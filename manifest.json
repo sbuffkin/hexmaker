@@ -1,0 +1,9 @@
+{
+	"id": "duckmage-plugin",
+	"name": "Duckmage Plugin",
+	"version": "0.1.0",
+	"minAppVersion": "1.0.0",
+	"description": "A template Obsidian plugin for the Duckmage vault.",
+	"author": "Your Name",
+	"authorUrl": ""
+}

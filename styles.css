@@ -1,0 +1,85 @@
+/* Duckmage plugin styles */
+
+/* Hex map view */
+.duckmage-hex-map-container {
+	padding: 1em;
+	overflow: auto;
+}
+
+.duckmage-hex-row {
+	display: flex;
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+	/* Flat-top hex: vertical step is 3/4 of hex height, so pull next row up by 1/4 of full height = half of --hex-size */
+	margin-bottom: calc(var(--hex-size, 2.2em) * -0.5);
+}
+
+.duckmage-hex-row:nth-child(even) {
+	/* Offset even rows by exactly half hex width so they tessellate */
+	margin-left: calc(var(--hex-size, 2.2em) * 1.732 / 2);
+}
+
+.duckmage-hex:focus {
+	outline: none;
+}
+
+.duckmage-hex {
+	--hex-size: 2.2em;
+	/* Flat-top regular hex: width = sqrt(3)*size, height = 2*size */
+	width: calc(var(--hex-size) * 1.732);
+	height: calc(var(--hex-size) * 2);
+	clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+	background: var(--background-secondary);
+	border: 2px solid var(--background-modifier-border);
+	margin: var(--duckmage-hex-gap, 0.15em);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	cursor: pointer;
+	position: relative;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.duckmage-hex:hover {
+	background: var(--background-modifier-hover);
+	border-color: var(--interactive-accent);
+}
+
+/* Has-note state: accent border and dot only (no purple fill so terrain/clear stays clear) */
+.duckmage-hex-exists {
+	border-color: var(--interactive-accent);
+}
+
+.duckmage-hex-exists:hover {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.duckmage-hex-label {
+	font-size: 0.65em;
+	font-weight: 600;
+	color: var(--text-muted);
+	pointer-events: none;
+	user-select: none;
+}
+
+.duckmage-hex-dot {
+	position: absolute;
+	bottom: 0.35em;
+	width: 4px;
+	height: 4px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	pointer-events: none;
+}
+
+/* Terrain-colored hex: keep label readable (text shadow if needed) */
+.duckmage-hex[style*="background-color"] .duckmage-hex-label {
+	text-shadow: 0 0 2px var(--background-primary), 0 0 4px var(--background-primary);
+}
+
+/* Settings: terrain palette list */
+.duckmage-palette-list .duckmage-palette-item {
+	margin-bottom: 0.5em;
+}
