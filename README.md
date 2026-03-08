@@ -1,6 +1,6 @@
 # Duckmage Obsidian Plugin
 
-A template Obsidian plugin. Customize `manifest.json`, `main.ts`, and `styles.css` for your vault.
+
 
 ## Development
 

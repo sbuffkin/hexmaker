@@ -1,9 +1,9 @@
 {
-	"id": "duckmage-plugin",
-	"name": "Duckmage World Hexmap Plugin",
-	"version": "0.1.0",
-	"minAppVersion": "1.0.0",
-	"description": "A template Obsidian plugin for the Duckmage vault.",
-	"author": "Your Name",
-	"authorUrl": ""
+  "id": "duckmage-plugin",
+  "name": "Duckmage World Hexmap Plugin",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "A plugin to power hex crawl worldbuilding and running.",
+  "author": "Mark B",
+  "authorUrl": ""
 }

@@ -31,6 +31,7 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: `${outDir}/${outFile}`,
+	loader: { ".md": "text" },
 });
 
 if (prod) {
