@@ -84,6 +84,7 @@ class HexCellModal extends Modal {
 		private filePath?: string,
 		private sectionKey?: string,
 		private onSave?: (newContent: string) => void,
+		private beforeSave?: () => Promise<void>,
 	) {
 		super(app);
 	}
@@ -109,6 +110,7 @@ class HexCellModal extends Modal {
 			saveBtn.addEventListener("click", async () => {
 				const newContent = textarea.value;
 				if (this.filePath && this.sectionKey) {
+					await this.beforeSave?.();
 					await setSectionContent(this.app, this.filePath, this.sectionKey, newContent);
 					this.onSave?.(newContent.trim());
 				}
@@ -624,36 +626,40 @@ export class HexTableView extends ItemView {
 				}
 			} else {
 				const content = text.get(col.key) ?? "";
+				td.dataset.fullContent = content;
 				if (content) {
-					td.dataset.fullContent = content;
 					const display = content.length > TRUNCATE_LEN
 						? content.slice(0, TRUNCATE_LEN) + "…"
 						: content;
 					td.setText(display);
-					td.addClass("duckmage-hex-table-cell-clickable");
-					td.addEventListener("click", () => {
-						const current = td.dataset.fullContent ?? "";
-						new HexCellModal(
-							this.app, `${x},${y} — ${col.label}`, current, false,
-							path, col.key,
-							(saved) => {
-								td.dataset.fullContent = saved;
-								if (saved) {
-									const newDisplay = saved.length > TRUNCATE_LEN
-										? saved.slice(0, TRUNCATE_LEN) + "…"
-										: saved;
-									td.setText(newDisplay);
-								} else {
-									td.empty();
-									td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
-									td.removeClass("duckmage-hex-table-cell-clickable");
-								}
-							},
-						).open();
-					});
 				} else {
 					td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
 				}
+				td.addClass("duckmage-hex-table-cell-clickable");
+				td.addEventListener("click", () => {
+					const current = td.dataset.fullContent ?? "";
+					new HexCellModal(
+						this.app, `${x},${y} — ${col.label}`, current, false,
+						path, col.key,
+						(saved) => {
+							td.dataset.fullContent = saved;
+							td.empty();
+							if (saved) {
+								const newDisplay = saved.length > TRUNCATE_LEN
+									? saved.slice(0, TRUNCATE_LEN) + "…"
+									: saved;
+								td.setText(newDisplay);
+							} else {
+								td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
+							}
+						},
+						async () => {
+							if (!this.app.vault.getAbstractFileByPath(path)) {
+								await this.plugin.createHexNote(x, y);
+							}
+						},
+					).open();
+				});
 			}
 		}
 	}

@@ -953,6 +953,39 @@
 	font-size: var(--font-ui-small);
 }
 
+/* ── Context menu create-new row ────────────────────────────────────────────── */
+.duckmage-editor-create-row {
+	display: flex;
+	gap: 6px;
+	margin-top: 6px;
+}
+
+.duckmage-editor-create-input {
+	flex: 1;
+	padding: 3px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	min-width: 0;
+}
+
+.duckmage-editor-create-btn {
+	padding: 3px 8px;
+	border-radius: 4px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border: none;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+}
+
+.duckmage-editor-create-btn:hover {
+	background: var(--interactive-accent-hover);
+}
+
 /* ── Go-to-hex button & modal ───────────────────────────────────────────────── */
 
 .duckmage-goto-btn {

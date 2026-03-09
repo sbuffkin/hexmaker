@@ -182,6 +182,42 @@ export class HexEditorModal extends Modal {
 			this.onChanged();
 			await refresh();
 		});
+
+		// Create-new row
+		const createRow = sectionEl.createDiv({ cls: "duckmage-editor-create-row" });
+		const createInput = createRow.createEl("input", { type: "text", cls: "duckmage-editor-create-input" });
+		createInput.placeholder = `New ${section.slice(0, -1).toLowerCase()}…`;
+		const createBtn = createRow.createEl("button", { text: "Create", cls: "duckmage-editor-create-btn" });
+
+		const createAndLink = async () => {
+			const name = createInput.value.trim();
+			if (!name) return;
+			const folder = normalizeFolder(sourceFolder);
+			const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
+			let file = this.app.vault.getAbstractFileByPath(newPath);
+			if (!(file instanceof TFile)) {
+				try {
+					if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+						await this.app.vault.createFolder(folder);
+					}
+					file = await this.app.vault.create(newPath, "");
+				} catch (err) {
+					new Notice(`Could not create ${newPath}: ${err}`);
+					return;
+				}
+			}
+			const hexFile = await this.ensureHexNote();
+			if (!hexFile) { new Notice("Could not create hex note."); return; }
+			const linkText = `[[${this.app.metadataCache.fileToLinktext(file as TFile, path)}]]`;
+			await addLinkToSection(this.app, path, section, linkText);
+			await addBacklinkToFile(this.app, (file as TFile).path, path);
+			this.onChanged();
+			createInput.value = "";
+			await refresh();
+		};
+
+		createBtn.addEventListener("click", createAndLink);
+		createInput.addEventListener("keydown", (e: KeyboardEvent) => { if (e.key === "Enter") createAndLink(); });
 	}
 
 	private renderLinkSection(

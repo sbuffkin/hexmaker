@@ -149,7 +149,7 @@ export async function addBacklinkToFile(app: App, targetFilePath: string, hexFil
 	);
 }
 
-/** Replace the body of a named ### section in-place. */
+/** Replace the body of a named ### section in-place, creating the section if absent. */
 export async function setSectionContent(app: App, filePath: string, section: string, newText: string): Promise<void> {
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
@@ -157,12 +157,18 @@ export async function setSectionContent(app: App, filePath: string, section: str
 
 	const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
 	const match = headingRegex.exec(content);
-	if (!match) return;
+	if (!match) {
+		if (newText.trim()) {
+			content = content.trimEnd() + `\n\n### ${section}\n${newText.trim()}\n`;
+			await app.vault.modify(file, content);
+		}
+		return;
+	}
 
 	const afterHeading = match.index + match[0].length;
 	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
 
-	const replacement = newText.trim() ? `\n\n${newText.trim()}\n` : "\n";
+	const replacement = newText.trim() ? `\n${newText.trim()}\n` : "\n";
 	await app.vault.modify(file, content.slice(0, afterHeading) + replacement + content.slice(sectionEnd));
 }

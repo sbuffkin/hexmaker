@@ -8,16 +8,16 @@ terrain:
 **Terrain:**
 
 ---
+What the party sees and feels. Terrain, atmosphere, any obvious features.
 
 ### description
 
-What the party sees and feels. Terrain, atmosphere, any obvious features.
 
 ---
+The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.
 
 ### landmark
 
-The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.
 
 ---
 
@@ -32,16 +32,16 @@ The visible standout feature — spire, ruin, lighthouse, statue, village — th
 ### Features
 
 ---
+Discoverable with exploration, tracking, or clues. Hidden lairs, ruins, tombs, camps, shortcuts.
 
 ### hidden
 
-Discoverable with exploration, tracking, or clues. Hidden lairs, ruins, tombs, camps, shortcuts.
 
 ---
+Revealed only through specific actions, NPCs, or investigation.
 
 ### secret
 
-Revealed only through specific actions, NPCs, or investigation.
 
 ---
 
@@ -51,13 +51,12 @@ Revealed only through specific actions, NPCs, or investigation.
 - **Custom / notable:**
 
 ---
+Normal for region, or special (e.g. always pleasant, sandstorms, magic zone effect).
 
 ### weather
 
-Normal for region, or special (e.g. always pleasant, sandstorms, magic zone effect).
 
 ---
+Seeds for adventures, things locals might mention, or what finding this hex could lead to.
 
 ### hooks & rumors
-
-Seeds for adventures, things locals might mention, or what finding this hex could lead to.
