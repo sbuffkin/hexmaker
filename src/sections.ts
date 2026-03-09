@@ -28,6 +28,28 @@ export async function addLinkToSection(app: App, filePath: string, section: stri
 	await app.vault.modify(file, content);
 }
 
+/** Remove a wiki-link from under the named ### section. Removes the whole line containing it. */
+export async function removeLinkFromSection(app: App, filePath: string, section: string, linkTarget: string): Promise<void> {
+	const file = app.vault.getAbstractFileByPath(filePath);
+	if (!(file instanceof TFile)) return;
+	let content = await app.vault.read(file);
+
+	const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+	const match = headingRegex.exec(content);
+	if (!match) return;
+
+	const afterHeading = match.index + match[0].length;
+	const nextHeadingMatch = /\n###? /m.exec(content.slice(afterHeading));
+	const sectionEnd = nextHeadingMatch ? afterHeading + nextHeadingMatch.index : content.length;
+
+	// Remove every line in the section that contains a link to linkTarget
+	const escapedTarget = linkTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const lineRegex = new RegExp(`\\n[^\\n]*\\[\\[${escapedTarget}(?:\\|[^\\]]+)?\\]\\][^\\n]*`, "g");
+	const sectionBody = content.slice(afterHeading, sectionEnd);
+	const newBody = sectionBody.replace(lineRegex, "");
+	await app.vault.modify(file, content.slice(0, afterHeading) + newBody + content.slice(sectionEnd));
+}
+
 /** Return all wiki-link targets found under a named ### section. */
 export async function getLinksInSection(app: App, filePath: string, section: string): Promise<string[]> {
 	const file = app.vault.getAbstractFileByPath(filePath);
@@ -101,6 +123,30 @@ export async function getAllSectionData(
 		text.set(name, body.trim());
 	}
 	return { text, links };
+}
+
+/**
+ * Append a backlink to hexFilePath at the end of targetFilePath, unless
+ * a link to the hex file already exists anywhere in the target note.
+ */
+export async function addBacklinkToFile(app: App, targetFilePath: string, hexFilePath: string): Promise<void> {
+	const hexFile    = app.vault.getAbstractFileByPath(hexFilePath);
+	const targetFile = app.vault.getAbstractFileByPath(targetFilePath);
+	if (!(hexFile instanceof TFile) || !(targetFile instanceof TFile)) return;
+
+	// Skip if the target already links back to the hex
+	const cache = app.metadataCache.getFileCache(targetFile);
+	const alreadyLinked = cache?.links?.some(
+		l => app.metadataCache.getFirstLinkpathDest(l.link, targetFilePath) === hexFile,
+	);
+	if (alreadyLinked) return;
+
+	const linkText = `[[${app.metadataCache.fileToLinktext(hexFile, targetFilePath)}]]`;
+	const content  = await app.vault.read(targetFile);
+	await app.vault.modify(
+		targetFile,
+		content.trimEnd() + (content.trim() ? "\n\n" : "") + linkText + "\n",
+	);
 }
 
 /** Replace the body of a named ### section in-place. */

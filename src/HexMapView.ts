@@ -1,4 +1,4 @@
-import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Modal, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { normalizeFolder, getIconUrl } from "./utils";
 import { getTerrainFromFile, getIconOverrideFromFile, setTerrainInFile, setIconOverrideInFile } from "./frontmatter";
@@ -74,6 +74,18 @@ export class HexMapView extends ItemView {
 		let lastPaintedKey: string | null = null;
 
 		this.registerDomEvent(contentEl, "mousedown", (e: MouseEvent) => {
+			// Middle click: always pan
+			if (e.button === 1) {
+				e.preventDefault(); // suppress auto-scroll cursor
+				isDragging = true;
+				hasDragged = false;
+				dragStartX = e.clientX;
+				dragStartY = e.clientY;
+				panStartX = this.panX;
+				panStartY = this.panY;
+				this.viewportEl?.addClass("is-dragging");
+				return;
+			}
 			if (e.button !== 0) return;
 			if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
 				isTerrainPainting = true;
@@ -138,17 +150,18 @@ export class HexMapView extends ItemView {
 			if (hasDragged) { e.stopPropagation(); hasDragged = false; }
 		}, { capture: true } as AddEventListenerOptions);
 
-		// Right-click anywhere exits terrain/icon mode (before hex contextmenu fires)
+		// Right-click anywhere exits the active tool
 		this.registerDomEvent(contentEl, "contextmenu", (e: MouseEvent) => {
-			if (this.drawingMode !== "terrain" && this.drawingMode !== "icon") return;
+			if (this.drawingMode === null) return;
 			e.preventDefault();
 			e.stopPropagation();
 			if (this.drawingMode === "terrain") this.exitTerrainMode();
-			else this.exitIconMode();
+			else if (this.drawingMode === "icon") this.exitIconMode();
+			else { this.drawingMode = null; this.updateToolbarButtonStates(); }
 		}, { capture: true } as AddEventListenerOptions);
 
-		// Clicking off the hex grid (but inside the viewport) exits terrain/icon mode
-		this.registerDomEvent(contentEl, "click", (e: MouseEvent) => {
+		// Double-clicking off the hex grid (but inside the viewport) exits terrain/icon mode
+		this.registerDomEvent(contentEl, "dblclick", (e: MouseEvent) => {
 			if (this.drawingMode !== "terrain" && this.drawingMode !== "icon") return;
 			const inViewport = (e.target as HTMLElement).closest(".duckmage-hex-map-viewport");
 			const onHex     = (e.target as HTMLElement).closest(".duckmage-hex");
@@ -168,6 +181,15 @@ export class HexMapView extends ItemView {
 		});
 		tableBtn.addEventListener("click", () => {
 			this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_HEX_TABLE });
+		});
+
+		const gotoBtn = controlsEl.createEl("button", {
+			cls: "duckmage-goto-btn",
+			title: "Go to hex",
+			text: "⌖",
+		});
+		gotoBtn.addEventListener("click", () => {
+			new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
 		});
 
 		this.renderGrid();
@@ -330,6 +352,36 @@ export class HexMapView extends ItemView {
 		}
 	}
 
+	private centerOnHex(x: number, y: number): void {
+		const hexEl = this.viewportEl?.querySelector<HTMLElement>(
+			`[data-x="${x}"][data-y="${y}"]`,
+		);
+		if (!hexEl) {
+			new Notice(`Hex ${x},${y} is not in the current grid.`);
+			return;
+		}
+
+		// Walk up offset parents to get hex centre in pre-transform viewport space
+		let ox = hexEl.offsetWidth / 2;
+		let oy = hexEl.offsetHeight / 2;
+		let cur: HTMLElement | null = hexEl;
+		while (cur && cur !== this.viewportEl) {
+			ox += cur.offsetLeft;
+			oy += cur.offsetTop;
+			cur = cur.offsetParent as HTMLElement | null;
+		}
+
+		const targetZoom = 1.5;
+		const clipEl = this.viewportEl?.parentElement;
+		const clipW = clipEl?.offsetWidth  ?? 600;
+		const clipH = clipEl?.offsetHeight ?? 400;
+
+		this.zoom = targetZoom;
+		this.panX = clipW / 2 - ox * targetZoom;
+		this.panY = clipH / 2 - oy * targetZoom;
+		this.applyTransform();
+	}
+
 	renderGrid(terrainOverrides?: Map<string, string | null>, iconOverrides?: Map<string, string | null>): void {
 		if (!this.viewportEl) return;
 		this.viewportEl.empty();
@@ -371,6 +423,8 @@ export class HexMapView extends ItemView {
 				img.src = getIconUrl(this.plugin, iconToShow);
 				img.alt = terrainEntry?.name ?? "";
 			}
+			// Tag override icons so the SVG overlay can elevate them above roads/rivers
+			if (iconOverride) hexEl.dataset.iconOverride = iconOverride;
 
 			hexEl.createSpan({ cls: "duckmage-hex-label", text: `${x},${y}` });
 			if (exists && !terrainEntry) hexEl.createSpan({ cls: "duckmage-hex-dot" });
@@ -482,9 +536,13 @@ export class HexMapView extends ItemView {
 				img.src = getIconUrl(this.plugin, icon);
 				img.alt = icon;
 				hexEl.insertBefore(img, hexEl.querySelector(".duckmage-hex-label"));
+				hexEl.dataset.iconOverride = icon;
+			} else {
+				delete hexEl.dataset.iconOverride;
 			}
 			if (icon !== null) hexEl.addClass("duckmage-hex-exists");
 		}
+		this.updateRoadRiverOverlay();
 
 		// ── Queue background file write (coalescing per-hex) ──────────────────
 		this.scheduleIconWrite(x, y, path, icon);
@@ -676,6 +734,9 @@ export class HexMapView extends ItemView {
 
 	private renderRoadRiverOverlay(gridContainer: HTMLElement): void {
 		this.viewportEl?.querySelector("svg.duckmage-road-river-svg")?.remove();
+		// Restore any icons that were hidden when the previous SVG elevated them
+		gridContainer.querySelectorAll<HTMLElement>(".duckmage-hex-icon[data-svg-elevated]")
+			.forEach(img => { img.style.display = ""; img.removeAttribute("data-svg-elevated"); });
 
 		const roadChains  = this.plugin.settings.roadChains  ?? [];
 		const riverChains = this.plugin.settings.riverChains ?? [];
@@ -789,6 +850,48 @@ export class HexMapView extends ItemView {
 		if (this.drawingMode === "road")  drawActiveEndMarker(this.activeRoadEnd,  this.plugin.settings.roadColor);
 		if (this.drawingMode === "river") drawActiveEndMarker(this.activeRiverEnd, this.plugin.settings.riverColor);
 
+		// Elevate override icons above roads/rivers by rendering them inside the SVG,
+		// then re-render the coordinate label on top of the icon.
+		gridContainer.querySelectorAll<HTMLElement>("[data-icon-override]").forEach(hexEl => {
+			const iconName = hexEl.dataset.iconOverride!;
+			const x = hexEl.dataset.x!;
+			const y = hexEl.dataset.y!;
+			const key = `${x}_${y}`;
+			const pos = centerMap.get(key);
+			if (!pos) return;
+			const origImg = hexEl.querySelector<HTMLElement>(".duckmage-hex-icon");
+			if (origImg) {
+				origImg.style.display = "none";
+				origImg.setAttribute("data-svg-elevated", "1");
+			}
+			const imgEl = document.createElementNS(svgNS, "image");
+			const iconW = hexEl.offsetWidth * 0.78;
+			const iconH = hexEl.offsetHeight * 0.78;
+			imgEl.setAttribute("x", String(pos.cx - iconW / 2));
+			imgEl.setAttribute("y", String(pos.cy - iconH / 2));
+			imgEl.setAttribute("width",  String(iconW));
+			imgEl.setAttribute("height", String(iconH));
+			imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
+			imgEl.setAttribute("opacity", "0.75");
+			svg.appendChild(imgEl);
+
+			// Coordinate label on top of the icon — mirrors .duckmage-hex-label styling
+			const textEl = document.createElementNS(svgNS, "text");
+			textEl.setAttribute("x", String(pos.cx));
+			textEl.setAttribute("y", String(pos.cy));
+			textEl.setAttribute("text-anchor", "middle");
+			textEl.setAttribute("dominant-baseline", "middle");
+			textEl.setAttribute("font-size", String(hexEl.offsetHeight * 0.12));
+			textEl.setAttribute("font-weight", "600");
+			textEl.setAttribute("fill", "#ffffff");
+			textEl.setAttribute("paint-order", "stroke");
+			textEl.setAttribute("stroke", "rgba(0,0,0,0.85)");
+			textEl.setAttribute("stroke-width", "2");
+			textEl.setAttribute("stroke-linejoin", "round");
+			textEl.textContent = `${x},${y}`;
+			svg.appendChild(textEl);
+		});
+
 		this.viewportEl?.appendChild(svg);
 	}
 
@@ -797,4 +900,43 @@ export class HexMapView extends ItemView {
 		if (!gridContainer) { this.renderGrid(); return; }
 		this.renderRoadRiverOverlay(gridContainer);
 	}
+}
+
+// ── Go-to-hex modal ──────────────────────────────────────────────────────────
+
+class GotoHexModal extends Modal {
+	private xInput: HTMLInputElement | null = null;
+	private yInput: HTMLInputElement | null = null;
+
+	constructor(app: App, private onConfirm: (x: number, y: number) => void) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.titleEl.setText("Go to hex");
+		const { contentEl } = this;
+		contentEl.addClass("duckmage-goto-modal");
+
+		const row = contentEl.createDiv({ cls: "duckmage-goto-row" });
+		row.createSpan({ text: "X:" });
+		this.xInput = row.createEl("input", { type: "number", cls: "duckmage-goto-input" });
+		row.createSpan({ text: "Y:" });
+		this.yInput = row.createEl("input", { type: "number", cls: "duckmage-goto-input" });
+
+		const go = () => {
+			const x = parseInt(this.xInput?.value ?? "", 10);
+			const y = parseInt(this.yInput?.value ?? "", 10);
+			if (!isNaN(x) && !isNaN(y)) { this.onConfirm(x, y); this.close(); }
+		};
+
+		const goBtn = contentEl.createEl("button", { text: "Go", cls: "mod-cta duckmage-goto-btn-confirm" });
+		goBtn.addEventListener("click", go);
+		[this.xInput, this.yInput].forEach(input =>
+			input?.addEventListener("keydown", (e: KeyboardEvent) => { if (e.key === "Enter") go(); }),
+		);
+
+		this.xInput.focus();
+	}
+
+	onClose(): void { this.contentEl.empty(); }
 }

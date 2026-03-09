@@ -1,10 +1,10 @@
-import { App, ItemView, Modal, TFile, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Modal, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { VIEW_TYPE_HEX_TABLE } from "./constants";
-import { getAllSectionData, setSectionContent } from "./sections";
+import { getAllSectionData, setSectionContent, addLinkToSection, addBacklinkToFile } from "./sections";
 import { getTerrainFromFile } from "./frontmatter";
 import { normalizeFolder } from "./utils";
-import type { TerrainColor } from "./types";
+import type { TerrainColor, LinkSection } from "./types";
 
 // Column definitions in template order
 const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
@@ -115,6 +115,131 @@ class HexCellModal extends Modal {
 				this.close();
 			});
 		}
+	}
+
+	onClose(): void { this.contentEl.empty(); }
+}
+
+// ── Multi-link navigation modal ──────────────────────────────────────────────
+
+class MultiLinkNavModal extends Modal {
+	constructor(
+		app: App,
+		private title: string,
+		private linkTargets: string[],
+		private sourcePath: string,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		this.titleEl.setText(this.title);
+		const { contentEl } = this;
+		contentEl.addClass("duckmage-link-picker-modal");
+		const list = contentEl.createEl("ul", { cls: "duckmage-link-picker-list" });
+		for (const target of this.linkTargets) {
+			const li = list.createEl("li", { cls: "duckmage-link-picker-item", text: target });
+			li.addEventListener("click", () => {
+				const file = this.app.metadataCache.getFirstLinkpathDest(target, this.sourcePath);
+				if (file instanceof TFile) {
+					this.app.workspace.getLeaf(false).openFile(file);
+					this.close();
+				}
+			});
+		}
+	}
+
+	onClose(): void { this.contentEl.empty(); }
+}
+
+// ── Link picker modal (Towns / Dungeons) ─────────────────────────────────────
+
+class LinkPickerModal extends Modal {
+	constructor(
+		app: App,
+		private plugin: DuckmagePlugin,
+		private hexPath: string,
+		private section: LinkSection,
+		private sourceFolder: string,
+		private onLinked: () => void,
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		this.titleEl.setText(`Add ${this.section}`);
+		contentEl.addClass("duckmage-link-picker-modal");
+
+		// ── Existing files list ──────────────────────────────────────────────
+		const normalized = normalizeFolder(this.sourceFolder);
+		const files = this.app.vault.getMarkdownFiles()
+			.filter(f => !normalized || f.path.startsWith(normalized + "/"))
+			.filter(f => !f.basename.startsWith("_"))
+			.sort((a, b) => a.basename.localeCompare(b.basename));
+
+		if (files.length > 0) {
+			contentEl.createEl("p", { text: "Select existing:", cls: "duckmage-link-picker-heading" });
+			const list = contentEl.createEl("ul", { cls: "duckmage-link-picker-list" });
+			for (const file of files) {
+				const li = list.createEl("li", { cls: "duckmage-link-picker-item" });
+				li.setText(file.basename);
+				li.addEventListener("click", async () => {
+					await this.addLink(file);
+				});
+			}
+		}
+
+		// ── Create new ───────────────────────────────────────────────────────
+		contentEl.createEl("p", { text: "Or create new:", cls: "duckmage-link-picker-heading" });
+		const row = contentEl.createDiv({ cls: "duckmage-link-picker-create-row" });
+		const input = row.createEl("input", { type: "text", cls: "duckmage-link-picker-input" });
+		input.placeholder = `${this.section.slice(0, -1)} name…`;
+		const createBtn = row.createEl("button", { text: "Create", cls: "mod-cta" });
+		createBtn.addEventListener("click", () => this.createAndLink(input.value.trim()));
+		input.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter") this.createAndLink(input.value.trim());
+		});
+	}
+
+	private async addLink(file: TFile): Promise<void> {
+		await this.ensureHexNote();
+		const linkText = `[[${this.app.metadataCache.fileToLinktext(file, this.hexPath)}]]`;
+		await addLinkToSection(this.app, this.hexPath, this.section, linkText);
+		await addBacklinkToFile(this.app, file.path, this.hexPath);
+		this.onLinked();
+		this.close();
+	}
+
+	private async createAndLink(name: string): Promise<void> {
+		if (!name) return;
+		const folder = normalizeFolder(this.sourceFolder);
+		const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
+		let file = this.app.vault.getAbstractFileByPath(newPath);
+		if (!(file instanceof TFile)) {
+			try {
+				if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+					await this.app.vault.createFolder(folder);
+				}
+				file = await this.app.vault.create(newPath, "");
+			} catch (err) {
+				new Notice(`Could not create ${newPath}: ${err}`);
+				return;
+			}
+		}
+		await this.addLink(file as TFile);
+	}
+
+	private async ensureHexNote(): Promise<void> {
+		const existing = this.app.vault.getAbstractFileByPath(this.hexPath);
+		if (existing instanceof TFile) return;
+		const folder = this.hexPath.includes("/")
+			? this.hexPath.slice(0, this.hexPath.lastIndexOf("/"))
+			: "";
+		if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+			await this.app.vault.createFolder(folder);
+		}
+		await this.app.vault.create(this.hexPath, "");
 	}
 
 	onClose(): void { this.contentEl.empty(); }
@@ -466,13 +591,36 @@ export class HexTableView extends ItemView {
 					const full = linkList.join(", ");
 					td.dataset.fullContent = full;
 					td.setText(full);
+				} else {
+					td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
+				}
+				// Towns and Dungeons: existing items open the file; empty cell opens picker
+				if (col.key === "towns" || col.key === "dungeons") {
+					const sourceFolder = col.key === "towns"
+						? this.plugin.settings.townsFolder
+						: this.plugin.settings.dungeonsFolder;
+					const section = col.key === "towns" ? "Towns" : "Dungeons";
+					td.addClass("duckmage-hex-table-cell-clickable");
+					td.addEventListener("click", () => {
+						if (linkList.length === 0) {
+							new LinkPickerModal(
+								this.app, this.plugin, path, section, sourceFolder,
+								() => void this.updateRow(path),
+							).open();
+						} else if (linkList.length === 1) {
+							const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+							if (file instanceof TFile) this.app.workspace.getLeaf(false).openFile(file);
+						} else {
+							// Multiple: show a nav list
+							new MultiLinkNavModal(this.app, `${x},${y} — ${section}`, linkList, path).open();
+						}
+					});
+				} else if (linkList.length > 0) {
 					td.addClass("duckmage-hex-table-cell-clickable");
 					td.addEventListener("click", () => {
 						const current = td.dataset.fullContent ?? "";
 						new HexCellModal(this.app, `${x},${y} — ${col.label}`, current, true).open();
 					});
-				} else {
-					td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
 				}
 			} else {
 				const content = text.get(col.key) ?? "";
@@ -518,30 +666,39 @@ export class HexTableView extends ItemView {
 		// Default widths (px): Hex, Terrain, then one per COLUMN entry
 		const defaultWidths = [60, 110, 220, 160, 150, 150, 150, 160, 160, 160, 140, 190];
 
+		// <col> elements + explicit table width is the only reliable way to drive
+		// table-layout:fixed column widths across browsers.
 		const colgroup = document.createElement("colgroup");
+		const cols: HTMLTableColElement[] = [];
+		let totalWidth = 0;
 		for (let i = 0; i < ths.length; i++) {
-			const col = document.createElement("col");
-			col.style.width = `${defaultWidths[i] ?? 160}px`;
+			const w = defaultWidths[i] ?? 160;
+			const col = document.createElement("col") as HTMLTableColElement;
+			col.style.width = `${w}px`;
 			colgroup.appendChild(col);
+			cols.push(col);
+			totalWidth += w;
 		}
 		table.insertBefore(colgroup, table.firstChild);
-
-		const cols = Array.from(colgroup.children) as HTMLTableColElement[];
+		table.style.width = `${totalWidth}px`;
 
 		for (let i = 0; i < ths.length; i++) {
-			const th = ths[i];
 			const col = cols[i];
 
-			const handle = th.createDiv({ cls: "duckmage-col-resizer" });
+			const handle = ths[i].createDiv({ cls: "duckmage-col-resizer" });
 			handle.addEventListener("mousedown", (e: MouseEvent) => {
 				e.preventDefault();
 				e.stopPropagation();
 				const startX  = e.clientX;
-				const startW  = th.getBoundingClientRect().width;
+				const startW  = parseInt(col.style.width, 10);
+				const startTW = parseInt(table.style.width, 10);
 				document.body.style.cursor = "col-resize";
 
 				const onMove = (me: MouseEvent) => {
-					col.style.width = `${Math.max(40, startW + me.clientX - startX)}px`;
+					const newW = Math.max(20, startW + me.clientX - startX);
+					const delta = newW - parseInt(col.style.width, 10);
+					col.style.width    = `${newW}px`;
+					table.style.width  = `${startTW + (newW - startW)}px`;
 				};
 				const onUp = () => {
 					document.body.style.cursor = "";

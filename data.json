@@ -4,7 +4,7 @@
   "hexFolder": "RPG/duckmage/hexes",
   "townsFolder": "RPG/duckmage/world/towns",
   "dungeonsFolder": "RPG/duckmage/world/dungeons",
-  "iconsFolder": "",
+  "iconsFolder": "RPG/duckmage/icons",
   "templatePath": "RPG/duckmage/world/hextemplate.md",
   "hexGap": "0.15",
   "terrainPalette": [
@@ -51,7 +51,7 @@
     },
     {
       "name": "desert rocky",
-      "color": "#d97706",
+      "color": "#e6bc60",
       "icon": "bw-desert-rocky.png"
     },
     {
@@ -221,11 +221,11 @@
   ],
   "gridSize": {
     "cols": 28,
-    "rows": 19
+    "rows": 20
   },
   "gridOffset": {
     "x": -3,
-    "y": -3
+    "y": -4
   },
   "zoomLevel": 1,
   "roadChains": [
@@ -319,8 +319,9 @@
       "13_3",
       "14_3",
       "15_2",
-      "15_1",
-      "16_1",
+      "15_1"
+    ],
+    [
       "17_0"
     ],
     [
@@ -360,9 +361,6 @@
     ],
     [
       "12_9"
-    ],
-    [
-      "11_8"
     ],
     [
       "7_6",

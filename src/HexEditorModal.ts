@@ -2,7 +2,7 @@ import { App, Modal, Notice, TFile } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { getIconUrl, normalizeFolder } from "./utils";
 import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile } from "./frontmatter";
-import { addLinkToSection, getLinksInSection, getSectionContent, setSectionContent } from "./sections";
+import { addLinkToSection, removeLinkFromSection, getLinksInSection, getAllSectionData, setSectionContent, addBacklinkToFile } from "./sections";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { TEXT_SECTIONS } from "./types";
 import type { LinkSection } from "./types";
@@ -20,27 +20,45 @@ export class HexEditorModal extends Modal {
 
 	async onOpen() {
 		const { contentEl } = this;
-		contentEl.empty();
 		contentEl.addClass("duckmage-hex-editor");
-		contentEl.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
 
 		const path = this.plugin.hexPath(this.x, this.y);
 		const hexExists = this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+
+		// Fetch all section data in one file read before touching the DOM
+		let allText  = new Map<string, string>();
+		let allLinks = new Map<string, string[]>();
+		if (hexExists) {
+			({ text: allText, links: allLinks } = await getAllSectionData(this.app, path));
+		}
+
+		// Render entire modal synchronously from pre-fetched data — no more chunked paints
+		contentEl.empty();
+		const titleRow = contentEl.createDiv({ cls: "duckmage-editor-title-row" });
+		titleRow.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
+		if (hexExists) {
+			const file = this.app.vault.getAbstractFileByPath(path) as TFile;
+			const openLink = titleRow.createEl("a", { text: "Open note", cls: "duckmage-editor-open-link" });
+			openLink.addEventListener("click", () => {
+				this.app.workspace.getLeaf("tab").openFile(file);
+				this.close();
+			});
+		}
 
 		this.renderTerrainSection(contentEl, path);
 
 		contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 		contentEl.createEl("h3", { text: "World features" });
 
-		await this.renderDropdownSection(contentEl, path, "Towns", hexExists, this.plugin.settings.townsFolder);
-		await this.renderDropdownSection(contentEl, path, "Dungeons", hexExists, this.plugin.settings.dungeonsFolder);
-		await this.renderLinkSection(contentEl, path, "Features", hexExists);
+		this.renderDropdownSection(contentEl, path, "Towns",    hexExists, this.plugin.settings.townsFolder,    allLinks.get("towns")    ?? []);
+		this.renderDropdownSection(contentEl, path, "Dungeons", hexExists, this.plugin.settings.dungeonsFolder, allLinks.get("dungeons") ?? []);
+		this.renderLinkSection(contentEl, path, "Features", hexExists, allLinks.get("features") ?? []);
 
 		contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 		contentEl.createEl("h3", { text: "Notes" });
 
 		for (const { key, label } of TEXT_SECTIONS) {
-			await this.renderTextSection(contentEl, path, key, label);
+			this.renderTextSection(contentEl, path, key, label, allText.get(key) ?? "");
 		}
 	}
 
@@ -113,13 +131,14 @@ export class HexEditorModal extends Modal {
 			.sort((a, b) => a.basename.localeCompare(b.basename));
 	}
 
-	private async renderDropdownSection(
+	private renderDropdownSection(
 		container: HTMLElement,
 		path: string,
 		section: LinkSection,
 		hexExists: boolean,
 		sourceFolder: string,
-	): Promise<void> {
+		initialLinks: string[],
+	): void {
 		const sectionEl = container.createDiv({ cls: "duckmage-editor-link-section" });
 		const header = sectionEl.createDiv({ cls: "duckmage-link-section-header" });
 		header.createEl("h4", { text: section });
@@ -131,8 +150,20 @@ export class HexEditorModal extends Modal {
 		}
 
 		const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
+
+		const refresh = async () => {
+			linksEl.empty();
+			this.renderLinkList(linksEl, await getLinksInSection(this.app, path, section), path, onRemove);
+		};
+
+		const onRemove = async (link: string) => {
+			await removeLinkFromSection(this.app, path, section, link);
+			this.onChanged();
+			await refresh();
+		};
+
 		if (hexExists) {
-			this.renderLinkList(linksEl, await getLinksInSection(this.app, path, section));
+			this.renderLinkList(linksEl, initialLinks, path, onRemove);
 		} else {
 			linksEl.createSpan({ text: "None", cls: "duckmage-link-empty" });
 		}
@@ -147,18 +178,19 @@ export class HexEditorModal extends Modal {
 			if (!hexFile) { new Notice("Could not create hex note."); return; }
 			const linkText = `[[${this.app.metadataCache.fileToLinktext(file, path)}]]`;
 			await addLinkToSection(this.app, path, section, linkText);
+			await addBacklinkToFile(this.app, file.path, path);
 			this.onChanged();
-			linksEl.empty();
-			this.renderLinkList(linksEl, await getLinksInSection(this.app, path, section));
+			await refresh();
 		});
 	}
 
-	private async renderLinkSection(
+	private renderLinkSection(
 		container: HTMLElement,
 		path: string,
 		section: LinkSection,
 		hexExists: boolean,
-	): Promise<void> {
+		initialLinks: string[],
+	): void {
 		const sectionEl = container.createDiv({ cls: "duckmage-editor-link-section" });
 		const header = sectionEl.createDiv({ cls: "duckmage-link-section-header" });
 		header.createEl("h4", { text: section });
@@ -166,8 +198,7 @@ export class HexEditorModal extends Modal {
 		const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
 
 		if (hexExists) {
-			const links = await getLinksInSection(this.app, path, section);
-			this.renderLinkList(linksEl, links);
+			this.renderLinkList(linksEl, initialLinks, path);
 		} else {
 			linksEl.createSpan({ text: "—", cls: "duckmage-link-empty" });
 		}
@@ -181,38 +212,52 @@ export class HexEditorModal extends Modal {
 				this.onChanged();
 				const links = await getLinksInSection(this.app, path, section);
 				linksEl.empty();
-				this.renderLinkList(linksEl, links);
+				this.renderLinkList(linksEl, links, path);
 			}).open();
 		});
 	}
 
-	private renderLinkList(container: HTMLElement, links: string[]): void {
+	private renderLinkList(
+		container: HTMLElement,
+		links: string[],
+		sourcePath: string,
+		onRemove?: (link: string) => void,
+	): void {
 		if (links.length === 0) {
 			container.createSpan({ text: "None", cls: "duckmage-link-empty" });
 		} else {
 			for (const link of links) {
-				container.createDiv({ text: `[[${link}]]`, cls: "duckmage-link-item" });
+				const item = container.createDiv({ cls: "duckmage-link-item" });
+				const label = item.createSpan({ text: `[[${link}]]`, cls: "duckmage-link-item-label" });
+				const file = this.app.metadataCache.getFirstLinkpathDest(link, sourcePath);
+				if (file instanceof TFile) {
+					label.addClass("duckmage-link-item-clickable");
+					label.addEventListener("click", () => {
+						this.app.workspace.getLeaf("tab").openFile(file);
+						this.close();
+					});
+				}
+				if (onRemove) {
+					const removeBtn = item.createEl("button", { text: "×", cls: "duckmage-link-remove-btn" });
+					removeBtn.addEventListener("click", () => onRemove(link));
+				}
 			}
 		}
 	}
 
-	private async renderTextSection(
+	private renderTextSection(
 		container: HTMLElement,
 		path: string,
 		section: string,
 		label: string,
-	): Promise<void> {
-		const hexFile = this.app.vault.getAbstractFileByPath(path);
-		const currentContent = hexFile instanceof TFile
-			? await getSectionContent(this.app, path, section)
-			: "";
-
+		initialContent: string,
+	): void {
 		const sectionEl = container.createDiv({ cls: "duckmage-editor-text-section" });
 		sectionEl.createEl("label", { text: label, cls: "duckmage-text-section-label" });
 		const textarea = sectionEl.createEl("textarea", { cls: "duckmage-text-section-textarea" });
 		textarea.rows = 3;
 		textarea.placeholder = `${label}…`;
-		textarea.value = currentContent;
+		textarea.value = initialContent;
 
 		textarea.addEventListener("blur", async () => {
 			const file = await this.ensureHexNote();
