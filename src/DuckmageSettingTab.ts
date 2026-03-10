@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, PluginSettingTab, Setting, TFile } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { normalizeFolder } from "./utils";
 
@@ -64,6 +64,61 @@ export class DuckmageSettingTab extends PluginSettingTab {
 						this.plugin.settings.dungeonsFolder = normalizeFolder(value ?? "");
 						await this.plugin.saveSettings();
 					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Tables folder")
+			.setDesc("Vault-relative folder for random table files. Used by the Encounters Table section and the Random Tables view.")
+			.addText(text =>
+				text
+					.setPlaceholder("world/tables")
+					.setValue(this.plugin.settings.tablesFolder)
+					.onChange(async value => {
+						this.plugin.settings.tablesFolder = normalizeFolder(value ?? "");
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Default die for new tables")
+			.setDesc("Die size used when creating new random table files (d6, d20, d100, etc.).")
+			.addDropdown(dropdown =>
+				dropdown
+					.addOption("4",   "d4")
+					.addOption("6",   "d6")
+					.addOption("8",   "d8")
+					.addOption("10",  "d10")
+					.addOption("12",  "d12")
+					.addOption("20",  "d20")
+					.addOption("100", "d100")
+					.setValue(String(this.plugin.settings.defaultTableDice ?? 100))
+					.onChange(async value => {
+						this.plugin.settings.defaultTableDice = parseInt(value, 10);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		containerEl.createEl("h3", { text: "Generate world data" });
+		containerEl.createEl("p", {
+			cls: "setting-item-description duckmage-generate-warning",
+			text: "⚠️ Configure all folder settings above before clicking Generate. This will create terrain table files, add roller links to all table files, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing files and links are not overwritten.",
+		});
+		new Setting(containerEl)
+			.setName("Generate terrain tables & hex links")
+			.setDesc("Creates missing terrain table files, adds roller links to all table files (so they can be opened in the Duckmage Roller from within Obsidian), and links each hex note's terrain encounters table into its Encounters Table section.")
+			.addButton(btn =>
+				btn.setButtonText("Generate").setCta().onClick(async () => {
+					btn.setDisabled(true);
+					btn.setButtonText("Generating…");
+					try {
+						await this.plugin.ensureTerrainTables();
+						await this.plugin.ensureAllRollerLinks();
+						await this.plugin.backfillTerrainLinks();
+					} finally {
+						btn.setDisabled(false);
+						btn.setButtonText("Generate");
+					}
+				}),
 			);
 
 		new Setting(containerEl)
@@ -220,15 +275,22 @@ export class DuckmageSettingTab extends PluginSettingTab {
 			});
 
 			new Setting(itemEl)
-				.addText(text =>
+				.addText(text => {
+					let nameBeforeEdit = entry.name;
 					text
 						.setPlaceholder("Name")
 						.setValue(entry.name)
 						.onChange(async value => {
 							entry.name = (value ?? "").trim() || entry.name;
 							await this.plugin.saveSettings();
-						}),
-				)
+						});
+					text.inputEl.addEventListener("focus", () => { nameBeforeEdit = entry.name; });
+					text.inputEl.addEventListener("blur", async () => {
+						if (entry.name !== nameBeforeEdit) {
+							await this.renameTerrainTables(nameBeforeEdit, entry.name);
+						}
+					});
+				})
 				.addColorPicker(color =>
 					color.setValue(entry.color).onChange(async value => {
 						entry.color = value;
@@ -262,8 +324,26 @@ export class DuckmageSettingTab extends PluginSettingTab {
 			btn.setButtonText("Add terrain type").onClick(async () => {
 				this.plugin.settings.terrainPalette.push({ name: "New", color: "#888888" });
 				await this.plugin.saveSettings();
+				await this.plugin.ensureTerrainTables();
 				this.display();
 			}),
 		);
+	}
+
+	private getTerrainTablePath(terrainName: string, tableType: "description" | "encounters"): string {
+		const folder = normalizeFolder(this.plugin.settings.tablesFolder);
+		const subfolder = folder ? `${folder}/terrain` : "terrain";
+		return `${subfolder}/${terrainName} - ${tableType}.md`;
+	}
+
+	private async renameTerrainTables(oldName: string, newName: string): Promise<void> {
+		for (const tableType of ["description", "encounters"] as const) {
+			const oldPath = this.getTerrainTablePath(oldName, tableType);
+			const newPath = this.getTerrainTablePath(newName, tableType);
+			const file = this.app.vault.getAbstractFileByPath(oldPath);
+			if (file instanceof TFile) {
+				try { await this.app.vault.rename(file, newPath); } catch { /* ignore */ }
+			}
+		}
 	}
 }

@@ -2,6 +2,7 @@ import type { TerrainColor, DuckmagePluginSettings } from "./types";
 
 export const VIEW_TYPE_HEX_MAP = "duckmage-hex-map";
 export const VIEW_TYPE_HEX_TABLE = "duckmage-hex-table";
+export const VIEW_TYPE_RANDOM_TABLES = "duckmage-random-tables";
 
 export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Open
@@ -108,4 +109,6 @@ export const DEFAULT_SETTINGS: DuckmagePluginSettings = {
   roadColor: "#a16207",
   riverColor: "#3b82f6",
   hexOrientation: "flat",
+  tablesFolder: "world/tables",
+  defaultTableDice: 100,
 };

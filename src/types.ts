@@ -22,9 +22,11 @@ export interface DuckmagePluginSettings {
 	roadColor: string;
 	riverColor: string;
 	hexOrientation: "pointy" | "flat";
+	tablesFolder: string;
+	defaultTableDice: number;
 }
 
-export const LINK_SECTIONS = ["Towns", "Dungeons", "Features"] as const;
+export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Encounters Table"] as const;
 export type LinkSection = typeof LINK_SECTIONS[number];
 
 export const TEXT_SECTIONS = [

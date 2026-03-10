@@ -1,11 +1,13 @@
 import { App, Modal, Notice, TFile } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
-import { getIconUrl, normalizeFolder } from "./utils";
+import { getIconUrl, normalizeFolder, makeTableTemplate } from "./utils";
 import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile } from "./frontmatter";
 import { addLinkToSection, removeLinkFromSection, getLinksInSection, getAllSectionData, setSectionContent, addBacklinkToFile } from "./sections";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { TEXT_SECTIONS } from "./types";
 import type { LinkSection } from "./types";
+import { RandomTableModal } from "./RandomTableModal";
+import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
 
 export class HexEditorModal extends Modal {
 	constructor(
@@ -53,6 +55,7 @@ export class HexEditorModal extends Modal {
 		this.renderDropdownSection(contentEl, path, "Towns",    hexExists, this.plugin.settings.townsFolder,    allLinks.get("towns")    ?? []);
 		this.renderDropdownSection(contentEl, path, "Dungeons", hexExists, this.plugin.settings.dungeonsFolder, allLinks.get("dungeons") ?? []);
 		this.renderLinkSection(contentEl, path, "Features", hexExists, allLinks.get("features") ?? []);
+		this.renderDropdownSection(contentEl, path, "Encounters Table", hexExists, this.plugin.settings.tablesFolder, allLinks.get("encounters table") ?? []);
 
 		contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 		contentEl.createEl("h3", { text: "Notes" });
@@ -151,10 +154,21 @@ export class HexEditorModal extends Modal {
 
 		const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
 
-		const refresh = async () => {
-			linksEl.empty();
-			this.renderLinkList(linksEl, await getLinksInSection(this.app, path, section), path, onRemove);
-		};
+		// For Encounters Table: clicking a linked item opens the table view for rolling
+		const onItemClick = section === "Encounters Table"
+			? async (_link: string, file: TFile) => {
+				const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
+				if (leaves.length > 0) {
+					this.app.workspace.revealLeaf(leaves[0]);
+					(leaves[0].view as any).openTable?.(file.path);
+				} else {
+					const leaf = this.app.workspace.getLeaf("tab");
+					await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+					(leaf.view as any).openTable?.(file.path);
+				}
+				this.close();
+			}
+			: undefined;
 
 		const onRemove = async (link: string) => {
 			await removeLinkFromSection(this.app, path, section, link);
@@ -162,8 +176,13 @@ export class HexEditorModal extends Modal {
 			await refresh();
 		};
 
+		const refresh = async () => {
+			linksEl.empty();
+			this.renderLinkList(linksEl, await getLinksInSection(this.app, path, section), path, onRemove, onItemClick);
+		};
+
 		if (hexExists) {
-			this.renderLinkList(linksEl, initialLinks, path, onRemove);
+			this.renderLinkList(linksEl, initialLinks, path, onRemove, onItemClick);
 		} else {
 			linksEl.createSpan({ text: "None", cls: "duckmage-link-empty" });
 		}
@@ -200,7 +219,7 @@ export class HexEditorModal extends Modal {
 					if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
 						await this.app.vault.createFolder(folder);
 					}
-					file = await this.app.vault.create(newPath, "");
+					file = await this.app.vault.create(newPath, section === "Encounters Table" ? makeTableTemplate(this.plugin.settings.defaultTableDice) : "");
 				} catch (err) {
 					new Notice(`Could not create ${newPath}: ${err}`);
 					return;
@@ -258,6 +277,7 @@ export class HexEditorModal extends Modal {
 		links: string[],
 		sourcePath: string,
 		onRemove?: (link: string) => void,
+		onItemClick?: (link: string, file: TFile) => void,
 	): void {
 		if (links.length === 0) {
 			container.createSpan({ text: "None", cls: "duckmage-link-empty" });
@@ -269,8 +289,12 @@ export class HexEditorModal extends Modal {
 				if (file instanceof TFile) {
 					label.addClass("duckmage-link-item-clickable");
 					label.addEventListener("click", () => {
-						this.app.workspace.getLeaf("tab").openFile(file);
-						this.close();
+						if (onItemClick) {
+							void onItemClick(link, file);
+						} else {
+							this.app.workspace.getLeaf("tab").openFile(file);
+							this.close();
+						}
 					});
 				}
 				if (onRemove) {
@@ -289,8 +313,56 @@ export class HexEditorModal extends Modal {
 		initialContent: string,
 	): void {
 		const sectionEl = container.createDiv({ cls: "duckmage-editor-text-section" });
-		sectionEl.createEl("label", { text: label, cls: "duckmage-text-section-label" });
+		const labelRow = sectionEl.createDiv({ cls: "duckmage-text-section-label-row" });
+		labelRow.createEl("label", { text: label, cls: "duckmage-text-section-label" });
+
+		// Button group on the right — keeps 📖 and 🎲 clustered together
+		const btnGroup = labelRow.createDiv({ cls: "duckmage-text-section-btn-group" });
+
+		// 📖 button: terrain description table (description section) or generic section table
+		const tablesFolder = this.plugin.settings.tablesFolder
+			? this.plugin.settings.tablesFolder.replace(/^\/+|\/+$/g, "")
+			: "";
+		let previewTablePath: string | null = null;
+		let previewTitle = "";
+
+		if (section === "description") {
+			const terrain = getTerrainFromFile(this.app, path);
+			if (terrain) {
+				const p = tablesFolder
+					? `${tablesFolder}/terrain/${terrain} - description.md`
+					: `terrain/${terrain} - description.md`;
+				if (this.app.vault.getAbstractFileByPath(p)) {
+					previewTablePath = p;
+					previewTitle = `Roll on ${terrain} description table`;
+				}
+			}
+		} else if (section === "landmark" || section === "hidden" || section === "secret") {
+			const p = tablesFolder ? `${tablesFolder}/${section}.md` : `${section}.md`;
+			if (this.app.vault.getAbstractFileByPath(p)) {
+				previewTablePath = p;
+				previewTitle = `Roll on ${section} table`;
+			}
+		}
+
+		if (previewTablePath) {
+			const previewBtn = btnGroup.createEl("button", { text: "📖", cls: "duckmage-section-desc-table-btn" });
+			previewBtn.title = previewTitle;
+			const capturedPath = previewTablePath;
+			previewBtn.addEventListener("click", () => {
+				new RandomTableModal(this.app, this.plugin, undefined, capturedPath).open();
+			});
+		}
+
+		const rollBtn = btnGroup.createEl("button", { text: "🎲", cls: "duckmage-section-roll-btn" });
+		rollBtn.title = "Roll on a table and append result";
 		const textarea = sectionEl.createEl("textarea", { cls: "duckmage-text-section-textarea" });
+		rollBtn.addEventListener("click", () => {
+			new RandomTableModal(this.app, this.plugin, (result) => {
+				if (textarea.value && !textarea.value.endsWith("\n")) textarea.value += "\n";
+				textarea.value += result;
+			}).open();
+		});
 		textarea.rows = 3;
 		textarea.placeholder = `${label}…`;
 		textarea.value = initialContent;

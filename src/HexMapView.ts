@@ -5,7 +5,7 @@ import { getTerrainFromFile, getIconOverrideFromFile, setTerrainInFile, setIconO
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
-import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_HEX_TABLE } from "./constants";
+import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_HEX_TABLE, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 
 export class HexMapView extends ItemView {
 	plugin: DuckmagePlugin;
@@ -192,6 +192,15 @@ export class HexMapView extends ItemView {
 		});
 		tableBtn.addEventListener("click", () => {
 			this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_HEX_TABLE });
+		});
+
+		const rtBtn = controlsEl.createEl("button", {
+			cls: "duckmage-rt-btn",
+			title: "Open random tables",
+			text: "🎲",
+		});
+		rtBtn.addEventListener("click", () => {
+			this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
 		});
 
 		const gotoBtn = controlsEl.createEl("button", {

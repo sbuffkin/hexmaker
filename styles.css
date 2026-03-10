@@ -469,10 +469,10 @@
 .duckmage-expand-left   { left: 4px;   top: 50%;  transform: translateY(-50%); }
 .duckmage-expand-right  { right: 4px;  top: 50%;  transform: translateY(-50%); }
 
-.duckmage-table-btn {
+.duckmage-table-btn,
+.duckmage-rt-btn {
 	position: absolute;
 	top: 8px;
-	left: 8px;
 	z-index: 10;
 	height: 26px;
 	padding: 0 8px;
@@ -488,7 +488,11 @@
 	user-select: none;
 }
 
-.duckmage-table-btn:hover {
+.duckmage-table-btn { left: 8px; }
+.duckmage-rt-btn    { left: 44px; }
+
+.duckmage-table-btn:hover,
+.duckmage-rt-btn:hover {
 	opacity: 1;
 	color: var(--text-normal);
 }
@@ -1004,7 +1008,7 @@
 .duckmage-goto-btn {
 	position: absolute;
 	top: 8px;
-	left: 44px;
+	left: 80px;
 	z-index: 10;
 	height: 26px;
 	padding: 0 8px;
@@ -1046,3 +1050,434 @@
 .duckmage-goto-btn-confirm {
 	width: 100%;
 }
+
+/* ── Random table view ──────────────────────────────────────────────────── */
+
+.duckmage-rt-container {
+	display: flex;
+	height: 100%;
+	overflow: hidden;
+}
+
+.duckmage-rt-left {
+	width: 220px;
+	flex-shrink: 0;
+	display: flex;
+	flex-direction: column;
+	border-right: 1px solid var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.duckmage-rt-list-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 10px 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-rt-list-title {
+	font-weight: 600;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.duckmage-rt-icon-btn {
+	background: none;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 2px 4px;
+	border-radius: 3px;
+	font-size: 1em;
+}
+.duckmage-rt-icon-btn:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
+
+.duckmage-rt-search {
+	width: 100%;
+	box-sizing: border-box;
+	padding: 4px 8px;
+	font-size: var(--font-ui-small);
+	border: none;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	outline: none;
+	flex-shrink: 0;
+}
+.duckmage-rt-search:focus { background: var(--background-modifier-hover); }
+
+.duckmage-rt-list {
+	flex: 1;
+	overflow-y: auto;
+	padding: 4px 0;
+}
+
+.duckmage-rt-list-item {
+	padding: 5px 12px;
+	cursor: pointer;
+	font-size: var(--font-ui-small);
+	border-radius: 4px;
+	margin: 1px 4px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.duckmage-rt-list-item:hover { background: var(--background-modifier-hover); }
+.duckmage-rt-list-item.is-active {
+	background: var(--background-modifier-active-hover);
+	color: var(--text-accent);
+	font-weight: 600;
+}
+
+.duckmage-rt-folder { margin: 1px 0; }
+.duckmage-rt-folder-header {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 8px;
+	cursor: pointer;
+	border-radius: 4px;
+	margin: 0 4px;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-muted);
+	user-select: none;
+}
+.duckmage-rt-folder-header:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.duckmage-rt-folder-arrow { font-size: 0.65em; flex-shrink: 0; }
+.duckmage-rt-folder-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.duckmage-rt-folder-children { padding-left: 12px; }
+
+.duckmage-rt-list-footer {
+	padding: 6px 8px;
+	border-top: 1px solid var(--background-modifier-border);
+	display: flex;
+	gap: 4px;
+}
+
+.duckmage-rt-new-input {
+	flex: 1;
+	min-width: 0;
+	padding: 3px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.duckmage-rt-new-btn {
+	padding: 3px 8px;
+	font-size: var(--font-ui-small);
+	white-space: nowrap;
+}
+
+.duckmage-rt-detail {
+	flex: 1;
+	overflow-y: auto;
+	padding: 12px 16px;
+}
+
+.duckmage-rt-placeholder {
+	color: var(--text-faint);
+	font-style: italic;
+	margin-top: 24px;
+	text-align: center;
+}
+
+.duckmage-rt-detail-header {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 12px;
+	flex-wrap: wrap;
+}
+
+.duckmage-rt-detail-title {
+	margin: 0;
+	flex: 1;
+	min-width: 0;
+}
+
+.duckmage-rt-edit-link {
+	font-size: var(--font-ui-small);
+	color: var(--text-accent);
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.duckmage-rt-die-select {
+	font-size: var(--font-ui-small);
+	padding: 2px 4px;
+	border-radius: 4px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+}
+
+/* ── Random table (odds table) ─────────────────────────────────────────── */
+
+.duckmage-random-table {
+	border-collapse: collapse;
+	width: 100%;
+	margin-bottom: 12px;
+	font-size: var(--font-ui-small);
+}
+
+.duckmage-random-table th {
+	position: sticky;
+	top: 0;
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	padding: 4px 8px;
+	text-align: left;
+	white-space: nowrap;
+	z-index: 2;
+	font-weight: 600;
+}
+
+.duckmage-random-table td {
+	border: 1px solid var(--background-modifier-border);
+	padding: 4px 8px;
+	vertical-align: top;
+}
+
+.duckmage-random-table tr.is-rolled td {
+	background: var(--background-modifier-hover);
+	font-weight: 600;
+}
+
+.duckmage-rt-range-cell {
+	color: var(--text-faint);
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.duckmage-rt-odds-cell {
+	color: var(--text-faint);
+	white-space: nowrap;
+	text-align: right;
+}
+
+/* ── Roll area ─────────────────────────────────────────────────────────── */
+
+.duckmage-rt-roll-area {
+	margin-bottom: 8px;
+}
+
+.duckmage-rt-roll-btn {
+	min-width: 80px;
+}
+
+.duckmage-roll-result {
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	padding: 10px 12px;
+	margin-bottom: 10px;
+	background: var(--background-secondary);
+}
+
+.duckmage-roll-result-textarea {
+	width: 100%;
+	min-height: 50px;
+	resize: vertical;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	padding: 6px 8px;
+	font-size: var(--font-ui-small);
+	box-sizing: border-box;
+	margin-bottom: 6px;
+}
+
+.duckmage-roll-result-btns {
+	display: flex;
+	gap: 6px;
+}
+
+.duckmage-roll-copy-btn {
+	font-size: var(--font-ui-small);
+}
+
+/* ── Roll history ──────────────────────────────────────────────────────── */
+
+.duckmage-rt-history {
+	margin-top: 8px;
+}
+
+.duckmage-rt-history-label {
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+	margin: 0 0 4px;
+}
+
+.duckmage-rt-history-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.duckmage-rt-history-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	padding: 1px 0;
+}
+
+.duckmage-rt-history-copy {
+	background: none;
+	border: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	padding: 0 2px;
+	font-size: 0.9em;
+	opacity: 0.6;
+}
+.duckmage-rt-history-copy:hover { opacity: 1; }
+
+/* ── Random table modal ────────────────────────────────────────────────── */
+
+.duckmage-roll-modal {
+	min-width: 380px;
+}
+
+.duckmage-roll-modal-select {
+	width: 100%;
+	margin-bottom: 10px;
+	padding: 4px 6px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.duckmage-roll-modal-table-wrap {
+	max-height: 200px;
+	overflow-y: auto;
+	margin-bottom: 10px;
+}
+
+.duckmage-rt-roll-btn.duckmage-rt-roll-btn {
+	display: block;
+	width: 100%;
+	margin-bottom: 8px;
+}
+
+.duckmage-rt-empty {
+	color: var(--text-faint);
+	font-style: italic;
+	font-size: var(--font-ui-small);
+}
+
+/* ── Section roll button (hex editor text sections) ────────────────────── */
+
+.duckmage-text-section-label-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 2px;
+}
+.duckmage-text-section-btn-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.duckmage-section-desc-table-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	font-size: 0.85em;
+	padding: 0 2px;
+	color: var(--text-muted);
+	opacity: 0.7;
+	line-height: 1;
+}
+.duckmage-section-desc-table-btn:hover { opacity: 1; }
+
+.duckmage-roll-modal-header-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+.duckmage-roll-modal-edit-link,
+.duckmage-roll-modal-open-link {
+	font-size: 0.8em;
+	color: var(--text-accent);
+	cursor: pointer;
+}
+.duckmage-roll-modal-edit-link:hover,
+.duckmage-roll-modal-open-link:hover { text-decoration: underline; }
+.duckmage-roll-modal-open-link { margin-left: auto; }
+
+/* ── Random table editor modal ───────────────────────────────────────────── */
+.duckmage-table-editor { min-width: 420px; }
+.duckmage-table-editor-heading {
+	font-weight: 600;
+	font-size: 0.85em;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin: 12px 0 4px;
+}
+.duckmage-table-editor-rows {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	max-height: 320px;
+	overflow-y: auto;
+	margin-bottom: 4px;
+}
+.duckmage-table-editor-row,
+.duckmage-table-editor-add-row {
+	display: flex;
+	gap: 6px;
+	align-items: flex-start;
+}
+.duckmage-table-editor-result {
+	flex: 1;
+	resize: vertical;
+	min-height: 28px;
+	font-family: inherit;
+	font-size: inherit;
+}
+.duckmage-table-editor-weight { width: 64px; }
+.duckmage-table-editor-del {
+	background: none;
+	border: none;
+	cursor: pointer;
+	color: var(--text-muted);
+	font-size: 1.1em;
+	padding: 0 4px;
+	line-height: 1;
+}
+.duckmage-table-editor-del:hover { color: var(--text-error); }
+.duckmage-table-editor-add-btn { white-space: nowrap; }
+.duckmage-table-editor-footer {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 14px;
+	padding-top: 10px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-section-roll-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	font-size: 1em;
+	padding: 0 2px;
+	color: var(--text-muted);
+	opacity: 0.7;
+	line-height: 1;
+}
+.duckmage-section-roll-btn:hover { opacity: 1; }

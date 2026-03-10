@@ -1,24 +1,25 @@
 import { App, ItemView, Modal, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
-import { VIEW_TYPE_HEX_TABLE } from "./constants";
+import { VIEW_TYPE_HEX_TABLE, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 import { getAllSectionData, setSectionContent, addLinkToSection, addBacklinkToFile } from "./sections";
 import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";
-import { getIconUrl } from "./utils";
-import { normalizeFolder } from "./utils";
+import { getIconUrl, normalizeFolder, makeTableTemplate } from "./utils";
 import type { TerrainColor, LinkSection } from "./types";
+import { RandomTableModal } from "./RandomTableModal";
 
 // Column definitions in template order
 const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
-	{ key: "description",    label: "Description",    isLink: false },
-	{ key: "landmark",       label: "Landmark",       isLink: false },
-	{ key: "towns",          label: "Towns",          isLink: true  },
-	{ key: "dungeons",       label: "Dungeons",       isLink: true  },
-	{ key: "features",       label: "Features",       isLink: true  },
-	{ key: "hidden",         label: "Hidden",         isLink: false },
-	{ key: "secret",         label: "Secret",         isLink: false },
-	{ key: "encounters",     label: "Encounters",     isLink: false },
-	{ key: "weather",        label: "Weather",        isLink: false },
-	{ key: "hooks & rumors", label: "Hooks & Rumors", isLink: false },
+	{ key: "description",      label: "Description",    isLink: false },
+	{ key: "landmark",         label: "Landmark",       isLink: false },
+	{ key: "towns",            label: "Towns",          isLink: true  },
+	{ key: "dungeons",         label: "Dungeons",       isLink: true  },
+	{ key: "features",         label: "Features",       isLink: true  },
+	{ key: "encounters table", label: "Enc. Table",     isLink: true  },
+	{ key: "hidden",           label: "Hidden",         isLink: false },
+	{ key: "secret",           label: "Secret",         isLink: false },
+	{ key: "encounters",       label: "Encounters",     isLink: false },
+	{ key: "weather",          label: "Weather",        isLink: false },
+	{ key: "hooks & rumors",   label: "Hooks & Rumors", isLink: false },
 ];
 
 const TRUNCATE_LEN = 120;
@@ -224,6 +225,7 @@ class LinkPickerModal extends Modal {
 		private section: LinkSection,
 		private sourceFolder: string,
 		private onLinked: () => void,
+		private createTemplate = "",
 	) {
 		super(app);
 	}
@@ -283,7 +285,7 @@ class LinkPickerModal extends Modal {
 				if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
 					await this.app.vault.createFolder(folder);
 				}
-				file = await this.app.vault.create(newPath, "");
+				file = await this.app.vault.create(newPath, this.createTemplate);
 			} catch (err) {
 				new Notice(`Could not create ${newPath}: ${err}`);
 				return;
@@ -668,22 +670,34 @@ export class HexTableView extends ItemView {
 				} else {
 					td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
 				}
-				// Towns and Dungeons: existing items open the file; empty cell opens picker
-				if (col.key === "towns" || col.key === "dungeons") {
+				// Towns, Dungeons, and Encounters Table: existing items open the file/roll; empty cell opens picker
+				if (col.key === "towns" || col.key === "dungeons" || col.key === "encounters table") {
 					const sourceFolder = col.key === "towns"
 						? this.plugin.settings.townsFolder
-						: this.plugin.settings.dungeonsFolder;
-					const section = col.key === "towns" ? "Towns" : "Dungeons";
+						: col.key === "dungeons"
+						? this.plugin.settings.dungeonsFolder
+						: this.plugin.settings.tablesFolder;
+					const section = col.key === "towns" ? "Towns" : col.key === "dungeons" ? "Dungeons" : "Encounters Table";
 					td.addClass("duckmage-hex-table-cell-clickable");
 					td.addEventListener("click", () => {
 						if (linkList.length === 0) {
 							new LinkPickerModal(
 								this.app, this.plugin, path, section, sourceFolder,
 								() => void this.updateRow(path),
+								col.key === "encounters table" ? makeTableTemplate(this.plugin.settings.defaultTableDice) : "",
 							).open();
 						} else if (linkList.length === 1) {
-							const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
-							if (file instanceof TFile) this.app.workspace.getLeaf(false).openFile(file);
+							if (col.key === "encounters table") {
+								const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+								if (file instanceof TFile) {
+									new RandomTableModal(this.app, this.plugin, (result) => {
+										navigator.clipboard.writeText(result);
+									}).open();
+								}
+							} else {
+								const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+								if (file instanceof TFile) this.app.workspace.getLeaf(false).openFile(file);
+							}
 						} else {
 							// Multiple: show a nav list
 							new MultiLinkNavModal(this.app, `${x},${y} — ${section}`, linkList, path).open();
@@ -742,7 +756,7 @@ export class HexTableView extends ItemView {
 		const ths = Array.from(table.querySelectorAll<HTMLTableCellElement>("thead th"));
 
 		// Default widths (px): Hex, Terrain, then one per COLUMN entry
-		const defaultWidths = [60, 110, 220, 160, 150, 150, 150, 160, 160, 160, 140, 190];
+		const defaultWidths = [60, 110, 220, 160, 150, 150, 150, 140, 160, 160, 160, 140, 190];
 
 		// <col> elements + explicit table width is the only reliable way to drive
 		// table-layout:fixed column widths across browsers.

@@ -23,8 +23,23 @@ A side-panel modal for editing a hex note without leaving the map.
 - **Icon override** — override the default terrain icon with any icon in your icons folder.
 - **Towns / Dungeons** — link existing notes from their configured folders, or create a new note by name. Linked items are clickable and open in a new tab. Each entry has a remove button. Backlinks are automatically added to the linked note.
 - **Features** — free-form wiki-link list for anything else.
-- **Notes sections** — Description, Landmark, Hidden, Secret, Encounters, Weather, Hooks & Rumors — inline text areas that auto-save on blur.
+- **Encounters Table** — link random table files to a hex. Clicking a linked table opens the Random Tables view with that table pre-selected.
+- **Notes sections** — Description, Landmark, Hidden, Secret, Encounters, Weather, Hooks & Rumors — inline text areas with a 🎲 roll button to append a result from any random table.
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
+
+### Random Tables view
+Open via **Command palette → "Open Duckmage random tables"** or the 🎲 toolbar button on the hex map.
+
+A two-panel view for managing and rolling on random tables.
+
+- **Left panel** — lists all `.md` files in the configured Tables folder. Click a table to load it. **+ New** creates a file from the default template.
+- **Right panel** — shows the table's entries with odds (percentage or die range). **Roll** button highlights the winning row and shows the result. The result is editable before use. Roll history shows the last 5 results.
+- **Change die** dropdown — updates the `dice:` frontmatter and recalculates die ranges.
+
+### Terrain tables & hex linking
+Each terrain type has two auto-generated table files: `{terrain} - description.md` and `{terrain} - encounters.md`, stored under `{tablesFolder}/terrain/`.
+
+> ⚠️ **Configure all folder settings before clicking Generate.** The Generate button (Settings → Duckmage → Generate world data) creates the terrain table files and links each hex note's terrain encounters table into its Encounters Table section. It is safe to run multiple times.
 
 ### Drawing tools (toolbar)
 Toggle tools from the toolbar above the map. **Double-right-click** off the map to exit any tool.
@@ -67,13 +82,16 @@ Open **Settings → Duckmage** to configure:
 | **Hex folder** | Folder where hex notes are stored, e.g. `RPG/world/hexes`. |
 | **Towns folder** | Scopes the Towns dropdown to a specific folder. |
 | **Dungeons folder** | Scopes the Dungeons dropdown to a specific folder. |
+| **Tables folder** | Folder for random table files. Terrain tables are created in a `terrain/` subfolder here. |
+| **Default die** | Die size used when creating new table files (d4–d100). |
 | **Icons folder** | Folder containing `.png` icon files available as terrain/hex icons. |
 | **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` placeholders. Leave blank to use the built-in template. |
 | **Hex gap** | Gap between hexes in pixels. |
 | **Grid size** | Number of columns and rows in the map grid. |
 | **Hex orientation** | `pointy` (default) or `flat` top hex style. |
 | **Road color / River color** | Hex colour values for the road and river overlays. |
-| **Terrain palette** | Ordered list of terrain types. Each entry has a name, a colour, and an optional icon filename. |
+| **Terrain palette** | Ordered list of terrain types. Each entry has a name, a colour, and an optional icon filename. Adding a terrain type automatically creates its table files. Renaming a terrain type renames the files too. |
+| **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
 ---
 
@@ -97,6 +115,7 @@ terrain: Forest
 | `### Towns` | Links | Settlement links |
 | `### Dungeons` | Links | Dungeon/site links |
 | `### Features` | Links | Other points of interest |
+| `### Encounters Table` | Links | Random table links (linked to terrain by Generate) |
 | `### hidden` | Text | Discoverable with effort |
 | `### secret` | Text | Revealed only through investigation |
 | `### encounters` | Text | Encounter table notes |
@@ -134,6 +153,9 @@ src/
   HexMapView.ts              ← interactive hex grid (ItemView)
   HexEditorModal.ts          ← right-click hex editor (Modal)
   HexTableView.ts            ← hex reference table (ItemView)
+  RandomTableView.ts         ← random tables panel (ItemView)
+  RandomTableModal.ts        ← inline roll modal (used from hex editor)
+  randomTable.ts             ← parse/roll/odds utilities
   TerrainPickerModal.ts      ← terrain palette picker
   IconPickerModal.ts         ← icon override picker
   FileLinkSuggestModal.ts    ← file search modal
