@@ -33,6 +33,8 @@ export class RandomTableEditorModal extends Modal {
 		contentEl.createEl("p", { text: "Entries", cls: "duckmage-table-editor-heading" });
 		const rowsEl = contentEl.createDiv({ cls: "duckmage-table-editor-rows" });
 
+		let dragSrcIndex = -1;
+
 		const renderRows = () => {
 			rowsEl.empty();
 			if (entries.length === 0) {
@@ -42,6 +44,10 @@ export class RandomTableEditorModal extends Modal {
 			for (let i = 0; i < entries.length; i++) {
 				const entry = entries[i];
 				const row = rowsEl.createDiv({ cls: "duckmage-table-editor-row" });
+				row.draggable = true;
+
+				const handle = row.createSpan({ cls: "duckmage-table-editor-drag-handle", text: "⠿" });
+				handle.title = "Drag to reorder";
 
 				const resultInput = row.createEl("textarea", { cls: "duckmage-table-editor-result" });
 				resultInput.value = entry.result;
@@ -59,6 +65,36 @@ export class RandomTableEditorModal extends Modal {
 				const delBtn = row.createEl("button", { text: "×", cls: "duckmage-table-editor-del" });
 				delBtn.title = "Remove row";
 				delBtn.addEventListener("click", () => { entries.splice(i, 1); renderRows(); });
+
+				row.addEventListener("dragstart", (e: DragEvent) => {
+					dragSrcIndex = i;
+					row.addClass("duckmage-table-editor-dragging");
+					e.dataTransfer?.setDragImage(row, 0, 0);
+				});
+				row.addEventListener("dragend", () => {
+					row.removeClass("duckmage-table-editor-dragging");
+					rowsEl.querySelectorAll(".duckmage-table-editor-drop-target").forEach(el =>
+						el.classList.remove("duckmage-table-editor-drop-target"),
+					);
+				});
+				row.addEventListener("dragover", (e: DragEvent) => {
+					e.preventDefault();
+					rowsEl.querySelectorAll(".duckmage-table-editor-drop-target").forEach(el =>
+						el.classList.remove("duckmage-table-editor-drop-target"),
+					);
+					row.addClass("duckmage-table-editor-drop-target");
+				});
+				row.addEventListener("dragleave", () => {
+					row.removeClass("duckmage-table-editor-drop-target");
+				});
+				row.addEventListener("drop", (e: DragEvent) => {
+					e.preventDefault();
+					if (dragSrcIndex === -1 || dragSrcIndex === i) return;
+					const [moved] = entries.splice(dragSrcIndex, 1);
+					entries.splice(i, 0, moved);
+					dragSrcIndex = -1;
+					renderRows();
+				});
 			}
 		};
 		renderRows();
@@ -88,8 +124,10 @@ export class RandomTableEditorModal extends Modal {
 			newResult.focus();
 		};
 		addBtn.addEventListener("click", doAdd);
-		// Ctrl+Enter / Cmd+Enter adds the row; plain Enter inserts a newline in the textarea
-		newResult.addEventListener("keydown", (e: KeyboardEvent) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); doAdd(); } });
+		// Enter submits; Shift+Enter inserts a newline
+		newResult.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); }
+		});
 
 		// ── Footer: Save ──────────────────────────────────────────────────
 		const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
