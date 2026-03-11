@@ -67,6 +67,32 @@ export class DuckmageSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
+			.setName("Quests folder")
+			.setDesc("Vault-relative folder to populate the Quests dropdown in the hex editor. Files starting with _ are excluded.")
+			.addText(text =>
+				text
+					.setPlaceholder("world/quests")
+					.setValue(this.plugin.settings.questsFolder)
+					.onChange(async value => {
+						this.plugin.settings.questsFolder = normalizeFolder(value ?? "");
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Features folder")
+			.setDesc("Vault-relative folder to populate the Features dropdown in the hex editor. Files starting with _ are excluded.")
+			.addText(text =>
+				text
+					.setPlaceholder("world/features")
+					.setValue(this.plugin.settings.featuresFolder)
+					.onChange(async value => {
+						this.plugin.settings.featuresFolder = normalizeFolder(value ?? "");
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
 			.setName("Tables folder")
 			.setDesc("Vault-relative folder for random table files. Used by the Encounters Table section and the Random Tables view.")
 			.addText(text =>

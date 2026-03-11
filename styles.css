@@ -155,6 +155,40 @@
 	z-index: 1;
 }
 
+.duckmage-hex-link-badge {
+	position: absolute;
+	top: 0.2em;
+	right: 0.2em;
+	font-size: 0.55em;
+	line-height: 1;
+	pointer-events: none;
+	z-index: 2;
+}
+
+.duckmage-hex-table-linked {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+@keyframes duckmage-blip {
+	0%   { transform: translate(-50%, -50%) scale(0);   opacity: 0.55; }
+	60%  { opacity: 0.3; }
+	100% { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
+}
+
+.duckmage-hex-blip {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 100%;
+	aspect-ratio: 1;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	pointer-events: none;
+	z-index: 3;
+	animation: duckmage-blip 0.55s ease-out forwards;
+}
+
 /* ── Hex editor modal ─────────────────────────────────────────────────────── */
 
 .duckmage-hex-editor h2 {
@@ -422,7 +456,8 @@
 	background: var(--background-modifier-hover);
 }
 
-.duckmage-draw-btn-terrain {
+.duckmage-draw-btn-terrain,
+.duckmage-draw-btn-tablelink {
 	display: flex;
 	align-items: center;
 	gap: 5px;
@@ -939,6 +974,18 @@
 	cursor: pointer;
 }
 
+.duckmage-terrain-filter-hint {
+	font-size: 0.8em;
+	color: var(--text-faint);
+	margin: 0 0 8px 0;
+}
+
+.duckmage-terrain-filter-excluded {
+	opacity: 0.5;
+	text-decoration: line-through;
+	color: var(--text-error);
+}
+
 .duckmage-row-hidden {
 	display: none !important;
 }
@@ -1059,6 +1106,12 @@
 .duckmage-goto-btn:hover {
 	opacity: 1;
 	color: var(--text-normal);
+}
+
+.duckmage-table-picker-modal .duckmage-table-picker-list {
+	max-height: 420px;
+	overflow-y: auto;
+	margin-top: 8px;
 }
 
 .duckmage-goto-modal .duckmage-goto-row {

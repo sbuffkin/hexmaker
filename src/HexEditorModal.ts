@@ -52,10 +52,11 @@ export class HexEditorModal extends Modal {
 		contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 		contentEl.createEl("h3", { text: "World features" });
 
-		this.renderDropdownSection(contentEl, path, "Towns",    hexExists, this.plugin.settings.townsFolder,    allLinks.get("towns")    ?? []);
-		this.renderDropdownSection(contentEl, path, "Dungeons", hexExists, this.plugin.settings.dungeonsFolder, allLinks.get("dungeons") ?? []);
-		this.renderLinkSection(contentEl, path, "Features", hexExists, allLinks.get("features") ?? []);
-		this.renderDropdownSection(contentEl, path, "Encounters Table", hexExists, this.plugin.settings.tablesFolder, allLinks.get("encounters table") ?? []);
+		this.renderDropdownSection(contentEl, path, "Towns",           hexExists, this.plugin.settings.townsFolder,    allLinks.get("towns")           ?? []);
+		this.renderDropdownSection(contentEl, path, "Dungeons",        hexExists, this.plugin.settings.dungeonsFolder, allLinks.get("dungeons")        ?? []);
+		this.renderDropdownSection(contentEl, path, "Features",        hexExists, this.plugin.settings.featuresFolder, allLinks.get("features")        ?? []);
+		this.renderDropdownSection(contentEl, path, "Quests",          hexExists, this.plugin.settings.questsFolder,   allLinks.get("quests")          ?? []);
+		this.renderDropdownSection(contentEl, path, "Encounters Table", hexExists, this.plugin.settings.tablesFolder,  allLinks.get("encounters table") ?? []);
 
 		contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 		contentEl.createEl("h3", { text: "Notes" });

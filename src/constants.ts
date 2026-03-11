@@ -97,6 +97,8 @@ export const DEFAULT_SETTINGS: DuckmagePluginSettings = {
   hexFolder: "world/hexes",
   townsFolder: "",
   dungeonsFolder: "",
+  questsFolder: "",
+  featuresFolder: "",
   iconsFolder: "",
   templatePath: "",
   hexGap: "0.15",

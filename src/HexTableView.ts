@@ -15,6 +15,7 @@ const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
 	{ key: "towns",            label: "Towns",          isLink: true  },
 	{ key: "dungeons",         label: "Dungeons",       isLink: true  },
 	{ key: "features",         label: "Features",       isLink: true  },
+	{ key: "quests",           label: "Quests",         isLink: true  },
 	{ key: "encounters table", label: "Enc. Table",     isLink: true  },
 	{ key: "hidden",           label: "Hidden",         isLink: false },
 	{ key: "secret",           label: "Secret",         isLink: false },
@@ -33,7 +34,8 @@ class TerrainFilterModal extends Modal {
 		app: App,
 		private palette: TerrainColor[],
 		private selected: Set<string>,
-		private onChange: (selected: Set<string>) => void,
+		private excluded: Set<string>,
+		private onChange: (selected: Set<string>, excluded: Set<string>) => void,
 	) {
 		super(app);
 	}
@@ -43,31 +45,65 @@ class TerrainFilterModal extends Modal {
 		const { contentEl } = this;
 		contentEl.addClass("duckmage-terrain-filter-modal");
 
+		contentEl.createEl("p", {
+			text: "Left-click to include  ·  Right-click to exclude",
+			cls: "duckmage-terrain-filter-hint",
+		});
+
 		const list = contentEl.createDiv({ cls: "duckmage-terrain-filter-list" });
+
+		const applyRowState = (lbl: HTMLElement, cb: HTMLInputElement, name: string) => {
+			const inc = this.selected.has(name);
+			const exc = this.excluded.has(name);
+			cb.checked = inc;
+			lbl.toggleClass("duckmage-terrain-filter-excluded", exc);
+		};
+
 		for (const entry of this.palette) {
-			// Checkbox inside label — clicking anywhere on the row toggles it
 			const lbl = list.createEl("label", { cls: "duckmage-terrain-filter-row" });
 			const cb = lbl.createEl("input") as HTMLInputElement;
 			cb.type = "checkbox";
-			cb.checked = this.selected.has(entry.name);
-			cb.addEventListener("change", () => {
-				if (cb.checked) this.selected.add(entry.name);
-				else this.selected.delete(entry.name);
-				this.onChange(new Set(this.selected));
-			});
+			applyRowState(lbl, cb, entry.name);
+
 			const swatch = lbl.createSpan({ cls: "duckmage-hex-table-swatch" });
 			swatch.style.backgroundColor = entry.color;
-			lbl.appendText(entry.name);
+			lbl.createSpan({ text: entry.name });
+
+			cb.addEventListener("change", () => {
+				if (cb.checked) {
+					this.selected.add(entry.name);
+					this.excluded.delete(entry.name);
+				} else {
+					this.selected.delete(entry.name);
+				}
+				applyRowState(lbl, cb, entry.name);
+				this.onChange(new Set(this.selected), new Set(this.excluded));
+			});
+
+			lbl.addEventListener("contextmenu", (e) => {
+				e.preventDefault();
+				if (this.excluded.has(entry.name)) {
+					this.excluded.delete(entry.name);
+				} else {
+					this.excluded.add(entry.name);
+					this.selected.delete(entry.name);
+				}
+				applyRowState(lbl, cb, entry.name);
+				this.onChange(new Set(this.selected), new Set(this.excluded));
+			});
 		}
 
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });
 		const clearBtn = btnRow.createEl("button", { text: "Clear all" });
 		clearBtn.addEventListener("click", () => {
 			this.selected.clear();
-			this.onChange(new Set(this.selected));
-			// Uncheck all visible checkboxes
-			contentEl.querySelectorAll<HTMLInputElement>("input[type=checkbox]")
-				.forEach(cb => { cb.checked = false; });
+			this.excluded.clear();
+			this.onChange(new Set(this.selected), new Set(this.excluded));
+			contentEl.querySelectorAll<HTMLElement>(".duckmage-terrain-filter-row").forEach(row => {
+				const cb = row.querySelector<HTMLInputElement>("input[type=checkbox]");
+				if (cb) cb.checked = false;
+				row.removeClass("duckmage-terrain-filter-excluded");
+			});
 		});
 		btnRow.createEl("button", { text: "Done", cls: "mod-cta" })
 			.addEventListener("click", () => this.close());
@@ -328,8 +364,11 @@ export class HexTableView extends ItemView {
 	private filterYMin: number | null = null;
 	private filterYMax: number | null = null;
 	private filterTerrains = new Set<string>();
+	private filterExcludeTerrains = new Set<string>();
 	private filterHasTown = false;
 	private filterHasDungeon = false;
+	private filterHasFeature = false;
+	private filterHasQuest = false;
 
 	// Filter UI elements (created once in onOpen)
 	private filterXMinInput: HTMLInputElement | null = null;
@@ -339,6 +378,8 @@ export class HexTableView extends ItemView {
 	private terrainFilterBtn: HTMLButtonElement | null = null;
 	private townCb: HTMLInputElement | null = null;
 	private dungeonCb: HTMLInputElement | null = null;
+	private featureCb: HTMLInputElement | null = null;
+	private questCb: HTMLInputElement | null = null;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: DuckmagePlugin) {
 		super(leaf);
@@ -410,8 +451,9 @@ export class HexTableView extends ItemView {
 		});
 		this.terrainFilterBtn.addEventListener("click", () => {
 			const palette = this.plugin.settings.terrainPalette ?? [];
-			new TerrainFilterModal(this.app, palette, new Set(this.filterTerrains), (selected) => {
+			new TerrainFilterModal(this.app, palette, new Set(this.filterTerrains), new Set(this.filterExcludeTerrains), (selected, excluded) => {
 				this.filterTerrains = selected;
+				this.filterExcludeTerrains = excluded;
 				this.updateTerrainBtnLabel();
 				this.applyFilters();
 			}).open();
@@ -437,6 +479,26 @@ export class HexTableView extends ItemView {
 		dungeonLabel.appendText(" Has Dungeon");
 		this.dungeonCb.addEventListener("change", () => {
 			this.filterHasDungeon = this.dungeonCb!.checked;
+			this.applyFilters();
+		});
+
+		// Has Feature checkbox
+		const featureLabel = toolbar.createEl("label", { cls: "duckmage-filter-check-label" });
+		this.featureCb = featureLabel.createEl("input") as HTMLInputElement;
+		this.featureCb.type = "checkbox";
+		featureLabel.appendText(" Has Feature");
+		this.featureCb.addEventListener("change", () => {
+			this.filterHasFeature = this.featureCb!.checked;
+			this.applyFilters();
+		});
+
+		// Has Quest checkbox
+		const questLabel = toolbar.createEl("label", { cls: "duckmage-filter-check-label" });
+		this.questCb = questLabel.createEl("input") as HTMLInputElement;
+		this.questCb.type = "checkbox";
+		questLabel.appendText(" Has Quest");
+		this.questCb.addEventListener("change", () => {
+			this.filterHasQuest = this.questCb!.checked;
 			this.applyFilters();
 		});
 
@@ -586,9 +648,13 @@ export class HexTableView extends ItemView {
 
 	private updateTerrainBtnLabel(): void {
 		if (!this.terrainFilterBtn) return;
-		const count = this.filterTerrains.size;
-		this.terrainFilterBtn.setText(count === 0 ? "Terrain: All" : `Terrain: ${count} selected`);
-		this.terrainFilterBtn.toggleClass("duckmage-filter-active", count > 0);
+		const inc = this.filterTerrains.size;
+		const exc = this.filterExcludeTerrains.size;
+		const parts: string[] = [];
+		if (inc > 0) parts.push(`${inc} shown`);
+		if (exc > 0) parts.push(`${exc} hidden`);
+		this.terrainFilterBtn.setText(parts.length ? `Terrain: ${parts.join(", ")}` : "Terrain: All");
+		this.terrainFilterBtn.toggleClass("duckmage-filter-active", inc > 0 || exc > 0);
 	}
 
 	private clearFilters(): void {
@@ -597,8 +663,11 @@ export class HexTableView extends ItemView {
 		this.filterYMin = null;
 		this.filterYMax = null;
 		this.filterTerrains = new Set();
+		this.filterExcludeTerrains = new Set();
 		this.filterHasTown = false;
 		this.filterHasDungeon = false;
+		this.filterHasFeature = false;
+		this.filterHasQuest = false;
 
 		if (this.filterXMinInput) this.filterXMinInput.value = "";
 		if (this.filterXMaxInput) this.filterXMaxInput.value = "";
@@ -606,6 +675,8 @@ export class HexTableView extends ItemView {
 		if (this.filterYMaxInput) this.filterYMaxInput.value = "";
 		if (this.townCb)    this.townCb.checked = false;
 		if (this.dungeonCb) this.dungeonCb.checked = false;
+		if (this.featureCb) this.featureCb.checked = false;
+		if (this.questCb)   this.questCb.checked = false;
 		this.updateTerrainBtnLabel();
 		this.applyFilters();
 	}
@@ -621,6 +692,8 @@ export class HexTableView extends ItemView {
 			const terrain = tr.dataset.terrain ?? "";
 			const hasTown    = tr.dataset.hasTown    === "1";
 			const hasDungeon = tr.dataset.hasDungeon === "1";
+			const hasFeature = tr.dataset.hasFeature === "1";
+			const hasQuest   = tr.dataset.hasQuest   === "1";
 
 			let show = true;
 			if (this.filterXMin !== null && x < this.filterXMin) show = false;
@@ -628,8 +701,11 @@ export class HexTableView extends ItemView {
 			if (this.filterYMin !== null && y < this.filterYMin) show = false;
 			if (this.filterYMax !== null && y > this.filterYMax) show = false;
 			if (this.filterTerrains.size > 0 && !this.filterTerrains.has(terrain)) show = false;
+			if (this.filterExcludeTerrains.size > 0 && this.filterExcludeTerrains.has(terrain)) show = false;
 			if (this.filterHasTown    && !hasTown)    show = false;
 			if (this.filterHasDungeon && !hasDungeon) show = false;
+			if (this.filterHasFeature && !hasFeature) show = false;
+			if (this.filterHasQuest   && !hasQuest)   show = false;
 
 			tr.classList.toggle("duckmage-row-hidden", !show);
 		}
@@ -653,6 +729,8 @@ export class HexTableView extends ItemView {
 
 		const hasTown    = (links.get("towns")    ?? []).length > 0;
 		const hasDungeon = (links.get("dungeons") ?? []).length > 0;
+		const hasFeature = (links.get("features") ?? []).length > 0;
+		const hasQuest   = (links.get("quests")   ?? []).length > 0;
 
 		// Store filter-relevant data on the row
 		tr.dataset.hexX      = String(x);
@@ -660,6 +738,8 @@ export class HexTableView extends ItemView {
 		tr.dataset.terrain   = terrainName ?? "";
 		tr.dataset.hasTown    = hasTown    ? "1" : "0";
 		tr.dataset.hasDungeon = hasDungeon ? "1" : "0";
+		tr.dataset.hasFeature = hasFeature ? "1" : "0";
+		tr.dataset.hasQuest   = hasQuest   ? "1" : "0";
 
 		// Coords cell — click to open note
 		const coordsTd = tr.createEl("td");

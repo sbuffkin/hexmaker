@@ -10,6 +10,8 @@ export interface DuckmagePluginSettings {
 	hexFolder: string;
 	townsFolder: string;
 	dungeonsFolder: string;
+	questsFolder: string;
+	featuresFolder: string;
 	iconsFolder: string;
 	templatePath: string;
 	hexGap: string;
@@ -26,7 +28,7 @@ export interface DuckmagePluginSettings {
 	defaultTableDice: number;
 }
 
-export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Encounters Table"] as const;
+export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Encounters Table"] as const;
 export type LinkSection = typeof LINK_SECTIONS[number];
 
 export const TEXT_SECTIONS = [
