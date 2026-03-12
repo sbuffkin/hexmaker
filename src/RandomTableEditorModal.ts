@@ -10,6 +10,7 @@ import type { RandomTableEntry } from "./randomTable";
 export class RandomTableEditorModal extends Modal {
 	// Held so onClose can flush a pending "add row" entry and save it
 	private flushAndSave: (() => Promise<void>) | null = null;
+	private dragInitialized = false;
 
 	constructor(
 		app: App,
@@ -145,6 +146,46 @@ export class RandomTableEditorModal extends Modal {
 		// ── Footer: Close (auto-saves on close) ───────────────────────────
 		const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
 		footer.createEl("button", { text: "Close", cls: "mod-cta" }).addEventListener("click", () => this.close());
+
+		this.makeDraggable();
+	}
+
+	private makeDraggable(): void {
+		if (this.dragInitialized) return;
+		this.dragInitialized = true;
+
+		const modal = this.modalEl;
+		modal.addClass("duckmage-editor-modal-drag");
+		modal.style.position = "absolute";
+		modal.style.left = "50%";
+		modal.style.top = "50%";
+		modal.style.transform = "translate(-50%, -50%)";
+		modal.style.margin = "0";
+
+		modal.addEventListener("mousedown", (e: MouseEvent) => {
+			// Only drag from the native modal header — the strip above .modal-content
+			const modalContent = modal.querySelector<HTMLElement>(".modal-content");
+			if (modalContent && e.clientY >= modalContent.getBoundingClientRect().top) return;
+			if ((e.target as HTMLElement).closest("button, a")) return;
+
+			e.preventDefault();
+			const r = modal.getBoundingClientRect();
+			modal.style.transform = "none";
+			modal.style.left = `${r.left}px`;
+			modal.style.top = `${r.top}px`;
+			const sx = e.clientX, sy = e.clientY;
+			const ox = r.left, oy = r.top;
+			const onMove = (ev: MouseEvent) => {
+				modal.style.left = `${ox + ev.clientX - sx}px`;
+				modal.style.top  = `${oy + ev.clientY - sy}px`;
+			};
+			const onUp = () => {
+				document.removeEventListener("mousemove", onMove);
+				document.removeEventListener("mouseup", onUp);
+			};
+			document.addEventListener("mousemove", onMove);
+			document.addEventListener("mouseup", onUp);
+		});
 	}
 
 	onClose(): void {
