@@ -271,17 +271,26 @@
     transform: scale(1.25);
     z-index: 1;
 }
+.duckmage-neighbor-tile-offmap {
+    opacity: 0.2;
+    cursor: default;
+    pointer-events: none;
+}
 
 /* ── Draggable / resizable modal ───────────────────────────────────── */
 .duckmage-editor-modal-drag {
-    resize: both;
-    overflow: auto;
+    overflow: hidden;
     width: min(520px, 90vw) !important;
     height: min(80vh, 700px) !important;
     max-height: none !important;
     max-width: none !important;
     min-width: 320px;
     min-height: 200px;
+}
+.duckmage-editor-modal-drag .modal-content {
+    overflow-y: auto;
+    max-height: none;
+    height: calc(100% - var(--modal-title-size, 0px));
 }
 .duckmage-editor-title-drag {
     cursor: move;
@@ -513,7 +522,8 @@
 }
 
 .duckmage-clear-btn {
-    margin-top: 0.5em;
+    margin-left: 4px;
+    flex-shrink: 0;
 }
 
 /* ── Terrain edit-mode grid tiles ────────────────────────────────── */

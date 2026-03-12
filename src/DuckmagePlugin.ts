@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, VIEW_TYPE_HEX_MAP, VIEW_TYPE
 import { normalizeFolder, makeTableTemplate } from "./utils";
 import type { DuckmagePluginSettings } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
-import { getTerrainFromFile } from "./frontmatter";
+import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";
 import { addLinkToSection, getLinksInSection } from "./sections";
 
 export default class DuckmagePlugin extends Plugin {
@@ -249,6 +249,40 @@ export default class DuckmagePlugin extends Plugin {
 			linked++;
 		}
 		new Notice(`Duckmage: linked encounters tables for ${linked} hex${linked !== 1 ? "es" : ""}.`);
+	}
+
+	/** Update every hex note whose terrain matches oldName to newName.
+	 *  Reads file content directly (not the metadata cache) so successive renames
+	 *  don't miss hexes whose cache entry hasn't refreshed yet.
+	 *  Returns a Map of filePath → newName for use as terrain overrides when re-rendering. */
+	async renameTerrainInHexes(oldName: string, newName: string): Promise<Map<string, string>> {
+		const hexFolder = normalizeFolder(this.settings.hexFolder);
+		const candidates = this.app.vault.getMarkdownFiles().filter(f => {
+			if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
+			return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
+		});
+		const overrides = new Map<string, string>();
+		const CHUNK = 10;
+		for (let i = 0; i < candidates.length; i += CHUNK) {
+			await Promise.all(candidates.slice(i, i + CHUNK).map(async f => {
+				// Read raw content — don't trust the stale metadata cache
+				const content = await this.app.vault.read(f);
+				const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+				if (!fmMatch) return;
+				const terrainLine = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
+				if (!terrainLine || terrainLine[1].trim() !== oldName) return;
+				await setTerrainInFile(this.app, f.path, newName);
+				overrides.set(f.path, newName);
+			}));
+		}
+		return overrides;
+	}
+
+	/** Re-render all open hex map views, passing terrain overrides to bypass the stale metadata cache. */
+	refreshHexMapWithOverrides(terrainOverrides: Map<string, string | null>): void {
+		this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach(leaf => {
+			(leaf.view as HexMapView).renderGrid(terrainOverrides);
+		});
 	}
 
 	/** Create a hex note from the configured template (or the built-in default). */

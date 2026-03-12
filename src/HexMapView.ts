@@ -640,6 +640,26 @@ export class HexMapView extends ItemView {
     const pathA = this.plugin.hexPath(x1, y1);
     const pathB = this.plugin.hexPath(x2, y2);
 
+    // Discard any pending (not-yet-started) writes for the two paths.
+    // Without this the flush loop would find no file after the rename and
+    // call createHexNote(), recreating a ghost file at the old position.
+    this.pendingTerrainWrites.delete(pathA);
+    this.pendingTerrainWrites.delete(pathB);
+    this.pendingIconWrites.delete(pathA);
+    this.pendingIconWrites.delete(pathB);
+
+    // Wait for any already-in-flight flushes on these paths to finish before
+    // renaming files — a flush that completes after the rename would write
+    // terrain to the wrong file or recreate a file that was just moved.
+    const flushKeys = [
+      `t:${pathA}`, `t:${pathB}`,
+      `i:${pathA}`, `i:${pathB}`,
+    ];
+    const deadline = Date.now() + 2000;
+    while (flushKeys.some(k => this.flushing.has(k)) && Date.now() < deadline) {
+      await new Promise<void>(r => setTimeout(r, 30));
+    }
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         await this.performSwap(pathA, pathB);
@@ -791,24 +811,24 @@ export class HexMapView extends ItemView {
       return;
     }
 
-    // Walk up offset parents to get hex centre in pre-transform viewport space
-    let ox = hexEl.offsetWidth / 2;
-    let oy = hexEl.offsetHeight / 2;
-    let cur: HTMLElement | null = hexEl;
-    while (cur && cur !== this.viewportEl) {
-      ox += cur.offsetLeft;
-      oy += cur.offsetTop;
-      cur = cur.offsetParent as HTMLElement | null;
-    }
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return;
+
+    // Use getBoundingClientRect for reliable positions — the offsetParent chain
+    // can silently break (e.g. fixed-position ancestors), causing wrong results.
+    const hexRect  = hexEl.getBoundingClientRect();
+    const clipRect = clipEl.getBoundingClientRect();
+
+    // Back-compute the hex centre in pre-transform viewport coordinates
+    const hexScreenX = hexRect.left + hexRect.width  / 2;
+    const hexScreenY = hexRect.top  + hexRect.height / 2;
+    const hexViewX = (hexScreenX - clipRect.left - this.panX) / this.zoom;
+    const hexViewY = (hexScreenY - clipRect.top  - this.panY) / this.zoom;
 
     const targetZoom = 1.5;
-    const clipEl = this.viewportEl?.parentElement;
-    const clipW = clipEl?.offsetWidth ?? 600;
-    const clipH = clipEl?.offsetHeight ?? 400;
-
     this.zoom = targetZoom;
-    this.panX = clipW / 2 - ox * targetZoom;
-    this.panY = clipH / 2 - oy * targetZoom;
+    this.panX = clipRect.width  / 2 - hexViewX * targetZoom;
+    this.panY = clipRect.height / 2 - hexViewY * targetZoom;
     this.applyTransform();
   }
 

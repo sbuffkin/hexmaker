@@ -4,7 +4,6 @@ import { getIconUrl, normalizeFolder, makeTableTemplate } from "./utils";
 import {
   getTerrainFromFile,
   setTerrainInFile,
-  getIconOverrideFromFile,
   setIconOverrideInFile,
 } from "./frontmatter";
 import {
@@ -46,11 +45,25 @@ export class HexEditorModal extends Modal {
     // Fetch all section data in one file read before touching the DOM
     let allText = new Map<string, string>();
     let allLinks = new Map<string, string[]>();
+    // Read terrain + icon directly from file content (bypass stale metadata cache)
+    let directTerrain: string | null = null;
+    let directIcon: string | null = null;
     if (hexExists) {
       ({ text: allText, links: allLinks } = await getAllSectionData(
         this.app,
         path,
       ));
+      // Re-read raw content for frontmatter (getAllSectionData doesn't expose it)
+      const rawContent = await this.app.vault.read(
+        this.app.vault.getAbstractFileByPath(path) as TFile,
+      );
+      const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+      if (fmMatch) {
+        const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
+        if (tm) directTerrain = tm[1].trim();
+        const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
+        if (im) directIcon = im[1].trim();
+      }
     }
 
     // Render entire modal synchronously from pre-fetched data — no more chunked paints
@@ -89,9 +102,8 @@ export class HexEditorModal extends Modal {
       s.hexEditorTerrainCollapsed ?? false,
     );
     // Show current terrain as a small swatch + name in the header
-    const currentTerrain = getTerrainFromFile(this.app, path);
-    const paletteEntry = currentTerrain
-      ? (this.plugin.settings.terrainPalette ?? []).find(p => p.name === currentTerrain)
+    const paletteEntry = directTerrain
+      ? (this.plugin.settings.terrainPalette ?? []).find(p => p.name === directTerrain)
       : undefined;
     if (paletteEntry) {
       const preview = terrainHeader.createSpan({ cls: "duckmage-terrain-header-preview" });
@@ -103,7 +115,7 @@ export class HexEditorModal extends Modal {
       }
       preview.createSpan({ text: paletteEntry.name, cls: "duckmage-terrain-header-name" });
     }
-    this.renderTerrainSection(terrainBody, path);
+    this.renderTerrainSection(terrainBody, path, directTerrain, directIcon);
 
     contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
@@ -178,7 +190,7 @@ export class HexEditorModal extends Modal {
       allLinks.get("features") ?? [],
     );
 
-    this.makeDraggableAndResizable();
+    this.makeDraggable();
   }
 
   onClose() {
@@ -187,36 +199,26 @@ export class HexEditorModal extends Modal {
 
   private dragInitialized = false;
 
-  private makeDraggableAndResizable(): void {
-    if (!this.dragInitialized) {
-      this.dragInitialized = true;
-      const modal = this.modalEl;
-      modal.addClass("duckmage-editor-modal-drag");
-      modal.style.position = "absolute";
-      modal.style.left = "50%";
-      modal.style.top = "50%";
-      modal.style.transform = "translate(-50%, -50%)";
-      modal.style.margin = "0";
-    }
-    this.attachDragToTitleRow();
-  }
+  private makeDraggable(): void {
+    if (this.dragInitialized) return;
+    this.dragInitialized = true;
 
-  private attachDragToTitleRow(): void {
     const modal = this.modalEl;
-    // Style title row to indicate it's draggable
-    this.contentEl.querySelector<HTMLElement>(".duckmage-editor-title-row")
-      ?.addClass("duckmage-editor-title-drag");
+    modal.addClass("duckmage-editor-modal-drag");
+    modal.style.position = "absolute";
+    modal.style.left = "50%";
+    modal.style.top = "50%";
+    modal.style.transform = "translate(-50%, -50%)";
+    modal.style.margin = "0";
 
-    // Attach to the modal element so the full top strip (including native header) is draggable
     modal.addEventListener("mousedown", (e: MouseEvent) => {
-      const titleRow = this.contentEl.querySelector<HTMLElement>(".duckmage-editor-title-row");
-      if (!titleRow) return;
-      // Only drag when clicking at or above the bottom of the title row
-      if (e.clientY > titleRow.getBoundingClientRect().bottom) return;
-      if ((e.target as HTMLElement).closest(
-        "button, a, input, select, textarea, .duckmage-neighbor-tile"
-      )) return;
+      // Only drag from the native modal header — the strip above .modal-content.
+      // This area never scrolls so the drag zone is always accessible.
+      const modalContent = modal.querySelector<HTMLElement>(".modal-content");
+      if (modalContent && e.clientY >= modalContent.getBoundingClientRect().top) return;
+      if ((e.target as HTMLElement).closest("button, a")) return;
 
+      e.preventDefault();
       const r = modal.getBoundingClientRect();
       modal.style.transform = "none";
       modal.style.left = `${r.left}px`;
@@ -225,7 +227,7 @@ export class HexEditorModal extends Modal {
       const ox = r.left, oy = r.top;
       const onMove = (ev: MouseEvent) => {
         modal.style.left = `${ox + ev.clientX - sx}px`;
-        modal.style.top = `${oy + ev.clientY - sy}px`;
+        modal.style.top  = `${oy + ev.clientY - sy}px`;
       };
       const onUp = () => {
         document.removeEventListener("mousemove", onMove);
@@ -233,8 +235,17 @@ export class HexEditorModal extends Modal {
       };
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup", onUp);
-      e.preventDefault();
     });
+  }
+
+  private isOnMap(nx: number, ny: number): boolean {
+    const { gridOffset, gridSize } = this.plugin.settings;
+    return (
+      nx >= gridOffset.x &&
+      nx < gridOffset.x + gridSize.cols &&
+      ny >= gridOffset.y &&
+      ny < gridOffset.y + gridSize.rows
+    );
   }
 
   private renderNeighborWidget(container: HTMLElement, x: number, y: number): void {
@@ -261,23 +272,29 @@ export class HexEditorModal extends Modal {
         ];
 
     for (const { l, t, nx, ny } of defs) {
-      const tile = widget.createDiv({ cls: "duckmage-neighbor-tile" });
+      const onMap = this.isOnMap(nx, ny);
+      const tile = widget.createDiv({
+        cls: `duckmage-neighbor-tile${onMap ? "" : " duckmage-neighbor-tile-offmap"}`,
+      });
       tile.style.left = `${l}px`;
       tile.style.top = `${t}px`;
-      tile.title = `Hex ${nx}, ${ny}`;
 
-      const nPath = this.plugin.hexPath(nx, ny);
-      const terrain = getTerrainFromFile(this.app, nPath);
-      const entry = terrain
-        ? this.plugin.settings.terrainPalette.find(p => p.name === terrain)
-        : undefined;
-      if (entry) tile.style.backgroundColor = entry.color;
-
-      tile.addEventListener("click", () => {
-        this.x = nx;
-        this.y = ny;
-        void this.onOpen();
-      });
+      if (onMap) {
+        tile.title = `Hex ${nx}, ${ny}`;
+        const nPath = this.plugin.hexPath(nx, ny);
+        const terrain = getTerrainFromFile(this.app, nPath);
+        const entry = terrain
+          ? this.plugin.settings.terrainPalette.find(p => p.name === terrain)
+          : undefined;
+        if (entry) tile.style.backgroundColor = entry.color;
+        tile.addEventListener("click", () => {
+          this.x = nx;
+          this.y = ny;
+          void this.onOpen();
+        });
+      } else {
+        tile.title = "Off map";
+      }
     }
   }
 
@@ -308,13 +325,29 @@ export class HexEditorModal extends Modal {
     return { body, header };
   }
 
-  private renderTerrainSection(container: HTMLElement, path: string): void {
-    const currentTerrain = getTerrainFromFile(this.app, path);
+  private renderTerrainSection(
+    container: HTMLElement,
+    path: string,
+    currentTerrain: string | null,
+    currentIcon: string | null,
+  ): void {
     const palette = this.plugin.settings.terrainPalette;
 
     const section = container.createDiv({ cls: "duckmage-editor-section" });
 
     const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
+
+    // Clear terrain — always first in the grid
+    if (currentTerrain) {
+      const clearBtn = grid.createDiv({ cls: "duckmage-terrain-option duckmage-terrain-option-clear" });
+      clearBtn.createDiv({ cls: "duckmage-terrain-preview duckmage-terrain-preview-clear" });
+      clearBtn.createSpan({ text: "Clear", cls: "duckmage-terrain-option-name" });
+      clearBtn.addEventListener("click", async () => {
+        await setTerrainInFile(this.app, path, null);
+        this.onChanged(new Map([[path, null]]));
+        this.close();
+      });
+    }
 
     for (const entry of palette) {
       const btn = grid.createDiv({
@@ -342,7 +375,7 @@ export class HexEditorModal extends Modal {
       });
     }
 
-    // Icon override + inline Clear terrain
+    // Icon override row
     const iconRow = section.createDiv({ cls: "duckmage-icon-override-row" });
     iconRow.createSpan({
       text: "Icon override",
@@ -351,17 +384,6 @@ export class HexEditorModal extends Modal {
     const iconSelect = iconRow.createEl("select", {
       cls: "duckmage-icon-override-select",
     });
-    if (currentTerrain) {
-      const clearBtn = iconRow.createEl("button", {
-        text: "Clear terrain",
-        cls: "duckmage-clear-btn mod-warning",
-      });
-      clearBtn.addEventListener("click", async () => {
-        await setTerrainInFile(this.app, path, null);
-        this.onChanged(new Map([[path, null]]));
-        this.close();
-      });
-    }
     iconSelect.createEl("option", {
       value: "",
       text: "— use terrain default —",
@@ -373,11 +395,34 @@ export class HexEditorModal extends Modal {
         .replace(/-/g, " ");
       iconSelect.createEl("option", { value: icon, text: label });
     }
-    iconSelect.value = getIconOverrideFromFile(this.app, path) ?? "";
+    // Use directly-read icon value (not the stale metadata cache)
+    iconSelect.value = currentIcon ?? "";
+    // Keep terrain in the overrides map so renderGrid doesn't lose it during
+    // the brief window when Obsidian clears the metadata cache on file modify.
+    const terrainOverrides: Map<string, string | null> | undefined =
+      currentTerrain ? new Map([[path, currentTerrain]]) : undefined;
+
     iconSelect.addEventListener("change", async () => {
       await this.ensureHexNote();
       await setIconOverrideInFile(this.app, path, iconSelect.value || null);
-      this.onChanged(undefined, new Map([[path, iconSelect.value || null]]));
+      this.onChanged(terrainOverrides, new Map([[path, iconSelect.value || null]]));
+    });
+    const clearIconBtn = iconRow.createEl("button", {
+      text: "Clear",
+      cls: "duckmage-clear-btn",
+      title: "Remove icon override",
+    });
+    clearIconBtn.style.visibility = currentIcon ? "visible" : "hidden";
+    clearIconBtn.addEventListener("click", async () => {
+      await this.ensureHexNote();
+      await setIconOverrideInFile(this.app, path, null);
+      this.onChanged(terrainOverrides, new Map([[path, null]]));
+      iconSelect.value = "";
+      clearIconBtn.style.visibility = "hidden";
+    });
+    // Show/hide clear button as icon selection changes
+    iconSelect.addEventListener("change", () => {
+      clearIconBtn.style.visibility = iconSelect.value ? "visible" : "hidden";
     });
   }
 

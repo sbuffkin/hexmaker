@@ -61,16 +61,34 @@ export class TerrainEntryEditorModal extends Modal {
 		const btnRow = contentEl.createDiv({ cls: "duckmage-tee-buttons" });
 
 		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: "Save" });
-		saveBtn.addEventListener("click", async () => {
+		saveBtn.addEventListener("click", () => {
 			const nameChanged = this.pendingName !== this.originalName;
-			this.entry.name  = this.pendingName;
+			// Update color/icon immediately — these don't affect hex file lookups
 			this.entry.color = this.pendingColor;
 			this.entry.icon  = this.pendingIcon;
-			if (nameChanged) await this.renameTerrainTables(this.originalName, this.pendingName);
-			await this.plugin.saveSettings();
-			this.plugin.refreshHexMap();
-			this.onSave();
-			this.close();
+			// Show pending state while async work runs
+			saveBtn.disabled = true;
+			saveBtn.setText(nameChanged ? "Updating hexes…" : "Saving…");
+			void (async () => {
+				if (nameChanged) {
+					const oldName = this.originalName;
+					const newName = this.pendingName;
+					// 1. Update hex files while palette still has old name (no blank hexes)
+					const overrides = await this.plugin.renameTerrainInHexes(oldName, newName);
+					// 2. Rename table files on disk
+					await this.renameTerrainTables(oldName, newName);
+					// 3. Now update palette entry name and persist
+					this.entry.name = newName;
+					await this.plugin.saveSettings();
+					// 4. Refresh with overrides to bypass stale metadata cache
+					this.plugin.refreshHexMapWithOverrides(overrides);
+				} else {
+					await this.plugin.saveSettings();
+					this.plugin.refreshHexMap();
+				}
+				this.onSave();
+				this.close();
+			})();
 		});
 
 		btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
