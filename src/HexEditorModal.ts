@@ -19,7 +19,7 @@ import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { TEXT_SECTIONS } from "./types";
 import type { LinkSection } from "./types";
 import { RandomTableModal } from "./RandomTableModal";
-import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
+import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 
 export class HexEditorModal extends Modal {
   constructor(
@@ -56,10 +56,21 @@ export class HexEditorModal extends Modal {
     // Render entire modal synchronously from pre-fetched data — no more chunked paints
     contentEl.empty();
     const titleRow = contentEl.createDiv({ cls: "duckmage-editor-title-row" });
-    titleRow.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
+    const titleLeft = titleRow.createDiv({ cls: "duckmage-editor-title-left" });
+    titleLeft.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
+    const centerBtn = titleLeft.createEl("button", {
+      text: "⌖",
+      cls: "duckmage-editor-center-btn",
+      title: "Center map on this hex",
+    });
+    centerBtn.addEventListener("click", () => {
+      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
+      if (leaves.length > 0) (leaves[0].view as any).centerOnHex?.(this.x, this.y);
+    });
+
     if (hexExists) {
       const file = this.app.vault.getAbstractFileByPath(path) as TFile;
-      const openLink = titleRow.createEl("a", {
+      const openLink = titleLeft.createEl("a", {
         text: "Open note",
         cls: "duckmage-editor-open-link",
       });
@@ -68,6 +79,7 @@ export class HexEditorModal extends Modal {
         this.close();
       });
     }
+    this.renderNeighborWidget(titleRow, this.x, this.y);
 
     const s = this.plugin.settings;
 
@@ -165,10 +177,108 @@ export class HexEditorModal extends Modal {
       s.featuresFolder,
       allLinks.get("features") ?? [],
     );
+
+    this.makeDraggableAndResizable();
   }
 
   onClose() {
     this.contentEl.empty();
+  }
+
+  private dragInitialized = false;
+
+  private makeDraggableAndResizable(): void {
+    if (!this.dragInitialized) {
+      this.dragInitialized = true;
+      const modal = this.modalEl;
+      modal.addClass("duckmage-editor-modal-drag");
+      modal.style.position = "absolute";
+      modal.style.left = "50%";
+      modal.style.top = "50%";
+      modal.style.transform = "translate(-50%, -50%)";
+      modal.style.margin = "0";
+    }
+    this.attachDragToTitleRow();
+  }
+
+  private attachDragToTitleRow(): void {
+    const modal = this.modalEl;
+    // Style title row to indicate it's draggable
+    this.contentEl.querySelector<HTMLElement>(".duckmage-editor-title-row")
+      ?.addClass("duckmage-editor-title-drag");
+
+    // Attach to the modal element so the full top strip (including native header) is draggable
+    modal.addEventListener("mousedown", (e: MouseEvent) => {
+      const titleRow = this.contentEl.querySelector<HTMLElement>(".duckmage-editor-title-row");
+      if (!titleRow) return;
+      // Only drag when clicking at or above the bottom of the title row
+      if (e.clientY > titleRow.getBoundingClientRect().bottom) return;
+      if ((e.target as HTMLElement).closest(
+        "button, a, input, select, textarea, .duckmage-neighbor-tile"
+      )) return;
+
+      const r = modal.getBoundingClientRect();
+      modal.style.transform = "none";
+      modal.style.left = `${r.left}px`;
+      modal.style.top = `${r.top}px`;
+      const sx = e.clientX, sy = e.clientY;
+      const ox = r.left, oy = r.top;
+      const onMove = (ev: MouseEvent) => {
+        modal.style.left = `${ox + ev.clientX - sx}px`;
+        modal.style.top = `${oy + ev.clientY - sy}px`;
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup", onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+      e.preventDefault();
+    });
+  }
+
+  private renderNeighborWidget(container: HTMLElement, x: number, y: number): void {
+    const isFlat = this.plugin.settings.hexOrientation === "flat";
+    const widget = container.createDiv({ cls: "duckmage-neighbor-widget" });
+
+    type NeighborDef = { l: number; t: number; nx: number; ny: number };
+    const defs: NeighborDef[] = isFlat
+      ? [
+          { l: 22, t: 2,  nx: x,     ny: y - 1 },                              // N
+          { l: 42, t: 13, nx: x + 1, ny: x % 2 === 0 ? y - 1 : y },            // NE
+          { l: 42, t: 32, nx: x + 1, ny: x % 2 === 0 ? y : y + 1 },            // SE
+          { l: 22, t: 40, nx: x,     ny: y + 1 },                              // S
+          { l: 2,  t: 32, nx: x - 1, ny: x % 2 === 0 ? y : y + 1 },            // SW
+          { l: 2,  t: 13, nx: x - 1, ny: x % 2 === 0 ? y - 1 : y },            // NW
+        ]
+      : [
+          { l: 10, t: 1,  nx: y % 2 === 0 ? x - 1 : x,     ny: y - 1 },        // NW
+          { l: 34, t: 1,  nx: y % 2 === 0 ? x : x + 1,     ny: y - 1 },        // NE
+          { l: 0,  t: 18, nx: x - 1, ny: y },                                   // W
+          { l: 44, t: 18, nx: x + 1, ny: y },                                   // E
+          { l: 10, t: 35, nx: y % 2 === 0 ? x - 1 : x,     ny: y + 1 },        // SW
+          { l: 34, t: 35, nx: y % 2 === 0 ? x : x + 1,     ny: y + 1 },        // SE
+        ];
+
+    for (const { l, t, nx, ny } of defs) {
+      const tile = widget.createDiv({ cls: "duckmage-neighbor-tile" });
+      tile.style.left = `${l}px`;
+      tile.style.top = `${t}px`;
+      tile.title = `Hex ${nx}, ${ny}`;
+
+      const nPath = this.plugin.hexPath(nx, ny);
+      const terrain = getTerrainFromFile(this.app, nPath);
+      const entry = terrain
+        ? this.plugin.settings.terrainPalette.find(p => p.name === terrain)
+        : undefined;
+      if (entry) tile.style.backgroundColor = entry.color;
+
+      tile.addEventListener("click", () => {
+        this.x = nx;
+        this.y = ny;
+        void this.onOpen();
+      });
+    }
   }
 
   private makeCollapsible(

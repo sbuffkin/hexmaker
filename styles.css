@@ -234,12 +234,82 @@
 
 .duckmage-editor-title-row {
     display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+.duckmage-editor-title-left {
+    flex: 1;
+    display: flex;
     align-items: baseline;
     gap: 12px;
+    flex-wrap: wrap;
 }
 .duckmage-editor-title-row h2 {
     margin: 0;
 }
+
+/* ── Neighbour hex preview widget ──────────────────────────────────── */
+.duckmage-neighbor-widget {
+    position: relative;
+    width: 60px;
+    height: 51px;
+    flex-shrink: 0;
+}
+.duckmage-neighbor-tile {
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background-color: var(--background-modifier-border);
+    cursor: pointer;
+    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+    transition: border-color 0.15s, transform 0.1s;
+    box-sizing: border-box;
+}
+.duckmage-neighbor-tile:hover {
+    border-color: var(--interactive-accent);
+    transform: scale(1.25);
+    z-index: 1;
+}
+
+/* ── Draggable / resizable modal ───────────────────────────────────── */
+.duckmage-editor-modal-drag {
+    resize: both;
+    overflow: auto;
+    width: min(520px, 90vw) !important;
+    height: min(80vh, 700px) !important;
+    max-height: none !important;
+    max-width: none !important;
+    min-width: 320px;
+    min-height: 200px;
+}
+.duckmage-editor-title-drag {
+    cursor: move;
+    user-select: none;
+}
+/* Native close-button row above our content is also part of the drag zone */
+.duckmage-editor-modal-drag .modal-close-button {
+    cursor: move;
+}
+.duckmage-editor-modal-drag .modal-title {
+    cursor: move;
+}
+
+.duckmage-editor-center-btn {
+    font-size: 0.85em;
+    padding: 1px 6px;
+    cursor: pointer;
+    border-radius: 4px;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+.duckmage-editor-center-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
 .duckmage-editor-open-link {
     font-size: 0.8em;
     color: var(--text-accent);
