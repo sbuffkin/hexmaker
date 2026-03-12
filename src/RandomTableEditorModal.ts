@@ -1,4 +1,4 @@
-import { App, Modal, Notice, TFile } from "obsidian";
+import { App, Modal, TFile } from "obsidian";
 import { parseRandomTable } from "./randomTable";
 import type { RandomTableEntry } from "./randomTable";
 
@@ -8,6 +8,9 @@ import type { RandomTableEntry } from "./randomTable";
  * Saves back to the file, preserving frontmatter.
  */
 export class RandomTableEditorModal extends Modal {
+	// Held so onClose can flush a pending "add row" entry and save it
+	private flushAndSave: (() => Promise<void>) | null = null;
+
 	constructor(
 		app: App,
 		private file: TFile,
@@ -123,28 +126,34 @@ export class RandomTableEditorModal extends Modal {
 			renderRows();
 			newResult.focus();
 		};
+		// Expose so onClose always saves all changes (flushes pending "add row" text first)
+		this.flushAndSave = async () => {
+			doAdd(); // flush pending "add row" text if any (no-op if empty)
+			const newContent = this.buildContent(frontmatter, preamble, entries);
+			try {
+				await this.app.vault.modify(this.file, newContent);
+				this.onSaved?.();
+			} catch { /* best-effort */ }
+		};
+
 		addBtn.addEventListener("click", doAdd);
 		// Enter submits; Shift+Enter inserts a newline
 		newResult.addEventListener("keydown", (e: KeyboardEvent) => {
 			if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); doAdd(); }
 		});
 
-		// ── Footer: Save ──────────────────────────────────────────────────
+		// ── Footer: Close (auto-saves on close) ───────────────────────────
 		const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
-		const saveBtn = footer.createEl("button", { text: "Save", cls: "mod-cta" });
-		saveBtn.addEventListener("click", async () => {
-			const newContent = this.buildContent(frontmatter, preamble, entries);
-			try {
-				await this.app.vault.modify(this.file, newContent);
-				this.onSaved?.();
-				this.close();
-			} catch (e) {
-				new Notice("Could not save: " + (e instanceof Error ? e.message : String(e)));
-			}
-		});
+		footer.createEl("button", { text: "Close", cls: "mod-cta" }).addEventListener("click", () => this.close());
 	}
 
-	onClose(): void { this.contentEl.empty(); }
+	onClose(): void {
+		// If the user typed something in "Add row" and closed without clicking Add,
+		// flush it and save so the entry isn't lost.
+		void this.flushAndSave?.();
+		this.flushAndSave = null;
+		this.contentEl.empty();
+	}
 
 	private extractFrontmatter(content: string): string {
 		const match = content.match(/^---\n[\s\S]*?\n---/);

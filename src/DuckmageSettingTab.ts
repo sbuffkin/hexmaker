@@ -266,13 +266,14 @@ export class DuckmageSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Hex cell spacing")
-			.setDesc("Gap between hex cells. A bare number is treated as em units (e.g. 0.15), or append em/px.")
-			.addText(text =>
-				text
-					.setPlaceholder("0.15")
-					.setValue(this.plugin.settings.hexGap ?? "0.15")
+			.setDesc("Gap between hex cells (0 – 0.5 em).")
+			.addSlider(slider =>
+				slider
+					.setLimits(0, 0.5, 0.01)
+					.setValue(parseFloat(this.plugin.settings.hexGap ?? "0.15") || 0.15)
+					.setDynamicTooltip()
 					.onChange(async value => {
-						this.plugin.settings.hexGap = (value ?? "0.15").trim() || "0";
+						this.plugin.settings.hexGap = String(value);
 						await this.plugin.saveSettings();
 					}),
 			);
