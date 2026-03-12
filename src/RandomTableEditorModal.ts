@@ -145,6 +145,7 @@ export class RandomTableEditorModal extends Modal {
 
 		// ── Footer: Close (auto-saves on close) ───────────────────────────
 		const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
+
 		footer.createEl("button", { text: "Close", cls: "mod-cta" }).addEventListener("click", () => this.close());
 
 		this.makeDraggable();

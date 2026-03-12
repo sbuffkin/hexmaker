@@ -269,10 +269,23 @@ export class RandomTableView extends ItemView {
 		});
 
 		// ── Odds table ─────────────────────────────────────────────────────
+		const tableSection = this.detailEl.createDiv({ cls: "duckmage-rt-table-section" });
+		const tableSectionHeader = tableSection.createDiv({ cls: "duckmage-rt-table-section-header" });
+		const collapseBtn = tableSectionHeader.createEl("button", { text: "▼", cls: "duckmage-rt-collapse-btn" });
+		collapseBtn.title = "Collapse table";
+		const tableBody = tableSection.createDiv({ cls: "duckmage-rt-table-body" });
+
+		collapseBtn.addEventListener("click", () => {
+			const collapsed = tableBody.style.display === "none";
+			tableBody.style.display = collapsed ? "" : "none";
+			collapseBtn.setText(collapsed ? "▼" : "▶");
+			collapseBtn.title = collapsed ? "Collapse table" : "Expand table";
+		});
+
 		if (table.entries.length === 0) {
-			this.detailEl.createDiv({ cls: "duckmage-rt-empty", text: "No entries found. Check the table format." });
+			tableBody.createDiv({ cls: "duckmage-rt-empty", text: "No entries found. Check the table format." });
 		} else {
-			const tableEl = this.detailEl.createEl("table", { cls: "duckmage-random-table" });
+			const tableEl = tableBody.createEl("table", { cls: "duckmage-random-table" });
 			const thead = tableEl.createEl("thead");
 			const headerRow = thead.createEl("tr");
 			if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
@@ -292,6 +305,19 @@ export class RandomTableView extends ItemView {
 
 		// ── Roll controls ──────────────────────────────────────────────────
 		const rollArea = this.detailEl.createDiv({ cls: "duckmage-rt-roll-area" });
+
+		const copyLinkBtn = rollArea.createEl("button", { text: "🎲 Copy link", cls: "duckmage-rt-copy-link-btn" });
+		copyLinkBtn.title = "Copy a markdown link to this table";
+		copyLinkBtn.addEventListener("click", () => {
+			const vault = encodeURIComponent(this.app.vault.getName());
+			const path  = encodeURIComponent(file.path);
+			const link  = `[🎲 ${file.basename}](obsidian://duckmage-roll?vault=${vault}&file=${path})`;
+			navigator.clipboard.writeText(link).then(() => {
+				copyLinkBtn.setText("Copied!");
+				setTimeout(() => copyLinkBtn.setText("🎲 Copy link"), 1500);
+			});
+		});
+
 		const rollBtn = rollArea.createEl("button", { text: "Roll", cls: "duckmage-rt-roll-btn mod-cta" });
 
 		const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });

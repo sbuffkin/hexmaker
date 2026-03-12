@@ -1699,6 +1699,24 @@
 
 /* ── Random table (odds table) ─────────────────────────────────────────── */
 
+.duckmage-rt-table-section-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+}
+.duckmage-rt-collapse-btn {
+    background: none;
+    border: none;
+    padding: 0 4px;
+    font-size: 0.75em;
+    color: var(--text-muted);
+    cursor: pointer;
+    line-height: 1;
+}
+.duckmage-rt-collapse-btn:hover {
+    color: var(--text-normal);
+}
+
 .duckmage-random-table {
     border-collapse: collapse;
     width: 100%;
@@ -1744,10 +1762,30 @@
 /* ── Roll area ─────────────────────────────────────────────────────────── */
 
 .duckmage-rt-roll-area {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
     margin-bottom: 8px;
 }
 
+.duckmage-rt-copy-link-btn {
+    justify-self: start;
+    font-size: 0.8em;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.duckmage-rt-copy-link-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
 .duckmage-rt-roll-btn {
+    justify-self: center;
     min-width: 80px;
 }
 
@@ -1845,11 +1883,6 @@
     margin-bottom: 10px;
 }
 
-.duckmage-rt-roll-btn.duckmage-rt-roll-btn {
-    display: block;
-    width: 100%;
-    margin-bottom: 8px;
-}
 
 .duckmage-rt-empty {
     color: var(--text-faint);
