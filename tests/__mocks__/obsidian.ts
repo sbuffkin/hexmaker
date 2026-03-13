@@ -18,6 +18,7 @@ export class TFolder extends TAbstractFile {
 }
 
 export class App {}
-export class Modal { constructor(_app: App) {} }
+export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } }
+export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: string): T[] { return []; } renderSuggestion(_v: T, _el: HTMLElement): void {} onChooseSuggestion(_v: T, _e: MouseEvent | KeyboardEvent): void {} }
 export class Notice { constructor(_msg: string) {} }
 export class Plugin { constructor(_app: App, _manifest: any) {} }

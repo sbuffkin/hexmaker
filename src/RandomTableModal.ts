@@ -166,6 +166,7 @@ export class RandomTableModal extends Modal {
 		if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
 		headerRow.createEl("th", { text: "Result" });
 		headerRow.createEl("th", { text: "Odds" });
+		headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
 
 		const tbody = tableEl.createEl("tbody");
 		const total = table.entries.reduce((s, e) => s + e.weight, 0);
@@ -176,6 +177,15 @@ export class RandomTableModal extends Modal {
 			tr.createEl("td", { text: entry.result });
 			const pct = `${Math.round((entry.weight / total) * 100)}%`;
 			tr.createEl("td", { text: pct, cls: "duckmage-rt-odds-cell" });
+			const copyTd = tr.createEl("td", { cls: "duckmage-rt-entry-copy-cell" });
+			const copyBtn = copyTd.createEl("button", { text: "⎘", cls: "duckmage-rt-entry-copy-btn" });
+			copyBtn.title = "Copy entry";
+			copyBtn.addEventListener("click", (e) => {
+				e.stopPropagation();
+				navigator.clipboard.writeText(entry.result);
+				copyBtn.setText("✓");
+				setTimeout(() => copyBtn.setText("⎘"), 1200);
+			});
 		});
 
 		rollBtn.disabled = false;

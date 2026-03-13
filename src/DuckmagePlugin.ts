@@ -8,7 +8,7 @@ import { normalizeFolder, makeTableTemplate } from "./utils";
 import type { DuckmagePluginSettings } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";
-import { addLinkToSection, getLinksInSection } from "./sections";
+import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "./sections";
 
 export default class DuckmagePlugin extends Plugin {
 	settings: DuckmagePluginSettings;
@@ -249,6 +249,51 @@ export default class DuckmagePlugin extends Plugin {
 			linked++;
 		}
 		new Notice(`Duckmage: linked encounters tables for ${linked} hex${linked !== 1 ? "es" : ""}.`);
+	}
+
+	/**
+	 * Replace the terrain encounters-table link in a single hex's "Encounters Table" section.
+	 * Removes any existing link that resolves to a file in the terrain subfolder, then adds
+	 * the correct link for the new terrain (if non-null and the table file exists).
+	 */
+	async syncHexEncounterTableLink(hexFilePath: string, terrain: string | null): Promise<void> {
+		const tablesFolder = normalizeFolder(this.settings.tablesFolder);
+		const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
+
+		// Remove any links that point to a terrain encounters table
+		const existing = await getLinksInSection(this.app, hexFilePath, "Encounters Table");
+		for (const linkTarget of existing) {
+			const resolved = this.app.metadataCache.getFirstLinkpathDest(linkTarget, hexFilePath);
+			if (resolved && resolved.path.startsWith(subfolder + "/") && resolved.path.endsWith(" - encounters.md")) {
+				await removeLinkFromSection(this.app, hexFilePath, "Encounters Table", linkTarget);
+			}
+		}
+
+		if (!terrain) return;
+
+		const tablePath = `${subfolder}/${terrain} - encounters.md`;
+		const tableFile = this.app.vault.getAbstractFileByPath(tablePath);
+		if (!(tableFile instanceof TFile)) return;
+		const linkText = `[[${this.app.metadataCache.fileToLinktext(tableFile, hexFilePath)}]]`;
+		await addLinkToSection(this.app, hexFilePath, "Encounters Table", linkText);
+	}
+
+	/**
+	 * For every hex note on the map, replace its terrain encounters-table link with the
+	 * one matching its current terrain.  Intended as a one-shot repair tool.
+	 */
+	async refreshAllTerrainEncounterLinks(): Promise<void> {
+		const hexFolder = normalizeFolder(this.settings.hexFolder);
+		const hexFiles = this.app.vault.getMarkdownFiles().filter(f => {
+			if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
+			return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
+		});
+
+		for (const file of hexFiles) {
+			const terrain = getTerrainFromFile(this.app, file.path) ?? null;
+			await this.syncHexEncounterTableLink(file.path, terrain);
+		}
+		new Notice(`Duckmage: refreshed encounter links for ${hexFiles.length} hex${hexFiles.length !== 1 ? "es" : ""}.`);
 	}
 
 	/** Update every hex note whose terrain matches oldName to newName.

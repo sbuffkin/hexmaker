@@ -27,6 +27,48 @@
     pointer-events: auto;
 }
 
+/* Toolbar panel — wraps all controls so they can be hidden together */
+.duckmage-toolbar-panel {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.duckmage-toolbar-panel > * {
+    pointer-events: auto;
+}
+
+.duckmage-toolbar-collapsed .duckmage-toolbar-panel {
+    display: none;
+}
+
+/* Toggle button — always visible, top-right corner */
+.duckmage-toolbar-toggle-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 1.1em;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    opacity: 0.7;
+    pointer-events: auto;
+}
+
+.duckmage-toolbar-toggle-btn:hover {
+    opacity: 1;
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
 .duckmage-hex-map-viewport {
     position: absolute;
     top: 0;
@@ -431,6 +473,34 @@
     border-color: var(--interactive-accent);
 }
 
+.duckmage-tpe-edit-footer {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--background-modifier-border);
+    display: flex;
+    justify-content: flex-end;
+}
+
+.duckmage-tpe-refresh-btn {
+    font-size: 0.8em;
+    padding: 3px 10px;
+    cursor: pointer;
+    border-radius: 4px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.duckmage-tpe-refresh-btn:hover:not(:disabled) {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
+.duckmage-tpe-refresh-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 /* Terrain picker grid — capped at 2 rows, scrollable */
 .duckmage-terrain-picker {
     display: flex;
@@ -710,7 +780,7 @@
 .duckmage-draw-toolbar {
     position: absolute;
     top: 8px;
-    right: 16px;
+    right: 44px;
     z-index: 10;
     display: flex;
     gap: 4px;
@@ -776,6 +846,11 @@
 /* While actively painting terrain (terrain selected, not eyedropper) */
 .duckmage-hex-map-viewport.duckmage-terrain-paint .duckmage-hex {
     cursor: cell;
+}
+
+/* When the SVG overlay is active it renders all labels — hide the HTML copies */
+.duckmage-hex-map-viewport.duckmage-svg-labels-active .duckmage-hex-label {
+    visibility: hidden;
 }
 
 /* ── Expand buttons ───────────────────────────────────────────────────────── */
@@ -1871,6 +1946,38 @@
     opacity: 1;
 }
 
+/* Per-entry copy button in the table odds grid */
+.duckmage-rt-copy-col-header {
+    width: 24px;
+    padding: 0 !important;
+}
+
+.duckmage-rt-entry-copy-cell {
+    width: 24px;
+    padding: 0 2px !important;
+    text-align: center;
+}
+
+.duckmage-rt-entry-copy-btn {
+    background: none;
+    border: none;
+    color: var(--text-faint);
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 0.9em;
+    opacity: 0;
+    transition: opacity 0.1s;
+}
+
+tr:hover .duckmage-rt-entry-copy-btn {
+    opacity: 0.6;
+}
+
+tr:hover .duckmage-rt-entry-copy-btn:hover {
+    opacity: 1;
+    color: var(--text-normal);
+}
+
 /* ── Random table modal ────────────────────────────────────────────────── */
 
 .duckmage-roll-modal {
@@ -2000,6 +2107,7 @@
     flex: 1;
     resize: vertical;
     min-height: 28px;
+    overflow-y: hidden;
     font-family: inherit;
     font-size: inherit;
 }

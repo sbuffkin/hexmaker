@@ -21,6 +21,12 @@ import { RandomTableModal } from "./RandomTableModal";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 
 export class HexEditorModal extends Modal {
+  private hexExists = false;
+  private allText = new Map<string, string>();
+  private allLinks = new Map<string, string[]>();
+  private directTerrain: string | null = null;
+  private directIcon: string | null = null;
+
   constructor(
     app: App,
     private plugin: DuckmagePlugin,
@@ -34,40 +40,41 @@ export class HexEditorModal extends Modal {
     super(app);
   }
 
-  async onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-hex-editor");
+  async loadData(): Promise<void> {
+    // Reset all fields so stale data from a previous hex never bleeds through
+    this.allText = new Map();
+    this.allLinks = new Map();
+    this.directTerrain = null;
+    this.directIcon = null;
 
     const path = this.plugin.hexPath(this.x, this.y);
-    const hexExists =
+    this.hexExists =
       this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    if (!this.hexExists) return;
 
-    // Fetch all section data in one file read before touching the DOM
-    let allText = new Map<string, string>();
-    let allLinks = new Map<string, string[]>();
-    // Read terrain + icon directly from file content (bypass stale metadata cache)
-    let directTerrain: string | null = null;
-    let directIcon: string | null = null;
-    if (hexExists) {
-      ({ text: allText, links: allLinks } = await getAllSectionData(
-        this.app,
-        path,
-      ));
-      // Re-read raw content for frontmatter (getAllSectionData doesn't expose it)
-      const rawContent = await this.app.vault.read(
-        this.app.vault.getAbstractFileByPath(path) as TFile,
-      );
-      const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-      if (fmMatch) {
-        const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
-        if (tm) directTerrain = tm[1].trim();
-        const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
-        if (im) directIcon = im[1].trim();
-      }
+    ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
+      this.app,
+      path,
+    ));
+    const rawContent = await this.app.vault.read(
+      this.app.vault.getAbstractFileByPath(path) as TFile,
+    );
+    const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+    if (fmMatch) {
+      const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
+      if (tm) this.directTerrain = tm[1].trim();
+      const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
+      if (im) this.directIcon = im[1].trim();
     }
+  }
 
-    // Render entire modal synchronously from pre-fetched data — no more chunked paints
+  onOpen() {
+    const { contentEl } = this;
     contentEl.empty();
+    contentEl.addClass("duckmage-hex-editor");
+
+    const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
+    const path = this.plugin.hexPath(this.x, this.y);
     const titleRow = contentEl.createDiv({ cls: "duckmage-editor-title-row" });
     const titleLeft = titleRow.createDiv({ cls: "duckmage-editor-title-left" });
     titleLeft.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
@@ -290,7 +297,7 @@ export class HexEditorModal extends Modal {
         tile.addEventListener("click", () => {
           this.x = nx;
           this.y = ny;
-          void this.onOpen();
+          this.loadData().then(() => this.onOpen());
         });
       } else {
         tile.title = "Off map";
@@ -344,6 +351,7 @@ export class HexEditorModal extends Modal {
       clearBtn.createSpan({ text: "Clear", cls: "duckmage-terrain-option-name" });
       clearBtn.addEventListener("click", async () => {
         await setTerrainInFile(this.app, path, null);
+        void this.plugin.syncHexEncounterTableLink(path, null);
         this.onChanged(new Map([[path, null]]));
         this.close();
       });
@@ -370,6 +378,7 @@ export class HexEditorModal extends Modal {
       btn.addEventListener("click", async () => {
         await this.ensureHexNote();
         await setTerrainInFile(this.app, path, entry.name);
+        void this.plugin.syncHexEncounterTableLink(path, entry.name);
         this.onChanged(new Map([[path, entry.name]]));
         this.close();
       });

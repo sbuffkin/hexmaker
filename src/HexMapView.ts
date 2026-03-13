@@ -262,10 +262,13 @@ export class HexMapView extends ItemView {
       }
     });
 
-    this.createExpandButtons(controlsEl);
-    this.createDrawingToolbar(controlsEl);
+    // All toolbar elements go in this panel so they can be hidden together
+    const toolbarPanel = controlsEl.createDiv({ cls: "duckmage-toolbar-panel" });
 
-    const tableBtn = controlsEl.createEl("button", {
+    this.createExpandButtons(toolbarPanel);
+    this.createDrawingToolbar(toolbarPanel);
+
+    const tableBtn = toolbarPanel.createEl("button", {
       cls: "duckmage-table-btn",
       title: "Open hex table",
       text: "⊞",
@@ -276,7 +279,7 @@ export class HexMapView extends ItemView {
         .setViewState({ type: VIEW_TYPE_HEX_TABLE });
     });
 
-    const rtBtn = controlsEl.createEl("button", {
+    const rtBtn = toolbarPanel.createEl("button", {
       cls: "duckmage-rt-btn",
       title: "Open random tables",
       text: "🎲",
@@ -287,7 +290,7 @@ export class HexMapView extends ItemView {
         .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
     });
 
-    const gotoBtn = controlsEl.createEl("button", {
+    const gotoBtn = toolbarPanel.createEl("button", {
       cls: "duckmage-goto-btn",
       title: "Go to hex",
       text: "⌖",
@@ -296,12 +299,24 @@ export class HexMapView extends ItemView {
       new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
     });
 
-    const helpBtn = controlsEl.createEl("button", {
+    const helpBtn = toolbarPanel.createEl("button", {
       cls: "duckmage-help-btn",
       title: "Controls & tools",
       text: "?",
     });
     helpBtn.addEventListener("click", () => new HexHelpModal(this.app).open());
+
+    // Toggle button — always visible, collapses/restores the toolbar panel
+    const toggleBtn = controlsEl.createEl("button", {
+      cls: "duckmage-toolbar-toggle-btn",
+      title: "Hide toolbar",
+    });
+    toggleBtn.setText("≡");
+    toggleBtn.addEventListener("click", () => {
+      const collapsed = controlsEl.hasClass("duckmage-toolbar-collapsed");
+      controlsEl.toggleClass("duckmage-toolbar-collapsed", !collapsed);
+      toggleBtn.title = collapsed ? "Hide toolbar" : "Show toolbar";
+    });
 
     this.renderGrid();
   }
@@ -943,7 +958,7 @@ export class HexMapView extends ItemView {
       this.onHexDeleteClick(x, y);
       return;
     }
-    new HexEditorModal(this.app, this.plugin, x, y, (t, i) => {
+    const modal = new HexEditorModal(this.app, this.plugin, x, y, (t, i) => {
       if (t !== undefined || i !== undefined) {
         // Terrain/icon changed — immediate update with explicit overrides avoids cache race
         this.renderGrid(t, i);
@@ -951,7 +966,8 @@ export class HexMapView extends ItemView {
         // Link-only change — defer so metadata cache has time to repopulate after vault.modify
         setTimeout(() => this.renderGrid(), 300);
       }
-    }).open();
+    });
+    modal.loadData().then(() => modal.open());
   }
 
   private async onHexClick(x: number, y: number): Promise<void> {
@@ -1168,8 +1184,10 @@ export class HexMapView extends ItemView {
         this.pendingTerrainWrites.delete(path);
         try {
           if (terrain === null) {
-            if (this.app.vault.getAbstractFileByPath(path) instanceof TFile)
+            if (this.app.vault.getAbstractFileByPath(path) instanceof TFile) {
               await setTerrainInFile(this.app, path, null);
+              void this.plugin.syncHexEncounterTableLink(path, null);
+            }
           } else {
             if (
               !(this.app.vault.getAbstractFileByPath(path) instanceof TFile)
@@ -1184,6 +1202,7 @@ export class HexMapView extends ItemView {
                 ?.addClass("duckmage-hex-exists");
             }
             await setTerrainInFile(this.app, path, terrain);
+            void this.plugin.syncHexEncounterTableLink(path, terrain);
           }
         } catch (err) {
           console.error(`[duckmage] terrain write failed for ${path}:`, err);
@@ -1396,6 +1415,7 @@ export class HexMapView extends ItemView {
 
   private renderRoadRiverOverlay(gridContainer: HTMLElement): void {
     this.viewportEl?.querySelector("svg.duckmage-road-river-svg")?.remove();
+    this.viewportEl?.removeClass("duckmage-svg-labels-active");
     // Restore any icons that were hidden when the previous SVG elevated them
     gridContainer
       .querySelectorAll<HTMLElement>(".duckmage-hex-icon[data-svg-elevated]")
@@ -1539,15 +1559,12 @@ export class HexMapView extends ItemView {
     if (this.drawingMode === "river")
       drawActiveEndMarker(this.activeRiverEnd, this.plugin.settings.riverColor);
 
-    // Elevate override icons above roads/rivers by rendering them inside the SVG,
-    // then re-render the coordinate label on top of the icon.
+    // Elevate override icons above roads/rivers by rendering them inside the SVG.
     gridContainer
       .querySelectorAll<HTMLElement>("[data-icon-override]")
       .forEach((hexEl) => {
         const iconName = hexEl.dataset.iconOverride!;
-        const x = hexEl.dataset.x!;
-        const y = hexEl.dataset.y!;
-        const key = `${x}_${y}`;
+        const key = `${hexEl.dataset.x!}_${hexEl.dataset.y!}`;
         const pos = centerMap.get(key);
         if (!pos) return;
         const origImg = hexEl.querySelector<HTMLElement>(".duckmage-hex-icon");
@@ -1565,24 +1582,41 @@ export class HexMapView extends ItemView {
         imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
         imgEl.setAttribute("opacity", "0.75");
         svg.appendChild(imgEl);
+      });
 
-        // Coordinate label on top of the icon — mirrors .duckmage-hex-label styling
+    // Render all hex coordinate labels as SVG text so they sit above roads,
+    // rivers, and icons regardless of CSS stacking context.
+    gridContainer
+      .querySelectorAll<HTMLElement>(".duckmage-hex")
+      .forEach((hexEl) => {
+        const x = hexEl.dataset.x!;
+        const y = hexEl.dataset.y!;
+        const pos = centerMap.get(`${x}_${y}`);
+        if (!pos) return;
+        const hasTerrain = !!hexEl.style.backgroundColor;
         const textEl = document.createElementNS(svgNS, "text");
         textEl.setAttribute("x", String(pos.cx));
-        textEl.setAttribute("y", String(pos.cy));
+        // Nudge label toward bottom of hex (same visual position as the HTML label)
+        textEl.setAttribute("y", String(pos.cy + hexEl.offsetHeight * 0.28));
         textEl.setAttribute("text-anchor", "middle");
         textEl.setAttribute("dominant-baseline", "middle");
         textEl.setAttribute("font-size", String(hexEl.offsetHeight * 0.12));
         textEl.setAttribute("font-weight", "600");
-        textEl.setAttribute("fill", "#ffffff");
-        textEl.setAttribute("paint-order", "stroke");
-        textEl.setAttribute("stroke", "rgba(0,0,0,0.85)");
-        textEl.setAttribute("stroke-width", "2");
-        textEl.setAttribute("stroke-linejoin", "round");
+        if (hasTerrain) {
+          textEl.setAttribute("fill", "#ffffff");
+          textEl.setAttribute("paint-order", "stroke");
+          textEl.setAttribute("stroke", "rgba(0,0,0,0.85)");
+          textEl.setAttribute("stroke-width", "2");
+          textEl.setAttribute("stroke-linejoin", "round");
+        } else {
+          textEl.setAttribute("fill", "var(--text-muted)");
+        }
+        textEl.setAttribute("pointer-events", "none");
         textEl.textContent = `${x},${y}`;
         svg.appendChild(textEl);
       });
 
+    this.viewportEl?.addClass("duckmage-svg-labels-active");
     this.viewportEl?.appendChild(svg);
   }
 

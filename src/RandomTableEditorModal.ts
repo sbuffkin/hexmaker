@@ -39,6 +39,11 @@ export class RandomTableEditorModal extends Modal {
 
 		let dragSrcIndex = -1;
 
+		const autoResize = (el: HTMLTextAreaElement) => {
+			el.style.height = "auto";
+			el.style.height = `${el.scrollHeight}px`;
+		};
+
 		const renderRows = () => {
 			rowsEl.empty();
 			if (entries.length === 0) {
@@ -57,7 +62,12 @@ export class RandomTableEditorModal extends Modal {
 				resultInput.value = entry.result;
 				resultInput.placeholder = "Result…";
 				resultInput.rows = 1;
-				resultInput.addEventListener("input", () => { entries[i].result = resultInput.value; });
+				// Size to content immediately, then keep in sync as the user types
+				requestAnimationFrame(() => autoResize(resultInput));
+				resultInput.addEventListener("input", () => {
+					entries[i].result = resultInput.value;
+					autoResize(resultInput);
+				});
 
 				const weightInput = row.createEl("input", { type: "number", cls: "duckmage-table-editor-weight" });
 				weightInput.value = String(entry.weight);
