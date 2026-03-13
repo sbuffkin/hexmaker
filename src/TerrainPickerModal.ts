@@ -7,11 +7,14 @@ export class TerrainPickerModal extends Modal {
 	private editMode = false;
 	private editChanged = false;
 
+	private selectionMade = false;
+
 	constructor(
 		app: App,
 		private plugin: DuckmagePlugin,
 		private onSelect: (terrainName: string | null) => void,
 		private onPickMode?: () => void,
+		private onDismiss?: () => void,
 	) {
 		super(app);
 	}
@@ -23,6 +26,9 @@ export class TerrainPickerModal extends Modal {
 	onClose(): void {
 		if (this.editChanged) {
 			this.plugin.refreshHexMap();
+		}
+		if (!this.selectionMade) {
+			this.onDismiss?.();
 		}
 		this.contentEl.empty();
 	}
@@ -58,12 +64,12 @@ export class TerrainPickerModal extends Modal {
 		const eyeBtn = grid.createDiv({ cls: "duckmage-terrain-option duckmage-terrain-option-eyedropper" });
 		eyeBtn.createDiv({ cls: "duckmage-terrain-preview duckmage-terrain-preview-eyedropper" }).setText("⌖");
 		eyeBtn.createSpan({ text: "Pick", cls: "duckmage-terrain-option-name" });
-		eyeBtn.addEventListener("click", () => { this.onPickMode?.(); this.close(); });
+		eyeBtn.addEventListener("click", () => { this.selectionMade = true; this.onPickMode?.(); this.close(); });
 
 		const clearBtn = grid.createDiv({ cls: "duckmage-terrain-option duckmage-terrain-option-clear" });
 		clearBtn.createDiv({ cls: "duckmage-terrain-preview duckmage-terrain-preview-clear" });
 		clearBtn.createSpan({ text: "Clear", cls: "duckmage-terrain-option-name" });
-		clearBtn.addEventListener("click", () => { this.onSelect(null); this.close(); });
+		clearBtn.addEventListener("click", () => { this.selectionMade = true; this.onSelect(null); this.close(); });
 
 		for (const entry of this.plugin.settings.terrainPalette) {
 			const btn = grid.createDiv({ cls: "duckmage-terrain-option" });
@@ -75,7 +81,7 @@ export class TerrainPickerModal extends Modal {
 				img.alt = entry.name;
 			}
 			btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
-			btn.addEventListener("click", () => { this.onSelect(entry.name); this.close(); });
+			btn.addEventListener("click", () => { this.selectionMade = true; this.onSelect(entry.name); this.close(); });
 		}
 	}
 

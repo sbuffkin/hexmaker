@@ -767,6 +767,17 @@
     cursor: crosshair;
 }
 
+/* While terrain picker modal is open */
+.duckmage-hex-map-viewport.duckmage-terrain-picking,
+.duckmage-hex-map-viewport.duckmage-terrain-picking .duckmage-hex {
+    cursor: crosshair;
+}
+
+/* While actively painting terrain (terrain selected, not eyedropper) */
+.duckmage-hex-map-viewport.duckmage-terrain-paint .duckmage-hex {
+    cursor: cell;
+}
+
 /* ── Expand buttons ───────────────────────────────────────────────────────── */
 
 .duckmage-expand-btn {

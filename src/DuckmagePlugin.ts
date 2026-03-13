@@ -285,6 +285,13 @@ export default class DuckmagePlugin extends Plugin {
 		});
 	}
 
+	/** Update terrain filter sets in all open hex table views after a rename. */
+	refreshHexTableTerrainRename(oldName: string, newName: string): void {
+		this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach(leaf => {
+			(leaf.view as HexTableView).renameTerrainInFilters(oldName, newName);
+		});
+	}
+
 	/** Create a hex note from the configured template (or the built-in default). */
 	async createHexNote(x: number, y: number): Promise<TFile | null> {
 		const path = this.hexPath(x, y);

@@ -658,6 +658,18 @@ export class HexTableView extends ItemView {
 
 	// ── Filter helpers ────────────────────────────────────────────────────────
 
+	/** Update filter sets when a terrain is renamed, so stale names don't persist. */
+	renameTerrainInFilters(oldName: string, newName: string): void {
+		if (this.filterTerrains.has(oldName)) {
+			this.filterTerrains.delete(oldName);
+			this.filterTerrains.add(newName);
+		}
+		if (this.filterExcludeTerrains.has(oldName)) {
+			this.filterExcludeTerrains.delete(oldName);
+			this.filterExcludeTerrains.add(newName);
+		}
+		this.updateTerrainBtnLabel();
+	}
 
 	private updateTerrainBtnLabel(): void {
 		if (!this.terrainFilterBtn) return;

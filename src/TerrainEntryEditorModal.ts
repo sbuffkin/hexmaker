@@ -82,6 +82,8 @@ export class TerrainEntryEditorModal extends Modal {
 					await this.plugin.saveSettings();
 					// 4. Refresh with overrides to bypass stale metadata cache
 					this.plugin.refreshHexMapWithOverrides(overrides);
+					// 5. Update any open hex table terrain filters
+					this.plugin.refreshHexTableTerrainRename(oldName, newName);
 				} else {
 					await this.plugin.saveSettings();
 					this.plugin.refreshHexMap();

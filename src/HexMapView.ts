@@ -423,11 +423,15 @@ export class HexMapView extends ItemView {
   }
 
   private handleTerrainButton(): void {
+    // Show crosshair on the viewport while the picker is open
+    this.viewportEl?.addClass("duckmage-terrain-picking");
+
     // Always open the picker — even if already active, so user can switch terrain
     new TerrainPickerModal(
       this.app,
       this.plugin,
       (terrainName: string | null) => {
+        this.viewportEl?.removeClass("duckmage-terrain-picking");
         this.drawingMode = "terrain";
         this.terrainPickMode = false;
         this.paintTerrainName = terrainName;
@@ -436,10 +440,15 @@ export class HexMapView extends ItemView {
       },
       () => {
         // Eyedropper: enter terrain mode in pick-from-map state
+        this.viewportEl?.removeClass("duckmage-terrain-picking");
         this.drawingMode = "terrain";
         this.terrainPickMode = true;
         this.paintTerrainName = null;
         this.updateToolbarButtonStates();
+      },
+      () => {
+        // Dismissed without selecting
+        this.viewportEl?.removeClass("duckmage-terrain-picking");
       },
     ).open();
   }
@@ -712,6 +721,10 @@ export class HexMapView extends ItemView {
     this.viewportEl?.toggleClass(
       "duckmage-draw-mode",
       this.drawingMode !== null,
+    );
+    this.viewportEl?.toggleClass(
+      "duckmage-terrain-paint",
+      this.drawingMode === "terrain" && !this.terrainPickMode,
     );
 
     // Icon button preview
