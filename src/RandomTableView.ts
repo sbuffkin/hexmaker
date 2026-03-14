@@ -1,461 +1,773 @@
-import { ItemView, Menu, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import {
+  ItemView,
+  Menu,
+  Notice,
+  TFile,
+  ViewStateResult,
+  WorkspaceLeaf,
+} from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
 import { normalizeFolder, makeTableTemplate } from "./utils";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import {
-	parseRandomTable,
-	rollOnTable,
-	getDieRanges,
-	getOddsLabel,
-	setDiceInFrontmatter,
-	type RandomTable,
-	type RandomTableEntry,
+  parseRandomTable,
+  rollOnTable,
+  getDieRanges,
+  getOddsLabel,
+  setDiceInFrontmatter,
+  type RandomTable,
+  type RandomTableEntry,
 } from "./randomTable";
 
 const DIE_OPTIONS = [
-	{ label: "— no die —", value: 0 },
-	{ label: "d4",   value: 4 },
-	{ label: "d6",   value: 6 },
-	{ label: "d8",   value: 8 },
-	{ label: "d10",  value: 10 },
-	{ label: "d12",  value: 12 },
-	{ label: "d20",  value: 20 },
-	{ label: "d100", value: 100 },
-	{ label: "d200", value: 200 },
-	{ label: "d500", value: 500 },
-	{ label: "d1000", value: 1000 },
+  { label: "— no die —", value: 0 },
+  { label: "d4", value: 4 },
+  { label: "d6", value: 6 },
+  { label: "d8", value: 8 },
+  { label: "d10", value: 10 },
+  { label: "d12", value: 12 },
+  { label: "d20", value: 20 },
+  { label: "d100", value: 100 },
+  { label: "d200", value: 200 },
+  { label: "d500", value: 500 },
+  { label: "d1000", value: 1000 },
 ];
 
-interface FileNode  { type: "file";   file: TFile; }
-interface FolderNode { type: "folder"; name: string; path: string; children: TreeNode[]; }
+interface FileNode {
+  type: "file";
+  file: TFile;
+}
+interface FolderNode {
+  type: "folder";
+  name: string;
+  path: string;
+  children: TreeNode[];
+}
 type TreeNode = FileNode | FolderNode;
 
 export class RandomTableView extends ItemView {
-	private listEl: HTMLElement | null = null;
-	private detailEl: HTMLElement | null = null;
-	private activeFile: TFile | null = null;
-	private rollHistory: string[] = [];
-	private collapsedFolders: Set<string> = new Set();
-	private filterQuery = "";
-	private treeInitialized = false;
+  private listEl: HTMLElement | null = null;
+  private detailEl: HTMLElement | null = null;
+  private activeFile: TFile | null = null;
+  private rollHistory: string[] = [];
+  private collapsedFolders: Set<string> = new Set();
+  private filterQuery = "";
+  private treeInitialized = false;
+  private linkedFolderMap: Map<string, string> = new Map(); // folder path → table file path
 
-	constructor(leaf: WorkspaceLeaf, private plugin: DuckmagePlugin) {
-		super(leaf);
-	}
+  constructor(
+    leaf: WorkspaceLeaf,
+    private plugin: DuckmagePlugin,
+  ) {
+    super(leaf);
+  }
 
-	getViewType()    { return VIEW_TYPE_RANDOM_TABLES; }
-	getDisplayText() { return "Random tables"; }
-	getIcon()        { return "dice"; }
+  getViewType() {
+    return VIEW_TYPE_RANDOM_TABLES;
+  }
+  getDisplayText() {
+    return "Random tables";
+  }
+  getIcon() {
+    return "dice";
+  }
 
-	async setState(state: any, result: ViewStateResult): Promise<void> {
-		await super.setState(state, result);
-		if (state?.filePath) {
-			const file = this.app.vault.getAbstractFileByPath(state.filePath);
-			if (file instanceof TFile) {
-				await this.loadList();
-				this.loadTable(file);
-			}
-		}
-	}
+  async setState(state: any, result: ViewStateResult): Promise<void> {
+    await super.setState(state, result);
+    if (state?.filePath) {
+      const file = this.app.vault.getAbstractFileByPath(state.filePath);
+      if (file instanceof TFile) {
+        await this.loadList();
+        this.loadTable(file);
+      }
+    }
+  }
 
-	async onOpen(): Promise<void> {
-		const { contentEl } = this;
-		contentEl.empty();
-		contentEl.addClass("duckmage-rt-container");
+  async onOpen(): Promise<void> {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("duckmage-rt-container");
 
-		// ── Left column: table list ──────────────────────────────────────────
-		const leftCol = contentEl.createDiv({ cls: "duckmage-rt-left" });
+    // ── Left column: table list ──────────────────────────────────────────
+    const leftCol = contentEl.createDiv({ cls: "duckmage-rt-left" });
 
-		const listHeader = leftCol.createDiv({ cls: "duckmage-rt-list-header" });
-		listHeader.createEl("span", { text: "Tables", cls: "duckmage-rt-list-title" });
-		const refreshBtn = listHeader.createEl("button", { text: "↺", cls: "duckmage-rt-icon-btn" });
-		refreshBtn.title = "Refresh list";
-		refreshBtn.addEventListener("click", () => this.loadList());
+    const listHeader = leftCol.createDiv({ cls: "duckmage-rt-list-header" });
+    listHeader.createEl("span", {
+      text: "Tables",
+      cls: "duckmage-rt-list-title",
+    });
+    const refreshBtn = listHeader.createEl("button", {
+      text: "↺",
+      cls: "duckmage-rt-icon-btn",
+    });
+    refreshBtn.title = "Refresh list";
+    refreshBtn.addEventListener("click", () => this.loadList());
 
-		const searchInput = leftCol.createEl("input", { type: "text", cls: "duckmage-rt-search" });
-		searchInput.placeholder = "Filter tables…";
-		searchInput.addEventListener("input", () => {
-			this.filterQuery = searchInput.value.toLowerCase().trim();
-			this.loadList();
-		});
+    const searchInput = leftCol.createEl("input", {
+      type: "text",
+      cls: "duckmage-rt-search",
+    });
+    searchInput.placeholder = "Filter tables…";
+    searchInput.addEventListener("input", () => {
+      this.filterQuery = searchInput.value.toLowerCase().trim();
+      this.loadList();
+    });
 
-		this.listEl = leftCol.createDiv({ cls: "duckmage-rt-list" });
+    this.listEl = leftCol.createDiv({ cls: "duckmage-rt-list" });
 
-		const listFooter = leftCol.createDiv({ cls: "duckmage-rt-list-footer" });
-		const newInput = listFooter.createEl("input", { type: "text", cls: "duckmage-rt-new-input" });
-		newInput.placeholder = "New table name…";
-		const newBtn = listFooter.createEl("button", { text: "+ New", cls: "duckmage-rt-new-btn" });
+    const listFooter = leftCol.createDiv({ cls: "duckmage-rt-list-footer" });
+    const newRow = listFooter.createDiv({ cls: "duckmage-rt-new-row" });
+    const newInput = newRow.createEl("input", {
+      type: "text",
+      cls: "duckmage-rt-new-input",
+    });
+    newInput.placeholder = "New table name…";
+    const newBtn = newRow.createEl("button", {
+      text: "+ New",
+      cls: "duckmage-rt-new-btn",
+    });
+    const fromFolderInput = listFooter.createEl("input", {
+      type: "text",
+      cls: "duckmage-rt-from-folder-input",
+      attr: { placeholder: "Generate from folder link (optional)…" },
+    });
 
-		const createTable = async () => {
-			const name = newInput.value.trim();
-			if (!name) return;
-			const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-			const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
-			let file = this.app.vault.getAbstractFileByPath(newPath);
-			if (!(file instanceof TFile)) {
-				try {
-					if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-						await this.app.vault.createFolder(folder);
-					}
-					const rollerLink = this.plugin.buildRollerLink(newPath);
-					file = await this.app.vault.create(newPath, makeTableTemplate(this.plugin.settings.defaultTableDice, 3, undefined, rollerLink));
-				} catch (err) {
-					new Notice(`Could not create ${newPath}: ${err}`);
-					return;
-				}
-			}
-			newInput.value = "";
-			await this.loadList();
-			this.loadTable(file as TFile);
-		};
+    const createTable = async () => {
+      const name = newInput.value.trim();
+      if (!name) return;
+      const folder = normalizeFolder(this.plugin.settings.tablesFolder);
+      const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
+      let file = this.app.vault.getAbstractFileByPath(newPath);
+      if (!(file instanceof TFile)) {
+        try {
+          if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+            await this.app.vault.createFolder(folder);
+          }
+          const srcFolder = normalizeFolder(fromFolderInput.value.trim());
+          let content: string;
+          if (srcFolder) {
+            const folderFiles = this.app.vault
+              .getMarkdownFiles()
+              .filter((f) => f.parent?.path === srcFolder && !f.basename.startsWith("_"))
+              .sort((a, b) => a.basename.localeCompare(b.basename));
+            const rollerLink = this.plugin.buildRollerLink(newPath);
+            const entryRows = folderFiles
+              .map((f) => `| ${f.basename} | 1 |`)
+              .join("\n");
+            content = `---\ndice: ${this.plugin.settings.defaultTableDice}\nlinked-folder: ${srcFolder}\n---\n\n${rollerLink}\n\n| Result | Weight |\n|--------|--------|\n${entryRows || "|  | 1 |"}\n`;
+          } else {
+            const rollerLink = this.plugin.buildRollerLink(newPath);
+            content = makeTableTemplate(
+              this.plugin.settings.defaultTableDice,
+              3,
+              undefined,
+              rollerLink,
+            );
+          }
+          file = await this.app.vault.create(newPath, content);
+          // Add roller backlinks to existing notes in the linked folder
+          if (srcFolder) {
+            const vault = encodeURIComponent(this.app.vault.getName());
+            const tableEnc = encodeURIComponent(newPath);
+            const marker = `duckmage-roll?vault=${vault}&file=${tableEnc}`;
+            const link = `[🎲 Open in Duckmage Roller](obsidian://${marker})`;
+            const folderFiles = this.app.vault
+              .getMarkdownFiles()
+              .filter((f) => f.parent?.path === srcFolder);
+            for (const noteFile of folderFiles) {
+              const nc = await this.app.vault.read(noteFile);
+              if (nc.includes(marker)) continue;
+              await this.app.vault.modify(
+                noteFile,
+                nc.trimEnd() + (nc.trim() ? "\n\n" : "") + link + "\n",
+              );
+            }
+          }
+        } catch (err) {
+          new Notice(`Could not create ${newPath}: ${err}`);
+          return;
+        }
+      }
+      newInput.value = "";
+      fromFolderInput.value = "";
+      await this.loadList();
+      this.loadTable(file as TFile);
+    };
 
-		newBtn.addEventListener("click", createTable);
-		newInput.addEventListener("keydown", (e: KeyboardEvent) => { if (e.key === "Enter") createTable(); });
+    newBtn.addEventListener("click", createTable);
+    newInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") createTable();
+    });
 
-		// ── Right column: table detail ───────────────────────────────────────
-		this.detailEl = contentEl.createDiv({ cls: "duckmage-rt-detail" });
-		this.detailEl.createDiv({ cls: "duckmage-rt-placeholder", text: "Select a table to view and roll." });
+    // ── Right column: table detail ───────────────────────────────────────
+    this.detailEl = contentEl.createDiv({ cls: "duckmage-rt-detail" });
+    this.detailEl.createDiv({
+      cls: "duckmage-rt-placeholder",
+      text: "Select a table to view and roll.",
+    });
 
-		await this.loadList();
-	}
+    await this.loadList();
 
-	async onClose(): Promise<void> { this.contentEl.empty(); }
+    // ── Live sync: note created in a linked folder → add entry to table ──
+    this.registerEvent(
+      this.app.vault.on("create", async (createdFile) => {
+        if (!(createdFile instanceof TFile) || createdFile.extension !== "md" || createdFile.basename.startsWith("_"))
+          return;
+        const dir = normalizeFolder(createdFile.parent?.path ?? "");
+        const tableFilePath = this.linkedFolderMap.get(dir);
+        if (!tableFilePath) return;
+        const tableFile = this.app.vault.getAbstractFileByPath(tableFilePath);
+        if (!(tableFile instanceof TFile)) return;
+        const content = await this.app.vault.read(tableFile);
+        const table = parseRandomTable(content);
+        if (table.entries.some((e) => e.result === createdFile.basename))
+          return;
+        // Append new row to the markdown table block in the file
+        const newRow = `| ${createdFile.basename} | 1 |`;
+        const updated = content.replace(
+          /(\| Result \| Weight \|\n\|[-| ]+\|\n)([\s\S]*)$/,
+          (_, hdr, body) =>
+            `${hdr}${body.trimEnd() ? body.trimEnd() + "\n" : ""}${newRow}\n`,
+        );
+        await this.app.vault.modify(tableFile, updated);
+        await this.loadList();
+        if (this.activeFile?.path === tableFilePath) await this.renderDetail();
+      }),
+    );
+  }
 
-	// ── Public: open a specific table (called from hex editor / protocol handler) ──
-	async openTable(filePath: string): Promise<void> {
-		const file = this.app.vault.getAbstractFileByPath(filePath);
-		if (file instanceof TFile) {
-			await this.loadList();
-			this.loadTable(file);
-		}
-	}
+  async onClose(): Promise<void> {
+    this.contentEl.empty();
+  }
 
-	// ── Tree building ─────────────────────────────────────────────────────────
+  // ── Public: open a specific table (called from hex editor / protocol handler) ──
+  async openTable(filePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (file instanceof TFile) {
+      await this.loadList();
+      this.loadTable(file);
+    }
+  }
 
-	private buildTree(files: TFile[], prefix: string): TreeNode[] {
-		const root: FolderNode = { type: "folder", name: "", path: "", children: [] };
+  // ── Tree building ─────────────────────────────────────────────────────────
 
-		for (const file of files) {
-			const rel = prefix ? file.path.slice(prefix.length) : file.path;
-			const parts = rel.split("/");
-			let current = root;
-			for (let i = 0; i < parts.length - 1; i++) {
-				const folderName = parts[i];
-				const folderPath = parts.slice(0, i + 1).join("/");
-				let child = current.children.find(
-					(c): c is FolderNode => c.type === "folder" && c.name === folderName,
-				);
-				if (!child) {
-					child = { type: "folder", name: folderName, path: folderPath, children: [] };
-					current.children.push(child);
-				}
-				current = child;
-			}
-			current.children.push({ type: "file", file });
-		}
+  private buildTree(files: TFile[], prefix: string): TreeNode[] {
+    const root: FolderNode = {
+      type: "folder",
+      name: "",
+      path: "",
+      children: [],
+    };
 
-		return root.children;
-	}
+    for (const file of files) {
+      const rel = prefix ? file.path.slice(prefix.length) : file.path;
+      const parts = rel.split("/");
+      let current = root;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const folderName = parts[i];
+        const folderPath = parts.slice(0, i + 1).join("/");
+        let child = current.children.find(
+          (c): c is FolderNode => c.type === "folder" && c.name === folderName,
+        );
+        if (!child) {
+          child = {
+            type: "folder",
+            name: folderName,
+            path: folderPath,
+            children: [],
+          };
+          current.children.push(child);
+        }
+        current = child;
+      }
+      current.children.push({ type: "file", file });
+    }
 
-	// ── List ─────────────────────────────────────────────────────────────────
+    const sortChildren = (nodes: TreeNode[]) => {
+      nodes.sort((a, b) => {
+        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
+        const aName = a.type === "folder" ? a.name : a.file.basename;
+        const bName = b.type === "folder" ? b.name : b.file.basename;
+        return aName.localeCompare(bName);
+      });
+      for (const node of nodes) {
+        if (node.type === "folder") sortChildren(node.children);
+      }
+    };
+    sortChildren(root.children);
 
-	private async loadList(): Promise<void> {
-		if (!this.listEl) return;
-		this.listEl.empty();
+    return root.children;
+  }
 
-		const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-		const prefix = folder ? folder + "/" : "";
+  // ── List ─────────────────────────────────────────────────────────────────
 
-		let files = this.app.vault.getMarkdownFiles()
-			.filter(f => (!prefix || f.path.startsWith(prefix)) && !f.basename.startsWith("_"))
-			.sort((a, b) => a.path.localeCompare(b.path));
+  private async loadList(): Promise<void> {
+    if (!this.listEl) return;
+    this.listEl.empty();
 
-		if (this.filterQuery) {
-			files = files.filter(f => {
-				const rel = prefix ? f.path.slice(prefix.length) : f.path;
-				return rel.toLowerCase().includes(this.filterQuery);
-			});
-		}
+    const folder = normalizeFolder(this.plugin.settings.tablesFolder);
+    const prefix = folder ? folder + "/" : "";
 
-		if (files.length === 0) {
-			this.listEl.createSpan({ text: "No tables found.", cls: "duckmage-rt-empty" });
-			return;
-		}
+    let files = this.app.vault
+      .getMarkdownFiles()
+      .filter(
+        (f) =>
+          (!prefix || f.path.startsWith(prefix)) && !f.basename.startsWith("_"),
+      )
+      .sort((a, b) => a.path.localeCompare(b.path));
 
-		const tree = this.buildTree(files, prefix);
+    if (this.filterQuery) {
+      files = files.filter((f) => {
+        const rel = prefix ? f.path.slice(prefix.length) : f.path;
+        return rel.toLowerCase().includes(this.filterQuery);
+      });
+    }
 
-		// Collapse all folders on first load
-		if (!this.treeInitialized) {
-			this.treeInitialized = true;
-			const collectFolders = (nodes: TreeNode[]) => {
-				for (const n of nodes) if (n.type === "folder") {
-					this.collapsedFolders.add(n.path);
-					collectFolders(n.children);
-				}
-			};
-			collectFolders(tree);
-		}
+    // Rebuild linked folder map
+    this.linkedFolderMap.clear();
+    for (const file of files) {
+      const lf =
+        this.app.metadataCache.getFileCache(file)?.frontmatter?.[
+          "linked-folder"
+        ];
+      if (lf)
+        this.linkedFolderMap.set(normalizeFolder(lf as string), file.path);
+    }
 
-		// When filtering, render flat (expand all) so matches aren't hidden inside collapsed folders
-		this.renderTreeNodes(this.listEl, tree, this.filterQuery !== "");
-	}
+    if (files.length === 0) {
+      this.listEl.createSpan({
+        text: "No tables found.",
+        cls: "duckmage-rt-empty",
+      });
+      return;
+    }
 
-	private renderTreeNodes(container: HTMLElement, nodes: TreeNode[], forceExpanded: boolean): void {
-		for (const node of nodes) {
-			if (node.type === "folder") {
-				const isCollapsed = !forceExpanded && this.collapsedFolders.has(node.path);
+    const tree = this.buildTree(files, prefix);
 
-				const folderEl = container.createDiv({ cls: "duckmage-rt-folder" });
-				const folderHeader = folderEl.createDiv({ cls: "duckmage-rt-folder-header" });
-				const arrow = folderHeader.createSpan({
-					cls: "duckmage-rt-folder-arrow",
-					text: isCollapsed ? "▶" : "▼",
-				});
-				folderHeader.createSpan({ cls: "duckmage-rt-folder-name", text: node.name });
+    // Collapse all folders on first load
+    if (!this.treeInitialized) {
+      this.treeInitialized = true;
+      const collectFolders = (nodes: TreeNode[]) => {
+        for (const n of nodes)
+          if (n.type === "folder") {
+            this.collapsedFolders.add(n.path);
+            collectFolders(n.children);
+          }
+      };
+      collectFolders(tree);
+    }
 
-				// Exclusion badges
-				const inRoll = this.plugin.settings.rollTableExcludedFolders.includes(node.path);
-				const inEnc  = this.plugin.settings.encounterTableExcludedFolders.includes(node.path);
-				if (inRoll || inEnc) {
-					const badges = folderHeader.createSpan({ cls: "duckmage-rt-folder-filter-badges" });
-					if (inRoll) {
-						const b = badges.createSpan({ cls: "duckmage-rt-folder-badge", text: "🎲✗" });
-						b.title = "Excluded from roll picker";
-					}
-					if (inEnc) {
-						const b = badges.createSpan({ cls: "duckmage-rt-folder-badge", text: "⚔✗" });
-						b.title = "Excluded from encounters table";
-					}
-				}
+    // When filtering, render flat (expand all) so matches aren't hidden inside collapsed folders
+    this.renderTreeNodes(this.listEl, tree, this.filterQuery !== "");
+  }
 
-				const childrenEl = folderEl.createDiv({ cls: "duckmage-rt-folder-children" });
-				if (isCollapsed) childrenEl.style.display = "none";
+  private renderTreeNodes(
+    container: HTMLElement,
+    nodes: TreeNode[],
+    forceExpanded: boolean,
+  ): void {
+    for (const node of nodes) {
+      if (node.type === "folder") {
+        const isCollapsed =
+          !forceExpanded && this.collapsedFolders.has(node.path);
 
-				this.renderTreeNodes(childrenEl, node.children, forceExpanded);
+        const folderEl = container.createDiv({ cls: "duckmage-rt-folder" });
+        const folderHeader = folderEl.createDiv({
+          cls: "duckmage-rt-folder-header",
+        });
+        const arrow = folderHeader.createSpan({
+          cls: "duckmage-rt-folder-arrow",
+          text: isCollapsed ? "▶" : "▼",
+        });
+        folderHeader.createSpan({
+          cls: "duckmage-rt-folder-name",
+          text: node.name,
+        });
 
-				folderHeader.addEventListener("contextmenu", (e: MouseEvent) => {
-					e.preventDefault();
-					this.showFolderContextMenu(e, node.path);
-				});
+        // Exclusion badges
+        const inRoll = this.plugin.settings.rollTableExcludedFolders.includes(
+          node.path,
+        );
+        const inEnc =
+          this.plugin.settings.encounterTableExcludedFolders.includes(
+            node.path,
+          );
+        if (inRoll || inEnc) {
+          const badges = folderHeader.createSpan({
+            cls: "duckmage-rt-folder-filter-badges",
+          });
+          if (inRoll) {
+            const b = badges.createSpan({
+              cls: "duckmage-rt-folder-badge",
+              text: "🎲✗",
+            });
+            b.title = "Excluded from roll picker";
+          }
+          if (inEnc) {
+            const b = badges.createSpan({
+              cls: "duckmage-rt-folder-badge",
+              text: "⚔✗",
+            });
+            b.title = "Excluded from encounters table";
+          }
+        }
 
-				folderHeader.addEventListener("click", () => {
-					const nowCollapsed = !this.collapsedFolders.has(node.path);
-					if (nowCollapsed) {
-						this.collapsedFolders.add(node.path);
-						childrenEl.style.display = "none";
-						arrow.textContent = "▶";
-					} else {
-						this.collapsedFolders.delete(node.path);
-						childrenEl.style.display = "";
-						arrow.textContent = "▼";
-					}
-				});
-			} else {
-				const row = container.createDiv({ cls: "duckmage-rt-list-item" });
-				if (node.file === this.activeFile) row.addClass("is-active");
-				row.setText(node.file.basename);
-				row.title = node.file.path;
-				row.addEventListener("click", () => this.loadTable(node.file));
-			}
-		}
-	}
+        const childrenEl = folderEl.createDiv({
+          cls: "duckmage-rt-folder-children",
+        });
+        if (isCollapsed) childrenEl.style.display = "none";
 
-	private showFolderContextMenu(e: MouseEvent, folderPath: string): void {
-		const menu = new Menu();
+        this.renderTreeNodes(childrenEl, node.children, forceExpanded);
 
-		const rollExcluded = this.plugin.settings.rollTableExcludedFolders.includes(folderPath);
-		menu.addItem(item => {
-			item.setTitle(rollExcluded ? "Include in roll picker" : "Exclude from roll picker");
-			item.setIcon("dice");
-			item.onClick(async () => {
-				const arr = this.plugin.settings.rollTableExcludedFolders;
-				if (rollExcluded) {
-					this.plugin.settings.rollTableExcludedFolders = arr.filter(p => p !== folderPath);
-				} else {
-					arr.push(folderPath);
-				}
-				await this.plugin.saveSettings();
-				new Notice(`Roll picker: "${folderPath}" ${rollExcluded ? "included" : "excluded"}.`);
-				await this.loadList();
-			});
-		});
+        folderHeader.addEventListener("contextmenu", (e: MouseEvent) => {
+          e.preventDefault();
+          this.showFolderContextMenu(e, node.path);
+        });
 
-		const encExcluded = this.plugin.settings.encounterTableExcludedFolders.includes(folderPath);
-		menu.addItem(item => {
-			item.setTitle(encExcluded ? "Include in encounters table" : "Exclude from encounters table");
-			item.setIcon("sword");
-			item.onClick(async () => {
-				const arr = this.plugin.settings.encounterTableExcludedFolders;
-				if (encExcluded) {
-					this.plugin.settings.encounterTableExcludedFolders = arr.filter(p => p !== folderPath);
-				} else {
-					arr.push(folderPath);
-				}
-				await this.plugin.saveSettings();
-				new Notice(`Encounters table: "${folderPath}" ${encExcluded ? "included" : "excluded"}.`);
-				await this.loadList();
-			});
-		});
+        folderHeader.addEventListener("click", () => {
+          const nowCollapsed = !this.collapsedFolders.has(node.path);
+          if (nowCollapsed) {
+            this.collapsedFolders.add(node.path);
+            childrenEl.style.display = "none";
+            arrow.textContent = "▶";
+          } else {
+            this.collapsedFolders.delete(node.path);
+            childrenEl.style.display = "";
+            arrow.textContent = "▼";
+          }
+        });
+      } else {
+        const row = container.createDiv({ cls: "duckmage-rt-list-item" });
+        if (node.file === this.activeFile) row.addClass("is-active");
+        row.setText(node.file.basename);
+        row.title = node.file.path;
+        row.addEventListener("click", () => this.loadTable(node.file));
+      }
+    }
+  }
 
-		menu.showAtMouseEvent(e);
-	}
+  private showFolderContextMenu(e: MouseEvent, folderPath: string): void {
+    const menu = new Menu();
 
-	// ── Detail ────────────────────────────────────────────────────────────────
+    const rollExcluded =
+      this.plugin.settings.rollTableExcludedFolders.includes(folderPath);
+    menu.addItem((item) => {
+      item.setTitle(
+        rollExcluded ? "Include in roll picker" : "Exclude from roll picker",
+      );
+      item.setIcon("dice");
+      item.onClick(async () => {
+        const arr = this.plugin.settings.rollTableExcludedFolders;
+        if (rollExcluded) {
+          this.plugin.settings.rollTableExcludedFolders = arr.filter(
+            (p) => p !== folderPath,
+          );
+        } else {
+          arr.push(folderPath);
+        }
+        await this.plugin.saveSettings();
+        new Notice(
+          `Roll picker: "${folderPath}" ${rollExcluded ? "included" : "excluded"}.`,
+        );
+        await this.loadList();
+      });
+    });
 
-	private async loadTable(file: TFile): Promise<void> {
-		this.activeFile = file;
-		this.rollHistory = [];
-		this.listEl?.querySelectorAll<HTMLElement>(".duckmage-rt-list-item").forEach(el => {
-			el.toggleClass("is-active", el.title === file.path);
-		});
-		await this.renderDetail();
-	}
+    const encExcluded =
+      this.plugin.settings.encounterTableExcludedFolders.includes(folderPath);
+    menu.addItem((item) => {
+      item.setTitle(
+        encExcluded
+          ? "Include in encounters table"
+          : "Exclude from encounters table",
+      );
+      item.setIcon("sword");
+      item.onClick(async () => {
+        const arr = this.plugin.settings.encounterTableExcludedFolders;
+        if (encExcluded) {
+          this.plugin.settings.encounterTableExcludedFolders = arr.filter(
+            (p) => p !== folderPath,
+          );
+        } else {
+          arr.push(folderPath);
+        }
+        await this.plugin.saveSettings();
+        new Notice(
+          `Encounters table: "${folderPath}" ${encExcluded ? "included" : "excluded"}.`,
+        );
+        await this.loadList();
+      });
+    });
 
-	private async renderDetail(): Promise<void> {
-		if (!this.detailEl || !this.activeFile) return;
-		const file = this.activeFile;
-		this.detailEl.empty();
+    menu.showAtMouseEvent(e);
+  }
 
-		const content = await this.app.vault.read(file);
-		const table = parseRandomTable(content);
-		const ranges = table.dice > 0 ? getDieRanges(table) : null;
+  // ── Detail ────────────────────────────────────────────────────────────────
 
-		// ── Header ─────────────────────────────────────────────────────────
-		const header = this.detailEl.createDiv({ cls: "duckmage-rt-detail-header" });
-		header.createEl("h3", { text: file.basename, cls: "duckmage-rt-detail-title" });
+  private async loadTable(file: TFile): Promise<void> {
+    this.activeFile = file;
+    this.rollHistory = [];
+    this.listEl
+      ?.querySelectorAll<HTMLElement>(".duckmage-rt-list-item")
+      .forEach((el) => {
+        el.toggleClass("is-active", el.title === file.path);
+      });
+    await this.renderDetail();
+  }
 
-		const editLink = header.createEl("a", { text: "Edit", cls: "duckmage-rt-edit-link" });
-		editLink.addEventListener("click", () => {
-			new RandomTableEditorModal(this.app, file, () => this.renderDetail()).open();
-		});
+  private renderDetailSeq = 0;
+  private async renderDetail(): Promise<void> {
+    if (!this.detailEl || !this.activeFile) return;
+    const file = this.activeFile;
+    const seq = ++this.renderDetailSeq;
 
-		const dieSelect = header.createEl("select", { cls: "duckmage-rt-die-select" });
-		for (const opt of DIE_OPTIONS) {
-			const o = dieSelect.createEl("option", { value: String(opt.value), text: opt.label });
-			if (opt.value === table.dice) o.selected = true;
-		}
-		dieSelect.addEventListener("change", async () => {
-			const newDice = parseInt(dieSelect.value, 10);
-			const updated = setDiceInFrontmatter(await this.app.vault.read(file), newDice);
-			await this.app.vault.modify(file, updated);
-			await this.renderDetail();
-		});
+    const content = await this.app.vault.read(file);
+    if (seq !== this.renderDetailSeq) return; // superseded by a newer call
 
-		// ── Odds table ─────────────────────────────────────────────────────
-		const tableSection = this.detailEl.createDiv({ cls: "duckmage-rt-table-section" });
-		const tableSectionHeader = tableSection.createDiv({ cls: "duckmage-rt-table-section-header" });
-		const collapseBtn = tableSectionHeader.createEl("button", { text: "▼", cls: "duckmage-rt-collapse-btn" });
-		collapseBtn.title = "Collapse table";
-		const tableBody = tableSection.createDiv({ cls: "duckmage-rt-table-body" });
+    this.detailEl.empty();
+    const table = parseRandomTable(content);
+    const ranges = table.dice > 0 ? getDieRanges(table) : null;
 
-		collapseBtn.addEventListener("click", () => {
-			const collapsed = tableBody.style.display === "none";
-			tableBody.style.display = collapsed ? "" : "none";
-			collapseBtn.setText(collapsed ? "▼" : "▶");
-			collapseBtn.title = collapsed ? "Collapse table" : "Expand table";
-		});
+    // ── Header ─────────────────────────────────────────────────────────
+    const header = this.detailEl.createDiv({
+      cls: "duckmage-rt-detail-header",
+    });
+    header.createEl("h3", {
+      text: file.basename,
+      cls: "duckmage-rt-detail-title",
+    });
 
-		if (table.entries.length === 0) {
-			tableBody.createDiv({ cls: "duckmage-rt-empty", text: "No entries found. Check the table format." });
-		} else {
-			const tableEl = tableBody.createEl("table", { cls: "duckmage-random-table" });
-			const thead = tableEl.createEl("thead");
-			const headerRow = thead.createEl("tr");
-			if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
-			headerRow.createEl("th", { text: "Result" });
-			headerRow.createEl("th", { text: "Odds" });
-			headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
+    const editLink = header.createEl("a", {
+      text: "Edit",
+      cls: "duckmage-rt-edit-link",
+    });
+    editLink.addEventListener("click", () => {
+      new RandomTableEditorModal(this.app, this.plugin, file, () =>
+        this.renderDetail(),
+      ).open();
+    });
 
-			const tbody = tableEl.createEl("tbody");
-			table.entries.forEach((entry, i) => {
-				const tr = tbody.createEl("tr");
-				tr.dataset.index = String(i);
-				if (ranges) tr.createEl("td", { text: ranges[i], cls: "duckmage-rt-range-cell" });
-				tr.createEl("td", { text: entry.result });
-				const pct = `${Math.round((entry.weight / table.entries.reduce((s, e) => s + e.weight, 0)) * 100)}%`;
-				tr.createEl("td", { text: pct, cls: "duckmage-rt-odds-cell" });
-				const copyTd = tr.createEl("td", { cls: "duckmage-rt-entry-copy-cell" });
-				const copyBtn = copyTd.createEl("button", { text: "⎘", cls: "duckmage-rt-entry-copy-btn" });
-				copyBtn.title = "Copy entry";
-				copyBtn.addEventListener("click", (e) => {
-					e.stopPropagation();
-					navigator.clipboard.writeText(entry.result);
-					copyBtn.setText("✓");
-					setTimeout(() => copyBtn.setText("⎘"), 1200);
-				});
-			});
-		}
+    const dieSelect = header.createEl("select", {
+      cls: "duckmage-rt-die-select",
+    });
+    for (const opt of DIE_OPTIONS) {
+      const o = dieSelect.createEl("option", {
+        value: String(opt.value),
+        text: opt.label,
+      });
+      if (opt.value === table.dice) o.selected = true;
+    }
+    dieSelect.addEventListener("change", async () => {
+      const newDice = parseInt(dieSelect.value, 10);
+      const updated = setDiceInFrontmatter(
+        await this.app.vault.read(file),
+        newDice,
+      );
+      await this.app.vault.modify(file, updated);
+      await this.renderDetail();
+    });
 
-		// ── Roll controls ──────────────────────────────────────────────────
-		const rollArea = this.detailEl.createDiv({ cls: "duckmage-rt-roll-area" });
+    // ── Odds table ─────────────────────────────────────────────────────
+    const tableSection = this.detailEl.createDiv({
+      cls: "duckmage-rt-table-section",
+    });
+    const tableSectionHeader = tableSection.createDiv({
+      cls: "duckmage-rt-table-section-header",
+    });
+    const collapseBtn = tableSectionHeader.createEl("button", {
+      text: "▼",
+      cls: "duckmage-rt-collapse-btn",
+    });
+    collapseBtn.title = "Collapse table";
+    const tableBody = tableSection.createDiv({ cls: "duckmage-rt-table-body" });
 
-		const copyLinkBtn = rollArea.createEl("button", { text: "🎲 Copy link", cls: "duckmage-rt-copy-link-btn" });
-		copyLinkBtn.title = "Copy a markdown link to this table";
-		copyLinkBtn.addEventListener("click", () => {
-			const vault = encodeURIComponent(this.app.vault.getName());
-			const path  = encodeURIComponent(file.path);
-			const link  = `[🎲 ${file.basename}](obsidian://duckmage-roll?vault=${vault}&file=${path})`;
-			navigator.clipboard.writeText(link).then(() => {
-				copyLinkBtn.setText("Copied!");
-				setTimeout(() => copyLinkBtn.setText("🎲 Copy link"), 1500);
-			});
-		});
+    collapseBtn.addEventListener("click", () => {
+      const collapsed = tableBody.style.display === "none";
+      tableBody.style.display = collapsed ? "" : "none";
+      collapseBtn.setText(collapsed ? "▼" : "▶");
+      collapseBtn.title = collapsed ? "Collapse table" : "Expand table";
+    });
 
-		const rollBtn = rollArea.createEl("button", { text: "Roll", cls: "duckmage-rt-roll-btn mod-cta" });
+    if (table.entries.length === 0) {
+      tableBody.createDiv({
+        cls: "duckmage-rt-empty",
+        text: "No entries found. Check the table format.",
+      });
+    } else {
+      const tableEl = tableBody.createEl("table", {
+        cls: "duckmage-random-table",
+      });
+      const thead = tableEl.createEl("thead");
+      const headerRow = thead.createEl("tr");
+      if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
+      headerRow.createEl("th", { text: "Result" });
+      headerRow.createEl("th", { text: "Odds" });
+      headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
 
-		const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });
-		resultBox.style.display = "none";
-		const resultTextarea = resultBox.createEl("textarea", { cls: "duckmage-roll-result-textarea" });
-		const resultBtns = resultBox.createDiv({ cls: "duckmage-roll-result-btns" });
-		const copyBtn = resultBtns.createEl("button", { text: "Copy", cls: "duckmage-roll-copy-btn" });
-		copyBtn.addEventListener("click", () => {
-			navigator.clipboard.writeText(resultTextarea.value);
-			copyBtn.setText("Copied!");
-			setTimeout(() => copyBtn.setText("Copy"), 1500);
-		});
+      const tbody = tableEl.createEl("tbody");
+      table.entries.forEach((entry, i) => {
+        const tr = tbody.createEl("tr");
+        tr.dataset.index = String(i);
+        if (ranges)
+          tr.createEl("td", { text: ranges[i], cls: "duckmage-rt-range-cell" });
 
-		const historyEl = this.detailEl.createDiv({ cls: "duckmage-rt-history" });
-		this.renderHistory(historyEl);
+        // Result cell — clickable link if table has a linked folder
+        const resultTd = tr.createEl("td");
+        if (table.linkedFolder) {
+          const link = resultTd.createEl("a", {
+            text: entry.result,
+            cls: "duckmage-rt-entry-link",
+          });
+          link.addEventListener("click", (e) => {
+            e.preventDefault();
+            const noteFile = this.app.vault.getAbstractFileByPath(
+              `${table.linkedFolder}/${entry.result}.md`,
+            );
+            if (noteFile instanceof TFile)
+              this.app.workspace.getLeaf(false).openFile(noteFile);
+          });
+        } else {
+          resultTd.setText(entry.result);
+        }
 
-		rollBtn.addEventListener("click", () => {
-			this.doRoll(table, resultBox, resultTextarea, historyEl);
-		});
-	}
+        const pct = `${Math.round((entry.weight / table.entries.reduce((s, e) => s + e.weight, 0)) * 100)}%`;
+        tr.createEl("td", { text: pct, cls: "duckmage-rt-odds-cell" });
+        const copyTd = tr.createEl("td", {
+          cls: "duckmage-rt-entry-copy-cell",
+        });
+        const copyBtn = copyTd.createEl("button", {
+          text: "⎘",
+          cls: "duckmage-rt-entry-copy-btn",
+        });
+        copyBtn.title = "Copy entry";
+        copyBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          navigator.clipboard.writeText(entry.result);
+          copyBtn.setText("✓");
+          setTimeout(() => copyBtn.setText("⎘"), 1200);
+        });
+      });
+    }
 
-	private doRoll(
-		table: RandomTable,
-		resultBox: HTMLElement,
-		resultTextarea: HTMLTextAreaElement,
-		historyEl: HTMLElement,
-	): void {
-		const entry = rollOnTable(table);
-		if (!entry) return;
+    // ── Roll controls ──────────────────────────────────────────────────
+    const rollArea = this.detailEl.createDiv({ cls: "duckmage-rt-roll-area" });
 
-		this.detailEl?.querySelectorAll(".duckmage-random-table tbody tr").forEach(tr => {
-			tr.toggleClass("is-rolled", tr.textContent?.includes(entry.result) ?? false);
-		});
+    const copyLinkBtn = rollArea.createEl("button", {
+      text: "🎲 Copy link",
+      cls: "duckmage-rt-copy-link-btn",
+    });
+    copyLinkBtn.title = "Copy a markdown link to this table";
+    copyLinkBtn.addEventListener("click", () => {
+      const vault = encodeURIComponent(this.app.vault.getName());
+      const path = encodeURIComponent(file.path);
+      const link = `[🎲 ${file.basename}](obsidian://duckmage-roll?vault=${vault}&file=${path})`;
+      navigator.clipboard.writeText(link).then(() => {
+        copyLinkBtn.setText("Copied!");
+        setTimeout(() => copyLinkBtn.setText("🎲 Copy link"), 1500);
+      });
+    });
 
-		resultBox.style.display = "";
-		resultTextarea.value = entry.result;
-		resultTextarea.focus();
+    const rollBtn = rollArea.createEl("button", {
+      text: "Roll",
+      cls: "duckmage-rt-roll-btn mod-cta",
+    });
 
-		this.rollHistory.unshift(entry.result);
-		if (this.rollHistory.length > 5) this.rollHistory.pop();
-		this.renderHistory(historyEl);
-	}
+    const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });
+    resultBox.style.display = "none";
+    const resultTextarea = resultBox.createEl("textarea", {
+      cls: "duckmage-roll-result-textarea",
+    });
+    const resultBtns = resultBox.createDiv({
+      cls: "duckmage-roll-result-btns",
+    });
+    const copyBtn = resultBtns.createEl("button", {
+      text: "Copy",
+      cls: "duckmage-roll-copy-btn",
+    });
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(resultTextarea.value);
+      copyBtn.setText("Copied!");
+      setTimeout(() => copyBtn.setText("Copy"), 1500);
+    });
+    // "Open note" button — shown only when the table has a linked folder
+    const openNoteBtn = resultBtns.createEl("button", {
+      text: "Open note",
+      cls: "duckmage-rt-open-note-btn",
+    });
+    openNoteBtn.style.display = "none";
 
-	private renderHistory(historyEl: HTMLElement): void {
-		historyEl.empty();
-		if (this.rollHistory.length === 0) return;
-		historyEl.createEl("p", { text: "Recent rolls:", cls: "duckmage-rt-history-label" });
-		const list = historyEl.createEl("ul", { cls: "duckmage-rt-history-list" });
-		for (const result of this.rollHistory) {
-			const li = list.createEl("li", { cls: "duckmage-rt-history-item" });
-			li.createSpan({ text: result });
-			const copyIcon = li.createEl("button", { text: "⎘", cls: "duckmage-rt-history-copy" });
-			copyIcon.title = "Copy";
-			copyIcon.addEventListener("click", () => navigator.clipboard.writeText(result));
-		}
-	}
+    const historyEl = this.detailEl.createDiv({ cls: "duckmage-rt-history" });
+    this.renderHistory(historyEl);
+
+    rollBtn.addEventListener("click", () => {
+      this.doRoll(table, resultBox, resultTextarea, historyEl, openNoteBtn);
+    });
+  }
+
+  private doRoll(
+    table: RandomTable,
+    resultBox: HTMLElement,
+    resultTextarea: HTMLTextAreaElement,
+    historyEl: HTMLElement,
+    openNoteBtn?: HTMLButtonElement,
+  ): void {
+    const entry = rollOnTable(table);
+    if (!entry) return;
+
+    this.detailEl
+      ?.querySelectorAll(".duckmage-random-table tbody tr")
+      .forEach((tr) => {
+        tr.toggleClass(
+          "is-rolled",
+          tr.textContent?.includes(entry.result) ?? false,
+        );
+      });
+
+    resultBox.style.display = "";
+    resultTextarea.value = entry.result;
+    resultTextarea.focus();
+
+    // Update "Open note" button
+    if (openNoteBtn) {
+      if (table.linkedFolder) {
+        openNoteBtn.style.display = "";
+        openNoteBtn.onclick = () => {
+          const noteFile = this.app.vault.getAbstractFileByPath(
+            `${table.linkedFolder}/${entry.result}.md`,
+          );
+          if (noteFile instanceof TFile)
+            this.app.workspace.getLeaf(false).openFile(noteFile);
+        };
+      } else {
+        openNoteBtn.style.display = "none";
+      }
+    }
+
+    this.rollHistory.unshift(entry.result);
+    if (this.rollHistory.length > 5) this.rollHistory.pop();
+    this.renderHistory(historyEl);
+  }
+
+  private renderHistory(historyEl: HTMLElement): void {
+    historyEl.empty();
+    if (this.rollHistory.length === 0) return;
+    historyEl.createEl("p", {
+      text: "Recent rolls:",
+      cls: "duckmage-rt-history-label",
+    });
+    const list = historyEl.createEl("ul", { cls: "duckmage-rt-history-list" });
+    for (const result of this.rollHistory) {
+      const li = list.createEl("li", { cls: "duckmage-rt-history-item" });
+      li.createSpan({ text: result });
+      const copyIcon = li.createEl("button", {
+        text: "⎘",
+        cls: "duckmage-rt-history-copy",
+      });
+      copyIcon.title = "Copy";
+      copyIcon.addEventListener("click", () =>
+        navigator.clipboard.writeText(result),
+      );
+    }
+  }
 }

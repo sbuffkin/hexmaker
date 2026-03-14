@@ -112,15 +112,18 @@ export class HexEditorModal extends Modal {
     const paletteEntry = directTerrain
       ? (this.plugin.settings.terrainPalette ?? []).find(p => p.name === directTerrain)
       : undefined;
-    if (paletteEntry) {
+    const iconToShow = directIcon ?? paletteEntry?.icon;
+    if (paletteEntry || iconToShow) {
       const preview = terrainHeader.createSpan({ cls: "duckmage-terrain-header-preview" });
       const swatch = preview.createSpan({ cls: "duckmage-terrain-header-swatch" });
-      swatch.style.backgroundColor = paletteEntry.color;
-      if (paletteEntry.icon) {
+      if (paletteEntry) swatch.style.backgroundColor = paletteEntry.color;
+      if (iconToShow) {
         const img = swatch.createEl("img");
-        img.src = getIconUrl(this.plugin, paletteEntry.icon);
+        img.src = getIconUrl(this.plugin, iconToShow);
       }
-      preview.createSpan({ text: paletteEntry.name, cls: "duckmage-terrain-header-name" });
+      if (paletteEntry) {
+        preview.createSpan({ text: paletteEntry.name, cls: "duckmage-terrain-header-name" });
+      }
     }
     this.renderTerrainSection(terrainBody, path, directTerrain, directIcon);
 

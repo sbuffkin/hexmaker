@@ -6,6 +6,7 @@ export interface RandomTableEntry {
 export interface RandomTable {
 	dice: number; // 0 = no die mapping, show % only
 	entries: RandomTableEntry[];
+	linkedFolder?: string;
 }
 
 /** Parse a random-table markdown file into a RandomTable. */
@@ -13,9 +14,12 @@ export function parseRandomTable(content: string): RandomTable {
 	// Extract dice from YAML frontmatter
 	let dice = 0;
 	const fmMatch = /^---\s*\n([\s\S]*?)\n---/.exec(content);
+	let linkedFolder: string | undefined;
 	if (fmMatch) {
 		const diceMatch = /^dice:\s*(\d+)\s*$/m.exec(fmMatch[1]);
 		if (diceMatch) dice = parseInt(diceMatch[1], 10);
+		const lfMatch = /^linked-folder:\s*(.+)$/m.exec(fmMatch[1]);
+		if (lfMatch) linkedFolder = lfMatch[1].trim();
 	}
 
 	// Find first markdown table — lines that start with |
@@ -50,7 +54,7 @@ export function parseRandomTable(content: string): RandomTable {
 		if (result) entries.push({ result, weight });
 	}
 
-	return { dice, entries };
+	return { dice, entries, linkedFolder };
 }
 
 /** Weighted random selection. Returns a random entry. */

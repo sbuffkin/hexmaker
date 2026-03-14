@@ -1,6 +1,8 @@
 import { App, Modal, TFile } from "obsidian";
 import { parseRandomTable } from "./randomTable";
 import type { RandomTableEntry } from "./randomTable";
+import type DuckmagePlugin from "./DuckmagePlugin";
+import { normalizeFolder } from "./utils";
 
 /**
  * Modal editor for a random table file.
@@ -14,6 +16,7 @@ export class RandomTableEditorModal extends Modal {
 
 	constructor(
 		app: App,
+		private plugin: DuckmagePlugin,
 		private file: TFile,
 		private onSaved?: () => void,
 	) {
@@ -32,6 +35,56 @@ export class RandomTableEditorModal extends Modal {
 
 		// Working copy so edits don't mutate until Save
 		const entries: RandomTableEntry[] = table.entries.map(e => ({ ...e }));
+
+		// If linked to a folder, silently drop entries whose note no longer exists
+		if (table.linkedFolder) {
+			const lf = normalizeFolder(table.linkedFolder);
+			for (let i = entries.length - 1; i >= 0; i--) {
+				if (!this.app.vault.getAbstractFileByPath(`${lf}/${entries[i].result}.md`)) {
+					entries.splice(i, 1);
+				}
+			}
+		}
+
+		// Track each entry's original result by object identity (survives drag-reorder)
+		const entryOriginalResult = new WeakMap<RandomTableEntry, string>();
+		entries.forEach(e => entryOriginalResult.set(e, e.result));
+
+		// Snapshot of original results so deleted entries can be retired on save
+		const originalResults = new Set(entries.map(e => e.result));
+
+		// ── Name (rename) ────────────────────────────────────────────────
+		const nameRow = contentEl.createDiv({ cls: "duckmage-table-editor-name-row" });
+		nameRow.createEl("label", { text: "Name", cls: "duckmage-table-editor-name-label" });
+		const nameInput = nameRow.createEl("input", { type: "text", cls: "duckmage-table-editor-name-input" });
+		nameInput.value = this.file.basename;
+
+		const doRename = async () => {
+			const newName = nameInput.value.trim();
+			if (!newName || newName === this.file.basename) return;
+			const dir = this.file.path.slice(0, this.file.path.length - this.file.name.length);
+			const newPath = dir + newName + ".md";
+			try {
+				await this.app.fileManager.renameFile(this.file, newPath);
+				this.titleEl.setText(`Edit: ${this.file.basename}`);
+				this.onSaved?.();
+			} catch (e) {
+				nameInput.value = this.file.basename; // revert on error
+			}
+		};
+
+		nameInput.addEventListener("blur", doRename);
+		nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+			if (e.key === "Enter") { e.preventDefault(); nameInput.blur(); }
+			if (e.key === "Escape") { nameInput.value = this.file.basename; nameInput.blur(); }
+		});
+
+		// ── Linked folder ─────────────────────────────────────────────────
+		const folderRow = contentEl.createDiv({ cls: "duckmage-table-editor-folder-row" });
+		folderRow.createEl("label", { text: "Linked folder", cls: "duckmage-table-editor-folder-label" });
+		const folderInput = folderRow.createEl("input", { type: "text", cls: "duckmage-table-editor-folder-input" });
+		folderInput.value = table.linkedFolder ?? "";
+		folderInput.placeholder = "world/towns (leave blank for none)";
 
 		// ── Filter settings ───────────────────────────────────────────────
 		const filterSection = contentEl.createDiv({ cls: "duckmage-table-editor-filter-section" });
@@ -156,6 +209,13 @@ export class RandomTableEditorModal extends Modal {
 				rollFilterCb.checked ? false : undefined);
 			updatedFm = this.setFrontmatterBool(updatedFm, "encounter-filter",
 				encFilterCb.checked ? false : undefined);
+			const linkedFolder = normalizeFolder(folderInput.value.trim());
+			updatedFm = this.setFrontmatterString(updatedFm, "linked-folder", linkedFolder || undefined);
+			if (linkedFolder) {
+				await this.renameUpdatedEntries(entries, entryOriginalResult, linkedFolder);
+				await this.retireDeletedEntries(originalResults, entries, linkedFolder);
+				await this.syncLinkedFolder(entries, linkedFolder);
+			}
 			const newContent = this.buildContent(updatedFm, preamble, entries);
 			try {
 				await this.app.vault.modify(this.file, newContent);
@@ -175,6 +235,81 @@ export class RandomTableEditorModal extends Modal {
 		footer.createEl("button", { text: "Close", cls: "mod-cta" }).addEventListener("click", () => this.close());
 
 		this.makeDraggable();
+	}
+
+	/** Sync entries ↔ notes in linkedFolder. Mutates entries in-place. */
+	private async syncLinkedFolder(entries: RandomTableEntry[], folderPath: string): Promise<void> {
+		// Ensure folder exists
+		if (!this.app.vault.getAbstractFileByPath(folderPath)) {
+			try { await this.app.vault.createFolder(folderPath); } catch { /* may already exist */ }
+		}
+
+		// Notes currently in the folder
+		const existing = this.app.vault.getMarkdownFiles()
+			.filter(f => f.parent?.path === folderPath && !f.basename.startsWith("_"));
+		const existingNames = new Set(existing.map(f => f.basename));
+
+		// For each entry: create note if missing, ensure backlink
+		for (const entry of entries) {
+			const notePath = `${folderPath}/${entry.result}.md`;
+			let noteFile = this.app.vault.getAbstractFileByPath(notePath) as TFile | null;
+			if (!noteFile) {
+				try {
+					noteFile = await this.app.vault.create(notePath, `# ${entry.result}\n`) as TFile;
+				} catch { continue; }
+			}
+			await this.ensureTableBacklink(noteFile as TFile);
+		}
+
+		// For each note without a matching entry: add entry + backlink
+		const entryNames = new Set(entries.map(e => e.result));
+		for (const noteFile of existing) {
+			if (!entryNames.has(noteFile.basename)) {
+				entries.push({ result: noteFile.basename, weight: 1 });
+				await this.ensureTableBacklink(noteFile);
+			}
+		}
+	}
+
+	/** Rename notes whose entry result text was changed, instead of creating a new note. */
+	private async renameUpdatedEntries(entries: RandomTableEntry[], originalResults: WeakMap<RandomTableEntry, string>, folderPath: string): Promise<void> {
+		for (const entry of entries) {
+			const orig = originalResults.get(entry);
+			if (!orig || orig === entry.result) continue;
+			const oldPath = `${folderPath}/${orig}.md`;
+			const newPath = `${folderPath}/${entry.result}.md`;
+			const noteFile = this.app.vault.getAbstractFileByPath(oldPath);
+			if (!(noteFile instanceof TFile)) continue;
+			if (this.app.vault.getAbstractFileByPath(newPath)) continue; // target already exists
+			try { await this.app.fileManager.renameFile(noteFile, newPath); } catch { /* best-effort */ }
+		}
+	}
+
+	/** Prepend "_" to notes whose entries were deleted, so they are excluded from future syncs. */
+	private async retireDeletedEntries(originalResults: Set<string>, currentEntries: RandomTableEntry[], folderPath: string): Promise<void> {
+		const currentNames = new Set(currentEntries.map(e => e.result));
+		for (const result of originalResults) {
+			if (currentNames.has(result)) continue;
+			const notePath = `${folderPath}/${result}.md`;
+			const noteFile = this.app.vault.getAbstractFileByPath(notePath);
+			if (!(noteFile instanceof TFile)) continue;
+			const newPath = `${folderPath}/_${result}.md`;
+			try { await this.app.fileManager.renameFile(noteFile, newPath); } catch { /* already renamed or missing */ }
+		}
+	}
+
+	/** Append the roller backlink for this table file to a note, if not already present. */
+	private async ensureTableBacklink(noteFile: TFile): Promise<void> {
+		const vault = encodeURIComponent(this.app.vault.getName());
+		const tableEnc = encodeURIComponent(this.file.path);
+		const marker = `duckmage-roll?vault=${vault}&file=${tableEnc}`;
+		const content = await this.app.vault.read(noteFile);
+		if (content.includes(marker)) return;
+		const link = `[🎲 Open in Duckmage Roller](obsidian://${marker})`;
+		await this.app.vault.modify(
+			noteFile,
+			content.trimEnd() + (content.trim() ? "\n\n" : "") + link + "\n",
+		);
 	}
 
 	private makeDraggable(): void {
@@ -248,6 +383,19 @@ export class RandomTableEditorModal extends Modal {
 			return frontmatter.replace(lineRegex, line);
 		}
 		// Insert before closing ---
+		return frontmatter.replace(/\n---$/, `\n${line}\n---`);
+	}
+
+	/** Set, remove, or update a string key in a frontmatter block string. */
+	private setFrontmatterString(frontmatter: string, key: string, value: string | undefined): string {
+		const lineRegex = new RegExp(`^${key}:.*$`, "m");
+		const hasKey = lineRegex.test(frontmatter);
+		if (!value) {
+			if (!hasKey) return frontmatter;
+			return frontmatter.replace(new RegExp(`^${key}:.*\\n?`, "m"), "");
+		}
+		const line = `${key}: ${value}`;
+		if (hasKey) return frontmatter.replace(lineRegex, line);
 		return frontmatter.replace(/\n---$/, `\n${line}\n---`);
 	}
 

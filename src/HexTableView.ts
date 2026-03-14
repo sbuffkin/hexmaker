@@ -60,38 +60,43 @@ class TerrainFilterModal extends Modal {
 			lbl.toggleClass("duckmage-terrain-filter-excluded", exc);
 		};
 
-		for (const entry of this.palette) {
+		const addRow = (name: string, label: string, color?: string) => {
 			const lbl = list.createEl("label", { cls: "duckmage-terrain-filter-row" });
 			const cb = lbl.createEl("input") as HTMLInputElement;
 			cb.type = "checkbox";
-			applyRowState(lbl, cb, entry.name);
+			applyRowState(lbl, cb, name);
 
 			const swatch = lbl.createSpan({ cls: "duckmage-hex-table-swatch" });
-			swatch.style.backgroundColor = entry.color;
-			lbl.createSpan({ text: entry.name });
+			if (color) swatch.style.backgroundColor = color;
+			lbl.createSpan({ text: label });
 
 			cb.addEventListener("change", () => {
 				if (cb.checked) {
-					this.selected.add(entry.name);
-					this.excluded.delete(entry.name);
+					this.selected.add(name);
+					this.excluded.delete(name);
 				} else {
-					this.selected.delete(entry.name);
+					this.selected.delete(name);
 				}
-				applyRowState(lbl, cb, entry.name);
+				applyRowState(lbl, cb, name);
 				this.onChange(new Set(this.selected), new Set(this.excluded));
 			});
 
 			lbl.addEventListener("contextmenu", (e) => {
 				e.preventDefault();
-				if (this.excluded.has(entry.name)) {
-					this.excluded.delete(entry.name);
+				if (this.excluded.has(name)) {
+					this.excluded.delete(name);
 				} else {
-					this.excluded.add(entry.name);
-					this.selected.delete(entry.name);
+					this.excluded.add(name);
+					this.selected.delete(name);
 				}
-				applyRowState(lbl, cb, entry.name);
+				applyRowState(lbl, cb, name);
 				this.onChange(new Set(this.selected), new Set(this.excluded));
 			});
+		};
+
+		addRow("", "No terrain");
+		for (const entry of this.palette) {
+			addRow(entry.name, entry.name, entry.color);
 		}
 
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });

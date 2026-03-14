@@ -91,7 +91,7 @@ export class RandomTableModal extends Modal {
 		headerRow.createEl("strong", { text: file.basename });
 		const editLink = headerRow.createEl("a", { text: "Edit", cls: "duckmage-roll-modal-edit-link" });
 		editLink.addEventListener("click", () => {
-			new RandomTableEditorModal(this.app, file, async () => {
+			new RandomTableEditorModal(this.app, this.plugin, file, async () => {
 				// Reload the table in place after saving
 				tableContainer.empty();
 				resultBox.el.style.display = "none";
