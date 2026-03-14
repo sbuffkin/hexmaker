@@ -79,6 +79,8 @@ export default class DuckmagePlugin extends Plugin {
 		if (this.settings.hexEditorTerrainCollapsed  === undefined) this.settings.hexEditorTerrainCollapsed  = false;
 		if (this.settings.hexEditorFeaturesCollapsed === undefined) this.settings.hexEditorFeaturesCollapsed = false;
 		if (this.settings.hexEditorNotesCollapsed    === undefined) this.settings.hexEditorNotesCollapsed    = false;
+		if (!Array.isArray(this.settings.rollTableExcludedFolders))      this.settings.rollTableExcludedFolders      = ["terrain"];
+		if (!Array.isArray(this.settings.encounterTableExcludedFolders)) this.settings.encounterTableExcludedFolders = ["terrain"];
 		if (!Array.isArray(this.settings.terrainPalette) || this.settings.terrainPalette.length === 0) {
 			this.settings.terrainPalette = [...DEFAULT_TERRAIN_PALETTE];
 		} else {
@@ -94,6 +96,30 @@ export default class DuckmagePlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+	}
+
+	/**
+	 * Filter a list of table files using a two-tier system:
+	 *  1. Per-file frontmatter (`filterKey: false` excludes, `filterKey: true` forces include)
+	 *  2. Folder-level exclusion list (paths relative to tablesFolder)
+	 */
+	filterTableFiles(
+		files: TFile[],
+		filterKey: "roll-filter" | "encounter-filter",
+		excludedFolders: string[],
+	): TFile[] {
+		const folder = normalizeFolder(this.settings.tablesFolder);
+		const prefix = folder ? folder + "/" : "";
+		return files.filter(f => {
+			const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+			if (fm != null) {
+				const val = fm[filterKey];
+				if (val === false) return false;
+				if (val === true)  return true;
+			}
+			const rel = prefix ? f.path.slice(prefix.length) : f.path;
+			return !excludedFolders.some(exc => rel.startsWith(exc + "/"));
+		});
 	}
 
 	refreshHexMap(): void {
@@ -210,7 +236,7 @@ export default class DuckmagePlugin extends Plugin {
 					try {
 						await this.app.vault.create(
 							path,
-							makeTableTemplate(this.settings.defaultTableDice, 1, { terrain: entry.name, "table-type": tableType }, this.buildRollerLink(path)),
+							makeTableTemplate(this.settings.defaultTableDice, 1, { terrain: entry.name, "table-type": tableType, "roll-filter": false, "encounter-filter": false }, this.buildRollerLink(path)),
 						);
 					} catch { /* ignore */ }
 				}

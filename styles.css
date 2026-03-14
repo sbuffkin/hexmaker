@@ -2150,3 +2150,43 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 .duckmage-section-roll-btn:hover {
     opacity: 1;
 }
+
+/* ── Random table editor — filter section ──────────────────────────────────── */
+
+.duckmage-table-editor-filter-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.duckmage-table-editor-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+    color: var(--text-muted);
+}
+
+.duckmage-table-editor-filter-row input[type="checkbox"] {
+    cursor: pointer;
+}
+
+/* ── Random table view — folder exclusion badges ───────────────────────────── */
+
+.duckmage-rt-folder-header {
+    display: flex;
+    align-items: center;
+}
+
+.duckmage-rt-folder-filter-badges {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+}
+
+.duckmage-rt-folder-badge {
+    font-size: 0.7em;
+    opacity: 0.6;
+    user-select: none;
+}

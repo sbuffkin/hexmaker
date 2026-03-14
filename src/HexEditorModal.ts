@@ -435,15 +435,20 @@ export class HexEditorModal extends Modal {
     });
   }
 
-  private getFilesForDropdown(folder: string): TFile[] {
+  private getFilesForDropdown(folder: string, filterType?: "roll-filter" | "encounter-filter"): TFile[] {
     const normalized = normalizeFolder(folder);
     const all = this.app.vault.getMarkdownFiles();
     const scoped = normalized
       ? all.filter((f) => f.path.startsWith(normalized + "/"))
       : all;
-    return scoped
-      .filter((f) => !f.basename.startsWith("_"))
-      .sort((a, b) => a.basename.localeCompare(b.basename));
+    let filtered = scoped.filter((f) => !f.basename.startsWith("_"));
+    if (filterType) {
+      const excluded = filterType === "encounter-filter"
+        ? this.plugin.settings.encounterTableExcludedFolders
+        : this.plugin.settings.rollTableExcludedFolders;
+      filtered = this.plugin.filterTableFiles(filtered, filterType, excluded);
+    }
+    return filtered.sort((a, b) => a.basename.localeCompare(b.basename));
   }
 
   private renderDropdownSection(
@@ -462,7 +467,8 @@ export class HexEditorModal extends Modal {
 
     const select = header.createEl("select", { cls: "duckmage-link-select" });
     select.createEl("option", { value: "", text: "— add —" });
-    for (const file of this.getFilesForDropdown(sourceFolder)) {
+    const filterType = section === "Encounters Table" ? "encounter-filter" as const : undefined;
+    for (const file of this.getFilesForDropdown(sourceFolder, filterType)) {
       select.createEl("option", { value: file.path, text: file.basename });
     }
 

@@ -1,4 +1,4 @@
-import { ItemView, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, TFile, ViewStateResult, WorkspaceLeaf } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
 import { normalizeFolder, makeTableTemplate } from "./utils";
@@ -38,6 +38,7 @@ export class RandomTableView extends ItemView {
 	private rollHistory: string[] = [];
 	private collapsedFolders: Set<string> = new Set();
 	private filterQuery = "";
+	private treeInitialized = false;
 
 	constructor(leaf: WorkspaceLeaf, private plugin: DuckmagePlugin) {
 		super(leaf);
@@ -183,6 +184,19 @@ export class RandomTableView extends ItemView {
 		}
 
 		const tree = this.buildTree(files, prefix);
+
+		// Collapse all folders on first load
+		if (!this.treeInitialized) {
+			this.treeInitialized = true;
+			const collectFolders = (nodes: TreeNode[]) => {
+				for (const n of nodes) if (n.type === "folder") {
+					this.collapsedFolders.add(n.path);
+					collectFolders(n.children);
+				}
+			};
+			collectFolders(tree);
+		}
+
 		// When filtering, render flat (expand all) so matches aren't hidden inside collapsed folders
 		this.renderTreeNodes(this.listEl, tree, this.filterQuery !== "");
 	}
@@ -200,10 +214,30 @@ export class RandomTableView extends ItemView {
 				});
 				folderHeader.createSpan({ cls: "duckmage-rt-folder-name", text: node.name });
 
+				// Exclusion badges
+				const inRoll = this.plugin.settings.rollTableExcludedFolders.includes(node.path);
+				const inEnc  = this.plugin.settings.encounterTableExcludedFolders.includes(node.path);
+				if (inRoll || inEnc) {
+					const badges = folderHeader.createSpan({ cls: "duckmage-rt-folder-filter-badges" });
+					if (inRoll) {
+						const b = badges.createSpan({ cls: "duckmage-rt-folder-badge", text: "🎲✗" });
+						b.title = "Excluded from roll picker";
+					}
+					if (inEnc) {
+						const b = badges.createSpan({ cls: "duckmage-rt-folder-badge", text: "⚔✗" });
+						b.title = "Excluded from encounters table";
+					}
+				}
+
 				const childrenEl = folderEl.createDiv({ cls: "duckmage-rt-folder-children" });
 				if (isCollapsed) childrenEl.style.display = "none";
 
 				this.renderTreeNodes(childrenEl, node.children, forceExpanded);
+
+				folderHeader.addEventListener("contextmenu", (e: MouseEvent) => {
+					e.preventDefault();
+					this.showFolderContextMenu(e, node.path);
+				});
 
 				folderHeader.addEventListener("click", () => {
 					const nowCollapsed = !this.collapsedFolders.has(node.path);
@@ -225,6 +259,46 @@ export class RandomTableView extends ItemView {
 				row.addEventListener("click", () => this.loadTable(node.file));
 			}
 		}
+	}
+
+	private showFolderContextMenu(e: MouseEvent, folderPath: string): void {
+		const menu = new Menu();
+
+		const rollExcluded = this.plugin.settings.rollTableExcludedFolders.includes(folderPath);
+		menu.addItem(item => {
+			item.setTitle(rollExcluded ? "Include in roll picker" : "Exclude from roll picker");
+			item.setIcon("dice");
+			item.onClick(async () => {
+				const arr = this.plugin.settings.rollTableExcludedFolders;
+				if (rollExcluded) {
+					this.plugin.settings.rollTableExcludedFolders = arr.filter(p => p !== folderPath);
+				} else {
+					arr.push(folderPath);
+				}
+				await this.plugin.saveSettings();
+				new Notice(`Roll picker: "${folderPath}" ${rollExcluded ? "included" : "excluded"}.`);
+				await this.loadList();
+			});
+		});
+
+		const encExcluded = this.plugin.settings.encounterTableExcludedFolders.includes(folderPath);
+		menu.addItem(item => {
+			item.setTitle(encExcluded ? "Include in encounters table" : "Exclude from encounters table");
+			item.setIcon("sword");
+			item.onClick(async () => {
+				const arr = this.plugin.settings.encounterTableExcludedFolders;
+				if (encExcluded) {
+					this.plugin.settings.encounterTableExcludedFolders = arr.filter(p => p !== folderPath);
+				} else {
+					arr.push(folderPath);
+				}
+				await this.plugin.saveSettings();
+				new Notice(`Encounters table: "${folderPath}" ${encExcluded ? "included" : "excluded"}.`);
+				await this.loadList();
+			});
+		});
+
+		menu.showAtMouseEvent(e);
 	}
 
 	// ── Detail ────────────────────────────────────────────────────────────────

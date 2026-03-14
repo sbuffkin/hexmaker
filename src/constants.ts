@@ -124,4 +124,6 @@ export const DEFAULT_SETTINGS: DuckmagePluginSettings = {
   hexEditorTerrainCollapsed: false,
   hexEditorFeaturesCollapsed: false,
   hexEditorNotesCollapsed: false,
+  rollTableExcludedFolders: ["terrain"],
+  encounterTableExcludedFolders: ["terrain"],
 };

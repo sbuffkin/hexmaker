@@ -35,9 +35,11 @@ export class RandomTableModal extends Modal {
 
 		// ── Table selector ────────────────────────────────────────────────
 		const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-		const files = this.app.vault.getMarkdownFiles()
+		let files = this.app.vault.getMarkdownFiles()
 			.filter(f => !folder || f.path.startsWith(folder + "/"))
-			.sort((a, b) => a.basename.localeCompare(b.basename));
+			.filter(f => !f.basename.startsWith("_"));
+		files = this.plugin.filterTableFiles(files, "roll-filter", this.plugin.settings.rollTableExcludedFolders);
+		files = files.sort((a, b) => a.basename.localeCompare(b.basename));
 
 		if (files.length === 0) {
 			contentEl.createDiv({ cls: "duckmage-rt-empty", text: `No tables found in "${this.plugin.settings.tablesFolder}".` });

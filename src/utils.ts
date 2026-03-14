@@ -4,7 +4,7 @@ export function normalizeFolder(path: string): string {
 	return path.replace(/^\/+|\/+$/g, "") || "";
 }
 
-export function makeTableTemplate(dice: number, exampleRows = 3, extraFrontmatter?: Record<string, string>, preamble?: string): string {
+export function makeTableTemplate(dice: number, exampleRows = 3, extraFrontmatter?: Record<string, string | boolean | number>, preamble?: string): string {
 	const rows = exampleRows === 1
 		? "|  | 1 |"
 		: Array.from({ length: exampleRows }, (_, i) =>

@@ -33,6 +33,18 @@ export class RandomTableEditorModal extends Modal {
 		// Working copy so edits don't mutate until Save
 		const entries: RandomTableEntry[] = table.entries.map(e => ({ ...e }));
 
+		// ── Filter settings ───────────────────────────────────────────────
+		const filterSection = contentEl.createDiv({ cls: "duckmage-table-editor-filter-section" });
+		const rollFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
+		const rollFilterCb = rollFilterRow.createEl("input", { type: "checkbox" });
+		rollFilterCb.checked = this.parseFrontmatterBool(frontmatter, "roll-filter") === false;
+		rollFilterRow.createEl("label", { text: "Exclude from roll picker" });
+
+		const encFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
+		const encFilterCb = encFilterRow.createEl("input", { type: "checkbox" });
+		encFilterCb.checked = this.parseFrontmatterBool(frontmatter, "encounter-filter") === false;
+		encFilterRow.createEl("label", { text: "Exclude from encounters table" });
+
 		// ── Existing rows ─────────────────────────────────────────────────
 		contentEl.createEl("p", { text: "Entries", cls: "duckmage-table-editor-heading" });
 		const rowsEl = contentEl.createDiv({ cls: "duckmage-table-editor-rows" });
@@ -140,7 +152,11 @@ export class RandomTableEditorModal extends Modal {
 		// Expose so onClose always saves all changes (flushes pending "add row" text first)
 		this.flushAndSave = async () => {
 			doAdd(); // flush pending "add row" text if any (no-op if empty)
-			const newContent = this.buildContent(frontmatter, preamble, entries);
+			let updatedFm = this.setFrontmatterBool(frontmatter, "roll-filter",
+				rollFilterCb.checked ? false : undefined);
+			updatedFm = this.setFrontmatterBool(updatedFm, "encounter-filter",
+				encFilterCb.checked ? false : undefined);
+			const newContent = this.buildContent(updatedFm, preamble, entries);
 			try {
 				await this.app.vault.modify(this.file, newContent);
 				this.onSaved?.();
@@ -205,6 +221,34 @@ export class RandomTableEditorModal extends Modal {
 		void this.flushAndSave?.();
 		this.flushAndSave = null;
 		this.contentEl.empty();
+	}
+
+	/** Read a `key: true|false` line from a frontmatter block string. Returns undefined if absent. */
+	private parseFrontmatterBool(frontmatter: string, key: string): boolean | undefined {
+		const m = frontmatter.match(new RegExp(`^${key}:\\s*(true|false)\\s*$`, "m"));
+		if (!m) return undefined;
+		return m[1] === "true";
+	}
+
+	/**
+	 * Set, remove, or update a boolean key in a frontmatter block string.
+	 * If value is undefined the key line is removed.
+	 * If the key doesn't exist and value is not undefined, it is inserted before the closing `---`.
+	 */
+	private setFrontmatterBool(frontmatter: string, key: string, value: boolean | undefined): string {
+		const lineRegex = new RegExp(`^${key}:.*$`, "m");
+		const hasKey = lineRegex.test(frontmatter);
+		if (value === undefined) {
+			if (!hasKey) return frontmatter;
+			// Remove the line (and any trailing newline)
+			return frontmatter.replace(new RegExp(`^${key}:.*\\n?`, "m"), "");
+		}
+		const line = `${key}: ${value}`;
+		if (hasKey) {
+			return frontmatter.replace(lineRegex, line);
+		}
+		// Insert before closing ---
+		return frontmatter.replace(/\n---$/, `\n${line}\n---`);
 	}
 
 	private extractFrontmatter(content: string): string {

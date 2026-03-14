@@ -30,6 +30,8 @@ export interface DuckmagePluginSettings {
 	hexEditorTerrainCollapsed: boolean;
 	hexEditorFeaturesCollapsed: boolean;
 	hexEditorNotesCollapsed: boolean;
+	rollTableExcludedFolders: string[];
+	encounterTableExcludedFolders: string[];
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;
