@@ -19,28 +19,28 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ## Drawing tools
 
 ### Road / River
-Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a coloured line connecting adjacent hexes.
+Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
 
 ### Terrain
-Opens the terrain palette. Click a colour/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolour, and add terrain types.
+Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
 
 ### Icon
-Opens the icon palette. Click an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations.
+Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations.
 
-### Link Table
+### Link table
 Opens a folder-tree picker scoped to your Tables folder. Select a random-encounter table, then left-click hexes to link that table into each hex's **Encounters Table** section.
 
-### Link Faction
+### Link faction
 Opens a folder-tree picker scoped to your Factions folder. Select a faction note, then left-click hexes to link it into each hex's **Factions** section.
 
 ### Swap
 Swap the contents of two hex positions by renaming their files.
 
-1. **Click** the first hex — highlighted amber (source)
-2. **Click** a second hex — highlighted purple (destination)
-3. **Click the destination again** to confirm the swap
+1. **Select** the first hex — highlighted amber (source)
+2. **Select** a second hex — highlighted purple (destination)
+3. **Select the destination again** to confirm the swap
 
-Clicking the source hex again cancels the selection. Clicking a different hex while a destination is already highlighted changes the destination.
+Selecting the source hex again cancels the selection. Selecting a different hex while a destination is already highlighted changes the destination.
 
 ---
 

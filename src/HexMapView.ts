@@ -395,17 +395,17 @@ export class HexMapView extends ItemView {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
     this.tableLinkBtnLabel = this.tableLinkBtn.createSpan({
-      text: "Link Table",
+      text: "Link table",
     });
     this.factionLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
     this.factionLinkBtnLabel = this.factionLinkBtn.createSpan({
-      text: "Link Faction",
+      text: "Link faction",
     });
     this.swapBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn",
-      text: "Swap Hexes",
+      text: "Swap hexes",
     });
 
     this.roadToolbarBtn.addEventListener("click", () =>
@@ -808,7 +808,7 @@ export class HexMapView extends ItemView {
           this.paintTablePath.split("/").pop()?.replace(/.md$/, "") ?? "Table";
         this.tableLinkBtnLabel.setText("Link: " + name);
       } else {
-        this.tableLinkBtnLabel.setText("Link Table");
+        this.tableLinkBtnLabel.setText("Link table");
       }
     }
 
@@ -820,7 +820,7 @@ export class HexMapView extends ItemView {
           "Faction";
         this.factionLinkBtnLabel.setText("Link: " + name);
       } else {
-        this.factionLinkBtnLabel.setText("Link Faction");
+        this.factionLinkBtnLabel.setText("Link faction");
       }
     }
   }

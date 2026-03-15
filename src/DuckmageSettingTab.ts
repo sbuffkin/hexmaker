@@ -138,7 +138,7 @@ export class DuckmageSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Tables folder")
-			.setDesc("Vault-relative folder for random table files. Used by the Encounters Table section and the Random Tables view.")
+			.setDesc("Vault-relative folder for random table notes. Used by the Encounters Table section and the Random Tables view.")
 			.addText(text =>
 				text
 					.setPlaceholder("world/tables")
@@ -151,7 +151,7 @@ export class DuckmageSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Default die for new tables")
-			.setDesc("Die size used when creating new random table files (d6, d20, d100, etc.).")
+			.setDesc("Die size used when creating new random table notes (d6, d20, d100, etc.).")
 			.addDropdown(dropdown =>
 				dropdown
 					.addOption("4",    "d4")
@@ -174,11 +174,11 @@ export class DuckmageSettingTab extends PluginSettingTab {
 		containerEl.createEl("h3", { text: "Generate world data" });
 		containerEl.createEl("p", {
 			cls: "setting-item-description duckmage-generate-warning",
-			text: "⚠️ Configure all folder settings above before clicking Generate. This will create terrain table files, add roller links to all table files, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing files and links are not overwritten.",
+			text: "⚠️ Configure all folder settings above before selecting Generate. This will create terrain table notes, add roller links to all table notes, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing notes and links are not overwritten.",
 		});
 		new Setting(containerEl)
 			.setName("Generate terrain tables & hex links")
-			.setDesc("Creates missing terrain table files, adds roller links to all table files (so they can be opened in the Duckmage Roller from within Obsidian), and links each hex note's terrain encounters table into its Encounters Table section.")
+			.setDesc("Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the Duckmage Roller from within Obsidian), and links each hex note's terrain encounters table into its Encounters Table section.")
 			.addButton(btn =>
 				btn.setButtonText("Generate").setCta().onClick(async () => {
 					btn.setDisabled(true);
@@ -292,7 +292,7 @@ export class DuckmageSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		containerEl.createEl("h3", { text: "Roads & Rivers" });
+		containerEl.createEl("h3", { text: "Roads & rivers" });
 		new Setting(containerEl)
 			.setName("Road color")
 			.setDesc("Color used to draw road lines between connected road hexes.")
@@ -372,11 +372,23 @@ export class DuckmageSettingTab extends PluginSettingTab {
 						.setPlaceholder("Name")
 						.setValue(entry.name)
 						.onChange(async value => {
-							entry.name = (value ?? "").trim() || entry.name;
+							const trimmed = (value ?? "").trim();
+							const isDuplicate = trimmed.length > 0 && this.plugin.settings.terrainPalette.some(
+								(e) => e !== entry && e.name.toLowerCase() === trimmed.toLowerCase(),
+							);
+							if (isDuplicate) {
+								text.inputEl.addClass("duckmage-input-error");
+								text.inputEl.title = `"${trimmed}" is already used by another terrain.`;
+								return;
+							}
+							text.inputEl.removeClass("duckmage-input-error");
+							text.inputEl.title = "";
+							entry.name = trimmed || entry.name;
 							await this.plugin.saveSettings();
 						});
 					text.inputEl.addEventListener("focus", () => { nameBeforeEdit = entry.name; });
 					text.inputEl.addEventListener("blur", async () => {
+						if (text.inputEl.hasClass("duckmage-input-error")) return;
 						if (entry.name !== nameBeforeEdit) {
 							await this.renameTerrainTables(nameBeforeEdit, entry.name);
 						}

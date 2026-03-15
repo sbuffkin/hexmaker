@@ -650,6 +650,12 @@
     border-color: var(--interactive-accent);
 }
 
+/* Duplicate-name error state on terrain name input */
+.duckmage-input-error {
+    border-color: var(--color-red) !important;
+    outline: 1px solid var(--color-red);
+}
+
 /* "Add" tile preview */
 .duckmage-terrain-preview-add {
     background: var(--background-modifier-border);

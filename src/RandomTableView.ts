@@ -149,6 +149,20 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-new-input",
     });
     newInput.placeholder = "New table name…";
+    newInput.addEventListener("input", () => {
+      const name = newInput.value.trim();
+      if (!name) { newInput.removeClass("duckmage-input-error"); newInput.title = ""; return; }
+      const folder = normalizeFolder(this.plugin.settings.tablesFolder);
+      const checkPath = folder ? `${folder}/${name}.md` : `${name}.md`;
+      const exists = this.app.vault.getAbstractFileByPath(checkPath) instanceof TFile;
+      if (exists) {
+        newInput.addClass("duckmage-input-error");
+        newInput.title = `"${name}" already exists.`;
+      } else {
+        newInput.removeClass("duckmage-input-error");
+        newInput.title = "";
+      }
+    });
     const newBtn = newRow.createEl("button", {
       text: "+ New",
       cls: "duckmage-rt-new-btn",
@@ -161,7 +175,7 @@ export class RandomTableView extends ItemView {
 
     const createTable = async () => {
       const name = newInput.value.trim();
-      if (!name) return;
+      if (!name || newInput.hasClass("duckmage-input-error")) return;
       const folder = normalizeFolder(this.plugin.settings.tablesFolder);
       const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
       let file = this.app.vault.getAbstractFileByPath(newPath);
@@ -197,6 +211,8 @@ export class RandomTableView extends ItemView {
         }
       }
       newInput.value = "";
+      newInput.removeClass("duckmage-input-error");
+      newInput.title = "";
       fromFolderInput.value = "";
       await this.loadList();
       this.loadTable(file as TFile);

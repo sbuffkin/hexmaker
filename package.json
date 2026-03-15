@@ -1,5 +1,5 @@
 {
-  "name": "duckmage-plugin",
+  "name": "hexmaker-plugin",
   "version": "0.1.0",
   "description": "A plugin to power hex crawl worldbuilding and running.",
   "main": "main.js",
