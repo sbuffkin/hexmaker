@@ -189,7 +189,7 @@ class MultiLinkNavModal extends Modal {
 			li.addEventListener("click", () => {
 				const file = this.app.metadataCache.getFirstLinkpathDest(target, this.sourcePath);
 				if (file instanceof TFile) {
-					this.app.workspace.getLeaf(false).openFile(file);
+					this.app.workspace.getLeaf().openFile(file);
 					this.close();
 				}
 			});
@@ -788,7 +788,7 @@ export class HexTableView extends ItemView {
 		coordsSpan.addEventListener("click", () => {
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (file instanceof TFile) {
-				void this.app.workspace.getLeaf(false).openFile(file);
+				void this.app.workspace.getLeaf().openFile(file);
 			}
 		});
 		jumpBtn.title = "Center map on this hex";
@@ -866,7 +866,7 @@ export class HexTableView extends ItemView {
 								}
 							} else {
 								const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
-								if (file instanceof TFile) this.app.workspace.getLeaf(false).openFile(file);
+								if (file instanceof TFile) this.app.workspace.getLeaf().openFile(file);
 							}
 						} else {
 							// Multiple: show a nav list

@@ -744,7 +744,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-edit-link",
     });
     openNoteLink.addEventListener("click", () => {
-      this.app.workspace.getLeaf(false).openFile(file);
+      this.app.workspace.getLeaf().openFile(file);
     });
 
     const dieSelect = header.createEl("select", {
@@ -843,7 +843,7 @@ export class RandomTableView extends ItemView {
               `${table.linkedFolder}/${entry.result}.md`,
             );
             if (noteFile instanceof TFile)
-              this.app.workspace.getLeaf(false).openFile(noteFile);
+              this.app.workspace.getLeaf().openFile(noteFile);
           });
         } else {
           resultTd.setText(entry.result);
@@ -956,7 +956,7 @@ export class RandomTableView extends ItemView {
             `${table.linkedFolder}/${entry.result}.md`,
           );
           if (noteFile instanceof TFile)
-            this.app.workspace.getLeaf(false).openFile(noteFile);
+            this.app.workspace.getLeaf().openFile(noteFile);
         };
       } else {
         openNoteBtn.style.display = "none";

@@ -1006,7 +1006,7 @@ export class HexMapView extends ItemView {
       else return;
     }
 
-    await this.app.workspace.getLeaf(false).openFile(fileToOpen);
+    await this.app.workspace.getLeaf().openFile(fileToOpen);
   }
 
   private onHexPaintClick(x: number, y: number): void {

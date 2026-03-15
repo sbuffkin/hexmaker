@@ -31,12 +31,12 @@ export default class DuckmagePlugin extends Plugin {
 		this.addCommand({
 			id: "open-hex-table",
 			name: "Open Duckmage hex table",
-			callback: () => this.app.workspace.getLeaf(false).setViewState({ type: VIEW_TYPE_HEX_TABLE }),
+			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
 		});
 		this.addCommand({
 			id: "open-random-tables",
 			name: "Open Duckmage random tables",
-			callback: () => this.app.workspace.getLeaf(false).setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
+			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
 		});
 		this.addSettingTab(new DuckmageSettingTab(this.app, this));
 
@@ -85,7 +85,7 @@ export default class DuckmagePlugin extends Plugin {
 	onunload() {}
 
 	private openHexMap(): void {
-		this.app.workspace.getLeaf(false).setViewState({ type: VIEW_TYPE_HEX_MAP });
+		this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
 	}
 
 	async loadSettings() {
@@ -396,8 +396,13 @@ export default class DuckmagePlugin extends Plugin {
 		let content: string;
 
 		if (templatePath) {
+			const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
+			if (!(templateFile instanceof TFile)) {
+				new Notice("Template not found: " + templatePath);
+				return null;
+			}
 			try {
-				content = await this.app.vault.adapter.read(templatePath);
+				content = await this.app.vault.read(templateFile);
 			} catch {
 				new Notice("Template not found: " + templatePath);
 				return null;
