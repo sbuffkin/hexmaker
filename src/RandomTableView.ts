@@ -57,6 +57,8 @@ export class RandomTableView extends ItemView {
   private filterQuery = "";
   private treeInitialized = false;
   private linkedFolderMap: Map<string, string> = new Map(); // folder path → table file path
+  private listRefreshTimer: number | null = null;
+  private detailRefreshTimer: number | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -214,6 +216,39 @@ export class RandomTableView extends ItemView {
 
     await this.loadList();
 
+    // ── Proactive tree refresh on vault changes ───────────────────────────
+    this.registerEvent(
+      this.app.vault.on("create", (file) => {
+        if (file instanceof TFile && !file.basename.startsWith("_") && this.isInTablesFolder(file.path))
+          this.scheduleListRefresh();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (!(file instanceof TFile) || !this.isInTablesFolder(file.path)) return;
+        if (this.activeFile === file) {
+          this.activeFile = null;
+          this.detailEl?.empty();
+        }
+        this.scheduleListRefresh();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (!(file instanceof TFile)) return;
+        const wasIn = this.isInTablesFolder(oldPath);
+        const isIn = this.isInTablesFolder(file.path);
+        if (!wasIn && !isIn) return;
+        if (this.activeFile?.path === oldPath) this.activeFile = file;
+        this.scheduleListRefresh();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (file instanceof TFile && file === this.activeFile) this.scheduleDetailRefresh();
+      }),
+    );
+
     // ── Live sync: note created in a linked folder → add entry to table ──
     this.registerEvent(
       this.app.vault.on("create", async (createdFile) => {
@@ -253,6 +288,29 @@ export class RandomTableView extends ItemView {
       await this.loadList();
       this.loadTable(file);
     }
+  }
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  private isInTablesFolder(filePath: string): boolean {
+    const folder = normalizeFolder(this.plugin.settings.tablesFolder);
+    return !folder || filePath.startsWith(folder + "/");
+  }
+
+  private scheduleListRefresh(): void {
+    if (this.listRefreshTimer !== null) clearTimeout(this.listRefreshTimer);
+    this.listRefreshTimer = window.setTimeout(() => {
+      this.listRefreshTimer = null;
+      void this.loadList();
+    }, 200);
+  }
+
+  private scheduleDetailRefresh(): void {
+    if (this.detailRefreshTimer !== null) clearTimeout(this.detailRefreshTimer);
+    this.detailRefreshTimer = window.setTimeout(() => {
+      this.detailRefreshTimer = null;
+      void this.renderDetail();
+    }, 300);
   }
 
   // ── Tree building ─────────────────────────────────────────────────────────

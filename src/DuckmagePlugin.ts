@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile } from "obsidian";
+import { Notice, Plugin, TFile, TFolder } from "obsidian";
 import { HexMapView } from "./HexMapView";
 import { HexTableView } from "./HexTableView";
 import { RandomTableView } from "./RandomTableView";
@@ -54,6 +54,32 @@ export default class DuckmagePlugin extends Plugin {
 				});
 			}
 		});
+
+		// Keep linked-folder frontmatter in sync when a folder is renamed
+		this.registerEvent(
+			this.app.vault.on("rename", async (abstractFile, oldPath) => {
+				if (!(abstractFile instanceof TFolder)) return;
+				const oldFolder = normalizeFolder(oldPath);
+				const newFolder = normalizeFolder(abstractFile.path);
+				if (oldFolder === newFolder) return;
+
+				const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
+				const tableFiles = this.app.vault.getMarkdownFiles().filter(
+					(f) => !tablesPrefix || f.path.startsWith(tablesPrefix + "/"),
+				);
+
+				for (const tableFile of tableFiles) {
+					const lf = this.app.metadataCache.getFileCache(tableFile)?.frontmatter?.["linked-folder"];
+					if (!lf || typeof lf !== "string") continue;
+					const lfNorm = normalizeFolder(lf);
+					if (lfNorm !== oldFolder && !lfNorm.startsWith(oldFolder + "/")) continue;
+					const updatedLf = newFolder + lfNorm.slice(oldFolder.length);
+					await this.app.fileManager.processFrontMatter(tableFile, (fm) => {
+						fm["linked-folder"] = updatedLf;
+					});
+				}
+			}),
+		);
 	}
 
 	onunload() {}
