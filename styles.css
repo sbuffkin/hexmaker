@@ -27,18 +27,8 @@
     pointer-events: auto;
 }
 
-/* Toolbar panel — wraps all controls so they can be hidden together */
-.duckmage-toolbar-panel {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-}
-
-.duckmage-toolbar-panel > * {
-    pointer-events: auto;
-}
-
-.duckmage-toolbar-collapsed .duckmage-toolbar-panel {
+/* Collapse drawing tools when toggled */
+.duckmage-toolbar-collapsed .duckmage-draw-toolbar {
     display: none;
 }
 
@@ -785,11 +775,13 @@
 
 .duckmage-draw-toolbar {
     position: absolute;
-    top: 8px;
-    right: 44px;
+    top: 44px;
+    right: 8px;
     z-index: 10;
     display: flex;
+    flex-direction: column;
     gap: 4px;
+    align-items: stretch;
 }
 
 .duckmage-draw-btn {
@@ -1490,39 +1482,11 @@
     background: var(--interactive-accent-hover);
 }
 
-/* ── Go-to-hex button & modal ───────────────────────────────────────────────── */
-
-.duckmage-goto-btn {
-    position: absolute;
-    top: 8px;
-    left: 86px;
-    z-index: 10;
-    height: 26px;
-    padding: 0 8px;
-    border-radius: 4px;
-    background: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
-    color: var(--text-muted);
-    font-size: 1em;
-    line-height: 1;
-    cursor: pointer;
-    opacity: 0.6;
-    transition:
-        opacity 0.15s ease,
-        color 0.15s ease;
-    user-select: none;
-}
-
-.duckmage-goto-btn:hover {
-    opacity: 1;
-    color: var(--text-normal);
-}
-
-/* ? help button — bottom-right of the map controls overlay */
+/* ? help button — bottom-left of the map controls overlay */
 .duckmage-help-btn {
     position: absolute;
     bottom: 8px;
-    right: 8px;
+    left: 8px;
     z-index: 10;
     width: 26px;
     height: 26px;

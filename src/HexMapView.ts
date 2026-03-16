@@ -262,13 +262,10 @@ export class HexMapView extends ItemView {
       }
     });
 
-    // All toolbar elements go in this panel so they can be hidden together
-    const toolbarPanel = controlsEl.createDiv({ cls: "duckmage-toolbar-panel" });
+    // Expand buttons and view buttons — always visible (not collapsible)
+    this.createExpandButtons(controlsEl);
 
-    this.createExpandButtons(toolbarPanel);
-    this.createDrawingToolbar(toolbarPanel);
-
-    const tableBtn = toolbarPanel.createEl("button", {
+    const tableBtn = controlsEl.createEl("button", {
       cls: "duckmage-table-btn",
       title: "Open hex table",
       text: "⊞",
@@ -279,7 +276,7 @@ export class HexMapView extends ItemView {
         .setViewState({ type: VIEW_TYPE_HEX_TABLE });
     });
 
-    const rtBtn = toolbarPanel.createEl("button", {
+    const rtBtn = controlsEl.createEl("button", {
       cls: "duckmage-rt-btn",
       title: "Open random tables",
       text: "🎲",
@@ -290,33 +287,27 @@ export class HexMapView extends ItemView {
         .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
     });
 
-    const gotoBtn = toolbarPanel.createEl("button", {
-      cls: "duckmage-goto-btn",
-      title: "Go to hex",
-      text: "⌖",
-    });
-    gotoBtn.addEventListener("click", () => {
-      new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
-    });
-
-    const helpBtn = toolbarPanel.createEl("button", {
+    const helpBtn = controlsEl.createEl("button", {
       cls: "duckmage-help-btn",
       title: "Controls & tools",
       text: "?",
     });
     helpBtn.addEventListener("click", () => new HexHelpModal(this.app).open());
 
-    // Toggle button — always visible, collapses/restores the toolbar panel
+    // Toggle button — always visible, collapses/restores only the drawing tools
     const toggleBtn = controlsEl.createEl("button", {
       cls: "duckmage-toolbar-toggle-btn",
-      title: "Hide toolbar",
+      title: "Hide tools",
     });
     toggleBtn.setText("≡");
     toggleBtn.addEventListener("click", () => {
       const collapsed = controlsEl.hasClass("duckmage-toolbar-collapsed");
       controlsEl.toggleClass("duckmage-toolbar-collapsed", !collapsed);
-      toggleBtn.title = collapsed ? "Hide toolbar" : "Show toolbar";
+      toggleBtn.title = collapsed ? "Hide tools" : "Show tools";
     });
+
+    // Drawing toolbar column — right side, collapses when toggled
+    this.createDrawingToolbar(controlsEl);
 
     this.renderGrid();
   }
@@ -369,14 +360,21 @@ export class HexMapView extends ItemView {
 
   private createDrawingToolbar(container: HTMLElement): void {
     const toolbar = container.createDiv({ cls: "duckmage-draw-toolbar" });
-    this.roadToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn",
-      text: "Road",
+
+    const centerHexBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-center-hex-btn",
+      text: "Center hex",
     });
-    this.riverToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn",
-      text: "River",
+    centerHexBtn.addEventListener("click", () => {
+      new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
     });
+
+    this.swapBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn",
+      text: "Swap hexes",
+    });
+    this.swapBtn.addEventListener("click", () => this.handleSwapButton());
+
     this.terrainToolbarBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
     });
@@ -384,6 +382,10 @@ export class HexMapView extends ItemView {
     this.terrainBtnPreview = this.terrainToolbarBtn.createSpan({
       cls: "duckmage-terrain-btn-preview",
     });
+    this.terrainToolbarBtn.addEventListener("click", () =>
+      this.handleTerrainButton(),
+    );
+
     this.iconToolbarBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
     });
@@ -391,42 +393,45 @@ export class HexMapView extends ItemView {
     this.iconBtnPreview = this.iconToolbarBtn.createEl("img", {
       cls: "duckmage-icon-btn-preview",
     });
+    this.iconToolbarBtn.addEventListener("click", () =>
+      this.handleIconButton(),
+    );
+
+    this.roadToolbarBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn",
+      text: "Road",
+    });
+    this.roadToolbarBtn.addEventListener("click", () =>
+      this.setDrawingMode("road"),
+    );
+
+    this.riverToolbarBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn",
+      text: "River",
+    });
+    this.riverToolbarBtn.addEventListener("click", () =>
+      this.setDrawingMode("river"),
+    );
+
     this.tableLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
     this.tableLinkBtnLabel = this.tableLinkBtn.createSpan({
       text: "Link table",
     });
+    this.tableLinkBtn.addEventListener("click", () =>
+      this.handleTableLinkButton(),
+    );
+
     this.factionLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
     this.factionLinkBtnLabel = this.factionLinkBtn.createSpan({
       text: "Link faction",
     });
-    this.swapBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn",
-      text: "Swap hexes",
-    });
-
-    this.roadToolbarBtn.addEventListener("click", () =>
-      this.setDrawingMode("road"),
-    );
-    this.riverToolbarBtn.addEventListener("click", () =>
-      this.setDrawingMode("river"),
-    );
-    this.terrainToolbarBtn.addEventListener("click", () =>
-      this.handleTerrainButton(),
-    );
-    this.iconToolbarBtn.addEventListener("click", () =>
-      this.handleIconButton(),
-    );
-    this.tableLinkBtn.addEventListener("click", () =>
-      this.handleTableLinkButton(),
-    );
     this.factionLinkBtn.addEventListener("click", () =>
       this.handleFactionLinkButton(),
     );
-    this.swapBtn.addEventListener("click", () => this.handleSwapButton());
   }
 
   private setDrawingMode(mode: "road" | "river"): void {
