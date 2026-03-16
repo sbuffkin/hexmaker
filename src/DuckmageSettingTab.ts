@@ -53,13 +53,22 @@ export class DuckmageSettingTab extends PluginSettingTab {
 						}
 					}
 					await this.plugin.saveSettings();
-					// Also ensure the default region subfolder exists
+					// Ensure all region subfolders exist and generate hex notes
 					const hexF = normalizeFolder(this.plugin.settings.hexFolder);
 					if (hexF) {
-						const defaultRegion = `${hexF}/default`;
-						if (!this.app.vault.getAbstractFileByPath(defaultRegion)) {
-							try { await this.app.vault.createFolder(defaultRegion); } catch { /* exists */ }
+						let totalCreated = 0;
+						for (const region of this.plugin.settings.regions) {
+							const regionFolder = `${hexF}/${region.name}`;
+							if (!this.app.vault.getAbstractFileByPath(regionFolder)) {
+								try { await this.app.vault.createFolder(regionFolder); } catch { /* exists */ }
+							}
+							const { cols, rows } = region.gridSize;
+							const { x: ox, y: oy } = region.gridOffset;
+							const xs = Array.from({ length: cols }, (_, i) => ox + i);
+							const ys = Array.from({ length: rows }, (_, i) => oy + i);
+							totalCreated += await this.plugin.generateHexNotes(region.name, xs, ys);
 						}
+						if (totalCreated > 0) new Notice(`Duckmage: generated ${totalCreated} hex note${totalCreated !== 1 ? "s" : ""}.`);
 					}
 					new Notice("Folders generated.");
 					this.display();

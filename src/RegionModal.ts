@@ -118,6 +118,11 @@ export class RegionModal extends Modal {
 		await this.plugin.saveSettings();
 		this.onChanged();
 		this.close();
+		// Auto-generate all hex notes for the new region in the background
+		const xs = Array.from({ length: cols }, (_, i) => i);
+		const ys = Array.from({ length: rows }, (_, i) => i);
+		const created = await this.plugin.generateHexNotes(name, xs, ys);
+		if (created > 0) new Notice(`Duckmage: generated ${created} hex note${created !== 1 ? "s" : ""} for "${name}".`);
 	}
 
 	onClose(): void { this.contentEl.empty(); }

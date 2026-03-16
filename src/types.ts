@@ -10,6 +10,7 @@ export interface TerrainColor {
 	name: string;
 	color: string;
 	icon?: string;
+	iconColor?: string; // CSS colour to tint the icon; undefined = no tint (render as-is)
 }
 
 export interface DuckmagePluginSettings {

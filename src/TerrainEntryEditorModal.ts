@@ -8,6 +8,7 @@ export class TerrainEntryEditorModal extends Modal {
 	private pendingName: string;
 	private pendingColor: string;
 	private pendingIcon: string | undefined;
+	private pendingIconColor: string | undefined;
 	private readonly originalName: string;
 
 	constructor(
@@ -18,10 +19,11 @@ export class TerrainEntryEditorModal extends Modal {
 		private onDelete: () => void,
 	) {
 		super(app);
-		this.originalName = entry.name;
-		this.pendingName  = entry.name;
-		this.pendingColor = entry.color;
-		this.pendingIcon  = entry.icon;
+		this.originalName   = entry.name;
+		this.pendingName    = entry.name;
+		this.pendingColor   = entry.color;
+		this.pendingIcon    = entry.icon;
+		this.pendingIconColor = entry.iconColor;
 	}
 
 	onOpen(): void {
@@ -58,14 +60,36 @@ export class TerrainEntryEditorModal extends Modal {
 				dropdown.onChange(value => { this.pendingIcon = value || undefined; });
 			});
 
+		// Track last picked colour so toggling on restores it rather than resetting to white
+		let lastIconColorPick = this.pendingIconColor ?? "#ffffff";
+		new Setting(contentEl)
+			.setName("Icon tint")
+			.setDesc("Apply a solid colour to the icon shape (works best with monochrome icons).")
+			.addToggle(toggle =>
+				toggle
+					.setValue(!!this.pendingIconColor)
+					.onChange(enabled => {
+						this.pendingIconColor = enabled ? lastIconColorPick : undefined;
+					}),
+			)
+			.addColorPicker(picker =>
+				picker
+					.setValue(lastIconColorPick)
+					.onChange(value => {
+						lastIconColorPick = value;
+						if (this.pendingIconColor !== undefined) this.pendingIconColor = value;
+					}),
+			);
+
 		const btnRow = contentEl.createDiv({ cls: "duckmage-tee-buttons" });
 
 		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: "Save" });
 		saveBtn.addEventListener("click", () => {
 			const nameChanged = this.pendingName !== this.originalName;
 			// Update color/icon immediately — these don't affect hex file lookups
-			this.entry.color = this.pendingColor;
-			this.entry.icon  = this.pendingIcon;
+			this.entry.color      = this.pendingColor;
+			this.entry.icon       = this.pendingIcon;
+			this.entry.iconColor  = this.pendingIconColor;
 			// Show pending state while async work runs
 			saveBtn.disabled = true;
 			saveBtn.setText(nameChanged ? "Updating hexes…" : "Saving…");

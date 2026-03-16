@@ -159,6 +159,10 @@
     pointer-events: none;
     opacity: 0.75;
 }
+/* When the icon is rendered as a tinted div (mask-image) instead of an img */
+div.duckmage-hex-icon {
+    object-fit: unset; /* not applicable to divs */
+}
 
 .duckmage-hex-label {
     position: relative; /* above icon */
@@ -294,8 +298,11 @@
     border-radius: 50%;
     background-color: var(--background-modifier-border);
     cursor: pointer;
-    border: 1px solid color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
-    transition: border-color 0.15s, transform 0.1s;
+    border: 1px solid
+        color-mix(in srgb, var(--background-modifier-border) 60%, transparent);
+    transition:
+        border-color 0.15s,
+        transform 0.1s;
     box-sizing: border-box;
 }
 .duckmage-neighbor-tile:hover {
@@ -570,6 +577,9 @@
     height: 100%;
     object-fit: contain;
 }
+div.duckmage-terrain-preview-icon {
+    object-fit: unset;
+}
 
 .duckmage-terrain-option-name {
     font-size: 0.7em;
@@ -830,6 +840,33 @@
     border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
+.duckmage-tpe-brush-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px 2px;
+    flex-wrap: wrap;
+}
+.duckmage-tpe-brush-label {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-right: 2px;
+}
+.duckmage-tpe-brush-btn {
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-tpe-brush-btn.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border-color: var(--interactive-accent);
+}
+
 .duckmage-hex-map-viewport.duckmage-draw-mode,
 .duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-hex {
     cursor: crosshair;
@@ -843,7 +880,10 @@
 
 /* While actively painting terrain (terrain selected, not eyedropper) */
 .duckmage-hex-map-viewport.duckmage-terrain-paint .duckmage-hex {
-    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M16 2 L18 4 L6 16 L2 18 L4 14 Z' fill='%23333'/%3E%3Ccircle cx='3' cy='17' r='2' fill='%235080ff'/%3E%3C/svg%3E") 2 17, crosshair;
+    cursor:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Cpath d='M16 2 L18 4 L6 16 L2 18 L4 14 Z' fill='%23333'/%3E%3Ccircle cx='3' cy='17' r='2' fill='%235080ff'/%3E%3C/svg%3E")
+            2 17,
+        crosshair;
 }
 
 /* When the SVG overlay is active it renders all labels — hide the HTML copies */
@@ -1131,13 +1171,13 @@
 
 .duckmage-filter-range-input {
     height: 24px;
-    width: 54px;
+    width: 36px;
     padding: 0 4px;
     border-radius: 4px;
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     color: var(--text-normal);
-    font-size: 0.8em;
+    font-size: 0.5em;
     text-align: center;
 }
 
@@ -1787,8 +1827,12 @@
     padding: 6px 8px;
     border-left: 2px solid var(--background-modifier-border);
 }
-.duckmage-rt-desc-body p:first-child { margin-top: 0; }
-.duckmage-rt-desc-body p:last-child { margin-bottom: 0; }
+.duckmage-rt-desc-body p:first-child {
+    margin-top: 0;
+}
+.duckmage-rt-desc-body p:last-child {
+    margin-bottom: 0;
+}
 
 /* ── Random table (odds table) ─────────────────────────────────────────── */
 
@@ -2007,7 +2051,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     overflow-y: auto;
     margin-bottom: 10px;
 }
-
 
 .duckmage-rt-empty {
     color: var(--text-faint);
@@ -2273,9 +2316,12 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
 }
 
-
 /* Confirm delete modal */
-.duckmage-confirm-btn-row { display: flex; gap: 8px; margin-top: 12px; }
+.duckmage-confirm-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
 
 /* ── Region button & modal ────────────────────────────────────────────────── */
 
@@ -2298,7 +2344,9 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     cursor: pointer;
     opacity: 0.8;
-    transition: opacity 0.15s ease, color 0.15s ease;
+    transition:
+        opacity 0.15s ease,
+        color 0.15s ease;
     user-select: none;
 }
 
@@ -2353,4 +2401,25 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-region-row input[type="number"] {
     width: 55px;
+}
+
+/* Saving / background-write indicator */
+.duckmage-saving-indicator {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    z-index: 10;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.78em;
+    color: var(--text-muted);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    user-select: none;
+}
+.duckmage-saving-indicator.is-active {
+    opacity: 1;
 }

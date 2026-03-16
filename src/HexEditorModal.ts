@@ -1,6 +1,6 @@
 import { App, Modal, Notice, TFile } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
-import { getIconUrl, normalizeFolder, makeTableTemplate } from "./utils";
+import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "./utils";
 import {
   getTerrainFromFile,
   setTerrainInFile,
@@ -371,11 +371,7 @@ export class HexEditorModal extends Modal {
       preview.style.backgroundColor = entry.color;
 
       if (entry.icon) {
-        const img = preview.createEl("img", {
-          cls: "duckmage-terrain-preview-icon",
-        });
-        img.src = getIconUrl(this.plugin, entry.icon);
-        img.alt = entry.name;
+        createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
 
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });

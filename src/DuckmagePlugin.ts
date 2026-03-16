@@ -468,15 +468,41 @@ export default class DuckmagePlugin extends Plugin {
 		const hexBase = normalizeFolder(this.settings.hexFolder);
 		const regionFolder = hexBase ? `${hexBase}/${regionName}` : regionName;
 		if (!this.app.vault.getAbstractFileByPath(regionFolder)) {
-			await this.app.vault.createFolder(regionFolder);
+			// Wrap in try/catch: a concurrent worker may have already created the folder.
+			try { await this.app.vault.createFolder(regionFolder); } catch { /* exists */ }
 		}
 
 		try {
 			return await this.app.vault.create(path, content);
-		} catch (e) {
-			new Notice("Could not create note: " + (e instanceof Error ? e.message : String(e)));
+		} catch {
+			// A concurrent worker may have created this file between our existence check and
+			// this create call.  If the file now exists, use it rather than treating it as an error.
+			const existing = this.app.vault.getAbstractFileByPath(path);
+			if (existing instanceof TFile) return existing;
+			new Notice("Could not create note at " + path);
 			return null;
 		}
+	}
+
+	/**
+	 * Create hex notes for every (x, y) in the cartesian product of xs × ys,
+	 * skipping any that already exist on disk.  Returns the number of notes created.
+	 */
+	async generateHexNotes(regionName: string, xs: number[], ys: number[]): Promise<number> {
+		let created = 0;
+		const CHUNK = 5;
+		const pairs: [number, number][] = [];
+		for (const x of xs) for (const y of ys) pairs.push([x, y]);
+		for (let i = 0; i < pairs.length; i += CHUNK) {
+			await Promise.all(pairs.slice(i, i + CHUNK).map(async ([x, y]) => {
+				const path = this.hexPath(x, y, regionName);
+				if (!(await this.app.vault.adapter.exists(path))) {
+					const result = await this.createHexNote(x, y, regionName);
+					if (result) created++;
+				}
+			}));
+		}
+		return created;
 	}
 
 	getRegion(name: string): RegionData | undefined {
