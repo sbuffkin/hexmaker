@@ -1,5 +1,7 @@
 export interface WorkflowStep {
-	tablePath: string;  // vault-relative path, no .md extension
+	kind: "table" | "dice";
+	tablePath: string;  // vault-relative path, no .md extension (kind=table), or "" (kind=dice)
+	diceFormula?: string;  // only for kind=dice, e.g. "2d6+6"
 	rolls: number;      // >= 1
 	label?: string;     // optional display name
 }
@@ -9,6 +11,45 @@ export interface Workflow {
 	resultsFolder?: string;
 	templateFile?: string;
 	steps: WorkflowStep[];
+}
+
+/** Returns true if the string is a valid TRPG dice formula (xdy+z). */
+export function isDiceFormula(s: string): boolean {
+	return /^\d*d\d+([+-]\d+)?$/i.test(s.trim());
+}
+
+/** Roll a dice formula string and return the numeric result. */
+export function rollDiceFormula(formula: string): number {
+	const m = /^(\d*)d(\d+)([+-]\d+)?$/i.exec(formula.trim());
+	if (!m) return 0;
+	const numDice = m[1] ? parseInt(m[1], 10) : 1;
+	const dieSize = parseInt(m[2], 10);
+	const modifier = m[3] ? parseInt(m[3], 10) : 0;
+	let total = modifier;
+	for (let i = 0; i < numDice; i++) {
+		total += Math.floor(Math.random() * dieSize) + 1;
+	}
+	return total;
+}
+
+/** Roll a dice formula and return a breakdown string: "(d1+d2+...+mod)=total".
+ *  For a single die with no modifier, returns just the number. */
+export function rollDiceFormulaWithBreakdown(formula: string): string {
+	const m = /^(\d*)d(\d+)([+-]\d+)?$/i.exec(formula.trim());
+	if (!m) return "0";
+	const numDice = m[1] ? parseInt(m[1], 10) : 1;
+	const dieSize = parseInt(m[2], 10);
+	const modifier = m[3] ? parseInt(m[3], 10) : 0;
+	const dice: number[] = [];
+	for (let i = 0; i < numDice; i++) {
+		dice.push(Math.floor(Math.random() * dieSize) + 1);
+	}
+	const total = dice.reduce((a, b) => a + b, 0) + modifier;
+	if (numDice === 1 && modifier === 0) return String(total);
+	let expr = dice.join("+");
+	if (modifier > 0) expr += `+${modifier}`;
+	else if (modifier < 0) expr += String(modifier);
+	return `(${expr})=${total}`;
 }
 
 /** Parse a workflow markdown file into a Workflow. */
@@ -46,15 +87,26 @@ export function parseWorkflow(content: string, name: string): Workflow {
 
 		if (!rawTable || isNaN(rolls) || rolls < 1) continue;
 
-		// Extract path from [[link]] syntax or plain text
-		const linkMatch = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/.exec(rawTable);
-		const tablePath = linkMatch ? linkMatch[1].trim() : rawTable.trim();
-
-		workflow.steps.push({
-			tablePath,
-			rolls,
-			label: label || undefined,
-		});
+		if (isDiceFormula(rawTable)) {
+			// Dice step — formula stored directly in the table cell
+			workflow.steps.push({
+				kind: "dice",
+				tablePath: "",
+				diceFormula: rawTable.trim(),
+				rolls,
+				label: label || undefined,
+			});
+		} else {
+			// Table step — extract path from [[link]] syntax or plain text
+			const linkMatch = /\[\[([^\]|]+)(?:\|[^\]]*)?\]\]/.exec(rawTable);
+			const tablePath = linkMatch ? linkMatch[1].trim() : rawTable.trim();
+			workflow.steps.push({
+				kind: "table",
+				tablePath,
+				rolls,
+				label: label || undefined,
+			});
+		}
 	}
 
 	return workflow;
@@ -75,7 +127,9 @@ export function buildWorkflowContent(workflow: Workflow): string {
 	lines.push("| Table | Rolls | Label |");
 	lines.push("|-------|-------|-------|");
 	for (const step of workflow.steps) {
-		const tableCell = `[[${step.tablePath}]]`;
+		const tableCell = step.kind === "dice"
+			? (step.diceFormula ?? "")
+			: `[[${step.tablePath}]]`;
 		const label = step.label ?? "";
 		lines.push(`| ${tableCell} | ${step.rolls} | ${label} |`);
 	}
@@ -83,9 +137,13 @@ export function buildWorkflowContent(workflow: Workflow): string {
 	return lines.join("\n") + "\n";
 }
 
-/** Derive the variable base name for a step: label if set, else table basename with spaces→underscores. */
+/** Derive the variable base name for a step: label if set, else table basename or sanitized formula. */
 export function stepVarName(step: WorkflowStep): string {
-	const base = step.label || (step.tablePath.split("/").pop() ?? step.tablePath);
+	if (step.label) return step.label.replace(/ /g, "_");
+	if (step.kind === "dice") {
+		return step.diceFormula ? `(${step.diceFormula})` : "dice";
+	}
+	const base = step.tablePath.split("/").pop() ?? step.tablePath;
 	return base.replace(/ /g, "_");
 }
 
@@ -102,7 +160,7 @@ export function generateDefaultTemplate(steps: WorkflowStep[]): string {
 
 	for (let i = 0; i < steps.length; i++) {
 		const step = steps[i];
-		const heading = step.label || `Table ${i + 1}`;
+		const heading = step.label || (step.kind === "dice" ? (step.diceFormula ?? `Step ${i + 1}`) : `Table ${i + 1}`);
 		lines.push(`## ${heading}`);
 		lines.push("");
 		for (let r = 0; r < step.rolls; r++) {

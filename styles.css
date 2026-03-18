@@ -151,6 +151,16 @@
     pointer-events: none;
 }
 
+.duckmage-hex-brush-hover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 2;
+}
+
 .duckmage-hex-exists {
     border-color: var(--background-modifier-border-hover);
 }
@@ -324,7 +334,7 @@ div.duckmage-hex-icon {
 /* ── Draggable / resizable modal ───────────────────────────────────── */
 .duckmage-editor-modal-drag {
     overflow: hidden;
-    width: min(520px, 90vw) !important;
+    width: min(620px, 90vw) !important;
     height: min(80vh, 700px) !important;
     max-height: none !important;
     max-width: none !important;
@@ -2326,6 +2336,28 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 .duckmage-rt-entry-link:hover {
     color: var(--link-color-hover);
 }
+.duckmage-wf-step-formula {
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+.duckmage-wf-step-alias {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-wf-template-section {
+    margin-top: 20px;
+}
+.duckmage-wf-template-preview {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--background-secondary);
+    font-size: var(--font-ui-small);
+    max-height: 240px;
+    overflow-y: auto;
+}
+.duckmage-wf-template-preview > *:first-child { margin-top: 0; }
+.duckmage-wf-template-preview > *:last-child  { margin-bottom: 0; }
 
 /* ── Random table view — from-folder input ─────────────────────────────────── */
 
@@ -2488,6 +2520,19 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     align-items: center;
     margin-bottom: 12px;
 }
+.duckmage-wf-sum-toggle {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex: 0 0 auto;
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+.duckmage-wf-sum-all {
+    margin-left: auto;
+}
 .duckmage-wf-wizard-step {
     margin-bottom: 12px;
     padding: 8px;
@@ -2506,6 +2551,11 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     border-radius: 3px;
     padding: 1px 5px;
     color: var(--text-muted);
+}
+.duckmage-wf-dice-badge {
+    background: var(--color-purple);
+    color: var(--text-on-accent);
+    font-family: var(--font-monospace);
 }
 .duckmage-wf-step-row {
     display: flex;
@@ -2575,9 +2625,36 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 }
 .duckmage-wf-editor-step-row select {
     flex: 2 1 0;
+    width: 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.duckmage-wf-kind-badge {
+    font-size: 1em;
+    flex: 0 0 auto;
+    cursor: default;
+}
+.duckmage-wf-formula-input {
+    flex: 2 1 0;
+    min-width: 0;
+    font-family: var(--font-monospace);
+    font-size: 0.9em;
+}
+.duckmage-wf-add-type-select {
+    flex: 0 0 auto;
+    max-width: 5em;
+}
+.duckmage-wf-add-specific {
+    flex: 2 1 0;
+    min-width: 0;
+    display: flex;
+}
+.duckmage-wf-add-specific select,
+.duckmage-wf-add-specific input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
 }
 .duckmage-wf-editor-step-row input[type="number"] {
     flex: 0 0 52px;

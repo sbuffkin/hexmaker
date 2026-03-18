@@ -83,11 +83,11 @@ A two-column browser with two modes toggled by tab buttons: **Tables** and **Wor
 
 **Workflows mode:**
 - Left: folder tree of workflow files + new-workflow creator. New workflows created with "New workflow with this table" (from a table detail pane) pre-populate the first step including auto-derived label.
-- Right: selected workflow — step summary, "Roll workflow" button, Edit button opens `WorkflowEditorModal`.
+- Right: selected workflow — each step shown as a clickable link (opens that table in Tables mode) with `×N` roll count, "Roll workflow" button, Edit button opens `WorkflowEditorModal`.
 - Right-click a workflow in the tree → context menu with "Delete workflow".
 
 **Public API:**
-- `openTable(filePath)` — switches to Tables mode, refreshes the list, and loads the specified table. Called from `HexTableView` when clicking an Enc. Table cell.
+- `openTable(filePath)` — switches to Tables mode, expands all ancestor folders of the target file so it is visible in the tree, refreshes the list, and loads the specified table. Called from `HexTableView` (Enc. Table cell), `HexEditorModal`, workflow step links, and the `obsidian://duckmage-roll` protocol handler.
 
 ---
 
@@ -188,7 +188,7 @@ template-file: world/workflows/templates/My Workflow.md
 | [[world/tables/forest-encounters]] | 2 | forest_encounters |
 | [[world/tables/treasure]] | 1 | treasure |
 ```
-Parsed/serialized by `workflow.ts`. Template files live at `{workflowsFolder}/templates/{name}.md` and use `$label` / `$label_N` placeholders (multi-roll steps). `WorkflowWizardModal` fills placeholders with roll results and saves the output as a new note.
+Parsed/serialized by `workflow.ts`. Template files live at `{workflowsFolder}/templates/{name}.md` and use `$label` / `$label_N` placeholders (multi-roll steps). `WorkflowEditorModal` auto-syncs the template when steps change: adding a step appends its section, changing a label updates the `## heading` and all `$var`/`$var_N` references, changing roll count adds or removes `_N`-suffixed placeholders. `WorkflowWizardModal` fills placeholders with roll results and saves the output as a new note.
 
 ### Settings (`data.json`)
 

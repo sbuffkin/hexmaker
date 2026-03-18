@@ -67,6 +67,7 @@ export class HexMapView extends ItemView {
   private paintIconName: string | null = null;
   private terrainPickMode = false;
   private paintBrushSize: 1 | 3 | 7 = 1;
+  private brushHoverHexes: Array<[number, number]> = [];
   private selectedHex: { x: number; y: number } | null = null;
   // Per-hex write queues: always stores the *latest* desired value so rapid
   // repaints of the same hex coalesce into at most one queued write.
@@ -121,6 +122,10 @@ export class HexMapView extends ItemView {
 
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
     this.applyTransform();
+
+    this.registerDomEvent(clipEl, "mouseleave", () => {
+      this.updateBrushHighlight(null, null);
+    });
 
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
     this.registerDomEvent(
@@ -207,8 +212,23 @@ export class HexMapView extends ItemView {
             if (this.drawingMode === "terrain") this.onHexPaintClick(x, y);
             else if (this.drawingMode === "icon") this.onHexIconClick(x, y);
           }
+          this.updateBrushHighlight(x, y);
+        } else {
+          this.updateBrushHighlight(null, null);
         }
         return;
+      }
+      if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
+        const el = document.elementFromPoint(
+          e.clientX,
+          e.clientY,
+        ) as HTMLElement | null;
+        const hexEl = el?.closest<HTMLElement>(".duckmage-hex");
+        if (hexEl) {
+          this.updateBrushHighlight(Number(hexEl.dataset.x), Number(hexEl.dataset.y));
+        } else {
+          this.updateBrushHighlight(null, null);
+        }
       }
       if (!isDragging) return;
       const dx = e.clientX - dragStartX;
@@ -541,6 +561,7 @@ export class HexMapView extends ItemView {
     this.drawingMode = null;
     this.paintTerrainName = null;
     this.terrainPickMode = false;
+    this.updateBrushHighlight(null, null);
     this.updateToolbarButtonStates();
   }
 
@@ -557,6 +578,7 @@ export class HexMapView extends ItemView {
     if (this.drawingMode !== "icon") return;
     this.drawingMode = null;
     this.paintIconName = null;
+    this.updateBrushHighlight(null, null);
     this.updateToolbarButtonStates();
   }
 
@@ -1130,6 +1152,22 @@ export class HexMapView extends ItemView {
     // orientations (verified from offset tables), forming a compact triangle.
     if (this.paintBrushSize === 3) return [center, nb[2], nb[3]];
     return [center, ...nb];
+  }
+
+  private updateBrushHighlight(x: number | null, y: number | null): void {
+    for (const [hx, hy] of this.brushHoverHexes) {
+      this.viewportEl
+        ?.querySelector<HTMLElement>(`[data-x="${hx}"][data-y="${hy}"]`)
+        ?.removeClass("duckmage-hex-brush-hover");
+    }
+    this.brushHoverHexes = [];
+    if (x === null || y === null) return;
+    this.brushHoverHexes = this.getBrushHexes(x, y);
+    for (const [hx, hy] of this.brushHoverHexes) {
+      this.viewportEl
+        ?.querySelector<HTMLElement>(`[data-x="${hx}"][data-y="${hy}"]`)
+        ?.addClass("duckmage-hex-brush-hover");
+    }
   }
 
   private onHexPaintClick(x: number, y: number): void {

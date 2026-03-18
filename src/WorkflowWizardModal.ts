@@ -1,7 +1,7 @@
 import { App, Modal, TFile, Notice } from "obsidian";
 import type DuckmagePlugin from "./DuckmagePlugin";
 import { normalizeFolder } from "./utils";
-import { parseWorkflow, generateDefaultTemplate, stepPlaceholder, type Workflow } from "./workflow";
+import { parseWorkflow, generateDefaultTemplate, stepPlaceholder, rollDiceFormulaWithBreakdown, type Workflow } from "./workflow";
 import { parseRandomTable, rollOnTable } from "./randomTable";
 
 export class WorkflowWizardModal extends Modal {
@@ -16,6 +16,8 @@ export class WorkflowWizardModal extends Modal {
 	private saveNoteBtn!: HTMLButtonElement;
 	private saveStatusEl!: HTMLElement;
 	private stepsArea!: HTMLElement;
+	// sumOnly[stepIdx][rollIdx] = true means collapse breakdown to sum in result
+	private sumOnly: boolean[][] = [];
 
 	constructor(
 		app: App,
@@ -26,15 +28,20 @@ export class WorkflowWizardModal extends Modal {
 	}
 
 	async onOpen(): Promise<void> {
+		this.titleEl.setText(this.workflowFile.basename);
+		this.contentEl.createDiv({ cls: "duckmage-rt-empty", text: "Loading…" });
+
 		const rawContent = await this.app.vault.read(this.workflowFile);
 		this.workflow = parseWorkflow(rawContent, this.workflowFile.basename);
 
 		// Initialise rolls array
 		this.rolls = this.workflow.steps.map(step => Array(step.rolls).fill(null));
+		this.sumOnly = this.workflow.steps.map(step => Array(step.rolls).fill(false));
 
-		// Preload table entries for each step (for the manual-pick dropdown)
+		// Preload table entries for each step (for the manual-pick dropdown; dice steps have no entries)
 		this.stepEntries = await Promise.all(
 			this.workflow.steps.map(async (step) => {
+				if (step.kind === "dice") return [];
 				const tableFile = this.app.vault.getAbstractFileByPath(step.tablePath + ".md")
 					?? this.app.metadataCache.getFirstLinkpathDest(step.tablePath, this.workflowFile.path);
 				if (!(tableFile instanceof TFile)) return [];
@@ -59,7 +66,6 @@ export class WorkflowWizardModal extends Modal {
 			this.templateContent = generateDefaultTemplate(this.workflow.steps);
 		}
 
-		this.titleEl.setText(this.workflowFile.basename);
 		this.buildUI();
 	}
 
@@ -91,7 +97,7 @@ export class WorkflowWizardModal extends Modal {
 			});
 		});
 
-		// ── Steps area ────────────────────────────────────────────────────
+// ── Steps area ────────────────────────────────────────────────────
 		this.stepsArea = contentEl.createDiv({ cls: "duckmage-wf-wizard-steps" });
 		this.renderSteps();
 
@@ -138,9 +144,29 @@ export class WorkflowWizardModal extends Modal {
 			const stepEl = this.stepsArea.createDiv({ cls: "duckmage-wf-wizard-step" });
 
 			const stepHeader = stepEl.createDiv({ cls: "duckmage-wf-wizard-step-header" });
-			const tableName = step.tablePath.split("/").pop() ?? step.tablePath;
-			stepHeader.createEl("strong", { text: step.label || tableName });
+			const stepName = step.kind === "dice"
+				? (step.label || step.diceFormula || "dice")
+				: (step.label || step.tablePath.split("/").pop() || step.tablePath);
+			stepHeader.createEl("strong", { text: stepName });
+			if (step.kind === "dice") {
+				stepHeader.createSpan({ cls: "duckmage-wf-roll-badge duckmage-wf-dice-badge", text: step.diceFormula ?? "" });
+			}
 			stepHeader.createSpan({ cls: "duckmage-wf-roll-badge", text: `×${step.rolls}` });
+
+			// "Sum all" toggle — only for dice steps with multiple rolls
+			const perRollCbs: HTMLInputElement[] = [];
+			let sumAllCb: HTMLInputElement | null = null;
+			if (step.kind === "dice" && step.rolls > 1) {
+				const sumAllLabel = stepHeader.createEl("label", { cls: "duckmage-wf-sum-toggle duckmage-wf-sum-all" });
+				sumAllCb = sumAllLabel.createEl("input", { type: "checkbox" });
+				sumAllCb.checked = this.sumOnly[si].every(v => v);
+				sumAllLabel.createSpan({ text: "sum all" });
+				sumAllCb.addEventListener("change", () => {
+					this.sumOnly[si].fill(sumAllCb!.checked);
+					for (const cb of perRollCbs) cb.checked = sumAllCb!.checked;
+					this.updateResultTextarea();
+				});
+			}
 
 			for (let ri = 0; ri < step.rolls; ri++) {
 				const rollRow = stepEl.createDiv({ cls: "duckmage-wf-step-row" });
@@ -161,22 +187,25 @@ export class WorkflowWizardModal extends Modal {
 					this.updateSaveButton();
 				});
 
-				const pickerSelect = rollRow.createEl("select", { cls: "duckmage-wf-pick-select" });
-				pickerSelect.createEl("option", { value: "", text: "— pick —" });
-				for (const label of (this.stepEntries[si] ?? [])) {
-					pickerSelect.createEl("option", { value: label, text: label });
+				// Only show the manual picker for table steps
+				if (step.kind !== "dice") {
+					const pickerSelect = rollRow.createEl("select", { cls: "duckmage-wf-pick-select" });
+					pickerSelect.createEl("option", { value: "", text: "— pick —" });
+					for (const label of (this.stepEntries[si] ?? [])) {
+						pickerSelect.createEl("option", { value: label, text: label });
+					}
+					pickerSelect.addEventListener("change", () => {
+						const picked = pickerSelect.value;
+						if (!picked) return;
+						this.rolls[si][ri] = picked;
+						rollInput.value = picked;
+						rollInput.classList.add("is-rolled");
+						rollBtn.setText("Reroll");
+						pickerSelect.value = "";
+						this.updateResultTextarea();
+						this.updateSaveButton();
+					});
 				}
-				pickerSelect.addEventListener("change", () => {
-					const picked = pickerSelect.value;
-					if (!picked) return;
-					this.rolls[si][ri] = picked;
-					rollInput.value = picked;
-					rollInput.classList.add("is-rolled");
-					rollBtn.setText("Reroll");
-					pickerSelect.value = "";
-					this.updateResultTextarea();
-					this.updateSaveButton();
-				});
 
 				const rollBtn = rollRow.createEl("button", {
 					text: this.rolls[si][ri] !== null ? "Reroll" : "Roll",
@@ -193,12 +222,31 @@ export class WorkflowWizardModal extends Modal {
 					this.updateResultTextarea();
 					this.updateSaveButton();
 				});
+
+				if (step.kind === "dice") {
+					const sumLabel = rollRow.createEl("label", { cls: "duckmage-wf-sum-toggle" });
+					const sumCb = sumLabel.createEl("input", { type: "checkbox" });
+					sumCb.checked = this.sumOnly[si][ri];
+					sumLabel.createSpan({ text: "sum" });
+					perRollCbs.push(sumCb);
+					sumCb.addEventListener("change", () => {
+						this.sumOnly[si][ri] = sumCb.checked;
+						if (sumAllCb) sumAllCb.checked = this.sumOnly[si].every(v => v);
+						this.updateResultTextarea();
+					});
+				}
 			}
 		}
 	}
 
 	private async rollStep(stepIdx: number, rollIdx: number): Promise<void> {
 		const step = this.workflow.steps[stepIdx];
+
+		if (step.kind === "dice") {
+			this.rolls[stepIdx][rollIdx] = rollDiceFormulaWithBreakdown(step.diceFormula ?? "1d6");
+			return;
+		}
+
 		// Try exact path first, then Obsidian link resolution with workflow file as source
 		const tableFile = this.app.vault.getAbstractFileByPath(step.tablePath + ".md")
 			?? this.app.metadataCache.getFirstLinkpathDest(step.tablePath, this.workflowFile.path);
@@ -239,10 +287,14 @@ export class WorkflowWizardModal extends Modal {
 			for (let ri = 0; ri < step.rolls; ri++) {
 				const placeholder = stepPlaceholder(step, ri);
 				const value = this.rolls[si][ri];
-				// Replace all occurrences of this placeholder
+				let display = value;
+				if (display !== null && step.kind === "dice" && this.sumOnly[si][ri]) {
+					// Extract just the sum from "(d1+d2+...)=N" format
+					display = display.replace(/^\(.*\)=(-?\d+)$/, "$1");
+				}
 				const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 				result = result.replace(new RegExp(escaped, "g"),
-					value !== null ? value : `[${placeholder}]`);
+					display !== null ? display : `[${placeholder}]`);
 			}
 		}
 		return result;

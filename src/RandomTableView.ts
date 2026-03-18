@@ -81,7 +81,9 @@ export class RandomTableView extends ItemView {
     return VIEW_TYPE_RANDOM_TABLES;
   }
   getDisplayText() {
-    return "Random tables";
+    return this.activeFile
+      ? `Random tables · ${this.activeFile.basename}`
+      : "Random tables";
   }
   getIcon() {
     return "dice";
@@ -89,6 +91,9 @@ export class RandomTableView extends ItemView {
 
   async setState(state: any, result: ViewStateResult): Promise<void> {
     await super.setState(state, result);
+    if (state?.viewMode && (state.viewMode === "tables" || state.viewMode === "workflows")) {
+      if (state.viewMode !== this.viewMode) this.setViewMode(state.viewMode);
+    }
     if (state?.filePath) {
       const file = this.app.vault.getAbstractFileByPath(state.filePath);
       if (file instanceof TFile) {
@@ -138,6 +143,22 @@ export class RandomTableView extends ItemView {
     });
     this.tablesBtn.addEventListener("click", () => this.setViewMode("tables"));
     this.workflowsBtn.addEventListener("click", () => this.setViewMode("workflows"));
+
+    // Middle-click mode tabs → open view in new tab at that mode
+    this.tablesBtn.addEventListener("auxclick", (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const leaf = this.app.workspace.getLeaf("tab");
+      leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "tables" } });
+      this.app.workspace.revealLeaf(leaf);
+    });
+    this.workflowsBtn.addEventListener("auxclick", (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      const leaf = this.app.workspace.getLeaf("tab");
+      leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "workflows" } });
+      this.app.workspace.revealLeaf(leaf);
+    });
 
     const searchInput = leftCol.createEl("input", {
       type: "text",
@@ -390,6 +411,13 @@ export class RandomTableView extends ItemView {
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (file instanceof TFile) {
       if (this.viewMode !== "tables") this.setViewMode("tables");
+      // Expand ancestor folders so the target item is visible in the list
+      let parent = file.parent;
+      const tablesFolder = normalizeFolder(this.plugin.settings.tablesFolder);
+      while (parent && parent.path !== tablesFolder && parent.path !== "/") {
+        this.collapsedFolders.delete(parent.path);
+        parent = parent.parent;
+      }
       await this.loadList();
       this.loadTable(file);
     }
@@ -415,6 +443,7 @@ export class RandomTableView extends ItemView {
     if (this.workflowFooterEl) this.workflowFooterEl.style.display = mode === "workflows" ? "" : "none";
     this.filterQuery = "";
     this.activeFile = null;
+    this.app.workspace.trigger("layout-change");
     this.detailEl?.empty();
     this.detailEl?.createDiv({
       cls: "duckmage-rt-placeholder",
@@ -660,6 +689,16 @@ export class RandomTableView extends ItemView {
           e.preventDefault();
           const menu = new Menu();
           menu.addItem((item) => {
+            item.setTitle("Open in new tab");
+            item.setIcon("external-link");
+            item.onClick(() => {
+              const leaf = this.app.workspace.getLeaf("tab");
+              leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+              this.app.workspace.revealLeaf(leaf);
+            });
+          });
+          menu.addSeparator();
+          menu.addItem((item) => {
             item.setTitle("Delete workflow");
             item.setIcon("trash");
             item.onClick(() => {
@@ -720,6 +759,7 @@ export class RandomTableView extends ItemView {
 
   private async loadWorkflow(file: TFile): Promise<void> {
     this.activeFile = file;
+    this.app.workspace.trigger("layout-change");
     this.listEl?.querySelectorAll<HTMLElement>(".duckmage-rt-workflow-item")
       .forEach(el => el.toggleClass("is-active", el.title === file.path));
     await this.renderWorkflowDetail();
@@ -778,14 +818,41 @@ export class RandomTableView extends ItemView {
       list.style.paddingLeft = "18px";
       for (const step of workflow.steps) {
         const li = list.createEl("li");
-        const tableName = step.tablePath.split("/").pop() ?? step.tablePath;
-        const link = li.createEl("a", { text: tableName, cls: "duckmage-rt-entry-link" });
-        link.addEventListener("click", async () => {
-          const tableFile = this.app.vault.getAbstractFileByPath(step.tablePath + ".md")
-            ?? this.app.metadataCache.getFirstLinkpathDest(step.tablePath, this.activeFile?.path ?? "");
-          if (tableFile instanceof TFile) await this.openTable(tableFile.path);
-        });
+        let primaryName: string;
+        if (step.kind === "dice") {
+          const formula = step.diceFormula ?? "dice";
+          primaryName = `(${formula})`;
+          li.createEl("code", { text: primaryName, cls: "duckmage-wf-step-formula" });
+        } else {
+          primaryName = step.tablePath.split("/").pop() ?? step.tablePath;
+          const link = li.createEl("a", { text: primaryName, cls: "duckmage-rt-entry-link" });
+          link.addEventListener("click", async () => {
+            const tableFile = this.app.vault.getAbstractFileByPath(step.tablePath + ".md")
+              ?? this.app.metadataCache.getFirstLinkpathDest(step.tablePath, this.activeFile?.path ?? "");
+            if (tableFile instanceof TFile) await this.openTable(tableFile.path);
+          });
+        }
+        if (step.label && step.label !== primaryName) {
+          li.createSpan({ text: ` "${step.label}"`, cls: "duckmage-wf-step-alias" });
+        }
         li.createSpan({ text: ` ×${step.rolls}` });
+      }
+    }
+
+    // ── Template link + preview ─────────────────────────────────────────
+    if (workflow.templateFile) {
+      const tmplFile = this.app.vault.getAbstractFileByPath(workflow.templateFile);
+      if (tmplFile instanceof TFile) {
+        const tmplSection = this.detailEl.createDiv({ cls: "duckmage-wf-template-section" });
+        tmplSection.createEl("p", { text: "Template", cls: "duckmage-rt-history-label" });
+        const tmplLink = tmplSection.createEl("a", { text: tmplFile.basename, cls: "duckmage-rt-entry-link" });
+        tmplLink.addEventListener("click", () => {
+          this.app.workspace.getLeaf(false).openFile(tmplFile);
+        });
+        const tmplContent = await this.app.vault.read(tmplFile);
+        const escapedContent = tmplContent.replace(/\$/g, "\\$");
+        const preview = tmplSection.createDiv({ cls: "duckmage-wf-template-preview" });
+        await MarkdownRenderer.render(this.app, escapedContent, preview, tmplFile.path, this);
       }
     }
   }
@@ -976,6 +1043,17 @@ export class RandomTableView extends ItemView {
     const menu = new Menu();
 
     menu.addItem((item) => {
+      item.setTitle("Open in new tab");
+      item.setIcon("external-link");
+      item.onClick(() => {
+        const leaf = this.app.workspace.getLeaf("tab");
+        leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: file.path } });
+        this.app.workspace.revealLeaf(leaf);
+      });
+    });
+    menu.addSeparator();
+
+    menu.addItem((item) => {
       item.setTitle(rollExcluded ? "Include in roll picker" : "Exclude from roll picker");
       item.setIcon("dice");
       item.onClick(async () => {
@@ -1047,6 +1125,7 @@ export class RandomTableView extends ItemView {
 
   private async loadTable(file: TFile): Promise<void> {
     this.activeFile = file;
+    this.app.workspace.trigger("layout-change");
     this.rollHistory = [];
     this.listEl
       ?.querySelectorAll<HTMLElement>(".duckmage-rt-list-item")

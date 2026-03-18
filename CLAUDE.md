@@ -115,9 +115,9 @@ Renders an interactive hex-grid map for tabletop RPG world-building inside Obsid
   - Jump button (◎) calls `HexMapView.centerOnHex(x, y)` on the open map view.
 
 - **`RandomTableView`** (`src/RandomTableView.ts`, extends `ItemView`) — Tabbed browser with two modes:
-  - **Tables mode**: folder tree + search + new-table creator. Detail pane shows entries with die-range and % odds, die-size selector, Roll button, copy result, roll history. Edit opens `RandomTableEditorModal`.
-  - **Workflows mode**: folder tree of workflow files. Detail pane shows steps summary and a "Roll workflow" button. Edit opens `WorkflowEditorModal`.
-  - **`openTable(filePath)`** (public) — switches to Tables mode and loads a specific table file; called from `HexTableView` when clicking an Enc. Table cell.
+  - **Tables mode**: folder tree + search + new-table creator. Detail pane shows entries with die-range and % odds, die-size selector, Roll button, copy result, roll history. Edit opens `RandomTableEditorModal`. Bottom of detail pane shows "Workflows using this table" links (each opens that workflow in Workflows mode) and a "+ New workflow with this table" link.
+  - **Workflows mode**: folder tree of workflow files. Detail pane shows each step as a clickable link (opens that table in Tables mode) with roll count. Edit opens `WorkflowEditorModal`. "Roll workflow" button opens `WorkflowWizardModal`.
+  - **`openTable(filePath)`** (public) — switches to Tables mode, expands ancestor folders so the target is visible, and loads the table detail; called from `HexTableView` (Enc. Table cell), `HexEditorModal`, workflow step links, and the protocol handler.
 
 - **`RandomTableModal`** (`src/RandomTableModal.ts`, extends `Modal`) — Lightweight inline roll modal opened from `HexEditorModal` (🎲 button per link section or 📖 for terrain description). Skips the picker if `initialFilePath` is supplied.
 
@@ -126,7 +126,7 @@ Renders an interactive hex-grid map for tabletop RPG world-building inside Obsid
 - **`WorkflowEditorModal`** (`src/WorkflowEditorModal.ts`, extends `Modal`) — Edit a workflow definition:
   - Rename workflow, set results folder, manage steps (table picker + roll count + label) with drag-to-reorder.
   - Template textarea with live placeholder validation — shows missing `$placeholder` names.
-  - Template auto-syncs when steps are added or labels change.
+  - Template auto-syncs: new step appends `## label\n$label` block; label change updates the heading AND all `$var`/`$var_N` placeholder references; roll-count change adds or removes `_N` suffixed placeholders (reducing to 1 collapses back to bare `$var`).
   - Auto-saves workflow file and template file on close. Modal is draggable by its title bar.
 
 - **`WorkflowWizardModal`** (`src/WorkflowWizardModal.ts`, extends `Modal`) — Execute a workflow:
