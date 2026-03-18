@@ -779,8 +779,13 @@ export class RandomTableView extends ItemView {
       for (const step of workflow.steps) {
         const li = list.createEl("li");
         const tableName = step.tablePath.split("/").pop() ?? step.tablePath;
-        const label = step.label ? `${step.label}: ` : "";
-        li.createSpan({ text: `${label}${tableName} ×${step.rolls}` });
+        const link = li.createEl("a", { text: tableName, cls: "duckmage-rt-entry-link" });
+        link.addEventListener("click", async () => {
+          const tableFile = this.app.vault.getAbstractFileByPath(step.tablePath + ".md")
+            ?? this.app.metadataCache.getFirstLinkpathDest(step.tablePath, this.activeFile?.path ?? "");
+          if (tableFile instanceof TFile) await this.openTable(tableFile.path);
+        });
+        li.createSpan({ text: ` ×${step.rolls}` });
       }
     }
   }

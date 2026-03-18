@@ -160,24 +160,46 @@ export class WorkflowEditorModal extends Modal {
 		};
 
 		const syncRollsInTemplate = (step: WorkflowStep, oldRolls: number, newRolls: number): void => {
-			if (newRolls <= oldRolls) return;
+			if (newRolls === oldRolls) return;
 			const varName = stepVarName(step);
-			if (oldRolls === 1) {
-				// Replace single $varname with $varname_1 … $varname_newRolls
-				const singleEscaped = escapeRegex(`$${varName}`);
-				const newText = Array.from({ length: newRolls }, (_, i) => `$${varName}_${i + 1}`).join("\n");
-				templateContent = templateContent.replace(
-					new RegExp(singleEscaped + "(?!_\\d)", "g"),
-					newText,
-				);
+
+			if (newRolls > oldRolls) {
+				if (oldRolls === 1) {
+					// Replace single $varname with $varname_1 … $varname_newRolls
+					const singleEscaped = escapeRegex(`$${varName}`);
+					const newText = Array.from({ length: newRolls }, (_, i) => `$${varName}_${i + 1}`).join("\n");
+					templateContent = templateContent.replace(
+						new RegExp(singleEscaped + "(?!_\\d)", "g"),
+						newText,
+					);
+				} else {
+					// Append new placeholder(s) after the last existing one
+					const lastPlaceholder = `$${varName}_${oldRolls}`;
+					const addedText = Array.from({ length: newRolls - oldRolls }, (_, i) => `$${varName}_${oldRolls + i + 1}`).join("\n");
+					templateContent = templateContent.replace(
+						new RegExp(escapeRegex(lastPlaceholder), "g"),
+						`${lastPlaceholder}\n${addedText}`,
+					);
+				}
 			} else {
-				// Append new placeholder(s) after the last existing one
-				const lastPlaceholder = `$${varName}_${oldRolls}`;
-				const addedText = Array.from({ length: newRolls - oldRolls }, (_, i) => `$${varName}_${oldRolls + i + 1}`).join("\n");
-				templateContent = templateContent.replace(
-					new RegExp(escapeRegex(lastPlaceholder), "g"),
-					`${lastPlaceholder}\n${addedText}`,
-				);
+				// Decreasing: remove placeholders that are now out of range
+				if (newRolls === 1) {
+					// Remove _2 … _oldRolls lines, then replace $varname_1 with $varname
+					for (let r = oldRolls; r >= 2; r--) {
+						const ph = escapeRegex(`$${varName}_${r}`);
+						templateContent = templateContent.replace(new RegExp(`\n?${ph}`, "g"), "");
+					}
+					templateContent = templateContent.replace(
+						new RegExp(escapeRegex(`$${varName}_1`), "g"),
+						`$${varName}`,
+					);
+				} else {
+					// Remove _newRolls+1 … _oldRolls lines
+					for (let r = oldRolls; r > newRolls; r--) {
+						const ph = escapeRegex(`$${varName}_${r}`);
+						templateContent = templateContent.replace(new RegExp(`\n?${ph}`, "g"), "");
+					}
+				}
 			}
 			templateArea.value = templateContent;
 			updateValidation();
@@ -233,7 +255,7 @@ export class WorkflowEditorModal extends Modal {
 					const oldRolls = steps[i].rolls;
 					const newRolls = Math.max(1, parseInt(rollsInput.value, 10) || 1);
 					steps[i].rolls = newRolls;
-					if (newRolls > oldRolls) syncRollsInTemplate(steps[i], oldRolls, newRolls);
+					syncRollsInTemplate(steps[i], oldRolls, newRolls);
 					updateValidation();
 				});
 
