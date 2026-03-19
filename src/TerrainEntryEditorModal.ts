@@ -10,6 +10,8 @@ export class TerrainEntryEditorModal extends Modal {
 	private pendingIcon: string | undefined;
 	private pendingIconColor: string | undefined;
 	private readonly originalName: string;
+	// Set to true by any explicit button action so onClose doesn't also autosave
+	private savedOrDeleted = false;
 
 	constructor(
 		app: App,
@@ -85,42 +87,21 @@ export class TerrainEntryEditorModal extends Modal {
 
 		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: "Save" });
 		saveBtn.addEventListener("click", () => {
+			this.savedOrDeleted = true;
 			const nameChanged = this.pendingName !== this.originalName;
-			// Update color/icon immediately — these don't affect hex file lookups
-			this.entry.color      = this.pendingColor;
-			this.entry.icon       = this.pendingIcon;
-			this.entry.iconColor  = this.pendingIconColor;
-			// Show pending state while async work runs
 			saveBtn.disabled = true;
 			saveBtn.setText(nameChanged ? "Updating hexes…" : "Saving…");
-			void (async () => {
-				if (nameChanged) {
-					const oldName = this.originalName;
-					const newName = this.pendingName;
-					// 1. Update hex files while palette still has old name (no blank hexes)
-					const overrides = await this.plugin.renameTerrainInHexes(oldName, newName);
-					// 2. Rename table files on disk
-					await this.renameTerrainTables(oldName, newName);
-					// 3. Now update palette entry name and persist
-					this.entry.name = newName;
-					await this.plugin.saveSettings();
-					// 4. Refresh with overrides to bypass stale metadata cache
-					this.plugin.refreshHexMapWithOverrides(overrides);
-					// 5. Update any open hex table terrain filters
-					this.plugin.refreshHexTableTerrainRename(oldName, newName);
-				} else {
-					await this.plugin.saveSettings();
-					this.plugin.refreshHexMap();
-				}
-				this.onSave();
-				this.close();
-			})();
+			void this.doSave().then(() => this.close());
 		});
 
-		btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+		btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
+			this.savedOrDeleted = true;
+			this.close();
+		});
 
 		const deleteBtn = btnRow.createEl("button", { cls: "duckmage-btn-danger", text: "Delete" });
 		deleteBtn.addEventListener("click", async () => {
+			this.savedOrDeleted = true;
 			const idx = this.plugin.settings.terrainPalette.indexOf(this.entry);
 			if (idx >= 0) this.plugin.settings.terrainPalette.splice(idx, 1);
 			await this.plugin.saveSettings();
@@ -130,7 +111,31 @@ export class TerrainEntryEditorModal extends Modal {
 	}
 
 	onClose(): void {
+		if (!this.savedOrDeleted) {
+			void this.doSave();
+		}
 		this.contentEl.empty();
+	}
+
+	private async doSave(): Promise<void> {
+		const nameChanged = this.pendingName !== this.originalName;
+		this.entry.color     = this.pendingColor;
+		this.entry.icon      = this.pendingIcon;
+		this.entry.iconColor = this.pendingIconColor;
+		if (nameChanged) {
+			const oldName = this.originalName;
+			const newName = this.pendingName;
+			const overrides = await this.plugin.renameTerrainInHexes(oldName, newName);
+			await this.renameTerrainTables(oldName, newName);
+			this.entry.name = newName;
+			await this.plugin.saveSettings();
+			this.plugin.refreshHexMapWithOverrides(overrides);
+			this.plugin.refreshHexTableTerrainRename(oldName, newName);
+		} else {
+			await this.plugin.saveSettings();
+			this.plugin.refreshHexMap();
+		}
+		this.onSave();
 	}
 
 	private getTerrainTablePath(name: string, type: "description" | "encounters"): string {

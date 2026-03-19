@@ -236,6 +236,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-from-folder-input",
       attr: { placeholder: "Generate from folder link (optional)…" },
     });
+    fromFolderInput.style.marginTop = "6px";
 
     const createTable = async () => {
       const name = newInput.value.trim();
@@ -685,6 +686,13 @@ export class RandomTableView extends ItemView {
         row.setText(node.file.basename);
         row.title = node.file.path;
         row.addEventListener("click", () => this.loadWorkflow(node.file));
+        row.addEventListener("auxclick", (e: MouseEvent) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          const leaf = this.app.workspace.getLeaf("tab");
+          leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+          this.app.workspace.revealLeaf(leaf);
+        });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
           e.preventDefault();
           const menu = new Menu();
@@ -964,6 +972,13 @@ export class RandomTableView extends ItemView {
         row.setText(node.file.basename);
         row.title = node.file.path;
         row.addEventListener("click", () => this.loadTable(node.file));
+        row.addEventListener("auxclick", (e: MouseEvent) => {
+          if (e.button !== 1) return;
+          e.preventDefault();
+          const leaf = this.app.workspace.getLeaf("tab");
+          leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+          this.app.workspace.revealLeaf(leaf);
+        });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
           e.preventDefault();
           this.showFileContextMenu(e, node.file);

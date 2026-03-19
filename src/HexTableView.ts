@@ -1061,6 +1061,17 @@ export class HexTableView extends ItemView {
                 ? "Dungeons"
                 : "Encounters Table";
           td.addClass("duckmage-hex-table-cell-clickable");
+          td.addEventListener("auxclick", async (e: MouseEvent) => {
+            if (e.button !== 1) return;
+            if (col.key !== "encounters table" || linkList.length !== 1) return;
+            e.preventDefault();
+            const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+            if (!(file instanceof TFile)) return;
+            const leaf = this.app.workspace.getLeaf("tab");
+            await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
+            this.app.workspace.revealLeaf(leaf);
+            await (leaf.view as RandomTableView).openTable(file.path);
+          });
           td.addEventListener("click", async () => {
             if (linkList.length === 0) {
               new LinkPickerModal(

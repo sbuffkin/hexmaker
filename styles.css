@@ -346,6 +346,8 @@ div.duckmage-hex-icon {
     overflow-x: hidden;
     max-height: none;
     height: calc(100% - var(--modal-title-size, 0px));
+    display: flex;
+    flex-direction: column;
 }
 .duckmage-editor-title-drag {
     cursor: move;
@@ -638,27 +640,21 @@ div.duckmage-terrain-preview-icon {
     color: var(--text-muted);
 }
 
-/* Pencil button — top-right corner */
+/* Pencil icon — top-right corner, decorative only */
 .duckmage-terrain-edit-pencil {
     position: absolute;
     top: 2px;
-    right: 2px;
-    font-size: 0.85em;
+    right: 4px;
+    font-size: 0.75em;
     line-height: 1;
     z-index: 2;
-    cursor: pointer;
+    pointer-events: none;
     opacity: 0.4;
-    padding: 3px 5px;
-    border-radius: 3px;
+    color: var(--text-faint);
 }
 .duckmage-terrain-option-editable:hover .duckmage-terrain-edit-pencil {
-    opacity: 1;
-    background: var(--background-modifier-hover);
-}
-.duckmage-terrain-edit-pencil:hover {
-    background: var(--interactive-accent) !important;
-    color: var(--text-on-accent);
-    opacity: 1 !important;
+    opacity: 0.8;
+    color: var(--text-muted);
 }
 
 /* Drop target highlight during drag-reorder */
@@ -2133,6 +2129,23 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 /* ── Random table editor modal ───────────────────────────────────────────── */
 .duckmage-table-editor {
     min-width: 420px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.duckmage-table-editor-entries-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.duckmage-table-editor-entries-section .duckmage-table-editor-rows {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 60px;
 }
 .duckmage-table-editor-heading {
     font-weight: 600;
@@ -2379,7 +2392,7 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 .duckmage-region-btn {
     position: absolute;
     top: 8px;
-    left: 80px;
+    left: 92px;
     z-index: 10;
     height: 26px;
     padding: 0 8px;
@@ -2586,10 +2599,27 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     text-align: center;
 }
 
+/* Workflow editor content — flex column so template section can grow */
+.duckmage-wf-editor {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+/* Template section grows to fill remaining space */
+.duckmage-wf-template-section-wrap {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
 /* Workflow template area */
 .duckmage-wf-template-area {
     width: 100%;
     min-height: 140px;
+    flex: 1;
     font-family: var(--font-monospace);
     font-size: 0.85em;
     resize: vertical;

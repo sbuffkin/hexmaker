@@ -130,12 +130,13 @@ export class WorkflowEditorModal extends Modal {
 		rfInput.addEventListener("input", () => { resultsFolder = normalizeFolder(rfInput.value.trim()); });
 
 		// ── Template section ──────────────────────────────────────────────
-		contentEl.createEl("p", { text: "Template", cls: "duckmage-table-editor-heading" });
-		const templateArea = contentEl.createEl("textarea", { cls: "duckmage-wf-template-area" });
+		const templateSectionWrap = contentEl.createDiv({ cls: "duckmage-wf-template-section-wrap" });
+		templateSectionWrap.createEl("p", { text: "Template", cls: "duckmage-table-editor-heading" });
+		const templateArea = templateSectionWrap.createEl("textarea", { cls: "duckmage-wf-template-area" });
 		templateArea.value = templateContent;
 		templateArea.addEventListener("input", () => { templateContent = templateArea.value; updateValidation(); });
 
-		const validationEl = contentEl.createDiv();
+		const validationEl = templateSectionWrap.createDiv();
 		validationEl.style.marginTop = "4px";
 		validationEl.style.fontSize = "0.85em";
 

@@ -1,10 +1,11 @@
-import { Notice, Plugin, TFile, TFolder } from "obsidian";
+import { Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
 import { HexMapView } from "./HexMapView";
 import { HexTableView } from "./HexTableView";
 import { RandomTableView } from "./RandomTableView";
 import { DuckmageSettingTab } from "./DuckmageSettingTab";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, VIEW_TYPE_HEX_MAP, VIEW_TYPE_HEX_TABLE, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 import { normalizeFolder, makeTableTemplate } from "./utils";
+import { parseWorkflow, buildWorkflowContent } from "./workflow";
 import type { DuckmagePluginSettings, RegionData } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";
@@ -78,6 +79,35 @@ export default class DuckmagePlugin extends Plugin {
 					await this.app.fileManager.processFrontMatter(tableFile, (fm) => {
 						fm["linked-folder"] = updatedLf;
 					});
+				}
+			}),
+		);
+
+		// Remove workflow steps that reference a deleted table file
+		this.registerEvent(
+			this.app.vault.on("delete", async (abstractFile: TAbstractFile) => {
+				if (!(abstractFile instanceof TFile)) return;
+				const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
+				if (tablesPrefix && !abstractFile.path.startsWith(tablesPrefix + "/")) return;
+
+				// The table path stored in workflows has no .md extension
+				const deletedTablePath = abstractFile.path.slice(0, -3);
+
+				const wfPrefix = normalizeFolder(this.settings.workflowsFolder);
+				const templatesPath = wfPrefix ? `${wfPrefix}/templates` : "templates";
+				const workflowFiles = this.app.vault.getMarkdownFiles().filter(
+					(f) => (!wfPrefix || f.path.startsWith(wfPrefix + "/"))
+						&& !f.path.startsWith(templatesPath + "/")
+						&& !f.basename.startsWith("_"),
+				);
+
+				for (const wfFile of workflowFiles) {
+					const content = await this.app.vault.read(wfFile);
+					const workflow = parseWorkflow(content, wfFile.basename);
+					const filtered = workflow.steps.filter(s => s.tablePath !== deletedTablePath);
+					if (filtered.length === workflow.steps.length) continue;
+					workflow.steps = filtered;
+					await this.app.vault.modify(wfFile, buildWorkflowContent(workflow));
 				}
 			}),
 		);

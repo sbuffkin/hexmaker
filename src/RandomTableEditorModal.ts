@@ -80,36 +80,12 @@ export class RandomTableEditorModal extends Modal {
 			if (e.key === "Escape") { nameInput.value = this.file.basename; nameInput.blur(); }
 		});
 
-		// ── Linked folder ─────────────────────────────────────────────────
-		const folderRow = contentEl.createDiv({ cls: "duckmage-table-editor-folder-row" });
-		folderRow.createEl("label", { text: "Linked folder", cls: "duckmage-table-editor-folder-label" });
-		const folderInput = folderRow.createEl("input", { type: "text", cls: "duckmage-table-editor-folder-input" });
-		folderInput.value = table.linkedFolder ?? "";
-		folderInput.placeholder = "world/towns (leave blank for none)";
-
-		// ── Description ───────────────────────────────────────────────────
-		const descRow = contentEl.createDiv({ cls: "duckmage-table-editor-desc-row" });
-		descRow.createEl("label", { text: "Description", cls: "duckmage-table-editor-desc-label" });
-		const descInput = descRow.createEl("textarea", { cls: "duckmage-table-editor-desc-input" });
-		descInput.placeholder = "Optional description shown above the table…";
-		descInput.value = table.description ?? "";
-		descInput.rows = 3;
-
-		// ── Filter settings ───────────────────────────────────────────────
-		const filterSection = contentEl.createDiv({ cls: "duckmage-table-editor-filter-section" });
-		const rollFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
-		const rollFilterCb = rollFilterRow.createEl("input", { type: "checkbox" });
-		rollFilterCb.checked = this.parseFrontmatterBool(frontmatter, "roll-filter") === false;
-		rollFilterRow.createEl("label", { text: "Exclude from roll picker" });
-
-		const encFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
-		const encFilterCb = encFilterRow.createEl("input", { type: "checkbox" });
-		encFilterCb.checked = this.parseFrontmatterBool(frontmatter, "encounter-filter") === false;
-		encFilterRow.createEl("label", { text: "Exclude from encounters table" });
+		// ── Entries section (grows to fill available space) ───────────────
+		const entriesSection = contentEl.createDiv({ cls: "duckmage-table-editor-entries-section" });
 
 		// ── Existing rows ─────────────────────────────────────────────────
-		contentEl.createEl("p", { text: "Entries", cls: "duckmage-table-editor-heading" });
-		const rowsEl = contentEl.createDiv({ cls: "duckmage-table-editor-rows" });
+		entriesSection.createEl("p", { text: "Entries", cls: "duckmage-table-editor-heading" });
+		const rowsEl = entriesSection.createDiv({ cls: "duckmage-table-editor-rows" });
 
 		let dragSrcIndex = -1;
 
@@ -197,8 +173,8 @@ export class RandomTableEditorModal extends Modal {
 		renderRows();
 
 		// ── Add new row ───────────────────────────────────────────────────
-		contentEl.createEl("p", { text: "Add row", cls: "duckmage-table-editor-heading" });
-		const addRow = contentEl.createDiv({ cls: "duckmage-table-editor-add-row" });
+		entriesSection.createEl("p", { text: "Add row", cls: "duckmage-table-editor-heading" });
+		const addRow = entriesSection.createDiv({ cls: "duckmage-table-editor-add-row" });
 
 		const newResult = addRow.createEl("textarea", { cls: "duckmage-table-editor-result" });
 		newResult.placeholder = "New result…";
@@ -210,8 +186,50 @@ export class RandomTableEditorModal extends Modal {
 
 		const addBtn = addRow.createEl("button", { text: "Add", cls: "duckmage-table-editor-add-btn mod-cta" });
 
-		const errorEl = contentEl.createDiv({ cls: "duckmage-table-editor-add-error" });
+		const errorEl = entriesSection.createDiv({ cls: "duckmage-table-editor-add-error" });
 		errorEl.style.display = "none";
+
+		// ── Description ───────────────────────────────────────────────────
+		const descRow = contentEl.createDiv({ cls: "duckmage-table-editor-desc-row" });
+		descRow.createEl("label", { text: "Description", cls: "duckmage-table-editor-desc-label" });
+		const descInput = descRow.createEl("textarea", { cls: "duckmage-table-editor-desc-input" });
+		descInput.placeholder = "Optional description shown above the table…";
+		descInput.value = table.description ?? "";
+		descInput.rows = 3;
+
+		// ── Linked folder ─────────────────────────────────────────────────
+		const folderRow = contentEl.createDiv({ cls: "duckmage-table-editor-folder-row" });
+		folderRow.createEl("label", { text: "Linked folder", cls: "duckmage-table-editor-folder-label" });
+		const folderDatalistId = "duckmage-lf-folders-" + Math.random().toString(36).slice(2);
+		const folderDatalist = contentEl.createEl("datalist");
+		folderDatalist.id = folderDatalistId;
+		const worldFolder = normalizeFolder(this.plugin.settings.worldFolder);
+		const seenFolders = new Set<string>();
+		for (const f of this.app.vault.getAllFolders()) {
+			const p = normalizeFolder(f.path);
+			if (!p || p === worldFolder) continue;
+			if (worldFolder && !p.startsWith(worldFolder + "/")) continue;
+			if (!seenFolders.has(p)) {
+				seenFolders.add(p);
+				folderDatalist.createEl("option", { value: p });
+			}
+		}
+		const folderInput = folderRow.createEl("input", { type: "text", cls: "duckmage-table-editor-folder-input" });
+		folderInput.setAttribute("list", folderDatalistId);
+		folderInput.value = table.linkedFolder ?? "";
+		folderInput.placeholder = "world/towns (leave blank for none)";
+
+		// ── Filter settings ───────────────────────────────────────────────
+		const filterSection = contentEl.createDiv({ cls: "duckmage-table-editor-filter-section" });
+		const rollFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
+		const rollFilterCb = rollFilterRow.createEl("input", { type: "checkbox" });
+		rollFilterCb.checked = this.parseFrontmatterBool(frontmatter, "roll-filter") === false;
+		rollFilterRow.createEl("label", { text: "Exclude from roll picker" });
+
+		const encFilterRow = filterSection.createDiv({ cls: "duckmage-table-editor-filter-row" });
+		const encFilterCb = encFilterRow.createEl("input", { type: "checkbox" });
+		encFilterCb.checked = this.parseFrontmatterBool(frontmatter, "encounter-filter") === false;
+		encFilterRow.createEl("label", { text: "Exclude from encounters table" });
 
 		const doAdd = () => {
 			const raw = newResult.value.trim();
