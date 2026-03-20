@@ -45,6 +45,7 @@ export function createIconEl(
 	return img;
 }
 
+
 export function getIconUrl(plugin: DuckmagePlugin, iconFilename: string): string {
 	if (plugin.vaultIconsSet.has(iconFilename)) {
 		const folder = normalizeFolder(plugin.settings.iconsFolder ?? "");

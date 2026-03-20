@@ -1,11 +1,12 @@
-import { App, Modal, Notice, TFile } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "./utils";
+import { App, Notice, TFile } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
   setTerrainInFile,
   setIconOverrideInFile,
-} from "./frontmatter";
+} from "../frontmatter";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -13,14 +14,14 @@ import {
   getAllSectionData,
   setSectionContent,
   addBacklinkToFile,
-} from "./sections";
+} from "../sections";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
-import { TEXT_SECTIONS } from "./types";
-import type { LinkSection } from "./types";
-import { RandomTableModal } from "./RandomTableModal";
-import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "./constants";
+import { TEXT_SECTIONS } from "../types";
+import type { LinkSection } from "../types";
+import { RandomTableModal } from "../random-tables/RandomTableModal";
+import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 
-export class HexEditorModal extends Modal {
+export class HexEditorModal extends DuckmageModal {
   private hexExists = false;
   private allText = new Map<string, string>();
   private allLinks = new Map<string, string[]>();
@@ -211,46 +212,6 @@ export class HexEditorModal extends Modal {
     this.contentEl.empty();
   }
 
-  private dragInitialized = false;
-
-  private makeDraggable(): void {
-    if (this.dragInitialized) return;
-    this.dragInitialized = true;
-
-    const modal = this.modalEl;
-    modal.addClass("duckmage-editor-modal-drag");
-    modal.style.position = "absolute";
-    modal.style.left = "50%";
-    modal.style.top = "50%";
-    modal.style.transform = "translate(-50%, -50%)";
-    modal.style.margin = "0";
-
-    modal.addEventListener("mousedown", (e: MouseEvent) => {
-      // Only drag from the native modal header — the strip above .modal-content.
-      // This area never scrolls so the drag zone is always accessible.
-      const modalContent = modal.querySelector<HTMLElement>(".modal-content");
-      if (modalContent && e.clientY >= modalContent.getBoundingClientRect().top) return;
-      if ((e.target as HTMLElement).closest("button, a")) return;
-
-      e.preventDefault();
-      const r = modal.getBoundingClientRect();
-      modal.style.transform = "none";
-      modal.style.left = `${r.left}px`;
-      modal.style.top = `${r.top}px`;
-      const sx = e.clientX, sy = e.clientY;
-      const ox = r.left, oy = r.top;
-      const onMove = (ev: MouseEvent) => {
-        modal.style.left = `${ox + ev.clientX - sx}px`;
-        modal.style.top  = `${oy + ev.clientY - sy}px`;
-      };
-      const onUp = () => {
-        document.removeEventListener("mousemove", onMove);
-        document.removeEventListener("mouseup", onUp);
-      };
-      document.addEventListener("mousemove", onMove);
-      document.addEventListener("mouseup", onUp);
-    });
-  }
 
   private isOnMap(nx: number, ny: number): boolean {
     const region = this.plugin.getOrCreateRegion(this.regionName);

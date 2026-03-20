@@ -8,25 +8,25 @@ import {
   WorkspaceLeaf,
 } from "obsidian";
 import HELP_CONTENT from "./help.md";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder, getIconUrl, createIconEl } from "./utils";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
   setTerrainInFile,
   setIconOverrideInFile,
-} from "./frontmatter";
+} from "../frontmatter";
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
-import { addLinkToSection, getLinksInSection } from "./sections";
+import { addLinkToSection, getLinksInSection } from "../sections";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
-} from "./constants";
+} from "../constants";
 import { RegionModal } from "./RegionModal";
-import type { RegionData } from "./types";
+import type { RegionData } from "../types";
 
 export class HexMapView extends ItemView {
   plugin: DuckmagePlugin;
@@ -316,24 +316,42 @@ export class HexMapView extends ItemView {
 
     const tableBtn = controlsEl.createEl("button", {
       cls: "duckmage-table-btn",
-      title: "Open hex table",
+      title: "Open hex table (middle-click for new tab)",
       text: "⊞",
     });
     tableBtn.addEventListener("click", () => {
-      this.app.workspace
-        .getLeaf("tab")
-        .setViewState({ type: VIEW_TYPE_HEX_TABLE });
+      const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE);
+      if (existing.length > 0) {
+        this.app.workspace.revealLeaf(existing[0]);
+      } else {
+        this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE });
+      }
+    });
+    tableBtn.addEventListener("auxclick", (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_HEX_TABLE });
+      this.app.workspace.revealLeaf(this.leaf);
     });
 
     const rtBtn = controlsEl.createEl("button", {
       cls: "duckmage-rt-btn",
-      title: "Open random tables",
+      title: "Open random tables (middle-click for new tab)",
       text: "🎲",
     });
     rtBtn.addEventListener("click", () => {
-      this.app.workspace
-        .getLeaf("tab")
-        .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+      const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
+      if (existing.length > 0) {
+        this.app.workspace.revealLeaf(existing[0]);
+      } else {
+        this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+      }
+    });
+    rtBtn.addEventListener("auxclick", (e: MouseEvent) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+      this.app.workspace.revealLeaf(this.leaf);
     });
 
     this.regionBtn = controlsEl.createEl("button", {

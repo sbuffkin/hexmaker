@@ -1,14 +1,16 @@
-import { App, Modal, Setting, TFile } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import type { TerrainColor } from "./types";
-import { normalizeFolder } from "./utils";
+import { App, Setting, TFile } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import type { TerrainColor } from "../types";
+import { normalizeFolder } from "../utils";
 
-export class TerrainEntryEditorModal extends Modal {
+export class TerrainEntryEditorModal extends DuckmageModal {
 	// Pending values — only written to the entry on Save
 	private pendingName: string;
 	private pendingColor: string;
 	private pendingIcon: string | undefined;
 	private pendingIconColor: string | undefined;
+	private pendingCategory: string | undefined;
 	private readonly originalName: string;
 	// Set to true by any explicit button action so onClose doesn't also autosave
 	private savedOrDeleted = false;
@@ -21,11 +23,12 @@ export class TerrainEntryEditorModal extends Modal {
 		private onDelete: () => void,
 	) {
 		super(app);
-		this.originalName   = entry.name;
-		this.pendingName    = entry.name;
-		this.pendingColor   = entry.color;
-		this.pendingIcon    = entry.icon;
+		this.originalName     = entry.name;
+		this.pendingName      = entry.name;
+		this.pendingColor     = entry.color;
+		this.pendingIcon      = entry.icon;
 		this.pendingIconColor = entry.iconColor;
+		this.pendingCategory  = entry.category;
 	}
 
 	onOpen(): void {
@@ -83,6 +86,33 @@ export class TerrainEntryEditorModal extends Modal {
 					}),
 			);
 
+		// Collect existing categories from the palette for the datalist
+		const existingCategories = [...new Set(
+			this.plugin.settings.terrainPalette
+				.map(e => e.category)
+				.filter((c): c is string => !!c),
+		)].sort();
+
+		let categoryInputEl: HTMLInputElement | undefined;
+		new Setting(contentEl)
+			.setName("Category")
+			.setDesc("Group this terrain with similar types in the filter.")
+			.addText(text => {
+				text
+					.setValue(this.pendingCategory ?? "")
+					.setPlaceholder("e.g. sea, forest, mountain…")
+					.onChange(value => { this.pendingCategory = value.trim() || undefined; });
+				categoryInputEl = text.inputEl;
+			});
+		if (categoryInputEl && existingCategories.length > 0) {
+			const dl = contentEl.createEl("datalist");
+			dl.id = "duckmage-terrain-category-dl";
+			categoryInputEl.setAttribute("list", "duckmage-terrain-category-dl");
+			for (const cat of existingCategories) {
+				dl.createEl("option", { value: cat });
+			}
+		}
+
 		const btnRow = contentEl.createDiv({ cls: "duckmage-tee-buttons" });
 
 		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: "Save" });
@@ -108,6 +138,8 @@ export class TerrainEntryEditorModal extends Modal {
 			this.onDelete();
 			this.close();
 		});
+
+		this.makeDraggable();
 	}
 
 	onClose(): void {
@@ -122,6 +154,7 @@ export class TerrainEntryEditorModal extends Modal {
 		this.entry.color     = this.pendingColor;
 		this.entry.icon      = this.pendingIcon;
 		this.entry.iconColor = this.pendingIconColor;
+		this.entry.category  = this.pendingCategory;
 		if (nameChanged) {
 			const oldName = this.originalName;
 			const newName = this.pendingName;

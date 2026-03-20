@@ -1,8 +1,9 @@
-import { App, Modal } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { getIconUrl } from "./utils";
+import { App } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { getIconUrl } from "../utils";
 
-export class IconPickerModal extends Modal {
+export class IconPickerModal extends DuckmageModal {
 	constructor(
 		app: App,
 		private plugin: DuckmagePlugin,
@@ -15,6 +16,7 @@ export class IconPickerModal extends Modal {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass("duckmage-hex-editor");
+		this.makeDraggable();
 		contentEl.createEl("h2", { text: "Paint icon" });
 
 		const section = contentEl.createDiv({ cls: "duckmage-editor-section" });

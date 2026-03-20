@@ -1,10 +1,11 @@
-import { App, Modal, TFile, Notice } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder } from "./utils";
+import { App, TFile, Notice } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder } from "../utils";
 import { parseWorkflow, generateDefaultTemplate, stepPlaceholder, rollDiceFormulaWithBreakdown, type Workflow } from "./workflow";
 import { parseRandomTable, rollOnTable } from "./randomTable";
 
-export class WorkflowWizardModal extends Modal {
+export class WorkflowWizardModal extends DuckmageModal {
 	private workflow!: Workflow;
 	// rolls[stepIdx][rollIdx] = result string or null (not yet rolled)
 	private rolls: (string | null)[][] = [];
@@ -121,10 +122,25 @@ export class WorkflowWizardModal extends Modal {
 
 		const saveResultsFolderRow = contentEl.createDiv({ cls: "duckmage-table-editor-name-row" });
 		saveResultsFolderRow.createEl("label", { text: "Results folder", cls: "duckmage-table-editor-name-label" });
+		const rfDatalistId = "duckmage-ww-rf-folders-" + Math.random().toString(36).slice(2);
+		const rfDatalist = contentEl.createEl("datalist");
+		rfDatalist.id = rfDatalistId;
+		const worldFolder = normalizeFolder(this.plugin.settings.worldFolder);
+		const seenFolders = new Set<string>();
+		for (const f of this.app.vault.getAllFolders()) {
+			const p = normalizeFolder(f.path);
+			if (!p || p === worldFolder) continue;
+			if (worldFolder && !p.startsWith(worldFolder + "/")) continue;
+			if (!seenFolders.has(p)) {
+				seenFolders.add(p);
+				rfDatalist.createEl("option", { value: p });
+			}
+		}
 		this.saveResultsFolderInput = saveResultsFolderRow.createEl("input", {
 			type: "text",
 			cls: "duckmage-table-editor-name-input",
 		});
+		this.saveResultsFolderInput.setAttribute("list", rfDatalistId);
 		this.saveResultsFolderInput.value = normalizeFolder(this.workflow.resultsFolder ?? "");
 
 		this.saveNoteBtn = contentEl.createEl("button", { text: "Save as note", cls: "mod-cta" });
@@ -134,6 +150,8 @@ export class WorkflowWizardModal extends Modal {
 		this.saveNoteBtn.addEventListener("click", async () => {
 			await this.saveAsNote();
 		});
+
+		this.makeDraggable();
 	}
 
 	private renderSteps(): void {

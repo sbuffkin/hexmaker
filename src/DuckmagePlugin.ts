@@ -1,11 +1,11 @@
 import { Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
-import { HexMapView } from "./HexMapView";
-import { HexTableView } from "./HexTableView";
-import { RandomTableView } from "./RandomTableView";
+import { HexMapView } from "./hex-map/HexMapView";
+import { HexTableView } from "./hex-table/HexTableView";
+import { RandomTableView } from "./random-tables/RandomTableView";
 import { DuckmageSettingTab } from "./DuckmageSettingTab";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, VIEW_TYPE_HEX_MAP, VIEW_TYPE_HEX_TABLE, VIEW_TYPE_RANDOM_TABLES } from "./constants";
 import { normalizeFolder, makeTableTemplate } from "./utils";
-import { parseWorkflow, buildWorkflowContent } from "./workflow";
+import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type { DuckmagePluginSettings, RegionData } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";

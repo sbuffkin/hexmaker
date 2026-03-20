@@ -1,9 +1,10 @@
-import { App, Modal, Notice, TFolder } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
+import { App, Notice, TFolder } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
 import type { HexMapView } from "./HexMapView";
-import { normalizeFolder } from "./utils";
+import { normalizeFolder } from "../utils";
 
-export class RegionModal extends Modal {
+export class RegionModal extends DuckmageModal {
 	constructor(
 		app: App,
 		private plugin: DuckmagePlugin,
@@ -13,6 +14,7 @@ export class RegionModal extends Modal {
 
 	onOpen(): void {
 		this.titleEl.setText("Regions");
+		this.makeDraggable();
 		this.render();
 	}
 

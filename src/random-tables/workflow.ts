@@ -8,6 +8,7 @@ export interface WorkflowStep {
 
 export interface Workflow {
 	name: string;
+	description?: string;
 	resultsFolder?: string;
 	templateFile?: string;
 	steps: WorkflowStep[];
@@ -66,8 +67,15 @@ export function parseWorkflow(content: string, name: string): Workflow {
 		if (tfMatch) workflow.templateFile = tfMatch[1].trim();
 	}
 
-	// Find the workflow steps table (| Table | Rolls | Label |)
+	// Extract description: text between frontmatter and the steps table
 	const tableMatch = /\|\s*Table\s*\|\s*Rolls\s*\|\s*Label\s*\|/i.exec(content);
+	if (tableMatch) {
+		const betweenFmAndTable = fmMatch
+			? content.slice(fmMatch[0].length, tableMatch.index)
+			: content.slice(0, tableMatch.index);
+		const desc = betweenFmAndTable.trim();
+		if (desc) workflow.description = desc;
+	}
 	if (!tableMatch) return workflow;
 
 	const afterHeader = content.slice(tableMatch.index);
@@ -122,6 +130,12 @@ export function buildWorkflowContent(workflow: Workflow): string {
 	if (workflow.templateFile) lines.push(`template-file: ${workflow.templateFile}`);
 	lines.push("---");
 	lines.push("");
+
+	// Description (optional)
+	if (workflow.description) {
+		lines.push(workflow.description);
+		lines.push("");
+	}
 
 	// Steps table
 	lines.push("| Table | Rolls | Label |");

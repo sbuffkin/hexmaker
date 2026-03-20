@@ -11,7 +11,7 @@ import {
 	requiredPlaceholders,
 	type WorkflowStep,
 	type Workflow,
-} from "../src/workflow";
+} from "../src/random-tables/workflow";
 
 // ── isDiceFormula ─────────────────────────────────────────────────────────────
 

@@ -1,8 +1,9 @@
-import { App, Modal, TFile } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder } from "./utils";
+import { App, TFile } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder } from "../utils";
 import { parseRandomTable, rollOnTable, getDieRanges } from "./randomTable";
-import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
+import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 
 /**
@@ -13,7 +14,7 @@ import { RandomTableEditorModal } from "./RandomTableEditorModal";
  * loaded immediately (used for terrain description tables via the 📖 button).
  * When `onInsert` is absent the result shows a Copy button instead of "Use result".
  */
-export class RandomTableModal extends Modal {
+export class RandomTableModal extends DuckmageModal {
 	constructor(
 		app: App,
 		private plugin: DuckmagePlugin,
@@ -27,6 +28,7 @@ export class RandomTableModal extends Modal {
 		this.titleEl.setText("Roll on table");
 		const { contentEl } = this;
 		contentEl.addClass("duckmage-roll-modal");
+		this.makeDraggable();
 
 		if (this.initialFilePath) {
 			this.loadTable(contentEl, this.initialFilePath);

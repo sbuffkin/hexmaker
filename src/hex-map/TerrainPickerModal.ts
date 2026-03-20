@@ -1,9 +1,10 @@
-import { App, Modal } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { getIconUrl, createIconEl } from "./utils";
+import { App } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { getIconUrl, createIconEl } from "../utils";
 import { TerrainEntryEditorModal } from "./TerrainEntryEditorModal";
 
-export class TerrainPickerModal extends Modal {
+export class TerrainPickerModal extends DuckmageModal {
   private editMode = false;
   private editChanged = false;
   private selectionMade = false;
@@ -23,6 +24,7 @@ export class TerrainPickerModal extends Modal {
   }
 
   onOpen(): void {
+    this.makeDraggable();
     this.render();
   }
 

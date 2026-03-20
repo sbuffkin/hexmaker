@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { TFile } from "obsidian";
-import { HexEditorModal } from "../src/HexEditorModal";
+import { HexEditorModal } from "../src/hex-map/HexEditorModal";
 
 /** Minimal App backed by a map of path → content strings. */
 function makeApp(files: Record<string, string>) {

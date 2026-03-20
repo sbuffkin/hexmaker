@@ -6,7 +6,7 @@ import {
 	getDieRanges,
 	setDiceInFrontmatter,
 	extractPostTableContent,
-} from "../src/randomTable";
+} from "../src/random-tables/randomTable";
 
 // ── parseRandomTable ──────────────────────────────────────────────────────────
 

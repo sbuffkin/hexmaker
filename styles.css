@@ -335,8 +335,7 @@ div.duckmage-hex-icon {
 .duckmage-editor-modal-drag {
     overflow: hidden;
     width: min(620px, 90vw) !important;
-    height: min(80vh, 700px) !important;
-    max-height: none !important;
+    max-height: min(90vh, 860px) !important;
     max-width: none !important;
     min-width: 320px;
     min-height: 200px;
@@ -344,8 +343,6 @@ div.duckmage-hex-icon {
 .duckmage-editor-modal-drag .modal-content {
     overflow-y: auto;
     overflow-x: hidden;
-    max-height: none;
-    height: calc(100% - var(--modal-title-size, 0px));
     display: flex;
     flex-direction: column;
 }
@@ -1356,6 +1353,17 @@ div.duckmage-terrain-preview-icon {
     color: var(--text-accent);
 }
 
+.duckmage-cell-modal-btn-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+    align-items: center;
+}
+
+.duckmage-cell-modal-roll-btn {
+    flex: 0 0 auto;
+}
+
 /* ── Hex cell detail modal ────────────────────────────────────────────────── */
 
 .duckmage-cell-modal {
@@ -1440,6 +1448,31 @@ div.duckmage-terrain-preview-icon {
 
 .duckmage-row-hidden {
     display: none !important;
+}
+
+.duckmage-terrain-filter-category-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    margin-top: 4px;
+    font-weight: 600;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 4px;
+    user-select: none;
+}
+
+.duckmage-terrain-filter-category-heading:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.duckmage-terrain-filter-row-indented {
+    padding-left: 14px;
 }
 
 .duckmage-terrain-filter-btns {
@@ -2071,6 +2104,13 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     margin-bottom: 10px;
 }
 
+.duckmage-wf-description {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    margin-bottom: 12px;
+    white-space: pre-wrap;
+}
+
 .duckmage-rt-empty {
     color: var(--text-faint);
     font-style: italic;
@@ -2607,19 +2647,16 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     min-height: 0;
 }
 
-/* Template section grows to fill remaining space */
+/* Template section */
 .duckmage-wf-template-section-wrap {
     display: flex;
     flex-direction: column;
-    flex: 1;
-    min-height: 0;
 }
 
 /* Workflow template area */
 .duckmage-wf-template-area {
     width: 100%;
-    min-height: 140px;
-    flex: 1;
+    height: 220px;
     font-family: var(--font-monospace);
     font-size: 0.85em;
     resize: vertical;

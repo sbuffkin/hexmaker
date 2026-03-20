@@ -1,6 +1,7 @@
-import { App, Modal, TFile, Notice } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder } from "./utils";
+import { App, TFile, Notice } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder } from "../utils";
 import {
 	parseWorkflow,
 	buildWorkflowContent,
@@ -21,9 +22,9 @@ function escapeRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export class WorkflowEditorModal extends Modal {
+export class WorkflowEditorModal extends DuckmageModal {
 	private flushAndSave: (() => Promise<void>) | null = null;
-	private dragInitialized = false;
+
 
 	constructor(
 		app: App,
@@ -46,6 +47,7 @@ export class WorkflowEditorModal extends Modal {
 		// Working copies
 		const steps: WorkflowStep[] = workflow.steps.map(s => ({ ...s }));
 		let resultsFolder = workflow.resultsFolder ?? "";
+		let description = workflow.description ?? "";
 		let templateContent = "";
 
 		// Load template file if it exists
@@ -102,6 +104,26 @@ export class WorkflowEditorModal extends Modal {
 		const addArea = contentEl.createDiv({ cls: "duckmage-wf-editor-add-area" });
 		const addRow = addArea.createDiv({ cls: "duckmage-wf-editor-step-row" });
 
+		// ── Template section ──────────────────────────────────────────────
+		const templateSectionWrap = contentEl.createDiv({ cls: "duckmage-wf-template-section-wrap" });
+		templateSectionWrap.createEl("p", { text: "Template", cls: "duckmage-table-editor-heading" });
+		const templateArea = templateSectionWrap.createEl("textarea", { cls: "duckmage-wf-template-area" });
+		templateArea.value = templateContent;
+		templateArea.addEventListener("input", () => { templateContent = templateArea.value; updateValidation(); });
+
+		const validationEl = templateSectionWrap.createDiv();
+		validationEl.style.marginTop = "4px";
+		validationEl.style.fontSize = "0.85em";
+
+		// ── Description ───────────────────────────────────────────────────
+		const descRow = contentEl.createDiv({ cls: "duckmage-table-editor-desc-row" });
+		descRow.createEl("label", { text: "Description", cls: "duckmage-table-editor-desc-label" });
+		const descInput = descRow.createEl("textarea", { cls: "duckmage-table-editor-desc-input" });
+		descInput.placeholder = "Optional description shown above the steps table…";
+		descInput.value = description;
+		descInput.rows = 3;
+		descInput.addEventListener("input", () => { description = descInput.value.trim(); });
+
 		// ── Results folder row ────────────────────────────────────────────
 		const rfRow = contentEl.createDiv({ cls: "duckmage-table-editor-name-row" });
 		rfRow.style.marginTop = "8px";
@@ -128,17 +150,6 @@ export class WorkflowEditorModal extends Modal {
 		rfInput.placeholder = "world/results";
 		rfInput.value = resultsFolder;
 		rfInput.addEventListener("input", () => { resultsFolder = normalizeFolder(rfInput.value.trim()); });
-
-		// ── Template section ──────────────────────────────────────────────
-		const templateSectionWrap = contentEl.createDiv({ cls: "duckmage-wf-template-section-wrap" });
-		templateSectionWrap.createEl("p", { text: "Template", cls: "duckmage-table-editor-heading" });
-		const templateArea = templateSectionWrap.createEl("textarea", { cls: "duckmage-wf-template-area" });
-		templateArea.value = templateContent;
-		templateArea.addEventListener("input", () => { templateContent = templateArea.value; updateValidation(); });
-
-		const validationEl = templateSectionWrap.createDiv();
-		validationEl.style.marginTop = "4px";
-		validationEl.style.fontSize = "0.85em";
 
 		// ── Validation + helpers (declared here so renderSteps can call them) ──
 
@@ -484,6 +495,7 @@ export class WorkflowEditorModal extends Modal {
 
 			const updatedWorkflow = {
 				name: this.file.basename,
+				description: description || undefined,
 				resultsFolder: resultsFolder || undefined,
 				templateFile: templatePath,
 				steps,
@@ -520,40 +532,4 @@ export class WorkflowEditorModal extends Modal {
 		this.contentEl.empty();
 	}
 
-	private makeDraggable(): void {
-		if (this.dragInitialized) return;
-		this.dragInitialized = true;
-
-		const modal = this.modalEl;
-		modal.addClass("duckmage-editor-modal-drag");
-		modal.style.position = "absolute";
-		modal.style.left = "50%";
-		modal.style.top = "50%";
-		modal.style.transform = "translate(-50%, -50%)";
-		modal.style.margin = "0";
-
-		modal.addEventListener("mousedown", (e: MouseEvent) => {
-			const modalContent = modal.querySelector<HTMLElement>(".modal-content");
-			if (modalContent && e.clientY >= modalContent.getBoundingClientRect().top) return;
-			if ((e.target as HTMLElement).closest("button, a, input, select, textarea")) return;
-
-			e.preventDefault();
-			const r = modal.getBoundingClientRect();
-			modal.style.transform = "none";
-			modal.style.left = `${r.left}px`;
-			modal.style.top = `${r.top}px`;
-			const sx = e.clientX, sy = e.clientY;
-			const ox = r.left, oy = r.top;
-			const onMove = (ev: MouseEvent) => {
-				modal.style.left = `${ox + ev.clientX - sx}px`;
-				modal.style.top  = `${oy + ev.clientY - sy}px`;
-			};
-			const onUp = () => {
-				document.removeEventListener("mousemove", onMove);
-				document.removeEventListener("mouseup", onUp);
-			};
-			document.addEventListener("mousemove", onMove);
-			document.addEventListener("mouseup", onUp);
-		});
-	}
 }

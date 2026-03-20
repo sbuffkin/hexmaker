@@ -1,18 +1,19 @@
-import { App, Modal, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
+import { DuckmageModal } from "../DuckmageModal";
 import { parseRandomTable, extractPostTableContent } from "./randomTable";
 import type { RandomTableEntry } from "./randomTable";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder } from "./utils";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder } from "../utils";
 
 /**
  * Modal editor for a random table file.
  * Shows existing entries as editable rows and allows adding new ones.
  * Saves back to the file, preserving frontmatter.
  */
-export class RandomTableEditorModal extends Modal {
+export class RandomTableEditorModal extends DuckmageModal {
 	// Held so onClose can flush a pending "add row" entry and save it
 	private flushAndSave: (() => Promise<void>) | null = null;
-	private dragInitialized = false;
+
 
 	constructor(
 		app: App,
@@ -370,43 +371,6 @@ export class RandomTableEditorModal extends Modal {
 		}
 	}
 
-	private makeDraggable(): void {
-		if (this.dragInitialized) return;
-		this.dragInitialized = true;
-
-		const modal = this.modalEl;
-		modal.addClass("duckmage-editor-modal-drag");
-		modal.style.position = "absolute";
-		modal.style.left = "50%";
-		modal.style.top = "50%";
-		modal.style.transform = "translate(-50%, -50%)";
-		modal.style.margin = "0";
-
-		modal.addEventListener("mousedown", (e: MouseEvent) => {
-			// Only drag from the native modal header — the strip above .modal-content
-			const modalContent = modal.querySelector<HTMLElement>(".modal-content");
-			if (modalContent && e.clientY >= modalContent.getBoundingClientRect().top) return;
-			if ((e.target as HTMLElement).closest("button, a")) return;
-
-			e.preventDefault();
-			const r = modal.getBoundingClientRect();
-			modal.style.transform = "none";
-			modal.style.left = `${r.left}px`;
-			modal.style.top = `${r.top}px`;
-			const sx = e.clientX, sy = e.clientY;
-			const ox = r.left, oy = r.top;
-			const onMove = (ev: MouseEvent) => {
-				modal.style.left = `${ox + ev.clientX - sx}px`;
-				modal.style.top  = `${oy + ev.clientY - sy}px`;
-			};
-			const onUp = () => {
-				document.removeEventListener("mousemove", onMove);
-				document.removeEventListener("mouseup", onUp);
-			};
-			document.addEventListener("mousemove", onMove);
-			document.addEventListener("mouseup", onUp);
-		});
-	}
 
 	onClose(): void {
 		// If the user typed something in "Add row" and closed without clicking Add,

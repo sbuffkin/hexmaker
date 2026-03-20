@@ -8,9 +8,9 @@ import {
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { VIEW_TYPE_RANDOM_TABLES } from "./constants";
-import { normalizeFolder, makeTableTemplate } from "./utils";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
+import { normalizeFolder, makeTableTemplate } from "../utils";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { WorkflowEditorModal } from "./WorkflowEditorModal";
 import { WorkflowWizardModal } from "./WorkflowWizardModal";
@@ -839,6 +839,11 @@ export class RandomTableView extends ItemView {
         setTimeout(() => copyWfLinkBtn.setText("🔗 Copy link"), 1500);
       });
     });
+
+    // ── Description ────────────────────────────────────────────────────
+    if (workflow.description) {
+      this.detailEl.createDiv({ cls: "duckmage-wf-description", text: workflow.description });
+    }
 
     // ── Steps list ─────────────────────────────────────────────────────
     if (workflow.steps.length === 0) {

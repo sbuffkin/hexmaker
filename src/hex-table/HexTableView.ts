@@ -1,21 +1,26 @@
-import { App, ItemView, Modal, Notice, TFile, WorkspaceLeaf } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
+import { App, ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
+import type DuckmagePlugin from "../DuckmagePlugin";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
-} from "./constants";
-import type { HexMapView } from "./HexMapView";
-import type { RandomTableView } from "./RandomTableView";
+} from "../constants";
+import type { HexMapView } from "../hex-map/HexMapView";
+import type { RandomTableView } from "../random-tables/RandomTableView";
 import {
   getAllSectionData,
   setSectionContent,
   addLinkToSection,
   addBacklinkToFile,
-} from "./sections";
-import { getTerrainFromFile, setTerrainInFile } from "./frontmatter";
-import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "./utils";
-import type { TerrainColor, LinkSection } from "./types";
+} from "../sections";
+import { getTerrainFromFile, setTerrainInFile } from "../frontmatter";
+import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "../utils";
+import type { TerrainColor, LinkSection } from "../types";
+import { TerrainFilterModal } from "./TerrainFilterModal";
+import { HexCellModal } from "./HexCellModal";
+import { MultiLinkNavModal } from "./MultiLinkNavModal";
+import { HexTerrainPickerModal } from "./HexTerrainPickerModal";
+import { LinkPickerModal } from "./LinkPickerModal";
 
 // Column definitions in template order
 const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
@@ -36,393 +41,12 @@ const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
 const TRUNCATE_LEN = 120;
 const HEX_PATTERN = /^(?:.*\/)?(-?\d+)_(-?\d+)\.md$/;
 
-// ── Terrain filter modal ────────────────────────────────────────────────────
-
-class TerrainFilterModal extends Modal {
-  constructor(
-    app: App,
-    private palette: TerrainColor[],
-    private selected: Set<string>,
-    private excluded: Set<string>,
-    private onChange: (selected: Set<string>, excluded: Set<string>) => void,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.titleEl.setText("Filter by Terrain");
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-terrain-filter-modal");
-
-    contentEl.createEl("p", {
-      text: "Left-click to include  ·  Right-click to exclude",
-      cls: "duckmage-terrain-filter-hint",
-    });
-
-    const list = contentEl.createDiv({ cls: "duckmage-terrain-filter-list" });
-
-    const applyRowState = (
-      lbl: HTMLElement,
-      cb: HTMLInputElement,
-      name: string,
-    ) => {
-      const inc = this.selected.has(name);
-      const exc = this.excluded.has(name);
-      cb.checked = inc;
-      lbl.toggleClass("duckmage-terrain-filter-excluded", exc);
-    };
-
-    const addRow = (name: string, label: string, color?: string) => {
-      const lbl = list.createEl("label", {
-        cls: "duckmage-terrain-filter-row",
-      });
-      const cb = lbl.createEl("input") as HTMLInputElement;
-      cb.type = "checkbox";
-      applyRowState(lbl, cb, name);
-
-      const swatch = lbl.createSpan({ cls: "duckmage-hex-table-swatch" });
-      if (color) swatch.style.backgroundColor = color;
-      lbl.createSpan({ text: label });
-
-      cb.addEventListener("change", () => {
-        if (cb.checked) {
-          this.selected.add(name);
-          this.excluded.delete(name);
-        } else {
-          this.selected.delete(name);
-        }
-        applyRowState(lbl, cb, name);
-        this.onChange(new Set(this.selected), new Set(this.excluded));
-      });
-
-      lbl.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        if (this.excluded.has(name)) {
-          this.excluded.delete(name);
-        } else {
-          this.excluded.add(name);
-          this.selected.delete(name);
-        }
-        applyRowState(lbl, cb, name);
-        this.onChange(new Set(this.selected), new Set(this.excluded));
-      });
-    };
-
-    addRow("", "No terrain");
-    for (const entry of this.palette) {
-      addRow(entry.name, entry.name, entry.color);
-    }
-
-    const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });
-    const clearBtn = btnRow.createEl("button", { text: "Clear all" });
-    clearBtn.addEventListener("click", () => {
-      this.selected.clear();
-      this.excluded.clear();
-      this.onChange(new Set(this.selected), new Set(this.excluded));
-      contentEl
-        .querySelectorAll<HTMLElement>(".duckmage-terrain-filter-row")
-        .forEach((row) => {
-          const cb = row.querySelector<HTMLInputElement>(
-            "input[type=checkbox]",
-          );
-          if (cb) cb.checked = false;
-          row.removeClass("duckmage-terrain-filter-excluded");
-        });
-    });
-    btnRow
-      .createEl("button", { text: "Done", cls: "mod-cta" })
-      .addEventListener("click", () => this.close());
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// ── Cell detail / edit modal ────────────────────────────────────────────────
-
-class HexCellModal extends Modal {
-  constructor(
-    app: App,
-    private title: string,
-    private body: string,
-    private isLink: boolean,
-    private filePath?: string,
-    private sectionKey?: string,
-    private onSave?: (newContent: string) => void,
-    private beforeSave?: () => Promise<void>,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.titleEl.setText(this.title);
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-cell-modal");
-
-    if (this.isLink) {
-      const list = contentEl.createEl("ul", {
-        cls: "duckmage-cell-modal-list",
-      });
-      for (const item of this.body.split(", ")) {
-        list.createEl("li", { text: item });
-      }
-    } else {
-      const textarea = contentEl.createEl("textarea", {
-        cls: "duckmage-cell-modal-textarea",
-      });
-      textarea.value = this.body;
-
-      const saveBtn = contentEl.createEl("button", {
-        text: "Save",
-        cls: "duckmage-cell-modal-save mod-cta",
-      });
-      saveBtn.addEventListener("click", async () => {
-        const newContent = textarea.value;
-        if (this.filePath && this.sectionKey) {
-          await this.beforeSave?.();
-          await setSectionContent(
-            this.app,
-            this.filePath,
-            this.sectionKey,
-            newContent,
-          );
-          this.onSave?.(newContent.trim());
-        }
-        this.close();
-      });
-    }
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// ── Multi-link navigation modal ──────────────────────────────────────────────
-
-class MultiLinkNavModal extends Modal {
-  constructor(
-    app: App,
-    private title: string,
-    private linkTargets: string[],
-    private sourcePath: string,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.titleEl.setText(this.title);
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-link-picker-modal");
-    const list = contentEl.createEl("ul", { cls: "duckmage-link-picker-list" });
-    for (const target of this.linkTargets) {
-      const li = list.createEl("li", {
-        cls: "duckmage-link-picker-item",
-        text: target,
-      });
-      li.addEventListener("click", () => {
-        const file = this.app.metadataCache.getFirstLinkpathDest(
-          target,
-          this.sourcePath,
-        );
-        if (file instanceof TFile) {
-          this.app.workspace.getLeaf().openFile(file);
-          this.close();
-        }
-      });
-    }
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// ── Terrain picker modal ──────────────────────────────────────────────────────
-
-class TerrainPickerModal extends Modal {
-  constructor(
-    app: App,
-    private plugin: DuckmagePlugin,
-    private hexPath: string,
-    private currentTerrain: string | null,
-    private onPicked: () => void,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.titleEl.setText("Select terrain");
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-terrain-picker-modal");
-
-    const grid = contentEl.createDiv({
-      cls: "duckmage-terrain-picker duckmage-terrain-picker-full",
-    });
-    for (const entry of this.plugin.settings.terrainPalette) {
-      const btn = grid.createDiv({
-        cls: `duckmage-terrain-option${entry.name === this.currentTerrain ? " is-selected" : ""}`,
-      });
-      const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.style.backgroundColor = entry.color;
-      if (entry.icon) {
-        createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
-      }
-      btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
-      btn.addEventListener("click", async () => {
-        if (!this.app.vault.getAbstractFileByPath(this.hexPath)) {
-          const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
-          const [hx, hy] = basename.split("_").map(Number);
-          const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-          const relative = hexFolder
-            ? this.hexPath.slice(hexFolder.length + 1)
-            : this.hexPath;
-          const regionName = relative.split("/")[0];
-          await this.plugin.createHexNote(hx, hy, regionName);
-        }
-        await setTerrainInFile(this.app, this.hexPath, entry.name);
-        this.onPicked();
-        this.close();
-      });
-    }
-
-    if (this.currentTerrain) {
-      const clearBtn = contentEl.createEl("button", {
-        text: "Clear terrain",
-        cls: "duckmage-clear-btn mod-warning",
-      });
-      clearBtn.addEventListener("click", async () => {
-        await setTerrainInFile(this.app, this.hexPath, null);
-        this.onPicked();
-        this.close();
-      });
-    }
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// ── Link picker modal (Towns / Dungeons) ─────────────────────────────────────
-
-class LinkPickerModal extends Modal {
-  constructor(
-    app: App,
-    private plugin: DuckmagePlugin,
-    private hexPath: string,
-    private section: LinkSection,
-    private sourceFolder: string,
-    private onLinked: () => void,
-    private createTemplate = "",
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    this.titleEl.setText(`Add ${this.section}`);
-    contentEl.addClass("duckmage-link-picker-modal");
-
-    // ── Existing files list ──────────────────────────────────────────────
-    const normalized = normalizeFolder(this.sourceFolder);
-    const files = this.app.vault
-      .getMarkdownFiles()
-      .filter((f) => !normalized || f.path.startsWith(normalized + "/"))
-      .filter((f) => !f.basename.startsWith("_"))
-      .sort((a, b) => a.basename.localeCompare(b.basename));
-
-    if (files.length > 0) {
-      contentEl.createEl("p", {
-        text: "Select existing:",
-        cls: "duckmage-link-picker-heading",
-      });
-      const list = contentEl.createEl("ul", {
-        cls: "duckmage-link-picker-list",
-      });
-      for (const file of files) {
-        const li = list.createEl("li", { cls: "duckmage-link-picker-item" });
-        li.setText(file.basename);
-        li.addEventListener("click", async () => {
-          await this.addLink(file);
-        });
-      }
-    }
-
-    // ── Create new ───────────────────────────────────────────────────────
-    contentEl.createEl("p", {
-      text: "Or create new:",
-      cls: "duckmage-link-picker-heading",
-    });
-    const row = contentEl.createDiv({ cls: "duckmage-link-picker-create-row" });
-    const input = row.createEl("input", {
-      type: "text",
-      cls: "duckmage-link-picker-input",
-    });
-    input.placeholder = `${this.section.slice(0, -1)} name…`;
-    const createBtn = row.createEl("button", {
-      text: "Create",
-      cls: "mod-cta",
-    });
-    createBtn.addEventListener("click", () =>
-      this.createAndLink(input.value.trim()),
-    );
-    input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") this.createAndLink(input.value.trim());
-    });
-  }
-
-  private async addLink(file: TFile): Promise<void> {
-    await this.ensureHexNote();
-    const linkText = `[[${this.app.metadataCache.fileToLinktext(file, this.hexPath)}]]`;
-    await addLinkToSection(this.app, this.hexPath, this.section, linkText);
-    await addBacklinkToFile(this.app, file.path, this.hexPath);
-    this.onLinked();
-    this.close();
-  }
-
-  private async createAndLink(name: string): Promise<void> {
-    if (!name) return;
-    const folder = normalizeFolder(this.sourceFolder);
-    const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
-    let file = this.app.vault.getAbstractFileByPath(newPath);
-    if (!(file instanceof TFile)) {
-      try {
-        if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-          await this.app.vault.createFolder(folder);
-        }
-        file = await this.app.vault.create(newPath, this.createTemplate);
-      } catch (err) {
-        new Notice(`Could not create ${newPath}: ${err}`);
-        return;
-      }
-    }
-    await this.addLink(file as TFile);
-  }
-
-  private async ensureHexNote(): Promise<void> {
-    const existing = this.app.vault.getAbstractFileByPath(this.hexPath);
-    if (existing instanceof TFile) return;
-    const folder = this.hexPath.includes("/")
-      ? this.hexPath.slice(0, this.hexPath.lastIndexOf("/"))
-      : "";
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-      await this.app.vault.createFolder(folder);
-    }
-    await this.app.vault.create(this.hexPath, "");
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
 // ── Main view ───────────────────────────────────────────────────────────────
 
 export class HexTableView extends ItemView {
   private scrollEl: HTMLElement | null = null;
   private updateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private loadGeneration = 0;
 
   // Sort state
   private sortPrimary: "x" | "y" = "x";
@@ -730,6 +354,8 @@ export class HexTableView extends ItemView {
 
   async loadTable(): Promise<void> {
     if (!this.scrollEl) return;
+    const gen = ++this.loadGeneration;
+
     this.scrollEl.empty();
     this.scrollEl.createSpan({
       text: "Loading…",
@@ -737,7 +363,7 @@ export class HexTableView extends ItemView {
     });
 
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-    let files: { path: string; x: number; y: number }[] = [];
+    let files: { path: string; x: number; y: number; region: string }[] = [];
 
     try {
       this.app.vault
@@ -746,13 +372,12 @@ export class HexTableView extends ItemView {
         .forEach((f) => {
           const m = HEX_PATTERN.exec(f.name);
           if (!m) return;
-          // Only include files that are one level inside hexFolder (region subfolder)
           const relative = hexFolder
             ? f.path.slice(hexFolder.length + 1)
             : f.path;
           const parts = relative.split("/");
           if (parts.length < 2) return; // not in a region subfolder
-          files.push({ path: f.path, x: Number(m[1]), y: Number(m[2]) });
+          files.push({ path: f.path, x: Number(m[1]), y: Number(m[2]), region: parts[0] });
         });
     } catch {
       this.scrollEl.empty();
@@ -801,12 +426,7 @@ export class HexTableView extends ItemView {
     if (this.filterYMaxInput)
       this.filterYMaxInput.placeholder = String(Math.max(...ys));
 
-    // Read all section data in parallel
-    const sectionData = await Promise.all(
-      files.map((f) => getAllSectionData(this.app, f.path)),
-    );
-
-    // Build table
+    // ── Phase 1: skeleton render (sync — coords + terrain from metadata cache) ──
     const table = document.createElement("table");
     table.className = "duckmage-hex-table";
 
@@ -819,21 +439,50 @@ export class HexTableView extends ItemView {
     }
 
     const tbody = table.createEl("tbody");
-    for (let i = 0; i < files.length; i++) {
-      const { path, x, y } = files[i];
-      const { text, links } = sectionData[i];
+    const rows: HTMLTableRowElement[] = [];
+    for (const { path, x, y, region } of files) {
       const tr = tbody.createEl("tr");
       tr.dataset.hexPath = path;
-      const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-      const relative = hexFolder ? path.slice(hexFolder.length + 1) : path;
-      const rowRegion = relative.split("/")[0];
-      this.fillRow(tr, path, x, y, rowRegion, text, links);
+      this.fillRow(tr, path, x, y, region, new Map(), new Map());
+      rows.push(tr);
     }
 
     this.scrollEl.empty();
     this.scrollEl.appendChild(table);
     this.addColumnResizers(table);
     this.applyFilters();
+
+    // ── Phase 2: fill section data in batches, above-the-fold first ──────────
+    const FIRST_BATCH = 20;
+    const REST_BATCH = 50;
+
+    const fillBatch = async (start: number, size: number): Promise<boolean> => {
+      if (gen !== this.loadGeneration) return false;
+      const slice = files.slice(start, start + size);
+      if (slice.length === 0) return true;
+      const sectionData = await Promise.all(
+        slice.map((f) => getAllSectionData(this.app, f.path)),
+      );
+      if (gen !== this.loadGeneration) return false;
+      for (let j = 0; j < slice.length; j++) {
+        const { path, x, y, region } = slice[j];
+        const { text, links } = sectionData[j];
+        this.fillRow(rows[start + j], path, x, y, region, text, links);
+      }
+      this.applyFilters();
+      return true;
+    };
+
+    // First batch is above-the-fold; await it so the view feels responsive fast
+    await fillBatch(0, FIRST_BATCH);
+
+    // Remaining batches load in the background
+    for (let i = FIRST_BATCH; i < files.length; i += REST_BATCH) {
+      const ok = await fillBatch(i, REST_BATCH);
+      if (!ok) break;
+      // Yield to the browser between batches to keep the UI responsive
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
   }
 
   // ── Filter helpers ────────────────────────────────────────────────────────
@@ -1022,7 +671,7 @@ export class HexTableView extends ItemView {
     renderTerrainCell();
     terrainTd.addEventListener("click", () => {
       const current = getTerrainFromFile(this.app, path);
-      new TerrainPickerModal(this.app, this.plugin, path, current, () => {
+      new HexTerrainPickerModal(this.app, this.plugin, path, current, () => {
         renderTerrainCell();
       }).open();
     });
@@ -1150,6 +799,7 @@ export class HexTableView extends ItemView {
             false,
             path,
             col.key,
+            this.plugin,
             (saved) => {
               td.dataset.fullContent = saved;
               td.empty();

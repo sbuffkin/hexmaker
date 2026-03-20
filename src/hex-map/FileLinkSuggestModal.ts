@@ -1,6 +1,6 @@
 import { App, SuggestModal, TFile } from "obsidian";
-import type DuckmagePlugin from "./DuckmagePlugin";
-import { normalizeFolder } from "./utils";
+import type DuckmagePlugin from "../DuckmagePlugin";
+import { normalizeFolder } from "../utils";
 
 export class FileLinkSuggestModal extends SuggestModal<TFile> {
 	constructor(
