@@ -7,6 +7,8 @@ import type DuckmagePlugin from "../DuckmagePlugin";
 import { RandomTableModal } from "../random-tables/RandomTableModal";
 
 export class HexCellModal extends DuckmageModal {
+  private textarea: HTMLTextAreaElement | null = null;
+
   constructor(
     app: App,
     private title: string,
@@ -28,54 +30,46 @@ export class HexCellModal extends DuckmageModal {
     contentEl.addClass("duckmage-cell-modal");
 
     if (this.isLink) {
-      const list = contentEl.createEl("ul", {
-        cls: "duckmage-cell-modal-list",
-      });
+      const list = contentEl.createEl("ul", { cls: "duckmage-cell-modal-list" });
       for (const item of this.body.split(", ")) {
         list.createEl("li", { text: item });
       }
     } else {
-      const textarea = contentEl.createEl("textarea", {
+      this.textarea = contentEl.createEl("textarea", {
         cls: "duckmage-cell-modal-textarea",
       });
-      textarea.value = this.body;
-
-      const btnRow = contentEl.createDiv({ cls: "duckmage-cell-modal-btn-row" });
+      this.textarea.value = this.body;
 
       const rollTableFile = this.plugin ? this.getRollTableFile() : null;
       if (rollTableFile) {
+        const btnRow = contentEl.createDiv({ cls: "duckmage-cell-modal-btn-row" });
         const rollBtn = btnRow.createEl("button", {
           text: "🎲 Roll on table",
           cls: "duckmage-cell-modal-roll-btn",
         });
         rollBtn.addEventListener("click", () => {
           new RandomTableModal(this.app, this.plugin!, (result) => {
-            if (textarea.value && !textarea.value.endsWith("\n"))
-              textarea.value += "\n";
-            textarea.value += result;
+            if (this.textarea!.value && !this.textarea!.value.endsWith("\n"))
+              this.textarea!.value += "\n";
+            this.textarea!.value += result;
           }, rollTableFile.path).open();
         });
       }
-
-      const saveBtn = btnRow.createEl("button", {
-        text: "Save",
-        cls: "duckmage-cell-modal-save mod-cta",
-      });
-      saveBtn.addEventListener("click", async () => {
-        const newContent = textarea.value;
-        if (this.filePath && this.sectionKey) {
-          await this.beforeSave?.();
-          await setSectionContent(
-            this.app,
-            this.filePath,
-            this.sectionKey,
-            newContent,
-          );
-          this.onSave?.(newContent.trim());
-        }
-        this.close();
-      });
     }
+  }
+
+  private async doSave(): Promise<void> {
+    if (!this.textarea || !this.filePath || !this.sectionKey) return;
+    const newContent = this.textarea.value;
+    await this.beforeSave?.();
+    await setSectionContent(this.app, this.filePath, this.sectionKey, newContent);
+    this.onSave?.(newContent.trim());
+  }
+
+  onClose(): void {
+    void this.doSave();
+    this.contentEl.empty();
+    this.textarea = null;
   }
 
   private getRollTableFile(): TFile | null {
@@ -103,7 +97,4 @@ export class HexCellModal extends DuckmageModal {
     return file instanceof TFile ? file : null;
   }
 
-  onClose(): void {
-    this.contentEl.empty();
-  }
 }

@@ -2,6 +2,7 @@ import {
   App,
   ItemView,
   MarkdownRenderer,
+  Menu,
   Modal,
   Notice,
   TFile,
@@ -467,12 +468,6 @@ export class HexMapView extends ItemView {
     centerHexBtn.addEventListener("click", () => {
       new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
     });
-
-    this.swapBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn",
-      text: "Swap hexes",
-    });
-    this.swapBtn.addEventListener("click", () => this.handleSwapButton());
 
     this.terrainToolbarBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
@@ -1088,12 +1083,7 @@ export class HexMapView extends ItemView {
     this.renderRoadRiverOverlay(gridContainer);
   }
 
-  private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
-    evt.preventDefault();
-    if (this.drawingMode === "road" || this.drawingMode === "river") {
-      this.onHexDeleteClick(x, y);
-      return;
-    }
+  private openHexEditorModal(x: number, y: number): void {
     this.setSelectedHex(x, y);
     const modal = new HexEditorModal(
       this.app,
@@ -1103,10 +1093,8 @@ export class HexMapView extends ItemView {
       this.activeRegionName,
       (t, i) => {
         if (t !== undefined || i !== undefined) {
-          // Terrain/icon changed — immediate update with explicit overrides avoids cache race
           this.renderGrid(t, i);
         } else {
-          // Link-only change — defer so metadata cache has time to repopulate after vault.modify
           setTimeout(() => this.renderGrid(), 300);
         }
       },
@@ -1121,6 +1109,55 @@ export class HexMapView extends ItemView {
       },
     );
     modal.loadData().then(() => modal.open());
+  }
+
+  private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
+    evt.preventDefault();
+    if (this.drawingMode === "road" || this.drawingMode === "river") {
+      this.onHexDeleteClick(x, y);
+      return;
+    }
+    if (this.drawingMode === "swap") {
+      this.exitSwapMode();
+      return;
+    }
+
+    const menu = new Menu();
+
+    menu.addItem(item =>
+      item
+        .setTitle("Center on this hex")
+        .setIcon("crosshair")
+        .onClick(() => this.centerOnHex(x, y)),
+    );
+
+    menu.addSeparator();
+
+    menu.addItem(item =>
+      item
+        .setTitle("Open note")
+        .setIcon("file-text")
+        .onClick(async () => {
+          const path = this.plugin.hexPath(x, y, this.activeRegionName);
+          const existing = this.app.vault.getAbstractFileByPath(path);
+          const file = existing instanceof TFile
+            ? existing
+            : await this.plugin.createHexNote(x, y, this.activeRegionName);
+          if (file) await this.app.workspace.getLeaf().openFile(file);
+        }),
+    );
+
+    menu.addItem(item =>
+      item
+        .setTitle("Swap hex")
+        .setIcon("arrow-left-right")
+        .onClick(() => {
+          if (this.drawingMode !== "swap") this.handleSwapButton();
+          void this.onHexSwapClick(x, y);
+        }),
+    );
+
+    menu.showAtMouseEvent(evt);
   }
 
   private async onHexClick(x: number, y: number): Promise<void> {
@@ -1149,17 +1186,7 @@ export class HexMapView extends ItemView {
       return;
     }
 
-    const path = this.plugin.hexPath(x, y, this.activeRegionName);
-    const abstract = this.app.vault.getAbstractFileByPath(path);
-    let fileToOpen: TFile | null = abstract instanceof TFile ? abstract : null;
-
-    if (!fileToOpen) {
-      fileToOpen = await this.plugin.createHexNote(x, y, this.activeRegionName);
-      if (fileToOpen) this.renderGrid();
-      else return;
-    }
-
-    await this.app.workspace.getLeaf().openFile(fileToOpen);
+    this.openHexEditorModal(x, y);
   }
 
   private getBrushHexes(x: number, y: number): [number, number][] {

@@ -94,12 +94,13 @@ export async function getSectionContent(app: App, filePath: string, section: str
 export async function getAllSectionData(
 	app: App,
 	filePath: string,
+	preloadedContent?: string,
 ): Promise<{ text: Map<string, string>; links: Map<string, string[]> }> {
 	const text  = new Map<string, string>();
 	const links = new Map<string, string[]>();
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return { text, links };
-	const content = await app.vault.read(file);
+	const content = preloadedContent ?? await app.vault.read(file);
 
 	// Find every ### heading and capture the body up to the next boundary
 	const headingRegex = /^###\s+(.+?)\s*$/gm;

@@ -700,32 +700,89 @@ div.duckmage-terrain-preview-icon {
     margin-bottom: 0.85em;
 }
 
-.duckmage-link-section-header {
+.duckmage-link-section-title {
+    margin: 0 0 0.3em 0;
+    font-size: 0.9em;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+/* ── Link combo box ─────────────────────────────────────────────────────── */
+.duckmage-link-combo {
+    position: relative;
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.3em;
+    gap: 4px;
+    margin-bottom: 0.4em;
 }
 
-.duckmage-add-btn {
-    font-size: 0.8em;
-    padding: 0.15em 0.5em;
-}
-
-.duckmage-link-select {
-    font-size: 0.85em;
-    background: var(--background-secondary);
+.duckmage-link-combo-input {
+    flex: 1;
+    min-width: 0;
+    padding: 3px 6px;
     border: 1px solid var(--background-modifier-border);
     border-radius: 4px;
+    background: var(--background-secondary);
     color: var(--text-normal);
-    padding: 0.15em 0.3em;
-    max-width: 160px;
-    cursor: pointer;
+    font-size: var(--font-ui-small);
 }
 
-.duckmage-link-select:focus {
+.duckmage-link-combo-input:focus {
     outline: none;
     border-color: var(--interactive-accent);
+}
+
+.duckmage-link-combo-arrow {
+    flex-shrink: 0;
+    padding: 2px 7px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    background: var(--background-secondary);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9em;
+    line-height: 1;
+}
+
+.duckmage-link-combo-arrow:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.duckmage-link-combo-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 100;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.duckmage-link-combo-item {
+    padding: 5px 8px;
+    font-size: var(--font-ui-small);
+    cursor: pointer;
+    color: var(--text-normal);
+}
+
+.duckmage-link-combo-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-link-combo-create {
+    color: var(--interactive-accent);
+    border-top: 1px solid var(--background-modifier-border-focus);
+}
+
+.duckmage-link-combo-empty {
+    padding: 5px 8px;
+    font-size: var(--font-ui-small);
+    color: var(--text-faint);
+    font-style: italic;
 }
 
 .duckmage-link-list {
@@ -1408,10 +1465,6 @@ div.duckmage-terrain-preview-icon {
     border-color: var(--interactive-accent);
 }
 
-.duckmage-cell-modal-save {
-    display: block;
-    margin-left: auto;
-}
 
 /* ── Terrain filter modal ─────────────────────────────────────────────────── */
 
@@ -1535,37 +1588,6 @@ div.duckmage-terrain-preview-icon {
 }
 
 /* ── Context menu create-new row ────────────────────────────────────────────── */
-.duckmage-editor-create-row {
-    display: flex;
-    gap: 6px;
-    margin-top: 6px;
-}
-
-.duckmage-editor-create-input {
-    flex: 1;
-    padding: 3px 6px;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background: var(--background-secondary);
-    color: var(--text-normal);
-    font-size: var(--font-ui-small);
-    min-width: 0;
-}
-
-.duckmage-editor-create-btn {
-    padding: 3px 8px;
-    border-radius: 4px;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-    cursor: pointer;
-    font-size: var(--font-ui-small);
-    white-space: nowrap;
-}
-
-.duckmage-editor-create-btn:hover {
-    background: var(--interactive-accent-hover);
-}
 
 /* ? help button — bottom-left of the map controls overlay */
 .duckmage-help-btn {
@@ -2268,19 +2290,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     border-top: 1px solid var(--background-modifier-border);
 }
 
-.duckmage-section-roll-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1em;
-    padding: 0 2px;
-    color: var(--text-muted);
-    opacity: 0.7;
-    line-height: 1;
-}
-.duckmage-section-roll-btn:hover {
-    opacity: 1;
-}
 
 /* ── Random table editor — name row ────────────────────────────────────────── */
 

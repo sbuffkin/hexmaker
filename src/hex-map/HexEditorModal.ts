@@ -52,17 +52,13 @@ export class HexEditorModal extends DuckmageModal {
     this.directIcon = null;
 
     const path = this.plugin.hexPath(this.x, this.y, this.regionName);
-    this.hexExists =
-      this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    this.hexExists = file instanceof TFile;
     if (!this.hexExists) return;
 
-    ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
-      this.app,
-      path,
-    ));
-    const rawContent = await this.app.vault.read(
-      this.app.vault.getAbstractFileByPath(path) as TFile,
-    );
+    // Single read — reused for both frontmatter and section parsing
+    const rawContent = await this.app.vault.read(file as TFile);
+
     const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
       const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
@@ -70,6 +66,12 @@ export class HexEditorModal extends DuckmageModal {
       const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
       if (im) this.directIcon = im[1].trim();
     }
+
+    ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
+      this.app,
+      path,
+      rawContent,
+    ));
   }
 
   onOpen() {
@@ -77,8 +79,9 @@ export class HexEditorModal extends DuckmageModal {
     contentEl.empty();
     contentEl.addClass("duckmage-hex-editor");
 
-    const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
     const path = this.plugin.hexPath(this.x, this.y, this.regionName);
+
+    // ── Static header — rendered immediately, no data needed ─────────────
     const titleRow = contentEl.createDiv({ cls: "duckmage-editor-title-row" });
     const titleLeft = titleRow.createDiv({ cls: "duckmage-editor-title-left" });
     titleLeft.createEl("h2", { text: `Hex ${this.x}, ${this.y}` });
@@ -92,27 +95,41 @@ export class HexEditorModal extends DuckmageModal {
       if (leaves.length > 0) (leaves[0].view as any).centerOnHex?.(this.x, this.y);
     });
 
-    if (hexExists) {
-      const file = this.app.vault.getAbstractFileByPath(path) as TFile;
+    // "Open note" can be determined synchronously from the vault index
+    const fileNow = this.app.vault.getAbstractFileByPath(path);
+    if (fileNow instanceof TFile) {
       const openLink = titleLeft.createEl("a", {
         text: "Open note",
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        this.app.workspace.getLeaf("tab").openFile(file);
+        this.app.workspace.getLeaf("tab").openFile(fileNow);
         this.close();
       });
     }
     this.renderNeighborWidget(titleRow, this.x, this.y);
 
+    this.makeDraggable();
+
+    // ── Body — populated after the single async read ──────────────────────
+    const bodyEl = contentEl.createDiv({ cls: "duckmage-editor-body" });
+    bodyEl.createSpan({ text: "Loading…", cls: "duckmage-editor-loading" });
+
+    void this.loadData().then(() => {
+      bodyEl.empty();
+      this.renderBody(bodyEl, path);
+    });
+  }
+
+  private renderBody(bodyEl: HTMLElement, path: string): void {
+    const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
     const s = this.plugin.settings;
 
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
-      contentEl,
+      bodyEl,
       "Terrain",
       s.hexEditorTerrainCollapsed ?? false,
     );
-    // Show current terrain as a small swatch + name in the header
     const paletteEntry = directTerrain
       ? (this.plugin.settings.terrainPalette ?? []).find(p => p.name === directTerrain)
       : undefined;
@@ -131,80 +148,30 @@ export class HexEditorModal extends DuckmageModal {
     }
     this.renderTerrainSection(terrainBody, path, directTerrain, directIcon);
 
-    contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
+    bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(
-      contentEl,
+      bodyEl,
       "Notes",
       s.hexEditorNotesCollapsed ?? false,
     );
     for (const { key, label } of TEXT_SECTIONS) {
-      this.renderTextSection(
-        notesBody,
-        path,
-        key,
-        label,
-        allText.get(key) ?? "",
-      );
+      this.renderTextSection(notesBody, path, key, label, allText.get(key) ?? "");
     }
 
-    contentEl.createEl("hr", { cls: "duckmage-editor-divider" });
+    bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: featuresBody } = this.makeCollapsible(
-      contentEl,
+      bodyEl,
       "World features",
       s.hexEditorFeaturesCollapsed ?? false,
     );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Encounters Table",
-      hexExists,
-      s.tablesFolder,
-      allLinks.get("encounters table") ?? [],
-    );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Towns",
-      hexExists,
-      s.townsFolder,
-      allLinks.get("towns") ?? [],
-    );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Dungeons",
-      hexExists,
-      s.dungeonsFolder,
-      allLinks.get("dungeons") ?? [],
-    );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Quests",
-      hexExists,
-      s.questsFolder,
-      allLinks.get("quests") ?? [],
-    );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Factions",
-      hexExists,
-      s.factionsFolder,
-      allLinks.get("factions") ?? [],
-    );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Features",
-      hexExists,
-      s.featuresFolder,
-      allLinks.get("features") ?? [],
-    );
-
-    this.makeDraggable();
+    this.renderDropdownSection(featuresBody, path, "Encounters Table", hexExists, s.tablesFolder, allLinks.get("encounters table") ?? []);
+    this.renderDropdownSection(featuresBody, path, "Towns",            hexExists, s.townsFolder,  allLinks.get("towns") ?? []);
+    this.renderDropdownSection(featuresBody, path, "Dungeons",         hexExists, s.dungeonsFolder, allLinks.get("dungeons") ?? []);
+    this.renderDropdownSection(featuresBody, path, "Quests",           hexExists, s.questsFolder,  allLinks.get("quests") ?? []);
+    this.renderDropdownSection(featuresBody, path, "Factions",         hexExists, s.factionsFolder, allLinks.get("factions") ?? []);
+    this.renderDropdownSection(featuresBody, path, "Features",         hexExists, s.featuresFolder, allLinks.get("features") ?? []);
   }
 
   onClose() {
@@ -425,28 +392,35 @@ export class HexEditorModal extends DuckmageModal {
     sourceFolder: string,
     initialLinks: string[],
   ): void {
-    const sectionEl = container.createDiv({
-      cls: "duckmage-editor-link-section",
+    const sectionEl = container.createDiv({ cls: "duckmage-editor-link-section" });
+    sectionEl.createEl("h4", { text: section, cls: "duckmage-link-section-title" });
+
+    // ── Combo box ──────────────────────────────────────────────────────────
+    const comboWrap = sectionEl.createDiv({ cls: "duckmage-link-combo" });
+    const input = comboWrap.createEl("input", {
+      type: "text",
+      cls: "duckmage-link-combo-input",
     });
-    const header = sectionEl.createDiv({ cls: "duckmage-link-section-header" });
-    header.createEl("h4", { text: section });
+    input.placeholder = `Search or create…`;
 
-    const select = header.createEl("select", { cls: "duckmage-link-select" });
-    select.createEl("option", { value: "", text: "— add —" });
-    const filterType = section === "Encounters Table" ? "encounter-filter" as const : undefined;
-    for (const file of this.getFilesForDropdown(sourceFolder, filterType)) {
-      select.createEl("option", { value: file.path, text: file.basename });
-    }
+    const arrowBtn = comboWrap.createEl("button", {
+      text: "▾",
+      cls: "duckmage-link-combo-arrow",
+      title: "Show all",
+    });
+    const dropdown = comboWrap.createDiv({ cls: "duckmage-link-combo-dropdown" });
+    dropdown.style.display = "none";
 
+    // ── Link list ──────────────────────────────────────────────────────────
     const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
 
-    // For Encounters Table: clicking a linked item opens the table view for rolling
+    let currentLinks = hexExists ? [...initialLinks] : [];
+    const filterType = section === "Encounters Table" ? "encounter-filter" as const : undefined;
+
     const onItemClick =
       section === "Encounters Table"
         ? async (_link: string, file: TFile) => {
-            const leaves = this.app.workspace.getLeavesOfType(
-              VIEW_TYPE_RANDOM_TABLES,
-            );
+            const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
             if (leaves.length > 0) {
               this.app.workspace.revealLeaf(leaves[0]);
               (leaves[0].view as any).openTable?.(file.path);
@@ -459,83 +433,94 @@ export class HexEditorModal extends DuckmageModal {
           }
         : undefined;
 
-    const onRemove = async (link: string) => {
-      await removeLinkFromSection(this.app, path, section, link);
-      this.onChanged();
-      await refresh();
-    };
-
     const onRollClick =
       section === "Encounters Table"
         ? (file: TFile) =>
-            new RandomTableModal(
-              this.app,
-              this.plugin,
-              undefined,
-              file.path,
-            ).open()
+            new RandomTableModal(this.app, this.plugin, undefined, file.path).open()
         : undefined;
 
-    const refresh = async () => {
-      linksEl.empty();
-      this.renderLinkList(
-        linksEl,
-        await getLinksInSection(this.app, path, section),
-        path,
-        onRemove,
-        onItemClick,
-        onRollClick,
-      );
+    const onRemove = async (link: string) => {
+      currentLinks = currentLinks.filter(l => l !== link);
+      refresh();
+      await removeLinkFromSection(this.app, path, section, link);
+      this.onChanged();
     };
 
-    if (hexExists) {
-      this.renderLinkList(
-        linksEl,
-        initialLinks,
-        path,
-        onRemove,
-        onItemClick,
-        onRollClick,
-      );
-    } else {
-      linksEl.createSpan({ text: "None", cls: "duckmage-link-empty" });
-    }
+    const refresh = () => {
+      linksEl.empty();
+      this.renderLinkList(linksEl, currentLinks, path, onRemove, onItemClick, onRollClick);
+    };
 
-    select.addEventListener("change", async () => {
-      const selectedPath = select.value;
-      select.value = "";
-      if (!selectedPath) return;
-      const file = this.app.vault.getAbstractFileByPath(selectedPath);
-      if (!(file instanceof TFile)) return;
-      const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
+    refresh();
+
+    // ── Dropdown logic ─────────────────────────────────────────────────────
+    let isOpen = false;
+
+    const getFiltered = (query: string): TFile[] => {
+      const files = this.getFilesForDropdown(sourceFolder, filterType);
+      if (!query) return files;
+      const q = query.toLowerCase();
+      return files.filter(f => f.basename.toLowerCase().includes(q));
+    };
+
+    const populateDropdown = (query: string) => {
+      dropdown.empty();
+      const trimmed = query.trim();
+      const files = getFiltered(trimmed);
+
+      if (files.length === 0 && !trimmed) {
+        dropdown.createDiv({ cls: "duckmage-link-combo-empty", text: "No files in folder" });
       }
-      const linkText = `[[${this.app.metadataCache.fileToLinktext(file, path)}]]`;
-      await addLinkToSection(this.app, path, section, linkText);
-      await addBacklinkToFile(this.app, file.path, path);
+
+      for (const file of files) {
+        const item = dropdown.createDiv({ cls: "duckmage-link-combo-item" });
+        item.textContent = file.basename;
+        item.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          void selectFile(file);
+        });
+      }
+
+      const exactMatch = files.some(f => f.basename.toLowerCase() === trimmed.toLowerCase());
+      if (trimmed && !exactMatch) {
+        const createItem = dropdown.createDiv({
+          cls: "duckmage-link-combo-item duckmage-link-combo-create",
+        });
+        createItem.textContent = `＋ Create "${trimmed}"`;
+        createItem.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          void createAndLink(trimmed);
+        });
+      }
+    };
+
+    const openDropdown = () => {
+      isOpen = true;
+      populateDropdown(input.value);
+      dropdown.style.display = "";
+    };
+
+    const closeDropdown = () => {
+      isOpen = false;
+      dropdown.style.display = "none";
+    };
+
+    const selectFile = async (file: TFile) => {
+      closeDropdown();
+      input.value = "";
+      const hexFile = await this.ensureHexNote();
+      if (!hexFile) { new Notice("Could not create hex note."); return; }
+      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
+      currentLinks = [...currentLinks, linkPath];
+      refresh();
+      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
-      await refresh();
-    });
+    };
 
-    // Create-new row
-    const createRow = sectionEl.createDiv({
-      cls: "duckmage-editor-create-row",
-    });
-    const createInput = createRow.createEl("input", {
-      type: "text",
-      cls: "duckmage-editor-create-input",
-    });
-    createInput.placeholder = `New ${section.slice(0, -1).toLowerCase()}…`;
-    const createBtn = createRow.createEl("button", {
-      text: "Create",
-      cls: "duckmage-editor-create-btn",
-    });
-
-    const createAndLink = async () => {
-      const name = createInput.value.trim();
-      if (!name) return;
+    const createAndLink = async (name: string) => {
+      closeDropdown();
+      input.value = "";
       const folder = normalizeFolder(sourceFolder);
       const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
       let file = this.app.vault.getAbstractFileByPath(newPath);
@@ -556,21 +541,38 @@ export class HexEditorModal extends DuckmageModal {
         }
       }
       const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
-      }
-      const linkText = `[[${this.app.metadataCache.fileToLinktext(file as TFile, path)}]]`;
-      await addLinkToSection(this.app, path, section, linkText);
-      await addBacklinkToFile(this.app, (file as TFile).path, path);
+      if (!hexFile) { new Notice("Could not create hex note."); return; }
+      const linkPath = this.app.metadataCache.fileToLinktext(file as TFile, path);
+      currentLinks = [...currentLinks, linkPath];
+      refresh();
+      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      void addBacklinkToFile(this.app, (file as TFile).path, path);
       this.onChanged();
-      createInput.value = "";
-      await refresh();
     };
 
-    createBtn.addEventListener("click", createAndLink);
-    createInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") createAndLink();
+    input.addEventListener("focus", () => openDropdown());
+    input.addEventListener("blur", () => setTimeout(() => closeDropdown(), 150));
+    input.addEventListener("input", () => {
+      if (!isOpen) openDropdown();
+      else populateDropdown(input.value);
+    });
+    input.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Escape") { closeDropdown(); input.blur(); return; }
+      if (e.key === "Enter") {
+        const trimmed = input.value.trim();
+        if (!trimmed) return;
+        const files = getFiltered(trimmed);
+        const exact = files.find(f => f.basename.toLowerCase() === trimmed.toLowerCase());
+        if (exact) void selectFile(exact);
+        else if (files.length === 1) void selectFile(files[0]);
+        else void createAndLink(trimmed);
+      }
+    });
+
+    arrowBtn.addEventListener("mousedown", (e) => e.preventDefault());
+    arrowBtn.addEventListener("click", () => {
+      if (isOpen) closeDropdown();
+      else { input.focus(); openDropdown(); }
     });
   }
 
@@ -684,12 +686,7 @@ export class HexEditorModal extends DuckmageModal {
       cls: "duckmage-text-section-label",
     });
 
-    // Button group on the right — keeps 📖 and 🎲 clustered together
-    const btnGroup = labelRow.createDiv({
-      cls: "duckmage-text-section-btn-group",
-    });
-
-    // 📖 button: terrain description table (description section) or generic section table
+    // 📖 button: terrain description table (description section) or section-specific table
     const tablesFolder = this.plugin.settings.tablesFolder
       ? this.plugin.settings.tablesFolder.replace(/^\/+|\/+$/g, "")
       : "";
@@ -721,7 +718,12 @@ export class HexEditorModal extends DuckmageModal {
       }
     }
 
+    const textarea = sectionEl.createEl("textarea", {
+      cls: "duckmage-text-section-textarea",
+    });
+
     if (previewTablePath) {
+      const btnGroup = labelRow.createDiv({ cls: "duckmage-text-section-btn-group" });
       const previewBtn = btnGroup.createEl("button", {
         text: "📖",
         cls: "duckmage-section-desc-table-btn",
@@ -729,30 +731,13 @@ export class HexEditorModal extends DuckmageModal {
       previewBtn.title = previewTitle;
       const capturedPath = previewTablePath;
       previewBtn.addEventListener("click", () => {
-        new RandomTableModal(
-          this.app,
-          this.plugin,
-          undefined,
-          capturedPath,
-        ).open();
+        new RandomTableModal(this.app, this.plugin, (result) => {
+          if (textarea.value && !textarea.value.endsWith("\n"))
+            textarea.value += "\n";
+          textarea.value += result;
+        }, capturedPath).open();
       });
     }
-
-    const rollBtn = btnGroup.createEl("button", {
-      text: "🎲",
-      cls: "duckmage-section-roll-btn",
-    });
-    rollBtn.title = "Roll on a table and append result";
-    const textarea = sectionEl.createEl("textarea", {
-      cls: "duckmage-text-section-textarea",
-    });
-    rollBtn.addEventListener("click", () => {
-      new RandomTableModal(this.app, this.plugin, (result) => {
-        if (textarea.value && !textarea.value.endsWith("\n"))
-          textarea.value += "\n";
-        textarea.value += result;
-      }).open();
-    });
     textarea.rows = 3;
     textarea.placeholder = `${label}…`;
     textarea.value = initialContent;
