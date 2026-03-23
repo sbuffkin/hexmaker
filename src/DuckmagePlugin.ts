@@ -25,20 +25,20 @@ export default class DuckmagePlugin extends Plugin {
 		this.registerView(VIEW_TYPE_HEX_MAP,       (leaf) => new HexMapView(leaf, this));
 		this.registerView(VIEW_TYPE_HEX_TABLE,     (leaf) => new HexTableView(leaf, this));
 		this.registerView(VIEW_TYPE_RANDOM_TABLES, (leaf) => new RandomTableView(leaf, this));
-		this.addRibbonIcon("map", "Duckmage: Open hex map", () => this.openHexMap());
+		this.addRibbonIcon("map", "Hexmaker: Open hex map", () => this.openHexMap());
 		this.addCommand({
 			id: "open-hex-map",
-			name: "Open Duckmage hex map",
+			name: "Open hex map",
 			callback: () => this.openHexMap(),
 		});
 		this.addCommand({
 			id: "open-hex-table",
-			name: "Open Duckmage hex table",
+			name: "Open hex table",
 			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
 		});
 		this.addCommand({
 			id: "open-random-tables",
-			name: "Open Duckmage random tables",
+			name: "Open random tables",
 			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
 		});
 		this.addSettingTab(new DuckmageSettingTab(this.app, this));
