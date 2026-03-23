@@ -4,7 +4,7 @@ An Obsidian plugin for tabletop RPG hex-map world-building. Each hex on the map 
 
 ---
 
-## Installation
+## Manual Installation
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/sbuffkin/obsidian-hexmaker/releases/latest).
 2. In your vault, create the folder `.obsidian/plugins/hexmaker-plugin/`.
