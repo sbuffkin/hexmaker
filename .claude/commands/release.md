@@ -1,8 +1,25 @@
+---
+description: Release a new version of the plugin. Follow these steps exactly:
+allowed-tools: Bash(npm:*), Bash(git:*)
+---
+
 Release a new version of the plugin. Follow these steps exactly:
 
 ## 1. Check current version
 
-Read `manifest.json` to confirm the current version number, then ask the user what the new version should be (or check if they've already specified it).
+Read `manifest.json` to confirm the current version number, then confirm with the user what the new version should be (patch / minor / major).
+
+**Important**: `package.json` and `manifest.json` must stay in sync. Set `package.json` to the new version first:
+
+```bash
+node -e "
+const fs = require('fs');
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+pkg.version = 'X.Y.Z';
+fs.writeFileSync('package.json', JSON.stringify(pkg, null, '\t'));
+console.log('package.json set to', pkg.version);
+"
+```
 
 ## 2. Bump version
 
@@ -10,7 +27,7 @@ Read `manifest.json` to confirm the current version number, then ask the user wh
 npm run version
 ```
 
-This updates `manifest.json` and `versions.json` and stages both files. Confirm the version was bumped correctly by reading `manifest.json`.
+This reads the version from `package.json` and writes it into `manifest.json` and `versions.json`, then stages both. Confirm by reading `manifest.json`.
 
 ## 3. Build and test
 
@@ -20,36 +37,27 @@ npm run build && npm test
 
 Do not proceed if either fails.
 
-## 4. Commit and push
+## 4. Commit and push to master
 
 ```bash
-git add manifest.json versions.json
+git add manifest.json versions.json package.json package-lock.json
 git commit -m "chore: release X.Y.Z"
 git push prod master
 ```
 
 Replace `X.Y.Z` with the actual version from `manifest.json`.
 
-## 5. Tag and push tag
-
-```bash
-git tag -a X.Y.Z -m "X.Y.Z"
-git push prod X.Y.Z
-```
-
-The tag **must exactly match** the version in `manifest.json`. The GitHub Actions release workflow is triggered by this tag push and will:
-- Run tests
-- Build `main.js`
-- Create a **draft** GitHub release with `main.js`, `manifest.json`, and `styles.css` attached
-
-## 6. Publish the draft release
-
-Go to the GitHub releases page, find the draft, add release notes, and publish it.
+That's it. Pushing to `master` automatically triggers the GitHub Actions release workflow, which will:
+- Detect the new version in `manifest.json`
+- Run tests and build `main.js`
+- Create a git tag `X.Y.Z`
+- Publish a GitHub release with auto-generated changelog and `main.js`, `manifest.json`, `styles.css` attached
 
 ---
 
 **Notes:**
 - The remote is named `prod` (not `origin`)
 - `main.js` is in `.gitignore` — never commit it manually; the CI builds it
-- The tag version must match `manifest.json` exactly (not `package.json`)
-- The release workflow creates a **draft** — you must publish it manually after adding release notes
+- No manual tagging required — the workflow creates the tag automatically
+- The release is published immediately (not a draft) with auto-generated release notes
+- If you push to master without changing the version, no release is created (idempotent)
