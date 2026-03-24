@@ -11,6 +11,6 @@ cd /mnt/c/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin && 
 
 Run this in the background — it is a long-running process. Tell the user the watcher has started, then remind them:
 - `main.js` rebuilds automatically on every save to `main.ts`
-- To reload the plugin in Obsidian after a rebuild: open the developer console (Ctrl+Shift+I) and run:
-  `app.plugins.disablePlugin('duckmage-plugin'); app.plugins.enablePlugin('duckmage-plugin');`
+- To reload the plugin in Obsidian after a rebuild, run:
+  `powershell.exe -Command "obsidian plugin:reload id=duckmage-plugin"`
 - Or use `/rebuild` instead for a one-off production build (includes type-checking).

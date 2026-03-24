@@ -25,7 +25,7 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   { name: "badlands", color: "#c2410c", icon: "bw-badlands.png" },
   { name: "brokenlands", color: "#92400e", icon: "bw-brokenlands.png" },
   { name: "cliffs", color: "#a86f1f", icon: "bw-brokenlands.png" },
-  { name: "Salt Flats", color: "#f7eaba", icon: "bw-dunes.png" },
+  { name: "salt flats", color: "#f7eaba", icon: "bw-dunes.png" },
   // Forest
   { name: "forest", color: "#2d9553", icon: "bw-forest-heavy.png" },
   { name: "forest heavy", color: "#15803d", icon: "bw-forest-heavy.png" },

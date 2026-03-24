@@ -82,6 +82,13 @@ export class HexMapView extends ItemView {
   >();
   private flushing = new Set<string>(); // "t:<path>" or "i:<path>"
   private savingIndicatorEl: HTMLElement | null = null;
+  // Terrain undo
+  private readonly TERRAIN_UNDO_DEPTH = 20;
+  private terrainUndoStack: Array<{ x: number; y: number; path: string; oldTerrain: string | null; newTerrain: string | null }[]> = [];
+  private terrainRedoStack: Array<{ x: number; y: number; path: string; oldTerrain: string | null; newTerrain: string | null }[]> = [];
+  private currentTerrainStroke: Map<string, { x: number; y: number; path: string; oldTerrain: string | null; newTerrain: string | null }> | null = null;
+  private undoBtn: HTMLButtonElement | null = null;
+  private redoBtn: HTMLButtonElement | null = null;
   activeRegionName = "default";
   private regionBtn: HTMLButtonElement | null = null;
 
@@ -174,6 +181,7 @@ export class HexMapView extends ItemView {
       if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
         isTerrainPainting = true;
         lastPaintedKey = null;
+        if (this.drawingMode === "terrain") this.currentTerrainStroke = new Map();
         // Paint the hex under the cursor immediately
         const hexEl = (e.target as HTMLElement).closest<HTMLElement>(
           ".duckmage-hex",
@@ -248,6 +256,7 @@ export class HexMapView extends ItemView {
     });
 
     this.registerDomEvent(document, "mouseup", () => {
+      if (isTerrainPainting && this.drawingMode === "terrain") this.commitTerrainStroke();
       isTerrainPainting = false;
       lastPaintedKey = null;
       isDragging = false;
@@ -366,11 +375,30 @@ export class HexMapView extends ItemView {
     this.updateRegionBtnLabel();
     this.regionBtn.addEventListener("click", () =>
       new RegionModal(this.app, this.plugin, this, () => {
+        this.terrainUndoStack = [];
+        this.terrainRedoStack = [];
+        this.updateUndoButton();
         this.updateRegionBtnLabel();
         (this.leaf as any).updateHeader();
         this.renderGrid();
       }).open(),
     );
+
+    this.undoBtn = controlsEl.createEl("button", {
+      cls: "duckmage-undo-btn-map",
+      text: "↩",
+      attr: { title: "Undo last terrain stroke (up to 20)" },
+    });
+    this.undoBtn.disabled = true;
+    this.undoBtn.addEventListener("click", () => this.undoLastTerrainStroke());
+
+    this.redoBtn = controlsEl.createEl("button", {
+      cls: "duckmage-undo-btn-map duckmage-redo-btn-map",
+      text: "↪",
+      attr: { title: "Redo last undone terrain stroke" },
+    });
+    this.redoBtn.disabled = true;
+    this.redoBtn.addEventListener("click", () => this.redoLastTerrainStroke());
 
     const helpBtn = controlsEl.createEl("button", {
       cls: "duckmage-help-btn",
@@ -577,6 +605,7 @@ export class HexMapView extends ItemView {
 
   private exitTerrainMode(): void {
     if (this.drawingMode !== "terrain") return;
+    this.commitTerrainStroke();
     this.drawingMode = null;
     this.paintTerrainName = null;
     this.terrainPickMode = false;
@@ -1259,6 +1288,14 @@ export class HexMapView extends ItemView {
 
       // ── Queue background file write (coalescing per-hex) ────────────────
       const path = this.plugin.hexPath(hx, hy, this.activeRegionName);
+      if (this.currentTerrainStroke) {
+        if (!this.currentTerrainStroke.has(path)) {
+          const oldTerrain = this.app.metadataCache.getCache(path)?.frontmatter?.terrain ?? null;
+          this.currentTerrainStroke.set(path, { x: hx, y: hy, path, oldTerrain, newTerrain: terrain });
+        } else {
+          this.currentTerrainStroke.get(path)!.newTerrain = terrain;
+        }
+      }
       this.scheduleTerrainWrite(hx, hy, path, terrain);
     }
   }
@@ -1379,6 +1416,81 @@ export class HexMapView extends ItemView {
   // hex A five times while the first write is in-flight, we perform exactly two
   // writes: the in-flight one and then the final value. No writes are lost; no
   // stale intermediate value can overwrite a newer one.
+
+  private applyTerrainToHexEl(hexEl: HTMLElement, terrain: string | null): void {
+    const palette = this.plugin.getRegionPalette(this.activeRegionName);
+    const entry = terrain != null ? palette.find((p) => p.name === terrain) : undefined;
+    hexEl.style.backgroundColor = entry?.color ?? "";
+    hexEl.querySelector(".duckmage-hex-icon")?.remove();
+    hexEl.querySelector(".duckmage-hex-dot")?.remove();
+    if (entry?.icon) {
+      try {
+        const iconEl = createIconEl(hexEl, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-hex-icon");
+        hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-label"));
+      } catch (err) {
+        console.warn(`[hexmaker] failed to render icon for terrain "${terrain}":`, err);
+      }
+    }
+    if (terrain !== null) hexEl.addClass("duckmage-hex-exists");
+    else hexEl.removeClass("duckmage-hex-exists");
+  }
+
+  private commitTerrainStroke(): void {
+    if (!this.currentTerrainStroke || this.currentTerrainStroke.size === 0) {
+      this.currentTerrainStroke = null;
+      return;
+    }
+    const entries = [...this.currentTerrainStroke.values()];
+    this.terrainUndoStack.push(entries);
+    if (this.terrainUndoStack.length > this.TERRAIN_UNDO_DEPTH)
+      this.terrainUndoStack.shift();
+    this.terrainRedoStack = []; // new paint invalidates redo history
+    this.currentTerrainStroke = null;
+    this.updateUndoButton();
+  }
+
+  private undoLastTerrainStroke(): void {
+    const stroke = this.terrainUndoStack.pop();
+    if (!stroke) return;
+    this.terrainRedoStack.push(stroke);
+    this.applyStroke(stroke, "old");
+    this.updateUndoButton();
+  }
+
+  private redoLastTerrainStroke(): void {
+    const stroke = this.terrainRedoStack.pop();
+    if (!stroke) return;
+    this.terrainUndoStack.push(stroke);
+    this.applyStroke(stroke, "new");
+    this.updateUndoButton();
+  }
+
+  private applyStroke(
+    stroke: { x: number; y: number; path: string; oldTerrain: string | null; newTerrain: string | null }[],
+    which: "old" | "new",
+  ): void {
+    for (const entry of stroke) {
+      const terrain = which === "old" ? entry.oldTerrain : entry.newTerrain;
+      try {
+        const hexEl = this.viewportEl?.querySelector<HTMLElement>(
+          `[data-x="${entry.x}"][data-y="${entry.y}"]`,
+        );
+        if (hexEl) this.applyTerrainToHexEl(hexEl, terrain);
+      } catch (err) {
+        console.warn(`[hexmaker] stroke visual update failed for ${entry.path}:`, err);
+      }
+      try {
+        this.scheduleTerrainWrite(entry.x, entry.y, entry.path, terrain);
+      } catch (err) {
+        console.warn(`[hexmaker] stroke write scheduling failed for ${entry.path}:`, err);
+      }
+    }
+  }
+
+  private updateUndoButton(): void {
+    if (this.undoBtn) this.undoBtn.disabled = this.terrainUndoStack.length === 0;
+    if (this.redoBtn) this.redoBtn.disabled = this.terrainRedoStack.length === 0;
+  }
 
   private updateSavingIndicator(): void {
     const count =

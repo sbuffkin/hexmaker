@@ -147,7 +147,7 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: rgba(255, 190, 0, 0.55);
+    background: rgba(255, 210, 0, 0.3);
     pointer-events: none;
 }
 
@@ -1008,7 +1008,8 @@ div.duckmage-terrain-preview-icon {
 }
 
 .duckmage-table-btn,
-.duckmage-rt-btn {
+.duckmage-rt-btn,
+.duckmage-undo-btn-map {
     position: absolute;
     top: 8px;
     z-index: 10;
@@ -1035,8 +1036,22 @@ div.duckmage-terrain-preview-icon {
     left: 44px;
 }
 
+.duckmage-undo-btn-map {
+    left: 8px;
+    top: 42px;
+}
+.duckmage-redo-btn-map {
+    left: 44px;
+    top: 42px;
+}
+.duckmage-undo-btn-map:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
 .duckmage-table-btn:hover,
-.duckmage-rt-btn:hover {
+.duckmage-rt-btn:hover,
+.duckmage-undo-btn-map:not(:disabled):hover {
     opacity: 1;
     color: var(--text-normal);
 }

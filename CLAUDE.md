@@ -28,9 +28,9 @@ Slash commands (invoke inside Claude Code):
 
 Each coding session:
 1. Run `npm run dev` in a terminal (or `/dev` from Claude Code) — esbuild watches for changes and rebuilds `main.js` on every save
-2. After a rebuild, reload the plugin in Obsidian via the developer console (Ctrl+Shift+I):
-   ```js
-   app.plugins.disablePlugin('duckmage-plugin'); app.plugins.enablePlugin('duckmage-plugin');
+2. After a rebuild, reload the plugin in Obsidian:
+   ```bash
+   powershell.exe -Command "obsidian plugin:reload id=duckmage-plugin"
    ```
 3. Use `/rebuild` for a final production build before committing (runs the TypeScript type-check and tests too)
 
