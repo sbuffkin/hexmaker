@@ -936,9 +936,25 @@ div.duckmage-terrain-preview-icon {
     height: 100%;
 }
 
-.duckmage-path-type-list { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
-.duckmage-path-type-row  { display: flex; align-items: center; gap: 8px; font-size: 0.85em; }
-.duckmage-path-type-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+.duckmage-path-type-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 8px 0;
+}
+.duckmage-path-type-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85em;
+}
+.duckmage-path-type-swatch {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
 
 .duckmage-tpe-brush-row {
     display: flex;
@@ -1513,7 +1529,6 @@ div.duckmage-terrain-preview-icon {
     outline: none;
     border-color: var(--interactive-accent);
 }
-
 
 /* ── Terrain filter modal ─────────────────────────────────────────────────── */
 
@@ -2277,6 +2292,7 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     cursor: pointer;
     white-space: nowrap;
     margin-top: 4px;
+    margin-bottom: 2px;
 }
 .duckmage-table-editor-add-one-btn:hover {
     color: var(--text-normal);
@@ -2362,7 +2378,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     padding-top: 10px;
     border-top: 1px solid var(--background-modifier-border);
 }
-
 
 /* ── Random table editor — name row ────────────────────────────────────────── */
 
@@ -2491,8 +2506,12 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     max-height: 240px;
     overflow-y: auto;
 }
-.duckmage-wf-template-preview > *:first-child { margin-top: 0; }
-.duckmage-wf-template-preview > *:last-child  { margin-bottom: 0; }
+.duckmage-wf-template-preview > *:first-child {
+    margin-top: 0;
+}
+.duckmage-wf-template-preview > *:last-child {
+    margin-bottom: 0;
+}
 
 /* ── Random table view — from-folder input ─────────────────────────────────── */
 
