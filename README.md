@@ -90,8 +90,7 @@ Toggle tools from the toolbar above the map. **Right-click** off a hex to exit a
 |------|-----------|----------------------|
 | **Terrain** | Paint terrain on a hex (drag to paint multiple) | — |
 | **Icon** | Paint an icon override on a hex | — |
-| **Road** | Add hex to road chain | Remove hex from road |
-| **River** | Add hex to river chain | Remove hex from river |
+| **Path** | Add hex to the active path chain | Remove hex from chain |
 
 **Terrain painter extras:**
 - Clicking the Terrain button always reopens the palette so you can switch colours mid-session.
@@ -99,7 +98,11 @@ Toggle tools from the toolbar above the map. **Right-click** off a hex to exit a
 - **Clear** — paints the "no terrain" state.
 - **Brush size** — paint 1×, 3×, or 7× hex radius at once.
 
-Roads and rivers are drawn as connected chains; adjacent chain hexes are joined by a coloured line. Road/river colours are configurable in Settings.
+**Path tool:** Click the Path button to open the path type picker. Select a type to start drawing, or switch to edit mode to create, rename, recolour, or delete path types. Each path type has a name, colour, line width, line style (solid / dashed / dotted), and routing mode:
+
+- **Through** — smooth Bezier curve through hex centres.
+- **Meander** — gentle curve through the midpoints between hex centres (good for rivers).
+- **Edge** — traces strictly along the hex polygon boundary lines between hexes.
 
 ### Hex table view
 Open via **Command palette → "Open Hexmaker hex table"**.
@@ -132,7 +135,7 @@ Open **Settings → Hexmaker** to configure:
 | **Hex gap** | Gap between hexes in pixels. |
 | **Grid size** | Number of columns and rows in the map grid. |
 | **Hex orientation** | `pointy` (default) or `flat` top hex style. |
-| **Road color / River color** | Hex colour values for the road and river overlays. |
+| **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
 | **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon). Palettes are assigned to regions at creation time and cannot be changed after. Edit palette contents from the terrain tool on the hex map. |
 | **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
@@ -227,3 +230,9 @@ src/
 
 - **"Failed to load plugin"** — `main.js` is missing. Run `npm run build`.
 - **Viewing logs** — Press `Ctrl+Shift+I` (Windows/Linux) or `Cmd+Option+I` (Mac) to open the developer console.
+
+---
+
+## Third-party libraries
+
+This plugin bundles [MiniSearch](https://github.com/lucaong/minisearch) (© Luca Ongaro, MIT License) for in-memory full-text search.
