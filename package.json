@@ -19,8 +19,8 @@
   "devDependencies": {
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language-data": "^6.5.2",
-    "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.40.0",
+    "@codemirror/state": "6.5.0",
+    "@codemirror/view": "6.38.6",
     "@types/node": "^25.5.0",
     "builtin-modules": "^5.0.0",
     "esbuild": "0.27.4",
