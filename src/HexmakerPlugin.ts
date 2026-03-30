@@ -5,7 +5,6 @@ import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import {
   DEFAULT_PALETTE_NAME,
-  DEFAULT_PATH_TYPES,
   DEFAULT_SETTINGS,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
@@ -28,6 +27,7 @@ import {
   removeLinkFromSection,
 } from "./sections";
 import { Frontmatter } from "./frontmatter";
+import { HexmakerData } from "./HexmakerData";
 
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
@@ -196,104 +196,20 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const data = (await this.loadData()) ?? {};
-    // Migrate old single terrainPalette → terrainPalettes
-    const anyData = data as Record<string, unknown>;
-    if (anyData.terrainPalette && !anyData.terrainPalettes) {
-      anyData.terrainPalettes = [
-        { name: DEFAULT_PALETTE_NAME, terrains: anyData.terrainPalette },
-      ];
-      delete anyData.terrainPalette;
-    }
+    const data = ((await this.loadData()) as HexmakerData) ?? {};
+
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     // Deep-clone the regions array so mutations to settings.regions never alias DEFAULT_SETTINGS.regions.
     // Object.assign does a shallow copy, so on first run (data===null) settings.regions IS
     // DEFAULT_SETTINGS.regions – pushing/mutating it would corrupt the constant for the session.
-    this.settings.regions = (
-      Array.isArray(this.settings.regions) ? this.settings.regions : []
-    ).map((r) => {
-      const raw = r as unknown as Record<string, unknown>;
-      // Migrate roadChains/riverChains → pathChains
-      const pathChains = Array.isArray(r.pathChains)
-        ? r.pathChains.map((c: { typeName: string; hexes: string[] }) => ({
-            typeName: c.typeName,
-            hexes: [...c.hexes],
-          }))
-        : [];
-      if (pathChains.length === 0) {
-        for (const c of Array.isArray(raw.roadChains)
-          ? (raw.roadChains as string[][])
-          : [])
-          pathChains.push({ typeName: "Road", hexes: [...c] });
-        for (const c of Array.isArray(raw.riverChains)
-          ? (raw.riverChains as string[][])
-          : [])
-          pathChains.push({ typeName: "River", hexes: [...c] });
-      }
-      return {
-        name: r.name,
-        paletteName: r.paletteName ?? DEFAULT_PALETTE_NAME,
-        gridSize: r.gridSize
-          ? { cols: r.gridSize.cols, rows: r.gridSize.rows }
-          : { cols: 20, rows: 16 },
-        gridOffset: r.gridOffset
-          ? { x: r.gridOffset.x, y: r.gridOffset.y }
-          : { x: 0, y: 0 },
-        pathChains,
-      };
-    });
-    // Migrate legacy flat gridSize/gridOffset/roadChains/riverChains into regions array
-    const legacyData = data as Record<string, unknown>;
-    if (
-      !Array.isArray(this.settings.regions) ||
-      this.settings.regions.length === 0
-    ) {
-      const legacyPathChains: { typeName: string; hexes: string[] }[] = [];
-      for (const c of Array.isArray(legacyData.roadChains)
-        ? (legacyData.roadChains as string[][])
-        : [])
-        legacyPathChains.push({ typeName: "Road", hexes: [...c] });
-      for (const c of Array.isArray(legacyData.riverChains)
-        ? (legacyData.riverChains as string[][])
-        : [])
-        legacyPathChains.push({ typeName: "River", hexes: [...c] });
-      this.settings.regions = [
-        {
-          name: "default",
-          paletteName: DEFAULT_PALETTE_NAME,
-          gridSize: (legacyData.gridSize as { cols: number; rows: number }) ?? {
-            cols: 20,
-            rows: 16,
-          },
-          gridOffset: (legacyData.gridOffset as { x: number; y: number }) ?? {
-            x: 0,
-            y: 0,
-          },
-          pathChains: legacyPathChains,
-        },
-      ];
-    }
+    this.settings.regions = Array.isArray(this.settings.regions)
+      ? this.settings.regions
+      : [];
+
     for (const r of this.settings.regions) {
       if (!r.paletteName) r.paletteName = DEFAULT_PALETTE_NAME;
       if (!r.gridOffset) r.gridOffset = { x: 0, y: 0 };
       if (!Array.isArray(r.pathChains)) r.pathChains = [];
-    }
-    // Migrate roadColor/riverColor → pathTypes
-    if (
-      !Array.isArray(this.settings.pathTypes) ||
-      this.settings.pathTypes.length === 0
-    ) {
-      this.settings.pathTypes = DEFAULT_PATH_TYPES.map((p) => ({ ...p }));
-      const road = this.settings.pathTypes.find((p) => p.name === "Road");
-      const river = this.settings.pathTypes.find((p) => p.name === "River");
-      if (road && (anyData.roadColor as string))
-        road.color = anyData.roadColor as string;
-      if (river && (anyData.riverColor as string))
-        river.color = anyData.riverColor as string;
-    }
-    // Migrate "between" routing → "meander"
-    for (const pt of this.settings.pathTypes) {
-      if ((pt.routing as string) === "between") pt.routing = "meander";
     }
     // Ensure terrainPalettes is valid
     if (

@@ -434,7 +434,7 @@ export class RandomTableView extends ItemView {
           const newRow = `| ${createdFile.basename} | 1 |`;
           const replaced = content.replace(
             /(\| Result \| Weight \|\n\|[-| ]+\|\n)([\s\S]*)$/,
-            (_, hdr, body) => {
+            (_, hdr, body: string) => {
               const tableLines = body
                 .split("\n")
                 .filter((l: string) => l.trimStart().startsWith("|"))

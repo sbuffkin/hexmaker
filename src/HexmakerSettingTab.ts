@@ -258,9 +258,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
           const cb = lbl.createEl("input");
           cb.type = "checkbox";
           cb.checked = get();
-          cb.addEventListener("change", async () => {
-            set(cb.checked);
-            await this.plugin.saveSettings();
+          cb.addEventListener("change", () => {
+            void (async () => {
+              set(cb.checked);
+              await this.plugin.saveSettings();
+            })();
           });
           lbl.appendText(label);
         };
@@ -440,26 +442,29 @@ export class HexmakerSettingTab extends PluginSettingTab {
           value: pal.name,
         });
         nameInput.addClass("duckmage-palette-mgmt-name");
-        nameInput.addEventListener("blur", async () => {
-          const trimmed = nameInput.value.trim();
-          if (!trimmed || trimmed === pal.name) {
-            nameInput.value = pal.name;
-            return;
-          }
-          const isDupe = palettes.some(
-            (p, j) => j !== i && p.name.toLowerCase() === trimmed.toLowerCase(),
-          );
-          if (isDupe) {
-            new Notice(`Palette "${trimmed}" already exists.`);
-            nameInput.value = pal.name;
-            return;
-          }
-          // Update any regions using this palette
-          for (const r of this.plugin.settings.regions) {
-            if (r.paletteName === pal.name) r.paletteName = trimmed;
-          }
-          pal.name = trimmed;
-          await this.plugin.saveSettings();
+        nameInput.addEventListener("blur", () => {
+          void (async () => {
+            const trimmed = nameInput.value.trim();
+            if (!trimmed || trimmed === pal.name) {
+              nameInput.value = pal.name;
+              return;
+            }
+            const isDupe = palettes.some(
+              (p, j) =>
+                j !== i && p.name.toLowerCase() === trimmed.toLowerCase(),
+            );
+            if (isDupe) {
+              new Notice(`Palette "${trimmed}" already exists.`);
+              nameInput.value = pal.name;
+              return;
+            }
+            // Update any regions using this palette
+            for (const r of this.plugin.settings.regions) {
+              if (r.paletteName === pal.name) r.paletteName = trimmed;
+            }
+            pal.name = trimmed;
+            await this.plugin.saveSettings();
+          })();
         });
 
         rowEl.createSpan({
@@ -475,10 +480,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
             : palettes.length <= 1
               ? "Cannot delete the last palette"
               : "";
-        deleteBtn.addEventListener("click", async () => {
-          palettes.splice(i, 1);
-          await this.plugin.saveSettings();
-          renderPaletteList();
+        deleteBtn.addEventListener("click", () => {
+          void (async () => {
+            palettes.splice(i, 1);
+            await this.plugin.saveSettings();
+            renderPaletteList();
+          })();
         });
       }
 

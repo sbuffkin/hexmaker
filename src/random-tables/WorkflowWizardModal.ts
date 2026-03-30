@@ -8,6 +8,7 @@ import {
   stepPlaceholder,
   rollDiceFormulaWithBreakdown,
   type Workflow,
+  WorkflowStep,
 } from "./workflow";
 import { parseRandomTable, rollOnTable } from "./randomTable";
 
@@ -42,16 +43,16 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.workflow = parseWorkflow(rawContent, this.workflowFile.basename);
 
     // Initialise rolls array
-    this.rolls = this.workflow.steps.map((step) =>
-      Array(step.rolls).fill(null),
+    this.rolls = this.workflow.steps.map((step: WorkflowStep) =>
+      Array.from({ length: step.rolls }, () => null),
     );
-    this.sumOnly = this.workflow.steps.map((step) =>
-      Array(step.rolls).fill(false),
+    this.sumOnly = this.workflow.steps.map((step: WorkflowStep) =>
+      Array.from({ length: step.rolls }, () => false),
     );
 
     // Preload table entries for each step (for the manual-pick dropdown; dice steps have no entries)
     this.stepEntries = await Promise.all(
-      this.workflow.steps.map(async (step) => {
+      this.workflow.steps.map(async (step: WorkflowStep) => {
         if (step.kind === "dice") return [];
         const tableFile =
           this.app.vault.getAbstractFileByPath(step.tablePath + ".md") ??
