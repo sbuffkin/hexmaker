@@ -418,7 +418,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       const linkedFolder = normalizeFolder(folderInput.value.trim());
       updatedFm = this.setFrontmatterString(
         updatedFm,
-        "linked-folder",
+        "linkedFolder",
         linkedFolder || undefined,
       );
       if (linkedFolder) {

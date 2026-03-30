@@ -62,8 +62,9 @@ export class LinkPickerModal extends HexmakerModal {
       text: "Create",
       cls: "mod-cta",
     });
-    createBtn.addEventListener("click", () =>
-      void this.createAndLink(input.value.trim()),
+    createBtn.addEventListener(
+      "click",
+      () => void this.createAndLink(input.value.trim()),
     );
     input.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") void this.createAndLink(input.value.trim());
@@ -91,7 +92,7 @@ export class LinkPickerModal extends HexmakerModal {
         }
         file = await this.app.vault.create(newPath, this.createTemplate);
       } catch (err) {
-        new Notice(`Could not create ${newPath}: ${err}`);
+        new Notice(`Could not create ${newPath}: ${String(err)}`);
         return;
       }
     }

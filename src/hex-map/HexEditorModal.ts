@@ -98,9 +98,14 @@ export class HexEditorModal extends HexmakerModal {
     });
     centerBtn.addEventListener("click", () => {
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      interface WithCenterOnHex { centerOnHex?(x: number, y: number): void; }
+      interface WithCenterOnHex {
+        centerOnHex?(x: number, y: number): void;
+      }
       if (leaves.length > 0)
-        (leaves[0].view as unknown as WithCenterOnHex).centerOnHex?.(this.x, this.y);
+        (leaves[0].view as unknown as WithCenterOnHex).centerOnHex?.(
+          this.x,
+          this.y,
+        );
     });
 
     // "Open note" can be determined synchronously from the vault index
@@ -151,7 +156,8 @@ export class HexEditorModal extends HexmakerModal {
       const swatch = preview.createSpan({
         cls: "duckmage-terrain-header-swatch",
       });
-      if (paletteEntry) swatch.setCssProps({ 'background-color': paletteEntry.color });
+      if (paletteEntry)
+        swatch.setCssProps({ "background-color": paletteEntry.color });
       if (iconToShow) {
         const img = swatch.createEl("img");
         img.src = getIconUrl(this.plugin, iconToShow);
@@ -297,7 +303,7 @@ export class HexEditorModal extends HexmakerModal {
         const nPath = this.plugin.hexPath(nx, ny, this.regionName);
         const terrain = getTerrainFromFile(this.app, nPath);
         const entry = terrain ? paletteMap.get(terrain) : undefined;
-        if (entry) tile.setCssProps({ 'background-color': entry.color });
+        if (entry) tile.setCssProps({ "background-color": entry.color });
         tile.addEventListener("click", () => {
           this.x = nx;
           this.y = ny;
@@ -331,7 +337,11 @@ export class HexEditorModal extends HexmakerModal {
     if (startCollapsed) body.hide();
     header.addEventListener("click", () => {
       const collapsed = !body.isShown();
-      collapsed ? body.show() : body.hide();
+      if (collapsed) {
+        body.show();
+      } else {
+        body.hide();
+      }
       arrow.textContent = collapsed ? "▼" : "▶";
     });
     return { body, header };
@@ -375,7 +385,7 @@ export class HexEditorModal extends HexmakerModal {
       });
 
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.setCssProps({ 'background-color': entry.color });
+      preview.setCssProps({ "background-color": entry.color });
 
       if (entry.icon) {
         createIconEl(
@@ -438,7 +448,9 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-clear-btn",
       title: "Remove icon override",
     });
-    clearIconBtn.setCssProps({ visibility: currentIcon ? "visible" : "hidden" });
+    clearIconBtn.setCssProps({
+      visibility: currentIcon ? "visible" : "hidden",
+    });
     clearIconBtn.addEventListener("click", async () => {
       await this.ensureHexNote();
       await setIconOverrideInFile(this.app, path, null);
@@ -448,7 +460,9 @@ export class HexEditorModal extends HexmakerModal {
     });
     // Show/hide clear button as icon selection changes
     iconSelect.addEventListener("change", () => {
-      clearIconBtn.setCssProps({ visibility: iconSelect.value ? "visible" : "hidden" });
+      clearIconBtn.setCssProps({
+        visibility: iconSelect.value ? "visible" : "hidden",
+      });
     });
   }
 
@@ -518,13 +532,17 @@ export class HexEditorModal extends HexmakerModal {
     const onItemClick =
       section === "Encounters Table"
         ? async (_link: string, file: TFile) => {
-            interface WithOpenTable { openTable?(path: string): void; }
+            interface WithOpenTable {
+              openTable?(path: string): void;
+            }
             const leaves = this.app.workspace.getLeavesOfType(
               VIEW_TYPE_RANDOM_TABLES,
             );
             if (leaves.length > 0) {
               this.app.workspace.revealLeaf(leaves[0]);
-              (leaves[0].view as unknown as WithOpenTable).openTable?.(file.path);
+              (leaves[0].view as unknown as WithOpenTable).openTable?.(
+                file.path,
+              );
             } else {
               const leaf = this.app.workspace.getLeaf("tab");
               await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
@@ -657,7 +675,7 @@ export class HexEditorModal extends HexmakerModal {
               : "",
           );
         } catch (err) {
-          new Notice(`Could not create ${newPath}: ${err}`);
+          new Notice(`Could not create ${newPath}: ${String(err)}`);
           return;
         }
       }

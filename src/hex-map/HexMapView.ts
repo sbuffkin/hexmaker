@@ -17,6 +17,7 @@ import {
   getIconOverrideFromFile,
   setTerrainInFile,
   setIconOverrideInFile,
+  Frontmatter,
 } from "../frontmatter";
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
@@ -31,11 +32,22 @@ import { RegionModal } from "./RegionModal";
 import { PathPickerModal } from "./PathPickerModal";
 import type { RegionData, PathChain } from "../types";
 
-type TerrainUndoEntry = { x: number; y: number; path: string; oldTerrain: string | null; newTerrain: string | null };
+type TerrainUndoEntry = {
+  x: number;
+  y: number;
+  path: string;
+  oldTerrain: string | null;
+  newTerrain: string | null;
+};
 type UndoItem =
   | { kind: "terrain"; entries: TerrainUndoEntry[] }
   | { kind: "swap"; x1: number; y1: number; x2: number; y2: number }
-  | { kind: "path"; regionName: string; before: PathChain[]; after: PathChain[] };
+  | {
+      kind: "path";
+      regionName: string;
+      before: PathChain[];
+      after: PathChain[];
+    };
 
 export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
@@ -187,7 +199,8 @@ export class HexMapView extends ItemView {
       if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
         isTerrainPainting = true;
         lastPaintedKey = null;
-        if (this.drawingMode === "terrain") this.currentTerrainStroke = new Map();
+        if (this.drawingMode === "terrain")
+          this.currentTerrainStroke = new Map();
         // Paint the hex under the cursor immediately
         const hexEl = (e.target as HTMLElement).closest<HTMLElement>(
           ".duckmage-hex",
@@ -244,7 +257,10 @@ export class HexMapView extends ItemView {
         ) as HTMLElement | null;
         const hexEl = el?.closest<HTMLElement>(".duckmage-hex");
         if (hexEl) {
-          this.updateBrushHighlight(Number(hexEl.dataset.x), Number(hexEl.dataset.y));
+          this.updateBrushHighlight(
+            Number(hexEl.dataset.x),
+            Number(hexEl.dataset.y),
+          );
         } else {
           this.updateBrushHighlight(null, null);
         }
@@ -262,7 +278,8 @@ export class HexMapView extends ItemView {
     });
 
     this.registerDomEvent(document, "mouseup", () => {
-      if (isTerrainPainting && this.drawingMode === "terrain") this.commitTerrainStroke();
+      if (isTerrainPainting && this.drawingMode === "terrain")
+        this.commitTerrainStroke();
       isTerrainPainting = false;
       lastPaintedKey = null;
       isDragging = false;
@@ -291,11 +308,7 @@ export class HexMapView extends ItemView {
       (e: MouseEvent) => {
         if (this.drawingMode === null) return;
         const onHex = (e.target as HTMLElement).closest(".duckmage-hex");
-        if (
-          onHex &&
-          this.drawingMode === "path"
-        )
-          return;
+        if (onHex && this.drawingMode === "path") return;
         e.preventDefault();
         e.stopPropagation();
         const now = Date.now();
@@ -346,13 +359,17 @@ export class HexMapView extends ItemView {
       if (existing.length > 0) {
         this.app.workspace.revealLeaf(existing[0]);
       } else {
-        void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE });
+        void this.app.workspace
+          .getLeaf()
+          .setViewState({ type: VIEW_TYPE_HEX_TABLE });
       }
     });
     tableBtn.addEventListener("auxclick", (e: MouseEvent) => {
       if (e.button !== 1) return;
       e.preventDefault();
-      void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_HEX_TABLE });
+      void this.app.workspace
+        .getLeaf("tab")
+        .setViewState({ type: VIEW_TYPE_HEX_TABLE });
       this.app.workspace.revealLeaf(this.leaf);
     });
 
@@ -362,17 +379,23 @@ export class HexMapView extends ItemView {
       text: "🎲",
     });
     rtBtn.addEventListener("click", () => {
-      const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
+      const existing = this.app.workspace.getLeavesOfType(
+        VIEW_TYPE_RANDOM_TABLES,
+      );
       if (existing.length > 0) {
         this.app.workspace.revealLeaf(existing[0]);
       } else {
-        void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+        void this.app.workspace
+          .getLeaf()
+          .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
       }
     });
     rtBtn.addEventListener("auxclick", (e: MouseEvent) => {
       if (e.button !== 1) return;
       e.preventDefault();
-      void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+      void this.app.workspace
+        .getLeaf("tab")
+        .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
       this.app.workspace.revealLeaf(this.leaf);
     });
 
@@ -389,7 +412,9 @@ export class HexMapView extends ItemView {
         this.redoStack = [];
         this.updateUndoButton();
         this.updateRegionBtnLabel();
-        interface WithUpdateHeader { updateHeader?(): void; }
+        interface WithUpdateHeader {
+          updateHeader?(): void;
+        }
         (this.leaf as unknown as WithUpdateHeader).updateHeader?.();
         this.renderGrid();
       }).open(),
@@ -401,7 +426,9 @@ export class HexMapView extends ItemView {
       attr: { title: "Undo (up to 20)" },
     });
     this.undoBtn.disabled = true;
-    this.undoBtn.addEventListener("click", () => { void this.undo(); });
+    this.undoBtn.addEventListener("click", () => {
+      void this.undo();
+    });
 
     this.redoBtn = controlsEl.createEl("button", {
       cls: "duckmage-undo-btn-map duckmage-redo-btn-map",
@@ -409,7 +436,9 @@ export class HexMapView extends ItemView {
       attr: { title: "Redo" },
     });
     this.redoBtn.disabled = true;
-    this.redoBtn.addEventListener("click", () => { void this.redo(); });
+    this.redoBtn.addEventListener("click", () => {
+      void this.redo();
+    });
 
     const helpBtn = controlsEl.createEl("button", {
       cls: "duckmage-help-btn",
@@ -452,8 +481,13 @@ export class HexMapView extends ItemView {
           await this.plugin.saveSettings();
           this.renderGrid();
           const r = this.getActiveRegion();
-          const xs = Array.from({ length: r.gridSize.cols }, (_, i) => r.gridOffset.x + i);
-          void this.plugin.generateHexNotes(this.activeRegionName, xs, [r.gridOffset.y]);
+          const xs = Array.from(
+            { length: r.gridSize.cols },
+            (_, i) => r.gridOffset.x + i,
+          );
+          void this.plugin.generateHexNotes(this.activeRegionName, xs, [
+            r.gridOffset.y,
+          ]);
         },
       },
       {
@@ -464,7 +498,10 @@ export class HexMapView extends ItemView {
           this.renderGrid();
           const r = this.getActiveRegion();
           const newY = r.gridOffset.y + r.gridSize.rows - 1;
-          const xs = Array.from({ length: r.gridSize.cols }, (_, i) => r.gridOffset.x + i);
+          const xs = Array.from(
+            { length: r.gridSize.cols },
+            (_, i) => r.gridOffset.x + i,
+          );
           void this.plugin.generateHexNotes(this.activeRegionName, xs, [newY]);
         },
       },
@@ -476,8 +513,15 @@ export class HexMapView extends ItemView {
           await this.plugin.saveSettings();
           this.renderGrid();
           const r = this.getActiveRegion();
-          const ys = Array.from({ length: r.gridSize.rows }, (_, i) => r.gridOffset.y + i);
-          void this.plugin.generateHexNotes(this.activeRegionName, [r.gridOffset.x], ys);
+          const ys = Array.from(
+            { length: r.gridSize.rows },
+            (_, i) => r.gridOffset.y + i,
+          );
+          void this.plugin.generateHexNotes(
+            this.activeRegionName,
+            [r.gridOffset.x],
+            ys,
+          );
         },
       },
       {
@@ -488,7 +532,10 @@ export class HexMapView extends ItemView {
           this.renderGrid();
           const r = this.getActiveRegion();
           const newX = r.gridOffset.x + r.gridSize.cols - 1;
-          const ys = Array.from({ length: r.gridSize.rows }, (_, i) => r.gridOffset.y + i);
+          const ys = Array.from(
+            { length: r.gridSize.rows },
+            (_, i) => r.gridOffset.y + i,
+          );
           void this.plugin.generateHexNotes(this.activeRegionName, [newX], ys);
         },
       },
@@ -539,8 +586,12 @@ export class HexMapView extends ItemView {
       cls: "duckmage-draw-btn duckmage-draw-btn-path",
     });
     this.pathToolbarBtn.createSpan({ text: "Path" });
-    this.pathBtnSwatch = this.pathToolbarBtn.createSpan({ cls: "duckmage-path-btn-swatch" });
-    this.pathToolbarBtn.addEventListener("click", () => this.handlePathButton());
+    this.pathBtnSwatch = this.pathToolbarBtn.createSpan({
+      cls: "duckmage-path-btn-swatch",
+    });
+    this.pathToolbarBtn.addEventListener("click", () =>
+      this.handlePathButton(),
+    );
 
     this.tableLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
@@ -598,7 +649,9 @@ export class HexMapView extends ItemView {
         this.viewportEl?.removeClass("duckmage-terrain-picking");
       },
       this.paintBrushSize,
-      (size) => { this.paintBrushSize = size; },
+      (size) => {
+        this.paintBrushSize = size;
+      },
     ).open();
   }
 
@@ -854,10 +907,14 @@ export class HexMapView extends ItemView {
     // Update path button swatch color to show active type
     if (this.pathBtnSwatch) {
       const activeType = this.activePathTypeName
-        ? this.plugin.settings.pathTypes.find(p => p.name === this.activePathTypeName)
+        ? this.plugin.settings.pathTypes.find(
+            (p) => p.name === this.activePathTypeName,
+          )
         : this.plugin.settings.pathTypes[0];
       if (activeType) {
-        this.pathBtnSwatch.setCssProps({ 'background-color': activeType.color });
+        this.pathBtnSwatch.setCssProps({
+          "background-color": activeType.color,
+        });
         this.pathBtnSwatch.show();
       } else {
         this.pathBtnSwatch.hide();
@@ -900,34 +957,36 @@ export class HexMapView extends ItemView {
         // Eyedropper waiting for a click — show ⌖ as the preview
         if (this.terrainToolbarBtn) {
           this.terrainToolbarBtn.setCssProps({
-            'border-color': "var(--interactive-accent)",
+            "border-color": "var(--interactive-accent)",
             color: "var(--interactive-accent)",
           });
         }
         if (this.terrainBtnPreview) {
-          this.terrainBtnPreview.setCssProps({ 'background-color': "" });
+          this.terrainBtnPreview.setCssProps({ "background-color": "" });
           this.terrainBtnPreview.show();
           this.terrainBtnPreview.textContent = "⌖";
         }
       } else {
         if (this.terrainBtnPreview) this.terrainBtnPreview.textContent = "";
         const entry = this.paintTerrainName
-          ? this.plugin.getRegionPalette(this.activeRegionName).find(
-              (p) => p.name === this.paintTerrainName,
-            )
+          ? this.plugin
+              .getRegionPalette(this.activeRegionName)
+              .find((p) => p.name === this.paintTerrainName)
           : undefined;
         if (entry) {
           if (this.terrainToolbarBtn) {
-            this.terrainToolbarBtn.setCssProps({ 'border-color': entry.color });
+            this.terrainToolbarBtn.setCssProps({ "border-color": entry.color });
           }
           if (this.terrainBtnPreview) {
-            this.terrainBtnPreview.setCssProps({ 'background-color': entry.color });
+            this.terrainBtnPreview.setCssProps({
+              "background-color": entry.color,
+            });
             this.terrainBtnPreview.show();
           }
         } else {
           // Clear mode — show active state without a color
           if (this.terrainToolbarBtn) {
-            this.terrainToolbarBtn.setCssProps({ 'border-color': "" });
+            this.terrainToolbarBtn.setCssProps({ "border-color": "" });
           }
           if (this.terrainBtnPreview) {
             this.terrainBtnPreview.hide();
@@ -936,7 +995,7 @@ export class HexMapView extends ItemView {
       }
     } else {
       if (this.terrainToolbarBtn) {
-        this.terrainToolbarBtn.setCssProps({ 'border-color': "", color: "" });
+        this.terrainToolbarBtn.setCssProps({ "border-color": "", color: "" });
       }
       if (this.terrainBtnPreview) {
         this.terrainBtnPreview.hide();
@@ -975,7 +1034,9 @@ export class HexMapView extends ItemView {
   setSelectedHex(x: number, y: number): void {
     if (this.selectedHex) {
       this.viewportEl
-        ?.querySelector<HTMLElement>(`[data-x="${this.selectedHex.x}"][data-y="${this.selectedHex.y}"]`)
+        ?.querySelector<HTMLElement>(
+          `[data-x="${this.selectedHex.x}"][data-y="${this.selectedHex.y}"]`,
+        )
         ?.removeClass("is-selected");
     }
     this.selectedHex = { x, y };
@@ -1066,7 +1127,13 @@ export class HexMapView extends ItemView {
       const iconToShow = iconOverride ?? terrainEntry?.icon;
       if (iconToShow) {
         const iconColor = iconOverride ? undefined : terrainEntry?.iconColor;
-        createIconEl(hexEl, getIconUrl(this.plugin, iconToShow), terrainEntry?.name ?? "", iconColor, "duckmage-hex-icon");
+        createIconEl(
+          hexEl,
+          getIconUrl(this.plugin, iconToShow),
+          terrainEntry?.name ?? "",
+          iconColor,
+          "duckmage-hex-icon",
+        );
       }
       // Tag override icons so the SVG overlay can elevate them above roads/rivers
       if (iconOverride) hexEl.dataset.iconOverride = iconOverride;
@@ -1131,7 +1198,9 @@ export class HexMapView extends ItemView {
       () => {
         if (this.selectedHex) {
           this.viewportEl
-            ?.querySelector<HTMLElement>(`[data-x="${this.selectedHex.x}"][data-y="${this.selectedHex.y}"]`)
+            ?.querySelector<HTMLElement>(
+              `[data-x="${this.selectedHex.x}"][data-y="${this.selectedHex.y}"]`,
+            )
             ?.removeClass("is-selected");
           this.selectedHex = null;
         }
@@ -1153,7 +1222,7 @@ export class HexMapView extends ItemView {
 
     const menu = new Menu();
 
-    menu.addItem(item =>
+    menu.addItem((item) =>
       item
         .setTitle("Center on this hex")
         .setIcon("crosshair")
@@ -1162,21 +1231,22 @@ export class HexMapView extends ItemView {
 
     menu.addSeparator();
 
-    menu.addItem(item =>
+    menu.addItem((item) =>
       item
         .setTitle("Open note")
         .setIcon("file-text")
         .onClick(async () => {
           const path = this.plugin.hexPath(x, y, this.activeRegionName);
           const existing = this.app.vault.getAbstractFileByPath(path);
-          const file = existing instanceof TFile
-            ? existing
-            : await this.plugin.createHexNote(x, y, this.activeRegionName);
+          const file =
+            existing instanceof TFile
+              ? existing
+              : await this.plugin.createHexNote(x, y, this.activeRegionName);
           if (file) await this.app.workspace.getLeaf().openFile(file);
         }),
     );
 
-    menu.addItem(item =>
+    menu.addItem((item) =>
       item
         .setTitle("Swap hex")
         .setIcon("arrow-left-right")
@@ -1274,8 +1344,17 @@ export class HexMapView extends ItemView {
         hexEl.querySelector(".duckmage-hex-icon")?.remove();
         hexEl.querySelector(".duckmage-hex-dot")?.remove();
         if (entry?.icon) {
-          const iconEl = createIconEl(hexEl, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-hex-icon");
-          hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-label"));
+          const iconEl = createIconEl(
+            hexEl,
+            getIconUrl(this.plugin, entry.icon),
+            entry.name,
+            entry.iconColor,
+            "duckmage-hex-icon",
+          );
+          hexEl.insertBefore(
+            iconEl,
+            hexEl.querySelector(".duckmage-hex-label"),
+          );
         }
         if (terrain !== null) hexEl.addClass("duckmage-hex-exists");
       }
@@ -1284,8 +1363,19 @@ export class HexMapView extends ItemView {
       const path = this.plugin.hexPath(hx, hy, this.activeRegionName);
       if (this.currentTerrainStroke) {
         if (!this.currentTerrainStroke.has(path)) {
-          const oldTerrain = this.app.metadataCache.getCache(path)?.frontmatter?.terrain ?? null;
-          this.currentTerrainStroke.set(path, { x: hx, y: hy, path, oldTerrain, newTerrain: terrain });
+          const oldTerrain =
+            (
+              this.app.metadataCache.getCache(path)?.frontmatter as
+                | Frontmatter
+                | undefined
+            )?.terrain ?? null;
+          this.currentTerrainStroke.set(path, {
+            x: hx,
+            y: hy,
+            path,
+            oldTerrain,
+            newTerrain: terrain,
+          });
         } else {
           this.currentTerrainStroke.get(path)!.newTerrain = terrain;
         }
@@ -1411,18 +1501,31 @@ export class HexMapView extends ItemView {
   // writes: the in-flight one and then the final value. No writes are lost; no
   // stale intermediate value can overwrite a newer one.
 
-  private applyTerrainToHexEl(hexEl: HTMLElement, terrain: string | null): void {
+  private applyTerrainToHexEl(
+    hexEl: HTMLElement,
+    terrain: string | null,
+  ): void {
     const palette = this.plugin.getRegionPalette(this.activeRegionName);
-    const entry = terrain != null ? palette.find((p) => p.name === terrain) : undefined;
+    const entry =
+      terrain != null ? palette.find((p) => p.name === terrain) : undefined;
     hexEl.style.backgroundColor = entry?.color ?? "";
     hexEl.querySelector(".duckmage-hex-icon")?.remove();
     hexEl.querySelector(".duckmage-hex-dot")?.remove();
     if (entry?.icon) {
       try {
-        const iconEl = createIconEl(hexEl, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-hex-icon");
+        const iconEl = createIconEl(
+          hexEl,
+          getIconUrl(this.plugin, entry.icon),
+          entry.name,
+          entry.iconColor,
+          "duckmage-hex-icon",
+        );
         hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-label"));
       } catch (err) {
-        console.warn(`[hexmaker] failed to render icon for terrain "${terrain}":`, err);
+        console.warn(
+          `[hexmaker] failed to render icon for terrain "${terrain}":`,
+          err,
+        );
       }
     }
     if (terrain !== null) hexEl.addClass("duckmage-hex-exists");
@@ -1470,7 +1573,10 @@ export class HexMapView extends ItemView {
     this.updateUndoButton();
   }
 
-  private async applyPathSnapshot(regionName: string, chains: PathChain[]): Promise<void> {
+  private async applyPathSnapshot(
+    regionName: string,
+    chains: PathChain[],
+  ): Promise<void> {
     const region = this.plugin.getRegion(regionName);
     if (!region) return;
     region.pathChains = this.cloneChains(chains);
@@ -1480,10 +1586,7 @@ export class HexMapView extends ItemView {
     this.updatePathOverlay();
   }
 
-  private applyStroke(
-    stroke: TerrainUndoEntry[],
-    which: "old" | "new",
-  ): void {
+  private applyStroke(stroke: TerrainUndoEntry[], which: "old" | "new"): void {
     for (const entry of stroke) {
       const terrain = which === "old" ? entry.oldTerrain : entry.newTerrain;
       try {
@@ -1492,12 +1595,18 @@ export class HexMapView extends ItemView {
         );
         if (hexEl) this.applyTerrainToHexEl(hexEl, terrain);
       } catch (err) {
-        console.warn(`[hexmaker] stroke visual update failed for ${entry.path}:`, err);
+        console.warn(
+          `[hexmaker] stroke visual update failed for ${entry.path}:`,
+          err,
+        );
       }
       try {
         this.scheduleTerrainWrite(entry.x, entry.y, entry.path, terrain);
       } catch (err) {
-        console.warn(`[hexmaker] stroke write scheduling failed for ${entry.path}:`, err);
+        console.warn(
+          `[hexmaker] stroke write scheduling failed for ${entry.path}:`,
+          err,
+        );
       }
     }
   }
@@ -1617,8 +1726,7 @@ export class HexMapView extends ItemView {
           try {
             const onDisk = !!this.app.vault.getAbstractFileByPath(path);
             if (icon === null) {
-              if (onDisk)
-                await setIconOverrideInFile(this.app, path, null);
+              if (onDisk) await setIconOverrideInFile(this.app, path, null);
             } else {
               if (!onDisk) {
                 if (
@@ -1672,10 +1780,14 @@ export class HexMapView extends ItemView {
 
   /** Deep-clone a pathChains array for undo/redo snapshot. */
   private cloneChains(chains: PathChain[]): PathChain[] {
-    return chains.map(c => ({ typeName: c.typeName, hexes: [...c.hexes] }));
+    return chains.map((c) => ({ typeName: c.typeName, hexes: [...c.hexes] }));
   }
 
-  private pushPathUndo(regionName: string, before: PathChain[], after: PathChain[]): void {
+  private pushPathUndo(
+    regionName: string,
+    before: PathChain[],
+    after: PathChain[],
+  ): void {
     this.undoStack.push({ kind: "path", regionName, before, after });
     if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
     this.redoStack = [];
@@ -1686,7 +1798,9 @@ export class HexMapView extends ItemView {
     if (!this.activePathTypeName) return;
     const key = `${x}_${y}`;
     const region = this.getActiveRegion();
-    const chains = region.pathChains.filter(c => c.typeName === this.activePathTypeName);
+    const chains = region.pathChains.filter(
+      (c) => c.typeName === this.activePathTypeName,
+    );
     const before = this.cloneChains(region.pathChains);
 
     // ── If adjacent to active end, extend that chain ─────────────────────
@@ -1699,17 +1813,24 @@ export class HexMapView extends ItemView {
         let target: PathChain | undefined;
         if (
           this.activePathChain !== null &&
-          this.activePathChain.hexes[this.activePathChain.hexes.length - 1] === this.activePathEnd
+          this.activePathChain.hexes[this.activePathChain.hexes.length - 1] ===
+            this.activePathEnd
         ) {
           target = this.activePathChain;
         } else {
-          target = chains.find((c) => c.hexes[c.hexes.length - 1] === this.activePathEnd);
+          target = chains.find(
+            (c) => c.hexes[c.hexes.length - 1] === this.activePathEnd,
+          );
         }
         if (target) {
           target.hexes.push(key);
           this.activePathEnd = key;
           this.activePathChain = target;
-          this.pushPathUndo(region.name, before, this.cloneChains(region.pathChains));
+          this.pushPathUndo(
+            region.name,
+            before,
+            this.cloneChains(region.pathChains),
+          );
           await this.plugin.saveSettings();
           this.updatePathOverlay();
           return;
@@ -1718,7 +1839,10 @@ export class HexMapView extends ItemView {
     }
 
     // ── Not adjacent (or no active chain) — start a new chain ────────────
-    const newChain: PathChain = { typeName: this.activePathTypeName, hexes: [key] };
+    const newChain: PathChain = {
+      typeName: this.activePathTypeName,
+      hexes: [key],
+    };
     region.pathChains.push(newChain);
     this.activePathEnd = key;
     this.activePathChain = newChain;
@@ -1731,7 +1855,7 @@ export class HexMapView extends ItemView {
     const key = `${x}_${y}`;
     const region = this.getActiveRegion();
     const chains = this.activePathTypeName
-      ? region.pathChains.filter(c => c.typeName === this.activePathTypeName)
+      ? region.pathChains.filter((c) => c.typeName === this.activePathTypeName)
       : region.pathChains;
     const before = this.cloneChains(region.pathChains);
 
@@ -1753,8 +1877,14 @@ export class HexMapView extends ItemView {
         chain.hexes.splice(pos, 1);
       } else {
         // Split: replace with two chains
-        const left: PathChain  = { typeName: chain.typeName, hexes: chain.hexes.slice(0, pos) };
-        const right: PathChain = { typeName: chain.typeName, hexes: chain.hexes.slice(pos + 1) };
+        const left: PathChain = {
+          typeName: chain.typeName,
+          hexes: chain.hexes.slice(0, pos),
+        };
+        const right: PathChain = {
+          typeName: chain.typeName,
+          hexes: chain.hexes.slice(pos + 1),
+        };
         const idx = region.pathChains.indexOf(chain);
         if (idx !== -1) region.pathChains.splice(idx, 1, left, right);
         if (isActiveChain) this.activePathChain = null;
@@ -1765,7 +1895,11 @@ export class HexMapView extends ItemView {
         this.activePathChain = null;
       }
 
-      this.pushPathUndo(region.name, before, this.cloneChains(region.pathChains));
+      this.pushPathUndo(
+        region.name,
+        before,
+        this.cloneChains(region.pathChains),
+      );
       await this.plugin.saveSettings();
       this.updatePathOverlay();
       return;
@@ -1832,13 +1966,17 @@ export class HexMapView extends ItemView {
 
     // Build hex center map — offsetLeft/offsetTop are unaffected by CSS transform
     const centerMap = new Map<string, { cx: number; cy: number }>();
-    let hexW = 0, hexH = 0;
+    let hexW = 0,
+      hexH = 0;
     gridContainer
       .querySelectorAll<HTMLElement>(".duckmage-hex")
       .forEach((hexEl) => {
         const x = Number(hexEl.dataset.x);
         const y = Number(hexEl.dataset.y);
-        if (hexW === 0) { hexW = hexEl.offsetWidth; hexH = hexEl.offsetHeight; }
+        if (hexW === 0) {
+          hexW = hexEl.offsetWidth;
+          hexH = hexEl.offsetHeight;
+        }
         let ox = hexEl.offsetWidth / 2;
         let oy = hexEl.offsetHeight / 2;
         let cur: HTMLElement | null = hexEl;
@@ -1876,12 +2014,16 @@ export class HexMapView extends ItemView {
       return d;
     };
 
-    const DASH_ARRAYS: Record<string, string> = { solid: "", dashed: "8 4", dotted: "2 4" };
+    const DASH_ARRAYS: Record<string, string> = {
+      solid: "",
+      dashed: "8 4",
+      dotted: "2 4",
+    };
 
     // Sharp polyline path (straight segments between each point — used for "edge" routing)
     const sharpPath = (pts: { cx: number; cy: number }[]): string => {
       if (pts.length < 2) return "";
-      return "M " + pts.map(p => `${p.cx} ${p.cy}`).join(" L ");
+      return "M " + pts.map((p) => `${p.cx} ${p.cy}`).join(" L ");
     };
 
     const appendPath = (
@@ -1904,11 +2046,16 @@ export class HexMapView extends ItemView {
 
     // "meander" routing: smooth bezier curves through edge midpoints between hex centers
     const buildMeanderPts = (hexes: string[]): { cx: number; cy: number }[] => {
-      const centers = hexes.map(k => centerMap.get(k)).filter((p): p is { cx: number; cy: number } => !!p);
+      const centers = hexes
+        .map((k) => centerMap.get(k))
+        .filter((p): p is { cx: number; cy: number } => !!p);
       if (centers.length < 3) return centers;
       const pts: { cx: number; cy: number }[] = [];
       for (let i = 0; i < centers.length - 1; i++)
-        pts.push({ cx: (centers[i].cx + centers[i + 1].cx) / 2, cy: (centers[i].cy + centers[i + 1].cy) / 2 });
+        pts.push({
+          cx: (centers[i].cx + centers[i + 1].cx) / 2,
+          cy: (centers[i].cy + centers[i + 1].cy) / 2,
+        });
       return pts;
     };
 
@@ -1931,7 +2078,9 @@ export class HexMapView extends ItemView {
 
     const buildEdgePts = (hexes: string[]): { cx: number; cy: number }[] => {
       type V2 = { cx: number; cy: number };
-      const centers = hexes.map(k => centerMap.get(k)).filter((p): p is V2 => !!p);
+      const centers = hexes
+        .map((k) => centerMap.get(k))
+        .filter((p): p is V2 => !!p);
       if (centers.length < 2) return centers;
       const n = centers.length;
       const TAU = 2 * Math.PI;
@@ -1951,12 +2100,16 @@ export class HexMapView extends ItemView {
       // Snap a direction angle θ to the nearest edge index (0–5).
       // Edge i spans vertex i → vertex (i+1)%6; its midpoint is at vStart + (i+0.5)×60°.
       const snapEdge = (theta: number): number => {
-        let best = 0, bestD = Infinity;
+        let best = 0,
+          bestD = Infinity;
         for (let i = 0; i < 6; i++) {
           const mid = vStart + (i + 0.5) * (Math.PI / 3);
-          let d = ((theta - mid) % TAU + TAU) % TAU;
+          let d = (((theta - mid) % TAU) + TAU) % TAU;
           if (d > Math.PI) d = TAU - d;
-          if (d < bestD) { bestD = d; best = i; }
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
         }
         return best;
       };
@@ -1964,11 +2117,11 @@ export class HexMapView extends ItemView {
       // Shorter arc from vertex index `from` to `to` on the 6-cycle, inclusive.
       const shortArc = (from: number, to: number): number[] => {
         if (from === to) return [from];
-        const cw  = (to   - from + 6) % 6;
-        const ccw = (from - to   + 6) % 6;
+        const cw = (to - from + 6) % 6;
+        const ccw = (from - to + 6) % 6;
         const out: number[] = [];
         if (cw <= ccw) {
-          for (let k = 0; k <= cw;  k++) out.push((from + k) % 6);
+          for (let k = 0; k <= cw; k++) out.push((from + k) % 6);
         } else {
           for (let k = 0; k <= ccw; k++) out.push((from - k + 6) % 6);
         }
@@ -1984,22 +2137,34 @@ export class HexMapView extends ItemView {
 
       // choice[i] ∈ {0,1}: which of the two edge-i vertices to use on centers[i]'s side.
       //   0 → verts[edgeIdx[i]]         1 → verts[(edgeIdx[i]+1)%6]
-      const choice: number[] = new Array(n - 1).fill(0);
+      const choice: number[] = Array.from({ length: n - 1 }, () => 0);
       let prev: V2 = centers[0];
       for (let i = 0; i < n - 1; i++) {
         const vA = hexVerts(centers[i]);
-        const Va = vA[edgeIdx[i]], Vb = vA[(edgeIdx[i] + 1) % 6];
+        const Va = vA[edgeIdx[i]],
+          Vb = vA[(edgeIdx[i] + 1) % 6];
         if (i < n - 2) {
           // Look-ahead: pick the vertex pair (this edge + next edge) with the lowest turn cost.
-          const vB  = hexVerts(centers[i + 1]);
-          const VaN = vB[edgeIdx[i + 1]], VbN = vB[(edgeIdx[i + 1] + 1) % 6];
+          const vB = hexVerts(centers[i + 1]);
+          const VaN = vB[edgeIdx[i + 1]],
+            VbN = vB[(edgeIdx[i + 1] + 1) % 6];
           const cost = (v: V2, vn: V2) =>
-            Math.abs((v.cx - prev.cx) * (vn.cy - v.cy) - (v.cy - prev.cy) * (vn.cx - v.cx));
-          let bestCost = Infinity, bestC = 0;
-          for (const [v, ci] of [[Va, 0], [Vb, 1]] as [V2, number][]) {
+            Math.abs(
+              (v.cx - prev.cx) * (vn.cy - v.cy) -
+                (v.cy - prev.cy) * (vn.cx - v.cx),
+            );
+          let bestCost = Infinity,
+            bestC = 0;
+          for (const [v, ci] of [
+            [Va, 0],
+            [Vb, 1],
+          ] as [V2, number][]) {
             for (const vn of [VaN, VbN]) {
               const co = cost(v, vn);
-              if (co < bestCost) { bestCost = co; bestC = ci; }
+              if (co < bestCost) {
+                bestCost = co;
+                bestC = ci;
+              }
             }
           }
           choice[i] = bestC;
@@ -2036,7 +2201,7 @@ export class HexMapView extends ItemView {
         } else {
           // Internal hex: traverse the shorter arc from entry to exit.
           const entryIdx = (edgeIdx[k - 1] + 4 - choice[k - 1]) % 6;
-          const exitIdx  = (edgeIdx[k]     + choice[k])          % 6;
+          const exitIdx = (edgeIdx[k] + choice[k]) % 6;
           const arc = shortArc(entryIdx, exitIdx);
           // arc[0] == entryIdx, which coincides (zero gap) with the last pushed point — skip it.
           for (let j = 1; j < arc.length; j++) result.push(verts[arc[j]]);
@@ -2048,7 +2213,9 @@ export class HexMapView extends ItemView {
 
     // Draw all path types in definition order
     for (const pt of this.plugin.settings.pathTypes) {
-      const typeChains = region.pathChains.filter(c => c.typeName === pt.name);
+      const typeChains = region.pathChains.filter(
+        (c) => c.typeName === pt.name,
+      );
       const dash = DASH_ARRAYS[pt.lineStyle] ?? "";
       for (const chain of typeChains) {
         let pts: { cx: number; cy: number }[];
@@ -2060,7 +2227,9 @@ export class HexMapView extends ItemView {
           pts = buildEdgePts(chain.hexes);
           smooth = false;
         } else {
-          pts = chain.hexes.map(k => centerMap.get(k)).filter((p): p is { cx: number; cy: number } => !!p);
+          pts = chain.hexes
+            .map((k) => centerMap.get(k))
+            .filter((p): p is { cx: number; cy: number } => !!p);
           smooth = true;
         }
         if (pts.length >= 2) appendPath(pts, pt.color, pt.width, dash, smooth);
@@ -2070,7 +2239,9 @@ export class HexMapView extends ItemView {
     // Small circle to mark the active endpoint (only visible in path mode)
     if (this.drawingMode === "path" && this.activePathEnd) {
       const activeType = this.activePathTypeName
-        ? this.plugin.settings.pathTypes.find(p => p.name === this.activePathTypeName)
+        ? this.plugin.settings.pathTypes.find(
+            (p) => p.name === this.activePathTypeName,
+          )
         : undefined;
       const color = activeType?.color ?? "#888888";
       const pos = centerMap.get(this.activePathEnd);
@@ -2250,7 +2421,11 @@ class TablePickerModal extends Modal {
   }
 
   onOpen(): void {
-    this.titleEl.setCssProps({ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' });
+    this.titleEl.setCssProps({
+      display: "flex",
+      "align-items": "center",
+      "justify-content": "space-between",
+    });
     this.titleEl.createSpan({ text: "Select table" });
     const openViewBtn = this.titleEl.createEl("button", {
       cls: "duckmage-rt-icon-btn",
