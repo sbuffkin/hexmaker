@@ -27,8 +27,6 @@ import {
   removeLinkFromSection,
 } from "./sections";
 import { Frontmatter } from "./frontmatter";
-import { HexmakerData } from "./HexmakerData";
-
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -196,7 +194,7 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const data = ((await this.loadData()) as HexmakerData) ?? {};
+    const data = ((await this.loadData()) as HexmakerPluginSettings) ?? {};
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
     // Deep-clone the regions array so mutations to settings.regions never alias DEFAULT_SETTINGS.regions.
