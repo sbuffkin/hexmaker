@@ -25,7 +25,7 @@ export default class HexmakerPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_HEX_MAP,       (leaf) => new HexMapView(leaf, this));
 		this.registerView(VIEW_TYPE_HEX_TABLE,     (leaf) => new HexTableView(leaf, this));
 		this.registerView(VIEW_TYPE_RANDOM_TABLES, (leaf) => new RandomTableView(leaf, this));
-		this.addRibbonIcon("map", "Hexmaker: Open hex map", () => this.openHexMap());
+		this.addRibbonIcon("map", "Hexmaker: open hex map", () => this.openHexMap());
 		this.addCommand({
 			id: "open-hex-map",
 			name: "Open hex map",
@@ -34,22 +34,23 @@ export default class HexmakerPlugin extends Plugin {
 		this.addCommand({
 			id: "open-hex-table",
 			name: "Open hex table",
-			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
+			callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
 		});
 		this.addCommand({
 			id: "open-random-tables",
 			name: "Open random tables",
-			callback: () => this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
+			callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
 		});
 		this.addSettingTab(new HexmakerSettingTab(this.app, this));
 
+		interface WithOpenTable { openTable?(path: string): void; }
 		this.registerObsidianProtocolHandler("duckmage-roll", (params) => {
 			const filePath = params["file"];
 			if (!filePath) return;
 			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
 			if (leaves.length > 0) {
-				this.app.workspace.revealLeaf(leaves[0]);
-				(leaves[0].view as any).openTable?.(filePath);
+				void this.app.workspace.revealLeaf(leaves[0]);
+				(leaves[0].view as unknown as WithOpenTable).openTable?.(filePath);
 			} else {
 				void this.app.workspace.getLeaf("tab").setViewState({
 					type: VIEW_TYPE_RANDOM_TABLES,
@@ -58,13 +59,14 @@ export default class HexmakerPlugin extends Plugin {
 			}
 		});
 
+		interface WithOpenWorkflow { openWorkflow?(path: string): void; }
 		this.registerObsidianProtocolHandler("duckmage-workflow", (params) => {
 			const filePath = params["file"];
 			if (!filePath) return;
 			const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
 			if (leaves.length > 0) {
-				this.app.workspace.revealLeaf(leaves[0]);
-				(leaves[0].view as any).openWorkflow?.(filePath);
+				void this.app.workspace.revealLeaf(leaves[0]);
+				(leaves[0].view as unknown as WithOpenWorkflow).openWorkflow?.(filePath);
 			} else {
 				void this.app.workspace.getLeaf("tab").setViewState({
 					type: VIEW_TYPE_RANDOM_TABLES,
@@ -133,7 +135,7 @@ export default class HexmakerPlugin extends Plugin {
 	onunload() {}
 
 	private openHexMap(): void {
-		this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
+		void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
 	}
 
 	async loadSettings() {

@@ -54,9 +54,9 @@ export class RegionModal extends HexmakerModal {
 		const createRow = contentEl.createDiv({ cls: "duckmage-region-row" });
 		const nameInput = createRow.createEl("input", { type: "text", placeholder: "region-name" }) as HTMLInputElement;
 		const colsInput = createRow.createEl("input", { type: "number", value: "20" }) as HTMLInputElement;
-		colsInput.style.width = "55px";
+		colsInput.setCssProps({ width: "55px" });
 		const rowsInput = createRow.createEl("input", { type: "number", value: "16" }) as HTMLInputElement;
-		rowsInput.style.width = "55px";
+		rowsInput.setCssProps({ width: "55px" });
 
 		const paletteSelect = createRow.createEl("select") as HTMLSelectElement;
 		for (const pal of this.plugin.settings.terrainPalettes) {

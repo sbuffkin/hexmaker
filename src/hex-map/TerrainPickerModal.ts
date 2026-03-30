@@ -123,7 +123,7 @@ export class TerrainPickerModal extends HexmakerModal {
     for (const entry of this.palette) {
       const btn = grid.createDiv({ cls: "duckmage-terrain-option" });
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.style.backgroundColor = entry.color;
+      preview.setCssProps({ 'background-color': entry.color });
       if (entry.icon) {
         createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
@@ -175,7 +175,7 @@ export class TerrainPickerModal extends HexmakerModal {
 
         // Standard colored preview + icon (same as pick mode)
         const preview = tile.createDiv({ cls: "duckmage-terrain-preview" });
-        preview.style.backgroundColor = entry.color;
+        preview.setCssProps({ 'background-color': entry.color });
         if (entry.icon) {
           createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
         }
@@ -320,7 +320,7 @@ class TerrainTemplatePickerModal extends HexmakerModal {
         for (const t of terrains) {
           const row = list.createDiv({ cls: "duckmage-terrain-template-row" });
           const swatch = row.createSpan({ cls: "duckmage-terrain-template-swatch" });
-          swatch.style.background = t.color;
+          swatch.setCssProps({ background: t.color });
           row.createSpan({ text: t.name });
           row.addEventListener("click", () => { this.onPick(t); this.close(); });
         }

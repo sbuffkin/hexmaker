@@ -15,7 +15,7 @@ export class TerrainFilterModal extends HexmakerModal {
 
   onOpen(): void {
     this.makeDraggable();
-    this.titleEl.setText("Filter by Terrain");
+    this.titleEl.setText("Filter by terrain");
     const { contentEl } = this;
     contentEl.addClass("duckmage-terrain-filter-modal");
 
@@ -38,7 +38,7 @@ export class TerrainFilterModal extends HexmakerModal {
       const lbl = list.createEl("label", {
         cls: "duckmage-terrain-filter-row" + (indented ? " duckmage-terrain-filter-row-indented" : ""),
       });
-      const cb = lbl.createEl("input") as HTMLInputElement;
+      const cb = lbl.createEl("input");
       cb.type = "checkbox";
       applyRowState(lbl, cb, name);
 

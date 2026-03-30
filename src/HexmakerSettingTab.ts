@@ -255,7 +255,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           const lbl = setting.controlEl.createEl("label", {
             cls: "duckmage-collapse-cb-label",
           });
-          const cb = lbl.createEl("input") as HTMLInputElement;
+          const cb = lbl.createEl("input");
           cb.type = "checkbox";
           cb.checked = get();
           cb.addEventListener("change", async () => {
@@ -438,7 +438,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
         const nameInput = rowEl.createEl("input", {
           type: "text",
           value: pal.name,
-        }) as HTMLInputElement;
+        });
         nameInput.addClass("duckmage-palette-mgmt-name");
         nameInput.addEventListener("blur", async () => {
           const trimmed = nameInput.value.trim();
@@ -485,7 +485,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       new Setting(listEl).addButton((btn) =>
         btn.setButtonText("Add palette").onClick(async () => {
           palettes.push({
-            name: "New Palette",
+            name: "New palette",
             terrains:
               this.plugin.settings.terrainPalettes[0]?.terrains.map((t) => ({
                 ...t,

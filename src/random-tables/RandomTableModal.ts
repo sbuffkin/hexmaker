@@ -31,7 +31,7 @@ export class RandomTableModal extends HexmakerModal {
 		this.makeDraggable();
 
 		if (this.initialFilePath) {
-			this.loadTable(contentEl, this.initialFilePath);
+			void this.loadTable(contentEl, this.initialFilePath);
 			return;
 		}
 
@@ -56,7 +56,7 @@ export class RandomTableModal extends HexmakerModal {
 
 		// "Open in roller" link — hidden until a table is selected
 		const openLink = contentEl.createEl("a", { text: "Open in roller view", cls: "duckmage-roll-modal-open-link" });
-		openLink.style.display = "none";
+		openLink.hide();
 
 		const tableContainer = contentEl.createDiv({ cls: "duckmage-roll-modal-table-wrap" });
 		const resultBox = this.buildResultBox(contentEl);
@@ -65,14 +65,14 @@ export class RandomTableModal extends HexmakerModal {
 
 		select.addEventListener("change", async () => {
 			tableContainer.empty();
-			resultBox.el.style.display = "none";
+			resultBox.el.hide();
 			rollBtn.disabled = true;
 			const path = select.value;
-			if (!path) { openLink.style.display = "none"; return; }
+			if (!path) { openLink.hide(); return; }
 			const file = this.app.vault.getAbstractFileByPath(path);
 			if (!(file instanceof TFile)) return;
 
-			openLink.style.display = "";
+			openLink.show();
 			openLink.onclick = () => { this.openInRoller(file.path); };
 
 			await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
@@ -97,7 +97,7 @@ export class RandomTableModal extends HexmakerModal {
 			new RandomTableEditorModal(this.app, this.plugin, file, async () => {
 				// Reload the table in place after saving
 				tableContainer.empty();
-				resultBox.el.style.display = "none";
+				resultBox.el.hide();
 				rollBtn.disabled = true;
 				await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
 			}, content).open();
@@ -118,7 +118,7 @@ export class RandomTableModal extends HexmakerModal {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
 		if (leaves.length > 0) {
 			this.app.workspace.revealLeaf(leaves[0]);
-			(leaves[0].view as any).openTable?.(filePath);
+			(leaves[0].view as unknown as { openTable?: (path: string) => void }).openTable?.(filePath);
 		} else {
 			void this.app.workspace.getLeaf("tab").setViewState({
 				type: VIEW_TYPE_RANDOM_TABLES,
@@ -130,7 +130,7 @@ export class RandomTableModal extends HexmakerModal {
 
 	private buildResultBox(contentEl: HTMLElement): { el: HTMLElement; textarea: HTMLTextAreaElement } {
 		const resultBox = contentEl.createDiv({ cls: "duckmage-roll-result" });
-		resultBox.style.display = "none";
+		resultBox.hide();
 		const resultTextarea = resultBox.createEl("textarea", { cls: "duckmage-roll-result-textarea" });
 		const resultBtns = resultBox.createDiv({ cls: "duckmage-roll-result-btns" });
 
@@ -143,7 +143,7 @@ export class RandomTableModal extends HexmakerModal {
 		} else {
 			const copyBtn = resultBtns.createEl("button", { text: "Copy", cls: "mod-cta" });
 			copyBtn.addEventListener("click", () => {
-				navigator.clipboard.writeText(resultTextarea.value);
+				void navigator.clipboard.writeText(resultTextarea.value);
 			});
 		}
 
@@ -187,7 +187,7 @@ export class RandomTableModal extends HexmakerModal {
 			copyBtn.title = "Copy entry";
 			copyBtn.addEventListener("click", (e) => {
 				e.stopPropagation();
-				navigator.clipboard.writeText(entry.result);
+				void navigator.clipboard.writeText(entry.result);
 				copyBtn.setText("✓");
 				setTimeout(() => copyBtn.setText("⎘"), 1200);
 			});
@@ -202,7 +202,7 @@ export class RandomTableModal extends HexmakerModal {
 					tr.textContent?.includes(rolled.result) || false,
 				);
 			});
-			resultBox.el.style.display = "";
+			resultBox.el.show();
 			resultBox.textarea.value = rolled.result;
 		};
 	}

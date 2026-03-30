@@ -31,20 +31,22 @@ export function createIconEl(
 ): HTMLElement {
 	if (iconColor) {
 		const div = parent.createEl("div", { cls, title: alt });
-		div.style.maskImage = `url('${src}')`;
-		div.style.setProperty("-webkit-mask-image", `url('${src}')`);
-		div.style.maskSize = "contain";
-		div.style.setProperty("-webkit-mask-size", "contain");
-		div.style.maskRepeat = "no-repeat";
-		div.style.setProperty("-webkit-mask-repeat", "no-repeat");
-		div.style.maskPosition = "center";
-		div.style.setProperty("-webkit-mask-position", "center");
-		div.style.backgroundColor = iconColor;
+		div.setCssProps({
+			'mask-image': `url("${src}")`,
+			'-webkit-mask-image': `url("${src}")`,
+			'mask-size': 'contain',
+			'-webkit-mask-size': 'contain',
+			'mask-repeat': 'no-repeat',
+			'-webkit-mask-repeat': 'no-repeat',
+			'mask-position': 'center',
+			'-webkit-mask-position': 'center',
+			'background-color': iconColor,
+		});
 		return div;
 	}
 	const img = parent.createEl("img", { cls });
-	(img as HTMLImageElement).src = src;
-	(img as HTMLImageElement).alt = alt;
+	img.src = src;
+	img.alt = alt;
 	return img;
 }
 

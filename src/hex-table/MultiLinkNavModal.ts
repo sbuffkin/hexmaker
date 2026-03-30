@@ -28,7 +28,7 @@ export class MultiLinkNavModal extends HexmakerModal {
           this.sourcePath,
         );
         if (file instanceof TFile) {
-          this.app.workspace.getLeaf().openFile(file);
+          void this.app.workspace.getLeaf().openFile(file);
           this.close();
         }
       });

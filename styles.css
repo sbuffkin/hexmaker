@@ -73,6 +73,15 @@
     cursor: grabbing;
 }
 
+/* SVG overlay for paths, coordinate labels and elevated icons */
+.duckmage-path-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
 /* ── Pointy-top row layout ────────────────────────────────────────────────── */
 
 .duckmage-hex-row {

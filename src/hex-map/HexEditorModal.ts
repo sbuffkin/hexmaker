@@ -51,6 +51,7 @@ export class HexEditorModal extends HexmakerModal {
 
   async loadData(): Promise<void> {
     // Reset all fields so stale data from a previous hex never bleeds through
+    this.hexExists = false;
     this.allText = new Map();
     this.allLinks = new Map();
     this.directTerrain = null;
@@ -58,11 +59,11 @@ export class HexEditorModal extends HexmakerModal {
 
     const path = this.plugin.hexPath(this.x, this.y, this.regionName);
     const file = this.app.vault.getAbstractFileByPath(path);
-    this.hexExists = file instanceof TFile;
-    if (!this.hexExists) return;
+    if (!(file instanceof TFile)) return;
+    this.hexExists = true;
 
     // Single read — reused for both frontmatter and section parsing
-    const rawContent = await this.app.vault.read(file as TFile);
+    const rawContent = await this.app.vault.read(file);
 
     const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
@@ -97,8 +98,9 @@ export class HexEditorModal extends HexmakerModal {
     });
     centerBtn.addEventListener("click", () => {
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
+      interface WithCenterOnHex { centerOnHex?(x: number, y: number): void; }
       if (leaves.length > 0)
-        (leaves[0].view as any).centerOnHex?.(this.x, this.y);
+        (leaves[0].view as unknown as WithCenterOnHex).centerOnHex?.(this.x, this.y);
     });
 
     // "Open note" can be determined synchronously from the vault index
@@ -109,7 +111,7 @@ export class HexEditorModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        this.app.workspace.getLeaf("tab").openFile(fileNow);
+        void this.app.workspace.getLeaf("tab").openFile(fileNow);
         this.close();
       });
     }
@@ -149,7 +151,7 @@ export class HexEditorModal extends HexmakerModal {
       const swatch = preview.createSpan({
         cls: "duckmage-terrain-header-swatch",
       });
-      if (paletteEntry) swatch.style.backgroundColor = paletteEntry.color;
+      if (paletteEntry) swatch.setCssProps({ 'background-color': paletteEntry.color });
       if (iconToShow) {
         const img = swatch.createEl("img");
         img.src = getIconUrl(this.plugin, iconToShow);
@@ -288,20 +290,19 @@ export class HexEditorModal extends HexmakerModal {
       const tile = widget.createDiv({
         cls: `duckmage-neighbor-tile${onMap ? "" : " duckmage-neighbor-tile-offmap"}`,
       });
-      tile.style.left = `${l}px`;
-      tile.style.top = `${t}px`;
+      tile.setCssProps({ left: `${l}px`, top: `${t}px` });
 
       if (onMap) {
         tile.title = `Hex ${nx}, ${ny}`;
         const nPath = this.plugin.hexPath(nx, ny, this.regionName);
         const terrain = getTerrainFromFile(this.app, nPath);
         const entry = terrain ? paletteMap.get(terrain) : undefined;
-        if (entry) tile.style.backgroundColor = entry.color;
+        if (entry) tile.setCssProps({ 'background-color': entry.color });
         tile.addEventListener("click", () => {
           this.x = nx;
           this.y = ny;
           this.onNavigate?.(nx, ny);
-          this.loadData().then(() => this.onOpen());
+          void this.loadData().then(() => this.onOpen());
         });
       } else {
         tile.title = "Off map";
@@ -327,10 +328,10 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-editor-collapsible-title",
     });
     const body = wrapper.createDiv({ cls: "duckmage-editor-collapsible-body" });
-    if (startCollapsed) body.style.display = "none";
+    if (startCollapsed) body.hide();
     header.addEventListener("click", () => {
-      const collapsed = body.style.display === "none";
-      body.style.display = collapsed ? "" : "none";
+      const collapsed = !body.isShown();
+      collapsed ? body.show() : body.hide();
       arrow.textContent = collapsed ? "▼" : "▶";
     });
     return { body, header };
@@ -374,7 +375,7 @@ export class HexEditorModal extends HexmakerModal {
       });
 
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.style.backgroundColor = entry.color;
+      preview.setCssProps({ 'background-color': entry.color });
 
       if (entry.icon) {
         createIconEl(
@@ -437,17 +438,17 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-clear-btn",
       title: "Remove icon override",
     });
-    clearIconBtn.style.visibility = currentIcon ? "visible" : "hidden";
+    clearIconBtn.setCssProps({ visibility: currentIcon ? "visible" : "hidden" });
     clearIconBtn.addEventListener("click", async () => {
       await this.ensureHexNote();
       await setIconOverrideInFile(this.app, path, null);
       this.onChanged(terrainOverrides, new Map([[path, null]]));
       iconSelect.value = "";
-      clearIconBtn.style.visibility = "hidden";
+      clearIconBtn.setCssProps({ visibility: "hidden" });
     });
     // Show/hide clear button as icon selection changes
     iconSelect.addEventListener("change", () => {
-      clearIconBtn.style.visibility = iconSelect.value ? "visible" : "hidden";
+      clearIconBtn.setCssProps({ visibility: iconSelect.value ? "visible" : "hidden" });
     });
   }
 
@@ -503,7 +504,7 @@ export class HexEditorModal extends HexmakerModal {
     const dropdown = comboWrap.createDiv({
       cls: "duckmage-link-combo-dropdown",
     });
-    dropdown.style.display = "none";
+    dropdown.hide();
 
     // ── Link list ──────────────────────────────────────────────────────────
     const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
@@ -517,16 +518,17 @@ export class HexEditorModal extends HexmakerModal {
     const onItemClick =
       section === "Encounters Table"
         ? async (_link: string, file: TFile) => {
+            interface WithOpenTable { openTable?(path: string): void; }
             const leaves = this.app.workspace.getLeavesOfType(
               VIEW_TYPE_RANDOM_TABLES,
             );
             if (leaves.length > 0) {
               this.app.workspace.revealLeaf(leaves[0]);
-              (leaves[0].view as any).openTable?.(file.path);
+              (leaves[0].view as unknown as WithOpenTable).openTable?.(file.path);
             } else {
               const leaf = this.app.workspace.getLeaf("tab");
               await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-              (leaf.view as any).openTable?.(file.path);
+              (leaf.view as unknown as WithOpenTable).openTable?.(file.path);
             }
             this.close();
           }
@@ -613,12 +615,12 @@ export class HexEditorModal extends HexmakerModal {
     const openDropdown = () => {
       isOpen = true;
       populateDropdown(input.value);
-      dropdown.style.display = "";
+      dropdown.show();
     };
 
     const closeDropdown = () => {
       isOpen = false;
-      dropdown.style.display = "none";
+      dropdown.hide();
     };
 
     const selectFile = async (file: TFile) => {
@@ -659,19 +661,17 @@ export class HexEditorModal extends HexmakerModal {
           return;
         }
       }
+      if (!(file instanceof TFile)) return;
       const hexFile = await this.ensureHexNote();
       if (!hexFile) {
         new Notice("Could not create hex note.");
         return;
       }
-      const linkPath = this.app.metadataCache.fileToLinktext(
-        file as TFile,
-        path,
-      );
+      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
       currentLinks = [...currentLinks, linkPath];
       refresh();
       void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, (file as TFile).path, path);
+      void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
     };
 
@@ -780,7 +780,7 @@ export class HexEditorModal extends HexmakerModal {
             if (onItemClick) {
               void onItemClick(link, file);
             } else {
-              this.app.workspace.getLeaf("tab").openFile(file);
+              void this.app.workspace.getLeaf("tab").openFile(file);
               this.close();
             }
           });

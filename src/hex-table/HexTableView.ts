@@ -1,21 +1,13 @@
-import { App, ItemView, Notice, TFile, WorkspaceLeaf } from "obsidian";
+import { ItemView, TFile, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
-import type { HexMapView } from "../hex-map/HexMapView";
-import type { RandomTableView } from "../random-tables/RandomTableView";
-import {
-  getAllSectionData,
-  setSectionContent,
-  addLinkToSection,
-  addBacklinkToFile,
-} from "../sections";
-import { getTerrainFromFile, setTerrainInFile } from "../frontmatter";
-import { getIconUrl, normalizeFolder, makeTableTemplate, createIconEl } from "../utils";
-import type { TerrainColor, LinkSection } from "../types";
+import { getAllSectionData } from "../sections";
+import { getTerrainFromFile } from "../frontmatter";
+import { normalizeFolder, makeTableTemplate } from "../utils";
 import { TerrainFilterModal } from "./TerrainFilterModal";
 import { HexCellModal } from "./HexCellModal";
 import { MultiLinkNavModal } from "./MultiLinkNavModal";
@@ -97,7 +89,7 @@ export class HexTableView extends ItemView {
       : "Hex table";
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.addClass("duckmage-hex-table-container");
 
@@ -116,7 +108,7 @@ export class HexTableView extends ItemView {
     toolbar.createSpan({ text: "X:", cls: "duckmage-filter-label" });
     this.filterXMinInput = toolbar.createEl("input", {
       cls: "duckmage-filter-range-input",
-    }) as HTMLInputElement;
+    });
     this.filterXMinInput.type = "number";
     this.filterXMinInput.placeholder = "min";
     this.filterXMinInput.addEventListener("input", () => {
@@ -127,7 +119,7 @@ export class HexTableView extends ItemView {
     toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
     this.filterXMaxInput = toolbar.createEl("input", {
       cls: "duckmage-filter-range-input",
-    }) as HTMLInputElement;
+    });
     this.filterXMaxInput.type = "number";
     this.filterXMaxInput.placeholder = "max";
     this.filterXMaxInput.addEventListener("input", () => {
@@ -142,7 +134,7 @@ export class HexTableView extends ItemView {
     toolbar.createSpan({ text: "Y:", cls: "duckmage-filter-label" });
     this.filterYMinInput = toolbar.createEl("input", {
       cls: "duckmage-filter-range-input",
-    }) as HTMLInputElement;
+    });
     this.filterYMinInput.type = "number";
     this.filterYMinInput.placeholder = "min";
     this.filterYMinInput.addEventListener("input", () => {
@@ -153,7 +145,7 @@ export class HexTableView extends ItemView {
     toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
     this.filterYMaxInput = toolbar.createEl("input", {
       cls: "duckmage-filter-range-input",
-    }) as HTMLInputElement;
+    });
     this.filterYMaxInput.type = "number";
     this.filterYMaxInput.placeholder = "max";
     this.filterYMaxInput.addEventListener("input", () => {
@@ -194,7 +186,7 @@ export class HexTableView extends ItemView {
     const townLabel = toolbar.createEl("label", {
       cls: "duckmage-filter-check-label",
     });
-    this.townCb = townLabel.createEl("input") as HTMLInputElement;
+    this.townCb = townLabel.createEl("input");
     this.townCb.type = "checkbox";
     townLabel.appendText("Town");
     this.townCb.addEventListener("change", () => {
@@ -206,7 +198,7 @@ export class HexTableView extends ItemView {
     const dungeonLabel = toolbar.createEl("label", {
       cls: "duckmage-filter-check-label",
     });
-    this.dungeonCb = dungeonLabel.createEl("input") as HTMLInputElement;
+    this.dungeonCb = dungeonLabel.createEl("input");
     this.dungeonCb.type = "checkbox";
     dungeonLabel.appendText("Dungeon");
     this.dungeonCb.addEventListener("change", () => {
@@ -218,7 +210,7 @@ export class HexTableView extends ItemView {
     const featureLabel = toolbar.createEl("label", {
       cls: "duckmage-filter-check-label",
     });
-    this.featureCb = featureLabel.createEl("input") as HTMLInputElement;
+    this.featureCb = featureLabel.createEl("input");
     this.featureCb.type = "checkbox";
     featureLabel.appendText("Feature");
     this.featureCb.addEventListener("change", () => {
@@ -230,7 +222,7 @@ export class HexTableView extends ItemView {
     const questLabel = toolbar.createEl("label", {
       cls: "duckmage-filter-check-label",
     });
-    this.questCb = questLabel.createEl("input") as HTMLInputElement;
+    this.questCb = questLabel.createEl("input");
     this.questCb.type = "checkbox";
     questLabel.appendText("Quest");
     this.questCb.addEventListener("change", () => {
@@ -242,7 +234,7 @@ export class HexTableView extends ItemView {
     const factionLabel = toolbar.createEl("label", {
       cls: "duckmage-filter-check-label",
     });
-    this.factionCb = factionLabel.createEl("input") as HTMLInputElement;
+    this.factionCb = factionLabel.createEl("input");
     this.factionCb.type = "checkbox";
     factionLabel.appendText("Faction");
     this.factionCb.addEventListener("change", () => {
@@ -255,22 +247,24 @@ export class HexTableView extends ItemView {
     // Region filter
     const regionSelect = toolbar.createEl("select", {
       cls: "duckmage-hex-table-region-select",
-    }) as HTMLSelectElement;
+    });
     this.regionSelectEl = regionSelect;
     regionSelect.createEl("option", { value: "all", text: "All regions" });
     for (const r of this.plugin.settings.regions) {
       regionSelect.createEl("option", { value: r.name, text: r.name });
     }
     // Default to active map view's region
+    interface WithActiveRegionName { activeRegionName: string; }
     const mapLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
     if (mapLeaves.length > 0) {
-      const mapView = mapLeaves[0].view as HexMapView;
+      const mapView = mapLeaves[0].view as unknown as WithActiveRegionName;
       this.regionFilter = mapView.activeRegionName;
     }
     regionSelect.value = this.regionFilter;
     regionSelect.addEventListener("change", () => {
       this.regionFilter = regionSelect.value;
-      (this.leaf as any).updateHeader();
+      interface WithUpdateHeader { updateHeader?(): void; }
+      (this.leaf as unknown as WithUpdateHeader).updateHeader?.();
       void this.loadTable();
     });
 
@@ -349,12 +343,14 @@ export class HexTableView extends ItemView {
     );
 
     void this.loadTable();
+    return Promise.resolve();
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     for (const timer of this.updateTimers.values()) clearTimeout(timer);
     this.updateTimers.clear();
     this.contentEl.empty();
+    return Promise.resolve();
   }
 
   async loadTable(): Promise<void> {
@@ -402,11 +398,9 @@ export class HexTableView extends ItemView {
     }
 
     files.sort((a, b) => {
-      const [p, s] = this.sortPrimary === "x" ? ["x", "y"] : ["y", "x"];
-      const diff =
-        (a as any)[p] !== (b as any)[p]
-          ? (a as any)[p] - (b as any)[p]
-          : (a as any)[s] - (b as any)[s];
+      const p = this.sortPrimary === "x" ? "x" : "y";
+      const s = this.sortPrimary === "x" ? "y" : "x";
+      const diff = a[p] !== b[p] ? a[p] - b[p] : a[s] - b[s];
       return this.sortAsc ? diff : -diff;
     });
 
@@ -601,7 +595,6 @@ export class HexTableView extends ItemView {
     const palette = this.plugin.getRegionPalette(region);
     const paletteMap = new Map(palette.map((p) => [p.name, p]));
     const terrainName = getTerrainFromFile(this.app, path);
-    const terrainEntry = terrainName ? paletteMap.get(terrainName) : undefined;
 
     const hasTown = (links.get("towns") ?? []).length > 0;
     const hasDungeon = (links.get("dungeons") ?? []).length > 0;
@@ -640,16 +633,17 @@ export class HexTableView extends ItemView {
     jumpBtn.title = "Center map on this hex";
     jumpBtn.addEventListener("click", async (e) => {
       e.stopPropagation();
+      interface WithCenterOnHex { centerOnHex(x: number, y: number): void; }
       const existingLeaves =
         this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (existingLeaves.length > 0) {
-        this.app.workspace.revealLeaf(existingLeaves[0]);
-        (existingLeaves[0].view as HexMapView).centerOnHex(x, y);
+        void this.app.workspace.revealLeaf(existingLeaves[0]);
+        (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(x, y);
       } else {
         const leaf = this.app.workspace.getLeaf("tab");
         await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
         // Wait one frame for the view to render before centering
-        setTimeout(() => (leaf.view as HexMapView).centerOnHex(x, y), 100);
+        setTimeout(() => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y), 100);
       }
     });
 
@@ -719,10 +713,11 @@ export class HexTableView extends ItemView {
             e.preventDefault();
             const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
             if (!(file instanceof TFile)) return;
+            interface WithOpenTable { openTable(path: string): Promise<void>; }
             const leaf = this.app.workspace.getLeaf("tab");
             await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
-            this.app.workspace.revealLeaf(leaf);
-            await (leaf.view as RandomTableView).openTable(file.path);
+            void this.app.workspace.revealLeaf(leaf);
+            await (leaf.view as unknown as WithOpenTable).openTable(file.path);
           });
           td.addEventListener("click", async () => {
             if (linkList.length === 0) {
@@ -744,11 +739,12 @@ export class HexTableView extends ItemView {
                   path,
                 );
                 if (file instanceof TFile) {
+                  interface WithOpenTable { openTable(path: string): Promise<void>; }
                   const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
                   const leaf = leaves.length > 0 ? leaves[0] : this.app.workspace.getLeaf("tab");
                   await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
-                  this.app.workspace.revealLeaf(leaf);
-                  await (leaf.view as RandomTableView).openTable(file.path);
+                  void this.app.workspace.revealLeaf(leaf);
+                  await (leaf.view as unknown as WithOpenTable).openTable(file.path);
                 }
               } else {
                 const file = this.app.metadataCache.getFirstLinkpathDest(
@@ -756,7 +752,7 @@ export class HexTableView extends ItemView {
                   path,
                 );
                 if (file instanceof TFile)
-                  this.app.workspace.getLeaf().openFile(file);
+                  void this.app.workspace.getLeaf().openFile(file);
               }
             } else {
               // Multiple: show a nav list
@@ -846,7 +842,7 @@ export class HexTableView extends ItemView {
     let totalWidth = 0;
     for (let i = 0; i < ths.length; i++) {
       const w = defaultWidths[i] ?? 160;
-      const col = document.createElement("col") as HTMLTableColElement;
+      const col = document.createElement("col");
       col.style.width = `${w}px`;
       colgroup.appendChild(col);
       cols.push(col);
@@ -869,7 +865,6 @@ export class HexTableView extends ItemView {
 
         const onMove = (me: MouseEvent) => {
           const newW = Math.max(20, startW + me.clientX - startX);
-          const delta = newW - parseInt(col.style.width, 10);
           col.style.width = `${newW}px`;
           table.style.width = `${startTW + (newW - startW)}px`;
         };

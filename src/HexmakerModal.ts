@@ -12,11 +12,13 @@ export class HexmakerModal extends Modal {
 		if (modalEl.dataset.draggable) return;
 		modalEl.dataset.draggable = "1";
 		modalEl.addClass("duckmage-editor-modal-drag");
-		modalEl.style.position = "absolute";
-		modalEl.style.left = "50%";
-		modalEl.style.top = "50%";
-		modalEl.style.transform = "translate(-50%, -50%)";
-		modalEl.style.margin = "0";
+		modalEl.setCssProps({
+			position: 'absolute',
+			left: '50%',
+			top: '50%',
+			transform: 'translate(-50%, -50%)',
+			margin: '0',
+		});
 
 		modalEl.addEventListener("mousedown", (e: MouseEvent) => {
 			const modalContent = modalEl.querySelector<HTMLElement>(".modal-content");
@@ -25,14 +27,11 @@ export class HexmakerModal extends Modal {
 
 			e.preventDefault();
 			const r = modalEl.getBoundingClientRect();
-			modalEl.style.transform = "none";
-			modalEl.style.left = `${r.left}px`;
-			modalEl.style.top = `${r.top}px`;
+			modalEl.setCssProps({ transform: 'none', left: `${r.left}px`, top: `${r.top}px` });
 			const sx = e.clientX, sy = e.clientY;
 			const ox = r.left, oy = r.top;
 			const onMove = (ev: MouseEvent) => {
-				modalEl.style.left = `${ox + ev.clientX - sx}px`;
-				modalEl.style.top  = `${oy + ev.clientY - sy}px`;
+				modalEl.setCssProps({ left: `${ox + ev.clientX - sx}px`, top: `${oy + ev.clientY - sy}px` });
 			};
 			const onUp = () => {
 				document.removeEventListener("mousemove", onMove);

@@ -63,10 +63,10 @@ export class LinkPickerModal extends HexmakerModal {
       cls: "mod-cta",
     });
     createBtn.addEventListener("click", () =>
-      this.createAndLink(input.value.trim()),
+      void this.createAndLink(input.value.trim()),
     );
     input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") this.createAndLink(input.value.trim());
+      if (e.key === "Enter") void this.createAndLink(input.value.trim());
     });
   }
 
@@ -95,7 +95,8 @@ export class LinkPickerModal extends HexmakerModal {
         return;
       }
     }
-    await this.addLink(file as TFile);
+    if (!(file instanceof TFile)) return;
+    await this.addLink(file);
   }
 
   private async ensureHexNote(): Promise<void> {

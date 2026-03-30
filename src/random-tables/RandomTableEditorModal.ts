@@ -83,12 +83,12 @@ export class RandomTableEditorModal extends HexmakerModal {
         await this.app.fileManager.renameFile(this.file, newPath);
         this.titleEl.setText(`Edit: ${this.file.basename}`);
         this.onSaved?.();
-      } catch (e) {
+      } catch {
         nameInput.value = this.file.basename; // revert on error
       }
     };
 
-    nameInput.addEventListener("blur", doRename);
+    nameInput.addEventListener("blur", () => void doRename());
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -139,8 +139,8 @@ export class RandomTableEditorModal extends HexmakerModal {
     let dragSrcIndex = -1;
 
     const autoResize = (el: HTMLTextAreaElement) => {
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
+      el.setCssProps({ height: "auto" });
+      el.setCssProps({ height: `${el.scrollHeight}px` });
     };
 
     const renderRows = () => {
@@ -281,7 +281,7 @@ export class RandomTableEditorModal extends HexmakerModal {
     const errorEl = entriesSection.createDiv({
       cls: "duckmage-table-editor-add-error",
     });
-    errorEl.style.display = "none";
+    errorEl.hide();
 
     // ── Description ───────────────────────────────────────────────────
     const descRow = contentEl.createDiv({
@@ -382,16 +382,16 @@ export class RandomTableEditorModal extends HexmakerModal {
           );
         if (!(found instanceof TFile)) {
           errorEl.setText(`No note found: "${normalizedPath}"`);
-          errorEl.style.display = "";
+          errorEl.show();
           return;
         }
-        errorEl.style.display = "none";
+        errorEl.hide();
         // Store the vault-relative path without extension (canonical link form)
         const resolvedPath = found.path.replace(/\.md$/i, "");
         const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
         entries.push({ result: resolvedPath, weight, isLink: true });
       } else {
-        errorEl.style.display = "none";
+        errorEl.hide();
         const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
         entries.push({ result: raw, weight });
       }
@@ -493,7 +493,6 @@ export class RandomTableEditorModal extends HexmakerModal {
       .filter(
         (f) => f.parent?.path === folderPath && !f.basename.startsWith("_"),
       );
-    const existingNames = new Set(existing.map((f) => f.basename));
 
     // For each entry: create note if missing
     for (const entry of entries) {

@@ -1,5 +1,6 @@
 import {
   App,
+  Component,
   ItemView,
   MarkdownRenderer,
   Menu,
@@ -345,7 +346,7 @@ export class HexMapView extends ItemView {
       if (existing.length > 0) {
         this.app.workspace.revealLeaf(existing[0]);
       } else {
-        this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE });
+        void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE });
       }
     });
     tableBtn.addEventListener("auxclick", (e: MouseEvent) => {
@@ -365,7 +366,7 @@ export class HexMapView extends ItemView {
       if (existing.length > 0) {
         this.app.workspace.revealLeaf(existing[0]);
       } else {
-        this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+        void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
       }
     });
     rtBtn.addEventListener("auxclick", (e: MouseEvent) => {
@@ -388,7 +389,8 @@ export class HexMapView extends ItemView {
         this.redoStack = [];
         this.updateUndoButton();
         this.updateRegionBtnLabel();
-        (this.leaf as any).updateHeader();
+        interface WithUpdateHeader { updateHeader?(): void; }
+        (this.leaf as unknown as WithUpdateHeader).updateHeader?.();
         this.renderGrid();
       }).open(),
     );
@@ -761,13 +763,13 @@ export class HexMapView extends ItemView {
     const hasB = fileB instanceof TFile;
     if (!hasA && !hasB) return;
 
-    if (hasA && !hasB) {
+    if (fileA instanceof TFile && !hasB) {
       await this.app.vault.rename(fileA, pathB);
-    } else if (!hasA && hasB) {
-      await this.app.vault.rename(fileB as TFile, pathA);
-    } else {
-      await this.app.vault.rename(fileA as TFile, tempPath);
-      await this.app.vault.rename(fileB as TFile, pathA);
+    } else if (!hasA && fileB instanceof TFile) {
+      await this.app.vault.rename(fileB, pathA);
+    } else if (fileA instanceof TFile && fileB instanceof TFile) {
+      await this.app.vault.rename(fileA, tempPath);
+      await this.app.vault.rename(fileB, pathA);
       const tmp = this.app.vault.getAbstractFileByPath(tempPath);
       if (!(tmp instanceof TFile)) throw new Error("temp file missing");
       await this.app.vault.rename(tmp, pathB);
@@ -855,10 +857,10 @@ export class HexMapView extends ItemView {
         ? this.plugin.settings.pathTypes.find(p => p.name === this.activePathTypeName)
         : this.plugin.settings.pathTypes[0];
       if (activeType) {
-        this.pathBtnSwatch.style.backgroundColor = activeType.color;
-        this.pathBtnSwatch.style.display = "inline-block";
+        this.pathBtnSwatch.setCssProps({ 'background-color': activeType.color });
+        this.pathBtnSwatch.show();
       } else {
-        this.pathBtnSwatch.style.display = "none";
+        this.pathBtnSwatch.hide();
       }
     }
     this.terrainToolbarBtn?.toggleClass(
@@ -888,22 +890,23 @@ export class HexMapView extends ItemView {
     if (this.drawingMode === "icon" && this.paintIconName) {
       if (this.iconBtnPreview) {
         this.iconBtnPreview.src = getIconUrl(this.plugin, this.paintIconName);
-        this.iconBtnPreview.style.display = "inline-block";
+        this.iconBtnPreview.show();
       }
     } else {
-      if (this.iconBtnPreview) this.iconBtnPreview.style.display = "none";
+      if (this.iconBtnPreview) this.iconBtnPreview.hide();
     }
     if (this.drawingMode === "terrain") {
       if (this.terrainPickMode) {
         // Eyedropper waiting for a click — show ⌖ as the preview
         if (this.terrainToolbarBtn) {
-          this.terrainToolbarBtn.style.borderColor =
-            "var(--interactive-accent)";
-          this.terrainToolbarBtn.style.color = "var(--interactive-accent)";
+          this.terrainToolbarBtn.setCssProps({
+            'border-color': "var(--interactive-accent)",
+            color: "var(--interactive-accent)",
+          });
         }
         if (this.terrainBtnPreview) {
-          this.terrainBtnPreview.style.backgroundColor = "";
-          this.terrainBtnPreview.style.display = "inline-block";
+          this.terrainBtnPreview.setCssProps({ 'background-color': "" });
+          this.terrainBtnPreview.show();
           this.terrainBtnPreview.textContent = "⌖";
         }
       } else {
@@ -915,29 +918,28 @@ export class HexMapView extends ItemView {
           : undefined;
         if (entry) {
           if (this.terrainToolbarBtn) {
-            this.terrainToolbarBtn.style.borderColor = entry.color;
+            this.terrainToolbarBtn.setCssProps({ 'border-color': entry.color });
           }
           if (this.terrainBtnPreview) {
-            this.terrainBtnPreview.style.backgroundColor = entry.color;
-            this.terrainBtnPreview.style.display = "inline-block";
+            this.terrainBtnPreview.setCssProps({ 'background-color': entry.color });
+            this.terrainBtnPreview.show();
           }
         } else {
           // Clear mode — show active state without a color
           if (this.terrainToolbarBtn) {
-            this.terrainToolbarBtn.style.borderColor = "";
+            this.terrainToolbarBtn.setCssProps({ 'border-color': "" });
           }
           if (this.terrainBtnPreview) {
-            this.terrainBtnPreview.style.display = "none";
+            this.terrainBtnPreview.hide();
           }
         }
       }
     } else {
       if (this.terrainToolbarBtn) {
-        this.terrainToolbarBtn.style.borderColor = "";
-        this.terrainToolbarBtn.style.color = "";
+        this.terrainToolbarBtn.setCssProps({ 'border-color': "", color: "" });
       }
       if (this.terrainBtnPreview) {
-        this.terrainBtnPreview.style.display = "none";
+        this.terrainBtnPreview.hide();
       }
     }
 
@@ -1135,7 +1137,7 @@ export class HexMapView extends ItemView {
         }
       },
     );
-    modal.loadData().then(() => modal.open());
+    void modal.loadData().then(() => modal.open());
   }
 
   private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
@@ -1818,7 +1820,7 @@ export class HexMapView extends ItemView {
     gridContainer
       .querySelectorAll<HTMLElement>(".duckmage-hex-icon[data-svg-elevated]")
       .forEach((img) => {
-        img.style.display = "";
+        img.show();
         img.removeAttribute("data-svg-elevated");
       });
 
@@ -1855,8 +1857,6 @@ export class HexMapView extends ItemView {
     const h = gridContainer.offsetTop + gridContainer.offsetHeight + 20;
     svg.setAttribute("width", String(w));
     svg.setAttribute("height", String(h));
-    svg.style.cssText =
-      "position:absolute;top:0;left:0;pointer-events:none;z-index:5;";
 
     // Build a smooth path through an ordered list of points using quadratic
     // bezier curves — corners are rounded by curving through midpoints.
@@ -2097,7 +2097,7 @@ export class HexMapView extends ItemView {
         if (!pos) return;
         const origImg = hexEl.querySelector<HTMLElement>(".duckmage-hex-icon");
         if (origImg) {
-          origImg.style.display = "none";
+          origImg.hide();
           origImg.setAttribute("data-svg-elevated", "1");
         }
         const imgEl = document.createElementNS(svgNS, "image");
@@ -2250,8 +2250,7 @@ class TablePickerModal extends Modal {
   }
 
   onOpen(): void {
-    this.titleEl.style.cssText =
-      "display:flex;align-items:center;justify-content:space-between;";
+    this.titleEl.setCssProps({ display: 'flex', 'align-items': 'center', 'justify-content': 'space-between' });
     this.titleEl.createSpan({ text: "Select table" });
     const openViewBtn = this.titleEl.createEl("button", {
       cls: "duckmage-rt-icon-btn",
@@ -2259,7 +2258,7 @@ class TablePickerModal extends Modal {
       title: "Open random tables view",
     });
     openViewBtn.addEventListener("click", () => {
-      this.app.workspace
+      void this.app.workspace
         .getLeaf("tab")
         .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
     });
@@ -2369,17 +2368,17 @@ class TablePickerModal extends Modal {
         const childrenEl = folderEl.createDiv({
           cls: "duckmage-rt-folder-children",
         });
-        if (isCollapsed) childrenEl.style.display = "none";
+        if (isCollapsed) childrenEl.hide();
         this.renderNodes(childrenEl, node.children, forceExpanded);
         header.addEventListener("click", () => {
           const nowCollapsed = !this.collapsedFolders.has(node.path);
           if (nowCollapsed) {
             this.collapsedFolders.add(node.path);
-            childrenEl.style.display = "none";
+            childrenEl.hide();
             arrow.textContent = "▶";
           } else {
             this.collapsedFolders.delete(node.path);
-            childrenEl.style.display = "";
+            childrenEl.show();
             arrow.textContent = "▼";
           }
         });
@@ -2522,17 +2521,17 @@ class FactionPickerModal extends Modal {
         const childrenEl = folderEl.createDiv({
           cls: "duckmage-rt-folder-children",
         });
-        if (isCollapsed) childrenEl.style.display = "none";
+        if (isCollapsed) childrenEl.hide();
         this.renderNodes(childrenEl, node.children, forceExpanded);
         header.addEventListener("click", () => {
           const nowCollapsed = !this.collapsedFolders.has(node.path);
           if (nowCollapsed) {
             this.collapsedFolders.add(node.path);
-            childrenEl.style.display = "none";
+            childrenEl.hide();
             arrow.textContent = "▶";
           } else {
             this.collapsedFolders.delete(node.path);
-            childrenEl.style.display = "";
+            childrenEl.show();
             arrow.textContent = "▼";
           }
         });
@@ -2553,13 +2552,12 @@ class HexHelpModal extends Modal {
   onOpen(): void {
     this.titleEl.setText("Hex map — controls & tools");
     this.contentEl.addClass("duckmage-help-modal");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     void MarkdownRenderer.render(
       this.app,
       HELP_CONTENT,
       this.contentEl,
       "",
-      this as any,
+      this as unknown as Component,
     );
   }
   onClose(): void {

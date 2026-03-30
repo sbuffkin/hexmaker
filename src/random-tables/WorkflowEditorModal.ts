@@ -89,7 +89,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 				nameInput.value = this.file.basename;
 			}
 		};
-		nameInput.addEventListener("blur", doRename);
+		nameInput.addEventListener("blur", () => void doRename());
 		nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
 			if (e.key === "Enter") { e.preventDefault(); nameInput.blur(); }
 			if (e.key === "Escape") { nameInput.value = this.file.basename; nameInput.blur(); }
@@ -112,8 +112,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 		templateArea.addEventListener("input", () => { templateContent = templateArea.value; updateValidation(); });
 
 		const validationEl = templateSectionWrap.createDiv();
-		validationEl.style.marginTop = "4px";
-		validationEl.style.fontSize = "0.85em";
+		validationEl.setCssProps({ "margin-top": "4px", "font-size": "0.85em" });
 
 		// ── Description ───────────────────────────────────────────────────
 		const descRow = contentEl.createDiv({ cls: "duckmage-table-editor-desc-row" });
@@ -126,7 +125,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 
 		// ── Results folder row ────────────────────────────────────────────
 		const rfRow = contentEl.createDiv({ cls: "duckmage-table-editor-name-row" });
-		rfRow.style.marginTop = "8px";
+		rfRow.setCssProps({ "margin-top": "8px" });
 		rfRow.createEl("label", { text: "Results folder", cls: "duckmage-table-editor-name-label" });
 
 		// Build a datalist of all folders under the world folder
@@ -320,7 +319,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 				const rollsInput = row.createEl("input", { type: "number" });
 				rollsInput.min = "1";
 				rollsInput.value = String(step.rolls);
-				rollsInput.style.width = "52px";
+				rollsInput.setCssProps({ width: "52px" });
 				rollsInput.title = "Number of rolls";
 				rollsInput.addEventListener("input", () => {
 					const oldRolls = steps[i].rolls;
@@ -334,7 +333,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 				labelInput = row.createEl("input", { type: "text" });
 				labelInput.placeholder = "Label…";
 				labelInput.value = step.label ?? "";
-				labelInput.style.flex = "1";
+				labelInput.setCssProps({ flex: "1" });
 				labelInput.addEventListener("input", () => {
 					const fallback = step.kind === "dice"
 						? (step.diceFormula ? `(${step.diceFormula})` : "")
@@ -447,12 +446,12 @@ export class WorkflowEditorModal extends HexmakerModal {
 		addRollsInput = addRow.createEl("input", { type: "number" });
 		addRollsInput.min = "1";
 		addRollsInput.value = "1";
-		addRollsInput.style.width = "52px";
+		addRollsInput.setCssProps({ width: "52px" });
 		addRollsInput.title = "Number of rolls";
 
 		addLabelInput = addRow.createEl("input", { type: "text" });
 		addLabelInput.placeholder = "Label (auto)…";
-		addLabelInput.style.flex = "1";
+		addLabelInput.setCssProps({ flex: "1" });
 
 		const addBtnRow = addArea.createDiv({ cls: "duckmage-wf-editor-add-btn-row" });
 		const addBtn = addBtnRow.createEl("button", { text: "Add step", cls: "mod-cta" });

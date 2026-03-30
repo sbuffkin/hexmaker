@@ -92,7 +92,7 @@ export class WorkflowWizardModal extends HexmakerModal {
 
 		const copyResultBtn = header.createEl("button", { text: "Copy result" });
 		copyResultBtn.addEventListener("click", () => {
-			navigator.clipboard.writeText(this.resultTextarea?.value ?? "").then(() => {
+			void navigator.clipboard.writeText(this.resultTextarea?.value ?? "").then(() => {
 				copyResultBtn.setText("Copied!");
 				setTimeout(() => copyResultBtn.setText("Copy result"), 1500);
 			});
@@ -105,7 +105,7 @@ export class WorkflowWizardModal extends HexmakerModal {
 		// ── Result textarea ───────────────────────────────────────────────
 		contentEl.createEl("p", { text: "Result", cls: "duckmage-table-editor-heading" });
 		this.resultTextarea = contentEl.createEl("textarea", { cls: "duckmage-wf-template-area" });
-		this.resultTextarea.style.minHeight = "120px";
+		this.resultTextarea.setCssProps({ "min-height": "120px" });
 		this.resultTextarea.readOnly = true;
 		this.resultTextarea.value = this.assembleResult();
 
@@ -344,7 +344,7 @@ export class WorkflowWizardModal extends HexmakerModal {
 	private async saveAsNote(): Promise<void> {
 		const noteName = this.saveNoteNameInput.value.trim();
 		if (!noteName) {
-			this.saveStatusEl.style.color = "var(--color-red)";
+			this.saveStatusEl.setCssProps({ color: "var(--color-red)" });
 			this.saveStatusEl.setText("Note name is required.");
 			return;
 		}
@@ -370,7 +370,7 @@ export class WorkflowWizardModal extends HexmakerModal {
 			this.close();
 			await this.app.workspace.getLeaf("tab").openFile(savedFile);
 		} catch (err) {
-			this.saveStatusEl.style.color = "var(--color-red)";
+			this.saveStatusEl.setCssProps({ color: "var(--color-red)" });
 			this.saveStatusEl.setText(`Error: ${err}`);
 		}
 	}

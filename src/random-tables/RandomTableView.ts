@@ -18,11 +18,9 @@ import {
   parseRandomTable,
   rollOnTable,
   getDieRanges,
-  getOddsLabel,
   setDiceInFrontmatter,
   extractPostTableContent,
   type RandomTable,
-  type RandomTableEntry,
 } from "./randomTable";
 import { parseWorkflow, generateDefaultTemplate } from "./workflow";
 
@@ -89,13 +87,14 @@ export class RandomTableView extends ItemView {
     return "dice";
   }
 
-  async setState(state: any, result: ViewStateResult): Promise<void> {
+  async setState(state: unknown, result: ViewStateResult): Promise<void> {
     await super.setState(state, result);
-    if (state?.viewMode && (state.viewMode === "tables" || state.viewMode === "workflows")) {
-      if (state.viewMode !== this.viewMode) this.setViewMode(state.viewMode);
+    const s = state as { viewMode?: string; filePath?: string } | null;
+    if (s?.viewMode && (s.viewMode === "tables" || s.viewMode === "workflows")) {
+      if (s.viewMode !== this.viewMode) this.setViewMode(s.viewMode as "tables" | "workflows");
     }
-    if (state?.filePath) {
-      const file = this.app.vault.getAbstractFileByPath(state.filePath);
+    if (s?.filePath) {
+      const file = this.app.vault.getAbstractFileByPath(s.filePath);
       if (file instanceof TFile) {
         if (this.isInWorkflowsFolder(file.path)) {
           this.viewMode = "workflows";
@@ -105,7 +104,7 @@ export class RandomTableView extends ItemView {
           await this.loadWorkflow(file);
         } else {
           await this.loadList();
-          this.loadTable(file);
+          void this.loadTable(file);
         }
       }
     }
@@ -129,7 +128,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-icon-btn",
     });
     refreshBtn.title = "Refresh list";
-    refreshBtn.addEventListener("click", () => this.loadList());
+    refreshBtn.addEventListener("click", () => void this.loadList());
 
     // ── Mode toggle tabs ─────────────────────────────────────────────────
     const modeTabs = leftCol.createDiv({ cls: "duckmage-rt-mode-tabs" });
@@ -149,14 +148,14 @@ export class RandomTableView extends ItemView {
       if (e.button !== 1) return;
       e.preventDefault();
       const leaf = this.app.workspace.getLeaf("tab");
-      leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "tables" } });
+      void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "tables" } });
       this.app.workspace.revealLeaf(leaf);
     });
     this.workflowsBtn.addEventListener("auxclick", (e: MouseEvent) => {
       if (e.button !== 1) return;
       e.preventDefault();
       const leaf = this.app.workspace.getLeaf("tab");
-      leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "workflows" } });
+      void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { viewMode: "workflows" } });
       this.app.workspace.revealLeaf(leaf);
     });
 
@@ -167,7 +166,7 @@ export class RandomTableView extends ItemView {
     searchInput.placeholder = "Filter tables…";
     searchInput.addEventListener("input", () => {
       this.filterQuery = searchInput.value.toLowerCase().trim();
-      this.loadList();
+      void this.loadList();
     });
 
     this.listEl = leftCol.createDiv({ cls: "duckmage-rt-list" });
@@ -198,12 +197,12 @@ export class RandomTableView extends ItemView {
 
     // ── Workflow footer (shown in workflows mode) ──────────────────────────
     this.workflowFooterEl = listFooter.createDiv();
-    this.workflowFooterEl.style.display = "none";
+    this.workflowFooterEl.hide();
     const newWfFooterBtn = this.workflowFooterEl.createEl("button", {
       text: "+ New workflow",
       cls: "duckmage-rt-new-btn",
     });
-    newWfFooterBtn.addEventListener("click", () => this.createWorkflow());
+    newWfFooterBtn.addEventListener("click", () => void this.createWorkflow());
 
     // ── Table footer (shown in tables mode) ───────────────────────────────
     this.tableFooterEl = listFooter.createDiv();
@@ -236,7 +235,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-from-folder-input",
       attr: { placeholder: "Generate from folder link (optional)…" },
     });
-    fromFolderInput.style.marginTop = "6px";
+    fromFolderInput.setCssProps({ "margin-top": "6px" });
 
     const createTable = async () => {
       const name = newInput.value.trim();
@@ -281,14 +280,14 @@ export class RandomTableView extends ItemView {
       newInput.title = "";
       fromFolderInput.value = "";
       await this.loadList();
-      await this.loadTable(file as TFile);
+      if (file instanceof TFile) await this.loadTable(file);
       // Re-render after vault I/O settles to ensure linked-folder link styling is applied
       if (srcFolder) await this.renderDetail();
     };
 
     newBtn.addEventListener("click", createTable);
     newInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") createTable();
+      if (e.key === "Enter") void createTable();
     });
 
     // ── Right column: table detail ───────────────────────────────────────
@@ -401,8 +400,9 @@ export class RandomTableView extends ItemView {
     );
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     this.contentEl.empty();
+    return Promise.resolve();
   }
 
   // ── Public: open a specific table (called from hex editor / protocol handler) ──
@@ -418,7 +418,7 @@ export class RandomTableView extends ItemView {
         parent = parent.parent;
       }
       await this.loadList();
-      this.loadTable(file);
+      void this.loadTable(file);
     }
   }
 
@@ -450,8 +450,8 @@ export class RandomTableView extends ItemView {
     this.viewMode = mode;
     this.tablesBtn?.toggleClass("is-active", mode === "tables");
     this.workflowsBtn?.toggleClass("is-active", mode === "workflows");
-    if (this.tableFooterEl) this.tableFooterEl.style.display = mode === "tables" ? "" : "none";
-    if (this.workflowFooterEl) this.workflowFooterEl.style.display = mode === "workflows" ? "" : "none";
+    if (this.tableFooterEl) { if (mode === "tables") this.tableFooterEl.show(); else this.tableFooterEl.hide(); }
+    if (this.workflowFooterEl) { if (mode === "workflows") this.workflowFooterEl.show(); else this.workflowFooterEl.hide(); }
     this.filterQuery = "";
     this.activeFile = null;
     this.app.workspace.trigger("layout-change");
@@ -540,7 +540,7 @@ export class RandomTableView extends ItemView {
     this.listEl.empty();
 
     if (this.viewMode === "workflows") {
-      await this.loadWorkflowList();
+      this.loadWorkflowList();
       return;
     }
 
@@ -622,7 +622,7 @@ export class RandomTableView extends ItemView {
     }
   }
 
-  private async loadWorkflowList(): Promise<void> {
+  private loadWorkflowList(): void {
     if (!this.listEl) return;
     const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
     if (!wfFolder) {
@@ -674,7 +674,7 @@ export class RandomTableView extends ItemView {
         folderHeader.createSpan({ cls: "duckmage-rt-folder-name", text: node.name });
 
         const childrenEl = folderEl.createDiv({ cls: "duckmage-rt-folder-children" });
-        if (isCollapsed) childrenEl.style.display = "none";
+        if (isCollapsed) childrenEl.hide();
         this.renderWorkflowTreeNodes(childrenEl, node.children);
 
         folderHeader.addEventListener("click", () => {
@@ -682,11 +682,11 @@ export class RandomTableView extends ItemView {
           const nowCollapsed = !this.collapsedFolders.has(key);
           if (nowCollapsed) {
             this.collapsedFolders.add(key);
-            childrenEl.style.display = "none";
+            childrenEl.hide();
             arrow.textContent = "▶";
           } else {
             this.collapsedFolders.delete(key);
-            childrenEl.style.display = "";
+            childrenEl.show();
             arrow.textContent = "▼";
           }
         });
@@ -695,12 +695,12 @@ export class RandomTableView extends ItemView {
         if (node.file === this.activeFile) row.addClass("is-active");
         row.setText(node.file.basename);
         row.title = node.file.path;
-        row.addEventListener("click", () => this.loadWorkflow(node.file));
+        row.addEventListener("click", () => void this.loadWorkflow(node.file));
         row.addEventListener("auxclick", (e: MouseEvent) => {
           if (e.button !== 1) return;
           e.preventDefault();
           const leaf = this.app.workspace.getLeaf("tab");
-          leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+          void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
           this.app.workspace.revealLeaf(leaf);
         });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
@@ -711,7 +711,7 @@ export class RandomTableView extends ItemView {
             item.setIcon("external-link");
             item.onClick(() => {
               const leaf = this.app.workspace.getLeaf("tab");
-              leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+              void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
               this.app.workspace.revealLeaf(leaf);
             });
           });
@@ -820,19 +820,19 @@ export class RandomTableView extends ItemView {
     runBtn.addEventListener("click", () => {
       new WorkflowWizardModal(this.app, this.plugin, file).open();
     });
-    runBtn.style.marginRight = "8px";
+    runBtn.setCssProps({ "margin-right": "8px" });
 
     const copyWfLinkBtn = this.detailEl.createEl("button", {
       text: "🔗 Copy link",
       cls: "duckmage-rt-copy-link-btn",
     });
     copyWfLinkBtn.title = "Copy a markdown link to open this workflow";
-    copyWfLinkBtn.style.marginBottom = "12px";
+    copyWfLinkBtn.setCssProps({ "margin-bottom": "12px" });
     copyWfLinkBtn.addEventListener("click", () => {
       const vault = encodeURIComponent(this.app.vault.getName());
       const path = encodeURIComponent(file.path);
       const link = `[🔗 ${file.basename}](obsidian://duckmage-workflow?vault=${vault}&file=${path})`;
-      navigator.clipboard.writeText(link).then(() => {
+      void navigator.clipboard.writeText(link).then(() => {
         copyWfLinkBtn.setText("Copied!");
         setTimeout(() => copyWfLinkBtn.setText("🔗 Copy link"), 1500);
       });
@@ -853,8 +853,7 @@ export class RandomTableView extends ItemView {
       const stepsEl = this.detailEl.createDiv({ cls: "duckmage-wf-detail-steps" });
       stepsEl.createEl("p", { text: "Steps", cls: "duckmage-rt-history-label" });
       const list = stepsEl.createEl("ul");
-      list.style.margin = "0";
-      list.style.paddingLeft = "18px";
+      list.setCssProps({ margin: "0", "padding-left": "18px" });
       for (const step of workflow.steps) {
         const li = list.createEl("li");
         let primaryName: string;
@@ -886,7 +885,7 @@ export class RandomTableView extends ItemView {
         tmplSection.createEl("p", { text: "Template", cls: "duckmage-rt-history-label" });
         const tmplLink = tmplSection.createEl("a", { text: tmplFile.basename, cls: "duckmage-rt-entry-link" });
         tmplLink.addEventListener("click", () => {
-          this.app.workspace.getLeaf(false).openFile(tmplFile);
+          void this.app.workspace.getLeaf(false).openFile(tmplFile);
         });
         const tmplContent = await this.app.vault.read(tmplFile);
         const escapedContent = tmplContent.replace(/\$/g, "\\$");
@@ -950,7 +949,7 @@ export class RandomTableView extends ItemView {
         const childrenEl = folderEl.createDiv({
           cls: "duckmage-rt-folder-children",
         });
-        if (isCollapsed) childrenEl.style.display = "none";
+        if (isCollapsed) childrenEl.hide();
 
         this.renderTreeNodes(childrenEl, node.children, forceExpanded);
 
@@ -989,11 +988,11 @@ export class RandomTableView extends ItemView {
           const nowCollapsed = !this.collapsedFolders.has(node.path);
           if (nowCollapsed) {
             this.collapsedFolders.add(node.path);
-            childrenEl.style.display = "none";
+            childrenEl.hide();
             arrow.textContent = "▶";
           } else {
             this.collapsedFolders.delete(node.path);
-            childrenEl.style.display = "";
+            childrenEl.show();
             arrow.textContent = "▼";
           }
         });
@@ -1002,12 +1001,12 @@ export class RandomTableView extends ItemView {
         if (node.file === this.activeFile) row.addClass("is-active");
         row.setText(node.file.basename);
         row.title = node.file.path;
-        row.addEventListener("click", () => this.loadTable(node.file));
+        row.addEventListener("click", () => void this.loadTable(node.file));
         row.addEventListener("auxclick", (e: MouseEvent) => {
           if (e.button !== 1) return;
           e.preventDefault();
           const leaf = this.app.workspace.getLeaf("tab");
-          leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
+          void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: node.file.path } });
           this.app.workspace.revealLeaf(leaf);
         });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
@@ -1093,7 +1092,7 @@ export class RandomTableView extends ItemView {
       item.setIcon("external-link");
       item.onClick(() => {
         const leaf = this.app.workspace.getLeaf("tab");
-        leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: file.path } });
+        void leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true, state: { filePath: file.path } });
         this.app.workspace.revealLeaf(leaf);
       });
     });
@@ -1160,7 +1159,7 @@ export class RandomTableView extends ItemView {
       await this.loadList();
       if (wasActive) {
         const newFile = this.app.vault.getAbstractFileByPath(newPath);
-        if (newFile instanceof TFile) this.loadTable(newFile);
+        if (newFile instanceof TFile) void this.loadTable(newFile);
       }
     } catch (err) {
       new Notice(`Could not move "${srcFile.basename}": ${err}`);
@@ -1250,7 +1249,7 @@ export class RandomTableView extends ItemView {
     editLink.addEventListener("click", async () => {
       const content = await this.app.vault.read(file);
       new RandomTableEditorModal(this.app, this.plugin, file, () =>
-        this.renderDetail(), content,
+        void this.renderDetail(), content,
       ).open();
     });
 
@@ -1259,7 +1258,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-edit-link",
     });
     openNoteLink.addEventListener("click", () => {
-      this.app.workspace.getLeaf().openFile(file);
+      void this.app.workspace.getLeaf().openFile(file);
     });
 
     const dieSelect = header.createEl("select", {
@@ -1289,10 +1288,10 @@ export class RandomTableView extends ItemView {
       descCollapseBtn.title = "Collapse description";
       descHeader.createSpan({ text: "Description", cls: "duckmage-rt-section-label" });
       const descBody = descSection.createDiv({ cls: "duckmage-rt-desc-body" });
-      MarkdownRenderer.render(this.app, table.description, descBody, file.path, this);
+      void MarkdownRenderer.render(this.app, table.description, descBody, file.path, this);
       descCollapseBtn.addEventListener("click", () => {
         const collapsed = descBody.style.display === "none";
-        descBody.style.display = collapsed ? "" : "none";
+        if (collapsed) descBody.show(); else descBody.hide();
         descCollapseBtn.setText(collapsed ? "▼" : "▶");
         descCollapseBtn.title = collapsed ? "Collapse description" : "Expand description";
       });
@@ -1314,7 +1313,7 @@ export class RandomTableView extends ItemView {
 
     collapseBtn.addEventListener("click", () => {
       const collapsed = tableBody.style.display === "none";
-      tableBody.style.display = collapsed ? "" : "none";
+      if (collapsed) tableBody.show(); else tableBody.hide();
       collapseBtn.setText(collapsed ? "▼" : "▶");
       collapseBtn.title = collapsed ? "Collapse table" : "Expand table";
     });
@@ -1355,7 +1354,7 @@ export class RandomTableView extends ItemView {
               `${table.linkedFolder}/${entry.result}.md`,
             );
             if (noteFile instanceof TFile)
-              this.app.workspace.getLeaf().openFile(noteFile);
+              void this.app.workspace.getLeaf().openFile(noteFile);
           });
         } else if (entry.isLink) {
           const label = entry.result.split("/").pop() ?? entry.result;
@@ -1368,7 +1367,7 @@ export class RandomTableView extends ItemView {
             const noteFile = this.app.vault.getAbstractFileByPath(entry.result + ".md")
               ?? this.app.metadataCache.getFirstLinkpathDest(entry.result, "");
             if (noteFile instanceof TFile)
-              this.app.workspace.getLeaf().openFile(noteFile);
+              void this.app.workspace.getLeaf().openFile(noteFile);
           });
         } else {
           resultTd.setText(entry.result);
@@ -1386,7 +1385,7 @@ export class RandomTableView extends ItemView {
         copyBtn.title = "Copy entry";
         copyBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          navigator.clipboard.writeText(entry.result);
+          void navigator.clipboard.writeText(entry.result);
           copyBtn.setText("✓");
           setTimeout(() => copyBtn.setText("⎘"), 1200);
         });
@@ -1406,7 +1405,7 @@ export class RandomTableView extends ItemView {
       const vault = encodeURIComponent(this.app.vault.getName());
       const path = encodeURIComponent(file.path);
       const link = `[🎲 ${file.basename}](obsidian://duckmage-roll?vault=${vault}&file=${path})`;
-      navigator.clipboard.writeText(link).then(() => {
+      void navigator.clipboard.writeText(link).then(() => {
         copyLinkBtn.setText("Copied!");
         setTimeout(() => copyLinkBtn.setText("🎲 Copy link"), 1500);
       });
@@ -1418,7 +1417,7 @@ export class RandomTableView extends ItemView {
     });
 
     const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });
-    resultBox.style.display = "none";
+    resultBox.hide();
     const resultTextarea = resultBox.createEl("textarea", {
       cls: "duckmage-roll-result-textarea",
     });
@@ -1430,7 +1429,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-roll-copy-btn",
     });
     copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(resultTextarea.value);
+      void navigator.clipboard.writeText(resultTextarea.value);
       copyBtn.setText("Copied!");
       setTimeout(() => copyBtn.setText("Copy"), 1500);
     });
@@ -1439,7 +1438,7 @@ export class RandomTableView extends ItemView {
       text: "Open note",
       cls: "duckmage-rt-open-note-btn",
     });
-    openNoteBtn.style.display = "none";
+    openNoteBtn.hide();
 
     const historyEl = this.detailEl.createDiv({ cls: "duckmage-rt-history" });
     this.renderHistory(historyEl);
@@ -1476,7 +1475,7 @@ export class RandomTableView extends ItemView {
         text: "+ New workflow with this table",
         cls: "duckmage-rt-entry-link",
       });
-      newWfLink.style.fontStyle = "italic";
+      newWfLink.setCssProps({ "font-style": "italic" });
       newWfLink.addEventListener("click", async () => {
         this.setViewMode("workflows");
         await this.createWorkflow(tableKey);
@@ -1508,31 +1507,31 @@ export class RandomTableView extends ItemView {
         );
       });
 
-    resultBox.style.display = "";
+    resultBox.show();
     resultTextarea.value = displayLabel;
     resultTextarea.focus();
 
     // Update "Open note" button
     if (openNoteBtn) {
       if (table.linkedFolder) {
-        openNoteBtn.style.display = "";
+        openNoteBtn.show();
         openNoteBtn.onclick = () => {
           const noteFile = this.app.vault.getAbstractFileByPath(
             `${table.linkedFolder}/${entry.result}.md`,
           );
           if (noteFile instanceof TFile)
-            this.app.workspace.getLeaf().openFile(noteFile);
+            void this.app.workspace.getLeaf().openFile(noteFile);
         };
       } else if (entry.isLink) {
-        openNoteBtn.style.display = "";
+        openNoteBtn.show();
         openNoteBtn.onclick = () => {
           const noteFile = this.app.vault.getAbstractFileByPath(entry.result + ".md")
             ?? this.app.metadataCache.getFirstLinkpathDest(entry.result, "");
           if (noteFile instanceof TFile)
-            this.app.workspace.getLeaf().openFile(noteFile);
+            void this.app.workspace.getLeaf().openFile(noteFile);
         };
       } else {
-        openNoteBtn.style.display = "none";
+        openNoteBtn.hide();
       }
     }
 
@@ -1558,7 +1557,7 @@ export class RandomTableView extends ItemView {
       });
       copyIcon.title = "Copy";
       copyIcon.addEventListener("click", () =>
-        navigator.clipboard.writeText(result),
+        void navigator.clipboard.writeText(result),
       );
     }
   }
