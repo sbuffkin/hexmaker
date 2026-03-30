@@ -1,18 +1,18 @@
 {
-	"compilerOptions": {
-		"inlineSourceMap": true,
-		"inlineSources": true,
-		"module": "ESNext",
-		"target": "ES2020",
-		"allowJs": true,
-		"noImplicitAny": true,
-		"moduleResolution": "bundler",
-		"importHelpers": true,
-		"isolatedModules": true,
-		"strictNullChecks": true,
-		"strictPropertyInitialization": false,
-		"lib": ["DOM", "ES2020"]
-	},
-	"include": ["**/*.ts"],
-	"exclude": ["tests/**", "node_modules"]
+  "compilerOptions": {
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "module": "ESNext",
+    "target": "ES2020",
+    "allowJs": true,
+    "noImplicitAny": true,
+    "moduleResolution": "bundler",
+    "importHelpers": true,
+    "isolatedModules": true,
+    "strictNullChecks": true,
+    "strictPropertyInitialization": false,
+    "lib": ["DOM", "ES2020"],
+  },
+  "include": ["**/*.ts", "eslint.config.js"],
+  "exclude": ["tests/**", "node_modules", "*.mjs"],
 }
