@@ -21,7 +21,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       )
       .addText((text) =>
         text
-          .setPlaceholder("world")
+          .setPlaceholder("World.")
           .setValue(this.plugin.settings.worldFolder)
           .onChange(async (value) => {
             this.plugin.settings.worldFolder = normalizeFolder(value ?? "");
@@ -101,10 +101,10 @@ export class HexmakerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Hex notes folder")
-      .setDesc("Vault-relative path where hex notes (x_y.md) are stored.")
+      .setDesc("Vault-relative path where hex notes (X_y.md) are stored.")
       .addText((text) =>
         text
-          .setPlaceholder("world/hexes")
+          .setPlaceholder("World/hexes")
           .setValue(this.plugin.settings.hexFolder)
           .onChange(async (value) => {
             this.plugin.settings.hexFolder = normalizeFolder(value ?? "");
@@ -115,11 +115,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Towns folder")
       .setDesc(
-        "Vault-relative folder to populate the Towns dropdown in the hex editor. Files starting with _ are excluded.",
+        "Vault-relative folder to populate the towns dropdown in the hex editor. Files starting with _ are excluded.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/towns")
+          .setPlaceholder("World/towns")
           .setValue(this.plugin.settings.townsFolder)
           .onChange(async (value) => {
             this.plugin.settings.townsFolder = normalizeFolder(value ?? "");
@@ -130,11 +130,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Dungeons folder")
       .setDesc(
-        "Vault-relative folder to populate the Dungeons dropdown in the hex editor. Files starting with _ are excluded.",
+        "Vault-relative folder to populate the dungeons dropdown in the hex editor. Files starting with _ are excluded.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/dungeons")
+          .setPlaceholder("World/dungeons")
           .setValue(this.plugin.settings.dungeonsFolder)
           .onChange(async (value) => {
             this.plugin.settings.dungeonsFolder = normalizeFolder(value ?? "");
@@ -145,11 +145,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Quests folder")
       .setDesc(
-        "Vault-relative folder to populate the Quests dropdown in the hex editor. Files starting with _ are excluded.",
+        "Vault-relative folder to populate the quests dropdown in the hex editor. Files starting with _ are excluded.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/quests")
+          .setPlaceholder("World/quests")
           .setValue(this.plugin.settings.questsFolder)
           .onChange(async (value) => {
             this.plugin.settings.questsFolder = normalizeFolder(value ?? "");
@@ -160,11 +160,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Features folder")
       .setDesc(
-        "Vault-relative folder to populate the Features dropdown in the hex editor. Files starting with _ are excluded.",
+        "Vault-relative folder to populate the features dropdown in the hex editor. Files starting with _ are excluded.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/features")
+          .setPlaceholder("World/features")
           .setValue(this.plugin.settings.featuresFolder)
           .onChange(async (value) => {
             this.plugin.settings.featuresFolder = normalizeFolder(value ?? "");
@@ -175,11 +175,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Factions folder")
       .setDesc(
-        "Vault-relative folder to populate the Factions dropdown in the hex editor. Files starting with _ are excluded.",
+        "Vault-relative folder to populate the factions dropdown in the hex editor. Files starting with _ are excluded.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/factions")
+          .setPlaceholder("World/factions")
           .setValue(this.plugin.settings.factionsFolder)
           .onChange(async (value) => {
             this.plugin.settings.factionsFolder = normalizeFolder(value ?? "");
@@ -190,11 +190,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Tables folder")
       .setDesc(
-        "Vault-relative folder for random table notes. Used by the Encounters Table section and the Random Tables view.",
+        "Vault-relative folder for random table notes. Used by the encounters table section and the random tables view.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/tables")
+          .setPlaceholder("World/tables")
           .setValue(this.plugin.settings.tablesFolder)
           .onChange(async (value) => {
             this.plugin.settings.tablesFolder = normalizeFolder(value ?? "");
@@ -205,11 +205,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Workflows folder")
       .setDesc(
-        "Vault-relative folder for workflow notes. Browsable from the Random Tables view via the Workflows tab.",
+        "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.",
       )
       .addText((text) =>
         text
-          .setPlaceholder("world/workflows")
+          .setPlaceholder("World/workflows")
           .setValue(this.plugin.settings.workflowsFolder)
           .onChange(async (value) => {
             this.plugin.settings.workflowsFolder = normalizeFolder(value ?? "");
@@ -224,16 +224,16 @@ export class HexmakerSettingTab extends PluginSettingTab {
       )
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("4", "d4")
-          .addOption("6", "d6")
-          .addOption("8", "d8")
-          .addOption("10", "d10")
-          .addOption("12", "d12")
-          .addOption("20", "d20")
-          .addOption("100", "d100")
-          .addOption("200", "d200")
-          .addOption("500", "d500")
-          .addOption("1000", "d1000")
+          .addOption("4", "D4")
+          .addOption("6", "D6")
+          .addOption("8", "D8")
+          .addOption("10", "D10")
+          .addOption("12", "D12")
+          .addOption("20", "D20")
+          .addOption("100", "D100")
+          .addOption("200", "D200")
+          .addOption("500", "D500")
+          .addOption("1000", "D1000")
           .setValue(String(this.plugin.settings.defaultTableDice ?? 100))
           .onChange(async (value) => {
             this.plugin.settings.defaultTableDice = parseInt(value, 10);
@@ -358,7 +358,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       )
       .addText((text) =>
         text
-          .setPlaceholder("icons")
+          .setPlaceholder("Icons")
           .setValue(this.plugin.settings.iconsFolder ?? "")
           .onChange(async (value) => {
             this.plugin.settings.iconsFolder = normalizeFolder(value ?? "");
@@ -370,12 +370,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Generate world data").setHeading();
     containerEl.createEl("p", {
       cls: "setting-item-description duckmage-generate-warning",
-      text: "⚠️ Configure all folder settings above before selecting Generate. This will create terrain table notes, add roller links to all table notes, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing notes and links are not overwritten.",
+      text: "⚠️ configure all folder settings above before selecting generate. This will create terrain table notes, add roller links to all table notes, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing notes and links are not overwritten.",
     });
     new Setting(containerEl)
       .setName("Generate terrain tables & hex links")
       .setDesc(
-        "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the Hexmaker Roller from within Obsidian), and links each hex note's terrain encounters table into its Encounters Table section.",
+        "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the hexmaker roller from within Obsidian), and links each hex note's terrain encounters table into its encounters table section.",
       )
       .addButton((btn) =>
         btn
@@ -397,7 +397,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Path types").setHeading();
     containerEl.createEl("p", {
-      text: "Path types define the available drawing tools (roads, rivers, etc.). Edit them from the Path tool on the hex map.",
+      text: "Path types define the available drawing tools (roads, rivers, etc.). Edit them from the path tool on the hex map.",
       cls: "setting-item-description",
     });
     const pathList = containerEl.createDiv({ cls: "duckmage-path-type-list" });

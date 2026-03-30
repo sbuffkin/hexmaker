@@ -146,7 +146,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 
 		const rfInput = rfRow.createEl("input", { type: "text", cls: "duckmage-table-editor-name-input" });
 		rfInput.setAttribute("list", datalistId);
-		rfInput.placeholder = "world/results";
+		rfInput.placeholder = "World/results";
 		rfInput.value = resultsFolder;
 		rfInput.addEventListener("input", () => { resultsFolder = normalizeFolder(rfInput.value.trim()); });
 
@@ -276,7 +276,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 				if (step.kind === "dice") {
 					// Dice formula input
 					const formulaInput = row.createEl("input", { type: "text", cls: "duckmage-wf-formula-input" });
-					formulaInput.placeholder = "e.g. 2d6+6";
+					formulaInput.placeholder = "E.g. 2d6+6";
 					formulaInput.value = step.diceFormula ?? "";
 					formulaInput.addEventListener("input", () => {
 						const newFormula = formulaInput.value.trim();
@@ -410,7 +410,7 @@ export class WorkflowEditorModal extends HexmakerModal {
 			addFormulaInput = null;
 			if (addTypeSelect.value === "dice") {
 				addFormulaInput = addSpecificWrap.createEl("input", { type: "text" });
-				addFormulaInput.placeholder = "e.g. 2d6+6";
+				addFormulaInput.placeholder = "E.g. 2d6+6";
 				addFormulaInput.addEventListener("input", () => {
 					const formula = addFormulaInput!.value.trim();
 					const cur = addLabelInput.value.trim();

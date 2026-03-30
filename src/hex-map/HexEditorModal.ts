@@ -725,7 +725,7 @@ export class HexEditorModal extends HexmakerModal {
     const header = sectionEl.createDiv({ cls: "duckmage-link-section-header" });
     header.createEl("h4", { text: section });
     const addBtn = header.createEl("button", {
-      text: "+ Add",
+      text: "+ add",
       cls: "duckmage-add-btn",
     });
     const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });

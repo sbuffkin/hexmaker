@@ -110,7 +110,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 			.addText(text => {
 				text
 					.setValue(this.pendingCategory ?? "")
-					.setPlaceholder("e.g. sea, forest, mountain…")
+					.setPlaceholder("E.g. Sea, forest, mountain…")
 					.onChange(value => { this.pendingCategory = value.trim() || undefined; });
 				categoryInputEl = text.inputEl;
 			});

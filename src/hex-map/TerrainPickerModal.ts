@@ -266,7 +266,7 @@ export class TerrainPickerModal extends HexmakerModal {
       cls: "duckmage-tpe-refresh-btn",
       text: "Refresh all encounter table links",
       title:
-        "Re-links every hex's Encounters Table section to match its current terrain",
+        "Re-links every hex's encounters table section to match its current terrain",
     });
     refreshBtn.addEventListener("click", async () => {
       refreshBtn.disabled = true;

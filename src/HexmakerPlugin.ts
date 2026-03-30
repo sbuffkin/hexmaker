@@ -153,7 +153,7 @@ export default class HexmakerPlugin extends Plugin {
 		this.settings.regions = (Array.isArray(this.settings.regions) ? this.settings.regions : []).map(r => {
 			const raw = r as unknown as Record<string, unknown>;
 			// Migrate roadChains/riverChains → pathChains
-			let pathChains = Array.isArray(r.pathChains) ? r.pathChains.map((c: { typeName: string; hexes: string[] }) => ({ typeName: c.typeName, hexes: [...c.hexes] })) : [];
+			const pathChains = Array.isArray(r.pathChains) ? r.pathChains.map((c: { typeName: string; hexes: string[] }) => ({ typeName: c.typeName, hexes: [...c.hexes] })) : [];
 			if (pathChains.length === 0) {
 				for (const c of Array.isArray(raw.roadChains)  ? raw.roadChains  as string[][] : [])
 					pathChains.push({ typeName: "Road",  hexes: [...c] });

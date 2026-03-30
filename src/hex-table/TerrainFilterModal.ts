@@ -20,7 +20,7 @@ export class TerrainFilterModal extends HexmakerModal {
     contentEl.addClass("duckmage-terrain-filter-modal");
 
     contentEl.createEl("p", {
-      text: "Left-click to include  ·  Right-click to exclude  ·  Click a category heading to toggle all",
+      text: "Left-click to include  ·  right-click to exclude  ·  click a category heading to toggle all",
       cls: "duckmage-terrain-filter-hint",
     });
 

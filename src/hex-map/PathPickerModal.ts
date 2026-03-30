@@ -144,7 +144,7 @@ export class PathPickerModal extends HexmakerModal {
     }
 
     if (pathTypes.length === 0) {
-      grid.createEl("p", { text: "No path types defined. Switch to Edit mode to add one.", cls: "duckmage-tpe-empty" });
+      grid.createEl("p", { text: "No path types defined. Switch to edit mode to add one.", cls: "duckmage-tpe-empty" });
     }
   }
 

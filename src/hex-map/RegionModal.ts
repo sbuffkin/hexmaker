@@ -42,7 +42,7 @@ export class RegionModal extends HexmakerModal {
 		// Rename current region
 		contentEl.createEl("h4", { text: "Rename current region" });
 		const renameRow = contentEl.createDiv({ cls: "duckmage-region-row" });
-		const renameInput = renameRow.createEl("input", { type: "text", value: this.view.activeRegionName }) as HTMLInputElement;
+		const renameInput = renameRow.createEl("input", { type: "text", value: this.view.activeRegionName });
 		const renameBtn = renameRow.createEl("button", { text: "Rename", cls: "mod-cta" });
 		renameBtn.addEventListener("click", () => void this.renameRegion(renameInput.value.trim(), renameBtn, renameInput));
 		renameInput.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -52,13 +52,13 @@ export class RegionModal extends HexmakerModal {
 		// Create new region
 		contentEl.createEl("h4", { text: "New region" });
 		const createRow = contentEl.createDiv({ cls: "duckmage-region-row" });
-		const nameInput = createRow.createEl("input", { type: "text", placeholder: "region-name" }) as HTMLInputElement;
-		const colsInput = createRow.createEl("input", { type: "number", value: "20" }) as HTMLInputElement;
+		const nameInput = createRow.createEl("input", { type: "text", placeholder: "region-name" });
+		const colsInput = createRow.createEl("input", { type: "number", value: "20" });
 		colsInput.setCssProps({ width: "55px" });
-		const rowsInput = createRow.createEl("input", { type: "number", value: "16" }) as HTMLInputElement;
+		const rowsInput = createRow.createEl("input", { type: "number", value: "16" });
 		rowsInput.setCssProps({ width: "55px" });
 
-		const paletteSelect = createRow.createEl("select") as HTMLSelectElement;
+		const paletteSelect = createRow.createEl("select");
 		for (const pal of this.plugin.settings.terrainPalettes) {
 			paletteSelect.createEl("option", { value: pal.name, text: pal.name });
 		}

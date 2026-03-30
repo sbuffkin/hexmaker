@@ -110,7 +110,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-range-input",
     });
     this.filterXMinInput.type = "number";
-    this.filterXMinInput.placeholder = "min";
+    this.filterXMinInput.placeholder = "Min";
     this.filterXMinInput.addEventListener("input", () => {
       const v = this.filterXMinInput!.value;
       this.filterXMin = v !== "" ? Number(v) : null;
@@ -121,7 +121,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-range-input",
     });
     this.filterXMaxInput.type = "number";
-    this.filterXMaxInput.placeholder = "max";
+    this.filterXMaxInput.placeholder = "Max";
     this.filterXMaxInput.addEventListener("input", () => {
       const v = this.filterXMaxInput!.value;
       this.filterXMax = v !== "" ? Number(v) : null;
@@ -136,7 +136,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-range-input",
     });
     this.filterYMinInput.type = "number";
-    this.filterYMinInput.placeholder = "min";
+    this.filterYMinInput.placeholder = "Min";
     this.filterYMinInput.addEventListener("input", () => {
       const v = this.filterYMinInput!.value;
       this.filterYMin = v !== "" ? Number(v) : null;
@@ -147,7 +147,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-range-input",
     });
     this.filterYMaxInput.type = "number";
-    this.filterYMaxInput.placeholder = "max";
+    this.filterYMaxInput.placeholder = "Max";
     this.filterYMaxInput.addEventListener("input", () => {
       const v = this.filterYMaxInput!.value;
       this.filterYMax = v !== "" ? Number(v) : null;
@@ -158,7 +158,7 @@ export class HexTableView extends ItemView {
 
     // Terrain multi-select filter
     this.terrainFilterBtn = toolbar.createEl("button", {
-      text: "Terrain: All",
+      text: "Terrain: all",
       cls: "duckmage-filter-btn",
     });
     this.terrainFilterBtn.addEventListener("click", () => {
@@ -272,11 +272,11 @@ export class HexTableView extends ItemView {
 
     // Sort controls
     this.sortPrimaryBtn = toolbar.createEl("button", {
-      text: "Sort: X→Y",
+      text: "Sort: X→y",
       cls: "duckmage-filter-btn",
     });
     this.sortPrimaryBtn.title =
-      "Toggle sort priority between X-first and Y-first";
+      "Toggle sort priority between X-first and y-first";
     this.sortPrimaryBtn.addEventListener("click", () => {
       this.sortPrimary = this.sortPrimary === "x" ? "y" : "x";
       this.sortPrimaryBtn!.setText(
@@ -286,7 +286,7 @@ export class HexTableView extends ItemView {
     });
 
     this.sortDirBtn = toolbar.createEl("button", {
-      text: "↑ Asc",
+      text: "↑ asc",
       cls: "duckmage-filter-btn",
     });
     this.sortDirBtn.title = "Toggle sort direction";

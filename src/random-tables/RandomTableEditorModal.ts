@@ -327,7 +327,7 @@ export class RandomTableEditorModal extends HexmakerModal {
     });
     folderInput.setAttribute("list", folderDatalistId);
     folderInput.value = table.linkedFolder ?? "";
-    folderInput.placeholder = "world/towns (leave blank for none)";
+    folderInput.placeholder = "World/towns (leave blank for none)";
 
     // ── Filter settings ───────────────────────────────────────────────
     const filterSection = contentEl.createDiv({

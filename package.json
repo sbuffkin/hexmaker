@@ -1,6 +1,6 @@
 {
   "name": "hexmaker-plugin",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "A plugin to power hex crawl worldbuilding and running.",
   "main": "main.js",
   "scripts": {
@@ -8,7 +8,8 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "version": "node version-bump.mjs && git add manifest.json versions.json",
     "test": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test tests/frontmatter.test.ts tests/hexEditorModal.test.ts tests/randomTable.test.ts tests/sections.test.ts tests/utils.test.ts tests/workflow.test.ts",
-    "test:watch": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test --watch tests/frontmatter.test.ts tests/hexEditorModal.test.ts tests/randomTable.test.ts tests/sections.test.ts tests/utils.test.ts tests/workflow.test.ts"
+    "test:watch": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test --watch tests/frontmatter.test.ts tests/hexEditorModal.test.ts tests/randomTable.test.ts tests/sections.test.ts tests/utils.test.ts tests/workflow.test.ts",
+    "lint": "eslint . --ext .js,.ts"
   },
   "keywords": [
     "obsidian",
@@ -21,14 +22,20 @@
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/state": "6.5.0",
     "@codemirror/view": "6.38.6",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^25.5.0",
     "builtin-modules": "^5.0.0",
     "esbuild": "0.27.4",
+    "eslint": "^10.1.0",
+    "eslint-plugin-obsidianmd": "^0.1.9",
     "expect": "^30.3.0",
+    "globals": "^17.4.0",
+    "jiti": "^2.6.1",
     "obsidian": "latest",
     "tslib": "2.8.1",
     "tsx": "^4.21.0",
-    "typescript": "6.0.2"
+    "typescript": "6.0.2",
+    "typescript-eslint": "^8.58.0"
   },
   "dependencies": {
     "minisearch": "^7.2.0"

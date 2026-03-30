@@ -44,7 +44,7 @@ export class HexCellModal extends HexmakerModal {
       if (rollTableFile) {
         const btnRow = contentEl.createDiv({ cls: "duckmage-cell-modal-btn-row" });
         const rollBtn = btnRow.createEl("button", {
-          text: "🎲 Roll on table",
+          text: "🎲 roll on table",
           cls: "duckmage-cell-modal-roll-btn",
         });
         rollBtn.addEventListener("click", () => {
