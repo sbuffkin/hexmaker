@@ -1,15 +1,10 @@
 import {
-  App,
-  Component,
   ItemView,
-  MarkdownRenderer,
   Menu,
-  Modal,
   Notice,
   TFile,
   WorkspaceLeaf,
 } from "obsidian";
-import HELP_CONTENT from "./help.md";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
@@ -31,6 +26,10 @@ import {
 import { RegionModal } from "./RegionModal";
 import { PathPickerModal } from "./PathPickerModal";
 import type { RegionData, PathChain } from "../types";
+import { hexNeighbors, smoothPath, sharpPath, buildMeanderPts, buildEdgePts } from "./hexGeometry";
+import { GotoHexModal } from "./GotoHexModal";
+import { HexHelpModal } from "./HexHelpModal";
+import { FolderTreePickerModal } from "./FolderTreePickerModal";
 
 type TerrainUndoEntry = {
   x: number;
@@ -683,11 +682,24 @@ export class HexMapView extends ItemView {
   }
 
   private handleTableLinkButton(): void {
-    new TablePickerModal(this.app, this.plugin, (file) => {
-      this.drawingMode = "tableLink";
-      this.paintTablePath = file.path;
-      this.updateToolbarButtonStates();
-    }).open();
+    new FolderTreePickerModal(
+      this.app,
+      this.plugin,
+      this.plugin.settings.tablesFolder,
+      "Select table",
+      "Filter tables…",
+      "No tables found.",
+      (file) => {
+        this.drawingMode = "tableLink";
+        this.paintTablePath = file.path;
+        this.updateToolbarButtonStates();
+      },
+      () => {
+        void this.app.workspace
+          .getLeaf("tab")
+          .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+      },
+    ).open();
   }
 
   private exitTableLinkMode(): void {
@@ -698,11 +710,19 @@ export class HexMapView extends ItemView {
   }
 
   private handleFactionLinkButton(): void {
-    new FactionPickerModal(this.app, this.plugin, (file) => {
-      this.drawingMode = "factionLink";
-      this.paintFactionPath = file.path;
-      this.updateToolbarButtonStates();
-    }).open();
+    new FolderTreePickerModal(
+      this.app,
+      this.plugin,
+      this.plugin.settings.factionsFolder,
+      "Select faction",
+      "Filter factions…",
+      "No factions found.",
+      (file) => {
+        this.drawingMode = "factionLink";
+        this.paintFactionPath = file.path;
+        this.updateToolbarButtonStates();
+      },
+    ).open();
   }
 
   private exitFactionLinkMode(): void {
@@ -1206,7 +1226,7 @@ export class HexMapView extends ItemView {
         }
       },
     );
-    void modal.loadData().then(() => modal.open());
+    modal.open();
   }
 
   private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
@@ -1291,7 +1311,7 @@ export class HexMapView extends ItemView {
   private getBrushHexes(x: number, y: number): [number, number][] {
     const center: [number, number] = [x, y];
     if (this.paintBrushSize === 1) return [center];
-    const nb = this.hexNeighbors(x, y);
+    const nb = hexNeighbors(x, y, this.plugin.settings.hexOrientation);
     // nb[2] and nb[3] are always adjacent to each other AND to center in both
     // orientations (verified from offset tables), forming a compact triangle.
     if (this.paintBrushSize === 3) return [center, nb[2], nb[3]];
@@ -1806,7 +1826,7 @@ export class HexMapView extends ItemView {
     // ── If adjacent to active end, extend that chain ─────────────────────
     if (this.activePathEnd !== null) {
       const [ax, ay] = this.activePathEnd.split("_").map(Number);
-      const isAdjacent = this.hexNeighbors(ax, ay).some(
+      const isAdjacent = hexNeighbors(ax, ay, this.plugin.settings.hexOrientation).some(
         ([nx, ny]) => nx === x && ny === y,
       );
       if (isAdjacent) {
@@ -1906,47 +1926,6 @@ export class HexMapView extends ItemView {
     }
   }
 
-  private hexNeighbors(x: number, y: number): [number, number][] {
-    if (this.plugin.settings.hexOrientation === "flat") {
-      // Flat-top, odd-q offset (odd columns shifted down)
-      return x % 2 === 0
-        ? [
-            [x, y - 1],
-            [x, y + 1],
-            [x + 1, y - 1],
-            [x + 1, y],
-            [x - 1, y - 1],
-            [x - 1, y],
-          ]
-        : [
-            [x, y - 1],
-            [x, y + 1],
-            [x + 1, y],
-            [x + 1, y + 1],
-            [x - 1, y],
-            [x - 1, y + 1],
-          ];
-    }
-    // Pointy-top, odd-r offset (odd rows shifted right)
-    return y % 2 === 0
-      ? [
-          [x + 1, y],
-          [x - 1, y],
-          [x - 1, y - 1],
-          [x, y - 1],
-          [x - 1, y + 1],
-          [x, y + 1],
-        ]
-      : [
-          [x + 1, y],
-          [x - 1, y],
-          [x, y - 1],
-          [x + 1, y - 1],
-          [x, y + 1],
-          [x + 1, y + 1],
-        ];
-  }
-
   private renderPathOverlay(gridContainer: HTMLElement): void {
     this.viewportEl?.querySelector("svg.duckmage-path-svg")?.remove();
     this.viewportEl?.removeClass("duckmage-svg-labels-active");
@@ -1996,34 +1975,10 @@ export class HexMapView extends ItemView {
     svg.setAttribute("width", String(w));
     svg.setAttribute("height", String(h));
 
-    // Build a smooth path through an ordered list of points using quadratic
-    // bezier curves — corners are rounded by curving through midpoints.
-    const smoothPath = (pts: { cx: number; cy: number }[]): string => {
-      if (pts.length < 2) return "";
-      if (pts.length === 2) {
-        return `M ${pts[0].cx} ${pts[0].cy} L ${pts[1].cx} ${pts[1].cy}`;
-      }
-      const mx = (a: { cx: number }, b: { cx: number }) => (a.cx + b.cx) / 2;
-      const my = (a: { cy: number }, b: { cy: number }) => (a.cy + b.cy) / 2;
-      let d = `M ${pts[0].cx} ${pts[0].cy}`;
-      d += ` L ${mx(pts[0], pts[1])} ${my(pts[0], pts[1])}`;
-      for (let i = 1; i < pts.length - 1; i++) {
-        d += ` Q ${pts[i].cx} ${pts[i].cy} ${mx(pts[i], pts[i + 1])} ${my(pts[i], pts[i + 1])}`;
-      }
-      d += ` L ${pts[pts.length - 1].cx} ${pts[pts.length - 1].cy}`;
-      return d;
-    };
-
     const DASH_ARRAYS: Record<string, string> = {
       solid: "",
       dashed: "8 4",
       dotted: "2 4",
-    };
-
-    // Sharp polyline path (straight segments between each point — used for "edge" routing)
-    const sharpPath = (pts: { cx: number; cy: number }[]): string => {
-      if (pts.length < 2) return "";
-      return "M " + pts.map((p) => `${p.cx} ${p.cy}`).join(" L ");
     };
 
     const appendPath = (
@@ -2044,172 +1999,8 @@ export class HexMapView extends ItemView {
       svg.appendChild(path);
     };
 
-    // "meander" routing: smooth bezier curves through edge midpoints between hex centers
-    const buildMeanderPts = (hexes: string[]): { cx: number; cy: number }[] => {
-      const centers = hexes
-        .map((k) => centerMap.get(k))
-        .filter((p): p is { cx: number; cy: number } => !!p);
-      if (centers.length < 3) return centers;
-      const pts: { cx: number; cy: number }[] = [];
-      for (let i = 0; i < centers.length - 1; i++)
-        pts.push({
-          cx: (centers[i].cx + centers[i + 1].cx) / 2,
-          cy: (centers[i].cy + centers[i + 1].cy) / 2,
-        });
-      return pts;
-    };
-
-    // "edge" routing: traces strictly along hex polygon boundary lines.
-    //
-    // Approach:
-    //  1. For each hex in the chain, the 6 vertices are computed from that hex's own centre
-    //     (not from the midpoint between two centres), so the path always lands on the actual
-    //     hex outline regardless of the CSS gap between hexes.
-    //  2. For each consecutive pair (Hi, Hi+1) the "edge index" on Hi's side is snapped from
-    //     the pixel direction angle to the nearest of the 6 edge midpoint angles.
-    //  3. A greedy look-ahead picks which of the two shared-edge vertices to use on each edge,
-    //     minimising the cross-product (turn cost) — this keeps collinear chains on one side.
-    //  4. For every internal hex the path traverses the *shorter arc* of that hex's boundary
-    //     between the entry vertex (from the previous edge) and the exit vertex (for the next
-    //     edge), including any intermediate polygon corner vertices.  This is the critical step
-    //     that makes the path hug the actual hex edge lines rather than cutting diagonally.
     const isFlat = this.plugin.settings.hexOrientation === "flat";
     const hexRadius = isFlat ? hexW / 2 : hexH / 2;
-
-    const buildEdgePts = (hexes: string[]): { cx: number; cy: number }[] => {
-      type V2 = { cx: number; cy: number };
-      const centers = hexes
-        .map((k) => centerMap.get(k))
-        .filter((p): p is V2 => !!p);
-      if (centers.length < 2) return centers;
-      const n = centers.length;
-      const TAU = 2 * Math.PI;
-
-      // Angle of vertex 0 for this orientation.
-      // Flat-top  → vertices at 0°, 60°, 120°, 180°, 240°, 300°  (right, lower-right, …)
-      // Pointy-top → vertices at 30°, 90°, 150°, 210°, 270°, 330° (upper-right, bottom, …)
-      const vStart = isFlat ? 0 : Math.PI / 6;
-
-      // The 6 vertices of a hex centred at C, clockwise from vStart.
-      const hexVerts = (C: V2): V2[] =>
-        Array.from({ length: 6 }, (_, i) => ({
-          cx: C.cx + hexRadius * Math.cos(vStart + (i * Math.PI) / 3),
-          cy: C.cy + hexRadius * Math.sin(vStart + (i * Math.PI) / 3),
-        }));
-
-      // Snap a direction angle θ to the nearest edge index (0–5).
-      // Edge i spans vertex i → vertex (i+1)%6; its midpoint is at vStart + (i+0.5)×60°.
-      const snapEdge = (theta: number): number => {
-        let best = 0,
-          bestD = Infinity;
-        for (let i = 0; i < 6; i++) {
-          const mid = vStart + (i + 0.5) * (Math.PI / 3);
-          let d = (((theta - mid) % TAU) + TAU) % TAU;
-          if (d > Math.PI) d = TAU - d;
-          if (d < bestD) {
-            bestD = d;
-            best = i;
-          }
-        }
-        return best;
-      };
-
-      // Shorter arc from vertex index `from` to `to` on the 6-cycle, inclusive.
-      const shortArc = (from: number, to: number): number[] => {
-        if (from === to) return [from];
-        const cw = (to - from + 6) % 6;
-        const ccw = (from - to + 6) % 6;
-        const out: number[] = [];
-        if (cw <= ccw) {
-          for (let k = 0; k <= cw; k++) out.push((from + k) % 6);
-        } else {
-          for (let k = 0; k <= ccw; k++) out.push((from - k + 6) % 6);
-        }
-        return out;
-      };
-
-      // For each edge i (between centers[i] and centers[i+1]):
-      // edgeIdx[i] = which edge of centers[i]'s hex faces centers[i+1].
-      const edgeIdx = centers.slice(0, -1).map((A, i) => {
-        const B = centers[i + 1];
-        return snapEdge(Math.atan2(B.cy - A.cy, B.cx - A.cx));
-      });
-
-      // choice[i] ∈ {0,1}: which of the two edge-i vertices to use on centers[i]'s side.
-      //   0 → verts[edgeIdx[i]]         1 → verts[(edgeIdx[i]+1)%6]
-      const choice: number[] = Array.from({ length: n - 1 }, () => 0);
-      let prev: V2 = centers[0];
-      for (let i = 0; i < n - 1; i++) {
-        const vA = hexVerts(centers[i]);
-        const Va = vA[edgeIdx[i]],
-          Vb = vA[(edgeIdx[i] + 1) % 6];
-        if (i < n - 2) {
-          // Look-ahead: pick the vertex pair (this edge + next edge) with the lowest turn cost.
-          const vB = hexVerts(centers[i + 1]);
-          const VaN = vB[edgeIdx[i + 1]],
-            VbN = vB[(edgeIdx[i + 1] + 1) % 6];
-          const cost = (v: V2, vn: V2) =>
-            Math.abs(
-              (v.cx - prev.cx) * (vn.cy - v.cy) -
-                (v.cy - prev.cy) * (vn.cx - v.cx),
-            );
-          let bestCost = Infinity,
-            bestC = 0;
-          for (const [v, ci] of [
-            [Va, 0],
-            [Vb, 1],
-          ] as [V2, number][]) {
-            for (const vn of [VaN, VbN]) {
-              const co = cost(v, vn);
-              if (co < bestCost) {
-                bestCost = co;
-                bestC = ci;
-              }
-            }
-          }
-          choice[i] = bestC;
-          prev = vA[(edgeIdx[i] + bestC) % 6];
-        } else {
-          // Last edge: pick the vertex closest to the previously chosen point.
-          const dA = (Va.cx - prev.cx) ** 2 + (Va.cy - prev.cy) ** 2;
-          const dB = (Vb.cx - prev.cx) ** 2 + (Vb.cy - prev.cy) ** 2;
-          choice[i] = dA <= dB ? 0 : 1;
-        }
-      }
-
-      // Build the result path.
-      // For internal hex k the path traverses the shorter boundary arc from the "entry vertex"
-      // (the vertex on hex k that matches the exit vertex chosen for edge k-1) to the "exit
-      // vertex" (the chosen vertex for edge k).
-      //
-      // Entry vertex on hex k from edge k-1:
-      //   If choice[k-1]=0, the vertex on centers[k-1] was edgeIdx[k-1].
-      //   The matching vertex on hex k's side is (edgeIdx[k-1] + 4 - choice[k-1]) % 6.
-      //   (The factor of 4 accounts for the ±30° / 180° flip between the two hex perspectives.)
-      const result: V2[] = [centers[0]];
-
-      for (let k = 0; k < n; k++) {
-        const verts = hexVerts(centers[k]);
-        if (k === 0) {
-          // First hex: just add the chosen exit vertex.
-          result.push(verts[(edgeIdx[0] + choice[0]) % 6]);
-        } else if (k === n - 1) {
-          // Last hex: add entry vertex then the hex centre.
-          const entryIdx = (edgeIdx[n - 2] + 4 - choice[n - 2]) % 6;
-          result.push(verts[entryIdx]);
-          result.push(centers[k]);
-        } else {
-          // Internal hex: traverse the shorter arc from entry to exit.
-          const entryIdx = (edgeIdx[k - 1] + 4 - choice[k - 1]) % 6;
-          const exitIdx = (edgeIdx[k] + choice[k]) % 6;
-          const arc = shortArc(entryIdx, exitIdx);
-          // arc[0] == entryIdx, which coincides (zero gap) with the last pushed point — skip it.
-          for (let j = 1; j < arc.length; j++) result.push(verts[arc[j]]);
-        }
-      }
-
-      return result;
-    };
 
     // Draw all path types in definition order
     for (const pt of this.plugin.settings.pathTypes) {
@@ -2221,10 +2012,10 @@ export class HexMapView extends ItemView {
         let pts: { cx: number; cy: number }[];
         let smooth: boolean;
         if (pt.routing === "meander") {
-          pts = buildMeanderPts(chain.hexes);
+          pts = buildMeanderPts(chain.hexes, centerMap);
           smooth = true;
         } else if (pt.routing === "edge") {
-          pts = buildEdgePts(chain.hexes);
+          pts = buildEdgePts(chain.hexes, centerMap, isFlat, hexRadius);
           smooth = false;
         } else {
           pts = chain.hexes
@@ -2331,411 +2122,3 @@ export class HexMapView extends ItemView {
   }
 }
 
-// ── Go-to-hex modal ──────────────────────────────────────────────────────────
-
-class GotoHexModal extends Modal {
-  private xInput: HTMLInputElement | null = null;
-  private yInput: HTMLInputElement | null = null;
-
-  constructor(
-    app: App,
-    private onConfirm: (x: number, y: number) => void,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    this.titleEl.setText("Go to hex");
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-goto-modal");
-
-    const row = contentEl.createDiv({ cls: "duckmage-goto-row" });
-    row.createSpan({ text: "X:" });
-    this.xInput = row.createEl("input", {
-      type: "number",
-      cls: "duckmage-goto-input",
-    });
-    row.createSpan({ text: "Y:" });
-    this.yInput = row.createEl("input", {
-      type: "number",
-      cls: "duckmage-goto-input",
-    });
-
-    const go = () => {
-      const x = parseInt(this.xInput?.value ?? "", 10);
-      const y = parseInt(this.yInput?.value ?? "", 10);
-      if (!isNaN(x) && !isNaN(y)) {
-        this.onConfirm(x, y);
-        this.close();
-      }
-    };
-
-    const goBtn = contentEl.createEl("button", {
-      text: "Go",
-      cls: "mod-cta duckmage-goto-btn-confirm",
-    });
-    goBtn.addEventListener("click", go);
-    [this.xInput, this.yInput].forEach((input) =>
-      input?.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (e.key === "Enter") go();
-      }),
-    );
-
-    this.xInput.focus();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}
-
-// ── Table picker modal ────────────────────────────────────────────────────────
-
-interface FileNode {
-  type: "file";
-  file: TFile;
-}
-interface FolderNode {
-  type: "folder";
-  name: string;
-  path: string;
-  children: TPickerNode[];
-}
-type TPickerNode = FileNode | FolderNode;
-
-class TablePickerModal extends Modal {
-  private filterQuery = "";
-  private collapsedFolders: Set<string> = new Set();
-  private listEl: HTMLElement | null = null;
-  private plugin: HexmakerPlugin;
-  private onChoose: (file: TFile) => void;
-
-  constructor(
-    app: App,
-    plugin: HexmakerPlugin,
-    onChoose: (file: TFile) => void,
-  ) {
-    super(app);
-    this.plugin = plugin;
-    this.onChoose = onChoose;
-  }
-
-  onOpen(): void {
-    this.titleEl.setCssProps({
-      display: "flex",
-      "align-items": "center",
-      "justify-content": "space-between",
-    });
-    this.titleEl.createSpan({ text: "Select table" });
-    const openViewBtn = this.titleEl.createEl("button", {
-      cls: "duckmage-rt-icon-btn",
-      text: "🎲",
-      title: "Open random tables view",
-    });
-    openViewBtn.addEventListener("click", () => {
-      void this.app.workspace
-        .getLeaf("tab")
-        .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-    });
-
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-table-picker-modal");
-
-    const search = contentEl.createEl("input", {
-      type: "text",
-      cls: "duckmage-rt-search",
-    });
-    search.placeholder = "Filter tables…";
-    search.addEventListener("input", () => {
-      this.filterQuery = search.value.toLowerCase().trim();
-      this.renderList();
-    });
-
-    this.listEl = contentEl.createDiv({
-      cls: "duckmage-table-picker-list duckmage-rt-list",
-    });
-    this.renderList();
-    search.focus();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private renderList(): void {
-    if (!this.listEl) return;
-    this.listEl.empty();
-
-    const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-    const prefix = folder ? folder + "/" : "";
-
-    let files = this.app.vault
-      .getMarkdownFiles()
-      .filter(
-        (f) =>
-          (!prefix || f.path.startsWith(prefix)) && !f.basename.startsWith("_"),
-      )
-      .sort((a, b) => a.path.localeCompare(b.path));
-
-    if (this.filterQuery) {
-      files = files.filter((f) => {
-        const rel = prefix ? f.path.slice(prefix.length) : f.path;
-        return rel.toLowerCase().includes(this.filterQuery);
-      });
-    }
-
-    if (files.length === 0) {
-      this.listEl.createSpan({
-        text: "No tables found.",
-        cls: "duckmage-rt-empty",
-      });
-      return;
-    }
-
-    const tree = this.buildTree(files, prefix);
-    this.renderNodes(this.listEl, tree, this.filterQuery !== "");
-  }
-
-  private buildTree(files: TFile[], prefix: string): TPickerNode[] {
-    const root: FolderNode = {
-      type: "folder",
-      name: "",
-      path: "",
-      children: [],
-    };
-    for (const file of files) {
-      const rel = prefix ? file.path.slice(prefix.length) : file.path;
-      const parts = rel.split("/");
-      let cur = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const name = parts[i];
-        const path = parts.slice(0, i + 1).join("/");
-        let child = cur.children.find(
-          (c): c is FolderNode => c.type === "folder" && c.name === name,
-        );
-        if (!child) {
-          child = { type: "folder", name, path, children: [] };
-          cur.children.push(child);
-        }
-        cur = child;
-      }
-      cur.children.push({ type: "file", file });
-    }
-    return root.children;
-  }
-
-  private renderNodes(
-    container: HTMLElement,
-    nodes: TPickerNode[],
-    forceExpanded: boolean,
-  ): void {
-    for (const node of nodes) {
-      if (node.type === "folder") {
-        const isCollapsed =
-          !forceExpanded && this.collapsedFolders.has(node.path);
-        const folderEl = container.createDiv({ cls: "duckmage-rt-folder" });
-        const header = folderEl.createDiv({ cls: "duckmage-rt-folder-header" });
-        const arrow = header.createSpan({
-          cls: "duckmage-rt-folder-arrow",
-          text: isCollapsed ? "▶" : "▼",
-        });
-        header.createSpan({ cls: "duckmage-rt-folder-name", text: node.name });
-        const childrenEl = folderEl.createDiv({
-          cls: "duckmage-rt-folder-children",
-        });
-        if (isCollapsed) childrenEl.hide();
-        this.renderNodes(childrenEl, node.children, forceExpanded);
-        header.addEventListener("click", () => {
-          const nowCollapsed = !this.collapsedFolders.has(node.path);
-          if (nowCollapsed) {
-            this.collapsedFolders.add(node.path);
-            childrenEl.hide();
-            arrow.textContent = "▶";
-          } else {
-            this.collapsedFolders.delete(node.path);
-            childrenEl.show();
-            arrow.textContent = "▼";
-          }
-        });
-      } else {
-        const row = container.createDiv({ cls: "duckmage-rt-list-item" });
-        row.setText(node.file.basename);
-        row.title = node.file.path;
-        row.addEventListener("click", () => {
-          this.onChoose(node.file);
-          this.close();
-        });
-      }
-    }
-  }
-}
-
-// ── Faction picker modal ──────────────────────────────────────────────────────
-
-class FactionPickerModal extends Modal {
-  private filterQuery = "";
-  private collapsedFolders: Set<string> = new Set();
-  private listEl: HTMLElement | null = null;
-  private plugin: HexmakerPlugin;
-  private onChoose: (file: TFile) => void;
-
-  constructor(
-    app: App,
-    plugin: HexmakerPlugin,
-    onChoose: (file: TFile) => void,
-  ) {
-    super(app);
-    this.plugin = plugin;
-    this.onChoose = onChoose;
-  }
-
-  onOpen(): void {
-    this.titleEl.setText("Select faction");
-    const { contentEl } = this;
-    contentEl.addClass("duckmage-table-picker-modal");
-
-    const search = contentEl.createEl("input", {
-      type: "text",
-      cls: "duckmage-rt-search",
-    });
-    search.placeholder = "Filter factions…";
-    search.addEventListener("input", () => {
-      this.filterQuery = search.value.toLowerCase().trim();
-      this.renderList();
-    });
-
-    this.listEl = contentEl.createDiv({
-      cls: "duckmage-table-picker-list duckmage-rt-list",
-    });
-    this.renderList();
-    search.focus();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
-
-  private renderList(): void {
-    if (!this.listEl) return;
-    this.listEl.empty();
-
-    const folder = normalizeFolder(this.plugin.settings.factionsFolder);
-    const prefix = folder ? folder + "/" : "";
-
-    let files = this.app.vault
-      .getMarkdownFiles()
-      .filter(
-        (f) =>
-          (!prefix || f.path.startsWith(prefix)) && !f.basename.startsWith("_"),
-      )
-      .sort((a, b) => a.path.localeCompare(b.path));
-
-    if (this.filterQuery) {
-      files = files.filter((f) => {
-        const rel = prefix ? f.path.slice(prefix.length) : f.path;
-        return rel.toLowerCase().includes(this.filterQuery);
-      });
-    }
-
-    if (files.length === 0) {
-      this.listEl.createSpan({
-        text: "No factions found.",
-        cls: "duckmage-rt-empty",
-      });
-      return;
-    }
-
-    const tree = this.buildTree(files, prefix);
-    this.renderNodes(this.listEl, tree, this.filterQuery !== "");
-  }
-
-  private buildTree(files: TFile[], prefix: string): TPickerNode[] {
-    const root: FolderNode = {
-      type: "folder",
-      name: "",
-      path: "",
-      children: [],
-    };
-    for (const file of files) {
-      const rel = prefix ? file.path.slice(prefix.length) : file.path;
-      const parts = rel.split("/");
-      let cur = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const name = parts[i];
-        const path = parts.slice(0, i + 1).join("/");
-        let child = cur.children.find(
-          (c): c is FolderNode => c.type === "folder" && c.name === name,
-        );
-        if (!child) {
-          child = { type: "folder", name, path, children: [] };
-          cur.children.push(child);
-        }
-        cur = child;
-      }
-      cur.children.push({ type: "file", file });
-    }
-    return root.children;
-  }
-
-  private renderNodes(
-    container: HTMLElement,
-    nodes: TPickerNode[],
-    forceExpanded: boolean,
-  ): void {
-    for (const node of nodes) {
-      if (node.type === "folder") {
-        const isCollapsed =
-          !forceExpanded && this.collapsedFolders.has(node.path);
-        const folderEl = container.createDiv({ cls: "duckmage-rt-folder" });
-        const header = folderEl.createDiv({ cls: "duckmage-rt-folder-header" });
-        const arrow = header.createSpan({
-          cls: "duckmage-rt-folder-arrow",
-          text: isCollapsed ? "▶" : "▼",
-        });
-        header.createSpan({ cls: "duckmage-rt-folder-name", text: node.name });
-        const childrenEl = folderEl.createDiv({
-          cls: "duckmage-rt-folder-children",
-        });
-        if (isCollapsed) childrenEl.hide();
-        this.renderNodes(childrenEl, node.children, forceExpanded);
-        header.addEventListener("click", () => {
-          const nowCollapsed = !this.collapsedFolders.has(node.path);
-          if (nowCollapsed) {
-            this.collapsedFolders.add(node.path);
-            childrenEl.hide();
-            arrow.textContent = "▶";
-          } else {
-            this.collapsedFolders.delete(node.path);
-            childrenEl.show();
-            arrow.textContent = "▼";
-          }
-        });
-      } else {
-        const row = container.createDiv({ cls: "duckmage-rt-list-item" });
-        row.setText(node.file.basename);
-        row.title = node.file.path;
-        row.addEventListener("click", () => {
-          this.onChoose(node.file);
-          this.close();
-        });
-      }
-    }
-  }
-}
-
-class HexHelpModal extends Modal {
-  onOpen(): void {
-    this.titleEl.setText("Hex map — controls & tools");
-    this.contentEl.addClass("duckmage-help-modal");
-    void MarkdownRenderer.render(
-      this.app,
-      HELP_CONTENT,
-      this.contentEl,
-      "",
-      this as unknown as Component,
-    );
-  }
-  onClose(): void {
-    this.contentEl.empty();
-  }
-}

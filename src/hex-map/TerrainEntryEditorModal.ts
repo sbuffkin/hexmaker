@@ -140,13 +140,15 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		});
 
 		const deleteBtn = btnRow.createEl("button", { cls: "duckmage-btn-danger", text: "Delete" });
-		deleteBtn.addEventListener("click", async () => {
-			this.savedOrDeleted = true;
-			const idx = this.palette.indexOf(this.entry);
-			if (idx >= 0) this.palette.splice(idx, 1);
-			await this.plugin.saveSettings();
-			this.onDelete();
-			this.close();
+		deleteBtn.addEventListener("click", () => {
+			void (async () => {
+				this.savedOrDeleted = true;
+				const idx = this.palette.indexOf(this.entry);
+				if (idx >= 0) this.palette.splice(idx, 1);
+				await this.plugin.saveSettings();
+				this.onDelete();
+				this.close();
+			})();
 		});
 
 		this.makeDraggable();

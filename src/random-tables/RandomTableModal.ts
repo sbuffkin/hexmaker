@@ -81,24 +81,26 @@ export class RandomTableModal extends HexmakerModal {
     });
     rollBtn.disabled = true;
 
-    select.addEventListener("change", async () => {
-      tableContainer.empty();
-      resultBox.el.hide();
-      rollBtn.disabled = true;
-      const path = select.value;
-      if (!path) {
-        openLink.hide();
-        return;
-      }
-      const file = this.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof TFile)) return;
+    select.addEventListener("change", () => {
+      void (async () => {
+        tableContainer.empty();
+        resultBox.el.hide();
+        rollBtn.disabled = true;
+        const path = select.value;
+        if (!path) {
+          openLink.hide();
+          return;
+        }
+        const file = this.app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) return;
 
-      openLink.show();
-      openLink.onclick = () => {
-        this.openInRoller(file.path);
-      };
+        openLink.show();
+        openLink.onclick = () => {
+          this.openInRoller(file.path);
+        };
 
-      await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+        await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+      })();
     });
 
     contentEl.appendChild(rollBtn);
@@ -126,21 +128,25 @@ export class RandomTableModal extends HexmakerModal {
       text: "Edit",
       cls: "duckmage-roll-modal-edit-link",
     });
-    editLink.addEventListener("click", async () => {
-      const content = await this.app.vault.read(file);
-      new RandomTableEditorModal(
-        this.app,
-        this.plugin,
-        file,
-        async () => {
-          // Reload the table in place after saving
-          tableContainer.empty();
-          resultBox.el.hide();
-          rollBtn.disabled = true;
-          await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
-        },
-        content,
-      ).open();
+    editLink.addEventListener("click", () => {
+      void (async () => {
+        const content = await this.app.vault.read(file);
+        new RandomTableEditorModal(
+          this.app,
+          this.plugin,
+          file,
+          () => {
+            void (async () => {
+              // Reload the table in place after saving
+              tableContainer.empty();
+              resultBox.el.hide();
+              rollBtn.disabled = true;
+              await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+            })();
+          },
+          content,
+        ).open();
+      })();
     });
     const openLink = headerRow.createEl("a", {
       text: "Open in roller view",
@@ -167,7 +173,7 @@ export class RandomTableModal extends HexmakerModal {
   private openInRoller(filePath: string): void {
     const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
     if (leaves.length > 0) {
-      this.app.workspace.revealLeaf(leaves[0]);
+      void this.app.workspace.revealLeaf(leaves[0]);
       (
         leaves[0].view as unknown as { openTable?: (path: string) => void }
       ).openTable?.(filePath);

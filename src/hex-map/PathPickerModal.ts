@@ -204,15 +204,14 @@ export class PathPickerModal extends HexmakerModal {
             .forEach((el) => el.classList.remove("duckmage-palette-drop-target"));
           tile.addClass("duckmage-palette-drop-target");
         });
-        tile.addEventListener("drop", async (e: DragEvent) => {
+        tile.addEventListener("drop", (e: DragEvent) => {
           e.preventDefault();
           if (dragSrcIndex === -1 || dragSrcIndex === i) return;
           const [moved] = pathTypes.splice(dragSrcIndex, 1);
           pathTypes.splice(i, 0, moved);
           dragSrcIndex = -1;
           this.editChanged = true;
-          await this.plugin.saveSettings();
-          renderTiles();
+          void this.plugin.saveSettings().then(() => renderTiles());
         });
       }
 
@@ -224,7 +223,8 @@ export class PathPickerModal extends HexmakerModal {
         .createDiv({ cls: "duckmage-terrain-preview duckmage-terrain-preview-add" })
         .setText("+");
       addTile.createSpan({ text: "Add", cls: "duckmage-terrain-option-name" });
-      addTile.addEventListener("click", async () => {
+      addTile.addEventListener("click", () => {
+        void (async () => {
         const newPt: PathType = { name: "New path", color: "#888888", width: 3, lineStyle: "solid", routing: "through" };
         pathTypes.push(newPt);
         this.editChanged = true;
@@ -237,6 +237,7 @@ export class PathPickerModal extends HexmakerModal {
           () => { this.editChanged = true; renderTiles(); },
           () => { this.editChanged = true; renderTiles(); },
         ).open();
+        })();
       });
     };
 

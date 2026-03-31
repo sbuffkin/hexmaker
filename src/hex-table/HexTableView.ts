@@ -631,20 +631,22 @@ export class HexTableView extends ItemView {
       }
     });
     jumpBtn.title = "Center map on this hex";
-    jumpBtn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      interface WithCenterOnHex { centerOnHex(x: number, y: number): void; }
-      const existingLeaves =
-        this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      if (existingLeaves.length > 0) {
-        void this.app.workspace.revealLeaf(existingLeaves[0]);
-        (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(x, y);
-      } else {
-        const leaf = this.app.workspace.getLeaf("tab");
-        await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
-        // Wait one frame for the view to render before centering
-        setTimeout(() => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y), 100);
-      }
+    jumpBtn.addEventListener("click", (e) => {
+      void (async () => {
+        e.stopPropagation();
+        interface WithCenterOnHex { centerOnHex(x: number, y: number): void; }
+        const existingLeaves =
+          this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
+        if (existingLeaves.length > 0) {
+          void this.app.workspace.revealLeaf(existingLeaves[0]);
+          (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(x, y);
+        } else {
+          const leaf = this.app.workspace.getLeaf("tab");
+          await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
+          // Wait one frame for the view to render before centering
+          setTimeout(() => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y), 100);
+        }
+      })();
     });
 
     // Terrain cell
@@ -707,19 +709,22 @@ export class HexTableView extends ItemView {
                 ? "Dungeons"
                 : "Encounters Table";
           td.addClass("duckmage-hex-table-cell-clickable");
-          td.addEventListener("auxclick", async (e: MouseEvent) => {
-            if (e.button !== 1) return;
-            if (col.key !== "encounters table" || linkList.length !== 1) return;
-            e.preventDefault();
-            const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
-            if (!(file instanceof TFile)) return;
-            interface WithOpenTable { openTable(path: string): Promise<void>; }
-            const leaf = this.app.workspace.getLeaf("tab");
-            await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
-            void this.app.workspace.revealLeaf(leaf);
-            await (leaf.view as unknown as WithOpenTable).openTable(file.path);
+          td.addEventListener("auxclick", (e: MouseEvent) => {
+            void (async () => {
+              if (e.button !== 1) return;
+              if (col.key !== "encounters table" || linkList.length !== 1) return;
+              e.preventDefault();
+              const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+              if (!(file instanceof TFile)) return;
+              interface WithOpenTable { openTable(path: string): Promise<void>; }
+              const leaf = this.app.workspace.getLeaf("tab");
+              await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
+              void this.app.workspace.revealLeaf(leaf);
+              await (leaf.view as unknown as WithOpenTable).openTable(file.path);
+            })();
           });
-          td.addEventListener("click", async () => {
+          td.addEventListener("click", () => {
+            void (async () => {
             if (linkList.length === 0) {
               new LinkPickerModal(
                 this.app,
@@ -763,6 +768,7 @@ export class HexTableView extends ItemView {
                 path,
               ).open();
             }
+            })();
           });
         } else if (linkList.length > 0) {
           td.addClass("duckmage-hex-table-cell-clickable");
@@ -861,7 +867,7 @@ export class HexTableView extends ItemView {
         const startX = e.clientX;
         const startW = parseInt(col.style.width, 10);
         const startTW = parseInt(table.style.width, 10);
-        document.body.style.cursor = "col-resize";
+        document.body.setCssProps({ cursor: "col-resize" });
 
         const onMove = (me: MouseEvent) => {
           const newW = Math.max(20, startW + me.clientX - startX);
@@ -869,7 +875,7 @@ export class HexTableView extends ItemView {
           table.style.width = `${startTW + (newW - startW)}px`;
         };
         const onUp = () => {
-          document.body.style.cursor = "";
+          document.body.setCssProps({ cursor: "" });
           document.removeEventListener("mousemove", onMove);
           document.removeEventListener("mouseup", onUp);
         };

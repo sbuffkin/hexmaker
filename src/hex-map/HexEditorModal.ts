@@ -894,6 +894,11 @@ export class HexEditorModal extends HexmakerModal {
             if (textarea.value && !textarea.value.endsWith("\n"))
               textarea.value += "\n";
             textarea.value += result;
+            void (async () => {
+              const file = await this.ensureHexNote();
+              if (!file) return;
+              await setSectionContent(this.app, path, section, textarea.value);
+            })();
             this.onChanged();
           },
           capturedPath,

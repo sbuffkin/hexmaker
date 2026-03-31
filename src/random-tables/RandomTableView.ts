@@ -2,7 +2,6 @@ import {
   ItemView,
   MarkdownRenderer,
   Menu,
-  Modal,
   Notice,
   TFile,
   ViewStateResult,
@@ -24,6 +23,8 @@ import {
 } from "./randomTable";
 import { parseWorkflow, generateDefaultTemplate } from "./workflow";
 import { Frontmatter } from "../frontmatter";
+import { buildTree, type TreeNode } from "./FolderTree";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 
 const DIE_OPTIONS = [
   { label: "— no die —", value: 0 },
@@ -38,18 +39,6 @@ const DIE_OPTIONS = [
   { label: "d500", value: 500 },
   { label: "d1000", value: 1000 },
 ];
-
-interface FileNode {
-  type: "file";
-  file: TFile;
-}
-interface FolderNode {
-  type: "folder";
-  name: string;
-  path: string;
-  children: TreeNode[];
-}
-type TreeNode = FileNode | FolderNode;
 
 export class RandomTableView extends ItemView {
   private listEl: HTMLElement | null = null;
@@ -159,7 +148,7 @@ export class RandomTableView extends ItemView {
         active: true,
         state: { viewMode: "tables" },
       });
-      this.app.workspace.revealLeaf(leaf);
+      void this.app.workspace.revealLeaf(leaf);
     });
     this.workflowsBtn.addEventListener("auxclick", (e: MouseEvent) => {
       if (e.button !== 1) return;
@@ -170,7 +159,7 @@ export class RandomTableView extends ItemView {
         active: true,
         state: { viewMode: "workflows" },
       });
-      this.app.workspace.revealLeaf(leaf);
+      void this.app.workspace.revealLeaf(leaf);
     });
 
     const searchInput = leftCol.createEl("input", {
@@ -202,12 +191,12 @@ export class RandomTableView extends ItemView {
       if (!e.dataTransfer?.types.includes("text/plain")) return;
       e.preventDefault();
     });
-    this.listEl.addEventListener("drop", async (e: DragEvent) => {
+    this.listEl.addEventListener("drop", (e: DragEvent) => {
       e.preventDefault();
       listDragCounter = 0;
       this.listEl!.removeClass("is-drag-over-root");
       const srcPath = e.dataTransfer?.getData("text/plain") ?? "";
-      await this.moveFileTo(
+      void this.moveFileTo(
         srcPath,
         normalizeFolder(this.plugin.settings.tablesFolder),
       );
@@ -542,56 +531,6 @@ export class RandomTableView extends ItemView {
     }, 300);
   }
 
-  // ── Tree building ─────────────────────────────────────────────────────────
-
-  private buildTree(files: TFile[], prefix: string): TreeNode[] {
-    const root: FolderNode = {
-      type: "folder",
-      name: "",
-      path: "",
-      children: [],
-    };
-
-    for (const file of files) {
-      const rel = prefix ? file.path.slice(prefix.length) : file.path;
-      const parts = rel.split("/");
-      let current = root;
-      for (let i = 0; i < parts.length - 1; i++) {
-        const folderName = parts[i];
-        const folderPath = parts.slice(0, i + 1).join("/");
-        let child = current.children.find(
-          (c): c is FolderNode => c.type === "folder" && c.name === folderName,
-        );
-        if (!child) {
-          child = {
-            type: "folder",
-            name: folderName,
-            path: folderPath,
-            children: [],
-          };
-          current.children.push(child);
-        }
-        current = child;
-      }
-      current.children.push({ type: "file", file });
-    }
-
-    const sortChildren = (nodes: TreeNode[]) => {
-      nodes.sort((a, b) => {
-        if (a.type !== b.type) return a.type === "folder" ? -1 : 1;
-        const aName = a.type === "folder" ? a.name : a.file.basename;
-        const bName = b.type === "folder" ? b.name : b.file.basename;
-        return aName.localeCompare(bName);
-      });
-      for (const node of nodes) {
-        if (node.type === "folder") sortChildren(node.children);
-      }
-    };
-    sortChildren(root.children);
-
-    return root.children;
-  }
-
   // ── List ─────────────────────────────────────────────────────────────────
 
   private async loadList(): Promise<void> {
@@ -643,7 +582,7 @@ export class RandomTableView extends ItemView {
       return;
     }
 
-    const tree = this.buildTree(files, prefix);
+    const tree = buildTree(files, prefix);
 
     // Collapse all folders on first load
     if (!this.treeInitialized) {
@@ -724,7 +663,7 @@ export class RandomTableView extends ItemView {
     }
 
     const prefix = wfFolder + "/";
-    const tree = this.buildTree(files, prefix);
+    const tree = buildTree(files, prefix);
     this.renderWorkflowTreeNodes(this.listEl, tree);
   }
 
@@ -782,7 +721,7 @@ export class RandomTableView extends ItemView {
             active: true,
             state: { filePath: node.file.path },
           });
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
           e.preventDefault();
@@ -797,7 +736,7 @@ export class RandomTableView extends ItemView {
                 active: true,
                 state: { filePath: node.file.path },
               });
-              this.app.workspace.revealLeaf(leaf);
+              void this.app.workspace.revealLeaf(leaf);
             });
           });
           menu.addSeparator();
@@ -897,27 +836,29 @@ export class RandomTableView extends ItemView {
       text: "Edit",
       cls: "duckmage-rt-edit-link",
     });
-    editLink.addEventListener("click", async () => {
-      const content = await this.app.vault.read(file);
-      const wf = parseWorkflow(content, file.basename);
-      let tmplContent = "";
-      if (wf.templateFile) {
-        const tmplFile = this.app.vault.getAbstractFileByPath(wf.templateFile);
-        if (tmplFile instanceof TFile) {
-          tmplContent = await this.app.vault.read(tmplFile);
+    editLink.addEventListener("click", () => {
+      void (async () => {
+        const content = await this.app.vault.read(file);
+        const wf = parseWorkflow(content, file.basename);
+        let tmplContent = "";
+        if (wf.templateFile) {
+          const tmplFile = this.app.vault.getAbstractFileByPath(wf.templateFile);
+          if (tmplFile instanceof TFile) {
+            tmplContent = await this.app.vault.read(tmplFile);
+          }
         }
-      }
-      if (!tmplContent) tmplContent = generateDefaultTemplate(wf.steps);
-      new WorkflowEditorModal(
-        this.app,
-        this.plugin,
-        file,
-        () => {
-          void this.loadList();
-          if (this.activeFile === file) void this.renderWorkflowDetail();
-        },
-        { content, templateContent: tmplContent },
-      ).open();
+        if (!tmplContent) tmplContent = generateDefaultTemplate(wf.steps);
+        new WorkflowEditorModal(
+          this.app,
+          this.plugin,
+          file,
+          () => {
+            void this.loadList();
+            if (this.activeFile === file) void this.renderWorkflowDetail();
+          },
+          { content, templateContent: tmplContent },
+        ).open();
+      })();
     });
 
     const runBtn = this.detailEl.createEl("button", {
@@ -985,7 +926,7 @@ export class RandomTableView extends ItemView {
             text: primaryName,
             cls: "duckmage-rt-entry-link",
           });
-          link.addEventListener("click", async () => {
+          link.addEventListener("click", () => {
             const tableFile =
               this.app.vault.getAbstractFileByPath(step.tablePath + ".md") ??
               this.app.metadataCache.getFirstLinkpathDest(
@@ -993,7 +934,7 @@ export class RandomTableView extends ItemView {
                 this.activeFile?.path ?? "",
               );
             if (tableFile instanceof TFile)
-              await this.openTable(tableFile.path);
+              void this.openTable(tableFile.path);
           });
         }
         if (step.label && step.label !== primaryName) {
@@ -1118,7 +1059,8 @@ export class RandomTableView extends ItemView {
           e.preventDefault();
           e.stopPropagation(); // don't let the root list show its highlight
         });
-        folderEl.addEventListener("drop", async (e: DragEvent) => {
+        folderEl.addEventListener("drop", (e: DragEvent) => {
+          void (async () => {
           e.preventDefault();
           e.stopPropagation();
           dragCounter = 0;
@@ -1129,6 +1071,7 @@ export class RandomTableView extends ItemView {
             ? `${tblFolder}/${node.path}`
             : node.path;
           await this.moveFileTo(srcPath, destFolder);
+          })();
         });
 
         folderHeader.addEventListener("contextmenu", (e: MouseEvent) => {
@@ -1163,7 +1106,7 @@ export class RandomTableView extends ItemView {
             active: true,
             state: { filePath: node.file.path },
           });
-          this.app.workspace.revealLeaf(leaf);
+          void this.app.workspace.revealLeaf(leaf);
         });
         row.addEventListener("contextmenu", (e: MouseEvent) => {
           e.preventDefault();
@@ -1255,7 +1198,7 @@ export class RandomTableView extends ItemView {
           active: true,
           state: { filePath: file.path },
         });
-        this.app.workspace.revealLeaf(leaf);
+        void this.app.workspace.revealLeaf(leaf);
       });
     });
     menu.addSeparator();
@@ -1434,15 +1377,17 @@ export class RandomTableView extends ItemView {
       text: "Edit",
       cls: "duckmage-rt-edit-link",
     });
-    editLink.addEventListener("click", async () => {
-      const content = await this.app.vault.read(file);
-      new RandomTableEditorModal(
-        this.app,
-        this.plugin,
-        file,
-        () => void this.renderDetail(),
-        content,
-      ).open();
+    editLink.addEventListener("click", () => {
+      void (async () => {
+        const content = await this.app.vault.read(file);
+        new RandomTableEditorModal(
+          this.app,
+          this.plugin,
+          file,
+          () => void this.renderDetail(),
+          content,
+        ).open();
+      })();
     });
 
     const openNoteLink = header.createEl("a", {
@@ -1463,12 +1408,14 @@ export class RandomTableView extends ItemView {
       });
       if (opt.value === table.dice) o.selected = true;
     }
-    dieSelect.addEventListener("change", async () => {
-      const newDice = parseInt(dieSelect.value, 10);
-      await this.app.vault.process(file, (content) =>
-        setDiceInFrontmatter(content, newDice),
-      );
-      await this.renderDetail();
+    dieSelect.addEventListener("change", () => {
+      void (async () => {
+        const newDice = parseInt(dieSelect.value, 10);
+        await this.app.vault.process(file, (content) =>
+          setDiceInFrontmatter(content, newDice),
+        );
+        await this.renderDetail();
+      })();
     });
 
     // ── Description ────────────────────────────────────────────────────
@@ -1694,9 +1641,11 @@ export class RandomTableView extends ItemView {
         cls: "duckmage-rt-entry-link",
       });
       newWfLink.setCssProps({ "font-style": "italic" });
-      newWfLink.addEventListener("click", async () => {
-        this.setViewMode("workflows");
-        await this.createWorkflow(tableKey);
+      newWfLink.addEventListener("click", () => {
+        void (async () => {
+          this.setViewMode("workflows");
+          await this.createWorkflow(tableKey);
+        })();
       });
     }
   }
@@ -1780,41 +1729,5 @@ export class RandomTableView extends ItemView {
         () => void navigator.clipboard.writeText(result),
       );
     }
-  }
-}
-
-// ── ConfirmDeleteModal ────────────────────────────────────────────────────────
-
-class ConfirmDeleteModal extends Modal {
-  constructor(
-    app: import("obsidian").App,
-    private readonly tableName: string,
-    private readonly onConfirm: () => Promise<void>,
-  ) {
-    super(app);
-  }
-
-  onOpen(): void {
-    const { contentEl } = this;
-    contentEl.createEl("p", {
-      text: `Delete "${this.tableName}"? This cannot be undone.`,
-    });
-    const btnRow = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-
-    const deleteBtn = btnRow.createEl("button", {
-      text: "Delete",
-      cls: "mod-warning",
-    });
-    deleteBtn.addEventListener("click", async () => {
-      this.close();
-      await this.onConfirm();
-    });
-
-    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
   }
 }

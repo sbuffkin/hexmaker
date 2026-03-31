@@ -42,9 +42,7 @@ export class LinkPickerModal extends HexmakerModal {
       for (const file of files) {
         const li = list.createEl("li", { cls: "duckmage-link-picker-item" });
         li.setText(file.basename);
-        li.addEventListener("click", async () => {
-          await this.addLink(file);
-        });
+        li.addEventListener("click", () => { void this.addLink(file); });
       }
     }
 

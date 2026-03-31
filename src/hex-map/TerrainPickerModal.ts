@@ -207,15 +207,14 @@ export class TerrainPickerModal extends HexmakerModal {
             );
           tile.addClass("duckmage-palette-drop-target");
         });
-        tile.addEventListener("drop", async (e: DragEvent) => {
+        tile.addEventListener("drop", (e: DragEvent) => {
           e.preventDefault();
           if (dragSrcIndex === -1 || dragSrcIndex === i) return;
           const [moved] = palette.splice(dragSrcIndex, 1);
           palette.splice(i, 0, moved);
           dragSrcIndex = -1;
           this.editChanged = true;
-          await this.plugin.saveSettings();
-          renderTiles();
+          void this.plugin.saveSettings().then(() => renderTiles());
         });
       }
 
@@ -234,7 +233,8 @@ export class TerrainPickerModal extends HexmakerModal {
           this.app,
           this.plugin,
           palette,
-          async (template) => {
+          (template) => {
+            void (async () => {
             const newEntry: TerrainColor = template
               ? { ...template }
               : { name: "New", color: "#888888" };
@@ -253,6 +253,7 @@ export class TerrainPickerModal extends HexmakerModal {
               () => { this.editChanged = true; renderTiles(); },
               true,
             ).open();
+            })();
           },
         ).open();
       });
@@ -268,11 +269,13 @@ export class TerrainPickerModal extends HexmakerModal {
       title:
         "Re-links every hex's encounters table section to match its current terrain",
     });
-    refreshBtn.addEventListener("click", async () => {
-      refreshBtn.disabled = true;
-      refreshBtn.setText("Refreshing…");
-      await this.plugin.refreshAllTerrainEncounterLinks();
-      refreshBtn.setText("Done");
+    refreshBtn.addEventListener("click", () => {
+      void (async () => {
+        refreshBtn.disabled = true;
+        refreshBtn.setText("Refreshing…");
+        await this.plugin.refreshAllTerrainEncounterLinks();
+        refreshBtn.setText("Done");
+      })();
     });
   }
 }

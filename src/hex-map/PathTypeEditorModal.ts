@@ -114,9 +114,11 @@ export class PathTypeEditorModal extends HexmakerModal {
 
 		// Save button
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-editor-actions" });
-		btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", async () => {
-			await this.doSave();
-			this.close();
+		btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => {
+			void (async () => {
+				await this.doSave();
+				this.close();
+			})();
 		});
 
 		// Delete button with confirm
@@ -138,9 +140,11 @@ export class PathTypeEditorModal extends HexmakerModal {
 			} else {
 				confirmDiv.createEl("p", { text: "Delete this path type?", cls: "duckmage-terrain-editor-confirm-msg" });
 			}
-			confirmDiv.createEl("button", { text: "Yes, delete", cls: "mod-warning" }).addEventListener("click", async () => {
-				await this.doDelete();
-				this.close();
+			confirmDiv.createEl("button", { text: "Yes, delete", cls: "mod-warning" }).addEventListener("click", () => {
+				void (async () => {
+					await this.doDelete();
+					this.close();
+				})();
 			});
 			confirmDiv.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
 				confirmDiv?.remove();

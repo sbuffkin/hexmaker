@@ -35,20 +35,22 @@ export class HexTerrainPickerModal extends HexmakerModal {
         createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
-      btn.addEventListener("click", async () => {
-        if (!this.app.vault.getAbstractFileByPath(this.hexPath)) {
-          const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
-          const [hx, hy] = basename.split("_").map(Number);
-          const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-          const relative = hexFolder
-            ? this.hexPath.slice(hexFolder.length + 1)
-            : this.hexPath;
-          const regionName = relative.split("/")[0];
-          await this.plugin.createHexNote(hx, hy, regionName);
-        }
-        await setTerrainInFile(this.app, this.hexPath, entry.name);
-        this.onPicked();
-        this.close();
+      btn.addEventListener("click", () => {
+        void (async () => {
+          if (!this.app.vault.getAbstractFileByPath(this.hexPath)) {
+            const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
+            const [hx, hy] = basename.split("_").map(Number);
+            const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
+            const relative = hexFolder
+              ? this.hexPath.slice(hexFolder.length + 1)
+              : this.hexPath;
+            const regionName = relative.split("/")[0];
+            await this.plugin.createHexNote(hx, hy, regionName);
+          }
+          await setTerrainInFile(this.app, this.hexPath, entry.name);
+          this.onPicked();
+          this.close();
+        })();
       });
     }
 
@@ -57,10 +59,12 @@ export class HexTerrainPickerModal extends HexmakerModal {
         text: "Clear terrain",
         cls: "duckmage-clear-btn mod-warning",
       });
-      clearBtn.addEventListener("click", async () => {
-        await setTerrainInFile(this.app, this.hexPath, null);
-        this.onPicked();
-        this.close();
+      clearBtn.addEventListener("click", () => {
+        void (async () => {
+          await setTerrainInFile(this.app, this.hexPath, null);
+          this.onPicked();
+          this.close();
+        })();
       });
     }
   }
