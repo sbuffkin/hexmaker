@@ -371,11 +371,13 @@ export class HexEditorModal extends HexmakerModal {
         text: "Clear",
         cls: "duckmage-terrain-option-name",
       });
-      clearBtn.addEventListener("click", async () => {
-        await setTerrainInFile(this.app, path, null);
-        void this.plugin.syncHexEncounterTableLink(path, null);
-        this.onChanged(new Map([[path, null]]));
-        this.close();
+      clearBtn.addEventListener("click", () => {
+        void (async () => {
+          await setTerrainInFile(this.app, path, null);
+          void this.plugin.syncHexEncounterTableLink(path, null);
+          this.onChanged(new Map([[path, null]]));
+          this.close();
+        })();
       });
     }
 
@@ -399,12 +401,14 @@ export class HexEditorModal extends HexmakerModal {
 
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
 
-      btn.addEventListener("click", async () => {
-        await this.ensureHexNote();
-        await setTerrainInFile(this.app, path, entry.name);
-        void this.plugin.syncHexEncounterTableLink(path, entry.name);
-        this.onChanged(new Map([[path, entry.name]]));
-        this.close();
+      btn.addEventListener("click", () => {
+        void (async () => {
+          await this.ensureHexNote();
+          await setTerrainInFile(this.app, path, entry.name);
+          void this.plugin.syncHexEncounterTableLink(path, entry.name);
+          this.onChanged(new Map([[path, entry.name]]));
+          this.close();
+        })();
       });
     }
 
@@ -435,13 +439,15 @@ export class HexEditorModal extends HexmakerModal {
     const terrainOverrides: Map<string, string | null> | undefined =
       currentTerrain ? new Map([[path, currentTerrain]]) : undefined;
 
-    iconSelect.addEventListener("change", async () => {
-      await this.ensureHexNote();
-      await setIconOverrideInFile(this.app, path, iconSelect.value || null);
-      this.onChanged(
-        terrainOverrides,
-        new Map([[path, iconSelect.value || null]]),
-      );
+    iconSelect.addEventListener("change", () => {
+      void (async () => {
+        await this.ensureHexNote();
+        await setIconOverrideInFile(this.app, path, iconSelect.value || null);
+        this.onChanged(
+          terrainOverrides,
+          new Map([[path, iconSelect.value || null]]),
+        );
+      })();
     });
     const clearIconBtn = iconRow.createEl("button", {
       text: "Clear",
@@ -451,12 +457,14 @@ export class HexEditorModal extends HexmakerModal {
     clearIconBtn.setCssProps({
       visibility: currentIcon ? "visible" : "hidden",
     });
-    clearIconBtn.addEventListener("click", async () => {
-      await this.ensureHexNote();
-      await setIconOverrideInFile(this.app, path, null);
-      this.onChanged(terrainOverrides, new Map([[path, null]]));
-      iconSelect.value = "";
-      clearIconBtn.setCssProps({ visibility: "hidden" });
+    clearIconBtn.addEventListener("click", () => {
+      void (async () => {
+        await this.ensureHexNote();
+        await setIconOverrideInFile(this.app, path, null);
+        this.onChanged(terrainOverrides, new Map([[path, null]]));
+        iconSelect.value = "";
+        clearIconBtn.setCssProps({ visibility: "hidden" });
+      })();
     });
     // Show/hide clear button as icon selection changes
     iconSelect.addEventListener("change", () => {
@@ -531,24 +539,26 @@ export class HexEditorModal extends HexmakerModal {
 
     const onItemClick =
       section === "Encounters Table"
-        ? async (_link: string, file: TFile) => {
-            interface WithOpenTable {
-              openTable?(path: string): void;
-            }
-            const leaves = this.app.workspace.getLeavesOfType(
-              VIEW_TYPE_RANDOM_TABLES,
-            );
-            if (leaves.length > 0) {
-              this.app.workspace.revealLeaf(leaves[0]);
-              (leaves[0].view as unknown as WithOpenTable).openTable?.(
-                file.path,
+        ? (_link: string, file: TFile) => {
+            void (async () => {
+              interface WithOpenTable {
+                openTable?(path: string): void;
+              }
+              const leaves = this.app.workspace.getLeavesOfType(
+                VIEW_TYPE_RANDOM_TABLES,
               );
-            } else {
-              const leaf = this.app.workspace.getLeaf("tab");
-              await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-              (leaf.view as unknown as WithOpenTable).openTable?.(file.path);
-            }
-            this.close();
+              if (leaves.length > 0) {
+                void this.app.workspace.revealLeaf(leaves[0]);
+                (leaves[0].view as unknown as WithOpenTable).openTable?.(
+                  file.path,
+                );
+              } else {
+                const leaf = this.app.workspace.getLeaf("tab");
+                await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+                (leaf.view as unknown as WithOpenTable).openTable?.(file.path);
+              }
+              this.close();
+            })();
           }
         : undefined;
 
@@ -563,11 +573,12 @@ export class HexEditorModal extends HexmakerModal {
             ).open()
         : undefined;
 
-    const onRemove = async (link: string) => {
+    const onRemove = (link: string) => {
       currentLinks = currentLinks.filter((l) => l !== link);
       refresh();
-      await removeLinkFromSection(this.app, path, section, link);
-      this.onChanged();
+      void removeLinkFromSection(this.app, path, section, link).then(() =>
+        this.onChanged(),
+      );
     };
 
     const refresh = () => {
@@ -755,18 +766,20 @@ export class HexEditorModal extends HexmakerModal {
     }
 
     addBtn.addEventListener("click", () => {
-      new FileLinkSuggestModal(this.app, this.plugin, async (file) => {
-        const hexFile = await this.ensureHexNote();
-        if (!hexFile) {
-          new Notice("Could not create hex note.");
-          return;
-        }
-        const linkText = `[[${this.app.metadataCache.fileToLinktext(file, path)}]]`;
-        await addLinkToSection(this.app, path, section, linkText);
-        this.onChanged();
-        const links = await getLinksInSection(this.app, path, section);
-        linksEl.empty();
-        this.renderLinkList(linksEl, links, path);
+      new FileLinkSuggestModal(this.app, this.plugin, (file) => {
+        void (async () => {
+          const hexFile = await this.ensureHexNote();
+          if (!hexFile) {
+            new Notice("Could not create hex note.");
+            return;
+          }
+          const linkText = `[[${this.app.metadataCache.fileToLinktext(file, path)}]]`;
+          await addLinkToSection(this.app, path, section, linkText);
+          this.onChanged();
+          const links = await getLinksInSection(this.app, path, section);
+          linksEl.empty();
+          this.renderLinkList(linksEl, links, path);
+        })();
       }).open();
     });
   }
@@ -909,10 +922,12 @@ export class HexEditorModal extends HexmakerModal {
     textarea.placeholder = `${label}…`;
     textarea.value = initialContent;
 
-    textarea.addEventListener("blur", async () => {
-      const file = await this.ensureHexNote();
-      if (!file) return;
-      await setSectionContent(this.app, path, section, textarea.value);
+    textarea.addEventListener("blur", () => {
+      void (async () => {
+        const file = await this.ensureHexNote();
+        if (!file) return;
+        await setSectionContent(this.app, path, section, textarea.value);
+      })();
     });
   }
 

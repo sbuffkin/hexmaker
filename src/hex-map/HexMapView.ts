@@ -356,7 +356,7 @@ export class HexMapView extends ItemView {
     tableBtn.addEventListener("click", () => {
       const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE);
       if (existing.length > 0) {
-        this.app.workspace.revealLeaf(existing[0]);
+        void this.app.workspace.revealLeaf(existing[0]);
       } else {
         void this.app.workspace
           .getLeaf()
@@ -369,7 +369,7 @@ export class HexMapView extends ItemView {
       void this.app.workspace
         .getLeaf("tab")
         .setViewState({ type: VIEW_TYPE_HEX_TABLE });
-      this.app.workspace.revealLeaf(this.leaf);
+      void this.app.workspace.revealLeaf(this.leaf);
     });
 
     const rtBtn = controlsEl.createEl("button", {
@@ -382,7 +382,7 @@ export class HexMapView extends ItemView {
         VIEW_TYPE_RANDOM_TABLES,
       );
       if (existing.length > 0) {
-        this.app.workspace.revealLeaf(existing[0]);
+        void this.app.workspace.revealLeaf(existing[0]);
       } else {
         void this.app.workspace
           .getLeaf()
@@ -395,7 +395,7 @@ export class HexMapView extends ItemView {
       void this.app.workspace
         .getLeaf("tab")
         .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-      this.app.workspace.revealLeaf(this.leaf);
+      void this.app.workspace.revealLeaf(this.leaf);
     });
 
     this.regionBtn = controlsEl.createEl("button", {
@@ -544,7 +544,7 @@ export class HexMapView extends ItemView {
         cls: `duckmage-expand-btn ${cls}`,
         text: "+",
       });
-      btn.addEventListener("click", action);
+      btn.addEventListener("click", () => { void action(); });
     }
   }
 
@@ -1165,8 +1165,8 @@ export class HexMapView extends ItemView {
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
 
-      hexEl.addEventListener("click", () => this.onHexClick(x, y));
-      hexEl.addEventListener("dblclick", () => this.onHexDblClick(x, y));
+      hexEl.addEventListener("click", () => { void this.onHexClick(x, y); });
+      hexEl.addEventListener("dblclick", () => { void this.onHexDblClick(x, y); });
       hexEl.addEventListener("contextmenu", (evt) =>
         this.onHexContextMenu(evt, x, y),
       );

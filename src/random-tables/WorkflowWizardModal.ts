@@ -100,15 +100,11 @@ export class WorkflowWizardModal extends HexmakerModal {
       cls: "mod-cta",
     });
     rollAllBtn.title = "Roll all unfilled slots";
-    rollAllBtn.addEventListener("click", async () => {
-      await this.rollAll(false);
-    });
+    rollAllBtn.addEventListener("click", () => { void this.rollAll(false); });
 
     const rerollAllBtn = header.createEl("button", { text: "Reroll all" });
     rerollAllBtn.title = "Reroll every slot";
-    rerollAllBtn.addEventListener("click", async () => {
-      await this.rollAll(true);
-    });
+    rerollAllBtn.addEventListener("click", () => { void this.rollAll(true); });
 
     const copyResultBtn = header.createEl("button", { text: "Copy result" });
     copyResultBtn.addEventListener("click", () => {
@@ -193,9 +189,7 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.saveStatusEl = contentEl.createDiv({ cls: "duckmage-wf-save-status" });
 
     this.updateSaveButton();
-    this.saveNoteBtn.addEventListener("click", async () => {
-      await this.saveAsNote();
-    });
+    this.saveNoteBtn.addEventListener("click", () => { void this.saveAsNote(); });
 
     this.makeDraggable();
   }
@@ -294,16 +288,18 @@ export class WorkflowWizardModal extends HexmakerModal {
           text: this.rolls[si][ri] !== null ? "Reroll" : "Roll",
           cls: "duckmage-wf-roll-btn",
         });
-        rollBtn.addEventListener("click", async () => {
-          rollBtn.disabled = true;
-          rollBtn.setText("…");
-          await this.rollStep(si, ri);
-          rollInput.value = this.rolls[si][ri] ?? "";
-          rollInput.classList.toggle("is-rolled", this.rolls[si][ri] !== null);
-          rollBtn.setText("Reroll");
-          rollBtn.disabled = false;
-          this.updateResultTextarea();
-          this.updateSaveButton();
+        rollBtn.addEventListener("click", () => {
+          void (async () => {
+            rollBtn.disabled = true;
+            rollBtn.setText("…");
+            await this.rollStep(si, ri);
+            rollInput.value = this.rolls[si][ri] ?? "";
+            rollInput.classList.toggle("is-rolled", this.rolls[si][ri] !== null);
+            rollBtn.setText("Reroll");
+            rollBtn.disabled = false;
+            this.updateResultTextarea();
+            this.updateSaveButton();
+          })();
         });
 
         if (step.kind === "dice") {

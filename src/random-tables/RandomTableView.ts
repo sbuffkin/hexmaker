@@ -302,7 +302,7 @@ export class RandomTableView extends ItemView {
       if (srcFolder) await this.renderDetail();
     };
 
-    newBtn.addEventListener("click", createTable);
+    newBtn.addEventListener("click", () => { void createTable(); });
     newInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") void createTable();
     });
