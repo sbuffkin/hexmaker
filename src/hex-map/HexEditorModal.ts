@@ -32,6 +32,7 @@ export class HexEditorModal extends HexmakerModal {
   private allLinks = new Map<string, string[]>();
   private directTerrain: string | null = null;
   private directIcon: string | null = null;
+  private dataPreloaded = false;
 
   constructor(
     app: App,
@@ -126,12 +127,18 @@ export class HexEditorModal extends HexmakerModal {
 
     // ── Body — populated after the single async read ──────────────────────
     const bodyEl = contentEl.createDiv({ cls: "duckmage-editor-body" });
-    bodyEl.createSpan({ text: "Loading…", cls: "duckmage-editor-loading" });
 
-    void this.loadData().then(() => {
-      bodyEl.empty();
+    if (this.dataPreloaded) {
+      // Data was fetched before onOpen was called (navigation); render immediately
+      // so there is no intermediate "Loading…" frame visible to the user.
       this.renderBody(bodyEl, path);
-    });
+    } else {
+      bodyEl.createSpan({ text: "Loading…", cls: "duckmage-editor-loading" });
+      void this.loadData().then(() => {
+        bodyEl.empty();
+        this.renderBody(bodyEl, path);
+      });
+    }
   }
 
   private renderBody(bodyEl: HTMLElement, path: string): void {
@@ -308,7 +315,11 @@ export class HexEditorModal extends HexmakerModal {
           this.x = nx;
           this.y = ny;
           this.onNavigate?.(nx, ny);
-          void this.loadData().then(() => this.onOpen());
+          void this.loadData().then(() => {
+            this.dataPreloaded = true;
+            this.onOpen();
+            this.dataPreloaded = false;
+          });
         });
       } else {
         tile.title = "Off map";

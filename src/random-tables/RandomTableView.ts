@@ -4,6 +4,7 @@ import {
   Menu,
   Notice,
   TFile,
+  TFolder,
   ViewStateResult,
   WorkspaceLeaf,
 } from "obsidian";
@@ -93,10 +94,10 @@ export class RandomTableView extends ItemView {
           this.viewMode = "workflows";
           this.tablesBtn?.removeClass("is-active");
           this.workflowsBtn?.addClass("is-active");
-          await this.loadList();
+          this.loadList();
           await this.loadWorkflow(file);
         } else {
-          await this.loadList();
+          this.loadList();
           void this.loadTable(file);
         }
       }
@@ -296,13 +297,15 @@ export class RandomTableView extends ItemView {
       newInput.removeClass("duckmage-input-error");
       newInput.title = "";
       fromFolderInput.value = "";
-      await this.loadList();
+      this.loadList();
       if (file instanceof TFile) await this.loadTable(file);
       // Re-render after vault I/O settles to ensure linkedFolder link styling is applied
       if (srcFolder) await this.renderDetail();
     };
 
-    newBtn.addEventListener("click", () => { void createTable(); });
+    newBtn.addEventListener("click", () => {
+      void createTable();
+    });
     newInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") void createTable();
     });
@@ -314,7 +317,7 @@ export class RandomTableView extends ItemView {
       text: "Select a table to view and roll.",
     });
 
-    await this.loadList();
+    this.loadList();
 
     // ── Proactive tree refresh on vault changes ───────────────────────────
     this.registerEvent(
@@ -433,7 +436,7 @@ export class RandomTableView extends ItemView {
           );
           return suffix ? replaced.trimEnd() + "\n\n" + suffix : replaced;
         });
-        await this.loadList();
+        this.loadList();
         if (this.activeFile?.path === tableFilePath) await this.renderDetail();
       }),
     );
@@ -456,7 +459,7 @@ export class RandomTableView extends ItemView {
         this.collapsedFolders.delete(parent.path);
         parent = parent.parent;
       }
-      await this.loadList();
+      this.loadList();
       void this.loadTable(file);
     }
   }
@@ -467,7 +470,7 @@ export class RandomTableView extends ItemView {
     if (file instanceof TFile) {
       if (this.viewMode !== "workflows") {
         this.setViewMode("workflows");
-        await this.loadList();
+        this.loadList();
       }
       await this.loadWorkflow(file);
     }
@@ -533,7 +536,7 @@ export class RandomTableView extends ItemView {
 
   // ── List ─────────────────────────────────────────────────────────────────
 
-  private async loadList(): Promise<void> {
+  private loadList(): void {
     if (!this.listEl) return;
     this.listEl.empty();
 
@@ -574,7 +577,26 @@ export class RandomTableView extends ItemView {
     // Rebuild workflow map (table path → [workflow paths])
     this.rebuildWorkflowMap(allFiles);
 
-    if (files.length === 0) {
+    // Collect all vault subfolders under the tables root so empty folders appear
+    const vaultFolderPaths: string[] = [];
+    if (!this.filterQuery) {
+      const rootAbstract = folder
+        ? this.app.vault.getAbstractFileByPath(folder)
+        : null;
+      if (rootAbstract instanceof TFolder) {
+        const collectFolders = (tf: TFolder) => {
+          for (const child of tf.children) {
+            if (child instanceof TFolder) {
+              vaultFolderPaths.push(child.path);
+              collectFolders(child);
+            }
+          }
+        };
+        collectFolders(rootAbstract);
+      }
+    }
+
+    if (files.length === 0 && vaultFolderPaths.length === 0) {
       this.listEl.createSpan({
         text: "No tables found.",
         cls: "duckmage-rt-empty",
@@ -582,7 +604,7 @@ export class RandomTableView extends ItemView {
       return;
     }
 
-    const tree = buildTree(files, prefix);
+    const tree = buildTree(files, prefix, vaultFolderPaths);
 
     // Collapse all folders on first load
     if (!this.treeInitialized) {
@@ -750,7 +772,7 @@ export class RandomTableView extends ItemView {
                   this.activeFile = null;
                   this.detailEl?.empty();
                 }
-                await this.loadList();
+                this.loadList();
               }).open();
             });
           });
@@ -795,7 +817,7 @@ export class RandomTableView extends ItemView {
 
     try {
       const file = await this.app.vault.create(newPath, content);
-      await this.loadList();
+      this.loadList();
       await this.loadWorkflow(file);
       new WorkflowEditorModal(this.app, this.plugin, file, () => {
         void this.loadList();
@@ -842,7 +864,9 @@ export class RandomTableView extends ItemView {
         const wf = parseWorkflow(content, file.basename);
         let tmplContent = "";
         if (wf.templateFile) {
-          const tmplFile = this.app.vault.getAbstractFileByPath(wf.templateFile);
+          const tmplFile = this.app.vault.getAbstractFileByPath(
+            wf.templateFile,
+          );
           if (tmplFile instanceof TFile) {
             tmplContent = await this.app.vault.read(tmplFile);
           }
@@ -933,8 +957,7 @@ export class RandomTableView extends ItemView {
                 step.tablePath,
                 this.activeFile?.path ?? "",
               );
-            if (tableFile instanceof TFile)
-              void this.openTable(tableFile.path);
+            if (tableFile instanceof TFile) void this.openTable(tableFile.path);
           });
         }
         if (step.label && step.label !== primaryName) {
@@ -1061,16 +1084,18 @@ export class RandomTableView extends ItemView {
         });
         folderEl.addEventListener("drop", (e: DragEvent) => {
           void (async () => {
-          e.preventDefault();
-          e.stopPropagation();
-          dragCounter = 0;
-          folderHeader.removeClass("is-drag-over");
-          const srcPath = e.dataTransfer?.getData("text/plain") ?? "";
-          const tblFolder = normalizeFolder(this.plugin.settings.tablesFolder);
-          const destFolder = tblFolder
-            ? `${tblFolder}/${node.path}`
-            : node.path;
-          await this.moveFileTo(srcPath, destFolder);
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter = 0;
+            folderHeader.removeClass("is-drag-over");
+            const srcPath = e.dataTransfer?.getData("text/plain") ?? "";
+            const tblFolder = normalizeFolder(
+              this.plugin.settings.tablesFolder,
+            );
+            const destFolder = tblFolder
+              ? `${tblFolder}/${node.path}`
+              : node.path;
+            await this.moveFileTo(srcPath, destFolder);
           })();
         });
 
@@ -1146,7 +1171,7 @@ export class RandomTableView extends ItemView {
         new Notice(
           `Roll picker: "${folderPath}" ${rollExcluded ? "included" : "excluded"}.`,
         );
-        await this.loadList();
+        this.loadList();
       });
     });
 
@@ -1172,7 +1197,7 @@ export class RandomTableView extends ItemView {
         new Notice(
           `Encounters table: "${folderPath}" ${encExcluded ? "included" : "excluded"}.`,
         );
-        await this.loadList();
+        this.loadList();
       });
     });
 
@@ -1219,7 +1244,7 @@ export class RandomTableView extends ItemView {
         new Notice(
           `Roll picker: "${file.basename}" ${rollExcluded ? "included" : "excluded"}.`,
         );
-        await this.loadList();
+        this.loadList();
       });
     });
 
@@ -1241,7 +1266,7 @@ export class RandomTableView extends ItemView {
         new Notice(
           `Encounters table: "${file.basename}" ${encExcluded ? "included" : "excluded"}.`,
         );
-        await this.loadList();
+        this.loadList();
       });
     });
 
@@ -1258,7 +1283,7 @@ export class RandomTableView extends ItemView {
               this.activeFile = null;
               this.detailEl?.empty();
             }
-            await this.loadList();
+            this.loadList();
           }).open();
         });
       });
@@ -1282,7 +1307,7 @@ export class RandomTableView extends ItemView {
     const wasActive = this.activeFile === srcFile;
     try {
       await this.app.fileManager.renameFile(srcFile, newPath);
-      await this.loadList();
+      this.loadList();
       if (wasActive) {
         const newFile = this.app.vault.getAbstractFileByPath(newPath);
         if (newFile instanceof TFile) void this.loadTable(newFile);

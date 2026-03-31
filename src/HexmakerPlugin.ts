@@ -34,7 +34,7 @@ export default class HexmakerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
-    await this.loadAvailableIcons();
+    this.loadAvailableIcons();
     await this.migrateHexFilesToDefaultRegion();
 
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
@@ -282,7 +282,7 @@ export default class HexmakerPlugin extends Plugin {
     });
   }
 
-  async loadAvailableIcons() {
+  loadAvailableIcons() {
     this.vaultIconsSet = new Set();
     const pluginIcons: string[] = Array.from(BUNDLED_ICONS.keys());
     const vaultIcons: string[] = [];

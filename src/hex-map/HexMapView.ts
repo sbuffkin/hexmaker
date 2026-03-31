@@ -1,10 +1,4 @@
-import {
-  ItemView,
-  Menu,
-  Notice,
-  TFile,
-  WorkspaceLeaf,
-} from "obsidian";
+import { ItemView, Menu, Notice, TFile, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
@@ -26,7 +20,13 @@ import {
 import { RegionModal } from "./RegionModal";
 import { PathPickerModal } from "./PathPickerModal";
 import type { RegionData, PathChain } from "../types";
-import { hexNeighbors, smoothPath, sharpPath, buildMeanderPts, buildEdgePts } from "./hexGeometry";
+import {
+  hexNeighbors,
+  smoothPath,
+  sharpPath,
+  buildMeanderPts,
+  buildEdgePts,
+} from "./hexGeometry";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
@@ -129,7 +129,7 @@ export class HexMapView extends ItemView {
     this.regionBtn?.setText(`${this.activeRegionName} ▾`);
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     // Initialise to the configured default region (falls back to first region or "default")
     this.activeRegionName =
       this.plugin.settings.defaultRegion ||
@@ -468,6 +468,7 @@ export class HexMapView extends ItemView {
     });
 
     this.renderGrid();
+    return Promise.resolve();
   }
 
   private createExpandButtons(container: HTMLElement): void {
@@ -544,7 +545,9 @@ export class HexMapView extends ItemView {
         cls: `duckmage-expand-btn ${cls}`,
         text: "+",
       });
-      btn.addEventListener("click", () => { void action(); });
+      btn.addEventListener("click", () => {
+        void action();
+      });
     }
   }
 
@@ -803,7 +806,7 @@ export class HexMapView extends ItemView {
   }
 
   // Double-click on the destination confirms the swap
-  private async onHexDblClick(x: number, y: number): Promise<void> {
+  private onHexDblClick(x: number, y: number): void {
     if (this.drawingMode === "path") {
       this.exitPathMode();
       this.updatePathOverlay();
@@ -1165,8 +1168,12 @@ export class HexMapView extends ItemView {
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
 
-      hexEl.addEventListener("click", () => { void this.onHexClick(x, y); });
-      hexEl.addEventListener("dblclick", () => { void this.onHexDblClick(x, y); });
+      hexEl.addEventListener("click", () => {
+        void this.onHexClick(x, y);
+      });
+      hexEl.addEventListener("dblclick", () => {
+        void this.onHexDblClick(x, y);
+      });
       hexEl.addEventListener("contextmenu", (evt) =>
         this.onHexContextMenu(evt, x, y),
       );
@@ -1826,9 +1833,11 @@ export class HexMapView extends ItemView {
     // ── If adjacent to active end, extend that chain ─────────────────────
     if (this.activePathEnd !== null) {
       const [ax, ay] = this.activePathEnd.split("_").map(Number);
-      const isAdjacent = hexNeighbors(ax, ay, this.plugin.settings.hexOrientation).some(
-        ([nx, ny]) => nx === x && ny === y,
-      );
+      const isAdjacent = hexNeighbors(
+        ax,
+        ay,
+        this.plugin.settings.hexOrientation,
+      ).some(([nx, ny]) => nx === x && ny === y);
       if (isAdjacent) {
         let target: PathChain | undefined;
         if (
@@ -2121,4 +2130,3 @@ export class HexMapView extends ItemView {
     this.renderPathOverlay(gridContainer);
   }
 }
-

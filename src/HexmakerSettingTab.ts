@@ -365,7 +365,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.iconsFolder = normalizeFolder(value ?? "");
             await this.plugin.saveSettings();
-            await this.plugin.loadAvailableIcons();
+            this.plugin.loadAvailableIcons();
           }),
       );
 
