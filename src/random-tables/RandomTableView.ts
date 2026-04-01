@@ -104,7 +104,7 @@ export class RandomTableView extends ItemView {
     }
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("duckmage-rt-container");
@@ -440,6 +440,7 @@ export class RandomTableView extends ItemView {
         if (this.activeFile?.path === tableFilePath) await this.renderDetail();
       }),
     );
+    return Promise.resolve();
   }
 
   onClose(): Promise<void> {
@@ -448,7 +449,7 @@ export class RandomTableView extends ItemView {
   }
 
   // ── Public: open a specific table (called from hex editor / protocol handler) ──
-  async openTable(filePath: string): Promise<void> {
+  openTable(filePath: string): void {
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (file instanceof TFile) {
       if (this.viewMode !== "tables") this.setViewMode("tables");

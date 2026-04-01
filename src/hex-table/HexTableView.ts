@@ -162,9 +162,10 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-btn",
     });
     this.terrainFilterBtn.addEventListener("click", () => {
-      const palette = this.regionFilter !== "all"
-        ? this.plugin.getRegionPalette(this.regionFilter)
-        : this.plugin.getAllTerrains();
+      const palette =
+        this.regionFilter !== "all"
+          ? this.plugin.getRegionPalette(this.regionFilter)
+          : this.plugin.getAllTerrains();
       new TerrainFilterModal(
         this.app,
         palette,
@@ -254,7 +255,9 @@ export class HexTableView extends ItemView {
       regionSelect.createEl("option", { value: r.name, text: r.name });
     }
     // Default to active map view's region
-    interface WithActiveRegionName { activeRegionName: string; }
+    interface WithActiveRegionName {
+      activeRegionName: string;
+    }
     const mapLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
     if (mapLeaves.length > 0) {
       const mapView = mapLeaves[0].view as unknown as WithActiveRegionName;
@@ -263,7 +266,9 @@ export class HexTableView extends ItemView {
     regionSelect.value = this.regionFilter;
     regionSelect.addEventListener("change", () => {
       this.regionFilter = regionSelect.value;
-      interface WithUpdateHeader { updateHeader?(): void; }
+      interface WithUpdateHeader {
+        updateHeader?(): void;
+      }
       (this.leaf as unknown as WithUpdateHeader).updateHeader?.();
       void this.loadTable();
     });
@@ -272,7 +277,7 @@ export class HexTableView extends ItemView {
 
     // Sort controls
     this.sortPrimaryBtn = toolbar.createEl("button", {
-      text: "Sort: X→y",
+      text: "Sort: xy",
       cls: "duckmage-filter-btn",
     });
     this.sortPrimaryBtn.title =
@@ -280,7 +285,7 @@ export class HexTableView extends ItemView {
     this.sortPrimaryBtn.addEventListener("click", () => {
       this.sortPrimary = this.sortPrimary === "x" ? "y" : "x";
       this.sortPrimaryBtn!.setText(
-        this.sortPrimary === "x" ? "Sort: X→Y" : "Sort: Y→X",
+        this.sortPrimary === "x" ? "Sort: xy" : "Sort: yx",
       );
       void this.loadTable();
     });
@@ -292,7 +297,7 @@ export class HexTableView extends ItemView {
     this.sortDirBtn.title = "Toggle sort direction";
     this.sortDirBtn.addEventListener("click", () => {
       this.sortAsc = !this.sortAsc;
-      this.sortDirBtn!.setText(this.sortAsc ? "↑ Asc" : "↓ Desc");
+      this.sortDirBtn!.setText(this.sortAsc ? "↑ asc" : "↓ desc");
       void this.loadTable();
     });
 
@@ -378,7 +383,12 @@ export class HexTableView extends ItemView {
             : f.path;
           const parts = relative.split("/");
           if (parts.length < 2) return; // not in a region subfolder
-          files.push({ path: f.path, x: Number(m[1]), y: Number(m[2]), region: parts[0] });
+          files.push({
+            path: f.path,
+            x: Number(m[1]),
+            y: Number(m[2]),
+            region: parts[0],
+          });
         });
     } catch {
       this.scrollEl.empty();
@@ -414,7 +424,10 @@ export class HexTableView extends ItemView {
     }
 
     // Update X/Y input placeholders with actual data bounds (single pass)
-    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+    let xMin = Infinity,
+      xMax = -Infinity,
+      yMin = Infinity,
+      yMax = -Infinity;
     for (const f of files) {
       if (f.x < xMin) xMin = f.x;
       if (f.x > xMax) xMax = f.x;
@@ -634,17 +647,25 @@ export class HexTableView extends ItemView {
     jumpBtn.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
-        interface WithCenterOnHex { centerOnHex(x: number, y: number): void; }
+        interface WithCenterOnHex {
+          centerOnHex(x: number, y: number): void;
+        }
         const existingLeaves =
           this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
         if (existingLeaves.length > 0) {
           void this.app.workspace.revealLeaf(existingLeaves[0]);
-          (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(x, y);
+          (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(
+            x,
+            y,
+          );
         } else {
           const leaf = this.app.workspace.getLeaf("tab");
           await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
           // Wait one frame for the view to render before centering
-          setTimeout(() => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y), 100);
+          setTimeout(
+            () => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y),
+            100,
+          );
         }
       })();
     });
@@ -670,9 +691,16 @@ export class HexTableView extends ItemView {
     renderTerrainCell();
     terrainTd.addEventListener("click", () => {
       const current = getTerrainFromFile(this.app, path);
-      new HexTerrainPickerModal(this.app, this.plugin, this.plugin.getRegionPalette(region), path, current, () => {
-        renderTerrainCell();
-      }).open();
+      new HexTerrainPickerModal(
+        this.app,
+        this.plugin,
+        this.plugin.getRegionPalette(region),
+        path,
+        current,
+        () => {
+          renderTerrainCell();
+        },
+      ).open();
     });
 
     // Section cells
@@ -683,9 +711,10 @@ export class HexTableView extends ItemView {
         if (linkList.length > 0) {
           const full = linkList.join(", ");
           td.dataset.fullContent = full;
-          const display = col.key === "encounters table"
-            ? linkList.map(l => l.split("/").pop() ?? l).join(", ")
-            : full;
+          const display =
+            col.key === "encounters table"
+              ? linkList.map((l) => l.split("/").pop() ?? l).join(", ")
+              : full;
           td.setText(display);
         } else {
           td.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
@@ -712,62 +741,83 @@ export class HexTableView extends ItemView {
           td.addEventListener("auxclick", (e: MouseEvent) => {
             void (async () => {
               if (e.button !== 1) return;
-              if (col.key !== "encounters table" || linkList.length !== 1) return;
+              if (col.key !== "encounters table" || linkList.length !== 1)
+                return;
               e.preventDefault();
-              const file = this.app.metadataCache.getFirstLinkpathDest(linkList[0], path);
+              const file = this.app.metadataCache.getFirstLinkpathDest(
+                linkList[0],
+                path,
+              );
               if (!(file instanceof TFile)) return;
-              interface WithOpenTable { openTable(path: string): Promise<void>; }
+              interface WithOpenTable {
+                openTable(path: string): void;
+              }
               const leaf = this.app.workspace.getLeaf("tab");
-              await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
+              await leaf.setViewState({
+                type: VIEW_TYPE_RANDOM_TABLES,
+                active: true,
+              });
               void this.app.workspace.revealLeaf(leaf);
-              await (leaf.view as unknown as WithOpenTable).openTable(file.path);
+              (leaf.view as unknown as WithOpenTable).openTable(file.path);
             })();
           });
           td.addEventListener("click", () => {
             void (async () => {
-            if (linkList.length === 0) {
-              new LinkPickerModal(
-                this.app,
-                this.plugin,
-                path,
-                section,
-                sourceFolder,
-                () => void this.updateRow(path),
-                col.key === "encounters table"
-                  ? makeTableTemplate(this.plugin.settings.defaultTableDice)
-                  : "",
-              ).open();
-            } else if (linkList.length === 1) {
-              if (col.key === "encounters table") {
-                const file = this.app.metadataCache.getFirstLinkpathDest(
-                  linkList[0],
+              if (linkList.length === 0) {
+                new LinkPickerModal(
+                  this.app,
+                  this.plugin,
                   path,
-                );
-                if (file instanceof TFile) {
-                  interface WithOpenTable { openTable(path: string): Promise<void>; }
-                  const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
-                  const leaf = leaves.length > 0 ? leaves[0] : this.app.workspace.getLeaf("tab");
-                  await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES, active: true });
-                  void this.app.workspace.revealLeaf(leaf);
-                  await (leaf.view as unknown as WithOpenTable).openTable(file.path);
+                  section,
+                  sourceFolder,
+                  () => void this.updateRow(path),
+                  col.key === "encounters table"
+                    ? makeTableTemplate(this.plugin.settings.defaultTableDice)
+                    : "",
+                ).open();
+              } else if (linkList.length === 1) {
+                if (col.key === "encounters table") {
+                  const file = this.app.metadataCache.getFirstLinkpathDest(
+                    linkList[0],
+                    path,
+                  );
+                  if (file instanceof TFile) {
+                    interface WithOpenTable {
+                      openTable(path: string): void;
+                    }
+                    const leaves = this.app.workspace.getLeavesOfType(
+                      VIEW_TYPE_RANDOM_TABLES,
+                    );
+                    const leaf =
+                      leaves.length > 0
+                        ? leaves[0]
+                        : this.app.workspace.getLeaf("tab");
+                    await leaf.setViewState({
+                      type: VIEW_TYPE_RANDOM_TABLES,
+                      active: true,
+                    });
+                    void this.app.workspace.revealLeaf(leaf);
+                    (leaf.view as unknown as WithOpenTable).openTable(
+                      file.path,
+                    );
+                  }
+                } else {
+                  const file = this.app.metadataCache.getFirstLinkpathDest(
+                    linkList[0],
+                    path,
+                  );
+                  if (file instanceof TFile)
+                    void this.app.workspace.getLeaf().openFile(file);
                 }
               } else {
-                const file = this.app.metadataCache.getFirstLinkpathDest(
-                  linkList[0],
+                // Multiple: show a nav list
+                new MultiLinkNavModal(
+                  this.app,
+                  `${x},${y} — ${section}`,
+                  linkList,
                   path,
-                );
-                if (file instanceof TFile)
-                  void this.app.workspace.getLeaf().openFile(file);
+                ).open();
               }
-            } else {
-              // Multiple: show a nav list
-              new MultiLinkNavModal(
-                this.app,
-                `${x},${y} — ${section}`,
-                linkList,
-                path,
-              ).open();
-            }
             })();
           });
         } else if (linkList.length > 0) {
