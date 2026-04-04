@@ -1,7 +1,7 @@
 {
   "id": "hexmaker",
   "name": "Hexmap World Creator",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "minAppVersion": "1.12.0",
   "description": "Create a hex map and a guidebook level wiki for your setting with minimal fuss. Hex crawl worldbuilding toolbox. System agnostic, ready for any TRPG you care to run in it.",
   "author": "morkdev",
