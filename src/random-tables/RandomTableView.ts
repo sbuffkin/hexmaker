@@ -245,11 +245,57 @@ export class RandomTableView extends ItemView {
       text: "+ new",
       cls: "duckmage-rt-new-btn",
     });
+    const fromFolderDatalistId =
+      "duckmage-rt-folders-" + Math.random().toString(36).slice(2);
+    const fromFolderDatalist = this.tableFooterEl.createEl("datalist");
+    fromFolderDatalist.id = fromFolderDatalistId;
+    const seenFromFolders = new Set<string>();
+    // Add configured settings folders first (excluding hexFolder)
+    for (const raw of [
+      this.plugin.settings.townsFolder,
+      this.plugin.settings.dungeonsFolder,
+      this.plugin.settings.questsFolder,
+      this.plugin.settings.featuresFolder,
+      this.plugin.settings.factionsFolder,
+      this.plugin.settings.tablesFolder,
+      this.plugin.settings.workflowsFolder,
+    ]) {
+      const p = normalizeFolder(raw);
+      if (p && !seenFromFolders.has(p)) {
+        seenFromFolders.add(p);
+        fromFolderDatalist.createEl("option", { value: p });
+      }
+    }
+    // Add all vault subfolders under worldFolder or any settings folder
+    const ps = this.plugin.settings;
+    const fromFolderRoots = [
+      ps.worldFolder,
+      ps.townsFolder,
+      ps.dungeonsFolder,
+      ps.questsFolder,
+      ps.featuresFolder,
+      ps.factionsFolder,
+      ps.tablesFolder,
+      ps.workflowsFolder,
+    ].map(normalizeFolder).filter(Boolean);
+    for (const f of this.app.vault.getAllFolders()) {
+      const p = normalizeFolder(f.path);
+      if (!p) continue;
+      const underRoot = fromFolderRoots.some(
+        (r) => p === r || p.startsWith(r + "/"),
+      );
+      if (!underRoot) continue;
+      if (!seenFromFolders.has(p)) {
+        seenFromFolders.add(p);
+        fromFolderDatalist.createEl("option", { value: p });
+      }
+    }
     const fromFolderInput = this.tableFooterEl.createEl("input", {
       type: "text",
       cls: "duckmage-rt-from-folder-input",
       attr: { placeholder: "Generate from folder link (optional)…" },
     });
+    fromFolderInput.setAttribute("list", fromFolderDatalistId);
     fromFolderInput.setCssProps({ "margin-top": "6px" });
 
     const createTable = async () => {
@@ -278,7 +324,7 @@ export class RandomTableView extends ItemView {
             const entryRows = folderFiles
               .map((f) => `| [[${f.basename}]] | 1 |`)
               .join("\n");
-            content = `---\ndice: ${this.plugin.settings.defaultTableDice}\nlinkedFolder: ${srcFolder}\n---\n\n${rollerLink}\n\n| Result | Weight |\n|--------|--------|\n${entryRows || "|  | 1 |"}\n`;
+            content = `---\ndice: ${this.plugin.settings.defaultTableDice}\nlinkedFolder: "[[${srcFolder}]]"\n---\n\n${rollerLink}\n\n| Result | Weight |\n|--------|--------|\n${entryRows || "|  | 1 |"}\n`;
           } else {
             const rollerLink = this.plugin.buildRollerLink(newPath);
             content = makeTableTemplate(
@@ -572,7 +618,11 @@ export class RandomTableView extends ItemView {
           | Frontmatter
           | undefined
       )?.["linkedFolder"];
-      if (lf) this.linkedFolderMap.set(normalizeFolder(lf), file.path);
+      if (lf && typeof lf === "string") {
+        const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
+        const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
+        this.linkedFolderMap.set(normalizeFolder(lfClean), file.path);
+      }
     }
 
     // Rebuild workflow map (table path → [workflow paths])
@@ -1423,6 +1473,20 @@ export class RandomTableView extends ItemView {
     openNoteLink.addEventListener("click", () => {
       void this.app.workspace.getLeaf().openFile(file);
     });
+
+    if (table.linkedFolder) {
+      const refreshBtn = header.createEl("a", {
+        text: "Refresh",
+        cls: "duckmage-rt-edit-link",
+      });
+      refreshBtn.title = `Sync entries from ${table.linkedFolder}`;
+      refreshBtn.addEventListener("click", () => {
+        void (async () => {
+          await this.autoSyncLinkedFolder(file);
+          await this.renderDetail();
+        })();
+      });
+    }
 
     const dieSelect = header.createEl("select", {
       cls: "duckmage-rt-die-select",

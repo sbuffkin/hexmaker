@@ -106,16 +106,6 @@ export class WorkflowWizardModal extends HexmakerModal {
     rerollAllBtn.title = "Reroll every slot";
     rerollAllBtn.addEventListener("click", () => { void this.rollAll(true); });
 
-    const copyResultBtn = header.createEl("button", { text: "Copy result" });
-    copyResultBtn.addEventListener("click", () => {
-      void navigator.clipboard
-        .writeText(this.resultTextarea?.value ?? "")
-        .then(() => {
-          copyResultBtn.setText("Copied!");
-          setTimeout(() => copyResultBtn.setText("Copy result"), 1500);
-        });
-    });
-
     // ── Steps area ────────────────────────────────────────────────────
     this.stepsArea = contentEl.createDiv({ cls: "duckmage-wf-wizard-steps" });
     this.renderSteps();
@@ -131,6 +121,16 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.resultTextarea.setCssProps({ "min-height": "120px" });
     this.resultTextarea.readOnly = true;
     this.resultTextarea.value = this.assembleResult();
+
+    const copyResultBtn = contentEl.createEl("button", { text: "Copy result" });
+    copyResultBtn.addEventListener("click", () => {
+      void navigator.clipboard
+        .writeText(this.resultTextarea?.value ?? "")
+        .then(() => {
+          copyResultBtn.setText("Copied!");
+          setTimeout(() => copyResultBtn.setText("Copy result"), 1500);
+        });
+    });
 
     // ── Save section ──────────────────────────────────────────────────
     contentEl.createEl("p", {

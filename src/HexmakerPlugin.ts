@@ -136,15 +136,17 @@ export default class HexmakerPlugin extends Plugin {
               | undefined
           )?.["linkedFolder"];
           if (!lf || typeof lf !== "string") continue;
-          const lfNorm = normalizeFolder(lf);
+          const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
+          const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
+          const lfNorm = normalizeFolder(lfClean);
           if (lfNorm !== oldFolder && !lfNorm.startsWith(oldFolder + "/"))
             continue;
           const updatedLf = newFolder + lfNorm.slice(oldFolder.length);
-          await this.app.fileManager.processFrontMatter(
-            tableFile,
-            (fm: Frontmatter) => {
-              fm["linkedFolder"] = updatedLf;
-            },
+          await this.app.vault.process(tableFile, (content) =>
+            content.replace(
+              /^(linkedFolder:\s*).*$/m,
+              `$1"[[${updatedLf}]]"`,
+            ),
           );
         }
       }),

@@ -310,12 +310,42 @@ export class RandomTableEditorModal extends HexmakerModal {
       "duckmage-lf-folders-" + Math.random().toString(36).slice(2);
     const folderDatalist = contentEl.createEl("datalist");
     folderDatalist.id = folderDatalistId;
-    const worldFolder = normalizeFolder(this.plugin.settings.worldFolder);
     const seenFolders = new Set<string>();
+    // Add configured settings folders first (excluding hexFolder)
+    const s = this.plugin.settings;
+    for (const raw of [
+      s.townsFolder,
+      s.dungeonsFolder,
+      s.questsFolder,
+      s.featuresFolder,
+      s.factionsFolder,
+      s.tablesFolder,
+      s.workflowsFolder,
+    ]) {
+      const p = normalizeFolder(raw);
+      if (p && !seenFolders.has(p)) {
+        seenFolders.add(p);
+        folderDatalist.createEl("option", { value: p });
+      }
+    }
+    // Add all vault subfolders under worldFolder or any settings folder
+    const folderRoots = [
+      s.worldFolder,
+      s.townsFolder,
+      s.dungeonsFolder,
+      s.questsFolder,
+      s.featuresFolder,
+      s.factionsFolder,
+      s.tablesFolder,
+      s.workflowsFolder,
+    ].map(normalizeFolder).filter(Boolean);
     for (const f of this.app.vault.getAllFolders()) {
       const p = normalizeFolder(f.path);
-      if (!p || p === worldFolder) continue;
-      if (worldFolder && !p.startsWith(worldFolder + "/")) continue;
+      if (!p) continue;
+      const underRoot = folderRoots.some(
+        (r) => p === r || p.startsWith(r + "/"),
+      );
+      if (!underRoot) continue;
       if (!seenFolders.has(p)) {
         seenFolders.add(p);
         folderDatalist.createEl("option", { value: p });
@@ -419,7 +449,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       updatedFm = this.setFrontmatterString(
         updatedFm,
         "linkedFolder",
-        linkedFolder || undefined,
+        linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
       );
       if (linkedFolder) {
         await this.renameUpdatedEntries(

@@ -21,7 +21,13 @@ export function parseRandomTable(content: string): RandomTable {
     const diceMatch = /^dice:\s*(\d+)\s*$/m.exec(fmMatch[1]);
     if (diceMatch) dice = parseInt(diceMatch[1], 10);
     const lfMatch = /^linkedFolder:\s*(.+)$/m.exec(fmMatch[1]);
-    if (lfMatch) linkedFolder = lfMatch[1].trim();
+    if (lfMatch) {
+      const raw = lfMatch[1].trim();
+      // Strip outer YAML quotes if present ("[[path]]" → [[path]])
+      const unquoted = /^"(.*)"$/.exec(raw)?.[1] ?? raw;
+      const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(unquoted);
+      linkedFolder = wikiLinkMatch ? wikiLinkMatch[1].trim() : unquoted;
+    }
   }
 
   // Extract user description from preamble (text between frontmatter and table, excluding roller link)
