@@ -221,6 +221,9 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "  Order doesn't matter, so *A | B* also covers *B | A*.",
     "- **Features** (optional): lines that are always placed, e.g. a river from a map",
     "  edge to a lake. *From* and *To* are `edge`, `none` or a terrain name.",
+    "- **Paths** (optional): paths drawn over the terrain (rivers, roads). *From* and",
+    "  *To* are `edge`, `none`, `path` (joins another path of the same type, like a",
+    "  tributary) or a terrain. *Through* is the share of the path on each terrain.",
     "- **Layout** (optional): where each terrain sat in the example map, in a 3×3",
     "  grid. 1 means as common there as anywhere; 3 means three times as common.",
     "- Frontmatter settings (optional): `feature-size`, `directional-bias`, `clumping`,",
@@ -250,6 +253,21 @@ export function modelToMarkdown(model: HexWfcModel): string {
           "| Terrain | From | To | Count |",
           "| --- | --- | --- | ---: |",
           ...features.map((f) => `| ${cell(f.terrain)} | ${cell(f.from)} | ${cell(f.to)} | ${num(f.count)} |`),
+          "",
+        ]
+      : []),
+    ...(model.paths?.length
+      ? [
+          "## Paths",
+          "",
+          "| Path | From | To | Count | Turn | Length % | Through |",
+          "| --- | --- | --- | ---: | ---: | ---: | --- |",
+          ...model.paths.map(
+            (p) =>
+              `| ${cell(p.type)} | ${cell(p.from)} | ${cell(p.to)} | ${num(p.count)} | ${num(p.turn)} | ${num(p.length * 100)} | ${cell(
+                Object.entries(p.through).map(([t, v]) => `${t} ${num(v * 100)}%`).join("; "),
+              )} |`,
+          ),
           "",
         ]
       : []),
@@ -298,8 +316,8 @@ export function isModelMarkdown(text: string): boolean {
   return new RegExp(`^---\\r?\\n(?:.*\\r?\\n)*?${MARKER}\\s*:`).test(text);
 }
 
-type Section = "terrains" | "adjacency" | "features" | "layout";
-const SECTIONS: readonly Section[] = ["terrains", "adjacency", "features", "layout"];
+type Section = "terrains" | "adjacency" | "features" | "paths" | "layout";
+const SECTIONS: readonly Section[] = ["terrains", "adjacency", "features", "paths", "layout"];
 
 /**
  * Parse a model file. Throws if the text isn't a hex-wfc file at all; bad
@@ -349,6 +367,7 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
   let columns = new Map<string, number>();
   const model: HexWfcModel = { name: "", terrains: [], adjacency: [], meta };
   const features: NonNullable<HexWfcModel["features"]> = [];
+  const paths: NonNullable<HexWfcModel["paths"]> = [];
   const layouts = new Map<string, number[]>();
   const weightOf = (raw: string | undefined, where: string): number | null => {
     if (raw === undefined || raw === "") return 1;
@@ -425,6 +444,26 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
         continue;
       }
       features.push({ terrain: cells[0], from: col("from") ?? "none", to: col("to") ?? "none", count });
+    } else if (section === "paths") {
+      const nums = ["count", "turn", "length %"].map((c) => Number(col(c) ?? (c === "count" ? "1" : "0")));
+      if (nums.some((n) => !Number.isFinite(n) || n < 0)) {
+        warnings.push(`${where}: count, turn and length % should be numbers ≥ 0, row skipped`);
+        continue;
+      }
+      const through: Record<string, number> = {};
+      for (const item of (col("through") ?? "").split(";").map((x) => x.trim()).filter(Boolean)) {
+        const m = /^(.*\S)\s+([\d.]+)%?$/.exec(item);
+        if (m) through[m[1]] = Math.round(Number(m[2]) * 1000) / 100000;
+      }
+      paths.push({
+        type: cells[0],
+        from: col("from") ?? "none",
+        to: col("to") ?? "none",
+        count: nums[0],
+        turn: nums[1],
+        length: Math.round(nums[2] * 1000) / 100000,
+        through,
+      });
     } else {
       const values = LAYOUT_BINS.map((b) => Number(cells[columns.get(b.toLowerCase()) ?? -1]));
       if (values.every((v) => Number.isFinite(v) && v >= 0)) layouts.set(cells[0], values);
@@ -438,6 +477,7 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
     else warnings.push(`Layout row "${t}" isn't in the Terrains table, ignored`);
   }
   if (features.length) model.features = features;
+  if (paths.length) model.paths = paths;
   if (exampleHexes !== undefined) model.exampleHexes = exampleHexes;
   if (Object.keys(settings).length) model.settings = settings;
   model.name = name || fallbackName;

@@ -22,6 +22,8 @@ export function drawPreview(
   orientation: "flat" | "pointy",
   colors: Map<string, string>,
   featureCells?: Set<string>,
+  paths: { type: string; hexes: string[] }[] = [],
+  pathColors: Map<string, string> = new Map(),
   maxWidth = 420,
 ): void {
   const { cols, rows, offset, stagger } = grid;
@@ -65,5 +67,21 @@ export function drawPreview(
       ctx.lineWidth = Math.max(1, scale * 0.15);
       ctx.stroke();
     }
+  }
+  // Paths through hex centres.
+  const centre = new Map(pts.map(([key, px, py]) => [key, [(px - minX + 1) * scale, (py - minY + 1) * scale]]));
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const p of paths) {
+    ctx.beginPath();
+    p.hexes.forEach((h, i) => {
+      const c = centre.get(h);
+      if (!c) return;
+      if (i === 0) ctx.moveTo(c[0], c[1]);
+      else ctx.lineTo(c[0], c[1]);
+    });
+    ctx.strokeStyle = pathColors.get(p.type) ?? "#2b6cb0";
+    ctx.lineWidth = Math.max(1.5, scale * 0.35);
+    ctx.stroke();
   }
 }

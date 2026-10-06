@@ -30,6 +30,7 @@ import {
 } from "./model";
 import { mulberry32 } from "./rng";
 import { placeFeatures, placeEdgeBorder } from "./features";
+import { routePaths, type PathOutput } from "./paths";
 import { smooth, connectLand, countPatches, countsPenalty, topUpCounts, type GridInfo } from "./post";
 
 export interface SolveOptions extends GeneratorSettings {
@@ -72,6 +73,8 @@ export type SolveResult =
       cells: Map<string, string>;
       /** Hexes laid down as guaranteed features (rivers), keyed "x_y". */
       featureCells: Set<string>;
+      /** Paths routed over the terrain (rivers, roads drawn as paths). */
+      paths: PathOutput[];
       /** Soft goals that weren't fully met (counts, connected land, features). */
       warnings: string[];
       stats: SolveStats;
@@ -167,7 +170,18 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       }
     }
 
-    const core = solveOnce(working, { ...opts, fixed, seed }, s);
+    let core = solveOnce(working, { ...opts, fixed, seed }, s);
+    if (!core.ok && featureCells.size) {
+      // The guaranteed features (or edge border) couldn't be fitted; try the
+      // map without them rather than failing outright.
+      const plain = new Map(toCellMap(opts.fixed ?? {}));
+      const retry = solveOnce(model, { ...opts, fixed: plain, seed }, s);
+      if (retry.ok) {
+        warnings.push("Guaranteed features or the edge border didn't fit this map, so they were left out");
+        featureCells.clear();
+        core = retry;
+      }
+    }
     for (const key of ["attempts", "backtracks", "decisions", "grown"] as const) total[key] += core.stats[key];
     if (!core.ok) {
       lastFail = core;
@@ -206,8 +220,16 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       if (range.max !== undefined && n > range.max) best.warnings.push(`${n} ${t} (wanted at most ${range.max})`);
     }
   }
+  let paths: PathOutput[] = [];
+  if (s.features && model.paths?.length) {
+    const N = grid.cols * grid.rows;
+    const scale = model.exampleHexes ? Math.sqrt(N / model.exampleHexes) : 1;
+    const routed = routePaths(model.paths, best.cells, grid, mulberry32(opts.seed ^ 0x7f4a7c15), scale);
+    paths = routed.paths;
+    best.warnings.push(...routed.warnings);
+  }
   total.ms = Date.now() - t0;
-  return { ok: true, cells: best.cells, featureCells: best.featureCells, warnings: best.warnings, stats: total };
+  return { ok: true, cells: best.cells, featureCells: best.featureCells, paths, warnings: best.warnings, stats: total };
 }
 
 /** Feedback never boosts or damps a terrain by more than this factor per choice. */

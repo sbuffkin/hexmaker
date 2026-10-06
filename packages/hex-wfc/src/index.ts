@@ -24,12 +24,14 @@ export {
   type GrowthShape,
   type GeneratorSettings,
   type LineFeature,
+  type PathFeature,
   type Symmetry,
   type CountRange,
 } from "./model";
 export { learnModel, measurePatches, measureLayout, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
 export { solve, findViolation, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
 export { countPatches, type GridInfo } from "./post";
+export { learnPaths, routePaths, type PathInput, type PathOutput } from "./paths";
 export {
   modelToMarkdown,
   parseModelMarkdown,

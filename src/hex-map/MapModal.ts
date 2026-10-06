@@ -12,6 +12,8 @@ import {
   generatorFitsPalette,
   generateTerrain,
   paletteColors,
+  pathColors,
+  toPathChains,
   type GeneratorFile,
 } from "../worldgen/generators";
 import { GeneratorTab } from "../worldgen/GeneratorTab";
@@ -692,7 +694,7 @@ export class MapModal extends HexmakerModal {
         previewStatus.setText(`This generator couldn't fill the map: ${r.message}`);
         return;
       }
-      drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells);
+      drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin));
       previewStatus.setText(r.warnings.length ? r.warnings.join("; ") : "");
     };
     let previewTimer: number | null = null;
@@ -861,6 +863,7 @@ export class MapModal extends HexmakerModal {
     // Solve before creating anything, so a generator that can't fill the
     // map leaves no half-made map behind.
     let terrainAt: Map<string, string> | undefined;
+    let generatedPaths: { type: string; hexes: string[] }[] = [];
     if (generator) {
       const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
       const solved = generateTerrain(
@@ -873,6 +876,7 @@ export class MapModal extends HexmakerModal {
         return;
       }
       terrainAt = solved.cells;
+      generatedPaths = solved.paths;
     }
 
     const result = await this.plugin.createNewMap(
@@ -902,6 +906,16 @@ export class MapModal extends HexmakerModal {
         new Notice(`Background import failed: ${e instanceof Error ? e.message : String(e)}`);
         resolvedBgPath = null;
       }
+    }
+
+    if (generatedPaths.length) {
+      const newMap = this.plugin.getMap(result.name);
+      const { chains, missing } = toPathChains(this.plugin, generatedPaths);
+      if (newMap && chains.length) {
+        newMap.pathChains = [...newMap.pathChains, ...chains];
+        await this.plugin.saveSettings();
+      }
+      if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
     }
 
     if (resolvedBgPath) {

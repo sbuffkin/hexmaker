@@ -70,6 +70,26 @@ export interface LineFeature {
   count: number;
 }
 
+/**
+ * A path drawn on top of the terrain (a river or road made with a path tool),
+ * learned from the example's paths and routed over generated terrain.
+ * `from`/`to` are "edge", "none", "path" (joins another path of this type,
+ * like a tributary) or a terrain name.
+ */
+export interface PathFeature {
+  type: string;
+  from: string;
+  to: string;
+  /** How many the example had. Scaled with map size when routing. */
+  count: number;
+  /** Share of steps that change direction (0–1). */
+  turn: number;
+  /** Length as a share of the map's larger side. */
+  length: number;
+  /** Share of the path's hexes on each terrain. */
+  through: Record<string, number>;
+}
+
 export type Symmetry = "none" | "left-right" | "top-bottom" | "both";
 export const SYMMETRIES: readonly Symmetry[] = ["none", "left-right", "top-bottom", "both"];
 
@@ -116,7 +136,7 @@ export interface GeneratorSettings {
   mix?: Record<string, number>;
   /** Per-terrain min/max number of separate patches. */
   counts?: Record<string, CountRange>;
-  /** Lay down the model's guaranteed line features (rivers). */
+  /** Lay down the model's guaranteed features and paths (rivers). */
   features?: boolean;
 }
 
@@ -151,8 +171,10 @@ export interface HexWfcModel {
   name: string;
   terrains: TerrainEntry[];
   adjacency: AdjacencyEntry[];
-  /** Guaranteed line features (rivers). */
+  /** Guaranteed line features painted as terrain (rivers). */
   features?: LineFeature[];
+  /** Paths drawn over the terrain (rivers, roads), routed after solving. */
+  paths?: PathFeature[];
   /** Number of painted hexes in the example. Used to scale counts and spacing. */
   exampleHexes?: number;
   /** Free-form string metadata (palette, source map, ...). Preserved by the file format. */
@@ -232,6 +254,9 @@ export function restrictModel(model: HexWfcModel, allowed: Iterable<string>): He
     adjacency: model.adjacency.filter((e) => keep.has(e.a) && keep.has(e.b)),
     ...(model.features
       ? { features: model.features.filter((f) => keep.has(f.terrain) && ok(f.from) && ok(f.to)) }
+      : {}),
+    ...(model.paths
+      ? { paths: model.paths.filter((p) => (p.from === "path" || ok(p.from)) && (p.to === "path" || ok(p.to))) }
       : {}),
     meta: { ...model.meta },
     ...(model.settings ? { settings: { ...model.settings } } : {}),

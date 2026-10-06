@@ -759,3 +759,67 @@ describe("setting codec", () => {
     expect(back.model).toEqual(m);
   });
 });
+
+describe("paths drawn over the terrain", () => {
+  /** 30×20 grass map with a bay of water on the left, a river path edge-to-edge and a tributary into the bay. */
+  function pathExample() {
+    const cells = new Map<string, string>();
+    for (let x = 0; x < 30; x++) for (let y = 0; y < 20; y++) cells.set(cellKey(x, y), x < 8 && y > 4 && y < 15 ? "Water" : "Grass");
+    // Main river: straight down column 20, top edge to bottom edge.
+    const main = Array.from({ length: 20 }, (_, y) => cellKey(20, y));
+    // Tributary: from the main river at (20,10) west to the bay (row 10).
+    const trib = Array.from({ length: 14 }, (_, i) => cellKey(20 - i, 10)); // ends at 7_10, in the bay
+    return { cells, paths: [{ type: "River", hexes: main }, { type: "River", hexes: trib }, { type: "River", hexes: ["3_3"] }] };
+  }
+
+  it("learns what each path's ends connect to, ignoring 1-hex stray paths", () => {
+    const { cells, paths } = pathExample();
+    const m = learnModel(cells, { name: "p", orientation: "flat", paths });
+    const sorted = (m.paths ?? []).map((p) => `${p.type}:${p.from}->${p.to}`).sort();
+    expect(sorted).toEqual(["River:edge->edge", "River:path->Water"]);
+    const main = m.paths!.find((p) => p.from === "edge")!;
+    expect(main.through.Grass).toBe(1);
+    expect(main.length).toBeCloseTo(20 / 30, 2);
+  });
+
+  it("round-trips the Paths table", () => {
+    const { cells, paths } = pathExample();
+    const m = learnModel(cells, { name: "p", orientation: "flat", paths });
+    const back = parseModelMarkdown(modelToMarkdown(m));
+    expect(back.warnings).toEqual([]);
+    expect(back.model.paths).toEqual(m.paths);
+  });
+
+  it("routes a main river edge to edge and a tributary from it into the water", () => {
+    const { cells, paths } = pathExample();
+    const m = learnModel(cells, { name: "p", orientation: "flat", paths });
+    for (const seed of [1, 2, 3]) {
+      const r = solve(m, { cols: 30, rows: 20, orientation: "flat", seed, directionalBias: 1 });
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      const adjacent = (a: string, b: string) => {
+        const [x, y] = a.split("_").map(Number);
+        return hexNeighbors(x, y, "flat").some(([nx, ny]) => cellKey(nx, ny) === b);
+      };
+      for (const p of r.paths) for (let i = 1; i < p.hexes.length; i++) expect(adjacent(p.hexes[i - 1], p.hexes[i])).toBe(true);
+      const onEdge = (k: string) => {
+        const [x, y] = k.split("_").map(Number);
+        return x === 0 || y === 0 || x === 29 || y === 19;
+      };
+      const main = r.paths.find((p) => onEdge(p.hexes[0]) && onEdge(p.hexes[p.hexes.length - 1]));
+      expect(main).toBeDefined();
+      const trib = r.paths.find((p) => p !== main);
+      if (trib) {
+        expect(main!.hexes).toContain(trib.hexes[0]);
+        expect(r.cells.get(trib.hexes[trib.hexes.length - 1])).toBe("Water");
+      }
+    }
+  });
+
+  it("features: false leaves paths out", () => {
+    const { cells, paths } = pathExample();
+    const m = learnModel(cells, { name: "p", orientation: "flat", paths });
+    const r = solve(m, { cols: 30, rows: 20, orientation: "flat", seed: 1, features: false });
+    expect(r.ok && r.paths.length).toBe(0);
+  });
+});

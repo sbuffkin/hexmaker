@@ -106,6 +106,24 @@ export function readLockedHexes(plugin: HexmakerPlugin, mapName: string): Set<st
   return out;
 }
 
+/** Path colour per path type name, for previews. */
+export function pathColors(plugin: HexmakerPlugin): Map<string, string> {
+  return new Map((plugin.settings.pathTypes ?? []).map((t) => [t.name, t.color]));
+}
+
+/**
+ * Generated paths as map path chains. Path types the vault doesn't have are
+ * dropped (and named in the returned warning list).
+ */
+export function toPathChains(
+  plugin: HexmakerPlugin,
+  paths: { type: string; hexes: string[] }[],
+): { chains: { typeName: string; hexes: string[] }[]; missing: string[] } {
+  const known = new Set((plugin.settings.pathTypes ?? []).map((t) => t.name));
+  const missing = [...new Set(paths.map((p) => p.type).filter((t) => !known.has(t)))];
+  return { chains: paths.filter((p) => known.has(p.type)).map((p) => ({ typeName: p.type, hexes: [...p.hexes] })), missing };
+}
+
 /** Palette colour per terrain name, for previews. */
 export function paletteColors(plugin: HexmakerPlugin, paletteName: string | undefined): Map<string, string> {
   const terrains = plugin.getPaletteByName(paletteName ?? "")?.terrains ?? plugin.settings.terrainPalettes[0]?.terrains ?? [];
@@ -134,6 +152,7 @@ export async function saveGeneratorFromMap(
     name,
     orientation: plugin.settings.hexOrientation,
     stagger: mapStagger(plugin, mapName),
+    paths: (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
     meta: {
       palette: map.paletteName,
       "source-map": mapName,
@@ -257,7 +276,17 @@ export async function fillMap(
   if (!result.ok) return { error: result.message };
   const changes = [...result.cells].filter(([k, t]) => painted.get(k) !== t);
   await writeTerrain(plugin, mapName, changes, onProgress);
-  return { changed: changes.length, warnings: result.warnings };
+  const warnings = [...result.warnings];
+  // Regenerating also redraws the generator's path types (rivers, roads);
+  // other path types, and every path when only filling, are left alone.
+  if (mode === "regenerate" && model.paths?.length) {
+    const learned = new Set(model.paths.map((p) => p.type));
+    const { chains, missing } = toPathChains(plugin, result.paths);
+    map.pathChains = [...(map.pathChains ?? []).filter((c) => !learned.has(c.typeName)), ...chains];
+    if (missing.length) warnings.push(`No path type named ${missing.join(", ")}, so those paths were skipped`);
+    await plugin.saveSettings();
+  }
+  return { changed: changes.length, warnings };
 }
 
 /** Write terrain to hex notes (creating missing ones) and keep encounter links in sync. */

@@ -14,6 +14,7 @@ import {
   generateTerrain,
   generatorFitsPalette,
   paletteColors,
+  pathColors,
   fillMap,
   LOCK_KEY,
   type GeneratorFile,
@@ -153,6 +154,7 @@ export class GeneratorTab {
     const parts = [`${model.terrains.length} terrains`];
     for (const [shape, label] of [["blob", "blobs"], ["line", "lines"], ["scatter", "scattered"]] as const)
       if (byShape(shape).length) parts.push(`${label}: ${byShape(shape).join(", ")}`);
+    if (model.paths?.length) parts.push(`paths: ${[...new Set(model.paths.map((p) => p.type))].join(", ")}`);
     if (model.meta["source-map"]) parts.push(`learned from ${model.meta["source-map"]}`);
     el.createEl("p", { text: parts.join(" · "), cls: "duckmage-map-origin-desc" });
     for (const w of g.warnings) el.createEl("p", { text: `⚠ ${w}`, cls: "duckmage-map-origin-desc" });
@@ -203,7 +205,7 @@ export class GeneratorTab {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
-      drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells);
+      drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin));
       const notes = r.warnings.length ? ` · ${r.warnings.join("; ")}` : "";
       status.setText(`${grid.cols}×${grid.rows} in ${r.stats.ms} ms${notes}`);
     };
@@ -245,12 +247,16 @@ export class GeneratorTab {
 
     // Guarantees
     this.heading(el, "Guarantees");
-    if (model.features?.length) {
-      const list = model.features.map((f) => `${f.terrain}: ${f.from === "edge" ? "map edge" : f.from} → ${f.to === "edge" ? "map edge" : f.to}`).join(", ");
+    if (model.features?.length || model.paths?.length) {
+      const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? "joins another" : e);
+      const list = [
+        ...(model.features ?? []).map((f) => `${f.terrain}: ${end(f.from)} → ${end(f.to)}`),
+        ...(model.paths ?? []).map((p) => `${p.type} path: ${end(p.from)} → ${end(p.to)}`),
+      ].join(", ");
       this.toggle(el, "Guaranteed features", `Always lay these down first: ${list}.`, s().features, (v) => save({ features: v }));
     } else {
       el.createEl("p", {
-        text: "No guaranteed features. Paint a river running from a map edge into a lake (or from edge to edge) in the example map to get one.",
+        text: "No guaranteed features. Draw a river (path or painted terrain) from a map edge into a lake, or from edge to edge, in the example map to get one.",
         cls: "duckmage-map-origin-desc",
       });
     }
@@ -344,7 +350,7 @@ export class GeneratorTab {
     const mapName = this.view.activeMapName;
     const palette = this.plugin.getMapPalette(mapName).map((t) => t.name);
     el.createEl("p", {
-      text: `Uses the preview's seed. "Fill unpainted hexes" keeps everything you've painted. "Regenerate" repaints the whole map except hexes whose note has "${LOCK_KEY}: true" in its properties.`,
+      text: `Uses the preview's seed. "Fill unpainted hexes" keeps everything you've painted and your paths. "Regenerate" repaints the whole map except hexes whose note has "${LOCK_KEY}: true" in its properties, and redraws the generator's path types (e.g. rivers).`,
       cls: "duckmage-map-origin-desc",
     });
     if (!generatorFitsPalette(g.model, palette))

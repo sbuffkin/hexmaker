@@ -9,12 +9,15 @@ import {
   type Stagger,
 } from "./grid";
 import type { HexWfcModel, GrowthShape, LineFeature, TerrainEntry } from "./model";
+import { learnPaths, type PathInput } from "./paths";
 
 export interface LearnOptions {
   name: string;
   orientation: Orientation;
   stagger?: Stagger;
   meta?: Record<string, string>;
+  /** Paths drawn over the example (rivers, roads), learned as path features. */
+  paths?: PathInput[];
 }
 
 /**
@@ -91,6 +94,10 @@ export function learnModel(
     meta: { ...(opts.meta ?? {}) },
   };
   if (analysis.features.length) model.features = analysis.features;
+  if (opts.paths?.length) {
+    const paths = learnPaths(opts.paths, map, opts.orientation, stagger);
+    if (paths.length) model.paths = paths;
+  }
   return model;
 }
 
@@ -114,8 +121,12 @@ export const SHAPE_THRESHOLDS = {
   /** Mean same-terrain neighbours at or above this → "blob"; below → thin
    *  (shores, rings), left to the neighbour rules. */
   blobThickness: 3.5,
-  /** Line patches at least this many hexes long can become features. */
+  /** Line patches at least this many hexes long can become features... */
   featureMinHexes: 4,
+  /** ...if the terrain's lines are this thin (a painted river is ~1 wide)... */
+  featureMaxWidth: 1.5,
+  /** ...and the terrain is a minor one (a share of the map at most this). */
+  featureMaxShare: 0.1,
 };
 
 interface Patch {
@@ -194,6 +205,7 @@ function analysePatches(
 
   const terrains = new Map<string, TerrainAnalysis>();
   const lineTerrains = new Set<string>();
+  const featureTerrains = new Set<string>();
   for (const [t, list] of byTerrain) {
     let sumS = 0, sumS2 = 0, elongW = 0, thickW = 0, widthW = 0, weighted = 0;
     const others = new Map<string, number>();
@@ -232,6 +244,7 @@ function analysePatches(
         a.turn = Math.round(Math.min(0.5, Math.max(0.05, 1.2 / elong)) * 100) / 100;
         a.width = Math.round(Math.min(3, Math.max(1, width)) * 10) / 10;
         lineTerrains.add(t);
+        if (width <= TH.featureMaxWidth && (countOf.get(t) ?? 0) / total <= TH.featureMaxShare) featureTerrains.add(t);
       } else if (thick >= TH.blobThickness || elong >= TH.lineElongation) {
         a.shape = "blob";
       }
@@ -253,7 +266,7 @@ function analysePatches(
   // (non-background) terrain.
   const featureCount = new Map<string, LineFeature>();
   for (const p of patches) {
-    if (!lineTerrains.has(p.terrain) || p.cells.length < TH.featureMinHexes) continue;
+    if (!featureTerrains.has(p.terrain) || p.cells.length < TH.featureMinHexes) continue;
     const proj = (c: [number, number]) => {
       const [px, py] = hexCenter(c[0], c[1], orientation, stagger);
       return (px - p.centre[0]) * p.axis[0] + (py - p.centre[1]) * p.axis[1];
@@ -271,11 +284,12 @@ function analysePatches(
         const xy = parseCellKey(k);
         if (xy && hexDistance(xy, end, orientation, stagger) <= 1) near.set(t, (near.get(t) ?? 0) + 1);
       }
-      // Prefer a blob (a lake) over a thin terrain it passes through (its shore).
-      let best = "none", bestScore = 0;
+      // A line only ends *in* a blob (a lake, a bay); passing a band of
+      // another terrain isn't an anchor.
+      let best = "none", bestN = 0;
       for (const [t, n] of near) {
-        const sc = n + (terrains.get(t)?.shape === "blob" ? 100 : 0);
-        if (sc > bestScore) { bestScore = sc; best = t; }
+        if (terrains.get(t)?.shape !== "blob") continue;
+        if (n > bestN) { bestN = n; best = t; }
       }
       return best;
     };
