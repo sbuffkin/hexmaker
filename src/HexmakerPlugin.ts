@@ -376,6 +376,17 @@ export default class HexmakerPlugin extends Plugin {
     void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
   }
 
+  /** Show a map in the hex map view, opening the view if it isn't open. */
+  async showMap(name: string): Promise<void> {
+    let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getLeaf("tab");
+      await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP, active: true });
+    }
+    await this.app.workspace.revealLeaf(leaf);
+    (leaf.view as HexMapView).switchMapFromModal(name);
+  }
+
   openSetupWizard(): void {
     void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_SETUP_WIZARD });
   }

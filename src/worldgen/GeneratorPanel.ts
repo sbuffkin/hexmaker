@@ -18,6 +18,7 @@ import {
   pathColors,
   fillMap,
   relearnGenerator,
+  toPathChains,
   LOCK_KEY,
   type GeneratorFile,
 } from "./generators";
@@ -263,19 +264,24 @@ export class GeneratorPanel {
     const colsInput = previewRow.createEl("input", { type: "number", value: String(this.previewCols), cls: "duckmage-wfc-num" });
     previewRow.createSpan({ text: "×" });
     const rowsInput = previewRow.createEl("input", { type: "number", value: String(this.previewRows), cls: "duckmage-wfc-num" });
-    const previewBtn = previewRow.createEl("button", { text: "Preview" });
+    const createRow = previewBox.createDiv({ cls: "duckmage-region-row" });
+    const newNameInput = createRow.createEl("input", { type: "text", attr: { placeholder: "Name for the new map" } });
+    const createBtn = createRow.createEl("button", { text: "Create map", cls: "mod-cta" });
 
-    const runPreview = () => {
-      this.previewCols = Math.max(2, Math.min(200, Number(colsInput.value) || 30));
-      this.previewRows = Math.max(2, Math.min(200, Number(rowsInput.value) || 20));
-      this.seed = Number(seedInput.value) >>> 0;
+    const previewGrid = () => {
       const map = this.plugin.getMap(this.mapName);
-      const grid = {
-        cols: this.previewCols,
-        rows: this.previewRows,
+      return {
+        cols: Math.max(2, Math.min(200, Number(colsInput.value) || 30)),
+        rows: Math.max(2, Math.min(200, Number(rowsInput.value) || 20)),
         offset: { x: 0, y: 0 },
         stagger: map?.staggerOffset ?? this.plugin.settings.staggerOffset ?? "odd",
       };
+    };
+    const runPreview = () => {
+      const grid = previewGrid();
+      this.previewCols = grid.cols;
+      this.previewRows = grid.rows;
+      this.seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
       const r = generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
@@ -290,7 +296,7 @@ export class GeneratorPanel {
     const schedulePreview = () => {
       if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
       if (Number(colsInput.value) * Number(rowsInput.value) > PREVIEW_AUTO_LIMIT) {
-        status.setText("Large map: use the preview button to generate it.");
+        status.setText("Large map: re-roll to preview it.");
         return;
       }
       this.previewTimer = window.setTimeout(() => {
@@ -302,7 +308,44 @@ export class GeneratorPanel {
       seedInput.value = String(randomSeed());
       runPreview();
     });
-    previewBtn.addEventListener("click", runPreview);
+    // Create a new map that is exactly the preview: same size, seed, palette and paths.
+    createBtn.addEventListener("click", () => {
+      const grid = previewGrid();
+      const seed = Number(seedInput.value) >>> 0;
+      const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
+      const r = generateTerrain(this.plugin, model, palette, grid, seed);
+      if (!r.ok) {
+        new Notice(`Couldn't generate: ${r.message}`);
+        return;
+      }
+      createBtn.disabled = true;
+      void this.plugin
+        .createNewMap(
+          newNameInput.value.trim() || `${model.name}-${seed}`,
+          grid.cols, grid.rows, GeneratorPanel.paletteName, 0, 0, grid.stagger,
+          (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
+          r.cells,
+        )
+        .then(async (result) => {
+          createBtn.disabled = false;
+          createBtn.setText("Create map");
+          if ("error" in result) {
+            new Notice(result.error);
+            return;
+          }
+          const { chains, missing } = toPathChains(this.plugin, r.paths);
+          const created = this.plugin.getMap(result.name);
+          if (created && chains.length) {
+            created.pathChains = [...created.pathChains, ...chains];
+            await this.plugin.saveSettings();
+          }
+          if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
+          new Notice(`Created map "${result.name}".`);
+          GeneratorPanel.mapName = result.name;
+          await this.plugin.showMap(result.name);
+          this.host.rerender();
+        });
+    });
     for (const input of [seedInput, colsInput, rowsInput]) input.addEventListener("change", schedulePreview);
 
     this.renderFill(el, g, () => Number(seedInput.value) >>> 0);
