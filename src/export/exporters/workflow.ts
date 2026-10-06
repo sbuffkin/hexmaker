@@ -32,6 +32,7 @@ import {
 } from "../../random-tables/randomTable";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { fillPlaceholders, escapeTableCell } from "../../textUtils";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -138,7 +139,7 @@ export async function buildWorkflowMarkdown(
     const tableCell =
       step.kind === "dice" ? (step.diceFormula ?? "") : step.tablePath;
     lines.push(
-      `| ${i + 1} | ${escapePipes(tableCell)} | ${step.rolls} | ${escapePipes(step.label ?? "")} |`,
+      `| ${i + 1} | ${escapeTableCell(tableCell)} | ${step.rolls} | ${escapeTableCell(step.label ?? "")} |`,
     );
   });
   lines.push("");
@@ -261,18 +262,16 @@ export function fillTemplate(
   rolls: string[][],
 ): string {
   if (!template) return "";
-  let result = template;
+  const values = new Map<string, string>();
   for (let si = 0; si < workflow.steps.length; si++) {
     const step = workflow.steps[si];
     const stepRolls = rolls[si] ?? [];
     for (let ri = 0; ri < step.rolls; ri++) {
       const placeholder = stepPlaceholder(step, ri);
-      const value = stepRolls[ri] ?? `[${placeholder}]`;
-      const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      result = result.replace(new RegExp(escaped, "g"), value);
+      values.set(placeholder, stepRolls[ri] ?? `[${placeholder}]`);
     }
   }
-  return result;
+  return fillPlaceholders(template, values);
 }
 
 /**
@@ -297,16 +296,13 @@ export function formatRollsBreakdown(
       const value = rolls[si]?.[ri] ?? "";
       const rollDisplay = step.rolls === 1 ? "—" : String(ri + 1);
       out.push(
-        `| ${si + 1} | ${escapePipes(label)} | ${rollDisplay} | ${escapePipes(value)} |`,
+        `| ${si + 1} | ${escapeTableCell(label)} | ${rollDisplay} | ${escapeTableCell(value)} |`,
       );
     }
   });
   return out;
 }
 
-function escapePipes(s: string): string {
-  return s.replace(/\|/g, "\\|");
-}
 
 function sanitiseFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_");

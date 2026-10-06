@@ -13,15 +13,13 @@ import {
   isDiceFormula,
   type WorkflowStep,
 } from "./workflow";
+import { escapeRegex, placeholderPattern } from "../textUtils";
 
 /** Convert a table basename to a default label: spaces → underscores. */
 function labelFromBasename(basename: string): string {
   return basename.replace(/ /g, "_");
 }
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export class WorkflowEditorModal extends HexmakerModal {
   private flushAndSave: (() => Promise<void>) | null = null;
@@ -235,7 +233,7 @@ export class WorkflowEditorModal extends HexmakerModal {
       // Update ## heading
       templateContent = templateContent.replace(
         new RegExp(`^## ${escapeRegex(oldLabel)}$`, "m"),
-        `## ${newLabel}`,
+        () => `## ${newLabel}`,
       );
       // Update $placeholder references: $old_var and $old_var_N → $new_var and $new_var_N
       const oldVar = oldLabel.replace(/ /g, "_");
@@ -273,14 +271,13 @@ export class WorkflowEditorModal extends HexmakerModal {
       if (newRolls > oldRolls) {
         if (oldRolls === 1) {
           // Replace single $varname with $varname_1 … $varname_newRolls
-          const singleEscaped = escapeRegex(`$${varName}`);
           const newText = Array.from(
             { length: newRolls },
             (_, i) => `$${varName}_${i + 1}`,
           ).join("\n");
           templateContent = templateContent.replace(
-            new RegExp(singleEscaped + "(?!_\\d)", "g"),
-            newText,
+            new RegExp(placeholderPattern(`$${varName}`), "g"),
+            () => newText,
           );
         } else {
           // Append new placeholder(s) after the last existing one
@@ -290,8 +287,8 @@ export class WorkflowEditorModal extends HexmakerModal {
             (_, i) => `$${varName}_${oldRolls + i + 1}`,
           ).join("\n");
           templateContent = templateContent.replace(
-            new RegExp(escapeRegex(lastPlaceholder), "g"),
-            `${lastPlaceholder}\n${addedText}`,
+            new RegExp(placeholderPattern(lastPlaceholder), "g"),
+            () => `${lastPlaceholder}\n${addedText}`,
           );
         }
       } else {
@@ -299,22 +296,20 @@ export class WorkflowEditorModal extends HexmakerModal {
         if (newRolls === 1) {
           // Remove _2 … _oldRolls lines, then replace $varname_1 with $varname
           for (let r = oldRolls; r >= 2; r--) {
-            const ph = escapeRegex(`$${varName}_${r}`);
             templateContent = templateContent.replace(
-              new RegExp(`\n?${ph}`, "g"),
+              new RegExp(`\n?${placeholderPattern(`$${varName}_${r}`)}`, "g"),
               "",
             );
           }
           templateContent = templateContent.replace(
-            new RegExp(escapeRegex(`$${varName}_1`), "g"),
-            `$${varName}`,
+            new RegExp(placeholderPattern(`$${varName}_1`), "g"),
+            () => `$${varName}`,
           );
         } else {
           // Remove _newRolls+1 … _oldRolls lines
           for (let r = oldRolls; r > newRolls; r--) {
-            const ph = escapeRegex(`$${varName}_${r}`);
             templateContent = templateContent.replace(
-              new RegExp(`\n?${ph}`, "g"),
+              new RegExp(`\n?${placeholderPattern(`$${varName}_${r}`)}`, "g"),
               "",
             );
           }

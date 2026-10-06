@@ -31,6 +31,7 @@ import {
   exportRandomTableAsPdf,
   exportRandomTableAsMarkdown,
 } from "../export/exporters/randomTable";
+import { escapeTableCell } from "../textUtils";
 
 export const DIE_OPTIONS = [
   { label: "— no die —", value: 0 },
@@ -345,7 +346,7 @@ export class RandomTableView extends ItemView {
             const rawContent = await this.app.vault.read(srcFile);
             const items = parseMarkdownListItems(rawContent);
             const rollerLink = this.plugin.buildRollerLink();
-            const entryRows = items.map((item) => `| ${item} | 1 |`).join("\n");
+            const entryRows = items.map((item) => `| ${escapeTableCell(item)} | 1 |`).join("\n");
             content = `---\ndice: ${this.plugin.settings.defaultTableDice}\n---\n\n${rollerLink}\n\n| Result | Weight |\n|--------|--------|\n${entryRows || "|  | 1 |"}\n`;
           } else if (srcFolder) {
             const folderFiles = this.app.vault
@@ -1353,11 +1354,11 @@ export class RandomTableView extends ItemView {
 
       const suffix = extractPostTableContent(content);
       const rows = newEntries
-        .map((e) => `| ${e.result} | ${e.weight} |`)
+        .map((e) => `| ${escapeTableCell(e.result)} | ${e.weight} |`)
         .join("\n");
       const replaced = content.replace(
         /(\| Result \| Weight \|\n\|[-| ]+\|\n)([\s\S]*)$/,
-        `$1${rows}\n`,
+        (_m: string, head: string) => `${head}${rows}\n`,
       );
       const updated = suffix ? replaced.trimEnd() + "\n\n" + suffix : replaced;
       return updated !== content ? updated : content;

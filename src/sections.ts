@@ -1,11 +1,12 @@
 import { App, TFile } from "obsidian";
+import { escapeRegex } from "./textUtils";
 
 /** Insert a wiki-link under the named ### section, creating the section if absent. */
 export async function addLinkToSection(app: App, filePath: string, section: string, linkText: string): Promise<void> {
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
 	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 		const match = headingRegex.exec(content);
 		if (!match) {
 			return content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`;
@@ -26,7 +27,7 @@ export async function removeLinkFromSection(app: App, filePath: string, section:
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
 	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 		const match = headingRegex.exec(content);
 		if (!match) return content;
 		const afterHeading = match.index + match[0].length;
@@ -46,7 +47,7 @@ export async function getLinksInSection(app: App, filePath: string, section: str
 	if (!(file instanceof TFile)) return [];
 	const content = await app.vault.read(file);
 
-	const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 	const match = headingRegex.exec(content);
 	if (!match) return [];
 
@@ -70,7 +71,7 @@ export async function getSectionContent(app: App, filePath: string, section: str
 	if (!(file instanceof TFile)) return "";
 	const content = await app.vault.read(file);
 
-	const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 	const match = headingRegex.exec(content);
 	if (!match) return "";
 
@@ -143,7 +144,7 @@ export async function setSectionContent(app: App, filePath: string, section: str
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
 	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${section}\\s*$`, "mi");
+		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 		const match = headingRegex.exec(content);
 		if (!match) {
 			return newText.trim()

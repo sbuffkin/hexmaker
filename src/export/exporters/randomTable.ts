@@ -24,6 +24,7 @@ import {
   parseRandomTable,
   getDieRanges,
 } from "../../random-tables/randomTable";
+import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 
@@ -198,7 +199,7 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
 
   table.entries.forEach((entry, i) => {
     const firstCol = ranges ? ranges[i] : String(i + 1);
-    const cells = [firstCol, escapePipes(entry.result)];
+    const cells = [firstCol, escapeTableCell(entry.result)];
     if (hasWeights) cells.push(String(entry.weight));
     lines.push(`| ${cells.join(" | ")} |`);
   });
@@ -206,9 +207,6 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
   return lines.join("\n");
 }
 
-function escapePipes(s: string): string {
-  return s.replace(/\|/g, "\\|");
-}
 
 async function writeBinaryToVault(
   app: App,

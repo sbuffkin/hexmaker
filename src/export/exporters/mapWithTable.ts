@@ -26,6 +26,7 @@ import {
 } from "../mapPngRenderer";
 import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile } from "../../frontmatter";
+import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
@@ -288,7 +289,7 @@ export async function buildMapPdfMarkdown(
         row.factions,
         row.encounters,
         row.description,
-      ].map(escapePipes);
+      ].map(escapeTableCell);
       lines.push(`| ${cells.join(" | ")} |`);
     }
   }
@@ -409,9 +410,6 @@ function truncate(s: string, n: number): string {
   return s.slice(0, Math.max(0, n - 1)).trimEnd() + "…";
 }
 
-function escapePipes(s: string): string {
-  return s.replace(/\|/g, "\\|");
-}
 
 function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");

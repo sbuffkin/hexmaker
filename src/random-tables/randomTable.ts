@@ -1,3 +1,4 @@
+import { splitTableRow } from "../textUtils";
 export interface RandomTableEntry {
   result: string;
   weight: number;
@@ -59,10 +60,7 @@ export function parseRandomTable(content: string): RandomTable {
     // Skip separator rows (|---|---| style)
     if (/^\|[\s|:-]+\|$/.test(trimmed)) continue;
 
-    const cells = trimmed
-      .split("|")
-      .map((c) => c.trim())
-      .filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    const cells = splitTableRow(trimmed) ?? [];
     if (cells.length < 1) continue;
 
     // First real row is the header — skip it

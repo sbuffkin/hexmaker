@@ -1,3 +1,4 @@
+import { splitTableRow, escapeTableCell } from "../textUtils";
 export interface WorkflowStep {
 	kind: "table" | "dice";
 	tablePath: string;  // vault-relative path, no .md extension (kind=table), or "" (kind=dice)
@@ -86,7 +87,7 @@ export function parseWorkflow(content: string, name: string): Workflow {
 		const line = lines[i].trim();
 		if (!line.startsWith("|")) break;
 
-		const cols = line.split("|").map(c => c.trim()).filter((_, idx, arr) => idx > 0 && idx < arr.length - 1);
+		const cols = splitTableRow(line) ?? [];
 		if (cols.length < 2) continue;
 
 		const rawTable = cols[0];
@@ -144,8 +145,8 @@ export function buildWorkflowContent(workflow: Workflow): string {
 		const tableCell = step.kind === "dice"
 			? (step.diceFormula ?? "")
 			: `[[${step.tablePath}]]`;
-		const label = step.label ?? "";
-		lines.push(`| ${tableCell} | ${step.rolls} | ${label} |`);
+		const label = escapeTableCell(step.label ?? "");
+		lines.push(`| ${escapeTableCell(tableCell)} | ${step.rolls} | ${label} |`);
 	}
 
 	return lines.join("\n") + "\n";

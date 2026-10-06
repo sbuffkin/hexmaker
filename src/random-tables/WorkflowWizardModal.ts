@@ -11,6 +11,7 @@ import {
   WorkflowStep,
 } from "./workflow";
 import { parseRandomTable, rollOnTable } from "./randomTable";
+import { fillPlaceholders } from "../textUtils";
 
 export class WorkflowWizardModal extends HexmakerModal {
   private workflow!: Workflow;
@@ -367,7 +368,7 @@ export class WorkflowWizardModal extends HexmakerModal {
   }
 
   private assembleResult(): string {
-    let result = this.templateContent;
+    const values = new Map<string, string>();
     for (let si = 0; si < this.workflow.steps.length; si++) {
       const step = this.workflow.steps[si];
       for (let ri = 0; ri < step.rolls; ri++) {
@@ -378,14 +379,10 @@ export class WorkflowWizardModal extends HexmakerModal {
           // Extract just the sum from "(d1+d2+...)=N" format
           display = display.replace(/^\(.*\)=(-?\d+)$/, "$1");
         }
-        const escaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        result = result.replace(
-          new RegExp(escaped, "g"),
-          display !== null ? display : `[${placeholder}]`,
-        );
+        values.set(placeholder, display !== null ? display : `[${placeholder}]`);
       }
     }
-    return result;
+    return fillPlaceholders(this.templateContent, values);
   }
 
   private updateResultTextarea(): void {

@@ -5,6 +5,7 @@ import type { RandomTableEntry } from "./randomTable";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
+import { escapeRegex, escapeTableCell } from "../textUtils";
 
 /**
  * Modal editor for a random table file.
@@ -686,7 +687,7 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
   ): boolean | undefined {
     const m = frontmatter.match(
-      new RegExp(`^${key}:\\s*(true|false)\\s*$`, "m"),
+      new RegExp(`^${escapeRegex(key)}:\\s*(true|false)\\s*$`, "m"),
     );
     if (!m) return undefined;
     return m[1] === "true";
@@ -702,19 +703,19 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: boolean | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${key}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (value === undefined) {
       if (!hasKey) return frontmatter;
       // Remove the line (and any trailing newline)
-      return frontmatter.replace(new RegExp(`^${key}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
     }
     const line = `${key}: ${value}`;
     if (hasKey) {
-      return frontmatter.replace(lineRegex, line);
+      return frontmatter.replace(lineRegex, () => line);
     }
     // Insert before closing ---
-    return frontmatter.replace(/\n---$/, `\n${line}\n---`);
+    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
   }
 
   /** Set, remove, or update a string key in a frontmatter block string. */
@@ -723,15 +724,15 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: string | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${key}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (!value) {
       if (!hasKey) return frontmatter;
-      return frontmatter.replace(new RegExp(`^${key}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
     }
     const line = `${key}: ${value}`;
-    if (hasKey) return frontmatter.replace(lineRegex, line);
-    return frontmatter.replace(/\n---$/, `\n${line}\n---`);
+    if (hasKey) return frontmatter.replace(lineRegex, () => line);
+    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
   }
 
   private extractFrontmatter(content: string): string {
@@ -757,7 +758,7 @@ export class RandomTableEditorModal extends HexmakerModal {
     const rows = entries
       .map((e) => {
         const cell = linkedFolder || e.isLink ? `[[${e.result}]]` : e.result;
-        return `| ${cell} | ${e.weight} |`;
+        return `| ${escapeTableCell(cell)} | ${e.weight} |`;
       })
       .join("\n");
     const tableBlock = `| Result | Weight |\n|--------|--------|\n${rows}`;
