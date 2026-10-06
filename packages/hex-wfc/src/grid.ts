@@ -57,6 +57,30 @@ export function directionRing(orientation: Orientation): number[] {
   return orientation === "flat" ? [0, 2, 3, 1, 5, 4] : [0, 5, 4, 1, 2, 3];
 }
 
+/** Offset coords → axial (q, r), matching hexNeighbors' stagger rules. */
+export function toAxial(x: number, y: number, orientation: Orientation, stagger: Stagger = "odd"): [number, number] {
+  // "odd": odd columns (flat) / rows (pointy) are shifted. x & 1 is 0/1 for negatives too.
+  if (orientation === "flat") {
+    const shift = stagger === "odd" ? (x - (x & 1)) / 2 : (x + (x & 1)) / 2;
+    return [x, y - shift];
+  }
+  const shift = stagger === "odd" ? (y - (y & 1)) / 2 : (y + (y & 1)) / 2;
+  return [x - shift, y];
+}
+
+/** Number of steps between two hexes. */
+export function hexDistance(
+  a: [number, number],
+  b: [number, number],
+  orientation: Orientation,
+  stagger: Stagger = "odd",
+): number {
+  const [q1, r1] = toAxial(a[0], a[1], orientation, stagger);
+  const [q2, r2] = toAxial(b[0], b[1], orientation, stagger);
+  const dq = q1 - q2, dr = r1 - r2;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
 /** Accept either a Map or a plain object of "x_y" → terrain. */
 export function toCellMap(cells: Map<string, string> | Record<string, string>): Map<string, string> {
   return cells instanceof Map ? cells : new Map(Object.entries(cells));

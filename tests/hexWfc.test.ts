@@ -3,7 +3,13 @@ import expect from "expect";
 import {
   hexNeighbors,
   hexCenter,
+  hexDistance,
   directionRing,
+  countPatches,
+  encodeSetting,
+  decodeSetting,
+  type SolveOptions,
+  type GeneratorSettings,
   measurePatches,
   cellKey,
   learnModel,
@@ -301,10 +307,10 @@ describe("growth: shape learning", () => {
     expect(Math.abs(small.patch - big.patch)).toBeLessThan(0.02);
   });
 
-  it("treats single scattered hexes as no-growth", () => {
+  it("classifies single scattered hexes as scatter (no growth)", () => {
     const m = new Map<string, string>();
     for (let x = 0; x < 20; x++) for (let y = 0; y < 20; y++) m.set(cellKey(x, y), (x * 7 + y * 3) % 11 === 0 ? "Rock" : "Grass");
-    expect(measurePatches(m, "pointy").get("Rock")?.shape).toBe("none");
+    expect(measurePatches(m, "pointy").get("Rock")?.shape).toBe("scatter");
   });
 
   it("directionRing walks the neighbours clockwise in 60° steps", () => {
@@ -478,5 +484,278 @@ describe("directional bias, randomness and saved settings", () => {
     expect(warnings.some((w) => w.includes('"scatter: lots"'))).toBe(true);
     expect(warnings.some((w) => w.startsWith("Layout row"))).toBe(true);
     expect(back.settings).toBeUndefined();
+  });
+});
+
+/** 40×40 example: a 1-wide river walked along hex neighbours from the top edge into a lake. */
+function riverExample(): Map<string, string> {
+  const m = new Map<string, string>();
+  for (let x = 0; x < 40; x++)
+    for (let y = 0; y < 40; y++) {
+      const d = Math.hypot(x - 26, y - 28);
+      m.set(cellKey(x, y), d < 4.5 ? "Water" : d < 5.8 ? "Sand" : "Grass");
+    }
+  let cur: [number, number] = [8, 0];
+  for (let step = 0; step < 80; step++) {
+    m.set(cellKey(cur[0], cur[1]), "River");
+    const ns = hexNeighbors(cur[0], cur[1], "flat", "odd");
+    if (ns.some(([x, y]) => m.get(cellKey(x, y)) === "Water")) break;
+    const goal = [26 + Math.sin(step / 3) * 6, 28];
+    ns.sort((a, b) => Math.hypot(a[0] - goal[0], a[1] - goal[1]) - Math.hypot(b[0] - goal[0], b[1] - goal[1]));
+    cur = ns.find(([x, y]) => m.get(cellKey(x, y)) !== "River" && x >= 0 && y >= 0)!;
+  }
+  return m;
+}
+
+/** World example plus towns dotted on the grass. */
+function townsExample(): Map<string, string> {
+  const m = worldExample();
+  for (const [k, t] of m) {
+    const [x, y] = k.split("_").map(Number);
+    if (t === "Grass" && (x * 7 + y * 13) % 53 === 0) m.set(k, "Town");
+  }
+  return m;
+}
+
+const gridOf = (cols: number, rows: number) => ({ cols, rows, ox: 0, oy: 0, orientation: "flat" as const, stagger: "odd" as const });
+
+describe("hex distance", () => {
+  it("is 1 for every neighbour and symmetric", () => {
+    for (const o of ["flat", "pointy"] as const)
+      for (const s of ["odd", "even"] as const)
+        for (const [x, y] of [[0, 0], [3, 4], [-2, 5], [7, -3]]) {
+          for (const n of hexNeighbors(x, y, o, s)) expect(hexDistance([x, y], n, o, s)).toBe(1);
+          expect(hexDistance([x, y], [x + 4, y + 1], o, s)).toBe(hexDistance([x + 4, y + 1], [x, y], o, s));
+        }
+  });
+});
+
+describe("learning: lines, boundaries, features, spacing", () => {
+  it("learns a river from the map edge into a lake as a guaranteed feature", () => {
+    const m = learnModel(riverExample(), { name: "river", orientation: "flat" });
+    expect(m.terrains.find((t) => t.name === "River")?.shape).toBe("line");
+    expect(m.features).toEqual([{ terrain: "River", from: "edge", to: "Water", count: 1 }]);
+    expect(m.exampleHexes).toBe(1600);
+  });
+
+  it("treats a shore between two terrains as a boundary, not a line or feature", () => {
+    const m = learnModel(coastExample(), { name: "coast", orientation: "flat" });
+    expect(m.terrains.find((t) => t.name === "Sand")?.shape).toBe("none");
+    expect(m.terrains.find((t) => t.name === "Ocean")?.shape).toBe("blob"); // thick band, not a line
+    expect(m.features ?? []).toEqual([]);
+  });
+
+  it("learns how far apart scattered towns are", () => {
+    const m = learnModel(townsExample(), { name: "towns", orientation: "flat" });
+    const town = m.terrains.find((t) => t.name === "Town")!;
+    expect(town.shape).toBe("scatter");
+    expect(town.spacing).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("controls", () => {
+  const world = learnModel(townsExample(), { name: "world", orientation: "flat" });
+  const solveWorld = (extra: Partial<SolveOptions> = {}, seed = 4, cols = 36, rows = 24) =>
+    solve(world, { cols, rows, orientation: "flat", seed, ...extra });
+
+  it("never breaks a learned rule, whatever the settings", () => {
+    const settings: Partial<SolveOptions>[] = [
+      { smoothing: 1 },
+      { symmetry: "both" },
+      { edgeTerrain: "Water", edgeStrength: 1 },
+      { edgeStrength: 1 },
+      { counts: { Town: { min: 4, max: 4 }, Water: { min: 2 } } },
+      { connected: true, impassable: ["Water", "Ridge"] },
+      { lineWidth: 3, featureSize: 2 },
+      { spacing: 2, randomness: 0.5 },
+      { mix: { Forest: 3, Water: 0.2 }, directionalBias: 1 },
+    ];
+    for (const extra of settings) {
+      const r = solveWorld(extra);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(findViolation(world, r.cells, "flat")).toBeNull();
+    }
+  });
+
+  it("guarantees the river: a connected line from the map edge to water", () => {
+    const m = learnModel(riverExample(), { name: "river", orientation: "flat" });
+    for (const seed of [1, 2, 3]) {
+      const r = solve(m, { cols: 30, rows: 20, orientation: "flat", seed });
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(findViolation(m, r.cells, "flat")).toBeNull();
+      const river = [...r.cells].filter(([, t]) => t === "River").map(([k]) => k);
+      expect(river.length).toBeGreaterThan(5);
+      expect(countPatches(new Map(river.map((k) => [k, "River"])), gridOf(30, 20)).get("River")).toBe(1);
+      const onEdge = river.some((k) => {
+        const [x, y] = k.split("_").map(Number);
+        return x === 0 || y === 0 || x === 29 || y === 19;
+      });
+      const touchesWater = river.some((k) => {
+        const [x, y] = k.split("_").map(Number);
+        return hexNeighbors(x, y, "flat").some(([nx, ny]) => r.cells.get(cellKey(nx, ny)) === "Water");
+      });
+      expect(onEdge && touchesWater).toBe(true);
+    }
+    const off = solve(m, { cols: 30, rows: 20, orientation: "flat", seed: 1, features: false });
+    expect(off.ok).toBe(true);
+    if (off.ok) expect(off.featureCells.size).toBe(0);
+  });
+
+  it("edge terrain makes an island: the whole border is that terrain", () => {
+    const r = solveWorld({ edgeTerrain: "Water", edgeStrength: 1 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    for (const [k, t] of r.cells) {
+      const [x, y] = k.split("_").map(Number);
+      if (x === 0 || y === 0 || x === 35 || y === 23) expect(t).toBe("Water");
+    }
+    expect([...r.cells.values()].filter((t) => t === "Grass").length).toBeGreaterThan(100);
+  });
+
+  it("symmetry mirrors the map where the rules allow", () => {
+    const r = solveWorld({ symmetry: "left-right" }, 6, 31, 20);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    let same = 0;
+    for (const [k, t] of r.cells) {
+      const [x, y] = k.split("_").map(Number);
+      if (r.cells.get(cellKey(30 - x, y)) === t) same++;
+    }
+    expect(same / r.cells.size).toBeGreaterThan(0.9);
+  });
+
+  it("smoothing leaves fewer lone specks", () => {
+    const specks = (cells: Map<string, string>) => {
+      let n = 0;
+      for (const [k, t] of cells) {
+        if (t === "Town") continue;
+        const [x, y] = k.split("_").map(Number);
+        if (!hexNeighbors(x, y, "flat").some(([nx, ny]) => cells.get(cellKey(nx, ny)) === t)) n++;
+      }
+      return n;
+    };
+    let rough = 0, smooth = 0;
+    for (const seed of [1, 2, 3]) {
+      const a = solveWorld({ smoothing: 0, randomness: 0.4 }, seed);
+      const b = solveWorld({ smoothing: 1, randomness: 0.4 }, seed);
+      if (a.ok && b.ok) {
+        rough += specks(a.cells);
+        smooth += specks(b.cells);
+      }
+    }
+    expect(smooth).toBeLessThan(rough);
+  });
+
+  it("counts: exact number of towns, at least two lakes", () => {
+    for (const seed of [1, 2]) {
+      const r = solveWorld({ counts: { Town: { min: 4, max: 4 }, Water: { min: 2 } } }, seed);
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      const pc = countPatches(r.cells, gridOf(36, 24));
+      expect(pc.get("Town")).toBe(4);
+      expect(pc.get("Water")).toBeGreaterThanOrEqual(2);
+      expect(r.warnings).toEqual([]);
+    }
+  });
+
+  it("spacing keeps towns apart", () => {
+    const towns = (cells: Map<string, string>) =>
+      [...cells].filter(([, t]) => t === "Town").map(([k]) => k.split("_").map(Number) as [number, number]);
+    const r = solveWorld({ spacing: 2, randomness: 0 }, 3, 40, 40);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const ts = towns(r.cells);
+    let min = Infinity;
+    for (let i = 0; i < ts.length; i++)
+      for (let j = i + 1; j < ts.length; j++) min = Math.min(min, hexDistance(ts[i], ts[j], "flat"));
+    expect(min).toBeGreaterThanOrEqual(3);
+  });
+
+  it("connected land fills cut-off pockets with impassable terrain", () => {
+    // Grass and Rock both touch everything; Rock is impassable.
+    const model: HexWfcModel = {
+      name: "rocks", meta: {},
+      terrains: [{ name: "Grass", weight: 1 }, { name: "Rock", weight: 1 }],
+      adjacency: [
+        { a: "Grass", b: "Grass", weight: 1 },
+        { a: "Grass", b: "Rock", weight: 1 },
+        { a: "Rock", b: "Rock", weight: 1 },
+      ],
+    };
+    const base = { cols: 20, rows: 20, orientation: "flat" as const, seed: 2, neighbourInfluence: 0 };
+    const free = solve(model, base);
+    const tied = solve(model, { ...base, connected: true, impassable: ["Rock"] });
+    expect(free.ok && tied.ok).toBe(true);
+    if (!free.ok || !tied.ok) return;
+    const landGroups = (cells: Map<string, string>) =>
+      countPatches(new Map([...cells].filter(([, t]) => t === "Grass")), gridOf(20, 20)).get("Grass") ?? 0;
+    expect(landGroups(free.cells)).toBeGreaterThan(1);
+    expect(landGroups(tied.cells)).toBe(1);
+  });
+
+  it("per-terrain mix shifts the terrain share", () => {
+    const forest = (extra: Partial<SolveOptions>) => {
+      let f = 0;
+      for (const seed of [1, 2, 3]) {
+        const r = solveWorld(extra, seed);
+        if (r.ok) f += [...r.cells.values()].filter((t) => t === "Forest").length;
+      }
+      return f;
+    };
+    expect(forest({ mix: { Forest: 3 } })).toBeGreaterThan(forest({}) * 1.5);
+  });
+
+  it("line width makes ridges thicker", () => {
+    const thickness = (lineWidth: number) => {
+      let same = 0, n = 0;
+      for (const seed of [1, 2, 3]) {
+        const r = solveWorld({ lineWidth }, seed, 40, 30);
+        if (!r.ok) continue;
+        for (const [k, t] of r.cells) {
+          if (t !== "Ridge") continue;
+          const [x, y] = k.split("_").map(Number);
+          n++;
+          same += hexNeighbors(x, y, "flat").filter(([nx, ny]) => r.cells.get(cellKey(nx, ny)) === "Ridge").length;
+        }
+      }
+      return same / n;
+    };
+    expect(thickness(3)).toBeGreaterThan(thickness(1));
+  });
+});
+
+describe("setting codec", () => {
+  it("round-trips every kind of setting through frontmatter text", () => {
+    const cases: [keyof GeneratorSettings, unknown][] = [
+      ["featureSize", 1.25],
+      ["connected", true],
+      ["symmetry", "top-bottom"],
+      ["edgeTerrain", "Deep Sea"],
+      ["impassable", ["Water", "High peaks, north"]],
+      ["mix", { Forest: 1.5, "Deep Sea": 0.5 }],
+      ["counts", { Town: { min: 3, max: 3 }, Lake: { min: 1 }, Ruin: { min: 0, max: 2 }, Fort: { max: 1 } }],
+    ];
+    for (const [field, value] of cases) {
+      const back = decodeSetting(field, String(encodeSetting(field, value)));
+      expect("value" in back ? back.value : back).toEqual(value);
+    }
+  });
+
+  it("explains malformed values", () => {
+    expect(decodeSetting("counts", "Town lots")).toHaveProperty("error");
+    expect(decodeSetting("symmetry", "sideways")).toHaveProperty("error");
+    expect(decodeSetting("mix", "Forest")).toHaveProperty("error");
+  });
+
+  it("round-trips a model with features and settings", () => {
+    const m = learnModel(riverExample(), { name: "river", orientation: "flat" });
+    m.settings = {
+      featureSize: 1.5, symmetry: "left-right", connected: true, impassable: ["Water"],
+      mix: { Grass: 0.8 }, counts: { Water: { min: 1 } }, edgeTerrain: "Water", edgeStrength: 0.5, features: false,
+    };
+    const back = parseModelMarkdown(modelToMarkdown(m));
+    expect(back.warnings).toEqual([]);
+    expect(back.model).toEqual(m);
   });
 });

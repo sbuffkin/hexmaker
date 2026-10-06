@@ -1,25 +1,38 @@
 /**
- * Plain-text file format for a model: Markdown with YAML frontmatter and two
- * tables. It's meant to be read and edited by hand (and renders nicely in
+ * Plain-text file format for a model: Markdown with YAML frontmatter and a
+ * few tables. It's meant to be read and edited by hand (and renders nicely in
  * Obsidian or on GitHub).
  *
  *   ---
  *   hex-wfc: 1
  *   name: lakes
- *   palette: Default        <- any other keys are kept as `meta`
+ *   example-hexes: 2500
+ *   feature-size: 1          <- solver settings (all optional)
+ *   palette: Default         <- any other keys are kept as `meta`
  *   ---
- *   ## Terrains
- *   | Terrain | Weight |
- *   ...
- *   ## Adjacency
- *   | Terrain | Next to | Weight |
- *   ...
+ *   ## Terrains   | Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge |
+ *   ## Adjacency  | Terrain | Next to | Weight |
+ *   ## Features   | Terrain | From | To | Count |          (optional)
+ *   ## Layout     | Terrain | NW | N | NE | W | C | E | SW | S | SE |   (optional)
  */
 
-import { LAYOUT_BINS, type HexWfcModel, type GeneratorSettings } from "./model";
+import {
+  LAYOUT_BINS,
+  GROWTH_SHAPES,
+  SYMMETRIES,
+  type HexWfcModel,
+  type GeneratorSettings,
+  type GrowthShape,
+  type Symmetry,
+  type CountRange,
+  type TerrainEntry,
+} from "./model";
 
 export const FORMAT_VERSION = 1;
 const MARKER = "hex-wfc";
+const EXAMPLE_KEY = "example-hexes";
+
+type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts";
 
 /** Frontmatter key for each saved solver setting. */
 export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
@@ -29,7 +42,127 @@ export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
   frequencyFeedback: "mix-strength",
   scatter: "scatter",
   randomness: "randomness",
+  edgeStrength: "edge-strength",
+  edgeTerrain: "edge-terrain",
+  lineWidth: "line-width",
+  smoothing: "smoothing",
+  symmetry: "symmetry",
+  spacing: "spacing",
+  connected: "connected",
+  impassable: "impassable",
+  mix: "mix",
+  counts: "counts",
+  features: "features",
 };
+
+const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
+  featureSize: "number",
+  directionalBias: "number",
+  neighbourInfluence: "number",
+  frequencyFeedback: "number",
+  scatter: "number",
+  randomness: "number",
+  edgeStrength: "number",
+  edgeTerrain: "string",
+  lineWidth: "number",
+  smoothing: "number",
+  symmetry: "symmetry",
+  spacing: "number",
+  connected: "boolean",
+  impassable: "list",
+  mix: "mix",
+  counts: "counts",
+  features: "boolean",
+};
+
+const num = (n: number) => String(Math.round(n * 1000) / 1000);
+
+/**
+ * Value of a setting as stored in frontmatter. Lists and maps are strings
+ * with "; " between items, so terrain names may contain commas and spaces:
+ *   impassable: "Water; High peaks"
+ *   mix: "Forest 1.5; Water 0.5"
+ *   counts: "Town 3; Lake 1-; Ruin 0-2"     (exactly, at least, between)
+ */
+export function encodeSetting(field: keyof GeneratorSettings, value: unknown): string | number | boolean {
+  switch (SETTING_KINDS[field]) {
+    case "number":
+      return Number(num(value as number));
+    case "boolean":
+      return Boolean(value);
+    case "list":
+      return (value as string[]).join("; ");
+    case "mix":
+      return Object.entries(value as Record<string, number>)
+        .map(([t, m]) => `${t} ${num(m)}`)
+        .join("; ");
+    case "counts":
+      return Object.entries(value as Record<string, CountRange>)
+        .map(([t, r]) => {
+          if (r.min !== undefined && r.min === r.max) return `${t} ${r.min}`;
+          return `${t} ${r.min ?? ""}-${r.max ?? ""}`;
+        })
+        .join("; ");
+    default:
+      return String(value);
+  }
+}
+
+/** Parse a frontmatter value back into a setting, or explain what's wrong. */
+export function decodeSetting(field: keyof GeneratorSettings, raw: string): { value: unknown } | { error: string } {
+  const v = raw.trim();
+  const items = () => v.split(";").map((p) => p.trim()).filter(Boolean);
+  const splitLast = (item: string): [string, string] => {
+    const i = item.lastIndexOf(" ");
+    return i < 0 ? ["", item] : [item.slice(0, i).trim(), item.slice(i + 1)];
+  };
+  switch (SETTING_KINDS[field]) {
+    case "number": {
+      const n = Number(v);
+      return v !== "" && Number.isFinite(n) && n >= 0 ? { value: n } : { error: "isn't a number ≥ 0" };
+    }
+    case "boolean":
+      if (/^(true|yes|on|1)$/i.test(v)) return { value: true };
+      if (/^(false|no|off|0)$/i.test(v)) return { value: false };
+      return { error: "should be true or false" };
+    case "symmetry":
+      return SYMMETRIES.includes(v as Symmetry)
+        ? { value: v as Symmetry }
+        : { error: `should be one of ${SYMMETRIES.join(", ")}` };
+    case "string":
+      return { value: v };
+    case "list":
+      return { value: items() };
+    case "mix": {
+      const out: Record<string, number> = {};
+      for (const item of items()) {
+        const [t, m] = splitLast(item);
+        const n = Number(m);
+        if (!t || !Number.isFinite(n) || n < 0) return { error: `has "${item}"; write it like "Forest 1.5"` };
+        out[t] = n;
+      }
+      return { value: out };
+    }
+    case "counts": {
+      const out: Record<string, CountRange> = {};
+      for (const item of items()) {
+        const [t, spec] = splitLast(item);
+        const m = /^(\d*)(-?)(\d*)$/.exec(spec);
+        if (!t || !m || (m[1] === "" && m[3] === "") || (!m[2] && m[3] !== ""))
+          return { error: `has "${item}"; write it like "Town 3", "Lake 1-" or "Ruin 0-2"` };
+        const range: CountRange = {};
+        if (m[2]) {
+          if (m[1] !== "") range.min = Number(m[1]);
+          if (m[3] !== "") range.max = Number(m[3]);
+        } else {
+          range.min = range.max = Number(m[1]);
+        }
+        out[t] = range;
+      }
+      return { value: out };
+    }
+  }
+}
 
 function yamlValue(v: string): string {
   return /^[A-Za-z0-9_][A-Za-z0-9 _./()-]*$/.test(v) && !v.endsWith(" ") ? v : JSON.stringify(v);
@@ -49,20 +182,24 @@ function parseYamlValue(raw: string): string {
 }
 
 const cell = (s: string) => s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
-const num = (n: number) => String(Math.round(n * 1000) / 1000);
+const opt = (n: number | undefined, scale = 1) => (n === undefined ? "" : num(n * scale));
 
 export function modelToMarkdown(model: HexWfcModel): string {
   const fm = [`${MARKER}: ${FORMAT_VERSION}`, `name: ${yamlValue(model.name)}`];
-  const settingKeys = new Set(Object.values(SETTING_KEYS));
-  for (const [k, v] of Object.entries(model.meta)) {
-    if (k === MARKER || k === "name" || settingKeys.has(k)) continue;
-    fm.push(`${k}: ${yamlValue(v)}`);
-  }
+  if (model.exampleHexes !== undefined) fm.push(`${EXAMPLE_KEY}: ${model.exampleHexes}`);
+  const reserved = new Set<string>([MARKER, "name", EXAMPLE_KEY, ...Object.values(SETTING_KEYS)]);
   for (const [field, key] of Object.entries(SETTING_KEYS) as [keyof GeneratorSettings, string][]) {
     const v = model.settings?.[field];
-    if (v !== undefined) fm.push(`${key}: ${num(v)}`);
+    if (v === undefined) continue;
+    const enc = encodeSetting(field, v);
+    fm.push(`${key}: ${typeof enc === "string" ? JSON.stringify(enc) : String(enc)}`);
+  }
+  for (const [k, v] of Object.entries(model.meta)) {
+    if (reserved.has(k)) continue;
+    fm.push(`${k}: ${yamlValue(v)}`);
   }
   const withLayout = model.terrains.filter((t) => t.layout?.length === 9);
+  const features = model.features ?? [];
   const lines = [
     "---",
     ...fm,
@@ -70,29 +207,34 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "",
     `# ${model.name}`,
     "",
-    "A wave function collapse generator. You can edit both tables by hand.",
+    "A wave function collapse generator. You can edit the tables and settings by hand.",
     "",
-    "- **Terrains**: *Weight* is how common the terrain is. 0 means it is never placed.",
+    "- **Terrains**: *Weight* is how common the terrain is. 0 means the solver never places it.",
     "  *Patch %* is the size of a typical patch as a share of the map, so features",
     "  scale with the map. *Shape* is how it spreads: `blob` (lakes, forests),",
-    "  `line` (ranges, ridges) or `none` (backgrounds, shores, scattered hexes).",
-    "  *Turn* is how often a `line` changes direction (0 to 1).",
+    "  `line` (ranges, ridges), `scatter` (single hexes such as towns) or `none`",
+    "  (backgrounds, shores). *Turn* is how often a `line` changes direction (0 to 1)",
+    "  and *Width* its thickness (1 to 3). *Spacing* is the closest two `scatter` hexes",
+    "  may be. *Edge* is how common the terrain is along the map border (1 = as anywhere).",
     "- **Adjacency**: pairs that may touch, and how often (higher is more likely).",
     "  A pair that isn't listed can never touch, including a terrain next to itself.",
     "  Order doesn't matter, so *A | B* also covers *B | A*.",
+    "- **Features** (optional): lines that are always placed, e.g. a river from a map",
+    "  edge to a lake. *From* and *To* are `edge`, `none` or a terrain name.",
     "- **Layout** (optional): where each terrain sat in the example map, in a 3×3",
     "  grid. 1 means as common there as anywhere; 3 means three times as common.",
-    "  Directional bias uses it to keep, say, an ocean along the bottom.",
-    "- Frontmatter settings (optional): `feature-size`, `directional-bias`,",
-    "  `clumping`, `mix-strength`, `scatter` and `randomness`.",
+    "- Frontmatter settings (optional): `feature-size`, `directional-bias`, `clumping`,",
+    "  `mix-strength`, `scatter`, `randomness`, `edge-strength`, `edge-terrain`,",
+    "  `line-width`, `smoothing`, `symmetry`, `spacing`, `connected`, `impassable`,",
+    "  `mix`, `counts` and `features`.",
     "",
     "## Terrains",
     "",
-    "| Terrain | Weight | Patch % | Shape | Turn |",
-    "| --- | ---: | ---: | --- | ---: |",
+    "| Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge |",
+    "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |",
     ...model.terrains.map(
       (t) =>
-        `| ${cell(t.name)} | ${num(t.weight)} | ${t.patch === undefined ? "" : num(t.patch * 100)} | ${t.shape ?? ""} | ${t.turn === undefined ? "" : num(t.turn)} |`,
+        `| ${cell(t.name)} | ${num(t.weight)} | ${opt(t.patch, 100)} | ${t.shape ?? ""} | ${opt(t.turn)} | ${opt(t.width)} | ${opt(t.spacing)} | ${opt(t.edge)} |`,
     ),
     "",
     "## Adjacency",
@@ -101,6 +243,16 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "| --- | --- | ---: |",
     ...model.adjacency.map((e) => `| ${cell(e.a)} | ${cell(e.b)} | ${num(e.weight)} |`),
     "",
+    ...(features.length
+      ? [
+          "## Features",
+          "",
+          "| Terrain | From | To | Count |",
+          "| --- | --- | --- | ---: |",
+          ...features.map((f) => `| ${cell(f.terrain)} | ${cell(f.from)} | ${cell(f.to)} | ${num(f.count)} |`),
+          "",
+        ]
+      : []),
     ...(withLayout.length
       ? [
           "## Layout",
@@ -146,36 +298,43 @@ export function isModelMarkdown(text: string): boolean {
   return new RegExp(`^---\\r?\\n(?:.*\\r?\\n)*?${MARKER}\\s*:`).test(text);
 }
 
+type Section = "terrains" | "adjacency" | "features" | "layout";
+const SECTIONS: readonly Section[] = ["terrains", "adjacency", "features", "layout"];
+
 /**
  * Parse a model file. Throws if the text isn't a hex-wfc file at all; bad
- * individual rows become warnings instead.
+ * individual rows and settings become warnings instead.
  */
 export function parseModelMarkdown(text: string, fallbackName = "Untitled"): ParseResult {
   const lines = text.split(/\r?\n/);
   const warnings: string[] = [];
   const meta: Record<string, string> = {};
-  let settings: GeneratorSettings | undefined;
-  const layouts = new Map<string, number[]>();
+  const settings: Record<string, unknown> = {};
+  let exampleHexes: number | undefined;
   let name = "";
   let version: number | null = null;
+  const fieldByKey = new Map(
+    (Object.entries(SETTING_KEYS) as [keyof GeneratorSettings, string][]).map(([f, k]) => [k, f]),
+  );
 
   let i = 0;
   if (lines[0]?.trim() === "---") {
     for (i = 1; i < lines.length && lines[i].trim() !== "---"; i++) {
-      const m = /^([^:#][^:]*):(.*)$/.exec(lines[i]);
+      const m = /^([^:#\s][^:]*):(.*)$/.exec(lines[i]);
       if (!m) continue;
       const key = m[1].trim();
       const value = parseYamlValue(m[2]);
+      const field = fieldByKey.get(key);
       if (key === MARKER) version = Number(value);
       else if (key === "name") name = value;
-      else {
-        const field = (Object.keys(SETTING_KEYS) as (keyof GeneratorSettings)[]).find((f) => SETTING_KEYS[f] === key);
-        if (field) {
-          const n = Number(value);
-          if (value !== "" && Number.isFinite(n) && n >= 0) (settings ??= {})[field] = n;
-          else warnings.push(`Setting "${key}: ${value}" isn't a number ≥ 0, ignored`);
-        } else meta[key] = value;
-      }
+      else if (key === EXAMPLE_KEY) {
+        const n = Number(value);
+        if (Number.isFinite(n) && n > 0) exampleHexes = n;
+      } else if (field) {
+        const decoded = decodeSetting(field, value);
+        if ("error" in decoded) warnings.push(`Setting "${key}: ${value}" ${decoded.error}, ignored`);
+        else settings[field] = decoded.value;
+      } else meta[key] = value;
     }
     i++;
   }
@@ -183,12 +342,14 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
   if (version > FORMAT_VERSION)
     warnings.push(`File is ${MARKER} version ${version}; this reader understands version ${FORMAT_VERSION}`);
 
-  let section: "terrains" | "adjacency" | "layout" | null = null;
+  let section: Section | null = null;
   let headerSeen = false;
-  // Column index by lower-cased header name, for the Terrains table's
-  // optional columns. Positions are the fallback for the required ones.
+  // Column index by lower-cased header name; positions are the fallback for
+  // the required columns so older or hand-made tables still work.
   let columns = new Map<string, number>();
   const model: HexWfcModel = { name: "", terrains: [], adjacency: [], meta };
+  const features: NonNullable<HexWfcModel["features"]> = [];
+  const layouts = new Map<string, number[]>();
   const weightOf = (raw: string | undefined, where: string): number | null => {
     if (raw === undefined || raw === "") return 1;
     const n = Number(raw);
@@ -205,7 +366,7 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
     if (h) {
       const title = h[1].trim().toLowerCase();
       if (!name && line.trim().startsWith("# ")) name = h[1].trim();
-      section = title === "terrains" || title === "adjacency" || title === "layout" ? title : null;
+      section = SECTIONS.includes(title as Section) ? (title as Section) : null;
       headerSeen = false;
       continue;
     }
@@ -221,49 +382,53 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
       columns = new Map(cells.map((c, idx) => [c.toLowerCase(), idx]));
       continue;
     }
-    const sectionTitle = section === "terrains" ? "Terrains" : section === "adjacency" ? "Adjacency" : "Layout";
-    const where = `${sectionTitle} row "${cells.join(" | ")}"`;
-    if (section === "layout") {
-      if (!cells[0]) continue;
-      const values = LAYOUT_BINS.map((b) => Number(cells[columns.get(b.toLowerCase()) ?? -1]));
-      if (values.every((v) => Number.isFinite(v) && v >= 0)) layouts.set(cells[0], values);
-      else warnings.push(`${where}: needs 9 numbers ≥ 0 under ${LAYOUT_BINS.join(", ")}, row skipped`);
-      continue;
-    }
+    const col = (colName: string) => {
+      const idx = columns.get(colName);
+      return idx === undefined ? undefined : cells[idx] || undefined;
+    };
+    const where = `${section[0].toUpperCase()}${section.slice(1)} row "${cells.join(" | ")}"`;
+    if (!cells[0]) continue;
+
     if (section === "terrains") {
-      if (!cells[0]) continue;
-      const col = (name: string) => {
-        const idx = columns.get(name);
-        return idx === undefined ? undefined : cells[idx] || undefined;
-      };
       const w = weightOf(col("weight") ?? cells[1], where);
       if (w === null) continue;
-      const entry: HexWfcModel["terrains"][number] = { name: cells[0], weight: w };
-      const patch = col("patch %") ?? col("patch");
-      if (patch !== undefined) {
-        const n = Number(patch.replace(/%$/, ""));
-        if (Number.isFinite(n) && n >= 0 && n <= 100) entry.patch = Math.round(n * 1000) / 100000;
-        else warnings.push(`${where}: patch "${patch}" isn't a percentage, ignored`);
-      }
+      const entry: TerrainEntry = { name: cells[0], weight: w };
+      const numberCol = (colName: string, lo: number, hi: number, set: (n: number) => void) => {
+        const raw = col(colName);
+        if (raw === undefined) return;
+        const n = Number(raw.replace(/%$/, ""));
+        if (Number.isFinite(n) && n >= lo && n <= hi) set(n);
+        else warnings.push(`${where}: ${colName} "${raw}" should be between ${lo} and ${hi}, ignored`);
+      };
+      numberCol(columns.has("patch %") ? "patch %" : "patch", 0, 100, (n) => (entry.patch = Math.round(n * 1000) / 100000));
       const shape = col("shape")?.toLowerCase();
       if (shape !== undefined) {
-        if (shape === "blob" || shape === "line" || shape === "none") entry.shape = shape;
-        else warnings.push(`${where}: shape "${shape}" should be blob, line or none, ignored`);
+        if (GROWTH_SHAPES.includes(shape as GrowthShape)) entry.shape = shape as GrowthShape;
+        else warnings.push(`${where}: shape "${shape}" should be ${GROWTH_SHAPES.join(", ")}, ignored`);
       }
-      const turn = col("turn");
-      if (turn !== undefined) {
-        const n = Number(turn);
-        if (Number.isFinite(n) && n >= 0 && n <= 1) entry.turn = n;
-        else warnings.push(`${where}: turn "${turn}" should be between 0 and 1, ignored`);
-      }
+      numberCol("turn", 0, 1, (n) => (entry.turn = n));
+      numberCol("width", 1, 3, (n) => (entry.width = n));
+      numberCol("spacing", 0, 1000, (n) => (entry.spacing = n));
+      numberCol("edge", 0, 1000, (n) => (entry.edge = n));
       model.terrains.push(entry);
-    } else {
-      if (!cells[0] || !cells[1]) {
-        if (cells.some(Boolean)) warnings.push(`${where}: needs two terrains, row skipped`);
+    } else if (section === "adjacency") {
+      if (!cells[1]) {
+        warnings.push(`${where}: needs two terrains, row skipped`);
         continue;
       }
       const w = weightOf(cells[2], where);
       if (w !== null) model.adjacency.push({ a: cells[0], b: cells[1], weight: w });
+    } else if (section === "features") {
+      const count = Number(col("count") ?? "1");
+      if (!Number.isFinite(count) || count < 0) {
+        warnings.push(`${where}: count should be a number ≥ 0, row skipped`);
+        continue;
+      }
+      features.push({ terrain: cells[0], from: col("from") ?? "none", to: col("to") ?? "none", count });
+    } else {
+      const values = LAYOUT_BINS.map((b) => Number(cells[columns.get(b.toLowerCase()) ?? -1]));
+      if (values.every((v) => Number.isFinite(v) && v >= 0)) layouts.set(cells[0], values);
+      else warnings.push(`${where}: needs 9 numbers ≥ 0 under ${LAYOUT_BINS.join(", ")}, row skipped`);
     }
   }
 
@@ -272,7 +437,9 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
     if (entry) entry.layout = values;
     else warnings.push(`Layout row "${t}" isn't in the Terrains table, ignored`);
   }
-  if (settings) model.settings = settings;
+  if (features.length) model.features = features;
+  if (exampleHexes !== undefined) model.exampleHexes = exampleHexes;
+  if (Object.keys(settings).length) model.settings = settings as GeneratorSettings;
   model.name = name || fallbackName;
   return { model, warnings };
 }

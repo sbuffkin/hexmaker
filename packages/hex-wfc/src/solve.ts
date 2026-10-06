@@ -1,30 +1,39 @@
 /**
  * Hex Wave Function Collapse (simple tiled model) with neighbour-weighted
- * choices.
+ * choices, growth moves and map-level constraints.
  *
  * Hard rules: a pair with adjacency weight 0 can never touch (enforced by
- * arc-consistency propagation plus backtracking).
+ * arc-consistency propagation plus backtracking). Post passes (smoothing,
+ * connected land, counts) only make changes that keep every rule.
  *
- * Soft rules: when a hex is collapsed, each candidate terrain t is scored
- *   weight(t) × (geometric mean over decided neighbours u of adj(t,u) / Σ_v adj(t,v))^influence
- * A model learned from a map with a lake therefore grows lake next to lake
- * rather than scattering it. (A plain product over neighbours overcounts,
- * because neighbours are correlated, and lets one terrain swallow the map.)
- * The same scores drive the entropy used to pick the next hex.
- *
- * Two more terms keep the result looking like the example:
+ * Soft rules: each candidate terrain t for a hex is scored
+ *   weight(t) × (geometric mean over decided neighbours u of P(u | t))^influence
+ *   × layout and edge preferences
+ * A plain product over neighbours overcounts (neighbours are correlated) and
+ * lets one terrain swallow the map. The same scores drive the entropy used
+ * to pick the next hex. On top of that:
  *   - frequency feedback nudges each choice toward the model's terrain mix;
  *   - scatter adds randomness to the order hexes are decided in, so
- *     features start in many places instead of one frontier swallowing all.
+ *     features start in many places instead of one frontier swallowing all;
+ *   - growth moves let blob/line terrains spread from where a patch starts;
+ *   - randomness mixes in plain weight-only picks (peppers rare terrain).
  *
  * Deterministic for a given model, options and seed.
  */
 
 import { hexNeighbors, directionRing, cellKey, parseCellKey, toCellMap, type Orientation, type Stagger } from "./grid";
-import { adjacencyLookup, DEFAULT_SETTINGS, type HexWfcModel } from "./model";
+import {
+  adjacencyLookup,
+  resolveSettings,
+  type HexWfcModel,
+  type GeneratorSettings,
+  type CountRange,
+} from "./model";
 import { mulberry32 } from "./rng";
+import { placeFeatures, placeEdgeBorder } from "./features";
+import { smooth, connectLand, countPatches, countsPenalty, topUpCounts, type GridInfo } from "./post";
 
-export interface SolveOptions {
+export interface SolveOptions extends GeneratorSettings {
   cols: number;
   rows: number;
   /** Coordinate of the top-left hex. Stagger parity uses absolute coords, so this matters. */
@@ -34,49 +43,15 @@ export interface SolveOptions {
   /** Hexes that must keep their terrain, keyed "x_y" in absolute coords. */
   fixed?: Map<string, string> | Record<string, string>;
   seed: number;
-  /**
-   * How strongly decided neighbours steer each choice (clumping). 0 uses only
-   * the hard rules and terrain weights, which gives speckled noise. Default 3.
-   */
-  neighbourInfluence?: number;
-  /**
-   * How hard the solver steers the overall terrain mix toward the model's
-   * terrain weights. Without it, the most common terrain tends to swallow the
-   * map, because every new hex copies its neighbours. 0 turns it off.
-   * Default 2.
-   */
-  frequencyFeedback?: number;
-  /**
-   * Randomness in which hex is decided next. Low values grow one region
-   * outward from a single start; higher values start features in many
-   * places, which lets enclosed features (a lake inside its shore) form.
-   * Default 3.
-   */
-  scatter?: number;
-  /**
-   * Multiplier on each terrain's learned patch size (its "growth moves").
-   * Patch sizes are stored as a share of the map, so they already scale with
-   * the grid; this adjusts on top: below 1 gives more, smaller features,
-   * above 1 fewer, bigger ones. 0 turns growth off. Default 1.
-   */
-  featureSize?: number;
-  /**
-   * How strongly terrain keeps to where it sat in the example (its 3×3
-   * layout). 0 = anywhere; 1 = e.g. an ocean along the bottom of the example
-   * stays along the bottom. Default 0.
-   */
-  directionalBias?: number;
-  /**
-   * Share of each choice made by terrain weight alone, ignoring neighbours,
-   * layout and growth. Lets rare terrains (towns, ruins) pepper the map
-   * instead of only appearing where the example had them. Hard rules still
-   * apply. 0–1, default 0.1.
-   */
-  randomness?: number;
   /** Backtracks allowed per attempt before restarting. Default 2000. */
   maxBacktracks?: number;
   /** Fresh attempts after the first. Default 5. */
   maxRestarts?: number;
+  /**
+   * Whole-map tries when counts or connected land are set; the best result
+   * is kept. Default 8.
+   */
+  maxTries?: number;
 }
 
 export interface SolveStats {
@@ -85,11 +60,23 @@ export interface SolveStats {
   decisions: number;
   /** Hexes placed by growth moves (blob/line spreading). */
   grown: number;
+  /** Hexes changed by smoothing / connected land / count top-ups. */
+  postChanges: number;
+  /** Whole-map tries (more than 1 when counts or connected land need it). */
+  tries: number;
   ms: number;
 }
 
 export type SolveResult =
-  | { ok: true; cells: Map<string, string>; stats: SolveStats }
+  | {
+      ok: true;
+      cells: Map<string, string>;
+      /** Hexes laid down as guaranteed features (rivers), keyed "x_y". */
+      featureCells: Set<string>;
+      /** Soft goals that weren't fully met (counts, connected land, features). */
+      warnings: string[];
+      stats: SolveStats;
+    }
   | {
       ok: false;
       reason: "invalid-input" | "fixed-conflict" | "contradiction";
@@ -118,17 +105,134 @@ export function findViolation(
   return null;
 }
 
+const emptyStats = (): SolveStats => ({
+  attempts: 0, backtracks: 0, decisions: 0, grown: 0, postChanges: 0, tries: 0, ms: 0,
+});
+
+/**
+ * Generate a map. Lays down guaranteed features, runs the solver, then the
+ * post passes. When counts or connected land are requested, it makes several
+ * whole-map tries and keeps the best.
+ */
+export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
+  const t0 = Date.now();
+  const s = resolveSettings(model, opts);
+  const stagger = opts.stagger ?? "odd";
+  const grid: GridInfo = {
+    cols: opts.cols,
+    rows: opts.rows,
+    ox: opts.offset?.x ?? 0,
+    oy: opts.offset?.y ?? 0,
+    orientation: opts.orientation,
+    stagger,
+  };
+
+  // Per-terrain mix multiplies the learned weights.
+  let working: HexWfcModel = {
+    ...model,
+    terrains: model.terrains.map((t) => ({ ...t, weight: t.weight * (s.mix[t.name] ?? 1) })),
+  };
+  const features = s.features ? (model.features ?? []).filter((f) => f.count > 0) : [];
+  // Feature terrain is only laid down by the features, never by the solver.
+  const featureTerrains = new Set(features.map((f) => f.terrain));
+  if (featureTerrains.size)
+    working = { ...working, terrains: working.terrains.map((t) => (featureTerrains.has(t.name) ? { ...t, weight: 0 } : t)) };
+
+  const hasCounts = Object.values(s.counts).some((c) => c.min !== undefined || c.max !== undefined);
+  const tries = hasCounts || s.connected ? Math.max(1, opts.maxTries ?? 8) : 1;
+  const masterRng = mulberry32(opts.seed ^ 0x9e3779b9);
+  const total = emptyStats();
+  const impassable = new Set(s.impassable);
+
+  type Candidate = { cells: Map<string, string>; featureCells: Set<string>; warnings: string[]; penalty: number };
+  let best: Candidate | null = null;
+  let lastFail: SolveResult | null = null;
+
+  for (let k = 0; k < tries; k++) {
+    total.tries++;
+    const seed = k === 0 ? opts.seed : Math.floor(masterRng() * 4294967296);
+    const rng = mulberry32(seed ^ 0x51ed270b);
+    const fixed = new Map(toCellMap(opts.fixed ?? {}));
+    const warnings: string[] = [];
+    const featureCells = new Set<string>();
+    for (const [key, t] of placeEdgeBorder(model, s, grid, fixed, rng)) {
+      fixed.set(key, t);
+      featureCells.add(key);
+    }
+    if (features.length) {
+      const placed = placeFeatures(model, features, s, grid, fixed, rng);
+      warnings.push(...placed.warnings);
+      for (const [key, t] of placed.cells) {
+        fixed.set(key, t);
+        featureCells.add(key);
+      }
+    }
+
+    const core = solveOnce(working, { ...opts, fixed, seed }, s);
+    for (const key of ["attempts", "backtracks", "decisions", "grown"] as const) total[key] += core.stats[key];
+    if (!core.ok) {
+      lastFail = core;
+      continue;
+    }
+
+    const protect = new Set<string>([...toCellMap(opts.fixed ?? {}).keys(), ...featureCells]);
+    const cells = core.cells;
+    total.postChanges += smooth(cells, model, grid, s.smoothing, protect, rng);
+    let penalty = 0;
+    if (s.connected && impassable.size) {
+      const { changed, stranded } = connectLand(cells, model, grid, impassable, protect);
+      total.postChanges += changed;
+      penalty += stranded;
+      if (stranded) warnings.push(`${stranded} land hexes are still cut off from the main landmass`);
+    }
+    if (hasCounts) penalty += countsPenalty(countPatches(cells, grid), s.counts);
+
+    if (!best || penalty < best.penalty) best = { cells, featureCells, warnings, penalty };
+    if (penalty === 0) break;
+  }
+
+  if (!best) {
+    const fail = lastFail ?? { ok: false as const, reason: "contradiction" as const, message: "No valid map found", stats: total };
+    fail.stats = { ...total, ms: Date.now() - t0 };
+    return fail;
+  }
+
+  if (hasCounts) {
+    const protect = new Set<string>([...toCellMap(opts.fixed ?? {}).keys(), ...best.featureCells]);
+    total.postChanges += topUpCounts(best.cells, model, grid, s.counts, protect, mulberry32(opts.seed ^ 0x2545f491));
+    const counted = countPatches(best.cells, grid);
+    for (const [t, range] of Object.entries(s.counts)) {
+      const n = counted.get(t) ?? 0;
+      if (range.min !== undefined && n < range.min) best.warnings.push(`Only ${n} ${t} (wanted at least ${range.min})`);
+      if (range.max !== undefined && n > range.max) best.warnings.push(`${n} ${t} (wanted at most ${range.max})`);
+    }
+  }
+  total.ms = Date.now() - t0;
+  return { ok: true, cells: best.cells, featureCells: best.featureCells, warnings: best.warnings, stats: total };
+}
+
 /** Feedback never boosts or damps a terrain by more than this factor per choice. */
 const FEEDBACK_CAP = 8;
 
-export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
+type CoreResult =
+  | { ok: true; cells: Map<string, string>; stats: SolveStats }
+  | {
+      ok: false;
+      reason: "invalid-input" | "fixed-conflict" | "contradiction";
+      message: string;
+      at?: { x: number; y: number };
+      stats: SolveStats;
+    };
+
+/** One run of the collapse itself (with restarts and backtracking). */
+function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<GeneratorSettings>): CoreResult {
   const t0 = Date.now();
-  const stats: SolveStats = { attempts: 0, backtracks: 0, decisions: 0, grown: 0, ms: 0 };
+  const stats = emptyStats();
   const fail = (
     reason: "invalid-input" | "fixed-conflict" | "contradiction",
     message: string,
     at?: { x: number; y: number },
-  ): SolveResult => {
+  ): CoreResult => {
     stats.ms = Date.now() - t0;
     return { ok: false, reason, message, at, stats };
   };
@@ -137,19 +241,18 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
   const stagger = opts.stagger ?? "odd";
   const ox = opts.offset?.x ?? 0;
   const oy = opts.offset?.y ?? 0;
-  // Options passed in win over settings saved with the model.
-  const saved = { ...DEFAULT_SETTINGS, ...model.settings };
-  const influence = opts.neighbourInfluence ?? saved.neighbourInfluence;
-  const feedback = opts.frequencyFeedback ?? saved.frequencyFeedback;
-  const scatter = opts.scatter ?? saved.scatter;
-  const featureSize = opts.featureSize ?? saved.featureSize;
-  const bias = opts.directionalBias ?? saved.directionalBias;
-  const randomness = Math.min(1, Math.max(0, opts.randomness ?? saved.randomness));
+  const influence = s.neighbourInfluence;
+  const feedback = s.frequencyFeedback;
+  const scatter = s.scatter;
+  const featureSize = s.featureSize;
+  const bias = s.directionalBias;
+  const randomness = Math.min(1, Math.max(0, s.randomness));
   const terrains = [...new Set(model.terrains.map((t) => t.name))];
   const T = terrains.length;
   if (!(cols > 0 && rows > 0)) return fail("invalid-input", "Grid must be at least 1×1");
   if (T === 0) return fail("invalid-input", "The model has no terrains");
   const tIndex = new Map(terrains.map((t, i) => [t, i]));
+  const entryOf = new Map(model.terrains.map((e) => [e.name, e]));
 
   const N = cols * rows;
   const W = (T + 31) >>> 5; // 32-bit words per domain bitset
@@ -181,11 +284,13 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     }
   }
 
-  // Directional bias: per hex, log of each terrain's learned layout density
-  // at that position (bilinear between the 3×3 bin centres), times bias.
-  let logBias: Float32Array | null = null;
+  // Position preferences per hex: directional bias (learned 3×3 layout,
+  // bilinear between bin centres) and edge style (border preference that
+  // fades out over the outer ~15% of the map).
+  let logPos: Float32Array | null = null;
+  const ensurePos = () => (logPos ??= new Float32Array(N * T));
   if (bias > 0 && model.terrains.some((e) => e.layout?.length === 9)) {
-    logBias = new Float32Array(N * T);
+    const pos = ensurePos();
     const centre = [1 / 6, 1 / 2, 5 / 6];
     const axis = (f: number): [number, number, number] => {
       if (f <= centre[0]) return [0, 0, 0];
@@ -202,7 +307,23 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
         const [cy0, cy1, fy] = axis((Math.floor(c / cols) + 0.5) / rows);
         const top = lay[cy0 * 3 + cx0] * (1 - fx) + lay[cy0 * 3 + cx1] * fx;
         const bottom = lay[cy1 * 3 + cx0] * (1 - fx) + lay[cy1 * 3 + cx1] * fx;
-        logBias[c * T + t] = bias * Math.log(Math.max(0.02, top * (1 - fy) + bottom * fy));
+        pos[c * T + t] += bias * Math.log(Math.max(0.02, top * (1 - fy) + bottom * fy));
+      }
+    }
+  }
+  // Learned edge preference (soft). An explicit edge terrain is laid down as
+  // a fixed border before solving instead (see placeEdgeBorder).
+  if (s.edgeStrength > 0 && !s.edgeTerrain) {
+    const logEdge = new Float64Array(T);
+    for (let t = 0; t < T; t++) logEdge[t] = Math.log(Math.max(0.02, entryOf.get(terrains[t])?.edge ?? 1));
+    if (logEdge.some((v) => v !== 0)) {
+      const pos = ensurePos();
+      const depth = Math.max(2, 0.15 * Math.min(cols, rows));
+      for (let c = 0; c < N; c++) {
+        const i = c % cols, j = Math.floor(c / cols);
+        const d = Math.min(i, cols - 1 - i, j, rows - 1 - j);
+        const f = Math.max(0, 1 - d / depth);
+        if (f > 0) for (let t = 0; t < T; t++) pos[c * T + t] += s.edgeStrength * f * logEdge[t];
       }
     }
   }
@@ -306,7 +427,7 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
   /** Returns the cell whose domain emptied, or −1. */
   const propagate = (seeds: number[]): number => {
     let head = 0, tail = 0, size = 0;
-    for (const s of seeds) if (!inQueue[s]) { inQueue[s] = 1; queue[tail++ % N] = s; size++; }
+    for (const sd of seeds) if (!inQueue[sd]) { inQueue[sd] = 1; queue[tail++ % N] = sd; size++; }
     while (size > 0) {
       const c = queue[head++ % N];
       size--;
@@ -341,58 +462,34 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     return -1;
   };
 
-  // ── Scoring ──────────────────────────────────────────────────────────────
-  const scores = new Float64Array(T);
-  /** Fill `scores` with relative probabilities for an open cell; returns their sum. */
-  const score = (c: number): number => {
-    const decided: number[] = [];
-    for (let d = 0; d < 6; d++) {
-      const n = nbr[c * 6 + d];
-      if (n >= 0) {
-        const u = single(n);
-        if (u >= 0) decided.push(u);
-      }
-    }
-    let max = -Infinity;
-    for (let t = 0; t < T; t++) {
-      if (!has(c, t)) { scores[t] = -Infinity; continue; }
-      let s = logW[t] + (logBias ? logBias[c * T + t] : 0);
-      if (decided.length) {
-        let e = 0, same = 0;
-        for (const u of decided) if (u === t) same++;
-        const enclosed = growShape[t] !== 0 && same >= 3;
-        for (const u of decided) e += u === t && enclosed ? learnedSelf[t] : logP[t * T + u];
-        s += e / decided.length;
-      }
-      scores[t] = s;
-      if (s > max) max = s;
-    }
-    let sum = 0;
-    for (let t = 0; t < T; t++) {
-      scores[t] = scores[t] === -Infinity ? 0 : Math.exp(scores[t] - max);
-      sum += scores[t];
-    }
-    return sum;
-  };
-  // ── Growth moves ─────────────────────────────────────────────────────────
-  // After the solver chooses a terrain for a hex, a "blob" or "line" terrain
-  // spreads into nearby open hexes. Every move is a normal place + propagate,
-  // undone on its own if it breaks a rule, so hard rules always hold.
+  // ── Growth setup ─────────────────────────────────────────────────────────
+  // After the solver chooses a terrain for a hex that starts a new patch, a
+  // "blob" or "line" terrain spreads into nearby open hexes. Every move is a
+  // normal place + propagate, undone on its own if it breaks a rule.
   const growShape = new Uint8Array(T); // 0 none, 1 blob, 2 line
+  const isScatter = new Uint8Array(T);
   // Learned self-adjacency of growth terrains, used only to fill holes: a hex
   // mostly surrounded by one growth terrain (e.g. a gap inside a lake) should
   // still become that terrain.
   const learnedSelf = new Float64Array(T);
   const growMoves = new Int32Array(T);
   const growTurn = new Float64Array(T);
+  const lineWidth = new Int32Array(T).fill(1);
+  const spacingOf = new Int32Array(T); // min hex distance between scattered hexes; 0/1 = none
+  const sizeScale = model.exampleHexes ? Math.sqrt(N / model.exampleHexes) : 1;
   for (const entry of model.terrains) {
     const t = tIndex.get(entry.name)!;
+    if (entry.shape === "scatter") {
+      isScatter[t] = 1;
+      if (entry.spacing && s.spacing > 0) spacingOf[t] = Math.max(1, Math.round(entry.spacing * s.spacing * sizeScale));
+    }
     const shape = entry.shape === "blob" ? 1 : entry.shape === "line" ? 2 : 0;
     const moves = Math.min(Math.floor(N / 2), Math.round((entry.patch ?? 0) * N * featureSize) - 1);
     if (shape && moves > 0) {
       growShape[t] = shape;
       growMoves[t] = moves;
       growTurn[t] = entry.turn ?? 0.2;
+      lineWidth[t] = Math.max(1, Math.min(3, Math.round(s.lineWidth > 0 ? s.lineWidth : (entry.width ?? 1))));
       // Growth owns this terrain's clumping. If the neighbour score also
       // rewarded "same terrain next door", every patch would keep spreading
       // past its learned size. Score self-adjacency at chance level instead.
@@ -412,6 +509,59 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       }
     }
   }
+  const maxPatches = new Int32Array(T).fill(-1);
+  for (const [name, range] of Object.entries(s.counts) as [string, CountRange][]) {
+    const t = tIndex.get(name);
+    if (t !== undefined && range.max !== undefined) maxPatches[t] = range.max;
+  }
+
+  // Mirror partners of a hex (relative to the grid), for symmetry.
+  const mirrorsOf = (c: number): number[] => {
+    if (s.symmetry === "none") return [];
+    const i = c % cols, j = Math.floor(c / cols);
+    const out: number[] = [];
+    const lr = s.symmetry === "left-right" || s.symmetry === "both";
+    const tb = s.symmetry === "top-bottom" || s.symmetry === "both";
+    if (lr) out.push(j * cols + (cols - 1 - i));
+    if (tb) out.push((rows - 1 - j) * cols + i);
+    if (lr && tb) out.push((rows - 1 - j) * cols + (cols - 1 - i));
+    return out.filter((m) => m !== c);
+  };
+
+  // ── Scoring ──────────────────────────────────────────────────────────────
+  const scores = new Float64Array(T);
+  /** Fill `scores` with relative probabilities for an open cell; returns their sum. */
+  const score = (c: number): number => {
+    const decided: number[] = [];
+    for (let d = 0; d < 6; d++) {
+      const n = nbr[c * 6 + d];
+      if (n >= 0) {
+        const u = single(n);
+        if (u >= 0) decided.push(u);
+      }
+    }
+    let max = -Infinity;
+    for (let t = 0; t < T; t++) {
+      if (!has(c, t)) { scores[t] = -Infinity; continue; }
+      let sc = logW[t] + (logPos ? logPos[c * T + t] : 0);
+      if (decided.length) {
+        let e = 0, same = 0;
+        for (const u of decided) if (u === t) same++;
+        const enclosed = growShape[t] !== 0 && same >= 3;
+        for (const u of decided) e += u === t && enclosed ? learnedSelf[t] : logP[t * T + u];
+        sc += e / decided.length;
+      }
+      scores[t] = sc;
+      if (sc > max) max = sc;
+    }
+    let sum = 0;
+    for (let t = 0; t < T; t++) {
+      scores[t] = scores[t] === -Infinity ? 0 : Math.exp(scores[t] - max);
+      sum += scores[t];
+    }
+    return sum;
+  };
+
   const ring = directionRing(orientation);
   const touchesTerrain = (c: number, t: number): boolean => {
     for (let d = 0; d < 6; d++) {
@@ -420,17 +570,39 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     }
     return false;
   };
+  /** Is there a decided hex of terrain t within `radius` steps of c? */
+  const visit = new Int32Array(N);
+  let visitStamp = 0;
+  const nearTerrain = (c: number, t: number, radius: number): boolean => {
+    visitStamp++;
+    let frontier = [c];
+    visit[c] = visitStamp;
+    for (let r = 0; r < radius; r++) {
+      const next: number[] = [];
+      for (const f of frontier)
+        for (let d = 0; d < 6; d++) {
+          const n = nbr[f * 6 + d];
+          if (n < 0 || visit[n] === visitStamp) continue;
+          visit[n] = visitStamp;
+          if (single(n) === t) return true;
+          next.push(n);
+        }
+      frontier = next;
+    }
+    return false;
+  };
 
-  /** Decide open cell c as t and propagate; undo just this move on contradiction. */
   // Patches often stop short (rules, map edge, other patches), so track the
   // size patches actually reach this attempt and use that as the divisor.
   const patchesStarted = new Int32Array(T);
   const patchHexes = new Int32Array(T);
   const expectedPatch = (t: number) =>
     patchesStarted[t] >= 3 ? Math.max(1, patchHexes[t] / patchesStarted[t]) : growMoves[t] + 1;
+  const patchCount = new Int32Array(T); // patches started this attempt (for max counts)
 
-  const tryPlace = (c: number, t: number): boolean => {
-    if (single(c) !== -1 || !has(c, t)) return false;
+  /** Decide open cell c as t and propagate; undo just this move on contradiction. */
+  const tryPlaceOne = (c: number, t: number): boolean => {
+    if (c < 0 || single(c) !== -1 || !has(c, t)) return false;
     const mark = trailIdx.length;
     for (let w = 0; w < W; w++) setWord(c * W + w, t >>> 5 === w ? 1 << (t & 31) : 0);
     if (propagate([c]) >= 0) {
@@ -438,6 +610,12 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       return false;
     }
     stats.grown++;
+    return true;
+  };
+  /** tryPlaceOne plus the hex's mirror partners (symmetric where the rules allow). */
+  const tryPlace = (c: number, t: number): boolean => {
+    if (!tryPlaceOne(c, t)) return false;
+    for (const m of mirrorsOf(c)) tryPlaceOne(m, t);
     return true;
   };
 
@@ -460,11 +638,12 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     addNeighbours(seed);
     while (budget > 0 && frontier.length) {
       // Best of three random frontier hexes, favouring ones that touch more
-      // of the patch, keeps blobs compact without being perfectly round.
-      let bi = 0, bs = -1;
+      // of the patch (keeps blobs compact without being perfectly round) and
+      // ones where directional bias / edge style want this terrain.
+      let bi = 0, bs = -Infinity;
       for (let k = 0; k < 3; k++) {
         const i = Math.floor(rng() * frontier.length);
-        const sc = touching(frontier[i]) + rng();
+        const sc = touching(frontier[i]) + rng() + (logPos ? logPos[frontier[i] * T + t] : 0);
         if (sc > bs) { bs = sc; bi = i; }
       }
       const n = frontier[bi];
@@ -483,7 +662,14 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
 
   const growLine = (seed: number, t: number, rng: () => number) => {
     let budget = growMoves[t];
+    const width = lineWidth[t];
+    // Extra width: the hexes behind-left / behind-right of each step.
+    const widen = (c: number, h: number) => {
+      if (width >= 2 && budget > 0 && tryPlace(nbr[c * 6 + ring[(h + 2) % 6]], t)) budget--;
+      if (width >= 3 && budget > 0 && tryPlace(nbr[c * 6 + ring[(h + 4) % 6]], t)) budget--;
+    };
     const h0 = Math.floor(rng() * 6);
+    widen(seed, h0);
     // Grow from both ends so the seed sits mid-line.
     const ends = [
       { c: seed, h: h0, alive: true },
@@ -504,6 +690,7 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
           end.h = hh;
           end.alive = true;
           budget--;
+          widen(n, hh);
           break;
         }
       }
@@ -514,14 +701,16 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
   const entropy = new Float64Array(N);
   const open = new Uint8Array(N);
   const noise = new Float64Array(N);
+  const saved = new Float64Array(T);
 
   for (let attempt = 0; attempt <= maxRestarts; attempt++) {
     stats.attempts++;
     const rng = mulberry32(Math.floor(masterRng() * 4294967296));
     trailIdx = [];
+    trailVal = [];
     patchesStarted.fill(0);
     patchHexes.fill(0);
-    trailVal = [];
+    patchCount.fill(0);
     for (let c = 0; c < N; c++) noise[c] = rng() * scatter;
     for (let c = 0; c < N; c++) {
       const ft = fixedAt[c];
@@ -544,11 +733,11 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       let best = -1, bestH = Infinity, decidedCount = 0;
       placed.fill(0);
       for (let c = 0; c < N; c++) {
-        const s = single(c);
-        if (s >= 0) { placed[s]++; decidedCount++; }
+        const sg = single(c);
+        if (sg >= 0) { placed[sg]++; decidedCount++; }
         if (dirty[c]) {
           dirty[c] = 0;
-          open[c] = s === -1 ? 1 : 0;
+          open[c] = sg === -1 ? 1 : 0;
           if (open[c]) {
             const sum = score(c);
             let h = Math.log(sum);
@@ -560,32 +749,42 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
       }
       if (best < 0) break; // everything decided
 
-      // Frequency feedback is applied to the choice only, not to the entropy
-      // cache: it changes after every step, and rescoring every hex each
-      // step would make the solver quadratic in a much worse way.
+      // Frequency feedback, growth seed odds, spacing and counts apply to the
+      // choice only, not to the entropy cache: they change after every step,
+      // and rescoring every hex each step would be far slower.
       const contextSum = score(best);
       if (randomness > 0) {
-        // Mix in a context-free pick by terrain weight (still only among
-        // terrains the hard rules allow here).
+        // Mix in a pick that ignores neighbours: terrain weight plus position
+        // preferences (directional bias, edge style), still only among the
+        // terrains the hard rules allow here.
+        const base = (t: number) => Math.exp(logW[t] + (logPos ? logPos[best * T + t] : 0));
         let baseSum = 0;
-        for (let t = 0; t < T; t++) if (scores[t] > 0) baseSum += Math.exp(logW[t]);
+        for (let t = 0; t < T; t++) if (scores[t] > 0) baseSum += base(t);
         for (let t = 0; t < T; t++)
-          if (scores[t] > 0)
-            scores[t] = (1 - randomness) * (scores[t] / contextSum) + (randomness * Math.exp(logW[t])) / baseSum;
+          if (scores[t] > 0) scores[t] = (1 - randomness) * (scores[t] / contextSum) + (randomness * base(t)) / baseSum;
       }
+      saved.set(scores);
       let sum = 0;
       for (let t = 0; t < T; t++) {
         if (scores[t] <= 0) continue;
+        const startsNew = !touchesTerrain(best, t);
         // Choosing a growth terrain here starts a whole patch, so it must
         // start (patch size) times less often. Otherwise coverage grows
         // with map size: patches scale with the map, and so would the
         // number of patches.
-        if (growShape[t] && !touchesTerrain(best, t)) scores[t] /= expectedPatch(t);
-        if (feedback > 0) {
+        if (growShape[t] && startsNew) scores[t] /= expectedPatch(t);
+        if (startsNew && maxPatches[t] >= 0 && patchCount[t] >= maxPatches[t]) scores[t] = 0;
+        if (spacingOf[t] > 1 && scores[t] > 0 && nearTerrain(best, t, spacingOf[t] - 1)) scores[t] = 0;
+        if (feedback > 0 && scores[t] > 0) {
           const ratio = Math.min(FEEDBACK_CAP, Math.max(1 / FEEDBACK_CAP, (share[t] * decidedCount + 1) / (placed[t] + 1)));
           scores[t] *= Math.pow(ratio, feedback);
         }
         sum += scores[t];
+      }
+      if (sum <= 0) {
+        // Spacing / counts ruled everything out here; fall back to the rules alone.
+        scores.set(saved);
+        for (let t = 0; t < T; t++) sum += scores[t];
       }
       let r = rng() * sum, choice = -1;
       for (let t = 0; t < T; t++) {
@@ -597,18 +796,24 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
 
       stats.decisions++;
       stack.push([trailIdx.length, best, choice]);
-      for (let w = 0; w < W; w++) setWord(best * W + w, choice >>> 5 === w ? 1 << (choice & 31) : 0);
       // Grow only from a hex that starts a new patch. A hex joining an
       // existing patch of the same terrain must not trigger another full
       // growth, or the terrain cascades across the whole map.
-      const startsPatch = growShape[choice] !== 0 && !touchesTerrain(best, choice);
+      const startsPatch = !touchesTerrain(best, choice);
+      for (let w = 0; w < W; w++) setWord(best * W + w, choice >>> 5 === w ? 1 << (choice & 31) : 0);
       let contradiction = propagate([best]) >= 0;
-      if (!contradiction && startsPatch) {
-        const before = stats.grown;
-        if (growShape[choice] === 1) growBlob(best, choice, rng);
-        else growLine(best, choice, rng);
-        patchesStarted[choice]++;
-        patchHexes[choice] += 1 + stats.grown - before;
+      if (!contradiction) {
+        for (const m of mirrorsOf(best)) tryPlaceOne(m, choice);
+        if (startsPatch) {
+          patchCount[choice] += 1 + mirrorsOf(best).length;
+          if (growShape[choice]) {
+            const before = stats.grown;
+            if (growShape[choice] === 1) growBlob(best, choice, rng);
+            else growLine(best, choice, rng);
+            patchesStarted[choice]++;
+            patchHexes[choice] += 1 + stats.grown - before;
+          }
+        }
       }
 
       // Undo the last decision and ban that choice; repeat while the ban
