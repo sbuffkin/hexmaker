@@ -317,3 +317,28 @@ async function writeTerrain(
     onProgress?.(done, changes.length);
   }
 }
+
+/**
+ * Re-learn a generator from the region it came from (its `source-map`),
+ * keeping its name, settings and other metadata. Rewrites the file.
+ */
+export async function relearnGenerator(
+  plugin: HexmakerPlugin,
+  g: GeneratorFile,
+): Promise<{ model: HexWfcModel } | { error: string }> {
+  const mapName = g.model.meta["source-map"];
+  const map = mapName ? plugin.getMap(mapName) : undefined;
+  if (!mapName || !map) return { error: `The region this generator came from (${mapName ?? "unknown"}) no longer exists.` };
+  const cells = readMapTerrain(plugin, mapName);
+  if (cells.size < 2) return { error: `Region "${mapName}" has no painted terrain to learn from.` };
+  const model = learnModel(cells, {
+    name: g.model.name,
+    orientation: plugin.settings.hexOrientation,
+    stagger: mapStagger(plugin, mapName),
+    paths: (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
+    meta: { ...g.model.meta, palette: map.paletteName, created: new Date().toISOString().slice(0, 10) },
+  });
+  if (g.model.settings) model.settings = { ...g.model.settings };
+  await plugin.app.vault.modify(g.file, modelToMarkdown(model));
+  return { model };
+}

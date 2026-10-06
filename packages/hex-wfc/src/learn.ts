@@ -110,10 +110,12 @@ export const SHAPE_THRESHOLDS = {
   /** Patch above this share of the map → "none" (it's the background). */
   maxPatchShare: 0.3,
   /** Long axis / short axis at or above this → "line"... */
-  lineElongation: 2.2,
+  lineElongation: 3,
   /** ...if also at most this many hexes thick. Thicker long patches (a sea
    *  along one edge) are bands, treated as blobs. */
-  maxLineWidth: 3.5,
+  maxLineWidth: 2,
+  /** ...and the terrain isn't a major one (share of the map at most this). */
+  maxLineShare: 0.1,
   /** A thin patch whose second most common neighbouring terrain makes up at
    *  least this share of its border is a boundary (a shore between land and
    *  sea), not a line: it's left to the neighbour rules. */
@@ -236,9 +238,10 @@ function analysePatches(
       const border = [...others.values()].sort((x, y) => y - x);
       const borderTotal = border.reduce((x, y) => x + y, 0);
       const isBoundary = borderTotal > 0 && (border[1] ?? 0) / borderTotal >= TH.boundaryShare;
-      if (elong >= TH.lineElongation && width <= TH.maxLineWidth && isBoundary) {
+      const thinLine = elong >= TH.lineElongation && width <= TH.maxLineWidth && (countOf.get(t) ?? 0) / total <= TH.maxLineShare;
+      if (thinLine && isBoundary) {
         a.shape = "none";
-      } else if (elong >= TH.lineElongation && width <= TH.maxLineWidth) {
+      } else if (thinLine) {
         a.shape = "line";
         // Straighter patches (higher elongation) turn less. Heuristic.
         a.turn = Math.round(Math.min(0.5, Math.max(0.05, 1.2 / elong)) * 100) / 100;

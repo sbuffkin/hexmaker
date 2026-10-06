@@ -75,6 +75,9 @@ export function learnPaths(
     let from = anchor(p.hexes[0]);
     let to = anchor(p.hexes[p.hexes.length - 1]);
     if (from === "none" && to === "none") continue;
+    // Joins at both ends (a link between two branches) isn't something to
+    // reproduce on its own.
+    if (from === "path" && to === "path") continue;
     // Order: a "path" anchor first (branches start from their parent), then
     // "edge", then a terrain, then "none".
     const rank = (e: string) => (e === "path" ? 0 : e === "edge" ? 1 : e === "none" ? 3 : 2);

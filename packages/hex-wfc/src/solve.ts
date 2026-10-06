@@ -336,7 +336,9 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
   // a fixed border before solving instead (see placeEdgeBorder).
   if (s.edgeStrength > 0 && !s.edgeTerrain) {
     const logEdge = new Float64Array(T);
-    for (let t = 0; t < T; t++) logEdge[t] = Math.log(Math.max(0.02, entryOf.get(terrains[t])?.edge ?? 1));
+    // Doubled so strength 1 roughly reproduces the example's border mix
+    // (measured on real maps with dev/wfc-edge.mts).
+    for (let t = 0; t < T; t++) logEdge[t] = 2 * Math.log(Math.max(0.02, entryOf.get(terrains[t])?.edge ?? 1));
     if (logEdge.some((v) => v !== 0)) {
       const pos = ensurePos();
       const depth = Math.max(2, 0.15 * Math.min(cols, rows));

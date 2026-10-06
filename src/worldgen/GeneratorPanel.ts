@@ -17,6 +17,7 @@ import {
   paletteColors,
   pathColors,
   fillMap,
+  relearnGenerator,
   LOCK_KEY,
   type GeneratorFile,
 } from "./generators";
@@ -95,10 +96,8 @@ export class GeneratorPanel {
     const select = pickRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
     const openBtn = pickRow.createEl("button", { text: "Open file" });
     openBtn.disabled = true;
-    el.createEl("p", {
-      text: "Generators whose terrains are all in this palette. Each keeps its settings in its own file.",
-      cls: "duckmage-map-origin-desc",
-    });
+    const relearnBtn = pickRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the region it came from, keeping its settings" } });
+    relearnBtn.disabled = true;
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
     const current = () => generators.find((g) => g.file.path === select.value);
@@ -108,6 +107,7 @@ export class GeneratorPanel {
       body.empty();
       const g = current();
       openBtn.disabled = !g;
+      relearnBtn.disabled = !g?.model.meta["source-map"];
       if (g) this.renderGenerator(body, g);
       else
         body.createEl("p", {
@@ -134,6 +134,20 @@ export class GeneratorPanel {
     openBtn.addEventListener("click", () => {
       const g = current();
       if (g) void this.app.workspace.getLeaf("tab").openFile(g.file);
+    });
+    relearnBtn.addEventListener("click", () => {
+      const g = current();
+      if (!g) return;
+      relearnBtn.disabled = true;
+      void relearnGenerator(this.plugin, g).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          relearnBtn.disabled = false;
+          return;
+        }
+        new Notice(`Re-learned "${g.model.name}" from ${g.model.meta["source-map"]}.`);
+        this.host.rerender();
+      });
     });
 
     select.createEl("option", { value: "", text: "Loading…" });
@@ -210,14 +224,17 @@ export class GeneratorPanel {
   private renderGenerator(el: HTMLElement, g: GeneratorFile): void {
     const { model } = g;
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
+    // One short line; the per-shape breakdown is on hover.
     const byShape = (shape: string) => model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
-    const parts = [`${model.terrains.length} terrains`];
-    for (const [shape, label] of [["blob", "blobs"], ["line", "lines"], ["scatter", "scattered"]] as const)
-      if (byShape(shape).length) parts.push(`${label}: ${byShape(shape).join(", ")}`);
-    if (model.paths?.length) parts.push(`paths: ${[...new Set(model.paths.map((p) => p.type))].join(", ")}`);
-    if (model.meta["source-map"]) parts.push(`learned from ${model.meta["source-map"]}`);
-    el.createEl("p", { text: parts.join(" · "), cls: "duckmage-map-origin-desc" });
-    for (const w of g.warnings) el.createEl("p", { text: `⚠ ${w}`, cls: "duckmage-map-origin-desc" });
+    const detail = (["blob", "line", "scatter", "none"] as const)
+      .filter((shape) => byShape(shape).length)
+      .map((shape) => `${shape}: ${byShape(shape).join(", ")}`);
+    if (model.paths?.length) detail.push(`paths: ${[...new Set(model.paths.map((p) => p.type))].join(", ")}`);
+    const summary = el.createEl("p", {
+      text: `${model.terrains.length} terrains${model.meta["source-map"] ? ` · from ${model.meta["source-map"]}` : ""}${g.warnings.length ? ` · ⚠ ${g.warnings.length}` : ""}`,
+      cls: "duckmage-map-origin-desc",
+    });
+    summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
 
     // Current settings, kept in sync with the file.
     const s = () => resolveSettings(model);
@@ -266,9 +283,8 @@ export class GeneratorPanel {
         return;
       }
       drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin));
-      // Keep it to one line; the details are on hover.
-      const notes = r.warnings.length ? ` · ${r.warnings.length} didn't fit (hover for details)` : "";
-      status.setText(`${grid.cols}×${grid.rows} in ${r.stats.ms} ms${notes}`);
+      // Short: size and time, plus a hoverable count if anything didn't fit.
+      status.setText(`${grid.cols}×${grid.rows} · ${r.stats.ms} ms${r.warnings.length ? ` · ⚠ ${r.warnings.length}` : ""}`);
       status.setAttr("title", r.warnings.join("\n"));
     };
     const schedulePreview = () => {

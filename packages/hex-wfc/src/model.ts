@@ -147,7 +147,7 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   frequencyFeedback: 2,
   scatter: 3,
   randomness: 0.1,
-  edgeStrength: 0,
+  edgeStrength: 1,
   edgeTerrain: "",
   lineWidth: 0,
   smoothing: 0,

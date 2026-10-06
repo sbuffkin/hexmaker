@@ -687,7 +687,7 @@ export class MapModal extends HexmakerModal {
         return;
       }
       drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin));
-      previewStatus.setText(r.warnings.length ? `${r.warnings.length} didn't fit (hover for details)` : "");
+      previewStatus.setText(r.warnings.length ? `⚠ ${r.warnings.length}` : "");
       previewStatus.setAttr("title", r.warnings.join("\n"));
     };
     let previewTimer: number | null = null;
