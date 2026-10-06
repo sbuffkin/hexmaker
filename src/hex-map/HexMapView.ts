@@ -364,6 +364,10 @@ export class HexMapView extends ItemView {
       this.setViewportFontSize(stored.fontSize);
       this.applyTransform();
       this.renderGrid();
+      // A saved position can leave the grid off-screen or too small to see
+      // (e.g. saved while the view had no size). Re-fit rather than show an
+      // empty view.
+      window.requestAnimationFrame(() => this.refitIfLost());
     } else {
       // First visit — reset any baked font size and fit the full grid into view.
       this.zoom = 1; this.panX = 0; this.panY = 0;
@@ -2885,6 +2889,21 @@ export class HexMapView extends ItemView {
       this.viewportEl?.removeClass("duckmage-calibrating-drag");
       this.removeCalibrationSnapshot();
     }, 200);
+  }
+
+  /** Re-fit the grid if it's entirely outside the view or its hexes are too small to see. */
+  private refitIfLost(): void {
+    const clipEl = this.viewportEl?.parentElement;
+    const gridEl = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const hexEl = gridEl?.querySelector<HTMLElement>("[data-x]");
+    if (!clipEl || !gridEl || !hexEl) return;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return; // hidden; measure next time
+    const grid = gridEl.getBoundingClientRect();
+    const overlapW = Math.min(grid.right, clip.right) - Math.max(grid.left, clip.left);
+    const overlapH = Math.min(grid.bottom, clip.bottom) - Math.max(grid.top, clip.top);
+    const tooSmall = hexEl.getBoundingClientRect().width < 4;
+    if (overlapW < 40 || overlapH < 40 || tooSmall) this.fitGridToView();
   }
 
   private fitGridToView(): void {
