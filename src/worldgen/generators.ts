@@ -22,7 +22,9 @@ import {
   solve,
   cellKey,
   type HexWfcModel,
+  SETTING_KEYS,
   type SolveResult,
+  type GeneratorSettings,
 } from "../../packages/hex-wfc/src";
 
 export interface GeneratorFile {
@@ -145,6 +147,7 @@ export function generateMapTerrain(
   offset: { x: number; y: number },
   stagger: "odd" | "even",
   seed: number,
+  featureSize = 1,
 ): SolveResult {
   return solve(restrictModel(model, paletteTerrains), {
     cols,
@@ -153,5 +156,22 @@ export function generateMapTerrain(
     orientation: plugin.settings.hexOrientation,
     stagger,
     seed,
+    featureSize,
+  });
+}
+
+/**
+ * Save solver settings into a generator file's frontmatter. Only the
+ * frontmatter changes, so the tables and any notes the user wrote are kept.
+ */
+export async function saveGeneratorSettings(
+  plugin: HexmakerPlugin,
+  file: TFile,
+  settings: GeneratorSettings,
+): Promise<void> {
+  await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    for (const [field, value] of Object.entries(settings) as [keyof GeneratorSettings, number | undefined][]) {
+      if (value !== undefined) fm[SETTING_KEYS[field]] = value;
+    }
   });
 }

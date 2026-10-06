@@ -7,11 +7,61 @@
  * with weight 0) may never touch. That includes a terrain next to itself.
  */
 
+/**
+ * How a terrain spreads when the solver places it:
+ *  - "blob": grows outward into a compact patch (lakes, forests);
+ *  - "line": pushes forward in a heading, turning now and then (ranges, ridges);
+ *  - "none": no growth; its shape comes from the neighbour rules alone
+ *    (backgrounds, shores, scattered single hexes).
+ */
+export type GrowthShape = "blob" | "line" | "none";
+
 export interface TerrainEntry {
   name: string;
   /** Relative frequency. 0 = never placed by the solver (still valid in fixed cells). */
   weight: number;
+  /**
+   * Typical patch size as a fraction of the whole map (0.05 = 5%). Stored
+   * relative to map area so a generator learned on a 50×50 map produces the
+   * same-looking terrain on a 20×20 one.
+   */
+  patch?: number;
+  /** Growth style. Missing = "none". */
+  shape?: GrowthShape;
+  /** For "line": chance per step of turning (0–1). Missing = 0.2. */
+  turn?: number;
+  /**
+   * Where the terrain sat in the example, as relative density in a 3×3 grid
+   * (row-major: NW, N, NE, W, C, E, SW, S, SE). 1 = as common as anywhere,
+   * 3 = three times as common there. Used by directional bias.
+   */
+  layout?: number[];
 }
+
+/** Layout bin names, in the order of TerrainEntry.layout. */
+export const LAYOUT_BINS = ["NW", "N", "NE", "W", "C", "E", "SW", "S", "SE"] as const;
+
+/**
+ * Solver settings saved with a generator. Each maps to the SolveOptions
+ * field of the same name; options passed to solve() win over these.
+ */
+export interface GeneratorSettings {
+  featureSize?: number;
+  directionalBias?: number;
+  neighbourInfluence?: number;
+  frequencyFeedback?: number;
+  scatter?: number;
+  randomness?: number;
+}
+
+export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
+  featureSize: 1,
+  directionalBias: 0,
+  neighbourInfluence: 3,
+  frequencyFeedback: 2,
+  scatter: 3,
+  randomness: 0.1,
+};
 
 export interface AdjacencyEntry {
   a: string;
@@ -26,6 +76,8 @@ export interface HexWfcModel {
   adjacency: AdjacencyEntry[];
   /** Free-form string metadata (palette, source map, ...). Preserved by the file format. */
   meta: Record<string, string>;
+  /** Saved solver settings. Missing fields use DEFAULT_SETTINGS. */
+  settings?: GeneratorSettings;
 }
 
 const pairKey = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
@@ -54,6 +106,14 @@ export function validateModel(model: HexWfcModel): string[] {
     names.add(t.name);
     if (!Number.isFinite(t.weight) || t.weight < 0)
       problems.push(`Terrain "${t.name}" has an invalid weight`);
+    if (t.patch !== undefined && !(t.patch >= 0 && t.patch <= 1))
+      problems.push(`Terrain "${t.name}" has a patch size outside 0–100%`);
+    if (t.shape !== undefined && !["blob", "line", "none"].includes(t.shape))
+      problems.push(`Terrain "${t.name}" has unknown shape "${String(t.shape)}"`);
+    if (t.turn !== undefined && !(t.turn >= 0 && t.turn <= 1))
+      problems.push(`Terrain "${t.name}" has a turn rate outside 0–1`);
+    if (t.layout !== undefined && (t.layout.length !== 9 || t.layout.some((v) => !(v >= 0))))
+      problems.push(`Terrain "${t.name}" needs 9 layout values ≥ 0`);
   }
   if (model.terrains.length === 0) problems.push("No terrains listed");
   for (const { a, b, weight } of model.adjacency) {
@@ -81,5 +141,6 @@ export function restrictModel(model: HexWfcModel, allowed: Iterable<string>): He
     terrains: model.terrains.filter((t) => keep.has(t.name)),
     adjacency: model.adjacency.filter((e) => keep.has(e.a) && keep.has(e.b)),
     meta: { ...model.meta },
+    ...(model.settings ? { settings: { ...model.settings } } : {}),
   };
 }

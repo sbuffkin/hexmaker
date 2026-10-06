@@ -35,6 +35,28 @@ export function hexNeighbors(
     : [[x + 1, y], [x - 1, y], [x, y - 1], [x + 1, y - 1], [x, y + 1], [x + 1, y + 1]];
 }
 
+/**
+ * Position of the hex centre in a plane where neighbouring centres are
+ * √3 apart (unit hex size). Used for shape measurements, not drawing.
+ */
+export function hexCenter(x: number, y: number, orientation: Orientation, stagger: Stagger = "odd"): [number, number] {
+  const isShifted = (n: number) => (stagger === "odd" ? n % 2 !== 0 : n % 2 === 0);
+  const r3 = Math.sqrt(3);
+  return orientation === "flat"
+    ? [x * 1.5, y * r3 + (isShifted(x) ? r3 / 2 : 0)]
+    : [x * r3 + (isShifted(y) ? r3 / 2 : 0), y * 1.5];
+}
+
+/**
+ * Neighbour indices (into the hexNeighbors() result) in clockwise ring
+ * order. The index → compass direction mapping is the same for shifted and
+ * unshifted hexes, so a heading can be kept as an index into this ring.
+ */
+export function directionRing(orientation: Orientation): number[] {
+  // flat: 0 N, 2 NE, 3 SE, 1 S, 5 SW, 4 NW; pointy: 0 E, 5 SE, 4 SW, 1 W, 2 NW, 3 NE
+  return orientation === "flat" ? [0, 2, 3, 1, 5, 4] : [0, 5, 4, 1, 2, 3];
+}
+
 /** Accept either a Map or a plain object of "x_y" → terrain. */
 export function toCellMap(cells: Map<string, string> | Record<string, string>): Map<string, string> {
   return cells instanceof Map ? cells : new Map(Object.entries(cells));
