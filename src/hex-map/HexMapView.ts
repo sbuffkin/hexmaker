@@ -2027,9 +2027,6 @@ export class HexMapView extends ItemView {
         "--duckmage-vp-tx": `${this.panX}px`,
         "--duckmage-vp-ty": `${this.panY}px`,
         "--duckmage-vp-scale": String(this.zoom),
-        // Inverse-zoom factor used by calibration resize handles so they stay
-        // constant screen-size regardless of how zoomed the viewport is.
-        "--duckmage-cal-scale": String(1 / Math.max(0.01, this.zoom)),
       });
     }
     this.updateCalHandleScale();
@@ -2038,22 +2035,29 @@ export class HexMapView extends ItemView {
   /**
    * Keep the calibration resize handles a constant on-screen size. A handle is
    * a child of the element it resizes (the bg image layer or the grid), so its
-   * rendered size is `handleCss × parentScale × viewportZoom`. The global
-   * `--duckmage-cal-scale` on the viewport only cancels the zoom; the parent's
-   * own scale (bg image ~4.8×, grid ~0.35×) is left in — which is why image
-   * handles looked huge and grid handles tiny. We override the var on each
-   * parent with `1 / (zoom × parentScale)` so the chain cancels to 1.
+   * rendered size is `handleCss × parentScale × viewportZoom`. Cancelling only
+   * the zoom leaves the parent's own scale (bg image ~4.8×, grid ~0.35×) in,
+   * which made image handles huge and grid handles tiny, so each handle gets
+   * `--duckmage-cal-scale = 1 / (zoom × parentScale)` and the chain cancels to 1.
    */
   private updateCalHandleScale(): void {
     if (!this.bgCalibrating || !this.viewportEl) return;
     const z = Math.max(0.01, this.zoom);
+    // Written on the handles themselves, not their parent: an inherited
+    // custom property changed on the grid would re-style every hex
+    // beneath it on each zoom frame.
+    const setHandleScale = (parent: HTMLElement, scale: number) => {
+      parent
+        .querySelectorAll<HTMLElement>(":scope > .duckmage-calibration-handle")
+        .forEach((h) => h.setCssProps({ "--duckmage-cal-scale": String(scale) }));
+    };
     const map = this.getActiveMap();
     const bgLayer = this.viewportEl.querySelector<HTMLElement>(
       ".duckmage-bg-image-layer",
     );
     if (bgLayer && map.backgroundImage) {
       const s = Math.max(0.01, map.backgroundImage.scale);
-      bgLayer.setCssProps({ "--duckmage-cal-scale": String(1 / (z * s)) });
+      setHandleScale(bgLayer, 1 / (z * s));
     }
     const grid = this.viewportEl.querySelector<HTMLElement>(
       ".duckmage-hex-map-grid",
@@ -2065,7 +2069,7 @@ export class HexMapView extends ItemView {
       const sx = map.gridDisplayScaleX ?? legacy;
       const sy = map.gridDisplayScaleY ?? legacy;
       const gs = Math.max(0.01, (sx + sy) / 2);
-      grid.setCssProps({ "--duckmage-cal-scale": String(1 / (z * gs)) });
+      setHandleScale(grid, 1 / (z * gs));
     }
   }
 

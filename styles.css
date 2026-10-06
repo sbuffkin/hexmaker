@@ -126,6 +126,24 @@
 .duckmage-hide-icon-overrides:not(.duckmage-hide-terrain-icons) .duckmage-hex[data-icon-override] .duckmage-hex-terrain-icon { display: block; }
 .duckmage-hide-icon-overrides .duckmage-svg-icon-override { display: none; }
 
+/* Transform vars are registered as NON-inheriting. Each is read only by the
+   element it is set on, and a plain custom property inherits: changing the
+   viewport's pan vars re-styled every element under it on every pan/zoom
+   frame (~430 ms/frame on chult's 3843 hexes; ~17 ms registered). Do not
+   read these from descendants. Repro: dev/real-map-bench.html. */
+@property --duckmage-vp-tx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-vp-ty { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-vp-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --duckmage-bg-tx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-bg-ty { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-bg-rot { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+@property --duckmage-bg-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --duckmage-bg-opacity { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --duckmage-grid-tx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-grid-ty { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@property --duckmage-grid-sx { syntax: "<number>"; inherits: false; initial-value: 1; }
+@property --duckmage-grid-sy { syntax: "<number>"; inherits: false; initial-value: 1; }
+
 .duckmage-hex-map-viewport {
     position: absolute;
     top: 0;
@@ -273,7 +291,7 @@
 
 /* Resize handles for bg image + hex grid in calibration mode. Positioned at
    each corner/edge of the parent (which is position: relative or absolute).
-   `--duckmage-cal-scale` is set by HexMapView.applyTransform as `1/zoom`, so
+   `--duckmage-cal-scale` is set on each handle by updateCalHandleScale, so
    handles stay constant *screen* size regardless of viewport zoom — without
    compensation the viewport's `transform: scale()` shrinks them at low zoom
    to the point you can't grab them. transform-origin: center keeps the scale
