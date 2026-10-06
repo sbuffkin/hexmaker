@@ -31,7 +31,7 @@ import type {
   TerrainPalette,
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
-import { getTerrainFromFile, setTerrainInFile, setSubmapInFile } from "./frontmatter";
+import { getTerrainFromFile, setTerrainInFile, setSubmapInFile, withFrontmatterField } from "./frontmatter";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -820,6 +820,13 @@ export default class HexmakerPlugin extends Plugin {
    * Removes any existing link that resolves to a file in the terrain subfolder, then adds
    * the correct link for the new terrain (if non-null and the table file exists).
    */
+  /** Whether `{tablesFolder}/terrain/encounters/{terrain}.md` exists. */
+  hasTerrainEncounterTable(terrain: string): boolean {
+    const tablesFolder = normalizeFolder(this.settings.tablesFolder);
+    const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
+    return this.app.vault.getAbstractFileByPath(`${subfolder}/encounters/${terrain}.md`) instanceof TFile;
+  }
+
   async syncHexEncounterTableLink(
     hexFilePath: string,
     terrain: string | null,
@@ -1054,6 +1061,7 @@ export default class HexmakerPlugin extends Plugin {
     y: number,
     mapName: string,
     preloadedTemplate?: string,
+    terrain?: string,
   ): Promise<TFile | null> {
     const path = this.hexPath(x, y, mapName);
     let content: string;
@@ -1068,6 +1076,7 @@ export default class HexmakerPlugin extends Plugin {
       .replace(/\{\{x\}\}/g, String(x))
       .replace(/\{\{y\}\}/g, String(y))
       .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`);
+    if (terrain) content = withFrontmatterField(content, "terrain", terrain);
 
     const hexBase = normalizeFolder(this.settings.hexFolder);
     const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
@@ -1143,6 +1152,8 @@ export default class HexmakerPlugin extends Plugin {
     initialY = 0,
     staggerOffset?: "odd" | "even",
     onProgress?: (done: number, total: number) => void,
+    /** Optional generated terrain per hex, keyed "x_y". */
+    terrainAt?: Map<string, string>,
   ): Promise<{ name: string } | { error: string }> {
     const name = slugify(rawName);
     if (!name) return { error: "Enter a map name." };
@@ -1170,8 +1181,12 @@ export default class HexmakerPlugin extends Plugin {
     const xs = Array.from({ length: cols }, (_, i) => i + initialX);
     const ys = Array.from({ length: rows }, (_, i) => i + initialY);
     const total = cols * rows;
-    const created = await this.generateHexNotes(name, xs, ys, (done) =>
-      onProgress?.(done, total),
+    const created = await this.generateHexNotes(
+      name,
+      xs,
+      ys,
+      (done) => onProgress?.(done, total),
+      terrainAt,
     );
     if (created > 0)
       new Notice(
@@ -1186,6 +1201,7 @@ export default class HexmakerPlugin extends Plugin {
     xs: number[],
     ys: number[],
     onProgress?: (done: number) => void,
+    terrainAt?: Map<string, string>,
   ): Promise<number> {
     // Read template once — avoids N vault reads for the same file
     const template = await this.loadHexTemplate();
@@ -1201,8 +1217,13 @@ export default class HexmakerPlugin extends Plugin {
         pairs.slice(i, i + CHUNK).map(async ([x, y]) => {
           const path = this.hexPath(x, y, mapName);
           if (!this.app.vault.getAbstractFileByPath(path)) {
-            const result = await this.createHexNote(x, y, mapName, template);
-            if (result) created++;
+            const terrain = terrainAt?.get(`${x}_${y}`);
+            const result = await this.createHexNote(x, y, mapName, template, terrain);
+            if (result) {
+              created++;
+              if (terrain && this.hasTerrainEncounterTable(terrain))
+                await this.syncHexEncounterTableLink(path, terrain);
+            }
           }
           done++;
         }),

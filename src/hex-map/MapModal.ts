@@ -7,6 +7,14 @@ import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
 import { exportMapAsPng } from "../export/mapPngRenderer";
 import { exportMapAsPdf } from "../export/exporters/mapWithTable";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
+import {
+  listGenerators,
+  generatorFitsPalette,
+  saveGeneratorFromMap,
+  generateMapTerrain,
+  type GeneratorFile,
+} from "../worldgen/generators";
+import { randomSeed } from "../../packages/hex-wfc/src";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -437,6 +445,40 @@ export class MapModal extends HexmakerModal {
         this.view.enterBgCalibration();
       });
     }
+
+    // ── Terrain generator ──────────────────────────────────────────────────
+    el.createEl("h4", { text: "Terrain generator" });
+    el.createEl("p", {
+      text: "Learn a wave function collapse generator from the terrain painted on this map. Terrains that never touch here never touch in generated maps. Pick the generator when you create a new map.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const genRow = el.createDiv({ cls: "duckmage-region-row" });
+    const genNameInput = genRow.createEl("input", {
+      type: "text",
+      value: this.view.activeMapName,
+      placeholder: "generator-name",
+    });
+    const genBtn = genRow.createEl("button", {
+      text: "Generate solver from map",
+      cls: "mod-cta",
+    });
+    genBtn.addEventListener("click", () => void this.learnGenerator(genNameInput.value, genBtn));
+  }
+
+  private async learnGenerator(rawName: string, btn: HTMLButtonElement): Promise<void> {
+    btn.disabled = true;
+    const result = await saveGeneratorFromMap(this.plugin, this.view.activeMapName, rawName);
+    btn.disabled = false;
+    if ("error" in result) {
+      new Notice(result.error);
+      return;
+    }
+    const { model, file } = result;
+    new Notice(
+      `Saved generator "${model.name}": ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs.`,
+    );
+    this.close();
+    await this.app.workspace.getLeaf("tab").openFile(file);
   }
 
   /** Compute the folder where dropped bg images should land for a given map. */
@@ -552,6 +594,34 @@ export class MapModal extends HexmakerModal {
       paletteSelect.createEl("option", { value: pal.name, text: pal.name });
     }
 
+    // Generator (optional). Only generators whose terrains all exist in the
+    // chosen palette are offered.
+    el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
+    el.createEl("p", {
+      text: "Fill the new map with generated terrain, or leave it blank. Make one from a painted map on the properties tab.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
+    const generatorSelect = generatorRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
+    let generators: GeneratorFile[] = [];
+    const fillGenerators = () => {
+      const current = generatorSelect.value;
+      generatorSelect.empty();
+      generatorSelect.createEl("option", { value: "", text: "Blank" });
+      const names = this.plugin.getPaletteByName(paletteSelect.value)?.terrains.map((t) => t.name) ?? [];
+      for (const g of generators) {
+        if (generatorFitsPalette(g.model, names))
+          generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
+      }
+      generatorSelect.value = Array.from(generatorSelect.options).some((o) => o.value === current) ? current : "";
+    };
+    fillGenerators();
+    paletteSelect.addEventListener("change", fillGenerators);
+    void listGenerators(this.plugin).then((list) => {
+      generators = list;
+      fillGenerators();
+    });
+
     // Stagger offset
     el.createEl("label", { text: "Stagger offset", cls: "duckmage-map-field-label" });
     const staggerRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -624,7 +694,7 @@ export class MapModal extends HexmakerModal {
     const createRow = el.createDiv({ cls: "duckmage-region-row duckmage-map-create-row" });
     const createBtn = createRow.createEl("button", { text: "Create", cls: "mod-cta" });
     const allInputs: (HTMLInputElement | HTMLSelectElement)[] = [
-      nameInput, colsInput, rowsInput, paletteSelect, originXInput, originYInput,
+      nameInput, colsInput, rowsInput, paletteSelect, generatorSelect, originXInput, originYInput,
     ];
     const doCreate = () =>
       void this.handleCreate(
@@ -639,6 +709,7 @@ export class MapModal extends HexmakerModal {
         allInputs,
         pendingBgPath,
         pendingBgFile,
+        generators.find((g) => g.file.path === generatorSelect.value) ?? null,
       );
     createBtn.addEventListener("click", doCreate);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
@@ -745,21 +816,43 @@ export class MapModal extends HexmakerModal {
     inputs: (HTMLInputElement | HTMLSelectElement)[],
     bgImagePath: string | null,
     bgImageFile: File | null,
+    generator: GeneratorFile | null,
   ): Promise<void> {
     btn.setText("Generating…");
     btn.disabled = true;
     for (const input of inputs) input.disabled = true;
+    const reset = () => {
+      btn.setText("Create");
+      btn.disabled = false;
+      for (const input of inputs) input.disabled = false;
+    };
+
+    // Solve before creating anything, so a generator that can't fill the
+    // map leaves no half-made map behind.
+    let terrainAt: Map<string, string> | undefined;
+    if (generator) {
+      const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
+      const solved = generateMapTerrain(
+        this.plugin, generator.model, palette, cols, rows,
+        { x: initialX, y: initialY }, staggerOffset, randomSeed(),
+      );
+      if (!solved.ok) {
+        new Notice(`Generator "${generator.model.name}" couldn't fill this map: ${solved.message}`);
+        reset();
+        return;
+      }
+      terrainAt = solved.cells;
+    }
 
     const result = await this.plugin.createNewMap(
       raw, cols, rows, paletteName, initialX, initialY, staggerOffset,
       (done, total) => btn.setText(`Generating ${done} / ${total}…`),
+      terrainAt,
     );
 
     if ("error" in result) {
       new Notice(result.error);
-      btn.setText("Create");
-      btn.disabled = false;
-      for (const input of inputs) input.disabled = false;
+      reset();
       return;
     }
 

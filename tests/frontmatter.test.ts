@@ -1,7 +1,7 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile, getSubmapFromFile, setSubmapInFile, terrainFromFm, iconOverrideFromFm, gmIconsFromFm } from "../src/frontmatter";
+import { getTerrainFromFile, setTerrainInFile, getIconOverrideFromFile, setIconOverrideInFile, getSubmapFromFile, setSubmapInFile, terrainFromFm, iconOverrideFromFm, gmIconsFromFm, withFrontmatterField } from "../src/frontmatter";
 
 /** Build a minimal mock App backed by an in-memory string. */
 function makeApp(filePath: string, initialContent: string) {
@@ -402,4 +402,38 @@ describe("gmIconsFromFm", () => {
 		expect(gmIconsFromFm(null)).toEqual([]);
 		expect(gmIconsFromFm(undefined)).toEqual([]);
 	});
+});
+
+describe("withFrontmatterField", () => {
+  it("fills an empty key in the default hex template", () => {
+    const out = withFrontmatterField("---\nterrain:\n---\n\n# Hex 1, 2\n", "terrain", "Grass");
+    expect(out).toBe("---\nterrain: Grass\n---\n\n# Hex 1, 2\n");
+  });
+
+  it("replaces an existing value and keeps other keys", () => {
+    const out = withFrontmatterField("---\nicon: a.png\nterrain: Sea\ntags: [x]\n---\nbody", "terrain", "Hills");
+    expect(out).toBe("---\nicon: a.png\nterrain: Hills\ntags: [x]\n---\nbody");
+  });
+
+  it("adds the key when the frontmatter lacks it", () => {
+    expect(withFrontmatterField("---\nicon: a.png\n---\nbody", "terrain", "Hills")).toBe(
+      "---\nicon: a.png\nterrain: Hills\n---\nbody",
+    );
+  });
+
+  it("adds a frontmatter block when there is none", () => {
+    expect(withFrontmatterField("# Hex\n", "terrain", "Hills")).toBe("---\nterrain: Hills\n---\n# Hex\n");
+  });
+
+  it("quotes values YAML would misread", () => {
+    expect(withFrontmatterField("---\nterrain:\n---\n", "terrain", "Sea: deep #1")).toBe(
+      '---\nterrain: "Sea: deep #1"\n---\n',
+    );
+  });
+
+  it("does not match a longer key with the same prefix", () => {
+    expect(withFrontmatterField("---\nterrain-note: x\n---\n", "terrain", "Hills")).toBe(
+      "---\nterrain-note: x\nterrain: Hills\n---\n",
+    );
+  });
 });
