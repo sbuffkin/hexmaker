@@ -209,7 +209,7 @@ export class HexEditorModal extends HexmakerModal {
     const { body: notesBody } = this.makeCollapsible(
       bodyEl,
       "Notes",
-      !this.options.gmLayerActive && (s.hexEditorNotesCollapsed ?? false),
+      s.hexEditorNotesCollapsed ?? false,
     );
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;

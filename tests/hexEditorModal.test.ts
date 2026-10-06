@@ -183,6 +183,42 @@ describe("HexEditorModal — HexEditorOptions", () => {
 	});
 });
 
+// ── Section start-collapsed settings (issue #34) ─────────────────────────────
+
+describe("HexEditorModal section start-collapsed settings", () => {
+	/** Render the body with DOM-heavy helpers stubbed; return label → startCollapsed. */
+	function collapsedStates(notesCollapsed: boolean, gmLayerActive: boolean) {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		(plugin.settings as any).hexEditorNotesCollapsed = notesCollapsed;
+		(plugin as any).getMapPalette = () => [];
+		const modal = new HexEditorModal(
+			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive },
+		) as any;
+		const states = new Map<string, boolean>();
+		modal.makeCollapsible = (_c: unknown, label: string, startCollapsed: boolean) => {
+			states.set(label, startCollapsed);
+			return { body: {}, header: {} };
+		};
+		modal.renderTerrainSection = () => {};
+		modal.renderTextSection = () => {};
+		modal.renderDropdownSection = () => {};
+		modal.renderBody({ createEl: () => ({}) }, "hex/1_1.md");
+		return states;
+	}
+
+	it("starts Notes collapsed when the setting is on and the GM layer is active", () => {
+		expect(collapsedStates(true, true).get("Notes")).toBe(true);
+	});
+
+	it("starts Notes collapsed when the setting is on and the GM layer is off", () => {
+		expect(collapsedStates(true, false).get("Notes")).toBe(true);
+	});
+
+	it("starts Notes expanded when the setting is off", () => {
+		expect(collapsedStates(false, true).get("Notes")).toBe(false);
+	});
+});
+
 // ── Navigation: reload on hex change ─────────────────────────────────────────
 
 describe("HexEditorModal navigation reload", () => {
