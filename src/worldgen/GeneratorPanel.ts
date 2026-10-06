@@ -1,7 +1,7 @@
 /**
  * The terrain generator page: pick a region (map) and palette, learn a
  * generator from the region, adjust a generator's settings (saved to its
- * file's frontmatter) with a live preview, and fill or regenerate the region.
+ * file's frontmatter) with a live preview, and create a new map from it.
  */
 
 import { App, Notice } from "obsidian";
@@ -16,10 +16,8 @@ import {
   generatorFitsPalette,
   paletteColors,
   pathColors,
-  fillMap,
   relearnGenerator,
   toPathChains,
-  LOCK_KEY,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
@@ -348,7 +346,6 @@ export class GeneratorPanel {
     });
     for (const input of [seedInput, colsInput, rowsInput]) input.addEventListener("change", schedulePreview);
 
-    this.renderFill(el, g, () => Number(seedInput.value) >>> 0);
 
     // Shape
     this.heading(el, "Shape");
@@ -442,60 +439,6 @@ export class GeneratorPanel {
     });
 
     schedulePreview();
-  }
-
-  // ── Fill the active map ──────────────────────────────────────────────────
-
-  private renderFill(el: HTMLElement, g: GeneratorFile, seed: () => number): void {
-    this.heading(el, `Fill ${this.mapName || "region"}`);
-    const mapName = this.mapName;
-    const palette = this.plugin.getMapPalette(mapName).map((t) => t.name);
-    el.createEl("p", {
-      text: `Uses the preview's seed. "Fill unpainted hexes" keeps everything you've painted and your paths. "Regenerate" repaints the whole map, except hexes whose note has "${LOCK_KEY}: true" in its properties, and redraws the generator's path types.`,
-      cls: "duckmage-map-origin-desc",
-    });
-    if (!generatorFitsPalette(g.model, palette))
-      el.createEl("p", {
-        text: "⚠ This map's palette is missing some of the generator's terrains; those are left out.",
-        cls: "duckmage-map-origin-desc",
-      });
-    const row = el.createDiv({ cls: "duckmage-region-row" });
-    const fillBtn = row.createEl("button", { text: "Fill unpainted hexes", cls: "mod-cta" });
-    const regenBtn = row.createEl("button", { text: "Regenerate map", cls: "mod-warning" });
-    let confirming = false;
-
-    const run = async (mode: "unpainted" | "regenerate", btn: HTMLButtonElement) => {
-      fillBtn.disabled = regenBtn.disabled = true;
-      const label = btn.textContent ?? "";
-      const result = await fillMap(this.plugin, mapName, g.model, mode, seed(), (done, total) =>
-        btn.setText(`Writing ${done} / ${total}…`),
-      );
-      fillBtn.disabled = regenBtn.disabled = false;
-      btn.setText(label);
-      if ("error" in result) {
-        new Notice(`Couldn't fill the map: ${result.error}`);
-        return;
-      }
-      const notes = result.warnings.length ? ` (${result.warnings.join("; ")})` : "";
-      new Notice(`Generator "${g.model.name}" set terrain on ${result.changed} hexes${notes}.`);
-      // Let the metadata cache catch up before redrawing.
-      window.setTimeout(() => this.plugin.refreshHexMap(), 300);
-    };
-    fillBtn.addEventListener("click", () => void run("unpainted", fillBtn));
-    regenBtn.addEventListener("click", () => {
-      if (!confirming) {
-        confirming = true;
-        regenBtn.setText("Click again to repaint the map");
-        window.setTimeout(() => {
-          confirming = false;
-          regenBtn.setText("Regenerate map");
-        }, 4000);
-        return;
-      }
-      confirming = false;
-      regenBtn.setText("Regenerate map");
-      void run("regenerate", regenBtn);
-    });
   }
 
   // ── Small controls ───────────────────────────────────────────────────────
