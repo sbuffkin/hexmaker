@@ -27,7 +27,6 @@ import {
   resolveSettings,
   type HexWfcModel,
   type GeneratorSettings,
-  type CountRange,
 } from "./model";
 import { mulberry32 } from "./rng";
 import { placeFeatures, placeEdgeBorder } from "./features";
@@ -510,7 +509,7 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
     }
   }
   const maxPatches = new Int32Array(T).fill(-1);
-  for (const [name, range] of Object.entries(s.counts) as [string, CountRange][]) {
+  for (const [name, range] of Object.entries(s.counts)) {
     const t = tIndex.get(name);
     if (t !== undefined && range.max !== undefined) maxPatches[t] = range.max;
   }

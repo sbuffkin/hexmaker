@@ -5101,3 +5101,96 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
 }
+
+/* ── Maps modal: Generator tab (wave function collapse) ───────────────────── */
+
+.duckmage-wfc-section {
+    margin: 0.75em 0;
+}
+
+.duckmage-wfc-preview {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-s);
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-heading {
+    margin: 1.2em 0 0.2em;
+    padding-bottom: 0.2em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-wfc-seed {
+    width: 120px;
+}
+
+.duckmage-wfc-num {
+    width: 60px;
+}
+
+.duckmage-wfc-toggle {
+    gap: 0.5em;
+    cursor: pointer;
+}
+
+.duckmage-wfc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em 0.75em;
+}
+
+.duckmage-wfc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    cursor: pointer;
+}
+
+.duckmage-wfc-terrains {
+    display: grid;
+    gap: 0.25em;
+}
+
+.duckmage-wfc-terrain-row {
+    display: grid;
+    grid-template-columns: minmax(8em, 1.5fr) 5em minmax(9em, 2fr) 4.5em 4.5em;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-wfc-terrain-head {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.duckmage-wfc-terrain-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-wfc-swatch {
+    flex: none;
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 2px;
+    background: var(--duckmage-wfc-swatch, var(--background-modifier-border));
+}
+
+.duckmage-wfc-mix {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+.duckmage-wfc-mix input[type="range"] {
+    flex: 1;
+    min-width: 0;
+}

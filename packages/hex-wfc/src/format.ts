@@ -127,7 +127,7 @@ export function decodeSetting(field: keyof GeneratorSettings, raw: string): { va
       return { error: "should be true or false" };
     case "symmetry":
       return SYMMETRIES.includes(v as Symmetry)
-        ? { value: v as Symmetry }
+        ? { value: v }
         : { error: `should be one of ${SYMMETRIES.join(", ")}` };
     case "string":
       return { value: v };
@@ -439,7 +439,7 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
   }
   if (features.length) model.features = features;
   if (exampleHexes !== undefined) model.exampleHexes = exampleHexes;
-  if (Object.keys(settings).length) model.settings = settings as GeneratorSettings;
+  if (Object.keys(settings).length) model.settings = settings;
   model.name = name || fallbackName;
   return { model, warnings };
 }

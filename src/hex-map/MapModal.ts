@@ -10,12 +10,13 @@ import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
   generatorFitsPalette,
-  saveGeneratorFromMap,
-  generateMapTerrain,
-  saveGeneratorSettings,
+  generateTerrain,
+  paletteColors,
   type GeneratorFile,
 } from "../worldgen/generators";
-import { randomSeed, DEFAULT_SETTINGS, type GeneratorSettings } from "../../packages/hex-wfc/src";
+import { GeneratorTab } from "../worldgen/GeneratorTab";
+import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
+import { randomSeed } from "../../packages/hex-wfc/src";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -49,7 +50,6 @@ function clampInt(v: number, lo: number, hi: number, fallback: number): number {
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
   private activeTab: ModalTab = "Maps";
-  private selectedGeneratorPath = "";
 
   constructor(
     app: App,
@@ -103,7 +103,13 @@ export class MapModal extends HexmakerModal {
     this.renderMapsTab(contentDivs.get("Maps")!);
     this.renderPropertiesTab(contentDivs.get("Properties")!);
     this.renderNewMapTab(contentDivs.get("New map")!);
-    this.renderGeneratorTab(contentDivs.get("Generator")!);
+    new GeneratorTab(this.app, this.plugin, this.view, {
+      close: () => this.close(),
+      rerender: () => {
+        this.activeTab = "Generator";
+        this.render();
+      },
+    }).render(contentDivs.get("Generator")!);
     this.renderExportTab(contentDivs.get("Export")!);
   }
 
@@ -450,23 +456,6 @@ export class MapModal extends HexmakerModal {
     }
   }
 
-  private async learnGenerator(rawName: string, btn: HTMLButtonElement): Promise<void> {
-    btn.disabled = true;
-    const result = await saveGeneratorFromMap(this.plugin, this.view.activeMapName, rawName);
-    btn.disabled = false;
-    if ("error" in result) {
-      new Notice(result.error);
-      return;
-    }
-    const { model, file } = result;
-    new Notice(
-      `Saved generator "${model.name}": ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs.`,
-    );
-    this.selectedGeneratorPath = file.path;
-    this.activeTab = "Generator";
-    this.render();
-  }
-
   /** Compute the folder where dropped bg images should land for a given map. */
   private bgImportFolder(mapName: string): string {
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
@@ -584,7 +573,7 @@ export class MapModal extends HexmakerModal {
     // chosen palette are offered.
     el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
     el.createEl("p", {
-      text: "Fill the new map with generated terrain, or leave it blank. Make one from a painted map on the properties tab.",
+      text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings on the generator tab.",
       cls: "duckmage-map-origin-desc",
     });
     const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -608,10 +597,16 @@ export class MapModal extends HexmakerModal {
       fillGenerators();
     });
 
-    el.createEl("p", {
-      text: "Each generator's settings are on the generator tab.",
-      cls: "duckmage-map-origin-desc",
-    });
+    // Preview of the generated terrain; Create uses exactly this seed.
+    const previewBox = el.createDiv({ cls: "duckmage-wfc-section" });
+    const previewCanvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
+    const previewStatus = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
+    const seedRow = previewBox.createDiv({ cls: "duckmage-region-row" });
+    seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
+    const seedInput = seedRow.createEl("input", { type: "number", value: String(randomSeed()), cls: "duckmage-wfc-seed" });
+    const rerollBtn = seedRow.createEl("button", { text: "Re-roll" });
+    const previewBtn = seedRow.createEl("button", { text: "Preview" });
+    previewBox.hide();
 
     // Stagger offset
     el.createEl("label", { text: "Stagger offset", cls: "duckmage-map-field-label" });
@@ -681,6 +676,49 @@ export class MapModal extends HexmakerModal {
       bgClearBtn.disabled = false;
     });
 
+    const selectedGenerator = () => generators.find((g) => g.file.path === generatorSelect.value) ?? null;
+    const runPreview = () => {
+      const g = selectedGenerator();
+      if (!g) return;
+      const grid = {
+        cols: Math.max(1, Number(colsInput.value) || 20),
+        rows: Math.max(1, Number(rowsInput.value) || 16),
+        offset: { x: Number(originXInput.value) || 0, y: Number(originYInput.value) || 0 },
+        stagger: staggerVal,
+      };
+      const palette = this.plugin.getPaletteByName(paletteSelect.value)?.terrains.map((t) => t.name) ?? [];
+      const r = generateTerrain(this.plugin, g.model, palette, grid, Number(seedInput.value) >>> 0);
+      if (!r.ok) {
+        previewStatus.setText(`This generator couldn't fill the map: ${r.message}`);
+        return;
+      }
+      drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells);
+      previewStatus.setText(r.warnings.length ? r.warnings.join("; ") : "");
+    };
+    let previewTimer: number | null = null;
+    const schedulePreview = () => {
+      previewBox.toggle(selectedGenerator() !== null);
+      if (!selectedGenerator()) return;
+      if (previewTimer !== null) window.clearTimeout(previewTimer);
+      if ((Number(colsInput.value) || 0) * (Number(rowsInput.value) || 0) > PREVIEW_AUTO_LIMIT) {
+        previewStatus.setText("Large map: use the preview button to see it.");
+        return;
+      }
+      previewTimer = window.setTimeout(() => {
+        previewTimer = null;
+        runPreview();
+      }, 200);
+    };
+    rerollBtn.addEventListener("click", () => {
+      seedInput.value = String(randomSeed());
+      schedulePreview();
+    });
+    previewBtn.addEventListener("click", runPreview);
+    for (const input of [generatorSelect, paletteSelect, colsInput, rowsInput, originXInput, originYInput, seedInput])
+      input.addEventListener("change", schedulePreview);
+    staggerBtn.addEventListener("click", schedulePreview);
+    presetsRow.addEventListener("click", schedulePreview);
+
     // Create button
     const createRow = el.createDiv({ cls: "duckmage-region-row duckmage-map-create-row" });
     const createBtn = createRow.createEl("button", { text: "Create", cls: "mod-cta" });
@@ -700,165 +738,12 @@ export class MapModal extends HexmakerModal {
         allInputs,
         pendingBgPath,
         pendingBgFile,
-        generators.find((g) => g.file.path === generatorSelect.value) ?? null,
+        selectedGenerator(),
+        Number(seedInput.value) >>> 0,
       );
     createBtn.addEventListener("click", doCreate);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") doCreate();
-    });
-  }
-
-  // ── Generator tab ─────────────────────────────────────────────────────────
-
-  private renderGeneratorTab(el: HTMLElement): void {
-    el.empty();
-
-    // Learn from the active map
-    el.createEl("h4", { text: "Learn from this map" });
-    el.createEl("p", {
-      text: "Make a wave function collapse generator from the terrain painted on this map. Terrains that never touch here never touch in generated maps, and lakes, ridges and forests keep their shape and relative size. Pick it on the new map tab.",
-      cls: "duckmage-map-origin-desc",
-    });
-    const learnRow = el.createDiv({ cls: "duckmage-region-row" });
-    const nameInput = learnRow.createEl("input", {
-      type: "text",
-      value: this.view.activeMapName,
-      placeholder: "generator-name",
-    });
-    const learnBtn = learnRow.createEl("button", { text: "Generate solver from map", cls: "mod-cta" });
-    learnBtn.addEventListener("click", () => void this.learnGenerator(nameInput.value, learnBtn));
-
-    // Settings of a saved generator
-    el.createEl("h4", { text: "Generator settings" });
-    el.createEl("p", {
-      text: "Each generator keeps its own settings in its file. New maps made with it use them.",
-      cls: "duckmage-map-origin-desc",
-    });
-    const pickRow = el.createDiv({ cls: "duckmage-region-row" });
-    const select = pickRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
-    const openBtn = pickRow.createEl("button", { text: "Open file" });
-    const settingsEl = el.createDiv();
-    let generators: GeneratorFile[] = [];
-
-    const current = () => generators.find((g) => g.file.path === select.value);
-    const show = () => {
-      this.selectedGeneratorPath = select.value;
-      settingsEl.empty();
-      const g = current();
-      openBtn.disabled = !g;
-      if (!g) {
-        settingsEl.createEl("p", {
-          text: generators.length ? "Pick a generator." : "No generators yet. Paint a map, then use the button above.",
-          cls: "duckmage-map-origin-desc",
-        });
-        return;
-      }
-      this.renderGeneratorSettings(settingsEl, g);
-    };
-    openBtn.addEventListener("click", () => {
-      const g = current();
-      if (!g) return;
-      this.close();
-      void this.app.workspace.getLeaf("tab").openFile(g.file);
-    });
-    select.addEventListener("change", show);
-
-    select.createEl("option", { value: "", text: "Loading…" });
-    openBtn.disabled = true;
-    void listGenerators(this.plugin).then((list) => {
-      generators = list;
-      select.empty();
-      if (!list.length) select.createEl("option", { value: "", text: "No generators" });
-      for (const g of list) {
-        const palette = g.model.meta.palette;
-        select.createEl("option", {
-          value: g.file.path,
-          text: palette ? `${g.model.name} (${palette})` : g.model.name,
-        });
-      }
-      select.value = list.some((g) => g.file.path === this.selectedGeneratorPath)
-        ? this.selectedGeneratorPath
-        : (list[0]?.file.path ?? "");
-      show();
-    });
-  }
-
-  private renderGeneratorSettings(el: HTMLElement, g: GeneratorFile): void {
-    const { model } = g;
-    const byShape = (shape: string) =>
-      model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
-    const parts = [`${model.terrains.length} terrains`];
-    if (byShape("blob").length) parts.push(`blobs: ${byShape("blob").join(", ")}`);
-    if (byShape("line").length) parts.push(`lines: ${byShape("line").join(", ")}`);
-    if (model.meta["source-map"]) parts.push(`learned from ${model.meta["source-map"]}`);
-    el.createEl("p", { text: parts.join(" · "), cls: "duckmage-map-origin-desc" });
-
-    const sliders: {
-      field: keyof GeneratorSettings;
-      label: string;
-      hint: string;
-      min: number;
-      max: number;
-      step: number;
-    }[] = [
-      {
-        field: "featureSize", label: "Feature size", min: 0, max: 3, step: 0.25,
-        hint: "Size of lakes, ranges and forests relative to the map. 1 = like the example map; lower = more, smaller features; 0 = no growth.",
-      },
-      {
-        field: "directionalBias", label: "Directional bias", min: 0, max: 1, step: 0.05,
-        hint: "0 = features can go anywhere. 1 = they keep to where they were in the example, so an ocean along the bottom stays along the bottom.",
-      },
-      {
-        field: "neighbourInfluence", label: "Clumping", min: 0, max: 6, step: 0.5,
-        hint: "How strongly each hex follows its neighbours. 0 gives speckled noise.",
-      },
-      {
-        field: "frequencyFeedback", label: "Mix strength", min: 0, max: 4, step: 0.5,
-        hint: "How closely the overall terrain mix follows the example.",
-      },
-      {
-        field: "randomness", label: "Randomness", min: 0, max: 1, step: 0.05,
-        hint: "Share of hexes chosen by plain chance, ignoring neighbours and layout. Lets rare terrain like towns pepper the map. Hard rules still apply.",
-      },
-      {
-        field: "scatter", label: "Scatter", min: 0, max: 6, step: 0.5,
-        hint: "Randomness in where features start. Too low and one terrain can take over the map.",
-      },
-    ];
-
-    const values: Required<GeneratorSettings> = { ...DEFAULT_SETTINGS, ...model.settings };
-    const inputs = new Map<keyof GeneratorSettings, [HTMLInputElement, HTMLElement]>();
-    const save = (patch: GeneratorSettings) => {
-      model.settings = { ...model.settings, ...patch };
-      saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
-        new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
-      });
-    };
-
-    for (const def of sliders) {
-      el.createEl("label", { text: def.label, cls: "duckmage-map-field-label" });
-      const row = el.createDiv({ cls: "duckmage-region-row" });
-      const slider = row.createEl("input", { type: "range" });
-      slider.min = String(def.min);
-      slider.max = String(def.max);
-      slider.step = String(def.step);
-      slider.value = String(values[def.field]);
-      const valueEl = row.createSpan({ text: String(values[def.field]) });
-      el.createEl("p", { text: def.hint, cls: "duckmage-map-origin-desc" });
-      inputs.set(def.field, [slider, valueEl]);
-      slider.addEventListener("input", () => valueEl.setText(slider.value));
-      slider.addEventListener("change", () => save({ [def.field]: Number(slider.value) }));
-    }
-
-    const resetRow = el.createDiv({ cls: "duckmage-region-row" });
-    const resetBtn = resetRow.createEl("button", { text: "Reset to defaults" });
-    resetBtn.addEventListener("click", () => {
-      for (const [field, [slider, valueEl]] of inputs) {
-        slider.value = String(DEFAULT_SETTINGS[field]);
-        valueEl.setText(slider.value);
-      }
-      save({ ...DEFAULT_SETTINGS });
     });
   }
 
@@ -962,6 +847,7 @@ export class MapModal extends HexmakerModal {
     bgImagePath: string | null,
     bgImageFile: File | null,
     generator: GeneratorFile | null,
+    seed: number,
   ): Promise<void> {
     btn.setText("Generating…");
     btn.disabled = true;
@@ -977,9 +863,9 @@ export class MapModal extends HexmakerModal {
     let terrainAt: Map<string, string> | undefined;
     if (generator) {
       const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
-      const solved = generateMapTerrain(
-        this.plugin, generator.model, palette, cols, rows,
-        { x: initialX, y: initialY }, staggerOffset, randomSeed(),
+      const solved = generateTerrain(
+        this.plugin, generator.model, palette,
+        { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed,
       );
       if (!solved.ok) {
         new Notice(`Generator "${generator.model.name}" couldn't fill this map: ${solved.message}`);

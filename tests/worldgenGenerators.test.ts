@@ -6,17 +6,20 @@ import {
   generatorFitsPalette,
   listGenerators,
   readMapTerrain,
+  readLockedHexes,
   saveGeneratorFromMap,
-  generateMapTerrain,
+  saveGeneratorSettings,
+  generateTerrain,
+  fillMap,
 } from "../src/worldgen/generators";
-import { findViolation, type HexWfcModel } from "../packages/hex-wfc/src";
+import { findViolation, parseModelMarkdown, type HexWfcModel } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
 /**
  * In-memory vault + plugin stub. Hex notes are represented only by their
- * terrain frontmatter; written files are kept as text.
+ * frontmatter (terrain, locked); other written files are kept as text.
  */
-function makePlugin(painted: Record<string, string>) {
+function makePlugin(painted: Record<string, string>, locked: string[] = []) {
   const files = new Map<string, string>();
   const folders = new Set<string>();
   const fileObj = (path: string) => {
@@ -26,16 +29,23 @@ function makePlugin(painted: Record<string, string>) {
     return f;
   };
   const hexPath = (x: number, y: number, map: string) => `world/hexes/${map}/${x}_${y}.md`;
-  const terrainByPath = new Map(
-    Object.entries(painted).map(([k, t]) => {
-      const [x, y] = k.split("_").map(Number);
-      return [hexPath(x, y, "sample"), t];
-    }),
-  );
+  const hexFm = new Map<string, Record<string, unknown>>();
+  for (const [k, t] of Object.entries(painted)) {
+    const [x, y] = k.split("_").map(Number);
+    hexFm.set(hexPath(x, y, "sample"), { terrain: t });
+  }
+  for (const k of locked) {
+    const [x, y] = k.split("_").map(Number);
+    const fm = hexFm.get(hexPath(x, y, "sample")) ?? {};
+    fm.locked = true;
+    hexFm.set(hexPath(x, y, "sample"), fm);
+  }
+  const otherFm = new Map<string, Record<string, unknown>>();
+  const created: string[] = [];
   const app = {
     vault: {
       getAbstractFileByPath: (p: string) => {
-        if (files.has(p) || terrainByPath.has(p)) return fileObj(p);
+        if (files.has(p) || hexFm.has(p)) return fileObj(p);
         if (folders.has(p)) return Object.create(TFolder.prototype) as TFolder;
         return null;
       },
@@ -49,23 +59,47 @@ function makePlugin(painted: Record<string, string>) {
     },
     metadataCache: {
       getFileCache: (f: TFile) => {
-        const terrain = terrainByPath.get(f.path);
-        return terrain ? { frontmatter: { terrain } } : null;
+        const fm = hexFm.get(f.path);
+        return fm ? { frontmatter: fm } : null;
+      },
+    },
+    fileManager: {
+      processFrontMatter: async (f: TFile, fn: (fm: Record<string, unknown>) => void) => {
+        const store = hexFm.has(f.path) ? hexFm : otherFm;
+        const fm = store.get(f.path) ?? {};
+        fn(fm);
+        store.set(f.path, fm);
       },
     },
   };
+  const palette = ["Grass", "Sand", "Water"].map((name) => ({ name, color: "#000" }));
   const plugin = {
     app,
     settings: {
       worldFolder: "world",
       hexOrientation: "flat",
       staggerOffset: "odd",
+      terrainPalettes: [{ name: "Default", terrains: palette }],
       maps: [{ name: "sample", paletteName: "Default", gridSize: { cols: 12, rows: 10 }, gridOffset: { x: 0, y: 0 } }],
     },
     getMap: (name: string) => plugin.settings.maps.find((m) => m.name === name),
+    getMapPalette: () => palette,
+    getPaletteByName: () => ({ name: "Default", terrains: palette }),
     hexPath,
+    createHexNote: async (x: number, y: number, map: string, _tpl?: string, terrain?: string) => {
+      const p = hexPath(x, y, map);
+      hexFm.set(p, terrain ? { terrain } : {});
+      created.push(p);
+      return fileObj(p);
+    },
+    hasTerrainEncounterTable: () => false,
+    syncHexEncounterTableLink: async () => {},
   } as unknown as HexmakerPlugin;
-  return { plugin, files };
+  const terrainAt = (k: string) => {
+    const [x, y] = k.split("_").map(Number);
+    return hexFm.get(hexPath(x, y, "sample"))?.terrain as string | undefined;
+  };
+  return { plugin, files, otherFm, created, terrainAt };
 }
 
 /** A 12×10 painted sample: a lake ringed by sand in grassland. */
@@ -79,15 +113,18 @@ function lakeSample(): Record<string, string> {
   return out;
 }
 
+const PALETTE = ["Grass", "Sand", "Water"];
+
 describe("worldgen generators", () => {
   it("stores generators under the world folder", () => {
     const { plugin } = makePlugin({});
     expect(generatorsFolder(plugin)).toBe("world/generators");
   });
 
-  it("reads painted terrain from the map's hex notes", () => {
-    const { plugin } = makePlugin({ "0_0": "Grass", "3_4": "Water" });
+  it("reads painted terrain and locked hexes from the map's notes", () => {
+    const { plugin } = makePlugin({ "0_0": "Grass", "3_4": "Water" }, ["3_4"]);
     expect([...readMapTerrain(plugin, "sample")]).toEqual([["0_0", "Grass"], ["3_4", "Water"]]);
+    expect([...readLockedHexes(plugin, "sample")]).toEqual(["3_4"]);
   });
 
   it("learns from a map, saves a readable file, and lists it back", async () => {
@@ -100,6 +137,7 @@ describe("worldgen generators", () => {
     expect(text).toContain("hex-wfc: 1");
     expect(text).toContain("palette: Default");
     expect(text).toContain("source-map: sample");
+    expect(text).toContain("example-hexes: 120");
     expect(text).toMatch(/\| (Water \| Sand|Sand \| Water) \|/);
     expect(text).not.toMatch(/\| (Water \| Grass|Grass \| Water) \|/); // never touched
 
@@ -132,11 +170,68 @@ describe("worldgen generators", () => {
     const { plugin } = makePlugin(lakeSample());
     const saved = await saveGeneratorFromMap(plugin, "sample", "lakes");
     if ("error" in saved) throw new Error(saved.error);
-    const r = generateMapTerrain(plugin, saved.model, ["Grass", "Sand", "Water"], 30, 20, { x: 5, y: 5 }, "odd", 42);
+    const r = generateTerrain(plugin, saved.model, PALETTE, { cols: 30, rows: 20, offset: { x: 5, y: 5 }, stagger: "odd" }, 42);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.cells.size).toBe(600);
     expect(r.cells.has("5_5")).toBe(true);
     expect(findViolation(saved.model, r.cells, "flat", "odd")).toBeNull();
+  });
+
+  it("keeps fixed hexes the generator doesn't know", async () => {
+    const { plugin } = makePlugin(lakeSample());
+    const saved = await saveGeneratorFromMap(plugin, "sample", "lakes");
+    if ("error" in saved) throw new Error(saved.error);
+    const r = generateTerrain(plugin, saved.model, PALETTE, { cols: 10, rows: 10, offset: { x: 0, y: 0 }, stagger: "odd" }, 1, new Map([["4_4", "Lava"]]));
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.cells.get("4_4")).toBe("Lava");
+  });
+
+  it("saves settings to frontmatter in their text form, and removes cleared ones", async () => {
+    const { plugin, otherFm } = makePlugin({});
+    const file = Object.create(TFile.prototype) as TFile;
+    file.path = "world/generators/g.md";
+    await saveGeneratorSettings(plugin, file, { featureSize: 1.5, counts: { Town: { min: 3, max: 3 } }, impassable: ["Water"] });
+    expect(otherFm.get(file.path)).toEqual({ "feature-size": 1.5, counts: "Town 3", impassable: "Water" });
+    await saveGeneratorSettings(plugin, file, { featureSize: undefined });
+    expect(otherFm.get(file.path)).toEqual({ counts: "Town 3", impassable: "Water" });
+  });
+});
+
+describe("fill this map", () => {
+  /** A partly painted map: the lake sample's left half only. */
+  const leftHalf = () => Object.fromEntries(Object.entries(lakeSample()).filter(([k]) => Number(k.split("_")[0]) < 6));
+
+  async function lakesModel(): Promise<HexWfcModel> {
+    const { plugin } = makePlugin(lakeSample());
+    const saved = await saveGeneratorFromMap(plugin, "sample", "lakes");
+    if ("error" in saved) throw new Error(saved.error);
+    // Round-trip through the file format, as the UI does.
+    return parseModelMarkdown(await plugin.app.vault.cachedRead(saved.file)).model;
+  }
+
+  it("fills unpainted hexes and keeps every painted one", async () => {
+    const model = await lakesModel();
+    const painted = leftHalf();
+    const { plugin, terrainAt, created } = makePlugin(painted);
+    const r = await fillMap(plugin, "sample", model, "unpainted", 7);
+    expect("error" in r).toBe(false);
+    for (const [k, t] of Object.entries(painted)) expect(terrainAt(k)).toBe(t);
+    for (let x = 6; x < 12; x++) for (let y = 0; y < 10; y++) expect(terrainAt(`${x}_${y}`)).toBeDefined();
+    expect(created.length).toBe(60); // the right half had no notes yet
+    if (!("error" in r)) expect(r.changed).toBe(60);
+  });
+
+  it("regenerate repaints everything except locked hexes", async () => {
+    const model = await lakesModel();
+    const painted = lakeSample();
+    const locked = ["5_5", "0_0"];
+    const { plugin, terrainAt } = makePlugin(painted, locked);
+    const r = await fillMap(plugin, "sample", model, "regenerate", 11);
+    expect("error" in r).toBe(false);
+    for (const k of locked) expect(terrainAt(k)).toBe(painted[k]);
+    const cells = new Map<string, string>();
+    for (let x = 0; x < 12; x++) for (let y = 0; y < 10; y++) cells.set(`${x}_${y}`, terrainAt(`${x}_${y}`)!);
+    expect(findViolation(model, cells, "flat")).toBeNull();
   });
 });

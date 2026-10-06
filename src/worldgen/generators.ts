@@ -1,17 +1,18 @@
 /**
  * Hexmaker glue for the hex-wfc library: where generator files live, learning
- * a generator from a painted map, and generating terrain for a new map.
+ * a generator from a painted map, generating terrain for a new map, and
+ * filling or regenerating an existing one.
  *
  * Generators are Markdown files (see packages/hex-wfc/src/format.ts) under
  * `{worldFolder}/generators`, so users can open and edit them by hand. A
  * palette can have any number of them (one learned from a lakes map, another
  * from a mountain range, ...). Each records the palette and map it came from
- * in its frontmatter.
+ * in its frontmatter, along with its solver settings.
  */
 
 import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { getTerrainFromFile } from "../frontmatter";
+import { getFrontMatter, getTerrainFromFile, setTerrainInFile } from "../frontmatter";
 import { normalizeFolder, slugify } from "../utils";
 import {
   learnModel,
@@ -21,11 +22,15 @@ import {
   restrictModel,
   solve,
   cellKey,
-  type HexWfcModel,
+  encodeSetting,
   SETTING_KEYS,
+  type HexWfcModel,
   type SolveResult,
   type GeneratorSettings,
 } from "../../packages/hex-wfc/src";
+
+/** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
+export const LOCK_KEY = "locked";
 
 export interface GeneratorFile {
   file: TFile;
@@ -85,6 +90,28 @@ export function readMapTerrain(plugin: HexmakerPlugin, mapName: string): Map<str
   return cells;
 }
 
+/** Hexes whose note has `locked: true` in its frontmatter. */
+export function readLockedHexes(plugin: HexmakerPlugin, mapName: string): Set<string> {
+  const map = plugin.getMap(mapName);
+  const out = new Set<string>();
+  if (!map) return out;
+  const { cols, rows } = map.gridSize;
+  const { x: ox, y: oy } = map.gridOffset;
+  for (let x = ox; x < ox + cols; x++) {
+    for (let y = oy; y < oy + rows; y++) {
+      const fm = getFrontMatter(plugin.app, plugin.hexPath(x, y, mapName)) as Record<string, unknown> | null;
+      if (fm?.[LOCK_KEY] === true) out.add(cellKey(x, y));
+    }
+  }
+  return out;
+}
+
+/** Palette colour per terrain name, for previews. */
+export function paletteColors(plugin: HexmakerPlugin, paletteName: string | undefined): Map<string, string> {
+  const terrains = plugin.getPaletteByName(paletteName ?? "")?.terrains ?? plugin.settings.terrainPalettes[0]?.terrains ?? [];
+  return new Map(terrains.map((t) => [t.name, t.color]));
+}
+
 /**
  * Learn a generator from the map's painted hexes and save it as a new file.
  * Never overwrites: a name clash gets a numeric suffix.
@@ -110,7 +137,6 @@ export async function saveGeneratorFromMap(
     meta: {
       palette: map.paletteName,
       "source-map": mapName,
-      "painted-hexes": String(cells.size),
       created: new Date().toISOString().slice(0, 10),
     },
   });
@@ -135,43 +161,130 @@ export async function saveGeneratorFromMap(
 }
 
 /**
- * Generate terrain for a whole new map. Terrains the palette lacks are dropped
- * from the generator first.
- */
-export function generateMapTerrain(
-  plugin: HexmakerPlugin,
-  model: HexWfcModel,
-  paletteTerrains: string[],
-  cols: number,
-  rows: number,
-  offset: { x: number; y: number },
-  stagger: "odd" | "even",
-  seed: number,
-  featureSize = 1,
-): SolveResult {
-  return solve(restrictModel(model, paletteTerrains), {
-    cols,
-    rows,
-    offset,
-    orientation: plugin.settings.hexOrientation,
-    stagger,
-    seed,
-    featureSize,
-  });
-}
-
-/**
  * Save solver settings into a generator file's frontmatter. Only the
  * frontmatter changes, so the tables and any notes the user wrote are kept.
+ * A value of `undefined` removes the setting (back to the default).
  */
 export async function saveGeneratorSettings(
   plugin: HexmakerPlugin,
   file: TFile,
-  settings: GeneratorSettings,
+  settings: Partial<Record<keyof GeneratorSettings, unknown>>,
 ): Promise<void> {
   await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-    for (const [field, value] of Object.entries(settings) as [keyof GeneratorSettings, number | undefined][]) {
-      if (value !== undefined) fm[SETTING_KEYS[field]] = value;
+    for (const [field, value] of Object.entries(settings) as [keyof GeneratorSettings, unknown][]) {
+      const key = SETTING_KEYS[field];
+      if (value === undefined) delete fm[key];
+      else fm[key] = encodeSetting(field, value);
     }
   });
+}
+
+export interface GridSpec {
+  cols: number;
+  rows: number;
+  offset: { x: number; y: number };
+  stagger: "odd" | "even";
+}
+
+/**
+ * Run a generator on a grid. Terrains the palette lacks are dropped from the
+ * generator first. Fixed hexes whose terrain the generator doesn't know are
+ * kept, treated as allowed next to anything.
+ */
+export function generateTerrain(
+  plugin: HexmakerPlugin,
+  model: HexWfcModel,
+  paletteTerrains: string[],
+  grid: GridSpec,
+  seed: number,
+  fixed?: Map<string, string>,
+): SolveResult {
+  let fitted = restrictModel(model, paletteTerrains);
+  const unknown = new Set([...(fixed?.values() ?? [])].filter((t) => !fitted.terrains.some((e) => e.name === t)));
+  if (unknown.size) {
+    const all = [...fitted.terrains.map((t) => t.name), ...unknown];
+    fitted = {
+      ...fitted,
+      terrains: [...fitted.terrains, ...[...unknown].map((name) => ({ name, weight: 0 }))],
+      adjacency: [
+        ...fitted.adjacency,
+        ...[...unknown].flatMap((u) => all.map((b) => ({ a: u, b, weight: 1 }))),
+      ],
+    };
+  }
+  return solve(fitted, {
+    cols: grid.cols,
+    rows: grid.rows,
+    offset: grid.offset,
+    orientation: plugin.settings.hexOrientation,
+    stagger: grid.stagger,
+    seed,
+    fixed,
+  });
+}
+
+/**
+ * Fill an existing map with a generator.
+ *  - "unpainted": only hexes without terrain change; every painted hex stays.
+ *  - "regenerate": every hex may change except those marked `locked: true`.
+ * Returns the number of hexes written, plus any soft-goal warnings.
+ */
+export async function fillMap(
+  plugin: HexmakerPlugin,
+  mapName: string,
+  model: HexWfcModel,
+  mode: "unpainted" | "regenerate",
+  seed: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ changed: number; warnings: string[] } | { error: string }> {
+  const map = plugin.getMap(mapName);
+  if (!map) return { error: `Map "${mapName}" not found.` };
+  const painted = readMapTerrain(plugin, mapName);
+  let fixed = painted;
+  if (mode === "regenerate") {
+    const locked = readLockedHexes(plugin, mapName);
+    fixed = new Map([...painted].filter(([k]) => locked.has(k)));
+  }
+  const palette = plugin.getMapPalette(mapName).map((t) => t.name);
+  const result = generateTerrain(
+    plugin,
+    model,
+    palette,
+    { cols: map.gridSize.cols, rows: map.gridSize.rows, offset: map.gridOffset, stagger: mapStagger(plugin, mapName) },
+    seed,
+    fixed,
+  );
+  if (!result.ok) return { error: result.message };
+  const changes = [...result.cells].filter(([k, t]) => painted.get(k) !== t);
+  await writeTerrain(plugin, mapName, changes, onProgress);
+  return { changed: changes.length, warnings: result.warnings };
+}
+
+/** Write terrain to hex notes (creating missing ones) and keep encounter links in sync. */
+async function writeTerrain(
+  plugin: HexmakerPlugin,
+  mapName: string,
+  changes: [string, string][],
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  const CHUNK = 20;
+  let done = 0;
+  for (let i = 0; i < changes.length; i += CHUNK) {
+    await Promise.all(
+      changes.slice(i, i + CHUNK).map(async ([key, terrain]) => {
+        const [x, y] = key.split("_").map(Number);
+        const path = plugin.hexPath(x, y, mapName);
+        const before = getTerrainFromFile(plugin.app, path);
+        if (plugin.app.vault.getAbstractFileByPath(path) instanceof TFile) {
+          await setTerrainInFile(plugin.app, path, terrain);
+        } else {
+          await plugin.createHexNote(x, y, mapName, undefined, terrain);
+        }
+        if (plugin.hasTerrainEncounterTable(terrain) || (before && plugin.hasTerrainEncounterTable(before)))
+          await plugin.syncHexEncounterTableLink(path, terrain);
+        done++;
+      }),
+    );
+    onProgress?.(done, changes.length);
+  }
 }
