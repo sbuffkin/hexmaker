@@ -28,6 +28,12 @@ export class GeneratorView extends ItemView {
     this.render();
   }
 
+  /** Re-render, e.g. after the selected region or generator changed. */
+  refresh(): void {
+    this.contentEl.empty();
+    this.render();
+  }
+
   private render(): void {
     this.contentEl.addClass("duckmage-wfc-page");
     new GeneratorPanel(this.app, this.plugin, { rerender: () => this.render() }).render(this.contentEl);

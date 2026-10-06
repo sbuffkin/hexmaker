@@ -1,4 +1,4 @@
-import { App, Notice, TFolder } from "obsidian";
+import { App, Menu, Notice, TFolder } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexMapView } from "./HexMapView";
@@ -10,6 +10,7 @@ import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
   generatorFitsPalette,
+  saveGeneratorFromMap,
   generateTerrain,
   paletteColors,
   pathColors,
@@ -249,6 +250,17 @@ export class MapModal extends HexmakerModal {
 
       const li = list.createEl("li", {
         cls: "duckmage-region-item duckmage-map-list-item" + (isActive ? " is-active" : ""),
+      });
+      li.addEventListener("contextmenu", (e: MouseEvent) => {
+        e.preventDefault();
+        const menu = new Menu();
+        menu.addItem((item) =>
+          item
+            .setTitle(`Create generator from ${map.name}`)
+            .setIcon("wand-sparkles")
+            .onClick(() => void this.createGeneratorFrom(map.name)),
+        );
+        menu.showAtMouseEvent(e);
       });
 
       if (isConfirming) {
@@ -739,6 +751,24 @@ export class MapModal extends HexmakerModal {
     createBtn.addEventListener("click", doCreate);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") doCreate();
+    });
+  }
+
+  // ── Generator ─────────────────────────────────────────────────────────────
+
+  /** Learn a generator from a region and open it in the terrain generator. */
+  private async createGeneratorFrom(mapName: string): Promise<void> {
+    const result = await saveGeneratorFromMap(this.plugin, mapName, mapName);
+    if ("error" in result) {
+      new Notice(result.error);
+      return;
+    }
+    new Notice(`Created generator "${result.model.name}" from ${mapName}.`);
+    this.close();
+    await this.plugin.openTerrainGenerator({
+      mapName,
+      generatorPath: result.file.path,
+      paletteName: result.model.meta.palette,
     });
   }
 

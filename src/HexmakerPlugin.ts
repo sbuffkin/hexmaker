@@ -39,6 +39,7 @@ import {
   removeLinkFromSection,
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
+import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -115,7 +116,7 @@ export default class HexmakerPlugin extends Plugin {
     this.addCommand({
       id: "open-terrain-generator",
       name: "Open terrain generator",
-      callback: () => void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true }),
+      callback: () => void this.openTerrainGenerator(),
     });
     this.addCommand({
       id: "open-random-tables",
@@ -374,6 +375,23 @@ export default class HexmakerPlugin extends Plugin {
 
   private openHexMap(): void {
     void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
+  }
+
+  /**
+   * Open the terrain generator page (or bring it forward), optionally with a
+   * region and generator selected.
+   */
+  async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string } = {}): Promise<void> {
+    if (select.mapName) GeneratorPanel.mapName = select.mapName;
+    if (select.paletteName) GeneratorPanel.paletteName = select.paletteName;
+    if (select.generatorPath) GeneratorPanel.selectedPath = select.generatorPath;
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)[0];
+    if (existing) {
+      await this.app.workspace.revealLeaf(existing);
+      (existing.view as GeneratorView).refresh();
+      return;
+    }
+    await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true });
   }
 
   /** Show a map in the hex map view, opening the view if it isn't open. */
