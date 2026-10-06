@@ -19,6 +19,7 @@ import {
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
   VIEW_TYPE_SETUP_WIZARD,
+  VIEW_TYPE_GENERATOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { normalizeFolder, makeTableTemplate, slugify } from "./utils";
@@ -37,6 +38,7 @@ import {
   getLinksInSection,
   removeLinkFromSection,
 } from "./sections";
+import { GeneratorView } from "./worldgen/GeneratorView";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -85,6 +87,7 @@ export default class HexmakerPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
+    this.registerView(VIEW_TYPE_GENERATOR, (leaf) => new GeneratorView(leaf, this));
     this.registerView(
       VIEW_TYPE_HEX_TABLE,
       (leaf) => new HexTableView(leaf, this),
@@ -108,6 +111,11 @@ export default class HexmakerPlugin extends Plugin {
         void this.app.workspace
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_HEX_TABLE }),
+    });
+    this.addCommand({
+      id: "open-terrain-generator",
+      name: "Open terrain generator",
+      callback: () => void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true }),
     });
     this.addCommand({
       id: "open-random-tables",

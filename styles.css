@@ -5194,3 +5194,46 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     flex: 1;
     min-width: 0;
 }
+
+.duckmage-wfc-filter {
+    width: 100%;
+    margin: 0.35em 0;
+}
+
+.duckmage-wfc-matches:empty {
+    display: none;
+}
+
+.duckmage-wfc-chip.is-selected {
+    padding: 0.1em 0.2em 0.1em 0.5em;
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-hover);
+}
+
+button.duckmage-wfc-chip {
+    padding: 0.15em 0.6em;
+    height: auto;
+}
+
+.duckmage-wfc-chip-remove {
+    padding: 0 0.35em;
+    height: auto;
+    box-shadow: none;
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-page {
+    padding: 1em 1.5em 3em;
+}
+
+.duckmage-wfc-page .duckmage-wfc-tab {
+    max-width: 760px;
+    margin: 0 auto;
+}
+
+.duckmage-wfc-regions {
+    max-height: 9em;
+    overflow-y: auto;
+    margin-bottom: 0.5em;
+}

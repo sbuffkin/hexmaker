@@ -8,6 +8,7 @@ export const VIEW_TYPE_HEX_MAP = "duckmage-hex-map";
 export const VIEW_TYPE_HEX_TABLE = "duckmage-hex-table";
 export const VIEW_TYPE_RANDOM_TABLES = "duckmage-random-tables";
 export const VIEW_TYPE_SETUP_WIZARD = "duckmage-setup-wizard";
+export const VIEW_TYPE_GENERATOR = "duckmage-terrain-generator";
 
 export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Sea

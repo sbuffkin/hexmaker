@@ -1,11 +1,12 @@
 /**
- * The "Generator" tab of the Maps modal: learn a generator from the active
- * map, adjust a generator's settings (saved to its file's frontmatter) with a
- * live preview, and fill or regenerate the active map with it.
+ * The terrain generator page: pick a region (map) and palette, learn a
+ * generator from the region, adjust a generator's settings (saved to its
+ * file's frontmatter) with a live preview, and fill or regenerate the region.
  */
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { VIEW_TYPE_HEX_MAP } from "../constants";
 import type { HexMapView } from "../hex-map/HexMapView";
 import {
   listGenerators,
@@ -29,9 +30,8 @@ import {
   type CountRange,
 } from "../../packages/hex-wfc/src";
 
-export interface GeneratorTabHost {
-  close(): void;
-  /** Re-render the whole modal (e.g. after learning a new generator). */
+export interface GeneratorPanelHost {
+  /** Re-render the whole page (e.g. after learning a new generator). */
   rerender(): void;
 }
 
@@ -42,9 +42,11 @@ const SYMMETRY_LABELS: Record<Symmetry, string> = {
   both: "Both",
 };
 
-export class GeneratorTab {
-  /** Survives re-renders of the modal. */
+export class GeneratorPanel {
+  /** Selections survive re-renders. */
   static selectedPath = "";
+  static mapName = "";
+  static paletteName = "";
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -53,93 +55,151 @@ export class GeneratorTab {
   constructor(
     private app: App,
     private plugin: HexmakerPlugin,
-    private view: HexMapView,
-    private host: GeneratorTabHost,
+    private host: GeneratorPanelHost,
   ) {
-    const map = plugin.getMap(view.activeMapName);
+    const maps = plugin.settings.maps;
+    if (!maps.some((m) => m.name === GeneratorPanel.mapName)) {
+      const active = (app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view as HexMapView | undefined)?.activeMapName;
+      GeneratorPanel.mapName = active ?? plugin.settings.defaultMap ?? maps[0]?.name ?? "";
+    }
+    if (!plugin.settings.terrainPalettes.some((p) => p.name === GeneratorPanel.paletteName))
+      GeneratorPanel.paletteName = plugin.getMap(GeneratorPanel.mapName)?.paletteName ?? plugin.settings.terrainPalettes[0]?.name ?? "";
+    const map = plugin.getMap(GeneratorPanel.mapName);
     if (map && map.gridSize.cols * map.gridSize.rows <= PREVIEW_AUTO_LIMIT) {
       this.previewCols = map.gridSize.cols;
       this.previewRows = map.gridSize.rows;
     }
   }
 
+  private get mapName(): string {
+    return GeneratorPanel.mapName;
+  }
+
+  private paletteTerrains(): string[] {
+    return this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains.map((t) => t.name) ?? [];
+  }
+
   render(el: HTMLElement): void {
     el.empty();
     el.addClass("duckmage-wfc-tab");
+    el.createEl("h3", { text: "Terrain generator" });
+    this.renderRegion(el);
     this.renderLearn(el);
 
-    el.createEl("h4", { text: "Generator settings" });
-    el.createEl("p", {
-      text: "Each generator keeps its settings in its own file. New maps made with it use them.",
-      cls: "duckmage-map-origin-desc",
-    });
+    el.createEl("h4", { text: "Generator" });
     const pickRow = el.createDiv({ cls: "duckmage-region-row" });
+    pickRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
+    const paletteSelect = pickRow.createEl("select");
+    for (const p of this.plugin.settings.terrainPalettes) paletteSelect.createEl("option", { value: p.name, text: p.name });
+    paletteSelect.value = GeneratorPanel.paletteName;
     const select = pickRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
     const openBtn = pickRow.createEl("button", { text: "Open file" });
     openBtn.disabled = true;
+    el.createEl("p", {
+      text: "Generators whose terrains are all in this palette. Each keeps its settings in its own file.",
+      cls: "duckmage-map-origin-desc",
+    });
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
     const current = () => generators.find((g) => g.file.path === select.value);
 
     const show = () => {
-      GeneratorTab.selectedPath = select.value;
+      GeneratorPanel.selectedPath = select.value;
       body.empty();
       const g = current();
       openBtn.disabled = !g;
       if (g) this.renderGenerator(body, g);
       else
         body.createEl("p", {
-          text: generators.length ? "Pick a generator." : "No generators yet. Paint a map, then use the button above.",
+          text: generators.length ? "No generators for this palette yet." : "No generators yet. Pick a region above and learn from it.",
           cls: "duckmage-map-origin-desc",
         });
     };
+    const fill = () => {
+      const names = this.paletteTerrains();
+      const fitting = generators.filter((g) => g.model.meta.palette === GeneratorPanel.paletteName || generatorFitsPalette(g.model, names));
+      select.empty();
+      if (!fitting.length) select.createEl("option", { value: "", text: "None" });
+      for (const g of fitting) select.createEl("option", { value: g.file.path, text: g.model.name });
+      select.value = fitting.some((g) => g.file.path === GeneratorPanel.selectedPath)
+        ? GeneratorPanel.selectedPath
+        : (fitting[0]?.file.path ?? "");
+      show();
+    };
     select.addEventListener("change", show);
+    paletteSelect.addEventListener("change", () => {
+      GeneratorPanel.paletteName = paletteSelect.value;
+      fill();
+    });
     openBtn.addEventListener("click", () => {
       const g = current();
-      if (!g) return;
-      this.host.close();
-      void this.app.workspace.getLeaf("tab").openFile(g.file);
+      if (g) void this.app.workspace.getLeaf("tab").openFile(g.file);
     });
 
     select.createEl("option", { value: "", text: "Loading…" });
     void listGenerators(this.plugin).then((list) => {
       generators = list;
-      select.empty();
-      if (!list.length) select.createEl("option", { value: "", text: "No generators" });
-      for (const g of list) {
-        const palette = g.model.meta.palette;
-        select.createEl("option", { value: g.file.path, text: palette ? `${g.model.name} (${palette})` : g.model.name });
-      }
-      select.value = list.some((g) => g.file.path === GeneratorTab.selectedPath)
-        ? GeneratorTab.selectedPath
-        : (list[0]?.file.path ?? "");
-      show();
+      fill();
     });
+  }
+
+  // ── Region ───────────────────────────────────────────────────────────────
+
+  /** Searchable list of maps; the chosen one is learned from and filled. */
+  private renderRegion(el: HTMLElement): void {
+    el.createEl("h4", { text: "Region" });
+    const search = el.createEl("input", {
+      type: "search",
+      cls: "duckmage-wfc-filter",
+      attr: { placeholder: "Search regions…" },
+    });
+    const list = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-regions" });
+    const render = () => {
+      list.empty();
+      const q = search.value.trim().toLowerCase();
+      const maps = this.plugin.settings.maps.filter((m) => !q || m.name.toLowerCase().includes(q));
+      if (!maps.length) list.createSpan({ text: "No matching region", cls: "duckmage-map-origin-desc" });
+      for (const m of maps.slice(0, 40)) {
+        const btn = list.createEl("button", {
+          cls: "duckmage-wfc-chip" + (m.name === this.mapName ? " is-selected" : ""),
+          attr: { title: `${m.gridSize.cols}×${m.gridSize.rows}, palette ${m.paletteName}` },
+        });
+        btn.createSpan({ text: m.name });
+        btn.addEventListener("click", () => {
+          GeneratorPanel.mapName = m.name;
+          GeneratorPanel.paletteName = m.paletteName;
+          this.host.rerender();
+        });
+      }
+    };
+    search.addEventListener("input", render);
+    render();
   }
 
   // ── Learn ────────────────────────────────────────────────────────────────
 
   private renderLearn(el: HTMLElement): void {
-    el.createEl("h4", { text: "Learn from this map" });
+    el.createEl("h4", { text: `Learn from ${this.mapName || "a region"}` });
     el.createEl("p", {
-      text: "Make a wave function collapse generator from the terrain painted on this map. Terrains that never touch here never touch in generated maps; lakes, ridges, forests and towns keep their shape and relative size; rivers that run from an edge into a lake are always placed.",
+      text: "Make a wave function collapse generator from the terrain and paths on this region. Terrains that never touch here never touch in generated maps, and each terrain keeps its shape and relative size.",
       cls: "duckmage-map-origin-desc",
     });
     const row = el.createDiv({ cls: "duckmage-region-row" });
-    const nameInput = row.createEl("input", { type: "text", value: this.view.activeMapName, placeholder: "generator-name" });
-    const btn = row.createEl("button", { text: "Generate solver from map", cls: "mod-cta" });
+    const nameInput = row.createEl("input", { type: "text", value: this.mapName, placeholder: "generator-name" });
+    const btn = row.createEl("button", { text: "Generate solver from region", cls: "mod-cta" });
+    btn.disabled = !this.mapName;
     btn.addEventListener("click", () => {
       btn.disabled = true;
-      void saveGeneratorFromMap(this.plugin, this.view.activeMapName, nameInput.value).then((result) => {
+      void saveGeneratorFromMap(this.plugin, this.mapName, nameInput.value).then((result) => {
         btn.disabled = false;
         if ("error" in result) {
           new Notice(result.error);
           return;
         }
         const { model, file } = result;
-        const extra = model.features?.length ? `, ${model.features.length} guaranteed feature(s)` : "";
-        new Notice(`Saved generator "${model.name}": ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs${extra}.`);
-        GeneratorTab.selectedPath = file.path;
+        new Notice(`Saved generator "${model.name}": ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs.`);
+        GeneratorPanel.selectedPath = file.path;
+        GeneratorPanel.paletteName = model.meta.palette ?? GeneratorPanel.paletteName;
         this.host.rerender();
       });
     });
@@ -149,7 +209,7 @@ export class GeneratorTab {
 
   private renderGenerator(el: HTMLElement, g: GeneratorFile): void {
     const { model } = g;
-    const colors = paletteColors(this.plugin, model.meta.palette);
+    const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
     const byShape = (shape: string) => model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
     const parts = [`${model.terrains.length} terrains`];
     for (const [shape, label] of [["blob", "blobs"], ["line", "lines"], ["scatter", "scattered"]] as const)
@@ -192,22 +252,24 @@ export class GeneratorTab {
       this.previewCols = Math.max(2, Math.min(200, Number(colsInput.value) || 30));
       this.previewRows = Math.max(2, Math.min(200, Number(rowsInput.value) || 20));
       this.seed = Number(seedInput.value) >>> 0;
-      const map = this.plugin.getMap(this.view.activeMapName);
+      const map = this.plugin.getMap(this.mapName);
       const grid = {
         cols: this.previewCols,
         rows: this.previewRows,
         offset: { x: 0, y: 0 },
         stagger: map?.staggerOffset ?? this.plugin.settings.staggerOffset ?? "odd",
       };
-      const palette = [...colors.keys()].length ? [...colors.keys()] : model.terrains.map((t) => t.name);
+      const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
       const r = generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
       drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin));
-      const notes = r.warnings.length ? ` · ${r.warnings.join("; ")}` : "";
+      // Keep it to one line; the details are on hover.
+      const notes = r.warnings.length ? ` · ${r.warnings.length} didn't fit (hover for details)` : "";
       status.setText(`${grid.cols}×${grid.rows} in ${r.stats.ms} ms${notes}`);
+      status.setAttr("title", r.warnings.join("\n"));
     };
     const schedulePreview = () => {
       if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
@@ -227,62 +289,47 @@ export class GeneratorTab {
     previewBtn.addEventListener("click", runPreview);
     for (const input of [seedInput, colsInput, rowsInput]) input.addEventListener("change", schedulePreview);
 
+    this.renderFill(el, g, () => Number(seedInput.value) >>> 0);
+
     // Shape
     this.heading(el, "Shape");
-    this.slider(el, "Feature size", "Size of lakes, ranges and forests relative to the map. 1 = like the example; lower = more, smaller features; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
-    this.slider(el, "Line width", "Thickness of ridges, ranges and rivers. 0 = as in the example.", 0, 3, 1, s().lineWidth, (v) => save({ lineWidth: v }));
+    this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
+    if (model.terrains.some((t) => t.shape === "line")) {
+      const learnedWidth = Math.max(1, Math.round(Math.max(...model.terrains.filter((t) => t.shape === "line").map((t) => t.width ?? 1))));
+      this.slider(el, "Line width", "Thickness of line-shaped terrain, in hexes.", 1, 3, 1, s().lineWidth > 0 ? s().lineWidth : learnedWidth, (v) => save({ lineWidth: v }));
+    }
     this.slider(el, "Smoothing", "Clean up lone specks and ragged edges after generating.", 0, 1, 0.1, s().smoothing, (v) => save({ smoothing: v }));
     this.select(el, "Symmetry", "Mirror the map. Symmetric wherever the rules allow.",
       SYMMETRIES.map((v) => [v, SYMMETRY_LABELS[v]]), s().symmetry, (v) => save({ symmetry: v }));
-    this.select(el, "Edge style", "What the map border prefers. Pick a terrain such as water for islands, or follow the example map.",
+    this.select(el, "Edge style", "What the map border prefers: a terrain of your choice, or the example's border.",
       [["", "As in the example"], ...model.terrains.map((t): [string, string] => [t.name, t.name])],
       s().edgeTerrain, (v) => save({ edgeTerrain: v || undefined }));
     this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v }));
 
     // Placement
     this.heading(el, "Placement");
-    this.slider(el, "Directional bias", "0 = features can go anywhere. 1 = they keep to where they were in the example, so an ocean along the bottom stays along the bottom.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }));
-    this.slider(el, "Spacing", "How far apart scattered terrain like towns stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v }));
-    this.slider(el, "Randomness", "Share of hexes chosen by plain chance, ignoring neighbours. Lets rare terrain like towns pepper the map. Hard rules still apply.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v }));
+    this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }));
+    if (model.terrains.some((t) => t.shape === "scatter")) {
+      this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v }));
+    }
+    this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v }));
 
     // Guarantees
     this.heading(el, "Guarantees");
     if (model.features?.length || model.paths?.length) {
-      const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? "joins another" : e);
-      const list = [
-        ...(model.features ?? []).map((f) => `${f.terrain}: ${end(f.from)} → ${end(f.to)}`),
-        ...(model.paths ?? []).map((p) => `${p.type} path: ${end(p.from)} → ${end(p.to)}`),
-      ].join(", ");
-      this.toggle(el, "Guaranteed features", `Always lay these down first: ${list}.`, s().features, (v) => save({ features: v }));
-    } else {
-      el.createEl("p", {
-        text: "No guaranteed features. Draw a river (path or painted terrain) from a map edge into a lake, or from edge to edge, in the example map to get one.",
-        cls: "duckmage-map-origin-desc",
-      });
+      this.toggle(el, "Guaranteed features", "Always place the example's anchored lines and paths.", s().features, (v) => save({ features: v }));
     }
-    this.toggle(el, "Connected land", "Make all land one connected area, filling cut-off pockets with impassable terrain.", s().connected, (v) => save({ connected: v }));
-    el.createEl("label", { text: "Impassable terrain", cls: "duckmage-map-field-label" });
-    const chips = el.createDiv({ cls: "duckmage-wfc-chips" });
-    const impassable = new Set(s().impassable);
-    for (const t of model.terrains) {
-      const chip = chips.createEl("label", { cls: "duckmage-wfc-chip" });
-      const cb = chip.createEl("input", { type: "checkbox" });
-      cb.checked = impassable.has(t.name);
-      chip.createSpan({ text: t.name });
-      cb.addEventListener("change", () => {
-        if (cb.checked) impassable.add(t.name);
-        else impassable.delete(t.name);
-        save({ impassable: [...impassable] });
-      });
-    }
+    this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
+    this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
 
-    // Per terrain
-    this.heading(el, "Terrains");
-    el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max set how many separate patches to make (a town is a 1-hex patch); leave blank for no limit.",
+    // Advanced: per-terrain controls and tuning
+    const adv = el.createEl("details", { cls: "duckmage-wfc-section" });
+    adv.createEl("summary", { text: "Advanced" });
+    adv.createEl("p", {
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit.",
       cls: "duckmage-map-origin-desc",
     });
-    const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
+    const table = adv.createDiv({ cls: "duckmage-wfc-terrains" });
     const head = table.createDiv({ cls: "duckmage-wfc-terrain-row duckmage-wfc-terrain-head" });
     for (const h of ["Terrain", "Shape", "Mix", "Min", "Max"]) head.createSpan({ text: h });
     const mix = { ...s().mix };
@@ -322,13 +369,9 @@ export class GeneratorTab {
         });
       }
     }
-
-    // Advanced tuning
-    const adv = el.createEl("details", { cls: "duckmage-wfc-section" });
-    adv.createEl("summary", { text: "Advanced tuning" });
     this.slider(adv, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v }));
     this.slider(adv, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v }));
-    this.slider(adv, "Scatter", "Randomness in where features start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
+    this.slider(adv, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
 
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
     const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });
@@ -339,18 +382,17 @@ export class GeneratorTab {
       this.host.rerender();
     });
 
-    this.renderFill(el, g, () => Number(seedInput.value) >>> 0);
     schedulePreview();
   }
 
   // ── Fill the active map ──────────────────────────────────────────────────
 
   private renderFill(el: HTMLElement, g: GeneratorFile, seed: () => number): void {
-    this.heading(el, "Fill this map");
-    const mapName = this.view.activeMapName;
+    this.heading(el, `Fill ${this.mapName || "region"}`);
+    const mapName = this.mapName;
     const palette = this.plugin.getMapPalette(mapName).map((t) => t.name);
     el.createEl("p", {
-      text: `Uses the preview's seed. "Fill unpainted hexes" keeps everything you've painted and your paths. "Regenerate" repaints the whole map except hexes whose note has "${LOCK_KEY}: true" in its properties, and redraws the generator's path types (e.g. rivers).`,
+      text: `Uses the preview's seed. "Fill unpainted hexes" keeps everything you've painted and your paths. "Regenerate" repaints the whole map, except hexes whose note has "${LOCK_KEY}: true" in its properties, and redraws the generator's path types.`,
       cls: "duckmage-map-origin-desc",
     });
     if (!generatorFitsPalette(g.model, palette))
@@ -447,7 +489,67 @@ export class GeneratorTab {
     const cb = row.createEl("input", { type: "checkbox" });
     cb.checked = value;
     row.createSpan({ text: label });
-    el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
+    if (hint) el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
     cb.addEventListener("change", () => onChange(cb.checked));
+  }
+  /**
+   * Searchable terrain list: type to filter, click a match to add it; added
+   * terrains show as chips that can be removed.
+   */
+  private terrainFilter(
+    el: HTMLElement,
+    label: string,
+    terrains: string[],
+    colors: Map<string, string>,
+    selected: string[],
+    onChange: (list: string[]) => void,
+  ): void {
+    el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const chosen = new Set(selected.filter((t) => terrains.includes(t)));
+    const chips = el.createDiv({ cls: "duckmage-wfc-chips" });
+    const search = el.createEl("input", { type: "search", cls: "duckmage-wfc-filter", attr: { placeholder: "Search terrain to add…" } });
+    const matches = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-matches" });
+    const swatch = (parent: HTMLElement, t: string) =>
+      parent.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": colors.get(t) ?? "var(--background-modifier-border)" });
+
+    const render = () => {
+      chips.empty();
+      if (!chosen.size) chips.createSpan({ text: "None", cls: "duckmage-map-origin-desc" });
+      for (const t of chosen) {
+        const chip = chips.createSpan({ cls: "duckmage-wfc-chip is-selected" });
+        swatch(chip, t);
+        chip.createSpan({ text: t });
+        const remove = chip.createEl("button", { text: "×", cls: "duckmage-wfc-chip-remove", attr: { "aria-label": `Remove ${t}` } });
+        remove.addEventListener("click", () => {
+          chosen.delete(t);
+          onChange([...chosen]);
+          render();
+        });
+      }
+      matches.empty();
+      const q = search.value.trim().toLowerCase();
+      if (!q) return;
+      const found = terrains.filter((t) => !chosen.has(t) && t.toLowerCase().includes(q)).slice(0, 12);
+      if (!found.length) matches.createSpan({ text: "No matching terrain", cls: "duckmage-map-origin-desc" });
+      for (const t of found) {
+        const btn = matches.createEl("button", { cls: "duckmage-wfc-chip" });
+        swatch(btn, t);
+        btn.createSpan({ text: t });
+        btn.addEventListener("click", () => {
+          chosen.add(t);
+          search.value = "";
+          onChange([...chosen]);
+          render();
+          search.focus();
+        });
+      }
+    };
+    search.addEventListener("input", render);
+    search.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key !== "Enter") return;
+      const first = matches.querySelector("button");
+      if (first) first.click();
+    });
+    render();
   }
 }

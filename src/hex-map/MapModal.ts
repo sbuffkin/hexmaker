@@ -16,13 +16,12 @@ import {
   toPathChains,
   type GeneratorFile,
 } from "../worldgen/generators";
-import { GeneratorTab } from "../worldgen/GeneratorTab";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
 import { randomSeed } from "../../packages/hex-wfc/src";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
-type ModalTab = "Maps" | "Properties" | "New map" | "Generator" | "Export";
+type ModalTab = "Maps" | "Properties" | "New map" | "Export";
 
 function makeCheckbox(
   parent: HTMLElement,
@@ -75,7 +74,7 @@ export class MapModal extends HexmakerModal {
 
     // Tab bar
     const tabBar = contentEl.createDiv({ cls: "duckmage-rt-mode-tabs duckmage-map-modal-tabs" });
-    const tabNames: ModalTab[] = ["Maps", "Properties", "New map", "Generator", "Export"];
+    const tabNames: ModalTab[] = ["Maps", "Properties", "New map", "Export"];
 
     const contentDivs = new Map<ModalTab, HTMLElement>();
     for (const tab of tabNames) {
@@ -105,13 +104,6 @@ export class MapModal extends HexmakerModal {
     this.renderMapsTab(contentDivs.get("Maps")!);
     this.renderPropertiesTab(contentDivs.get("Properties")!);
     this.renderNewMapTab(contentDivs.get("New map")!);
-    new GeneratorTab(this.app, this.plugin, this.view, {
-      close: () => this.close(),
-      rerender: () => {
-        this.activeTab = "Generator";
-        this.render();
-      },
-    }).render(contentDivs.get("Generator")!);
     this.renderExportTab(contentDivs.get("Export")!);
   }
 
@@ -575,7 +567,7 @@ export class MapModal extends HexmakerModal {
     // chosen palette are offered.
     el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
     el.createEl("p", {
-      text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings on the generator tab.",
+      text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings in the terrain generator.",
       cls: "duckmage-map-origin-desc",
     });
     const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -695,7 +687,8 @@ export class MapModal extends HexmakerModal {
         return;
       }
       drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin));
-      previewStatus.setText(r.warnings.length ? r.warnings.join("; ") : "");
+      previewStatus.setText(r.warnings.length ? `${r.warnings.length} didn't fit (hover for details)` : "");
+      previewStatus.setAttr("title", r.warnings.join("\n"));
     };
     let previewTimer: number | null = null;
     const schedulePreview = () => {
