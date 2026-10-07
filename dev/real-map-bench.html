@@ -1,0 +1,201 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>loading</title>
+<!-- Replays a real map snapshot taken from Obsidian (dev/out/snap-<map>.json,
+     written by the snapshot eval — see dev/snapshot-map.js) with the plugin's
+     own styles.css, the plugin's pan/zoom model, and toggleable render
+     variants, so big-map scroll/zoom cost can be measured and compared.
+       /dev/real-map-bench.html?map=chult&v=propvars,blobicons
+     Hooks: window.__runBench() → frame stats; window.__variants(list). -->
+<link rel="stylesheet" href="../styles.css" />
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; color: #ddd; font: 12px system-ui; overflow: hidden; }
+  #bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 6px 8px; background: #111d; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  #bar label { white-space: nowrap; }
+  #stats { font-family: monospace; white-space: pre; }
+  #host { position: absolute; top: 34px; left: 0; right: 0; bottom: 0; }
+  #host .duckmage-hex-map-clip { position: absolute; inset: 0; overflow: hidden; }
+
+  /* ── Variants ─────────────────────────────────────────────────────────── */
+  /* noclip: diagnostic only — how much of paint is the hex clip-path. */
+  .v-noclip .duckmage-hex { clip-path: none !important; }
+  /* nolabels: diagnostic — cost of the 1-per-hex coord label layer. */
+  .v-nolabels .duckmage-coord-labels-layer { display: none; }
+  /* contain: isolate each column's layout/paint. */
+  .v-contain .duckmage-hex-col, .v-contain .duckmage-hex-row { contain: layout style paint; }
+  /* cv: skip rendering of off-screen columns entirely. */
+  .v-cv .duckmage-hex-col, .v-cv .duckmage-hex-row { content-visibility: auto; contain-intrinsic-size: auto 10px auto 10px; }
+  /* notrans: hexes have a 0.15s background-color transition. */
+  .v-notrans .duckmage-hex { transition: none; }
+</style>
+<style id="propvars"></style>
+</head>
+<body>
+<div id="bar">
+  <b id="title"></b>
+  <span id="toggles"></span>
+  <button id="bench">Run bench</button>
+  <span id="stats"></span>
+</div>
+<div id="host"></div>
+<script type="module">
+const params = new URLSearchParams(location.search);
+const mapName = params.get("map") ?? "chult";
+const VARIANTS = {
+  propvars: "non-inherited pan/zoom vars (@property)",
+  blobicons: "data: icons → blob: URLs",
+  cv: "content-visibility per column",
+  contain: "contain per column",
+  notrans: "no hex transition",
+  nolabels: "hide coord labels (diag)",
+  noclip: "no clip-path (diag)",
+};
+let active = new Set((params.get("v") ?? "").split(",").filter(Boolean));
+
+const snap = await (await fetch(`./out/snap-${mapName}.json`)).json();
+document.body.className = snap.bodyClass.replace(/\bis-frameless\b|\bis-hidden-frameless\b/g, "");
+const host = document.getElementById("host");
+for (const [k, v] of Object.entries(snap.vars)) host.style.setProperty(k, v);
+host.classList.add("duckmage-hex-map-container");
+host.innerHTML = snap.html.replace(/app:\/\/\w+\/C:\/Users\/markr\/Documents\/KB\/journal\//g, "/vault/").replace(/(\/vault\/[^"?]+)\?\d+/g, "$1");
+const vp = host.querySelector(".duckmage-hex-map-viewport");
+const clip = host.querySelector(".duckmage-hex-map-clip");
+const hasBg = !!vp.querySelector(".duckmage-bg-image");
+document.getElementById("title").textContent =
+  `${snap.map}: ${snap.hexes} hexes, ${host.querySelectorAll("*").length} elements${hasBg ? ", bg image" : ""}`;
+
+// ── Plugin pan/zoom model (HexMapView.applyTransform / flushPendingZoom / bakeZoom) ──
+let panX = parseFloat(vp.style.getPropertyValue("--duckmage-vp-tx")) || 0;
+let panY = parseFloat(vp.style.getPropertyValue("--duckmage-vp-ty")) || 0;
+let zoom = parseFloat(vp.style.getPropertyValue("--duckmage-vp-scale")) || 1;
+const start = { panX, panY, zoom, fs: vp.style.fontSize };
+function applyTransform() {
+  vp.style.setProperty("--duckmage-vp-tx", `${panX}px`);
+  vp.style.setProperty("--duckmage-vp-ty", `${panY}px`);
+  vp.style.setProperty("--duckmage-vp-scale", String(zoom));
+  vp.style.setProperty("--duckmage-cal-scale", String(1 / Math.max(0.01, zoom)));
+}
+let bakeTimer = 0;
+function bakeZoom() {
+  if (zoom === 1) return;
+  const fs = parseFloat(getComputedStyle(vp).fontSize);
+  vp.style.fontSize = `${fs * zoom}px`;
+  zoom = 1;
+  applyTransform();
+}
+function scheduleBake() {
+  if (hasBg) return; // plugin never bakes over a background image
+  clearTimeout(bakeTimer);
+  bakeTimer = setTimeout(bakeZoom, 80);
+}
+function zoomAt(factor, cx, cy) {
+  const nz = Math.min(5, Math.max(0.2, zoom * factor));
+  const f = nz / zoom;
+  panX = cx - (cx - panX) * f;
+  panY = cy - (cy - panY) * f;
+  zoom = nz;
+  applyTransform();
+  scheduleBake();
+}
+let pendingLog = 0, pivot = null;
+clip.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const r = clip.getBoundingClientRect();
+  pendingLog += -e.deltaY * 0.0015;
+  pivot = { cx: e.clientX - r.left, cy: e.clientY - r.top };
+  if (pendingLog !== 0) requestAnimationFrame(() => {
+    if (!pivot) return;
+    zoomAt(Math.exp(pendingLog), pivot.cx, pivot.cy);
+    pendingLog = 0; pivot = null;
+  });
+}, { passive: false });
+let drag = null;
+clip.addEventListener("mousedown", (e) => { drag = { x: e.clientX - panX, y: e.clientY - panY }; vp.classList.add("is-dragging"); });
+addEventListener("mousemove", (e) => { if (!drag) return; panX = e.clientX - drag.x; panY = e.clientY - drag.y; applyTransform(); });
+addEventListener("mouseup", () => { drag = null; vp.classList.remove("is-dragging"); });
+
+// ── Variants ──
+const blobCache = new Map();
+const origSrc = new Map();
+async function setBlobIcons(on) {
+  for (const img of host.querySelectorAll("img")) {
+    if (on && img.src.startsWith("data:")) {
+      let url = blobCache.get(img.src);
+      if (!url) { url = URL.createObjectURL(await (await fetch(img.src)).blob()); blobCache.set(img.src, url); }
+      origSrc.set(img, img.src); img.src = url;
+    } else if (!on && origSrc.has(img)) { img.src = origSrc.get(img); origSrc.delete(img); }
+  }
+}
+function setPropVars(on) {
+  document.getElementById("propvars").textContent = on ? `
+    @property --duckmage-vp-tx { syntax: "<length>"; inherits: false; initial-value: 0px; }
+    @property --duckmage-vp-ty { syntax: "<length>"; inherits: false; initial-value: 0px; }
+    @property --duckmage-vp-scale { syntax: "<number>"; inherits: false; initial-value: 1; }
+    @property --duckmage-cal-scale { syntax: "<number>"; inherits: false; initial-value: 1; }` : "";
+}
+async function applyVariants() {
+  for (const v of Object.keys(VARIANTS)) host.classList.toggle(`v-${v}`, active.has(v));
+  setPropVars(active.has("propvars"));
+  await setBlobIcons(active.has("blobicons"));
+  const u = new URL(location.href); u.searchParams.set("v", [...active].join(",")); history.replaceState(null, "", u);
+}
+const tg = document.getElementById("toggles");
+for (const [k, label] of Object.entries(VARIANTS)) {
+  const l = tg.appendChild(document.createElement("label"));
+  const cb = l.appendChild(document.createElement("input"));
+  cb.type = "checkbox"; cb.checked = active.has(k); cb.dataset.v = k;
+  cb.onchange = () => { cb.checked ? active.add(k) : active.delete(k); void applyVariants(); };
+  l.append(" " + label);
+}
+await applyVariants();
+
+// ── Bench ──
+const frame = () => new Promise((r) => requestAnimationFrame(r));
+function stats(xs) {
+  const s = [...xs].sort((a, b) => a - b);
+  const q = (p) => s[Math.min(s.length - 1, Math.floor(p * s.length))];
+  return { mean: +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1), p50: +q(0.5).toFixed(1), p95: +q(0.95).toFixed(1), max: +s[s.length - 1].toFixed(1), janky: xs.filter((x) => x > 20).length, n: xs.length };
+}
+/** Drive `step(i)` once per frame; record frame intervals and the synchronous
+ *  style+layout cost forced right after each step. */
+async function drive(n, step) {
+  const intervals = [], sync = [];
+  await frame(); let last = performance.now();
+  for (let i = 0; i < n; i++) {
+    step(i);
+    const t = performance.now();
+    void clip.offsetHeight; getComputedStyle(vp).transform; // force style + layout
+    sync.push(performance.now() - t);
+    await frame();
+    const now = performance.now(); intervals.push(now - last); last = now;
+  }
+  return { frame: stats(intervals), styleLayout: stats(sync) };
+}
+function reset() { panX = start.panX; panY = start.panY; zoom = start.zoom; vp.style.fontSize = start.fs; applyTransform(); }
+async function runBench() {
+  reset(); for (let i = 0; i < 10; i++) await frame();
+  const pan = await drive(120, (i) => { panX += i < 60 ? -12 : 12; panY += i < 60 ? -6 : 6; applyTransform(); });
+  reset();
+  const r = clip.getBoundingClientRect();
+  const z = await drive(120, (i) => { zoomAt(i < 60 ? 1.03 : 1 / 1.03, r.width / 2, r.height / 2); });
+  clearTimeout(bakeTimer);
+  const t = performance.now(); bakeZoom(); void clip.offsetHeight; await frame();
+  const bake = +(performance.now() - t).toFixed(1);
+  reset();
+  return { map: snap.map, variants: [...active], pan, zoom: z, bakeMs: hasBg ? null : bake };
+}
+window.__runBench = runBench;
+window.__variants = async (list) => { active = new Set(list); for (const cb of tg.querySelectorAll("input")) cb.checked = active.has(cb.dataset.v); await applyVariants(); };
+const out = document.getElementById("stats");
+document.getElementById("bench").onclick = async () => {
+  out.textContent = "running…";
+  const r = await runBench();
+  out.textContent = `pan frame p50 ${r.pan.frame.p50} p95 ${r.pan.frame.p95} janky ${r.pan.frame.janky} | style+layout ${r.pan.styleLayout.mean}ms · zoom frame p50 ${r.zoom.frame.p50} p95 ${r.zoom.frame.p95} janky ${r.zoom.frame.janky} | s+l ${r.zoom.styleLayout.mean}ms`;
+};
+await Promise.all([...host.querySelectorAll("img")].map((i) => i.decode().catch(() => {})));
+document.title = "ready";
+</script>
+</body>
+</html>
