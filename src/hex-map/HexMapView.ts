@@ -169,7 +169,7 @@ export class HexMapView extends ItemView {
   private coordPlacements: { key: string; ox: number; oy: number }[] = [];
   private coordGridSize = { w: 1, h: 1 };
   private coordLabels = new Map<string, HTMLElement>();
-  private coordSyncTimer: number | null = null;
+  private settleTimer: number | null = null;
   // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
   // paints (esp. trackpads). We sum the log-zoom delta of all events that
   // arrive in one frame and apply them as ONE transform update on the next
@@ -2036,7 +2036,7 @@ export class HexMapView extends ItemView {
       });
     }
     this.updateCalHandleScale();
-    this.scheduleCoordLabelSync();
+    this.onViewportMoved();
   }
 
   /**
@@ -2728,7 +2728,7 @@ export class HexMapView extends ItemView {
    * view open doesn't inherit a half-dead calibration state.
    */
   async onClose(): Promise<void> {
-    if (this.coordSyncTimer !== null) window.clearTimeout(this.coordSyncTimer);
+    if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
     }
@@ -4914,12 +4914,22 @@ export class HexMapView extends ItemView {
     this.syncCoordLabels();
   }
 
-  private scheduleCoordLabelSync(): void {
-    if (this.coordSyncTimer !== null) window.clearTimeout(this.coordSyncTimer);
-    this.coordSyncTimer = window.setTimeout(() => {
-      this.coordSyncTimer = null;
+  /**
+   * While the viewport moves it is a composited layer (`is-moving` →
+   * will-change: transform), so pan/zoom frames only re-composite. Once it
+   * settles the class comes off, which makes Chromium re-raster at the
+   * current zoom: a promoted layer is otherwise only rastered at the scale
+   * it was promoted at, so zooming in over a bg image (where zoom is never
+   * baked into font-size) left hexes and labels soft and jagged.
+   */
+  private onViewportMoved(): void {
+    this.viewportEl?.addClass("is-moving");
+    if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
+    this.settleTimer = window.setTimeout(() => {
+      this.settleTimer = null;
+      this.viewportEl?.removeClass("is-moving");
       this.syncCoordLabels();
-    }, 120);
+    }, 150);
   }
 
   /**

@@ -149,7 +149,6 @@
     top: 0;
     left: 0;
     transform-origin: 0 0;
-    will-change: transform;
     cursor: grab;
     padding: 1em;
     /* Viewport pan/zoom values are written to these CSS custom properties
@@ -346,6 +345,11 @@
 .duckmage-bg-image-row.is-drop-target {
     border-color: var(--interactive-accent);
     background: var(--background-modifier-hover);
+}
+
+/* Composited only while moving; see HexMapView.onViewportMoved. */
+.duckmage-hex-map-viewport.is-moving {
+    will-change: transform;
 }
 
 .duckmage-hex-map-viewport.is-dragging {
