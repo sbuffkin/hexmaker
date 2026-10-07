@@ -108,8 +108,8 @@
 .duckmage-hex-terrain-icon { display: none; }
 
 /* Coordinates — the visible labels live in .duckmage-coord-labels-layer
-   (.duckmage-coord-label-html); .duckmage-hex-label is a hidden in-hex
-   anchor and .duckmage-svg-coord-label no longer exists (issue #32). */
+   (.duckmage-coord-label-html); the in-hex .duckmage-hex-label and
+   .duckmage-svg-coord-label no longer exist (issue #32). */
 .duckmage-hide-coords .duckmage-coord-labels-layer { display: none; }
 
 /* Paths off: hide road/river polylines (and the active-endpoint marker)
@@ -485,19 +485,6 @@
 div.duckmage-hex-icon,
 div.duckmage-hex-terrain-icon {
     object-fit: unset; /* not applicable to divs */
-}
-
-/* Coord label: absolutely-positioned inside the hex so the parent's
-   flex centering doesn't fight us. Vertical anchor is set by a
-   `duckmage-coord-{top,middle,bottom}` class on the viewport — see
-   the rules below. Horizontal is always centered via translate(-50%). */
-.duckmage-hex-label {
-    /* Kept in DOM as an insertBefore anchor for hex-icon ordering, but
-       NOT visible. The actual coord labels render in
-       .duckmage-coord-labels-layer (a gridContainer-level sibling of the
-       path/faction SVGs) so they stack above paths, GM icons, faction
-       and region overlays. */
-    visibility: hidden;
 }
 
 /* Coord labels — gridContainer-level sibling above path SVG (z:5),
@@ -1395,11 +1382,11 @@ input.duckmage-input-error {
         crosshair;
 }
 
-/* Coord labels live in each hex's DOM (.duckmage-hex-label) — the SVG
-   path overlay no longer renders a duplicate. The old rule that hid
-   HTML labels while the SVG overlay was active is gone with that code;
-   HTML labels are always visible, and they track the hex layout
-   perfectly across font-size changes (no slip-on-zoom). */
+/* Coord labels live in .duckmage-coord-labels-layer — the SVG path
+   overlay no longer renders a duplicate. The old rule that hid HTML
+   labels while the SVG overlay was active is gone with that code; the
+   labels sit at a % of the grid, so they track the hex layout across
+   font-size changes (no slip-on-zoom). */
 
 /* ── Expand / shrink button groups ───────────────────────────────────────── */
 

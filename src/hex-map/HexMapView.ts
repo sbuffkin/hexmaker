@@ -3011,9 +3011,9 @@ export class HexMapView extends ItemView {
     // frame between the font-size change and the SVG rebuild shows
     // labels visibly shifted up-left from the hexes. By removing the
     // SVG (and its `duckmage-svg-labels-active` class) here, the
-    // intermediate frame falls back to the HTML `.duckmage-hex-label`
-    // spans — those live inside the hex DOM and track the hex layout
-    // perfectly across font-size changes. The new path SVG is rebuilt
+    // intermediate frame shows only the HTML labels in
+    // `.duckmage-coord-labels-layer`, which sit at a % of the grid and so
+    // track the hex layout across font-size changes. The new path SVG is rebuilt
     // via `updatePathOverlay()` further down. Sandbox repro of the
     // pre-fix slip: dev/coord-slip-sandbox.html.
     this.viewportEl.querySelector("svg.duckmage-path-svg")?.remove();
@@ -3144,7 +3144,7 @@ export class HexMapView extends ItemView {
     this.viewportEl.addClass(`duckmage-coord-${placement}`);
 
     // Coord label size + font (settings → "Coordinate label"). Both flow
-    // into CSS vars consumed by `.duckmage-hex-label`. Size is in em so it
+    // into CSS vars consumed by `.duckmage-coord-label-html`. Size is in em so it
     // scales with the hex; font family is one of Obsidian's CSS font vars.
     const coordFontSize = this.plugin.settings.coordFontSize ?? 0.8;
     const coordFontFamilyKey = this.plugin.settings.coordFontFamily ?? "interface";
@@ -4790,9 +4790,9 @@ export class HexMapView extends ItemView {
     // pixel positions are computed against pre-bake hex sizes, so any
     // paint frame between the bake's font-size change and the SVG
     // rebuild shows labels visibly stranded relative to the now-bigger
-    // hexes. The HTML `.duckmage-hex-label` spans inside each hex track
-    // the hex layout perfectly across font-size changes (they ARE part
-    // of the hex DOM), so we rely on those instead. Trade-off: a path
+    // hexes. The HTML labels in `.duckmage-coord-labels-layer` are placed
+    // at a % of the grid, so they track the hex layout across font-size
+    // changes, and we rely on those instead. Trade-off: a path
     // or GM icon drawn through a hex can visually obscure that hex's
     // coord label. Acceptable cost vs. the slip — see
     // dev/coord-slip-validator.html for the regression test.
