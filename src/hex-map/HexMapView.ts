@@ -164,6 +164,12 @@ export class HexMapView extends ItemView {
   private panX = 0;
   private panY = 0;
   private zoomSettleTimer: number | null = null;
+  // Coord labels are created only for on-screen hexes big enough to read
+  // (see syncCoordLabels). Placements are measured once per renderGrid.
+  private coordPlacements: { key: string; ox: number; oy: number }[] = [];
+  private coordGridSize = { w: 1, h: 1 };
+  private coordLabels = new Map<string, HTMLElement>();
+  private coordSyncTimer: number | null = null;
   // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
   // paints (esp. trackpads). We sum the log-zoom delta of all events that
   // arrive in one frame and apply them as ONE transform update on the next
@@ -2030,6 +2036,7 @@ export class HexMapView extends ItemView {
       });
     }
     this.updateCalHandleScale();
+    this.scheduleCoordLabelSync();
   }
 
   /**
@@ -2721,6 +2728,7 @@ export class HexMapView extends ItemView {
    * view open doesn't inherit a half-dead calibration state.
    */
   async onClose(): Promise<void> {
+    if (this.coordSyncTimer !== null) window.clearTimeout(this.coordSyncTimer);
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
     }
@@ -3271,7 +3279,6 @@ export class HexMapView extends ItemView {
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
 
-      hexEl.createSpan({ cls: "duckmage-hex-label", text: `${x},${y}` });
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
 
@@ -3643,7 +3650,7 @@ export class HexMapView extends ItemView {
           );
           hexEl.insertBefore(
             iconEl,
-            hexEl.querySelector(".duckmage-hex-label"),
+            hexEl.querySelector(".duckmage-hex-dot"),
           );
         }
         if (terrain !== null) hexEl.addClass("duckmage-hex-exists");
@@ -3783,7 +3790,7 @@ export class HexMapView extends ItemView {
           const img = hexEl.createEl("img", { cls: "duckmage-hex-icon" });
           img.src = getIconUrl(this.plugin, icon);
           img.alt = icon;
-          hexEl.insertBefore(img, hexEl.querySelector(".duckmage-hex-label"));
+          hexEl.insertBefore(img, hexEl.querySelector(".duckmage-hex-dot"));
           hexEl.dataset.iconOverride = icon;
         } else {
           delete hexEl.dataset.iconOverride;
@@ -3999,7 +4006,7 @@ export class HexMapView extends ItemView {
           entry.iconColor,
           "duckmage-hex-icon",
         );
-        hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-label"));
+        hexEl.insertBefore(iconEl, hexEl.querySelector(".duckmage-hex-dot"));
       } catch (err) {
         console.warn(
           `[hexmaker] failed to render icon for terrain "${terrain}":`,
@@ -4170,7 +4177,7 @@ export class HexMapView extends ItemView {
             const img = hexEl.createEl("img", { cls: "duckmage-hex-icon" });
             img.src = getIconUrl(this.plugin, icon);
             img.alt = icon;
-            hexEl.insertBefore(img, hexEl.querySelector(".duckmage-hex-label"));
+            hexEl.insertBefore(img, hexEl.querySelector(".duckmage-hex-dot"));
             hexEl.dataset.iconOverride = icon;
           } else {
             delete hexEl.dataset.iconOverride;
@@ -4875,16 +4882,17 @@ export class HexMapView extends ItemView {
     gridContainer
       .querySelector(".duckmage-coord-labels-layer")
       ?.remove();
+    this.coordLabels.clear();
     const gw = gridContainer.offsetWidth || 1;
     const gh = gridContainer.offsetHeight || 1;
+    this.coordGridSize = { w: gw, h: gh };
 
     // CRITICAL: read every hex's offset geometry FIRST, into a plain array,
     // before creating any label DOM. Interleaving offset reads with DOM writes
     // forces a full synchronous layout per hex — O(n²) layout thrash that
     // stalled opening large maps for ~20s at chult's 3843 hexes (see
-    // dev/coord-label-thrash-bench). With reads batched ahead of writes the
-    // browser flushes layout once, dropping this to ~100ms.
-    const placements: { x: number; y: number; ox: number; oy: number }[] = [];
+    // dev/coord-label-thrash-bench).
+    const placements: { key: string; ox: number; oy: number }[] = [];
     gridContainer
       .querySelectorAll<HTMLElement>(".duckmage-hex")
       .forEach((hexEl) => {
@@ -4898,29 +4906,80 @@ export class HexMapView extends ItemView {
           oy += cur.offsetTop;
           cur = cur.offsetParent as HTMLElement | null;
         }
-        placements.push({
-          x: Number(hexEl.dataset.x),
-          y: Number(hexEl.dataset.y),
-          ox,
-          oy,
-        });
+        placements.push({ key: `${hexEl.dataset.x},${hexEl.dataset.y}`, ox, oy });
       });
+    this.coordPlacements = placements;
 
-    // Write phase: no offset reads here, so layout stays clean throughout.
-    const layer = gridContainer.createDiv({
-      cls: "duckmage-coord-labels-layer",
-    });
-    for (const { x, y, ox, oy } of placements) {
-      const label = layer.createDiv({
-        cls: "duckmage-coord-label-html",
-        text: `${x},${y}`,
-      });
+    gridContainer.createDiv({ cls: "duckmage-coord-labels-layer" });
+    this.syncCoordLabels();
+  }
+
+  private scheduleCoordLabelSync(): void {
+    if (this.coordSyncTimer !== null) window.clearTimeout(this.coordSyncTimer);
+    this.coordSyncTimer = window.setTimeout(() => {
+      this.coordSyncTimer = null;
+      this.syncCoordLabels();
+    }, 120);
+  }
+
+  /**
+   * Create labels for hexes inside the visible area (plus a margin) and drop
+   * the rest. Text is the most expensive thing on the map — a label for all
+   * 3843 chult hexes cost ~170 ms of every renderGrid — and when zoomed out
+   * far enough to see a big map the labels are a few pixels tall, so below
+   * MIN_LABEL_PX none are drawn. Labels sit at a % of the grid, so they
+   * track font-size zoom bakes without a rebuild.
+   */
+  private syncCoordLabels(): void {
+    const MIN_LABEL_PX = 5;
+    const layer = this.viewportEl?.querySelector<HTMLElement>(".duckmage-coord-labels-layer");
+    const grid = layer?.parentElement;
+    const clip = this.viewportEl?.parentElement;
+    if (!layer || !grid || !clip) return;
+
+    // Reads first (one layout flush), then writes. Measure the grid, not the
+    // layer: the layer covers it exactly but is display:none while
+    // coordinates are hidden, and labels must be ready when they're shown.
+    const rect = grid.getBoundingClientRect();
+    const clipRect = clip.getBoundingClientRect();
+    const { w: gw, h: gh } = this.coordGridSize;
+    const sx = rect.width / gw;
+    const sy = rect.height / gh;
+    const labelPx =
+      parseFloat(getComputedStyle(layer).fontSize) *
+      (this.plugin.settings.coordFontSize ?? 0.8) *
+      Math.min(sx, sy);
+
+    const wanted = new Set<string>();
+    if (sx > 0 && sy > 0 && labelPx >= MIN_LABEL_PX) {
+      const mx = clipRect.width * 0.25;
+      const my = clipRect.height * 0.25;
+      const x0 = (clipRect.left - mx - rect.left) / sx;
+      const x1 = (clipRect.right + mx - rect.left) / sx;
+      const y0 = (clipRect.top - my - rect.top) / sy;
+      const y1 = (clipRect.bottom + my - rect.top) / sy;
+      for (const p of this.coordPlacements) {
+        if (p.ox >= x0 && p.ox <= x1 && p.oy >= y0 && p.oy <= y1) wanted.add(p.key);
+      }
+    }
+
+    for (const [key, el] of this.coordLabels) {
+      if (!wanted.has(key)) {
+        el.remove();
+        this.coordLabels.delete(key);
+      }
+    }
+    for (const p of this.coordPlacements) {
+      if (!wanted.has(p.key) || this.coordLabels.has(p.key)) continue;
+      const label = layer.createDiv({ cls: "duckmage-coord-label-html", text: p.key });
       label.setCssProps({
-        "--duckmage-coord-x": `${((ox / gw) * 100).toFixed(3)}%`,
-        "--duckmage-coord-y": `${((oy / gh) * 100).toFixed(3)}%`,
+        "--duckmage-coord-x": `${((p.ox / gw) * 100).toFixed(3)}%`,
+        "--duckmage-coord-y": `${((p.oy / gh) * 100).toFixed(3)}%`,
       });
+      this.coordLabels.set(p.key, label);
     }
   }
+
 
   private updatePathOverlay(): void {
     const gridContainer = this.viewportEl?.querySelector<HTMLElement>(
