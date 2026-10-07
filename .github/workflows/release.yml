@@ -8,6 +8,10 @@ on:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      released: ${{ steps.check.outputs.exists == 'false' }}
     permissions:
       contents: write
       id-token: write
@@ -52,6 +56,14 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         run: npm test
 
+      # Runs the scan Obsidian applies to releases on this commit first, so a
+      # version with review errors never gets published (.github/OBSIDIAN_REVIEW.md).
+      - name: Obsidian review gate (preview scan)
+        if: steps.check.outputs.exists == 'false'
+        env:
+          OBSIDIAN_COMMUNITY_COOKIE: ${{ secrets.OBSIDIAN_COMMUNITY_COOKIE }}
+        run: node dev/obsidian-review.mjs preview "$GITHUB_SHA"
+
       - name: Build plugin
         if: steps.check.outputs.exists == 'false'
         run: npm run build
@@ -80,3 +92,35 @@ jobs:
             --title="$version" \
             --generate-notes \
             main.js manifest.json styles.css
+
+  # Waits for the directory to pick up the new release and reports its scan.
+  # A failure means the published version gets delisted unless it's fixed, so
+  # it also opens an issue.
+  obsidian-review:
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Wait for the release scan
+        env:
+          OBSIDIAN_COMMUNITY_COOKIE: ${{ secrets.OBSIDIAN_COMMUNITY_COOKIE }}
+        run: node dev/obsidian-review.mjs release "${{ needs.release.outputs.version }}"
+
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue create --repo "$GITHUB_REPOSITORY" \
+            --title "Obsidian review failed for ${{ needs.release.outputs.version }}" \
+            --body "The community directory scan of release ${{ needs.release.outputs.version }} did not pass. Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID. Dashboard: https://community.obsidian.md/account/plugins/hexmaker"
