@@ -14,8 +14,10 @@ import * as path from "node:path";
  */
 
 const root = process.cwd();
-const stylesCss = readFileSync(path.join(root, "styles.css"), "utf8");
-const viewSrc = readFileSync(path.join(root, "src", "hex-map", "HexMapView.ts"), "utf8");
+const read = (...p: string[]) =>
+  readFileSync(path.join(root, ...p), "utf8").replace(/\r\n/g, "\n");
+const stylesCss = read("styles.css");
+const viewSrc = read("src", "hex-map", "HexMapView.ts");
 
 /** Keys of the setCssProps({...}) object literal inside method `name`. */
 function varsWrittenBy(name: string): string[] {
