@@ -11,6 +11,8 @@ import {
   saveGeneratorSettings,
   generateTerrain,
   fillMap,
+  defaultImpassable,
+  generatorSettings,
 } from "../src/worldgen/generators";
 import { findViolation, parseModelMarkdown, type HexWfcModel } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
@@ -233,5 +235,28 @@ describe("fill this map", () => {
     const cells = new Map<string, string>();
     for (let x = 0; x < 12; x++) for (let y = 0; y < 10; y++) cells.set(`${x}_${y}`, terrainAt(`${x}_${y}`)!);
     expect(findViolation(model, cells, "flat")).toBeNull();
+  });
+});
+
+describe("default impassable terrain", () => {
+  const base: HexWfcModel = {
+    name: "d",
+    meta: {},
+    terrains: ["Grass", "Shallows", "ocean", "TRENCH", "Hills"].map((name) => ({ name, weight: 1 })),
+    adjacency: [],
+  };
+
+  it("uses the generator's shallows, ocean and trench, in any case", () => {
+    expect(defaultImpassable(base)).toEqual(["Shallows", "ocean", "TRENCH"]);
+    expect(generatorSettings(base).impassable).toEqual(["Shallows", "ocean", "TRENCH"]);
+  });
+
+  it("only covers terrains the generator has", () => {
+    expect(defaultImpassable({ ...base, terrains: [{ name: "Grass", weight: 1 }] })).toEqual([]);
+  });
+
+  it("steps aside once the generator saves its own list, even an empty one", () => {
+    expect(defaultImpassable({ ...base, settings: { impassable: ["Hills"] } })).toBeUndefined();
+    expect(generatorSettings({ ...base, settings: { impassable: [] } }).impassable).toEqual([]);
   });
 });

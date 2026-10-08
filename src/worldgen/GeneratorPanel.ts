@@ -13,6 +13,7 @@ import {
   saveGeneratorFromMap,
   saveGeneratorSettings,
   generateTerrain,
+  generatorSettings,
   generatorFitsPalette,
   paletteColors,
   pathColors,
@@ -24,7 +25,6 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable } from "./scrub";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
-  resolveSettings,
   cleanupStrengths,
   randomSeed,
   SYMMETRIES,
@@ -246,7 +246,7 @@ export class GeneratorPanel {
     summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
 
     // Current settings, kept in sync with the file.
-    const s = () => resolveSettings(model);
+    const s = () => generatorSettings(model);
     const save = (patch: Partial<Record<keyof GeneratorSettings, unknown>>) => {
       const next: Record<string, unknown> = { ...(model.settings ?? {}) };
       for (const [k, v] of Object.entries(patch)) {

@@ -27,6 +27,7 @@ import {
   type HexWfcModel,
   type SolveResult,
   type GeneratorSettings,
+  resolveSettings,
 } from "../../packages/hex-wfc/src";
 
 /** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
@@ -205,6 +206,26 @@ export interface GridSpec {
   stagger: "odd" | "even";
 }
 
+/** Terrain names treated as impassable until a generator sets its own list. */
+export const DEFAULT_IMPASSABLE = ["shallows", "ocean", "trench"];
+
+/**
+ * Impassable terrains for a generator that has never saved the setting: its
+ * terrains named like DEFAULT_IMPASSABLE (any case), so "Connected land"
+ * works out of the box. Once the generator saves a list (even an empty one),
+ * that list is used instead.
+ */
+export function defaultImpassable(model: HexWfcModel): string[] | undefined {
+  if (model.settings?.impassable !== undefined) return undefined;
+  return model.terrains.map((t) => t.name).filter((n) => DEFAULT_IMPASSABLE.includes(n.toLowerCase()));
+}
+
+/** Saved settings with the plugin's defaults filled in (see defaultImpassable). */
+export function generatorSettings(model: HexWfcModel): Required<GeneratorSettings> {
+  const impassable = defaultImpassable(model);
+  return resolveSettings(model, impassable ? { impassable } : {});
+}
+
 /**
  * Run a generator on a grid. Terrains the palette lacks are dropped from the
  * generator first. Fixed hexes whose terrain the generator doesn't know are
@@ -239,6 +260,7 @@ export function generateTerrain(
     stagger: grid.stagger,
     seed,
     fixed,
+    ...(defaultImpassable(model) ? { impassable: defaultImpassable(model) } : {}),
   });
 }
 
