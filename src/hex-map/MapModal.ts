@@ -6,6 +6,7 @@ import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToV
 import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
 import { exportMapAsPng } from "../export/mapPngRenderer";
 import { exportMapAsPdf } from "../export/exporters/mapWithTable";
+import { exportMapAsManual } from "../export/exporters/hexcrawlManual";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
@@ -163,6 +164,11 @@ export class MapModal extends HexmakerModal {
       "Include region overlay",
       false,
     );
+    const playerEdition = makeCheckbox(
+      optsForm,
+      "Manual: player edition (leave out hidden and secret)",
+      false,
+    );
 
     // Output size: a dropdown of presets that map to a hex-radius value.
     // The actual PNG dimensions depend on grid size too, so we phrase the
@@ -234,6 +240,24 @@ export class MapModal extends HexmakerModal {
     });
     exportPdfBtn.addEventListener("click", () => {
       void exportMapAsPdf(this.plugin, mapName, collectOpts());
+      this.close();
+    });
+    // A printable gazetteer: legend, encounter tables, keyed hexes by
+    // section, index. Uses its own print styling and hex numbering.
+    const exportManualBtn = actions.createEl("button", {
+      cls: "mod-cta",
+      text: "Export hexcrawl manual (PDF)",
+    });
+    exportManualBtn.addEventListener("click", () => {
+      const o = collectOpts();
+      void exportMapAsManual(this.plugin, mapName, {
+        outputName: `${nameInput.value.trim() || mapName} ${playerEdition.checked ? "player" : "manual"}`,
+        player: playerEdition.checked,
+        showIcons: o.showIcons,
+        showPaths: o.showPaths,
+        showFactionOverlay: o.showFactionOverlay,
+        showRegionOverlay: o.showRegionOverlay,
+      });
       this.close();
     });
   }

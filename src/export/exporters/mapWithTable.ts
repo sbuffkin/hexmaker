@@ -415,11 +415,11 @@ function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-function sanitiseFilename(name: string): string {
+export function sanitiseFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_");
 }
 
-async function blobToDataUri(blob: Blob, type: string): Promise<string> {
+export async function blobToDataUri(blob: Blob, type: string): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const CHUNK = 0x8000;
   const parts: string[] = [];
@@ -429,7 +429,7 @@ async function blobToDataUri(blob: Blob, type: string): Promise<string> {
   return `data:${type};base64,${btoa(parts.join(""))}`;
 }
 
-async function writeBinaryToVault(
+export async function writeBinaryToVault(
   app: App,
   path: string,
   data: Uint8Array,
@@ -444,7 +444,7 @@ async function writeBinaryToVault(
   }
 }
 
-async function openInVault(app: App, path: string): Promise<void> {
+export async function openInVault(app: App, path: string): Promise<void> {
   const file = app.vault.getAbstractFileByPath(path);
   if (file instanceof TFile) {
     await app.workspace.getLeaf(false).openFile(file);
