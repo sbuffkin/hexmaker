@@ -46,43 +46,62 @@ function fits(
 }
 
 /**
- * Clean up lone specks and ragged edges: a hex with too few same-terrain
- * neighbours takes its most common neighbouring terrain (if the rules allow).
- * Strength 0–1 sets the number of passes and how lonely a hex must be.
- * Scattered and line terrains are left alone (thin by nature).
+ * Terrains the clean-up passes never touch: scattered and line terrains
+ * (thin by nature), plus any terrain whose share of the example is below
+ * `keepRare`, so the odd rare hex survives smoothing.
+ */
+export function untouchableTerrains(model: HexWfcModel, keepRare = 0): Set<string> {
+  const total = model.terrains.reduce((sum, t) => sum + Math.max(0, t.weight), 0) || 1;
+  return new Set(
+    model.terrains
+      .filter((t) => t.shape === "scatter" || t.shape === "line" || (keepRare > 0 && Math.max(0, t.weight) / total < keepRare))
+      .map((t) => t.name),
+  );
+}
+
+/** Neighbour terrains around `key`, most common first, and how many match its own. */
+function neighbourTally(key: string, cells: Map<string, string>, grid: GridInfo) {
+  const t = cells.get(key)!;
+  let same = 0;
+  const tally = new Map<string, number>();
+  for (const n of neighbourKeys(key, grid, cells)) {
+    const u = cells.get(n)!;
+    if (u === t) same++;
+    else tally.set(u, (tally.get(u) ?? 0) + 1);
+  }
+  return { same, others: [...tally].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])) };
+}
+
+/**
+ * Tidy patch edges. A hex that belongs to a patch but sticks out of it
+ * (one same-terrain neighbour) or, from strength 0.5, sits in a notch (two)
+ * takes the surrounding terrain when that terrain outnumbers its own by two
+ * and the rules allow. Lone hexes (no same-terrain neighbour) are left to
+ * `removeSpecks`. Strength 0–1 also sets the number of passes (1–3).
  * Returns the number of hexes changed.
  */
-export function smooth(
+export function smoothEdges(
   cells: Map<string, string>,
   model: HexWfcModel,
   grid: GridInfo,
   strength: number,
   protect: Set<string>,
+  keep: Set<string>,
   rng: () => number,
 ): number {
   if (!(strength > 0)) return 0;
   const adj = adjacencyLookup(model);
-  const keepShape = new Set(model.terrains.filter((t) => t.shape === "scatter" || t.shape === "line").map((t) => t.name));
   const passes = Math.ceil(Math.min(1, strength) * 3);
-  const lonely = strength >= 0.5 ? 1 : 0; // max same-terrain neighbours to count as a speck
+  const maxSame = strength >= 0.5 ? 2 : 1;
   let changed = 0;
   for (let p = 0; p < passes; p++) {
     let changedThisPass = 0;
     for (const key of shuffled([...cells.keys()], rng)) {
-      const t = cells.get(key)!;
-      if (protect.has(key) || keepShape.has(t)) continue;
-      const ns = neighbourKeys(key, grid, cells);
-      let same = 0;
-      const tally = new Map<string, number>();
-      for (const n of ns) {
-        const u = cells.get(n)!;
-        if (u === t) same++;
-        else tally.set(u, (tally.get(u) ?? 0) + 1);
-      }
-      if (same > lonely) continue;
-      const candidates = [...tally].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-      for (const [u, n] of candidates) {
-        if (n < 2) break; // need a real majority to switch to
+      if (protect.has(key) || keep.has(cells.get(key)!)) continue;
+      const { same, others } = neighbourTally(key, cells, grid);
+      if (same < 1 || same > maxSame) continue;
+      for (const [u, n] of others) {
+        if (n < same + 2) break;
         if (fits(key, u, cells, grid, adj)) {
           cells.set(key, u);
           changed++;
@@ -94,6 +113,76 @@ export function smooth(
     if (!changedThisPass) break;
   }
   return changed;
+}
+
+/**
+ * Remove small patches: every patch of `maxSize` hexes or fewer is filled in
+ * from outside, hex by hex, with its most common neighbouring terrain the
+ * rules allow (at least two neighbours of it for a lone hex). Hexes that
+ * can't change are left. Returns the number of hexes changed.
+ */
+export function removeSpecks(
+  cells: Map<string, string>,
+  model: HexWfcModel,
+  grid: GridInfo,
+  maxSize: number,
+  protect: Set<string>,
+  keep: Set<string>,
+): number {
+  if (!(maxSize >= 1)) return 0;
+  const adj = adjacencyLookup(model);
+  let changed = 0;
+  for (let round = 0; round < 3; round++) {
+    let changedThisRound = 0;
+    for (const patch of patchesOf(cells, grid)) {
+      if (patch.keys.length > maxSize || keep.has(patch.terrain)) continue;
+      const inPatch = new Set(patch.keys);
+      for (const key of patch.keys) {
+        if (protect.has(key) || cells.get(key) !== patch.terrain) continue;
+        const tally = new Map<string, number>();
+        for (const n of neighbourKeys(key, grid, cells)) {
+          const u = cells.get(n)!;
+          if (!inPatch.has(n) && u !== patch.terrain) tally.set(u, (tally.get(u) ?? 0) + 1);
+        }
+        const others = [...tally].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        for (const [u, n] of others) {
+          if (patch.keys.length === 1 && n < 2) break;
+          if (fits(key, u, cells, grid, adj)) {
+            cells.set(key, u);
+            changed++;
+            changedThisRound++;
+            break;
+          }
+        }
+      }
+    }
+    if (!changedThisRound) break;
+  }
+  return changed;
+}
+
+/** Every same-terrain patch on the map. */
+function patchesOf(cells: Map<string, string>, grid: GridInfo): { terrain: string; keys: string[] }[] {
+  const out: { terrain: string; keys: string[] }[] = [];
+  const seen = new Set<string>();
+  for (const [key, t] of cells) {
+    if (seen.has(key)) continue;
+    const keys: string[] = [];
+    const stack = [key];
+    seen.add(key);
+    while (stack.length) {
+      const k = stack.pop()!;
+      keys.push(k);
+      for (const n of neighbourKeys(k, grid, cells)) {
+        if (!seen.has(n) && cells.get(n) === t) {
+          seen.add(n);
+          stack.push(n);
+        }
+      }
+    }
+    out.push({ terrain: t, keys });
+  }
+  return out;
 }
 
 /** Connected groups of hexes for which `inGroup` is true. */

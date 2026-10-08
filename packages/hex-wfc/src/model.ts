@@ -122,8 +122,20 @@ export interface GeneratorSettings {
   edgeTerrain?: string;
   /** Thickness of line terrains: 0 = as learned, otherwise 1–3. */
   lineWidth?: number;
-  /** 0–1: clean up lone specks and ragged edges after generating. */
+  /**
+   * Legacy single knob (0–1): lone specks, plus ragged edges from 0.5. Used
+   * only while `edgeSmoothing` and `speckSize` are both 0.
+   */
   smoothing?: number;
+  /** 0–1: trim one-hex protrusions and notches on patch edges. Leaves lone hexes alone. */
+  edgeSmoothing?: number;
+  /** Remove patches of this many hexes or fewer (0 = off). */
+  speckSize?: number;
+  /**
+   * 0–1 share of the example: terrains rarer than this are never smoothed or
+   * removed, so the odd rare hex survives. 0 = off.
+   */
+  keepRare?: number;
   /** Mirror the map. Symmetric where the rules allow. */
   symmetry?: Symmetry;
   /** Multiplier on learned spacing between scattered terrain (towns). 0 = off. */
@@ -151,6 +163,9 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   edgeTerrain: "",
   lineWidth: 0,
   smoothing: 0,
+  edgeSmoothing: 0,
+  speckSize: 0,
+  keepRare: 0,
   symmetry: "none",
   spacing: 1,
   connected: false,

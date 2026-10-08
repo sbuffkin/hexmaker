@@ -4,7 +4,7 @@
  * file's frontmatter) with a live preview, and create a new map from it.
  */
 
-import { App, Notice } from "obsidian";
+import { App, Notice, setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { VIEW_TYPE_HEX_MAP } from "../constants";
 import type { HexMapView } from "../hex-map/HexMapView";
@@ -21,8 +21,11 @@ import {
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
+import { makeScrubbable } from "./scrub";
+import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
   resolveSettings,
+  cleanupStrengths,
   randomSeed,
   SYMMETRIES,
   type GeneratorSettings,
@@ -47,6 +50,7 @@ export class GeneratorPanel {
   static selectedPath = "";
   static mapName = "";
   static paletteName = "";
+  static seedLocked = false;
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -79,9 +83,14 @@ export class GeneratorPanel {
     return this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains.map((t) => t.name) ?? [];
   }
 
-  render(el: HTMLElement): void {
-    el.empty();
-    el.addClass("duckmage-wfc-tab");
+  render(root: HTMLElement): void {
+    root.empty();
+    root.addClass("duckmage-wfc-tab");
+    // Controls on the left; the preview sits in a column that stays in view
+    // while the controls scroll (stacked above them on narrow panes).
+    const layout = root.createDiv({ cls: "duckmage-wfc-layout" });
+    const el = layout.createDiv({ cls: "duckmage-wfc-main" });
+    const side = layout.createDiv({ cls: "duckmage-wfc-side" });
     el.createEl("h3", { text: "Terrain generator" });
     this.renderRegion(el);
     this.renderLearn(el);
@@ -104,15 +113,16 @@ export class GeneratorPanel {
     const show = () => {
       GeneratorPanel.selectedPath = select.value;
       body.empty();
+      side.empty();
       const g = current();
       openBtn.disabled = !g;
       relearnBtn.disabled = !g?.model.meta["source-map"];
-      if (g) this.renderGenerator(body, g);
-      else
-        body.createEl("p", {
-          text: generators.length ? "No generators for this palette yet." : "No generators yet. Pick a region above and learn from it.",
-          cls: "duckmage-map-origin-desc",
-        });
+      if (g) this.renderGenerator(body, side, g);
+      else {
+        const text = generators.length ? "No generators for this palette yet." : "No generators yet. Pick a region and learn from it.";
+        body.createEl("p", { text, cls: "duckmage-map-origin-desc" });
+        side.createEl("p", { text: "Pick a generator to preview it here.", cls: "duckmage-map-origin-desc" });
+      }
     };
     const fill = () => {
       const names = this.paletteTerrains();
@@ -220,7 +230,7 @@ export class GeneratorPanel {
 
   // ── One generator ────────────────────────────────────────────────────────
 
-  private renderGenerator(el: HTMLElement, g: GeneratorFile): void {
+  private renderGenerator(el: HTMLElement, side: HTMLElement, g: GeneratorFile): void {
     const { model } = g;
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
     // One short line; the per-shape breakdown is on hover.
@@ -250,14 +260,31 @@ export class GeneratorPanel {
       schedulePreview();
     };
 
-    // Preview
-    const previewBox = el.createDiv({ cls: "duckmage-wfc-section" });
+    // Preview (in the sticky side column)
+    const previewBox = side.createDiv({ cls: "duckmage-wfc-section" });
+    previewBox.createEl("h4", { text: "Preview" });
     const canvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
     const status = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
     const previewRow = previewBox.createDiv({ cls: "duckmage-region-row" });
     previewRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
     const seedInput = previewRow.createEl("input", { type: "number", value: String(this.seed), cls: "duckmage-wfc-seed" });
-    const rerollBtn = previewRow.createEl("button", { text: "Re-roll" });
+    // Locked: the button regenerates with the same seed, so a settings change
+    // can be compared on the same map (large maps don't preview on their own).
+    const lockBtn = previewRow.createEl("button", { cls: "clickable-icon duckmage-wfc-lock" });
+    const rerollBtn = previewRow.createEl("button");
+    const showLock = () => {
+      const locked = GeneratorPanel.seedLocked;
+      setIcon(lockBtn, locked ? "lock" : "lock-open");
+      lockBtn.toggleClass("is-active", locked);
+      lockBtn.setAttr("aria-pressed", String(locked));
+      lockBtn.setAttr("aria-label", locked ? "Seed locked: regenerate keeps it" : "Lock the seed");
+      rerollBtn.setText(locked ? "Regenerate" : "Re-roll");
+    };
+    lockBtn.addEventListener("click", () => {
+      GeneratorPanel.seedLocked = !GeneratorPanel.seedLocked;
+      showLock();
+      schedulePreview();
+    });
     previewRow.createSpan({ text: "Size", cls: "duckmage-map-origin-label" });
     const colsInput = previewRow.createEl("input", { type: "number", value: String(this.previewCols), cls: "duckmage-wfc-num" });
     previewRow.createSpan({ text: "×" });
@@ -275,6 +302,36 @@ export class GeneratorPanel {
         stagger: map?.staggerOffset ?? this.plugin.settings.staggerOffset ?? "odd",
       };
     };
+    // Share readouts in the Advanced table, filled in further down.
+    const shareCells = new Map<string, { now: HTMLElement; change: HTMLElement }>();
+    let baseline: { key: string; shares: Map<string, number> } | null = null;
+    /**
+     * Shares in the preview vs the same seed without per-terrain mix/counts,
+     * so the table shows what those settings change. The untweaked run is
+     * cached until something other than mix/counts changes.
+     */
+    const updateShares = (cells: Map<string, string>, grid: ReturnType<typeof previewGrid>, palette: string[]) => {
+      const now = terrainShares(cells);
+      let before = now;
+      if (hasTerrainTweaks(model)) {
+        const plain = withoutTerrainTweaks(model);
+        const key = JSON.stringify([this.seed, grid, palette, plain.settings]);
+        if (baseline?.key !== key) {
+          const b = generateTerrain(this.plugin, plain, palette, grid, this.seed);
+          baseline = { key, shares: b.ok ? terrainShares(b.cells) : now };
+        }
+        before = baseline.shares;
+      }
+      for (const [name, cell] of shareCells) {
+        const n = now.get(name) ?? 0, b = before.get(name) ?? 0;
+        cell.now.setText(formatShare(n));
+        const change = formatShareChange(n, b);
+        cell.change.setText(change);
+        cell.change.toggleClass("is-up", change.startsWith("+"));
+        cell.change.toggleClass("is-down", change.startsWith("−"));
+        cell.change.setAttr("title", change ? `${formatShare(b)} without its mix and min/max settings` : "");
+      }
+    };
     const runPreview = () => {
       const grid = previewGrid();
       this.previewCols = grid.cols;
@@ -286,7 +343,11 @@ export class GeneratorPanel {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
-      drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin));
+      // Draw at the side column's device-pixel width so it stays sharp when stretched.
+      const dpr = activeWindow.devicePixelRatio || 1;
+      drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin),
+        Math.max(420, side.clientWidth) * dpr, 40 * dpr);
+      updateShares(r.cells, grid, palette);
       // Short: size and time, plus a hoverable count if anything didn't fit.
       status.setText(`${grid.cols}×${grid.rows} · ${r.stats.ms} ms${r.warnings.length ? ` · ⚠ ${r.warnings.length}` : ""}`);
       status.setAttr("title", r.warnings.join("\n"));
@@ -294,7 +355,9 @@ export class GeneratorPanel {
     const schedulePreview = () => {
       if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
       if (Number(colsInput.value) * Number(rowsInput.value) > PREVIEW_AUTO_LIMIT) {
-        status.setText("Large map: re-roll to preview it.");
+        status.setText(GeneratorPanel.seedLocked
+          ? "Large map: press Regenerate to see your changes on this seed."
+          : "Large map: re-roll to preview it, or lock the seed to compare settings.");
         return;
       }
       this.previewTimer = window.setTimeout(() => {
@@ -303,9 +366,10 @@ export class GeneratorPanel {
       }, 200);
     };
     rerollBtn.addEventListener("click", () => {
-      seedInput.value = String(randomSeed());
+      if (!GeneratorPanel.seedLocked) seedInput.value = String(randomSeed());
       runPreview();
     });
+    showLock();
     // Create a new map that is exactly the preview: same size, seed, palette and paths.
     createBtn.addEventListener("click", () => {
       const grid = previewGrid();
@@ -345,16 +409,34 @@ export class GeneratorPanel {
         });
     });
     for (const input of [seedInput, colsInput, rowsInput]) input.addEventListener("change", schedulePreview);
+    // Drag up/down on size and seed; the preview follows while dragging.
+    makeScrubbable(colsInput, { min: 2, max: 200, pxPerStep: 4 });
+    makeScrubbable(rowsInput, { min: 2, max: 200, pxPerStep: 4 });
+    makeScrubbable(seedInput, { min: 0, max: 0xffffffff, pxPerStep: 8 });
+    for (const input of [seedInput, colsInput, rowsInput]) {
+      input.addEventListener("input", () => {
+        if (input.hasClass("is-scrubbing")) schedulePreview();
+      });
+    }
 
 
     // Shape
     this.heading(el, "Shape");
     this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
+    this.slider(el, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v }));
     if (model.terrains.some((t) => t.shape === "line")) {
       const learnedWidth = Math.max(1, Math.round(Math.max(...model.terrains.filter((t) => t.shape === "line").map((t) => t.width ?? 1))));
       this.slider(el, "Line width", "Thickness of line-shaped terrain, in hexes.", 1, 3, 1, s().lineWidth > 0 ? s().lineWidth : learnedWidth, (v) => save({ lineWidth: v }));
     }
-    this.slider(el, "Smoothing", "Clean up lone specks and ragged edges after generating.", 0, 1, 0.1, s().smoothing, (v) => save({ smoothing: v }));
+    // Clean-up after generating. Older generators only have one "smoothing"
+    // value; the sliders start from what it meant, and any change replaces it.
+    const cleanup = cleanupStrengths(s());
+    this.slider(el, "Edge smoothing", "Trim one-hex bumps and notches along the edges of patches. Lone hexes are left alone.", 0, 1, 0.1, cleanup.edges,
+      (v) => save({ edgeSmoothing: v, speckSize: cleanupStrengths(s()).speckSize, smoothing: undefined }));
+    this.slider(el, "Remove small patches", "Fill in patches of this many hexes or fewer with the terrain around them. 0 = keep all.", 0, 6, 1, cleanup.speckSize,
+      (v) => save({ speckSize: v, edgeSmoothing: cleanupStrengths(s()).edges, smoothing: undefined }));
+    this.slider(el, "Keep rare terrain", "Terrains under this share of the example (%) are never smoothed or removed, so the odd rare hex survives.", 0, 20, 1,
+      Math.round(s().keepRare * 100), (v) => save({ keepRare: v / 100 }));
     this.select(el, "Symmetry", "Mirror the map. Symmetric wherever the rules allow.",
       SYMMETRIES.map((v) => [v, SYMMETRY_LABELS[v]]), s().symmetry, (v) => save({ symmetry: v }));
     this.select(el, "Edge style", "What the map border prefers: a terrain of your choice, or the example's border.",
@@ -365,6 +447,7 @@ export class GeneratorPanel {
     // Placement
     this.heading(el, "Placement");
     this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }));
+    this.slider(el, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
     if (model.terrains.some((t) => t.shape === "scatter")) {
       this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v }));
     }
@@ -378,25 +461,37 @@ export class GeneratorPanel {
     this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
     this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
 
-    // Advanced: per-terrain controls and tuning
-    const adv = el.createEl("details", { cls: "duckmage-wfc-section" });
-    adv.createEl("summary", { text: "Advanced" });
-    adv.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit.",
+    // Terrain mix: per-terrain controls and what they do to the preview
+    this.heading(el, "Terrain mix");
+    el.createEl("p", {
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the region it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
-    const table = adv.createDiv({ cls: "duckmage-wfc-terrains" });
+    const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
     const head = table.createDiv({ cls: "duckmage-wfc-terrain-row duckmage-wfc-terrain-head" });
-    for (const h of ["Terrain", "Shape", "Mix", "Min", "Max"]) head.createSpan({ text: h });
+    const headings: [string, string][] = [
+      ["Terrain", ""],
+      ["Mix", ""],
+      ["Min", "Fewest separate patches"],
+      ["Max", "Most separate patches"],
+      ["Example", "Share of the region this generator was learned from"],
+      ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
+    ];
+    for (const [h, title] of headings) head.createSpan({ text: h, attr: title ? { title } : {} });
+    const example = exampleShares(model);
     const mix = { ...s().mix };
     const counts: Record<string, CountRange> = Object.fromEntries(Object.entries(s().counts).map(([k, r]) => [k, { ...r }]));
     for (const t of model.terrains) {
       const row = table.createDiv({ cls: "duckmage-wfc-terrain-row" });
-      const nameCell = row.createSpan({ cls: "duckmage-wfc-terrain-name" });
+      // Guaranteed line features are laid down before the solver runs, so
+      // mix barely changes how much of them there is.
+      const isFeature = model.features?.some((f) => f.terrain === t.name) ?? false;
+      const title = `${t.name} (${t.shape ?? "no"} shape)` + (isFeature ? ". Placed as a guaranteed feature, so mix has little effect." : "");
+      const nameCell = row.createSpan({ cls: "duckmage-wfc-terrain-name", attr: { title } });
       const swatch = nameCell.createSpan({ cls: "duckmage-wfc-swatch" });
       swatch.setCssProps({ "--duckmage-wfc-swatch": colors.get(t.name) ?? "var(--background-modifier-border)" });
       nameCell.createSpan({ text: t.name });
-      row.createSpan({ text: t.shape ?? "none", cls: "duckmage-map-origin-desc" });
+      if (isFeature) nameCell.createSpan({ text: "feature", cls: "duckmage-wfc-tag" });
       const mixCell = row.createSpan({ cls: "duckmage-wfc-mix" });
       const mixSlider = mixCell.createEl("input", { type: "range" });
       mixSlider.min = "0";
@@ -424,10 +519,15 @@ export class GeneratorPanel {
           save({ counts: Object.keys(counts).length ? { ...counts } : undefined });
         });
       }
+      row.createSpan({ text: formatShare(example.get(t.name) ?? 0), cls: "duckmage-wfc-share" });
+      const mapCell = row.createSpan({ cls: "duckmage-wfc-share" });
+      shareCells.set(t.name, {
+        now: mapCell.createSpan({ text: "–" }),
+        change: mapCell.createSpan({ cls: "duckmage-wfc-share-change" }),
+      });
     }
-    this.slider(adv, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v }));
-    this.slider(adv, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v }));
-    this.slider(adv, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
+
+    this.slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v }));
 
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
     const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });

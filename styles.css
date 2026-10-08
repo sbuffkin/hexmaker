@@ -5155,7 +5155,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-wfc-terrain-row {
     display: grid;
-    grid-template-columns: minmax(8em, 1.5fr) 5em minmax(9em, 2fr) 4.5em 4.5em;
+    /* Terrain, Mix, Min, Max, Example, Map */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em;
     align-items: center;
     gap: 0.5em;
 }
@@ -5228,12 +5229,92 @@ button.duckmage-wfc-chip {
 }
 
 .duckmage-wfc-page .duckmage-wfc-tab {
-    max-width: 760px;
+    max-width: 1280px;
     margin: 0 auto;
+    container-type: inline-size;
+}
+
+/* Controls left, preview right. The preview column sticks to the top of the
+   scrolling view so changes made far down the page are visible right away. */
+.duckmage-wfc-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 42%);
+    gap: 2em;
+    align-items: start;
+}
+
+.duckmage-wfc-side {
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+.duckmage-wfc-side .duckmage-wfc-preview {
+    width: 100%;
+}
+
+/* Narrow panes: one column, preview first and not sticky. */
+@container (max-width: 760px) {
+    .duckmage-wfc-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .duckmage-wfc-side {
+        position: static;
+        max-height: none;
+        order: -1;
+    }
+}
+
+.duckmage-wfc-share {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.duckmage-wfc-tag {
+    flex: none;
+    font-size: 0.75em;
+    color: var(--text-faint);
+}
+
+.duckmage-wfc-share-change {
+    margin-left: 0.35em;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-share-change.is-up {
+    color: var(--color-green);
+}
+
+.duckmage-wfc-share-change.is-down {
+    color: var(--color-red);
 }
 
 .duckmage-wfc-regions {
     max-height: 9em;
     overflow-y: auto;
     margin-bottom: 0.5em;
+}
+
+/* Drag-to-change number inputs (src/worldgen/scrub.ts). Spinners are hidden:
+   dragging replaces them, and a click focuses the field for typing. */
+.duckmage-scrub:not(:focus) {
+    cursor: ns-resize;
+}
+
+.duckmage-scrub::-webkit-inner-spin-button,
+.duckmage-scrub::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.duckmage-scrub.is-scrubbing {
+    cursor: ns-resize;
+    border-color: var(--interactive-accent);
+}
+
+.duckmage-wfc-lock.is-active {
+    color: var(--interactive-accent);
 }

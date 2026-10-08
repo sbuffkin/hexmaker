@@ -31,7 +31,28 @@ import {
 import { mulberry32 } from "./rng";
 import { placeFeatures, placeEdgeBorder } from "./features";
 import { routePaths, type PathOutput } from "./paths";
-import { smooth, connectLand, countPatches, countsPenalty, topUpCounts, type GridInfo } from "./post";
+import {
+  smoothEdges,
+  removeSpecks,
+  untouchableTerrains,
+  connectLand,
+  countPatches,
+  countsPenalty,
+  topUpCounts,
+  type GridInfo,
+} from "./post";
+
+/**
+ * Edge smoothing and speck size to apply. A generator saved before these were
+ * split only has the legacy `smoothing` knob: any value removed lone specks,
+ * and 0.5 or more also tidied edges.
+ */
+export function cleanupStrengths(s: Required<GeneratorSettings>): { edges: number; speckSize: number } {
+  if (s.edgeSmoothing > 0 || s.speckSize > 0 || !(s.smoothing > 0)) {
+    return { edges: s.edgeSmoothing, speckSize: Math.floor(s.speckSize) };
+  }
+  return { edges: s.smoothing >= 0.5 ? s.smoothing : 0, speckSize: 1 };
+}
 
 export interface SolveOptions extends GeneratorSettings {
   cols: number;
@@ -190,7 +211,10 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
 
     const protect = new Set<string>([...toCellMap(opts.fixed ?? {}).keys(), ...featureCells]);
     const cells = core.cells;
-    total.postChanges += smooth(cells, model, grid, s.smoothing, protect, rng);
+    const keep = untouchableTerrains(model, s.keepRare);
+    const { edges, speckSize } = cleanupStrengths(s);
+    total.postChanges += smoothEdges(cells, model, grid, edges, protect, keep, rng);
+    total.postChanges += removeSpecks(cells, model, grid, speckSize, protect, keep);
     let penalty = 0;
     if (s.connected && impassable.size) {
       const { changed, stranded } = connectLand(cells, model, grid, impassable, protect);

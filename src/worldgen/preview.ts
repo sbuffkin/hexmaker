@@ -25,6 +25,8 @@ export function drawPreview(
   paths: { type: string; hexes: string[] }[] = [],
   pathColors: Map<string, string> = new Map(),
   maxWidth = 420,
+  /** Largest hex size in canvas pixels (keeps tiny maps from ballooning). */
+  maxScale = 14,
 ): void {
   const { cols, rows, offset, stagger } = grid;
   // Hex centres in unit space (neighbours √3 apart, circumradius 1).
@@ -39,7 +41,7 @@ export function drawPreview(
       minY = Math.min(minY, py); maxY = Math.max(maxY, py);
     }
   const spanX = maxX - minX + 2, spanY = maxY - minY + 2;
-  const scale = Math.max(1, Math.min(maxWidth / spanX, 14));
+  const scale = Math.max(1, Math.min(maxWidth / spanX, maxScale));
   canvas.width = Math.ceil(spanX * scale);
   canvas.height = Math.ceil(spanY * scale);
   const ctx = canvas.getContext("2d");
