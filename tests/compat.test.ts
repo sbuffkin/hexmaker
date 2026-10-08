@@ -17,9 +17,7 @@ import { exampleFiles } from "./compat/examples";
 const root = process.cwd();
 const compatDir = path.join(root, "tests", "fixtures", "compat");
 // Checkouts on Windows may turn the examples CRLF; the files were written LF.
-const read = (...p: string[]) => readFileSync(path.join(...p), "utf8").replace(/
-/g, "
-");
+const read = (...p: string[]) => readFileSync(path.join(...p), "utf8").replace(/\r\n/g, "\n");
 const versions = existsSync(compatDir)
   ? readdirSync(compatDir).filter((d) => /^\d+(\.\d+)*$/.test(d)).sort(compareVersions)
   : [];
