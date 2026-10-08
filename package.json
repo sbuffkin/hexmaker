@@ -11,7 +11,8 @@
     "test:watch": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test --watch tests/frontmatter.test.ts tests/hexEditorModal.test.ts tests/randomTable.test.ts tests/sections.test.ts tests/utils.test.ts tests/workflow.test.ts tests/token.test.ts tests/randomTableExport.test.ts tests/singleNoteExport.test.ts tests/hexGeometry.test.ts tests/mapWithTableExport.test.ts tests/singleHexExport.test.ts tests/workflowExport.test.ts tests/textUtils.test.ts tests/overlayPatterns.test.ts tests/overlayHideRules.test.ts tests/transformVars.test.ts tests/obsidianReview.test.ts",
     "test:integration": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test tests/integration/*.integration.ts",
     "test:e2e": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test tests/integration/e2e-*.integration.ts",
-    "lint": "eslint . --ext .js,.ts"
+    "lint": "eslint . --ext .js,.ts",
+    "obsidian:login": "node dev/obsidian-login.mjs"
   },
   "keywords": [
     "obsidian",

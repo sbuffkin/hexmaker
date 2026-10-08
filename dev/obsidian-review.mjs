@@ -11,8 +11,9 @@
 //
 // Auth: the dashboard has no API tokens, only the browser session, so
 // OBSIDIAN_COMMUNITY_COOKIE must hold the Cookie header of a logged-in
-// session (see .github/OBSIDIAN_REVIEW.md). When it is unset the script warns
-// and exits 0, so forks and fresh clones aren't blocked.
+// session; refresh it with `npm run obsidian:login` (see .github/OBSIDIAN_REVIEW.md).
+// When it is unset the script fails on the home repo (an empty secret must not
+// pass silently) but only warns elsewhere, so forks aren't blocked.
 
 import { appendFileSync } from "node:fs";
 import { errorsOf, isDone, parseScans, warningsOf } from "./obsidian-review-parse.mjs";
@@ -25,6 +26,8 @@ const POLL_MS = Number(process.env.OBSIDIAN_REVIEW_POLL_MS ?? 60_000);
 const TIMEOUT_MS = Number(process.env.OBSIDIAN_REVIEW_TIMEOUT_MIN ?? 90) * 60_000;
 const DASHBOARD = `${BASE}/account/plugins/${SLUG}`;
 const inActions = !!process.env.GITHUB_ACTIONS;
+const HOME_REPO = process.env.OBSIDIAN_REVIEW_REPO ?? "sbuffkin/hexmaker";
+const REFRESH = "Run `npm run obsidian:login` to refresh the OBSIDIAN_COMMUNITY_COOKIE secret (see .github/OBSIDIAN_REVIEW.md).";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -53,8 +56,7 @@ async function assertSession() {
   const body = await res.json().catch(() => ({}));
   if (!body.authenticated) {
     throw new Error(
-      "The Obsidian community session has expired. Log in at https://community.obsidian.md, " +
-        "then update the OBSIDIAN_COMMUNITY_COOKIE secret (see .github/OBSIDIAN_REVIEW.md).",
+      `The Obsidian community session has expired or the cookie is wrong. ${REFRESH}`,
     );
   }
   log(`signed in as ${body.user?.handle ?? body.user?.github_username ?? "?"}`);
@@ -153,7 +155,10 @@ async function release(version) {
 const [cmd, arg] = process.argv.slice(2);
 // exitCode rather than process.exit(): exiting with fetch sockets still open
 // trips a libuv assertion on Windows.
-if (!COOKIE) {
+if (!COOKIE && process.env.GITHUB_REPOSITORY === HOME_REPO) {
+  annotate("error", `OBSIDIAN_COMMUNITY_COOKIE is empty. ${REFRESH}`);
+  process.exitCode = 1;
+} else if (!COOKIE) {
   annotate("warning", "OBSIDIAN_COMMUNITY_COOKIE is not set; skipping the Obsidian review check.");
 } else {
   try {

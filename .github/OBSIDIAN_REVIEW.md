@@ -21,19 +21,23 @@ The logic is in `dev/obsidian-review.mjs`. The HTML parser is in
 
 ## The session secret
 
-The dashboard has no API tokens, so CI uses a logged-in browser session.
-Store its Cookie header as the repo secret `OBSIDIAN_COMMUNITY_COOKIE`:
+The dashboard has no API tokens, so CI uses a logged-in browser session,
+stored as the repo secret `OBSIDIAN_COMMUNITY_COOKIE`. To set or refresh it:
 
-1. Log in at https://community.obsidian.md in a normal browser.
-2. Open DevTools → Network, reload the page, click the first
-   `community.obsidian.md` request, and copy the whole **Cookie** request
-   header value.
-3. Run `gh secret set OBSIDIAN_COMMUNITY_COOKIE --repo sbuffkin/hexmaker` and
-   paste the value when prompted. The value stays out of shell history.
+```bash
+npm run obsidian:login
+```
 
-When the session expires, the review steps fail with "The Obsidian community
-session has expired". Repeat the steps above to fix it. If the secret is
-missing, the steps only warn and pass, so forks aren't blocked.
+This opens community.obsidian.md in Chrome (or Edge) with its own saved
+profile. Log in if asked; after the first time you usually already are. It
+reads the session cookies over the DevTools protocol (they are httpOnly, so
+page scripts can't see them) and pipes them to `gh secret set` as the repo
+owner. The value never goes through the clipboard or the command line.
+`npm run obsidian:login -- --print` prints the Cookie header instead.
+
+When the session expires or the secret is empty, the review steps fail with
+a message that says to run `npm run obsidian:login`. On forks, where the
+secret doesn't exist, they only warn.
 
 ## Running it locally
 
