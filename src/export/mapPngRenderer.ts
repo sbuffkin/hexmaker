@@ -51,6 +51,14 @@ export interface MapPngRenderOptions {
   coordColor?: string;
   /** Draw coordinate labels in each hex. Default true. */
   showCoords?: boolean;
+  /**
+   * Label text per hex instead of "x,y" (the hexcrawl manual prints XXYY hex
+   * numbers). When set, the label sits near the top edge, the usual place
+   * for hex numbers on printed maps.
+   */
+  coordLabel?: (x: number, y: number) => string;
+  /** Outline drawn behind labels so they read on any terrain colour. */
+  coordHalo?: string;
   /** Draw terrain icons. Default true. */
   showIcons?: boolean;
   /** Include road/river/path chains. Default true. */
@@ -344,11 +352,20 @@ export async function renderMapToPngBlob(
     }
     if (showCoords) {
       const [hxStr, hyStr] = hex.key.split("_");
-      ctx.fillStyle = coordColor;
-      ctx.font = `${Math.round(R * 0.22)}px sans-serif`;
+      const custom = opts.coordLabel;
+      const text = custom ? custom(Number(hxStr), Number(hyStr)) : `${hxStr},${hyStr}`;
+      const y = custom ? hex.cy - R * 0.52 : hex.cy + R * 0.75;
+      ctx.font = `${custom ? "600 " : ""}${Math.round(R * (custom ? 0.24 : 0.22))}px sans-serif`;
       ctx.textAlign = "center";
-      ctx.textBaseline = "alphabetic";
-      ctx.fillText(`${hxStr},${hyStr}`, hex.cx, hex.cy + R * 0.75);
+      ctx.textBaseline = custom ? "middle" : "alphabetic";
+      if (opts.coordHalo) {
+        ctx.lineJoin = "round";
+        ctx.lineWidth = Math.max(2, R * 0.08);
+        ctx.strokeStyle = opts.coordHalo;
+        ctx.strokeText(text, hex.cx, y);
+      }
+      ctx.fillStyle = coordColor;
+      ctx.fillText(text, hex.cx, y);
     }
   }
 
