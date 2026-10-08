@@ -355,7 +355,8 @@ export interface ParseResult {
 }
 
 export function isModelMarkdown(text: string): boolean {
-  return new RegExp(`^---\\r?\\n(?:.*\\r?\\n)*?${MARKER}\\s*:`).test(text);
+  // Only the frontmatter counts: stop at its closing "---".
+  return new RegExp(`^---\\r?\\n(?:(?!---).*\\r?\\n)*?${MARKER}\\s*:`).test(text);
 }
 
 type Section = "terrains" | "adjacency" | "features" | "paths" | "layout";

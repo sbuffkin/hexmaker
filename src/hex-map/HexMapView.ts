@@ -6,6 +6,7 @@ import {
   getIconOverrideFromFile,
   getFrontMatter,
   terrainFromFm,
+  pendingTerrainOf,
   iconOverrideFromFm,
   gmIconsFromFm,
   setGmIconsInFile,
@@ -3217,9 +3218,11 @@ export class HexMapView extends ItemView {
       // getFileCache three times per hex (~11.5k redundant lookups on a
       // 3843-hex map).
       const fm = getFrontMatter(this.app, path);
+      // A note this plugin just wrote may not be indexed yet (new maps write
+      // thousands at once); its terrain is held in memory until it is.
       const terrainKey = terrainOverrides?.has(path)
         ? terrainOverrides.get(path)!
-        : terrainFromFm(fm);
+        : fm ? terrainFromFm(fm) : pendingTerrainOf(path);
       const terrainEntry = terrainKey != null ? paletteByName.get(terrainKey) : undefined;
 
       const hexEl = parent.createDiv({

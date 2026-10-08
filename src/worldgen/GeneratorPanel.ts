@@ -24,6 +24,9 @@ import {
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable } from "./scrub";
+import { listSaves, writeSave, readSave, applySave } from "./saves";
+import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
+import { compareVersions, pluginVersion } from "../compat";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
   cleanupStrengths,
@@ -56,6 +59,12 @@ export class GeneratorPanel {
   static mapName = "";
   static paletteName = "";
   static seedLocked = false;
+  /**
+   * The save last loaded. While the page still shows its generator, seed and
+   * size (and no setting has changed), the preview and Create map use the
+   * saved map, even if this version would generate a different one.
+   */
+  static loadedSave: GeneratorSave | null = null;
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -77,6 +86,12 @@ export class GeneratorPanel {
     if (map && map.gridSize.cols * map.gridSize.rows <= PREVIEW_AUTO_LIMIT) {
       this.previewCols = map.gridSize.cols;
       this.previewRows = map.gridSize.rows;
+    }
+    const loaded = GeneratorPanel.loadedSave;
+    if (loaded) {
+      this.seed = loaded.seed;
+      this.previewCols = loaded.cols;
+      this.previewRows = loaded.rows;
     }
   }
 
@@ -252,7 +267,11 @@ export class GeneratorPanel {
 
     // Current settings, kept in sync with the file.
     const s = () => generatorSettings(model);
+    // A just-loaded save's settings win over a possibly stale read of the file.
+    const isThisGenerator = (sv: GeneratorSave) => sv.generatorPath === g.file.path || sv.generatorName === model.name;
+    if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
     const save = (patch: Partial<Record<keyof GeneratorSettings, unknown>>) => {
+      GeneratorPanel.loadedSave = null;
       const next: Record<string, unknown> = { ...(model.settings ?? {}) };
       for (const [k, v] of Object.entries(patch)) {
         if (v === undefined) delete next[k];
@@ -297,6 +316,28 @@ export class GeneratorPanel {
     const createRow = previewBox.createDiv({ cls: "duckmage-region-row" });
     const newNameInput = createRow.createEl("input", { type: "text", attr: { placeholder: "Name for the new map" } });
     const createBtn = createRow.createEl("button", { text: "Create map", cls: "mod-cta" });
+
+    // Saves: keep a generated map and its settings without creating a map.
+    const savesBox = previewBox.createDiv({ cls: "duckmage-wfc-saves" });
+    savesBox.createEl("h5", { text: "Saves", cls: "duckmage-wfc-heading" });
+    const saveRow = savesBox.createDiv({ cls: "duckmage-region-row" });
+    const saveNameInput = saveRow.createEl("input", { type: "text", attr: { placeholder: "Save name (optional)" } });
+    const saveBtn = saveRow.createEl("button", { text: "Save", attr: { title: "Save these settings, seed and size with the generated map" } });
+    const loadRow = savesBox.createDiv({ cls: "duckmage-region-row" });
+    const loadSelect = loadRow.createEl("select", { cls: "duckmage-wfc-save-select" });
+    const loadBtn = loadRow.createEl("button", { text: "Load" });
+    const fillSaves = () => {
+      const current = pluginVersion(this.plugin);
+      const saves = listSaves(this.plugin);
+      loadSelect.empty();
+      if (!saves.length) loadSelect.createEl("option", { value: "", text: "No saves yet" });
+      for (const sv of saves) {
+        const other = compareVersions(sv.version, current) !== 0 ? ` · v${sv.version}` : "";
+        loadSelect.createEl("option", { value: sv.file.path, text: `${sv.name} · ${sv.generator} · seed ${sv.seed} · ${sv.size}${other}` });
+      }
+      loadBtn.disabled = !saves.length;
+    };
+    fillSaves();
 
     const previewGrid = () => {
       const map = this.plugin.getMap(this.mapName);
@@ -357,6 +398,15 @@ export class GeneratorPanel {
         row.placed.toggleClass("is-short", st.placed < st.wanted);
       }
     };
+    /** The loaded save, while the page shows exactly its generator, seed and size. */
+    const showingSave = (): GeneratorSave | null => {
+      const sv = GeneratorPanel.loadedSave;
+      if (!sv || !isThisGenerator(sv)) return null;
+      if (sv.seed !== Number(seedInput.value) >>> 0 || sv.cols !== Number(colsInput.value) || sv.rows !== Number(rowsInput.value)) return null;
+      return sv;
+    };
+    /** What the preview shows now, for Save. */
+    let shown: { cells: Map<string, string>; paths: { type: string; route?: string; hexes: string[] }[] } | null = null;
     const runPreview = () => {
       const grid = previewGrid();
       this.previewCols = grid.cols;
@@ -368,19 +418,33 @@ export class GeneratorPanel {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
+      // A loaded save shows its own map if this version generates a different one.
+      let cells = r.cells;
+      let rawPaths: { type: string; route?: string; hexes: string[] }[] = r.paths;
+      let saveNote = "";
+      const sv = showingSave();
+      if (sv) {
+        if (sameCells(sv.cells, r.cells)) saveNote = ` · save "${sv.name}"`;
+        else {
+          cells = sv.cells;
+          rawPaths = sv.paths;
+          saveNote = ` · saved map "${sv.name}" (from v${sv.version}; this version generates it differently)`;
+        }
+      } else GeneratorPanel.loadedSave = null;
+      shown = { cells, paths: rawPaths };
       // Paths are coloured as the map path type they'll become.
-      const paths = r.paths.map((p) => ({ ...p, type: drawnPathType(model, p) }));
+      const paths = rawPaths.map((p) => ({ ...p, type: drawnPathType(model, p) }));
       lastDraw = (highlight?: string) => {
         // Draw at the side column's device-pixel width so it stays sharp when stretched.
         const dpr = activeWindow.devicePixelRatio || 1;
-        drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
+        drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
           Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight);
       };
       lastDraw(hoveredRoute);
-      updateShares(r.cells, grid, palette);
+      updateShares(cells, grid, palette);
       updatePathRows(r.pathRoutes);
       // Short: size and time, plus a hoverable count if anything didn't fit.
-      status.setText(`${grid.cols}×${grid.rows} · ${r.stats.ms} ms${r.warnings.length ? ` · ⚠ ${r.warnings.length}` : ""}`);
+      status.setText(`${grid.cols}×${grid.rows} · ${r.stats.ms} ms${r.warnings.length ? ` · ⚠ ${r.warnings.length}` : ""}${saveNote}`);
       status.setAttr("title", r.warnings.join("\n"));
     };
     const schedulePreview = () => {
@@ -396,6 +460,78 @@ export class GeneratorPanel {
         runPreview();
       }, 200);
     };
+    saveBtn.addEventListener("click", () => {
+      if (!shown) {
+        new Notice("Generate a preview first (re-roll or regenerate).");
+        return;
+      }
+      const grid = previewGrid();
+      const snapshot = shown;
+      saveBtn.disabled = true;
+      void (async () => {
+        try {
+          const saved: GeneratorSave = {
+            name: saveNameInput.value.trim() || `${model.name}-${this.seed}`,
+            version: pluginVersion(this.plugin),
+            format: SAVE_FORMAT,
+            created: new Date().toISOString().slice(0, 10),
+            generatorName: model.name,
+            generatorPath: g.file.path,
+            palette: GeneratorPanel.paletteName,
+            seed: this.seed,
+            cols: grid.cols,
+            rows: grid.rows,
+            stagger: grid.stagger,
+            orientation: this.plugin.settings.hexOrientation,
+            settings: { ...(model.settings ?? {}) },
+            cells: snapshot.cells,
+            paths: snapshot.paths,
+            generatorMarkdown: await this.app.vault.read(g.file),
+          };
+          const file = await writeSave(this.plugin, saved);
+          GeneratorPanel.loadedSave = { ...saved, name: file.basename };
+          saveNameInput.value = "";
+          new Notice(`Saved "${file.basename}".`);
+          // The new file may not be in the metadata cache yet.
+          window.setTimeout(fillSaves, 300);
+        } catch (e) {
+          new Notice(`Couldn't save: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+          saveBtn.disabled = false;
+        }
+      })();
+    });
+    loadBtn.addEventListener("click", () => {
+      const file = this.app.vault.getFileByPath(loadSelect.value);
+      if (!file) return;
+      loadBtn.disabled = true;
+      void (async () => {
+        const read = await readSave(this.plugin, file);
+        if ("error" in read) {
+          new Notice(`Couldn't load "${file.basename}": ${read.error}`);
+          loadBtn.disabled = false;
+          return;
+        }
+        const { save: sv, warnings } = read;
+        const applied = await applySave(this.plugin, sv);
+        if ("error" in applied) {
+          new Notice(applied.error);
+          loadBtn.disabled = false;
+          return;
+        }
+        GeneratorPanel.loadedSave = { ...sv, generatorPath: applied.file.path };
+        GeneratorPanel.selectedPath = applied.file.path;
+        if (this.plugin.settings.terrainPalettes.some((p) => p.name === sv.palette)) GeneratorPanel.paletteName = sv.palette;
+        GeneratorPanel.seedLocked = true;
+        const notes = [
+          applied.recreated ? `recreated generator "${applied.file.basename}" from the save` : "",
+          compareVersions(sv.version, pluginVersion(this.plugin)) !== 0 ? `saved with v${sv.version}` : "",
+          ...warnings,
+        ].filter(Boolean);
+        new Notice(`Loaded "${sv.name}"${notes.length ? ` (${notes.join("; ")})` : ""}.`);
+        this.host.rerender();
+      })();
+    });
     rerollBtn.addEventListener("click", () => {
       if (!GeneratorPanel.seedLocked) seedInput.value = String(randomSeed());
       runPreview();
@@ -406,11 +542,14 @@ export class GeneratorPanel {
       const grid = previewGrid();
       const seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const r = generateTerrain(this.plugin, model, palette, grid, seed);
-      if (!r.ok) {
-        new Notice(`Couldn't generate: ${r.message}`);
+      const generated = generateTerrain(this.plugin, model, palette, grid, seed);
+      if (!generated.ok) {
+        new Notice(`Couldn't generate: ${generated.message}`);
         return;
       }
+      // While a loaded save is shown, create exactly the saved map.
+      const sv = showingSave();
+      const r = sv ? { ...generated, cells: sv.cells, paths: sv.paths } : generated;
       createBtn.disabled = true;
       void this.plugin
         .createNewMap(
@@ -789,4 +928,11 @@ export class GeneratorPanel {
     });
     render();
   }
+}
+
+/** Same terrain on every hex. */
+function sameCells(a: Map<string, string>, b: Map<string, string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const [k, t] of a) if (b.get(k) !== t) return false;
+  return true;
 }

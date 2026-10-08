@@ -100,8 +100,32 @@ export function gmIconsFromFm(fm: Frontmatter | null | undefined): string[] {
   return typeof legacy === "string" ? [legacy] : [];
 }
 
+/**
+ * Terrain of hex notes this plugin just wrote whose frontmatter Obsidian
+ * hasn't indexed yet. Creating a map writes thousands of notes and opens it
+ * straight away; without this the first render shows most hexes blank and
+ * nothing re-renders when the index catches up. Cleared per note when its
+ * metadata arrives (HexmakerPlugin listens for "changed").
+ */
+const pendingTerrain = new Map<string, string>();
+
+export function notePendingTerrain(path: string, terrain: string): void {
+  pendingTerrain.set(path, terrain);
+}
+
+export function clearPendingTerrain(path?: string): void {
+  if (path === undefined) pendingTerrain.clear();
+  else pendingTerrain.delete(path);
+}
+
+/** Terrain of a just-written note that isn't indexed yet, if any. */
+export function pendingTerrainOf(path: string): string | null {
+  return pendingTerrain.get(path) ?? null;
+}
+
 export function getTerrainFromFile(app: App, path: string): string | null {
-  return terrainFromFm(getFrontMatter(app, path));
+  const fm = getFrontMatter(app, path);
+  return fm ? terrainFromFm(fm) : pendingTerrainOf(path);
 }
 
 export async function setTerrainInFile(

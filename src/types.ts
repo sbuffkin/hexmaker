@@ -50,6 +50,8 @@ export interface MapBackgroundImage {
 
 export interface MapData {
 	name: string;
+	/** Plugin version that created the map (see src/compat.ts). */
+	createdWith?: string;
 	paletteName: string;
 	terrainType?: string;        // terrain name from the map's palette; used as submap center dot color
 	gridSize: { cols: number; rows: number };
@@ -103,6 +105,8 @@ export interface TerrainColor {
 
 export interface HexmakerPluginSettings {
 	mySetting: string;
+	/** Plugin version that last saved data.json (see src/compat.ts). */
+	savedWith?: string;
 	worldFolder: string;
 	hexFolder: string;
 	townsFolder: string;

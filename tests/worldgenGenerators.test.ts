@@ -194,9 +194,10 @@ describe("worldgen generators", () => {
     const file = Object.create(TFile.prototype) as TFile;
     file.path = "world/generators/g.md";
     await saveGeneratorSettings(plugin, file, { featureSize: 1.5, counts: { Town: { min: 3, max: 3 } }, impassable: ["Water"] });
-    expect(otherFm.get(file.path)).toEqual({ "feature-size": 1.5, counts: "Town 3", impassable: "Water" });
+    // Every write also stamps the plugin version ("unknown" in this stub).
+    expect(otherFm.get(file.path)).toEqual({ "feature-size": 1.5, counts: "Town 3", impassable: "Water", "hexmaker-version": "unknown" });
     await saveGeneratorSettings(plugin, file, { featureSize: undefined });
-    expect(otherFm.get(file.path)).toEqual({ counts: "Town 3", impassable: "Water" });
+    expect(otherFm.get(file.path)).toEqual({ counts: "Town 3", impassable: "Water", "hexmaker-version": "unknown" });
   });
 });
 

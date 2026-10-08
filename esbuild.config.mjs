@@ -4,6 +4,7 @@ import { createRequire } from "module";
 
 const require = createRequire(import.meta.url);
 const pkg = require("./package.json");
+const manifest = require("./manifest.json");
 const fs = require("fs");
 
 const production = process.argv[2] === "production";
@@ -32,6 +33,10 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: `${outDir}/${outFile}`,
 	loader: { ".md": "text", ".png": "dataurl" },
+	// The version stamped on files the plugin writes (src/compat.ts). Taken from
+	// manifest.json at build time: Obsidian keeps the manifest it read at startup,
+	// so plugin.manifest.version can be stale after an update without a restart.
+	define: { __HEXMAKER_VERSION__: JSON.stringify(manifest.version) },
 });
 
 if (prod) {

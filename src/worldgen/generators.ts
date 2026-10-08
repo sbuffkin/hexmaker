@@ -14,6 +14,7 @@ import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getFrontMatter, getTerrainFromFile, setTerrainInFile } from "../frontmatter";
 import { normalizeFolder, slugify } from "../utils";
+import { VERSION_KEY, pluginVersion } from "../compat";
 import {
   learnModel,
   modelToMarkdown,
@@ -45,12 +46,18 @@ export function generatorsFolder(plugin: HexmakerPlugin): string {
   return world ? `${world}/generators` : "generators";
 }
 
+/** Where generator saves (presets with their generated map) are kept. */
+export function savesFolder(plugin: HexmakerPlugin): string {
+  return `${generatorsFolder(plugin)}/saves`;
+}
+
 /** Every generator file in the generators folder (sub-folders included). */
 export async function listGenerators(plugin: HexmakerPlugin): Promise<GeneratorFile[]> {
   const folder = generatorsFolder(plugin);
+  const saves = savesFolder(plugin) + "/";
   const files = plugin.app.vault
     .getMarkdownFiles()
-    .filter((f) => f.path.startsWith(folder + "/") && !f.basename.startsWith("_"));
+    .filter((f) => f.path.startsWith(folder + "/") && !f.path.startsWith(saves) && !f.basename.startsWith("_"));
   const out: GeneratorFile[] = [];
   for (const file of files) {
     const text = await plugin.app.vault.cachedRead(file);
@@ -166,6 +173,7 @@ export async function saveGeneratorFromMap(
       palette: map.paletteName,
       "source-map": mapName,
       created: new Date().toISOString().slice(0, 10),
+      [VERSION_KEY]: pluginVersion(plugin),
     },
   });
   if (model.adjacency.length === 0)
@@ -204,6 +212,7 @@ export async function saveGeneratorSettings(
       if (value === undefined) delete fm[key];
       else fm[key] = encodeSetting(field, value);
     }
+    fm[VERSION_KEY] = pluginVersion(plugin);
   });
 }
 
@@ -366,7 +375,7 @@ export async function relearnGenerator(
     orientation: plugin.settings.hexOrientation,
     stagger: mapStagger(plugin, mapName),
     paths: (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
-    meta: { ...g.model.meta, palette: map.paletteName, created: new Date().toISOString().slice(0, 10) },
+    meta: { ...g.model.meta, palette: map.paletteName, created: new Date().toISOString().slice(0, 10), [VERSION_KEY]: pluginVersion(plugin) },
   });
   if (g.model.settings) model.settings = { ...g.model.settings };
   await plugin.app.vault.modify(g.file, modelToMarkdown(model));

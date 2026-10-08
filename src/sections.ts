@@ -5,21 +5,27 @@ import { escapeRegex } from "./textUtils";
 export async function addLinkToSection(app: App, filePath: string, section: string, linkText: string): Promise<void> {
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
-	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-		const match = headingRegex.exec(content);
-		if (!match) {
-			return content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`;
-		}
-		const afterHeading = match.index + match[0].length;
-		const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
-		const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
-		const sectionContent = content.slice(afterHeading, sectionEnd);
-		if (sectionContent.includes(linkText)) return content;
-		const trimmedSection = sectionContent.trimEnd();
-		const insertAt = afterHeading + trimmedSection.length;
-		return content.slice(0, insertAt) + "\n\n" + linkText + content.slice(insertAt);
-	});
+	await app.vault.process(file, (content) => insertLinkInSection(content, section, linkText));
+}
+
+/**
+ * Note text with `linkText` added under the "### section" heading (the
+ * heading is appended if missing). Unchanged if the link is already there.
+ */
+export function insertLinkInSection(content: string, section: string, linkText: string): string {
+	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
+	const match = headingRegex.exec(content);
+	if (!match) {
+		return content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`;
+	}
+	const afterHeading = match.index + match[0].length;
+	const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
+	const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
+	const sectionContent = content.slice(afterHeading, sectionEnd);
+	if (sectionContent.includes(linkText)) return content;
+	const trimmedSection = sectionContent.trimEnd();
+	const insertAt = afterHeading + trimmedSection.length;
+	return content.slice(0, insertAt) + "\n\n" + linkText + content.slice(insertAt);
 }
 
 /** Remove a wiki-link from under the named ### section. Removes the whole line containing it. */

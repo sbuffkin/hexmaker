@@ -32,11 +32,13 @@ import type {
   TerrainPalette,
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
-import { getTerrainFromFile, setTerrainInFile, setSubmapInFile, withFrontmatterField } from "./frontmatter";
+import { migrateMapData, pluginVersion } from "./compat";
+import { getTerrainFromFile, setTerrainInFile, setSubmapInFile, withFrontmatterField, notePendingTerrain, clearPendingTerrain } from "./frontmatter";
 import {
   addLinkToSection,
   getLinksInSection,
   removeLinkFromSection,
+  insertLinkInSection,
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
@@ -47,6 +49,8 @@ export default class HexmakerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
+    this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
     // Defer until vault metadata cache is ready; calling before layout-ready
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
@@ -371,7 +375,9 @@ export default class HexmakerPlugin extends Plugin {
     );
   }
 
-  onunload() {}
+  onunload() {
+    clearPendingTerrain();
+  }
 
   private openHexMap(): void {
     void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
@@ -431,11 +437,7 @@ export default class HexmakerPlugin extends Plugin {
       ? this.settings.maps
       : [];
 
-    for (const r of this.settings.maps) {
-      if (!r.paletteName) r.paletteName = DEFAULT_PALETTE_NAME;
-      if (!r.gridOffset) r.gridOffset = { x: 0, y: 0 };
-      if (!Array.isArray(r.pathChains)) r.pathChains = [];
-    }
+    this.settings.maps = this.settings.maps.map((r) => migrateMapData(r, DEFAULT_PALETTE_NAME));
     // Ensure terrainPalettes is valid
     if (
       !Array.isArray(this.settings.terrainPalettes) ||
@@ -474,6 +476,7 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   async saveSettings() {
+    this.settings.savedWith = pluginVersion(this);
     await this.saveData(this.settings);
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
@@ -859,9 +862,15 @@ export default class HexmakerPlugin extends Plugin {
    */
   /** Whether `{tablesFolder}/terrain/encounters/{terrain}.md` exists. */
   hasTerrainEncounterTable(terrain: string): boolean {
+    return this.terrainEncounterTable(terrain) !== null;
+  }
+
+  /** The terrain's encounters table file, if it has one. */
+  terrainEncounterTable(terrain: string): TFile | null {
     const tablesFolder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
-    return this.app.vault.getAbstractFileByPath(`${subfolder}/encounters/${terrain}.md`) instanceof TFile;
+    const file = this.app.vault.getAbstractFileByPath(`${subfolder}/encounters/${terrain}.md`);
+    return file instanceof TFile ? file : null;
   }
 
   async syncHexEncounterTableLink(
@@ -1113,7 +1122,16 @@ export default class HexmakerPlugin extends Plugin {
       .replace(/\{\{x\}\}/g, String(x))
       .replace(/\{\{y\}\}/g, String(y))
       .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`);
-    if (terrain) content = withFrontmatterField(content, "terrain", terrain);
+    if (terrain) {
+      content = withFrontmatterField(content, "terrain", terrain);
+      // Add the terrain's encounter-table link now rather than reading the
+      // note back and rewriting it after it's created.
+      const table = this.terrainEncounterTable(terrain);
+      if (table) {
+        const linkText = `[[${this.app.metadataCache.fileToLinktext(table, path)}]]`;
+        content = insertLinkInSection(content, "Encounters Table", linkText);
+      }
+    }
 
     const hexBase = normalizeFolder(this.settings.hexFolder);
     const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
@@ -1127,7 +1145,9 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     try {
-      return await this.app.vault.create(path, content);
+      const file = await this.app.vault.create(path, content);
+      if (terrain) notePendingTerrain(path, terrain);
+      return file;
     } catch {
       // A concurrent worker may have created this file between our existence check and
       // this create call.  If the file now exists, use it rather than treating it as an error.
@@ -1212,6 +1232,7 @@ export default class HexmakerPlugin extends Plugin {
       gridOffset: { x: initialX, y: initialY },
       pathChains: [],
       staggerOffset,
+      createdWith: pluginVersion(this),
     });
     await this.saveSettings();
 
@@ -1255,12 +1276,8 @@ export default class HexmakerPlugin extends Plugin {
           const path = this.hexPath(x, y, mapName);
           if (!this.app.vault.getAbstractFileByPath(path)) {
             const terrain = terrainAt?.get(`${x}_${y}`);
-            const result = await this.createHexNote(x, y, mapName, template, terrain);
-            if (result) {
-              created++;
-              if (terrain && this.hasTerrainEncounterTable(terrain))
-                await this.syncHexEncounterTableLink(path, terrain);
-            }
+            // createHexNote writes the terrain and its encounter link in one go.
+            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
           }
           done++;
         }),
