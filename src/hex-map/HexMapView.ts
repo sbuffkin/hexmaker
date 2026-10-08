@@ -1341,40 +1341,47 @@ export class HexMapView extends ItemView {
     if (mode === "terrain") {
       onSwitch = () => this.handleTerrainButton();
       switchLabel = "Switch terrain";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
+      extra.push({ label: erasing ? "Paint mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "icon") {
-      onSwitch = () => { this.exitIconMode(); this.handleIconButton(); };
+      onSwitch = () => this.openIconPicker();
       switchLabel = "Switch icon";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
+      extra.push({ label: erasing ? "Paint mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "tableLink") {
-      onSwitch = () => { this.exitTableLinkMode(); this.handleTableLinkButton(); };
+      onSwitch = () => this.handleTableLinkButton(true);
       switchLabel = "Switch table";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "submapLink") {
-      onSwitch = () => { this.exitSubmapLinkMode(); this.handleSubmapLinkButton(); };
+      onSwitch = () => this.handleSubmapLinkButton(true);
       switchLabel = "Switch submap";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "factionLink") {
+      onSwitch = () => this.handleFactionLinkButton();
+      switchLabel = "Switch faction";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "regionLink") {
+      onSwitch = () => this.handleRegionLinkButton();
+      switchLabel = "Switch region";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "path") {
-      onSwitch = () => {
-        this.exitPathMode();
-        this.drawingMode = null;
-        this.updateToolbarButtonStates();
-        this.updatePathOverlay();
-        this.handlePathButton();
-      };
+      onSwitch = () => this.handlePathButton(true);
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "placeToken") {
-      onSwitch = () => { this.exitTokenMode(); this.handleTokenButton(); };
+      onSwitch = () => this.handleTokenButton(true);
       switchLabel = "Switch token";
     }
     // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
 
     new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra).open(clientX, clientY);
+  }
+
+  /**
+   * Called when a picker's choice switches to tool `next`: properly leave a
+   * different active tool first (commits its pending stroke). Staying in the
+   * same tool keeps its state.
+   */
+  private leaveOtherToolFor(next: NonNullable<typeof this.drawingMode>): void {
+    if (this.drawingMode !== null && this.drawingMode !== next) this.exitCurrentMode();
   }
 
   private exitCurrentMode(): void {
@@ -1406,7 +1413,11 @@ export class HexMapView extends ItemView {
   }
 
   private handleTerrainButton(): void {
-    if (this.drawingMode === "terrain") this.exitTerrainMode();
+    // Keep the current tool while the picker is open: closing it without a
+    // pick (Escape, clicking away, or after only changing the brush size)
+    // must leave painting exactly as it was. It used to exit terrain mode
+    // here first, so any of those turned the tool off.
+    if (this.drawingMode === "terrain") this.commitTerrainStroke();
 
     // Show crosshair on the viewport while the picker is open
     this.viewportEl?.addClass("duckmage-terrain-picking");
@@ -1418,6 +1429,7 @@ export class HexMapView extends ItemView {
       this.plugin.getMapPalette(this.activeMapName),
       (terrainName: string | null) => {
         this.viewportEl?.removeClass("duckmage-terrain-picking");
+        this.leaveOtherToolFor("terrain");
         this.drawingMode = "terrain";
         this.isErasingMode = false;
         this.terrainPickMode = false;
@@ -1428,6 +1440,7 @@ export class HexMapView extends ItemView {
       () => {
         // Eyedropper: enter terrain mode in pick-from-map state
         this.viewportEl?.removeClass("duckmage-terrain-picking");
+        this.leaveOtherToolFor("terrain");
         this.drawingMode = "terrain";
         this.isErasingMode = false;
         this.terrainPickMode = true;
@@ -1458,16 +1471,26 @@ export class HexMapView extends ItemView {
 
   private handleIconButton(): void {
     if (this.drawingMode === "icon") { this.exitIconMode(); return; }
+    this.openIconPicker();
+  }
+
+  /**
+   * Pick an icon to paint. Like the terrain picker, the current tool stays
+   * active until an icon is actually picked, so dismissing it changes nothing.
+   */
+  private openIconPicker(): void {
     new IconPickerModal(
       this.app,
       this.plugin,
       (iconName: string | null, gmOnly: boolean) => {
+        this.leaveOtherToolFor("icon");
         this.drawingMode = "icon";
         this.isErasingMode = false;
         this.paintIconName = iconName;
         this.paintIconGmOnly = gmOnly;
         this.paintTerrainName = null;
-        this.paintBrushSize = 1;
+        // The terrain brush size is kept: icons always paint one hex
+        // (getBrushHexes), so switching to icons and back doesn't reset it.
         // Auto-enable the GM layer when the user picks a GM-only paint —
         // otherwise their painted icons are silently invisible because the
         // layer is hidden. Mirrors the showFactionOverlay-on-paint
@@ -1501,8 +1524,9 @@ export class HexMapView extends ItemView {
     this.updateToolbarButtonStates();
   }
 
-  private handleTableLinkButton(): void {
-    if (this.drawingMode === "tableLink") { this.exitTableLinkMode(); return; }
+  /** `keep`: opened from the tool's own right-click menu; stay in the tool unless something is picked. */
+  private handleTableLinkButton(keep = false): void {
+    if (!keep && this.drawingMode === "tableLink") { this.exitTableLinkMode(); return; }
     new FolderTreePickerModal(
       this.app,
       this.plugin,
@@ -1511,6 +1535,7 @@ export class HexMapView extends ItemView {
       "Filter tables…",
       "No tables found.",
       (file) => {
+        this.leaveOtherToolFor("tableLink");
         this.drawingMode = "tableLink";
         this.isErasingMode = false;
         this.paintTablePath = file.path;
@@ -1532,13 +1557,14 @@ export class HexMapView extends ItemView {
     this.updateToolbarButtonStates();
   }
 
-  private handleSubmapLinkButton(): void {
-    if (this.drawingMode === "submapLink") { this.exitSubmapLinkMode(); return; }
+  private handleSubmapLinkButton(keep = false): void {
+    if (!keep && this.drawingMode === "submapLink") { this.exitSubmapLinkMode(); return; }
     new SubmapPickerModal(
       this.app,
       this.plugin,
       undefined,
       (mapName) => {
+        this.leaveOtherToolFor("submapLink");
         this.drawingMode = "submapLink";
         this.isErasingMode = false;
         this.paintSubmapName = mapName;
@@ -1558,6 +1584,7 @@ export class HexMapView extends ItemView {
 
   private handleFactionLinkButton(): void {
     new FactionPickerModal(this.app, this.plugin, (filePath) => {
+      this.leaveOtherToolFor("factionLink");
       this.drawingMode = "factionLink";
       this.isErasingMode = false;
       this.paintFactionPath = filePath;
@@ -1579,6 +1606,7 @@ export class HexMapView extends ItemView {
 
   private handleRegionLinkButton(): void {
     new GeoRegionPickerModal(this.app, this.plugin, (filePath) => {
+      this.leaveOtherToolFor("regionLink");
       this.drawingMode = "regionLink";
       this.isErasingMode = false;
       this.paintRegionPath = filePath;
@@ -1604,8 +1632,8 @@ export class HexMapView extends ItemView {
     this.updateToolbarButtonStates();
   }
 
-  private handleTokenButton(): void {
-    if (this.drawingMode === "placeToken") {
+  private handleTokenButton(keep = false): void {
+    if (!keep && this.drawingMode === "placeToken") {
       this.exitTokenMode();
       return;
     }
@@ -1616,6 +1644,7 @@ export class HexMapView extends ItemView {
       "",
       {},
       (notePath, data) => {
+        this.leaveOtherToolFor("placeToken");
         this.pendingTokenNotePath  = notePath;
         this.pendingTokenPlaceData = { icon: data.icon, shape: data.shape, size: data.size, color: data.color, border: data.border, description: data.description };
         this.drawingMode = "placeToken";
@@ -3590,7 +3619,8 @@ export class HexMapView extends ItemView {
 
   private getBrushHexes(x: number, y: number): [number, number][] {
     const center: [number, number] = [x, y];
-    if (this.paintBrushSize === 1) return [center];
+    // Only terrain paints with a brush; every other tool works on one hex.
+    if (this.paintBrushSize === 1 || this.drawingMode !== "terrain") return [center];
     const nb = hexNeighbors(x, y, this.plugin.settings.hexOrientation, this.getActiveStagger());
     // nb[2] and nb[3] are always adjacent to each other AND to center in both
     // orientations (verified from offset tables), forming a compact triangle.
@@ -4455,8 +4485,8 @@ export class HexMapView extends ItemView {
     }
   }
 
-  private handlePathButton(): void {
-    if (this.drawingMode === "path") {
+  private handlePathButton(keep = false): void {
+    if (!keep && this.drawingMode === "path") {
       this.exitPathMode();
       this.drawingMode = null;
       this.updateToolbarButtonStates();
@@ -4468,6 +4498,9 @@ export class HexMapView extends ItemView {
       this.plugin,
       this.activePathTypeName,
       (typeName) => {
+        this.leaveOtherToolFor("path");
+        // A new type starts a new chain rather than continuing the old one.
+        this.exitPathMode();
         this.activePathTypeName = typeName;
         this.drawingMode = "path";
         this.isErasingMode = false;
