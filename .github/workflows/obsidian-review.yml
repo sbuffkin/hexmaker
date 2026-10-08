@@ -1,0 +1,31 @@
+name: Obsidian review (preview)
+
+# Runs the community directory's automated review against every pushed branch
+# commit, so findings show up before anything is released. master is covered
+# by release.yml, which gates the release on the same scan.
+
+on:
+  push:
+    branches-ignore:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: obsidian-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+
+      - name: Preview scan
+        env:
+          OBSIDIAN_COMMUNITY_COOKIE: ${{ secrets.OBSIDIAN_COMMUNITY_COOKIE }}
+        run: node dev/obsidian-review.mjs preview "$GITHUB_SHA"

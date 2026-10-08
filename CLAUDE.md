@@ -188,6 +188,18 @@ Renders an interactive hex-grid map for tabletop RPG world-building inside Obsid
 - All modals call `this.makeDraggable()` in `onOpen` (inherited from `DuckmageModal`), which adds the `duckmage-editor-modal-drag` class and locks dragging to the title-bar area. (`FileLinkSuggestModal` is the sole exception — it extends `SuggestModal` and cannot inherit from `DuckmageModal`.)
 - **NEVER interleave layout reads (`offsetWidth/Height/Left/Top`, `getBoundingClientRect`, `getComputedStyle`) with DOM writes (`createDiv`/`createEl`/`appendChild`/`setCssProps`/style changes) inside a per-hex loop.** Each read after a write forces a full synchronous layout flush → O(n²) thrash. On large maps (chult = 3843 hexes) this stalled the main thread for ~20s on open (regression in `renderCoordLabelsLayer`, commit 10475fd; fixed by batching). **Pattern:** read ALL geometry into a plain array first, THEN do all DOM writes. This is the established pattern in `renderPathOverlay`/`renderFactionOverlay` (build `centerMap` read-only, then build the SVG). The overlay/label builders in `HexMapView` are the hot path — any new one MUST follow read-then-write. Reproduce/validate with `dev/coord-label-thrash-bench.{html,mjs}` (~198× speedup batched vs interleaved).
 
+### Obsidian directory review in CI (never via the dashboard by hand)
+
+Every branch push runs Obsidian's automated review (preview scan) in CI, and
+master releases are gated on it, then the published release scan is watched
+(`.github/workflows/obsidian-review.yml`, `release.yml`, `dev/obsidian-review.mjs`).
+**When an "Obsidian review" job fails, follow the Runbook in
+`.github/OBSIDIAN_REVIEW.md`**: the failure message names the entry. The
+common one is an expired session: the fix is `npm run obsidian:login`
+(opens a browser, user logs in if asked, it sets the
+`OBSIDIAN_COMMUNITY_COOKIE` secret), then re-run the job. Use
+`gh` as `sbuffkin` (`GH_TOKEN=$(gh auth token --user sbuffkin)`) for this repo.
+
 ### Obsidian reviewer-bot conventions (enforced beyond what eslint catches)
 
 The obsidianmd reviewer flags patterns the locally-installed
