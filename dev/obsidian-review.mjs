@@ -27,7 +27,17 @@ const TIMEOUT_MS = Number(process.env.OBSIDIAN_REVIEW_TIMEOUT_MIN ?? 90) * 60_00
 const DASHBOARD = `${BASE}/account/plugins/${SLUG}`;
 const inActions = !!process.env.GITHUB_ACTIONS;
 const HOME_REPO = process.env.OBSIDIAN_REVIEW_REPO ?? "sbuffkin/hexmaker";
-const REFRESH = "Run `npm run obsidian:login` to refresh the OBSIDIAN_COMMUNITY_COOKIE secret (see .github/OBSIDIAN_REVIEW.md).";
+const RUNBOOK = `https://github.com/${HOME_REPO}/blob/master/.github/OBSIDIAN_REVIEW.md`;
+
+/** A failure with the runbook entry that says what to do about it. */
+class ReviewFailure extends Error {
+  constructor(message, anchor, fix) {
+    super(message);
+    this.anchor = anchor;
+    this.fix = fix;
+  }
+}
+const SESSION_FIX = "Run `npm run obsidian:login` (log in if asked), then re-run this job.";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
@@ -55,18 +65,22 @@ async function assertSession() {
   const res = await request("/api/auth/session");
   const body = await res.json().catch(() => ({}));
   if (!body.authenticated) {
-    throw new Error(
-      `The Obsidian community session has expired or the cookie is wrong. ${REFRESH}`,
-    );
+    throw new ReviewFailure("The Obsidian community session has expired or the cookie is wrong.", "session-expired-or-secret-empty", SESSION_FIX);
   }
   log(`signed in as ${body.user?.handle ?? body.user?.github_username ?? "?"}`);
 }
 
 async function listScans() {
   const res = await request(`/account/plugins/${SLUG}`);
-  if (res.status !== 200) throw new Error(`dashboard returned HTTP ${res.status}`);
+  if (res.status !== 200) {
+    throw new ReviewFailure(`The dashboard returned HTTP ${res.status}.`, "dashboard-unreachable-or-layout-changed",
+      "Open the dashboard in a browser. If it loads for you, re-run the job; if it redirects to a login, run `npm run obsidian:login`.");
+  }
   const scans = parseScans(await res.text());
-  if (scans.length === 0) throw new Error("no scans found on the dashboard; has its layout changed?");
+  if (scans.length === 0) {
+    throw new ReviewFailure("No scans found on the dashboard; its layout may have changed.", "dashboard-unreachable-or-layout-changed",
+      "Save the dashboard HTML as tests/fixtures/obsidian-dashboard.html and update dev/obsidian-review-parse.mjs until tests/obsidianReview.test.ts passes.");
+  }
   return scans;
 }
 
@@ -81,7 +95,10 @@ async function waitFor(label, find, { onIdle } = {}) {
     last = state;
     if (scan && isDone(scan)) return scan;
     if (!scan && onIdle) await onIdle();
-    if (Date.now() > deadline) throw new Error(`${label} still ${state} after ${TIMEOUT_MS / 60_000} min`);
+    if (Date.now() > deadline) {
+      throw new ReviewFailure(`${label} is still ${state} after ${TIMEOUT_MS / 60_000} min.`, "scan-timed-out-or-stuck",
+        `Check the scan on ${DASHBOARD}. Re-run the job once it finishes (a finished preview of the same commit is reused); if it never finishes, use Get help → "A scan is stuck".`);
+    }
     await sleep(POLL_MS);
   }
 }
@@ -104,8 +121,16 @@ function report(label, scan) {
     annotate(level, `[${f.section}] ${f.message}`, f.locations[0]);
   }
   log(`${label}: ${scan.status}, ${errors.length} error(s), ${warnings.length} warning(s)`);
-  if (scan.status !== "Completed") throw new Error(`${label} ended with status ${scan.status}`);
-  if (errors.length) throw new Error(`${label} has ${errors.length} error finding(s); see ${DASHBOARD}`);
+  if (scan.status !== "Completed") {
+    throw new ReviewFailure(`${label} ended with status ${scan.status}.`, "scan-timed-out-or-stuck", `Check the scan on ${DASHBOARD}, then re-run the job.`);
+  }
+  if (errors.length) {
+    const released = label.startsWith("release");
+    throw new ReviewFailure(`${label} has ${errors.length} error finding(s).`, released ? "release-scan-failed-after-publishing" : "error-findings",
+      released
+        ? "Fix the errors listed above and publish a new patch version; the directory delists a plugin whose latest release fails."
+        : "Fix the errors listed above (each has a file and line) and push; the next push re-scans.");
+  }
 }
 
 async function preview(sha) {
@@ -128,7 +153,10 @@ async function preview(sha) {
       }
       const err = (await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`;
       // Only one scan runs per entry at a time (409); wait for the other one.
-      if (res.status !== 409 || Date.now() > deadline) throw new Error(`could not start ${label}: ${err}`);
+      if (res.status !== 409 || Date.now() > deadline) {
+        throw new ReviewFailure(`Couldn't start ${label}: ${err}`, "couldnt-start-a-scan",
+          res.status === 401 || res.status === 403 ? SESSION_FIX : `Make sure the commit is pushed to GitHub, check ${DASHBOARD} for a stuck scan, then re-run.`);
+      }
       log(`${label}: ${err}; retrying`);
       await sleep(POLL_MS);
     }
@@ -155,9 +183,17 @@ async function release(version) {
 const [cmd, arg] = process.argv.slice(2);
 // exitCode rather than process.exit(): exiting with fetch sockets still open
 // trips a libuv assertion on Windows.
-if (!COOKIE && process.env.GITHUB_REPOSITORY === HOME_REPO) {
-  annotate("error", `OBSIDIAN_COMMUNITY_COOKIE is empty. ${REFRESH}`);
+/** Log a failure with its fix and runbook link, in the log and the job summary. */
+function fail(e) {
+  const link = e.anchor ? `${RUNBOOK}#${e.anchor}` : `${RUNBOOK}#runbook`;
+  const fix = e.fix ? ` Fix: ${e.fix}` : "";
+  annotate("error", `${e.message}${fix} Runbook: ${link}`);
+  summary([`### ❌ Obsidian review failed`, "", e.message, "", e.fix ? `**Fix:** ${e.fix}` : "", "", `Runbook: ${link}`].join("\n"));
   process.exitCode = 1;
+}
+
+if (!COOKIE && process.env.GITHUB_REPOSITORY === HOME_REPO) {
+  fail(new ReviewFailure("OBSIDIAN_COMMUNITY_COOKIE is empty.", "session-expired-or-secret-empty", SESSION_FIX));
 } else if (!COOKIE) {
   annotate("warning", "OBSIDIAN_COMMUNITY_COOKIE is not set; skipping the Obsidian review check.");
 } else {
@@ -167,7 +203,6 @@ if (!COOKIE && process.env.GITHUB_REPOSITORY === HOME_REPO) {
     else if (cmd === "release" && arg) await release(arg);
     else throw new Error("usage: obsidian-review.mjs preview <sha> | release <version>");
   } catch (e) {
-    annotate("error", e.message);
-    process.exitCode = 1;
+    fail(e);
   }
 }

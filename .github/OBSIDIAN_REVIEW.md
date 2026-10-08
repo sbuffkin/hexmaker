@@ -49,3 +49,74 @@ OBSIDIAN_COMMUNITY_COOKIE='…' node dev/obsidian-review.mjs release 1.5.5
 The commit has to be pushed to GitHub first, because the scanner fetches it
 from there. Only one scan runs per entry at a time. The script waits and
 retries while another one is in progress.
+
+## Runbook
+
+Every failure prints a **Fix:** line and a link to its entry below, in the
+job log and in the run's summary page. To re-run after fixing, use
+**Re-run failed jobs** on the run, or push again.
+
+### Session expired or secret empty
+
+*"The Obsidian community session has expired or the cookie is wrong"* or
+*"OBSIDIAN_COMMUNITY_COOKIE is empty"*.
+
+1. Run `npm run obsidian:login`. A browser window opens; log in if asked.
+   The script sets the secret itself and prints `Updated
+   OBSIDIAN_COMMUNITY_COOKIE`.
+2. Re-run the failed job.
+
+If the script can't find a browser, set `CHROME` to a Chrome or Edge
+executable. If `gh` complains, log in to `gh` as the repo owner
+(`gh auth login`) and try again.
+
+### Error findings
+
+*"preview … has N error finding(s)"*. The scan found something the
+directory treats as a failure. The findings are listed as annotations with
+file and line, and as a table in the run summary.
+
+1. Fix each one. Most are eslint-plugin-obsidianmd rules: run `npm run lint`
+   locally, and see the reviewer-bot notes in `CLAUDE.md`.
+2. Push. Every push gets a fresh preview scan.
+
+Warnings and recommendations don't fail the check. If an Error is a false
+positive, use **Get help → A review flagged something incorrectly** on the
+dashboard.
+
+### Release scan failed after publishing
+
+*"release X.Y.Z has N error finding(s)"*. This also opens an issue. The
+release is already public, and a plugin whose **latest** release fails gets
+delisted.
+
+1. Fix the errors (see [Error findings](#error-findings)).
+2. Bump the patch version and push to master. The new release replaces the
+   failing one as "latest".
+
+### Scan timed out or stuck
+
+*"… is still Pending after 90 min"* or *"ended with status …"*.
+
+1. Look at the scan on the [dashboard](https://community.obsidian.md/account/plugins/hexmaker).
+2. If it has finished since, re-run the job. A finished preview of the same
+   commit is reused, not run again.
+3. If it never finishes, use **Get help → A scan is stuck or didn't run**.
+
+### Couldn't start a scan
+
+*"Couldn't start preview …"*. Usually the commit isn't on GitHub yet, or
+another scan stayed "in progress" past the timeout. Check the dashboard,
+then re-run. A 401 or 403 means the session expired: see
+[Session expired or secret empty](#session-expired-or-secret-empty).
+
+### Dashboard unreachable or layout changed
+
+*"The dashboard returned HTTP …"* or *"No scans found on the dashboard"*.
+
+1. Open the dashboard in a browser. If it redirects to a login, see
+   [Session expired or secret empty](#session-expired-or-secret-empty).
+2. If it loads but CI finds no scans, Obsidian changed the page. Save its
+   HTML over `tests/fixtures/obsidian-dashboard.html` (trim it to a few
+   scans) and update `dev/obsidian-review-parse.mjs` until
+   `tests/obsidianReview.test.ts` passes.
