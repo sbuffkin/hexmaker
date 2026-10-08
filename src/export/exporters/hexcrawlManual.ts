@@ -28,6 +28,7 @@ import {
   writeBinaryToVault,
 } from "./mapWithTable";
 import { hexNumbering } from "../manual/hexNumber";
+import { pluginVersion } from "../../compat";
 import { PlaceholderFilter } from "../manual/placeholders";
 import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "../manual/manualHtml";
 import type { ManualData, ManualHex, ManualLinks, ManualSection, ManualTable } from "../manual/manualModel";
@@ -289,7 +290,7 @@ export async function collectManualData(
   const keyedCount = keyedByKey.size;
   return {
     title: mapName,
-    version: plugin.manifest?.version ?? "",
+    version: pluginVersion(plugin),
     date: new Date().toISOString().slice(0, 10),
     hexCount,
     keyedCount,
