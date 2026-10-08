@@ -1,7 +1,12 @@
 # Mobile port: handoff brief
 
-**Branch:** `feat/mobile-scout` (from `origin/feat/wfc-worldgen-research` at `2d3c7ee`). Local
-only, not pushed.
+**Branch:** `feat/mobile-scout` (from `origin/feat/wfc-worldgen-research` at `2d3c7ee`), pushed
+to GitHub. Tracking issue: https://github.com/sbuffkin/hexmaker/issues/20.
+
+**Ground rule:** desktop loses nothing. Every mobile change is additive and gated behind
+`Platform` checks (features, layout via `.is-phone`/`.is-mobile`) or `pointerType === "touch"`
+(input). Desktop mouse/keyboard behaviour, modals, exports and data writes stay exactly as they
+are. See "Ground rule" in FEASIBILITY.md.
 
 **Done so far:** the scout only. `docs/mobile/FEASIBILITY.md` has the verdict, the blocker table
 with file:line references, gesture mapping, phased estimates (24–44 days total, 7–12 for a

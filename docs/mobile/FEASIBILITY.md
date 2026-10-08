@@ -3,6 +3,28 @@
 Scout date: 2026-10-08. Branch `feat/mobile-scout`, cut from `origin/feat/wfc-worldgen-research`
 at `2d3c7ee`. Read-only research; nothing was built or run on a device. Community issue #20.
 
+## Ground rule: desktop loses nothing
+
+Mobile support is **additive and gated**. No desktop feature is removed, hidden or changed to
+make room for mobile. Everything below that says "hide", "drop", "replace" or "desktop-only"
+applies **on mobile only**, behind one of these checks:
+
+- `Platform.isMobile` / `Platform.isPhone` / `Platform.isTablet` / `Platform.isDesktopApp`
+  (Obsidian API) for features and layout, e.g. PDF export stays on desktop and is not offered on
+  mobile.
+- `PointerEvent.pointerType === "touch"` for input, so a touchscreen laptop or a mouse on a
+  tablet keeps the desktop gestures. Mouse, wheel, right-click, middle-click, dblclick, hover
+  and keyboard behaviour on desktop stay exactly as they are.
+- A `.is-phone` / `.is-mobile` class on the view (set from `Platform`) for CSS, so desktop
+  styles are untouched.
+
+Data stays shared: desktop and mobile read and write the same notes and `data.json`. Where a
+value must differ per device (the saved map viewport), desktop keeps writing it exactly where it
+does today and mobile keeps its own copy, so desktop behaviour doesn't change.
+
+Every phase ends with a desktop regression pass (see Test plan) and a static guard test that
+checks the gating (e.g. every PDF entry point checks `Platform.isDesktopApp`).
+
 ## Verdict
 
 Feasible, and cheaper than issue #20 assumed. There are no Node or Electron imports anywhere in
@@ -130,8 +152,9 @@ hexes, ~13.7k elements):
   Don't add timer-based clearing.
 - Sync churn: `saveSettings()` is called from 98 sites and rewrites the whole `data.json`, which
   holds all map data (paths, palettes, grid, overlays, viewport). With Obsidian Sync or iCloud,
-  edits on two devices are last-writer-wins for the whole file. Moving `savedViewport` to
-  per-device storage removes the noisiest writer. Real conflict safety would mean splitting map
+  edits on two devices are last-writer-wins for the whole file. On mobile, keeping the viewport
+  in per-device storage removes the noisiest writer (desktop keeps writing `savedViewport` to
+  `data.json` as today, so nothing changes there). Real conflict safety would mean splitting map
   data into per-map files, which is out of scope here. Note it for the user.
 
 ## Layout and UI on small screens
@@ -140,7 +163,8 @@ hexes, ~13.7k elements):
   - Map toolbar. Top-row buttons plus the drawing/overlay side panels (`.duckmage-side-panel`,
     absolute, `top: 44px`, `styles.css:69-82`) will overlap. Make the panels bottom sheets or
     full-width drawers under `.is-phone`, and enlarge hit targets to ≥ 44 px.
-  - Modals. Drop the minimum sizes and dragging (see the blocker table). HexEditorModal is the core
+  - Modals. On phones only (`.is-phone`), drop the minimum sizes and dragging (see the blocker
+    table); desktop modals keep both. HexEditorModal is the core
     play surface. It is long but collapsible, so it should work full-screen.
   - Random tables view (`styles.css:2520-2530`): the fixed 220 px left tree leaves ~170 px for the
     detail pane. Stack the tree above the detail with an `@container` rule on the view, or make
@@ -199,13 +223,14 @@ geometry.
 |---|---|---|
 | **0. Hard blockers + mobile gate** | `Platform.isDesktopApp` gating for all PDF entry points, with a backstop throw in `exportToPdfBytes`. `HexmakerModal.makeDraggable` no-op on phone. Phone CSS resets for modal min sizes. Hide bg calibration on mobile. PNG canvas-area clamp. A static guard test (see Test plan). Flip `isDesktopOnly` to `false` **only on a branch** until Phase 1 is in. | 1.5–3 |
 | **1. Navigate and play** | Map input moves to Pointer Events (`HexMapView.ts:473-745`): one-finger pan, pinch zoom, tap, long-press context menu, `touch-action`, stopping Obsidian's swipe gestures. Per-device `savedViewport` and a longer bake debounce on mobile. Phone toolbar and side-panel layout, 44 px targets, hover-only controls made visible. Random tables view stacked layout. Hex editor full-screen pass. Help modal (`src/help.md`) touch section. | 5–9 |
-| **2. Touch editing** | Paint strokes (one finger paints, two pan). "Done"/tool-options buttons replacing dblclick and right-click. Path tool. Token drag and menu. GM remove-one. Terrain filter tri-state. Reorder fallbacks for the 6 DnD sites. Bg image file input. Long-press menus in random-tables, map list and hex editor. | 6–10 |
+| **2. Touch editing** | Paint strokes (one finger paints, two pan). "Done"/tool-options buttons on touch, in addition to dblclick and right-click (which stay on desktop). Path tool. Token drag and menu. GM remove-one. Terrain filter tri-state. Reorder fallbacks for the 6 DnD sites. Bg image file input. Long-press menus in random-tables, map list and hex editor. | 6–10 |
 | **3. Generator page + exports** | Touch-mode scrub (tap to type). Path-row tap highlight. Preview sizing. PNG export on iOS (non-Offscreen fallback, area clamp, tiles if needed). Bulk-write UX (warnings, resumable progress). Touch bg calibration (drag/pinch, Lock), optional. PDF stays desktop-only unless a pure-JS PDF path is wanted (+3–5 days, not included). | 4–7 |
 | **4. Big-map performance** | Measure on devices first. Then hex virtualization or a canvas terrain layer, with overlays (paths, faction/region, tokens, GM, coord labels) re-plumbed onto computed geometry instead of `offsetLeft`/`offsetTop`. Incremental updates so fewer callers need a full `renderGrid`. Desktop benefits too. | 8–15 |
 | **Total** | | **24–44** |
 
 A sensible first release is Phases 0 + 1 (7–12 days), shipped as "mobile: view, navigate,
-edit hex notes, roll tables". Editing tools stay desktop-only and are hidden on mobile.
+edit hex notes, roll tables". Editing tools are only hidden on mobile until Phase 2; on
+desktop they're unchanged throughout.
 
 ## Risks and unknowns, with cheap ways to resolve them
 
