@@ -22,11 +22,13 @@ export function drawPreview(
   orientation: "flat" | "pointy",
   colors: Map<string, string>,
   featureCells?: Set<string>,
-  paths: { type: string; hexes: string[] }[] = [],
+  paths: { type: string; route?: string; hexes: string[] }[] = [],
   pathColors: Map<string, string> = new Map(),
   maxWidth = 420,
   /** Largest hex size in canvas pixels (keeps tiny maps from ballooning). */
   maxScale = 14,
+  /** Route to emphasise (others are dimmed), e.g. while its table row is hovered. */
+  highlightRoute?: string,
 ): void {
   const { cols, rows, offset, stagger } = grid;
   // Hex centres in unit space (neighbours √3 apart, circumradius 1).
@@ -75,6 +77,8 @@ export function drawPreview(
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (const p of paths) {
+    const lit = !highlightRoute || p.route === highlightRoute;
+    ctx.globalAlpha = lit ? 1 : 0.2;
     ctx.beginPath();
     p.hexes.forEach((h, i) => {
       const c = centre.get(h);
@@ -83,7 +87,8 @@ export function drawPreview(
       else ctx.lineTo(c[0], c[1]);
     });
     ctx.strokeStyle = pathColors.get(p.type) ?? "#2b6cb0";
-    ctx.lineWidth = Math.max(1.5, scale * 0.35);
+    ctx.lineWidth = Math.max(1.5, scale * 0.35) * (highlightRoute && lit ? 1.8 : 1);
     ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }

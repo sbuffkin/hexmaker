@@ -28,6 +28,7 @@ import {
   type SolveResult,
   type GeneratorSettings,
   resolveSettings,
+  pathRouteKey,
 } from "../../packages/hex-wfc/src";
 
 /** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
@@ -118,11 +119,18 @@ export function pathColors(plugin: HexmakerPlugin): Map<string, string> {
  */
 export function toPathChains(
   plugin: HexmakerPlugin,
-  paths: { type: string; hexes: string[] }[],
+  paths: { type: string; route?: string; hexes: string[] }[],
+  model?: HexWfcModel,
 ): { chains: { typeName: string; hexes: string[] }[]; missing: string[] } {
   const known = new Set((plugin.settings.pathTypes ?? []).map((t) => t.name));
-  const missing = [...new Set(paths.map((p) => p.type).filter((t) => !known.has(t)))];
-  return { chains: paths.filter((p) => known.has(p.type)).map((p) => ({ typeName: p.type, hexes: [...p.hexes] })), missing };
+  const typed = paths.map((p) => ({ typeName: drawnPathType(model, p), hexes: [...p.hexes] }));
+  const missing = [...new Set(typed.map((p) => p.typeName).filter((t) => !known.has(t)))];
+  return { chains: typed.filter((p) => known.has(p.typeName)), missing };
+}
+
+/** The map path type a generated path is drawn as: its route's "as", else its learned type. */
+export function drawnPathType(model: HexWfcModel | undefined, p: { type: string; route?: string }): string {
+  return (p.route && model?.settings?.paths?.[p.route]?.as) || p.type;
 }
 
 /** Palette colour per terrain name, for previews. */
@@ -302,8 +310,8 @@ export async function fillMap(
   // Regenerating also redraws the generator's path types (rivers, roads);
   // other path types, and every path when only filling, are left alone.
   if (mode === "regenerate" && model.paths?.length) {
-    const learned = new Set(model.paths.map((p) => p.type));
-    const { chains, missing } = toPathChains(plugin, result.paths);
+    const learned = new Set(model.paths.map((p) => drawnPathType(model, { type: p.type, route: pathRouteKey(p) })));
+    const { chains, missing } = toPathChains(plugin, result.paths, model);
     map.pathChains = [...(map.pathChains ?? []).filter((c) => !learned.has(c.typeName)), ...chains];
     if (missing.length) warnings.push(`No path type named ${missing.join(", ")}, so those paths were skipped`);
     await plugin.saveSettings();

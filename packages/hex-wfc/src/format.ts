@@ -25,6 +25,7 @@ import {
   type GrowthShape,
   type Symmetry,
   type CountRange,
+  type PathTweak,
   type TerrainEntry,
 } from "./model";
 
@@ -32,7 +33,7 @@ export const FORMAT_VERSION = 1;
 const MARKER = "hex-wfc";
 const EXAMPLE_KEY = "example-hexes";
 
-type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts";
+type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts" | "paths";
 
 /** Frontmatter key for each saved solver setting. */
 export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
@@ -56,6 +57,8 @@ export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
   mix: "mix",
   counts: "counts",
   features: "features",
+  drawPaths: "draw-paths",
+  paths: "paths",
 };
 
 const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
@@ -79,6 +82,8 @@ const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
   mix: "mix",
   counts: "counts",
   features: "boolean",
+  drawPaths: "boolean",
+  paths: "paths",
 };
 
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
@@ -108,6 +113,17 @@ export function encodeSetting(field: keyof GeneratorSettings, value: unknown): s
           if (r.min !== undefined && r.min === r.max) return `${t} ${r.min}`;
           return `${t} ${r.min ?? ""}-${r.max ?? ""}`;
         })
+        .join("; ");
+    case "paths":
+      return Object.entries(value as Record<string, PathTweak>)
+        .map(([route, t]) => {
+          const opts: string[] = [];
+          if (t.off) opts.push("off");
+          for (const k of ["count", "wiggle", "length", "follow"] as const) if (t[k] !== undefined) opts.push(`${k} ${num(t[k])}`);
+          if (t.as) opts.push(`as ${t.as}`);
+          return `${route} = ${opts.join(", ")}`;
+        })
+        .filter((e) => !e.endsWith("= "))
         .join("; ");
     default:
       return String(value);
@@ -164,6 +180,24 @@ export function decodeSetting(field: keyof GeneratorSettings, raw: string): { va
           range.min = range.max = Number(m[1]);
         }
         out[t] = range;
+      }
+      return { value: out };
+    }
+    case "paths": {
+      const out: Record<string, PathTweak> = {};
+      for (const item of items()) {
+        const eq = item.indexOf(" = ");
+        if (eq < 0) return { error: `has "${item}"; write it like "Road: edge > peak = count 2, wiggle 1.5"` };
+        const route = item.slice(0, eq).trim();
+        const tweak: PathTweak = {};
+        for (const part of item.slice(eq + 3).split(",").map((x) => x.trim()).filter(Boolean)) {
+          const m = /^(count|wiggle|length|follow) (\S+)$/.exec(part);
+          if (part === "off") tweak.off = true;
+          else if (part.startsWith("as ")) tweak.as = part.slice(3).trim();
+          else if (m && Number.isFinite(Number(m[2])) && Number(m[2]) >= 0) tweak[m[1] as "count"] = Number(m[2]);
+          else return { error: `has "${part}" for ${route}; use off, count N, wiggle N, length N, follow N or as <path type>` };
+        }
+        out[route] = tweak;
       }
       return { value: out };
     }
@@ -236,7 +270,8 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "  `mix-strength`, `scatter`, `randomness`, `edge-strength`, `edge-terrain`,",
     "  `line-width`, `edge-smoothing`, `speck-size`, `keep-rare`, `symmetry`, `spacing`,",
     "  `connected`, `impassable`,",
-    "  `mix`, `counts` and `features`.",
+    "  `mix`, `counts`, `features`, `draw-paths` and `paths` (per route, e.g.",
+    "  `Road: edge > peak = count 2, wiggle 1.5, as Trade road`).",
     "",
     "## Terrains",
     "",

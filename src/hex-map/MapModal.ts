@@ -886,7 +886,7 @@ export class MapModal extends HexmakerModal {
     // Solve before creating anything, so a generator that can't fill the
     // map leaves no half-made map behind.
     let terrainAt: Map<string, string> | undefined;
-    let generatedPaths: { type: string; hexes: string[] }[] = [];
+    let generatedPaths: { type: string; route?: string; hexes: string[] }[] = [];
     if (generator) {
       const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
       const solved = generateTerrain(
@@ -933,7 +933,7 @@ export class MapModal extends HexmakerModal {
 
     if (generatedPaths.length) {
       const newMap = this.plugin.getMap(result.name);
-      const { chains, missing } = toPathChains(this.plugin, generatedPaths);
+      const { chains, missing } = toPathChains(this.plugin, generatedPaths, generator?.model);
       if (newMap && chains.length) {
         newMap.pathChains = [...newMap.pathChains, ...chains];
         await this.plugin.saveSettings();

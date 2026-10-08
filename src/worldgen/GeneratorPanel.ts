@@ -14,6 +14,7 @@ import {
   saveGeneratorSettings,
   generateTerrain,
   generatorSettings,
+  drawnPathType,
   generatorFitsPalette,
   paletteColors,
   pathColors,
@@ -26,6 +27,10 @@ import { makeScrubbable } from "./scrub";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
   cleanupStrengths,
+  pathsEnabled,
+  pathRouteKey,
+  type PathTweak,
+  type RouteStat,
   randomSeed,
   SYMMETRIES,
   type GeneratorSettings,
@@ -332,6 +337,26 @@ export class GeneratorPanel {
         cell.change.setAttr("title", change ? `${formatShare(b)} without its mix and min/max settings` : "");
       }
     };
+    // Path rows (filled in further down) and the last drawn preview, so
+    // hovering a row can redraw it with that route highlighted.
+    const pathRows = new Map<string, { placed: HTMLElement; count: HTMLInputElement; auto: number }>();
+    let lastDraw: ((highlight?: string) => void) | null = null;
+    let hoveredRoute: string | undefined;
+    const updatePathRows = (stats: RouteStat[]) => {
+      const byRoute = new Map(stats.map((st) => [st.route, st]));
+      for (const [route, row] of pathRows) {
+        const st = byRoute.get(route);
+        row.auto = st?.auto ?? row.auto;
+        row.count.placeholder = `Auto (${row.auto})`;
+        if (!st || !pathsEnabled(model) || st.wanted === 0) {
+          row.placed.setText("Off");
+          row.placed.removeClass("is-short");
+          continue;
+        }
+        row.placed.setText(`${st.placed} of ${st.wanted}`);
+        row.placed.toggleClass("is-short", st.placed < st.wanted);
+      }
+    };
     const runPreview = () => {
       const grid = previewGrid();
       this.previewCols = grid.cols;
@@ -343,11 +368,17 @@ export class GeneratorPanel {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
-      // Draw at the side column's device-pixel width so it stays sharp when stretched.
-      const dpr = activeWindow.devicePixelRatio || 1;
-      drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, r.paths, pathColors(this.plugin),
-        Math.max(420, side.clientWidth) * dpr, 40 * dpr);
+      // Paths are coloured as the map path type they'll become.
+      const paths = r.paths.map((p) => ({ ...p, type: drawnPathType(model, p) }));
+      lastDraw = (highlight?: string) => {
+        // Draw at the side column's device-pixel width so it stays sharp when stretched.
+        const dpr = activeWindow.devicePixelRatio || 1;
+        drawPreview(canvas, r.cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
+          Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight);
+      };
+      lastDraw(hoveredRoute);
       updateShares(r.cells, grid, palette);
+      updatePathRows(r.pathRoutes);
       // Short: size and time, plus a hoverable count if anything didn't fit.
       status.setText(`${grid.cols}×${grid.rows} · ${r.stats.ms} ms${r.warnings.length ? ` · ⚠ ${r.warnings.length}` : ""}`);
       status.setAttr("title", r.warnings.join("\n"));
@@ -395,7 +426,7 @@ export class GeneratorPanel {
             new Notice(result.error);
             return;
           }
-          const { chains, missing } = toPathChains(this.plugin, r.paths);
+          const { chains, missing } = toPathChains(this.plugin, r.paths, model);
           const created = this.plugin.getMap(result.name);
           if (created && chains.length) {
             created.pathChains = [...created.pathChains, ...chains];
@@ -455,8 +486,8 @@ export class GeneratorPanel {
 
     // Guarantees
     this.heading(el, "Guarantees");
-    if (model.features?.length || model.paths?.length) {
-      this.toggle(el, "Guaranteed features", "Always place the example's anchored lines and paths.", s().features, (v) => save({ features: v }));
+    if (model.features?.length) {
+      this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v }));
     }
     this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
     this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
@@ -510,6 +541,7 @@ export class GeneratorPanel {
         const input = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "–" } });
         const v = counts[t.name]?.[bound];
         input.value = v === undefined ? "" : String(v);
+        makeScrubbable(input, { min: 0, max: 99, pxPerStep: 8 });
         input.addEventListener("change", () => {
           const range: CountRange = { ...(counts[t.name] ?? {}) };
           if (input.value === "") delete range[bound];
@@ -528,6 +560,109 @@ export class GeneratorPanel {
     }
 
     this.slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v }));
+
+    // Paths: one row per learned route (type + what its ends connect to)
+    if (model.paths?.length) {
+      this.heading(el, "Paths");
+      el.createEl("p", {
+        text: "Roads and rivers drawn over the terrain. Count is how many of each route to draw; leave it blank for the learned amount for this map size (drag or scroll on it). Hover a row to highlight its paths on the preview.",
+        cls: "duckmage-map-origin-desc",
+      });
+      const tweaks: Record<string, PathTweak> = Object.fromEntries(Object.entries(s().paths).map(([k, t]) => [k, { ...t }]));
+      const saveTweak = (route: string, patch: Partial<PathTweak>) => {
+        const t: PathTweak = { ...(tweaks[route] ?? {}), ...patch };
+        for (const k of Object.keys(t) as (keyof PathTweak)[]) if (t[k] === undefined || t[k] === false) delete t[k];
+        if (Object.keys(t).length) tweaks[route] = t;
+        else delete tweaks[route];
+        save({ paths: Object.keys(tweaks).length ? { ...tweaks } : undefined });
+      };
+      const table = el.createDiv({ cls: "duckmage-wfc-paths" });
+      this.toggle(table, "Draw paths", "", pathsEnabled(model), (v) => {
+        save({ drawPaths: v });
+        table.toggleClass("is-off", !v);
+      });
+      table.toggleClass("is-off", !pathsEnabled(model));
+      const mapTypes = (this.plugin.settings.pathTypes ?? []).map((t) => t.name);
+      const typeColors = pathColors(this.plugin);
+      for (const f of model.paths) {
+        const route = pathRouteKey(f);
+        const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
+        const tw = tweaks[route] ?? {};
+        const row = table.createDiv({ cls: "duckmage-wfc-path-row" + (tw.off ? " is-off" : "") });
+        row.addEventListener("mouseenter", () => {
+          hoveredRoute = route;
+          lastDraw?.(route);
+        });
+        row.addEventListener("mouseleave", () => {
+          hoveredRoute = undefined;
+          lastDraw?.();
+        });
+
+        // Line 1: on, name, route, count, becomes, placed
+        const top = row.createDiv({ cls: "duckmage-wfc-path-top" });
+        const on = top.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${f.type} (${end(f.from)} to ${end(f.to)})` } });
+        on.checked = !tw.off;
+        on.addEventListener("change", () => {
+          row.toggleClass("is-off", !on.checked);
+          saveTweak(route, { off: !on.checked || undefined });
+        });
+        const name = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
+        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
+          "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
+        });
+        name.createSpan({ text: f.type });
+        top.createSpan({ text: `${end(f.from)} → ${end(f.to)}`, cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
+
+        const countWrap = top.createSpan({ cls: "duckmage-wfc-path-count" });
+        countWrap.createSpan({ text: "Count", cls: "duckmage-map-origin-label" });
+        const count = countWrap.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "Auto" } });
+        count.value = tw.count === undefined ? "" : String(tw.count);
+        const rowState = { placed: top.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" }), count, auto: 1 };
+        makeScrubbable(count, { min: 0, max: 99, pxPerStep: 8, initial: () => rowState.auto });
+        count.addEventListener("input", () => {
+          if (count.hasClass("is-scrubbing")) {
+            tweaks[route] = { ...(tweaks[route] ?? {}), count: Number(count.value) };
+            model.settings = { ...(model.settings ?? {}), paths: { ...tweaks } };
+            schedulePreview();
+          }
+        });
+        count.addEventListener("change", () => {
+          saveTweak(route, { count: count.value === "" ? undefined : Math.max(0, Math.floor(Number(count.value) || 0)) });
+        });
+
+        const asWrap = top.createSpan({ cls: "duckmage-wfc-path-as" });
+        asWrap.createSpan({ text: "As", cls: "duckmage-map-origin-label" });
+        const asSel = asWrap.createEl("select", { attr: { title: "Path type it is drawn as on the map" } });
+        const learnedKnown = mapTypes.includes(f.type);
+        asSel.createEl("option", { value: "", text: learnedKnown ? f.type : `${f.type} (no such type: skipped)` });
+        for (const t of mapTypes) if (t !== f.type) asSel.createEl("option", { value: t, text: t });
+        asSel.value = tw.as && mapTypes.includes(tw.as) ? tw.as : "";
+        asSel.addEventListener("change", () => saveTweak(route, { as: asSel.value || undefined }));
+        top.appendChild(rowState.placed);
+        pathRows.set(route, rowState);
+
+        // Line 2: shape of the route
+        const knobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
+        const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
+          const cell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
+          cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
+          const slider = cell.createEl("input", { type: "range" });
+          slider.min = "0";
+          slider.max = String(max);
+          slider.step = "0.25";
+          slider.value = String(tw[key] ?? 1);
+          const valueLabel = cell.createSpan({ text: `×${slider.value}` });
+          slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
+          slider.addEventListener("change", () => {
+            const v = Number(slider.value);
+            saveTweak(route, { [key]: v === 1 ? undefined : v });
+          });
+        };
+        knob("Wiggle", "How much it meanders. 0 = as straight as the terrain allows.", "wiggle", 3);
+        if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
+        knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
+      }
+    }
 
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
     const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });

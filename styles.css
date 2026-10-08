@@ -5318,3 +5318,69 @@ button.duckmage-wfc-chip {
 .duckmage-wfc-lock.is-active {
     color: var(--interactive-accent);
 }
+
+/* Generator page: Paths table. Each route is a two-line card: on/name/route/
+   count/type/placed, then its shape sliders. */
+.duckmage-wfc-paths {
+    display: grid;
+    gap: 0.4em;
+}
+
+.duckmage-wfc-path-row {
+    padding: 0.4em 0.5em;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-wfc-path-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-paths.is-off .duckmage-wfc-path-row,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-knobs,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-count,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-as {
+    opacity: 0.45;
+}
+
+.duckmage-wfc-path-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.8em;
+}
+
+.duckmage-wfc-path-route {
+    flex: 1;
+    min-width: 8em;
+    margin: 0;
+}
+
+.duckmage-wfc-path-count,
+.duckmage-wfc-path-as {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+.duckmage-wfc-path-count .duckmage-wfc-num {
+    width: 6.5em;
+}
+
+.duckmage-wfc-path-placed {
+    min-width: 4.5em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-path-placed.is-short {
+    color: var(--color-orange);
+}
+
+.duckmage-wfc-path-knobs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
+    gap: 0.25em 1em;
+    margin-top: 0.35em;
+}

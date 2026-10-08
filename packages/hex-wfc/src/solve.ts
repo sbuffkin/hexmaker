@@ -30,7 +30,7 @@ import {
 } from "./model";
 import { mulberry32 } from "./rng";
 import { placeFeatures, placeEdgeBorder } from "./features";
-import { routePaths, type PathOutput } from "./paths";
+import { routePaths, type PathOutput, type RouteStat } from "./paths";
 import {
   smoothEdges,
   removeSpecks,
@@ -96,6 +96,8 @@ export type SolveResult =
       featureCells: Set<string>;
       /** Paths routed over the terrain (rivers, roads drawn as paths). */
       paths: PathOutput[];
+      /** Per learned route: how many were wanted and placed. */
+      pathRoutes: RouteStat[];
       /** Soft goals that weren't fully met (counts, connected land, features). */
       warnings: string[];
       stats: SolveStats;
@@ -245,15 +247,27 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     }
   }
   let paths: PathOutput[] = [];
-  if (s.features && model.paths?.length) {
+  let pathRoutes: RouteStat[] = [];
+  if (pathsEnabled(model, opts) && model.paths?.length) {
     const N = grid.cols * grid.rows;
     const scale = model.exampleHexes ? Math.sqrt(N / model.exampleHexes) : 1;
-    const routed = routePaths(model.paths, best.cells, grid, mulberry32(opts.seed ^ 0x7f4a7c15), scale);
+    const routed = routePaths(model.paths, best.cells, grid, mulberry32(opts.seed ^ 0x7f4a7c15), scale, s.paths);
     paths = routed.paths;
+    pathRoutes = routed.routes;
     best.warnings.push(...routed.warnings);
   }
   total.ms = Date.now() - t0;
-  return { ok: true, cells: best.cells, featureCells: best.featureCells, paths, warnings: best.warnings, stats: total };
+  return { ok: true, cells: best.cells, featureCells: best.featureCells, paths, pathRoutes, warnings: best.warnings, stats: total };
+}
+
+/**
+ * Whether learned paths are drawn. `drawPaths` decides when set; generators
+ * saved before it existed only had `features`, which used to cover paths too.
+ */
+export function pathsEnabled(model: HexWfcModel, override: GeneratorSettings = {}): boolean {
+  const own = override.drawPaths ?? model.settings?.drawPaths;
+  if (own !== undefined) return own;
+  return override.features ?? model.settings?.features ?? true;
 }
 
 /** Feedback never boosts or damps a terrain by more than this factor per choice. */

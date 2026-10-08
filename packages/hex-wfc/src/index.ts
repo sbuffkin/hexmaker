@@ -27,11 +27,13 @@ export {
   type PathFeature,
   type Symmetry,
   type CountRange,
+  type PathTweak,
+  pathRouteKey,
 } from "./model";
 export { learnModel, measurePatches, measureLayout, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
-export { solve, findViolation, cleanupStrengths, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
+export { solve, findViolation, cleanupStrengths, pathsEnabled, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
 export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, type GridInfo } from "./post";
-export { learnPaths, routePaths, type PathInput, type PathOutput } from "./paths";
+export { learnPaths, routePaths, type PathInput, type PathOutput, type RouteStat } from "./paths";
 export {
   modelToMarkdown,
   parseModelMarkdown,

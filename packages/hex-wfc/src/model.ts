@@ -94,6 +94,27 @@ export type Symmetry = "none" | "left-right" | "top-bottom" | "both";
 export const SYMMETRIES: readonly Symmetry[] = ["none", "left-right", "top-bottom", "both"];
 
 /** Min/max number of separate patches of a terrain (a town is a 1-hex patch). */
+/** Adjustments to one learned path route; anything unset is as learned. */
+export interface PathTweak {
+  /** Never place this route. */
+  off?: boolean;
+  /** Exact number to place. Unset = learned count scaled to the map size. */
+  count?: number;
+  /** Multiplier on how much it meanders. 0 = as straight as the terrain allows. */
+  wiggle?: number;
+  /** Multiplier on its length (routes ending in "none", and edge-to-edge). */
+  length?: number;
+  /** Multiplier on how strongly it keeps to the terrains it ran through. 0 = ignores terrain. */
+  follow?: number;
+  /** Path type to draw it as on the map, instead of its learned type. */
+  as?: string;
+}
+
+/** Key that identifies a learned path route, e.g. "Road: edge > peak". */
+export function pathRouteKey(p: { type: string; from: string; to: string }): string {
+  return `${p.type}: ${p.from} > ${p.to}`;
+}
+
 export interface CountRange {
   min?: number;
   max?: number;
@@ -148,8 +169,15 @@ export interface GeneratorSettings {
   mix?: Record<string, number>;
   /** Per-terrain min/max number of separate patches. */
   counts?: Record<string, CountRange>;
-  /** Lay down the model's guaranteed features and paths (rivers). */
+  /** Lay down the model's guaranteed features (terrain lines such as a river painted as terrain). */
   features?: boolean;
+  /**
+   * Draw the learned paths (roads, rivers drawn as paths) over the terrain.
+   * Unset: follows `features`, as before the two were split.
+   */
+  drawPaths?: boolean;
+  /** Per-route adjustments, keyed by pathRouteKey(). */
+  paths?: Record<string, PathTweak>;
 }
 
 export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
@@ -173,6 +201,8 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   mix: {},
   counts: {},
   features: true,
+  drawPaths: true,
+  paths: {},
 };
 
 export interface AdjacencyEntry {

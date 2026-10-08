@@ -11,7 +11,7 @@
  */
 
 import { hexNeighbors, hexDistance, directionRing, cellKey, parseCellKey, type Orientation, type Stagger } from "./grid";
-import type { PathFeature } from "./model";
+import { pathRouteKey, type PathFeature, type PathTweak } from "./model";
 import type { GridInfo } from "./post";
 
 export interface PathInput {
@@ -23,7 +23,19 @@ export interface PathInput {
 
 export interface PathOutput {
   type: string;
+  /** The learned route it came from (pathRouteKey). */
+  route: string;
   hexes: string[];
+}
+
+/** How one learned route fared on a map. */
+export interface RouteStat {
+  route: string;
+  /** Learned count scaled to this map: what "auto" means. */
+  auto: number;
+  /** How many were asked for (0 when the route is off). */
+  wanted: number;
+  placed: number;
 }
 
 const MIN_PATH_HEXES = 3;
@@ -132,7 +144,8 @@ export function routePaths(
   grid: GridInfo,
   rng: () => number,
   sizeScale: number,
-): { paths: PathOutput[]; warnings: string[] } {
+  tweaks: Record<string, PathTweak> = {},
+): { paths: PathOutput[]; warnings: string[]; routes: RouteStat[] } {
   const { cols, rows, ox, oy, orientation, stagger } = grid;
   const N = cols * rows;
   const keyOf = (c: number) => cellKey(ox + (c % cols), oy + Math.floor(c / cols));
@@ -243,11 +256,16 @@ export function routePaths(
   // Parents before branches.
   const order = [...features].sort((a, b) => Number(a.from === "path") - Number(b.from === "path"));
 
-  for (const f of order) {
+  const routes: RouteStat[] = [];
+  for (const learned of order) {
+    const route = pathRouteKey(learned);
+    const tw = tweaks[route] ?? {};
+    const f: PathFeature = { ...learned, length: learned.length * (tw.length ?? 1) };
+    const follow = tw.follow ?? 1;
     // Cheap on terrains the example's path ran through (relative to how
     // common they are), plus smooth noise so routes wiggle like the example.
-    const pref = (t: string) => Math.log(((f.through[t] ?? 0) + 0.01) / ((share.get(t) ?? 0) + 0.01));
-    const noiseAmp = 0.5 + 3 * f.turn;
+    const pref = (t: string) => follow * Math.log(((f.through[t] ?? 0) + 0.01) / ((share.get(t) ?? 0) + 0.01));
+    const noiseAmp = (0.5 + 3 * f.turn) * (tw.wiggle ?? 1);
     const phase = [rng(), rng(), rng()].map((v) => v * Math.PI * 2);
     const freq = 0.6 + rng() * 0.6;
     const cost = new Float64Array(N);
@@ -257,23 +275,28 @@ export function routePaths(
       cost[c] = Math.max(0.05, 1.5 - pref(terrainOf(c)) + noiseAmp * (0.5 + 0.5 * noise));
     }
 
-    const count = Math.max(1, Math.round(f.count * sizeScale));
+    const auto = Math.max(1, Math.round(f.count * sizeScale));
+    const count = tw.off ? 0 : Math.max(0, Math.round(tw.count ?? auto));
+    const stat: RouteStat = { route, auto, wanted: count, placed: 0 };
+    routes.push(stat);
+    if (!count) continue;
     const taken = takenByType.get(f.type) ?? new Set<number>();
     takenByType.set(f.type, taken);
     let made = 0;
     for (let k = 0; k < count; k++) {
-      const route = routeOne(f, cost, taken);
-      if (!route) continue;
-      out.push({ type: f.type, hexes: route.map(keyOf) });
-      for (const c of route) taken.add(c);
+      const path = routeOne(f, cost, taken);
+      if (!path) continue;
+      out.push({ type: f.type, route: stat.route, hexes: path.map(keyOf) });
+      for (const c of path) taken.add(c);
       made++;
     }
+    stat.placed = made;
     if (made < count) {
       const end = (e: string) => (e === "edge" ? "a map edge" : e === "path" ? `another ${f.type}` : e);
       warnings.push(`Placed ${made} of ${count} ${f.type} paths (${end(f.from)} to ${end(f.to)})`);
     }
   }
-  return { paths: out, warnings };
+  return { paths: out, warnings, routes };
 }
 
 /** Minimal binary min-heap of [priority, value]. */
