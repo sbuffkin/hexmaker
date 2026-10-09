@@ -48,6 +48,12 @@ export interface MapBackgroundImage {
 	opacity?: number;
 }
 
+/** See MapData.biome. */
+export interface RegionBiome {
+	generator: string;
+	from?: string[];
+}
+
 export interface MapData {
 	name: string;
 	/** Plugin version that created the map (see src/compat.ts). */
@@ -68,6 +74,10 @@ export interface MapData {
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting
 	/** Slot on a shared grid of neighbouring regions (see src/worldgen/world.ts). */
 	world?: { id: string; cx: number; cy: number };
+	/** The generator (biome) a region was made from, so later neighbours can
+	 *  blend with it. `from` lists the neighbouring biomes it was blended with:
+	 *  a transition region between them and `generator`. */
+	biome?: RegionBiome;
 	backgroundImage?: MapBackgroundImage;
 	/** Optional independent transform applied to the hex grid container,
 	 *  used during background-image calibration so the user can resize/shift

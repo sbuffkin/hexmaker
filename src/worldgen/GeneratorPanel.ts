@@ -34,7 +34,7 @@ import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
 import { SIDES, type Side } from "./world";
-import { blendFromNeighbours, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
+import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -114,6 +114,8 @@ export class GeneratorPanel {
   private previewCols = 30;
   private previewRows = 20;
   private previewTimer: number | null = null;
+  /** Every generator file, once listed (neighbour regions blend with the one they were made from). */
+  private generators: GeneratorFile[] = [];
 
   constructor(
     private app: App,
@@ -190,6 +192,7 @@ export class GeneratorPanel {
 
     void listGenerators(this.plugin).then((found) => {
       generators = found;
+      this.generators = found;
       // Keep the chosen generator; otherwise one learned from the current
       // region, then the first one that fits the palette.
       if (!current()) {
@@ -593,7 +596,7 @@ export class GeneratorPanel {
         GeneratorPanel.leanToNeighbours = box.checked;
         this.host.rerender();
       });
-      if (GeneratorPanel.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected));
+      if (GeneratorPanel.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected), NEIGHBOUR_SHARE, this.generators);
     }
 
     const showLock = () => {
@@ -896,6 +899,14 @@ export class GeneratorPanel {
           }
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           if (connected) {
+            // Record its biome (and what it was blended with) for later neighbours.
+            const around = Object.values(regionNeighbourNames(this.plugin, connected))
+              .map((n) => regionBiome(this.plugin, n, this.generators)?.name)
+              .filter((n): n is string => !!n && n !== model.name);
+            const made = this.plugin.getMap(result.name);
+            if (made) made.biome = GeneratorPanel.leanToNeighbours && around.length
+              ? { generator: model.name, from: [...new Set(around)] }
+              : { generator: model.name };
             await placeNewRegion(this.plugin, result.name, connected);
             // Only clear the choice if it's still the one used; a newer one stays.
             if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
