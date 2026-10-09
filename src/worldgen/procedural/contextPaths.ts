@@ -63,9 +63,10 @@ export function routeContextPaths(
   const inGrid = new Set(hexes.map(([x, y]) => cellKey(x, y)));
   const out: ProcPath[] = [];
   paths.forEach((p, n) => {
-    if (!p.from && !p.to) return;
-    const start = p.from ? edgeHex(grid, p.from) : centerHex(grid);
-    const end = p.to ? edgeHex(grid, p.to) : centerHex(grid);
+    if (!p.from && !p.to && !p.fromHex && !p.toHex) return;
+    const at = (k: string | undefined) => (k && inGrid.has(k) ? (k.split("_").map(Number) as [number, number]) : undefined);
+    const start = at(p.fromHex) ?? (p.from ? edgeHex(grid, p.from) : centerHex(grid));
+    const end = at(p.toHex) ?? (p.to ? edgeHex(grid, p.to) : centerHex(grid));
     const sk = cellKey(start[0], start[1]), ek = cellKey(end[0], end[1]);
     if (sk === ek) return;
     const river = isRiver(p);
@@ -124,5 +125,48 @@ export function routeContextPaths(
     while (chain[0] !== sk) chain.unshift(prev.get(chain[0])!);
     out.push({ type: p.type, hexes: chain });
   });
+  return out;
+}
+
+/**
+ * Turn the points where neighbouring regions' paths cross into this map
+ * ("x_y" border hexes inside it) into context paths: crossings of the same
+ * path type are joined in pairs, taken in order around the map's edge, so a
+ * road entering in the west and one entering in the east become one road
+ * through; an odd one out runs to the centre (it ends here, e.g. at a town).
+ */
+export function pairCrossings(
+  crossings: { type: string; routing?: ContextPath["routing"]; hex: string }[],
+  grid: ProcGrid,
+): ContextPath[] {
+  const [mx, my] = hexCenter(...centerHex(grid), grid.orientation, grid.stagger);
+  const angle = (k: string) => {
+    const [x, y] = k.split("_").map(Number);
+    const [px, py] = hexCenter(x, y, grid.orientation, grid.stagger);
+    return Math.atan2(py - my, px - mx);
+  };
+  const byType = new Map<string, typeof crossings>();
+  const seen = new Set<string>();
+  for (const c of crossings) {
+    const id = `${c.type}|${c.hex}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    byType.set(c.type, [...(byType.get(c.type) ?? []), c]);
+  }
+  const out: ContextPath[] = [];
+  for (const list of byType.values()) {
+    const sorted = [...list].sort((a, b) => angle(a.hex) - angle(b.hex));
+    // Pair opposite-ish crossings: i with i + n/2 around the ring, so two
+    // roads through a map go across it rather than hugging one corner.
+    const half = Math.floor(sorted.length / 2);
+    for (let i = 0; i < half; i++) {
+      const a = sorted[i], b = sorted[i + half];
+      out.push({ type: a.type, routing: a.routing, fromHex: a.hex, toHex: b.hex });
+    }
+    if (sorted.length % 2 === 1) {
+      const last = sorted[sorted.length - 1];
+      out.push({ type: last.type, routing: last.routing, fromHex: last.hex });
+    }
+  }
   return out;
 }

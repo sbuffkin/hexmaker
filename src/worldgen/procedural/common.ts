@@ -68,6 +68,10 @@ export interface ContextPath {
   routing?: "through" | "meander" | "edge";
   from?: Side;
   to?: Side;
+  /** Exact entry / exit hex ("x_y" in this map) — e.g. where a neighbouring
+   *  region's road crosses the shared border. Wins over `from` / `to`. */
+  fromHex?: string;
+  toHex?: string;
 }
 
 /** Unit vector (screen space: +x east, +y south) for each side. */

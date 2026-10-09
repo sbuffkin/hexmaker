@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { edgeHex, routeContextPaths } from "../src/worldgen/procedural/contextPaths";
+import { edgeHex, pairCrossings, routeContextPaths } from "../src/worldgen/procedural/contextPaths";
 import { centerHex, distance, type ProcGrid } from "../src/worldgen/procedural/common";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 
@@ -98,5 +98,42 @@ describe("routeContextPaths", () => {
 		], 1);
 		expect(out).toHaveLength(1);
 		expect(parse(out[0].hexes[0])).toEqual(edgeHex(flat, "N"));
+	});
+});
+
+describe("pairCrossings (neighbour regions' paths crossing into a new map)", () => {
+	it("joins a west and an east crossing of the same type into one path through", () => {
+		const out = pairCrossings([
+			{ type: "Road", hex: "0_4" },
+			{ type: "Road", hex: "12_4" },
+		], flat);
+		expect(out).toHaveLength(1);
+		expect(new Set([out[0].fromHex, out[0].toHex])).toEqual(new Set(["0_4", "12_4"]));
+	});
+
+	it("keeps types apart, sends an odd one out to the centre, and dedupes", () => {
+		const out = pairCrossings([
+			{ type: "Road", hex: "0_4" },
+			{ type: "Road", hex: "0_4" },
+			{ type: "River", routing: "meander", hex: "6_0" },
+		], flat);
+		expect(out).toHaveLength(2);
+		const river = out.find((p) => p.type === "River")!;
+		expect(river.fromHex).toBe("6_0");
+		expect(river.toHex).toBeUndefined();
+		expect(river.routing).toBe("meander");
+	});
+
+	it("four crossings pair across the map, not around a corner", () => {
+		const out = pairCrossings(["0_4", "12_4", "6_0", "6_8"].map((hex) => ({ type: "Road", hex })), flat);
+		expect(out).toHaveLength(2);
+		const pairs = out.map((p) => [p.fromHex, p.toHex].sort().join(" ")).sort();
+		expect(pairs).toEqual(["0_4 12_4", "6_0 6_8"]);
+	});
+
+	it("routeContextPaths uses exact entry hexes over sides", () => {
+		const [road] = routeContextPaths(cells(flat), DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Road", fromHex: "0_1", toHex: "12_7", from: "N", to: "S" }], 1);
+		expect(road.hexes[0]).toBe("0_1");
+		expect(road.hexes[road.hexes.length - 1]).toBe("12_7");
 	});
 });

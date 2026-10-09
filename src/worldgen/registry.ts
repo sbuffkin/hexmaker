@@ -19,6 +19,7 @@ import {
   planetSurfaceFits,
 } from "./procedural/planetSurface";
 import { isKindEnabled, type MapKind } from "../mapKinds";
+import { generateConnected, type NewRegion } from "./neighbours";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -50,6 +51,9 @@ export interface GenerateRequest {
   options: Record<string, string>;
   /** Where the map sits in the bigger map (parent hex, neighbours). */
   context?: GenerationContext;
+  /** A new region placed next to existing ones: learned generators solve
+   *  against the neighbours' edges (generateConnected). */
+  region?: NewRegion;
 }
 
 export interface TerrainGeneratorKind {
@@ -176,7 +180,10 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       generatorPath: g.file.path,
       fits: (terrains) => generatorFitsPalette(g.model, terrains.map((t) => t.name)),
       generate: (req) => {
-        const res = generateTerrain(plugin, g.model, req.terrains.map((t) => t.name), req.grid, req.seed);
+        const names = req.terrains.map((t) => t.name);
+        const res = req.region
+          ? generateConnected(plugin, g.model, names, req.region, req.seed)
+          : generateTerrain(plugin, g.model, names, req.grid, req.seed);
         if (!res.ok) return { ok: false, message: res.message };
         return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
       },

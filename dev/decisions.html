@@ -1,0 +1,141 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>
+  body { font: 14px system-ui, sans-serif; background: #1e1e1e; color: #ddd; margin: 18px 18px 120px; max-width: 980px; }
+  h1 { font-size: 19px; margin: 0 0 4px; }
+  p.lead { color: #999; margin: 0 0 18px; }
+  .card { background: #252525; border: 1px solid #333; border-radius: 10px; padding: 14px 16px; margin-bottom: 14px; }
+  .card.done { border-color: #2f6b3e; }
+  .card h2 { font-size: 15px; margin: 0 0 4px; display: flex; gap: 8px; align-items: baseline; }
+  .card h2 .n { color: #7c3aed; font-weight: 700; }
+  .card .why { color: #9a9a9a; font-size: 13px; margin: 0 0 10px; }
+  .opts { display: grid; gap: 8px; }
+  .opt { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; padding: 8px 10px; border: 1px solid #383838; border-radius: 8px; cursor: pointer; }
+  .opt:hover { border-color: #555; }
+  .opt.sel { border-color: #7c3aed; background: #2a2340; }
+  .opt input { margin-top: 3px; }
+  .opt b { color: #eee; }
+  .opt .rec { font-size: 11px; color: #a78bfa; border: 1px solid #5b3fc4; border-radius: 4px; padding: 0 5px; margin-left: 6px; }
+  .opt .d { color: #aaa; font-size: 13px; margin-top: 2px; }
+  textarea { width: 100%; box-sizing: border-box; margin-top: 10px; background: #1b1b1b; color: #ddd; border: 1px solid #383838; border-radius: 6px; padding: 6px 8px; font: 13px system-ui; min-height: 34px; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: #111; border-top: 1px solid #333; padding: 10px 18px; font-size: 13px; }
+  #bar b { color: #a78bfa; }
+</style>
+<h1>Hexmaker — open decisions</h1>
+<p class="lead">Click one option per card (add a note if you like). Picks save in this page; tell Claude when you're done and it reads them back.</p>
+<div id="cards"></div>
+<div id="bar"></div>
+<script>
+const DECISIONS = [
+  {
+    id: "star-scatter-system",
+    title: "Star scatter on the Space - System palette",
+    why: "Since terrains got types, system palettes also 'fit' Star scatter (a sector-style generator). Types alone can't tell a sector palette from a system palette.",
+    options: [
+      { v: "restrict", label: "Restrict it", rec: true, d: "Offer Star scatter only on palettes that look like sectors (have world/system terrains but no star-type terrains). System maps then only show Orbits (plus Blank / learned)." },
+      { v: "leave", label: "Leave it", d: "Keep offering it — you can scatter bodies as a 'region of space' on a system palette if you want." },
+    ],
+  },
+  {
+    id: "release",
+    title: "What to do with the branches",
+    why: "Two local branches, nothing pushed: feat/space-palette (palettes, icons, submap nav) and feat/map-setup-generators (everything since, incl. the WFC branch merged in). Pushing runs the Obsidian review CI.",
+    options: [
+      { v: "push-review", label: "Push both for CI review, no merge yet", rec: true, d: "Push the branches to GitHub so the Obsidian reviewer bot scans them; fix anything it flags; merge later." },
+      { v: "merge-release", label: "Merge to master and cut a release", d: "Merge feat/map-setup-generators (it contains everything) into master, bump version, release. Biggest step — includes the WFC branch's unreleased work." },
+      { v: "local", label: "Keep it local for now", d: "Live-test more in the vault first; push nothing yet." },
+    ],
+  },
+  {
+    id: "version",
+    title: "Version bump for the next release",
+    why: "Current: 1.5.6. This adds new commands, settings, views, generators and a palettes-as-notes migration (backward compatible — old versions still read data.json).",
+    options: [
+      { v: "minor", label: "1.6.0 (minor)", rec: true, d: "Additive features with a compatible migration — the textbook minor bump." },
+      { v: "patch", label: "1.5.7 (patch)", d: "Keep the patch cadence regardless of size." },
+      { v: "later", label: "Decide at release time", d: "Not releasing soon; ask again then." },
+    ],
+  },
+  {
+    id: "notes-on-use",
+    title: "Hex notes 'on use' for all new maps?",
+    why: "Today only maps made with a base terrain (e.g. void) skip creating a note per hex up front. Other new maps still create every note (e.g. 20×16 = 320 notes).",
+    options: [
+      { v: "base-only", label: "Only when a base terrain is set", rec: true, d: "Current behaviour. Fantasy maps without a base terrain keep one note per hex (the hex table lists them all)." },
+      { v: "always", label: "Always on use", d: "No new map writes notes up front; unpainted hexes have no note until clicked/painted/linked. Leaner vault, but the hex table only lists used hexes." },
+      { v: "setting", label: "A setting (default: base-only)", d: "Add 'Create hex notes up front' to settings and the setup modal." },
+    ],
+  },
+  {
+    id: "hex-outline",
+    title: "Hex outline style",
+    why: "The clipped-border fix removed the uneven outline; the gap between hexes now draws an even outline. With hex gap set to 0, neighbouring hexes of the same terrain merge visually.",
+    options: [
+      { v: "gap", label: "Gap only (current)", rec: true, d: "Clean, flat look; outline thickness = the hex gap setting." },
+      { v: "stroke-setting", label: "Add an 'outline' setting", d: "Optional thin drawn outline (none / subtle / strong) that works even at gap 0 — drawn with an inner hexagon so it's even on every side." },
+    ],
+  },
+  {
+    id: "tester",
+    title: "Fresh-eyes UX tester skill",
+    why: "Planned: sandboxed Obsidian + blind explorer + adversarial critic + audited HTML report, skill in work/tools/skills-share/ux-testing.",
+    options: [
+      { v: "build-now", label: "Build it now", rec: true, d: "Start on the driver + skill + first scenario set right away (parallel to the remaining feature wiring)." },
+      { v: "build-later", label: "After the branches land", d: "Finish and release features first." },
+    ],
+    extra: { id: "tools-git", label: "Also put work/tools under git?", options: [
+      { v: "yes", label: "Yes — git init + first commit", d: "The tools folder isn't a repo today; skills there aren't versioned." },
+      { v: "no", label: "No, leave it as is", d: "" },
+    ] },
+  },
+];
+const KEY = "hexmaker-decisions-v1";
+const picks = JSON.parse(localStorage.getItem(KEY) || "{}");
+const save = () => { localStorage.setItem(KEY, JSON.stringify(picks)); bar(); };
+const root = document.getElementById("cards");
+function optionGroup(parent, group, key) {
+  const box = parent.appendChild(Object.assign(document.createElement("div"), { className: "opts" }));
+  for (const o of group.options) {
+    const el = document.createElement("label");
+    el.className = "opt" + (picks[key]?.choice === o.v ? " sel" : "");
+    el.innerHTML = `<input type="radio" name="${key}" ${picks[key]?.choice === o.v ? "checked" : ""}><div><b>${o.label}</b>${o.rec ? '<span class="rec">recommended</span>' : ""}<div class="d">${o.d}</div></div>`;
+    el.querySelector("input").addEventListener("change", () => {
+      picks[key] = { ...(picks[key] || {}), choice: o.v };
+      box.querySelectorAll(".opt").forEach((x) => x.classList.remove("sel"));
+      el.classList.add("sel");
+      el.closest(".card").classList.toggle("done", true);
+      save();
+    });
+    box.appendChild(el);
+  }
+}
+DECISIONS.forEach((d, i) => {
+  const card = document.createElement("div");
+  card.className = "card" + (picks[d.id]?.choice ? " done" : "");
+  card.innerHTML = `<h2><span class="n">${i + 1}</span>${d.title}</h2><p class="why">${d.why}</p>`;
+  optionGroup(card, d, d.id);
+  if (d.extra) {
+    const h = document.createElement("p");
+    h.className = "why";
+    h.style.marginTop = "12px";
+    h.textContent = d.extra.label;
+    card.appendChild(h);
+    optionGroup(card, d.extra, d.extra.id);
+  }
+  const note = document.createElement("textarea");
+  note.placeholder = "Notes (optional)";
+  note.value = picks[d.id]?.note || "";
+  note.addEventListener("input", () => { picks[d.id] = { ...(picks[d.id] || {}), note: note.value }; save(); });
+  card.appendChild(note);
+  root.appendChild(card);
+});
+function bar() {
+  const done = DECISIONS.filter((d) => picks[d.id]?.choice).length;
+  document.getElementById("bar").innerHTML = `<b>${done}/${DECISIONS.length}</b> decided — ` +
+    DECISIONS.map((d) => `${d.title.split(" ")[0]}…: ${picks[d.id]?.choice ?? "—"}`).join(" · ");
+}
+window.__decisions = () => JSON.parse(JSON.stringify(picks));
+bar();
+document.title = "ready";
+</script>

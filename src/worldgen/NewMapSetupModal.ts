@@ -4,6 +4,9 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { SubmapDefault, TerrainColor } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
+import { buildRegionContext } from "./regionContext";
+import { neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
@@ -56,6 +59,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private saved: SubmapDefault | undefined;
   /** The parent hex and its neighbours, so generation fits the bigger map. */
   private context: GenerationContext | undefined;
+  /** "Next to" placement in a world of neighbouring regions (top-level maps). */
+  private placement: NewRegion | undefined;
   /** "Default for <terrain>" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
 
@@ -169,6 +174,59 @@ export class NewMapSetupModal extends HexmakerModal {
     colsInput.addEventListener("change", onSize);
     rowsInput.addEventListener("change", onSize);
     this.rememberBox(sizeRow, "size");
+
+    // ── Next to (new top-level maps): join a world of neighbouring regions.
+    // Size, palette, offset and stagger then follow the neighbour; terrain
+    // and roads continue across the borders.
+    if (!this.origin && this.plugin.settings.maps.length > 0) {
+      const nextRow = this.row(form, "Next to");
+      const anchorSel = nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } });
+      anchorSel.createEl("option", { value: "", text: "— none (stand-alone) —" });
+      for (const m of this.plugin.settings.maps) anchorSel.createEl("option", { value: m.name, text: m.name });
+      const sideSel = nextRow.createEl("select", { attr: { "aria-label": "Side" } });
+      for (const s of ["east", "west", "north", "south"] as const) sideSel.createEl("option", { value: s, text: `${s} of it` });
+      const note = nextRow.createDiv({ cls: "setting-item-description" });
+      const onPlace = () => {
+        this.placement = undefined;
+        this.context = undefined;
+        note.setText("");
+        const anchor = anchorSel.value;
+        sideSel.disabled = !anchor;
+        if (anchor) {
+          const spec = neighbourSpec(this.plugin, anchor, sideSel.value as WorldSide);
+          if (!spec.ok) {
+            note.setText(`⚠ ${spec.reason}`);
+          } else {
+            this.placement = {
+              slot: spec.slot, aSlot: spec.aSlot, anchor, side: sideSel.value as WorldSide,
+              cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName,
+            };
+            this.cols = spec.cols;
+            this.rows = spec.rows;
+            colsInput.value = String(spec.cols);
+            rowsInput.value = String(spec.rows);
+            paletteSelect.value = spec.paletteName;
+            this.context = buildRegionContext(this.plugin, this.placement);
+            const roads = this.context.paths?.length ?? 0;
+            const borders = occupiedSides(this.plugin, this.placement).map((s) => `${s}: ${regionNameAt(this.plugin, this.placement!, s)}`);
+            note.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.` +
+              (roads ? ` ${roads} path${roads === 1 ? "" : "s"} continue across.` : ""));
+          }
+        }
+        const locked = !!this.placement;
+        colsInput.disabled = locked;
+        rowsInput.disabled = locked;
+        paletteSelect.disabled = locked;
+        presetBtns.forEach((b) => { b.disabled = locked; });
+        syncPresetBtns();
+        renderGenerators();
+        renderBase();
+        refresh();
+      };
+      anchorSel.addEventListener("change", onPlace);
+      sideSel.addEventListener("change", onPlace);
+      sideSel.disabled = true;
+    }
 
     // ── Generator ──
     const genRow = this.row(form, "Generator");
@@ -306,7 +364,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (this.baseTerrain) {
         for (let i = 0; i < this.cols; i++)
           for (let j = 0; j < this.rows; j++) {
-            const k = `${i}_${j}`;
+            const k = `${grid.offset.x + i}_${grid.offset.y + j}`;
             if (!cells.has(k)) cells.set(k, this.baseTerrain);
           }
       }
@@ -387,7 +445,7 @@ export class NewMapSetupModal extends HexmakerModal {
    */
   private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[]): GenerateOutcome {
     const grid = this.grid();
-    const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
+    const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement });
     const carry = this.context?.paths ?? [];
     if (!outcome.ok || carry.length === 0 || kind.mapKind === "space") return outcome;
     const routed = routeContextPaths(
@@ -417,6 +475,9 @@ export class NewMapSetupModal extends HexmakerModal {
   }
 
   private grid() {
+    if (this.placement) {
+      return { cols: this.cols, rows: this.rows, offset: { ...this.placement.offset }, stagger: this.placement.stagger };
+    }
     const parent = this.origin ? this.plugin.getMap(this.origin.map) : undefined;
     return {
       cols: this.cols,
@@ -456,8 +517,8 @@ export class NewMapSetupModal extends HexmakerModal {
       this.cols,
       this.rows,
       paletteName,
-      0,
-      0,
+      this.grid().offset.x,
+      this.grid().offset.y,
       this.grid().stagger,
       (done, total) => goBtn.setText(`Creating ${done} / ${total}…`),
       outcome?.ok ? outcome.cells : undefined,
@@ -485,6 +546,8 @@ export class NewMapSetupModal extends HexmakerModal {
       if (missing.length) new Notice(`Skipped paths with no matching path type: ${missing.join(", ")}`);
     }
 
+    // Join the world grid next to the chosen neighbour.
+    if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
     await this.saveDefaults(paletteName);
     this.close();
     this.onCreated(result, { openGenerator });
