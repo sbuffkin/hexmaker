@@ -4,7 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
 import { isModelMarkdown, parseModelMarkdown, solve } from "../packages/hex-wfc/src";
 import { compareVersions, migrateMapData, VERSION_KEY } from "../src/compat";
-import { isSaveMarkdown, parseSave, serializeSave, decodeCells, encodeCells } from "../src/worldgen/saveFormat";
+import { isSaveMarkdown, parseSave, retargetSave, serializeSave, decodeCells, encodeCells } from "../src/worldgen/saveFormat";
 import { exampleFiles } from "./compat/examples";
 
 /**
@@ -87,6 +87,20 @@ describe("save format", () => {
   it("explains a damaged terrain block", () => {
     expect(decodeCells("legend: Grass\n0*2", 3, 1)).toHaveProperty("error");
     expect(decodeCells("legend: Grass\n0 5 0", 3, 1)).toHaveProperty("error");
+  });
+
+  it("points a save at a renamed generator, and leaves other saves alone", () => {
+    const text = exampleFiles("9.9.9")["save.md"];
+    const parsed = parseSave(text);
+    if ("error" in parsed) throw new Error(parsed.error);
+    const from = { name: parsed.save.generatorName, path: parsed.save.generatorPath };
+    const to = { name: "new name", path: "world/generators/new name.md" };
+    const moved = parseSave(retargetSave(text, from, to));
+    if ("error" in moved) throw new Error(moved.error);
+    expect([moved.save.generatorName, moved.save.generatorPath]).toEqual([to.name, to.path]);
+    // Only the two lines change: cells, settings and the generator copy stay.
+    expect({ ...moved.save, generatorName: "", generatorPath: "" }).toEqual({ ...parsed.save, generatorName: "", generatorPath: "" });
+    expect(retargetSave(text, { name: "other", path: "world/generators/other.md" }, to)).toBe(text);
   });
 });
 

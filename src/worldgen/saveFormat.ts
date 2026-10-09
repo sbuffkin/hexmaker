@@ -127,6 +127,35 @@ export function decodeCells(text: string, cols: number, rows: number): { cells: 
 const yaml = (v: string | number) =>
   typeof v === "number" || /^[A-Za-z0-9_][A-Za-z0-9 _./()-]*$/.test(v) ? String(v) : JSON.stringify(v);
 
+/**
+ * Point a save's text at a renamed generator: if its `generator-path` is
+ * `from.path` (or, with no path, its `generator` is `from.name`), the two
+ * lines are rewritten. Anything else, including the save's own copy of the
+ * generator, is left as it was. Returns the text unchanged otherwise.
+ */
+export function retargetSave(text: string, from: { name: string; path: string }, to: { name: string; path: string }): string {
+  const fmEnd = text.search(/\r?\n---\s*(\r?\n|$)/);
+  if (!text.startsWith("---") || fmEnd < 0) return text;
+  const head = text.slice(0, fmEnd), rest = text.slice(fmEnd);
+  const value = (key: string): string | undefined => {
+    const m = new RegExp(`^${key}:[ \\t]*([^\\r\\n]*)$`, "m").exec(head);
+    if (!m) return undefined;
+    const raw = m[1].trim();
+    try {
+      return raw.startsWith('"') ? String(JSON.parse(raw)) : raw;
+    } catch {
+      return raw;
+    }
+  };
+  const path = value("generator-path"), name = value("generator");
+  if (!(path ? path === from.path : name === from.name)) return text;
+  const set = (h: string, key: string, v: string) =>
+    new RegExp(`^${key}:[^\\r\\n]*$`, "m").test(h)
+      ? h.replace(new RegExp(`^${key}:[^\\r\\n]*$`, "m"), () => `${key}: ${yaml(v)}`)
+      : h;
+  return set(set(head, "generator", to.name), "generator-path", to.path) + rest;
+}
+
 export function serializeSave(s: GeneratorSave): string {
   const fm = [
     `${SAVE_MARKER}: ${SAVE_FORMAT}`,

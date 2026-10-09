@@ -260,6 +260,13 @@ export async function deleteGenerators(plugin: HexmakerPlugin, files: TFile[]): 
  * frontmatter changes, so the tables and any notes the user wrote are kept.
  * A value of `undefined` removes the setting (back to the default).
  */
+/** Set the palette a generator belongs to (its `palette` frontmatter). */
+export async function setGeneratorPalette(plugin: HexmakerPlugin, file: TFile, palette: string): Promise<void> {
+  await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    fm.palette = palette;
+  });
+}
+
 export async function saveGeneratorSettings(
   plugin: HexmakerPlugin,
   file: TFile,

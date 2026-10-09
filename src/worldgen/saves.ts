@@ -8,7 +8,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { slugify } from "../utils";
 import { VERSION_KEY } from "../compat";
 import { generatorsFolder, savesFolder, listGenerators, saveGeneratorSettings, type GeneratorFile } from "./generators";
-import { parseSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "./saveFormat";
+import { parseSave, retargetSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "./saveFormat";
 import { parseModelMarkdown, SETTING_KEYS, type GeneratorSettings } from "../../packages/hex-wfc/src";
 
 /** A save as listed (frontmatter only; the file is parsed on load). */
@@ -98,4 +98,50 @@ export async function applySave(
   for (const k of Object.keys(SETTING_KEYS) as (keyof GeneratorSettings)[]) patch[k] = save.settings[k];
   await saveGeneratorSettings(plugin, g.file, patch);
   return { file: g.file, recreated };
+}
+
+/**
+ * Rename a generator: its file, the `name` in its frontmatter and its title
+ * heading. Saves that point at it are updated, so loading them still finds it
+ * (rather than recreating the old one from their copy).
+ */
+export async function renameGenerator(
+  plugin: HexmakerPlugin,
+  g: GeneratorFile,
+  rawName: string,
+): Promise<{ file: TFile; name: string; savesUpdated: number } | { error: string }> {
+  const name = slugify(rawName);
+  if (!name) return { error: "Enter a name (letters, numbers and dashes)." };
+  const oldName = g.model.name, oldPath = g.file.path;
+  const folder = g.file.parent?.path ?? generatorsFolder(plugin);
+  const path = `${folder}/${name}.md`;
+  if (name === oldName && path === oldPath) return { file: g.file, name, savesUpdated: 0 };
+  const clash = plugin.app.vault.getAbstractFileByPath(path);
+  if (clash && clash !== g.file) return { error: `There's already a generator named "${name}".` };
+
+  await plugin.app.vault.process(g.file, (text) => {
+    const fmEnd = text.search(/\r?\n---\s*(\r?\n|$)/);
+    if (!text.startsWith("---") || fmEnd < 0) return text;
+    const head = text.slice(0, fmEnd).replace(/^name:[^\r\n]*$/m, () => `name: ${name}`);
+    // The title heading the file was written with, if it's still there.
+    const rest = text
+      .slice(fmEnd)
+      .split(/(\r?\n)/)
+      .map((line) => (line.trimEnd() === `# ${oldName}` ? `# ${name}` : line))
+      .join("");
+    return head + rest;
+  });
+  if (path !== oldPath) await plugin.app.fileManager.renameFile(g.file, path);
+
+  let savesUpdated = 0;
+  for (const sv of listSaves(plugin)) {
+    let changed = false;
+    await plugin.app.vault.process(sv.file, (text) => {
+      const next = retargetSave(text, { name: oldName, path: oldPath }, { name, path: g.file.path });
+      changed = next !== text;
+      return next;
+    });
+    if (changed) savesUpdated++;
+  }
+  return { file: g.file, name, savesUpdated };
 }

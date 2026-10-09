@@ -18,6 +18,8 @@ import {
   paletteColors,
   pathColors,
   sourceMapsOf,
+  relearnGenerator,
+  setGeneratorPalette,
   toPathChains,
   type GeneratorFile,
 } from "./generators";
@@ -25,9 +27,10 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable } from "./scrub";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
-import { listSaves, writeSave, readSave, applySave } from "./saves";
+import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
+import { ConfirmModal } from "./ConfirmModal";
 import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
-import { compareVersions, pluginVersion } from "../compat";
+import { compareVersions, pluginVersion, VERSION_KEY } from "../compat";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
   cleanupStrengths,
@@ -204,6 +207,96 @@ export class GeneratorPanel {
       });
       schedulePreview();
     };
+
+    // Generator settings: what's saved on the generator itself (its name,
+    // palette and where it came from), as opposed to how it generates.
+    el = this.section(main, "Generator settings");
+    const nameRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
+    const nameInput = nameRow.createEl("input", { type: "text", value: model.name, attr: { placeholder: "Generator name" } });
+    const renameBtn = nameRow.createEl("button", { text: "Rename" });
+    renameBtn.disabled = true;
+    nameInput.addEventListener("input", () => {
+      renameBtn.disabled = !nameInput.value.trim() || nameInput.value.trim() === model.name;
+    });
+    const rename = () => {
+      if (renameBtn.disabled) return;
+      renameBtn.disabled = true;
+      void renameGenerator(this.plugin, g, nameInput.value).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          renameBtn.disabled = false;
+          return;
+        }
+        new Notice(`Renamed to "${r.name}"${r.savesUpdated ? `; ${r.savesUpdated} save${r.savesUpdated === 1 ? "" : "s"} updated` : ""}.`);
+        GeneratorPanel.selectedPath = r.file.path;
+        this.host.rerender();
+      });
+    };
+    renameBtn.addEventListener("click", rename);
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") rename();
+      if (e.key === "Escape") {
+        nameInput.value = model.name;
+        renameBtn.disabled = true;
+      }
+    });
+
+    const ownPaletteRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    ownPaletteRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
+    const ownPalette = ownPaletteRow.createEl("select", { attr: { title: "The palette this generator is for. The palette under the preview only changes the preview." } });
+    const palettes = this.plugin.settings.terrainPalettes.map((p) => p.name);
+    const learnedPalette = model.meta.palette ?? "";
+    if (learnedPalette && !palettes.includes(learnedPalette)) ownPalette.createEl("option", { value: learnedPalette, text: `${learnedPalette} (not installed)` });
+    for (const p of palettes) ownPalette.createEl("option", { value: p, text: p });
+    ownPalette.value = learnedPalette;
+    ownPalette.addEventListener("change", () => {
+      model.meta.palette = ownPalette.value;
+      void setGeneratorPalette(this.plugin, g.file, ownPalette.value).then(() => {
+        GeneratorPanel.paletteName = ownPalette.value;
+        this.host.rerender();
+      });
+    });
+
+    const sources = sourceMapsOf(model);
+    const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    sourceRow.createSpan({ text: "From", cls: "duckmage-map-origin-label" });
+    sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No region recorded", cls: "duckmage-wfc-source" });
+    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these regions, keeping the settings below" } });
+    relearnBtn.disabled = !sources.length;
+    relearnBtn.addEventListener("click", () => {
+      relearnBtn.disabled = true;
+      void relearnGenerator(this.plugin, g).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          relearnBtn.disabled = false;
+          return;
+        }
+        new Notice(`Re-learned "${model.name}" from ${sources.join(" + ")}.`);
+        this.host.rerender();
+      });
+    });
+    const openBtn = sourceRow.createEl("button", { text: "Open file" });
+    openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
+
+    const info = [
+      `${model.terrains.length} terrains`,
+      model.exampleHexes ? `learned from ${model.exampleHexes} hexes` : "",
+      model.meta.created ? `created ${model.meta.created}` : "",
+      model.meta[VERSION_KEY] ? `v${model.meta[VERSION_KEY]}` : "",
+      g.file.path,
+    ].filter(Boolean);
+    el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
+    const resetRow = el.createDiv({ cls: "duckmage-region-row" });
+    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every setting below back to its default" } });
+    resetBtn.addEventListener("click", () => {
+      new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
+        const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
+        for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
+        save(cleared);
+        this.host.rerender();
+      }).open();
+    });
 
     // Preview (in the sticky side column), with the map's seed, size and
     // palette right under it.
@@ -770,14 +863,6 @@ export class GeneratorPanel {
       }
     }
 
-    const resetRow = main.createDiv({ cls: "duckmage-region-row" });
-    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });
-    resetBtn.addEventListener("click", () => {
-      const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
-      for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
-      save(cleared);
-      this.host.rerender();
-    });
 
     schedulePreview();
   }
