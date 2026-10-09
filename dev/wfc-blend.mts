@@ -14,6 +14,14 @@ for (const spec of specs) {
   if (!isCompass(dir)) throw new Error(`bad direction ${dir}`);
   models.push(parsed.model); dirs.push(dir); influence.push(Number(inf));
 }
-const name = specs.map((s) => basename(s.split(":")[0], ".md")).join("-to-");
-writeFileSync(out, modelToMarkdown(mergeModels(models, name, { palette: "Default" }, influence, dirs)));
+// Same metadata the generator page writes, so the blend can be re-blended there.
+const name = basename(out, ".md");
+const meta = {
+  palette: "Default",
+  created: new Date().toISOString().slice(0, 10),
+  "blend-of": models.map((m) => m.name).join(" + "),
+  "source-influence": influence.join(" + "),
+  ...(dirs.some((d) => d !== "C") ? { "source-direction": dirs.join(" + ") } : {}),
+};
+writeFileSync(out, modelToMarkdown(mergeModels(models, name, meta, influence, dirs)));
 console.log("wrote", out);
