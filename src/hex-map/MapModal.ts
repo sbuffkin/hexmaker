@@ -36,6 +36,8 @@ import {
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
+import { hasFeature } from "../featureLevel";
+import { renderAdvancedHint, withFeature } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
@@ -533,6 +535,12 @@ export class MapModal extends HexmakerModal {
    * lining up, slot free) are offered; an empty side can get a new region.
    */
   private renderNeighbourBlock(el: HTMLElement, map: MapData): void {
+    // An Advanced feature; a map that's already linked keeps showing its links.
+    if (!hasFeature(this.plugin.settings, "regions") && !map.world) {
+      renderAdvancedHint(el, this.plugin, "regions", "map-properties",
+        "Join this map edge to edge with others into one big world, and walk from one into the next: neighbouring regions.");
+      return;
+    }
     el.createEl("h4", { text: "Neighbouring regions" });
     el.createEl("p", {
       text: "Regions next to each other share one grid: walking off this map's edge (or the hex flower) leads into them. They must be the same size and use the same palette.",
@@ -675,18 +683,25 @@ export class MapModal extends HexmakerModal {
 
     // Place next to an existing map: it becomes a neighbouring region on the
     // same grid, so size, palette, stagger and coordinates follow from it.
-    el.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label" });
-    el.createEl("p", {
+    // Neighbouring regions are an Advanced feature (hidden, with a hint, in Simple).
+    const placeBox = el.createDiv();
+    if (!hasFeature(this.plugin.settings, "regions")) {
+      placeBox.hide();
+      renderAdvancedHint(el, this.plugin, "regions", "new-map-place",
+        "Place a new map next to an existing one, so they join into one world: neighbouring regions.");
+    }
+    placeBox.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label" });
+    placeBox.createEl("p", {
       text: "Make this map a neighbouring region of another: it's the same size and palette, and lines up with it hex for hex.",
       cls: "duckmage-map-origin-desc",
     });
-    const placeRow = el.createDiv({ cls: "duckmage-region-row" });
+    const placeRow = placeBox.createDiv({ cls: "duckmage-region-row" });
     const anchorSelect = placeRow.createEl("select");
     anchorSelect.createEl("option", { value: "", text: "Nowhere (a separate map)" });
     for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
     const sideSelect = placeRow.createEl("select");
     for (const s of SIDES) sideSelect.createEl("option", { value: s, text: `${s} of it` });
-    const placeNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
+    const placeNote = placeBox.createEl("p", { cls: "duckmage-map-origin-desc" });
     if (this.newMapPlacement) {
       anchorSelect.value = this.newMapPlacement.anchor;
       sideSelect.value = this.newMapPlacement.side;
@@ -730,15 +745,21 @@ export class MapModal extends HexmakerModal {
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
     fillPaletteSelect(this.plugin, paletteSelect);
+    renderAdvancedHint(el, this.plugin, "palettes", "new-map-palette",
+      "Design your own palette: its terrains, colours and icons, and the paths you can draw.");
 
     // Generator (optional). Only generators whose terrains all exist in the
     // chosen palette are offered.
-    el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
-    el.createEl("p", {
+    const generatorBox = el.createDiv();
+    const generatorHint = el.createDiv();
+    renderAdvancedHint(generatorHint, this.plugin, "generators", "new-map-generator",
+      "Fill a new map with generated terrain instead of painting it all by hand: terrain generators.");
+    generatorBox.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
+    generatorBox.createEl("p", {
       text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings in the terrain generator.",
       cls: "duckmage-map-origin-desc",
     });
-    const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
+    const generatorRow = generatorBox.createDiv({ cls: "duckmage-region-row" });
     const generatorSelect = generatorRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
     let generators: GeneratorFile[] = [];
     const fillGenerators = () => {
@@ -754,10 +775,16 @@ export class MapModal extends HexmakerModal {
           spaceContext,
           selected: g.file.path === current,
         });
-        if (shown && generatorFitsPalette(g.model, names))
+        // Generators are Advanced; Space brings its own at either level.
+        const allowed = hasFeature(this.plugin.settings, "generators") || generatorMapKind(g.model.meta) === "space";
+        if (shown && allowed && generatorFitsPalette(g.model, names))
           generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
       }
       generatorSelect.value = Array.from(generatorSelect.options).some((o) => o.value === current) ? current : "";
+      // Nothing but Blank to offer (Simple, no space generators): a hint instead.
+      const none = generatorSelect.options.length <= 1 && !hasFeature(this.plugin.settings, "generators");
+      generatorBox.toggle(!none);
+      generatorHint.toggle(none);
     };
     fillGenerators();
     paletteSelect.addEventListener("change", fillGenerators);
@@ -965,6 +992,11 @@ export class MapModal extends HexmakerModal {
 
   /** Learn a generator from a region and open it in the terrain generator. */
   private async createGeneratorFrom(mapName: string): Promise<void> {
+    // An Advanced feature: in Simple, offer to turn it on first.
+    if (!hasFeature(this.plugin.settings, "generators")) {
+      withFeature(this.plugin, "generators", () => void this.createGeneratorFrom(mapName));
+      return;
+    }
     const result = await saveGeneratorFromMap(this.plugin, mapName, mapName);
     if ("error" in result) {
       new Notice(result.error);

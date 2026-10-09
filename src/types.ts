@@ -198,6 +198,18 @@ export interface HexmakerPluginSettings {
 	palettesMigrated: boolean;
 	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
 	mapKinds: string[];
+	/** Simple or Advanced (see src/featureLevel.ts). */
+	featureLevel: "simple" | "advanced";
+	/** Advanced features turned on one by one while in Simple. */
+	advancedFeatures: string[];
+	/** Advanced hints the user closed, by spot id. */
+	dismissedHints: string[];
+	/** When the plugin first ran (ISO date), for the "ready for more?" check-in. */
+	installedAt?: string;
+	/** Last time the check-in was shown (ISO date). */
+	advancedNudgeAt?: string;
+	/** "Don't ask again" on the check-in. */
+	advancedNudgeOff?: boolean;
 	/** True once existing palettes got terrain types (one-time seeding). */
 	terrainTypesSeeded: boolean;
 }

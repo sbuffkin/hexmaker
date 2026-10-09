@@ -10,6 +10,8 @@ import {
 } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
+import { hasFeature } from "../featureLevel";
+import { renderAdvancedHint } from "../advancedHints";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { WorkflowEditorModal } from "./WorkflowEditorModal";
@@ -62,6 +64,19 @@ export class RandomTableView extends ItemView {
   private viewMode: "tables" | "workflows" = "tables";
   private tablesBtn: HTMLButtonElement | null = null;
   private workflowsBtn: HTMLButtonElement | null = null;
+  /** Holds the "workflows" hint while that Advanced feature is off. */
+  private workflowHintBox: HTMLElement | null = null;
+
+  /** Show or hide workflows to match the feature level (see src/featureLevel.ts). */
+  refreshFeatures(): void {
+    const on = hasFeature(this.plugin.settings, "workflows");
+    this.workflowsBtn?.toggle(on);
+    this.workflowHintBox?.empty();
+    if (!on && this.workflowHintBox)
+      renderAdvancedHint(this.workflowHintBox, this.plugin, "workflows", "random-tables",
+        "Chain several of these tables into one filled-in note (a settlement, an NPC): workflows.");
+    if (!on && this.viewMode === "workflows") this.setViewMode("tables");
+  }
   private tableFooterEl: HTMLElement | null = null;
   private workflowFooterEl: HTMLElement | null = null;
 
@@ -144,6 +159,9 @@ export class RandomTableView extends ItemView {
     this.workflowsBtn.addEventListener("click", () =>
       this.setViewMode("workflows"),
     );
+    // Workflows are an Advanced feature: in Simple, a hint sits here instead.
+    this.workflowHintBox = leftCol.createDiv();
+    this.refreshFeatures();
 
     // Middle-click mode tabs → open view in new tab at that mode
     this.tablesBtn.addEventListener("auxclick", (e: MouseEvent) => {
@@ -1656,7 +1674,7 @@ export class RandomTableView extends ItemView {
     // ── Used by workflows ───────────────────────────────────────────────
     const tableKey = file.path.slice(0, -3); // remove .md
     const usingWorkflows = this.workflowMap.get(tableKey) ?? [];
-    if (usingWorkflows.length > 0 || this.plugin.settings.workflowsFolder) {
+    if (hasFeature(this.plugin.settings, "workflows") && (usingWorkflows.length > 0 || this.plugin.settings.workflowsFolder)) {
       const usedBySection = this.detailEl.createDiv({
         cls: "duckmage-rt-used-by",
       });

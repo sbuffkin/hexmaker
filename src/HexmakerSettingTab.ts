@@ -3,6 +3,7 @@ import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
+import { ADVANCED_FEATURES, hasFeature, isAdvanced } from "./featureLevel";
 
 const PALETTES_FOLDER_DESC =
   "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
@@ -225,6 +226,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
             }),
           );
         },
+      },
+      {
+        type: "group",
+        heading: "Features",
+        items: this.featureItems(),
       },
       {
         name: "Default die for new tables",
@@ -765,6 +771,58 @@ export class HexmakerSettingTab extends PluginSettingTab {
     });
   }
 
+  /**
+   * Feature level (src/featureLevel.ts): Simple or Advanced, each Advanced
+   * feature on its own while in Simple, and a way to bring closed hints back.
+   */
+  private featureItems(): LocalSettingDefinition[] {
+    const s = this.plugin.settings;
+    const refresh = () => {
+      if (typeof (this as unknown as { update?: () => void }).update === "function") this.requestDeclarativeRerender();
+      else this.renderSettings();
+    };
+    const items: LocalSettingDefinition[] = [
+      {
+        name: "Feature level",
+        desc: "Simple: paint maps, write hex notes, roll on encounter tables, export. Advanced: also terrain generators, workflows, custom palettes and neighbouring regions. Nothing you've made is touched either way.",
+        aliases: ["simple", "advanced", "mode"],
+        render: (setting: Setting) => {
+          setting.addDropdown((d) =>
+            d.addOption("simple", "Simple").addOption("advanced", "Advanced")
+              .setValue(s.featureLevel)
+              .onChange((v) => void this.plugin.setFeatureLevel(v === "simple" ? "simple" : "advanced").then(refresh)),
+          );
+        },
+      },
+    ];
+    for (const f of ADVANCED_FEATURES) {
+      items.push({
+        name: f.label,
+        desc: isAdvanced(s) ? `${f.pitch} (On with Advanced.)` : f.pitch,
+        render: (setting: Setting) => {
+          setting.addToggle((t) => {
+            t.setValue(hasFeature(s, f.id)).setDisabled(isAdvanced(s));
+            t.onChange((on) => void (on ? this.plugin.enableAdvancedFeature(f.id) : this.plugin.disableAdvancedFeature(f.id)).then(refresh));
+          });
+        },
+      });
+    }
+    if (s.dismissedHints.length)
+      items.push({
+        name: "Hints",
+        desc: `${s.dismissedHints.length} hint${s.dismissedHints.length === 1 ? "" : "s"} about Advanced features hidden.`,
+        render: (setting: Setting) => {
+          setting.addButton((b) =>
+            b.setButtonText("Show hints again").onClick(() => {
+              s.dismissedHints = [];
+              void this.plugin.saveSettings().then(refresh);
+            }),
+          );
+        },
+      });
+    return items;
+  }
+
   private requestDeclarativeRerender(): void {
     const tab = this as unknown as { update?: () => void };
     if (typeof tab.update !== "function") return;
@@ -858,6 +916,13 @@ export class HexmakerSettingTab extends PluginSettingTab {
             void this.plugin.saveSettings().then(() => this.plugin.openSetupWizard());
           }),
       );
+
+    new Setting(containerEl).setName("Features").setHeading();
+    for (const item of this.featureItems()) {
+      const s = new Setting(containerEl).setName(item.name ?? "");
+      if (typeof item.desc === "string") s.setDesc(item.desc);
+      item.render?.(s);
+    }
 
     new Setting(containerEl)
       .setName("Default die for new tables")

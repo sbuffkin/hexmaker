@@ -6,6 +6,8 @@ import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
 import { neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import { hasFeature } from "../featureLevel";
+import { renderAdvancedHint } from "../advancedHints";
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
@@ -183,7 +185,12 @@ export class NewMapSetupModal extends HexmakerModal {
     // ── Next to (new top-level maps): join a world of neighbouring regions.
     // Size, palette, offset and stagger then follow the neighbour; terrain
     // and roads continue across the borders.
-    if (!this.origin && this.plugin.settings.maps.length > 0) {
+    // An Advanced feature: a hint stands in for it in Simple.
+    if (!this.origin && this.plugin.settings.maps.length > 0 && !hasFeature(this.plugin.settings, "regions")) {
+      renderAdvancedHint(form, this.plugin, "regions", "new-map-setup-next",
+        "Place this map next to an existing one so they join into one world: neighbouring regions.");
+    }
+    if (!this.origin && this.plugin.settings.maps.length > 0 && hasFeature(this.plugin.settings, "regions")) {
       const nextRow = this.row(form, "Next to");
       const anchorSel = nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } });
       anchorSel.createEl("option", { value: "", text: "— none (stand-alone) —" });
@@ -237,6 +244,9 @@ export class NewMapSetupModal extends HexmakerModal {
     const genRow = this.row(form, "Generator");
     this.rememberBox(genRow, "generator", "Generator and its options");
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators" });
+    // Simple shows Blank (and Space generators); a hint says there is more.
+    renderAdvancedHint(form, this.plugin, "generators", "new-map-setup-generators",
+      "Generate this map's terrain for you: learned from maps you've painted, or from biome presets.");
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
 
     // ── Base terrain ──
@@ -278,6 +288,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const actions = contentEl.createDiv({ cls: "duckmage-setup-actions" });
     const goBtn = actions.createEl("button", { cls: "mod-cta" });
     const genBtn = actions.createEl("button", { text: "Open in generator", attr: { title: "Create the map blank and open the generator view on it to tune generation by hand" } });
+    if (!hasFeature(this.plugin.settings, "generators")) genBtn.hide();
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
     const renderGenerators = () => {

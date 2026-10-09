@@ -36,6 +36,8 @@ import { suggestImpassable } from "./impassableHint";
 import { SIDES, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
+import { hasFeature } from "../featureLevel";
+import { renderAdvancedHint } from "../advancedHints";
 import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -572,6 +574,13 @@ export class GeneratorPanel {
     anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
     sideSelect.value = GeneratorPanel.connect?.side ?? "east";
     sideSelect.disabled = !anchorSelect.value;
+    // Neighbouring regions are an Advanced feature: a hint instead in Simple.
+    if (!hasFeature(this.plugin.settings, "regions")) {
+      connectRow.hide();
+      GeneratorPanel.connect = null;
+      renderAdvancedHint(el, this.plugin, "regions", "generator-connect",
+        "Make the new map a neighbour of an existing one, its terrain carrying on across the border: neighbouring regions.");
+    }
     const connectNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
     let connected: NewRegion | null = null;
     if (GeneratorPanel.connect) {

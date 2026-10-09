@@ -26,6 +26,8 @@ import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { isIconHiddenByKind, isSpacePalette, resolveMapKinds } from "./mapKinds";
+import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
+import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
   getPreset,
@@ -79,6 +81,11 @@ export default class HexmakerPlugin extends Plugin {
       void this.autoRegisterMapsFromVault();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
+      } else if (shouldNudge(this.settings, this.settings.maps.length)) {
+        // A Simple user who's been at it a while: offer Advanced, once.
+        this.settings.advancedNudgeAt = new Date().toISOString().slice(0, 10);
+        void this.saveSettings();
+        new AdvancedNudgeModal(this.app, this).open();
       }
     });
 
@@ -445,6 +452,11 @@ export default class HexmakerPlugin extends Plugin {
    * region and generator selected.
    */
   async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string } = {}): Promise<void> {
+    // An Advanced feature: in Simple, offer to turn it on first.
+    if (!hasFeature(this.settings, "generators")) {
+      new EnableFeatureModal(this.app, this, "generators", () => void this.openTerrainGenerator(select)).open();
+      return;
+    }
     if (select.mapName) GeneratorPanel.mapName = select.mapName;
     if (select.paletteName) GeneratorPanel.paletteName = select.paletteName;
     if (select.generatorPath) GeneratorPanel.selectedPath = select.generatorPath;
@@ -534,6 +546,17 @@ export default class HexmakerPlugin extends Plugin {
     // (new install / older data) = world, plus space if a palette has space
     // terrains already.
     this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
+    // Feature level, also from the raw data: an install that already had
+    // settings (an update) gets Advanced so nothing it used disappears; a
+    // fresh one starts Simple. Saved right away, so the next load doesn't
+    // mistake a fresh install's first save for an update.
+    const rawData = (await this.loadData()) as Record<string, unknown> | null;
+    this.settings.featureLevel = resolveFeatureLevel(rawData);
+    this.settings.advancedFeatures = Array.isArray(data["advancedFeatures"]) ? (data["advancedFeatures"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
+    this.settings.dismissedHints = Array.isArray(data["dismissedHints"]) ? (data["dismissedHints"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
+    const firstLevel = rawData?.["featureLevel"] === undefined;
+    if (!this.settings.installedAt) this.settings.installedAt = new Date().toISOString().slice(0, 10);
+    if (firstLevel || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
   async saveSettings() {
@@ -592,6 +615,11 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Open (or focus) the palette editor page, optionally on one palette. */
   async openPaletteEditor(paletteName?: string): Promise<void> {
+    // An Advanced feature: in Simple, offer to turn it on first.
+    if (!hasFeature(this.settings, "palettes")) {
+      new EnableFeatureModal(this.app, this, "palettes", () => void this.openPaletteEditor(paletteName)).open();
+      return;
+    }
     if (paletteName) PaletteEditorView.paletteName = paletteName;
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)[0];
     if (existing) {
@@ -614,6 +642,38 @@ export default class HexmakerPlugin extends Plugin {
    * pickers and re-render open pages that list palettes or generators so
    * the change shows at once. Modals read the setting when they open.
    */
+  /** Switch between Simple and Advanced (settings, wizard, hints). */
+  async setFeatureLevel(level: FeatureLevel): Promise<void> {
+    this.settings.featureLevel = level;
+    await this.saveSettings();
+    this.onFeaturesChanged();
+  }
+
+  /** Turn on one Advanced feature while in Simple (see enableFeature). */
+  async enableAdvancedFeature(f: AdvancedFeature): Promise<void> {
+    enableFeature(this.settings, f);
+    await this.saveSettings();
+    this.onFeaturesChanged();
+  }
+
+  /** Turn off one Advanced feature that was turned on by itself (Simple only). */
+  async disableAdvancedFeature(f: AdvancedFeature): Promise<void> {
+    this.settings.advancedFeatures = this.settings.advancedFeatures.filter((x) => x !== f);
+    await this.saveSettings();
+    this.onFeaturesChanged();
+  }
+
+  /**
+   * Feature level or an Advanced feature changed: re-render open pages that
+   * show or hide features (modals read the setting when they open).
+   */
+  onFeaturesChanged(): void {
+    this.onMapKindsChanged();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES)) {
+      if (leaf.view instanceof RandomTableView) leaf.view.refreshFeatures();
+    }
+  }
+
   onMapKindsChanged(): void {
     this.loadAvailableIcons();
     this.refreshPaletteEditors();

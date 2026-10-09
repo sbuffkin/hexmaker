@@ -21,6 +21,7 @@ import {
   planetSurfaceFits,
 } from "./procedural/planetSurface";
 import { generatorMapKind, isGeneratorShown, type MapKind } from "../mapKinds";
+import { hasFeature, type FeatureSettings } from "../featureLevel";
 import { generateConnected, type NewRegion } from "./neighbours";
 
 /**
@@ -224,11 +225,17 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
  */
 export function visibleKinds(
   kinds: TerrainGeneratorKind[],
-  settings: { mapKinds?: string[] },
+  settings: { mapKinds?: string[] } & FeatureSettings,
   spaceContext: boolean,
   selectedId?: string,
 ): TerrainGeneratorKind[] {
-  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
+  return kinds.filter(
+    (k) =>
+      isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId })
+      // Generators are an Advanced feature; Blank always shows, and Space
+      // brings its own generators at either level (isGeneratorShown).
+      && (k.id === BLANK_ID || k.id === selectedId || k.mapKind === "space" || hasFeature(settings, "generators")),
+  );
 }
 
 /**

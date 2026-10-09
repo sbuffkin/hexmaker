@@ -31,6 +31,8 @@ import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { resolveHex, type Side } from "../worldgen/world";
 import { neighbourSpec } from "../worldgen/neighbours";
 import { WalkRegionModal } from "../worldgen/WalkRegionModal";
+import { hasFeature } from "../featureLevel";
+import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 
@@ -395,15 +397,21 @@ export class HexEditorModal extends HexmakerModal {
           const side = offMapSide(here, nx, ny);
           tile.addClass("duckmage-neighbor-tile-new");
           tile.removeClass("duckmage-neighbor-tile-offmap");
-          tile.title = `New land to the ${side}…`;
+          tile.title = hasFeature(this.plugin.settings, "regions")
+            ? `New land to the ${side}…`
+            : `Join a new map to the ${side} (neighbouring regions)…`;
           tile.addEventListener("click", () => {
-            new WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
-              const now = this.plugin.getMap(this.mapName);
-              const arrived = now ? resolveHex(this.plugin.settings.maps, now, nx, ny) : null;
-              if (!arrived || arrived.map.name === this.mapName) return;
-              this.close();
-              this.options.onCrossToRegion?.(arrived.map.name, arrived.x, arrived.y);
-            }).open();
+            // Needs neighbouring regions, and generators to pick a biome;
+            // in Simple each asks to be turned on first.
+            withFeature(this.plugin, "regions", () => withFeature(this.plugin, "generators", () => {
+              new WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
+                const now = this.plugin.getMap(this.mapName);
+                const arrived = now ? resolveHex(this.plugin.settings.maps, now, nx, ny) : null;
+                if (!arrived || arrived.map.name === this.mapName) return;
+                this.close();
+                this.options.onCrossToRegion?.(arrived.map.name, arrived.x, arrived.y);
+              }).open();
+            }));
           });
         } else {
           tile.title = "Off map";

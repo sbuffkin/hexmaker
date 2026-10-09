@@ -6,6 +6,7 @@ import { normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, isSpacePalette, type MapKind } from "./mapKinds";
+import { FEATURE_LEVEL_CHOICES, type FeatureLevel } from "./featureLevel";
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { pathColors } from "./worldgen/generators";
@@ -46,6 +47,8 @@ interface WizardContext {
 	hexOrientation: "flat" | "pointy";
 	/** Map types to enable (src/mapKinds.ts). */
 	mapKinds: MapKind[];
+	/** Simple or Advanced (src/featureLevel.ts). */
+	featureLevel: FeatureLevel;
 	/** Generator for the first map (registry id); undefined = pick the
 	 *  default for the map types and palette (firstMapGenerator). */
 	generatorId?: string;
@@ -140,11 +143,17 @@ function wizardKinds(
 	ctx: WizardContext,
 	terrains: TerrainColor[],
 ): { fitting: TerrainGeneratorKind[]; selected: string } {
-	const shown = visibleKinds(kinds, { mapKinds: ctx.mapKinds }, isSpacePalette(terrains), ctx.generatorId);
-	const fitting = kindsForPalette(shown, terrains);
+	// Choose among every generator the map types allow, then (in Simple) keep
+	// just Blank and the default starter, so a Simple first map still gets
+	// terrain without a wall of choices.
+	const all = kindsForPalette(visibleKinds(kinds, { mapKinds: ctx.mapKinds, featureLevel: "advanced" }, isSpacePalette(terrains), ctx.generatorId), terrains);
+	const starter = firstMapGenerator(all, ctx.mapKinds);
+	const fitting = ctx.featureLevel === "simple"
+		? all.filter((k) => k.id === BLANK_ID || k.id === starter || k.mapKind === "space")
+		: all;
 	const selected = ctx.generatorId && fitting.some((k) => k.id === ctx.generatorId)
 		? ctx.generatorId
-		: firstMapGenerator(fitting, ctx.mapKinds);
+		: starter;
 	return { fitting, selected };
 }
 
@@ -215,10 +224,28 @@ function makeWelcomeStep(): WizardStep {
 					cbs.onUpdate();
 				});
 			}
+
+			// How much to start with. Changeable any time in settings, and
+			// any one Advanced feature can be turned on from where it would appear.
+			const level = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-kinds" });
+			level.createEl("label", { text: "How much do you want to start with?", cls: "duckmage-wizard-label" });
+			for (const opt of FEATURE_LEVEL_CHOICES) {
+				const row = level.createEl("label", { cls: "duckmage-wizard-kind" });
+				const radio = row.createEl("input", { type: "radio", attr: { name: "duckmage-feature-level" } });
+				radio.checked = ctx.featureLevel === opt.id;
+				const text = row.createDiv();
+				text.createDiv({ text: opt.label, cls: "duckmage-wizard-kind-title" });
+				text.createDiv({ text: opt.description, cls: "duckmage-wizard-kind-desc" });
+				radio.addEventListener("change", () => {
+					if (radio.checked) ctx.featureLevel = opt.id;
+					cbs.onUpdate();
+				});
+			}
 		},
 		canProceed: (ctx) => ctx.mapKinds.length > 0,
 		async onNext(ctx, plugin) {
 			plugin.settings.mapKinds = [...ctx.mapKinds];
+			plugin.settings.featureLevel = ctx.featureLevel;
 			// Start the first map on a palette of a chosen map type: Space
 			// only → a sector chart (Space - Sector, installed on create).
 			const palIsSpace = isSpacePalette(plugin.getPaletteOrPresetTerrains(ctx.paletteName));
@@ -476,6 +503,13 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });
 			const genSide = genBody.createDiv({ cls: "duckmage-wizard-generator-choices" });
 			const genList = genSide.createDiv({ cls: "duckmage-setup-generators", text: "Loading generators…" });
+			// Simple offers just the starter generator; say there's more.
+			if (ctx.featureLevel === "simple") {
+				genSide.createDiv({
+					text: "More generators (learned from your own maps, biome presets, blends) come with the advanced features; turn them on any time.",
+					cls: "duckmage-wizard-kind-desc",
+				});
+			}
 			const optsBox = genSide.createDiv({ cls: "duckmage-wizard-generator-options" });
 			const previewBox = genBody.createDiv({ cls: "duckmage-wizard-generator-preview" });
 			const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
@@ -721,6 +755,7 @@ export class SetupWizardView extends ItemView {
 			paletteName: defaultPaletteFor(plugin.settings),
 			hexOrientation: plugin.settings.hexOrientation ?? "flat",
 			mapKinds: [...enabledKinds(plugin.settings)],
+			featureLevel: plugin.settings.featureLevel,
 			generatorOptions: {},
 			seed: randomSeed(),
 		};

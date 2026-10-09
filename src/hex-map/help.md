@@ -77,3 +77,9 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 | **⊞** | Open the Hex Table — a spreadsheet view of all hex notes with filters and sorting |
 | **🎲** | Open the Random Tables browser — roll on any table, view odds, edit entries |
 | **⌖** | Go to a specific hex by entering X, Y coordinates |
+
+## Simple and Advanced
+
+**Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes and neighbouring regions (maps joined into one world).
+
+Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.

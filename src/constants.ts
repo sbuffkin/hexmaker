@@ -387,5 +387,10 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   // the setting get space too if they already have space palettes
   // (resolveMapKinds in src/mapKinds.ts).
   mapKinds: ["world"],
+  // Resolved at load from the raw data (resolveFeatureLevel): updates from
+  // before feature levels get Advanced, fresh installs start Simple.
+  featureLevel: "simple",
+  advancedFeatures: [],
+  dismissedHints: [],
   terrainTypesSeeded: false,
 };
