@@ -75,10 +75,18 @@ const JSON_KEYS: [keyof MapSettings, string][] = [
   ["world", "world"],
   ["backgroundImage", "background-image"],
 ];
+/**
+ * Region biome (MapData.biome = { generator, from? }) as two readable keys,
+ * `biome: <generator>` and `biome-from: [a, b]` for transition regions.
+ * Hand-editing `biome` is how a user says "treat this region as deep
+ * forest" for later neighbour blends.
+ */
+const BIOME_KEY = "biome";
+const BIOME_FROM_KEY = "biome-from";
 /** Catch-all for MapData fields this file doesn't know (future/other branches). */
 const EXTRA_KEY = "hexmaker-extra";
 const OWNED = new Set<string>([
-  MAP_NOTE_MARKER, "cols", "rows", "offset-x", "offset-y", EXTRA_KEY,
+  MAP_NOTE_MARKER, "cols", "rows", "offset-x", "offset-y", EXTRA_KEY, BIOME_KEY, BIOME_FROM_KEY,
   ...SCALAR_KEYS.map(([, k]) => k), ...JSON_KEYS.map(([, k]) => k),
 ]);
 const SKIP_FIELDS = new Set(["name", "pathChains", "savedViewport", "gridSize", "gridOffset"]);
@@ -103,6 +111,15 @@ function parseValue(raw: string): unknown {
   return t;
 }
 
+/** A YAML flow list, JSON or hand-written (`[a, b]` without quotes), or one bare value. */
+function parseList(raw: string): string[] {
+  const v = parseValue(raw);
+  if (Array.isArray(v)) return v.filter((x): x is string => typeof x === "string" && x !== "");
+  if (typeof v !== "string" || !v) return [];
+  const inner = /^\[(.*)\]$/.exec(v);
+  return (inner ? inner[1].split(",") : [v]).map((x) => x.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
+}
+
 function frontmatterLines(settings: Partial<MapSettings>): string[] {
   const s = settings as Record<string, unknown>;
   const lines = [`${MAP_NOTE_MARKER}: 1`];
@@ -110,7 +127,16 @@ function frontmatterLines(settings: Partial<MapSettings>): string[] {
   if (settings.gridOffset) lines.push(`offset-x: ${settings.gridOffset.x}`, `offset-y: ${settings.gridOffset.y}`);
   for (const [field, key] of SCALAR_KEYS) if (s[field] !== undefined) lines.push(`${key}: ${yamlValue(s[field])}`);
   for (const [field, key] of JSON_KEYS) if (s[field] !== undefined) lines.push(`${key}: ${JSON.stringify(s[field])}`);
+  const biome = s.biome as { generator?: unknown; from?: unknown } | undefined;
+  const biomeReadable = !!biome && typeof biome.generator === "string" && biome.generator !== ""
+    && Object.keys(biome).every((k) => k === "generator" || k === "from")
+    && (biome.from === undefined || (Array.isArray(biome.from) && biome.from.every((v) => typeof v === "string")));
+  if (biomeReadable) {
+    lines.push(`${BIOME_KEY}: ${yamlValue(biome.generator)}`);
+    if (Array.isArray(biome.from) && biome.from.length) lines.push(`${BIOME_FROM_KEY}: ${JSON.stringify(biome.from)}`);
+  }
   const known = new Set<string>([...SCALAR_KEYS, ...JSON_KEYS].map(([f]) => f as string));
+  if (biomeReadable) known.add("biome");
   const extra: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(s)) {
     if (v === undefined || known.has(k) || SKIP_FIELDS.has(k)) continue;
@@ -141,6 +167,13 @@ function parseFrontmatter(body: string): Partial<MapSettings> {
     if (!raw.has(key)) continue;
     const v = parseValue(raw.get(key)!);
     if (v !== undefined) out[field] = v;
+  }
+  const gen = parseValue(raw.get(BIOME_KEY) ?? "");
+  if (typeof gen === "string" && gen) {
+    const biome: { generator: string; from?: string[] } = { generator: gen };
+    const from = parseList(raw.get(BIOME_FROM_KEY) ?? "");
+    if (from.length) biome.from = from;
+    out.biome = biome;
   }
   const extra = parseValue(raw.get(EXTRA_KEY) ?? "");
   if (extra && typeof extra === "object" && !Array.isArray(extra)) {

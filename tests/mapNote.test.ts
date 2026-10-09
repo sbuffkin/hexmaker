@@ -123,6 +123,38 @@ describe("map notes", () => {
 	});
 });
 
+describe("region biome", () => {
+	const withBiome = (biome: unknown): MapNoteData => ({ settings: { paletteName: "Default", biome } as never, hexes: new Map(), paths: [] });
+
+	it("is written as readable biome / biome-from keys and read back", () => {
+		const note = buildMapNote("m", withBiome({ generator: "preset-deep-forest", from: ["preset-valley", "biome-swamp"] }));
+		expect(note).toContain("\nbiome: preset-deep-forest\n");
+		expect(note).toContain('\nbiome-from: ["preset-valley","biome-swamp"]\n');
+		expect(note).not.toContain("hexmaker-extra");
+		expect((parseMapNote(note)!.settings as Record<string, unknown>).biome)
+			.toEqual({ generator: "preset-deep-forest", from: ["preset-valley", "biome-swamp"] });
+	});
+
+	it("accepts hand edits: a bare name, and an unquoted list", () => {
+		const note = "---\nhexmaker-map: 1\nbiome: deep forest\nbiome-from: [valley, swamp]\n---\n";
+		expect((parseMapNote(note)!.settings as Record<string, unknown>).biome)
+			.toEqual({ generator: "deep forest", from: ["valley", "swamp"] });
+	});
+
+	it("survives an update that keeps the user's prose", () => {
+		const note = buildMapNote("m", withBiome({ generator: "biome-taiga" })) + "\nMy notes.\n";
+		const out = updateMapNote(note, "m", withBiome({ generator: "biome-tundra" }));
+		expect(out).toContain("\nbiome: biome-tundra\n");
+		expect(out.match(/^biome:/gm)).toHaveLength(1);
+		expect(out).toContain("My notes.");
+	});
+
+	it("falls back to the catch-all for shapes it can't write readably", () => {
+		const back = parseMapNote(buildMapNote("m", withBiome({ generator: "x", weights: { a: 1 } })))!;
+		expect((back.settings as Record<string, unknown>).biome).toEqual({ generator: "x", weights: { a: 1 } });
+	});
+});
+
 describe("new hex notes", () => {
 	it("swap map-data keys for a link to the map note, keeping the rest", () => {
 		const t = "---\nterrain:\ntags: [hex]\ngm-icons:\n  - a.png\n  - b.png\nregion: North\n---\n# Hex 1, 2\n";
