@@ -4,6 +4,8 @@ import type { HexMapView } from "./hex-map/HexMapView";
 import { normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { fillPaletteSelect } from "./palettes/paletteOptions";
+import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
+import { SPACE_SECTOR_PALETTE_NAME } from "./palettes/presets";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +30,8 @@ interface WizardContext {
 	mapRows: number;
 	paletteName: string;
 	hexOrientation: "flat" | "pointy";
+	/** Map types to enable (src/mapKinds.ts). */
+	mapKinds: MapKind[];
 }
 
 interface WizardCallbacks {
@@ -80,7 +84,7 @@ function makeWelcomeStep(): WizardStep {
 	return {
 		id: "welcome",
 		title: "Welcome to Hexmaker!",
-		render(container) {
+		render(container, ctx, cbs) {
 			container.createEl("p", {
 				text: "Hexmaker turns your Obsidian vault into a living, interactive hex map. Each hex on the map is a Markdown note — you can paint terrain, add icons, link towns, dungeons, factions, and encounter tables, and run random tables right from the map.",
 				cls: "duckmage-wizard-text",
@@ -93,8 +97,35 @@ function makeWelcomeStep(): WizardStep {
 				text: "This panel doesn't block anything — feel free to click around Obsidian, browse the file tree, or create folders while it's open.",
 				cls: "duckmage-wizard-text duckmage-wizard-tip",
 			});
+
+			// What kinds of maps? Drives which palettes, generators and icon
+			// packs are offered. Changeable later in settings → Map types.
+			const kinds = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-kinds" });
+			kinds.createEl("label", { text: "What will you map?", cls: "duckmage-wizard-label" });
+			for (const k of MAP_KINDS) {
+				const row = kinds.createEl("label", { cls: "duckmage-wizard-kind" });
+				const cb = row.createEl("input", { type: "checkbox" });
+				cb.checked = ctx.mapKinds.includes(k.id);
+				const text = row.createDiv();
+				text.createDiv({ text: k.label, cls: "duckmage-wizard-kind-title" });
+				text.createDiv({ text: k.description, cls: "duckmage-wizard-kind-desc" });
+				cb.addEventListener("change", () => {
+					ctx.mapKinds = MAP_KINDS.map((m) => m.id).filter((id) =>
+						id === k.id ? cb.checked : ctx.mapKinds.includes(id));
+					cbs.onUpdate();
+				});
+			}
 		},
-		canProceed: () => true,
+		canProceed: (ctx) => ctx.mapKinds.length > 0,
+		async onNext(ctx, plugin) {
+			plugin.settings.mapKinds = [...ctx.mapKinds];
+			// Space only: start the first map as a sector chart.
+			if (!ctx.mapKinds.includes("world") && ctx.mapKinds.includes("space")) {
+				ctx.paletteName = SPACE_SECTOR_PALETTE_NAME;
+			}
+			await plugin.saveSettings();
+			plugin.loadAvailableIcons();
+		},
 	};
 }
 
@@ -473,6 +504,7 @@ export class SetupWizardView extends ItemView {
 			mapRows: 16,
 			paletteName: plugin.settings.terrainPalettes[0]?.name ?? "Limited",
 			hexOrientation: plugin.settings.hexOrientation ?? "flat",
+			mapKinds: [...enabledKinds(plugin.settings)],
 		};
 		this.steps = [
 			makeWelcomeStep(),

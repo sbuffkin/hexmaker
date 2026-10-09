@@ -1,4 +1,5 @@
-import type { PathType, TerrainColor, TerrainPalette } from "../types";
+import type { PathType, SubmapDefault, TerrainColor, TerrainPalette } from "../types";
+import type { MapKind } from "../mapKinds";
 import {
   DEFAULT_TERRAIN_PALETTE,
   EXPANDED_PALETTE_NAME,
@@ -18,6 +19,10 @@ export interface PalettePreset {
   pathTypes?: PathType[];
   /** Palette suggested for submaps of maps using this one. */
   childPalette?: string;
+  /** Map type this preset belongs to (hidden when that type is off). */
+  kind: MapKind;
+  /** Per-terrain submap setup (see SubmapDefault). */
+  submapDefaults?: Record<string, SubmapDefault>;
 }
 
 export const SPACE_SECTOR_PALETTE_NAME = "Space - Sector";
@@ -92,16 +97,52 @@ export const SYSTEM_PATH_TYPES: PathType[] = [
   { name: "Orbit", color: "#3b4a6b", width: 1, lineStyle: "dotted", routing: "through" },
 ];
 
+// Drilling down: every system in a sector opens as an Orbits star system…
+const SYSTEM_SUBMAP: SubmapDefault = {
+  palette: SPACE_SYSTEM_PALETTE_NAME,
+  cols: 13,
+  rows: 13,
+  generator: "procedural:orbits",
+  baseTerrain: "void",
+};
+const SECTOR_SUBMAP_DEFAULTS: Record<string, SubmapDefault> = Object.fromEntries(
+  ["garden world", "ocean world", "desert world", "ice world", "barren world", "molten world",
+    "asteroid belt", "gas giant", "star system"].map((t) => [t, { ...SYSTEM_SUBMAP }]),
+);
+
+// …and every rocky world in a system opens as a planet-surface region map,
+// tuned to the planet type. The sea (or desert) is the base terrain, so
+// only land (or oases) gets hex notes up front.
+const surface = (water: string, climate: string, base: string, relief = "normal"): SubmapDefault => ({
+  palette: EXPANDED_PALETTE_NAME,
+  cols: 20,
+  rows: 14,
+  generator: "procedural:planet-surface",
+  options: { water, climate, relief },
+  baseTerrain: base,
+});
+const SYSTEM_SUBMAP_DEFAULTS: Record<string, SubmapDefault> = {
+  "terrestrial planet": surface("65", "temperate", "ocean"),
+  "ocean planet": surface("85", "lush", "ocean"),
+  "desert planet": surface("10", "arid", "desert"),
+  "ice planet": surface("30", "frozen", "ocean"),
+  "rocky planet": surface("10", "arid", "desert", "rugged"),
+  "molten planet": surface("10", "volcanic", "desert", "rugged"),
+  moon: surface("10", "frozen", "desert", "rugged"),
+};
+
 export const PALETTE_PRESETS: PalettePreset[] = [
   {
     name: LIMITED_PALETTE_NAME,
     description: "A small fantasy overland set: ocean, grass, hills, forest, mountains, desert, snow.",
     terrains: LIMITED_TERRAIN_PALETTE,
+    kind: "world",
   },
   {
     name: EXPANDED_PALETTE_NAME,
     description: "The full fantasy overland set with forests, mountains, wetlands, coasts, and more.",
     terrains: DEFAULT_TERRAIN_PALETTE,
+    kind: "world",
   },
   {
     name: SPACE_SECTOR_PALETTE_NAME,
@@ -109,12 +150,16 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     terrains: SPACE_SECTOR_TERRAINS,
     pathTypes: SPACE_PATH_TYPES,
     childPalette: SPACE_SYSTEM_PALETTE_NAME,
+    kind: "space",
+    submapDefaults: SECTOR_SUBMAP_DEFAULTS,
   },
   {
     name: SPACE_SYSTEM_PALETTE_NAME,
     description: "A single star system: stars, planets, belts, stations, and hazards. Adds an Orbit path type.",
     terrains: SPACE_SYSTEM_TERRAINS,
     pathTypes: SYSTEM_PATH_TYPES,
+    kind: "space",
+    submapDefaults: SYSTEM_SUBMAP_DEFAULTS,
   },
 ];
 
@@ -126,6 +171,7 @@ export function getPreset(name: string): PalettePreset | undefined {
 export function presetToPalette(preset: PalettePreset, name = preset.name): TerrainPalette {
   const pal: TerrainPalette = { name, terrains: preset.terrains.map((t) => ({ ...t })) };
   if (preset.childPalette) pal.childPalette = preset.childPalette;
+  if (preset.submapDefaults) pal.submapDefaults = cloneSubmapDefaults(preset.submapDefaults);
   return pal;
 }
 
@@ -153,4 +199,11 @@ export function mergePathTypes(existing: PathType[], incoming: PathType[] | unde
     added.push(pt.name);
   }
   return added;
+}
+
+/** Deep copy of a submap-defaults map. */
+export function cloneSubmapDefaults(d: Record<string, SubmapDefault>): Record<string, SubmapDefault> {
+  return Object.fromEntries(
+    Object.entries(d).map(([k, v]) => [k, { ...v, ...(v.options ? { options: { ...v.options } } : {}) }]),
+  );
 }

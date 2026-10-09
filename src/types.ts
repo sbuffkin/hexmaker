@@ -105,6 +105,21 @@ export interface TerrainPalette {
 	 *  (e.g. "Space - Sector" → "Space - System"). Stored as `child-palette`
 	 *  in the palette note's frontmatter. Unset = same palette as the parent. */
 	childPalette?: string;
+	/** Per-terrain setup for submaps made from hexes of that terrain
+	 *  ("ocean world" → Space - System, 13×13, Orbits…). Stored as the
+	 *  "Submap defaults" table in the palette note. */
+	submapDefaults?: Record<string, SubmapDefault>;
+}
+
+/** Saved choices for new submaps of one terrain. Every field is optional. */
+export interface SubmapDefault {
+	palette?: string;
+	cols?: number;
+	rows?: number;
+	/** Generator id from src/worldgen/registry.ts ("blank", "procedural:orbits", "wfc:<path>"). */
+	generator?: string;
+	options?: Record<string, string>;
+	baseTerrain?: string;
 }
 
 export interface TerrainColor {
@@ -165,6 +180,8 @@ export interface HexmakerPluginSettings {
 	palettesFolder: string;
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
+	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
+	mapKinds: string[];
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

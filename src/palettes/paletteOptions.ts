@@ -1,5 +1,6 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { PALETTE_PRESETS } from "./presets";
+import { isKindEnabled } from "../mapKinds";
 
 /**
  * Fill a palette <select> with the installed palettes, then any built-in
@@ -16,7 +17,11 @@ export function fillPaletteSelect(
   for (const pal of plugin.settings.terrainPalettes) {
     select.createEl("option", { value: pal.name, text: pal.name });
   }
-  const presets = PALETTE_PRESETS.filter((p) => !installed.has(p.name));
+  // Presets of disabled map types are hidden — unless already selected (e.g.
+  // a saved submap default), so the dropdown can still show it.
+  const presets = PALETTE_PRESETS.filter(
+    (p) => !installed.has(p.name) && (isKindEnabled(plugin.settings, p.kind) || p.name === selected),
+  );
   if (presets.length > 0) {
     const group = select.createEl("optgroup", { attr: { label: "Presets" } });
     for (const p of presets) {

@@ -10,6 +10,13 @@ import {
 import { findTerrain, type ProcGrid, type ProcOption } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterFits } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
+import {
+  PLANET_SURFACE_ID,
+  PLANET_SURFACE_OPTIONS,
+  planetSurface,
+  planetSurfaceFits,
+} from "./procedural/planetSurface";
+import { isKindEnabled, type MapKind } from "../mapKinds";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -46,6 +53,8 @@ export interface TerrainGeneratorKind {
   label: string;
   description: string;
   source: "blank" | "built-in" | "learned";
+  /** Map type that owns a built-in generator (hidden when that type is off). */
+  mapKind?: MapKind;
   options: ProcOption[];
   /** Can this generator produce terrain for a palette with these terrains? */
   fits(terrains: TerrainColor[]): boolean;
@@ -80,7 +89,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
   const jumpRoute = pathTypeNamed(/jump route/i, "Jump route");
   const orbitPath = pathTypeNamed(/^orbit$/i, "Orbit");
 
-  const kinds: TerrainGeneratorKind[] = [
+  const builtIn: TerrainGeneratorKind[] = [
     {
       id: BLANK_ID,
       label: "Blank",
@@ -94,6 +103,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     {
       id: STAR_SCATTER_ID,
       label: "Star scatter",
+      mapKind: "space",
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
       options: STAR_SCATTER_OPTIONS,
@@ -107,6 +117,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     {
       id: ORBITS_ID,
       label: "Orbits",
+      mapKind: "space",
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
       options: ORBITS_OPTIONS,
@@ -117,7 +128,22 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       },
       toChains,
     },
+    {
+      id: PLANET_SURFACE_ID,
+      label: "Planet surface",
+      mapKind: "world",
+      description: "Region map from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
+      source: "built-in",
+      options: PLANET_SURFACE_OPTIONS,
+      fits: planetSurfaceFits,
+      generate: (req) => {
+        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options);
+        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+      },
+      toChains,
+    },
   ];
+  const kinds = builtIn.filter((k) => isKindEnabled(plugin.settings, k.mapKind));
 
   for (const g of await listGenerators(plugin)) {
     kinds.push({

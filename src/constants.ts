@@ -343,4 +343,5 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   setupDismissed: false,
   palettesFolder: "",
   palettesMigrated: false,
+  mapKinds: ["world", "space"],
 };

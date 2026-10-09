@@ -1951,6 +1951,51 @@ input.duckmage-input-error {
     gap: 0.5em;
 }
 
+/* Onboarding: "What will you map?" checkboxes. */
+.duckmage-wizard-kinds {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin-top: 1em;
+}
+
+.duckmage-wizard-kind {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6em;
+    cursor: pointer;
+}
+
+.duckmage-wizard-kind input {
+    margin-top: 0.25em;
+}
+
+.duckmage-wizard-kind-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-wizard-kind-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+/* "Default for <terrain>" checkbox at the end of a setup row. */
+.duckmage-setup-default {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.duckmage-setup-generators + .duckmage-setup-default,
+.duckmage-setup-control > .duckmage-setup-default:first-child {
+    margin-left: 0;
+}
+
 .duckmage-submap-new-row,
 .duckmage-map-guided-row {
     display: flex;

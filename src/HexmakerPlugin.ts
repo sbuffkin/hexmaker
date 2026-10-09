@@ -23,6 +23,7 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
+import { ALL_MAP_KINDS, isIconHiddenByKind } from "./mapKinds";
 import {
   getPreset,
   mergePathTypes,
@@ -35,6 +36,7 @@ import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
   HexmakerPluginSettings,
   MapData,
+  SubmapDefault,
   TerrainColor,
   TerrainPalette,
 } from "./types";
@@ -509,6 +511,10 @@ export default class HexmakerPlugin extends Plugin {
     if (!this.settings.defaultMap) {
       this.settings.defaultMap = this.settings.maps[0]?.name ?? "default";
     }
+    // Own copy (never alias DEFAULT_SETTINGS); unset in older data = all types.
+    this.settings.mapKinds = Array.isArray(this.settings.mapKinds)
+      ? [...this.settings.mapKinds]
+      : [...ALL_MAP_KINDS];
   }
 
   async saveSettings() {
@@ -572,7 +578,10 @@ export default class HexmakerPlugin extends Plugin {
 
   loadAvailableIcons() {
     this.vaultIconsSet = new Set();
-    const pluginIcons: string[] = Array.from(BUNDLED_ICONS.keys());
+    // Icon packs of disabled map types stay out of the pickers (palettes that
+    // already use them still render — getIconUrl reads BUNDLED_ICONS).
+    const pluginIcons: string[] = Array.from(BUNDLED_ICONS.keys())
+      .filter((i) => !isIconHiddenByKind(this.settings, i));
     const vaultIcons: string[] = [];
 
     const iconsFolder = normalizeFolder(this.settings.iconsFolder ?? "");
@@ -1493,6 +1502,47 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Maps whose parent scan came up empty this session (cleared on any link change). */
   private noParentMaps = new Set<string>();
+
+  /**
+   * Saved setup for a new submap made from a `terrain` hex on `parentMap`:
+   * the parent palette's Submap defaults row for that terrain (from its
+   * note), else the matching preset's row (palettes installed before the
+   * preset gained defaults still get them).
+   */
+  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined {
+    if (!terrain) return undefined;
+    const paletteName = this.getMap(parentMap)?.paletteName;
+    if (!paletteName) return undefined;
+    const own = this.getPaletteByName(paletteName)?.submapDefaults?.[terrain];
+    if (own) return own;
+    return getPreset(paletteName)?.submapDefaults?.[terrain];
+  }
+
+  /**
+   * Remember (or forget) choices for new submaps of `terrain` on the parent
+   * map's palette. `set` fields are stored; `clear` fields are removed.
+   * Saved into the palette note's Submap defaults table by the sync.
+   */
+  async saveSubmapDefault(
+    parentMap: string,
+    terrain: string,
+    set: SubmapDefault,
+    clear: (keyof SubmapDefault)[],
+  ): Promise<void> {
+    const paletteName = this.getMap(parentMap)?.paletteName;
+    const pal = paletteName ? this.getPaletteByName(paletteName) : undefined;
+    if (!pal) return;
+    // Start from what the user currently sees (own row, else the preset row).
+    const current: SubmapDefault = { ...(this.submapDefaultFor(parentMap, terrain) ?? {}) };
+    for (const k of clear) delete current[k];
+    Object.assign(current, set);
+    const defaults = { ...(pal.submapDefaults ?? {}) };
+    if (Object.keys(current).length) defaults[terrain] = current;
+    else delete defaults[terrain];
+    if (Object.keys(defaults).length) pal.submapDefaults = defaults;
+    else delete pal.submapDefaults;
+    await this.saveSettings();
+  }
 
   /** Install `name` from the presets if no palette by that name exists yet. */
   async ensurePaletteInstalled(name: string): Promise<void> {

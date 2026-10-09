@@ -1,4 +1,4 @@
-import type { TerrainColor } from "../types";
+import type { SubmapDefault, TerrainColor } from "../types";
 
 // Plain-text palette notes.
 //
@@ -160,6 +160,145 @@ export function setChildPalette(content: string, value: string | undefined): str
   let body = fm[1] + "\n";
   body = CHILD_PALETTE_LINE.test(body) ? body.replace(CHILD_PALETTE_LINE, line) : body + line;
   return `---\n${body}---${fm[2]}${text.slice(fm[0].length)}`;
+}
+
+// ── Submap defaults table ────────────────────────────────────────────────
+//
+//   ## Submap defaults
+//   | Terrain | Palette | Size | Generator | Options | Base terrain |
+//   | ocean world | Space - System | 13x13 | procedural:orbits | bodies=normal | void |
+//
+// Optional per-terrain setup for new submaps (see SubmapDefault). Any cell
+// may be blank. Recognised by its Terrain + Generator header columns, so it
+// never collides with the terrain table (Terrain + Color).
+
+const SUBMAP_HEADING = "## Submap defaults";
+const SUBMAP_HEADERS = ["Terrain", "Palette", "Size", "Generator", "Options", "Base terrain"] as const;
+
+type SubmapColumn = "terrain" | "palette" | "size" | "generator" | "options" | "base";
+
+function submapColumnFor(header: string): SubmapColumn | null {
+  const h = header.trim().toLowerCase().replace(/\s+/g, " ");
+  if (h === "terrain") return "terrain";
+  if (h === "palette") return "palette";
+  if (h === "size") return "size";
+  if (h === "generator") return "generator";
+  if (h === "options") return "options";
+  if (h === "base terrain" || h === "base") return "base";
+  return null;
+}
+
+function findSubmapTable(lines: string[]): { start: number; end: number; columns: (SubmapColumn | null)[] } | null {
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!lines[i].trim().startsWith("|")) continue;
+    if (!SEPARATOR_ROW.test(lines[i + 1])) continue;
+    const columns = splitRow(lines[i]).map(submapColumnFor);
+    if (!columns.includes("terrain") || !columns.includes("generator")) continue;
+    let end = i + 2;
+    while (end < lines.length && lines[end].trim().startsWith("|")) end++;
+    return { start: i, end, columns };
+  }
+  return null;
+}
+
+function parseOptions(raw: string): Record<string, string> | undefined {
+  const out: Record<string, string> = {};
+  for (const part of raw.split(/[;,]/)) {
+    const m = /^\s*([^=]+?)\s*=\s*(.*?)\s*$/.exec(part);
+    if (m && m[1]) out[m[1]] = m[2];
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** The "Submap defaults" table, or undefined when the note has none (or it's empty). */
+export function readSubmapDefaults(content: string): Record<string, SubmapDefault> | undefined {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const span = findSubmapTable(lines);
+  if (!span) return undefined;
+  const out: Record<string, SubmapDefault> = {};
+  for (let i = span.start + 2; i < span.end; i++) {
+    const cells = splitRow(lines[i]);
+    const row: Partial<Record<SubmapColumn, string>> = {};
+    span.columns.forEach((col, idx) => {
+      if (col && cells[idx]) row[col] = cells[idx];
+    });
+    if (!row.terrain) continue;
+    const d: SubmapDefault = {};
+    if (row.palette) d.palette = row.palette;
+    const size = row.size ? /^(\d+)\s*[x×*]\s*(\d+)$/i.exec(row.size) : null;
+    if (size) { d.cols = Number(size[1]); d.rows = Number(size[2]); }
+    if (row.generator) d.generator = row.generator;
+    const opts = row.options ? parseOptions(row.options) : undefined;
+    if (opts) d.options = opts;
+    if (row.base) d.baseTerrain = row.base;
+    out[row.terrain] = d;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+export function serializeSubmapDefaults(defaults: Record<string, SubmapDefault>): string {
+  const lines = [
+    `| ${SUBMAP_HEADERS.join(" | ")} |`,
+    `| ${SUBMAP_HEADERS.map(() => "---").join(" | ")} |`,
+  ];
+  for (const [terrain, d] of Object.entries(defaults)) {
+    const size = d.cols && d.rows ? `${d.cols}x${d.rows}` : "";
+    const opts = d.options ? Object.entries(d.options).map(([k, v]) => `${k}=${v}`).join("; ") : "";
+    const cells = [terrain, d.palette, size, d.generator, opts, d.baseTerrain].map(escapeCell);
+    lines.push(`| ${cells.join(" | ")} |`);
+  }
+  return lines.join("\n");
+}
+
+/** Order-independent comparison key for defaults (undefined ≡ empty). */
+export function submapDefaultsKey(d: Record<string, SubmapDefault> | undefined): string {
+  if (!d) return "";
+  const norm = Object.keys(d).sort().map((t) => {
+    const v = d[t];
+    const opts = v.options ? Object.keys(v.options).sort().map((k) => [k, v.options![k]]) : [];
+    return [t, v.palette ?? "", v.cols ?? 0, v.rows ?? 0, v.generator ?? "", opts, v.baseTerrain ?? ""];
+  });
+  const key = JSON.stringify(norm.filter((r) => (r as unknown[]).slice(1).some((x) => x !== "" && x !== 0 && !(Array.isArray(x) && x.length === 0))));
+  return key === "[]" ? "" : key;
+}
+
+/**
+ * Write (or remove) the "Submap defaults" table. Returns the content
+ * untouched when it already holds these defaults.
+ */
+export function setSubmapDefaults(content: string, defaults: Record<string, SubmapDefault> | undefined): string {
+  if (submapDefaultsKey(readSubmapDefaults(content)) === submapDefaultsKey(defaults)) return content;
+  const text = content.replace(/\r\n?/g, "\n");
+  const lines = text.split("\n");
+  const span = findSubmapTable(lines);
+  const empty = submapDefaultsKey(defaults) === "";
+  if (span) {
+    if (empty) {
+      // Drop the table, plus our heading and intro text when the nearest
+      // heading above the table is "## Submap defaults".
+      let start = span.start;
+      for (let i = span.start - 1; i >= 0; i--) {
+        if (!lines[i].startsWith("#")) continue;
+        if (lines[i].trim() === SUBMAP_HEADING) start = i;
+        break;
+      }
+      while (start > 0 && lines[start - 1].trim() === "") start--;
+      const rest = lines.slice(span.end);
+      while (rest.length && rest[0].trim() === "") rest.shift();
+      const kept = [...lines.slice(0, start), ...(rest.length ? ["", ...rest] : [""])];
+      return kept.join("\n");
+    }
+    return [...lines.slice(0, span.start), serializeSubmapDefaults(defaults!), ...lines.slice(span.end)].join("\n");
+  }
+  if (empty) return content;
+  const base = text.endsWith("\n") ? text : text + "\n";
+  return (
+    base +
+    `\n${SUBMAP_HEADING}\n\n` +
+    "New submaps made from a hex of these terrains start with these choices (generator ids: blank, procedural:star-scatter, procedural:orbits, procedural:planet-surface, wfc:<generator note path>).\n\n" +
+    serializeSubmapDefaults(defaults!) +
+    "\n"
+  );
 }
 
 /** A complete new palette note. */

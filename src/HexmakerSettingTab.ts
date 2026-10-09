@@ -2,6 +2,7 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
+import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
 
 const PALETTES_FOLDER_DESC =
   "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
@@ -607,6 +608,20 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "World/palettes",
         PALETTES_FOLDER_DESC,
       ),
+      {
+        type: "group",
+        heading: "Map types",
+        items: MAP_KINDS.map((k): LocalSettingDefinition => ({
+          name: k.label,
+          desc: k.description,
+          render: (setting: Setting) => {
+            setting.addToggle((t) =>
+              t.setValue(enabledKinds(this.plugin.settings).has(k.id))
+                .onChange((v) => void this.setMapKind(k.id, v)),
+            );
+          },
+        })),
+      },
       // Terrain palettes LAST, deliberately: on update() the declarative
       // renderer reuses unchanged rows but re-creates a changed list and
       // appends it at the END of the page — a mid-page list visibly "drops
@@ -717,6 +732,23 @@ export class HexmakerSettingTab extends PluginSettingTab {
    * generated). Typed dynamically because the installed 1.12 typings predate
    * the method; declaring it on this class would shadow the real one.
    */
+  /**
+   * Turn a map type on/off. Hides (never deletes) its presets, generators
+   * and icon pack. At least one type stays on.
+   */
+  private async setMapKind(kind: MapKind, on: boolean): Promise<void> {
+    const kinds = enabledKinds(this.plugin.settings);
+    if (on) kinds.add(kind);
+    else kinds.delete(kind);
+    if (kinds.size === 0) {
+      new Notice("Keep at least one map type enabled.");
+      kinds.add(kind);
+    }
+    this.plugin.settings.mapKinds = MAP_KINDS.map((k) => k.id).filter((id) => kinds.has(id));
+    await this.plugin.saveSettings();
+    this.plugin.loadAvailableIcons();
+  }
+
   /** "Open note" button for a palette row — opens the palette's note in a new tab. */
   private addOpenNoteButton(parent: HTMLElement, paletteName: string): void {
     const btn = parent.createEl("button", { text: "Open note" });
@@ -1351,6 +1383,17 @@ export class HexmakerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    new Setting(containerEl).setName("Map types").setHeading();
+    for (const k of MAP_KINDS) {
+      new Setting(containerEl)
+        .setName(k.label)
+        .setDesc(k.description)
+        .addToggle((t) =>
+          t.setValue(enabledKinds(this.plugin.settings).has(k.id))
+            .onChange((v) => void this.setMapKind(k.id, v)),
+        );
+    }
 
     // Terrain palettes last — mirrors getSettingDefinitions() ordering
     // (see comment there: the declarative renderer re-appends a changed

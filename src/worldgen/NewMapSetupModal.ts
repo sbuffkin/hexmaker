@@ -1,7 +1,8 @@
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { TerrainColor } from "../types";
+import type { SubmapDefault, TerrainColor } from "../types";
+import { getTerrainFromFile } from "../frontmatter";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
@@ -46,6 +47,12 @@ export class NewMapSetupModal extends HexmakerModal {
   private rows: number;
   private baseTerrain: string | undefined;
   private lastOutcome: GenerateOutcome | undefined;
+  /** Terrain of the hex this submap is made from (e.g. "ocean world"). */
+  private originTerrain: string | undefined;
+  /** Saved setup for submaps of that terrain, applied as the starting values. */
+  private saved: SubmapDefault | undefined;
+  /** "Default for <terrain>" checkboxes, one per option row. */
+  private remember = { palette: false, size: false, generator: false, base: false };
 
   constructor(
     app: App,
@@ -58,6 +65,22 @@ export class NewMapSetupModal extends HexmakerModal {
     const preset = origin ? SUBMAP_SIZE_PRESETS[1] : SIZE_PRESETS[0];
     this.cols = preset.cols;
     this.rows = preset.rows;
+    if (origin) {
+      const parent = plugin.getMap(origin.map);
+      this.originTerrain =
+        getTerrainFromFile(app, plugin.hexPath(origin.x, origin.y, origin.map)) ?? parent?.baseTerrain ?? undefined;
+      this.saved = plugin.submapDefaultFor(origin.map, this.originTerrain);
+      const d = this.saved;
+      if (d?.cols && d.rows) { this.cols = d.cols; this.rows = d.rows; }
+      if (d?.generator) this.kindId = d.generator;
+      if (d?.options) this.options = { ...d.options };
+      this.remember = {
+        palette: !!d?.palette,
+        size: !!(d?.cols && d.rows),
+        generator: !!d?.generator,
+        base: d?.baseTerrain !== undefined,
+      };
+    }
   }
 
   onOpen(): void {
@@ -65,7 +88,7 @@ export class NewMapSetupModal extends HexmakerModal {
     this.modalEl.addClass("duckmage-setup-modal");
     this.titleEl.setText(
       this.origin
-        ? `New submap — ${this.origin.map}, hex ${this.origin.x}, ${this.origin.y}`
+        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.origin.map} hex ${this.origin.x}, ${this.origin.y}`
         : "New map",
     );
     void listGeneratorKinds(this.plugin).then((kinds) => {
@@ -104,8 +127,10 @@ export class NewMapSetupModal extends HexmakerModal {
     fillPaletteSelect(
       this.plugin,
       paletteSelect,
-      this.origin ? this.plugin.childPaletteFor(this.origin.map) : this.plugin.settings.terrainPalettes[0]?.name,
+      this.saved?.palette
+        ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : this.plugin.settings.terrainPalettes[0]?.name),
     );
+    this.rememberBox(palRow, "palette");
 
     // ── Size ──
     const sizeRow = this.row(form, "Size");
@@ -137,15 +162,18 @@ export class NewMapSetupModal extends HexmakerModal {
     };
     colsInput.addEventListener("change", onSize);
     rowsInput.addEventListener("change", onSize);
+    this.rememberBox(sizeRow, "size");
 
     // ── Generator ──
     const genRow = this.row(form, "Generator");
+    this.rememberBox(genRow, "generator", "Generator and its options");
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators" });
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
 
     // ── Base terrain ──
     const baseRow = this.row(form, "Base terrain");
     const baseSelect = baseRow.createEl("select");
+    this.rememberBox(baseRow, "base");
     baseRow.createDiv({
       cls: "setting-item-description",
       text: "Shown on unpainted hexes. With a base terrain, hex notes are created as you use hexes instead of all up front.",
@@ -210,7 +238,10 @@ export class NewMapSetupModal extends HexmakerModal {
       baseSelect.empty();
       baseSelect.createEl("option", { value: "", text: "None (create every hex note)" });
       for (const t of terrains) baseSelect.createEl("option", { value: t.name, text: t.name });
-      this.baseTerrain = suggestBaseTerrain(terrains);
+      const savedBase = this.saved?.baseTerrain;
+      this.baseTerrain = savedBase !== undefined && (savedBase === "" || terrains.some((t) => t.name === savedBase))
+        ? savedBase || undefined
+        : suggestBaseTerrain(terrains);
       baseSelect.value = this.baseTerrain ?? "";
     };
     baseSelect.addEventListener("change", () => { this.baseTerrain = baseSelect.value || undefined; refresh(); });
@@ -279,6 +310,45 @@ export class NewMapSetupModal extends HexmakerModal {
     refresh();
     nameInput.focus();
     nameInput.select();
+  }
+
+  /**
+   * "Default for <terrain>" checkbox at the end of an option row. Only shown
+   * when the submap comes from a hex with a terrain.
+   */
+  private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], what?: string): void {
+    if (!this.originTerrain) return;
+    const label = row.createEl("label", {
+      cls: "duckmage-setup-default",
+      attr: { title: `Use this ${(what ?? key).toLowerCase()} for every new submap of a ${this.originTerrain} hex` },
+    });
+    const cb = label.createEl("input", { type: "checkbox" });
+    cb.checked = this.remember[key];
+    label.createSpan({ text: `Default for ${this.originTerrain}` });
+    cb.addEventListener("change", () => { this.remember[key] = cb.checked; });
+  }
+
+  /** Store (or forget) the ticked choices as this terrain's submap defaults. */
+  private async saveDefaults(paletteName: string): Promise<void> {
+    if (!this.origin || !this.originTerrain) return;
+    const set: SubmapDefault = {};
+    const clear: (keyof SubmapDefault)[] = [];
+    if (this.remember.palette) set.palette = paletteName; else clear.push("palette");
+    if (this.remember.size) { set.cols = this.cols; set.rows = this.rows; } else clear.push("cols", "rows");
+    const kind = this.kind();
+    if (this.remember.generator && kind) {
+      set.generator = kind.id;
+      const opts = this.resolvedOptions(kind);
+      if (Object.keys(opts).length) set.options = opts; else clear.push("options");
+    } else {
+      clear.push("generator", "options");
+    }
+    if (this.remember.base) set.baseTerrain = this.baseTerrain ?? ""; else clear.push("baseTerrain");
+    const before = JSON.stringify(this.saved ?? {});
+    const after = JSON.stringify({ ...(this.saved ?? {}), ...set });
+    const nothingSaved = !this.saved && Object.keys(set).length === 0;
+    if (nothingSaved || (before === after && clear.every((k) => this.saved?.[k] === undefined))) return;
+    await this.plugin.saveSubmapDefault(this.origin.map, this.originTerrain, set, clear);
   }
 
   private row(parent: HTMLElement, label: string): HTMLElement {
@@ -363,6 +433,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (missing.length) new Notice(`Skipped paths with no matching path type: ${missing.join(", ")}`);
     }
 
+    await this.saveDefaults(paletteName);
     this.close();
     this.onCreated(result, { openGenerator });
     if (openGenerator) {

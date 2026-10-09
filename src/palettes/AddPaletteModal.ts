@@ -2,6 +2,7 @@ import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { isKindEnabled } from "../mapKinds";
 
 /**
  * "Add palette" chooser: install a built-in preset, copy an existing
@@ -24,7 +25,7 @@ export class AddPaletteModal extends HexmakerModal {
 
     contentEl.createEl("h4", { text: "Presets" });
     const presetList = contentEl.createDiv({ cls: "duckmage-add-palette-list" });
-    for (const preset of PALETTE_PRESETS) {
+    for (const preset of PALETTE_PRESETS.filter((p) => isKindEnabled(this.plugin.settings, p.kind))) {
       const installed = this.plugin.getPaletteByName(preset.name) !== undefined;
       this.option(
         presetList,
