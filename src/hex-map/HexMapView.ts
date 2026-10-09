@@ -17,7 +17,7 @@ import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
-import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getSubmapFromFile, setSubmapInFile, type OverlayStyle } from "../frontmatter";
+import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getSubmapFromFile, type OverlayStyle } from "../frontmatter";
 import { buildSvgPattern, colorToIdToken, type OverlayPatternKey } from "../overlayPatterns";
 import { renderHexPreview } from "./overlayPatternControls";
 import {
@@ -26,6 +26,7 @@ import {
   VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
 import { MapModal } from "./MapModal";
+import { mapAncestors } from "./submapNav";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -288,6 +289,10 @@ export class HexMapView extends ItemView {
   private mapHistory: string[] = [];
   private mapBtn: HTMLButtonElement | null = null;
   private backBtn: HTMLButtonElement | null = null;
+  private upBtn: HTMLButtonElement | null = null;
+  private crumbsEl: HTMLElement | null = null;
+  /** False until the first map's viewport is placed (restored or fitted). */
+  private viewportReady = false;
   private tokenEntries: TokenEntry[] = [];
   private pendingTokenNotePath: string | null = null;
   private pendingTokenPlaceData: { icon?: string; shape: import("../types").TokenShape; size: import("../types").TokenSize; color?: string; border?: string; description?: string } | null = null;
@@ -339,9 +344,11 @@ export class HexMapView extends ItemView {
   switchToMap(name: string): void {
     // Save the departing map's viewport into the in-memory cache AND onto the
     // map itself, so the state survives both same-session switching and full
-    // view reload. Skip if we haven't actually opened a map yet (initial
-    // load) — `this.viewportEl` is null in that case.
-    if (this.viewportEl) {
+    // view reload. Skip until the view has placed its first map — before that
+    // the zoom/pan are placeholder values, and saving them would clobber the
+    // default map's stored viewport (e.g. a new tab immediately switching to
+    // a submap).
+    if (this.viewportEl && this.viewportReady) {
       const snapshot = {
         zoom: this.zoom,
         panX: this.panX,
@@ -359,9 +366,16 @@ export class HexMapView extends ItemView {
     this.activeMapName = name;
     this.updateMapBtnLabel();
     this.refreshViewHeader();
+    this.restoreViewport(name);
+    this.refreshMapNav();
+  }
 
-    // Prefer the in-memory cache (live state from this session), fall back to
-    // persisted savedViewport on the map (survives view close/reopen).
+  /**
+   * Show `name` at its last viewport: the in-memory cache (live state from
+   * this session), else the persisted savedViewport (survives view
+   * close/reopen), else fit the whole grid (first visit).
+   */
+  private restoreViewport(name: string): void {
     const stored = this.mapViewport.get(name) ?? this.plugin.getMap(name)?.savedViewport;
     if (stored) {
       this.zoom = stored.zoom;
@@ -373,41 +387,120 @@ export class HexMapView extends ItemView {
       // A saved position can leave the grid off-screen or too small to see
       // (e.g. saved while the view had no size). Re-fit rather than show an
       // empty view.
-      window.requestAnimationFrame(() => this.refitIfLost());
+      window.requestAnimationFrame(() => {
+        this.refitIfLost();
+        this.viewportReady = true;
+      });
     } else {
-      // First visit — reset any baked font size and fit the full grid into view.
       this.zoom = 1; this.panX = 0; this.panY = 0;
       this.setViewportFontSize("");
       this.applyTransform();
       this.renderGrid();
-      window.requestAnimationFrame(() => this.fitGridToView());
+      window.requestAnimationFrame(() => {
+        this.fitGridToView();
+        this.viewportReady = true;
+      });
     }
   }
 
-  navigateToMap(name: string): void {
-    this.mapHistory.push(this.activeMapName);
-    this.switchToMap(name);
-    this.refreshBackBtn();
-  }
-
-  private navigateBack(): void {
-    const prev = this.mapHistory.pop();
-    if (prev) this.switchToMap(prev);
-    this.refreshBackBtn();
-  }
-
-  private refreshBackBtn(): void {
-    if (this.mapHistory.length > 0) this.backBtn?.show();
-    else this.backBtn?.hide();
-  }
-
-  public switchMapFromModal(name: string): void {
-    this.exitTerrainMode();
+  /**
+   * The one way to change maps from the UI (map list, breadcrumb, submap
+   * badge, Ctrl+click, context menu, hex editor, Up/Back targets). Exits the
+   * active tool and clears undo — undo entries hold bare x/y and would apply
+   * to the wrong map — and records history for Back.
+   */
+  navigateToMap(name: string, opts: { recordHistory?: boolean } = {}): void {
+    if (!this.plugin.getMap(name)) {
+      new Notice(`Map "${name}" no longer exists.`);
+      return;
+    }
+    if (name === this.activeMapName) {
+      this.renderGrid();
+      return;
+    }
+    this.exitCurrentMode();
     this.exitPathMode();
     this.undoStack = [];
     this.redoStack = [];
     this.updateUndoButton();
+    if (opts.recordHistory !== false) {
+      this.mapHistory.push(this.activeMapName);
+      if (this.mapHistory.length > 50) this.mapHistory.shift();
+    }
     this.switchToMap(name);
+  }
+
+  /** Back to the previously viewed map (skips maps deleted since). */
+  navigateBack(): boolean {
+    while (this.mapHistory.length > 0) {
+      const prev = this.mapHistory.pop()!;
+      if (!this.plugin.getMap(prev) || prev === this.activeMapName) continue;
+      this.navigateToMap(prev, { recordHistory: false });
+      return true;
+    }
+    this.refreshMapNav();
+    return false;
+  }
+
+  /** Up to the map this one is a submap of, flashing the hex we came from. */
+  navigateUp(): boolean {
+    const parent = this.plugin.parentOf(this.activeMapName);
+    if (!parent) return false;
+    this.navigateToMap(parent.map);
+    const [x, y] = parent.hex.split("_").map(Number);
+    window.requestAnimationFrame(() => this.flashHex(x, y));
+    return true;
+  }
+
+  canNavigateBack(): boolean {
+    return this.mapHistory.some((m) => m !== this.activeMapName && this.plugin.getMap(m));
+  }
+
+  canNavigateUp(): boolean {
+    return this.plugin.parentOf(this.activeMapName) !== undefined;
+  }
+
+  /** Brief ripple on a hex so the eye lands on it after a map change. */
+  private flashHex(x: number, y: number): void {
+    const hexEl = this.viewportEl?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`);
+    if (!hexEl) return;
+    const blip = hexEl.createSpan({ cls: "duckmage-hex-blip" });
+    blip.addEventListener("animationend", () => blip.remove(), { once: true });
+  }
+
+  /** Breadcrumb (ancestors), Up and Back buttons for the active map. */
+  private refreshMapNav(): void {
+    if (this.canNavigateBack()) this.backBtn?.show();
+    else this.backBtn?.hide();
+
+    const parent = this.plugin.parentOf(this.activeMapName);
+    if (this.upBtn) {
+      if (parent) {
+        this.upBtn.show();
+        this.upBtn.title = `Up to ${parent.map} (hex ${parent.hex.replace("_", ", ")})`;
+      } else {
+        this.upBtn.hide();
+      }
+    }
+
+    const crumbs = this.crumbsEl;
+    if (!crumbs) return;
+    crumbs.empty();
+    const ancestors = mapAncestors(this.activeMapName, (m) => this.plugin.parentOf(m)?.map);
+    for (const name of ancestors) {
+      const crumb = crumbs.createEl("button", {
+        cls: "duckmage-map-crumb",
+        text: name,
+        attr: { title: `Go to ${name}` },
+      });
+      crumb.addEventListener("click", () => this.navigateToMap(name));
+      crumbs.createSpan({ cls: "duckmage-map-crumb-sep", text: "›" });
+    }
+    crumbs.toggle(ancestors.length > 0);
+  }
+
+  public switchMapFromModal(name: string): void {
+    this.navigateToMap(name);
   }
 
   onOpen(): Promise<void> {
@@ -443,6 +536,17 @@ export class HexMapView extends ItemView {
     this.scope.register(["Mod", "Shift"], "z", (e: KeyboardEvent) => {
       e.preventDefault();
       void this.redo();
+      return false;
+    });
+    // Submap navigation: Alt+↑ up to the parent map, Alt+← back.
+    this.scope.register(["Alt"], "ArrowUp", (e: KeyboardEvent) => {
+      if (!this.navigateUp()) return;
+      e.preventDefault();
+      return false;
+    });
+    this.scope.register(["Alt"], "ArrowLeft", (e: KeyboardEvent) => {
+      if (!this.navigateBack()) return;
+      e.preventDefault();
       return false;
     });
 
@@ -796,6 +900,10 @@ export class HexMapView extends ItemView {
 
     const mapNavGroup = controlsEl.createDiv({ cls: "duckmage-map-nav-group" });
 
+    // Breadcrumb of parent maps (sector › system › …); filled by refreshMapNav.
+    this.crumbsEl = mapNavGroup.createDiv({ cls: "duckmage-map-crumbs" });
+    this.crumbsEl.hide();
+
     this.mapBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-region-btn",
       title: "Manage maps",
@@ -814,6 +922,13 @@ export class HexMapView extends ItemView {
       }).open(),
     );
 
+    this.upBtn = mapNavGroup.createEl("button", {
+      cls: "duckmage-map-up-btn",
+      text: "↑ up",
+    });
+    this.upBtn.hide();
+    this.upBtn.addEventListener("click", () => this.navigateUp());
+
     this.backBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-map-back-btn",
       text: "← back",
@@ -821,6 +936,7 @@ export class HexMapView extends ItemView {
     });
     this.backBtn.hide();
     this.backBtn.addEventListener("click", () => this.navigateBack());
+    this.refreshMapNav();
 
     this.undoBtn = controlsEl.createEl("button", {
       cls: "duckmage-undo-btn-map",
@@ -925,8 +1041,10 @@ export class HexMapView extends ItemView {
       }),
     );
 
-    this.renderGrid();
-    window.requestAnimationFrame(() => this.fitGridToView());
+    // Reopen where the user left this map (onClose saves savedViewport);
+    // first visit fits the whole grid.
+    this.restoreViewport(this.activeMapName);
+    this.refreshMapNav();
     return Promise.resolve();
   }
 
@@ -3282,6 +3400,23 @@ export class HexMapView extends ItemView {
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
 
+      // Submap marker: shows which hexes drill down (a system in a sector,
+      // a dungeon in a region). Clicking it enters the submap when no tool
+      // is active; with a tool active the click falls through to the hex.
+      const submapName: unknown = fm?.["duckmage-submap"];
+      if (typeof submapName === "string" && submapName && this.plugin.getMap(submapName)) {
+        hexEl.addClass("duckmage-hex-has-submap");
+        const badge = hexEl.createSpan({
+          cls: "duckmage-hex-submap-badge",
+          attr: { title: `Enter submap: ${submapName} (Ctrl+click hex)`, "aria-label": `Enter submap ${submapName}` },
+        });
+        badge.addEventListener("click", (e) => {
+          if (this.drawingMode) return;
+          e.stopPropagation();
+          this.navigateToMap(submapName);
+        });
+      }
+
       hexEl.addEventListener("click", (e) => {
         void this.onHexClick(x, y, e);
       });
@@ -3440,26 +3575,27 @@ export class HexMapView extends ItemView {
 
     menu.addItem((item) =>
       item
-        .setTitle("Link submap")
+        .setTitle(submap ? "Change submap…" : "Create / link submap…")
         .setIcon("map-pin")
         .onClick(() => {
+          const parentMap = this.activeMapName;
           const current = getSubmapFromFile(this.app, hexPath);
           new SubmapPickerModal(
             this.app,
             this.plugin,
             current,
-            (mapName) => {
+            (mapName, created) => {
               void (async () => {
-                if (!this.app.vault.getAbstractFileByPath(hexPath)) {
-                  await this.plugin.createHexNote(x, y, this.activeMapName);
-                }
-                await setSubmapInFile(this.app, hexPath, mapName);
-                this.renderGrid();
+                await this.plugin.linkSubmap(parentMap, x, y, mapName);
+                // A freshly made submap is where the user wants to be next.
+                if (created && this.activeMapName === parentMap) this.navigateToMap(mapName);
+                else this.renderGrid();
               })();
             },
             () => {
-              void setSubmapInFile(this.app, hexPath, null).then(() => this.renderGrid());
+              void this.plugin.unlinkSubmap(parentMap, x, y).then(() => this.renderGrid());
             },
+            { map: parentMap, x, y },
           ).open();
         }),
     );
@@ -3561,17 +3697,20 @@ export class HexMapView extends ItemView {
       return;
     }
 
-    // Ctrl/Cmd+click with no active tool: open submap in a new tab if one is linked
+    // Ctrl/Cmd+click with no active tool: dive into the linked submap in
+    // place (Up / Back return). Ctrl/Cmd+Shift+click opens it in a new tab.
     if (e?.ctrlKey || e?.metaKey) {
       const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
       const submap = getSubmapFromFile(this.app, hexPath);
       if (submap) {
-        const leaf = this.app.workspace.getLeaf("tab");
-        void leaf.setViewState({ type: VIEW_TYPE_HEX_MAP }).then(() => {
-          if (leaf.view && "switchToMap" in leaf.view) {
-            (leaf.view as HexMapView).switchToMap(submap);
-          }
-        });
+        if (e.shiftKey) {
+          const leaf = this.app.workspace.getLeaf("tab");
+          void leaf.setViewState({ type: VIEW_TYPE_HEX_MAP }).then(() => {
+            if (leaf.view instanceof HexMapView) leaf.view.navigateToMap(submap, { recordHistory: false });
+          });
+        } else {
+          this.navigateToMap(submap);
+        }
         return;
       }
     }
@@ -3817,17 +3956,13 @@ export class HexMapView extends ItemView {
 
   private async onHexSubmapLinkClick(x: number, y: number): Promise<void> {
     if (this.drawingMode !== "submapLink") return;
-    const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
     if (this.isErasingMode) {
-      await setSubmapInFile(this.app, hexPath, null);
+      await this.plugin.unlinkSubmap(this.activeMapName, x, y);
       this.renderGrid();
       return;
     }
     if (!this.paintSubmapName) return;
-    if (!this.app.vault.getAbstractFileByPath(hexPath)) {
-      await this.plugin.createHexNote(x, y, this.activeMapName);
-    }
-    await setSubmapInFile(this.app, hexPath, this.paintSubmapName);
+    await this.plugin.linkSubmap(this.activeMapName, x, y, this.paintSubmapName);
     this.renderGrid();
 
     // Visual feedback: ripple blip on the linked hex

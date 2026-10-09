@@ -16,6 +16,8 @@ export interface PalettePreset {
   description: string;
   terrains: TerrainColor[];
   pathTypes?: PathType[];
+  /** Palette suggested for submaps of maps using this one. */
+  childPalette?: string;
 }
 
 export const SPACE_SECTOR_PALETTE_NAME = "Space - Sector";
@@ -101,6 +103,7 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     description: "Star charts: one hex per parsec, typed by mainworld. Adds jump and trade route path types.",
     terrains: SPACE_SECTOR_TERRAINS,
     pathTypes: SPACE_PATH_TYPES,
+    childPalette: SPACE_SYSTEM_PALETTE_NAME,
   },
   {
     name: SPACE_SYSTEM_PALETTE_NAME,
@@ -115,7 +118,9 @@ export function getPreset(name: string): PalettePreset | undefined {
 
 /** Deep copy of a preset's terrains, safe to mutate. */
 export function presetToPalette(preset: PalettePreset, name = preset.name): TerrainPalette {
-  return { name, terrains: preset.terrains.map((t) => ({ ...t })) };
+  const pal: TerrainPalette = { name, terrains: preset.terrains.map((t) => ({ ...t })) };
+  if (preset.childPalette) pal.childPalette = preset.childPalette;
+  return pal;
 }
 
 /** `base`, or `base 2`, `base 3`, … — first name not taken (case-insensitive). */

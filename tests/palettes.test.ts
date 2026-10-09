@@ -427,6 +427,24 @@ describe("PaletteStore", () => {
 		]);
 	});
 
+	it("round-trips child-palette between notes and palettes", async () => {
+		h.settings.terrainPalettes[0].childPalette = "Expanded";
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		expect(h.vault.files.get(p)).toContain('child-palette: "Expanded"');
+
+		// In-app change → note.
+		h.settings.terrainPalettes[0].childPalette = "Space - System";
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toContain('child-palette: "Space - System"');
+
+		// Hand edit (only the frontmatter) → palette.
+		h.vault.files.set(p, h.vault.files.get(p)!.replace('"Space - System"', "Overland"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		expect(h.settings.terrainPalettes[0].childPalette).toBe("Overland");
+	});
+
 	it("honours a custom palettes folder", async () => {
 		const c = makeHarness({ palettesFolder: "rpg/pal" });
 		await c.store.init();

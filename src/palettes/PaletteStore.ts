@@ -6,10 +6,21 @@ import {
   buildPaletteNote,
   paletteFileName,
   parsePaletteNote,
+  readChildPalette,
+  setChildPalette,
   terrainsEqual,
   updatePaletteNote,
 } from "./paletteNote";
 import { uniquePaletteName } from "./presets";
+
+/** Copy a note's `child-palette` onto the palette. Returns true if it changed. */
+function applyChildPalette(pal: TerrainPalette, content: string): boolean {
+  const child = readChildPalette(content);
+  if (pal.childPalette === child) return false;
+  if (child) pal.childPalette = child;
+  else delete pal.childPalette;
+  return true;
+}
 
 /**
  * Keeps `settings.terrainPalettes` and the palette notes in sync.
@@ -158,7 +169,7 @@ export class PaletteStore {
           name = uniquePaletteName(safe, siblings);
         }
         if (name !== pal.name) this.renamePalette(pal, name);
-        const content = buildPaletteNote(pal.terrains);
+        const content = buildPaletteNote(pal.terrains, pal.childPalette);
         const path = this.pathFor(pal.name);
         this.bind(pal, path, content);
         await this.plugin.app.vault.create(path, content);
@@ -205,6 +216,7 @@ export class PaletteStore {
         pal = { name: file.basename, terrains };
         changed = true;
       }
+      if (applyChildPalette(pal, content)) changed = true;
       this.bind(pal, file.path, content);
       next.push(pal);
     }
@@ -282,16 +294,19 @@ export class PaletteStore {
         if (file instanceof TFile) {
           const current = await vault.read(file);
           const parsed = parsePaletteNote(current);
-          const next = parsed && terrainsEqual(parsed, pal.terrains)
-            ? current
-            : updatePaletteNote(current, pal.terrains);
+          const next = setChildPalette(
+            parsed && terrainsEqual(parsed, pal.terrains)
+              ? current
+              : updatePaletteNote(current, pal.terrains),
+            pal.childPalette,
+          );
           if (next !== current) {
             this.lastContent.set(target, next);
             await vault.modify(file, next);
           }
           this.bind(pal, target, next);
         } else {
-          const content = buildPaletteNote(pal.terrains);
+          const content = buildPaletteNote(pal.terrains, pal.childPalette);
           this.bind(pal, target, content);
           await vault.create(target, content);
         }
@@ -334,15 +349,20 @@ export class PaletteStore {
       this.lastContent.set(file.path, content);
       let pal = this.paletteBoundTo(file.path)
         ?? this.plugin.settings.terrainPalettes.find((p) => p.name.toLowerCase() === file.basename.toLowerCase());
+      let changed = false;
       if (pal) {
-        if (terrainsEqual(pal.terrains, terrains)) return;
-        pal.terrains.splice(0, pal.terrains.length, ...terrains);
+        if (!terrainsEqual(pal.terrains, terrains)) {
+          pal.terrains.splice(0, pal.terrains.length, ...terrains);
+          changed = true;
+        }
       } else {
         pal = { name: file.basename, terrains };
         this.plugin.settings.terrainPalettes.push(pal);
+        changed = true;
       }
+      if (applyChildPalette(pal, content)) changed = true;
       this.bind(pal, file.path, content);
-      await this.persist();
+      if (changed) await this.persist();
     });
   }
 

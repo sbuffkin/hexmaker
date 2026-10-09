@@ -663,6 +663,10 @@ export class MapModal extends HexmakerModal {
     }
 
     this.plugin.settings.maps = this.plugin.settings.maps.filter((m) => m.name !== name);
+    // Submaps of the deleted map lose their breadcrumb parent.
+    for (const m of this.plugin.settings.maps) {
+      if (m.parent?.map === name) delete m.parent;
+    }
 
     if (this.plugin.settings.defaultMap === name) {
       this.plugin.settings.defaultMap = this.plugin.settings.maps[0]?.name ?? "";

@@ -132,11 +132,42 @@ export function serializePaletteTable(terrains: TerrainColor[]): string {
   return lines.join("\n");
 }
 
+const FRONTMATTER = /^---\n([\s\S]*?)\n---(\n|$)/;
+const CHILD_PALETTE_LINE = /^child-palette:[^\n]*(\n|$)/m;
+
+/** The `child-palette:` frontmatter value (palette suggested for submaps). */
+export function readChildPalette(content: string): string | undefined {
+  const fm = FRONTMATTER.exec(content.replace(/\r\n?/g, "\n"));
+  if (!fm) return undefined;
+  const m = /^child-palette:\s*(.*)$/m.exec(fm[1]);
+  if (!m) return undefined;
+  const raw = m[1].trim();
+  const unquoted = /^(["']).*\1$/.test(raw) ? raw.slice(1, -1) : raw;
+  return unquoted.trim() || undefined;
+}
+
+/**
+ * Set or clear `child-palette:` in the note's frontmatter. Returns the
+ * content untouched when it already holds that value (so a CRLF note isn't
+ * rewritten just to normalise line endings).
+ */
+export function setChildPalette(content: string, value: string | undefined): string {
+  if (readChildPalette(content) === (value || undefined)) return content;
+  const text = content.replace(/\r\n?/g, "\n");
+  const line = value ? `child-palette: ${JSON.stringify(value)}\n` : "";
+  const fm = FRONTMATTER.exec(text);
+  if (!fm) return value ? `---\n${line}---\n${text}` : text;
+  let body = fm[1] + "\n";
+  body = CHILD_PALETTE_LINE.test(body) ? body.replace(CHILD_PALETTE_LINE, line) : body + line;
+  return `---\n${body}---${fm[2]}${text.slice(fm[0].length)}`;
+}
+
 /** A complete new palette note. */
-export function buildPaletteNote(terrains: TerrainColor[]): string {
+export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string): string {
   return [
     "---",
     `${PALETTE_NOTE_MARKER}: 1`,
+    ...(childPalette ? [`child-palette: ${JSON.stringify(childPalette)}`] : []),
     "---",
     "",
     "Hexmaker terrain palette. The note name is the palette name. Each table row is one terrain:",

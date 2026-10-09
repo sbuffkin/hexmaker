@@ -126,6 +126,26 @@ export default class HexmakerPlugin extends Plugin {
           .setViewState({ type: VIEW_TYPE_HEX_TABLE }),
     });
     this.addCommand({
+      id: "map-go-up",
+      name: "Go up to parent map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateUp()) return false;
+        if (!checking) view.navigateUp();
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "map-go-back",
+      name: "Go back to previous map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateBack()) return false;
+        if (!checking) view.navigateBack();
+        return true;
+      },
+    });
+    this.addCommand({
       id: "open-random-tables",
       name: "Open random tables",
       callback: () =>
@@ -291,14 +311,14 @@ export default class HexmakerPlugin extends Plugin {
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
         void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as HexMapView).switchToMap(mapName);
+        (leaves[0].view as HexMapView).navigateToMap(mapName);
       } else {
         void this.app.workspace.getLeaf("tab")
           .setViewState({ type: VIEW_TYPE_HEX_MAP })
           .then(() => {
             const newLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
             if (newLeaves.length > 0) {
-              (newLeaves[0].view as HexMapView).switchToMap(mapName);
+              (newLeaves[0].view as HexMapView).navigateToMap(mapName, { recordHistory: false });
             }
           });
       }
@@ -632,6 +652,11 @@ export default class HexmakerPlugin extends Plugin {
       const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
       if (submap !== oldName) continue;
       await setSubmapInFile(this.app, file.path, newName);
+    }
+    this.noParentMaps.clear();
+    // Children of the renamed map keep their breadcrumb.
+    for (const m of this.settings.maps) {
+      if (m.parent?.map === oldName) m.parent.map = newName;
     }
   }
 
@@ -1272,6 +1297,82 @@ export default class HexmakerPlugin extends Plugin {
     );
     return name;
   }
+
+  /**
+   * Palette to pre-select for a new submap of `parentMap`: the parent
+   * palette's `childPalette` (installed or a preset), else the parent's own
+   * palette, else the first palette.
+   */
+  childPaletteFor(parentMap: string): string {
+    const parentPaletteName = this.getMap(parentMap)?.paletteName;
+    const parentPalette = parentPaletteName ? this.getPaletteByName(parentPaletteName) : undefined;
+    const child = parentPalette?.childPalette ?? (parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined);
+    if (child && (this.getPaletteByName(child) || getPreset(child))) return child;
+    if (parentPalette) return parentPalette.name;
+    return this.settings.terrainPalettes[0]?.name ?? DEFAULT_PALETTE_NAME;
+  }
+
+  /**
+   * Link hex (x, y) of `parentMap` to `childMap` as its submap: creates the
+   * hex note if needed, writes `duckmage-submap`, and records the parent on
+   * the child map (first link wins, so re-linking a shared submap from a
+   * second hex doesn't move its breadcrumb).
+   */
+  async linkSubmap(parentMap: string, x: number, y: number, childMap: string): Promise<void> {
+    const hexPath = this.hexPath(x, y, parentMap);
+    if (!this.app.vault.getAbstractFileByPath(hexPath)) {
+      await this.createHexNote(x, y, parentMap);
+    }
+    await setSubmapInFile(this.app, hexPath, childMap);
+    this.noParentMaps.clear();
+    const child = this.getMap(childMap);
+    if (child && !child.parent && childMap !== parentMap) {
+      child.parent = { map: parentMap, hex: `${x}_${y}` };
+      await this.saveSettings();
+    }
+  }
+
+  /** Remove the submap link from hex (x, y); clears the child's parent if it pointed here. */
+  async unlinkSubmap(parentMap: string, x: number, y: number): Promise<void> {
+    const hexPath = this.hexPath(x, y, parentMap);
+    const fm: unknown = this.app.metadataCache.getCache(hexPath)?.frontmatter?.["duckmage-submap"];
+    await setSubmapInFile(this.app, hexPath, null);
+    this.noParentMaps.clear();
+    const child = typeof fm === "string" ? this.getMap(fm) : undefined;
+    if (child?.parent?.map === parentMap && child.parent.hex === `${x}_${y}`) {
+      delete child.parent;
+      await this.saveSettings();
+    }
+  }
+
+  /**
+   * The map `mapName` was opened from as a submap. Uses the stored parent;
+   * for maps linked before parents were stored, scans hex notes for a
+   * `duckmage-submap` pointing here and remembers the first hit.
+   */
+  parentOf(mapName: string): { map: string; hex: string } | undefined {
+    const map = this.getMap(mapName);
+    if (!map) return undefined;
+    if (map.parent && this.getMap(map.parent.map)) return map.parent;
+    // Root maps have no parent; don't rescan the hex notes on every switch.
+    if (this.noParentMaps.has(mapName)) return undefined;
+    const hexFolder = normalizeFolder(this.settings.hexFolder);
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (hexFolder && !file.path.startsWith(hexFolder + "/")) continue;
+      const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
+      if (submap !== mapName) continue;
+      const parentMap = file.parent?.name;
+      if (!parentMap || parentMap === mapName || !this.getMap(parentMap)) continue;
+      map.parent = { map: parentMap, hex: file.basename };
+      void this.saveSettings();
+      return map.parent;
+    }
+    this.noParentMaps.add(mapName);
+    return undefined;
+  }
+
+  /** Maps whose parent scan came up empty this session (cleared on any link change). */
+  private noParentMaps = new Set<string>();
 
   /** Install `name` from the presets if no palette by that name exists yet. */
   async ensurePaletteInstalled(name: string): Promise<void> {

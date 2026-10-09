@@ -52,6 +52,10 @@ export interface MapData {
 	name: string;
 	paletteName: string;
 	terrainType?: string;        // terrain name from the map's palette; used as submap center dot color
+	/** The hex this map was opened from as a submap ("x_y" on `map`). Drives
+	 *  the breadcrumb and "Up". Set by plugin.linkSubmap; recovered by scanning
+	 *  hex notes when missing (maps linked before this existed). */
+	parent?: { map: string; hex: string };
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };
 	pathChains: PathChain[];
@@ -91,6 +95,10 @@ export interface MapData {
 export interface TerrainPalette {
 	name: string;
 	terrains: TerrainColor[];
+	/** Palette suggested for submaps created from this palette's maps
+	 *  (e.g. "Space - Sector" → "Space - System"). Stored as `child-palette`
+	 *  in the palette note's frontmatter. Unset = same palette as the parent. */
+	childPalette?: string;
 }
 
 export interface TerrainColor {
