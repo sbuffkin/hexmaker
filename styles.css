@@ -5309,10 +5309,82 @@ button.duckmage-wfc-chip {
     color: var(--color-red);
 }
 
-.duckmage-wfc-regions {
-    max-height: 9em;
+/* The page's one picker: generators, and regions to learn a new one from. */
+.duckmage-wfc-picker {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.duckmage-wfc-picker-input {
+    width: 100%;
+}
+
+.duckmage-wfc-picker-list {
+    position: absolute;
+    z-index: var(--layer-popover);
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    max-height: 22em;
     overflow-y: auto;
-    margin-bottom: 0.5em;
+    padding: 0.25em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+}
+
+.duckmage-wfc-picker-group {
+    padding: 0.5em 0.6em 0.25em;
+    font-size: 0.75em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.duckmage-wfc-picker-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75em;
+    padding: 0.3em 0.6em;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+}
+
+.duckmage-wfc-picker-item.is-active {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-picker-item.is-selected .duckmage-wfc-picker-label {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+
+.duckmage-wfc-picker-detail {
+    margin-left: auto;
+    font-size: 0.85em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.duckmage-wfc-picker-empty {
+    padding: 0.5em 0.6em;
+    color: var(--text-muted);
+}
+
+/* Map section rows: labels line up. */
+.duckmage-wfc-map-row > .duckmage-map-origin-label:first-child {
+    min-width: 4em;
+}
+
+/* Beats .duckmage-region-row input[type="number"], which is too narrow for a seed. */
+.duckmage-wfc-map-row input.duckmage-wfc-seed {
+    width: 9em;
+}
+
+.duckmage-wfc-map-row input.duckmage-wfc-num {
+    width: 4.5em;
 }
 
 /* Drag-to-change number inputs (src/worldgen/scrub.ts). Spinners are hidden:
