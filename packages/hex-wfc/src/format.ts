@@ -26,6 +26,7 @@ import {
   type Symmetry,
   type CountRange,
   type PathTweak,
+  type PathTypeTweak,
   type TerrainEntry,
 } from "./model";
 
@@ -33,7 +34,7 @@ export const FORMAT_VERSION = 1;
 const MARKER = "hex-wfc";
 const EXAMPLE_KEY = "example-hexes";
 
-type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts" | "paths";
+type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts" | "paths" | "pathTypes";
 
 /** Frontmatter key for each saved solver setting. */
 export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
@@ -59,6 +60,7 @@ export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
   features: "features",
   drawPaths: "draw-paths",
   paths: "paths",
+  pathTypes: "path-types",
 };
 
 const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
@@ -84,6 +86,7 @@ const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
   features: "boolean",
   drawPaths: "boolean",
   paths: "paths",
+  pathTypes: "pathTypes",
 };
 
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
@@ -122,6 +125,17 @@ export function encodeSetting(field: keyof GeneratorSettings, value: unknown): s
           for (const k of ["count", "wiggle", "length", "follow"] as const) if (t[k] !== undefined) opts.push(`${k} ${num(t[k])}`);
           if (t.as) opts.push(`as ${t.as}`);
           return `${route} = ${opts.join(", ")}`;
+        })
+        .filter((e) => !e.endsWith("= "))
+        .join("; ");
+    case "pathTypes":
+      return Object.entries(value as Record<string, PathTypeTweak>)
+        .map(([type, t]) => {
+          const opts: string[] = [];
+          if (t.off) opts.push("off");
+          if (t.crossImpassable) opts.push("cross-impassable");
+          for (const k of ["keep", "wiggle", "length", "follow"] as const) if (t[k] !== undefined) opts.push(`${k} ${num(t[k])}`);
+          return `${type} = ${opts.join(", ")}`;
         })
         .filter((e) => !e.endsWith("= "))
         .join("; ");
@@ -198,6 +212,24 @@ export function decodeSetting(field: keyof GeneratorSettings, raw: string): { va
           else return { error: `has "${part}" for ${route}; use off, count N, wiggle N, length N, follow N or as <path type>` };
         }
         out[route] = tweak;
+      }
+      return { value: out };
+    }
+    case "pathTypes": {
+      const out: Record<string, PathTypeTweak> = {};
+      for (const item of items()) {
+        const eq = item.indexOf(" = ");
+        if (eq < 0) return { error: `has "${item}"; write it like "Road = keep 0.5, wiggle 1.5"` };
+        const type = item.slice(0, eq).trim();
+        const tweak: PathTypeTweak = {};
+        for (const part of item.slice(eq + 3).split(",").map((x) => x.trim()).filter(Boolean)) {
+          const m = /^(keep|wiggle|length|follow) (\S+)$/.exec(part);
+          if (part === "off") tweak.off = true;
+          else if (part === "cross-impassable") tweak.crossImpassable = true;
+          else if (m && Number.isFinite(Number(m[2])) && Number(m[2]) >= 0) tweak[m[1] as "keep"] = Number(m[2]);
+          else return { error: `has "${part}" for ${type}; use off, cross-impassable, keep N, wiggle N, length N or follow N` };
+        }
+        out[type] = tweak;
       }
       return { value: out };
     }

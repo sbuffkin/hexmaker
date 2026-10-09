@@ -29,19 +29,30 @@ export function drawPreview(
   maxScale = 14,
   /** Route to emphasise (others are dimmed), e.g. while its table row is hovered. */
   highlightRoute?: string,
+  extra: {
+    /** Hexes outside the grid (same coordinate frame) drawn faded: neighbouring regions. */
+    shadow?: Map<string, string>;
+    /** A hex to outline (e.g. where you'll arrive). */
+    mark?: string;
+  } = {},
 ): void {
   const { cols, rows, offset, stagger } = grid;
   // Hex centres in unit space (neighbours √3 apart, circumradius 1).
   const pts: [string, number, number][] = [];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const addPoint = (x: number, y: number) => {
+    const [px, py] = hexCenter(x, y, orientation, stagger);
+    pts.push([cellKey(x, y), px, py]);
+    minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+    minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+  };
   for (let j = 0; j < rows; j++)
-    for (let i = 0; i < cols; i++) {
-      const x = offset.x + i, y = offset.y + j;
-      const [px, py] = hexCenter(x, y, orientation, stagger);
-      pts.push([cellKey(x, y), px, py]);
-      minX = Math.min(minX, px); maxX = Math.max(maxX, px);
-      minY = Math.min(minY, py); maxY = Math.max(maxY, py);
-    }
+    for (let i = 0; i < cols; i++) addPoint(offset.x + i, offset.y + j);
+  const inside = pts.length;
+  for (const key of extra.shadow?.keys() ?? []) {
+    const [x, y] = key.split("_").map(Number);
+    if (Number.isFinite(x) && Number.isFinite(y)) addPoint(x, y);
+  }
   const spanX = maxX - minX + 2, spanY = maxY - minY + 2;
   const scale = Math.max(1, Math.min(maxWidth / spanX, maxScale));
   canvas.width = Math.ceil(spanX * scale);
@@ -54,8 +65,10 @@ export function drawPreview(
     return [Math.cos(a), Math.sin(a)];
   };
   const corners = [0, 1, 2, 3, 4, 5].map(corner);
-  for (const [key, px, py] of pts) {
-    const t = cells.get(key);
+  for (const [n, [key, px, py]] of pts.entries()) {
+    const shadow = n >= inside;
+    const t = shadow ? extra.shadow?.get(key) : cells.get(key);
+    ctx.globalAlpha = shadow ? 0.35 : 1;
     const cx = (px - minX + 1) * scale, cy = (py - minY + 1) * scale;
     ctx.beginPath();
     corners.forEach(([dx, dy], k) => {
@@ -66,9 +79,26 @@ export function drawPreview(
     ctx.closePath();
     ctx.fillStyle = t ? (colors.get(t) ?? hashColor(t)) : "rgba(127,127,127,0.15)";
     ctx.fill();
-    if (featureCells?.has(key)) {
+    if (!shadow && featureCells?.has(key)) {
       ctx.strokeStyle = "rgba(0,0,0,0.35)";
       ctx.lineWidth = Math.max(1, scale * 0.15);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1;
+  if (extra.mark) {
+    const m = pts.find(([key]) => key === extra.mark);
+    if (m) {
+      const cx = (m[1] - minX + 1) * scale, cy = (m[2] - minY + 1) * scale;
+      ctx.beginPath();
+      corners.forEach(([dx, dy], k) => {
+        const X = cx + dx * scale * 0.9, Y = cy + dy * scale * 0.9;
+        if (k === 0) ctx.moveTo(X, Y);
+        else ctx.lineTo(X, Y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = Math.max(2, scale * 0.3);
       ctx.stroke();
     }
   }

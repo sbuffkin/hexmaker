@@ -48,6 +48,8 @@ import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
+import { RegionNavigateModal } from "./RegionNavigateModal";
+import { neighbourShadow } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
 import {
   getTokenDataFromCache,
@@ -1306,13 +1308,21 @@ export class HexMapView extends ItemView {
       },
     ];
 
+    // Neighbouring regions all share one size, so a map that has them can't grow or shrink.
+    const sizeLocked = (): boolean => {
+      if (!this.getActiveMap().world) return false;
+      new Notice("This map has neighbouring regions, which all share one size. Detach it from them in the map list's properties tab to resize it.");
+      return true;
+    };
     for (const { groupCls, expandAction, shrinkAction, canShrink, edgePaths } of dirs) {
       const group = container.createDiv({
         cls: `duckmage-expand-group ${groupCls}`,
       });
 
       group.createEl("button", { cls: "duckmage-expand-btn", text: "+" })
-        .addEventListener("click", () => void expandAction());
+        .addEventListener("click", () => {
+          if (!sizeLocked()) void expandAction();
+        });
 
       const shrinkBtn = group.createEl("button", {
         cls: "duckmage-shrink-btn",
@@ -1331,7 +1341,7 @@ export class HexMapView extends ItemView {
       let pendingPaths: string[] = [];
       let confirmTimer: number | null = null;
       shrinkBtn.addEventListener("click", () => {
-        if (!canShrink()) return;
+        if (!canShrink() || sizeLocked()) return;
         const paths = edgePaths();
         const dirty = paths.some((p) => this.hexHasContent(p));
         if (dirty && !shrinkBtn.hasClass("is-confirming")) {
@@ -3536,6 +3546,7 @@ export class HexMapView extends ItemView {
       }
     }
 
+    this.renderNeighbourShadow(gridContainer, region);
     this.renderPathOverlay(gridContainer);
     this.renderRegionOverlay(gridContainer);
     this.renderFactionOverlay(gridContainer);
@@ -3548,6 +3559,94 @@ export class HexMapView extends ItemView {
       this.applyCalibrationFocusStyles();
     }
     this.renderTokenLayer(gridContainer);
+  }
+
+  /**
+   * Neighbouring regions' terrain just past this map's edges, dimmed (1–3
+   * hexes deep by map size). Clicking one asks to go to that region.
+   *
+   * Drawn on its own layer so the grid itself (and anything calibrated to
+   * it) doesn't move: hex spacing is read from hexes already laid out, all
+   * reads first, then the writes (see the read-then-write rule in CLAUDE.md).
+   */
+  private renderNeighbourShadow(gridContainer: HTMLElement, region: MapData): void {
+    if (!region.world) return;
+    const shadow = neighbourShadow(this.plugin, region);
+    if (!shadow.size) return;
+    const { x: ox, y: oy } = region.gridOffset;
+    const { cols, rows } = region.gridSize;
+    const isFlat = this.plugin.settings.hexOrientation === "flat";
+    const stagger = this.getActiveStagger();
+    const shifted = (n: number) => (stagger === "odd" ? n % 2 !== 0 : n % 2 === 0) ? 1 : 0;
+
+    // ── Reads ──
+    const hexAt = (x: number, y: number) => gridContainer.querySelector<HTMLElement>(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`);
+    const origin = hexAt(ox, oy);
+    if (!origin) return;
+    const g = gridContainer.getBoundingClientRect();
+    const sx = gridContainer.offsetWidth ? g.width / gridContainer.offsetWidth : 1;
+    const sy = gridContainer.offsetHeight ? g.height / gridContainer.offsetHeight : 1;
+    const centre = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return { x: (r.left + r.width / 2 - g.left) / sx, y: (r.top + r.height / 2 - g.top) / sy, w: r.width / sx, h: r.height / sy };
+    };
+    const A = centre(origin);
+    // Positions are written in em: zooming bakes a new font size into the
+    // grid and the hexes (sized in em) resize with it; px would be left behind.
+    const em = parseFloat(getComputedStyle(gridContainer).fontSize) || 16;
+    const right = cols > 1 ? hexAt(ox + 1, oy) : null, below = rows > 1 ? hexAt(ox, oy + 1) : null;
+    const B = right ? centre(right) : null, C = below ? centre(below) : null;
+    let place: (x: number, y: number) => { x: number; y: number };
+    if (isFlat) {
+      const colPitch = B ? B.x - A.x : A.w * 0.75;
+      const rowPitch = C ? C.y - A.y : A.h;
+      place = (x, y) => ({ x: A.x + (x - ox) * colPitch, y: A.y + (y - oy) * rowPitch + (shifted(x) - shifted(ox)) * (rowPitch / 2) });
+    } else {
+      const colPitch = B ? B.x - A.x : A.w;
+      const rowPitch = C ? C.y - A.y : A.h * 0.75;
+      place = (x, y) => ({ x: A.x + (x - ox) * colPitch + (shifted(y) - shifted(oy)) * (colPitch / 2), y: A.y + (y - oy) * rowPitch });
+    }
+    const palettes = new Map<string, Map<string, string>>();
+    const colorOf = (map: string, terrain?: string) => {
+      if (!terrain) return undefined;
+      let p = palettes.get(map);
+      if (!p) palettes.set(map, (p = new Map(this.plugin.getMapPalette(map).map((t) => [t.name, t.color]))));
+      return p.get(terrain);
+    };
+    const items = [...shadow].map(([key, s]) => {
+      const [x, y] = key.split("_").map(Number);
+      return { s, at: place(x, y), color: colorOf(s.map, s.terrain) };
+    });
+
+    // ── Writes ──
+    const layer = gridContainer.createDiv({ cls: "duckmage-region-shadow-layer" });
+    for (const { s, at, color } of items) {
+      // Not a .duckmage-hex: painting, overlays and labels all look for those.
+      const el = layer.createDiv({
+        cls: "duckmage-region-shadow-hex",
+        attr: { title: `${s.map}: hex ${s.x}, ${s.y}`, "data-region": s.map },
+      });
+      el.setCssProps({
+        "--duckmage-shadow-x": `${(at.x - A.w / 2) / em}em`,
+        "--duckmage-shadow-y": `${(at.y - A.h / 2) / em}em`,
+        "--duckmage-shadow-w": `${A.w / em}em`,
+        "--duckmage-shadow-h": `${A.h / em}em`,
+        ...(color ? { "--duckmage-shadow-color": color } : {}),
+      });
+      el.addEventListener("click", () => {
+        new RegionNavigateModal(this.app, this.plugin, { map: s.map, x: s.x, y: s.y }, () => this.goToRegionHex(s.map, s.x, s.y)).open();
+      });
+    }
+  }
+
+  /** Switch to a neighbouring region and land on one of its hexes. */
+  private goToRegionHex(mapName: string, x: number, y: number, openEditor = false): void {
+    this.navigateToMap(mapName);
+    window.setTimeout(() => {
+      this.setSelectedHex(x, y);
+      this.centerOnHex(x, y);
+      if (openEditor) this.openHexEditorModal(x, y);
+    }, 80);
   }
 
   private openHexEditorModal(x: number, y: number): void {
@@ -3579,6 +3678,7 @@ export class HexMapView extends ItemView {
           }
         },
         onSwitchMap: (name: string) => this.navigateToMap(name),
+        onCrossToRegion: (name: string, nx: number, ny: number) => this.goToRegionHex(name, nx, ny, true),
       },
     );
     modal.open();

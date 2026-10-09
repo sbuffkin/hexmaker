@@ -39,6 +39,14 @@ export interface RouteStat {
 }
 
 const MIN_PATH_HEXES = 3;
+/**
+ * Cap on how much a path prefers or avoids a terrain (log of how much more
+ * often the example's path ran through it than it covers the map). Uncapped,
+ * a terrain that's rare on the map but common under the example's paths
+ * became nearly free to cross, so rivers ran long detours along a thin strip
+ * of it (a coast). At 1.2 a favoured terrain is at most ~5x cheaper.
+ */
+const PREF_CAP = 1.2;
 
 /** Remove consecutive duplicates (repeat clicks). */
 function clean(hexes: string[]): string[] {
@@ -145,6 +153,8 @@ export function routePaths(
   rng: () => number,
   sizeScale: number,
   tweaks: Record<string, PathTweak> = {},
+  /** Terrains paths may not cross unless their tweak says crossImpassable. */
+  impassable: string[] = [],
 ): { paths: PathOutput[]; warnings: string[]; routes: RouteStat[] } {
   const { cols, rows, ox, oy, orientation, stagger } = grid;
   const N = cols * rows;
@@ -157,6 +167,7 @@ export function routePaths(
     nbr.push(hexNeighbors(x, y, orientation, stagger).filter(([nx, ny]) => inGrid(nx, ny)).map(([nx, ny]) => idx(nx, ny)));
   }
   const terrainOf = (c: number) => cells.get(keyOf(c)) ?? "";
+  const impassableSet = new Set(impassable);
   const share = new Map<string, number>();
   for (const t of cells.values()) share.set(t, (share.get(t) ?? 0) + 1 / N);
   const border = (c: number) => {
@@ -182,8 +193,8 @@ export function routePaths(
     return all;
   };
 
-  /** Cheapest route from `start` to the nearest target, avoiding `taken` (no braids). */
-  const dijkstra = (cost: Float64Array, start: number, targets: Set<number>, taken: Set<number>): number[] | null => {
+  /** Cheapest route from `start` to the nearest target, avoiding `taken` (no braids) and `blocked` hexes. */
+  const dijkstra = (cost: Float64Array, start: number, targets: Set<number>, taken: Set<number>, blocked: Uint8Array | null): number[] | null => {
     const dist = new Float64Array(N).fill(Infinity);
     const prev = new Int32Array(N).fill(-1);
     const heap = new MinHeap();
@@ -199,6 +210,7 @@ export function routePaths(
       }
       for (const n of nbr[c]) {
         if (taken.has(n) && !targets.has(n)) continue;
+        if (blocked?.[n] && !targets.has(n)) continue;
         const nd = d + cost[n];
         if (nd < dist[n]) {
           dist[n] = nd;
@@ -210,44 +222,84 @@ export function routePaths(
     return null;
   };
 
-  const routeOne = (f: PathFeature, cost: Float64Array, taken: Set<number>): number[] | null => {
-    const starts = candidates(f.from, taken, null).filter((c) => f.from === "path" || !taken.has(c));
+  const routeOne = (f: PathFeature, cost: Float64Array, taken: Set<number>, blocked: Uint8Array | null): number[] | null => {
+    // An end on impassable terrain is only allowed when that terrain is the
+    // anchor itself (a river that ends in the shallows).
+    const endOk = (anchor: string) => (c: number) => !blocked?.[c] || terrainOf(c) === anchor;
+    const starts = candidates(f.from, taken, null).filter((c) => (f.from === "path" || !taken.has(c)) && endOk(f.from)(c));
     if (!starts.length) return null;
-    // A few random starts; keep the cheapest.
+    const dist = (a: number, b: number) =>
+      hexDistance([ox + (a % cols), oy + Math.floor(a / cols)], [ox + (b % cols), oy + Math.floor(b / cols)], orientation, stagger);
+
+    /**
+     * Route from one start, to ends it can actually reach (land cut off by
+     * impassable terrain or other paths doesn't count). If none of those is
+     * as far as the learned length asks, the farthest one will do.
+     */
+    const attempt = (start: number): number[] | null => {
+      const reach = new Uint8Array(N);
+      reach[start] = 1;
+      const stack = [start];
+      while (stack.length) {
+        const c = stack.pop()!;
+        for (const n of nbr[c]) {
+          if (reach[n] || blocked?.[n] || taken.has(n)) continue;
+          reach[n] = 1;
+          stack.push(n);
+        }
+      }
+      // An end can be stepped onto from reachable land (a river into the sea).
+      const reachable = (c: number) => reach[c] === 1 || nbr[c].some((n) => reach[n] === 1);
+      const startSide = border(start) ? sideOf(start) : null;
+      let targets: Set<number>;
+      if (f.to === "none") {
+        const want = Math.max(3, Math.round(f.length * Math.max(cols, rows)));
+        const land: { c: number; d: number }[] = [];
+        for (let c = 0; c < N; c++) if (reach[c] && c !== start) land.push({ c, d: dist(start, c) });
+        let atLength = land.filter((x) => Math.abs(x.d - want) <= 1);
+        if (!atLength.length && land.length) {
+          const best = Math.max(...land.filter((x) => x.d <= want).map((x) => x.d), 0);
+          atLength = best >= MIN_PATH_HEXES - 1 ? land.filter((x) => x.d === best) : [];
+        }
+        targets = new Set(atLength.length ? [atLength[Math.floor(rng() * atLength.length)].c] : []);
+      } else {
+        targets = new Set(candidates(f.to, taken, f.to === "edge" ? startSide : null).filter((c) => endOk(f.to)(c) && reachable(c)));
+        // Edge-to-edge: don't let it cut a corner; it should run at least most
+        // of the learned length (or as far as the land allows).
+        if (f.to === "edge") {
+          const minLen = Math.round(0.6 * f.length * Math.max(cols, rows));
+          const far = [...targets].filter((c) => dist(start, c) >= minLen);
+          if (far.length) targets = new Set(far);
+          else if (targets.size) {
+            const longest = Math.max(...[...targets].map((c) => dist(start, c)));
+            targets = new Set([...targets].filter((c) => dist(start, c) === longest));
+          }
+        }
+      }
+      if (f.to !== "path") for (const c of taken) targets.delete(c);
+      targets.delete(start);
+      if (!targets.size) return null;
+      const route = dijkstra(cost, start, targets, taken, blocked);
+      return route && route.length >= MIN_PATH_HEXES ? route : null;
+    };
+
+    // A few random starts; try the cheapest first, then others if it fails
+    // (it may sit on a scrap of land the route can't leave).
+    const tried = new Set<number>();
     let start = starts[Math.floor(rng() * starts.length)];
     for (let t = 0; t < 6; t++) {
       const c = starts[Math.floor(rng() * starts.length)];
       if (cost[c] < cost[start]) start = c;
     }
-    const startSide = border(start) ? sideOf(start) : null;
-    let targets: Set<number>;
-    if (f.to === "none") {
-      const want = Math.max(3, Math.round(f.length * Math.max(cols, rows)));
-      const sx = ox + (start % cols), sy = oy + Math.floor(start / cols);
-      const atLength: number[] = [];
-      for (let c = 0; c < N; c++) {
-        const d = hexDistance([sx, sy], [ox + (c % cols), oy + Math.floor(c / cols)], orientation, stagger);
-        if (Math.abs(d - want) <= 1) atLength.push(c);
-      }
-      targets = new Set(atLength.length ? [atLength[Math.floor(rng() * atLength.length)]] : []);
-    } else {
-      targets = new Set(candidates(f.to, taken, f.to === "edge" ? startSide : null));
-      // Edge-to-edge: don't let it cut a corner; it should run at least most
-      // of the learned length.
-      if (f.to === "edge") {
-        const minLen = Math.round(0.6 * f.length * Math.max(cols, rows));
-        const sx = ox + (start % cols), sy = oy + Math.floor(start / cols);
-        const far = [...targets].filter(
-          (c) => hexDistance([sx, sy], [ox + (c % cols), oy + Math.floor(c / cols)], orientation, stagger) >= minLen,
-        );
-        if (far.length) targets = new Set(far);
-      }
+    for (let k = 0; k < 12 && tried.size < starts.length; k++) {
+      tried.add(start);
+      const route = attempt(start);
+      if (route) return route;
+      const left = starts.filter((c) => !tried.has(c));
+      if (!left.length) break;
+      start = left[Math.floor(rng() * left.length)];
     }
-    if (f.to !== "path") for (const c of taken) targets.delete(c);
-    targets.delete(start);
-    if (!targets.size) return null;
-    const route = dijkstra(cost, start, targets, taken);
-    return route && route.length >= MIN_PATH_HEXES ? route : null;
+    return null;
   };
 
   const out: PathOutput[] = [];
@@ -264,7 +316,8 @@ export function routePaths(
     const follow = tw.follow ?? 1;
     // Cheap on terrains the example's path ran through (relative to how
     // common they are), plus smooth noise so routes wiggle like the example.
-    const pref = (t: string) => follow * Math.log(((f.through[t] ?? 0) + 0.01) / ((share.get(t) ?? 0) + 0.01));
+    const pref = (t: string) =>
+      follow * Math.max(-PREF_CAP, Math.min(PREF_CAP, Math.log(((f.through[t] ?? 0) + 0.01) / ((share.get(t) ?? 0) + 0.01))));
     const noiseAmp = (0.5 + 3 * f.turn) * (tw.wiggle ?? 1);
     const phase = [rng(), rng(), rng()].map((v) => v * Math.PI * 2);
     const freq = 0.6 + rng() * 0.6;
@@ -273,6 +326,13 @@ export function routePaths(
       const i = c % cols, j = Math.floor(c / cols);
       const noise = (Math.sin(i * freq + phase[0]) * Math.cos(j * freq * 0.8 + phase[1]) + Math.sin((i + j) * freq * 0.7 + phase[2])) / 2;
       cost[c] = Math.max(0.05, 1.5 - pref(terrainOf(c)) + noiseAmp * (0.5 + 0.5 * noise));
+    }
+
+    // Impassable hexes this route may not cross (unless it's allowed to).
+    let blocked: Uint8Array | null = null;
+    if (impassableSet.size && !tw.crossImpassable) {
+      blocked = new Uint8Array(N);
+      for (let c = 0; c < N; c++) if (impassableSet.has(terrainOf(c))) blocked[c] = 1;
     }
 
     const auto = Math.max(1, Math.round(f.count * sizeScale));
@@ -284,7 +344,7 @@ export function routePaths(
     takenByType.set(f.type, taken);
     let made = 0;
     for (let k = 0; k < count; k++) {
-      const path = routeOne(f, cost, taken);
+      const path = routeOne(f, cost, taken, blocked);
       if (!path) continue;
       out.push({ type: f.type, route: stat.route, hexes: path.map(keyOf) });
       for (const c of path) taken.add(c);

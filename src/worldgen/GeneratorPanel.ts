@@ -18,22 +18,34 @@ import {
   paletteColors,
   pathColors,
   sourceMapsOf,
+  relearnGenerator,
+  regionSizes,
+  sourceInfluenceOf,
+  setGeneratorPalette,
   toPathChains,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
-import { makeScrubbable } from "./scrub";
+import { makeScrubbable, wheelValue } from "./scrub";
+import { rebalance, toPercents } from "./regionWeights";
+import { suggestImpassable } from "./impassableHint";
+import { SIDES, type Side } from "./world";
+import { generateConnected, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
-import { listSaves, writeSave, readSave, applySave } from "./saves";
+import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
+import { ConfirmModal } from "./ConfirmModal";
 import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
-import { compareVersions, pluginVersion } from "../compat";
+import { compareVersions, pluginVersion, VERSION_KEY } from "../compat";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
 import {
   cleanupStrengths,
   pathsEnabled,
   pathRouteKey,
   type PathTweak,
+  type PathTypeTweak,
+  type PathFeature,
+  effectivePathTweaks,
   type RouteStat,
   randomSeed,
   SYMMETRIES,
@@ -60,8 +72,12 @@ export class GeneratorPanel {
   static mapName = "";
   static paletteName = "";
   static seedLocked = false;
+  /** Generate the new map as a neighbouring region of an existing one. */
+  static connect: { anchor: string; side: Side } | null = null;
   /** Titles of the setting sections folded away. */
   static collapsed = new Set<string>();
+  /** Path types whose routes are shown (groups start folded). */
+  static openPathTypes = new Set<string>();
   /**
    * The save last loaded. While the page still shows its generator, seed and
    * size (and no setting has changed), the preview and Create map use the
@@ -191,6 +207,8 @@ export class GeneratorPanel {
     // A just-loaded save's settings win over a possibly stale read of the file.
     const isThisGenerator = (sv: GeneratorSave) => sv.generatorPath === g.file.path || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
+    /** The last settings write, for anything that must re-read the file after it. */
+    let lastWrite: Promise<void> = Promise.resolve();
     const save = (patch: Partial<Record<keyof GeneratorSettings, unknown>>) => {
       GeneratorPanel.loadedSave = null;
       const next: Record<string, unknown> = { ...(model.settings ?? {}) };
@@ -199,11 +217,158 @@ export class GeneratorPanel {
         else next[k] = v;
       }
       model.settings = next;
-      saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
+      lastWrite = saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
         new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
       });
       schedulePreview();
     };
+
+    // Generator settings: what's saved on the generator itself (its name,
+    // palette and where it came from), as opposed to how it generates.
+    el = this.section(main, "Generator settings");
+    const nameRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
+    const nameInput = nameRow.createEl("input", { type: "text", value: model.name, attr: { placeholder: "Generator name" } });
+    const renameBtn = nameRow.createEl("button", { text: "Rename" });
+    renameBtn.disabled = true;
+    nameInput.addEventListener("input", () => {
+      renameBtn.disabled = !nameInput.value.trim() || nameInput.value.trim() === model.name;
+    });
+    const rename = () => {
+      if (renameBtn.disabled) return;
+      renameBtn.disabled = true;
+      void renameGenerator(this.plugin, g, nameInput.value).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          renameBtn.disabled = false;
+          return;
+        }
+        new Notice(`Renamed to "${r.name}"${r.savesUpdated ? `; ${r.savesUpdated} save${r.savesUpdated === 1 ? "" : "s"} updated` : ""}.`);
+        GeneratorPanel.selectedPath = r.file.path;
+        this.host.rerender();
+      });
+    };
+    renameBtn.addEventListener("click", rename);
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") rename();
+      if (e.key === "Escape") {
+        nameInput.value = model.name;
+        renameBtn.disabled = true;
+      }
+    });
+
+    const ownPaletteRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    ownPaletteRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
+    const ownPalette = ownPaletteRow.createEl("select", { attr: { title: "The palette this generator is for. The palette under the preview only changes the preview." } });
+    const palettes = this.plugin.settings.terrainPalettes.map((p) => p.name);
+    const learnedPalette = model.meta.palette ?? "";
+    if (learnedPalette && !palettes.includes(learnedPalette)) ownPalette.createEl("option", { value: learnedPalette, text: `${learnedPalette} (not installed)` });
+    for (const p of palettes) ownPalette.createEl("option", { value: p, text: p });
+    ownPalette.value = learnedPalette;
+    ownPalette.addEventListener("change", () => {
+      model.meta.palette = ownPalette.value;
+      void setGeneratorPalette(this.plugin, g.file, ownPalette.value).then(() => {
+        GeneratorPanel.paletteName = ownPalette.value;
+        this.host.rerender();
+      });
+    });
+
+    const sources = sourceMapsOf(model);
+    const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    sourceRow.createSpan({ text: "From", cls: "duckmage-map-origin-label" });
+    sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No region recorded", cls: "duckmage-wfc-source" });
+    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these regions, keeping the settings below" } });
+    relearnBtn.disabled = !sources.length;
+    relearnBtn.addEventListener("click", () => {
+      relearnBtn.disabled = true;
+      void relearnGenerator(this.plugin, g).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          relearnBtn.disabled = false;
+          return;
+        }
+        new Notice(`Re-learned "${model.name}" from ${sources.join(" + ")}.`);
+        this.host.rerender();
+      });
+    });
+    const openBtn = sourceRow.createEl("button", { text: "Open file" });
+    openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
+
+    // A combined generator: how much each region counts. The sliders always
+    // add up to 100%; letting go of one re-learns with the new mix.
+    if (sources.length > 1) {
+      const box = el.createDiv({ cls: "duckmage-wfc-influence" });
+      box.createEl("label", { text: "Region influence", cls: "duckmage-map-field-label" });
+      const stored = sourceInfluenceOf(model);
+      let weights = toPercents(stored ?? regionSizes(this.plugin, sources));
+      const rows = sources.map((name) => {
+        const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
+        row.createSpan({ text: name, cls: "duckmage-wfc-influence-name", attr: { title: name } });
+        const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${name} influence` } });
+        const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
+        return { slider, value };
+      });
+      const showWeights = () =>
+        rows.forEach((r, i) => {
+          r.slider.value = String(weights[i]);
+          r.value.setText(`${weights[i]}%`);
+        });
+      showWeights();
+      const note = box.createEl("p", {
+        text: stored
+          ? "Each region's share of what the generator learns."
+          : "Set by each region's size (painted hexes). Move a slider to choose your own mix.",
+        cls: "duckmage-map-origin-desc",
+      });
+      const relearnWith = (next: number[] | null) => {
+        note.setText("Re-learning…");
+        for (const r of rows) r.slider.disabled = true;
+        void relearnGenerator(this.plugin, g, next).then((res) => {
+          if ("error" in res) new Notice(res.error);
+          this.host.rerender();
+        });
+      };
+      let wheelTimer: number | null = null;
+      rows.forEach((r, i) => {
+        r.slider.addEventListener("input", () => {
+          weights = rebalance(weights, i, Number(r.slider.value));
+          showWeights();
+        });
+        r.slider.addEventListener("change", () => relearnWith(weights));
+        // Scroll to nudge by 5%; re-learn once the wheel stops.
+        r.slider.addEventListener("wheel", (e) => {
+          e.preventDefault();
+          weights = rebalance(weights, i, wheelValue(weights[i], e.deltaY, { min: 0, max: 100, step: 5 }));
+          showWeights();
+          if (wheelTimer !== null) window.clearTimeout(wheelTimer);
+          wheelTimer = window.setTimeout(() => relearnWith(weights), 500);
+        }, { passive: false });
+      });
+      if (stored) {
+        const bySize = box.createEl("button", { text: "Back to region size", attr: { title: "Let each region count by how many hexes it has painted" } });
+        bySize.addEventListener("click", () => relearnWith(null));
+      }
+    }
+
+    const info = [
+      `${model.terrains.length} terrains`,
+      model.exampleHexes ? `learned from ${model.exampleHexes} hexes` : "",
+      model.meta.created ? `created ${model.meta.created}` : "",
+      model.meta[VERSION_KEY] ? `v${model.meta[VERSION_KEY]}` : "",
+      g.file.path,
+    ].filter(Boolean);
+    el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
+    const resetRow = el.createDiv({ cls: "duckmage-region-row" });
+    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every setting below back to its default" } });
+    resetBtn.addEventListener("click", () => {
+      new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
+        const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
+        for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
+        // Re-render once written, or the page re-reads the old settings.
+        save(cleared);
+        void lastWrite.then(() => this.host.rerender());
+      }).open();
+    });
 
     // Preview (in the sticky side column), with the map's seed, size and
     // palette right under it.
@@ -267,6 +432,46 @@ export class GeneratorPanel {
       input.addEventListener("change", markPreset);
     }
 
+    // Connect to: the new map becomes a neighbouring region of an existing
+    // one, so its size, palette, coordinates and stagger follow from it, and
+    // its terrain carries on across the border.
+    const connectRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    connectRow.createSpan({ text: "Connect to", cls: "duckmage-map-origin-label" });
+    const anchorSelect = connectRow.createEl("select");
+    anchorSelect.createEl("option", { value: "", text: "Nothing (a separate map)" });
+    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
+    const sideSelect = connectRow.createEl("select");
+    for (const sd of SIDES) sideSelect.createEl("option", { value: sd, text: `${sd} of it` });
+    anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
+    sideSelect.value = GeneratorPanel.connect?.side ?? "east";
+    sideSelect.disabled = !anchorSelect.value;
+    const connectNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
+    let connected: NewRegion | null = null;
+    if (GeneratorPanel.connect) {
+      const spec = neighbourSpec(this.plugin, GeneratorPanel.connect.anchor, GeneratorPanel.connect.side);
+      if (!spec.ok) connectNote.setText(`⚠ ${spec.reason}`);
+      else {
+        connected = { slot: spec.slot, aSlot: spec.aSlot, anchor: GeneratorPanel.connect.anchor, side: GeneratorPanel.connect.side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
+        const borders = occupiedSides(this.plugin, connected).map((sd) => `${sd}: ${regionNameAt(this.plugin, connected!, sd)}`);
+        connectNote.setText(`Size locked to ${spec.cols}×${spec.rows} and palette to ${spec.paletteName}, so it lines up. Borders ${borders.join("; ")}.`);
+        colsInput.value = String(spec.cols);
+        rowsInput.value = String(spec.rows);
+        colsInput.disabled = rowsInput.disabled = true;
+        for (const { btn } of presetBtns) btn.disabled = true;
+        markPreset();
+      }
+    }
+    const setConnect = () => {
+      GeneratorPanel.connect = anchorSelect.value ? { anchor: anchorSelect.value, side: sideSelect.value as Side } : null;
+      // Neighbours must share the palette.
+      const anchorMap = anchorSelect.value ? this.plugin.getMap(anchorSelect.value) : undefined;
+      if (anchorMap) GeneratorPanel.paletteName = anchorMap.paletteName;
+      this.host.rerender();
+    };
+    anchorSelect.addEventListener("change", setConnect);
+    sideSelect.addEventListener("change", setConnect);
+    if (connected) paletteSelect.disabled = true;
+
     const showLock = () => {
       const locked = GeneratorPanel.seedLocked;
       setIcon(lockBtn, locked ? "lock" : "lock-open");
@@ -307,6 +512,7 @@ export class GeneratorPanel {
     fillSaves();
 
     const previewGrid = () => {
+      if (connected) return { cols: connected.cols, rows: connected.rows, offset: { ...connected.offset }, stagger: connected.stagger };
       const map = this.plugin.getMap(this.mapName);
       return {
         cols: Math.max(2, Math.min(200, Number(colsInput.value) || 30)),
@@ -348,6 +554,8 @@ export class GeneratorPanel {
     // Path rows (filled in further down) and the last drawn preview, so
     // hovering a row can redraw it with that route highlighted.
     const pathRows = new Map<string, { placed: HTMLElement; count: HTMLInputElement; auto: number }>();
+    /** Each path type's "placed of wanted" total in its group header. */
+    const pathGroupPlaced = new Map<string, { el: HTMLElement; routes: string[] }>();
     let lastDraw: ((highlight?: string) => void) | null = null;
     let hoveredRoute: string | undefined;
     const updatePathRows = (stats: RouteStat[]) => {
@@ -363,6 +571,17 @@ export class GeneratorPanel {
         }
         row.placed.setText(`${st.placed} of ${st.wanted}`);
         row.placed.toggleClass("is-short", st.placed < st.wanted);
+      }
+      for (const { el: placedEl, routes } of pathGroupPlaced.values()) {
+        let placed = 0, wanted = 0;
+        for (const r of routes) {
+          const st = byRoute.get(r);
+          if (!st || !pathsEnabled(model)) continue;
+          placed += st.placed;
+          wanted += st.wanted;
+        }
+        placedEl.setText(wanted ? `${placed} of ${wanted}` : "Off");
+        placedEl.toggleClass("is-short", placed < wanted);
       }
     };
     /** The loaded save, while the page shows exactly its generator, seed and size. */
@@ -380,11 +599,12 @@ export class GeneratorPanel {
       this.previewRows = grid.rows;
       this.seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const r = generateTerrain(this.plugin, model, palette, grid, this.seed);
+      const r = connected ? generateConnected(this.plugin, model, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
+      const shadow = connected && "shadow" in r ? (r.shadow as Map<string, string>) : undefined;
       // A loaded save shows its own map if this version generates a different one.
       let cells = r.cells;
       let rawPaths: { type: string; route?: string; hexes: string[] }[] = r.paths;
@@ -405,7 +625,7 @@ export class GeneratorPanel {
         // Draw at the side column's device-pixel width so it stays sharp when stretched.
         const dpr = activeWindow.devicePixelRatio || 1;
         drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
-          Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight);
+          Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight, { shadow });
       };
       lastDraw(hoveredRoute);
       updateShares(cells, grid, palette);
@@ -509,7 +729,15 @@ export class GeneratorPanel {
       const grid = previewGrid();
       const seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const generated = generateTerrain(this.plugin, model, palette, grid, seed);
+      // A neighbour slot may have been taken since this page was drawn.
+      if (connected?.anchor && connected.side) {
+        const again = neighbourSpec(this.plugin, connected.anchor, connected.side);
+        if (!again.ok) {
+          new Notice(again.reason);
+          return;
+        }
+      }
+      const generated = connected ? generateConnected(this.plugin, model, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
       if (!generated.ok) {
         new Notice(`Couldn't generate: ${generated.message}`);
         return;
@@ -517,11 +745,14 @@ export class GeneratorPanel {
       // While a loaded save is shown, create exactly the saved map.
       const sv = showingSave();
       const r = sv ? { ...generated, cells: sv.cells, paths: sv.paths } : generated;
+      // The choice this map is made with; the page may be redrawn (and the
+      // choice changed) while a big map is still being written.
+      const usedConnect = GeneratorPanel.connect;
       createBtn.disabled = true;
       void this.plugin
         .createNewMap(
           newNameInput.value.trim() || `${model.name}-${seed}`,
-          grid.cols, grid.rows, GeneratorPanel.paletteName, 0, 0, grid.stagger,
+          grid.cols, grid.rows, GeneratorPanel.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
           (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
           r.cells,
         )
@@ -539,7 +770,12 @@ export class GeneratorPanel {
             await this.plugin.saveSettings();
           }
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
-          new Notice(`Created map "${result.name}".`);
+          if (connected) {
+            await placeNewRegion(this.plugin, result.name, connected);
+            // Only clear the choice if it's still the one used; a newer one stays.
+            if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
+          }
+          new Notice(`Created map "${result.name}"${connected ? ` ${connected.side} of ${connected.anchor}` : ""}.`);
           GeneratorPanel.mapName = result.name;
           await this.plugin.showMap(result.name);
           this.host.rerender();
@@ -596,7 +832,38 @@ export class GeneratorPanel {
       this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v }));
     }
     this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
-    this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
+    const impassableBox = el.createDiv();
+    const hintBox = el.createDiv({ cls: "duckmage-wfc-hint" });
+    // Terrain the learned paths go around, offered to add (never added for you).
+    const drawHints = () => {
+      hintBox.empty();
+      const hints = suggestImpassable(model, colors, s().impassable);
+      if (!hints.length) return;
+      const row = hintBox.createDiv({ cls: "duckmage-region-row" });
+      row.createSpan({ text: "Suggested", cls: "duckmage-map-origin-label" });
+      for (const h of hints) {
+        const chip = row.createSpan({ cls: "duckmage-wfc-chip duckmage-wfc-hint-chip", attr: { title: h.reason } });
+        chip.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": colors.get(h.terrain) ?? "var(--background-modifier-border)" });
+        chip.createSpan({ text: h.terrain });
+      }
+      const add = row.createEl("button", { text: hints.length > 1 ? "Add all" : "Add" });
+      add.addEventListener("click", () => {
+        // Redraw here rather than re-rendering the page: the page would
+        // re-read the file before this save has landed.
+        save({ impassable: [...s().impassable, ...hints.map((h) => h.terrain).filter((t) => !s().impassable.includes(t))] });
+        drawImpassable();
+      });
+      hintBox.createEl("p", { text: hints.map((h) => `${h.terrain}: ${h.reason}.`).join(" "), cls: "duckmage-map-origin-desc" });
+    };
+    const drawImpassable = () => {
+      impassableBox.empty();
+      this.terrainFilter(impassableBox, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => {
+        save({ impassable: list });
+        drawHints();
+      });
+      drawHints();
+    };
+    drawImpassable();
 
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
@@ -671,7 +938,7 @@ export class GeneratorPanel {
     if (model.paths?.length) {
       el = this.section(main, "Paths");
       el.createEl("p", {
-        text: "Roads and rivers drawn over the terrain. Count is how many of each route to draw; leave it blank for the learned amount for this map size (drag or scroll on it). Hover a row to highlight its paths on the preview.",
+        text: "Roads and rivers drawn over the terrain, grouped by type. Each type's checkbox and sliders apply to all its routes; Amount turns off the routes the example had least of. Open a type to set single routes: Count is how many to draw (blank = learned amount for this map size; drag or scroll on it). Hover a route to highlight it on the preview.",
         cls: "duckmage-map-origin-desc",
       });
       const tweaks: Record<string, PathTweak> = Object.fromEntries(Object.entries(s().paths).map(([k, t]) => [k, { ...t }]));
@@ -682,6 +949,16 @@ export class GeneratorPanel {
         else delete tweaks[route];
         save({ paths: Object.keys(tweaks).length ? { ...tweaks } : undefined });
       };
+      const types: Record<string, PathTypeTweak> = Object.fromEntries(Object.entries(s().pathTypes).map(([k, t]) => [k, { ...t }]));
+      const effective = () => effectivePathTweaks(model.paths ?? [], tweaks, types);
+      const saveType = (type: string, patch: Partial<PathTypeTweak>) => {
+        const t: PathTypeTweak = { ...(types[type] ?? {}), ...patch };
+        for (const k of Object.keys(t) as (keyof PathTypeTweak)[]) if (t[k] === undefined || t[k] === false) delete t[k];
+        if (Object.keys(t).length) types[type] = t;
+        else delete types[type];
+        save({ pathTypes: Object.keys(types).length ? { ...types } : undefined });
+        refreshGroups();
+      };
       const table = el.createDiv({ cls: "duckmage-wfc-paths" });
       this.toggle(table, "Draw paths", "", pathsEnabled(model), (v) => {
         save({ drawPaths: v });
@@ -690,94 +967,197 @@ export class GeneratorPanel {
       table.toggleClass("is-off", !pathsEnabled(model));
       const mapTypes = (this.plugin.settings.pathTypes ?? []).map((t) => t.name);
       const typeColors = pathColors(this.plugin);
-      for (const f of model.paths) {
-        const route = pathRouteKey(f);
-        const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
-        const tw = tweaks[route] ?? {};
-        const row = table.createDiv({ cls: "duckmage-wfc-path-row" + (tw.off ? " is-off" : "") });
-        row.addEventListener("mouseenter", () => {
-          hoveredRoute = route;
-          lastDraw?.(route);
-        });
-        row.addEventListener("mouseleave", () => {
-          hoveredRoute = undefined;
-          lastDraw?.();
+
+      // One collapsible group per path type, most common type first.
+      const byType = new Map<string, PathFeature[]>();
+      for (const f of model.paths) byType.set(f.type, [...(byType.get(f.type) ?? []), f]);
+      const groupOrder = [...byType].sort((a, b) =>
+        b[1].reduce((n, f) => n + f.count, 0) - a[1].reduce((n, f) => n + f.count, 0) || a[0].localeCompare(b[0]));
+      const groupRefreshers: (() => void)[] = [];
+      const refreshGroups = () => groupRefreshers.forEach((r) => r());
+      for (const [type, routes] of groupOrder) {
+        const group = table.createDiv({ cls: "duckmage-wfc-path-group" });
+        const open = () => GeneratorPanel.openPathTypes.has(type);
+        group.toggleClass("is-collapsed", !open());
+        const head = group.createDiv({ cls: "duckmage-wfc-path-group-head" });
+        const title = head.createDiv({ cls: "duckmage-wfc-path-group-title" });
+        const fold = title.createEl("button", { cls: "clickable-icon duckmage-wfc-fold", attr: { "aria-label": `Show ${type} routes` } });
+        setIcon(fold, "chevron-down");
+        const all = title.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${type} paths` } });
+        const name = title.createSpan({ cls: "duckmage-wfc-terrain-name" });
+        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": typeColors.get(type) ?? "var(--background-modifier-border)" });
+        name.createSpan({ text: type });
+        const summary = title.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-group-summary" });
+        const placedEl = title.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" });
+        const toggleOpen = () => {
+          if (!GeneratorPanel.openPathTypes.delete(type)) GeneratorPanel.openPathTypes.add(type);
+          group.toggleClass("is-collapsed", !open());
+          fold.setAttr("aria-expanded", String(open()));
+        };
+        fold.addEventListener("click", toggleOpen);
+        name.addEventListener("click", toggleOpen);
+        all.addEventListener("change", () => {
+          if (all.checked) {
+            // Turning a type on also turns its routes back on.
+            for (const f of routes) {
+              const key = pathRouteKey(f);
+              if (tweaks[key]?.off) {
+                const { off: _off, ...rest } = tweaks[key];
+                if (Object.keys(rest).length) tweaks[key] = rest;
+                else delete tweaks[key];
+              }
+            }
+            save({ paths: Object.keys(tweaks).length ? { ...tweaks } : undefined });
+            saveType(type, { off: undefined });
+          } else saveType(type, { off: true });
         });
 
-        // Line 1: on, name, route, count, becomes, placed
-        const top = row.createDiv({ cls: "duckmage-wfc-path-top" });
-        const on = top.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${f.type} (${end(f.from)} to ${end(f.to)})` } });
-        on.checked = !tw.off;
-        on.addEventListener("change", () => {
-          row.toggleClass("is-off", !on.checked);
-          saveTweak(route, { off: !on.checked || undefined });
-        });
-        const name = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
-        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
-          "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
-        });
-        name.createSpan({ text: f.type });
-        top.createSpan({ text: `${end(f.from)} → ${end(f.to)}`, cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
-
-        const countWrap = top.createSpan({ cls: "duckmage-wfc-path-count" });
-        countWrap.createSpan({ text: "Count", cls: "duckmage-map-origin-label" });
-        const count = countWrap.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "Auto" } });
-        count.value = tw.count === undefined ? "" : String(tw.count);
-        const rowState = { placed: top.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" }), count, auto: 1 };
-        makeScrubbable(count, { min: 0, max: 99, pxPerStep: 8, initial: () => rowState.auto });
-        count.addEventListener("input", () => {
-          if (count.hasClass("is-scrubbing")) {
-            tweaks[route] = { ...(tweaks[route] ?? {}), count: Number(count.value) };
-            model.settings = { ...(model.settings ?? {}), paths: { ...tweaks } };
-            schedulePreview();
-          }
-        });
-        count.addEventListener("change", () => {
-          saveTweak(route, { count: count.value === "" ? undefined : Math.max(0, Math.floor(Number(count.value) || 0)) });
-        });
-
-        const asWrap = top.createSpan({ cls: "duckmage-wfc-path-as" });
-        asWrap.createSpan({ text: "As", cls: "duckmage-map-origin-label" });
-        const asSel = asWrap.createEl("select", { attr: { title: "Path type it is drawn as on the map" } });
-        const learnedKnown = mapTypes.includes(f.type);
-        asSel.createEl("option", { value: "", text: learnedKnown ? f.type : `${f.type} (no such type: skipped)` });
-        for (const t of mapTypes) if (t !== f.type) asSel.createEl("option", { value: t, text: t });
-        asSel.value = tw.as && mapTypes.includes(tw.as) ? tw.as : "";
-        asSel.addEventListener("change", () => saveTweak(route, { as: asSel.value || undefined }));
-        top.appendChild(rowState.placed);
-        pathRows.set(route, rowState);
-
-        // Line 2: shape of the route
-        const knobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
-        const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
+        // Settings for the whole type: how many of its routes, and multipliers
+        // on every route's own wiggle, length and terrain following.
+        const knobs = head.createDiv({ cls: "duckmage-wfc-path-knobs duckmage-wfc-path-group-knobs" });
+        const amountCell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title: `How many of the ${type} routes to draw. Lower turns off the ones the example had least of.` } });
+        amountCell.createSpan({ text: "Amount", cls: "duckmage-map-origin-label" });
+        const amount = amountCell.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5" } });
+        amount.value = String(Math.round((types[type]?.keep ?? 1) * 100));
+        const amountLabel = amountCell.createSpan();
+        const showAmount = () => amountLabel.setText(amount.value === "100" ? "All" : `${amount.value}%`);
+        showAmount();
+        amount.addEventListener("input", showAmount);
+        amount.addEventListener("change", () => saveType(type, { keep: amount.value === "100" ? undefined : Number(amount.value) / 100 }));
+        const typeKnob = (label: string, key: "wiggle" | "length" | "follow", title: string) => {
           const cell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
           cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
-          const slider = cell.createEl("input", { type: "range" });
-          slider.min = "0";
-          slider.max = String(max);
-          slider.step = "0.25";
-          slider.value = String(tw[key] ?? 1);
+          const slider = cell.createEl("input", { type: "range", attr: { min: "0", max: "3", step: "0.25" } });
+          slider.value = String(types[type]?.[key] ?? 1);
           const valueLabel = cell.createSpan({ text: `×${slider.value}` });
           slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
-          slider.addEventListener("change", () => {
-            const v = Number(slider.value);
-            saveTweak(route, { [key]: v === 1 ? undefined : v });
-          });
+          slider.addEventListener("change", () => saveType(type, { [key]: Number(slider.value) === 1 ? undefined : Number(slider.value) }));
         };
-        knob("Wiggle", "How much it meanders. 0 = as straight as the terrain allows.", "wiggle", 3);
-        if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
-        knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
+        typeKnob("Wiggle", "wiggle", `Multiplies every ${type} route's wiggle.`);
+        if (routes.some((f) => f.to === "none" || f.to === "edge")) typeKnob("Length", "length", `Multiplies every ${type} route's length.`);
+        typeKnob("Follow terrain", "follow", `Multiplies how strongly every ${type} route keeps to its terrains.`);
+        // Guarantee: never over impassable terrain (on unless turned off).
+        const impassableList = s().impassable;
+        const avoid = knobs.createEl("label", {
+          cls: "duckmage-wfc-toggle duckmage-wfc-path-avoid",
+          attr: {
+            title: impassableList.length
+              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows). Set the list under Guarantees.`
+              : "No terrain is marked impassable yet (Guarantees, Impassable terrain).",
+          },
+        });
+        const avoidBox = avoid.createEl("input", { type: "checkbox" });
+        avoidBox.checked = !types[type]?.crossImpassable;
+        avoidBox.disabled = !impassableList.length;
+        avoid.createSpan({ text: "Avoid impassable terrain" });
+        avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
+
+        const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
+        const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];
+        for (const f of [...routes].sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)))) {
+          const route = pathRouteKey(f);
+          const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
+          const tw = tweaks[route] ?? {};
+          const row = body.createDiv({ cls: "duckmage-wfc-path-row" });
+          row.addEventListener("mouseenter", () => {
+            hoveredRoute = route;
+            lastDraw?.(route);
+          });
+          row.addEventListener("mouseleave", () => {
+            hoveredRoute = undefined;
+            lastDraw?.();
+          });
+
+          // Line 1: on, route, count, becomes, placed
+          const top = row.createDiv({ cls: "duckmage-wfc-path-top" });
+          const on = top.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${f.type} (${end(f.from)} to ${end(f.to)})` } });
+          on.checked = !tw.off;
+          on.addEventListener("change", () => {
+            saveTweak(route, { off: !on.checked || undefined });
+            refreshGroups();
+          });
+          const routeName = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
+          routeName.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
+            "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
+          });
+          routeName.createSpan({ text: `${end(f.from)} → ${end(f.to)}` });
+          const why = top.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
+
+          const countWrap = top.createSpan({ cls: "duckmage-wfc-path-count" });
+          countWrap.createSpan({ text: "Count", cls: "duckmage-map-origin-label" });
+          const count = countWrap.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "Auto" } });
+          count.value = tw.count === undefined ? "" : String(tw.count);
+          const rowState = { placed: top.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" }), count, auto: 1 };
+          makeScrubbable(count, { min: 0, max: 99, pxPerStep: 8, initial: () => rowState.auto });
+          count.addEventListener("input", () => {
+            if (count.hasClass("is-scrubbing")) {
+              tweaks[route] = { ...(tweaks[route] ?? {}), count: Number(count.value) };
+              model.settings = { ...(model.settings ?? {}), paths: { ...tweaks } };
+              schedulePreview();
+            }
+          });
+          count.addEventListener("change", () => {
+            saveTweak(route, { count: count.value === "" ? undefined : Math.max(0, Math.floor(Number(count.value) || 0)) });
+          });
+
+          const asWrap = top.createSpan({ cls: "duckmage-wfc-path-as" });
+          asWrap.createSpan({ text: "As", cls: "duckmage-map-origin-label" });
+          const asSel = asWrap.createEl("select", { attr: { title: "Path type it is drawn as on the map" } });
+          const learnedKnown = mapTypes.includes(f.type);
+          asSel.createEl("option", { value: "", text: learnedKnown ? f.type : `${f.type} (no such type: skipped)` });
+          for (const t of mapTypes) if (t !== f.type) asSel.createEl("option", { value: t, text: t });
+          asSel.value = tw.as && mapTypes.includes(tw.as) ? tw.as : "";
+          asSel.addEventListener("change", () => saveTweak(route, { as: asSel.value || undefined }));
+          top.appendChild(rowState.placed);
+          pathRows.set(route, rowState);
+
+          // Line 2: shape of the route
+          const routeKnobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
+          const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
+            const cell = routeKnobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
+            cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
+            const slider = cell.createEl("input", { type: "range" });
+            slider.min = "0";
+            slider.max = String(max);
+            slider.step = "0.25";
+            slider.value = String(tw[key] ?? 1);
+            const valueLabel = cell.createSpan({ text: `×${slider.value}` });
+            slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
+            slider.addEventListener("change", () => {
+              const v = Number(slider.value);
+              saveTweak(route, { [key]: v === 1 ? undefined : v });
+            });
+          };
+          knob("Wiggle", "How much it meanders, on top of the type's. 0 = as straight as the terrain allows.", "wiggle", 3);
+          if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
+          knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
+          rowEls.push({ route, row, on, why });
+        }
+
+        // Header checkbox, summary and each row's on/off state, from the
+        // route settings with the type's applied.
+        groupRefreshers.push(() => {
+          const eff = effective();
+          const own = rowEls.filter((r) => !tweaks[r.route]?.off).length;
+          const drawn = rowEls.filter((r) => !eff[r.route]?.off).length;
+          const typeOff = !!types[type]?.off;
+          all.checked = !typeOff && own > 0;
+          all.indeterminate = !typeOff && own > 0 && own < rowEls.length;
+          group.toggleClass("is-off", drawn === 0);
+          summary.setText(`${drawn} of ${rowEls.length} route${rowEls.length === 1 ? "" : "s"} on`);
+          for (const r of rowEls) {
+            const ownOff = !!tweaks[r.route]?.off;
+            const byType = !ownOff && !!eff[r.route]?.off;
+            r.on.checked = !ownOff;
+            r.row.toggleClass("is-off", ownOff || byType);
+            r.why.setText(byType ? (typeOff ? `off: all ${type} off` : `off: ${type} amount`) : "");
+          }
+        });
+        pathGroupPlaced.set(type, { el: placedEl, routes: rowEls.map((r) => r.route) });
       }
+      refreshGroups();
     }
 
-    const resetRow = main.createDiv({ cls: "duckmage-region-row" });
-    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });
-    resetBtn.addEventListener("click", () => {
-      const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
-      for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
-      save(cleared);
-      this.host.rerender();
-    });
 
     schedulePreview();
   }

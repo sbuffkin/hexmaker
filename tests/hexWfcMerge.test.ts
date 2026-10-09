@@ -84,3 +84,28 @@ describe("generators with 32 or more terrains", () => {
     });
   }
 });
+
+describe("merging with region influence", () => {
+  const big = learn(block(20, 10, coast));            // 200 hexes: land and sea
+  const small = learn(block(5, 4, (x) => (x < 2 ? "hills" : "land")), "s"); // 20 hexes
+  const share = (m: HexWfcModel, name: string) => {
+    const total = m.terrains.reduce((n, t) => n + t.weight, 0);
+    return (m.terrains.find((t) => t.name === name)?.weight ?? 0) / total;
+  };
+
+  it("counts each region by its size when no influence is given", () => {
+    expect(share(mergeModels([big, small], "m"), "hills")).toBeCloseTo(8 / 220);
+  });
+
+  it("gives each region its share of the influence, whatever its size", () => {
+    const even = mergeModels([big, small], "m", {}, [50, 50]);
+    // Half of what's learned comes from the small region, where hills are 8 of 20 hexes.
+    expect(share(even, "hills")).toBeCloseTo(0.5 * (8 / 20));
+    expect(even.exampleHexes).toBe(220);
+  });
+
+  it("leaves out a region with no influence", () => {
+    const m = mergeModels([big, small], "m", {}, [100, 0]);
+    expect(m.terrains.map((t) => t.name).sort()).toEqual(["land", "sea"]);
+  });
+});

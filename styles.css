@@ -5798,6 +5798,24 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     margin: 0.35em 0;
 }
 
+/* Suggested impassable terrain under the Impassable chips: dashed, to read
+   as "not added yet". */
+.duckmage-wfc-hint:empty {
+    display: none;
+}
+
+.duckmage-wfc-hint .duckmage-region-row {
+    margin: 0.3em 0 0;
+}
+
+.duckmage-wfc-hint-chip {
+    padding: 0.05em 0.5em;
+    border: 1px dashed var(--background-modifier-border-hover);
+    border-radius: var(--radius-s);
+    color: var(--text-muted);
+    cursor: help;
+}
+
 .duckmage-wfc-matches:empty {
     display: none;
 }
@@ -6044,6 +6062,34 @@ button.duckmage-wfc-library-tab.is-active {
     margin-bottom: 0.5em;
 }
 
+/* Region influence sliders on combined generators (always add up to 100%). */
+.duckmage-wfc-influence {
+    margin: 0.5em 0;
+}
+
+.duckmage-wfc-influence-row {
+    display: grid;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.2em 0;
+}
+
+.duckmage-wfc-influence-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-wfc-influence-row input[type="range"] {
+    width: 100%;
+}
+
+.duckmage-wfc-influence-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 .duckmage-wfc-preset-size {
     color: var(--text-muted);
     font-size: 0.85em;
@@ -6144,4 +6190,113 @@ button.duckmage-wfc-library-tab.is-active {
     grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
     gap: 0.25em 1em;
     margin-top: 0.35em;
+}
+
+/* One group per path type: a header with the type's checkbox, summary and
+   sliders for all its routes, and the routes themselves (folded by default). */
+.duckmage-wfc-path-group {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    overflow: hidden;
+}
+
+.duckmage-wfc-path-group-head {
+    padding: 0.4em 0.6em;
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-path-group-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.duckmage-wfc-path-group-summary {
+    flex: 1;
+    margin: 0;
+}
+
+.duckmage-wfc-path-group-title .duckmage-wfc-fold {
+    padding: 0.15em;
+    height: auto;
+}
+
+.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-title .duckmage-wfc-fold {
+    transform: rotate(-90deg);
+}
+
+.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-body {
+    display: none;
+}
+
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-knobs,
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    opacity: 0.45;
+}
+
+/* In a group the route name is its own span; the note (why it's off) takes
+   only the space left over, so it never pushes the placed count down. */
+.duckmage-wfc-path-group-body .duckmage-wfc-path-route {
+    min-width: 0;
+}
+
+.duckmage-wfc-path-group-body {
+    display: grid;
+    gap: 0.4em;
+    padding: 0.4em 0.6em 0.6em 1.6em;
+}
+
+/* Neighbouring regions (src/worldgen/world.ts): their terrain shown dimmed
+   past the map's edges, on a layer of its own so the grid doesn't move. */
+.duckmage-region-shadow-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.duckmage-region-shadow-hex {
+    position: absolute;
+    left: var(--duckmage-shadow-x, 0px);
+    top: var(--duckmage-shadow-y, 0px);
+    width: var(--duckmage-shadow-w);
+    height: var(--duckmage-shadow-h);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: var(--duckmage-shadow-color, var(--background-secondary));
+    opacity: 0.35;
+    filter: saturate(0.6);
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.duckmage-grid-flat .duckmage-region-shadow-hex {
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+.duckmage-region-shadow-hex:hover {
+    opacity: 0.7;
+}
+
+/* Hex flower: a tile past the edge that's in a neighbouring region. */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region {
+    opacity: 0.55;
+    cursor: pointer;
+    outline: 1px dashed var(--text-muted);
+    outline-offset: -2px;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region:hover {
+    opacity: 0.9;
+}
+
+/* "Go to region?" box. */
+.duckmage-region-nav-preview {
+    display: block;
+    max-width: 100%;
+    margin: 0.5em auto;
+    border-radius: var(--radius-s);
 }

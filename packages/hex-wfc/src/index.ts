@@ -28,6 +28,8 @@ export {
   type Symmetry,
   type CountRange,
   type PathTweak,
+  type PathTypeTweak,
+  effectivePathTweaks,
   pathRouteKey,
 } from "./model";
 export { mergeModels } from "./merge";

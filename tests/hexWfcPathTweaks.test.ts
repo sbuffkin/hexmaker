@@ -3,12 +3,15 @@ import expect from "expect";
 import {
   cellKey,
   decodeSetting,
+  effectivePathTweaks,
   encodeSetting,
   hexNeighbors,
   learnModel,
   modelToMarkdown,
   parseModelMarkdown,
   pathRouteKey,
+  routePaths,
+  mulberry32,
   pathsEnabled,
   solve,
   type HexWfcModel,
@@ -133,5 +136,111 @@ describe("wheelValue", () => {
     expect(wheelValue(3, 100, { min: 0, max: 9 })).toBe(2);
     expect(wheelValue(0, 100, { min: 0, max: 9 })).toBe(0);
     expect(wheelValue(9, -100, { min: 0, max: 9 })).toBe(9);
+  });
+});
+
+describe("path type settings", () => {
+  const route = (type: string, to: string, count: number) => ({ type, from: "edge", to, count, turn: 0.2, length: 0.5, through: {} });
+  const routes = [route("Road", "town", 3), route("Road", "peak", 1), route("Road", "lake", 2), route("River", "sea", 1)];
+  const key = (type: string, to: string) => pathRouteKey({ type, from: "edge", to });
+
+  it("turning a type off turns off its routes only", () => {
+    const t = effectivePathTweaks(routes, {}, { Road: { off: true } });
+    expect([t[key("Road", "town")].off, t[key("Road", "peak")].off, t[key("River", "sea")].off]).toEqual([true, true, undefined]);
+  });
+
+  it("keep turns off the type's least common routes, among those still on", () => {
+    const half = effectivePathTweaks(routes, {}, { Road: { keep: 0.5 } });
+    // 3 roads: keep round(1.5) = 2, the two most common (town 3, lake 2).
+    expect([half[key("Road", "town")].off, half[key("Road", "lake")].off, half[key("Road", "peak")].off]).toEqual([undefined, undefined, true]);
+    // With town turned off by hand, keep 0.5 of the remaining two = lake.
+    const manual = effectivePathTweaks(routes, { [key("Road", "town")]: { off: true } }, { Road: { keep: 0.5 } });
+    expect([manual[key("Road", "lake")].off, manual[key("Road", "peak")].off]).toEqual([undefined, true]);
+    // Keeping something always keeps at least one route.
+    expect(Object.values(effectivePathTweaks(routes, {}, { Road: { keep: 0.01 } })).filter((t) => !t.off)).toHaveLength(2);
+  });
+
+  it("type multipliers multiply each route's own", () => {
+    const t = effectivePathTweaks(routes, { [key("Road", "town")]: { wiggle: 2, count: 4 } }, { Road: { wiggle: 0.5, length: 1.5 } });
+    expect(t[key("Road", "town")]).toEqual({ wiggle: 1, count: 4, length: 1.5 });
+    expect(t[key("Road", "peak")]).toEqual({ wiggle: 0.5, length: 1.5 });
+    expect(t[key("River", "sea")]).toEqual({});
+  });
+
+  it("round-trip through the file", () => {
+    const types = { Road: { keep: 0.5, wiggle: 1.25 }, "Old river": { off: true, follow: 0 } };
+    const back = decodeSetting("pathTypes", String(encodeSetting("pathTypes", types)));
+    expect(back).toEqual({ value: types });
+    expect(decodeSetting("pathTypes", "Road = sometimes")).toHaveProperty("error");
+  });
+});
+
+describe("paths and impassable terrain", () => {
+  // 20x12: land, with a 2-wide lake running top to bottom down the middle
+  // except a land bridge on rows 0-1.
+  const cols = 20, rows = 12;
+  const cells = new Map<string, string>();
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.set(cellKey(x, y), (x === 9 || x === 10) && y > 1 ? "water" : "grass");
+  const grid = { cols, rows, ox: 0, oy: 0, orientation: "flat" as const, stagger: "odd" as const };
+  const road = { type: "Road", from: "edge", to: "edge", count: 4, turn: 0.2, length: 1, through: { grass: 1 } };
+  const onWater = (paths: { hexes: string[] }[]) => paths.flatMap((p) => p.hexes).filter((h) => cells.get(h) === "water").length;
+
+  it("never cross it by default, going round instead", () => {
+    const r = routePaths([road], cells, grid, mulberry32(3), 1, {}, ["water"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    expect(onWater(r.paths)).toBe(0);
+  });
+
+  it("may cross it when the type allows", () => {
+    // A route that likes water: only the guarantee keeps it off.
+    const wet = { ...road, through: { water: 1 } };
+    expect(onWater(routePaths([wet], cells, grid, mulberry32(3), 1, {}, ["water"]).paths)).toBe(0);
+    const tweaks = effectivePathTweaks([wet], {}, { Road: { crossImpassable: true } });
+    expect(onWater(routePaths([wet], cells, grid, mulberry32(3), 1, tweaks, ["water"]).paths)).toBeGreaterThan(0);
+  });
+
+  it("can still end in it when that terrain is the end (a river into a lake)", () => {
+    const river = { type: "River", from: "edge", to: "water", count: 2, turn: 0.2, length: 0.5, through: { grass: 1 } };
+    const r = routePaths([river], cells, grid, mulberry32(5), 1, {}, ["water"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    for (const p of r.paths) {
+      expect(cells.get(p.hexes[p.hexes.length - 1])).toBe("water");
+      expect(p.hexes.slice(0, -1).every((h) => cells.get(h) !== "water")).toBe(true);
+    }
+  });
+
+  it("round-trips the type setting", () => {
+    const back = decodeSetting("pathTypes", String(encodeSetting("pathTypes", { River: { crossImpassable: true, keep: 0.5 } })));
+    expect(back).toEqual({ value: { River: { crossImpassable: true, keep: 0.5 } } });
+  });
+});
+
+describe("paths on land cut up by impassable terrain", () => {
+  // 30x14 sea with a 3-row strip of land along the bottom and single land
+  // hexes dotted along the other edges (starts a route can't leave).
+  const cols = 30, rows = 14;
+  const cells = new Map<string, string>();
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const speck = (y === 0 && x % 3 === 0) || ((x === 0 || x === cols - 1) && y % 3 === 0 && y < rows - 3);
+      cells.set(cellKey(x, y), y >= rows - 3 || speck ? "grass" : "sea");
+    }
+  const grid = { cols, rows, ox: 0, oy: 0, orientation: "flat" as const, stagger: "odd" as const };
+
+  it("tries other starts, and settles for the longest run the land allows", () => {
+    // Learned as running the whole map; only the strip can take one.
+    const river = { type: "River", from: "edge", to: "edge", count: 1, turn: 0.2, length: 1.4, through: { grass: 1 } };
+    for (let seed = 1; seed <= 6; seed++) {
+      const r = routePaths([river], cells, grid, mulberry32(seed), 1, {}, ["sea"]);
+      expect(r.paths).toHaveLength(1);
+      expect(r.paths[0].hexes.every((h) => cells.get(h) === "grass")).toBe(true);
+    }
+  });
+
+  it("finds a stopping point on reachable land for routes that just stop", () => {
+    const road = { type: "Road", from: "edge", to: "none", count: 2, turn: 0.2, length: 0.8, through: { grass: 1 } };
+    const r = routePaths([road], cells, grid, mulberry32(9), 1, {}, ["sea"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    expect(r.paths.flatMap((p) => p.hexes).every((h) => cells.get(h) === "grass")).toBe(true);
   });
 });

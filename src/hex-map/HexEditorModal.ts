@@ -28,6 +28,8 @@ import type { LinkSection, HexEditorOptions, TerrainColor } from "../types";
 import { RandomTableModal } from "../random-tables/RandomTableModal";
 import { HexExportModal } from "./HexExportModal";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
+import { resolveHex } from "../worldgen/world";
+import { RegionNavigateModal } from "./RegionNavigateModal";
 
 export class HexEditorModal extends HexmakerModal {
   private hexExists = false;
@@ -360,7 +362,26 @@ export class HexEditorModal extends HexmakerModal {
           });
         });
       } else {
-        tile.title = "Off map";
+        // Past the edge: a neighbouring region's hex, if one sits there.
+        const here = this.plugin.getMap(this.mapName);
+        const across = here ? resolveHex(this.plugin.settings.maps, here, nx, ny) : null;
+        if (across && across.map.name !== this.mapName) {
+          const target = { map: across.map.name, x: across.x, y: across.y };
+          tile.addClass("duckmage-neighbor-tile-region");
+          tile.removeClass("duckmage-neighbor-tile-offmap");
+          tile.title = `${target.map}: hex ${target.x}, ${target.y}`;
+          const t = getTerrainFromFile(this.app, this.plugin.hexPath(target.x, target.y, target.map));
+          const color = t ? this.plugin.getMapPalette(target.map).find((p) => p.name === t)?.color : undefined;
+          if (color) tile.setCssProps({ "--duckmage-bg": color });
+          tile.addEventListener("click", () => {
+            new RegionNavigateModal(this.app, this.plugin, target, () => {
+              this.close();
+              this.options.onCrossToRegion?.(target.map, target.x, target.y);
+            }).open();
+          });
+        } else {
+          tile.title = "Off map";
+        }
       }
     }
 
