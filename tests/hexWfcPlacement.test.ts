@@ -4,9 +4,12 @@ import {
   cellKey,
   decodeSetting,
   encodeSetting,
+  hexDistance,
   hexNeighbors,
   layoutTo5,
   layoutValue,
+  learnModel,
+  measureNear,
   modelToMarkdown,
   mulberry32,
   parseCellKey,
@@ -218,5 +221,30 @@ describe("paths: sides and the border", () => {
     }
     expect(shy).toBeLessThanOrEqual(free);
     expect(shy).toBeLessThan(4);
+  });
+});
+
+describe("learning from an example", () => {
+  // Grass everywhere, a few volcanoes, lava only right around them.
+  const example = new Map<string, string>();
+  const volcanoes = [[5, 5], [20, 12], [32, 4]];
+  for (let y = 0; y < 18; y++)
+    for (let x = 0; x < 40; x++) {
+      const d = Math.min(...volcanoes.map(([vx, vy]) => hexDistance([x, y], [vx, vy], "flat", "odd")));
+      example.set(cellKey(x, y), d === 0 ? "volcano" : d <= 2 ? "lava" : "grass");
+    }
+
+  it("finds near rules: lava only ever sits by a volcano", () => {
+    const rules = measureNear(example, "flat", "odd");
+    expect(rules.get("lava")).toEqual({ terrain: "volcano", distance: 2 });
+    expect(rules.has("grass")).toBe(false); // grass is everywhere
+  });
+
+  it("puts them in the learned model, with a 5×5 layout on a big example", () => {
+    const m = learnModel(example, { name: "v", orientation: "flat" });
+    expect(m.terrains.find((t) => t.name === "lava")?.near).toEqual({ terrain: "volcano", distance: 2 });
+    expect(m.terrains[0].layout).toHaveLength(25);
+    const small = learnModel(new Map([...example].filter(([k]) => parseCellKey(k)![0] < 12)), { name: "s", orientation: "flat" });
+    expect(small.terrains[0].layout).toHaveLength(9);
   });
 });

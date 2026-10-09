@@ -39,7 +39,7 @@ export {
   pathRouteKey,
 } from "./model";
 export { mergeModels } from "./merge";
-export { learnModel, measurePatches, measureLayout, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
+export { learnModel, measurePatches, measureLayout, measureNear, LAYOUT_5_MIN_HEXES, NEAR_THRESHOLDS, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
 export { solve, findViolation, cleanupStrengths, pathsEnabled, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
 export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, enforceNear, type GridInfo } from "./post";
 export { learnPaths, routePaths, edgeSide, isEdgeAnchor, type PathInput, type PathOutput, type RouteStat } from "./paths";

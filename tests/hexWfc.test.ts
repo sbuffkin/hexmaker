@@ -418,9 +418,9 @@ describe("directional bias, randomness and saved settings", () => {
 
   it("learns where each terrain sat", () => {
     const ocean = model.terrains.find((t) => t.name === "Ocean")!.layout!;
-    expect(ocean).toHaveLength(9);
-    expect(ocean[7]).toBeGreaterThan(2); // S: much more ocean than average
-    expect(ocean[1]).toBeLessThan(0.2); // N: almost none
+    expect(ocean).toHaveLength(25); // a big example learns the 5×5 grid
+    expect(ocean[22]).toBeGreaterThan(2); // bottom middle: much more ocean than average
+    expect(ocean[2]).toBeLessThan(0.2); // top middle: almost none
   });
 
   it("bias 1 keeps the ocean along the bottom; bias 0 doesn't care", () => {
@@ -469,7 +469,7 @@ describe("directional bias, randomness and saved settings", () => {
     const text = modelToMarkdown(m);
     expect(text).toContain("feature-size: 1.5");
     expect(text).toContain("directional-bias: 0.75");
-    expect(text).toContain("| Terrain | NW | N | NE | W | C | E | SW | S | SE |");
+    expect(text).toContain("| Terrain | R1C1 | R1C2 | R1C3 | R1C4 | R1C5 |");
     const back = parseModelMarkdown(text);
     expect(back.warnings).toEqual([]);
     expect(back.model).toEqual(m);

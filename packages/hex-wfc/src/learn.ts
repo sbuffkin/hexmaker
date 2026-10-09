@@ -8,7 +8,7 @@ import {
   type Orientation,
   type Stagger,
 } from "./grid";
-import type { HexWfcModel, GrowthShape, LineFeature, TerrainEntry } from "./model";
+import type { HexWfcModel, GrowthShape, LineFeature, NearRule, TerrainEntry } from "./model";
 import { learnPaths, type PathInput } from "./paths";
 
 export interface LearnOptions {
@@ -30,6 +30,8 @@ export interface LearnOptions {
  *   from measuring each terrain's patches (see measurePatches).
  * - Line patches anchored to a map edge or another terrain become guaranteed
  *   features (e.g. a river from the edge to a lake).
+ * - A terrain that only ever appears close to a rarer one gets a near rule
+ *   (lava within 3 of a volcano); see measureNear.
  *
  * Cells that are missing (unpainted) are ignored, along with their edges.
  */
@@ -60,6 +62,7 @@ export function learnModel(
 
   const analysis = analysePatches(map, opts.orientation, stagger);
   const layouts = measureLayout(map);
+  const near = measureNear(map, opts.orientation, stagger);
   const terrains: TerrainEntry[] = [...terrainCount]
     .map(([name, weight]) => {
       const a = analysis.terrains.get(name);
@@ -74,6 +77,8 @@ export function learnModel(
       }
       const layout = layouts.get(name);
       if (layout) entry.layout = layout;
+      const rule = near.get(name);
+      if (rule) entry.near = rule;
       return entry;
     })
     .sort((p, q) => q.weight - p.weight || p.name.localeCompare(q.name));
@@ -377,7 +382,9 @@ function minSpacing(list: Patch[], orientation: Orientation, stagger: Stagger): 
  * common as across the whole map. Smoothed toward 1 so a bin with few hexes
  * doesn't forbid a terrain outright.
  */
-export function measureLayout(cells: Map<string, string>): Map<string, number[]> {
+export function measureLayout(cells: Map<string, string>, size?: 3 | 5): Map<string, number[]> {
+  // Finer grid once there are enough hexes for ~24 per cell.
+  const n = size ?? (cells.size >= LAYOUT_5_MIN_HEXES ? 5 : 3);
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   const pts: [number, number, string][] = [];
   for (const [key, t] of cells) {
@@ -391,14 +398,14 @@ export function measureLayout(cells: Map<string, string>): Map<string, number[]>
   if (!pts.length) return out;
   const w = maxX - minX + 1, h = maxY - minY + 1;
   const bin = (x: number, y: number) =>
-    Math.min(2, Math.floor((3 * (y - minY)) / h)) * 3 + Math.min(2, Math.floor((3 * (x - minX)) / w));
-  const binTotal = new Array<number>(9).fill(0);
+    Math.min(n - 1, Math.floor((n * (y - minY)) / h)) * n + Math.min(n - 1, Math.floor((n * (x - minX)) / w));
+  const binTotal = new Array<number>(n * n).fill(0);
   const counts = new Map<string, number[]>();
   for (const [x, y, t] of pts) {
     const b = bin(x, y);
     binTotal[b]++;
     let c = counts.get(t);
-    if (!c) counts.set(t, (c = new Array<number>(9).fill(0)));
+    if (!c) counts.set(t, (c = new Array<number>(n * n).fill(0)));
     c[b]++;
   }
   const PSEUDO = 4; // pseudo-hexes per bin pulling the estimate toward 1
@@ -414,3 +421,76 @@ export function measureLayout(cells: Map<string, string>): Map<string, number[]>
   }
   return out;
 }
+
+/** Examples with at least this many hexes learn a 5×5 layout instead of 3×3. */
+export const LAYOUT_5_MIN_HEXES = 600;
+
+/** Limits for learning near rules. Exported for tests and tuning. */
+export const NEAR_THRESHOLDS = {
+  /** Only terrains with at least this many hexes get a rule. */
+  minHexes: 6,
+  /** ...and only to an anchor with at least this many; one stray hex is too
+   *  little to go on (and generated maps often lack it, wiping the terrain). */
+  minAnchorHexes: 2,
+  /** Furthest a rule reaches, in hexes. */
+  maxDistance: 4,
+  /** The anchor's reach may cover at most this share of the map; any more
+   *  and the rule says little (everything is near grass). */
+  maxCoverage: 0.45,
+};
+
+/**
+ * Near rules from an example: terrain T gets "near A d" when every T hex is
+ * within d hexes of some A hex, and A's reach at d covers only a small part
+ * of the map. Of several anchors, the tightest one (least coverage) wins.
+ */
+export function measureNear(cells: Map<string, string>, orientation: Orientation, stagger: Stagger): Map<string, NearRule> {
+  const out = new Map<string, NearRule>();
+  const total = cells.size;
+  if (!total) return out;
+  const byTerrain = new Map<string, string[]>();
+  for (const [k, t] of cells) {
+    if (!t) continue;
+    let list = byTerrain.get(t);
+    if (!list) byTerrain.set(t, (list = []));
+    list.push(k);
+  }
+  const { minHexes, minAnchorHexes, maxDistance, maxCoverage } = NEAR_THRESHOLDS;
+  const best = new Map<string, { rule: NearRule; coverage: number }>();
+  for (const [anchor, seeds] of byTerrain) {
+    if (seeds.length < minAnchorHexes || seeds.length / total > maxCoverage) continue;
+    // Distance from the anchor, up to maxDistance.
+    const dist = new Map<string, number>(seeds.map((k) => [k, 0]));
+    let frontier = seeds;
+    const reach = [seeds.length]; // hexes within d, for d = 0..maxDistance
+    for (let d = 1; d <= maxDistance; d++) {
+      const next: string[] = [];
+      for (const k of frontier) {
+        const xy = parseCellKey(k)!;
+        for (const [nx, ny] of hexNeighbors(xy[0], xy[1], orientation, stagger)) {
+          const nk = cellKey(nx, ny);
+          if (cells.has(nk) && !dist.has(nk)) { dist.set(nk, d); next.push(nk); }
+        }
+      }
+      reach.push(reach[d - 1] + next.length);
+      frontier = next;
+    }
+    for (const [t, hexes] of byTerrain) {
+      if (t === anchor || hexes.length < minHexes) continue;
+      let far = 0;
+      for (const k of hexes) {
+        const d = dist.get(k);
+        if (d === undefined) { far = Infinity; break; }
+        far = Math.max(far, d);
+      }
+      if (far < 1 || far > maxDistance) continue;
+      const coverage = reach[far] / total;
+      if (coverage > maxCoverage) continue;
+      const prev = best.get(t);
+      if (!prev || coverage < prev.coverage) best.set(t, { rule: { terrain: anchor, distance: far }, coverage });
+    }
+  }
+  for (const [t, b] of best) out.set(t, b.rule);
+  return out;
+}
+
