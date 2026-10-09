@@ -745,6 +745,9 @@ export class GeneratorPanel {
       // While a loaded save is shown, create exactly the saved map.
       const sv = showingSave();
       const r = sv ? { ...generated, cells: sv.cells, paths: sv.paths } : generated;
+      // The choice this map is made with; the page may be redrawn (and the
+      // choice changed) while a big map is still being written.
+      const usedConnect = GeneratorPanel.connect;
       createBtn.disabled = true;
       void this.plugin
         .createNewMap(
@@ -769,7 +772,8 @@ export class GeneratorPanel {
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           if (connected) {
             await placeNewRegion(this.plugin, result.name, connected);
-            GeneratorPanel.connect = null;
+            // Only clear the choice if it's still the one used; a newer one stays.
+            if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
           }
           new Notice(`Created map "${result.name}"${connected ? ` ${connected.side} of ${connected.anchor}` : ""}.`);
           GeneratorPanel.mapName = result.name;
