@@ -11,7 +11,8 @@
  */
 
 import { hexNeighbors, hexDistance, directionRing, cellKey, parseCellKey, type Orientation, type Stagger } from "./grid";
-import { pathRouteKey, type PathFeature, type PathTweak } from "./model";
+import { edgeSide, isEdgeAnchor, pathRouteKey, type PathFeature, type PathTweak } from "./model";
+export { edgeSide, isEdgeAnchor };
 import type { GridInfo } from "./post";
 
 export interface PathInput {
@@ -54,13 +55,6 @@ const PREF_CAP = 1.2;
  */
 const BORDER_COST = 3;
 
-/** "edge-N" / "edge-E" / "edge-S" / "edge-W" (any case): which side; null for anything else. */
-export function edgeSide(anchor: string): "N" | "E" | "S" | "W" | null {
-  const m = /^edge-([nesw])$/i.exec(anchor.trim());
-  return m ? (m[1].toUpperCase() as "N" | "E" | "S" | "W") : null;
-}
-/** Any edge anchor: `edge` or one side of it. */
-export const isEdgeAnchor = (anchor: string): boolean => anchor === "edge" || edgeSide(anchor) !== null;
 
 /** Remove consecutive duplicates (repeat clicks). */
 function clean(hexes: string[]): string[] {

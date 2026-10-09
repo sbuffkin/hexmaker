@@ -11,6 +11,7 @@ import {
   mulberry32,
   parseCellKey,
   parseModelMarkdown,
+  restrictModel,
   routePaths,
   solve,
   type HexWfcModel,
@@ -194,6 +195,17 @@ describe("paths: sides and the border", () => {
         expect(parseCellKey(p.hexes[p.hexes.length - 1])![0]).toBe(cols - 1);
       }
     }
+  });
+
+  it("survive fitting the model to a palette", () => {
+    const m: HexWfcModel = {
+      name: "p",
+      meta: {},
+      terrains: [{ name: "grass", weight: 1 }],
+      adjacency: [{ a: "grass", b: "grass", weight: 1 }],
+      paths: [{ type: "River", from: "edge-W", to: "edge-E", count: 1, turn: 0.3, length: 1, through: { grass: 1 } }],
+    };
+    expect(restrictModel(m, ["grass"]).paths).toHaveLength(1);
   });
 
   it("keep off the border between their ends, unless allowed to cross", () => {

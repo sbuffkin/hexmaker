@@ -414,13 +414,21 @@ export function validateModel(model: HexWfcModel): string[] {
   return problems;
 }
 
+/** "edge-N" / "edge-E" / "edge-S" / "edge-W" (any case): which side; null for anything else. */
+export function edgeSide(anchor: string): "N" | "E" | "S" | "W" | null {
+  const m = /^edge-([nesw])$/i.exec(anchor.trim());
+  return m ? (m[1].toUpperCase() as "N" | "E" | "S" | "W") : null;
+}
+/** Any edge anchor: `edge` or one side of it. */
+export const isEdgeAnchor = (anchor: string): boolean => anchor === "edge" || edgeSide(anchor) !== null;
+
 /**
  * Drop terrains that aren't in `allowed` (and their adjacency rows and
  * features). Use it to fit a model to a palette that lacks some terrains.
  */
 export function restrictModel(model: HexWfcModel, allowed: Iterable<string>): HexWfcModel {
   const keep = new Set(allowed);
-  const ok = (end: string) => end === "edge" || end === "none" || keep.has(end);
+  const ok = (end: string) => isEdgeAnchor(end) || end === "none" || keep.has(end);
   return {
     ...model,
     terrains: model.terrains.filter((t) => keep.has(t.name)),
