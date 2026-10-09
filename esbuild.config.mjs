@@ -31,7 +31,7 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: `${outDir}/${outFile}`,
-	loader: { ".md": "text", ".png": "dataurl" },
+	loader: { ".md": "text", ".png": "dataurl", ".svg": "dataurl" },
 });
 
 if (prod) {

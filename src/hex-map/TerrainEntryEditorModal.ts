@@ -2,7 +2,7 @@ import { App, Notice, Setting, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { normalizeFolder } from "../utils";
+import { ICON_PACK_LABELS, iconLabel, iconPack, normalizeFolder, type IconPack } from "../utils";
 
 export class TerrainEntryEditorModal extends HexmakerModal {
 	// Pending values — only written to the entry on Save
@@ -62,9 +62,17 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 			.setName("Icon")
 			.addDropdown(dropdown => {
 				dropdown.addOption("", "— no icon —");
+				// Grouped by pack so a long icon list stays scannable.
+				const groups = new Map<IconPack, HTMLOptGroupElement>();
+				for (const pack of Object.keys(ICON_PACK_LABELS) as IconPack[]) {
+					groups.set(pack, dropdown.selectEl.createEl("optgroup", { attr: { label: ICON_PACK_LABELS[pack] } }));
+				}
 				for (const icon of this.plugin.availableIcons) {
-					const label = icon.replace(/^bw-/, "").replace(/\.png$/, "").replace(/-/g, " ");
-					dropdown.addOption(icon, label);
+					groups.get(iconPack(icon, this.plugin.vaultIconsSet))
+						?.createEl("option", { value: icon, text: iconLabel(icon) });
+				}
+				for (const group of groups.values()) {
+					if (group.childElementCount === 0) group.remove();
 				}
 				dropdown.setValue(this.pendingIcon ?? "");
 				dropdown.onChange(value => { this.pendingIcon = value || undefined; });

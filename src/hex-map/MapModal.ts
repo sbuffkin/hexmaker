@@ -7,6 +7,7 @@ import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
 import { exportMapAsPng } from "../export/mapPngRenderer";
 import { exportMapAsPdf } from "../export/exporters/mapWithTable";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
+import { fillPaletteSelect } from "../palettes/paletteOptions";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -548,9 +549,7 @@ export class MapModal extends HexmakerModal {
     el.createEl("label", { text: "Palette", cls: "duckmage-map-field-label" });
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
-    for (const pal of this.plugin.settings.terrainPalettes) {
-      paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-    }
+    fillPaletteSelect(this.plugin, paletteSelect);
 
     // Stagger offset
     el.createEl("label", { text: "Stagger offset", cls: "duckmage-map-field-label" });

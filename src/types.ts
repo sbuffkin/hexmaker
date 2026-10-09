@@ -145,6 +145,10 @@ export interface HexmakerPluginSettings {
 	iconOrder: string[];
 	setupComplete: boolean;
 	setupDismissed: boolean;
+	/** Vault folder holding palette notes. Empty = "{worldFolder}/palettes". */
+	palettesFolder: string;
+	/** True once settings-only palettes were written out as notes. */
+	palettesMigrated: boolean;
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

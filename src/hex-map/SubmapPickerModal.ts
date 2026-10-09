@@ -2,6 +2,7 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getIconUrl, createIconEl } from "../utils";
+import { fillPaletteSelect } from "../palettes/paletteOptions";
 
 export class SubmapPickerModal extends HexmakerModal {
   constructor(
@@ -126,9 +127,7 @@ export class SubmapPickerModal extends HexmakerModal {
     const paletteRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });
     paletteRow.createSpan({ text: "Palette", cls: "duckmage-submap-create-label" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-submap-create-palette" });
-    for (const pal of this.plugin.settings.terrainPalettes) {
-      paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-    }
+    fillPaletteSelect(this.plugin, paletteSelect);
 
     // Starting coordinates
     const originRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });
@@ -160,7 +159,7 @@ export class SubmapPickerModal extends HexmakerModal {
     const renderTerrainGrid = () => {
       terrainGrid.empty();
       selectedTerrainType = undefined;
-      const palette = this.plugin.getPaletteByName(paletteSelect.value)?.terrains ?? [];
+      const palette = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value);
 
       const noneTile = terrainGrid.createDiv({
         cls: "duckmage-terrain-option duckmage-terrain-option-clear is-selected",

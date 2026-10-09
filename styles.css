@@ -1716,9 +1716,93 @@ input.duckmage-input-error {
     min-height: 0;
 }
 .duckmage-token-modal .duckmage-icon-picker-inline {
-    height: 150px;
+    height: 220px;
     max-height: none;
     flex-shrink: 0;
+    resize: vertical; /* big token libraries: drag the bottom edge to see more */
+    min-height: 120px;
+}
+
+/* Inline icon grids elsewhere can also be dragged taller. */
+.duckmage-icon-picker-inline {
+    resize: vertical;
+    min-height: 90px;
+}
+
+/* ── Icon filter bar (search + pack tabs) above icon grids ───────────── */
+.duckmage-icon-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: 0.4em;
+}
+
+.duckmage-icon-filter-search {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.duckmage-icon-filter-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+}
+
+.duckmage-icon-filter-tab {
+    font-size: var(--font-ui-smaller);
+    padding: 0.15em 0.6em;
+    height: auto;
+}
+
+.duckmage-icon-filter-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.duckmage-icon-filter-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    margin: -0.25em 0 0.5em;
+}
+
+/* ── Add palette modal ──────────────────────────────────────────────── */
+.duckmage-add-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.duckmage-add-palette-option {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35em;
+    height: auto;
+    padding: 0.5em 0.75em;
+    text-align: left;
+    white-space: normal;
+}
+
+.duckmage-add-palette-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-add-palette-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-add-palette-swatches {
+    display: flex;
+    gap: 2px;
+}
+
+.duckmage-add-palette-swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--duckmage-bg, transparent);
 }
 
 /* Token modal title row with inline preview */

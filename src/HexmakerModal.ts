@@ -1,9 +1,99 @@
 import { App, Modal } from "obsidian";
+import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
+
+/** Last pack tab picked in any icon filter — remembered for the session. */
+let lastIconPack: IconPack | "all" = "all";
 
 /** Base class for all Hexmaker modals. Provides shared behaviour. */
 export class HexmakerModal extends Modal {
 	constructor(app: App) {
 		super(app);
+	}
+
+	/**
+	 * Put a search box + pack tabs (All / Terrain / Space / Custom) above an
+	 * icon grid so large icon libraries stay navigable. Works on any grid
+	 * whose tiles are `.duckmage-icon-option` elements carrying
+	 * `data-icon="<file name>"`; tiles with an empty `data-icon` ("no icon",
+	 * "clear all") are always shown. Tiles are filtered in place, so each
+	 * grid keeps its own click/selection behaviour.
+	 *
+	 * `vaultIcons` is the set of icon names that come from the user's icons
+	 * folder (plugin.vaultIconsSet). Returns a function that re-applies the
+	 * filter — call it if the grid is re-rendered.
+	 */
+	protected addIconFilter(grid: HTMLElement, vaultIcons: Set<string>): () => void {
+		const bar = createDiv({ cls: "duckmage-icon-filter-bar" });
+		grid.before(bar);
+		const search = bar.createEl("input", {
+			type: "search",
+			cls: "duckmage-icon-filter-search",
+			attr: { placeholder: "Filter icons…", "aria-label": "Filter icons" },
+		});
+		const tabs = bar.createDiv({ cls: "duckmage-icon-filter-tabs" });
+		const empty = createDiv({ cls: "duckmage-icon-filter-empty", text: "No icons match." });
+		grid.after(empty);
+
+		const tiles = (): HTMLElement[] =>
+			Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-icon-option[data-icon]"));
+
+		let pack: IconPack | "all" = lastIconPack;
+		const apply = () => {
+			const query = search.value.trim().toLowerCase();
+			let shown = 0;
+			for (const tile of tiles()) {
+				const icon = tile.dataset["icon"] ?? "";
+				if (!icon) continue;
+				const match =
+					(pack === "all" || iconPack(icon, vaultIcons) === pack) &&
+					(!query || iconLabel(icon).includes(query) || icon.toLowerCase().includes(query));
+				tile.toggle(match);
+				if (match) shown++;
+			}
+			empty.toggle(shown === 0);
+		};
+
+		const renderTabs = () => {
+			tabs.empty();
+			const counts = new Map<IconPack, number>();
+			for (const tile of tiles()) {
+				const icon = tile.dataset["icon"];
+				if (icon) counts.set(iconPack(icon, vaultIcons), (counts.get(iconPack(icon, vaultIcons)) ?? 0) + 1);
+			}
+			// One pack (or none) → tabs add nothing; search alone is enough.
+			if (counts.size < 2) {
+				pack = "all";
+				return;
+			}
+			if (pack !== "all" && !counts.has(pack)) pack = "all";
+			const total = [...counts.values()].reduce((a, b) => a + b, 0);
+			const entries: [IconPack | "all", string, number][] = [
+				["all", "All", total],
+				...(Object.keys(ICON_PACK_LABELS) as IconPack[])
+					.filter((p) => counts.has(p))
+					.map((p): [IconPack, string, number] => [p, ICON_PACK_LABELS[p], counts.get(p) ?? 0]),
+			];
+			for (const [key, label, n] of entries) {
+				const tab = tabs.createEl("button", {
+					cls: `duckmage-icon-filter-tab${pack === key ? " is-active" : ""}`,
+					text: `${label} ${n}`,
+				});
+				tab.addEventListener("click", () => {
+					pack = key;
+					lastIconPack = key;
+					renderTabs();
+					apply();
+				});
+			}
+		};
+
+		search.addEventListener("input", apply);
+		renderTabs();
+		apply();
+		return () => {
+			renderTabs();
+			apply();
+		};
 	}
 
 	/** Make this modal draggable by its title-bar area. Safe to call multiple times. */

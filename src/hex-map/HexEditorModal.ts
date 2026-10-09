@@ -6,6 +6,7 @@ import {
   normalizeFolder,
   makeTableTemplate,
   createIconEl,
+  iconLabel,
 } from "../utils";
 import {
   getTerrainFromFile,
@@ -546,7 +547,7 @@ export class HexEditorModal extends HexmakerModal {
 
     const makeTile = (icon: string | null): HTMLElement => {
       const label = icon
-        ? icon.replace(/^bw-/, "").replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "").replace(/-/g, " ")
+        ? iconLabel(icon)
         : "— clear all —";
       const tile = grid.createDiv({ cls: "duckmage-icon-option" });
       tile.dataset["icon"] = icon ?? "";
@@ -619,6 +620,7 @@ export class HexEditorModal extends HexmakerModal {
 
     makeTile(null);
     for (const icon of icons) makeTile(icon);
+    this.addIconFilter(grid, this.plugin.vaultIconsSet);
   }
 
   private renderIconGrid(
@@ -633,7 +635,7 @@ export class HexEditorModal extends HexmakerModal {
 
     const makeTile = (icon: string | null) => {
       const label = icon
-        ? icon.replace(/^bw-/, "").replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "").replace(/-/g, " ")
+        ? iconLabel(icon)
         : noneLabel;
       const tile = grid.createDiv({
         cls: `duckmage-icon-option${selected === icon ? " is-selected" : ""}`,
@@ -662,6 +664,7 @@ export class HexEditorModal extends HexmakerModal {
 
     makeTile(null);
     for (const icon of icons) makeTile(icon);
+    this.addIconFilter(grid, this.plugin.vaultIconsSet);
   }
 
   private getFilesForDropdown(

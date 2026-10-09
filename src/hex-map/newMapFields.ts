@@ -1,4 +1,5 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { fillPaletteSelect } from "../palettes/paletteOptions";
 
 export interface NewMapFieldRefs {
   nameInput: HTMLInputElement;
@@ -37,9 +38,7 @@ export function renderNewMapFields(
   rowsInput.setCssProps({ width: "55px" });
 
   const paletteSelect = row.createEl("select");
-  for (const pal of plugin.settings.terrainPalettes) {
-    paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-  }
+  fillPaletteSelect(plugin, paletteSelect);
 
   return { nameInput, colsInput, rowsInput, paletteSelect };
 }

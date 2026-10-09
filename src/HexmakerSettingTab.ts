@@ -1,6 +1,10 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
+import { AddPaletteModal } from "./palettes/AddPaletteModal";
+
+const PALETTES_FOLDER_DESC =
+  "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
 
 // ---------------------------------------------------------------------------
 // Obsidian 1.13 declarative settings API — local structural types.
@@ -100,6 +104,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "regionsFolder",
   "tablesFolder",
   "workflowsFolder",
+  "palettesFolder",
 ]);
 
 /** Settings keys whose change should re-render open hex map views. */
@@ -200,6 +205,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
               this.requestDeclarativeRerender();
             })();
           });
+          this.addOpenNoteButton(setting.controlEl, pal.name);
         },
       };
     });
@@ -595,6 +601,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "World/workflows",
         "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.",
       ),
+      folderText(
+        "Palettes folder",
+        "palettesFolder",
+        "World/palettes",
+        PALETTES_FOLDER_DESC,
+      ),
       // Terrain palettes LAST, deliberately: on update() the declarative
       // renderer reuses unchanged rows but re-creates a changed list and
       // appends it at the END of the page — a mid-page list visibly "drops
@@ -606,7 +618,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
         items: [
           {
             name: "",
-            desc: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map.",
+            desc: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note.",
             searchable: false,
           },
         ],
@@ -637,16 +649,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
         addItem: {
           name: "Add palette",
           action: () => {
-            palettes.push({
-              name: "New palette",
-              terrains:
-                this.plugin.settings.terrainPalettes[0]?.terrains.map((t) => ({
-                  ...t,
-                })) ?? [],
-            });
-            void this.plugin
-              .saveSettings()
-              .then(() => this.requestDeclarativeRerender());
+            new AddPaletteModal(this.app, this.plugin, () =>
+              this.requestDeclarativeRerender(),
+            ).open();
           },
         },
       },
@@ -712,6 +717,19 @@ export class HexmakerSettingTab extends PluginSettingTab {
    * generated). Typed dynamically because the installed 1.12 typings predate
    * the method; declaring it on this class would shadow the real one.
    */
+  /** "Open note" button for a palette row — opens the palette's note in a new tab. */
+  private addOpenNoteButton(parent: HTMLElement, paletteName: string): void {
+    const btn = parent.createEl("button", { text: "Open note" });
+    btn.addEventListener("click", () => {
+      const file = this.plugin.paletteStore.noteFor(paletteName);
+      if (!file) {
+        new Notice(`No note found for palette "${paletteName}" yet.`);
+        return;
+      }
+      void this.app.workspace.getLeaf("tab").openFile(file);
+    });
+  }
+
   private requestDeclarativeRerender(): void {
     const tab = this as unknown as { update?: () => void };
     if (typeof tab.update !== "function") return;
@@ -1321,12 +1339,25 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
+    new Setting(containerEl)
+      .setName("Palettes folder")
+      .setDesc(PALETTES_FOLDER_DESC)
+      .addText((text) =>
+        text
+          .setPlaceholder("World/palettes")
+          .setValue(this.plugin.settings.palettesFolder)
+          .onChange(async (value) => {
+            this.plugin.settings.palettesFolder = normalizeFolder(value ?? "");
+            await this.plugin.saveSettings();
+          }),
+      );
+
     // Terrain palettes last — mirrors getSettingDefinitions() ordering
     // (see comment there: the declarative renderer re-appends a changed
     // list at the page end, so the list lives at the end in both paths).
     new Setting(containerEl).setName("Terrain palettes").setHeading();
     containerEl.createEl("p", {
-      text: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map.",
+      text: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note.",
       cls: "setting-item-description",
     });
 
@@ -1384,6 +1415,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           text: `(${usedBy} region${usedBy !== 1 ? "s" : ""})`,
         });
 
+        this.addOpenNoteButton(rowEl, pal.name);
+
         const deleteBtn = rowEl.createEl("button", { text: "Delete" });
         deleteBtn.disabled = usedBy > 0 || palettes.length <= 1;
         deleteBtn.title =
@@ -1402,16 +1435,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
       }
 
       new Setting(listEl).addButton((btn) =>
-        btn.setButtonText("Add palette").onClick(async () => {
-          palettes.push({
-            name: "New palette",
-            terrains:
-              this.plugin.settings.terrainPalettes[0]?.terrains.map((t) => ({
-                ...t,
-              })) ?? [],
-          });
-          await this.plugin.saveSettings();
-          renderPaletteList();
+        btn.setButtonText("Add palette").onClick(() => {
+          new AddPaletteModal(this.app, this.plugin, renderPaletteList).open();
         }),
       );
     };

@@ -340,4 +340,6 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   iconOrder: [],
   setupComplete: false,
   setupDismissed: false,
+  palettesFolder: "",
+  palettesMigrated: false,
 };

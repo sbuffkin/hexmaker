@@ -21,6 +21,13 @@ import {
   VIEW_TYPE_SETUP_WIZARD,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
+import { PaletteStore } from "./palettes/PaletteStore";
+import {
+  getPreset,
+  mergePathTypes,
+  presetToPalette,
+  uniquePaletteName,
+} from "./palettes/presets";
 import { normalizeFolder, makeTableTemplate, slugify } from "./utils";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
@@ -41,6 +48,7 @@ export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
+  paletteStore = new PaletteStore(this);
 
   async onload() {
     await this.loadSettings();
@@ -48,6 +56,7 @@ export default class HexmakerPlugin extends Plugin {
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      void this.paletteStore.init();
       void this.autoRegisterMapsFromVault();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
@@ -68,17 +77,24 @@ export default class HexmakerPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("create", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
+        this.paletteStore.onModify(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
+        this.paletteStore.onDelete(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (f, oldPath) => {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
+        this.paletteStore.onRename(f, oldPath);
       }),
+    );
+    // Palette notes edited by hand (or by sync) flow back into the palettes.
+    this.registerEvent(
+      this.app.vault.on("modify", (f) => this.paletteStore.onModify(f)),
     );
 
     await this.migrateHexFilesToDefaultRegion();
@@ -438,6 +454,8 @@ export default class HexmakerPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
+    // Mirror palette edits (from any editor) into the palette notes.
+    void this.paletteStore.sync();
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
     // flag them so they re-render on next activation (issue #32). The
@@ -453,6 +471,8 @@ export default class HexmakerPlugin extends Plugin {
   // the synced state without a manual Obsidian restart.
   async onExternalSettingsChange(): Promise<void> {
     await this.loadSettings();
+    // data.json carries a cached copy of the palettes; the notes win.
+    await this.paletteStore.reload();
     this.loadAvailableIcons();
     this.refreshHexMap();
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
@@ -1149,6 +1169,8 @@ export default class HexmakerPlugin extends Plugin {
     if (this.settings.maps.some((r) => r.name === name))
       return { error: `Map "${name}" already exists.` };
 
+    await this.ensurePaletteInstalled(paletteName);
+
     const hexFolder = normalizeFolder(this.settings.hexFolder);
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
     if (!this.app.vault.getAbstractFileByPath(folderPath)) {
@@ -1218,6 +1240,43 @@ export default class HexmakerPlugin extends Plugin {
 
   getPaletteByName(name: string): TerrainPalette | undefined {
     return this.settings.terrainPalettes.find((p) => p.name === name);
+  }
+
+  /**
+   * Terrains for an installed palette, or for a built-in preset that isn't
+   * installed yet (lets new-map dropdowns preview presets before install).
+   */
+  getPaletteOrPresetTerrains(name: string): TerrainColor[] {
+    return this.getPaletteByName(name)?.terrains ?? getPreset(name)?.terrains ?? [];
+  }
+
+  /**
+   * Add a copy of a built-in preset as a new palette (a unique name is chosen
+   * if the preset's name is taken) and merge the preset's path types. Saves;
+   * the palette note is written by the sync that follows. Returns the new
+   * palette's name.
+   */
+  async installPalettePreset(presetName: string, asName?: string): Promise<string | undefined> {
+    const preset = getPreset(presetName);
+    if (!preset) return undefined;
+    const name = uniquePaletteName(
+      asName ?? preset.name,
+      this.settings.terrainPalettes.map((p) => p.name),
+    );
+    this.settings.terrainPalettes.push(presetToPalette(preset, name));
+    const added = mergePathTypes(this.settings.pathTypes, preset.pathTypes);
+    await this.saveSettings();
+    new Notice(
+      `Hexmaker: added palette "${name}"` +
+        (added.length ? ` and path types ${added.join(", ")}.` : "."),
+    );
+    return name;
+  }
+
+  /** Install `name` from the presets if no palette by that name exists yet. */
+  async ensurePaletteInstalled(name: string): Promise<void> {
+    if (this.getPaletteByName(name) || !getPreset(name)) return;
+    await this.installPalettePreset(name);
   }
 
   getMapPalette(mapName: string): TerrainColor[] {
