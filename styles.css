@@ -420,7 +420,11 @@
     height: calc(var(--hex-size) * 2);
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
     background: var(--background-secondary);
-    border: 2px solid var(--background-modifier-border);
+    /* No border: a box border under a hexagon clip-path survives only as
+       bars on the straight sides and specks at the tips (and insets the
+       fill). The gap between hexes (--duckmage-hex-gap) draws an even
+       outline instead. */
+    border: none;
     margin: var(--duckmage-hex-gap, 0.15em);
     display: flex;
     align-items: center;
