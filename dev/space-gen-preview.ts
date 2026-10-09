@@ -120,8 +120,11 @@ function render(): void {
   }
   const legend = document.getElementById("legend")!;
   legend.replaceChildren(...[...colors(state.gen)].map(([name, color]) => {
+    // DOM calls, not innerHTML: the Obsidian review scans dev files too.
     const s = document.createElement("span");
-    s.innerHTML = `<i style="background:${color}"></i>${name}`;
+    const swatch = document.createElement("i");
+    swatch.style.setProperty("background", color);
+    s.append(swatch, document.createTextNode(name));
     return s;
   }));
 }
