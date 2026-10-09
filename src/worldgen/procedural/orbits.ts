@@ -4,9 +4,13 @@ import {
   cellKey,
   centerHex,
   distance,
+  findByType,
   findTerrain,
   gridKeys,
   inCategory,
+  ofType,
+  typeIndex,
+  untyped,
   weightedPick,
   type ProcGrid,
   type ProcOption,
@@ -21,9 +25,10 @@ import {
  * may get a moon; the mainworld may get a station or starport alongside;
  * a comet and a jump point sit out past the last orbit.
  *
- * Works on any palette with a background ("void" / "empty space" / first
- * `space` terrain) and at least one star and one body — by name, or the
- * `stars` / `bodies` categories.
+ * Works on any palette with a background (type void, or "void" / "empty
+ * space" / first `space` terrain) and at least one star and one body — by
+ * type (star; world / gas-giant / asteroids), else by name or the `stars`
+ * / `bodies` categories.
  */
 
 export const ORBITS_ID = "procedural:orbits";
@@ -63,7 +68,7 @@ const STAR_WEIGHTS: Record<string, number> = {
   "blue giant": 0.5,
 };
 
-const ZONE_WEIGHTS: Record<"inner" | "habitable" | "outer", Record<string, number>> = {
+const ZONE_WEIGHTS: Record<Zone, Record<string, number>> = {
   inner: { "molten planet": 4, "rocky planet": 4, "desert planet": 2, "asteroid belt": 0.5 },
   habitable: { "terrestrial planet": 4, "ocean planet": 3, "desert planet": 3, "rocky planet": 2, "asteroid belt": 1 },
   outer: { "gas giant": 4, "ice giant": 3, "ice planet": 3, "asteroid belt": 1.5, "rocky planet": 1 },
@@ -73,6 +78,31 @@ const BODY_NAMES = [
   "terrestrial planet", "ocean planet", "desert planet", "ice planet", "rocky planet",
   "molten planet", "gas giant", "ice giant", "asteroid belt",
 ];
+
+type Zone = "inner" | "habitable" | "outer";
+
+/**
+ * Zone weights for bodies the tables above don't name, by name hint (the
+ * type vocabulary is coarse: "world" covers lava rocks and ocean planets
+ * alike), else by type.
+ */
+const ZONE_HINTS: { re: RegExp; w: Record<Zone, number> }[] = [
+  { re: /molten|lava|magma|volcan|inferno|ember|cinder|scorch/i, w: { inner: 4, habitable: 0.5, outer: 0.2 } },
+  { re: /\bice|frozen|frost|snow|glacier|\bcold/i, w: { inner: 0.2, habitable: 0.5, outer: 3 } },
+  { re: /ocean|water|garden|terra|earth|jungle|green|eden|haven/i, w: { inner: 0.5, habitable: 4, outer: 0.3 } },
+  { re: /desert|arid|dune|dust|sand/i, w: { inner: 2, habitable: 3, outer: 0.5 } },
+  { re: /\brock|barren|stone/i, w: { inner: 4, habitable: 2, outer: 1 } },
+];
+const ZONE_TYPE_WEIGHTS: Record<string, Record<Zone, number>> = {
+  world: { inner: 2, habitable: 3, outer: 1 },
+  "gas-giant": { inner: 0.3, habitable: 0.5, outer: 4 },
+  asteroids: { inner: 0.5, habitable: 1, outer: 1.5 },
+};
+
+/** Typed bodies that never take an orbit of their own. */
+const MOON = /\bmoons?\b|satellite/i;
+const COMET = /comet/i;
+const DEBRIS = /debris|wreck/i;
 
 export interface OrbitRoles {
   background: string;
@@ -85,32 +115,84 @@ export interface OrbitRoles {
   jumpPoint?: string;
   jumpLimit?: string;
   belt?: string;
+  /** Bodies drawn as an arc of their ring (asteroid-type bodies, belts). */
+  belts: string[];
+  /** Bodies that may get a moon (gas-giant type, or "giant" in the name). */
+  giants: string[];
+  /** Per-zone body weights (lower-case names) for weightedPick. */
+  zoneWeights: Record<Zone, Record<string, number>>;
 }
 
+/**
+ * Roles by type first — void, star, world / gas-giant / asteroids, station
+ * — split by name hints where the type is coarse (moon vs planet, comet vs
+ * belt, starport vs jump point); untyped terrains fall back to the
+ * category and exact-name lookups.
+ */
 export function orbitRoles(terrains: TerrainColor[]): OrbitRoles | undefined {
-  const background = findTerrain(terrains, ["void", "empty space", "deep space", "space"], "space");
-  let stars = inCategory(terrains, "stars");
+  const loose = untyped(terrains);
+  // "jump limit" is void-typed too, but it is a marker, not the background.
+  const background = findByType(terrains.filter((t) => !/limit/i.test(t.name)), ["void"], ["void", "empty space", "deep space", "space"])
+    ?? findTerrain(loose, ["void", "empty space", "deep space", "space"], "space");
+  // A sector's "star system" marker is star-typed but isn't a star.
+  let stars = [...ofType(terrains, ["star"]).filter((s) => !/system/i.test(s)), ...inCategory(loose, "stars")];
   if (stars.length === 0) {
-    const s = findTerrain(terrains, ["yellow star", "star", "sun"]);
+    const s = findTerrain(loose, ["yellow star", "star", "sun"]);
     stars = s ? [s] : [];
   }
-  const names = new Set(terrains.map((t) => t.name.toLowerCase()));
-  let bodies = inCategory(terrains, "bodies").filter((b) => !/^(moon|comet)$/i.test(b));
-  if (bodies.length === 0) bodies = terrains.map((t) => t.name).filter((n) => BODY_NAMES.includes(n.toLowerCase()));
+  const typedBodies = ofType(terrains, ["world", "gas-giant", "asteroids"]);
+  let bodies = [
+    ...typedBodies.filter((b) => !MOON.test(b) && !COMET.test(b) && !DEBRIS.test(b)),
+    ...inCategory(loose, "bodies").filter((b) => !/^(moon|comet)$/i.test(b)),
+  ];
+  if (bodies.length === 0) bodies = loose.map((t) => t.name).filter((n) => BODY_NAMES.includes(n.toLowerCase()));
   if (!background || stars.length === 0 || bodies.length === 0) return undefined;
-  const pick = (n: string) => (names.has(n) ? terrains.find((t) => t.name.toLowerCase() === n)!.name : undefined);
+  const types = typeIndex(terrains);
+  const exact = (n: string) => findTerrain(loose, [n]);
+  const station = (want: RegExp | undefined, avoid: RegExp | undefined, prefer: string[]) =>
+    findByType(terrains.filter((t) => (!want || want.test(t.name)) && !avoid?.test(t.name)), ["station"], prefer);
+  const belts = bodies.filter((b) => types.get(b.toLowerCase()) === "asteroids" || /belt/i.test(b));
   return {
     background,
     stars,
     bodies,
-    moon: pick("moon"),
-    comet: pick("comet"),
-    station: pick("space station"),
-    starport: pick("starport"),
-    jumpPoint: pick("jump point"),
-    jumpLimit: pick("jump limit"),
-    belt: bodies.find((b) => /belt/i.test(b)),
+    moon: findByType(terrains.filter((t) => MOON.test(t.name)), ["world"], ["moon"]) ?? exact("moon"),
+    comet: findByType(terrains.filter((t) => COMET.test(t.name)), ["asteroids"], ["comet"]) ?? exact("comet"),
+    station: station(undefined, /port|jump|gate/i, ["space station", "station"]) ?? exact("space station"),
+    starport: station(/port/i, undefined, ["starport"]) ?? exact("starport"),
+    jumpPoint: station(/jump|gate/i, undefined, ["jump point"]) ?? exact("jump point"),
+    jumpLimit: findByType(terrains.filter((t) => /limit/i.test(t.name)), ["void"], ["jump limit"]) ?? exact("jump limit"),
+    belt: belts[0],
+    belts,
+    giants: bodies.filter((b) => types.get(b.toLowerCase()) === "gas-giant" || /giant/i.test(b)),
+    zoneWeights: {
+      inner: zoneWeights(bodies, types, "inner"),
+      habitable: zoneWeights(bodies, types, "habitable"),
+      outer: zoneWeights(bodies, types, "outer"),
+    },
   };
+}
+
+/**
+ * Weights for one zone. The shipped body names keep their table weights
+ * (0.5 when the zone doesn't list them); other names go by hint, then type.
+ */
+function zoneWeights(bodies: string[], types: Map<string, string>, zone: Zone): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const b of bodies) {
+    const k = b.toLowerCase();
+    if (BODY_NAMES.includes(k)) {
+      out[k] = ZONE_WEIGHTS[zone][k] ?? 0.5;
+      continue;
+    }
+    const type = types.get(k);
+    // Giants go by type first: "ice giant" belongs outside, not with ice planets.
+    const w = (type === "gas-giant" ? ZONE_TYPE_WEIGHTS[type] : undefined)
+      ?? ZONE_HINTS.find((h) => h.re.test(b))?.w
+      ?? ZONE_TYPE_WEIGHTS[type ?? ""];
+    if (w) out[k] = w[zone];
+  }
+  return out;
 }
 
 export function orbitsFits(terrains: TerrainColor[]): boolean {
@@ -178,10 +260,10 @@ export function orbits(
     }
     const t = (d - first) / Math.max(1, last - first);
     const zone = t < 0.3 ? "inner" : t < 0.6 ? "habitable" : "outer";
-    const body = weightedPick(rand, roles.bodies, ZONE_WEIGHTS[zone], 0.5)!;
+    const body = weightedPick(rand, roles.bodies, roles.zoneWeights[zone], 0.5)!;
     const hexesOnRing = ring(d);
     if (hexesOnRing.length === 0) continue;
-    if (roles.belt && body === roles.belt) {
+    if (roles.belts.includes(body)) {
       // Belts sweep an arc of the ring rather than sitting on one hex.
       const start = Math.floor(rand() * hexesOnRing.length);
       const span = Math.max(2, Math.floor(hexesOnRing.length * (0.3 + rand() * 0.4)));
@@ -193,7 +275,7 @@ export function orbits(
     set(pos, body);
     if (zone === "habitable" && !mainworld) mainworld = pos;
     // Giants get a moon on a free neighbouring hex.
-    if (roles.moon && /giant/i.test(body) && rand() < 0.7) {
+    if (roles.moon && roles.giants.includes(body) && rand() < 0.7) {
       const free = hexes.filter((h) => distance(h, pos, grid) === 1
         && cells.get(cellKey(h[0], h[1])) === roles.background);
       if (free.length) set(free[Math.floor(rand() * free.length)], roles.moon);

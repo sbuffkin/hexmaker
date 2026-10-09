@@ -1,16 +1,33 @@
 import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type { TerrainColor } from "../types";
+import { groupPaletteByType } from "./terrainTypeFilter";
+
+/** Mutable include/exclude sets for terrain names and type ids. */
+export interface TerrainFilterSets {
+  terrains: Set<string>;
+  excludeTerrains: Set<string>;
+  types: Set<string>;
+  excludeTypes: Set<string>;
+}
 
 export class TerrainFilterModal extends HexmakerModal {
   constructor(
     app: App,
     private palette: TerrainColor[],
-    private selected: Set<string>,
-    private excluded: Set<string>,
-    private onChange: (selected: Set<string>, excluded: Set<string>) => void,
+    private sets: TerrainFilterSets,
+    private onChange: (sets: TerrainFilterSets) => void,
   ) {
     super(app);
+  }
+
+  private emit(): void {
+    this.onChange({
+      terrains: new Set(this.sets.terrains),
+      excludeTerrains: new Set(this.sets.excludeTerrains),
+      types: new Set(this.sets.types),
+      excludeTypes: new Set(this.sets.excludeTypes),
+    });
   }
 
   onOpen(): void {
@@ -19,57 +36,85 @@ export class TerrainFilterModal extends HexmakerModal {
     const { contentEl } = this;
     contentEl.addClass("duckmage-terrain-filter-modal");
 
+    const { groups: typeGroups, untyped } = groupPaletteByType(this.palette);
+
     contentEl.createEl("p", {
-      text: "Left-click to include  ·  right-click to exclude  ·  click a category heading to toggle all",
+      text:
+        "Left-click to include  ·  right-click to exclude  ·  " +
+        (typeGroups.length > 0
+          ? "a type row matches every terrain of that type"
+          : "click a category heading to toggle all"),
       cls: "duckmage-terrain-filter-hint",
     });
 
     const list = contentEl.createDiv({ cls: "duckmage-terrain-filter-list" });
 
-    // Map terrain name → row elements, so category headings can bulk-update them
-    const rowRefs = new Map<string, { lbl: HTMLElement; cb: HTMLInputElement }>();
+    // Every include/exclude row (terrains and types), so bulk actions can refresh them
+    const refreshers: (() => void)[] = [];
+    const terrainRefs = new Map<string, () => void>();
 
-    const applyRowState = (lbl: HTMLElement, cb: HTMLInputElement, name: string) => {
-      cb.checked = this.selected.has(name);
-      lbl.toggleClass("duckmage-terrain-filter-excluded", this.excluded.has(name));
-    };
-
-    const addRow = (name: string, label: string, color?: string, indented = false) => {
-      const lbl = list.createEl("label", {
-        cls: "duckmage-terrain-filter-row" + (indented ? " duckmage-terrain-filter-row-indented" : ""),
-      });
+    /**
+     * A checkbox row bound to an include/exclude pair. Left-click (checkbox)
+     * toggles include; right-click toggles exclude.
+     */
+    const addToggleRow = (
+      key: string,
+      include: Set<string>,
+      exclude: Set<string>,
+      label: string,
+      cls: string,
+      color?: string,
+    ): (() => void) => {
+      const lbl = list.createEl("label", { cls });
       const cb = lbl.createEl("input");
       cb.type = "checkbox";
-      applyRowState(lbl, cb, name);
-
-      const swatch = lbl.createSpan({ cls: "duckmage-hex-table-swatch" });
-      if (color) swatch.style.backgroundColor = color;
+      if (color !== undefined) {
+        const swatch = lbl.createSpan({ cls: "duckmage-hex-table-swatch" });
+        if (color) swatch.setCssProps({ "--duckmage-swatch-color": color });
+      }
       lbl.createSpan({ text: label });
 
-      rowRefs.set(name, { lbl, cb });
+      const refresh = () => {
+        cb.checked = include.has(key);
+        lbl.toggleClass("duckmage-terrain-filter-excluded", exclude.has(key));
+      };
+      refresh();
+      refreshers.push(refresh);
 
       cb.addEventListener("change", () => {
         if (cb.checked) {
-          this.selected.add(name);
-          this.excluded.delete(name);
+          include.add(key);
+          exclude.delete(key);
         } else {
-          this.selected.delete(name);
+          include.delete(key);
         }
-        applyRowState(lbl, cb, name);
-        this.onChange(new Set(this.selected), new Set(this.excluded));
+        refresh();
+        this.emit();
       });
-
       lbl.addEventListener("contextmenu", (e) => {
         e.preventDefault();
-        if (this.excluded.has(name)) {
-          this.excluded.delete(name);
+        if (exclude.has(key)) {
+          exclude.delete(key);
         } else {
-          this.excluded.add(name);
-          this.selected.delete(name);
+          exclude.add(key);
+          include.delete(key);
         }
-        applyRowState(lbl, cb, name);
-        this.onChange(new Set(this.selected), new Set(this.excluded));
+        refresh();
+        this.emit();
       });
+      return refresh;
+    };
+
+    const addTerrainRow = (name: string, label: string, color?: string, indented = false) => {
+      const refresh = addToggleRow(
+        name,
+        this.sets.terrains,
+        this.sets.excludeTerrains,
+        label,
+        "duckmage-terrain-filter-row" + (indented ? " duckmage-terrain-filter-row-indented" : ""),
+        color ?? "",
+      );
+      terrainRefs.set(name, refresh);
     };
 
     const addCategoryHeading = (label: string, names: string[]) => {
@@ -77,45 +122,57 @@ export class TerrainFilterModal extends HexmakerModal {
       heading.createSpan({ text: label });
 
       const refreshRows = () => {
-        for (const name of names) {
-          const ref = rowRefs.get(name);
-          if (ref) applyRowState(ref.lbl, ref.cb, name);
-        }
+        for (const name of names) terrainRefs.get(name)?.();
       };
+      const { terrains: selected, excludeTerrains: excluded } = this.sets;
 
       // Left-click: include all (or deselect all if all already included)
       heading.addEventListener("click", () => {
-        const allIncluded = names.every(n => this.selected.has(n));
+        const allIncluded = names.every(n => selected.has(n));
         if (allIncluded) {
-          names.forEach(n => this.selected.delete(n));
+          names.forEach(n => selected.delete(n));
         } else {
-          names.forEach(n => { this.selected.add(n); this.excluded.delete(n); });
+          names.forEach(n => { selected.add(n); excluded.delete(n); });
         }
         refreshRows();
-        this.onChange(new Set(this.selected), new Set(this.excluded));
+        this.emit();
       });
 
       // Right-click: exclude all (or un-exclude all if all already excluded)
       heading.addEventListener("contextmenu", (e) => {
         e.preventDefault();
-        const allExcluded = names.every(n => this.excluded.has(n));
+        const allExcluded = names.every(n => excluded.has(n));
         if (allExcluded) {
-          names.forEach(n => this.excluded.delete(n));
+          names.forEach(n => excluded.delete(n));
         } else {
-          names.forEach(n => { this.excluded.add(n); this.selected.delete(n); });
+          names.forEach(n => { excluded.add(n); selected.delete(n); });
         }
         refreshRows();
-        this.onChange(new Set(this.selected), new Set(this.excluded));
+        this.emit();
       });
     };
 
     // "No terrain" is always first and never grouped
-    addRow("", "No terrain");
+    addTerrainRow("", "No terrain");
 
-    // Split palette into ungrouped and category groups
+    // Typed terrains: one type row (filters by type) + its terrains indented
+    for (const group of typeGroups) {
+      addToggleRow(
+        group.typeId,
+        this.sets.types,
+        this.sets.excludeTypes,
+        group.label,
+        "duckmage-terrain-filter-row duckmage-terrain-filter-type-row",
+      );
+      for (const entry of group.entries) {
+        addTerrainRow(entry.name, entry.name, entry.color, true);
+      }
+    }
+
+    // Untyped terrains keep the category grouping
     const groups = new Map<string, TerrainColor[]>();
     const ungrouped: TerrainColor[] = [];
-    for (const entry of this.palette) {
+    for (const entry of untyped) {
       if (entry.category) {
         if (!groups.has(entry.category)) groups.set(entry.category, []);
         groups.get(entry.category)!.push(entry);
@@ -124,9 +181,16 @@ export class TerrainFilterModal extends HexmakerModal {
       }
     }
 
+    if (typeGroups.length > 0 && untyped.length > 0) {
+      list.createDiv({
+        text: "No type",
+        cls: "duckmage-terrain-filter-section-label",
+      });
+    }
+
     // Ungrouped terrains — no heading, not indented
     for (const entry of ungrouped) {
-      addRow(entry.name, entry.name, entry.color);
+      addTerrainRow(entry.name, entry.name, entry.color);
     }
 
     // Categorised terrains — heading + indented rows
@@ -134,20 +198,19 @@ export class TerrainFilterModal extends HexmakerModal {
       const entries = groups.get(cat)!;
       addCategoryHeading(cat, entries.map(e => e.name));
       for (const entry of entries) {
-        addRow(entry.name, entry.name, entry.color, true);
+        addTerrainRow(entry.name, entry.name, entry.color, true);
       }
     }
 
     const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });
     const clearBtn = btnRow.createEl("button", { text: "Clear all" });
     clearBtn.addEventListener("click", () => {
-      this.selected.clear();
-      this.excluded.clear();
-      this.onChange(new Set(this.selected), new Set(this.excluded));
-      for (const { lbl, cb } of rowRefs.values()) {
-        cb.checked = false;
-        lbl.removeClass("duckmage-terrain-filter-excluded");
-      }
+      this.sets.terrains.clear();
+      this.sets.excludeTerrains.clear();
+      this.sets.types.clear();
+      this.sets.excludeTypes.clear();
+      for (const refresh of refreshers) refresh();
+      this.emit();
     });
     btnRow
       .createEl("button", { text: "Done", cls: "mod-cta" })

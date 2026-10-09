@@ -3,9 +3,13 @@ import type { TerrainColor } from "../../types";
 import {
   cellKey,
   distance,
+  findRole,
   findTerrain,
   gridKeys,
   inCategory,
+  ofType,
+  typeIndex,
+  untyped,
   weightedPick,
   type ProcGrid,
   type ProcOption,
@@ -20,9 +24,10 @@ import {
  * them, rare features (black hole, anomaly, deep-space station) are
  * sprinkled in, and nearby systems can be joined by jump routes.
  *
- * Works on any palette with a background terrain ("empty space" / "void" /
- * first `space` terrain) and at least one terrain in the `worlds` category
- * (or a "star system" terrain).
+ * Works on any palette with a background terrain (type void, or "empty
+ * space" / "void" / first `space` terrain) and at least one world (type
+ * world / gas-giant / asteroids, or the `worlds` category, or a "star
+ * system" terrain).
  */
 
 export const STAR_SCATTER_ID = "procedural:star-scatter";
@@ -88,20 +93,56 @@ export interface StarScatterRoles {
   features: string[];
 }
 
+/** Weights for typed terrains whose names aren't in the tables above. */
+const WORLD_TYPE_WEIGHTS: Record<string, number> = { world: 2.5, "gas-giant": 1, asteroids: 1.5 };
+const FEATURE_TYPE_WEIGHTS: Record<string, number> = { station: 3, anomaly: 1.5 };
+
+/** Typed worlds that aren't a system's mainworld: comets, debris fields. */
+const NOT_MAINWORLD = /comet|debris/i;
+
+/**
+ * Roles by type first (void / world, gas-giant, asteroids / nebula /
+ * station, anomaly), then by name and category for untyped terrains. List
+ * roles take both, so a half-typed palette still uses everything.
+ */
 export function starScatterRoles(terrains: TerrainColor[]): StarScatterRoles | undefined {
-  const background = findTerrain(terrains, ["empty space", "void", "deep space", "space"], "space");
-  let worlds = inCategory(terrains, "worlds");
+  const loose = untyped(terrains);
+  const background = findRole(terrains, ["void"], ["empty space", "void", "deep space", "space"], "space");
+  let worlds = [
+    ...ofType(terrains, ["world", "gas-giant", "asteroids"]).filter((t) => !NOT_MAINWORLD.test(t)),
+    ...inCategory(loose, "worlds"),
+  ];
   if (worlds.length === 0) {
-    const system = findTerrain(terrains, ["star system", "system", "star"]);
+    const system = findRole(terrains, ["star"], ["star system", "system", "star"]);
     worlds = system ? [system] : [];
   }
   if (!background || worlds.length === 0) return undefined;
-  const clouds = inCategory(terrains, "space").filter(
-    (t) => t !== background && !/rift/i.test(t),
-  );
-  const cloudNames = clouds.length ? clouds : [findTerrain(terrains, ["nebula", "dust cloud"])].filter((t): t is string => !!t);
-  const features = inCategory(terrains, "features").filter((t) => !/^star system$/i.test(t));
+  const clouds = [
+    ...ofType(terrains, ["nebula"]),
+    ...inCategory(loose, "space").filter((t) => t !== background && !/rift/i.test(t)),
+  ];
+  const cloudNames = clouds.length ? clouds : [findTerrain(loose, ["nebula", "dust cloud"])].filter((t): t is string => !!t);
+  const features = [
+    ...ofType(terrains, ["station", "anomaly"]),
+    ...inCategory(loose, "features").filter((t) => !/^star system$/i.test(t)),
+  ];
   return { background, worlds, clouds: cloudNames, features };
+}
+
+/** Name weights, else the terrain's type weight; unknowns fall through to the default. */
+function weightsFor(
+  names: string[],
+  types: Map<string, string>,
+  byName: Record<string, number>,
+  byType: Record<string, number>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const n of names) {
+    const k = n.toLowerCase();
+    const w = byName[k] ?? byType[types.get(k) ?? ""];
+    if (w !== undefined) out[k] = w;
+  }
+  return out;
 }
 
 export function starScatterFits(terrains: TerrainColor[]): boolean {
@@ -120,6 +161,11 @@ export function starScatter(
     return { cells: new Map(), paths: [], warnings: ["This palette has no space background or world terrains."] };
   }
   const rand = mulberry32(seed);
+  const types = typeIndex(terrains);
+  const worldWeights = weightsFor(roles.worlds, types, WORLD_WEIGHTS, WORLD_TYPE_WEIGHTS);
+  const featureWeights = weightsFor(roles.features, types, FEATURE_WEIGHTS, FEATURE_TYPE_WEIGHTS);
+  // Stations host a system (and so a route); black holes and anomalies don't.
+  const hostsSystem = (t: string) => types.get(t.toLowerCase()) === "station" || /station/i.test(t);
   const density = DENSITY[options.density ?? "standard"] ?? 0.5;
   const hexes = gridKeys(grid);
   const cells = new Map<string, string>();
@@ -153,10 +199,10 @@ export function starScatter(
     if (rand() >= odds) continue;
     const roll = rand();
     const feature = roles.features.length > 0 && roll < 0.04
-      ? weightedPick(rand, roles.features, FEATURE_WEIGHTS)
+      ? weightedPick(rand, roles.features, featureWeights)
       : undefined;
-    cells.set(k, feature ?? weightedPick(rand, roles.worlds, WORLD_WEIGHTS)!);
-    if (!feature || /station/i.test(feature)) systems.push([x, y]);
+    cells.set(k, feature ?? weightedPick(rand, roles.worlds, worldWeights)!);
+    if (!feature || hostsSystem(feature)) systems.push([x, y]);
   }
 
   // Jump routes: each system links to its nearest neighbour within range.

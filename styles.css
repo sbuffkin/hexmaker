@@ -2560,10 +2560,17 @@ input.duckmage-input-error {
     margin-right: 4px;
     vertical-align: middle;
     flex-shrink: 0;
+    background-color: var(--duckmage-swatch-color, transparent);
 }
 
 .duckmage-hex-table-empty {
     color: var(--text-faint);
+}
+
+/* Terrain/type shown from the map's base terrain (hex has none of its own) */
+.duckmage-hex-table-base-terrain {
+    color: var(--text-muted);
+    font-style: italic;
 }
 
 .duckmage-hex-table-cell-clickable {
@@ -2689,6 +2696,20 @@ tr.duckmage-row-hidden {
 
 .duckmage-terrain-filter-row-indented {
     padding-left: 14px;
+}
+
+/* Type rows filter by terrain type; styled as headings over their terrains */
+.duckmage-terrain-filter-type-row {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.duckmage-terrain-filter-section-label {
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: var(--text-faint);
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 6px;
 }
 
 .duckmage-terrain-filter-btns {

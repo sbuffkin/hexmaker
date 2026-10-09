@@ -1,4 +1,5 @@
 import { cellKey, hexDistance, type Orientation, type Stagger } from "../../../packages/hex-wfc/src";
+import { isTerrainType } from "../../terrainTypes";
 import type { TerrainColor } from "../../types";
 
 /**
@@ -76,6 +77,74 @@ export function findTerrain(
 /** All terrains in a category (case-insensitive), in palette order. */
 export function inCategory(terrains: TerrainColor[], category: string): string[] {
   return terrains.filter((t) => t.category?.toLowerCase() === category).map((t) => t.name);
+}
+
+/*
+ * Type-aware lookups. A terrain's `type` (see terrainTypes.ts) is
+ * authoritative: a typed terrain fills only the roles of its type, however
+ * it is named, so "ocean" typed desert is never used as sea. The name /
+ * category guesses above are the fallback for untyped terrains only.
+ */
+
+/** Terrains with a known type id. Unknown ids count as untyped. */
+function typeOf(t: TerrainColor): string | undefined {
+  return isTerrainType(t.type) ? t.type : undefined;
+}
+
+/** Terrains without a (known) type: the ones name / category guesses may use. */
+export function untyped(terrains: TerrainColor[]): TerrainColor[] {
+  return terrains.filter((t) => !typeOf(t));
+}
+
+/** Names of all terrains of the given types, in palette order. */
+export function ofType(terrains: TerrainColor[], typeIds: string[]): string[] {
+  return terrains.filter((t) => typeIds.includes(typeOf(t) ?? "")).map((t) => t.name);
+}
+
+/**
+ * The terrain for a role among those of the given types: the first name in
+ * `preferNames` (case-insensitive) that is of one of the types, else the
+ * first terrain of `typeIds[0]`, then `typeIds[1]`, … in palette order.
+ * Picks "forest" over "forest heavy" for the base forest role, while a
+ * palette whose only forest is "Pinewood" still gets a forest.
+ */
+export function findByType(
+  terrains: TerrainColor[],
+  typeIds: string[],
+  preferNames: string[] = [],
+): string | undefined {
+  const typed = terrains.filter((t) => typeIds.includes(typeOf(t) ?? ""));
+  if (typed.length === 0) return undefined;
+  const hinted = findTerrain(typed, preferNames);
+  if (hinted) return hinted;
+  for (const id of typeIds) {
+    const hit = typed.find((t) => typeOf(t) === id);
+    if (hit) return hit.name;
+  }
+  return undefined;
+}
+
+/**
+ * Resolve a role: by type first, else by name / category among the
+ * untyped terrains (older or hand-made palettes).
+ */
+export function findRole(
+  terrains: TerrainColor[],
+  typeIds: string[],
+  names: string[],
+  category?: string,
+): string | undefined {
+  return findByType(terrains, typeIds, names) ?? findTerrain(untyped(terrains), names, category);
+}
+
+/** Lower-case name → type id, for weight tables keyed by type. */
+export function typeIndex(terrains: TerrainColor[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of terrains) {
+    const id = typeOf(t);
+    if (id) out.set(t.name.toLowerCase(), id);
+  }
+  return out;
 }
 
 /**

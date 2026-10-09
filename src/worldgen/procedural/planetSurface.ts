@@ -1,6 +1,15 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
-import { cellKey, findTerrain, gridKeys, type ProcGrid, type ProcOption, type ProcResult } from "./common";
+import {
+  cellKey,
+  findByType,
+  findRole,
+  gridKeys,
+  ofType,
+  type ProcGrid,
+  type ProcOption,
+  type ProcResult,
+} from "./common";
 
 /**
  * "Planet surface": a region map of a world — seas, coasts, plains,
@@ -10,8 +19,9 @@ import { cellKey, findTerrain, gridKeys, type ProcGrid, type ProcOption, type Pr
  * water % and climate let one generator cover ocean worlds, deserts and
  * ice balls (the space presets set these per planet type).
  *
- * Terrain roles resolve by name, then category, so the Limited / Expanded
- * palettes and user palettes with similar names all work.
+ * Terrain roles resolve by terrain type, then (for untyped terrains) by
+ * name and category, so the Limited / Expanded palettes and user palettes
+ * with any names all work.
  */
 
 export const PLANET_SURFACE_ID = "procedural:planet-surface";
@@ -69,28 +79,92 @@ export interface PlanetRoles {
   desert?: string;
   badlands?: string;
   volcano?: string;
+  variants: PlanetVariants;
 }
 
+/** Woodland family, chosen by temperature: conifers cold, broadleaf warm. */
+type Family = "conifer" | "mixed" | "broadleaf" | "tropical";
+
+/**
+ * Typed extras for variety. A palette with several terrains of one type
+ * (Expanded: forest, forest heavy, mixed forest, evergreen, …) spreads them
+ * by climate instead of using only the first; name hints tell the variants
+ * apart since the type doesn't. Empty on untyped palettes.
+ */
+export interface PlanetVariants {
+  /** Forest per family: [open, dense]. */
+  forest: Partial<Record<Family, [string | undefined, string | undefined]>>;
+  denseJungle?: string;
+  /** Wooded hills / mountains per family (on moist high ground). */
+  hills: Partial<Record<Family, string>>;
+  mountain: Partial<Record<Family, string>>;
+}
+
+const WOODED = /forest|wood|evergreen|pine|conifer|taiga|jungle|rainforest|grove/i;
+const FAMILY_RE: Record<Family, RegExp> = {
+  conifer: /evergreen|pine|conifer|taiga|spruce|fir\b/i,
+  mixed: /mixed/i,
+  tropical: /jungle|rainforest/i,
+  broadleaf: /forest|wood|grove/i,
+};
+const DENSE = /heavy|dense|thick|deep|old/i;
+
+/** Which family a name belongs to; broadleaf is the catch-all. */
+function familyOf(name: string): Family {
+  for (const f of ["conifer", "mixed", "tropical"] as const) if (FAMILY_RE[f].test(name)) return f;
+  return "broadleaf";
+}
+
+function planetVariants(terrains: TerrainColor[], forest: string | undefined): PlanetVariants {
+  const v: PlanetVariants = { forest: {}, hills: {}, mountain: {} };
+  for (const name of ofType(terrains, ["forest"])) {
+    const fam = familyOf(name);
+    const slot = (v.forest[fam] ??= [undefined, undefined]);
+    const i = DENSE.test(name) ? 1 : 0;
+    // The base forest role stays the open broadleaf forest.
+    if (name === forest) slot[i] = name;
+    else slot[i] ??= name;
+  }
+  v.denseJungle = ofType(terrains, ["jungle"]).find((n) => DENSE.test(n));
+  for (const [key, type] of [["hills", "hills"], ["mountain", "mountains"]] as const) {
+    for (const name of ofType(terrains, [type])) {
+      if (WOODED.test(name)) v[key][familyOf(name)] ??= name;
+    }
+  }
+  return v;
+}
+
+/**
+ * Roles by terrain type first (water, grassland, forest, …), so custom
+ * names like "Kelp sea" or "Pinewood" work; untyped palettes fall back to
+ * the name and category guesses. The base hills / mountain role skips
+ * wooded variants ("forested hills"), which only appear on moist ground.
+ */
 export function planetRoles(terrains: TerrainColor[]): PlanetRoles | undefined {
-  const sea = findTerrain(terrains, ["ocean", "sea", "water"], "sea");
-  const plains = findTerrain(terrains, ["grass", "grassland", "plains", "lowland", "meadow"], "lowlands");
+  const sea = findRole(terrains, ["water"], ["ocean", "sea", "water"], "sea");
+  const plains = findRole(terrains, ["grassland"], ["grass", "grassland", "plains", "lowland", "meadow"], "lowlands");
   if (!sea || !plains) return undefined;
+  const bare = terrains.filter((t) => !WOODED.test(t.name));
+  const rugged = (type: string, names: string[], category?: string) =>
+    findByType(bare, [type], names) ?? findRole(terrains, [type], names, category);
+  const forest = findRole(terrains, ["forest"], ["forest", "mixed forest", "woods"], "forest");
   return {
     sea,
     plains,
-    deep: findTerrain(terrains, ["trench", "deep ocean", "deep water", "abyss"]),
-    shallows: findTerrain(terrains, ["shallows", "shallow water", "reef"]),
-    beach: findTerrain(terrains, ["beach", "coast", "shore", "sand"], "coast"),
-    forest: findTerrain(terrains, ["forest", "mixed forest", "woods"], "forest"),
-    jungle: findTerrain(terrains, ["jungle", "rainforest"]),
-    swamp: findTerrain(terrains, ["swamp", "marsh", "bog"], "bog"),
-    hills: findTerrain(terrains, ["hills", "hill", "foothills"]),
-    mountain: findTerrain(terrains, ["mountain", "mountains"], "mountain"),
-    peak: findTerrain(terrains, ["peak", "mountains snow", "mountain snow", "snowy peak"]),
-    snow: findTerrain(terrains, ["snow", "tundra", "ice", "glacier"], "snow"),
-    desert: findTerrain(terrains, ["desert", "dunes", "desert rocky"], "desert"),
-    badlands: findTerrain(terrains, ["badlands", "brokenlands", "wasteland"]),
-    volcano: findTerrain(terrains, ["volcano", "volcanic"]),
+    deep: findRole(terrains, ["deep-water"], ["trench", "deep ocean", "deep water", "abyss"]),
+    shallows: findRole(terrains, ["shallows"], ["shallows", "shallow water", "reef"]),
+    beach: findRole(terrains, ["coast"], ["beach", "coast", "shore", "sand"], "coast"),
+    forest,
+    jungle: findRole(terrains, ["jungle"], ["jungle", "rainforest"]),
+    swamp: findRole(terrains, ["wetland"], ["swamp", "marsh", "bog"], "bog"),
+    hills: rugged("hills", ["hills", "hill", "foothills"]),
+    mountain: rugged("mountains", ["mountain", "mountains"], "mountain"),
+    peak: findRole(terrains, ["peaks"], ["peak", "mountains snow", "mountain snow", "snowy peak"]),
+    snow: findRole(terrains, ["snow"], ["snow", "tundra", "ice", "glacier"], "snow"),
+    desert: findRole(terrains, ["desert"], ["desert", "dunes", "desert rocky"], "desert"),
+    badlands: findRole(terrains, ["badlands"], ["badlands", "brokenlands", "wasteland"]),
+    volcano: findRole(terrains, ["volcanic"], ["volcano", "volcanic"]),
+    variants: planetVariants(terrains, forest),
   };
 }
 
@@ -176,6 +250,26 @@ export function planetSurface(
   const tShift = climateShift[climate] ?? 0;
   const mShift = moistShift[climate] ?? 0;
 
+  // Woodland variety (typed palettes only): the family follows temperature,
+  // dense variants take the wettest ground. No rand() calls, so a seed's
+  // layout is the same with or without variants.
+  const v = roles.variants;
+  const familyAt = (temp: number): Family =>
+    temp > 0.75 ? "tropical" : temp < 0.45 ? "conifer" : temp < 0.6 ? "mixed" : "broadleaf";
+  const chain = (f: Family): Family[] => (f === "broadleaf" ? [f] : f === "conifer" ? [f, "mixed", "broadleaf"] : [f, "broadleaf"]);
+  const forestAt = (temp: number, m: number): string | undefined => {
+    for (const f of chain(familyAt(temp))) {
+      const slot = v.forest[f];
+      const hit = slot && (m > 0.64 ? slot[1] ?? slot[0] : slot[0]);
+      if (hit) return hit;
+    }
+    return roles.forest;
+  };
+  const wooded = (byFamily: Partial<Record<Family, string>>, temp: number): string | undefined => {
+    for (const f of chain(familyAt(temp))) if (byFamily[f]) return byFamily[f];
+    return undefined;
+  };
+
   const cells = new Map<string, string>();
   const isSea: boolean[] = elev.map((e) => e <= seaLevel);
   const index = new Map(hexes.map(([x, y], i) => [cellKey(x, y), i]));
@@ -198,16 +292,16 @@ export function planetSurface(
 
     let t: string | undefined;
     if (e >= peakAt) t = roles.peak ?? roles.mountain;
-    else if (e >= mountainAt) t = roles.mountain;
-    else if (e >= hillAt) t = roles.hills;
+    else if (e >= mountainAt) t = (m > 0.6 ? wooded(v.mountain, temp) : undefined) ?? roles.mountain;
+    else if (e >= hillAt) t = (m > 0.5 ? wooded(v.hills, temp) : undefined) ?? roles.hills;
     if (t && temp < 0.2 && roles.peak) t = roles.peak;
     if (!t) {
       if (temp < 0.22) t = roles.snow;
       else if (climate === "volcanic" && m < 0.45) t = roles.badlands ?? roles.desert;
       else if (m < 0.32 && temp > 0.45) t = roles.desert ?? roles.badlands;
-      else if (m > 0.72 && temp > 0.75) t = roles.jungle ?? roles.forest;
-      else if (m > 0.68 && e - seaLevel < 0.05) t = roles.swamp ?? roles.forest;
-      else if (m > 0.5) t = roles.forest;
+      else if (m > 0.72 && temp > 0.75) t = (m > 0.85 ? v.denseJungle : undefined) ?? roles.jungle ?? forestAt(temp, m);
+      else if (m > 0.68 && e - seaLevel < 0.05) t = roles.swamp ?? forestAt(temp, m);
+      else if (m > 0.5) t = forestAt(temp, m);
     }
     cells.set(k, t ?? roles.plains);
   });
