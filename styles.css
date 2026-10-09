@@ -5498,6 +5498,10 @@ button.duckmage-wfc-library-tab.is-active {
     white-space: nowrap;
 }
 
+.duckmage-wfc-influence-row input[type="range"] {
+    width: 100%;
+}
+
 .duckmage-wfc-influence-value {
     text-align: right;
     font-variant-numeric: tabular-nums;
