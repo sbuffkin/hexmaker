@@ -170,6 +170,21 @@ export function sourceInfluenceOf(model: HexWfcModel): number[] | undefined {
   return list.reduce((n, v) => n + v, 0) > 0 ? list : undefined;
 }
 
+/**
+ * Generators learned from a region, best match first: ones learned from it
+ * alone before combined ones, then newest, then by name.
+ */
+export function generatorsForRegion(generators: GeneratorFile[], mapName: string): GeneratorFile[] {
+  return generators
+    .filter((g) => sourceMapsOf(g.model).includes(mapName))
+    .sort(
+      (a, b) =>
+        sourceMapsOf(a.model).length - sourceMapsOf(b.model).length ||
+        (b.model.meta.created ?? "").localeCompare(a.model.meta.created ?? "") ||
+        a.model.name.localeCompare(b.model.name),
+    );
+}
+
 /** How many painted hexes each region has (what influence defaults to). */
 export function regionSizes(plugin: HexmakerPlugin, mapNames: string[]): number[] {
   return mapNames.map((m) => readMapTerrain(plugin, m).size);

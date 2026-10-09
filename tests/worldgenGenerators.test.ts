@@ -9,6 +9,7 @@ import {
   readLockedHexes,
   saveGeneratorFromMap,
   sourceMapsOf,
+  generatorsForRegion,
   saveGeneratorSettings,
   generateTerrain,
   fillMap,
@@ -269,5 +270,21 @@ describe("generator source regions", () => {
     expect(sourceMapsOf(model({ "source-map": "the-coast" }))).toEqual(["the-coast"]);
     expect(sourceMapsOf(model({ "source-maps": "the-coast + the-north" }))).toEqual(["the-coast", "the-north"]);
     expect(sourceMapsOf(model({}))).toEqual([]);
+  });
+});
+
+describe("a region's generators", () => {
+  const gen = (name: string, meta: Record<string, string>) =>
+    ({ file: { path: `g/${name}.md` }, model: { name, terrains: [], adjacency: [], meta }, warnings: [] }) as unknown as Parameters<typeof generatorsForRegion>[0][number];
+  const all = [
+    gen("combo", { "source-maps": "the-coast + the-north", created: "2026-10-09" }),
+    gen("the-coast", { "source-map": "the-coast", created: "2026-10-01" }),
+    gen("the-coast-2", { "source-map": "the-coast", created: "2026-10-05" }),
+    gen("north", { "source-map": "the-north" }),
+  ];
+  it("prefers one learned from the region alone, newest first, then combined ones", () => {
+    expect(generatorsForRegion(all, "the-coast").map((g) => g.model.name)).toEqual(["the-coast-2", "the-coast", "combo"]);
+    expect(generatorsForRegion(all, "the-north").map((g) => g.model.name)).toEqual(["north", "combo"]);
+    expect(generatorsForRegion(all, "island")).toEqual([]);
   });
 });

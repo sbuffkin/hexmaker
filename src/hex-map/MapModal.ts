@@ -12,6 +12,7 @@ import {
   listGenerators,
   generatorFitsPalette,
   saveGeneratorFromMap,
+  generatorsForRegion,
   generateTerrain,
   paletteColors,
   pathColors,
@@ -277,14 +278,28 @@ export class MapModal extends HexmakerModal {
       });
       li.addEventListener("contextmenu", (e: MouseEvent) => {
         e.preventDefault();
-        const menu = new Menu();
-        menu.addItem((item) =>
-          item
-            .setTitle(`Create generator from ${map.name}`)
-            .setIcon("wand-sparkles")
-            .onClick(() => void this.createGeneratorFrom(map.name)),
-        );
-        menu.showAtMouseEvent(e);
+        const at = { x: e.clientX, y: e.clientY };
+        // A region that already has a generator opens it; learning another
+        // stays available below.
+        void listGenerators(this.plugin).then((all) => {
+          const existing = generatorsForRegion(all, map.name)[0];
+          const menu = new Menu();
+          if (existing) {
+            menu.addItem((item) =>
+              item
+                .setTitle(`Open generator "${existing.model.name}"`)
+                .setIcon("wand-sparkles")
+                .onClick(() => void this.openGenerator(map.name, existing)),
+            );
+          }
+          menu.addItem((item) =>
+            item
+              .setTitle(existing ? `Learn a new generator from ${map.name}` : `Create generator from ${map.name}`)
+              .setIcon(existing ? "plus" : "wand-sparkles")
+              .onClick(() => void this.createGeneratorFrom(map.name)),
+          );
+          menu.showAtPosition(at);
+        });
       });
 
       if (isConfirming) {
@@ -793,6 +808,16 @@ export class MapModal extends HexmakerModal {
       mapName,
       generatorPath: result.file.path,
       paletteName: result.model.meta.palette,
+    });
+  }
+
+  /** Open a region's existing generator in the terrain generator. */
+  private async openGenerator(mapName: string, g: GeneratorFile): Promise<void> {
+    this.close();
+    await this.plugin.openTerrainGenerator({
+      mapName,
+      generatorPath: g.file.path,
+      paletteName: g.model.meta.palette,
     });
   }
 
