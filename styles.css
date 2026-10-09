@@ -6449,6 +6449,8 @@ button.duckmage-wfc-library-tab.is-active {
     align-items: center;
     gap: 0.4em;
     width: 240px;
+}
+
 /* Terrain mix: the Near rule field ("volcano 3"). */
 .duckmage-wfc-near {
     width: 100%;
