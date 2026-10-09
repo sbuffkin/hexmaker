@@ -82,7 +82,7 @@ export function generatorFitsPalette(model: HexWfcModel, paletteTerrains: string
   return placeable.length > 0 && placeable.every((t) => names.has(t.name));
 }
 
-function mapStagger(plugin: HexmakerPlugin, mapName: string): "odd" | "even" {
+export function mapStagger(plugin: HexmakerPlugin, mapName: string): "odd" | "even" {
   return plugin.getMap(mapName)?.staggerOffset ?? plugin.settings.staggerOffset ?? "odd";
 }
 

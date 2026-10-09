@@ -32,7 +32,7 @@ import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
 import { SIDES, type Side } from "./world";
-import { generateConnected, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import { blendFromNeighbours, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -81,6 +81,8 @@ export class GeneratorPanel {
   static seedLocked = false;
   /** Generate the new map as a neighbouring region of an existing one. */
   static connect: { anchor: string; side: Side } | null = null;
+  /** When connected: blend toward the neighbours' terrain (see blendFromNeighbours). */
+  static leanToNeighbours = true;
   /** Titles of the setting sections folded away. */
   static collapsed = new Set<string>();
   /** Path types whose routes are shown (groups start folded). */
@@ -513,6 +515,21 @@ export class GeneratorPanel {
     anchorSelect.addEventListener("change", setConnect);
     sideSelect.addEventListener("change", setConnect);
     if (connected) paletteSelect.disabled = true;
+    // Blend toward the neighbours, so the region is the border country
+    // between this generator and what's next door.
+    let genModel = model;
+    if (connected) {
+      const lean = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
+      const box = lean.createEl("input", { type: "checkbox" });
+      box.checked = GeneratorPanel.leanToNeighbours;
+      lean.createSpan({ text: "Lean toward neighbours" });
+      lean.setAttr("title", `Blend in what the neighbouring regions look like (${NEIGHBOUR_SHARE}% between them), each toward its own side. Directional bias sets how sharp the change is.`);
+      box.addEventListener("change", () => {
+        GeneratorPanel.leanToNeighbours = box.checked;
+        this.host.rerender();
+      });
+      if (GeneratorPanel.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected));
+    }
 
     const showLock = () => {
       const locked = GeneratorPanel.seedLocked;
@@ -641,7 +658,7 @@ export class GeneratorPanel {
       this.previewRows = grid.rows;
       this.seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const r = connected ? generateConnected(this.plugin, model, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
+      const r = connected ? generateConnected(this.plugin, genModel, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
@@ -779,7 +796,7 @@ export class GeneratorPanel {
           return;
         }
       }
-      const generated = connected ? generateConnected(this.plugin, model, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
+      const generated = connected ? generateConnected(this.plugin, genModel, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
       if (!generated.ok) {
         new Notice(`Couldn't generate: ${generated.message}`);
         return;

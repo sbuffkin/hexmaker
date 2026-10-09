@@ -1,14 +1,15 @@
 /**
  * Neighbour regions in the vault: reading and saving where maps sit on their
  * shared grid (see world.ts for the rules), the terrain just past a map's
- * edges, and generating a region that carries on from its neighbours.
+ * edges, and generating a region that carries on from its neighbours (its
+ * edge terrain, and optionally its whole character: blendFromNeighbours).
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
-import { generateTerrain, type GridSpec } from "./generators";
-import type { HexWfcModel, SolveResult } from "../../packages/hex-wfc/src";
+import { generateTerrain, readMapTerrain, type GridSpec } from "./generators";
+import { learnModel, mergeModels, type Compass, type HexWfcModel, type SolveResult } from "../../packages/hex-wfc/src";
 import {
   link,
   neighbours,
@@ -207,4 +208,46 @@ export async function placeNewRegion(plugin: HexmakerPlugin, mapName: string, re
     created.staggerOffset = region.stagger;
   }
   await plugin.saveSettings();
+}
+
+/** How much of a blended region its neighbours make up between them (percent). */
+export const NEIGHBOUR_SHARE = 40;
+
+const SIDE_COMPASS: Record<Side, Compass> = { north: "N", east: "E", south: "S", west: "W" };
+
+/**
+ * The generator for a region next to others, blended toward them: each
+ * neighbour's painted terrain is learned and leans toward its side, the
+ * region's own generator covers the rest (see mergeModels). A valley region
+ * with deep forest to the east comes out as valley turning to forest in the
+ * east. `neighbours` maps a side of the new region to the neighbour there;
+ * sides with nothing painted are skipped. Returns `own` when none are left.
+ */
+export function blendFromNeighbours(
+  plugin: HexmakerPlugin,
+  own: HexWfcModel,
+  neighbours: Partial<Record<Side, string>>,
+  share = NEIGHBOUR_SHARE,
+): HexWfcModel {
+  const models: HexWfcModel[] = [own];
+  const dirs: Compass[] = ["C"];
+  for (const side of SIDES) {
+    const name = neighbours[side];
+    const map = name ? plugin.getMap(name) : undefined;
+    if (!name || !map) continue;
+    const cells = readMapTerrain(plugin, name);
+    if (cells.size < 2) continue;
+    models.push(learnModel(cells, { name, orientation: plugin.settings.hexOrientation, stagger: map.staggerOffset ?? "odd" }));
+    dirs.push(SIDE_COMPASS[side]);
+  }
+  if (models.length === 1) return own;
+  const each = share / (models.length - 1);
+  return mergeModels(models, own.name, { ...own.meta }, [100 - share, ...models.slice(1).map(() => each)], dirs);
+}
+
+/** The neighbours of a new region by side (see occupiedSides), for blendFromNeighbours. */
+export function regionNeighbourNames(plugin: HexmakerPlugin, region: NewRegion): Partial<Record<Side, string>> {
+  const out: Partial<Record<Side, string>> = {};
+  for (const side of occupiedSides(plugin, region)) out[side] = regionNameAt(plugin, region, side);
+  return out;
 }
