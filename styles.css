@@ -5233,6 +5233,24 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     margin: 0.35em 0;
 }
 
+/* Suggested impassable terrain under the Impassable chips: dashed, to read
+   as "not added yet". */
+.duckmage-wfc-hint:empty {
+    display: none;
+}
+
+.duckmage-wfc-hint .duckmage-region-row {
+    margin: 0.3em 0 0;
+}
+
+.duckmage-wfc-hint-chip {
+    padding: 0.05em 0.5em;
+    border: 1px dashed var(--background-modifier-border-hover);
+    border-radius: var(--radius-s);
+    color: var(--text-muted);
+    cursor: help;
+}
+
 .duckmage-wfc-matches:empty {
     display: none;
 }

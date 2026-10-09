@@ -28,6 +28,7 @@ import {
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
+import { suggestImpassable } from "./impassableHint";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -202,6 +203,8 @@ export class GeneratorPanel {
     // A just-loaded save's settings win over a possibly stale read of the file.
     const isThisGenerator = (sv: GeneratorSave) => sv.generatorPath === g.file.path || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
+    /** The last settings write, for anything that must re-read the file after it. */
+    let lastWrite: Promise<void> = Promise.resolve();
     const save = (patch: Partial<Record<keyof GeneratorSettings, unknown>>) => {
       GeneratorPanel.loadedSave = null;
       const next: Record<string, unknown> = { ...(model.settings ?? {}) };
@@ -210,7 +213,7 @@ export class GeneratorPanel {
         else next[k] = v;
       }
       model.settings = next;
-      saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
+      lastWrite = saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
         new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
       });
       schedulePreview();
@@ -357,8 +360,9 @@ export class GeneratorPanel {
       new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
         const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
         for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
+        // Re-render once written, or the page re-reads the old settings.
         save(cleared);
-        this.host.rerender();
+        void lastWrite.then(() => this.host.rerender());
       }).open();
     });
 
@@ -766,7 +770,38 @@ export class GeneratorPanel {
       this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v }));
     }
     this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
-    this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
+    const impassableBox = el.createDiv();
+    const hintBox = el.createDiv({ cls: "duckmage-wfc-hint" });
+    // Terrain the learned paths go around, offered to add (never added for you).
+    const drawHints = () => {
+      hintBox.empty();
+      const hints = suggestImpassable(model, colors, s().impassable);
+      if (!hints.length) return;
+      const row = hintBox.createDiv({ cls: "duckmage-region-row" });
+      row.createSpan({ text: "Suggested", cls: "duckmage-map-origin-label" });
+      for (const h of hints) {
+        const chip = row.createSpan({ cls: "duckmage-wfc-chip duckmage-wfc-hint-chip", attr: { title: h.reason } });
+        chip.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": colors.get(h.terrain) ?? "var(--background-modifier-border)" });
+        chip.createSpan({ text: h.terrain });
+      }
+      const add = row.createEl("button", { text: hints.length > 1 ? "Add all" : "Add" });
+      add.addEventListener("click", () => {
+        // Redraw here rather than re-rendering the page: the page would
+        // re-read the file before this save has landed.
+        save({ impassable: [...s().impassable, ...hints.map((h) => h.terrain).filter((t) => !s().impassable.includes(t))] });
+        drawImpassable();
+      });
+      hintBox.createEl("p", { text: hints.map((h) => `${h.terrain}: ${h.reason}.`).join(" "), cls: "duckmage-map-origin-desc" });
+    };
+    const drawImpassable = () => {
+      impassableBox.empty();
+      this.terrainFilter(impassableBox, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => {
+        save({ impassable: list });
+        drawHints();
+      });
+      drawHints();
+    };
+    drawImpassable();
 
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
