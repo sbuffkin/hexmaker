@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { learnModel, mergeModels, type HexWfcModel } from "../packages/hex-wfc/src";
+import { learnModel, mergeModels, solve, type HexWfcModel } from "../packages/hex-wfc/src";
 
 /** Combining generators learned from several regions (packages/hex-wfc/src/merge.ts). */
 
@@ -66,4 +66,21 @@ describe("merging generators", () => {
     expect(m.features).toEqual([{ terrain: "river", from: "edge", to: "sea", count: 3 }]);
     expect(m.meta).toEqual({ palette: "Default" });
   });
+});
+
+describe("generators with 32 or more terrains", () => {
+  // The 32nd terrain uses the top bit of a 32-bit word. A signed/unsigned
+  // mismatch there made propagation loop until memory ran out (Obsidian froze
+  // on a combined generator with 33 terrains).
+  for (const count of [32, 33, 64]) {
+    it(`solve with ${count} terrains`, () => {
+      const cells: Record<string, string> = {};
+      for (let x = 0; x < count * 2; x++) for (let y = 0; y < 6; y++) cells[`${x}_${y}`] = `t${Math.floor(x / 2)}`;
+      const model = learn(cells);
+      expect(model.terrains).toHaveLength(count);
+      const r = solve(model, { cols: 16, rows: 12, orientation: "flat", seed: 7 });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.cells.size).toBe(16 * 12);
+    });
+  }
 });

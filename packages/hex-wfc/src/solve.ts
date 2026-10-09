@@ -454,6 +454,10 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
     }
   };
   const setWord = (i: number, v: number) => {
+    // Bit operators give signed 32-bit results; dom holds unsigned words. With
+    // 32+ terrains the top bit is used, so compare and store as unsigned (a
+    // signed/unsigned mismatch here once made propagation loop forever).
+    v >>>= 0;
     if (dom[i] === v) return;
     trailIdx.push(i);
     trailVal.push(dom[i]);
@@ -509,7 +513,7 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
         let changed = false, empty = true;
         for (let w = 0; w < W; w++) {
           const i = n * W + w;
-          const nv = dom[i] & support[w];
+          const nv = (dom[i] & support[w]) >>> 0;
           if (nv !== dom[i]) { setWord(i, nv); changed = true; }
           if (nv) empty = false;
         }
