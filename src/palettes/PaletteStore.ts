@@ -233,8 +233,11 @@ export class PaletteStore {
       dirty = true;
     }
     this.ready = true;
+    // Write seeded types into the notes now, in the same queued step. Queued
+    // separately, an unload in between left notes untyped while settings
+    // said seeding was done — and notes win on the next load.
+    if (seeded) await this.syncNow();
     if (dirty) await this.persist();
-    if (seeded) void this.sync();
   }
 
   /**
@@ -299,7 +302,12 @@ export class PaletteStore {
   /** memory → notes. Safe to call often; only touches notes that differ. */
   sync(): Promise<void> {
     if (!this.ready) return this.queue;
-    return this.enqueue(async () => {
+    return this.enqueue(() => this.syncNow());
+  }
+
+  /** The body of sync(); call only from inside the queue. */
+  private async syncNow(): Promise<void> {
+    {
       if (this.folder() !== this.attachedFolder) {
         // Folder setting changed: start over against the new folder once the
         // user stops typing (settings save per keystroke — attaching at once
@@ -376,7 +384,7 @@ export class PaletteStore {
       }
 
       if (renamedInMemory) await this.persist();
-    });
+    }
   }
 
   /** The note backing a palette, if it has been written. */

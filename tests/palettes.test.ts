@@ -445,6 +445,18 @@ describe("PaletteStore", () => {
 		expect(h.settings.terrainPalettes[0].childPalette).toBe("Overland");
 	});
 
+	it("seeded terrain types are in the notes when init() resolves (no separately queued write)", async () => {
+		// An existing vault: untyped palettes, never seeded. If the note write
+		// were queued after init, an unload in between would leave the notes
+		// untyped while settings say "seeded" — found on the first live deploy.
+		h.settings.terrainPalettes = [{ name: "Mine", terrains: [{ name: "ocean", color: "#000" }, { name: "dark forest", color: "#111" }] }];
+		h.settings.maps[0].paletteName = "Mine";
+		h.settings.terrainTypesSeeded = false;
+		await h.store.init();
+		expect(h.settings.terrainTypesSeeded).toBe(true);
+		expect(parsePaletteNote(h.vault.files.get("world/palettes/Mine.md")!)!.map((t) => t.type)).toEqual(["water", "forest"]);
+	});
+
 	it("honours a custom palettes folder", async () => {
 		const c = makeHarness({ palettesFolder: "rpg/pal" });
 		await c.store.init();
