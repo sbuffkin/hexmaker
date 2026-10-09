@@ -13,6 +13,7 @@ import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbi
 import {
   PLANET_SURFACE_ID,
   OVERLAND_ID,
+  OVERLAND_OPTIONS,
   PLANET_SURFACE_OPTIONS,
   REGION_DETAIL_ID,
   REGION_DETAIL_OPTIONS,
@@ -161,12 +162,12 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       // Planet surface's noise generator under a world name, so world-only
       // users get a procedural map without seeing space options.
       mapKind: "world",
-      description: "A region from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
+      description: "A region from noise: coast, plains, forests, hills, mountains, deserts. One climate across the map; set water %, climate and which side the sea is on.",
       source: "built-in",
-      options: PLANET_SURFACE_OPTIONS,
+      options: OVERLAND_OPTIONS,
       fits: planetSurfaceFits,
       generate: (req) => {
-        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options);
+        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, undefined, "overland");
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toChains,
@@ -228,6 +229,17 @@ export function visibleKinds(
   selectedId?: string,
 ): TerrainGeneratorKind[] {
   return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
+}
+
+/**
+ * Generator a first map starts with (setup wizard): Overland for world
+ * users, Star scatter for space-only users — whichever of the two fits the
+ * palette, in that order of preference — else Blank.
+ */
+export function firstMapGenerator(fitting: { id: string }[], mapKinds: Iterable<string>): string {
+  const kinds = new Set(mapKinds);
+  const prefs = kinds.has("world") ? [OVERLAND_ID, STAR_SCATTER_ID] : [STAR_SCATTER_ID, OVERLAND_ID];
+  return prefs.find((id) => fitting.some((k) => k.id === id)) ?? BLANK_ID;
 }
 
 /** Generators usable with a palette, Blank first. Context-only ones need `hasContext`. */

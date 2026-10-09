@@ -72,6 +72,64 @@ export const PLANET_SURFACE_OPTIONS: ProcOption[] = [
   },
 ];
 
+/** Where Overland puts its sea. "random" picks one side from the seed. */
+export type SeaSide = "north" | "east" | "south" | "west" | "around" | "scattered" | "none";
+
+/**
+ * Overland: Planet surface's knobs plus where the sea goes. A region is a
+ * piece of a world, not a whole planet: one climate across the map (no
+ * polar bands), and by default the sea runs along one side (picked from
+ * the seed) so the map reads as a stretch of coast.
+ */
+export const OVERLAND_OPTIONS: ProcOption[] = [
+  // A coast, not a hemisphere of ocean: less water by default.
+  ...PLANET_SURFACE_OPTIONS.map((o) => (o.key === "water" ? { ...o, default: "30" } : o)),
+  {
+    key: "sea",
+    label: "Sea",
+    choices: [
+      { value: "random", label: "One side (random)" },
+      { value: "north", label: "North" },
+      { value: "east", label: "East" },
+      { value: "south", label: "South" },
+      { value: "west", label: "West" },
+      { value: "around", label: "All around (island)" },
+      { value: "scattered", label: "Scattered (lakes and inlets)" },
+      { value: "none", label: "None (landlocked)" },
+    ],
+    default: "random",
+  },
+];
+
+const SEA_SIDES: SeaSide[] = ["north", "east", "south", "west", "around", "scattered", "none"];
+const ONE_SIDE: SeaSide[] = ["north", "east", "south", "west"];
+
+/** The Sea option as a side: "random" (or missing/unknown) → one of N/E/S/W from the seed. */
+export function resolveSeaSide(option: string | undefined, seed: number): SeaSide {
+  if (option && option !== "random" && (SEA_SIDES as string[]).includes(option)) return option as SeaSide;
+  // Its own stream, so the noise layout doesn't depend on the side.
+  return ONE_SIDE[Math.floor(mulberry32((seed ^ 0x5ea5) >>> 0)() * ONE_SIDE.length)];
+}
+
+/**
+ * How far inland a point is, 0 at the sea edge .. 1 at the far edge
+ * (u, v in 0..1, west→east and north→south). "around": 0 at every edge,
+ * 1 in the middle.
+ */
+function inland(side: SeaSide, u: number, v: number): number {
+  switch (side) {
+    case "north": return v;
+    case "south": return 1 - v;
+    case "west": return u;
+    case "east": return 1 - u;
+    case "around": return 1 - Math.max(Math.abs(2 * u - 1), Math.abs(2 * v - 1));
+    default: return 0.5;
+  }
+}
+
+/** How strongly the sea side tilts the land (elevation units; noise spans ~0.3). */
+const SEA_TILT = 0.6;
+
 export interface PlanetRoles {
   deep?: string;
   sea: string;
@@ -283,6 +341,8 @@ interface Levels {
   hill: number;
   mountain: number;
   peak: number;
+  /** Low ground (swamps): sea level, or the lowest land when there's no sea. */
+  low?: number;
 }
 
 export function planetSurface(
@@ -293,6 +353,9 @@ export function planetSurface(
   /** When given, generate a *region* of the bigger map (Region detail):
    *  the parent hex's terrain fills it and neighbours shape its edges. */
   context?: GenerationContext,
+  /** "planet": a whole world (warm equator, polar caps). "overland": a
+   *  region of one (single climate, sea on a chosen side; OVERLAND_OPTIONS). */
+  flavor: "planet" | "overland" = "planet",
 ): ProcResult {
   const roles = planetRoles(terrains);
   if (!roles) return { cells: new Map(), paths: [], warnings: ["This palette has no sea or plains terrain."] };
@@ -300,6 +363,9 @@ export function planetSurface(
   const elevNoise = makeNoise(rand);
   const moistNoise = makeNoise(rand);
   const climate = options.climate ?? "temperate";
+  // Frozen worlds have no temperate belt: open land is snow / ice, high
+  // ground bare rock, and no woods anywhere.
+  const frozen = climate === "frozen";
 
   const hexes = gridKeys(grid);
   // Feature scale: about 3 noise cells across the map whatever its size.
@@ -319,8 +385,17 @@ export function planetSurface(
   } else {
     const water = Math.max(0, Math.min(95, Number(options.water ?? 50))) / 100;
     const relief = options.relief ?? "normal";
-    elev = noiseE;
-    const seaLevel = water <= 0 ? -Infinity : quantile(elev, water);
+    const overland = flavor === "overland";
+    const sea: SeaSide = overland ? resolveSeaSide(options.sea, seed) : "scattered";
+    // Tilt the land down toward the sea side; the water % quantile below
+    // then floods that side first, with the noise giving a ragged coast.
+    const spanX = Math.max(maxX - minX, 1e-6), spanY = Math.max(maxY - minY, 1e-6);
+    elev = sea === "scattered" || sea === "none"
+      ? noiseE
+      : noiseE.map((n, i) => n + SEA_TILT * (inland(sea, (xs[i] - minX) / spanX, (ys[i] - minY) / spanY) - 0.5));
+    const seaLevel = water <= 0 || sea === "none" ? -Infinity : quantile(elev, water);
+    // Lowland reference for the lapse rate: sea level, or (no sea) the low ground.
+    const lowLevel = Number.isFinite(seaLevel) ? seaLevel : quantile(elev, 0.1);
     const landElev = elev.filter((e) => e > seaLevel);
     const seaElev = elev.filter((e) => e <= seaLevel);
     lv = {
@@ -328,8 +403,10 @@ export function planetSurface(
       hill: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7),
       mountain: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.97 : relief === "rugged" ? 0.72 : 0.87),
       peak: quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97),
-      deep: quantile(seaElev.length ? seaElev : [0], 0.35),
+      // Overland: only the far offshore water is deep (no trench band along the edge).
+      deep: quantile(seaElev.length ? seaElev : [0], overland ? 0.12 : 0.35),
       shelf: quantile(seaElev.length ? seaElev : [0], 0.8),
+      low: lowLevel,
     };
     // Temperature: warm equator, cold poles (rows), shifted by climate.
     const climateShift: Record<string, number> = { temperate: 0, lush: 0.12, arid: 0.15, frozen: -0.55, volcanic: 0.3 };
@@ -337,13 +414,15 @@ export function planetSurface(
     const tShift = climateShift[climate] ?? 0;
     const mShift = moistShift[climate] ?? 0;
     tempArr = centers.map((c, i) => {
-      const lat = maxY > minY ? Math.abs((c[1] - minY) / (maxY - minY) - 0.5) * 2 : 0; // 0 equator .. 1 pole
-      return 1 - lat * 0.9 + tShift - Math.max(0, elev[i] - seaLevel) * 0.6;
+      // Overland is one region: a single mid-latitude climate, no poles.
+      const lat = overland ? 0.4 : maxY > minY ? Math.abs((c[1] - minY) / (maxY - minY) - 0.5) * 2 : 0; // 0 equator .. 1 pole
+      return 1 - lat * 0.9 + tShift - Math.max(0, elev[i] - lowLevel) * 0.6;
     });
     moistArr = noiseM.map((m) => m + mShift);
   }
   const seaLevel = lv.sea, deepAt = lv.deep, shelfAt = lv.shelf;
   const hillAt = lv.hill, mountainAt = lv.mountain, peakAt = lv.peak;
+  const lowAt = lv.low ?? seaLevel;
 
   // Woodland variety (typed palettes only): the family follows temperature,
   // dense variants take the wettest ground. No rand() calls, so a seed's
@@ -376,8 +455,8 @@ export function planetSurface(
     const m = moistArr[i];
 
     if (isSea[i]) {
-      // Frozen seas near the poles ice over.
-      if (temp < 0.12 && roles.snow) { cells.set(k, roles.snow); return; }
+      // Frozen seas near the poles ice over (on an Overland region: floes).
+      if (temp < 0.12 && roles.snow && (flavor !== "overland" || noiseM[i] > 0.5)) { cells.set(k, roles.snow); return; }
       if (e < deepAt && roles.deep) cells.set(k, roles.deep);
       else if (e > shelfAt && roles.shallows) cells.set(k, roles.shallows);
       else cells.set(k, roles.sea);
@@ -386,15 +465,16 @@ export function planetSurface(
 
     let t: string | undefined;
     if (e >= peakAt) t = roles.peak ?? roles.mountain;
-    else if (e >= mountainAt) t = (m > 0.6 ? wooded(v.mountain, temp) : undefined) ?? roles.mountain;
-    else if (e >= hillAt) t = (m > 0.5 ? wooded(v.hills, temp) : undefined) ?? roles.hills;
+    else if (e >= mountainAt) t = (m > 0.6 && !frozen ? wooded(v.mountain, temp) : undefined) ?? roles.mountain;
+    else if (e >= hillAt) t = (m > 0.5 && !frozen ? wooded(v.hills, temp) : undefined) ?? roles.hills;
     if (t && temp < 0.2 && roles.peak) t = roles.peak;
     if (!t) {
-      if (temp < 0.22) t = roles.snow;
+      if (frozen) t = roles.snow ?? roles.badlands ?? roles.desert;
+      else if (temp < 0.22) t = roles.snow;
       else if (climate === "volcanic" && m < 0.45) t = roles.badlands ?? roles.desert;
       else if (m < 0.32 && temp > 0.45) t = roles.desert ?? roles.badlands;
       else if (m > 0.72 && temp > 0.75) t = (m > 0.85 ? v.denseJungle : undefined) ?? roles.jungle ?? forestAt(temp, m);
-      else if (m > 0.68 && e - seaLevel < 0.05) t = roles.swamp ?? forestAt(temp, m);
+      else if (m > 0.68 && e - lowAt < 0.05) t = roles.swamp ?? forestAt(temp, m);
       else if (m > 0.5) t = forestAt(temp, m);
     }
     cells.set(k, t ?? roles.plains);
