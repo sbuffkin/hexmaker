@@ -27,6 +27,12 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 ---
 
+## Where the map is stored
+
+Terrain, icons, GM icons, regions and submap links live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
+
+---
+
 ## Expand buttons
 
 The **+** buttons at the edges of the map grow the grid one column or row in that direction, shifting the coordinate origin if needed.

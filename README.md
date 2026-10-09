@@ -225,7 +225,7 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Workflows folder** | Folder for workflow definition files and their templates. |
 | **Default die** | Die size used when creating new table files (d4–d100). |
 | **Icons folder** | Folder containing `.png` icon files available as custom terrain/hex icons. |
-| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` placeholders. Leave blank to use the built-in template. |
+| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use the built-in template. |
 | **Hex gap** | Gap between hexes in pixels. |
 | **Hex orientation** | `flat` (default) or `pointy` top hex style. |
 | **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
@@ -235,14 +235,19 @@ Open **Settings → Hexmap World Creator** to configure:
 
 ---
 
+## Map notes
+
+Each map has one **map note** at `{hexFolder}/{map}/_{map}.md` (e.g. `RPG/world/hexes/Overworld/_Overworld.md`). It holds the map's settings in its frontmatter and a table with one row per hex that has map data: terrain, icon, GM icons, region, submap and locked. Hexes with only the map's base terrain (or nothing) have no row. Painting updates the table; you can also edit the table by hand and the map follows. Anything you write in the note outside the "Hexes" and "Paths" tables is left alone.
+
+Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `hexmaker-map:` link to the map note. Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault.
+
 ## Hex notes
 
-Each hex note lives at `{hexFolder}/{map}/{x}_{y}.md` (e.g. `RPG/world/hexes/Overworld/3_7.md`).
+Each hex note lives at `{hexFolder}/{map}/{x}_{y}.md` (e.g. `RPG/world/hexes/Overworld/3_7.md`). Hex notes hold descriptions and links, and are created when a hex first gets some (you open it, write in the editor, or link something); painting terrain doesn't create one. Its frontmatter links to the map note:
 
-**Frontmatter:**
 ```yaml
 ---
-terrain: Forest
+hexmaker-map: "[[_Overworld]]"
 ---
 ```
 
