@@ -320,3 +320,28 @@ export function mapNoteKey(data: MapNoteData): string {
   const hexes = hexRowsToWrite(data.hexes, data.settings.baseTerrain);
   return JSON.stringify([settings, hexes, data.paths.map((p) => [p.typeName, p.hexes])]);
 }
+
+/** Hex-note frontmatter keys that hold map data (they live in the map note). */
+const HEX_NOTE_DATA_KEY = /^(terrain|icon|gm-icons|gm-icon|region|duckmage-submap|locked|hexmaker-map)\s*:/;
+
+/**
+ * Prepare a new hex note's text: drop map-data keys a template may carry
+ * (the default one had `terrain:`) and point at the map note instead, so
+ * nobody edits a terrain field that the map no longer reads.
+ */
+export function withMapLink(content: string, mapName: string): string {
+  const link = `hexmaker-map: "[[_${mapName}]]"`;
+  const nl = content.includes("\r\n") ? "\r\n" : "\n";
+  const m = /^---\r?\n([\s\S]*?)\r?\n?---(\r?\n|$)/.exec(content);
+  if (!m) return `---${nl}${link}${nl}---${nl}${content}`;
+  const kept: string[] = [link];
+  let inDropped = false;
+  for (const line of m[1].split(/\r?\n/)) {
+    if (HEX_NOTE_DATA_KEY.test(line)) { inDropped = true; continue; }
+    // indented lines (list items) belong to the key above them
+    if (inDropped && /^\s+\S/.test(line)) continue;
+    inDropped = false;
+    if (line.trim()) kept.push(line);
+  }
+  return `---${nl}${kept.join(nl)}${nl}---${m[2] || nl}${content.slice(m[0].length)}`;
+}

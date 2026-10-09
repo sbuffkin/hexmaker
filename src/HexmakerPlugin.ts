@@ -47,6 +47,7 @@ import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore } from "./maps/MapStore";
+import { withMapLink } from "./maps/mapNote";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -1258,11 +1259,16 @@ export default class HexmakerPlugin extends Plugin {
     content = content
       .replace(/\{\{x\}\}/g, String(x))
       .replace(/\{\{y\}\}/g, String(y))
-      .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`);
+      .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`)
+      .replace(/\{\{map\}\}/g, mapName);
+    // Map data lives in the map note: the hex note links there instead of
+    // carrying (possibly stale) terrain/region fields.
+    content = withMapLink(content, mapName);
+    if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
+    // The hex's terrain (just set, or painted before it had a note) gets
+    // its encounter-table link now rather than patched in later.
+    terrain ??= this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
     if (terrain) {
-      // Terrain is map data (map note); the note only gets the terrain's
-      // encounter-table link, added now rather than patched in later.
-      this.mapStore.set(mapName, `${x}_${y}`, { terrain });
       const table = this.terrainEncounterTable(terrain);
       if (table) {
         const linkText = `[[${this.app.metadataCache.fileToLinktext(table, path)}]]`;

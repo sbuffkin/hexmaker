@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import {
+	withMapLink,
 	buildMapNote,
 	hexRowsToWrite,
 	mapNoteKey,
@@ -119,5 +120,20 @@ describe("map notes", () => {
 		const back = parseMapNote(buildMapNote("chult", { settings: { gridSize: { cols: 63, rows: 61 } }, hexes, paths: [] }))!;
 		expect(back.hexes.size).toBe(3843);
 		expect(Date.now() - t0).toBeLessThan(1500);
+	});
+});
+
+describe("new hex notes", () => {
+	it("swap map-data keys for a link to the map note, keeping the rest", () => {
+		const t = "---\nterrain:\ntags: [hex]\ngm-icons:\n  - a.png\n  - b.png\nregion: North\n---\n# Hex 1, 2\n";
+		expect(withMapLink(t, "coast")).toBe('---\nhexmaker-map: "[[_coast]]"\ntags: [hex]\n---\n# Hex 1, 2\n');
+	});
+
+	it("adds frontmatter to a template without any", () => {
+		expect(withMapLink("# Hex\n", "m")).toBe('---\nhexmaker-map: "[[_m]]"\n---\n# Hex\n');
+	});
+
+	it("handles an empty frontmatter block and CRLF", () => {
+		expect(withMapLink("---\r\n---\r\n\r\n# Hex\r\n", "m")).toBe('---\r\nhexmaker-map: "[[_m]]"\r\n---\r\n\r\n# Hex\r\n');
 	});
 });

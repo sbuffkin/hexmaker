@@ -1,11 +1,7 @@
 ---
-terrain:
 ---
 
 # Hex {{x}}, {{y}}
-
-**Region:**
-**Terrain:**
 
 ---
 What the party sees and feels. Terrain, atmosphere, any obvious features.
