@@ -746,7 +746,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
     this.plugin.settings.mapKinds = MAP_KINDS.map((k) => k.id).filter((id) => kinds.has(id));
     await this.plugin.saveSettings();
-    this.plugin.loadAvailableIcons();
+    this.plugin.onMapKindsChanged();
   }
 
   /** "Open note" button for a palette row — opens the palette's note in a new tab. */

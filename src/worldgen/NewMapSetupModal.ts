@@ -10,6 +10,7 @@ import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { isSpacePalette } from "../mapKinds";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
@@ -20,6 +21,7 @@ import {
   kindsForPalette,
   listGeneratorKinds,
   suggestBaseTerrain,
+  visibleKinds,
   type GenerateOutcome,
   type TerrainGeneratorKind,
 } from "./registry";
@@ -277,7 +279,12 @@ export class NewMapSetupModal extends HexmakerModal {
 
     const renderGenerators = () => {
       const terrains = this.terrains(paletteSelect.value);
-      const fitting = kindsForPalette(this.kinds, terrains, !!this.context);
+      // Space generators only for space users or maps in space (a space
+      // palette here, or a planet submap of a star system); a saved
+      // submap default stays visible either way.
+      const spaceContext = isSpacePalette(terrains) || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
+      const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator);
+      const fitting = kindsForPalette(shown, terrains, !!this.context);
       if (!fitting.some((k) => k.id === this.kindId)) {
         // Default to the first built-in generator that fits, else Blank.
         // Submaps zoom in: prefer the context-aware generator when it fits.
@@ -298,7 +305,7 @@ export class NewMapSetupModal extends HexmakerModal {
           refresh();
         });
       }
-      const hidden = this.kinds.length - fitting.length;
+      const hidden = shown.length - fitting.length;
       if (hidden > 0) {
         genList.createDiv({
           cls: "setting-item-description",
@@ -439,15 +446,15 @@ export class NewMapSetupModal extends HexmakerModal {
 
   /**
    * Run a generator with this map's context, then continue the parent
-   * hex's paths (roads, rivers…) across the result. Space maps skip the
-   * path carry-over (a jump route through a sector hex isn't a lane in
-   * the system).
+   * hex's paths (roads, rivers…) across the result. Maps on a space
+   * palette skip the path carry-over (a jump route through a sector hex
+   * isn't a lane in the system).
    */
   private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[]): GenerateOutcome {
     const grid = this.grid();
     const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement });
     const carry = this.context?.paths ?? [];
-    if (!outcome.ok || carry.length === 0 || kind.mapKind === "space") return outcome;
+    if (!outcome.ok || carry.length === 0 || isSpacePalette(terrains)) return outcome;
     const routed = routeContextPaths(
       outcome.cells,
       terrains,

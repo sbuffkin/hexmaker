@@ -25,7 +25,8 @@ import {
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { ALL_MAP_KINDS, isIconHiddenByKind } from "./mapKinds";
+import { isIconHiddenByKind, isSpacePalette, resolveMapKinds } from "./mapKinds";
+import { mapAncestors } from "./hex-map/submapNav";
 import {
   getPreset,
   mergePathTypes,
@@ -519,10 +520,10 @@ export default class HexmakerPlugin extends Plugin {
     if (!this.settings.defaultMap) {
       this.settings.defaultMap = this.settings.maps[0]?.name ?? "default";
     }
-    // Own copy (never alias DEFAULT_SETTINGS); unset in older data = all types.
-    this.settings.mapKinds = Array.isArray(this.settings.mapKinds)
-      ? [...this.settings.mapKinds]
-      : [...ALL_MAP_KINDS];
+    // Own copy (never alias DEFAULT_SETTINGS). Read from the raw data: unset
+    // (new install / older data) = world, plus space if a palette has space
+    // terrains already.
+    this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
   }
 
   async saveSettings() {
@@ -594,6 +595,19 @@ export default class HexmakerPlugin extends Plugin {
   refreshPaletteEditors(): void {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)) {
       if (leaf.view instanceof PaletteEditorView) leaf.view.refreshFromStore();
+    }
+  }
+
+  /**
+   * Map types turned on/off (settings, setup wizard): reload the icon
+   * pickers and re-render open pages that list palettes or generators so
+   * the change shows at once. Modals read the setting when they open.
+   */
+  onMapKindsChanged(): void {
+    this.loadAvailableIcons();
+    this.refreshPaletteEditors();
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)) {
+      if (leaf.view instanceof GeneratorView) leaf.view.refresh();
     }
   }
 
@@ -1626,6 +1640,19 @@ export default class HexmakerPlugin extends Plugin {
       this.settings.terrainPalettes[0]?.terrains ??
       []
     );
+  }
+
+  /**
+   * Is `mapName` in space: its palette, or any ancestor map's (a planet
+   * submap of a star system), is a space palette? Space generators are
+   * offered there even when the Space map type is off.
+   */
+  isSpaceMap(mapName: string): boolean {
+    const chain = [...mapAncestors(mapName, (m) => this.parentOf(m)?.map), mapName];
+    return chain.some((m) => {
+      const paletteName = this.getMap(m)?.paletteName;
+      return !!paletteName && isSpacePalette(this.getPaletteOrPresetTerrains(paletteName));
+    });
   }
 
   getAllTerrains(): TerrainColor[] {

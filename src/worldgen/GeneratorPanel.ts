@@ -32,6 +32,7 @@ import { suggestImpassable } from "./impassableHint";
 import { SIDES, type Side } from "./world";
 import { generateConnected, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
+import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
 import { ConfirmModal } from "./ConfirmModal";
@@ -160,7 +161,15 @@ export class GeneratorPanel {
     };
 
     void listGenerators(this.plugin).then((found) => {
-      generators = found;
+      // Planet generators (map-kind: planet) are hidden while the Space map
+      // type is off, unless this palette/map is in space or one is loaded.
+      const spaceContext = isSpacePalette(this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains)
+        || (!!this.mapName && this.plugin.isSpaceMap(this.mapName));
+      generators = found.filter((g) => isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
+        spaceContext,
+        selected: g.file.path === GeneratorPanel.selectedPath,
+      }));
+      const hiddenBySpace = found.length - generators.length;
       // Keep the chosen generator; otherwise one learned from the current
       // region, then the first one that fits the palette.
       if (!current()) {
@@ -179,6 +188,12 @@ export class GeneratorPanel {
           this.host.rerender();
         },
       }).render(libraryEl);
+      if (hiddenBySpace > 0) {
+        libraryEl.createEl("p", {
+          text: `${hiddenBySpace} space generator${hiddenBySpace === 1 ? "" : "s"} hidden — space maps are off (settings → map types).`,
+          cls: "duckmage-map-origin-desc",
+        });
+      }
       show();
     });
   }

@@ -36,6 +36,7 @@ import {
 } from "../worldgen/neighbours";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
@@ -745,9 +746,16 @@ export class MapModal extends HexmakerModal {
       const current = generatorSelect.value;
       generatorSelect.empty();
       generatorSelect.createEl("option", { value: "", text: "Blank" });
-      const names = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value).map((t) => t.name);
+      const terrains = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value);
+      const names = terrains.map((t) => t.name);
+      // Planet generators (map-kind: planet) only for space users or on a space palette.
+      const spaceContext = isSpacePalette(terrains);
       for (const g of generators) {
-        if (generatorFitsPalette(g.model, names))
+        const shown = isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
+          spaceContext,
+          selected: g.file.path === current,
+        });
+        if (shown && generatorFitsPalette(g.model, names))
           generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
       }
       generatorSelect.value = Array.from(generatorSelect.options).some((o) => o.value === current) ? current : "";

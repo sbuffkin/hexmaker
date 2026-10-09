@@ -8,7 +8,8 @@ import { fillTerrainTypeSelect } from "../terrainTypeSelect";
 import { inferTerrainType, terrainTypeInfo } from "../terrainTypes";
 import { AddPaletteModal } from "./AddPaletteModal";
 import { fillPaletteSelect } from "./paletteOptions";
-import { listGeneratorKinds, type TerrainGeneratorKind } from "../worldgen/registry";
+import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
+import { isSpacePalette } from "../mapKinds";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -372,7 +373,13 @@ export class PaletteEditorView extends ItemView {
 
       const genSel = tr.createEl("td").createEl("select");
       genSel.createEl("option", { value: "", text: "—" });
-      for (const g of this.generators) genSel.createEl("option", { value: g.id, text: g.label });
+      // Space generators while Space is off: only for a space palette or a
+      // space submap palette (or the saved value).
+      const spaceContext = isSpacePalette(pal.terrains)
+        || (!!d.palette && isSpacePalette(this.plugin.getPaletteOrPresetTerrains(d.palette)));
+      for (const g of visibleKinds(this.generators, this.plugin.settings, spaceContext, d.generator)) {
+        genSel.createEl("option", { value: g.id, text: g.label });
+      }
       if (d.generator && !this.generators.some((g) => g.id === d.generator)) {
         genSel.createEl("option", { value: d.generator, text: `${d.generator} (not available)` });
       }
