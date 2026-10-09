@@ -31,6 +31,8 @@ import {
   type GeneratorSettings,
   resolveSettings,
   pathRouteKey,
+  isCompass,
+  type Compass,
 } from "../../packages/hex-wfc/src";
 
 /** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
@@ -161,12 +163,41 @@ const SOURCE_MAPS_JOIN = " + ";
  */
 export const SOURCE_INFLUENCE_KEY = "source-influence";
 
+/**
+ * Meta key with the compass point each source leans toward, in source order:
+ * `source-direction: W + E` ("C" = everywhere). Missing means no direction.
+ */
+export const SOURCE_DIRECTION_KEY = "source-direction";
+
+/** Meta key listing the generators a blend was made from: `blend-of: valley + deep-forest`. */
+export const BLEND_OF_KEY = "blend-of";
+
+/** The generators a blend was made from (by name), or [] if it isn't one. */
+export function blendSourcesOf(model: HexWfcModel): string[] {
+  return model.meta[BLEND_OF_KEY]?.split(SOURCE_MAPS_JOIN).map((s) => s.trim()).filter(Boolean) ?? [];
+}
+
+/** What a combined generator was made from: blended generators, else regions. */
+export function combinedSourcesOf(model: HexWfcModel): { kind: "blend" | "regions"; names: string[] } {
+  const blend = blendSourcesOf(model);
+  return blend.length ? { kind: "blend", names: blend } : { kind: "regions", names: sourceMapsOf(model) };
+}
+
+/** Each source's compass direction, or undefined when none is set. */
+export function sourceDirectionsOf(model: HexWfcModel): Compass[] | undefined {
+  const raw = model.meta[SOURCE_DIRECTION_KEY];
+  if (!raw) return undefined;
+  const list = raw.split(SOURCE_MAPS_JOIN).map((v) => v.trim().toUpperCase());
+  if (list.length !== combinedSourcesOf(model).names.length || !list.every(isCompass)) return undefined;
+  return list;
+}
+
 /** A combined generator's region influence (percent, one per region), or undefined if by size. */
 export function sourceInfluenceOf(model: HexWfcModel): number[] | undefined {
   const raw = model.meta[SOURCE_INFLUENCE_KEY];
   if (!raw) return undefined;
   const list = raw.split(SOURCE_MAPS_JOIN).map((v) => Number(v.trim()));
-  if (list.length !== sourceMapsOf(model).length || list.some((v) => !Number.isFinite(v) || v < 0)) return undefined;
+  if (list.length !== combinedSourcesOf(model).names.length || list.some((v) => !Number.isFinite(v) || v < 0)) return undefined;
   return list.reduce((n, v) => n + v, 0) > 0 ? list : undefined;
 }
 
@@ -211,6 +242,7 @@ function learnFromMaps(
   name: string,
   meta: Record<string, string>,
   influence?: number[],
+  directions?: Compass[],
 ): { model: HexWfcModel } | { error: string } {
   const models: HexWfcModel[] = [];
   for (const mapName of mapNames) {
@@ -229,7 +261,7 @@ function learnFromMaps(
       meta,
     }));
   }
-  const model = models.length === 1 ? models[0] : mergeModels(models, name, meta, influence);
+  const model = models.length === 1 ? models[0] : mergeModels(models, name, meta, influence, directions);
   if (model.adjacency.length === 0)
     return { error: "No painted hexes touch each other, so there is nothing to learn yet." };
   return { model };
@@ -471,7 +503,10 @@ export async function relearnGenerator(
   g: GeneratorFile,
   /** New influence per region; null = by region size; omitted = as stored. */
   influence?: number[] | null,
+  /** New direction per region; omitted = as stored. */
+  directions?: Compass[],
 ): Promise<{ model: HexWfcModel } | { error: string }> {
+  if (blendSourcesOf(g.model).length) return reblendGenerator(plugin, g, influence, directions);
   const mapNames = sourceMapsOf(g.model);
   if (!mapNames.length) return { error: "This generator doesn't record the region it came from." };
   const missing = mapNames.filter((m) => !plugin.getMap(m));
@@ -480,10 +515,107 @@ export async function relearnGenerator(
   const meta = { ...g.model.meta, ...sourceMeta(plugin, mapNames) };
   if (weights && mapNames.length > 1) meta[SOURCE_INFLUENCE_KEY] = weights.join(SOURCE_MAPS_JOIN);
   else delete meta[SOURCE_INFLUENCE_KEY];
-  const learned = learnFromMaps(plugin, mapNames, g.model.name, meta, mapNames.length > 1 ? weights : undefined);
+  const dirs = directions ?? sourceDirectionsOf(g.model);
+  setDirections(meta, mapNames.length > 1 ? dirs : undefined);
+  const learned = learnFromMaps(plugin, mapNames, g.model.name, meta, mapNames.length > 1 ? weights : undefined, mapNames.length > 1 ? dirs : undefined);
   if ("error" in learned) return learned;
   const { model } = learned;
-  if (g.model.settings) model.settings = { ...g.model.settings };
+  keepSettings(model, g.model, dirs);
+  await plugin.app.vault.modify(g.file, modelToMarkdown(model));
+  return { model };
+}
+
+/** Record directions in meta, or drop the key when none lean anywhere. */
+function setDirections(meta: Record<string, string>, dirs: Compass[] | undefined): void {
+  if (dirs?.some((d) => d !== "C")) meta[SOURCE_DIRECTION_KEY] = dirs.join(SOURCE_MAPS_JOIN);
+  else delete meta[SOURCE_DIRECTION_KEY];
+}
+
+/**
+ * Carry the old generator's settings onto a re-made one. Directions only
+ * work through directional bias, so it's switched on (1) if it was off.
+ */
+function keepSettings(model: HexWfcModel, old: HexWfcModel, dirs: Compass[] | undefined): void {
+  if (old.settings) model.settings = { ...old.settings };
+  if (dirs?.some((d) => d !== "C") && !(model.settings?.directionalBias ?? 0))
+    model.settings = { ...model.settings, directionalBias: 1 };
+}
+
+/** Default directions for a new blend: two sources run west to east; more start everywhere. */
+export function defaultBlendDirections(n: number): Compass[] {
+  return n === 2 ? ["W", "E"] : Array.from({ length: n }, (): Compass => "C");
+}
+
+/** Merge generators into one model (see mergeModels), with blend meta. */
+function blendModels(
+  plugin: HexmakerPlugin,
+  sources: HexWfcModel[],
+  name: string,
+  meta: Record<string, string>,
+  influence: number[],
+  directions: Compass[],
+): HexWfcModel {
+  const full: Record<string, string> = {
+    ...meta,
+    [BLEND_OF_KEY]: sources.map((m) => m.name).join(SOURCE_MAPS_JOIN),
+    [SOURCE_INFLUENCE_KEY]: influence.join(SOURCE_MAPS_JOIN),
+    [VERSION_KEY]: pluginVersion(plugin),
+  };
+  setDirections(full, directions);
+  return mergeModels(sources, name, full, influence, directions);
+}
+
+/**
+ * Blend generators into a new one: their terrains, rules and paths combined,
+ * each leaning toward its own side of the map (two run west to east by
+ * default), so the result is the border country between them. Never
+ * overwrites: a name clash gets a numeric suffix.
+ */
+export async function saveBlendedGenerator(
+  plugin: HexmakerPlugin,
+  sources: GeneratorFile[],
+  rawName: string,
+): Promise<{ file: TFile; model: HexWfcModel } | { error: string }> {
+  if (sources.length < 2) return { error: "Tick two or more generators to blend." };
+  const name = slugify(rawName) || slugify(sources.map((g) => g.model.name).join("-to-"));
+  if (!name) return { error: "Enter a generator name." };
+  const influence = sources.map(() => Math.round(100 / sources.length));
+  const model = blendModels(plugin, sources.map((g) => g.model), name, {
+    palette: sources[0].model.meta.palette ?? "",
+    created: new Date().toISOString().slice(0, 10),
+  }, influence, defaultBlendDirections(sources.length));
+  const folder = generatorsFolder(plugin);
+  let path = `${folder}/${name}.md`;
+  for (let n = 2; plugin.app.vault.getAbstractFileByPath(path); n++) {
+    path = `${folder}/${name}-${n}.md`;
+    model.name = `${name}-${n}`;
+  }
+  const file = await plugin.app.vault.create(path, modelToMarkdown(model));
+  return { file, model };
+}
+
+/**
+ * Blend a blended generator again from its sources' current files, with new
+ * influence or directions (omitted = as stored; null influence = even).
+ * Keeps its name, settings and other metadata. Rewrites the file.
+ */
+export async function reblendGenerator(
+  plugin: HexmakerPlugin,
+  g: GeneratorFile,
+  influence?: number[] | null,
+  directions?: Compass[],
+): Promise<{ model: HexWfcModel } | { error: string }> {
+  const names = blendSourcesOf(g.model);
+  const all = await listGenerators(plugin);
+  const sources = names.map((n) => all.find((x) => x.model.name === n || x.file.basename === n));
+  const missing = names.filter((_, i) => !sources[i]);
+  if (missing.length) return { error: `Can't find the generator${missing.length === 1 ? "" : "s"} this blend came from: ${missing.join(", ")}.` };
+  const stored = influence === null ? undefined : (influence ?? sourceInfluenceOf(g.model));
+  const weights = stored ?? names.map(() => Math.round(100 / names.length));
+  const dirs = directions ?? sourceDirectionsOf(g.model) ?? names.map((): Compass => "C");
+  const found = sources.filter((x): x is GeneratorFile => !!x);
+  const model = blendModels(plugin, found.map((x) => x.model), g.model.name, { ...g.model.meta }, weights, dirs);
+  keepSettings(model, g.model, dirs);
   await plugin.app.vault.modify(g.file, modelToMarkdown(model));
   return { model };
 }

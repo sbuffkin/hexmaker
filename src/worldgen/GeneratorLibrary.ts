@@ -1,12 +1,12 @@
 /**
  * The generator page's file list: a Generators tab (load one, or tick several
- * to open, re-learn or delete them) and a Regions tab (tick one or more maps
+ * to open, re-learn, blend or delete them) and a Regions tab (tick one or more maps
  * and learn a generator from them, combined when there are several).
  */
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import { blendSourcesOf, deleteGenerators, relearnGenerator, saveBlendedGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -121,9 +121,27 @@ export class GeneratorLibrary {
     actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick generators to act on them", cls: "duckmage-map-origin-desc" });
     const open = actions.createEl("button", { text: "Open file" });
     const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the regions they came from, keeping their settings" } });
+    const blend = actions.createEl("button", {
+      text: selected.length > 1 ? `Blend (${selected.length})` : "Blend",
+      attr: { title: "Make a new generator that blends these, each leaning toward its own side of the map: the border country between them" },
+    });
     const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
     for (const b of [open, relearn, del]) b.disabled = !selected.length;
-    relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length);
+    relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length || blendSourcesOf(g.model).length);
+    blend.disabled = selected.length < 2;
+    blend.addEventListener("click", () => {
+      blend.disabled = true;
+      void saveBlendedGenerator(this.plugin, selected, "").then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          blend.disabled = false;
+          return;
+        }
+        new Notice(`Blended ${selected.map((g) => g.model.name).join(" + ")} into "${r.model.name}".`);
+        checked.clear();
+        this.host.changed(r.file.path);
+      });
+    });
     open.addEventListener("click", () => {
       for (const g of selected) void this.app.workspace.getLeaf("tab").openFile(g.file);
     });

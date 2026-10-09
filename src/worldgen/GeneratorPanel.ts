@@ -21,6 +21,8 @@ import {
   relearnGenerator,
   regionSizes,
   sourceInfluenceOf,
+  combinedSourcesOf,
+  sourceDirectionsOf,
   setGeneratorPalette,
   toPathChains,
   type GeneratorFile,
@@ -55,6 +57,8 @@ import {
   type GeneratorSettings,
   type Symmetry,
   type CountRange,
+  COMPASS,
+  type Compass,
 } from "../../packages/hex-wfc/src";
 
 export interface GeneratorPanelHost {
@@ -276,11 +280,16 @@ export class GeneratorPanel {
       });
     });
 
-    const sources = sourceMapsOf(model);
+    const combo = combinedSourcesOf(model);
+    const isBlend = combo.kind === "blend";
+    const sources = combo.names;
     const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    sourceRow.createSpan({ text: "From", cls: "duckmage-map-origin-label" });
+    sourceRow.createSpan({ text: isBlend ? "Blend of" : "From", cls: "duckmage-map-origin-label" });
     sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No region recorded", cls: "duckmage-wfc-source" });
-    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these regions, keeping the settings below" } });
+    const relearnBtn = sourceRow.createEl("button", {
+      text: isBlend ? "Re-blend" : "Re-learn",
+      attr: { title: isBlend ? "Blend again from these generators' current files, keeping the settings below" : "Learn again from these regions, keeping the settings below" },
+    });
     relearnBtn.disabled = !sources.length;
     relearnBtn.addEventListener("click", () => {
       relearnBtn.disabled = true;
@@ -290,43 +299,73 @@ export class GeneratorPanel {
           relearnBtn.disabled = false;
           return;
         }
-        new Notice(`Re-learned "${model.name}" from ${sources.join(" + ")}.`);
+        new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.join(" + ")}.`);
         this.host.rerender();
       });
     });
     const openBtn = sourceRow.createEl("button", { text: "Open file" });
     openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
 
-    // A combined generator: how much each region counts. The sliders always
-    // add up to 100%; letting go of one re-learns with the new mix.
+    // A combined generator (regions learned together, or a blend of
+    // generators): how much each source counts, and which side of the map
+    // it leans toward. The sliders always add up to 100%; letting go of one,
+    // or picking a direction, re-makes the generator with the new mix.
     if (sources.length > 1) {
       const box = el.createDiv({ cls: "duckmage-wfc-influence" });
-      box.createEl("label", { text: "Region influence", cls: "duckmage-map-field-label" });
+      box.createEl("label", { text: isBlend ? "Blend" : "Region influence", cls: "duckmage-map-field-label" });
       const stored = sourceInfluenceOf(model);
-      let weights = toPercents(stored ?? regionSizes(this.plugin, sources));
-      const rows = sources.map((name) => {
+      let weights = toPercents(stored ?? (isBlend ? sources.map(() => 1) : regionSizes(this.plugin, sources)));
+      let dirs: Compass[] = sourceDirectionsOf(model) ?? sources.map((): Compass => "C");
+      const arrows: Record<Compass, string> = { NW: "↖", N: "↑", NE: "↗", W: "←", C: "•", E: "→", SW: "↙", S: "↓", SE: "↘" };
+      const names: Record<Compass, string> = {
+        NW: "north-west", N: "north", NE: "north-east", W: "west", C: "everywhere", E: "east", SW: "south-west", S: "south", SE: "south-east",
+      };
+      const rows = sources.map((name, i) => {
         const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
         row.createSpan({ text: name, cls: "duckmage-wfc-influence-name", attr: { title: name } });
         const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${name} influence` } });
         const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
-        return { slider, value };
+        // Compass: which side of the map this source leans toward.
+        const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${name} direction` } });
+        const points = COMPASS.map((d) => {
+          const b = compass.createEl("button", {
+            text: arrows[d],
+            cls: "duckmage-wfc-compass-point",
+            attr: { title: d === "C" ? `${name}: everywhere (no direction)` : `${name}: lean ${names[d]}`, "aria-label": names[d] },
+          });
+          b.addEventListener("click", () => {
+            if (dirs[i] === d) return;
+            dirs = dirs.map((x, j) => (j === i ? d : x));
+            showDirs();
+            // A direction alone keeps a by-size mix by size.
+            remake(stored || isBlend ? weights : undefined, dirs);
+          });
+          return { d, b };
+        });
+        return { slider, value, points };
       });
       const showWeights = () =>
         rows.forEach((r, i) => {
           r.slider.value = String(weights[i]);
           r.value.setText(`${weights[i]}%`);
         });
+      const showDirs = () => rows.forEach((r, i) => r.points.forEach((p) => p.b.toggleClass("is-active", p.d === dirs[i])));
       showWeights();
+      showDirs();
       const note = box.createEl("p", {
-        text: stored
-          ? "Each region's share of what the generator learns."
-          : "Set by each region's size (painted hexes). Move a slider to choose your own mix.",
+        text: (stored || isBlend
+          ? `Each ${isBlend ? "generator" : "region"}'s share of the mix.`
+          : "Set by each region's size (painted hexes). Move a slider to choose your own mix.")
+          + " The arrows set which side of the map each one leans toward (• = everywhere); Directional bias sets how sharp the change is.",
         cls: "duckmage-map-origin-desc",
       });
-      const relearnWith = (next: number[] | null) => {
-        note.setText("Re-learning…");
-        for (const r of rows) r.slider.disabled = true;
-        void relearnGenerator(this.plugin, g, next).then((res) => {
+      const remake = (next: number[] | null | undefined, nextDirs: Compass[]) => {
+        note.setText(isBlend ? "Blending…" : "Re-learning…");
+        for (const r of rows) {
+          r.slider.disabled = true;
+          for (const p of r.points) p.b.disabled = true;
+        }
+        void relearnGenerator(this.plugin, g, next, nextDirs).then((res) => {
           if ("error" in res) new Notice(res.error);
           this.host.rerender();
         });
@@ -337,19 +376,19 @@ export class GeneratorPanel {
           weights = rebalance(weights, i, Number(r.slider.value));
           showWeights();
         });
-        r.slider.addEventListener("change", () => relearnWith(weights));
-        // Scroll to nudge by 5%; re-learn once the wheel stops.
+        r.slider.addEventListener("change", () => remake(weights, dirs));
+        // Scroll to nudge by 5%; re-make once the wheel stops.
         r.slider.addEventListener("wheel", (e) => {
           e.preventDefault();
           weights = rebalance(weights, i, wheelValue(weights[i], e.deltaY, { min: 0, max: 100, step: 5 }));
           showWeights();
           if (wheelTimer !== null) window.clearTimeout(wheelTimer);
-          wheelTimer = window.setTimeout(() => relearnWith(weights), 500);
+          wheelTimer = window.setTimeout(() => remake(weights, dirs), 500);
         }, { passive: false });
       });
-      if (stored) {
+      if (stored && !isBlend) {
         const bySize = box.createEl("button", { text: "Back to region size", attr: { title: "Let each region count by how many hexes it has painted" } });
-        bySize.addEventListener("click", () => relearnWith(null));
+        bySize.addEventListener("click", () => remake(null, dirs));
       }
     }
 

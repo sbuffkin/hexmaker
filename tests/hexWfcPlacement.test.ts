@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import {
   cellKey,
+  compassLayout,
   decodeSetting,
   encodeSetting,
   hexDistance,
@@ -10,6 +11,7 @@ import {
   layoutValue,
   learnModel,
   measureNear,
+  mergeModels,
   modelToMarkdown,
   mulberry32,
   parseCellKey,
@@ -246,5 +248,41 @@ describe("learning from an example", () => {
     expect(m.terrains[0].layout).toHaveLength(25);
     const small = learnModel(new Map([...example].filter(([k]) => parseCellKey(k)![0] < 12)), { name: "s", orientation: "flat" });
     expect(small.terrains[0].layout).toHaveLength(9);
+  });
+});
+
+describe("blending generators toward compass points", () => {
+  const biome = (name: string, own: string): HexWfcModel => ({
+    name,
+    meta: {},
+    exampleHexes: 100,
+    terrains: [{ name: "grass", weight: 50 }, { name: own, weight: 50, shape: "blob", patch: 0.05, near: { terrain: "grass", distance: 3 } }],
+    adjacency: [{ a: "grass", b: "grass", weight: 5 }, { a: "grass", b: own, weight: 2 }, { a: own, b: own, weight: 5 }],
+  });
+  const valley = biome("valley", "marsh"), forest = biome("forest", "forest heavy");
+
+  it("compass layouts average 1 and lean the right way", () => {
+    const east = compassLayout("E");
+    expect(east.reduce((a, b) => a + b, 0) / 25).toBeCloseTo(1, 1);
+    expect(east[4]).toBeGreaterThan(east[0] * 5); // R1C5 vs R1C1
+    expect(compassLayout("C").every((v) => v === 1)).toBe(true);
+  });
+
+  it("puts each source's own terrain on its side, and keeps near rules", () => {
+    const m = mergeModels([valley, forest], "v-to-f", {}, [50, 50], ["W", "E"]);
+    expect(m.settings?.directionalBias).toBeGreaterThanOrEqual(1);
+    expect(m.terrains.find((t) => t.name === "marsh")?.near).toEqual({ terrain: "grass", distance: 3 });
+    let marshWest = 0, marshAll = 0, forestEast = 0, forestAll = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const r = solve(m, { cols: 30, rows: 18, ...flat, seed });
+      if (!r.ok) continue;
+      for (const [k, t] of r.cells) {
+        const x = parseCellKey(k)![0];
+        if (t === "marsh") { marshAll++; if (x < 15) marshWest++; }
+        if (t === "forest heavy") { forestAll++; if (x >= 15) forestEast++; }
+      }
+    }
+    expect(marshWest / Math.max(1, marshAll)).toBeGreaterThan(0.75);
+    expect(forestEast / Math.max(1, forestAll)).toBeGreaterThan(0.75);
   });
 });

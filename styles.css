@@ -5508,7 +5508,7 @@ button.duckmage-wfc-library-tab.is-active {
 
 .duckmage-wfc-influence-row {
     display: grid;
-    grid-template-columns: minmax(6em, 10em) 1fr 3.5em;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em auto;
     align-items: center;
     gap: 0.6em;
     margin: 0.2em 0;
@@ -5527,6 +5527,31 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-wfc-influence-value {
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* Which side of the map a blended source leans toward: a 3×3 compass. */
+.duckmage-wfc-compass {
+    display: grid;
+    grid-template-columns: repeat(3, 1.4em);
+    grid-template-rows: repeat(3, 1.4em);
+    gap: 1px;
+}
+
+.duckmage-wfc-compass-point {
+    width: 1.4em;
+    height: 1.4em;
+    min-width: 0;
+    padding: 0;
+    font-size: 0.75em;
+    line-height: 1;
+    box-shadow: none;
+    color: var(--text-muted);
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-compass-point.is-active {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
 }
 
 .duckmage-wfc-preset-size {
