@@ -1,12 +1,13 @@
 /**
  * The generator page's file list: a Generators tab (load one, or tick several
- * to open, re-learn or delete them) and a Regions tab (tick one or more maps
+ * to open, re-learn, blend or delete them) and a Regions tab (tick one or more maps
  * and learn a generator from them, combined when there are several).
  */
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -15,6 +16,8 @@ export interface LibraryHost {
   selectedPath(): string;
   /** Show this generator below the list. */
   load(g: GeneratorFile): void;
+  /** Show an unsaved generator (a new blend) below the list. */
+  loadDraft(model: HexWfcModel): void;
   /** Files changed (learned, re-learned, deleted): reload the page. */
   changed(selectPath?: string): void;
 }
@@ -121,9 +124,24 @@ export class GeneratorLibrary {
     actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick generators to act on them", cls: "duckmage-map-origin-desc" });
     const open = actions.createEl("button", { text: "Open file" });
     const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the maps they came from, keeping their settings" } });
+    const blend = actions.createEl("button", {
+      text: selected.length > 1 ? `Blend (${selected.length})` : "Blend",
+      attr: { title: "Try a blend of these, each leaning toward its own side of the map: the border country between them. It isn't saved until you choose to." },
+    });
     const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
     for (const b of [open, relearn, del]) b.disabled = !selected.length;
-    relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length);
+    relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length || blendSourcesOf(g.model).length);
+    blend.disabled = selected.length < 2;
+    blend.addEventListener("click", () => {
+      const r = blendGenerators(this.plugin, selected);
+      if ("error" in r) {
+        new Notice(r.error);
+        return;
+      }
+      checked.clear();
+      redraw();
+      this.host.loadDraft(r.model);
+    });
     open.addEventListener("click", () => {
       for (const g of selected) void this.app.workspace.getLeaf("tab").openFile(g.file);
     });

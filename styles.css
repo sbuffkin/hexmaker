@@ -5766,8 +5766,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-wfc-terrain-row {
     display: grid;
-    /* Terrain, Mix, Min, Max, Example, Map */
-    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em;
+    /* Terrain, Mix, Min, Max, Near, Example, Map */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em minmax(6em, 1fr) 3.5em 5.5em;
     align-items: center;
     gap: 0.5em;
 }
@@ -6083,7 +6083,7 @@ button.duckmage-wfc-library-tab.is-active {
 
 .duckmage-wfc-influence-row {
     display: grid;
-    grid-template-columns: minmax(6em, 10em) 1fr 3.5em;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em auto;
     align-items: center;
     gap: 0.6em;
     margin: 0.2em 0;
@@ -6102,6 +6102,31 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-wfc-influence-value {
     text-align: right;
     font-variant-numeric: tabular-nums;
+}
+
+/* Which side of the map a blended source leans toward: a 3×3 compass. */
+.duckmage-wfc-compass {
+    display: grid;
+    grid-template-columns: repeat(3, 1.4em);
+    grid-template-rows: repeat(3, 1.4em);
+    gap: 1px;
+}
+
+.duckmage-wfc-compass-point {
+    width: 1.4em;
+    height: 1.4em;
+    min-width: 0;
+    padding: 0;
+    font-size: 0.75em;
+    line-height: 1;
+    box-shadow: none;
+    color: var(--text-muted);
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-compass-point.is-active {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
 }
 
 .duckmage-wfc-preset-size {
@@ -6307,6 +6332,29 @@ button.duckmage-wfc-library-tab.is-active {
     opacity: 0.9;
 }
 
+/* Hex flower: past the edge with no region yet; click to walk into new land. */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new {
+    opacity: 0.45;
+    cursor: pointer;
+    outline: 1px dashed var(--interactive-accent);
+    outline-offset: -2px;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new::after {
+    content: "+";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--interactive-accent);
+    font-weight: bold;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new:hover {
+    opacity: 0.9;
+}
+
 /* "Go to region?" box. */
 .duckmage-region-nav-preview {
     display: block;
@@ -6401,4 +6449,8 @@ button.duckmage-wfc-library-tab.is-active {
     align-items: center;
     gap: 0.4em;
     width: 240px;
+/* Terrain mix: the Near rule field ("volcano 3"). */
+.duckmage-wfc-near {
+    width: 100%;
+    min-width: 0;
 }

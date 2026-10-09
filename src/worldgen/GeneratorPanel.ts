@@ -21,8 +21,12 @@ import {
   relearnGenerator,
   regionSizes,
   sourceInfluenceOf,
+  combinedSourcesOf,
+  sourceDirectionsOf,
   setGeneratorPalette,
   toPathChains,
+  remakeBlend,
+  saveGeneratorModel,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
@@ -30,7 +34,7 @@ import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
 import { SIDES, type Side } from "./world";
-import { generateConnected, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { sizePresets } from "./sizePresets";
@@ -46,19 +50,33 @@ import {
   type PathTweak,
   type PathTypeTweak,
   type PathFeature,
+  type NearRule,
   effectivePathTweaks,
+  edgeSide,
+  parseNear,
   type RouteStat,
   randomSeed,
   SYMMETRIES,
   type GeneratorSettings,
   type Symmetry,
   type CountRange,
+  COMPASS,
+  type Compass,
+  modelToMarkdown,
+  type HexWfcModel,
 } from "../../packages/hex-wfc/src";
+import type { TFile } from "obsidian";
 
 export interface GeneratorPanelHost {
   /** Re-render the whole page (e.g. after learning a new generator). */
   rerender(): void;
 }
+
+/** A generator shown on the page: a file, or an unsaved draft (file null). */
+type ShownGenerator = Omit<GeneratorFile, "file"> & { file: TFile | null };
+
+/** selectedPath while the unsaved draft is shown. */
+const DRAFT_PATH = "\u0000draft";
 
 const SYMMETRY_LABELS: Record<Symmetry, string> = {
   none: "None",
@@ -75,6 +93,8 @@ export class GeneratorPanel {
   static seedLocked = false;
   /** Generate the new map as a neighbouring region of an existing one. */
   static connect: { anchor: string; side: Side } | null = null;
+  /** When connected: blend toward the neighbours' terrain (see blendFromNeighbours). */
+  static leanToNeighbours = true;
   /** Titles of the setting sections folded away. */
   static collapsed = new Set<string>();
   /** Path types whose routes are shown (groups start folded). */
@@ -85,10 +105,18 @@ export class GeneratorPanel {
    * saved map, even if this version would generate a different one.
    */
   static loadedSave: GeneratorSave | null = null;
+  /**
+   * A generator that only exists on this page (a new blend) until saved.
+   * Settings, sliders and directions change it in memory; Save writes it to
+   * the generators folder.
+   */
+  static draft: HexWfcModel | null = null;
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
   private previewTimer: number | null = null;
+  /** Every generator file, once listed (neighbour regions blend with the one they were made from). */
+  private generators: GeneratorFile[] = [];
 
   constructor(
     private app: App,
@@ -138,7 +166,10 @@ export class GeneratorPanel {
     libraryEl.createEl("p", { text: "Loading generators…", cls: "duckmage-map-origin-desc" });
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
-    const current = () => generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
+    const current = (): ShownGenerator | undefined =>
+      GeneratorPanel.selectedPath === DRAFT_PATH
+        ? GeneratorPanel.draft ? { file: null, model: GeneratorPanel.draft, warnings: [] } : undefined
+        : generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
 
     const show = () => {
       body.empty();
@@ -170,6 +201,7 @@ export class GeneratorPanel {
         selected: g.file.path === GeneratorPanel.selectedPath,
       }));
       const hiddenBySpace = found.length - generators.length;
+      this.generators = found;
       // Keep the chosen generator; otherwise one learned from the current
       // region, then the first one that fits the palette.
       if (!current()) {
@@ -183,6 +215,11 @@ export class GeneratorPanel {
       new GeneratorLibrary(this.app, this.plugin, generators, {
         selectedPath: () => GeneratorPanel.selectedPath,
         load: choose,
+        loadDraft: (draft) => {
+          GeneratorPanel.draft = draft;
+          GeneratorPanel.selectedPath = DRAFT_PATH;
+          show();
+        },
         changed: (selectPath) => {
           if (selectPath) GeneratorPanel.selectedPath = selectPath;
           this.host.rerender();
@@ -200,8 +237,11 @@ export class GeneratorPanel {
 
   // ── One generator ────────────────────────────────────────────────────────
 
-  private renderGenerator(main: HTMLElement, side: HTMLElement, g: GeneratorFile): void {
+  private renderGenerator(main: HTMLElement, side: HTMLElement, g: ShownGenerator): void {
     const { model } = g;
+    /** The generator's file; null for an unsaved draft, which lives only in memory. */
+    const file = g.file;
+    const saved = file ? { ...g, file } : null;
     // Controls go into the current section; each section() call starts a new one.
     let el = main;
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
@@ -220,7 +260,7 @@ export class GeneratorPanel {
     // Current settings, kept in sync with the file.
     const s = () => generatorSettings(model);
     // A just-loaded save's settings win over a possibly stale read of the file.
-    const isThisGenerator = (sv: GeneratorSave) => sv.generatorPath === g.file.path || sv.generatorName === model.name;
+    const isThisGenerator = (sv: GeneratorSave) => (!!file && sv.generatorPath === file.path) || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
     /** The last settings write, for anything that must re-read the file after it. */
     let lastWrite: Promise<void> = Promise.resolve();
@@ -232,15 +272,42 @@ export class GeneratorPanel {
         else next[k] = v;
       }
       model.settings = next;
-      lastWrite = saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
-        new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
-      });
+      if (file)
+        lastWrite = saveGeneratorSettings(this.plugin, file, patch).catch((e: unknown) => {
+          new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
+        });
       schedulePreview();
     };
 
     // Generator settings: what's saved on the generator itself (its name,
     // palette and where it came from), as opposed to how it generates.
     el = this.section(main, "Generator settings");
+    if (!file) {
+      const draftRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-draft" });
+      draftRow.createSpan({
+        text: "Not saved: this blend lives only on this page. Try it out, then save it to keep it in your generator list.",
+        cls: "duckmage-map-origin-desc",
+      });
+      const keep = draftRow.createEl("button", { text: "Save generator", cls: "mod-cta" });
+      keep.addEventListener("click", () => {
+        keep.disabled = true;
+        void saveGeneratorModel(this.plugin, model).then((r) => {
+          GeneratorPanel.draft = null;
+          GeneratorPanel.selectedPath = r.file.path;
+          new Notice(`Saved generator "${r.model.name}".`);
+          this.host.rerender();
+        }, (e: unknown) => {
+          new Notice(`Couldn't save the generator: ${e instanceof Error ? e.message : String(e)}`);
+          keep.disabled = false;
+        });
+      });
+      const discard = draftRow.createEl("button", { text: "Discard" });
+      discard.addEventListener("click", () => {
+        GeneratorPanel.draft = null;
+        GeneratorPanel.selectedPath = "";
+        this.host.rerender();
+      });
+    }
     const nameRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
     const nameInput = nameRow.createEl("input", { type: "text", value: model.name, attr: { placeholder: "Generator name" } });
@@ -252,7 +319,13 @@ export class GeneratorPanel {
     const rename = () => {
       if (renameBtn.disabled) return;
       renameBtn.disabled = true;
-      void renameGenerator(this.plugin, g, nameInput.value).then((r) => {
+      if (!saved) {
+        // A draft just takes the name; it's tidied into a file name on save.
+        model.name = nameInput.value.trim();
+        this.host.rerender();
+        return;
+      }
+      void renameGenerator(this.plugin, saved, nameInput.value).then((r) => {
         if ("error" in r) {
           new Notice(r.error);
           renameBtn.disabled = false;
@@ -282,64 +355,103 @@ export class GeneratorPanel {
     ownPalette.value = learnedPalette;
     ownPalette.addEventListener("change", () => {
       model.meta.palette = ownPalette.value;
-      void setGeneratorPalette(this.plugin, g.file, ownPalette.value).then(() => {
+      void (file ? setGeneratorPalette(this.plugin, file, ownPalette.value) : Promise.resolve()).then(() => {
         GeneratorPanel.paletteName = ownPalette.value;
         this.host.rerender();
       });
     });
 
-    const sources = sourceMapsOf(model);
+    const combo = combinedSourcesOf(model);
+    const isBlend = combo.kind === "blend";
+    const sources = combo.names;
     const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    sourceRow.createSpan({ text: "From", cls: "duckmage-map-origin-label" });
+    sourceRow.createSpan({ text: isBlend ? "Blend of" : "From", cls: "duckmage-map-origin-label" });
     sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No map recorded", cls: "duckmage-wfc-source" });
-    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these maps, keeping the settings below" } });
+    const relearnBtn = sourceRow.createEl("button", {
+      text: isBlend ? "Re-blend" : "Re-learn",
+      attr: { title: isBlend ? "Blend again from these generators' current files, keeping the settings below" : "Learn again from these maps, keeping the settings below" },
+    });
     relearnBtn.disabled = !sources.length;
     relearnBtn.addEventListener("click", () => {
       relearnBtn.disabled = true;
-      void relearnGenerator(this.plugin, g).then((r) => {
+      void (saved ? relearnGenerator(this.plugin, saved) : remakeBlend(this.plugin, model)).then((r) => {
         if ("error" in r) {
           new Notice(r.error);
           relearnBtn.disabled = false;
           return;
         }
-        new Notice(`Re-learned "${model.name}" from ${sources.join(" + ")}.`);
+        if (!saved) GeneratorPanel.draft = r.model;
+        new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.join(" + ")}.`);
         this.host.rerender();
       });
     });
-    const openBtn = sourceRow.createEl("button", { text: "Open file" });
-    openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
+    if (file) {
+      const openBtn = sourceRow.createEl("button", { text: "Open file" });
+      openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(file));
+    }
 
-    // A combined generator: how much each region counts. The sliders always
-    // add up to 100%; letting go of one re-learns with the new mix.
+    // A combined generator (regions learned together, or a blend of
+    // generators): how much each source counts, and which side of the map
+    // it leans toward. The sliders always add up to 100%; letting go of one,
+    // or picking a direction, re-makes the generator with the new mix.
     if (sources.length > 1) {
       const box = el.createDiv({ cls: "duckmage-wfc-influence" });
-      box.createEl("label", { text: "Map influence", cls: "duckmage-map-field-label" });
+      box.createEl("label", { text: isBlend ? "Blend" : "Map influence", cls: "duckmage-map-field-label" });
       const stored = sourceInfluenceOf(model);
-      let weights = toPercents(stored ?? regionSizes(this.plugin, sources));
-      const rows = sources.map((name) => {
+      let weights = toPercents(stored ?? (isBlend ? sources.map(() => 1) : regionSizes(this.plugin, sources)));
+      let dirs: Compass[] = sourceDirectionsOf(model) ?? sources.map((): Compass => "C");
+      const arrows: Record<Compass, string> = { NW: "↖", N: "↑", NE: "↗", W: "←", C: "•", E: "→", SW: "↙", S: "↓", SE: "↘" };
+      const names: Record<Compass, string> = {
+        NW: "north-west", N: "north", NE: "north-east", W: "west", C: "everywhere", E: "east", SW: "south-west", S: "south", SE: "south-east",
+      };
+      const rows = sources.map((name, i) => {
         const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
         row.createSpan({ text: name, cls: "duckmage-wfc-influence-name", attr: { title: name } });
         const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${name} influence` } });
         const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
-        return { slider, value };
+        // Compass: which side of the map this source leans toward.
+        const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${name} direction` } });
+        const points = COMPASS.map((d) => {
+          const b = compass.createEl("button", {
+            text: arrows[d],
+            cls: "duckmage-wfc-compass-point",
+            attr: { title: d === "C" ? `${name}: everywhere (no direction)` : `${name}: lean ${names[d]}`, "aria-label": names[d] },
+          });
+          b.addEventListener("click", () => {
+            if (dirs[i] === d) return;
+            dirs = dirs.map((x, j) => (j === i ? d : x));
+            showDirs();
+            // A direction alone keeps a by-size mix by size.
+            remake(stored || isBlend ? weights : undefined, dirs);
+          });
+          return { d, b };
+        });
+        return { slider, value, points };
       });
       const showWeights = () =>
         rows.forEach((r, i) => {
           r.slider.value = String(weights[i]);
           r.value.setText(`${weights[i]}%`);
         });
+      const showDirs = () => rows.forEach((r, i) => r.points.forEach((p) => p.b.toggleClass("is-active", p.d === dirs[i])));
       showWeights();
+      showDirs();
       const note = box.createEl("p", {
-        text: stored
-          ? "Each map's share of what the generator learns."
-          : "Set by each map's size (painted hexes). Move a slider to choose your own mix.",
+        text: (stored || isBlend
+          ? `Each ${isBlend ? "generator" : "map"}'s share of the mix.`
+          : "Set by each map's size (painted hexes). Move a slider to choose your own mix.")
+          + " The arrows set which side of the map each one leans toward (• = everywhere); Directional bias sets how sharp the change is.",
         cls: "duckmage-map-origin-desc",
       });
-      const relearnWith = (next: number[] | null) => {
-        note.setText("Re-learning…");
-        for (const r of rows) r.slider.disabled = true;
-        void relearnGenerator(this.plugin, g, next).then((res) => {
+      const remake = (next: number[] | null | undefined, nextDirs: Compass[]) => {
+        note.setText(isBlend ? "Blending…" : "Re-learning…");
+        for (const r of rows) {
+          r.slider.disabled = true;
+          for (const p of r.points) p.b.disabled = true;
+        }
+        void (saved ? relearnGenerator(this.plugin, saved, next, nextDirs) : remakeBlend(this.plugin, model, next, nextDirs)).then((res) => {
           if ("error" in res) new Notice(res.error);
+          else if (!saved) GeneratorPanel.draft = res.model;
           this.host.rerender();
         });
       };
@@ -349,19 +461,19 @@ export class GeneratorPanel {
           weights = rebalance(weights, i, Number(r.slider.value));
           showWeights();
         });
-        r.slider.addEventListener("change", () => relearnWith(weights));
-        // Scroll to nudge by 5%; re-learn once the wheel stops.
+        r.slider.addEventListener("change", () => remake(weights, dirs));
+        // Scroll to nudge by 5%; re-make once the wheel stops.
         r.slider.addEventListener("wheel", (e) => {
           e.preventDefault();
           weights = rebalance(weights, i, wheelValue(weights[i], e.deltaY, { min: 0, max: 100, step: 5 }));
           showWeights();
           if (wheelTimer !== null) window.clearTimeout(wheelTimer);
-          wheelTimer = window.setTimeout(() => relearnWith(weights), 500);
+          wheelTimer = window.setTimeout(() => remake(weights, dirs), 500);
         }, { passive: false });
       });
-      if (stored) {
+      if (stored && !isBlend) {
         const bySize = box.createEl("button", { text: "Back to map size", attr: { title: "Let each map count by how many hexes it has painted" } });
-        bySize.addEventListener("click", () => relearnWith(null));
+        bySize.addEventListener("click", () => remake(null, dirs));
       }
     }
 
@@ -370,7 +482,7 @@ export class GeneratorPanel {
       model.exampleHexes ? `learned from ${model.exampleHexes} hexes` : "",
       model.meta.created ? `created ${model.meta.created}` : "",
       model.meta[VERSION_KEY] ? `v${model.meta[VERSION_KEY]}` : "",
-      g.file.path,
+      file?.path ?? "not saved",
     ].filter(Boolean);
     el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -486,6 +598,21 @@ export class GeneratorPanel {
     anchorSelect.addEventListener("change", setConnect);
     sideSelect.addEventListener("change", setConnect);
     if (connected) paletteSelect.disabled = true;
+    // Blend toward the neighbours, so the region is the border country
+    // between this generator and what's next door.
+    let genModel = model;
+    if (connected) {
+      const lean = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
+      const box = lean.createEl("input", { type: "checkbox" });
+      box.checked = GeneratorPanel.leanToNeighbours;
+      lean.createSpan({ text: "Lean toward neighbours" });
+      lean.setAttr("title", `Blend in what the neighbouring regions look like (${NEIGHBOUR_SHARE}% between them), each toward its own side. Directional bias sets how sharp the change is.`);
+      box.addEventListener("change", () => {
+        GeneratorPanel.leanToNeighbours = box.checked;
+        this.host.rerender();
+      });
+      if (GeneratorPanel.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected), NEIGHBOUR_SHARE, this.generators);
+    }
 
     const showLock = () => {
       const locked = GeneratorPanel.seedLocked;
@@ -614,7 +741,7 @@ export class GeneratorPanel {
       this.previewRows = grid.rows;
       this.seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const r = connected ? generateConnected(this.plugin, model, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
+      const r = connected ? generateConnected(this.plugin, genModel, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
@@ -678,7 +805,7 @@ export class GeneratorPanel {
             format: SAVE_FORMAT,
             created: new Date().toISOString().slice(0, 10),
             generatorName: model.name,
-            generatorPath: g.file.path,
+            generatorPath: g.file?.path ?? "",
             palette: GeneratorPanel.paletteName,
             seed: this.seed,
             cols: grid.cols,
@@ -688,7 +815,8 @@ export class GeneratorPanel {
             settings: { ...(model.settings ?? {}) },
             cells: snapshot.cells,
             paths: snapshot.paths,
-            generatorMarkdown: await this.app.vault.read(g.file),
+            // A draft has no file; the save keeps its own copy either way.
+            generatorMarkdown: g.file ? await this.app.vault.read(g.file) : modelToMarkdown(model),
           };
           const file = await writeSave(this.plugin, saved);
           GeneratorPanel.loadedSave = { ...saved, name: file.basename };
@@ -752,7 +880,7 @@ export class GeneratorPanel {
           return;
         }
       }
-      const generated = connected ? generateConnected(this.plugin, model, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
+      const generated = connected ? generateConnected(this.plugin, genModel, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
       if (!generated.ok) {
         new Notice(`Couldn't generate: ${generated.message}`);
         return;
@@ -786,6 +914,14 @@ export class GeneratorPanel {
           }
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           if (connected) {
+            // Record its biome (and what it was blended with) for later neighbours.
+            const around = Object.values(regionNeighbourNames(this.plugin, connected))
+              .map((n) => regionBiome(this.plugin, n, this.generators)?.name)
+              .filter((n): n is string => !!n && n !== model.name);
+            const made = this.plugin.getMap(result.name);
+            if (made) made.biome = GeneratorPanel.leanToNeighbours && around.length
+              ? { generator: model.name, from: [...new Set(around)] }
+              : { generator: model.name };
             await placeNewRegion(this.plugin, result.name, connected);
             // Only clear the choice if it's still the one used; a newer one stays.
             if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
@@ -883,7 +1019,7 @@ export class GeneratorPanel {
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
     el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Near keeps a terrain within some hexes of another, such as lava fields near a volcano. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
     const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
@@ -893,6 +1029,7 @@ export class GeneratorPanel {
       ["Mix", ""],
       ["Min", "Fewest separate patches"],
       ["Max", "Most separate patches"],
+      ["Near", "Keep this terrain within some hexes of another, e.g. \"volcano 3\" (how hard it steers follows Clumping). Blank = the generator's own rule; \"off\" = none"],
       ["Example", "Share of the map this generator was learned from"],
       ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
     ];
@@ -900,6 +1037,8 @@ export class GeneratorPanel {
     const example = exampleShares(model);
     const mix = { ...s().mix };
     const counts: Record<string, CountRange> = Object.fromEntries(Object.entries(s().counts).map(([k, r]) => [k, { ...r }]));
+    const near: Record<string, NearRule | null> = { ...s().near };
+    const terrainNames = new Set(model.terrains.map((t) => t.name));
     for (const t of model.terrains) {
       const row = table.createDiv({ cls: "duckmage-wfc-terrain-row" });
       // Guaranteed line features are laid down before the solver runs, so
@@ -939,6 +1078,29 @@ export class GeneratorPanel {
           save({ counts: Object.keys(counts).length ? { ...counts } : undefined });
         });
       }
+      // Near rule: blank = the generator's own (shown as the placeholder).
+      const nearInput = row.createEl("input", {
+        type: "text",
+        cls: "duckmage-wfc-near",
+        attr: { placeholder: t.near ? `${t.near.terrain} ${t.near.distance}` : "–", "aria-label": `${t.name} near rule` },
+      });
+      const own = near[t.name];
+      nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
+      nearInput.addEventListener("change", () => {
+        const raw = nearInput.value.trim();
+        if (!raw) delete near[t.name];
+        else if (/^(off|none)$/i.test(raw)) near[t.name] = null;
+        else {
+          const rule = parseNear(raw);
+          if (!rule || !terrainNames.has(rule.terrain) || rule.terrain === t.name) {
+            new Notice(`Write a terrain from this generator and a distance, e.g. "${model.terrains.find((x) => x.name !== t.name)?.name ?? "volcano"} 3", or "off".`);
+            nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
+            return;
+          }
+          near[t.name] = rule;
+        }
+        save({ near: Object.keys(near).length ? { ...near } : undefined });
+      });
       row.createSpan({ text: formatShare(example.get(t.name) ?? 0), cls: "duckmage-wfc-share" });
       const mapCell = row.createSpan({ cls: "duckmage-wfc-share" });
       shareCells.set(t.name, {
@@ -1057,21 +1219,22 @@ export class GeneratorPanel {
           cls: "duckmage-wfc-toggle duckmage-wfc-path-avoid",
           attr: {
             title: impassableList.length
-              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows). Set the list under Guarantees.`
-              : "No terrain is marked impassable yet (Guarantees, Impassable terrain).",
+              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows), and keep off the map border except at their ends. Set the list under Guarantees.`
+              : "Paths keep off the map border except at their ends. No terrain is marked impassable yet (Guarantees, Impassable terrain).",
           },
         });
         const avoidBox = avoid.createEl("input", { type: "checkbox" });
         avoidBox.checked = !types[type]?.crossImpassable;
-        avoidBox.disabled = !impassableList.length;
-        avoid.createSpan({ text: "Avoid impassable terrain" });
+
+        avoid.createSpan({ text: "Avoid impassable terrain and the map border" });
         avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
 
         const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
         const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];
         for (const f of [...routes].sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)))) {
           const route = pathRouteKey(f);
-          const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
+          const sides = { N: "north edge", E: "east edge", S: "south edge", W: "west edge" } as const;
+          const end = (e: string) => (e === "edge" ? "map edge" : edgeSide(e) ? sides[edgeSide(e)!] : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
           const tw = tweaks[route] ?? {};
           const row = body.createDiv({ cls: "duckmage-wfc-path-row" });
           row.addEventListener("mouseenter", () => {

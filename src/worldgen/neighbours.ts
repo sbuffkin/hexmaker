@@ -1,14 +1,15 @@
 /**
  * Neighbour regions in the vault: reading and saving where maps sit on their
  * shared grid (see world.ts for the rules), the terrain just past a map's
- * edges, and generating a region that carries on from its neighbours.
+ * edges, and generating a region that carries on from its neighbours (its
+ * edge terrain, and optionally its whole character: blendFromNeighbours).
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { MapData } from "../types";
+import type { MapData, RegionBiome } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
-import { generateTerrain, type GridSpec } from "./generators";
-import type { HexWfcModel, SolveResult } from "../../packages/hex-wfc/src";
+import { generateTerrain, readMapTerrain, toPathChains, type GeneratorFile, type GridSpec } from "./generators";
+import { learnModel, mergeModels, type Compass, type HexWfcModel, type SolveResult } from "../../packages/hex-wfc/src";
 import {
   link,
   neighbours,
@@ -207,4 +208,156 @@ export async function placeNewRegion(plugin: HexmakerPlugin, mapName: string, re
     created.staggerOffset = region.stagger;
   }
   await plugin.saveSettings();
+}
+
+/** How much of a blended region its neighbours make up between them (percent). */
+export const NEIGHBOUR_SHARE = 40;
+
+const SIDE_COMPASS: Record<Side, Compass> = { north: "N", east: "E", south: "S", west: "W" };
+
+/**
+ * The generator for a region next to others, blended toward them: each
+ * neighbour's biome (see regionBiome) leans toward its side, the region's own
+ * generator covers the rest (see mergeModels). A valley region with deep
+ * forest to the east comes out as valley turning to forest in the east.
+ * `neighbours` maps a side of the new region to the neighbour there; sides
+ * with nothing to go on are skipped. Returns `own` when none are left.
+ * Pass `generators` so neighbours made from a generator blend with that
+ * generator rather than with what's learned from their painted hexes.
+ */
+export function blendFromNeighbours(
+  plugin: HexmakerPlugin,
+  own: HexWfcModel,
+  neighbours: Partial<Record<Side, string>>,
+  share = NEIGHBOUR_SHARE,
+  generators: GeneratorFile[] = [],
+): HexWfcModel {
+  const models: HexWfcModel[] = [own];
+  const dirs: Compass[] = ["C"];
+  for (const side of SIDES) {
+    const name = neighbours[side];
+    const biome = name ? regionBiome(plugin, name, generators) : null;
+    if (!biome) continue;
+    models.push(biome.model);
+    dirs.push(SIDE_COMPASS[side]);
+  }
+  if (models.length === 1) return own;
+  const each = share / (models.length - 1);
+  return mergeModels(models, own.name, { ...own.meta }, [100 - share, ...models.slice(1).map(() => each)], dirs);
+}
+
+/** The neighbours of a new region by side (see occupiedSides), for blendFromNeighbours. */
+export function regionNeighbourNames(plugin: HexmakerPlugin, region: NewRegion): Partial<Record<Side, string>> {
+  const out: Partial<Record<Side, string>> = {};
+  for (const side of occupiedSides(plugin, region)) out[side] = regionNameAt(plugin, region, side);
+  return out;
+}
+
+/**
+ * What a region is like, for blending with it: the generator it was made
+ * from (MapData.biome, if that generator still exists), otherwise a model
+ * learned from its painted hexes. Null for an unknown or unpainted region.
+ */
+export function regionBiome(
+  plugin: HexmakerPlugin,
+  mapName: string,
+  generators: GeneratorFile[],
+): { name: string; model: HexWfcModel } | null {
+  const map = plugin.getMap(mapName);
+  if (!map) return null;
+  const recorded = map.biome?.generator;
+  const g = recorded ? generators.find((x) => x.model.name === recorded) : undefined;
+  if (g) return { name: g.model.name, model: g.model };
+  const cells = readMapTerrain(plugin, mapName);
+  if (cells.size < 2) return null;
+  return {
+    name: recorded ?? mapName,
+    model: learnModel(cells, { name: mapName, orientation: plugin.settings.hexOrientation, stagger: map.staggerOffset ?? "odd" }),
+  };
+}
+
+/** A region to make by walking off a map's edge (see planWalk). */
+export interface WalkPlan {
+  region: NewRegion;
+  /** The generator to make it with: the chosen biome, blended with its neighbours. */
+  model: HexWfcModel;
+  biome: RegionBiome;
+  /** Neighbouring biomes that differ from the chosen one (it's a transition region). */
+  from: string[];
+}
+
+/**
+ * Plan the region `side` of `fromMap`, to be the biome `chosen`. The new
+ * region always blends with every neighbour it will have (the one walked
+ * from included), each leaning toward its side, and `chosen` leans toward
+ * the far side (or covers everywhere when that side is taken too). So
+ * walking from one biome toward another always passes through at least one
+ * transition region; picking the biome you're already in just carries on.
+ */
+export function planWalk(
+  plugin: HexmakerPlugin,
+  fromMap: string,
+  side: Side,
+  chosen: GeneratorFile,
+  generators: GeneratorFile[],
+): { ok: true; plan: WalkPlan } | { ok: false; reason: string } {
+  const spec = neighbourSpec(plugin, fromMap, side);
+  if (!spec.ok) return spec;
+  const region: NewRegion = {
+    slot: spec.slot, aSlot: spec.aSlot, anchor: fromMap, side,
+    cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName,
+  };
+  const names = regionNeighbourNames(plugin, region);
+  const around: { name: string; model: HexWfcModel; dir: Compass }[] = [];
+  for (const s of SIDES) {
+    const n = names[s];
+    const b = n ? regionBiome(plugin, n, generators) : null;
+    if (b) around.push({ ...b, dir: SIDE_COMPASS[s] });
+  }
+  const own = chosen.model.name;
+  const from = [...new Set(around.map((a) => a.name).filter((n) => n !== own))];
+  if (!from.length) return { ok: true, plan: { region, model: chosen.model, biome: { generator: own }, from } };
+  // Half the chosen biome, half its neighbours between them.
+  const model = mergeModels(
+    [chosen.model, ...around.map((a) => a.model)],
+    own,
+    { ...chosen.model.meta },
+    [50, ...around.map(() => 50 / around.length)],
+    [names[side] ? "C" : SIDE_COMPASS[side], ...around.map((a) => a.dir)],
+  );
+  return { ok: true, plan: { region, model, biome: { generator: own, from }, from } };
+}
+
+/** Generate a planned region (see planWalk), the terrain it would get, without creating it. */
+export function previewWalk(plugin: HexmakerPlugin, plan: WalkPlan, seed: number): ReturnType<typeof generateConnected> {
+  const palette = plugin.getPaletteByName(plan.region.paletteName)?.terrains.map((t) => t.name) ?? [];
+  return generateConnected(plugin, plan.model, palette, plan.region, seed);
+}
+
+/**
+ * Create a planned region (see planWalk): its map, generated terrain and
+ * paths, its slot next to the map walked from, and its biome record.
+ */
+export async function createWalkRegion(
+  plugin: HexmakerPlugin,
+  plan: WalkPlan,
+  rawName: string,
+  seed: number,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ name: string } | { error: string }> {
+  const r = previewWalk(plugin, plan, seed);
+  if (!r.ok) return { error: `Couldn't generate: ${r.message}` };
+  const { region } = plan;
+  const made = await plugin.createNewMap(
+    rawName, region.cols, region.rows, region.paletteName, region.offset.x, region.offset.y, region.stagger, onProgress, r.cells,
+  );
+  if ("error" in made) return made;
+  const map = plugin.getMap(made.name);
+  if (map) {
+    const { chains } = toPathChains(plugin, r.paths, plan.model);
+    if (chains.length) map.pathChains = [...map.pathChains, ...chains];
+    map.biome = { ...plan.biome };
+  }
+  await placeNewRegion(plugin, made.name, region);
+  return made;
 }

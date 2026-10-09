@@ -25,6 +25,9 @@ import { hexNeighbors, directionRing, cellKey, parseCellKey, toCellMap, type Ori
 import {
   adjacencyLookup,
   effectivePathTweaks,
+  layoutSize,
+  layoutValue,
+  nearRules,
   resolveSettings,
   type HexWfcModel,
   type GeneratorSettings,
@@ -40,6 +43,7 @@ import {
   countPatches,
   countsPenalty,
   topUpCounts,
+  enforceNear,
   type GridInfo,
 } from "./post";
 
@@ -218,6 +222,7 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
     const { edges, speckSize } = cleanupStrengths(s);
     total.postChanges += smoothEdges(cells, model, grid, edges, protect, keep, rng);
     total.postChanges += removeSpecks(cells, model, grid, speckSize, protect, keep);
+    total.postChanges += enforceNear(cells, model, grid, nearRules(model, s), protect);
     let penalty = 0;
     if (s.connected && impassable.size) {
       const { changed, stranded } = connectLand(cells, model, grid, impassable, protect);
@@ -240,6 +245,7 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
   if (hasCounts) {
     const protect = new Set<string>([...toCellMap(opts.fixed ?? {}).keys(), ...best.featureCells]);
     total.postChanges += topUpCounts(best.cells, model, grid, s.counts, protect, mulberry32(opts.seed ^ 0x2545f491));
+    total.postChanges += enforceNear(best.cells, model, grid, nearRules(model, s), protect);
     const counted = countPatches(best.cells, grid);
     for (const [t, range] of Object.entries(s.counts)) {
       const n = counted.get(t) ?? 0;
@@ -306,6 +312,9 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
   const scatter = s.scatter;
   const featureSize = s.featureSize;
   const bias = s.directionalBias;
+  // How hard near rules steer while solving: follows Clumping, which is also
+  // about what a hex sits next to (Clumping 3, the default, = 1).
+  const nearPull = Math.max(0.25, s.neighbourInfluence / 3);
   const randomness = Math.min(1, Math.max(0, s.randomness));
   const terrains = [...new Set(model.terrains.map((t) => t.name))];
   const T = terrains.length;
@@ -344,30 +353,20 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
     }
   }
 
-  // Position preferences per hex: directional bias (learned 3×3 layout,
-  // bilinear between bin centres) and edge style (border preference that
-  // fades out over the outer ~15% of the map).
+  // Position preferences per hex: directional bias (the layout grid, 3×3
+  // or 5×5, bilinear between cell centres) and edge style (border
+  // preference that fades out over the outer ~15% of the map).
   let logPos: Float32Array | null = null;
   const ensurePos = () => (logPos ??= new Float32Array(N * T));
-  if (bias > 0 && model.terrains.some((e) => e.layout?.length === 9)) {
+  if (bias > 0 && model.terrains.some((e) => layoutSize(e.layout))) {
     const pos = ensurePos();
-    const centre = [1 / 6, 1 / 2, 5 / 6];
-    const axis = (f: number): [number, number, number] => {
-      if (f <= centre[0]) return [0, 0, 0];
-      if (f >= centre[2]) return [2, 2, 0];
-      const i = f < centre[1] ? 0 : 1;
-      return [i, i + 1, (f - centre[i]) * 3];
-    };
     for (const entry of model.terrains) {
       const lay = entry.layout;
-      if (lay?.length !== 9) continue;
+      if (!lay || !layoutSize(lay)) continue;
       const t = tIndex.get(entry.name)!;
       for (let c = 0; c < N; c++) {
-        const [cx0, cx1, fx] = axis(((c % cols) + 0.5) / cols);
-        const [cy0, cy1, fy] = axis((Math.floor(c / cols) + 0.5) / rows);
-        const top = lay[cy0 * 3 + cx0] * (1 - fx) + lay[cy0 * 3 + cx1] * fx;
-        const bottom = lay[cy1 * 3 + cx0] * (1 - fx) + lay[cy1 * 3 + cx1] * fx;
-        pos[c * T + t] += bias * Math.log(Math.max(0.02, top * (1 - fy) + bottom * fy));
+        const v = layoutValue(lay, ((c % cols) + 0.5) / cols, (Math.floor(c / cols) + 0.5) / rows);
+        pos[c * T + t] += bias * Math.log(Math.max(0.02, v));
       }
     }
   }
@@ -685,6 +684,24 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
     return true;
   };
 
+  // Near rules (lava near a volcano): terrain index -> anchor index and distance.
+  const nearAnchor = new Int32Array(T).fill(-1);
+  const nearDist = new Int32Array(T);
+  for (const [name, rule] of nearRules(model, s)) {
+    const t = tIndex.get(name), a = tIndex.get(rule.terrain);
+    if (t === undefined || a === undefined) continue;
+    nearAnchor[t] = a;
+    nearDist[t] = Math.max(1, Math.round(rule.distance));
+  }
+  /** Would t at c keep its near rule (an anchor hex within reach)? */
+  const nearOk = (c: number, t: number): boolean => nearAnchor[t] < 0 || nearTerrain(c, nearAnchor[t], nearDist[t]);
+  // Growth follows directional bias: below this position score (a layout
+  // density of about a quarter, scaled by the bias) a patch doesn't spread.
+  const growFloor = bias > 0 ? bias * Math.log(0.25) : -Infinity;
+  /** May a growing patch of t take hex c? Position and near rules both say yes. */
+  const growOk = (c: number, t: number): boolean =>
+    c >= 0 && (!logPos || logPos[c * T + t] >= growFloor) && nearOk(c, t);
+
   const growBlob = (seed: number, t: number, rng: () => number) => {
     let budget = growMoves[t];
     const inPatch = new Set<number>([seed]);
@@ -709,14 +726,15 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
       let bi = 0, bs = -Infinity;
       for (let k = 0; k < 3; k++) {
         const i = Math.floor(rng() * frontier.length);
-        const sc = touching(frontier[i]) + rng() + (logPos ? logPos[frontier[i] * T + t] : 0);
+        // Position counts double: patches lean toward where bias wants them.
+        const sc = touching(frontier[i]) + rng() + (logPos ? 2 * logPos[frontier[i] * T + t] : 0);
         if (sc > bs) { bs = sc; bi = i; }
       }
       const n = frontier[bi];
       frontier[bi] = frontier[frontier.length - 1];
       frontier.pop();
       if (inPatch.has(n) || rejected.has(n)) continue;
-      if (tryPlace(n, t)) {
+      if (growOk(n, t) && tryPlace(n, t)) {
         inPatch.add(n);
         budget--;
         addNeighbours(n);
@@ -731,8 +749,9 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
     const width = lineWidth[t];
     // Extra width: the hexes behind-left / behind-right of each step.
     const widen = (c: number, h: number) => {
-      if (width >= 2 && budget > 0 && tryPlace(nbr[c * 6 + ring[(h + 2) % 6]], t)) budget--;
-      if (width >= 3 && budget > 0 && tryPlace(nbr[c * 6 + ring[(h + 4) % 6]], t)) budget--;
+      const side1 = nbr[c * 6 + ring[(h + 2) % 6]], side2 = nbr[c * 6 + ring[(h + 4) % 6]];
+      if (width >= 2 && budget > 0 && growOk(side1, t) && tryPlace(side1, t)) budget--;
+      if (width >= 3 && budget > 0 && growOk(side2, t) && tryPlace(side2, t)) budget--;
     };
     const h0 = Math.floor(rng() * 6);
     widen(seed, h0);
@@ -751,7 +770,7 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
       end.alive = false;
       for (const hh of [h, (h + 1) % 6, (h + 5) % 6]) {
         const n = nbr[end.c * 6 + ring[hh]];
-        if (n >= 0 && tryPlace(n, t)) {
+        if (n >= 0 && growOk(n, t) && tryPlace(n, t)) {
           end.c = n;
           end.h = hh;
           end.alive = true;
@@ -841,6 +860,8 @@ function solveOnce(model: HexWfcModel, opts: SolveOptions, s: Required<Generator
         if (growShape[t] && startsNew) scores[t] /= expectedPatch(t);
         if (startsNew && maxPatches[t] >= 0 && patchCount[t] >= maxPatches[t]) scores[t] = 0;
         if (spacingOf[t] > 1 && scores[t] > 0 && nearTerrain(best, t, spacingOf[t] - 1)) scores[t] = 0;
+        // Near rules: likelier close to the anchor, much less likely away from it.
+        if (nearAnchor[t] >= 0 && scores[t] > 0) scores[t] *= nearOk(best, t) ? 1 + nearPull : Math.exp(-2 * nearPull);
         if (feedback > 0 && scores[t] > 0) {
           const ratio = Math.min(FEEDBACK_CAP, Math.max(1 / FEEDBACK_CAP, (share[t] * decidedCount + 1) / (placed[t] + 1)));
           scores[t] *= Math.pow(ratio, feedback);

@@ -16,6 +16,12 @@ export {
   resolveSettings,
   DEFAULT_SETTINGS,
   LAYOUT_BINS,
+  LAYOUT_BINS_5,
+  layoutSize,
+  layoutValue,
+  layoutTo5,
+  nearRules,
+  type NearRule,
   GROWTH_SHAPES,
   SYMMETRIES,
   type HexWfcModel,
@@ -32,14 +38,15 @@ export {
   effectivePathTweaks,
   pathRouteKey,
 } from "./model";
-export { mergeModels } from "./merge";
-export { learnModel, measurePatches, measureLayout, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
+export { mergeModels, compassLayout, isCompass, COMPASS, type Compass } from "./merge";
+export { learnModel, measurePatches, measureLayout, measureNear, LAYOUT_5_MIN_HEXES, NEAR_THRESHOLDS, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
 export { solve, findViolation, cleanupStrengths, pathsEnabled, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
-export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, type GridInfo } from "./post";
-export { learnPaths, routePaths, type PathInput, type PathOutput, type RouteStat } from "./paths";
+export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, enforceNear, type GridInfo } from "./post";
+export { learnPaths, routePaths, edgeSide, isEdgeAnchor, type PathInput, type PathOutput, type RouteStat } from "./paths";
 export {
   modelToMarkdown,
   parseModelMarkdown,
+  parseNear,
   isModelMarkdown,
   encodeSetting,
   decodeSetting,

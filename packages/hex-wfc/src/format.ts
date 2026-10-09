@@ -10,14 +10,17 @@
  *   feature-size: 1          <- solver settings (all optional)
  *   palette: Default         <- any other keys are kept as `meta`
  *   ---
- *   ## Terrains   | Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge |
+ *   ## Terrains   | Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge | Near |
  *   ## Adjacency  | Terrain | Next to | Weight |
  *   ## Features   | Terrain | From | To | Count |          (optional)
- *   ## Layout     | Terrain | NW | N | NE | W | C | E | SW | S | SE |   (optional)
+ *   ## Layout     | Terrain | NW | N | NE | W | C | E | SW | S | SE |   (optional; or R1C1 … R5C5 for 5×5)
  */
 
 import {
   LAYOUT_BINS,
+  LAYOUT_BINS_5,
+  layoutSize,
+  layoutTo5,
   GROWTH_SHAPES,
   SYMMETRIES,
   type HexWfcModel,
@@ -27,14 +30,23 @@ import {
   type CountRange,
   type PathTweak,
   type PathTypeTweak,
+  type NearRule,
   type TerrainEntry,
 } from "./model";
 
 export const FORMAT_VERSION = 1;
+
+/** "volcano 3" -> { terrain: "volcano", distance: 3 }; null if malformed. */
+export function parseNear(text: string): NearRule | null {
+  const m = /^(.*\S)\s+(\d+(?:\.\d+)?)$/.exec(text.trim());
+  if (!m) return null;
+  const distance = Number(m[2]);
+  return distance >= 1 && distance <= 50 ? { terrain: m[1], distance } : null;
+}
 const MARKER = "hex-wfc";
 const EXAMPLE_KEY = "example-hexes";
 
-type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts" | "paths" | "pathTypes";
+type SettingKind = "number" | "string" | "symmetry" | "boolean" | "list" | "mix" | "counts" | "paths" | "pathTypes" | "near";
 
 /** Frontmatter key for each saved solver setting. */
 export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
@@ -61,6 +73,7 @@ export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
   drawPaths: "draw-paths",
   paths: "paths",
   pathTypes: "path-types",
+  near: "near",
 };
 
 const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
@@ -87,6 +100,7 @@ const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
   drawPaths: "boolean",
   paths: "paths",
   pathTypes: "pathTypes",
+  near: "near",
 };
 
 const num = (n: number) => String(Math.round(n * 1000) / 1000);
@@ -127,6 +141,10 @@ export function encodeSetting(field: keyof GeneratorSettings, value: unknown): s
           return `${route} = ${opts.join(", ")}`;
         })
         .filter((e) => !e.endsWith("= "))
+        .join("; ");
+    case "near":
+      return Object.entries(value as Record<string, NearRule | null>)
+        .map(([t, rule]) => `${t} = ${rule ? `${rule.terrain} ${num(rule.distance)}` : "off"}`)
         .join("; ");
     case "pathTypes":
       return Object.entries(value as Record<string, PathTypeTweak>)
@@ -215,6 +233,20 @@ export function decodeSetting(field: keyof GeneratorSettings, raw: string): { va
       }
       return { value: out };
     }
+    case "near": {
+      const out: Record<string, NearRule | null> = {};
+      for (const item of items()) {
+        const eq = item.indexOf(" = ");
+        if (eq < 0) return { error: `has "${item}"; write it like "brokenlands = volcano 3" or "brokenlands = off"` };
+        const terrain = item.slice(0, eq).trim();
+        const rest = item.slice(eq + 3).trim();
+        if (rest === "off") { out[terrain] = null; continue; }
+        const rule = parseNear(rest);
+        if (!rule) return { error: `has "${rest}" for ${terrain}; write a terrain and a distance, e.g. "volcano 3"` };
+        out[terrain] = rule;
+      }
+      return { value: out };
+    }
     case "pathTypes": {
       const out: Record<string, PathTypeTweak> = {};
       for (const item of items()) {
@@ -270,7 +302,9 @@ export function modelToMarkdown(model: HexWfcModel): string {
     if (reserved.has(k)) continue;
     fm.push(`${k}: ${yamlValue(v)}`);
   }
-  const withLayout = model.terrains.filter((t) => t.layout?.length === 9);
+  const withLayout = model.terrains.filter((t) => layoutSize(t.layout));
+  const layout5 = withLayout.some((t) => layoutSize(t.layout) === 5);
+  const layoutCols: readonly string[] = layout5 ? LAYOUT_BINS_5 : LAYOUT_BINS;
   const features = model.features ?? [];
   const lines = [
     "---",
@@ -288,30 +322,35 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "  *Turn* is how often a `line` changes direction (0 to 1) and *Width* its",
     "  thickness (1 to 3). *Spacing* is the closest two `scatter` hexes may be.",
     "  *Edge* is how common the terrain is along the map border (1 = as anywhere).",
+    "  *Near* keeps a terrain within some hexes of another, e.g. `volcano 3` for lava",
+    "  fields (steered while generating, strength from `clumping`, then enforced).",
     "- **Adjacency**: pairs that may touch, and how often (higher is more likely).",
     "  A pair that isn't listed can never touch, including a terrain next to itself.",
     "  Order doesn't matter, so *A | B* also covers *B | A*.",
     "- **Features** (optional): lines of terrain that are always placed. *From* and *To*",
     "  are `edge`, `none` or a terrain name.",
     "- **Paths** (optional): paths drawn over the terrain. *From* and *To* are `edge`,",
-    "  `none`, `path` (joins another path of the same type) or a terrain. *Through*",
+    "  `edge-N`, `edge-E`, `edge-S`, `edge-W` (one side of the map), `none`, `path`",
+    "  (joins another path of the same type) or a terrain. *Through*",
     "  is the share of the path on each terrain.",
     "- **Layout** (optional): where each terrain sat in the example map, in a 3×3",
-    "  grid. 1 means as common there as anywhere; 3 means three times as common.",
+    "  grid (NW … SE) or a finer 5×5 one (R1C1 … R5C5). 1 means as common there as",
+    "  anywhere; 3 means three times as common. Values blend smoothly between cells",
+    "  and `directional-bias` sets how strongly they apply (patches grow along them too).",
     "- Frontmatter settings (optional): `feature-size`, `directional-bias`, `clumping`,",
     "  `mix-strength`, `scatter`, `randomness`, `edge-strength`, `edge-terrain`,",
     "  `line-width`, `edge-smoothing`, `speck-size`, `keep-rare`, `symmetry`, `spacing`,",
-    "  `connected`, `impassable`,",
+    "  `connected`, `impassable`, `near`,",
     "  `mix`, `counts`, `features`, `draw-paths` and `paths` (per route, e.g.",
     "  `Road: edge > peak = count 2, wiggle 1.5, as Trade road`).",
     "",
     "## Terrains",
     "",
-    "| Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge |",
-    "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: |",
+    "| Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge | Near |",
+    "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
     ...model.terrains.map(
       (t) =>
-        `| ${cell(t.name)} | ${num(t.weight)} | ${opt(t.patch, 100)} | ${t.shape ?? ""} | ${opt(t.turn)} | ${opt(t.width)} | ${opt(t.spacing)} | ${opt(t.edge)} |`,
+        `| ${cell(t.name)} | ${num(t.weight)} | ${opt(t.patch, 100)} | ${t.shape ?? ""} | ${opt(t.turn)} | ${opt(t.width)} | ${opt(t.spacing)} | ${opt(t.edge)} | ${t.near ? cell(`${t.near.terrain} ${num(t.near.distance)}`) : ""} |`,
     ),
     "",
     "## Adjacency",
@@ -349,9 +388,9 @@ export function modelToMarkdown(model: HexWfcModel): string {
       ? [
           "## Layout",
           "",
-          `| Terrain | ${LAYOUT_BINS.join(" | ")} |`,
-          `| --- |${" ---: |".repeat(9)}`,
-          ...withLayout.map((t) => `| ${cell(t.name)} | ${t.layout!.map(num).join(" | ")} |`),
+          `| Terrain | ${layoutCols.join(" | ")} |`,
+          `| --- |${" ---: |".repeat(layoutCols.length)}`,
+          ...withLayout.map((t) => `| ${cell(t.name)} | ${(layout5 ? layoutTo5(t.layout!) : t.layout!).map(num).join(" | ")} |`),
           "",
         ]
       : []),
@@ -504,6 +543,12 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
       numberCol("width", 1, 3, (n) => (entry.width = n));
       numberCol("spacing", 0, 1000, (n) => (entry.spacing = n));
       numberCol("edge", 0, 1000, (n) => (entry.edge = n));
+      const near = col("near");
+      if (near !== undefined) {
+        const rule = parseNear(near);
+        if (rule) entry.near = rule;
+        else warnings.push(`${where}: near "${near}" should be a terrain and a distance, e.g. "volcano 3", ignored`);
+      }
       model.terrains.push(entry);
     } else if (section === "adjacency") {
       if (!cells[1]) {
@@ -540,9 +585,10 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
         through,
       });
     } else {
-      const values = LAYOUT_BINS.map((b) => Number(cells[columns.get(b.toLowerCase()) ?? -1]));
+      const bins: readonly string[] = columns.has("r1c1") ? LAYOUT_BINS_5 : LAYOUT_BINS;
+      const values = bins.map((b) => Number(cells[columns.get(b.toLowerCase()) ?? -1]));
       if (values.every((v) => Number.isFinite(v) && v >= 0)) layouts.set(cells[0], values);
-      else warnings.push(`${where}: needs 9 numbers ≥ 0 under ${LAYOUT_BINS.join(", ")}, row skipped`);
+      else warnings.push(`${where}: needs ${bins.length} numbers ≥ 0 under ${bins[0]} … ${bins[bins.length - 1]}, row skipped`);
     }
   }
 

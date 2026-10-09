@@ -5,7 +5,7 @@
  */
 
 import { hexNeighbors, cellKey, parseCellKey, type Orientation, type Stagger } from "./grid";
-import { adjacencyLookup, type HexWfcModel, type CountRange } from "./model";
+import { adjacencyLookup, type HexWfcModel, type CountRange, type NearRule } from "./model";
 
 export interface GridInfo {
   cols: number;
@@ -330,6 +330,66 @@ export function topUpCounts(
       changed++;
       n++;
     }
+  }
+  return changed;
+}
+
+/**
+ * Near rules: a hex of a ruled terrain with no hex of its anchor terrain
+ * within the rule's distance is repainted with the commonest neighbouring
+ * terrain that fits (or, failing that, any terrain that fits, most common
+ * first). Replacements never use a ruled terrain, so they can't break a
+ * rule themselves. Returns how many hexes changed.
+ */
+export function enforceNear(
+  cells: Map<string, string>,
+  model: HexWfcModel,
+  grid: GridInfo,
+  rules: Map<string, NearRule>,
+  protect: Set<string>,
+): number {
+  if (!rules.size) return 0;
+  const adj = adjacencyLookup(model);
+  const byWeight = [...model.terrains].sort((a, b) => b.weight - a.weight).map((t) => t.name);
+  /** Hexes within `distance` of any hex of `anchor`. */
+  const covered = (anchor: string, distance: number): Set<string> => {
+    const seen = new Set<string>();
+    let frontier: string[] = [];
+    for (const [k, t] of cells) if (t === anchor) { seen.add(k); frontier.push(k); }
+    for (let d = 0; d < distance && frontier.length; d++) {
+      const next: string[] = [];
+      for (const k of frontier)
+        for (const n of neighbourKeys(k, grid, cells))
+          if (!seen.has(n)) { seen.add(n); next.push(n); }
+      frontier = next;
+    }
+    return seen;
+  };
+  let changed = 0;
+  for (let round = 0; round < 4; round++) {
+    let changedThisRound = 0;
+    for (const [terrain, rule] of rules) {
+      const ok = covered(rule.terrain, rule.distance);
+      for (const [key, t] of cells) {
+        if (t !== terrain || ok.has(key) || protect.has(key)) continue;
+        const tally = new Map<string, number>();
+        for (const n of neighbourKeys(key, grid, cells)) {
+          const u = cells.get(n)!;
+          if (!rules.has(u)) tally.set(u, (tally.get(u) ?? 0) + 1);
+        }
+        const candidates = [
+          ...[...tally].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([u]) => u),
+          ...byWeight.filter((u) => !rules.has(u) && !tally.has(u)),
+        ];
+        const u = candidates.find((c) => fits(key, c, cells, grid, adj));
+        if (u) {
+          cells.set(key, u);
+          changed++;
+          changedThisRound++;
+        }
+      }
+    }
+    if (!changedThisRound) break;
   }
   return changed;
 }
