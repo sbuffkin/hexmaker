@@ -54,6 +54,8 @@ export class MapStore {
   private ready = false;
   private queue: Promise<void> = Promise.resolve();
   private listeners = new Set<(map: string) => void>();
+  /** Maps whose note exists but doesn't parse: never written over. */
+  private broken = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -170,10 +172,19 @@ export class MapStore {
     });
   }
 
+  /**
+   * Maps by unique name, first wins (as getMap does). Old data.json files
+   * can hold two maps with the same name; both share one folder and note.
+   */
+  private uniqueMaps(): MapData[] {
+    const seen = new Set<string>();
+    return this.plugin.settings.maps.filter((m) => !seen.has(m.name) && !!seen.add(m.name));
+  }
+
   /** Settings changed (saveSettings): write notes whose data differs. */
   sync(): Promise<void> {
     if (!this.ready) return this.queue;
-    for (const m of this.plugin.settings.maps) {
+    for (const m of this.uniqueMaps()) {
       if (this.lastKey.get(m.name) !== mapNoteKey(this.dataFor(m))) this.dirty.add(m.name);
     }
     return this.flush();
@@ -185,6 +196,7 @@ export class MapStore {
   }
 
   private async writeNote(map: MapData): Promise<void> {
+    if (this.broken.has(map.name)) return;
     const { vault } = this.plugin.app;
     const data = this.dataFor(map);
     const key = mapNoteKey(data);
@@ -219,15 +231,16 @@ export class MapStore {
     this.lastKey.set(map.name, mapNoteKey(this.dataFor(map)));
   }
 
-  private async loadMap(map: MapData): Promise<boolean> {
+  /** "loaded", "missing" (no note: migrate), or "unreadable" (leave it alone). */
+  private async loadMap(map: MapData): Promise<"loaded" | "missing" | "unreadable"> {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map.name));
-    if (!(file instanceof TFile)) return false;
+    if (!(file instanceof TFile)) return "missing";
     const content = await this.plugin.app.vault.read(file);
     const data = parseMapNote(content);
-    if (!data) return false;
+    if (!data) return "unreadable";
     this.lastContent.set(file.path, content);
     this.apply(map, data);
-    return true;
+    return "loaded";
   }
 
   /** A map note edited by hand (or synced in): reload that map. */
@@ -242,6 +255,7 @@ export class MapStore {
       if (this.lastContent.get(file.path) === content) return; // our own write
       const data = parseMapNote(content);
       if (!data) return;
+      this.broken.delete(map.name);
       this.lastContent.set(file.path, content);
       this.apply(map, data);
       await this.plugin.saveData(this.plugin.settings);
@@ -279,15 +293,27 @@ export class MapStore {
    */
   init(): Promise<void> {
     return this.enqueue(async () => {
+      const maps = this.uniqueMaps();
       const toMigrate: MapData[] = [];
-      for (const map of this.plugin.settings.maps) {
-        if (!(await this.loadMap(map))) toMigrate.push(map);
+      const unreadable: MapData[] = [];
+      for (const map of maps) {
+        const r = await this.loadMap(map);
+        if (r === "missing") toMigrate.push(map);
+        else if (r === "unreadable") unreadable.push(map);
+      }
+      // A map note that exists but doesn't parse (hand-broken frontmatter)
+      // must never be "migrated" over: its hex notes are already cleaned,
+      // so that would write an empty map. Keep the note, hold edits in
+      // memory only, and say so.
+      for (const m of unreadable) this.broken.add(m.name);
+      if (unreadable.length) {
+        new Notice(`Hexmaker: couldn't read the map note for ${unreadable.map((m) => m.name).join(", ")} (${unreadable.map((m) => this.notePath(m.name)).join(", ")}). Fix its frontmatter (it needs "hexmaker-map: 1"); it won't be overwritten until then.`, 0);
       }
       this.ready = true;
       if (toMigrate.length) await this.migrate(toMigrate);
       // Hex notes still carrying map data after a load (an interrupted
       // cleanup, or notes synced in from an older device) get cleaned now.
-      await this.cleanHexNotes(this.plugin.settings.maps.filter((m) => !toMigrate.includes(m)), false);
+      await this.cleanHexNotes(maps.filter((m) => !toMigrate.includes(m) && !unreadable.includes(m)), false);
       this.plugin.refreshHexMap();
     });
   }

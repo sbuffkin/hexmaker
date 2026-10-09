@@ -199,3 +199,48 @@ describe("map store: edits", () => {
 		expect(store.get("shore", "3_4")?.terrain).toBe("forest");
 	});
 });
+
+describe("map store: odd settings", () => {
+	it("two maps with the same name (old data.json) migrate once, data intact", async () => {
+		const v = new MemVault({
+			"world/hexes/asdf/1_1.md": HEX("terrain: forest"),
+			"world/hexes/asdf/2_2.md": HEX("terrain: hills\nicon: tower.png"),
+		});
+		const m = [
+			{ name: "asdf", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [{ typeName: "Road", hexes: ["1_1", "2_2"] }] } as MapData,
+			{ name: "asdf", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [] } as MapData,
+		];
+		const { store } = await boot(v, m);
+		expect(store.get("asdf", "1_1")).toEqual({ terrain: "forest" });
+		expect(store.get("asdf", "2_2")).toEqual({ terrain: "hills", icon: "tower.png" });
+		const note = parseMapNote(v.files.get("world/hexes/asdf/_asdf.md")!)!;
+		expect(note.hexes.size).toBe(2);
+		expect(note.paths).toEqual([{ typeName: "Road", hexes: ["1_1", "2_2"] }]);
+		// and a restart keeps it
+		const again = await boot(v, m);
+		expect(again.store.get("asdf", "2_2")?.icon).toBe("tower.png");
+	});
+});
+
+describe("map store: a broken map note", () => {
+	it("is never migrated over or rewritten; fixing it by hand brings it back", async () => {
+		const v = oldVault();
+		const m = maps();
+		await boot(v, m);
+		const path = "world/hexes/coast/_coast.md";
+		const good = v.files.get(path)!;
+		const broken = good.replace("hexmaker-map: 1", "hexmaker-mpa: 1");
+		v.files.set(path, broken);
+		const { store, p } = await boot(v, m);
+		store.set("coast", "9_9", { terrain: "lava" });
+		await store.flush();
+		expect(v.files.get(path)).toBe(broken);
+		// hex notes were not touched either
+		expect(v.frontmatter("world/hexes/coast/3_4.md")!["hexmaker-map"]).toBe("[[_coast]]");
+		// the user fixes it
+		v.files.set(path, good);
+		store.onModify(p.app.vault.getAbstractFileByPath(path) as never);
+		await store.flush();
+		expect(store.get("coast", "3_4")?.terrain).toBe("forest");
+	});
+});
