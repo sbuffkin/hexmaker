@@ -5122,6 +5122,38 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     border-bottom: 1px solid var(--background-modifier-border);
 }
 
+/* Collapsible setting sections: click the title to fold the body away. */
+.duckmage-wfc-heading.is-collapsible {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    cursor: pointer;
+    user-select: none;
+}
+
+.duckmage-wfc-heading.is-collapsible:hover {
+    color: var(--text-accent);
+}
+
+.duckmage-wfc-fold {
+    display: inline-flex;
+    color: var(--text-muted);
+    transition: transform 120ms ease;
+}
+
+.duckmage-wfc-fold svg {
+    width: 1em;
+    height: 1em;
+}
+
+.duckmage-wfc-group.is-collapsed .duckmage-wfc-fold {
+    transform: rotate(-90deg);
+}
+
+.duckmage-wfc-group.is-collapsed .duckmage-wfc-group-body {
+    display: none;
+}
+
 .duckmage-wfc-seed {
     width: 120px;
 }

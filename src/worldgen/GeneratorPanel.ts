@@ -61,6 +61,8 @@ export class GeneratorPanel {
   static mapName = "";
   static paletteName = "";
   static seedLocked = false;
+  /** Titles of the setting sections folded away. */
+  static collapsed = new Set<string>();
   /**
    * The save last loaded. While the page still shows its generator, seed and
    * size (and no setting has changed), the preview and Create map use the
@@ -302,8 +304,10 @@ export class GeneratorPanel {
 
   // ── One generator ────────────────────────────────────────────────────────
 
-  private renderGenerator(el: HTMLElement, side: HTMLElement, g: GeneratorFile): void {
+  private renderGenerator(main: HTMLElement, side: HTMLElement, g: GeneratorFile): void {
     const { model } = g;
+    // Controls go into the current section; each section() call starts a new one.
+    let el = main;
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
     // One short line; the per-shape breakdown is on hover.
     const byShape = (shape: string) => model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
@@ -372,7 +376,7 @@ export class GeneratorPanel {
 
     // Map settings lead the controls: preset sizes for now. The exact size,
     // seed and palette sit under the preview.
-    this.heading(el, "Map settings");
+    el = this.section(main, "Map settings");
     const presetRow = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-presets" });
     const sourceMap = this.plugin.getMap(model.meta["source-map"] ?? "");
     const presets = sizePresets(sourceMap ? { name: sourceMap.name, cols: sourceMap.gridSize.cols, rows: sourceMap.gridSize.rows } : undefined);
@@ -689,7 +693,7 @@ export class GeneratorPanel {
 
 
     // Shape
-    this.heading(el, "Shape");
+    el = this.section(main, "Shape");
     this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
     this.slider(el, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v }));
     if (model.terrains.some((t) => t.shape === "line")) {
@@ -713,7 +717,7 @@ export class GeneratorPanel {
     this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v }));
 
     // Placement
-    this.heading(el, "Placement");
+    el = this.section(main, "Placement");
     this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }));
     this.slider(el, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
     if (model.terrains.some((t) => t.shape === "scatter")) {
@@ -722,7 +726,7 @@ export class GeneratorPanel {
     this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v }));
 
     // Guarantees
-    this.heading(el, "Guarantees");
+    el = this.section(main, "Guarantees");
     if (model.features?.length) {
       this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v }));
     }
@@ -730,7 +734,7 @@ export class GeneratorPanel {
     this.terrainFilter(el, "Impassable terrain", model.terrains.map((t) => t.name), colors, s().impassable, (list) => save({ impassable: list }));
 
     // Terrain mix: per-terrain controls and what they do to the preview
-    this.heading(el, "Terrain mix");
+    el = this.section(main, "Terrain mix");
     el.createEl("p", {
       text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the region it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
@@ -800,7 +804,7 @@ export class GeneratorPanel {
 
     // Paths: one row per learned route (type + what its ends connect to)
     if (model.paths?.length) {
-      this.heading(el, "Paths");
+      el = this.section(main, "Paths");
       el.createEl("p", {
         text: "Roads and rivers drawn over the terrain. Count is how many of each route to draw; leave it blank for the learned amount for this map size (drag or scroll on it). Hover a row to highlight its paths on the preview.",
         cls: "duckmage-map-origin-desc",
@@ -901,7 +905,7 @@ export class GeneratorPanel {
       }
     }
 
-    const resetRow = el.createDiv({ cls: "duckmage-region-row" });
+    const resetRow = main.createDiv({ cls: "duckmage-region-row" });
     const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults" });
     resetBtn.addEventListener("click", () => {
       const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
@@ -915,8 +919,33 @@ export class GeneratorPanel {
 
   // ── Small controls ───────────────────────────────────────────────────────
 
-  private heading(el: HTMLElement, text: string): void {
-    el.createEl("h5", { text, cls: "duckmage-wfc-heading" });
+  /**
+   * A titled group of controls; click the title to fold it away. Folded
+   * sections stay folded across re-renders. Returns the section's body.
+   */
+  private section(el: HTMLElement, text: string): HTMLElement {
+    const box = el.createDiv({ cls: "duckmage-wfc-group" });
+    const title = box.createEl("h5", { cls: "duckmage-wfc-heading is-collapsible", attr: { role: "button", tabindex: "0" } });
+    setIcon(title.createSpan({ cls: "duckmage-wfc-fold" }), "chevron-down");
+    title.createSpan({ text });
+    const body = box.createDiv({ cls: "duckmage-wfc-group-body" });
+    const show = () => {
+      const folded = GeneratorPanel.collapsed.has(text);
+      box.toggleClass("is-collapsed", folded);
+      title.setAttr("aria-expanded", String(!folded));
+    };
+    const toggle = () => {
+      if (!GeneratorPanel.collapsed.delete(text)) GeneratorPanel.collapsed.add(text);
+      show();
+    };
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      toggle();
+    });
+    show();
+    return body;
   }
 
   private slider(
