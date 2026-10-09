@@ -1,6 +1,7 @@
 import { App, Menu, Notice, TFolder } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
 import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
 import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
@@ -20,6 +21,19 @@ import {
   type GeneratorFile,
 } from "../worldgen/generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
+import { SIDES, link, type Side } from "../worldgen/world";
+import {
+  detachRegion,
+  generateConnected,
+  gridRules,
+  linkRegions,
+  regionNeighbours,
+  neighbourSpec,
+  occupiedSides,
+  placeNewRegion,
+  regionNameAt,
+  type NewRegion,
+} from "../worldgen/neighbours";
 import { randomSeed } from "../../packages/hex-wfc/src";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
@@ -54,6 +68,8 @@ function clampInt(v: number, lo: number, hi: number, fallback: number): number {
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
   private activeTab: ModalTab = "Maps";
+  /** Set by "New region here" in Properties: prefills the New map tab's placement. */
+  private newMapPlacement: { anchor: string; side: Side } | null = null;
 
   constructor(
     app: App,
@@ -385,14 +401,22 @@ export class MapModal extends HexmakerModal {
     const propStaggerBtn = staggerRow.createEl("button", { cls: "duckmage-stagger-toggle" });
     propStaggerBtn.setText(propStaggerVal === "odd" ? "Odd" : "Even");
     propStaggerBtn.toggleClass("is-even", propStaggerVal === "even");
+    // A map with neighbours can't flip its stagger: its seams would stop lining up.
+    const hasNeighbours = !!currentMap && Object.keys(regionNeighbours(this.plugin, currentMap.name)).length > 0;
+    if (hasNeighbours) {
+      propStaggerBtn.disabled = true;
+      staggerRow.createSpan({ text: "Fixed while this map has neighbouring regions (it has to line up with them).", cls: "duckmage-map-origin-desc" });
+    }
     propStaggerBtn.addEventListener("click", () => {
-      if (!currentMap) return;
+      if (!currentMap || hasNeighbours) return;
       propStaggerVal = propStaggerVal === "odd" ? "even" : "odd";
       propStaggerBtn.setText(propStaggerVal === "odd" ? "Odd" : "Even");
       propStaggerBtn.toggleClass("is-even", propStaggerVal === "even");
       currentMap.staggerOffset = propStaggerVal;
       void this.plugin.saveSettings().then(() => this.onChanged());
     });
+
+    if (currentMap) this.renderNeighbourBlock(el, currentMap);
 
     // Terrain theme
     el.createEl("h4", { text: "Terrain theme" });
@@ -501,6 +525,64 @@ export class MapModal extends HexmakerModal {
     }
   }
 
+  /**
+   * Neighbouring regions: which map is north, east, south and west of this
+   * one on their shared grid. Only maps that fit (same size and palette,
+   * lining up, slot free) are offered; an empty side can get a new region.
+   */
+  private renderNeighbourBlock(el: HTMLElement, map: MapData): void {
+    el.createEl("h4", { text: "Neighbouring regions" });
+    el.createEl("p", {
+      text: "Regions next to each other share one grid: walking off this map's edge (or the hex flower) leads into them. They must be the same size and use the same palette.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const current = regionNeighbours(this.plugin, map.name);
+    const rules = gridRules(this.plugin);
+    const grid = el.createDiv({ cls: "duckmage-neighbour-grid" });
+    for (const side of SIDES) {
+      const row = grid.createDiv({ cls: "duckmage-region-row duckmage-neighbour-row" });
+      row.createSpan({ text: side[0].toUpperCase() + side.slice(1), cls: "duckmage-map-origin-label" });
+      const select = row.createEl("select");
+      select.createEl("option", { value: "", text: "None" });
+      const now = current[side];
+      if (now) select.createEl("option", { value: now.name, text: now.name });
+      for (const other of this.plugin.settings.maps) {
+        if (other.name === map.name || other.name === now?.name) continue;
+        if (link(this.plugin.settings.maps, map.name, side, other.name, rules, () => "check").ok)
+          select.createEl("option", { value: other.name, text: other.name });
+      }
+      select.value = now?.name ?? "";
+      select.addEventListener("change", () => {
+        void (async () => {
+          if (now && select.value !== now.name) await detachRegion(this.plugin, now.name);
+          if (select.value) {
+            const r = await linkRegions(this.plugin, map.name, side, select.value);
+            if (!r.ok) new Notice(r.reason);
+          }
+          this.onChanged();
+          this.render();
+        })();
+      });
+      if (!now) {
+        const add = row.createEl("button", { text: "New region here…", attr: { title: `Make a new map ${side} of ${map.name}` } });
+        add.addEventListener("click", () => {
+          this.newMapPlacement = { anchor: map.name, side };
+          this.activeTab = "New map";
+          this.render();
+        });
+      }
+    }
+    if (map.world) {
+      const leave = el.createDiv({ cls: "duckmage-region-row" }).createEl("button", { text: "Detach from its neighbours" });
+      leave.addEventListener("click", () => {
+        void detachRegion(this.plugin, map.name).then(() => {
+          this.onChanged();
+          this.render();
+        });
+      });
+    }
+  }
+
   /** Compute the folder where dropped bg images should land for a given map. */
   private bgImportFolder(mapName: string): string {
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
@@ -573,6 +655,26 @@ export class MapModal extends HexmakerModal {
       placeholder: "map-name",
       cls: "duckmage-map-new-name-input",
     });
+
+    // Place next to an existing map: it becomes a neighbouring region on the
+    // same grid, so size, palette, stagger and coordinates follow from it.
+    el.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label" });
+    el.createEl("p", {
+      text: "Make this map a neighbouring region of another: it's the same size and palette, and lines up with it hex for hex.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const placeRow = el.createDiv({ cls: "duckmage-region-row" });
+    const anchorSelect = placeRow.createEl("select");
+    anchorSelect.createEl("option", { value: "", text: "Nowhere (a separate map)" });
+    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
+    const sideSelect = placeRow.createEl("select");
+    for (const s of SIDES) sideSelect.createEl("option", { value: s, text: `${s} of it` });
+    const placeNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
+    if (this.newMapPlacement) {
+      anchorSelect.value = this.newMapPlacement.anchor;
+      sideSelect.value = this.newMapPlacement.side;
+      this.newMapPlacement = null;
+    }
 
     // Size
     el.createEl("label", { text: "Size", cls: "duckmage-map-field-label" });
@@ -721,6 +823,46 @@ export class MapModal extends HexmakerModal {
       bgClearBtn.disabled = false;
     });
 
+    // Placement: lock what has to match the map it goes next to.
+    let placement: NewRegion | null = null;
+    const presetBtns = Array.from(presetsRow.querySelectorAll("button"));
+    const applyPlacement = () => {
+      placement = null;
+      const anchor = anchorSelect.value;
+      const locked = !!anchor;
+      if (anchor) {
+        const spec = neighbourSpec(this.plugin, anchor, sideSelect.value as Side);
+        if (!spec.ok) {
+          placeNote.setText(`⚠ ${spec.reason}`);
+        } else {
+          placement = { slot: spec.slot, aSlot: spec.aSlot, anchor, side: sideSelect.value as Side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
+          colsInput.value = String(spec.cols);
+          rowsInput.value = String(spec.rows);
+          paletteSelect.value = spec.paletteName;
+          originXInput.value = String(spec.offset.x);
+          originYInput.value = String(spec.offset.y);
+          staggerVal = spec.stagger;
+          staggerBtn.setText(staggerVal === "odd" ? "Odd" : "Even");
+          staggerBtn.toggleClass("is-even", staggerVal === "even");
+          const borders = occupiedSides(this.plugin, placement).map((s) => `${s}: ${regionNameAt(this.plugin, placement!, s)}`);
+          placeNote.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.`);
+          fillGenerators();
+        }
+      } else placeNote.setText("");
+      for (const input of [colsInput, rowsInput, paletteSelect, originXInput, originYInput]) input.disabled = locked;
+      for (const b of presetBtns) b.disabled = locked;
+      staggerBtn.disabled = locked;
+      sideSelect.disabled = !anchor;
+    };
+    anchorSelect.addEventListener("change", () => {
+      applyPlacement();
+      schedulePreview();
+    });
+    sideSelect.addEventListener("change", () => {
+      applyPlacement();
+      schedulePreview();
+    });
+
     const selectedGenerator = () => generators.find((g) => g.file.path === generatorSelect.value) ?? null;
     const runPreview = () => {
       const g = selectedGenerator();
@@ -732,12 +874,14 @@ export class MapModal extends HexmakerModal {
         stagger: staggerVal,
       };
       const palette = this.plugin.getPaletteByName(paletteSelect.value)?.terrains.map((t) => t.name) ?? [];
-      const r = generateTerrain(this.plugin, g.model, palette, grid, Number(seedInput.value) >>> 0);
+      const seed = Number(seedInput.value) >>> 0;
+      const r = placement ? generateConnected(this.plugin, g.model, palette, placement, seed) : generateTerrain(this.plugin, g.model, palette, grid, seed);
       if (!r.ok) {
         previewStatus.setText(`This generator couldn't fill the map: ${r.message}`);
         return;
       }
-      drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin));
+      const shadow = placement && "shadow" in r ? (r.shadow as Map<string, string>) : undefined;
+      drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin), 420, 14, undefined, { shadow });
       previewStatus.setText(r.warnings.length ? `⚠ ${r.warnings.length}` : "");
       previewStatus.setAttr("title", r.warnings.join("\n"));
     };
@@ -786,7 +930,9 @@ export class MapModal extends HexmakerModal {
         pendingBgFile,
         selectedGenerator(),
         Number(seedInput.value) >>> 0,
+        placement,
       );
+    applyPlacement();
     createBtn.addEventListener("click", doCreate);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") doCreate();
@@ -922,6 +1068,7 @@ export class MapModal extends HexmakerModal {
     bgImageFile: File | null,
     generator: GeneratorFile | null,
     seed: number,
+    placement: NewRegion | null = null,
   ): Promise<void> {
     btn.setText("Generating…");
     btn.disabled = true;
@@ -934,14 +1081,25 @@ export class MapModal extends HexmakerModal {
 
     // Solve before creating anything, so a generator that can't fill the
     // map leaves no half-made map behind.
+    // Its place next to another map may have been taken since it was chosen.
+    if (placement?.anchor && placement.side) {
+      const again = neighbourSpec(this.plugin, placement.anchor, placement.side);
+      if (!again.ok) {
+        new Notice(again.reason);
+        reset();
+        return;
+      }
+    }
     let terrainAt: Map<string, string> | undefined;
     let generatedPaths: { type: string; route?: string; hexes: string[] }[] = [];
     if (generator) {
       const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
-      const solved = generateTerrain(
-        this.plugin, generator.model, palette,
-        { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed,
-      );
+      const solved = placement
+        ? generateConnected(this.plugin, generator.model, palette, placement, seed)
+        : generateTerrain(
+          this.plugin, generator.model, palette,
+          { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed,
+        );
       if (!solved.ok) {
         new Notice(`Generator "${generator.model.name}" couldn't fill this map: ${solved.message}`);
         reset();
@@ -962,6 +1120,7 @@ export class MapModal extends HexmakerModal {
       reset();
       return;
     }
+    if (placement) await placeNewRegion(this.plugin, result.name, placement);
 
     // Resolve the bg image path: a dropped File needs importing into the new
     // map's _bg folder first; a picked vault path is used directly.

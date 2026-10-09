@@ -66,6 +66,8 @@ export interface MapData {
 	showGmLayer?: boolean;        // undefined = true (on by default)
 	showTokens?: boolean;         // undefined = true (on by default)
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting
+	/** Slot on a shared grid of neighbouring regions (see src/worldgen/world.ts). */
+	world?: { id: string; cx: number; cy: number };
 	backgroundImage?: MapBackgroundImage;
 	/** Optional independent transform applied to the hex grid container,
 	 *  used during background-image calibration so the user can resize/shift
@@ -175,4 +177,6 @@ export interface HexEditorOptions {
 	onModalClose?: () => void;
 	/** Called when the user clicks the submap centre-dot to drill into another map. */
 	onSwitchMap?: (mapName: string) => void;
+	/** Called after the user agrees to step from the hex flower into a neighbouring region's hex. */
+	onCrossToRegion?: (mapName: string, x: number, y: number) => void;
 }

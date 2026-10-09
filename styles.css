@@ -5685,3 +5685,48 @@ button.duckmage-wfc-library-tab.is-active {
     gap: 0.4em;
     padding: 0.4em 0.6em 0.6em 1.6em;
 }
+
+/* Neighbouring regions (src/worldgen/world.ts): their terrain shown dimmed
+   past the map's edges, on a layer of its own so the grid doesn't move. */
+.duckmage-region-shadow-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.duckmage-hex.duckmage-hex-shadow {
+    position: absolute;
+    left: var(--duckmage-shadow-x, 0px);
+    top: var(--duckmage-shadow-y, 0px);
+    width: var(--duckmage-shadow-w);
+    height: var(--duckmage-shadow-h);
+    box-sizing: border-box;
+    margin: 0;
+    opacity: 0.35;
+    pointer-events: auto;
+    filter: saturate(0.6);
+}
+
+.duckmage-hex.duckmage-hex-shadow:hover {
+    opacity: 0.7;
+}
+
+/* Hex flower: a tile past the edge that's in a neighbouring region. */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region {
+    opacity: 0.55;
+    cursor: pointer;
+    outline: 1px dashed var(--text-muted);
+    outline-offset: -2px;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region:hover {
+    opacity: 0.9;
+}
+
+/* "Go to region?" box. */
+.duckmage-region-nav-preview {
+    display: block;
+    max-width: 100%;
+    margin: 0.5em auto;
+    border-radius: var(--radius-s);
+}

@@ -29,6 +29,8 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
+import { SIDES, type Side } from "./world";
+import { generateConnected, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -70,6 +72,8 @@ export class GeneratorPanel {
   static mapName = "";
   static paletteName = "";
   static seedLocked = false;
+  /** Generate the new map as a neighbouring region of an existing one. */
+  static connect: { anchor: string; side: Side } | null = null;
   /** Titles of the setting sections folded away. */
   static collapsed = new Set<string>();
   /** Path types whose routes are shown (groups start folded). */
@@ -428,6 +432,46 @@ export class GeneratorPanel {
       input.addEventListener("change", markPreset);
     }
 
+    // Connect to: the new map becomes a neighbouring region of an existing
+    // one, so its size, palette, coordinates and stagger follow from it, and
+    // its terrain carries on across the border.
+    const connectRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    connectRow.createSpan({ text: "Connect to", cls: "duckmage-map-origin-label" });
+    const anchorSelect = connectRow.createEl("select");
+    anchorSelect.createEl("option", { value: "", text: "Nothing (a separate map)" });
+    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
+    const sideSelect = connectRow.createEl("select");
+    for (const sd of SIDES) sideSelect.createEl("option", { value: sd, text: `${sd} of it` });
+    anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
+    sideSelect.value = GeneratorPanel.connect?.side ?? "east";
+    sideSelect.disabled = !anchorSelect.value;
+    const connectNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
+    let connected: NewRegion | null = null;
+    if (GeneratorPanel.connect) {
+      const spec = neighbourSpec(this.plugin, GeneratorPanel.connect.anchor, GeneratorPanel.connect.side);
+      if (!spec.ok) connectNote.setText(`⚠ ${spec.reason}`);
+      else {
+        connected = { slot: spec.slot, aSlot: spec.aSlot, anchor: GeneratorPanel.connect.anchor, side: GeneratorPanel.connect.side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
+        const borders = occupiedSides(this.plugin, connected).map((sd) => `${sd}: ${regionNameAt(this.plugin, connected!, sd)}`);
+        connectNote.setText(`Size locked to ${spec.cols}×${spec.rows} and palette to ${spec.paletteName}, so it lines up. Borders ${borders.join("; ")}.`);
+        colsInput.value = String(spec.cols);
+        rowsInput.value = String(spec.rows);
+        colsInput.disabled = rowsInput.disabled = true;
+        for (const { btn } of presetBtns) btn.disabled = true;
+        markPreset();
+      }
+    }
+    const setConnect = () => {
+      GeneratorPanel.connect = anchorSelect.value ? { anchor: anchorSelect.value, side: sideSelect.value as Side } : null;
+      // Neighbours must share the palette.
+      const anchorMap = anchorSelect.value ? this.plugin.getMap(anchorSelect.value) : undefined;
+      if (anchorMap) GeneratorPanel.paletteName = anchorMap.paletteName;
+      this.host.rerender();
+    };
+    anchorSelect.addEventListener("change", setConnect);
+    sideSelect.addEventListener("change", setConnect);
+    if (connected) paletteSelect.disabled = true;
+
     const showLock = () => {
       const locked = GeneratorPanel.seedLocked;
       setIcon(lockBtn, locked ? "lock" : "lock-open");
@@ -468,6 +512,7 @@ export class GeneratorPanel {
     fillSaves();
 
     const previewGrid = () => {
+      if (connected) return { cols: connected.cols, rows: connected.rows, offset: { ...connected.offset }, stagger: connected.stagger };
       const map = this.plugin.getMap(this.mapName);
       return {
         cols: Math.max(2, Math.min(200, Number(colsInput.value) || 30)),
@@ -554,11 +599,12 @@ export class GeneratorPanel {
       this.previewRows = grid.rows;
       this.seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const r = generateTerrain(this.plugin, model, palette, grid, this.seed);
+      const r = connected ? generateConnected(this.plugin, model, palette, connected, this.seed) : generateTerrain(this.plugin, model, palette, grid, this.seed);
       if (!r.ok) {
         status.setText(`Couldn't generate: ${r.message}`);
         return;
       }
+      const shadow = connected && "shadow" in r ? (r.shadow as Map<string, string>) : undefined;
       // A loaded save shows its own map if this version generates a different one.
       let cells = r.cells;
       let rawPaths: { type: string; route?: string; hexes: string[] }[] = r.paths;
@@ -579,7 +625,7 @@ export class GeneratorPanel {
         // Draw at the side column's device-pixel width so it stays sharp when stretched.
         const dpr = activeWindow.devicePixelRatio || 1;
         drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
-          Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight);
+          Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight, { shadow });
       };
       lastDraw(hoveredRoute);
       updateShares(cells, grid, palette);
@@ -683,7 +729,15 @@ export class GeneratorPanel {
       const grid = previewGrid();
       const seed = Number(seedInput.value) >>> 0;
       const palette = this.paletteTerrains().length ? this.paletteTerrains() : model.terrains.map((t) => t.name);
-      const generated = generateTerrain(this.plugin, model, palette, grid, seed);
+      // A neighbour slot may have been taken since this page was drawn.
+      if (connected?.anchor && connected.side) {
+        const again = neighbourSpec(this.plugin, connected.anchor, connected.side);
+        if (!again.ok) {
+          new Notice(again.reason);
+          return;
+        }
+      }
+      const generated = connected ? generateConnected(this.plugin, model, palette, connected, seed) : generateTerrain(this.plugin, model, palette, grid, seed);
       if (!generated.ok) {
         new Notice(`Couldn't generate: ${generated.message}`);
         return;
@@ -695,7 +749,7 @@ export class GeneratorPanel {
       void this.plugin
         .createNewMap(
           newNameInput.value.trim() || `${model.name}-${seed}`,
-          grid.cols, grid.rows, GeneratorPanel.paletteName, 0, 0, grid.stagger,
+          grid.cols, grid.rows, GeneratorPanel.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
           (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
           r.cells,
         )
@@ -713,7 +767,11 @@ export class GeneratorPanel {
             await this.plugin.saveSettings();
           }
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
-          new Notice(`Created map "${result.name}".`);
+          if (connected) {
+            await placeNewRegion(this.plugin, result.name, connected);
+            GeneratorPanel.connect = null;
+          }
+          new Notice(`Created map "${result.name}"${connected ? ` ${connected.side} of ${connected.anchor}` : ""}.`);
           GeneratorPanel.mapName = result.name;
           await this.plugin.showMap(result.name);
           this.host.rerender();
