@@ -66,7 +66,43 @@ function mergePaths(paths: PathFeature[]): PathFeature {
   };
 }
 
-export function mergeModels(models: HexWfcModel[], name: string, meta: Record<string, string> = {}): HexWfcModel {
+/** Every count in a model multiplied by `f`; relative measures unchanged. */
+function scaleModel(m: HexWfcModel, f: number): HexWfcModel {
+  return {
+    ...m,
+    terrains: m.terrains.map((t) => ({ ...t, weight: t.weight * f })),
+    adjacency: m.adjacency.map((e) => ({ ...e, weight: e.weight * f })),
+    features: m.features?.map((x) => ({ ...x, count: x.count * f })),
+    paths: m.paths?.map((p) => ({ ...p, count: p.count * f })),
+  };
+}
+
+/**
+ * Merge models into one. `influence` (one per model, any scale) sets how much
+ * each counts: by default a model counts by its size (example hexes), as if
+ * the regions were one example. With influence, each model's counts are
+ * scaled so its share of the total is its share of the influence; a model
+ * with 0 influence is left out.
+ */
+export function mergeModels(models: HexWfcModel[], name: string, meta: Record<string, string> = {}, influence?: number[]): HexWfcModel {
+  if (influence && influence.length === models.length) {
+    const size = (m: HexWfcModel) => m.exampleHexes ?? m.terrains.reduce((n, t) => n + t.weight, 0);
+    const totalSize = models.reduce((n, m) => n + size(m), 0);
+    const totalInfluence = influence.reduce((n, w) => n + Math.max(0, w), 0);
+    if (totalInfluence > 0 && totalSize > 0) {
+      const kept = models
+        .map((m, i) => ({ m, w: Math.max(0, influence[i]) }))
+        .filter(({ m, w }) => w > 0 && size(m) > 0);
+      const merged = mergeModels(
+        kept.map(({ m, w }) => scaleModel(m, ((w / totalInfluence) * totalSize) / size(m))),
+        name,
+        meta,
+      );
+      // Example size is the regions' real size, whatever their influence.
+      merged.exampleHexes = totalSize;
+      return merged;
+    }
+  }
   if (models.length === 0) throw new Error("Nothing to merge.");
 
   const terrainGroups = new Map<string, TerrainEntry[]>();

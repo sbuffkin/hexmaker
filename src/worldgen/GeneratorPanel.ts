@@ -19,12 +19,15 @@ import {
   pathColors,
   sourceMapsOf,
   relearnGenerator,
+  regionSizes,
+  sourceInfluenceOf,
   setGeneratorPalette,
   toPathChains,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
-import { makeScrubbable } from "./scrub";
+import { makeScrubbable, wheelValue } from "./scrub";
+import { rebalance, toPercents } from "./regionWeights";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -278,6 +281,62 @@ export class GeneratorPanel {
     });
     const openBtn = sourceRow.createEl("button", { text: "Open file" });
     openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
+
+    // A combined generator: how much each region counts. The sliders always
+    // add up to 100%; letting go of one re-learns with the new mix.
+    if (sources.length > 1) {
+      const box = el.createDiv({ cls: "duckmage-wfc-influence" });
+      box.createEl("label", { text: "Region influence", cls: "duckmage-map-field-label" });
+      const stored = sourceInfluenceOf(model);
+      let weights = toPercents(stored ?? regionSizes(this.plugin, sources));
+      const rows = sources.map((name) => {
+        const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
+        row.createSpan({ text: name, cls: "duckmage-wfc-influence-name", attr: { title: name } });
+        const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${name} influence` } });
+        const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
+        return { slider, value };
+      });
+      const showWeights = () =>
+        rows.forEach((r, i) => {
+          r.slider.value = String(weights[i]);
+          r.value.setText(`${weights[i]}%`);
+        });
+      showWeights();
+      const note = box.createEl("p", {
+        text: stored
+          ? "Each region's share of what the generator learns."
+          : "Set by each region's size (painted hexes). Move a slider to choose your own mix.",
+        cls: "duckmage-map-origin-desc",
+      });
+      const relearnWith = (next: number[] | null) => {
+        note.setText("Re-learning…");
+        for (const r of rows) r.slider.disabled = true;
+        void relearnGenerator(this.plugin, g, next).then((res) => {
+          if ("error" in res) new Notice(res.error);
+          this.host.rerender();
+        });
+      };
+      let wheelTimer: number | null = null;
+      rows.forEach((r, i) => {
+        r.slider.addEventListener("input", () => {
+          weights = rebalance(weights, i, Number(r.slider.value));
+          showWeights();
+        });
+        r.slider.addEventListener("change", () => relearnWith(weights));
+        // Scroll to nudge by 5%; re-learn once the wheel stops.
+        r.slider.addEventListener("wheel", (e) => {
+          e.preventDefault();
+          weights = rebalance(weights, i, wheelValue(weights[i], e.deltaY, { min: 0, max: 100, step: 5 }));
+          showWeights();
+          if (wheelTimer !== null) window.clearTimeout(wheelTimer);
+          wheelTimer = window.setTimeout(() => relearnWith(weights), 500);
+        }, { passive: false });
+      });
+      if (stored) {
+        const bySize = box.createEl("button", { text: "Back to region size", attr: { title: "Let each region count by how many hexes it has painted" } });
+        bySize.addEventListener("click", () => relearnWith(null));
+      }
+    }
 
     const info = [
       `${model.terrains.length} terrains`,

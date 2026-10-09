@@ -5479,6 +5479,30 @@ button.duckmage-wfc-library-tab.is-active {
     margin-bottom: 0.5em;
 }
 
+/* Region influence sliders on combined generators (always add up to 100%). */
+.duckmage-wfc-influence {
+    margin: 0.5em 0;
+}
+
+.duckmage-wfc-influence-row {
+    display: grid;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.2em 0;
+}
+
+.duckmage-wfc-influence-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-wfc-influence-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
 .duckmage-wfc-preset-size {
     color: var(--text-muted);
     font-size: 0.85em;

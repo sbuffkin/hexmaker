@@ -154,6 +154,27 @@ export function paletteColors(plugin: HexmakerPlugin, paletteName: string | unde
 export const SOURCE_MAPS_KEY = "source-maps";
 const SOURCE_MAPS_JOIN = " + ";
 
+/**
+ * Meta key with each region's influence on a combined generator, in the
+ * order of its regions: `source-influence: 60 + 40` (percent). Missing means
+ * each region counts by its size.
+ */
+export const SOURCE_INFLUENCE_KEY = "source-influence";
+
+/** A combined generator's region influence (percent, one per region), or undefined if by size. */
+export function sourceInfluenceOf(model: HexWfcModel): number[] | undefined {
+  const raw = model.meta[SOURCE_INFLUENCE_KEY];
+  if (!raw) return undefined;
+  const list = raw.split(SOURCE_MAPS_JOIN).map((v) => Number(v.trim()));
+  if (list.length !== sourceMapsOf(model).length || list.some((v) => !Number.isFinite(v) || v < 0)) return undefined;
+  return list.reduce((n, v) => n + v, 0) > 0 ? list : undefined;
+}
+
+/** How many painted hexes each region has (what influence defaults to). */
+export function regionSizes(plugin: HexmakerPlugin, mapNames: string[]): number[] {
+  return mapNames.map((m) => readMapTerrain(plugin, m).size);
+}
+
 /** The regions a generator was learned from: one, several, or none recorded. */
 export function sourceMapsOf(model: HexWfcModel): string[] {
   const many = model.meta[SOURCE_MAPS_KEY]?.split(SOURCE_MAPS_JOIN).map((s) => s.trim()).filter(Boolean);
@@ -172,6 +193,7 @@ function learnFromMaps(
   mapNames: string[],
   name: string,
   meta: Record<string, string>,
+  influence?: number[],
 ): { model: HexWfcModel } | { error: string } {
   const models: HexWfcModel[] = [];
   for (const mapName of mapNames) {
@@ -190,7 +212,7 @@ function learnFromMaps(
       meta,
     }));
   }
-  const model = models.length === 1 ? models[0] : mergeModels(models, name, meta);
+  const model = models.length === 1 ? models[0] : mergeModels(models, name, meta, influence);
   if (model.adjacency.length === 0)
     return { error: "No painted hexes touch each other, so there is nothing to learn yet." };
   return { model };
@@ -430,12 +452,18 @@ async function writeTerrain(
 export async function relearnGenerator(
   plugin: HexmakerPlugin,
   g: GeneratorFile,
+  /** New influence per region; null = by region size; omitted = as stored. */
+  influence?: number[] | null,
 ): Promise<{ model: HexWfcModel } | { error: string }> {
   const mapNames = sourceMapsOf(g.model);
   if (!mapNames.length) return { error: "This generator doesn't record the region it came from." };
   const missing = mapNames.filter((m) => !plugin.getMap(m));
   if (missing.length) return { error: `The region this generator came from (${missing.join(", ")}) no longer exists.` };
-  const learned = learnFromMaps(plugin, mapNames, g.model.name, { ...g.model.meta, ...sourceMeta(plugin, mapNames) });
+  const weights = influence === null ? undefined : (influence ?? sourceInfluenceOf(g.model));
+  const meta = { ...g.model.meta, ...sourceMeta(plugin, mapNames) };
+  if (weights && mapNames.length > 1) meta[SOURCE_INFLUENCE_KEY] = weights.join(SOURCE_MAPS_JOIN);
+  else delete meta[SOURCE_INFLUENCE_KEY];
+  const learned = learnFromMaps(plugin, mapNames, g.model.name, meta, mapNames.length > 1 ? weights : undefined);
   if ("error" in learned) return learned;
   const { model } = learned;
   if (g.model.settings) model.settings = { ...g.model.settings };
