@@ -37,7 +37,7 @@ export class HexTerrainPickerModal extends HexmakerModal {
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
       btn.addEventListener("click", () => {
         void (async () => {
-          if (!this.app.vault.getAbstractFileByPath(this.hexPath)) {
+          if (!this.plugin.mapStore.isReady() && !this.app.vault.getAbstractFileByPath(this.hexPath)) {
             const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
             const [hx, hy] = basename.split("_").map(Number);
             const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);

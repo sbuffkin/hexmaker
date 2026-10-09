@@ -1,5 +1,7 @@
 /** Minimal Obsidian API stubs for unit tests. */
 
+import { parseMiniYaml } from "../helpers/miniYaml";
+
 export class TAbstractFile {
 	path = "";
 	name = "";
@@ -20,9 +22,13 @@ export class TFolder extends TAbstractFile {
 export class App {}
 export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } }
 export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: string): T[] { return []; } renderSuggestion(_v: T, _el: HTMLElement): void {} onChooseSuggestion(_v: T, _e: MouseEvent | KeyboardEvent): void {} }
-export class Notice { constructor(_msg: string) {} }
+export class Notice { constructor(_msg: string, _timeout?: number) {} setMessage(_msg: string) { return this; } hide() {} }
 export class Plugin { constructor(_app: App, _manifest: any) {} }
 
 export function normalizePath(path: string): string {
 	return path.replace(/[\\/]+/g, "/").replace(/\u00A0/g, " ").normalize().replace(/^\/+|\/+$/g, "");
+}
+
+export function parseYaml(src: string): unknown {
+	return parseMiniYaml(src);
 }

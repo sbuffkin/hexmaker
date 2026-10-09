@@ -31,6 +31,7 @@ import {
   getRegionColorFromFile,
   getFactionStyleFromFile,
   getRegionStyleFromFile,
+  getHexRegionFromFile,
   type OverlayStyle,
 } from "../frontmatter";
 import { getIconUrl, normalizeFolder } from "../utils";
@@ -789,9 +790,7 @@ function getHexFactionLinks(app: App, file: TFile): string[] {
 
 /** Read the `region:` frontmatter of a hex note via metadata cache. */
 function getHexRegionName(app: App, file: TFile): string | null {
-  const cache = app.metadataCache.getFileCache(file);
-  const region: unknown = cache?.frontmatter?.["region"];
-  return typeof region === "string" ? region : null;
+  return getHexRegionFromFile(app, file.path);
 }
 
 function dashFor(style: "solid" | "dashed" | "dotted"): number[] {

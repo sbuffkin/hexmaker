@@ -44,7 +44,8 @@ import type {
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
-import { getTerrainFromFile, setTerrainInFile, setSubmapInFile, withFrontmatterField, notePendingTerrain, clearPendingTerrain } from "./frontmatter";
+import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
+import { MapStore } from "./maps/MapStore";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -58,16 +59,21 @@ export default class HexmakerPlugin extends Plugin {
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
   paletteStore = new PaletteStore(this);
+  /** Per-hex map data, backed by one map note per map (src/maps). */
+  mapStore = new MapStore(this);
 
   async onload() {
     await this.loadSettings();
+    setHexDataSource(this.mapStore);
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
     // Defer until vault metadata cache is ready; calling before layout-ready
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
-      void this.paletteStore.init();
+      // Palettes first (maps reference them), then map notes — which may
+      // migrate per-hex data out of hex notes on the first run.
+      void this.paletteStore.init().then(() => this.mapStore.init());
       void this.autoRegisterMapsFromVault();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
@@ -105,7 +111,10 @@ export default class HexmakerPlugin extends Plugin {
     );
     // Palette notes edited by hand (or by sync) flow back into the palettes.
     this.registerEvent(
-      this.app.vault.on("modify", (f) => this.paletteStore.onModify(f)),
+      this.app.vault.on("modify", (f) => {
+        this.paletteStore.onModify(f);
+        this.mapStore.onModify(f);
+      }),
     );
 
     await this.migrateHexFilesToDefaultRegion();
@@ -530,6 +539,7 @@ export default class HexmakerPlugin extends Plugin {
     await this.saveData(this.settings);
     // Mirror palette edits (from any editor) into the palette notes.
     void this.paletteStore.sync();
+    void this.mapStore.sync();
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
     // flag them so they re-render on next activation (issue #32). The
@@ -720,14 +730,10 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Update duckmage-submap frontmatter in all hex notes when a map is renamed. */
   async updateSubmapReferences(oldName: string, newName: string): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    const files = this.app.vault.getMarkdownFiles().filter(
-      (f) => !hexFolder || f.path.startsWith(hexFolder + "/"),
-    );
-    for (const file of files) {
-      const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
-      if (submap !== oldName) continue;
-      await setSubmapInFile(this.app, file.path, newName);
+    for (const m of this.settings.maps) {
+      for (const [key, h] of this.mapStore.all(m.name)) {
+        if (h.submap === oldName) this.mapStore.set(m.name, key, { submap: newName });
+      }
     }
     this.noParentMaps.clear();
     // Children of the renamed map keep their breadcrumb.
@@ -958,6 +964,9 @@ export default class HexmakerPlugin extends Plugin {
     hexFilePath: string,
     terrain: string | null,
   ): Promise<void> {
+    // The link lives in the hex note's body; a hex without a note gets it
+    // when its note is created (createHexNote adds it).
+    if (!(this.app.vault.getAbstractFileByPath(hexFilePath) instanceof TFile)) return;
     const tablesFolder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
 
@@ -1122,9 +1131,8 @@ export default class HexmakerPlugin extends Plugin {
 
     let linked = 0;
     for (const file of hexFiles) {
-      const cache = this.app.metadataCache.getFileCache(file);
-      const region: unknown = cache?.frontmatter?.["region"];
-      if (typeof region !== "string" || !region) continue;
+      const region = getHexRegionFromFile(this.app, file.path);
+      if (!region) continue;
       await this.syncHexRegionTableLink(file.path, region);
       linked++;
     }
@@ -1142,27 +1150,19 @@ export default class HexmakerPlugin extends Plugin {
     oldName: string,
     newName: string,
   ): Promise<Map<string, string>> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    const candidates = this.app.vault.getMarkdownFiles().filter((f) => {
-      if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
-      return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
-    });
+    // Terrain lives in map notes: rename it there (in memory now, notes
+    // follow). Hex notes no longer carry terrain.
     const overrides = new Map<string, string>();
-    const CHUNK = 10;
-    for (let i = 0; i < candidates.length; i += CHUNK) {
-      await Promise.all(
-        candidates.slice(i, i + CHUNK).map(async (f) => {
-          // Read raw content — don't trust the stale metadata cache
-          const content = await this.app.vault.read(f);
-          const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-          if (!fmMatch) return;
-          const terrainLine = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
-          if (!terrainLine || terrainLine[1].trim() !== oldName) return;
-          await setTerrainInFile(this.app, f.path, newName);
-          overrides.set(f.path, newName);
-        }),
-      );
+    for (const m of this.settings.maps) {
+      for (const [key, h] of this.mapStore.all(m.name)) {
+        if (h.terrain !== oldName) continue;
+        this.mapStore.set(m.name, key, { terrain: newName });
+        const [x, y] = key.split("_").map(Number);
+        overrides.set(this.hexPath(x, y, m.name), newName);
+      }
+      if (m.baseTerrain === oldName) m.baseTerrain = newName;
     }
+    await this.mapStore.flush();
     return overrides;
   }
 
@@ -1246,9 +1246,9 @@ export default class HexmakerPlugin extends Plugin {
       .replace(/\{\{y\}\}/g, String(y))
       .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`);
     if (terrain) {
-      content = withFrontmatterField(content, "terrain", terrain);
-      // Add the terrain's encounter-table link now rather than reading the
-      // note back and rewriting it after it's created.
+      // Terrain is map data (map note); the note only gets the terrain's
+      // encounter-table link, added now rather than patched in later.
+      this.mapStore.set(mapName, `${x}_${y}`, { terrain });
       const table = this.terrainEncounterTable(terrain);
       if (table) {
         const linkText = `[[${this.app.metadataCache.fileToLinktext(table, path)}]]`;
@@ -1268,9 +1268,7 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     try {
-      const file = await this.app.vault.create(path, content);
-      if (terrain) notePendingTerrain(path, terrain);
-      return file;
+      return await this.app.vault.create(path, content);
     } catch {
       // A concurrent worker may have created this file between our existence check and
       // this create call.  If the file now exists, use it rather than treating it as an error.
@@ -1372,38 +1370,36 @@ export default class HexmakerPlugin extends Plugin {
     });
     await this.saveSettings();
 
-    let created: number;
-    if (extra.baseTerrain) {
-      // Notes on use: write only hexes that differ from the base terrain.
-      const painted = [...(terrainAt ?? new Map<string, string>())]
-        .filter(([, t]) => t && t !== extra.baseTerrain);
-      created = await this.generateHexNotesAt(name, painted, (done) => onProgress?.(done, painted.length));
-    } else {
-      const xs = Array.from({ length: cols }, (_, i) => i + initialX);
-      const ys = Array.from({ length: rows }, (_, i) => i + initialY);
-      const total = cols * rows;
-      created = await this.generateHexNotes(
-        name,
-        xs,
-        ys,
-        (done) => onProgress?.(done, total),
-        terrainAt,
-      );
-    }
-    if (created > 0 && !extra.quiet)
-      new Notice(
-        `Hexmaker: generated ${created} hex note${created !== 1 ? "s" : ""} for "${name}".`,
-      );
+    // Notes on use: a new map writes no hex notes — terrain goes into the
+    // map note, and a hex note appears when the hex first gets content.
+    const cells = [...(terrainAt ?? new Map<string, string>())]
+      .filter(([, t]) => t && t !== extra.baseTerrain)
+      .map(([k, t]): [string, { terrain: string }] => [k, { terrain: t }]);
+    this.mapStore.setMany(name, cells);
+    onProgress?.(cols * rows, cols * rows);
+    await this.mapStore.flush();
+    if (!extra.quiet) new Notice(`Hexmaker: created map "${name}".`);
 
     return { name };
   }
 
-  /** Create notes for specific hexes ("x_y" → terrain), skipping ones that exist. */
+  /**
+   * Set terrain for specific hexes ("x_y" → terrain). With map notes this
+   * writes map data only — hex notes are created when a hex gets content —
+   * so it returns 0 notes created. Falls back to creating notes only if the
+   * map store isn't ready yet.
+   */
   async generateHexNotesAt(
     mapName: string,
     cells: [string, string][],
     onProgress?: (done: number) => void,
   ): Promise<number> {
+    if (this.mapStore.isReady()) {
+      this.mapStore.setMany(mapName, cells.filter(([, t]) => t).map(([k, t]) => [k, { terrain: t }]));
+      onProgress?.(cells.length);
+      await this.mapStore.flush();
+      return 0;
+    }
     const template = await this.loadHexTemplate();
     if (template === null) return 0;
     let created = 0;
@@ -1431,6 +1427,16 @@ export default class HexmakerPlugin extends Plugin {
     onProgress?: (done: number) => void,
     terrainAt?: Map<string, string>,
   ): Promise<number> {
+    if (this.mapStore.isReady()) {
+      const cells: [string, string][] = [];
+      for (const x of xs) for (const y of ys) {
+        const t = terrainAt?.get(`${x}_${y}`);
+        if (t) cells.push([`${x}_${y}`, t]);
+      }
+      if (cells.length) return this.generateHexNotesAt(mapName, cells);
+      onProgress?.(xs.length * ys.length);
+      return 0;
+    }
     // Read template once — avoids N vault reads for the same file
     const template = await this.loadHexTemplate();
     if (template === null) return 0;
@@ -1517,11 +1523,7 @@ export default class HexmakerPlugin extends Plugin {
    * second hex doesn't move its breadcrumb).
    */
   async linkSubmap(parentMap: string, x: number, y: number, childMap: string): Promise<void> {
-    const hexPath = this.hexPath(x, y, parentMap);
-    if (!this.app.vault.getAbstractFileByPath(hexPath)) {
-      await this.createHexNote(x, y, parentMap);
-    }
-    await setSubmapInFile(this.app, hexPath, childMap);
+    this.mapStore.set(parentMap, `${x}_${y}`, { submap: childMap });
     this.noParentMaps.clear();
     const child = this.getMap(childMap);
     if (child && !child.parent && childMap !== parentMap) {
@@ -1532,9 +1534,8 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Remove the submap link from hex (x, y); clears the child's parent if it pointed here. */
   async unlinkSubmap(parentMap: string, x: number, y: number): Promise<void> {
-    const hexPath = this.hexPath(x, y, parentMap);
-    const fm: unknown = this.app.metadataCache.getCache(hexPath)?.frontmatter?.["duckmage-submap"];
-    await setSubmapInFile(this.app, hexPath, null);
+    const fm = this.mapStore.get(parentMap, `${x}_${y}`)?.submap;
+    this.mapStore.set(parentMap, `${x}_${y}`, { submap: null });
     this.noParentMaps.clear();
     const child = typeof fm === "string" ? this.getMap(fm) : undefined;
     if (child?.parent?.map === parentMap && child.parent.hex === `${x}_${y}`) {
@@ -1554,16 +1555,14 @@ export default class HexmakerPlugin extends Plugin {
     if (map.parent && this.getMap(map.parent.map)) return map.parent;
     // Root maps have no parent; don't rescan the hex notes on every switch.
     if (this.noParentMaps.has(mapName)) return undefined;
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (hexFolder && !file.path.startsWith(hexFolder + "/")) continue;
-      const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
-      if (submap !== mapName) continue;
-      const parentMap = file.parent?.name;
-      if (!parentMap || parentMap === mapName || !this.getMap(parentMap)) continue;
-      map.parent = { map: parentMap, hex: file.basename };
-      void this.saveSettings();
-      return map.parent;
+    for (const m of this.settings.maps) {
+      if (m.name === mapName) continue;
+      for (const [key, h] of this.mapStore.all(m.name)) {
+        if (h.submap !== mapName) continue;
+        map.parent = { map: m.name, hex: key };
+        void this.saveSettings();
+        return map.parent;
+      }
     }
     this.noParentMaps.add(mapName);
     return undefined;

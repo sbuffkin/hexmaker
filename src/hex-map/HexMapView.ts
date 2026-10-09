@@ -18,7 +18,7 @@ import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
-import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getSubmapFromFile, type OverlayStyle } from "../frontmatter";
+import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getHexRegionFromFile, getSubmapFromFile, type OverlayStyle } from "../frontmatter";
 import { buildSvgPattern, colorToIdToken, type OverlayPatternKey } from "../overlayPatterns";
 import { renderHexPreview } from "./overlayPatternControls";
 import {
@@ -1373,13 +1373,11 @@ export class HexMapView extends ItemView {
   }
 
   private hexHasContent(path: string): boolean {
+    if (getTerrainFromFile(this.app, path)) return true;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return false;
     const cache = this.app.metadataCache.getFileCache(file);
-    if (!cache) return false;
-    if (cache.frontmatter?.terrain) return true;
-    if (cache.links && cache.links.length > 0) return true;
-    return false;
+    return !!cache?.links && cache.links.length > 0;
   }
 
   private buildDrawingToolbarContent(toolbar: HTMLElement): void {
@@ -3396,11 +3394,15 @@ export class HexMapView extends ItemView {
       // getGmIconsFromFile separately would re-run getAbstractFileByPath +
       // getFileCache three times per hex (~11.5k redundant lookups on a
       // 3843-hex map).
-      const fm = getFrontMatter(this.app, path);
-      // A note this plugin just wrote may not be indexed yet (new maps write
-      // thousands at once); its terrain is held in memory until it is.
+      // Before the map store is ready (startup), fall back to frontmatter.
+      const fromStore = this.plugin.mapStore.isReady();
+      const fm = fromStore ? null : getFrontMatter(this.app, path);
+      const stored = fromStore ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`) : undefined;
+      // A note this plugin just wrote may not be indexed yet; its terrain is
+      // held in memory until it is.
       const terrainKey = terrainOverrides?.has(path)
         ? terrainOverrides.get(path)!
+        : fromStore ? stored?.terrain ?? null
         : fm ? terrainFromFm(fm) : pendingTerrainOf(path);
       // Hexes with no terrain (often no note at all — notes are created on
       // use) show the map's base terrain, e.g. "void" on a system map.
@@ -3418,7 +3420,7 @@ export class HexMapView extends ItemView {
 
       const iconOverride = iconOverrides?.has(path)
         ? iconOverrides.get(path)!
-        : iconOverrideFromFm(fm);
+        : fromStore ? stored?.icon ?? null : iconOverrideFromFm(fm);
       if (iconOverride) {
         // Render terrain icon as hidden fallback — shown by CSS when overrides are off
         if (terrainEntry?.icon) {
@@ -3459,7 +3461,7 @@ export class HexMapView extends ItemView {
       // list lands on the dataset immediately, no race.
       const gmIcons = gmIconsOverrides?.has(path)
         ? gmIconsOverrides.get(path)!
-        : gmIconsFromFm(fm);
+        : fromStore ? [...(stored?.gmIcons ?? [])] : gmIconsFromFm(fm);
       if (gmIcons.length > 0) hexEl.dataset.gmIcons = JSON.stringify(gmIcons);
 
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
@@ -4583,7 +4585,9 @@ export class HexMapView extends ItemView {
               window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
             );
           try {
-            const onDisk = !!this.app.vault.getAbstractFileByPath(path);
+            // Map data lives in the map note once the store is ready, so
+            // painting never needs (or creates) a hex note.
+            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
             if (terrain === null) {
               if (onDisk) {
                 await setTerrainInFile(this.app, path, null);
@@ -4650,7 +4654,9 @@ export class HexMapView extends ItemView {
               window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
             );
           try {
-            const onDisk = !!this.app.vault.getAbstractFileByPath(path);
+            // Map data lives in the map note once the store is ready, so
+            // painting never needs (or creates) a hex note.
+            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
             if (icon === null) {
               if (onDisk) await setIconOverrideInFile(this.app, path, null);
             } else {
@@ -4719,7 +4725,9 @@ export class HexMapView extends ItemView {
               window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
             );
           try {
-            const onDisk = !!this.app.vault.getAbstractFileByPath(path);
+            // Map data lives in the map note once the store is ready, so
+            // painting never needs (or creates) a hex note.
+            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
             if (list.length === 0) {
               if (onDisk) await setGmIconsInFile(this.app, path, []);
             } else {
@@ -5702,11 +5710,7 @@ export class HexMapView extends ItemView {
     if (this.erasedRegions.has(hexFilePath)) return null;
     const pending = this.pendingRegions.get(hexFilePath);
     if (pending !== undefined) return pending;
-    const file = this.app.vault.getAbstractFileByPath(hexFilePath);
-    if (!(file instanceof TFile)) return null;
-    const cache = this.app.metadataCache.getFileCache(file);
-    const region: unknown = cache?.frontmatter?.["region"];
-    return typeof region === "string" ? region : null;
+    return getHexRegionFromFile(this.app, hexFilePath);
   }
 
   private updateRegionOverlay(): void {

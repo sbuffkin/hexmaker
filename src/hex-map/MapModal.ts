@@ -4,7 +4,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
 import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
-import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
 import { exportMapAsPng } from "../export/mapPngRenderer";
 import { exportMapAsPdf } from "../export/exporters/mapWithTable";
 import { exportMapAsManual } from "../export/exporters/hexcrawlManual";
@@ -1013,10 +1012,13 @@ export class MapModal extends HexmakerModal {
       this.view.activeMapName = this.plugin.settings.maps[0]?.name ?? "";
     }
 
-    const submapRefs = this.app.vault.getMarkdownFiles().filter(
-      (f) => getSubmapFromFile(this.app, f.path) === name,
-    );
-    await Promise.all(submapRefs.map((f) => setSubmapInFile(this.app, f.path, null)));
+    // Hexes pointing at the deleted map lose their submap link.
+    this.plugin.mapStore.forgetMap(name);
+    for (const m of this.plugin.settings.maps) {
+      for (const [key, h] of this.plugin.mapStore.all(m.name)) {
+        if (h.submap === name) this.plugin.mapStore.set(m.name, key, { submap: null });
+      }
+    }
 
     this.confirmingDelete = null;
     await this.plugin.saveSettings();
@@ -1061,6 +1063,8 @@ export class MapModal extends HexmakerModal {
     const oldName = this.view.activeMapName;
     const map = this.plugin.getMap(oldName);
     if (map) map.name = newName;
+    // The map note moved with its folder; give it the new name too.
+    await this.plugin.mapStore.renameMap(oldName, newName);
     if (this.plugin.settings.defaultMap === oldName) {
       this.plugin.settings.defaultMap = newName;
     }

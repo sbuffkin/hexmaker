@@ -448,7 +448,7 @@ async function writeTerrain(
         const [x, y] = key.split("_").map(Number);
         const path = plugin.hexPath(x, y, mapName);
         const before = getTerrainFromFile(plugin.app, path);
-        if (plugin.app.vault.getAbstractFileByPath(path) instanceof TFile) {
+        if (plugin.mapStore?.isReady() || plugin.app.vault.getAbstractFileByPath(path) instanceof TFile) {
           await setTerrainInFile(plugin.app, path, terrain);
         } else {
           await plugin.createHexNote(x, y, mapName, undefined, terrain);

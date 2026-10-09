@@ -404,6 +404,18 @@ export class HexTableView extends ItemView {
       }),
     );
 
+    // Map data (terrain, region, …) changes in the map store, not in hex
+    // notes: reload once painting settles.
+    let storeTimer: number | undefined;
+    const offStore = this.plugin.mapStore.onChange(() => {
+      window.clearTimeout(storeTimer);
+      storeTimer = window.setTimeout(() => void this.loadTable(), 500);
+    });
+    this.register(() => {
+      offStore();
+      window.clearTimeout(storeTimer);
+    });
+
     void this.loadTable();
     return Promise.resolve();
   }
@@ -455,6 +467,17 @@ export class HexTableView extends ItemView {
         cls: "duckmage-hex-table-empty",
       });
       return;
+    }
+
+    // Hexes with map data (terrain, region, …) but no note yet — notes are
+    // created on use, so the map note is the other half of the list.
+    const seen = new Set(files.map((f) => f.path));
+    for (const m of this.plugin.settings.maps) {
+      for (const key of this.plugin.mapStore.all(m.name).keys()) {
+        const [x, y] = key.split("_").map(Number);
+        const path = this.plugin.hexPath(x, y, m.name);
+        if (!seen.has(path)) files.push({ path, x, y, region: m.name });
+      }
     }
 
     // Apply region filter

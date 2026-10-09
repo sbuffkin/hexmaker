@@ -15,7 +15,7 @@ import { exportToPdfBytes } from "../pdfExporter";
 import { ensureExportFolder } from "../exportFolder";
 import { renderMapToPngBlob } from "../mapPngRenderer";
 import { getAllSectionData } from "../../sections";
-import { getFrontMatter, terrainFromFm } from "../../frontmatter";
+import { getHexRegionFromFile, getTerrainFromFile } from "../../frontmatter";
 import { getIconUrl, normalizeFolder } from "../../utils";
 import { parseRandomTable, getDieRanges } from "../../random-tables/randomTable";
 import DEFAULT_HEX_TEMPLATE from "../../defaultHexTemplate.md";
@@ -134,9 +134,8 @@ export async function collectManualData(
         const file = app.vault.getAbstractFileByPath(path);
         if (!(file instanceof TFile)) continue;
         hexCount++;
-        const fm = getFrontMatter(app, path);
-        const terrain = terrainFromFm(fm) ?? "";
-        const region = typeof fm?.region === "string" ? fm.region : "";
+        const terrain = getTerrainFromFile(app, path) ?? "";
+        const region = getHexRegionFromFile(app, path) ?? "";
         if (terrain) terrainCounts.set(terrain, (terrainCounts.get(terrain) ?? 0) + 1);
         if (region) regionCounts.set(region, (regionCounts.get(region) ?? 0) + 1);
 

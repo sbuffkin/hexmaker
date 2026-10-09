@@ -67,6 +67,28 @@ export function withFrontmatterField(content: string, key: string, value: string
   return `---\n${newBody}\n---${m[2]}${content.slice(m[0].length)}`;
 }
 
+/**
+ * Per-hex map data (terrain, icon, GM icons, region, submap) lives in map
+ * notes (see src/maps/MapStore.ts), not in hex-note frontmatter. Once the
+ * store is ready, the hex getters/setters below route to it; before that
+ * (startup) and for non-hex paths they fall back to frontmatter.
+ */
+export interface HexDataSource {
+  isReady(): boolean;
+  resolve(path: string): { map: string; key: string } | null;
+  get(map: string, key: string): import("./maps/mapNote").HexData | undefined;
+  set(map: string, key: string, patch: Record<string, unknown>): void;
+}
+let hexSource: HexDataSource | null = null;
+export function setHexDataSource(src: HexDataSource | null): void {
+  hexSource = src;
+}
+/** The store location for a hex-note path, when the store is serving it. */
+function hexLoc(path: string): { map: string; key: string } | null {
+  if (!hexSource?.isReady()) return null;
+  return hexSource.resolve(path);
+}
+
 export function getFrontMatter(app: App, path: string) {
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return null;
@@ -124,6 +146,8 @@ export function pendingTerrainOf(path: string): string | null {
 }
 
 export function getTerrainFromFile(app: App, path: string): string | null {
+  const loc = hexLoc(path);
+  if (loc) return hexSource!.get(loc.map, loc.key)?.terrain ?? null;
   const fm = getFrontMatter(app, path);
   return fm ? terrainFromFm(fm) : pendingTerrainOf(path);
 }
@@ -133,6 +157,8 @@ export async function setTerrainInFile(
   path: string,
   terrainKey: string | null,
 ): Promise<boolean> {
+  const loc = hexLoc(path);
+  if (loc) { hexSource!.set(loc.map, loc.key, { terrain: terrainKey }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -206,6 +232,8 @@ export async function setFactionStyleInFile(
 }
 
 export function getHexRegionFromFile(app: App, path: string): string | null {
+  const loc = hexLoc(path);
+  if (loc) return hexSource!.get(loc.map, loc.key)?.region ?? null;
   const region = getFrontMatter(app, path)?.["region"];
   return typeof region === "string" ? region : null;
 }
@@ -215,6 +243,8 @@ export async function setHexRegionInFile(
   path: string,
   regionName: string | null,
 ): Promise<boolean> {
+  const loc = hexLoc(path);
+  if (loc) { hexSource!.set(loc.map, loc.key, { region: regionName }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -288,6 +318,8 @@ export async function setRegionStyleInFile(
 }
 
 export function getIconOverrideFromFile(app: App, path: string): string | null {
+  const loc = hexLoc(path);
+  if (loc) return hexSource!.get(loc.map, loc.key)?.icon ?? null;
   return iconOverrideFromFm(getFrontMatter(app, path));
 }
 
@@ -296,6 +328,8 @@ export async function setIconOverrideInFile(
   path: string,
   icon: string | null,
 ): Promise<boolean> {
+  const loc = hexLoc(path);
+  if (loc) { hexSource!.set(loc.map, loc.key, { icon }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -326,6 +360,8 @@ export function getGmIconFromFile(app: App, path: string): string | null {
  * singular key `gm-icon` if present so existing notes Just Work.
  */
 export function getGmIconsFromFile(app: App, path: string): string[] {
+  const loc = hexLoc(path);
+  if (loc) return [...(hexSource!.get(loc.map, loc.key)?.gmIcons ?? [])];
   return gmIconsFromFm(getFrontMatter(app, path));
 }
 
@@ -354,6 +390,8 @@ export async function setGmIconsInFile(
   path: string,
   icons: string[],
 ): Promise<boolean> {
+  const loc = hexLoc(path);
+  if (loc) { hexSource!.set(loc.map, loc.key, { gmIcons: [...icons] }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -499,6 +537,8 @@ export async function applyTokenFrontmatter(
 }
 
 export function getSubmapFromFile(app: App, path: string): string | undefined {
+  const loc = hexLoc(path);
+  if (loc) return hexSource!.get(loc.map, loc.key)?.submap;
   const val = getFrontMatter(app, path)?.["duckmage-submap"];
   return typeof val === "string" ? val : undefined;
 }
@@ -508,6 +548,8 @@ export async function setSubmapInFile(
   path: string,
   mapName: string | null,
 ): Promise<boolean> {
+  const loc = hexLoc(path);
+  if (loc) { hexSource!.set(loc.map, loc.key, { submap: mapName }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
