@@ -87,6 +87,11 @@ export const SPACE_PATH_TYPES: PathType[] = [
   { name: "Trade route", color: "#f59e0b", width: 3, lineStyle: "solid", routing: "through" },
 ];
 
+// System-scale: faint dotted rings the Orbits generator draws around the star.
+export const SYSTEM_PATH_TYPES: PathType[] = [
+  { name: "Orbit", color: "#3b4a6b", width: 1, lineStyle: "dotted", routing: "through" },
+];
+
 export const PALETTE_PRESETS: PalettePreset[] = [
   {
     name: LIMITED_PALETTE_NAME,
@@ -107,8 +112,9 @@ export const PALETTE_PRESETS: PalettePreset[] = [
   },
   {
     name: SPACE_SYSTEM_PALETTE_NAME,
-    description: "A single star system: stars, planets, belts, stations, and hazards.",
+    description: "A single star system: stars, planets, belts, stations, and hazards. Adds an Orbit path type.",
     terrains: SPACE_SYSTEM_TERRAINS,
+    pathTypes: SYSTEM_PATH_TYPES,
   },
 ];
 

@@ -1256,6 +1256,15 @@ export default class HexmakerPlugin extends Plugin {
     onProgress?: (done: number, total: number) => void,
     /** Optional generated terrain per hex, keyed "x_y". */
     terrainAt?: Map<string, string>,
+    extra: {
+      /** Terrain shown on unpainted hexes. When set, hex notes are created
+       *  on use: only hexes that get a terrain other than the base get a
+       *  note now; the rest appear when clicked, painted, or linked. */
+      baseTerrain?: string;
+      parent?: { map: string; hex: string };
+      /** Silence the "generated N notes" notice (caller reports instead). */
+      quiet?: boolean;
+    } = {},
   ): Promise<{ name: string } | { error: string }> {
     const name = slugify(rawName);
     if (!name) return { error: "Enter a map name." };
@@ -1280,25 +1289,61 @@ export default class HexmakerPlugin extends Plugin {
       pathChains: [],
       staggerOffset,
       createdWith: pluginVersion(this),
+      ...(extra.baseTerrain ? { baseTerrain: extra.baseTerrain } : {}),
+      ...(extra.parent ? { parent: extra.parent } : {}),
     });
     await this.saveSettings();
 
-    const xs = Array.from({ length: cols }, (_, i) => i + initialX);
-    const ys = Array.from({ length: rows }, (_, i) => i + initialY);
-    const total = cols * rows;
-    const created = await this.generateHexNotes(
-      name,
-      xs,
-      ys,
-      (done) => onProgress?.(done, total),
-      terrainAt,
-    );
-    if (created > 0)
+    let created: number;
+    if (extra.baseTerrain) {
+      // Notes on use: write only hexes that differ from the base terrain.
+      const painted = [...(terrainAt ?? new Map<string, string>())]
+        .filter(([, t]) => t && t !== extra.baseTerrain);
+      created = await this.generateHexNotesAt(name, painted, (done) => onProgress?.(done, painted.length));
+    } else {
+      const xs = Array.from({ length: cols }, (_, i) => i + initialX);
+      const ys = Array.from({ length: rows }, (_, i) => i + initialY);
+      const total = cols * rows;
+      created = await this.generateHexNotes(
+        name,
+        xs,
+        ys,
+        (done) => onProgress?.(done, total),
+        terrainAt,
+      );
+    }
+    if (created > 0 && !extra.quiet)
       new Notice(
         `Hexmaker: generated ${created} hex note${created !== 1 ? "s" : ""} for "${name}".`,
       );
 
     return { name };
+  }
+
+  /** Create notes for specific hexes ("x_y" → terrain), skipping ones that exist. */
+  async generateHexNotesAt(
+    mapName: string,
+    cells: [string, string][],
+    onProgress?: (done: number) => void,
+  ): Promise<number> {
+    const template = await this.loadHexTemplate();
+    if (template === null) return 0;
+    let created = 0;
+    let done = 0;
+    const CHUNK = 20;
+    for (let i = 0; i < cells.length; i += CHUNK) {
+      await Promise.all(
+        cells.slice(i, i + CHUNK).map(async ([key, terrain]) => {
+          const [x, y] = key.split("_").map(Number);
+          if (!this.app.vault.getAbstractFileByPath(this.hexPath(x, y, mapName))) {
+            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
+          }
+          done++;
+        }),
+      );
+      onProgress?.(done);
+    }
+    return created;
   }
 
   async generateHexNotes(

@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>loading</title>
+<style>
+  body { font: 13px system-ui, sans-serif; background: #1e1e1e; color: #ddd; margin: 16px; }
+  h1 { font-size: 17px; margin: 0 0 8px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  button, select, input { font: inherit; background: #2b2b2b; color: #ddd; border: 1px solid #444; border-radius: 5px; padding: 3px 8px; }
+  button.on { background: #7c3aed; border-color: #7c3aed; color: #fff; }
+  input { width: 4em; }
+  #wall { display: flex; flex-wrap: wrap; gap: 14px; }
+  figure { margin: 0; background: #151515; padding: 8px; border-radius: 8px; }
+  figcaption { color: #888; font-size: 11px; margin-top: 4px; max-width: 300px; }
+  #legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 12px; color: #aaa; font-size: 12px; }
+  #legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+</style>
+<h1>Procedural space generators: Star scatter (sector) and Orbits (system)</h1>
+<div class="bar">
+  <button data-gen="sector">Star scatter</button>
+  <button data-gen="system">Orbits</button>
+  <label>Size <input id="cols" type="number"> × <input id="rows" type="number"></label>
+  <label>Hexes <select id="orient"><option value="flat">flat-top</option><option value="pointy">pointy-top</option></select></label>
+  <button id="reroll">🎲 Re-roll</button>
+</div>
+<div class="bar" id="controls"></div>
+<div id="wall"></div>
+<div id="legend"></div>
+<script src="space-gen-preview.js"></script>

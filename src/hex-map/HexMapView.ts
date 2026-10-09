@@ -47,6 +47,7 @@ import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
+import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { TokenInfoModal } from "./TokenInfoModal";
 import {
   getTokenDataFromCache,
@@ -451,6 +452,27 @@ export class HexMapView extends ItemView {
     const [x, y] = parent.hex.split("_").map(Number);
     window.requestAnimationFrame(() => this.flashHex(x, y));
     return true;
+  }
+
+  /**
+   * "New submap…" for hex (x, y): the setup modal (size, palette, generator,
+   * base terrain, preview). On create, links the hex and enters the new map;
+   * "Open in generator" also opens the Generator view on it.
+   */
+  openNewSubmapSetup(x: number, y: number): void {
+    const parentMap = this.activeMapName;
+    new NewMapSetupModal(
+      this.app,
+      this.plugin,
+      ({ name }) => {
+        void (async () => {
+          await this.plugin.linkSubmap(parentMap, x, y, name);
+          if (this.activeMapName === parentMap) this.navigateToMap(name);
+          else this.renderGrid();
+        })();
+      },
+      { map: parentMap, x, y },
+    ).open();
   }
 
   canNavigateBack(): boolean {
@@ -3370,7 +3392,11 @@ export class HexMapView extends ItemView {
       const terrainKey = terrainOverrides?.has(path)
         ? terrainOverrides.get(path)!
         : fm ? terrainFromFm(fm) : pendingTerrainOf(path);
-      const terrainEntry = terrainKey != null ? paletteByName.get(terrainKey) : undefined;
+      // Hexes with no terrain (often no note at all — notes are created on
+      // use) show the map's base terrain, e.g. "void" on a system map.
+      const ownTerrain = terrainKey != null ? paletteByName.get(terrainKey) : undefined;
+      const baseEntry = !ownTerrain && region.baseTerrain ? paletteByName.get(region.baseTerrain) : undefined;
+      const terrainEntry = ownTerrain ?? baseEntry;
 
       const hexEl = parent.createDiv({
         cls: `duckmage-hex${exists ? " duckmage-hex-exists" : ""}`,
@@ -3605,9 +3631,18 @@ export class HexMapView extends ItemView {
       );
     }
 
+    if (!submap) {
+      menu.addItem((item) =>
+        item
+          .setTitle("New submap…")
+          .setIcon("map-plus")
+          .onClick(() => this.openNewSubmapSetup(x, y)),
+      );
+    }
+
     menu.addItem((item) =>
       item
-        .setTitle(submap ? "Change submap…" : "Create / link submap…")
+        .setTitle(submap ? "Change submap…" : "Link existing map…")
         .setIcon("map-pin")
         .onClick(() => {
           const parentMap = this.activeMapName;
@@ -3628,6 +3663,7 @@ export class HexMapView extends ItemView {
               void this.plugin.unlinkSubmap(parentMap, x, y).then(() => this.renderGrid());
             },
             { map: parentMap, x, y },
+            () => this.openNewSubmapSetup(x, y),
           ).open();
         }),
     );

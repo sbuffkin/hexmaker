@@ -21,6 +21,7 @@ import {
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -551,6 +552,21 @@ export class MapModal extends HexmakerModal {
   // ── New map tab ───────────────────────────────────────────────────────────
 
   private renderNewMapTab(el: HTMLElement): void {
+    // Guided setup: the same modal used for new submaps — palette, size,
+    // any generator (incl. Star scatter / Orbits), base terrain, preview.
+    const guided = el.createDiv({ cls: "duckmage-region-row duckmage-map-guided-row" });
+    guided.createEl("button", { text: "Guided setup…" }).addEventListener("click", () => {
+      new NewMapSetupModal(this.app, this.plugin, ({ name }) => {
+        this.view.switchMapFromModal(name);
+        this.onChanged();
+      }).open();
+      this.close();
+    });
+    guided.createSpan({
+      cls: "setting-item-description",
+      text: "Pick a size and a generator with a live preview, or fill in the form below.",
+    });
+
     // Name
     el.createEl("label", { text: "Name", cls: "duckmage-map-field-label" });
     const nameRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -612,7 +628,7 @@ export class MapModal extends HexmakerModal {
       const current = generatorSelect.value;
       generatorSelect.empty();
       generatorSelect.createEl("option", { value: "", text: "Blank" });
-      const names = this.plugin.getPaletteByName(paletteSelect.value)?.terrains.map((t) => t.name) ?? [];
+      const names = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value).map((t) => t.name);
       for (const g of generators) {
         if (generatorFitsPalette(g.model, names))
           generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
@@ -715,7 +731,7 @@ export class MapModal extends HexmakerModal {
         offset: { x: Number(originXInput.value) || 0, y: Number(originYInput.value) || 0 },
         stagger: staggerVal,
       };
-      const palette = this.plugin.getPaletteByName(paletteSelect.value)?.terrains.map((t) => t.name) ?? [];
+      const palette = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value).map((t) => t.name);
       const r = generateTerrain(this.plugin, g.model, palette, grid, Number(seedInput.value) >>> 0);
       if (!r.ok) {
         previewStatus.setText(`This generator couldn't fill the map: ${r.message}`);
@@ -915,7 +931,7 @@ export class MapModal extends HexmakerModal {
     let terrainAt: Map<string, string> | undefined;
     let generatedPaths: { type: string; route?: string; hexes: string[] }[] = [];
     if (generator) {
-      const palette = this.plugin.getPaletteByName(paletteName)?.terrains.map((t) => t.name) ?? [];
+      const palette = this.plugin.getPaletteOrPresetTerrains(paletteName).map((t) => t.name);
       const solved = generateTerrain(
         this.plugin, generator.model, palette,
         { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed,

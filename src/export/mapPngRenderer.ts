@@ -213,6 +213,11 @@ export async function renderMapToPngBlob(
       if (file instanceof TFile) {
         const terrainName = getTerrainFromFile(plugin.app, file.path);
         if (terrainName) terrain = terrainByName.get(terrainName);
+      }
+      // Unpainted hexes (often noteless) draw as the map's base terrain,
+      // matching the on-screen map.
+      if (!terrain && map?.baseTerrain) terrain = terrainByName.get(map.baseTerrain);
+      if (file instanceof TFile) {
         iconOverride = getIconOverrideFromFile(plugin.app, file.path) ?? undefined;
         if (showFactionOverlay) {
           for (const fName of getHexFactionLinks(plugin.app, file)) {
