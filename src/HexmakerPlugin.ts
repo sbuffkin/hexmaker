@@ -20,9 +20,11 @@ import {
   VIEW_TYPE_RANDOM_TABLES,
   VIEW_TYPE_SETUP_WIZARD,
   VIEW_TYPE_GENERATOR,
+  VIEW_TYPE_PALETTE_EDITOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
+import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { ALL_MAP_KINDS, isIconHiddenByKind } from "./mapKinds";
 import {
   getPreset,
@@ -110,6 +112,7 @@ export default class HexmakerPlugin extends Plugin {
 
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
+    this.registerView(VIEW_TYPE_PALETTE_EDITOR, (leaf) => new PaletteEditorView(leaf, this));
     this.registerView(VIEW_TYPE_GENERATOR, (leaf) => new GeneratorView(leaf, this));
     this.registerView(
       VIEW_TYPE_HEX_TABLE,
@@ -139,6 +142,11 @@ export default class HexmakerPlugin extends Plugin {
       id: "open-terrain-generator",
       name: "Open terrain generator",
       callback: () => void this.openTerrainGenerator(),
+    });
+    this.addCommand({
+      id: "open-palette-editor",
+      name: "Open palette editor",
+      callback: () => void this.openPaletteEditor(),
     });
     this.addCommand({
       id: "map-go-up",
@@ -568,6 +576,25 @@ export default class HexmakerPlugin extends Plugin {
       const rel = prefix ? f.path.slice(prefix.length) : f.path;
       return !excludedFolders.some((exc) => rel.startsWith(exc + "/"));
     });
+  }
+
+  /** Open (or focus) the palette editor page, optionally on one palette. */
+  async openPaletteEditor(paletteName?: string): Promise<void> {
+    if (paletteName) PaletteEditorView.paletteName = paletteName;
+    const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)[0];
+    if (existing) {
+      await this.app.workspace.revealLeaf(existing);
+      if (paletteName && existing.view instanceof PaletteEditorView) existing.view.show(paletteName);
+      return;
+    }
+    await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_PALETTE_EDITOR, active: true });
+  }
+
+  /** Palettes changed from outside an editor page (note edit, map tool). */
+  refreshPaletteEditors(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)) {
+      if (leaf.view instanceof PaletteEditorView) leaf.view.refreshFromStore();
+    }
   }
 
   refreshHexMap(): void {
@@ -1140,6 +1167,48 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /** Re-render all open hex map views, passing terrain overrides to bypass the stale metadata cache. */
+  /**
+   * Rename a palette terrain everywhere: hex notes using it, its terrain
+   * table files, then the entry itself (saved). Used by the terrain entry
+   * editor and the palette editor page.
+   */
+  async renameTerrain(entry: TerrainColor, newName: string): Promise<void> {
+    const oldName = entry.name;
+    if (!newName || newName === oldName) return;
+    const overrides = await this.renameTerrainInHexes(oldName, newName);
+    await this.renameTerrainTables(oldName, newName);
+    entry.name = newName;
+    await this.saveSettings();
+    this.refreshHexMapWithOverrides(overrides);
+    this.refreshHexTableTerrainRename(oldName, newName);
+  }
+
+  private terrainTablePath(name: string, type: "description" | "encounters"): string {
+    const folder = normalizeFolder(this.settings.tablesFolder);
+    const sub = folder ? `${folder}/terrain` : "terrain";
+    return `${sub}/${type}/${name}.md`;
+  }
+
+  private async renameTerrainTables(oldName: string, newName: string): Promise<void> {
+    for (const type of ["description", "encounters"] as const) {
+      const oldPath = this.terrainTablePath(oldName, type);
+      const newPath = this.terrainTablePath(newName, type);
+      // Don't overwrite if the new terrain already has its own tables
+      if (this.app.vault.getAbstractFileByPath(newPath)) continue;
+      const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
+      if (!(oldFile instanceof TFile)) continue;
+      try {
+        let content = await this.app.vault.read(oldFile);
+        // Update the terrain frontmatter property to the new name
+        content = content.replace(/^terrain:[ \t].+$/m, `terrain: ${newName}`);
+        // Strip the old roller link so ensureRollerLink can add one with the correct path
+        content = content.replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, "");
+        await this.app.vault.create(newPath, content);
+        await this.ensureRollerLink(newPath);
+      } catch { /* ignore */ }
+    }
+  }
+
   refreshHexMapWithOverrides(
     terrainOverrides: Map<string, string | null>,
   ): void {

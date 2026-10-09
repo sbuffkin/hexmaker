@@ -14,7 +14,27 @@ import {
   terrainsEqual,
   updatePaletteNote,
 } from "./paletteNote";
-import { uniquePaletteName } from "./presets";
+import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { inferTerrainType } from "../terrainTypes";
+
+/**
+ * Fill in missing terrain types: a same-named terrain in a preset wins,
+ * else the type is inferred from the name/category. Returns how many
+ * terrains were typed.
+ */
+export function seedTerrainTypes(palettes: TerrainPalette[]): number {
+  const known = new Map<string, string>();
+  for (const p of PALETTE_PRESETS) for (const t of p.terrains) if (t.type) known.set(t.name.toLowerCase(), t.type);
+  let n = 0;
+  for (const pal of palettes) {
+    for (const t of pal.terrains) {
+      if (t.type) continue;
+      const type = known.get(t.name.toLowerCase()) ?? inferTerrainType(t.name, t.category);
+      if (type) { t.type = type; n++; }
+    }
+  }
+  return n;
+}
 
 /**
  * Copy a note's metadata (`child-palette`, the Submap defaults table) onto
@@ -203,8 +223,18 @@ export class PaletteStore {
     }
 
     if (await this.loadAll()) dirty = true;
+    // One-time: give existing palettes terrain types (from same-named
+    // preset terrains, else inferred from the name). Later blanks are the
+    // user's choice and stay blank.
+    let seeded = false;
+    if (!settings.terrainTypesSeeded) {
+      seeded = seedTerrainTypes(settings.terrainPalettes) > 0;
+      settings.terrainTypesSeeded = true;
+      dirty = true;
+    }
     this.ready = true;
     if (dirty) await this.persist();
+    if (seeded) void this.sync();
   }
 
   /**
@@ -263,6 +293,7 @@ export class PaletteStore {
   private async persist(): Promise<void> {
     await this.plugin.saveData(this.plugin.settings);
     this.plugin.refreshHexMap();
+    this.plugin.refreshPaletteEditors();
   }
 
   /** memory → notes. Safe to call often; only touches notes that differ. */

@@ -1951,6 +1951,149 @@ input.duckmage-input-error {
     gap: 0.5em;
 }
 
+/* ── Palette editor page ────────────────────────────────────────────── */
+.duckmage-palette-editor {
+    padding: 1em 1.25em 3em;
+}
+
+.duckmage-pe-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.duckmage-pe-palette-select {
+    font-weight: var(--font-semibold);
+    min-width: 12em;
+}
+
+.duckmage-pe-search {
+    margin-left: auto;
+    min-width: 12em;
+}
+
+.duckmage-pe-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 0.4em;
+}
+
+.duckmage-pe-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.duckmage-pe-table th {
+    text-align: left;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    font-weight: var(--font-normal);
+    padding: 0.25em 0.4em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-pe-table td {
+    padding: 0.2em 0.4em;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    vertical-align: middle;
+}
+
+.duckmage-pe-table input[type="text"],
+.duckmage-pe-table select {
+    width: 100%;
+    min-width: 7em;
+}
+
+.duckmage-pe-table input[type="color"] {
+    width: 2.2em;
+    height: 1.8em;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.duckmage-pe-table select.is-unset {
+    color: var(--text-faint);
+}
+
+.duckmage-pe-handle {
+    cursor: grab;
+    color: var(--text-faint);
+    width: 1.2em;
+    user-select: none;
+}
+
+.duckmage-pe-table tr.is-dragging {
+    opacity: 0.45;
+}
+
+.duckmage-pe-table tr.is-drop-target {
+    box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+
+.duckmage-pe-icon {
+    width: 2.4em;
+    height: 2.2em;
+    padding: 0.15em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.duckmage-pe-icon img {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.duckmage-pe-tint {
+    white-space: nowrap;
+}
+
+.duckmage-pe-delete {
+    padding: 0 0.6em;
+    color: var(--text-muted);
+}
+
+.duckmage-pe-delete.is-armed {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+.duckmage-pe-size {
+    white-space: nowrap;
+}
+
+.duckmage-pe-size input {
+    width: 4em;
+}
+
+.duckmage-pe-add-row {
+    display: flex;
+    gap: 0.5em;
+    margin: 0.5em 0 1em;
+}
+
+.duckmage-pe-field {
+    display: grid;
+    grid-template-columns: 10em minmax(0, 22em);
+    align-items: center;
+    gap: 0.25em 0.75em;
+}
+
+.duckmage-pe-field .setting-item-description {
+    grid-column: 2;
+}
+
+.duckmage-pe-defaults td.mod-warning {
+    color: var(--text-warning);
+}
+
 /* Onboarding: "What will you map?" checkboxes. */
 .duckmage-wizard-kinds {
     display: flex;

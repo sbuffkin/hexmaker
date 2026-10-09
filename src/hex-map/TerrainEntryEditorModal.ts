@@ -1,8 +1,10 @@
-import { App, Notice, Setting, TFile } from "obsidian";
+import { App, Notice, Setting } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { ICON_PACK_LABELS, iconLabel, iconPack, normalizeFolder, type IconPack } from "../utils";
+import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "../utils";
+import { inferTerrainType } from "../terrainTypes";
+import { fillTerrainTypeSelect } from "../terrainTypeSelect";
 
 export class TerrainEntryEditorModal extends HexmakerModal {
 	// Pending values — only written to the entry on Save
@@ -11,6 +13,9 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 	private pendingIcon: string | undefined;
 	private pendingIconColor: string | undefined;
 	private pendingCategory: string | undefined;
+	private pendingType: string | undefined;
+	/** True once the user picked a type themselves (stops name-based suggestions). */
+	private typeTouched: boolean;
 	private readonly originalName: string;
 	// Set to true by any explicit button action so onClose doesn't also autosave
 	private savedOrDeleted = false;
@@ -31,6 +36,8 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.pendingIcon      = entry.icon;
 		this.pendingIconColor = entry.iconColor;
 		this.pendingCategory  = entry.category;
+		this.pendingType      = entry.type ?? (isNew ? undefined : inferTerrainType(entry.name, entry.category));
+		this.typeTouched      = !!entry.type;
 	}
 
 	onOpen(): void {
@@ -42,13 +49,34 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		contentEl.addClass("duckmage-hex-editor");
 		contentEl.createEl("h2", { text: "Edit terrain type" });
 
+		let typeSelect: HTMLSelectElement | undefined;
 		new Setting(contentEl)
 			.setName("Name")
 			.addText(text =>
 				text
 					.setValue(this.pendingName)
-					.onChange(value => { this.pendingName = value.trim() || this.pendingName; }),
+					.onChange(value => {
+						this.pendingName = value.trim() || this.pendingName;
+						// Suggest a type from the name ("dark forest" → forest) until
+						// the user picks one themselves.
+						if (!this.typeTouched && typeSelect) {
+							this.pendingType = inferTerrainType(this.pendingName, this.pendingCategory);
+							typeSelect.value = this.pendingType ?? "";
+						}
+					}),
 			);
+
+		new Setting(contentEl)
+			.setName("Type")
+			.setDesc("What this terrain is (forest, water, star…), whatever you call it. Generators and the hex table use it.")
+			.addDropdown(dd => {
+				typeSelect = dd.selectEl;
+				fillTerrainTypeSelect(dd.selectEl, this.plugin.settings, this.pendingType);
+				dd.onChange(value => {
+					this.pendingType = value || undefined;
+					this.typeTouched = true;
+				});
+			});
 
 		new Setting(contentEl)
 			.setName("Color")
@@ -182,6 +210,8 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.entry.icon      = this.pendingIcon;
 		this.entry.iconColor = this.pendingIconColor;
 		this.entry.category  = this.pendingCategory;
+		if (this.pendingType) this.entry.type = this.pendingType;
+		else delete this.entry.type;
 		if (this.isNew) {
 			// Brand-new entry — no hex can have this terrain yet and no table files exist
 			// to rename. Just commit the name and create fresh table files.
@@ -190,14 +220,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 			await this.plugin.ensureTerrainTables();
 			this.plugin.refreshHexMap();
 		} else if (nameChanged) {
-			const oldName = this.originalName;
-			const newName = this.pendingName;
-			const overrides = await this.plugin.renameTerrainInHexes(oldName, newName);
-			await this.renameTerrainTables(oldName, newName);
-			this.entry.name = newName;
-			await this.plugin.saveSettings();
-			this.plugin.refreshHexMapWithOverrides(overrides);
-			this.plugin.refreshHexTableTerrainRename(oldName, newName);
+			await this.plugin.renameTerrain(this.entry, this.pendingName);
 		} else {
 			await this.plugin.saveSettings();
 			this.plugin.refreshHexMap();
@@ -205,29 +228,4 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.onSave();
 	}
 
-	private getTerrainTablePath(name: string, type: "description" | "encounters"): string {
-		const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-		const sub = folder ? `${folder}/terrain` : "terrain";
-		return `${sub}/${type}/${name}.md`;
-	}
-
-	private async renameTerrainTables(oldName: string, newName: string): Promise<void> {
-		for (const type of ["description", "encounters"] as const) {
-			const oldPath = this.getTerrainTablePath(oldName, type);
-			const newPath = this.getTerrainTablePath(newName, type);
-			// Don't overwrite if the new terrain already has its own tables
-			if (this.app.vault.getAbstractFileByPath(newPath)) continue;
-			const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
-			if (!(oldFile instanceof TFile)) continue;
-			try {
-				let content = await this.app.vault.read(oldFile);
-				// Update the terrain frontmatter property to the new name
-				content = content.replace(/^terrain:[ \t].+$/m, `terrain: ${newName}`);
-				// Strip the old roller link so ensureRollerLink can add one with the correct path
-				content = content.replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, "");
-				await this.app.vault.create(newPath, content);
-				await this.plugin.ensureRollerLink(newPath);
-			} catch { /* ignore */ }
-		}
-	}
 }

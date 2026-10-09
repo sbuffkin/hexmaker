@@ -5,9 +5,9 @@ import type { SubmapDefault, TerrainColor } from "../types";
 // A palette is a markdown note whose basename is the palette name and whose
 // body holds one terrain per table row:
 //
-//   | Terrain | Color | Icon | Icon color | Category |
-//   | --- | --- | --- | --- | --- |
-//   | ocean | #29507f |  |  | sea |
+//   | Terrain | Color | Icon | Icon color | Category | Type |
+//   | --- | --- | --- | --- | --- | --- |
+//   | ocean | #29507f |  |  | sea | water |
 //
 // Columns are matched by header name (case-insensitive, any order), so a
 // hand-edited or shared note only needs the Terrain and Color columns. Text
@@ -17,9 +17,9 @@ import type { SubmapDefault, TerrainColor } from "../types";
 /** Frontmatter key written into every palette note (informational only). */
 export const PALETTE_NOTE_MARKER = "hexmaker-palette";
 
-const HEADERS = ["Terrain", "Color", "Icon", "Icon color", "Category"] as const;
+const HEADERS = ["Terrain", "Color", "Icon", "Icon color", "Category", "Type"] as const;
 
-type Column = "name" | "color" | "icon" | "iconColor" | "category";
+type Column = "name" | "color" | "icon" | "iconColor" | "category" | "type";
 
 function columnFor(header: string): Column | null {
   const h = header.trim().toLowerCase().replace(/\s+/g, " ");
@@ -28,6 +28,7 @@ function columnFor(header: string): Column | null {
   if (h === "icon") return "icon";
   if (h === "icon color" || h === "icon colour" || h === "tint") return "iconColor";
   if (h === "category") return "category";
+  if (h === "type" || h === "terrain type") return "type";
   return null;
 }
 
@@ -110,6 +111,7 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
     if (row.icon) entry.icon = row.icon;
     if (row.iconColor) entry.iconColor = row.iconColor;
     if (row.category) entry.category = row.category;
+    if (row.type) entry.type = row.type;
     terrains.push(entry);
   }
   return terrains;
@@ -126,7 +128,7 @@ export function serializePaletteTable(terrains: TerrainColor[]): string {
     `| ${HEADERS.map(() => "---").join(" | ")} |`,
   ];
   for (const t of terrains) {
-    const cells = [t.name, t.color, t.icon, t.iconColor, t.category].map(escapeCell);
+    const cells = [t.name, t.color, t.icon, t.iconColor, t.category, t.type].map(escapeCell);
     lines.push(`| ${cells.join(" | ")} |`);
   }
   return lines.join("\n");
@@ -310,9 +312,10 @@ export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string
     "---",
     "",
     "Hexmaker terrain palette. The note name is the palette name. Each table row is one terrain:",
-    "colors are any CSS color, icons are file names from the icon picker, and categories group",
-    "terrains in the picker. Edit here or from the terrain tool on the hex map. Copy this note",
-    "into another vault's palettes folder to share it.",
+    "colors are any CSS color, icons are file names from the icon picker, categories group",
+    "terrains in the picker, and the type says what a terrain is (water, forest, star…) for",
+    "generators and the hex table. Edit here, in the palette editor, or from the terrain tool on",
+    "the hex map. Copy this note into another vault's palettes folder to share it.",
     "",
     serializePaletteTable(terrains),
     "",
@@ -346,7 +349,8 @@ export function terrainsEqual(a: TerrainColor[], b: TerrainColor[]): boolean {
       t.color === u.color &&
       (t.icon ?? "") === (u.icon ?? "") &&
       (t.iconColor ?? "") === (u.iconColor ?? "") &&
-      (t.category ?? "") === (u.category ?? "")
+      (t.category ?? "") === (u.category ?? "") &&
+      (t.type ?? "") === (u.type ?? "")
     );
   });
 }

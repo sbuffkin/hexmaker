@@ -128,6 +128,10 @@ export interface TerrainColor {
 	icon?: string;
 	iconColor?: string; // CSS colour to tint the icon; undefined = no tint (render as-is)
 	category?: string;
+	/** Terrain type id from src/terrainTypes.ts ("forest", "water", "star"…):
+	 *  what this terrain *is*, whatever it's called. Used by generators and
+	 *  the hex table. Unset = unknown (inferred from the name where needed). */
+	type?: string;
 }
 
 export interface HexmakerPluginSettings {
@@ -182,6 +186,8 @@ export interface HexmakerPluginSettings {
 	palettesMigrated: boolean;
 	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
 	mapKinds: string[];
+	/** True once existing palettes got terrain types (one-time seeding). */
+	terrainTypesSeeded: boolean;
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

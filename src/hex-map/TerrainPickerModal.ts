@@ -57,6 +57,15 @@ export class TerrainPickerModal extends HexmakerModal {
       this.editMode = !this.editMode;
       this.render();
     });
+    if (this.editMode) {
+      // The full page: every field (type, tint…), reorder, submap defaults.
+      const owner = this.plugin.settings.terrainPalettes.find((p) => p.terrains === this.palette);
+      header.createEl("button", { cls: "duckmage-tpe-edit-btn", text: "Full editor…" })
+        .addEventListener("click", () => {
+          this.close();
+          void this.plugin.openPaletteEditor(owner?.name);
+        });
+    }
 
     if (this.editMode) {
       this.renderEditMode();

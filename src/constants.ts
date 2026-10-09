@@ -8,72 +8,82 @@ export const VIEW_TYPE_HEX_MAP = "duckmage-hex-map";
 export const VIEW_TYPE_HEX_TABLE = "duckmage-hex-table";
 export const VIEW_TYPE_RANDOM_TABLES = "duckmage-random-tables";
 export const VIEW_TYPE_SETUP_WIZARD = "duckmage-setup-wizard";
+export const VIEW_TYPE_PALETTE_EDITOR = "duckmage-palette-editor";
 export const VIEW_TYPE_GENERATOR = "duckmage-terrain-generator";
 
 export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Sea
-  { name: "trench", color: "#14223d", category: "sea" },
-  { name: "ocean", color: "#29507f", category: "sea" },
-  { name: "shallows", color: "#4a82a5", category: "sea" },
+  { name: "trench", type: "deep-water", color: "#14223d", category: "sea" },
+  { name: "ocean", type: "water", color: "#29507f", category: "sea" },
+  { name: "shallows", type: "shallows", color: "#4a82a5", category: "sea" },
   // Uncategorised
-  { name: "water", color: "#60a5fa" },
-  { name: "urban", color: "#888888" },
+  { name: "water", type: "water", color: "#60a5fa" },
+  { name: "urban", type: "settlement", color: "#888888" },
   // Lowlands
   {
     name: "grass",
+    type: "grassland",
     color: "#69a168",
     icon: "bw-grassland.png",
     category: "lowlands",
   },
   {
     name: "hills",
+    type: "hills",
     color: "#e0e8a1",
     icon: "bw-hills.png",
     category: "lowlands",
   },
   {
     name: "foothills",
+    type: "hills",
     color: "#81c191",
     icon: "bw-hills.png",
     category: "lowlands",
   },
   // Snow
-  { name: "snow", color: "#e0f2fe", category: "snow" },
+  { name: "snow", type: "snow", color: "#e0f2fe", category: "snow" },
   {
     name: "mountains snow",
+    type: "peaks",
     color: "#bfdbfe",
     icon: "bw-mountains-snow.png",
     category: "snow",
   },
   // Desert
-  { name: "desert", color: "#ecdba2", category: "desert" },
+  { name: "desert", type: "desert", color: "#ecdba2", category: "desert" },
   {
     name: "desert rocky",
+    type: "desert",
     color: "#e6bc60",
     icon: "bw-desert-rocky.png",
     category: "desert",
   },
-  { name: "dunes", color: "#eccd7e", icon: "bw-dunes.png", category: "desert" },
+  { name: "dunes", type: "desert", color: "#eccd7e", icon: "bw-dunes.png", category: "desert" },
   {
     name: "cactus",
+    type: "desert",
     color: "#e2b75a",
     icon: "bw-cactus.png",
     category: "desert",
   },
   {
     name: "cactus heavy",
+    type: "desert",
     color: "#ddb869",
     icon: "bw-cactus-heavy.png",
     category: "desert",
   },
   {
     name: "badlands",
+    type: "badlands",
     color: "#c2410c",
     icon: "bw-badlands.png",
     category: "desert",
   },
   {
     name: "brokenlands",
+    type: "badlands",
     color: "#92400e",
     icon: "bw-brokenlands.png",
     category: "desert",
@@ -81,30 +91,35 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Forest
   {
     name: "forest",
+    type: "forest",
     color: "#2d9553",
     icon: "bw-forest.png",
     category: "forest",
   },
   {
     name: "forest heavy",
+    type: "forest",
     color: "#15803d",
     icon: "bw-forest-heavy.png",
     category: "forest",
   },
   {
     name: "forested hills",
+    type: "hills",
     color: "#22c55e",
     icon: "bw-forested-hills.png",
     category: "forest",
   },
   {
     name: "forested mountain",
+    type: "mountains",
     color: "#6b9e7c",
     icon: "bw-forested-mountain.png",
     category: "forest",
   },
   {
     name: "forested mountains",
+    type: "mountains",
     color: "#466d46",
     icon: "bw-forested-mountains.png",
     iconColor: "#1b1d1c",
@@ -112,30 +127,35 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   },
   {
     name: "mixed forest",
+    type: "forest",
     color: "#16a34a",
     icon: "bw-forest-mixed.png",
     category: "forest",
   },
   {
     name: "mixed forest heavy",
+    type: "forest",
     color: "#15803d",
     icon: "bw-forest-mixed-heavy.png",
     category: "forest",
   },
   {
     name: "mixed forest hills",
+    type: "hills",
     color: "#22c55e",
     icon: "bw-forest-mixed-hills.png",
     category: "forest",
   },
   {
     name: "mixed forest mountain",
+    type: "mountains",
     color: "#6b9e7c",
     icon: "bw-forest-mixed-mountain.png",
     category: "forest",
   },
   {
     name: "mixed forest mountains",
+    type: "mountains",
     color: "#5e8c6a",
     icon: "bw-forest-mixed-mountains.png",
     category: "forest",
@@ -143,12 +163,14 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Darkwood (evergreen)
   {
     name: "evergreen",
+    type: "forest",
     color: "#428a5e",
     icon: "bw-evergreen.png",
     category: "darkwood",
   },
   {
     name: "evergreen heavy",
+    type: "forest",
     color: "#257445",
     icon: "bw-evergreen-heavy.png",
     iconColor: "#1f1e1e",
@@ -156,6 +178,7 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   },
   {
     name: "evergreen hills",
+    type: "hills",
     color: "#328651",
     icon: "bw-evergreen-hills.png",
     iconColor: "#292929",
@@ -163,12 +186,14 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   },
   {
     name: "evergreen mountain",
+    type: "mountains",
     color: "#6b806b",
     icon: "bw-evergreen-mountain.png",
     category: "darkwood",
   },
   {
     name: "evergreen mountains",
+    type: "mountains",
     color: "#8c9d80",
     icon: "bw-evergreen-mountains.png",
     category: "darkwood",
@@ -176,12 +201,14 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Island (jungle / volcanic)
   {
     name: "jungle",
+    type: "jungle",
     color: "#15803d",
     icon: "bw-jungle.png",
     category: "island",
   },
   {
     name: "jungle heavy",
+    type: "jungle",
     color: "#14532d",
     icon: "bw-jungle-heavy.png",
     iconColor: "#ffffff",
@@ -189,30 +216,35 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   },
   {
     name: "jungle hills",
+    type: "hills",
     color: "#4ade80",
     icon: "bw-jungle-hills.png",
     category: "island",
   },
   {
     name: "jungle mountain",
+    type: "mountains",
     color: "#4d7c0f",
     icon: "bw-jungle-mountain.png",
     category: "island",
   },
   {
     name: "jungle mountains",
+    type: "mountains",
     color: "#3f6212",
     icon: "bw-jungle-mountains.png",
     category: "island",
   },
   {
     name: "volcano",
+    type: "volcanic",
     color: "#b91c1c",
     icon: "bw-volcano.png",
     category: "island",
   },
   {
     name: "volcano dormant",
+    type: "volcanic",
     color: "#78350f",
     icon: "bw-volcano-dormant.png",
     iconColor: "#ffffff",
@@ -221,32 +253,37 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Mountain
   {
     name: "cliffs",
+    type: "mountains",
     color: "#a86f1f",
     icon: "bw-brokenlands.png",
     category: "mountain",
   },
   {
     name: "mountain",
+    type: "mountains",
     color: "#a77649",
     icon: "bw-mountain.png",
     category: "mountain",
   },
   {
     name: "mountain ridge",
+    type: "mountains",
     color: "#c55f0d",
     icon: "bw-mountains.png",
     category: "mountain",
   },
   {
     name: "peak",
+    type: "peaks",
     color: "#78716c",
     icon: "bw-mountain.png",
     category: "mountain",
   },
   // Bog (wetlands)
-  { name: "marsh", color: "#909f23", icon: "bw-marsh.png", category: "bog" },
+  { name: "marsh", type: "wetland", color: "#909f23", icon: "bw-marsh.png", category: "bog" },
   {
     name: "swamp",
+    type: "wetland",
     color: "#4e5214",
     icon: "bw-swamp.png",
     iconColor: "#f9fbf9",
@@ -254,6 +291,7 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   },
   {
     name: "bog",
+    type: "wetland",
     color: "#432e6b",
     icon: "bw-swamp.png",
     iconColor: "#ffffff",
@@ -262,12 +300,14 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // Coast
   {
     name: "beach",
+    type: "coast",
     color: "#cac181",
     icon: "bw-grassland.png",
     category: "coast",
   },
   {
     name: "salt flats",
+    type: "coast",
     color: "#f7eaba",
     icon: "bw-dunes.png",
     category: "coast",
@@ -275,13 +315,13 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
 ];
 
 export const LIMITED_TERRAIN_PALETTE: TerrainColor[] = [
-  { name: "ocean",    color: "#29507f",  category: "sea" },
-  { name: "grass",    color: "#69a168",  icon: "bw-grassland.png", category: "lowlands" },
-  { name: "hill",     color: "#e0e8a1",  icon: "bw-hills.png",     category: "lowlands" },
-  { name: "forest",   color: "#2d9553",  icon: "bw-forest.png",    category: "forest" },
-  { name: "mountain", color: "#a77649",  icon: "bw-mountain.png",  category: "mountain" },
-  { name: "desert",   color: "#ecdba2",  category: "desert" },
-  { name: "snow",     color: "#e0f2fe",  category: "snow" },
+  { name: "ocean", type: "water",    color: "#29507f",  category: "sea" },
+  { name: "grass", type: "grassland",    color: "#69a168",  icon: "bw-grassland.png", category: "lowlands" },
+  { name: "hill", type: "hills",     color: "#e0e8a1",  icon: "bw-hills.png",     category: "lowlands" },
+  { name: "forest", type: "forest",   color: "#2d9553",  icon: "bw-forest.png",    category: "forest" },
+  { name: "mountain", type: "mountains", color: "#a77649",  icon: "bw-mountain.png",  category: "mountain" },
+  { name: "desert", type: "desert",   color: "#ecdba2",  category: "desert" },
+  { name: "snow", type: "snow",     color: "#e0f2fe",  category: "snow" },
 ];
 
 export const DEFAULT_PATH_TYPES: PathType[] = [
@@ -344,4 +384,5 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   palettesFolder: "",
   palettesMigrated: false,
   mapKinds: ["world", "space"],
+  terrainTypesSeeded: false,
 };

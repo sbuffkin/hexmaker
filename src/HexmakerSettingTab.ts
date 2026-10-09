@@ -751,6 +751,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
 
   /** "Open note" button for a palette row — opens the palette's note in a new tab. */
   private addOpenNoteButton(parent: HTMLElement, paletteName: string): void {
+    parent.createEl("button", { text: "Edit", cls: "mod-cta" }).addEventListener("click", () => {
+      void this.plugin.openPaletteEditor(paletteName);
+    });
     const btn = parent.createEl("button", { text: "Open note" });
     btn.addEventListener("click", () => {
       const file = this.plugin.paletteStore.noteFor(paletteName);
