@@ -7,10 +7,14 @@
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/palettes/presets";
 import { starScatter, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/starScatter";
 import { orbits, ORBITS_OPTIONS } from "../src/worldgen/procedural/orbits";
-import type { ProcGrid, ProcOption } from "../src/worldgen/procedural/common";
+import type { GenerationContext, ProcGrid, ProcOption, Side } from "../src/worldgen/procedural/common";
+import { planetSurface, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
+import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { drawPreview } from "../src/worldgen/preview";
 
-type Gen = "sector" | "system";
+type Gen = "sector" | "system" | "region";
+/** Region detail: the parent hex and its N/E/S/W neighbours (terrain names from Expanded). */
+const region: { parent: string; sides: Partial<Record<Side, string>> } = { parent: "forest", sides: { E: "ocean" } };
 const state = {
   gen: "sector" as Gen,
   orientation: "flat" as "flat" | "pointy",
@@ -20,14 +24,36 @@ const state = {
   options: {} as Record<string, string>,
 };
 
-const colors = (gen: Gen) =>
-  new Map((gen === "sector" ? SPACE_SECTOR_TERRAINS : SPACE_SYSTEM_TERRAINS).map((t) => [t.name, t.color]));
+const paletteOf = (gen: Gen) =>
+  gen === "sector" ? SPACE_SECTOR_TERRAINS : gen === "system" ? SPACE_SYSTEM_TERRAINS : DEFAULT_TERRAIN_PALETTE;
+const colors = (gen: Gen) => new Map(paletteOf(gen).map((t) => [t.name, t.color]));
+const typed = (name: string) => ({ terrain: name, type: DEFAULT_TERRAIN_PALETTE.find((t) => t.name === name)?.type });
+function regionContext(): GenerationContext {
+  const sides: GenerationContext["sides"] = {};
+  for (const [s, name] of Object.entries(region.sides)) if (name) sides[s as Side] = typed(name);
+  return { parent: typed(region.parent), sides };
+}
 const pathColors = new Map([...SPACE_PATH_TYPES, ...SYSTEM_PATH_TYPES].map((p) => [p.name, p.color]));
 
 function controls(): void {
   const box = document.getElementById("controls")!;
   box.replaceChildren();
-  const opts: ProcOption[] = state.gen === "sector" ? STAR_SCATTER_OPTIONS : ORBITS_OPTIONS;
+  const opts: ProcOption[] = state.gen === "sector" ? STAR_SCATTER_OPTIONS : state.gen === "system" ? ORBITS_OPTIONS : REGION_DETAIL_OPTIONS;
+  if (state.gen === "region") {
+    const names = ["", ...DEFAULT_TERRAIN_PALETTE.map((t) => t.name)];
+    const pick = (label: string, value: string, set: (v: string) => void) => {
+      const l = document.createElement("label");
+      l.textContent = label + " ";
+      const sel = document.createElement("select");
+      for (const n of names) sel.add(new Option(n || "—", n));
+      sel.value = value;
+      sel.onchange = () => { set(sel.value); render(); };
+      l.append(sel);
+      box.append(l);
+    };
+    pick("Parent hex", region.parent, (v) => { region.parent = v || "grass"; });
+    for (const s of ["N", "E", "S", "W"] as Side[]) pick(s, region.sides[s] ?? "", (v) => { region.sides[s] = v || undefined; });
+  }
   for (const o of opts) {
     const label = document.createElement("label");
     label.textContent = o.label + " ";
@@ -51,7 +77,9 @@ function render(): void {
     const seed = state.seed + i;
     const r = state.gen === "sector"
       ? starScatter(SPACE_SECTOR_TERRAINS, grid, seed, state.options, "Jump route")
-      : orbits(SPACE_SYSTEM_TERRAINS, grid, seed, state.options, "Orbit");
+      : state.gen === "system"
+        ? orbits(SPACE_SYSTEM_TERRAINS, grid, seed, state.options, "Orbit")
+        : planetSurface(DEFAULT_TERRAIN_PALETTE, grid, seed, state.options, regionContext());
     const fig = document.createElement("figure");
     const canvas = document.createElement("canvas");
     drawPreview(canvas, r.cells, grid, state.orientation, colors(state.gen), undefined, r.paths, pathColors, 300, 18);
@@ -71,7 +99,7 @@ function render(): void {
 function setGen(gen: Gen): void {
   state.gen = gen;
   state.options = {};
-  [state.cols, state.rows] = gen === "sector" ? [8, 10] : [13, 13];
+  [state.cols, state.rows] = gen === "sector" ? [8, 10] : gen === "system" ? [13, 13] : [20, 14];
   (document.getElementById("cols") as HTMLInputElement).value = String(state.cols);
   (document.getElementById("rows") as HTMLInputElement).value = String(state.rows);
   document.querySelectorAll<HTMLButtonElement>("[data-gen]").forEach((b) => b.classList.toggle("on", b.dataset.gen === gen));

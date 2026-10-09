@@ -28,6 +28,52 @@ export interface ProcResult {
   warnings: string[];
 }
 
+/** Compass sides of a map, for what lies beyond each edge. */
+export type Side = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+export const SIDES: Side[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+/** A terrain as context: its palette name and (when known) its type. */
+export interface ContextTerrain {
+  terrain?: string;
+  type?: string;
+}
+
+/**
+ * What surrounds the map being generated, so it fits into the bigger map:
+ *  - `parent`: the hex a submap zooms into (its terrain fills the map);
+ *  - `sides`: the parent hex's neighbours, by compass side (each pulls its
+ *    edge of the map toward its own terrain — east *and* west neighbours
+ *    both act, each on their side);
+ *  - `edgeCells`: exact terrain of hexes just outside the grid, keyed in
+ *    this map's coordinates (from neighbouring regions sharing a border).
+ * Every field is optional; generators ignore what they can't use.
+ */
+export interface GenerationContext {
+  parent?: ContextTerrain;
+  sides?: Partial<Record<Side, ContextTerrain>>;
+  edgeCells?: Map<string, ContextTerrain>;
+}
+
+/** Unit vector (screen space: +x east, +y south) for each side. */
+export const SIDE_VECTORS: Record<Side, [number, number]> = {
+  N: [0, -1],
+  NE: [Math.SQRT1_2, -Math.SQRT1_2],
+  E: [1, 0],
+  SE: [Math.SQRT1_2, Math.SQRT1_2],
+  S: [0, 1],
+  SW: [-Math.SQRT1_2, Math.SQRT1_2],
+  W: [-1, 0],
+  NW: [-Math.SQRT1_2, -Math.SQRT1_2],
+};
+
+/** The compass side a direction vector points to (8 sectors of 45°). */
+export function sideOf(dx: number, dy: number): Side {
+  const angle = Math.atan2(dy, dx); // 0 = east, +π/2 = south (screen y down)
+  const sector = Math.round(angle / (Math.PI / 4));
+  const bySector: Record<number, Side> = { 0: "E", 1: "SE", 2: "S", 3: "SW", 4: "W", [-4]: "W", [-3]: "NW", [-2]: "N", [-1]: "NE" };
+  return bySector[sector];
+}
+
 export interface ProcOption {
   key: string;
   label: string;

@@ -1,7 +1,14 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
+import { inferTerrainType, isTerrainType } from "../../terrainTypes";
 import {
+  SIDES,
+  SIDE_VECTORS,
   cellKey,
+  distance,
+  type ContextTerrain,
+  type GenerationContext,
+  type Side,
   findByType,
   findRole,
   gridKeys,
@@ -209,20 +216,88 @@ function quantile(values: number[], q: number): number {
   return sorted[i];
 }
 
+// ── Region detail (context mode) ─────────────────────────────────────────
+//
+// Target [elevation, moisture, temperature] per terrain type, on the same
+// 0..1 scales the classifier below uses (sea below 0.33, hills from 0.64,
+// mountains 0.79, peaks 0.92). A region zooming into a "forest" hex gets
+// forest-ish targets in the middle; each edge drifts toward the terrain
+// beyond it, so a sea to the east puts a coast on the east edge.
+const TYPE_TARGETS: Record<string, [number, number, number]> = {
+  "deep-water": [0.02, 0.5, 0.6],
+  water: [0.14, 0.5, 0.6],
+  shallows: [0.27, 0.5, 0.6],
+  coast: [0.37, 0.4, 0.65],
+  grassland: [0.5, 0.42, 0.6],
+  settlement: [0.5, 0.42, 0.6],
+  forest: [0.52, 0.68, 0.55],
+  jungle: [0.5, 0.9, 0.9],
+  wetland: [0.41, 0.86, 0.6],
+  hills: [0.7, 0.45, 0.55],
+  mountains: [0.85, 0.45, 0.45],
+  peaks: [0.96, 0.4, 0.15],
+  snow: [0.55, 0.4, 0.08],
+  desert: [0.5, 0.1, 0.82],
+  badlands: [0.6, 0.15, 0.75],
+  volcanic: [0.82, 0.2, 0.85],
+};
+
+function targetOf(c: ContextTerrain | undefined): [number, number, number] | undefined {
+  if (!c) return undefined;
+  const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+  return type ? TYPE_TARGETS[type] : undefined;
+}
+
+export const REGION_DETAIL_ID = "procedural:region-detail";
+
+export const REGION_DETAIL_OPTIONS: ProcOption[] = [
+  {
+    key: "edges",
+    label: "Neighbour influence",
+    choices: [
+      { value: "soft", label: "Soft (thin edges)" },
+      { value: "normal", label: "Normal" },
+      { value: "strong", label: "Strong (wide edges)" },
+    ],
+    default: "normal",
+  },
+  {
+    key: "variety",
+    label: "Variety",
+    choices: [
+      { value: "low", label: "Low (mostly the parent terrain)" },
+      { value: "normal", label: "Normal" },
+      { value: "high", label: "High" },
+    ],
+    default: "normal",
+  },
+];
+
+/** Thresholds shared by both modes' classification. */
+interface Levels {
+  sea: number;
+  deep: number;
+  shelf: number;
+  hill: number;
+  mountain: number;
+  peak: number;
+}
+
 export function planetSurface(
   terrains: TerrainColor[],
   grid: ProcGrid,
   seed: number,
   options: Record<string, string> = {},
+  /** When given, generate a *region* of the bigger map (Region detail):
+   *  the parent hex's terrain fills it and neighbours shape its edges. */
+  context?: GenerationContext,
 ): ProcResult {
   const roles = planetRoles(terrains);
   if (!roles) return { cells: new Map(), paths: [], warnings: ["This palette has no sea or plains terrain."] };
   const rand = mulberry32(seed);
   const elevNoise = makeNoise(rand);
   const moistNoise = makeNoise(rand);
-  const water = Math.max(0, Math.min(95, Number(options.water ?? 50))) / 100;
   const climate = options.climate ?? "temperate";
-  const relief = options.relief ?? "normal";
 
   const hexes = gridKeys(grid);
   // Feature scale: about 3 noise cells across the map whatever its size.
@@ -232,23 +307,41 @@ export function planetSurface(
   const span = Math.max(maxX - minX, maxY - minY, 1);
   const scale = 3.2 / span;
   const ox = rand() * 100, oy = rand() * 100;
+  const noiseE = centers.map(([px, py]) => elevNoise(ox + px * scale, oy + py * scale));
+  const noiseM = centers.map(([px, py]) => moistNoise(oy + px * scale * 1.3, ox + py * scale * 1.3));
 
-  const elev = centers.map(([px, py]) => elevNoise(ox + px * scale, oy + py * scale));
-  const moist = centers.map(([px, py]) => moistNoise(oy + px * scale * 1.3, ox + py * scale * 1.3));
-  const seaLevel = water <= 0 ? -Infinity : quantile(elev, water);
-  const landElev = elev.filter((e) => e > seaLevel);
-  const hillAt = quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7);
-  const mountainAt = quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.97 : relief === "rugged" ? 0.72 : 0.87);
-  const peakAt = quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97);
-  const seaElev = elev.filter((e) => e <= seaLevel);
-  const deepAt = quantile(seaElev.length ? seaElev : [0], 0.35);
-  const shelfAt = quantile(seaElev.length ? seaElev : [0], 0.8);
-
-  // Temperature: warm equator, cold poles (rows), shifted by climate.
-  const climateShift: Record<string, number> = { temperate: 0, lush: 0.12, arid: 0.15, frozen: -0.55, volcanic: 0.3 };
-  const moistShift: Record<string, number> = { temperate: 0, lush: 0.25, arid: -0.35, frozen: -0.1, volcanic: -0.2 };
-  const tShift = climateShift[climate] ?? 0;
-  const mShift = moistShift[climate] ?? 0;
+  let elev: number[], moistArr: number[], tempArr: number[], lv: Levels;
+  if (context) {
+    ({ elev, moist: moistArr, temp: tempArr } = regionField(grid, hexes, centers, noiseE, noiseM, context, options));
+    lv = { sea: 0.33, deep: 0.08, shelf: 0.27, hill: 0.64, mountain: 0.79, peak: 0.92 };
+  } else {
+    const water = Math.max(0, Math.min(95, Number(options.water ?? 50))) / 100;
+    const relief = options.relief ?? "normal";
+    elev = noiseE;
+    const seaLevel = water <= 0 ? -Infinity : quantile(elev, water);
+    const landElev = elev.filter((e) => e > seaLevel);
+    const seaElev = elev.filter((e) => e <= seaLevel);
+    lv = {
+      sea: seaLevel,
+      hill: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7),
+      mountain: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.97 : relief === "rugged" ? 0.72 : 0.87),
+      peak: quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97),
+      deep: quantile(seaElev.length ? seaElev : [0], 0.35),
+      shelf: quantile(seaElev.length ? seaElev : [0], 0.8),
+    };
+    // Temperature: warm equator, cold poles (rows), shifted by climate.
+    const climateShift: Record<string, number> = { temperate: 0, lush: 0.12, arid: 0.15, frozen: -0.55, volcanic: 0.3 };
+    const moistShift: Record<string, number> = { temperate: 0, lush: 0.25, arid: -0.35, frozen: -0.1, volcanic: -0.2 };
+    const tShift = climateShift[climate] ?? 0;
+    const mShift = moistShift[climate] ?? 0;
+    tempArr = centers.map((c, i) => {
+      const lat = maxY > minY ? Math.abs((c[1] - minY) / (maxY - minY) - 0.5) * 2 : 0; // 0 equator .. 1 pole
+      return 1 - lat * 0.9 + tShift - Math.max(0, elev[i] - seaLevel) * 0.6;
+    });
+    moistArr = noiseM.map((m) => m + mShift);
+  }
+  const seaLevel = lv.sea, deepAt = lv.deep, shelfAt = lv.shelf;
+  const hillAt = lv.hill, mountainAt = lv.mountain, peakAt = lv.peak;
 
   // Woodland variety (typed palettes only): the family follows temperature,
   // dense variants take the wettest ground. No rand() calls, so a seed's
@@ -277,9 +370,8 @@ export function planetSurface(
   hexes.forEach(([x, y], i) => {
     const k = cellKey(x, y);
     const e = elev[i];
-    const lat = maxY > minY ? Math.abs((centers[i][1] - minY) / (maxY - minY) - 0.5) * 2 : 0; // 0 equator .. 1 pole
-    const temp = 1 - lat * 0.9 + tShift - Math.max(0, e - seaLevel) * 0.6;
-    const m = moist[i] + mShift;
+    const temp = tempArr[i];
+    const m = moistArr[i];
 
     if (isSea[i]) {
       // Frozen seas near the poles ice over.
@@ -327,4 +419,71 @@ export function planetSurface(
   }
 
   return { cells, paths: [], warnings: [] };
+}
+
+/**
+ * Elevation / moisture / temperature for a region inside a bigger map:
+ * the parent's targets everywhere, blended toward each side's neighbour
+ * near that edge, and toward exact neighbour-region cells near the border;
+ * noise adds local detail on top.
+ */
+function regionField(
+  grid: ProcGrid,
+  hexes: [number, number][],
+  centers: [number, number][],
+  noiseE: number[],
+  noiseM: number[],
+  context: GenerationContext,
+  options: Record<string, string>,
+): { elev: number[]; moist: number[]; temp: number[] } {
+  const parent = targetOf(context.parent) ?? TYPE_TARGETS.grassland;
+  // Edge band: how far in from an edge its neighbour still pulls.
+  const band = options.edges === "soft" ? 0.3 : options.edges === "strong" ? 0.65 : 0.45;
+  const variety = options.variety === "low" ? 0.22 : options.variety === "high" ? 0.55 : 0.36;
+
+  const xs = centers.map((c) => c[0]), ys = centers.map((c) => c[1]);
+  const midX = (Math.min(...xs) + Math.max(...xs)) / 2, midY = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const halfW = Math.max((Math.max(...xs) - Math.min(...xs)) / 2, 1e-6);
+  const halfH = Math.max((Math.max(...ys) - Math.min(...ys)) / 2, 1e-6);
+
+  const sides = SIDES
+    .map((s) => ({ s, t: targetOf(context.sides?.[s]) }))
+    .filter((x): x is { s: Side; t: [number, number, number] } => !!x.t);
+  const edgeCells = [...(context.edgeCells ?? new Map<string, ContextTerrain>())]
+    .map(([k, c]) => ({ at: k.split("_").map(Number) as [number, number], t: targetOf(c) }))
+    .filter((x): x is { at: [number, number]; t: [number, number, number] } => !!x.t);
+
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const elev: number[] = [], moist: number[] = [], temp: number[] = [];
+  hexes.forEach((h, i) => {
+    const u = (centers[i][0] - midX) / halfW; // -1 west .. 1 east
+    const v = (centers[i][1] - midY) / halfH; // -1 north .. 1 south
+    let w = 1;
+    const acc = [parent[0], parent[1], parent[2]];
+    for (const { s, t } of sides) {
+      const [dx, dy] = SIDE_VECTORS[s];
+      // 1 on that edge, 0 at the far side. A corner neighbour (NE…) only
+      // reaches hexes near *both* of its edges.
+      const reach = s.length === 2 ? Math.min(u * Math.sign(dx), v * Math.sign(dy)) : u * dx + v * dy;
+      const edge = smooth(Math.max(0, Math.min(1, (reach - (1 - band)) / band)));
+      if (edge <= 0) continue;
+      const ws = edge * (s.length === 2 ? 2 : 3);
+      w += ws;
+      for (let k = 0; k < 3; k++) acc[k] += t[k] * ws;
+    }
+    // Exact border cells from a neighbouring region: strong, very local.
+    for (const c of edgeCells) {
+      const d = distance(h, c.at, grid);
+      if (d > 3) continue;
+      const ws = (4 - d) * 2;
+      w += ws;
+      for (let k = 0; k < 3; k++) acc[k] += c.t[k] * ws;
+    }
+    const target = acc.map((a) => a / w);
+    const e = target[0] + (noiseE[i] - 0.5) * variety * 1.4;
+    elev.push(e);
+    moist.push(target[1] + (noiseM[i] - 0.5) * 0.5);
+    temp.push(target[2] - Math.max(0, e - 0.6) * 0.5);
+  });
+  return { elev, moist, temp };
 }

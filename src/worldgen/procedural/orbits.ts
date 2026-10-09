@@ -12,6 +12,7 @@ import {
   typeIndex,
   untyped,
   weightedPick,
+  type GenerationContext,
   type ProcGrid,
   type ProcOption,
   type ProcPath,
@@ -206,6 +207,8 @@ export function orbits(
   options: Record<string, string> = {},
   /** Path type to draw occupied orbits with (e.g. "Orbit"); none = no rings. */
   orbitPathType?: string,
+  /** The sector hex this system sits in: its terrain picks the mainworld. */
+  context?: GenerationContext,
 ): ProcResult {
   const roles = orbitRoles(terrains);
   if (!roles) {
@@ -251,8 +254,12 @@ export function orbits(
   if (fullRing < 2) warnings.push("Map is too small for orbits — try Medium or Large.");
   let mainworld: [number, number] | undefined;
   const paths: ProcPath[] = [];
+  // The sector says what the mainworld is ("ocean world" → an ocean planet
+  // in the habitable zone); that orbit is never skipped.
+  const mainBody = mainworldFor(context?.parent?.terrain, roles.bodies);
+  const mainRing = mainBody ? first + Math.round(0.45 * (last - first)) : -1;
   for (let d = first; d <= last; d++) {
-    if (rand() < skip) continue;
+    if (d !== mainRing && rand() < skip) continue;
     // Draw the orbit itself: the ring, in order around the star, closed.
     if (orbitPathType) {
       const around = sortAround(ring(d), center, grid).map((h) => cellKey(h[0], h[1]));
@@ -260,7 +267,7 @@ export function orbits(
     }
     const t = (d - first) / Math.max(1, last - first);
     const zone = t < 0.3 ? "inner" : t < 0.6 ? "habitable" : "outer";
-    const body = weightedPick(rand, roles.bodies, roles.zoneWeights[zone], 0.5)!;
+    const body = d === mainRing ? mainBody! : weightedPick(rand, roles.bodies, roles.zoneWeights[zone], 0.5)!;
     const hexesOnRing = ring(d);
     if (hexesOnRing.length === 0) continue;
     if (roles.belts.includes(body)) {
@@ -269,11 +276,13 @@ export function orbits(
       const span = Math.max(2, Math.floor(hexesOnRing.length * (0.3 + rand() * 0.4)));
       const sorted = sortAround(hexesOnRing, center, grid);
       for (let i = 0; i < span; i++) set(sorted[(start + i) % sorted.length], body);
+      if (d === mainRing) mainworld = sorted[start];
       continue;
     }
     const pos = hexesOnRing[Math.floor(rand() * hexesOnRing.length)];
     set(pos, body);
-    if (zone === "habitable" && !mainworld) mainworld = pos;
+    if (d === mainRing) mainworld = pos;
+    else if (zone === "habitable" && !mainworld && mainRing < 0) mainworld = pos;
     // Giants get a moon on a free neighbouring hex.
     if (roles.moon && roles.giants.includes(body) && rand() < 0.7) {
       const free = hexes.filter((h) => distance(h, pos, grid) === 1
@@ -311,4 +320,35 @@ function sortAround(hexes: [number, number][], center: [number, number], grid: P
     return Math.atan2(py - cy, px - cx);
   };
   return [...hexes].sort((a, b) => angle(a) - angle(b));
+}
+
+/** Parent-terrain words → body-name words, most specific first. */
+const MAINWORLD_HINTS: [string, string][] = [
+  ["gas giant", "gas giant"],
+  ["ice giant", "ice giant"],
+  ["asteroid", "belt"],
+  ["ocean", "ocean"],
+  ["water", "ocean"],
+  ["garden", "terrestrial"],
+  ["terrestrial", "terrestrial"],
+  ["earth", "terrestrial"],
+  ["desert", "desert"],
+  ["ice", "ice"],
+  ["frozen", "ice"],
+  ["molten", "molten"],
+  ["lava", "molten"],
+  ["barren", "rocky"],
+  ["rocky", "rocky"],
+];
+
+/** The body that should be the system's mainworld, given the sector hex's terrain name. */
+export function mainworldFor(parentTerrain: string | undefined, bodies: string[]): string | undefined {
+  if (!parentTerrain) return undefined;
+  const p = parentTerrain.toLowerCase();
+  for (const [from, to] of MAINWORLD_HINTS) {
+    if (!p.includes(from)) continue;
+    const hit = bodies.find((b) => b.toLowerCase().includes(to));
+    if (hit) return hit;
+  }
+  return undefined;
 }

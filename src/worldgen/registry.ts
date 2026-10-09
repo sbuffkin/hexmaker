@@ -7,12 +7,14 @@ import {
   toPathChains,
   type GridSpec,
 } from "./generators";
-import { findTerrain, type ProcGrid, type ProcOption } from "./procedural/common";
+import { findTerrain, type GenerationContext, type ProcGrid, type ProcOption } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterFits } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
 import {
   PLANET_SURFACE_ID,
   PLANET_SURFACE_OPTIONS,
+  REGION_DETAIL_ID,
+  REGION_DETAIL_OPTIONS,
   planetSurface,
   planetSurfaceFits,
 } from "./procedural/planetSurface";
@@ -46,6 +48,8 @@ export interface GenerateRequest {
   grid: GridSpec;
   seed: number;
   options: Record<string, string>;
+  /** Where the map sits in the bigger map (parent hex, neighbours). */
+  context?: GenerationContext;
 }
 
 export interface TerrainGeneratorKind {
@@ -55,6 +59,8 @@ export interface TerrainGeneratorKind {
   source: "blank" | "built-in" | "learned";
   /** Map type that owns a built-in generator (hidden when that type is off). */
   mapKind?: MapKind;
+  /** Only meaningful inside a bigger map (offered for submaps only). */
+  needsContext?: boolean;
   options: ProcOption[];
   /** Can this generator produce terrain for a palette with these terrains? */
   fits(terrains: TerrainColor[]): boolean;
@@ -123,7 +129,22 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       options: ORBITS_OPTIONS,
       fits: orbitsFits,
       generate: (req) => {
-        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitPath);
+        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitPath, req.context);
+        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+      },
+      toChains,
+    },
+    {
+      id: REGION_DETAIL_ID,
+      label: "Region detail",
+      mapKind: "world",
+      needsContext: true,
+      description: "Zoom into the parent hex: its terrain fills the map, and each neighbour shapes its edge (sea to the east → coast on the east).",
+      source: "built-in",
+      options: REGION_DETAIL_OPTIONS,
+      fits: planetSurfaceFits,
+      generate: (req) => {
+        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, req.context ?? {});
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toChains,
@@ -165,9 +186,13 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
   return kinds;
 }
 
-/** Generators usable with a palette, Blank first. */
-export function kindsForPalette(kinds: TerrainGeneratorKind[], terrains: TerrainColor[]): TerrainGeneratorKind[] {
-  return kinds.filter((k) => k.fits(terrains));
+/** Generators usable with a palette, Blank first. Context-only ones need `hasContext`. */
+export function kindsForPalette(
+  kinds: TerrainGeneratorKind[],
+  terrains: TerrainColor[],
+  hasContext = false,
+): TerrainGeneratorKind[] {
+  return kinds.filter((k) => k.fits(terrains) && (hasContext || !k.needsContext));
 }
 
 /**

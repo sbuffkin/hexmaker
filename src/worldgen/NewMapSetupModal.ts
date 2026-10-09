@@ -3,6 +3,8 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { SubmapDefault, TerrainColor } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
+import { buildSubmapContext } from "./submapContext";
+import type { GenerationContext, Side } from "./procedural/common";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
@@ -51,6 +53,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private originTerrain: string | undefined;
   /** Saved setup for submaps of that terrain, applied as the starting values. */
   private saved: SubmapDefault | undefined;
+  /** The parent hex and its neighbours, so generation fits the bigger map. */
+  private context: GenerationContext | undefined;
   /** "Default for <terrain>" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
 
@@ -70,6 +74,7 @@ export class NewMapSetupModal extends HexmakerModal {
       this.originTerrain =
         getTerrainFromFile(app, plugin.hexPath(origin.x, origin.y, origin.map)) ?? parent?.baseTerrain ?? undefined;
       this.saved = plugin.submapDefaultFor(origin.map, this.originTerrain);
+      this.context = buildSubmapContext(plugin, origin.map, origin.x, origin.y);
       const d = this.saved;
       if (d?.cols && d.rows) { this.cols = d.cols; this.rows = d.rows; }
       if (d?.generator) this.kindId = d.generator;
@@ -180,7 +185,25 @@ export class NewMapSetupModal extends HexmakerModal {
     });
 
     // ── Preview ──
-    const canvas = side.createEl("canvas", { cls: "duckmage-setup-canvas" });
+    // For submaps: the preview sits inside a frame of the parent's
+    // neighbours (N, NE, E…), so it's clear why each edge looks as it does.
+    const frame = side.createDiv({ cls: "duckmage-setup-context" });
+    const chip = (slot: Side | "C") => {
+      const cell = frame.createDiv({ cls: `duckmage-setup-ctx duckmage-setup-ctx-${slot}` });
+      if (slot === "C") return cell;
+      const t = this.context?.sides?.[slot];
+      if (!t?.terrain) return cell;
+      const color = this.origin ? this.plugin.getMapPalette(this.origin.map).find((p) => p.name === t.terrain)?.color : undefined;
+      cell.createSpan({ cls: "duckmage-setup-ctx-swatch" }).setCssProps({ "--duckmage-bg": color ?? "transparent" });
+      cell.createSpan({ cls: "duckmage-setup-ctx-name", text: t.terrain });
+      cell.setAttr("title", `${slot}: ${t.terrain}`);
+      return cell;
+    };
+    const showFrame = !!this.context && Object.keys(this.context.sides ?? {}).length > 0;
+    frame.toggleClass("is-empty", !showFrame);
+    (["NW", "N", "NE", "W"] as const).forEach((s) => chip(s));
+    const canvas = chip("C").createEl("canvas", { cls: "duckmage-setup-canvas" });
+    (["E", "SW", "S", "SE"] as const).forEach((s) => chip(s));
     const seedRow = side.createDiv({ cls: "duckmage-setup-seed-row" });
     const rerollBtn = seedRow.createEl("button", { text: "🎲 Re-roll", attr: { title: "New random seed" } });
     const seedLabel = seedRow.createSpan({ cls: "duckmage-setup-seed" });
@@ -195,10 +218,13 @@ export class NewMapSetupModal extends HexmakerModal {
 
     const renderGenerators = () => {
       const terrains = this.terrains(paletteSelect.value);
-      const fitting = kindsForPalette(this.kinds, terrains);
+      const fitting = kindsForPalette(this.kinds, terrains, !!this.context);
       if (!fitting.some((k) => k.id === this.kindId)) {
         // Default to the first built-in generator that fits, else Blank.
-        this.kindId = fitting.find((k) => k.source === "built-in")?.id ?? BLANK_ID;
+        // Submaps zoom in: prefer the context-aware generator when it fits.
+        this.kindId = (this.context ? fitting.find((k) => k.needsContext)?.id : undefined)
+          ?? fitting.find((k) => k.source === "built-in")?.id
+          ?? BLANK_ID;
         this.options = {};
       }
       genList.empty();
@@ -260,7 +286,7 @@ export class NewMapSetupModal extends HexmakerModal {
         if (this.cols * this.rows > PREVIEW_AUTO_LIMIT) {
           status.setText("Large map — the preview is skipped; terrain is generated on create.");
         } else {
-          const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind) });
+          const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
           this.lastOutcome = outcome;
           if (!outcome.ok) {
             status.setText(outcome.message);
@@ -388,7 +414,7 @@ export class NewMapSetupModal extends HexmakerModal {
     let outcome: GenerateOutcome | undefined;
     if (!openGenerator && kind && kind.id !== BLANK_ID) {
       outcome = this.lastOutcome
-        ?? kind.generate({ terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind) });
+        ?? kind.generate({ terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
       if (!outcome.ok) {
         new Notice(outcome.message);
         return;
