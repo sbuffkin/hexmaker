@@ -1,7 +1,8 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { normalizeFolder, makeTableTemplate, getIconUrl } from "../src/utils";
+import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl } from "../src/utils";
+import { BUNDLED_ICONS } from "../src/bundledIcons";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
 // ── normalizeFolder ───────────────────────────────────────────────────────────
@@ -180,5 +181,31 @@ describe("getIconUrl", () => {
     const result = getIconUrl(plugin, "ruins.png");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
+  });
+});
+
+describe("cssUrl", () => {
+  // The quoted string inside url("…") must not end early.
+  const inner = (v: string) => v.slice('url("'.length, -'")'.length);
+
+  it("percent-encodes quotes in an inline SVG so the CSS value stays valid", () => {
+    const svg = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><path fill="%23000" d="M0 0"/></svg>';
+    const v = cssUrl(svg);
+    expect(v.startsWith('url("')).toBe(true);
+    expect(inner(v)).not.toContain('"');
+    expect(decodeURIComponent(inner(v))).toBe(decodeURIComponent(svg.replace(/"/g, "%22")));
+  });
+
+  it("leaves base64 data URLs and plain paths alone", () => {
+    expect(cssUrl("data:image/png;base64,iVBORw0KGgo=")).toBe('url("data:image/png;base64,iVBORw0KGgo=")');
+    expect(cssUrl("app://local/icons/x.png")).toBe('url("app://local/icons/x.png")');
+  });
+
+  it("every bundled icon (the space SVGs included) makes a valid url() value", () => {
+    expect(BUNDLED_ICONS.size).toBeGreaterThan(0);
+    for (const [name, src] of BUNDLED_ICONS) {
+      const v = inner(cssUrl(src));
+      if (/["\\n\r]/.test(v)) throw new Error(`${name} would break url("…")`);
+    }
   });
 });
