@@ -2,7 +2,7 @@ import { App, Notice, Setting, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TokenShape, TokenSize } from "../types";
-import { normalizeFolder, getIconUrl } from "../utils";
+import { normalizeFolder, getIconUrl, iconLabel } from "../utils";
 
 export interface TokenModalResult {
   icon: string | undefined;
@@ -136,7 +136,7 @@ export class TokenModal extends HexmakerModal {
 
     const makeIconTile = (icon: string | null) => {
       const label = icon
-        ? icon.replace(/^bw-/, "").replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "").replace(/-/g, " ")
+        ? iconLabel(icon)
         : "no icon";
       const tile = iconGrid.createDiv({
         cls: `duckmage-icon-option${this.pendingIcon === icon ? " is-selected" : ""}`,
@@ -161,6 +161,7 @@ export class TokenModal extends HexmakerModal {
     };
     makeIconTile(null);
     for (const icon of visibleIcons) makeIconTile(icon);
+    this.addIconFilter(iconGrid, this.plugin.vaultIconsSet);
 
     // ── Shape ─────────────────────────────────────────────────────────────
     new Setting(contentEl)

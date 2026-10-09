@@ -2,14 +2,20 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getIconUrl, createIconEl } from "../utils";
+import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { defaultSubmapName } from "./submapNav";
 
 export class SubmapPickerModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
     private current: string | undefined,
-    private onLink: (mapName: string) => void,
+    /** `created` is true when the map was just made in this modal. */
+    private onLink: (mapName: string, created: boolean) => void,
     private onUnlink: () => void,
+    /** The hex being linked. Enables the create-first layout: section open,
+     *  auto-named `<parent>-x-y`, child palette pre-selected. */
+    private origin?: { map: string; x: number; y: number },
   ) {
     super(app);
   }
@@ -96,7 +102,11 @@ export class SubmapPickerModal extends HexmakerModal {
     createHeader.createEl("h4", { text: "Create & link new map", cls: "duckmage-editor-collapsible-title" });
 
     const createBody = createSection.createDiv({ cls: "duckmage-editor-collapsible-body" });
-    createBody.hide();
+    // From a single hex with nothing linked yet, creating is the likely
+    // intent — open the section instead of making the user find it.
+    const createFirst = !!this.origin && !this.current;
+    if (createFirst) createArrow.setText("▼");
+    else createBody.hide();
 
     createHeader.addEventListener("click", () => {
       const open = createBody.isShown();
@@ -112,6 +122,12 @@ export class SubmapPickerModal extends HexmakerModal {
       placeholder: "map-name",
       cls: "duckmage-submap-create-name",
     });
+    if (this.origin) {
+      nameInput.value = defaultSubmapName(
+        this.origin.map, this.origin.x, this.origin.y,
+        this.plugin.settings.maps.map((m) => m.name),
+      );
+    }
 
     // Size (cols × rows on one row)
     const sizeRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });
@@ -126,9 +142,11 @@ export class SubmapPickerModal extends HexmakerModal {
     const paletteRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });
     paletteRow.createSpan({ text: "Palette", cls: "duckmage-submap-create-label" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-submap-create-palette" });
-    for (const pal of this.plugin.settings.terrainPalettes) {
-      paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-    }
+    fillPaletteSelect(
+      this.plugin,
+      paletteSelect,
+      this.origin ? this.plugin.childPaletteFor(this.origin.map) : undefined,
+    );
 
     // Starting coordinates
     const originRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });
@@ -160,7 +178,7 @@ export class SubmapPickerModal extends HexmakerModal {
     const renderTerrainGrid = () => {
       terrainGrid.empty();
       selectedTerrainType = undefined;
-      const palette = this.plugin.getPaletteByName(paletteSelect.value)?.terrains ?? [];
+      const palette = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value);
 
       const noneTile = terrainGrid.createDiv({
         cls: "duckmage-terrain-option duckmage-terrain-option-clear is-selected",
@@ -203,8 +221,9 @@ export class SubmapPickerModal extends HexmakerModal {
     paletteSelect.addEventListener("change", renderTerrainGrid);
 
     // Create & link button
+    const createLabel = this.origin ? "Create & enter" : "Create & link";
     const createBtn = createBody.createEl("button", {
-      text: "Create & link",
+      text: createLabel,
       cls: "mod-cta duckmage-submap-create-btn",
     });
     const allInputs: (HTMLInputElement | HTMLSelectElement)[] = [
@@ -235,7 +254,7 @@ export class SubmapPickerModal extends HexmakerModal {
       bottomRow.createEl("button", { text: "Link", cls: "mod-cta" })
         .addEventListener("click", () => {
           this.close();
-          this.onLink(selectedMap);
+          this.onLink(selectedMap, false);
         });
     }
     bottomRow.createEl("button", { text: "Cancel" })
@@ -265,7 +284,7 @@ export class SubmapPickerModal extends HexmakerModal {
 
     if ("error" in result) {
       new Notice(result.error);
-      btn.setText("Create & link");
+      btn.setText(this.origin ? "Create & enter" : "Create & link");
       btn.disabled = false;
       for (const input of inputs) input.disabled = false;
       return;
@@ -280,7 +299,7 @@ export class SubmapPickerModal extends HexmakerModal {
     }
 
     this.close();
-    this.onLink(result.name);
+    this.onLink(result.name, true);
   }
 
   onClose(): void {

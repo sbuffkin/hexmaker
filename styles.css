@@ -1716,9 +1716,93 @@ input.duckmage-input-error {
     min-height: 0;
 }
 .duckmage-token-modal .duckmage-icon-picker-inline {
-    height: 150px;
+    height: 220px;
     max-height: none;
     flex-shrink: 0;
+    resize: vertical; /* big token libraries: drag the bottom edge to see more */
+    min-height: 120px;
+}
+
+/* Inline icon grids elsewhere can also be dragged taller. */
+.duckmage-icon-picker-inline {
+    resize: vertical;
+    min-height: 90px;
+}
+
+/* ── Icon filter bar (search + pack tabs) above icon grids ───────────── */
+.duckmage-icon-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: 0.4em;
+}
+
+.duckmage-icon-filter-search {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.duckmage-icon-filter-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+}
+
+.duckmage-icon-filter-tab {
+    font-size: var(--font-ui-smaller);
+    padding: 0.15em 0.6em;
+    height: auto;
+}
+
+.duckmage-icon-filter-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.duckmage-icon-filter-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    margin: -0.25em 0 0.5em;
+}
+
+/* ── Add palette modal ──────────────────────────────────────────────── */
+.duckmage-add-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.duckmage-add-palette-option {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35em;
+    height: auto;
+    padding: 0.5em 0.75em;
+    text-align: left;
+    white-space: normal;
+}
+
+.duckmage-add-palette-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-add-palette-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-add-palette-swatches {
+    display: flex;
+    gap: 2px;
+}
+
+.duckmage-add-palette-swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--duckmage-bg, transparent);
 }
 
 /* Token modal title row with inline preview */
@@ -3442,6 +3526,75 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     opacity: 1;
     color: var(--text-normal);
     border-color: var(--interactive-accent);
+}
+
+/* Up to parent map — same look as Back. */
+.duckmage-map-up-btn {
+    height: 26px;
+    font-size: 0.78em;
+    padding: 0 8px;
+    opacity: 0.75;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.duckmage-map-up-btn:hover {
+    opacity: 1;
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
+/* Breadcrumb of parent maps before the map button: sector › system › */
+.duckmage-map-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    pointer-events: auto;
+    max-width: 40vw;
+    overflow: hidden;
+}
+.duckmage-map-crumb {
+    height: 26px;
+    font-size: 0.78em;
+    padding: 0 6px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 14em;
+}
+.duckmage-map-crumb:hover {
+    color: var(--text-normal);
+    text-decoration: underline;
+}
+.duckmage-map-crumb-sep {
+    color: var(--text-faint);
+    font-size: 0.85em;
+}
+
+/* Submap marker: a small ring at the top of hexes that drill down. */
+.duckmage-hex-submap-badge {
+    position: absolute;
+    top: 0.3em;
+    width: 0.75em;
+    height: 0.75em;
+    border-radius: 50%;
+    border: 2px solid var(--interactive-accent);
+    background: color-mix(in srgb, var(--background-primary) 60%, transparent);
+    box-sizing: border-box;
+    cursor: pointer;
+    z-index: 2;
+}
+.duckmage-hex-submap-badge:hover {
+    background: var(--interactive-accent);
+    transform: scale(1.25);
 }
 
 /* Faction hover tooltip */

@@ -3,6 +3,7 @@ import type HexmakerPlugin from "./HexmakerPlugin";
 import type { HexMapView } from "./hex-map/HexMapView";
 import { normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
+import { fillPaletteSelect } from "./palettes/paletteOptions";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -321,10 +322,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const paletteRow = container.createDiv({ cls: "duckmage-wizard-field" });
 			paletteRow.createEl("label", { text: "Terrain palette", cls: "duckmage-wizard-label" });
 			const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-wizard-select" });
-			for (const pal of plugin.settings.terrainPalettes) {
-				const opt = paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-				if (pal.name === ctx.paletteName) opt.selected = true;
-			}
+			fillPaletteSelect(plugin, paletteSelect, ctx.paletteName);
 			paletteSelect.addEventListener("change", () => {
 				ctx.paletteName = paletteSelect.value;
 			});
@@ -357,6 +355,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const folderPath = hexBase ? `${hexBase}/${name}` : name;
 			await ensureFolder(plugin.app, folderPath);
 
+			await plugin.ensurePaletteInstalled(ctx.paletteName);
 			if (!plugin.settings.maps.find(m => m.name === name)) {
 				plugin.settings.maps.push({
 					name,

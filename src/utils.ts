@@ -61,6 +61,31 @@ export function getIconUrl(plugin: HexmakerPlugin, iconFilename: string): string
 	return plugin.app.vault.adapter.getResourcePath(`${plugin.manifest.dir}/icons/${iconFilename}`);
 }
 
+/** Icon groups shown as tabs in icon pickers. */
+export type IconPack = "terrain" | "space" | "custom";
+
+export const ICON_PACK_LABELS: Record<IconPack, string> = {
+	terrain: "Terrain",
+	space: "Space",
+	custom: "Custom",
+};
+
+/** Which picker tab an icon belongs to: the user's icons folder wins over bundled names. */
+export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
+	if (vaultIcons.has(icon)) return "custom";
+	if (icon.startsWith("space-")) return "space";
+	if (icon.startsWith("bw-")) return "terrain";
+	return "custom";
+}
+
+/** Human label for an icon file name: drops the pack prefix and extension. */
+export function iconLabel(icon: string): string {
+	return icon
+		.replace(/^(bw|space)-/, "")
+		.replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
+		.replace(/-/g, " ");
+}
+
 /**
  * Write a File (from a drag-drop event) into the vault at the given folder.
  * Creates intermediate folders as needed. Auto-renames on collision

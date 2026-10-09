@@ -208,6 +208,8 @@ Parsed/serialized by `workflow.ts`. Template files live at `{workflowsFolder}/te
 | `hexGap` | CSS gap between cells |
 | `hexOrientation` | `"pointy"` or `"flat"` |
 | `terrainPalette` | `[{name, color, icon?, iconColor?}]` |
+| `terrainPalettes` | In-memory working copy + data.json cache of the palette notes (source of truth: one note per palette in `palettesFolder`, synced both ways by `src/palettes/PaletteStore.ts`) |
+| `palettesFolder` / `palettesMigrated` | Palette notes folder (blank = `{worldFolder}/palettes`) / one-time settings→notes migration flag |
 | `gridSize` | `{cols, rows}` |
 | `gridOffset` | `{x, y}` origin offset (adjusted by expand buttons) |
 | `zoomLevel` | Current zoom |

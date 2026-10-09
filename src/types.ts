@@ -54,6 +54,10 @@ export interface MapData {
 	createdWith?: string;
 	paletteName: string;
 	terrainType?: string;        // terrain name from the map's palette; used as submap center dot color
+	/** The hex this map was opened from as a submap ("x_y" on `map`). Drives
+	 *  the breadcrumb and "Up". Set by plugin.linkSubmap; recovered by scanning
+	 *  hex notes when missing (maps linked before this existed). */
+	parent?: { map: string; hex: string };
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };
 	pathChains: PathChain[];
@@ -93,6 +97,10 @@ export interface MapData {
 export interface TerrainPalette {
 	name: string;
 	terrains: TerrainColor[];
+	/** Palette suggested for submaps created from this palette's maps
+	 *  (e.g. "Space - Sector" → "Space - System"). Stored as `child-palette`
+	 *  in the palette note's frontmatter. Unset = same palette as the parent. */
+	childPalette?: string;
 }
 
 export interface TerrainColor {
@@ -149,6 +157,10 @@ export interface HexmakerPluginSettings {
 	iconOrder: string[];
 	setupComplete: boolean;
 	setupDismissed: boolean;
+	/** Vault folder holding palette notes. Empty = "{worldFolder}/palettes". */
+	palettesFolder: string;
+	/** True once settings-only palettes were written out as notes. */
+	palettesMigrated: boolean;
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

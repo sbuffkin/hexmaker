@@ -1,7 +1,7 @@
 import { App, TFile, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { getIconUrl, normalizeFolder } from "../utils";
+import { getIconUrl, iconLabel, normalizeFolder } from "../utils";
 
 export class IconPickerModal extends HexmakerModal {
   private manageMode = false;
@@ -88,11 +88,9 @@ export class IconPickerModal extends HexmakerModal {
 
       const icons = this.plugin.availableIcons.filter((i) => !hidden.has(i));
       for (const icon of icons) {
-        const label = icon
-          .replace(/^bw-/, "")
-          .replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
-          .replace(/-/g, " ");
+        const label = iconLabel(icon);
         const btn = grid.createDiv({ cls: "duckmage-icon-option" });
+        btn.dataset["icon"] = icon;
         const preview = btn.createDiv({ cls: "duckmage-icon-preview" });
         const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });
         img.src = getIconUrl(this.plugin, icon);
@@ -106,7 +104,11 @@ export class IconPickerModal extends HexmakerModal {
     } else {
       this.renderManageGrid(grid, hidden);
     }
+    this.reapplyIconFilter = this.addIconFilter(grid, this.plugin.vaultIconsSet);
   }
+
+  /** Re-applies the search/pack filter after the manage grid re-renders. */
+  private reapplyIconFilter: () => void = () => {};
 
   private renderManageGrid(grid: HTMLElement, hidden: Set<string>): void {
     grid.empty();
@@ -116,14 +118,12 @@ export class IconPickerModal extends HexmakerModal {
     for (let i = 0; i < icons.length; i++) {
       const icon = icons[i];
       const isHidden = hidden.has(icon);
-      const label = icon
-        .replace(/^bw-/, "")
-        .replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
-        .replace(/-/g, " ");
+      const label = iconLabel(icon);
 
       const btn = grid.createDiv({
         cls: `duckmage-icon-option${isHidden ? " duckmage-icon-hidden" : ""}`,
       });
+      btn.dataset["icon"] = icon;
       btn.draggable = true;
 
       // Grip handle
@@ -149,6 +149,7 @@ export class IconPickerModal extends HexmakerModal {
         void this.plugin.saveSettings().then(() => {
           this.plugin.loadAvailableIcons();
           this.renderManageGrid(grid, new Set(this.plugin.settings.hiddenIcons ?? []));
+          this.reapplyIconFilter();
         });
       });
 
@@ -182,6 +183,7 @@ export class IconPickerModal extends HexmakerModal {
         void this.plugin.saveSettings().then(() => {
           this.plugin.loadAvailableIcons();
           this.renderManageGrid(grid, new Set(this.plugin.settings.hiddenIcons ?? []));
+          this.reapplyIconFilter();
         });
       });
     }

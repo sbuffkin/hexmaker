@@ -32,7 +32,7 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: `${outDir}/${outFile}`,
-	loader: { ".md": "text", ".png": "dataurl" },
+	loader: { ".md": "text", ".png": "dataurl", ".svg": "dataurl" },
 	// The version stamped on files the plugin writes (src/compat.ts). Taken from
 	// manifest.json at build time: Obsidian keeps the manifest it read at startup,
 	// so plugin.manifest.version can be stale after an update without a restart.

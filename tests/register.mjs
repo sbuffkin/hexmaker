@@ -5,6 +5,7 @@ import { register, createRequire } from "node:module";
 const req = createRequire(import.meta.url);
 const CJSModule = req("module");
 CJSModule._extensions[".png"] = function (mod) { mod.exports = ""; };
+CJSModule._extensions[".svg"] = function (mod) { mod.exports = ""; };
 CJSModule._extensions[".md"]  = function (mod) { mod.exports = ""; };
 
 // Register ESM load hook for .png/.md (fallback for ESM mode)

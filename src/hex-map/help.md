@@ -5,8 +5,25 @@
 | **Middle-mouse drag** (or click + drag on empty space) | Pan the map |
 | **Scroll wheel** | Zoom in / out |
 | **Left-click** a hex | Open the hex editor (terrain, notes, links) |
-| **Right-click** a hex | Context menu: center on hex, open note, link submap/table, swap hex, create token here, clear terrain |
+| **Right-click** a hex | Context menu: center on hex, open note, create / link submap, link table, swap hex, create token here, clear terrain |
 | **Double-right-click** anywhere | Exit the active tool and return to normal mode |
+
+---
+
+## Submaps
+
+A hex can drill down into its own map: a star system inside a sector, a dungeon inside a region. Hexes with a submap show a small ring at the top.
+
+| Action | Result |
+|--------|--------|
+| **Right-click → Create / link submap…** | Create a submap for this hex (auto-named after the map and hex, with the suggested palette pre-selected) and go straight into it, or link an existing map |
+| **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the submap |
+| **Ctrl/Cmd+Shift+click** the hex | Open the submap in a new tab |
+| **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
+| **← back** button / **Alt+←** | Return to the previously viewed map |
+| Breadcrumb (top left) | Jump to any map above this one |
+
+"Go up to parent map" and "Go back to previous map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
 
 ---
 
@@ -25,7 +42,7 @@ Paint a connected chain of road or river hexes. Left-click hexes to extend the c
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
 
 ### Icon
-Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations.
+Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations. Every icon list (here, in the token editor, and in the hex editor) has a filter box and **All / Terrain / Space / Custom** tabs; drag the bottom edge of an inline icon list to make it taller.
 
 ### Link table
 Opens a folder-tree picker scoped to your Tables folder. Select a random-encounter table, then left-click hexes to link that table into each hex's **Encounters Table** section.

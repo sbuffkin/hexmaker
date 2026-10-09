@@ -229,7 +229,8 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Hex gap** | Gap between hexes in pixels. |
 | **Hex orientation** | `flat` (default) or `pointy` top hex style. |
 | **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
-| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map. |
+| **Palettes folder** | Folder holding one note per terrain palette (default `{world folder}/palettes`). |
+| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note — copy a palette note into another vault's palettes folder to share it. **Add palette** offers built-in presets: *Limited* and *Expanded* (fantasy overland), plus *Space - Sector* (star charts, one hex per parsec; adds Jump route and Trade route path types) and *Space - System* (stars, planets, belts, stations) for sci-fi games such as Traveller. New-map palette menus list uninstalled presets too. |
 | **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
 ---
@@ -342,3 +343,5 @@ src/
 ## Third-party libraries
 
 This plugin bundles [MiniSearch](https://github.com/lucaong/minisearch) (© Luca Ongaro, MIT License) for in-memory full-text search.
+
+The space icon pack (`icons/space-*`) uses icons from [game-icons.net](https://game-icons.net) by Lorc and Delapouite (CC BY 3.0), [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0), [Tabler Icons](https://tabler.io/icons) (MIT), and [Kenney Simple Space](https://kenney.nl/assets/simple-space) (CC0). Full per-icon credits and licence texts are in [`icons/CREDITS.md`](icons/CREDITS.md).

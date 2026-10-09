@@ -20,6 +20,7 @@ import {
 } from "../worldgen/generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
 import { randomSeed } from "../../packages/hex-wfc/src";
+import { fillPaletteSelect } from "../palettes/paletteOptions";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -595,9 +596,7 @@ export class MapModal extends HexmakerModal {
     el.createEl("label", { text: "Palette", cls: "duckmage-map-field-label" });
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
-    for (const pal of this.plugin.settings.terrainPalettes) {
-      paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-    }
+    fillPaletteSelect(this.plugin, paletteSelect);
 
     // Generator (optional). Only generators whose terrains all exist in the
     // chosen palette are offered.
@@ -814,6 +813,10 @@ export class MapModal extends HexmakerModal {
     }
 
     this.plugin.settings.maps = this.plugin.settings.maps.filter((m) => m.name !== name);
+    // Submaps of the deleted map lose their breadcrumb parent.
+    for (const m of this.plugin.settings.maps) {
+      if (m.parent?.map === name) delete m.parent;
+    }
 
     if (this.plugin.settings.defaultMap === name) {
       this.plugin.settings.defaultMap = this.plugin.settings.maps[0]?.name ?? "";

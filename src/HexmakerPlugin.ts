@@ -22,6 +22,13 @@ import {
   VIEW_TYPE_GENERATOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
+import { PaletteStore } from "./palettes/PaletteStore";
+import {
+  getPreset,
+  mergePathTypes,
+  presetToPalette,
+  uniquePaletteName,
+} from "./palettes/presets";
 import { normalizeFolder, makeTableTemplate, slugify } from "./utils";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
@@ -46,6 +53,7 @@ export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
+  paletteStore = new PaletteStore(this);
 
   async onload() {
     await this.loadSettings();
@@ -55,6 +63,7 @@ export default class HexmakerPlugin extends Plugin {
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      void this.paletteStore.init();
       void this.autoRegisterMapsFromVault();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
@@ -75,17 +84,24 @@ export default class HexmakerPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("create", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
+        this.paletteStore.onModify(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
+        this.paletteStore.onDelete(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (f, oldPath) => {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
+        this.paletteStore.onRename(f, oldPath);
       }),
+    );
+    // Palette notes edited by hand (or by sync) flow back into the palettes.
+    this.registerEvent(
+      this.app.vault.on("modify", (f) => this.paletteStore.onModify(f)),
     );
 
     await this.migrateHexFilesToDefaultRegion();
@@ -121,6 +137,26 @@ export default class HexmakerPlugin extends Plugin {
       id: "open-terrain-generator",
       name: "Open terrain generator",
       callback: () => void this.openTerrainGenerator(),
+    });
+    this.addCommand({
+      id: "map-go-up",
+      name: "Go up to parent map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateUp()) return false;
+        if (!checking) view.navigateUp();
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "map-go-back",
+      name: "Go back to previous map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateBack()) return false;
+        if (!checking) view.navigateBack();
+        return true;
+      },
     });
     this.addCommand({
       id: "open-random-tables",
@@ -288,14 +324,14 @@ export default class HexmakerPlugin extends Plugin {
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
         void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as HexMapView).switchToMap(mapName);
+        (leaves[0].view as HexMapView).navigateToMap(mapName);
       } else {
         void this.app.workspace.getLeaf("tab")
           .setViewState({ type: VIEW_TYPE_HEX_MAP })
           .then(() => {
             const newLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
             if (newLeaves.length > 0) {
-              (newLeaves[0].view as HexMapView).switchToMap(mapName);
+              (newLeaves[0].view as HexMapView).navigateToMap(mapName, { recordHistory: false });
             }
           });
       }
@@ -478,6 +514,8 @@ export default class HexmakerPlugin extends Plugin {
   async saveSettings() {
     this.settings.savedWith = pluginVersion(this);
     await this.saveData(this.settings);
+    // Mirror palette edits (from any editor) into the palette notes.
+    void this.paletteStore.sync();
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
     // flag them so they re-render on next activation (issue #32). The
@@ -493,6 +531,8 @@ export default class HexmakerPlugin extends Plugin {
   // the synced state without a manual Obsidian restart.
   async onExternalSettingsChange(): Promise<void> {
     await this.loadSettings();
+    // data.json carries a cached copy of the palettes; the notes win.
+    await this.paletteStore.reload();
     this.loadAvailableIcons();
     this.refreshHexMap();
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
@@ -652,6 +692,11 @@ export default class HexmakerPlugin extends Plugin {
       const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
       if (submap !== oldName) continue;
       await setSubmapInFile(this.app, file.path, newName);
+    }
+    this.noParentMaps.clear();
+    // Children of the renamed map keep their breadcrumb.
+    for (const m of this.settings.maps) {
+      if (m.parent?.map === oldName) m.parent.map = newName;
     }
   }
 
@@ -1217,6 +1262,8 @@ export default class HexmakerPlugin extends Plugin {
     if (this.settings.maps.some((r) => r.name === name))
       return { error: `Map "${name}" already exists.` };
 
+    await this.ensurePaletteInstalled(paletteName);
+
     const hexFolder = normalizeFolder(this.settings.hexFolder);
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
     if (!this.app.vault.getAbstractFileByPath(folderPath)) {
@@ -1293,6 +1340,119 @@ export default class HexmakerPlugin extends Plugin {
 
   getPaletteByName(name: string): TerrainPalette | undefined {
     return this.settings.terrainPalettes.find((p) => p.name === name);
+  }
+
+  /**
+   * Terrains for an installed palette, or for a built-in preset that isn't
+   * installed yet (lets new-map dropdowns preview presets before install).
+   */
+  getPaletteOrPresetTerrains(name: string): TerrainColor[] {
+    return this.getPaletteByName(name)?.terrains ?? getPreset(name)?.terrains ?? [];
+  }
+
+  /**
+   * Add a copy of a built-in preset as a new palette (a unique name is chosen
+   * if the preset's name is taken) and merge the preset's path types. Saves;
+   * the palette note is written by the sync that follows. Returns the new
+   * palette's name.
+   */
+  async installPalettePreset(presetName: string, asName?: string): Promise<string | undefined> {
+    const preset = getPreset(presetName);
+    if (!preset) return undefined;
+    const name = uniquePaletteName(
+      asName ?? preset.name,
+      this.settings.terrainPalettes.map((p) => p.name),
+    );
+    this.settings.terrainPalettes.push(presetToPalette(preset, name));
+    const added = mergePathTypes(this.settings.pathTypes, preset.pathTypes);
+    await this.saveSettings();
+    new Notice(
+      `Hexmaker: added palette "${name}"` +
+        (added.length ? ` and path types ${added.join(", ")}.` : "."),
+    );
+    return name;
+  }
+
+  /**
+   * Palette to pre-select for a new submap of `parentMap`: the parent
+   * palette's `childPalette` (installed or a preset), else the parent's own
+   * palette, else the first palette.
+   */
+  childPaletteFor(parentMap: string): string {
+    const parentPaletteName = this.getMap(parentMap)?.paletteName;
+    const parentPalette = parentPaletteName ? this.getPaletteByName(parentPaletteName) : undefined;
+    const child = parentPalette?.childPalette ?? (parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined);
+    if (child && (this.getPaletteByName(child) || getPreset(child))) return child;
+    if (parentPalette) return parentPalette.name;
+    return this.settings.terrainPalettes[0]?.name ?? DEFAULT_PALETTE_NAME;
+  }
+
+  /**
+   * Link hex (x, y) of `parentMap` to `childMap` as its submap: creates the
+   * hex note if needed, writes `duckmage-submap`, and records the parent on
+   * the child map (first link wins, so re-linking a shared submap from a
+   * second hex doesn't move its breadcrumb).
+   */
+  async linkSubmap(parentMap: string, x: number, y: number, childMap: string): Promise<void> {
+    const hexPath = this.hexPath(x, y, parentMap);
+    if (!this.app.vault.getAbstractFileByPath(hexPath)) {
+      await this.createHexNote(x, y, parentMap);
+    }
+    await setSubmapInFile(this.app, hexPath, childMap);
+    this.noParentMaps.clear();
+    const child = this.getMap(childMap);
+    if (child && !child.parent && childMap !== parentMap) {
+      child.parent = { map: parentMap, hex: `${x}_${y}` };
+      await this.saveSettings();
+    }
+  }
+
+  /** Remove the submap link from hex (x, y); clears the child's parent if it pointed here. */
+  async unlinkSubmap(parentMap: string, x: number, y: number): Promise<void> {
+    const hexPath = this.hexPath(x, y, parentMap);
+    const fm: unknown = this.app.metadataCache.getCache(hexPath)?.frontmatter?.["duckmage-submap"];
+    await setSubmapInFile(this.app, hexPath, null);
+    this.noParentMaps.clear();
+    const child = typeof fm === "string" ? this.getMap(fm) : undefined;
+    if (child?.parent?.map === parentMap && child.parent.hex === `${x}_${y}`) {
+      delete child.parent;
+      await this.saveSettings();
+    }
+  }
+
+  /**
+   * The map `mapName` was opened from as a submap. Uses the stored parent;
+   * for maps linked before parents were stored, scans hex notes for a
+   * `duckmage-submap` pointing here and remembers the first hit.
+   */
+  parentOf(mapName: string): { map: string; hex: string } | undefined {
+    const map = this.getMap(mapName);
+    if (!map) return undefined;
+    if (map.parent && this.getMap(map.parent.map)) return map.parent;
+    // Root maps have no parent; don't rescan the hex notes on every switch.
+    if (this.noParentMaps.has(mapName)) return undefined;
+    const hexFolder = normalizeFolder(this.settings.hexFolder);
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (hexFolder && !file.path.startsWith(hexFolder + "/")) continue;
+      const submap: unknown = this.app.metadataCache.getFileCache(file)?.frontmatter?.["duckmage-submap"];
+      if (submap !== mapName) continue;
+      const parentMap = file.parent?.name;
+      if (!parentMap || parentMap === mapName || !this.getMap(parentMap)) continue;
+      map.parent = { map: parentMap, hex: file.basename };
+      void this.saveSettings();
+      return map.parent;
+    }
+    this.noParentMaps.add(mapName);
+    return undefined;
+  }
+
+  /** Maps whose parent scan came up empty this session (cleared on any link change). */
+  private noParentMaps = new Set<string>();
+
+  /** Install `name` from the presets if no palette by that name exists yet. */
+  async ensurePaletteInstalled(name: string): Promise<void> {
+    if (this.getPaletteByName(name) || !getPreset(name)) return;
+    await this.installPalettePreset(name);
   }
 
   getMapPalette(mapName: string): TerrainColor[] {
