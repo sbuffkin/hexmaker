@@ -45,7 +45,10 @@ import {
   type PathTweak,
   type PathTypeTweak,
   type PathFeature,
+  type NearRule,
   effectivePathTweaks,
+  edgeSide,
+  parseNear,
   type RouteStat,
   randomSeed,
   SYMMETRIES,
@@ -868,7 +871,7 @@ export class GeneratorPanel {
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
     el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the region it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Near keeps a terrain within some hexes of another, such as lava fields near a volcano. Example is each terrain's share of the region it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
     const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
@@ -878,6 +881,7 @@ export class GeneratorPanel {
       ["Mix", ""],
       ["Min", "Fewest separate patches"],
       ["Max", "Most separate patches"],
+      ["Near", "Keep this terrain within some hexes of another, e.g. \"volcano 3\" (how hard it steers follows Clumping). Blank = the generator's own rule; \"off\" = none"],
       ["Example", "Share of the region this generator was learned from"],
       ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
     ];
@@ -885,6 +889,8 @@ export class GeneratorPanel {
     const example = exampleShares(model);
     const mix = { ...s().mix };
     const counts: Record<string, CountRange> = Object.fromEntries(Object.entries(s().counts).map(([k, r]) => [k, { ...r }]));
+    const near: Record<string, NearRule | null> = { ...s().near };
+    const terrainNames = new Set(model.terrains.map((t) => t.name));
     for (const t of model.terrains) {
       const row = table.createDiv({ cls: "duckmage-wfc-terrain-row" });
       // Guaranteed line features are laid down before the solver runs, so
@@ -924,6 +930,29 @@ export class GeneratorPanel {
           save({ counts: Object.keys(counts).length ? { ...counts } : undefined });
         });
       }
+      // Near rule: blank = the generator's own (shown as the placeholder).
+      const nearInput = row.createEl("input", {
+        type: "text",
+        cls: "duckmage-wfc-near",
+        attr: { placeholder: t.near ? `${t.near.terrain} ${t.near.distance}` : "–", "aria-label": `${t.name} near rule` },
+      });
+      const own = near[t.name];
+      nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
+      nearInput.addEventListener("change", () => {
+        const raw = nearInput.value.trim();
+        if (!raw) delete near[t.name];
+        else if (/^(off|none)$/i.test(raw)) near[t.name] = null;
+        else {
+          const rule = parseNear(raw);
+          if (!rule || !terrainNames.has(rule.terrain) || rule.terrain === t.name) {
+            new Notice(`Write a terrain from this generator and a distance, e.g. "${model.terrains.find((x) => x.name !== t.name)?.name ?? "volcano"} 3", or "off".`);
+            nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
+            return;
+          }
+          near[t.name] = rule;
+        }
+        save({ near: Object.keys(near).length ? { ...near } : undefined });
+      });
       row.createSpan({ text: formatShare(example.get(t.name) ?? 0), cls: "duckmage-wfc-share" });
       const mapCell = row.createSpan({ cls: "duckmage-wfc-share" });
       shareCells.set(t.name, {
@@ -1042,21 +1071,22 @@ export class GeneratorPanel {
           cls: "duckmage-wfc-toggle duckmage-wfc-path-avoid",
           attr: {
             title: impassableList.length
-              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows). Set the list under Guarantees.`
-              : "No terrain is marked impassable yet (Guarantees, Impassable terrain).",
+              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows), and keep off the map border except at their ends. Set the list under Guarantees.`
+              : "Paths keep off the map border except at their ends. No terrain is marked impassable yet (Guarantees, Impassable terrain).",
           },
         });
         const avoidBox = avoid.createEl("input", { type: "checkbox" });
         avoidBox.checked = !types[type]?.crossImpassable;
-        avoidBox.disabled = !impassableList.length;
-        avoid.createSpan({ text: "Avoid impassable terrain" });
+
+        avoid.createSpan({ text: "Avoid impassable terrain and the map border" });
         avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
 
         const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
         const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];
         for (const f of [...routes].sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)))) {
           const route = pathRouteKey(f);
-          const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
+          const sides = { N: "north edge", E: "east edge", S: "south edge", W: "west edge" } as const;
+          const end = (e: string) => (e === "edge" ? "map edge" : edgeSide(e) ? sides[edgeSide(e)!] : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
           const tw = tweaks[route] ?? {};
           const row = body.createDiv({ cls: "duckmage-wfc-path-row" });
           row.addEventListener("mouseenter", () => {

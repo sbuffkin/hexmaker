@@ -48,14 +48,68 @@ export interface TerrainEntry {
   edge?: number;
   /**
    * Where the terrain sat in the example, as relative density in a 3×3 grid
-   * (row-major: NW, N, NE, W, C, E, SW, S, SE). 1 = as common as anywhere,
-   * 3 = three times as common there. Used by directional bias.
+   * (row-major: NW, N, NE, W, C, E, SW, S, SE) or a 5×5 one (row-major,
+   * R1C1 … R5C5). 1 = as common as anywhere, 3 = three times as common
+   * there. Values blend smoothly between grid cells. Used by directional bias.
    */
   layout?: number[];
+  /**
+   * The terrain only appears within `distance` hexes of `terrain`, e.g. lava
+   * fields near a volcano. Steered while solving and enforced afterwards.
+   */
+  near?: NearRule;
+}
+
+export interface NearRule {
+  terrain: string;
+  /** Most hexes away from the nearest hex of `terrain` (1 = touching). */
+  distance: number;
 }
 
 /** Layout bin names, in the order of TerrainEntry.layout. */
 export const LAYOUT_BINS = ["NW", "N", "NE", "W", "C", "E", "SW", "S", "SE"] as const;
+/** Column names of a 5×5 layout grid, row-major. */
+export const LAYOUT_BINS_5 = Array.from({ length: 25 }, (_, i) => `R${Math.floor(i / 5) + 1}C${(i % 5) + 1}`);
+
+/** A layout's grid size: 3 (9 values) or 5 (25 values); 0 if neither. */
+export const layoutSize = (lay: number[] | undefined): number => (lay?.length === 9 ? 3 : lay?.length === 25 ? 5 : 0);
+
+/**
+ * A layout's value at a point of the map (fx, fy from 0 to 1), bilinear
+ * between grid-cell centres, so preferences change smoothly across the map.
+ */
+export function layoutValue(lay: number[], fx: number, fy: number): number {
+  const n = layoutSize(lay);
+  if (!n) return 1;
+  const axis = (f: number): [number, number, number] => {
+    const pos = f * n - 0.5; // in cell-centre units
+    if (pos <= 0) return [0, 0, 0];
+    if (pos >= n - 1) return [n - 1, n - 1, 0];
+    const i = Math.floor(pos);
+    return [i, i + 1, pos - i];
+  };
+  const [x0, x1, tx] = axis(fx), [y0, y1, ty] = axis(fy);
+  const top = lay[y0 * n + x0] * (1 - tx) + lay[y0 * n + x1] * tx;
+  const bottom = lay[y1 * n + x0] * (1 - tx) + lay[y1 * n + x1] * tx;
+  return top * (1 - ty) + bottom * ty;
+}
+
+/** A 3×3 layout as 5×5 (sampled at the 5×5 cell centres); 5×5 is returned as is. */
+export function layoutTo5(lay: number[]): number[] {
+  if (layoutSize(lay) !== 3) return lay;
+  return Array.from({ length: 25 }, (_, i) => layoutValue(lay, ((i % 5) + 0.5) / 5, (Math.floor(i / 5) + 0.5) / 5));
+}
+
+/** Each terrain's near rule: the model's, with settings overriding (null = off). */
+export function nearRules(model: HexWfcModel, settings: GeneratorSettings = {}): Map<string, NearRule> {
+  const out = new Map<string, NearRule>();
+  for (const t of model.terrains) if (t.near) out.set(t.name, t.near);
+  for (const [t, rule] of Object.entries(settings.near ?? {})) {
+    if (rule) out.set(t, rule);
+    else out.delete(t);
+  }
+  return out;
+}
 
 /**
  * A guaranteed line feature, e.g. a river from a map edge to a lake. Placed
@@ -245,6 +299,8 @@ export interface GeneratorSettings {
   paths?: Record<string, PathTweak>;
   /** Per path type adjustments (all Roads, all Rivers), on top of `paths`. */
   pathTypes?: Record<string, PathTypeTweak>;
+  /** Near rules per terrain, over the model's (null turns a model rule off). */
+  near?: Record<string, NearRule | null>;
 }
 
 export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
@@ -271,6 +327,7 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   drawPaths: true,
   paths: {},
   pathTypes: {},
+  near: {},
 };
 
 export interface AdjacencyEntry {
@@ -330,10 +387,13 @@ export function validateModel(model: HexWfcModel): string[] {
       problems.push(`Terrain "${t.name}" has a turn rate outside 0–1`);
     if (t.width !== undefined && !(t.width >= 1 && t.width <= 3))
       problems.push(`Terrain "${t.name}" has a width outside 1–3`);
-    if (t.layout !== undefined && (t.layout.length !== 9 || t.layout.some((v) => !(v >= 0))))
-      problems.push(`Terrain "${t.name}" needs 9 layout values ≥ 0`);
+    if (t.layout !== undefined && (!layoutSize(t.layout) || t.layout.some((v) => !(v >= 0))))
+      problems.push(`Terrain "${t.name}" needs 9 or 25 layout values ≥ 0`);
   }
   if (model.terrains.length === 0) problems.push("No terrains listed");
+  for (const t of model.terrains)
+    if (t.near !== undefined && !(names.has(t.near.terrain) && t.near.distance >= 1))
+      problems.push(`Terrain "${t.name}" has a near rule on an unknown terrain or a distance under 1`);
   for (const { a, b, weight } of model.adjacency) {
     for (const n of [a, b])
       if (!names.has(n)) problems.push(`Adjacency row "${a} | ${b}" uses unknown terrain "${n}"`);

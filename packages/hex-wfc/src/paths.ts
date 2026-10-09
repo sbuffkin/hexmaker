@@ -47,6 +47,20 @@ const MIN_PATH_HEXES = 3;
  * of it (a coast). At 1.2 a favoured terrain is at most ~5x cheaper.
  */
 const PREF_CAP = 1.2;
+/**
+ * Extra cost of a border hex for routes that avoid impassable terrain (the
+ * default): without it, cheap terrain along the edge drew routes into
+ * running down the map border.
+ */
+const BORDER_COST = 3;
+
+/** "edge-N" / "edge-E" / "edge-S" / "edge-W" (any case): which side; null for anything else. */
+export function edgeSide(anchor: string): "N" | "E" | "S" | "W" | null {
+  const m = /^edge-([nesw])$/i.exec(anchor.trim());
+  return m ? (m[1].toUpperCase() as "N" | "E" | "S" | "W") : null;
+}
+/** Any edge anchor: `edge` or one side of it. */
+export const isEdgeAnchor = (anchor: string): boolean => anchor === "edge" || edgeSide(anchor) !== null;
 
 /** Remove consecutive duplicates (repeat clicks). */
 function clean(hexes: string[]): string[] {
@@ -180,11 +194,18 @@ export function routePaths(
     return d.indexOf(Math.min(...d));
   };
 
+  /** Is c on the given side's border row/column? */
+  const onSide = (c: number, side: "N" | "E" | "S" | "W"): boolean => {
+    const i = c % cols, j = Math.floor(c / cols);
+    return side === "N" ? j === 0 : side === "S" ? j === rows - 1 : side === "W" ? i === 0 : i === cols - 1;
+  };
   const candidates = (anchor: string, taken: Set<number>, avoidSide: number | null): number[] => {
     const all: number[] = [];
+    const side = edgeSide(anchor);
     for (let c = 0; c < N; c++) {
       const ok =
-        anchor === "edge" ? border(c) && (avoidSide === null || sideOf(c) !== avoidSide)
+        side ? onSide(c, side)
+        : anchor === "edge" ? border(c) && (avoidSide === null || sideOf(c) !== avoidSide)
         : anchor === "path" ? taken.has(c)
         : anchor === "none" ? !border(c)
         : terrainOf(c) === anchor;
@@ -266,7 +287,7 @@ export function routePaths(
         targets = new Set(candidates(f.to, taken, f.to === "edge" ? startSide : null).filter((c) => endOk(f.to)(c) && reachable(c)));
         // Edge-to-edge: don't let it cut a corner; it should run at least most
         // of the learned length (or as far as the land allows).
-        if (f.to === "edge") {
+        if (isEdgeAnchor(f.to)) {
           const minLen = Math.round(0.6 * f.length * Math.max(cols, rows));
           const far = [...targets].filter((c) => dist(start, c) >= minLen);
           if (far.length) targets = new Set(far);
@@ -326,6 +347,7 @@ export function routePaths(
       const i = c % cols, j = Math.floor(c / cols);
       const noise = (Math.sin(i * freq + phase[0]) * Math.cos(j * freq * 0.8 + phase[1]) + Math.sin((i + j) * freq * 0.7 + phase[2])) / 2;
       cost[c] = Math.max(0.05, 1.5 - pref(terrainOf(c)) + noiseAmp * (0.5 + 0.5 * noise));
+      if (!tw.crossImpassable && border(c)) cost[c] *= BORDER_COST;
     }
 
     // Impassable hexes this route may not cross (unless it's allowed to).
@@ -352,7 +374,8 @@ export function routePaths(
     }
     stat.placed = made;
     if (made < count) {
-      const end = (e: string) => (e === "edge" ? "a map edge" : e === "path" ? `another ${f.type}` : e);
+      const sideName = { N: "the north edge", E: "the east edge", S: "the south edge", W: "the west edge" } as const;
+      const end = (e: string) => (e === "edge" ? "a map edge" : edgeSide(e) ? sideName[edgeSide(e)!] : e === "path" ? `another ${f.type}` : e);
       warnings.push(`Placed ${made} of ${count} ${f.type} paths (${end(f.from)} to ${end(f.to)})`);
     }
   }

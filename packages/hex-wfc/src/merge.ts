@@ -8,7 +8,7 @@
  * turning) are averaged, weighted by how much of that terrain each region had.
  */
 
-import { pathRouteKey, type AdjacencyEntry, type HexWfcModel, type LineFeature, type PathFeature, type TerrainEntry } from "./model";
+import { layoutSize, layoutTo5, pathRouteKey, type AdjacencyEntry, type HexWfcModel, type LineFeature, type PathFeature, type TerrainEntry } from "./model";
 
 type Weighted = { value: number; weight: number };
 
@@ -41,10 +41,13 @@ function mergeTerrain(entries: TerrainEntry[]): TerrainEntry {
   if (spacing !== undefined) merged.spacing = spacing;
   const edge = mean((t) => t.edge);
   if (edge !== undefined) merged.edge = edge;
-  const layouts = entries.filter((t) => t.layout?.length === 9);
+  // Layouts of different grid sizes are compared on the finer (5×5) grid.
+  const withLayout = entries.filter((t) => layoutSize(t.layout));
+  const fine = withLayout.some((t) => layoutSize(t.layout) === 5);
+  const layouts = withLayout.map((t) => ({ lay: fine ? layoutTo5(t.layout!) : t.layout!, weight: t.weight }));
   if (layouts.length) {
-    merged.layout = Array.from({ length: 9 }, (_, i) =>
-      weightedMean(layouts.map((t) => ({ value: t.layout![i], weight: t.weight })))!);
+    merged.layout = Array.from({ length: fine ? 25 : 9 }, (_, i) =>
+      weightedMean(layouts.map((l) => ({ value: l.lay[i], weight: l.weight })))!);
   }
   return merged;
 }

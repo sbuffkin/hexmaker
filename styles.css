@@ -5191,8 +5191,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-wfc-terrain-row {
     display: grid;
-    /* Terrain, Mix, Min, Max, Example, Map */
-    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em;
+    /* Terrain, Mix, Min, Max, Near, Example, Map */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em minmax(6em, 1fr) 3.5em 5.5em;
     align-items: center;
     gap: 0.5em;
 }
@@ -5738,4 +5738,10 @@ button.duckmage-wfc-library-tab.is-active {
     max-width: 100%;
     margin: 0.5em auto;
     border-radius: var(--radius-s);
+}
+
+/* Terrain mix: the Near rule field ("volcano 3"). */
+.duckmage-wfc-near {
+    width: 100%;
+    min-width: 0;
 }
