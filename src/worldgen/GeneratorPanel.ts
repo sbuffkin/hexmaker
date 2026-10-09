@@ -939,6 +939,21 @@ export class GeneratorPanel {
         typeKnob("Wiggle", "wiggle", `Multiplies every ${type} route's wiggle.`);
         if (routes.some((f) => f.to === "none" || f.to === "edge")) typeKnob("Length", "length", `Multiplies every ${type} route's length.`);
         typeKnob("Follow terrain", "follow", `Multiplies how strongly every ${type} route keeps to its terrains.`);
+        // Guarantee: never over impassable terrain (on unless turned off).
+        const impassableList = s().impassable;
+        const avoid = knobs.createEl("label", {
+          cls: "duckmage-wfc-toggle duckmage-wfc-path-avoid",
+          attr: {
+            title: impassableList.length
+              ? `${type} paths never start, run or end on ${impassableList.join(", ")}, except where an end is that terrain (a river into the shallows). Set the list under Guarantees.`
+              : "No terrain is marked impassable yet (Guarantees, Impassable terrain).",
+          },
+        });
+        const avoidBox = avoid.createEl("input", { type: "checkbox" });
+        avoidBox.checked = !types[type]?.crossImpassable;
+        avoidBox.disabled = !impassableList.length;
+        avoid.createSpan({ text: "Avoid impassable terrain" });
+        avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
 
         const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
         const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];

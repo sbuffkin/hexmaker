@@ -108,6 +108,8 @@ export interface PathTweak {
   follow?: number;
   /** Path type to draw it as on the map, instead of its learned type. */
   as?: string;
+  /** May cross impassable terrain. Set from its path type (PathTypeTweak). */
+  crossImpassable?: boolean;
 }
 
 /**
@@ -122,6 +124,11 @@ export interface PathTypeTweak {
    * of are kept; the rest are turned off. Unset = all.
    */
   keep?: number;
+  /**
+   * Let this type's paths cross impassable terrain. By default they never
+   * start, run or end on it, except where an end is that terrain itself.
+   */
+  crossImpassable?: boolean;
   /** Multipliers on every route's wiggle, length and terrain following. */
   wiggle?: number;
   length?: number;
@@ -152,6 +159,7 @@ export function effectivePathTweaks(
     for (const r of list) {
       const tw = out[pathRouteKey(r)];
       if (t.off) tw.off = true;
+      if (t.crossImpassable) tw.crossImpassable = true;
       for (const k of ["wiggle", "length", "follow"] as const) {
         if (t[k] !== undefined) tw[k] = (tw[k] ?? 1) * t[k];
       }

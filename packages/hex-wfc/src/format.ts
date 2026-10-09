@@ -133,6 +133,7 @@ export function encodeSetting(field: keyof GeneratorSettings, value: unknown): s
         .map(([type, t]) => {
           const opts: string[] = [];
           if (t.off) opts.push("off");
+          if (t.crossImpassable) opts.push("cross-impassable");
           for (const k of ["keep", "wiggle", "length", "follow"] as const) if (t[k] !== undefined) opts.push(`${k} ${num(t[k])}`);
           return `${type} = ${opts.join(", ")}`;
         })
@@ -224,8 +225,9 @@ export function decodeSetting(field: keyof GeneratorSettings, raw: string): { va
         for (const part of item.slice(eq + 3).split(",").map((x) => x.trim()).filter(Boolean)) {
           const m = /^(keep|wiggle|length|follow) (\S+)$/.exec(part);
           if (part === "off") tweak.off = true;
+          else if (part === "cross-impassable") tweak.crossImpassable = true;
           else if (m && Number.isFinite(Number(m[2])) && Number(m[2]) >= 0) tweak[m[1] as "keep"] = Number(m[2]);
-          else return { error: `has "${part}" for ${type}; use off, keep N, wiggle N, length N or follow N` };
+          else return { error: `has "${part}" for ${type}; use off, cross-impassable, keep N, wiggle N, length N or follow N` };
         }
         out[type] = tweak;
       }

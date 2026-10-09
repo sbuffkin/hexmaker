@@ -10,6 +10,8 @@ import {
   modelToMarkdown,
   parseModelMarkdown,
   pathRouteKey,
+  routePaths,
+  mulberry32,
   pathsEnabled,
   solve,
   type HexWfcModel,
@@ -170,5 +172,45 @@ describe("path type settings", () => {
     const back = decodeSetting("pathTypes", String(encodeSetting("pathTypes", types)));
     expect(back).toEqual({ value: types });
     expect(decodeSetting("pathTypes", "Road = sometimes")).toHaveProperty("error");
+  });
+});
+
+describe("paths and impassable terrain", () => {
+  // 20x12: land, with a 2-wide lake running top to bottom down the middle
+  // except a land bridge on rows 0-1.
+  const cols = 20, rows = 12;
+  const cells = new Map<string, string>();
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.set(cellKey(x, y), (x === 9 || x === 10) && y > 1 ? "water" : "grass");
+  const grid = { cols, rows, ox: 0, oy: 0, orientation: "flat" as const, stagger: "odd" as const };
+  const road = { type: "Road", from: "edge", to: "edge", count: 4, turn: 0.2, length: 1, through: { grass: 1 } };
+  const onWater = (paths: { hexes: string[] }[]) => paths.flatMap((p) => p.hexes).filter((h) => cells.get(h) === "water").length;
+
+  it("never cross it by default, going round instead", () => {
+    const r = routePaths([road], cells, grid, mulberry32(3), 1, {}, ["water"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    expect(onWater(r.paths)).toBe(0);
+  });
+
+  it("may cross it when the type allows", () => {
+    // A route that likes water: only the guarantee keeps it off.
+    const wet = { ...road, through: { water: 1 } };
+    expect(onWater(routePaths([wet], cells, grid, mulberry32(3), 1, {}, ["water"]).paths)).toBe(0);
+    const tweaks = effectivePathTweaks([wet], {}, { Road: { crossImpassable: true } });
+    expect(onWater(routePaths([wet], cells, grid, mulberry32(3), 1, tweaks, ["water"]).paths)).toBeGreaterThan(0);
+  });
+
+  it("can still end in it when that terrain is the end (a river into a lake)", () => {
+    const river = { type: "River", from: "edge", to: "water", count: 2, turn: 0.2, length: 0.5, through: { grass: 1 } };
+    const r = routePaths([river], cells, grid, mulberry32(5), 1, {}, ["water"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    for (const p of r.paths) {
+      expect(cells.get(p.hexes[p.hexes.length - 1])).toBe("water");
+      expect(p.hexes.slice(0, -1).every((h) => cells.get(h) !== "water")).toBe(true);
+    }
+  });
+
+  it("round-trips the type setting", () => {
+    const back = decodeSetting("pathTypes", String(encodeSetting("pathTypes", { River: { crossImpassable: true, keep: 0.5 } })));
+    expect(back).toEqual({ value: { River: { crossImpassable: true, keep: 0.5 } } });
   });
 });
