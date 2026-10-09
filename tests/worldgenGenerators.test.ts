@@ -287,4 +287,13 @@ describe("a region's generators", () => {
     expect(generatorsForRegion(all, "the-north").map((g) => g.model.name)).toEqual(["north", "combo"]);
     expect(generatorsForRegion(all, "island")).toEqual([]);
   });
+
+  it("breaks same-day ties by when the file was made", () => {
+    const made = (name: string, ctime: number) => {
+      const g = gen(name, { "source-map": "r", created: "2026-10-08" });
+      (g.file as unknown as { stat: { ctime: number } }).stat = { ctime };
+      return g;
+    };
+    expect(generatorsForRegion([made("r-4", 100), made("r-7", 400), made("r-5", 200)], "r").map((g) => g.model.name)).toEqual(["r-7", "r-5", "r-4"]);
+  });
 });

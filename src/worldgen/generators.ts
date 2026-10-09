@@ -181,6 +181,8 @@ export function generatorsForRegion(generators: GeneratorFile[], mapName: string
       (a, b) =>
         sourceMapsOf(a.model).length - sourceMapsOf(b.model).length ||
         (b.model.meta.created ?? "").localeCompare(a.model.meta.created ?? "") ||
+        // `created` is a date only; same-day ones go by when the file was made.
+        (b.file.stat?.ctime ?? 0) - (a.file.stat?.ctime ?? 0) ||
         a.model.name.localeCompare(b.model.name),
     );
 }
