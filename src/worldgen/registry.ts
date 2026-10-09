@@ -12,6 +12,7 @@ import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered 
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
 import {
   PLANET_SURFACE_ID,
+  OVERLAND_ID,
   PLANET_SURFACE_OPTIONS,
   REGION_DETAIL_ID,
   REGION_DETAIL_OPTIONS,
@@ -150,6 +151,22 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       fits: planetSurfaceFits,
       generate: (req) => {
         const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, req.context ?? {});
+        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+      },
+      toChains,
+    },
+    {
+      id: OVERLAND_ID,
+      label: "Overland",
+      // Planet surface's noise generator under a world name, so world-only
+      // users get a procedural map without seeing space options.
+      mapKind: "world",
+      description: "A region from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
+      source: "built-in",
+      options: PLANET_SURFACE_OPTIONS,
+      fits: planetSurfaceFits,
+      generate: (req) => {
+        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options);
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toChains,

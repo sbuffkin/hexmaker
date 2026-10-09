@@ -12,7 +12,7 @@ import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, PALETTE_PRESETS } from ".
 import { listGeneratorKinds, visibleKinds, BLANK_ID } from "../src/worldgen/registry";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { ORBITS_ID } from "../src/worldgen/procedural/orbits";
-import { PLANET_SURFACE_ID, REGION_DETAIL_ID } from "../src/worldgen/procedural/planetSurface";
+import { OVERLAND_ID, PLANET_SURFACE_ID, REGION_DETAIL_ID } from "../src/worldgen/procedural/planetSurface";
 import { learnModel, modelToMarkdown } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
@@ -142,6 +142,8 @@ describe("generator registry visibility", () => {
 		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, false));
 		expect(shown).toContain(BLANK_ID);
 		expect(shown).toContain(REGION_DETAIL_ID);
+		// a procedural top-level generator without the space wording
+		expect(shown).toContain(OVERLAND_ID);
 		expect(shown).toContain("wfc:world/generators/my-coast.md");
 		for (const id of [STAR_SCATTER_ID, ORBITS_ID, PLANET_SURFACE_ID, "wfc:world/generators/planet-ocean.md"]) {
 			expect(shown).not.toContain(id);

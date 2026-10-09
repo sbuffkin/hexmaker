@@ -32,6 +32,8 @@ import {
  */
 
 export const PLANET_SURFACE_ID = "procedural:planet-surface";
+/** The same generator offered on world maps (Planet surface is space-only). */
+export const OVERLAND_ID = "procedural:overland";
 
 export const PLANET_SURFACE_OPTIONS: ProcOption[] = [
   {
