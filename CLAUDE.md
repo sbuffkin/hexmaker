@@ -30,8 +30,10 @@ Each coding session:
 1. Run `npm run dev` in a terminal (or `/dev` from Claude Code) — esbuild watches for changes and rebuilds `main.js` on every save
 2. After a rebuild, reload the plugin in Obsidian:
    ```bash
-   powershell.exe -Command "obsidian plugin:reload id=duckmage-plugin"
+   powershell.exe -Command "obsidian eval code=\"(async()=>{await app.plugins.disablePlugin('hexmaker'); await app.plugins.enablePlugin('hexmaker'); return 'ok'})()\""
    ```
+   The plugin **id is `hexmaker`** (the folder is `duckmage-plugin`). On this machine's Obsidian installer the CLI's `plugin:reload` / `plugin:disable` / `plugin:enable` and `dev:*` commands silently do nothing (exit 255, "installer out of date"); `obsidian eval` works. To check what's loaded: `obsidian eval code="Object.keys(app.commands.commands).filter(c=>c.startsWith('hexmaker:'))"`. Screenshot: `require('@electron/remote').getCurrentWebContents().capturePage()` inside `eval`. `app.plugins.plugins.hexmaker.manifest.version` is cached from startup — don't use it to tell builds apart.
+   **Before copying a build into this folder**, check which branch the current vault build came from — other sessions deploy from their own branches, and a deploy reverts theirs.
 3. Use `/rebuild` for a final production build before committing (runs the TypeScript type-check and tests too)
 
 ## Architecture
