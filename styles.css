@@ -2086,9 +2086,21 @@ input.duckmage-input-error {
     justify-content: center;
 }
 
-.duckmage-pe-icon img {
-    max-width: 100%;
-    max-height: 100%;
+/* Icon preview sits on the terrain's colour, tinted, as the map draws it. */
+.duckmage-pe-icon {
+    background: var(--duckmage-pe-fill, var(--interactive-normal));
+}
+
+.duckmage-pe-icon-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Tint swatch reads as "off" when tint is disabled. */
+.duckmage-pe-tint input[type="color"]:disabled {
+    opacity: 0.25;
+    cursor: default;
 }
 
 .duckmage-pe-tint {

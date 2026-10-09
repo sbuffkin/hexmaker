@@ -2,7 +2,7 @@ import { ItemView, Notice, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { SubmapDefault, TerrainColor, TerrainPalette } from "../types";
 import { VIEW_TYPE_PALETTE_EDITOR } from "../constants";
-import { getIconUrl, iconLabel } from "../utils";
+import { createIconEl, getIconUrl, iconLabel } from "../utils";
 import { IconPickerModal } from "../hex-map/IconPickerModal";
 import { fillTerrainTypeSelect } from "../terrainTypeSelect";
 import { inferTerrainType, terrainTypeInfo } from "../terrainTypes";
@@ -230,7 +230,8 @@ export class PaletteEditorView extends ItemView {
     // Color
     const color = tr.createEl("td").createEl("input", { type: "color", attr: { "aria-label": `${t.name} color` } });
     color.value = /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : "#888888";
-    color.addEventListener("input", () => { t.color = color.value; this.save(); });
+    let paintIcon = () => {};
+    color.addEventListener("input", () => { t.color = color.value; paintIcon(); this.save(); });
 
     // Name (renames cascade to hex notes and terrain tables on commit)
     const name = tr.createEl("td").createEl("input", { type: "text", cls: "duckmage-pe-name", attr: { "aria-label": "Terrain name" } });
@@ -277,13 +278,13 @@ export class PaletteEditorView extends ItemView {
     // Icon
     const iconCell = tr.createEl("td");
     const iconBtn = iconCell.createEl("button", { cls: "duckmage-pe-icon", attr: { title: t.icon ? iconLabel(t.icon) : "Choose icon" } });
-    if (t.icon) {
-      const img = iconBtn.createEl("img");
-      img.src = getIconUrl(this.plugin, t.icon);
-      img.alt = iconLabel(t.icon);
-    } else {
-      iconBtn.setText("—");
-    }
+    paintIcon = () => {
+      iconBtn.empty();
+      iconBtn.setCssProps({ "--duckmage-pe-fill": t.color });
+      if (t.icon) createIconEl(iconBtn, getIconUrl(this.plugin, t.icon), iconLabel(t.icon), t.iconColor, "duckmage-pe-icon-img");
+      else iconBtn.setText("—");
+    };
+    paintIcon();
     iconBtn.addEventListener("click", () => {
       new IconPickerModal(this.app, this.plugin, (icon) => {
         if (icon) t.icon = icon;
@@ -304,9 +305,10 @@ export class PaletteEditorView extends ItemView {
       if (tintOn.checked) t.iconColor = tint.value;
       else delete t.iconColor;
       tint.disabled = !tintOn.checked;
+      paintIcon();
       this.save();
     });
-    tint.addEventListener("input", () => { if (tintOn.checked) { t.iconColor = tint.value; this.save(); } });
+    tint.addEventListener("input", () => { if (tintOn.checked) { t.iconColor = tint.value; paintIcon(); this.save(); } });
 
     // Delete (two clicks)
     const del = tr.createEl("td").createEl("button", { cls: "duckmage-pe-delete", text: "×", attr: { title: "Delete terrain", "aria-label": `Delete ${t.name}` } });
