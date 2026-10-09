@@ -2087,8 +2087,10 @@ input.duckmage-input-error {
 }
 
 /* Icon preview sits on the terrain's colour, tinted, as the map draws it. */
-.duckmage-pe-icon {
-    background: var(--duckmage-pe-fill, var(--interactive-normal));
+/* Scoped twice over so it beats the theme's button background rules. */
+.duckmage-palette-editor .duckmage-pe-table button.duckmage-pe-icon {
+    background-color: var(--duckmage-pe-fill, var(--interactive-normal));
+    box-shadow: none;
 }
 
 .duckmage-pe-icon-img {
