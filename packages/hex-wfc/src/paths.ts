@@ -228,42 +228,78 @@ export function routePaths(
     const endOk = (anchor: string) => (c: number) => !blocked?.[c] || terrainOf(c) === anchor;
     const starts = candidates(f.from, taken, null).filter((c) => (f.from === "path" || !taken.has(c)) && endOk(f.from)(c));
     if (!starts.length) return null;
-    // A few random starts; keep the cheapest.
+    const dist = (a: number, b: number) =>
+      hexDistance([ox + (a % cols), oy + Math.floor(a / cols)], [ox + (b % cols), oy + Math.floor(b / cols)], orientation, stagger);
+
+    /**
+     * Route from one start, to ends it can actually reach (land cut off by
+     * impassable terrain or other paths doesn't count). If none of those is
+     * as far as the learned length asks, the farthest one will do.
+     */
+    const attempt = (start: number): number[] | null => {
+      const reach = new Uint8Array(N);
+      reach[start] = 1;
+      const stack = [start];
+      while (stack.length) {
+        const c = stack.pop()!;
+        for (const n of nbr[c]) {
+          if (reach[n] || blocked?.[n] || taken.has(n)) continue;
+          reach[n] = 1;
+          stack.push(n);
+        }
+      }
+      // An end can be stepped onto from reachable land (a river into the sea).
+      const reachable = (c: number) => reach[c] === 1 || nbr[c].some((n) => reach[n] === 1);
+      const startSide = border(start) ? sideOf(start) : null;
+      let targets: Set<number>;
+      if (f.to === "none") {
+        const want = Math.max(3, Math.round(f.length * Math.max(cols, rows)));
+        const land: { c: number; d: number }[] = [];
+        for (let c = 0; c < N; c++) if (reach[c] && c !== start) land.push({ c, d: dist(start, c) });
+        let atLength = land.filter((x) => Math.abs(x.d - want) <= 1);
+        if (!atLength.length && land.length) {
+          const best = Math.max(...land.filter((x) => x.d <= want).map((x) => x.d), 0);
+          atLength = best >= MIN_PATH_HEXES - 1 ? land.filter((x) => x.d === best) : [];
+        }
+        targets = new Set(atLength.length ? [atLength[Math.floor(rng() * atLength.length)].c] : []);
+      } else {
+        targets = new Set(candidates(f.to, taken, f.to === "edge" ? startSide : null).filter((c) => endOk(f.to)(c) && reachable(c)));
+        // Edge-to-edge: don't let it cut a corner; it should run at least most
+        // of the learned length (or as far as the land allows).
+        if (f.to === "edge") {
+          const minLen = Math.round(0.6 * f.length * Math.max(cols, rows));
+          const far = [...targets].filter((c) => dist(start, c) >= minLen);
+          if (far.length) targets = new Set(far);
+          else if (targets.size) {
+            const longest = Math.max(...[...targets].map((c) => dist(start, c)));
+            targets = new Set([...targets].filter((c) => dist(start, c) === longest));
+          }
+        }
+      }
+      if (f.to !== "path") for (const c of taken) targets.delete(c);
+      targets.delete(start);
+      if (!targets.size) return null;
+      const route = dijkstra(cost, start, targets, taken, blocked);
+      return route && route.length >= MIN_PATH_HEXES ? route : null;
+    };
+
+    // A few random starts; try the cheapest first, then others if it fails
+    // (it may sit on a scrap of land the route can't leave).
+    const tried = new Set<number>();
     let start = starts[Math.floor(rng() * starts.length)];
     for (let t = 0; t < 6; t++) {
       const c = starts[Math.floor(rng() * starts.length)];
       if (cost[c] < cost[start]) start = c;
     }
-    const startSide = border(start) ? sideOf(start) : null;
-    let targets: Set<number>;
-    if (f.to === "none") {
-      const want = Math.max(3, Math.round(f.length * Math.max(cols, rows)));
-      const sx = ox + (start % cols), sy = oy + Math.floor(start / cols);
-      const atLength: number[] = [];
-      for (let c = 0; c < N; c++) {
-        if (blocked?.[c]) continue;
-        const d = hexDistance([sx, sy], [ox + (c % cols), oy + Math.floor(c / cols)], orientation, stagger);
-        if (Math.abs(d - want) <= 1) atLength.push(c);
-      }
-      targets = new Set(atLength.length ? [atLength[Math.floor(rng() * atLength.length)]] : []);
-    } else {
-      targets = new Set(candidates(f.to, taken, f.to === "edge" ? startSide : null).filter(endOk(f.to)));
-      // Edge-to-edge: don't let it cut a corner; it should run at least most
-      // of the learned length.
-      if (f.to === "edge") {
-        const minLen = Math.round(0.6 * f.length * Math.max(cols, rows));
-        const sx = ox + (start % cols), sy = oy + Math.floor(start / cols);
-        const far = [...targets].filter(
-          (c) => hexDistance([sx, sy], [ox + (c % cols), oy + Math.floor(c / cols)], orientation, stagger) >= minLen,
-        );
-        if (far.length) targets = new Set(far);
-      }
+    for (let k = 0; k < 12 && tried.size < starts.length; k++) {
+      tried.add(start);
+      const route = attempt(start);
+      if (route) return route;
+      const left = starts.filter((c) => !tried.has(c));
+      if (!left.length) break;
+      start = left[Math.floor(rng() * left.length)];
     }
-    if (f.to !== "path") for (const c of taken) targets.delete(c);
-    targets.delete(start);
-    if (!targets.size) return null;
-    const route = dijkstra(cost, start, targets, taken, blocked);
-    return route && route.length >= MIN_PATH_HEXES ? route : null;
+    return null;
   };
 
   const out: PathOutput[] = [];

@@ -214,3 +214,33 @@ describe("paths and impassable terrain", () => {
     expect(back).toEqual({ value: { River: { crossImpassable: true, keep: 0.5 } } });
   });
 });
+
+describe("paths on land cut up by impassable terrain", () => {
+  // 30x14 sea with a 3-row strip of land along the bottom and single land
+  // hexes dotted along the other edges (starts a route can't leave).
+  const cols = 30, rows = 14;
+  const cells = new Map<string, string>();
+  for (let y = 0; y < rows; y++)
+    for (let x = 0; x < cols; x++) {
+      const speck = (y === 0 && x % 3 === 0) || ((x === 0 || x === cols - 1) && y % 3 === 0 && y < rows - 3);
+      cells.set(cellKey(x, y), y >= rows - 3 || speck ? "grass" : "sea");
+    }
+  const grid = { cols, rows, ox: 0, oy: 0, orientation: "flat" as const, stagger: "odd" as const };
+
+  it("tries other starts, and settles for the longest run the land allows", () => {
+    // Learned as running the whole map; only the strip can take one.
+    const river = { type: "River", from: "edge", to: "edge", count: 1, turn: 0.2, length: 1.4, through: { grass: 1 } };
+    for (let seed = 1; seed <= 6; seed++) {
+      const r = routePaths([river], cells, grid, mulberry32(seed), 1, {}, ["sea"]);
+      expect(r.paths).toHaveLength(1);
+      expect(r.paths[0].hexes.every((h) => cells.get(h) === "grass")).toBe(true);
+    }
+  });
+
+  it("finds a stopping point on reachable land for routes that just stop", () => {
+    const road = { type: "Road", from: "edge", to: "none", count: 2, turn: 0.2, length: 0.8, through: { grass: 1 } };
+    const r = routePaths([road], cells, grid, mulberry32(9), 1, {}, ["sea"]);
+    expect(r.paths.length).toBeGreaterThan(0);
+    expect(r.paths.flatMap((p) => p.hexes).every((h) => cells.get(h) === "grass")).toBe(true);
+  });
+});
