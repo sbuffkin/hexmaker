@@ -6,7 +6,8 @@
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { blendSourcesOf, deleteGenerators, relearnGenerator, saveBlendedGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
 import { ConfirmModal } from "./ConfirmModal";
 
@@ -15,6 +16,8 @@ export interface LibraryHost {
   selectedPath(): string;
   /** Show this generator below the list. */
   load(g: GeneratorFile): void;
+  /** Show an unsaved generator (a new blend) below the list. */
+  loadDraft(model: HexWfcModel): void;
   /** Files changed (learned, re-learned, deleted): reload the page. */
   changed(selectPath?: string): void;
 }
@@ -123,24 +126,21 @@ export class GeneratorLibrary {
     const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the regions they came from, keeping their settings" } });
     const blend = actions.createEl("button", {
       text: selected.length > 1 ? `Blend (${selected.length})` : "Blend",
-      attr: { title: "Make a new generator that blends these, each leaning toward its own side of the map: the border country between them" },
+      attr: { title: "Try a blend of these, each leaning toward its own side of the map: the border country between them. It isn't saved until you choose to." },
     });
     const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
     for (const b of [open, relearn, del]) b.disabled = !selected.length;
     relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length || blendSourcesOf(g.model).length);
     blend.disabled = selected.length < 2;
     blend.addEventListener("click", () => {
-      blend.disabled = true;
-      void saveBlendedGenerator(this.plugin, selected, "").then((r) => {
-        if ("error" in r) {
-          new Notice(r.error);
-          blend.disabled = false;
-          return;
-        }
-        new Notice(`Blended ${selected.map((g) => g.model.name).join(" + ")} into "${r.model.name}".`);
-        checked.clear();
-        this.host.changed(r.file.path);
-      });
+      const r = blendGenerators(this.plugin, selected);
+      if ("error" in r) {
+        new Notice(r.error);
+        return;
+      }
+      checked.clear();
+      redraw();
+      this.host.loadDraft(r.model);
     });
     open.addEventListener("click", () => {
       for (const g of selected) void this.app.workspace.getLeaf("tab").openFile(g.file);

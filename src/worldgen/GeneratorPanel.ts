@@ -25,6 +25,8 @@ import {
   sourceDirectionsOf,
   setGeneratorPalette,
   toPathChains,
+  remakeBlend,
+  saveGeneratorModel,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
@@ -59,12 +61,21 @@ import {
   type CountRange,
   COMPASS,
   type Compass,
+  modelToMarkdown,
+  type HexWfcModel,
 } from "../../packages/hex-wfc/src";
+import type { TFile } from "obsidian";
 
 export interface GeneratorPanelHost {
   /** Re-render the whole page (e.g. after learning a new generator). */
   rerender(): void;
 }
+
+/** A generator shown on the page: a file, or an unsaved draft (file null). */
+type ShownGenerator = Omit<GeneratorFile, "file"> & { file: TFile | null };
+
+/** selectedPath while the unsaved draft is shown. */
+const DRAFT_PATH = "\u0000draft";
 
 const SYMMETRY_LABELS: Record<Symmetry, string> = {
   none: "None",
@@ -93,6 +104,12 @@ export class GeneratorPanel {
    * saved map, even if this version would generate a different one.
    */
   static loadedSave: GeneratorSave | null = null;
+  /**
+   * A generator that only exists on this page (a new blend) until saved.
+   * Settings, sliders and directions change it in memory; Save writes it to
+   * the generators folder.
+   */
+  static draft: HexWfcModel | null = null;
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -146,7 +163,10 @@ export class GeneratorPanel {
     libraryEl.createEl("p", { text: "Loading generators…", cls: "duckmage-map-origin-desc" });
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
-    const current = () => generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
+    const current = (): ShownGenerator | undefined =>
+      GeneratorPanel.selectedPath === DRAFT_PATH
+        ? GeneratorPanel.draft ? { file: null, model: GeneratorPanel.draft, warnings: [] } : undefined
+        : generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
 
     const show = () => {
       body.empty();
@@ -183,6 +203,11 @@ export class GeneratorPanel {
       new GeneratorLibrary(this.app, this.plugin, generators, {
         selectedPath: () => GeneratorPanel.selectedPath,
         load: choose,
+        loadDraft: (draft) => {
+          GeneratorPanel.draft = draft;
+          GeneratorPanel.selectedPath = DRAFT_PATH;
+          show();
+        },
         changed: (selectPath) => {
           if (selectPath) GeneratorPanel.selectedPath = selectPath;
           this.host.rerender();
@@ -194,8 +219,11 @@ export class GeneratorPanel {
 
   // ── One generator ────────────────────────────────────────────────────────
 
-  private renderGenerator(main: HTMLElement, side: HTMLElement, g: GeneratorFile): void {
+  private renderGenerator(main: HTMLElement, side: HTMLElement, g: ShownGenerator): void {
     const { model } = g;
+    /** The generator's file; null for an unsaved draft, which lives only in memory. */
+    const file = g.file;
+    const saved = file ? { ...g, file } : null;
     // Controls go into the current section; each section() call starts a new one.
     let el = main;
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
@@ -214,7 +242,7 @@ export class GeneratorPanel {
     // Current settings, kept in sync with the file.
     const s = () => generatorSettings(model);
     // A just-loaded save's settings win over a possibly stale read of the file.
-    const isThisGenerator = (sv: GeneratorSave) => sv.generatorPath === g.file.path || sv.generatorName === model.name;
+    const isThisGenerator = (sv: GeneratorSave) => (!!file && sv.generatorPath === file.path) || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
     /** The last settings write, for anything that must re-read the file after it. */
     let lastWrite: Promise<void> = Promise.resolve();
@@ -226,15 +254,42 @@ export class GeneratorPanel {
         else next[k] = v;
       }
       model.settings = next;
-      lastWrite = saveGeneratorSettings(this.plugin, g.file, patch).catch((e: unknown) => {
-        new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
-      });
+      if (file)
+        lastWrite = saveGeneratorSettings(this.plugin, file, patch).catch((e: unknown) => {
+          new Notice(`Couldn't save generator settings: ${e instanceof Error ? e.message : String(e)}`);
+        });
       schedulePreview();
     };
 
     // Generator settings: what's saved on the generator itself (its name,
     // palette and where it came from), as opposed to how it generates.
     el = this.section(main, "Generator settings");
+    if (!file) {
+      const draftRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-draft" });
+      draftRow.createSpan({
+        text: "Not saved: this blend lives only on this page. Try it out, then save it to keep it in your generator list.",
+        cls: "duckmage-map-origin-desc",
+      });
+      const keep = draftRow.createEl("button", { text: "Save generator", cls: "mod-cta" });
+      keep.addEventListener("click", () => {
+        keep.disabled = true;
+        void saveGeneratorModel(this.plugin, model).then((r) => {
+          GeneratorPanel.draft = null;
+          GeneratorPanel.selectedPath = r.file.path;
+          new Notice(`Saved generator "${r.model.name}".`);
+          this.host.rerender();
+        }, (e: unknown) => {
+          new Notice(`Couldn't save the generator: ${e instanceof Error ? e.message : String(e)}`);
+          keep.disabled = false;
+        });
+      });
+      const discard = draftRow.createEl("button", { text: "Discard" });
+      discard.addEventListener("click", () => {
+        GeneratorPanel.draft = null;
+        GeneratorPanel.selectedPath = "";
+        this.host.rerender();
+      });
+    }
     const nameRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
     const nameInput = nameRow.createEl("input", { type: "text", value: model.name, attr: { placeholder: "Generator name" } });
@@ -246,7 +301,13 @@ export class GeneratorPanel {
     const rename = () => {
       if (renameBtn.disabled) return;
       renameBtn.disabled = true;
-      void renameGenerator(this.plugin, g, nameInput.value).then((r) => {
+      if (!saved) {
+        // A draft just takes the name; it's tidied into a file name on save.
+        model.name = nameInput.value.trim();
+        this.host.rerender();
+        return;
+      }
+      void renameGenerator(this.plugin, saved, nameInput.value).then((r) => {
         if ("error" in r) {
           new Notice(r.error);
           renameBtn.disabled = false;
@@ -276,7 +337,7 @@ export class GeneratorPanel {
     ownPalette.value = learnedPalette;
     ownPalette.addEventListener("change", () => {
       model.meta.palette = ownPalette.value;
-      void setGeneratorPalette(this.plugin, g.file, ownPalette.value).then(() => {
+      void (file ? setGeneratorPalette(this.plugin, file, ownPalette.value) : Promise.resolve()).then(() => {
         GeneratorPanel.paletteName = ownPalette.value;
         this.host.rerender();
       });
@@ -295,18 +356,21 @@ export class GeneratorPanel {
     relearnBtn.disabled = !sources.length;
     relearnBtn.addEventListener("click", () => {
       relearnBtn.disabled = true;
-      void relearnGenerator(this.plugin, g).then((r) => {
+      void (saved ? relearnGenerator(this.plugin, saved) : remakeBlend(this.plugin, model)).then((r) => {
         if ("error" in r) {
           new Notice(r.error);
           relearnBtn.disabled = false;
           return;
         }
+        if (!saved) GeneratorPanel.draft = r.model;
         new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.join(" + ")}.`);
         this.host.rerender();
       });
     });
-    const openBtn = sourceRow.createEl("button", { text: "Open file" });
-    openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(g.file));
+    if (file) {
+      const openBtn = sourceRow.createEl("button", { text: "Open file" });
+      openBtn.addEventListener("click", () => void this.app.workspace.getLeaf("tab").openFile(file));
+    }
 
     // A combined generator (regions learned together, or a blend of
     // generators): how much each source counts, and which side of the map
@@ -367,8 +431,9 @@ export class GeneratorPanel {
           r.slider.disabled = true;
           for (const p of r.points) p.b.disabled = true;
         }
-        void relearnGenerator(this.plugin, g, next, nextDirs).then((res) => {
+        void (saved ? relearnGenerator(this.plugin, saved, next, nextDirs) : remakeBlend(this.plugin, model, next, nextDirs)).then((res) => {
           if ("error" in res) new Notice(res.error);
+          else if (!saved) GeneratorPanel.draft = res.model;
           this.host.rerender();
         });
       };
@@ -399,7 +464,7 @@ export class GeneratorPanel {
       model.exampleHexes ? `learned from ${model.exampleHexes} hexes` : "",
       model.meta.created ? `created ${model.meta.created}` : "",
       model.meta[VERSION_KEY] ? `v${model.meta[VERSION_KEY]}` : "",
-      g.file.path,
+      file?.path ?? "not saved",
     ].filter(Boolean);
     el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -722,7 +787,7 @@ export class GeneratorPanel {
             format: SAVE_FORMAT,
             created: new Date().toISOString().slice(0, 10),
             generatorName: model.name,
-            generatorPath: g.file.path,
+            generatorPath: g.file?.path ?? "",
             palette: GeneratorPanel.paletteName,
             seed: this.seed,
             cols: grid.cols,
@@ -732,7 +797,8 @@ export class GeneratorPanel {
             settings: { ...(model.settings ?? {}) },
             cells: snapshot.cells,
             paths: snapshot.paths,
-            generatorMarkdown: await this.app.vault.read(g.file),
+            // A draft has no file; the save keeps its own copy either way.
+            generatorMarkdown: g.file ? await this.app.vault.read(g.file) : modelToMarkdown(model),
           };
           const file = await writeSave(this.plugin, saved);
           GeneratorPanel.loadedSave = { ...saved, name: file.basename };

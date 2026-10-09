@@ -566,16 +566,12 @@ function blendModels(
 }
 
 /**
- * Blend generators into a new one: their terrains, rules and paths combined,
- * each leaning toward its own side of the map (two run west to east by
- * default), so the result is the border country between them. Never
- * overwrites: a name clash gets a numeric suffix.
+ * Blend generators into a new, unsaved one: their terrains, rules and paths
+ * combined, each leaning toward its own side of the map (two run west to
+ * east by default), so the result is the border country between them.
+ * Nothing is written; see saveGeneratorModel to keep it.
  */
-export async function saveBlendedGenerator(
-  plugin: HexmakerPlugin,
-  sources: GeneratorFile[],
-  rawName: string,
-): Promise<{ file: TFile; model: HexWfcModel } | { error: string }> {
+export function blendGenerators(plugin: HexmakerPlugin, sources: GeneratorFile[], rawName = ""): { model: HexWfcModel } | { error: string } {
   if (sources.length < 2) return { error: "Tick two or more generators to blend." };
   const name = slugify(rawName) || slugify(sources.map((g) => g.model.name).join("-to-"));
   if (!name) return { error: "Enter a generator name." };
@@ -584,38 +580,67 @@ export async function saveBlendedGenerator(
     palette: sources[0].model.meta.palette ?? "",
     created: new Date().toISOString().slice(0, 10),
   }, influence, defaultBlendDirections(sources.length));
-  const folder = generatorsFolder(plugin);
-  let path = `${folder}/${name}.md`;
-  for (let n = 2; plugin.app.vault.getAbstractFileByPath(path); n++) {
-    path = `${folder}/${name}-${n}.md`;
-    model.name = `${name}-${n}`;
-  }
-  const file = await plugin.app.vault.create(path, modelToMarkdown(model));
-  return { file, model };
+  return { model };
 }
 
 /**
- * Blend a blended generator again from its sources' current files, with new
- * influence or directions (omitted = as stored; null influence = even).
- * Keeps its name, settings and other metadata. Rewrites the file.
+ * Write a generator that only exists in memory (an unsaved blend) to the
+ * generators folder. Never overwrites: a name clash gets a numeric suffix,
+ * which the model's name follows.
  */
+export async function saveGeneratorModel(plugin: HexmakerPlugin, model: HexWfcModel): Promise<{ file: TFile; model: HexWfcModel }> {
+  const folder = generatorsFolder(plugin);
+  if (!(plugin.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
+    try {
+      await plugin.app.vault.createFolder(folder);
+    } catch {
+      /* exists */
+    }
+  }
+  const name = slugify(model.name) || "generator";
+  const saved: HexWfcModel = { ...model, name, meta: { ...model.meta } };
+  let path = `${folder}/${name}.md`;
+  for (let n = 2; plugin.app.vault.getAbstractFileByPath(path); n++) {
+    path = `${folder}/${name}-${n}.md`;
+    saved.name = `${name}-${n}`;
+  }
+  const file = await plugin.app.vault.create(path, modelToMarkdown(saved));
+  return { file, model: saved };
+}
+
+/**
+ * A blend made again from its sources' current files, with new influence or
+ * directions (omitted = as stored; null influence = even). Keeps its name,
+ * settings and other metadata. Writes nothing (see reblendGenerator).
+ */
+export async function remakeBlend(
+  plugin: HexmakerPlugin,
+  blend: HexWfcModel,
+  influence?: number[] | null,
+  directions?: Compass[],
+): Promise<{ model: HexWfcModel } | { error: string }> {
+  const names = blendSourcesOf(blend);
+  const all = await listGenerators(plugin);
+  const sources = names.map((n) => all.find((x) => x.model.name === n || x.file.basename === n));
+  const missing = names.filter((_, i) => !sources[i]);
+  if (missing.length) return { error: `Can't find the generator${missing.length === 1 ? "" : "s"} this blend came from: ${missing.join(", ")}.` };
+  const stored = influence === null ? undefined : (influence ?? sourceInfluenceOf(blend));
+  const weights = stored ?? names.map(() => Math.round(100 / names.length));
+  const dirs = directions ?? sourceDirectionsOf(blend) ?? names.map((): Compass => "C");
+  const found = sources.filter((x): x is GeneratorFile => !!x);
+  const model = blendModels(plugin, found.map((x) => x.model), blend.name, { ...blend.meta }, weights, dirs);
+  keepSettings(model, blend, dirs);
+  return { model };
+}
+
+/** remakeBlend, then rewrite the blend's file. */
 export async function reblendGenerator(
   plugin: HexmakerPlugin,
   g: GeneratorFile,
   influence?: number[] | null,
   directions?: Compass[],
 ): Promise<{ model: HexWfcModel } | { error: string }> {
-  const names = blendSourcesOf(g.model);
-  const all = await listGenerators(plugin);
-  const sources = names.map((n) => all.find((x) => x.model.name === n || x.file.basename === n));
-  const missing = names.filter((_, i) => !sources[i]);
-  if (missing.length) return { error: `Can't find the generator${missing.length === 1 ? "" : "s"} this blend came from: ${missing.join(", ")}.` };
-  const stored = influence === null ? undefined : (influence ?? sourceInfluenceOf(g.model));
-  const weights = stored ?? names.map(() => Math.round(100 / names.length));
-  const dirs = directions ?? sourceDirectionsOf(g.model) ?? names.map((): Compass => "C");
-  const found = sources.filter((x): x is GeneratorFile => !!x);
-  const model = blendModels(plugin, found.map((x) => x.model), g.model.name, { ...g.model.meta }, weights, dirs);
-  keepSettings(model, g.model, dirs);
-  await plugin.app.vault.modify(g.file, modelToMarkdown(model));
-  return { model };
+  const r = await remakeBlend(plugin, g.model, influence, directions);
+  if ("model" in r) await plugin.app.vault.modify(g.file, modelToMarkdown(r.model));
+  return r;
 }
