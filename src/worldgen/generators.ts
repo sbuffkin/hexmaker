@@ -17,6 +17,7 @@ import { normalizeFolder, slugify } from "../utils";
 import { VERSION_KEY, pluginVersion } from "../compat";
 import {
   learnModel,
+  mergeModels,
   modelToMarkdown,
   parseModelMarkdown,
   isModelMarkdown,
@@ -147,37 +148,81 @@ export function paletteColors(plugin: HexmakerPlugin, paletteName: string | unde
 }
 
 /**
- * Learn a generator from the map's painted hexes and save it as a new file.
- * Never overwrites: a name clash gets a numeric suffix.
+ * Meta key listing the regions of a generator learned from several, joined
+ * with SOURCE_MAPS_JOIN: `source-maps: the-coast + the-north`.
  */
-export async function saveGeneratorFromMap(
+export const SOURCE_MAPS_KEY = "source-maps";
+const SOURCE_MAPS_JOIN = " + ";
+
+/** The regions a generator was learned from: one, several, or none recorded. */
+export function sourceMapsOf(model: HexWfcModel): string[] {
+  const many = model.meta[SOURCE_MAPS_KEY]?.split(SOURCE_MAPS_JOIN).map((s) => s.trim()).filter(Boolean);
+  if (many?.length) return many;
+  const one = model.meta["source-map"];
+  return one ? [one] : [];
+}
+
+/**
+ * Learn from the painted hexes of one or more regions. Several regions are
+ * learned one by one and merged (see mergeModels), so nothing is learned
+ * from where one region's edge would meet another's.
+ */
+function learnFromMaps(
   plugin: HexmakerPlugin,
-  mapName: string,
-  rawName: string,
-): Promise<{ file: TFile; model: HexWfcModel } | { error: string }> {
-  const map = plugin.getMap(mapName);
-  if (!map) return { error: `Map "${mapName}" not found.` };
-  const name = slugify(rawName) || slugify(mapName);
-  if (!name) return { error: "Enter a generator name." };
-
-  const cells = readMapTerrain(plugin, mapName);
-  if (cells.size < 2)
-    return { error: "Paint some terrain on this map first. The generator learns from painted hexes." };
-
-  const model = learnModel(cells, {
-    name,
-    orientation: plugin.settings.hexOrientation,
-    stagger: mapStagger(plugin, mapName),
-    paths: (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
-    meta: {
-      palette: map.paletteName,
-      "source-map": mapName,
-      created: new Date().toISOString().slice(0, 10),
-      [VERSION_KEY]: pluginVersion(plugin),
-    },
-  });
+  mapNames: string[],
+  name: string,
+  meta: Record<string, string>,
+): { model: HexWfcModel } | { error: string } {
+  const models: HexWfcModel[] = [];
+  for (const mapName of mapNames) {
+    const map = plugin.getMap(mapName);
+    if (!map) return { error: `Region "${mapName}" no longer exists.` };
+    const cells = readMapTerrain(plugin, mapName);
+    if (cells.size < 2)
+      return { error: mapNames.length > 1
+        ? `Region "${mapName}" has no painted terrain to learn from.`
+        : "Paint some terrain on this map first. The generator learns from painted hexes." };
+    models.push(learnModel(cells, {
+      name,
+      orientation: plugin.settings.hexOrientation,
+      stagger: mapStagger(plugin, mapName),
+      paths: (map.pathChains ?? []).map((c) => ({ type: c.typeName, hexes: c.hexes })),
+      meta,
+    }));
+  }
+  const model = models.length === 1 ? models[0] : mergeModels(models, name, meta);
   if (model.adjacency.length === 0)
     return { error: "No painted hexes touch each other, so there is nothing to learn yet." };
+  return { model };
+}
+
+/** Meta for a generator learned from these regions. */
+function sourceMeta(plugin: HexmakerPlugin, mapNames: string[]): Record<string, string> {
+  const meta: Record<string, string> = {
+    palette: plugin.getMap(mapNames[0])?.paletteName ?? "",
+    created: new Date().toISOString().slice(0, 10),
+    [VERSION_KEY]: pluginVersion(plugin),
+  };
+  if (mapNames.length === 1) meta["source-map"] = mapNames[0];
+  else meta[SOURCE_MAPS_KEY] = mapNames.join(SOURCE_MAPS_JOIN);
+  return meta;
+}
+
+/**
+ * Learn a generator from one or more maps' painted hexes and save it as a
+ * new file. Never overwrites: a name clash gets a numeric suffix.
+ */
+export async function saveGeneratorFromMaps(
+  plugin: HexmakerPlugin,
+  mapNames: string[],
+  rawName: string,
+): Promise<{ file: TFile; model: HexWfcModel } | { error: string }> {
+  if (!mapNames.length) return { error: "Pick a region to learn from." };
+  const name = slugify(rawName) || slugify(mapNames.join("-"));
+  if (!name) return { error: "Enter a generator name." };
+  const learned = learnFromMaps(plugin, mapNames, name, sourceMeta(plugin, mapNames));
+  if ("error" in learned) return learned;
+  const { model } = learned;
 
   const folder = generatorsFolder(plugin);
   if (!(plugin.app.vault.getAbstractFileByPath(folder) instanceof TFolder)) {
@@ -194,6 +239,20 @@ export async function saveGeneratorFromMap(
   }
   const file = await plugin.app.vault.create(path, modelToMarkdown(model));
   return { file, model };
+}
+
+/** Learn a generator from one map (see saveGeneratorFromMaps). */
+export function saveGeneratorFromMap(
+  plugin: HexmakerPlugin,
+  mapName: string,
+  rawName: string,
+): Promise<{ file: TFile; model: HexWfcModel } | { error: string }> {
+  return saveGeneratorFromMaps(plugin, [mapName], rawName);
+}
+
+/** Move generator files to the trash (system or vault, as the user set). */
+export async function deleteGenerators(plugin: HexmakerPlugin, files: TFile[]): Promise<void> {
+  for (const file of files) await plugin.app.fileManager.trashFile(file);
 }
 
 /**
@@ -365,18 +424,13 @@ export async function relearnGenerator(
   plugin: HexmakerPlugin,
   g: GeneratorFile,
 ): Promise<{ model: HexWfcModel } | { error: string }> {
-  const mapName = g.model.meta["source-map"];
-  const map = mapName ? plugin.getMap(mapName) : undefined;
-  if (!mapName || !map) return { error: `The region this generator came from (${mapName ?? "unknown"}) no longer exists.` };
-  const cells = readMapTerrain(plugin, mapName);
-  if (cells.size < 2) return { error: `Region "${mapName}" has no painted terrain to learn from.` };
-  const model = learnModel(cells, {
-    name: g.model.name,
-    orientation: plugin.settings.hexOrientation,
-    stagger: mapStagger(plugin, mapName),
-    paths: (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
-    meta: { ...g.model.meta, palette: map.paletteName, created: new Date().toISOString().slice(0, 10), [VERSION_KEY]: pluginVersion(plugin) },
-  });
+  const mapNames = sourceMapsOf(g.model);
+  if (!mapNames.length) return { error: "This generator doesn't record the region it came from." };
+  const missing = mapNames.filter((m) => !plugin.getMap(m));
+  if (missing.length) return { error: `The region this generator came from (${missing.join(", ")}) no longer exists.` };
+  const learned = learnFromMaps(plugin, mapNames, g.model.name, { ...g.model.meta, ...sourceMeta(plugin, mapNames) });
+  if ("error" in learned) return learned;
+  const { model } = learned;
   if (g.model.settings) model.settings = { ...g.model.settings };
   await plugin.app.vault.modify(g.file, modelToMarkdown(model));
   return { model };

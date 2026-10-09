@@ -30,6 +30,7 @@ export {
   type PathTweak,
   pathRouteKey,
 } from "./model";
+export { mergeModels } from "./merge";
 export { learnModel, measurePatches, measureLayout, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
 export { solve, findViolation, cleanupStrengths, pathsEnabled, type SolveOptions, type SolveResult, type SolveStats } from "./solve";
 export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, type GridInfo } from "./post";

@@ -8,6 +8,7 @@ import {
   readMapTerrain,
   readLockedHexes,
   saveGeneratorFromMap,
+  sourceMapsOf,
   saveGeneratorSettings,
   generateTerrain,
   fillMap,
@@ -259,5 +260,14 @@ describe("default impassable terrain", () => {
   it("steps aside once the generator saves its own list, even an empty one", () => {
     expect(defaultImpassable({ ...base, settings: { impassable: ["Hills"] } })).toBeUndefined();
     expect(generatorSettings({ ...base, settings: { impassable: [] } }).impassable).toEqual([]);
+  });
+});
+
+describe("generator source regions", () => {
+  const model = (meta: Record<string, string>) => ({ name: "g", terrains: [], adjacency: [], meta });
+  it("reads one region, several combined, or none", () => {
+    expect(sourceMapsOf(model({ "source-map": "the-coast" }))).toEqual(["the-coast"]);
+    expect(sourceMapsOf(model({ "source-maps": "the-coast + the-north" }))).toEqual(["the-coast", "the-north"]);
+    expect(sourceMapsOf(model({}))).toEqual([]);
   });
 });

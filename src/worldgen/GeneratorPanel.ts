@@ -10,7 +10,6 @@ import { VIEW_TYPE_HEX_MAP } from "../constants";
 import type { HexMapView } from "../hex-map/HexMapView";
 import {
   listGenerators,
-  saveGeneratorFromMap,
   saveGeneratorSettings,
   generateTerrain,
   generatorSettings,
@@ -18,13 +17,13 @@ import {
   generatorFitsPalette,
   paletteColors,
   pathColors,
-  relearnGenerator,
+  sourceMapsOf,
   toPathChains,
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable } from "./scrub";
-import { pickerItems, type PickerItem } from "./picker";
+import { GeneratorLibrary } from "./GeneratorLibrary";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave } from "./saves";
 import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
@@ -117,20 +116,9 @@ export class GeneratorPanel {
     const side = layout.createDiv({ cls: "duckmage-wfc-side" });
     el.createEl("h3", { text: "Terrain generator" });
 
-    // One picker: choose a generator, or learn a new one from a region.
-    const pickRow = el.createDiv({ cls: "duckmage-region-row" });
-    const picker = pickRow.createDiv({ cls: "duckmage-wfc-picker" });
-    const input = picker.createEl("input", {
-      type: "text",
-      cls: "duckmage-wfc-picker-input",
-      attr: { placeholder: "Search generators and regions…", role: "combobox", "aria-expanded": "false", "aria-autocomplete": "list" },
-    });
-    const list = picker.createDiv({ cls: "duckmage-wfc-picker-list", attr: { role: "listbox" } });
-    list.hide();
-    const openBtn = pickRow.createEl("button", { text: "Open file" });
-    openBtn.disabled = true;
-    const relearnBtn = pickRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the region it came from, keeping its settings" } });
-    relearnBtn.disabled = true;
+    // The file list: generators to load, regions to learn from.
+    const libraryEl = el.createDiv();
+    libraryEl.createEl("p", { text: "Loading generators…", cls: "duckmage-map-origin-desc" });
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
     const current = () => generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
@@ -139,165 +127,42 @@ export class GeneratorPanel {
       body.empty();
       side.empty();
       const g = current();
-      input.value = g?.model.name ?? "";
-      openBtn.disabled = !g;
-      relearnBtn.disabled = !g?.model.meta["source-map"];
       if (g) this.renderGenerator(body, side, g);
       else {
-        const text = generators.length ? "Pick a generator above." : "No generators yet. Search above for a region to learn one from.";
+        const text = generators.length ? "Click a generator above to load it." : "No generators yet. Learn one from a region above.";
         body.createEl("p", { text, cls: "duckmage-map-origin-desc" });
         side.createEl("p", { text: "Pick a generator to preview it here.", cls: "duckmage-map-origin-desc" });
       }
     };
     const choose = (g: GeneratorFile) => {
       GeneratorPanel.selectedPath = g.file.path;
-      const source = g.model.meta["source-map"];
+      const source = sourceMapsOf(g.model)[0];
       if (source && this.plugin.getMap(source)) GeneratorPanel.mapName = source;
       const palette = g.model.meta.palette;
       if (palette && this.plugin.settings.terrainPalettes.some((p) => p.name === palette)) GeneratorPanel.paletteName = palette;
       show();
     };
-    const learn = (region: string) => {
-      input.disabled = true;
-      input.value = `Learning from ${region}…`;
-      void saveGeneratorFromMap(this.plugin, region, region).then((result) => {
-        input.disabled = false;
-        if ("error" in result) {
-          new Notice(result.error);
-          show();
-          return;
-        }
-        const { model, file } = result;
-        new Notice(`Learned generator "${model.name}" from ${region}: ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs.`);
-        GeneratorPanel.selectedPath = file.path;
-        GeneratorPanel.mapName = region;
-        GeneratorPanel.paletteName = model.meta.palette ?? GeneratorPanel.paletteName;
-        this.host.rerender();
-      });
-    };
 
-    // The dropdown list, filtered by what's typed.
-    let items: { item: PickerItem; el: HTMLElement }[] = [];
-    let active = -1;
-    const setActive = (i: number) => {
-      items[active]?.el.removeClass("is-active");
-      active = i;
-      const it = items[active];
-      if (!it) return;
-      it.el.addClass("is-active");
-      it.el.scrollIntoView({ block: "nearest" });
-    };
-    const close = () => {
-      list.hide();
-      input.setAttr("aria-expanded", "false");
-    };
-    const pick = (item: PickerItem) => {
-      close();
-      input.blur();
-      if (item.kind === "region") learn(item.value);
-      else {
-        const g = generators.find((x) => x.file.path === item.value);
-        if (g) choose(g);
-      }
-    };
-    const fillList = () => {
-      list.empty();
-      items = [];
-      active = -1;
-      // Showing the chosen generator's name means "no filter yet".
-      const q = input.value === (current()?.model.name ?? "") ? "" : input.value;
-      const found = pickerItems(
-        generators.map((g) => ({ path: g.file.path, name: g.model.name, sourceMap: g.model.meta["source-map"], palette: g.model.meta.palette })),
-        this.plugin.settings.maps.map((m) => ({ name: m.name, cols: m.gridSize.cols, rows: m.gridSize.rows, palette: m.paletteName })),
-        q,
-      );
-      const group = (title: string, group: PickerItem[]) => {
-        if (!group.length) return;
-        list.createDiv({ text: title, cls: "duckmage-wfc-picker-group" });
-        for (const item of group) {
-          const row = list.createDiv({ cls: "duckmage-wfc-picker-item", attr: { role: "option" } });
-          if (item.kind === "generator" && item.value === GeneratorPanel.selectedPath) row.addClass("is-selected");
-          row.createSpan({ text: item.label, cls: "duckmage-wfc-picker-label" });
-          row.createSpan({ text: item.detail, cls: "duckmage-wfc-picker-detail" });
-          // mousedown, so the pick lands before the input's blur closes the list.
-          row.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            pick(item);
-          });
-          const index = items.length;
-          row.addEventListener("mousemove", () => {
-            if (active !== index) setActive(index);
-          });
-          items.push({ item, el: row });
-        }
-      };
-      group("Generators", found.generators);
-      group("Learn a new generator from a region", found.regions);
-      if (!items.length) list.createDiv({ text: "Nothing matches", cls: "duckmage-wfc-picker-empty" });
-    };
-    const open = () => {
-      fillList();
-      list.show();
-      input.setAttr("aria-expanded", "true");
-    };
-    input.addEventListener("focus", () => {
-      input.select();
-      open();
-    });
-    input.addEventListener("input", open);
-    input.addEventListener("blur", () => {
-      close();
-      if (!input.disabled) input.value = current()?.model.name ?? "";
-    });
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        if (!list.isShown()) open();
-        if (!items.length) return;
-        const step = e.key === "ArrowDown" ? 1 : -1;
-        setActive((active + step + items.length) % items.length);
-      } else if (e.key === "Enter") {
-        e.preventDefault();
-        const it = items[active] ?? (items.length === 1 ? items[0] : undefined);
-        if (it) pick(it.item);
-      } else if (e.key === "Escape") {
-        input.blur();
-      }
-    });
-
-    openBtn.addEventListener("click", () => {
-      const g = current();
-      if (g) void this.app.workspace.getLeaf("tab").openFile(g.file);
-    });
-    relearnBtn.addEventListener("click", () => {
-      const g = current();
-      if (!g) return;
-      relearnBtn.disabled = true;
-      void relearnGenerator(this.plugin, g).then((r) => {
-        if ("error" in r) {
-          new Notice(r.error);
-          relearnBtn.disabled = false;
-          return;
-        }
-        new Notice(`Re-learned "${g.model.name}" from ${g.model.meta["source-map"]}.`);
-        this.host.rerender();
-      });
-    });
-
-    input.value = "Loading…";
-    input.disabled = true;
     void listGenerators(this.plugin).then((found) => {
       generators = found;
-      input.disabled = false;
       // Keep the chosen generator; otherwise one learned from the current
       // region, then the first one that fits the palette.
       if (!current()) {
         const names = this.paletteTerrains();
-        const g = generators.find((x) => x.model.meta["source-map"] === this.mapName)
+        const g = generators.find((x) => sourceMapsOf(x.model).includes(this.mapName))
           ?? generators.find((x) => x.model.meta.palette === GeneratorPanel.paletteName || generatorFitsPalette(x.model, names))
           ?? generators[0];
         if (g) GeneratorPanel.selectedPath = g.file.path;
       }
+      libraryEl.empty();
+      new GeneratorLibrary(this.app, this.plugin, generators, {
+        selectedPath: () => GeneratorPanel.selectedPath,
+        load: choose,
+        changed: (selectPath) => {
+          if (selectPath) GeneratorPanel.selectedPath = selectPath;
+          this.host.rerender();
+        },
+      }).render(libraryEl);
       show();
     });
   }
@@ -316,7 +181,7 @@ export class GeneratorPanel {
       .map((shape) => `${shape}: ${byShape(shape).join(", ")}`);
     if (model.paths?.length) detail.push(`paths: ${[...new Set(model.paths.map((p) => p.type))].join(", ")}`);
     const summary = el.createEl("p", {
-      text: `${model.terrains.length} terrains${model.meta["source-map"] ? ` · from ${model.meta["source-map"]}` : ""}${g.warnings.length ? ` · ⚠ ${g.warnings.length}` : ""}`,
+      text: `${model.terrains.length} terrains${sourceMapsOf(model).length ? ` · from ${sourceMapsOf(model).join(" + ")}` : ""}${g.warnings.length ? ` · ⚠ ${g.warnings.length}` : ""}`,
       cls: "duckmage-map-origin-desc",
     });
     summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
@@ -378,7 +243,7 @@ export class GeneratorPanel {
     // seed and palette sit under the preview.
     el = this.section(main, "Map settings");
     const presetRow = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-presets" });
-    const sourceMap = this.plugin.getMap(model.meta["source-map"] ?? "");
+    const sourceMap = this.plugin.getMap(sourceMapsOf(model)[0] ?? "");
     const presets = sizePresets(sourceMap ? { name: sourceMap.name, cols: sourceMap.gridSize.cols, rows: sourceMap.gridSize.rows } : undefined);
     const presetBtns = presets.map((p) => {
       const btn = presetRow.createEl("button", { cls: "duckmage-wfc-chip" });
