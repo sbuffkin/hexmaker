@@ -25,6 +25,7 @@ import {
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable } from "./scrub";
 import { pickerItems, type PickerItem } from "./picker";
+import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave } from "./saves";
 import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
 import { compareVersions, pluginVersion } from "../compat";
@@ -335,9 +336,24 @@ export class GeneratorPanel {
       schedulePreview();
     };
 
-    // Map: the overall settings for the map, first among the controls.
-    this.heading(el, "Map");
-    const paletteRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    // Preview (in the sticky side column), with the map's seed, size and
+    // palette right under it.
+    const previewBox = side.createDiv({ cls: "duckmage-wfc-section" });
+    previewBox.createEl("h4", { text: "Preview" });
+    const canvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
+    const status = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
+    const previewRow = previewBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    previewRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
+    const seedInput = previewRow.createEl("input", { type: "number", value: String(this.seed), cls: "duckmage-wfc-seed" });
+    // Locked: the button regenerates with the same seed, so a settings change
+    // can be compared on the same map (large maps don't preview on their own).
+    const lockBtn = previewRow.createEl("button", { cls: "clickable-icon duckmage-wfc-lock" });
+    const rerollBtn = previewRow.createEl("button");
+    previewRow.createSpan({ text: "Size", cls: "duckmage-map-origin-label" });
+    const colsInput = previewRow.createEl("input", { type: "number", value: String(this.previewCols), cls: "duckmage-wfc-num" });
+    previewRow.createSpan({ text: "×" });
+    const rowsInput = previewRow.createEl("input", { type: "number", value: String(this.previewRows), cls: "duckmage-wfc-num" });
+    const paletteRow = previewBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     paletteRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
     const paletteSelect = paletteRow.createEl("select");
     for (const p of this.plugin.settings.terrainPalettes) paletteSelect.createEl("option", { value: p.name, text: p.name });
@@ -353,25 +369,35 @@ export class GeneratorPanel {
         attr: { title: `Learned with palette ${model.meta.palette ?? "unknown"}` },
       });
     }
-    const sizeRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    sizeRow.createSpan({ text: "Size", cls: "duckmage-map-origin-label" });
-    const colsInput = sizeRow.createEl("input", { type: "number", value: String(this.previewCols), cls: "duckmage-wfc-num" });
-    sizeRow.createSpan({ text: "×" });
-    const rowsInput = sizeRow.createEl("input", { type: "number", value: String(this.previewRows), cls: "duckmage-wfc-num" });
-    const seedRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
-    const seedInput = seedRow.createEl("input", { type: "number", value: String(this.seed), cls: "duckmage-wfc-seed" });
-    // Locked: the button regenerates with the same seed, so a settings change
-    // can be compared on the same map (large maps don't preview on their own).
-    const lockBtn = seedRow.createEl("button", { cls: "clickable-icon duckmage-wfc-lock" });
 
-    // Preview (in the sticky side column)
-    const previewBox = side.createDiv({ cls: "duckmage-wfc-section" });
-    previewBox.createEl("h4", { text: "Preview" });
-    const canvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
-    const status = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
-    const previewRow = previewBox.createDiv({ cls: "duckmage-region-row" });
-    const rerollBtn = previewRow.createEl("button");
+    // Map settings lead the controls: preset sizes for now. The exact size,
+    // seed and palette sit under the preview.
+    this.heading(el, "Map settings");
+    const presetRow = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-presets" });
+    const sourceMap = this.plugin.getMap(model.meta["source-map"] ?? "");
+    const presets = sizePresets(sourceMap ? { name: sourceMap.name, cols: sourceMap.gridSize.cols, rows: sourceMap.gridSize.rows } : undefined);
+    const presetBtns = presets.map((p) => {
+      const btn = presetRow.createEl("button", { cls: "duckmage-wfc-chip" });
+      btn.createSpan({ text: p.label });
+      btn.createSpan({ text: `${p.cols}×${p.rows}`, cls: "duckmage-wfc-preset-size" });
+      btn.addEventListener("click", () => {
+        colsInput.value = String(p.cols);
+        rowsInput.value = String(p.rows);
+        markPreset();
+        schedulePreview();
+      });
+      return { p, btn };
+    });
+    const markPreset = () => {
+      for (const { p, btn } of presetBtns)
+        btn.toggleClass("is-selected", Number(colsInput.value) === p.cols && Number(rowsInput.value) === p.rows);
+    };
+    markPreset();
+    for (const input of [colsInput, rowsInput]) {
+      input.addEventListener("input", markPreset);
+      input.addEventListener("change", markPreset);
+    }
+
     const showLock = () => {
       const locked = GeneratorPanel.seedLocked;
       setIcon(lockBtn, locked ? "lock" : "lock-open");

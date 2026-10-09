@@ -5387,6 +5387,25 @@ button.duckmage-wfc-chip {
     width: 4.5em;
 }
 
+.duckmage-wfc-presets {
+    margin-bottom: 0.5em;
+}
+
+.duckmage-wfc-preset-size {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+.duckmage-wfc-presets .duckmage-wfc-chip.is-selected {
+    padding: 0.15em 0.6em;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.duckmage-wfc-presets .duckmage-wfc-chip.is-selected .duckmage-wfc-preset-size {
+    color: inherit;
+}
+
 /* Drag-to-change number inputs (src/worldgen/scrub.ts). Spinners are hidden:
    dragging replaces them, and a click focuses the field for typing. */
 .duckmage-scrub:not(:focus) {
