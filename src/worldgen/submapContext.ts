@@ -31,8 +31,28 @@ export function buildSubmapContext(
     return type ? { terrain: name, type } : { terrain: name };
   };
 
-  const context: GenerationContext = { parent: look(x, y), sides: {} };
+  const context: GenerationContext = { parent: look(x, y), sides: {}, paths: [] };
   const [cx, cy] = hexCenter(x, y, orientation, stagger);
+  const sideTo = (k: string | undefined) => {
+    if (!k) return undefined;
+    const [nx, ny] = k.split("_").map(Number);
+    const [px, py] = hexCenter(nx, ny, orientation, stagger);
+    return sideOf(px - cx, py - cy);
+  };
+
+  // Paths through this hex: where each comes in and goes out, so the
+  // submap can carry the road / river across instead of losing it.
+  const key = `${x}_${y}`;
+  const routingOf = new Map((plugin.settings.pathTypes ?? []).map((p) => [p.name, p.routing]));
+  for (const chain of map.pathChains ?? []) {
+    chain.hexes.forEach((h, i) => {
+      if (h !== key) return;
+      const from = sideTo(chain.hexes[i - 1]);
+      const to = sideTo(chain.hexes[i + 1]);
+      if (!from && !to) return;
+      context.paths!.push({ type: chain.typeName, routing: routingOf.get(chain.typeName), from, to });
+    });
+  }
   for (const [nx, ny] of hexNeighbors(x, y, orientation, stagger)) {
     if (!inGrid(nx, ny)) continue;
     const t = look(nx, ny);

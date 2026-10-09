@@ -52,6 +52,22 @@ export interface GenerationContext {
   parent?: ContextTerrain;
   sides?: Partial<Record<Side, ContextTerrain>>;
   edgeCells?: Map<string, ContextTerrain>;
+  /** Paths (roads, rivers…) crossing the parent hex, so they continue
+   *  across the submap from the side they enter to the side they leave. */
+  paths?: ContextPath[];
+}
+
+/**
+ * A path through the parent hex: its type and the sides it enters / leaves
+ * by. A missing side means the path ends in this hex (e.g. a road to a
+ * town) and is routed to the middle of the submap.
+ */
+export interface ContextPath {
+  type: string;
+  /** The path type's routing; "meander" paths (rivers) wander a little. */
+  routing?: "through" | "meander" | "edge";
+  from?: Side;
+  to?: Side;
 }
 
 /** Unit vector (screen space: +x east, +y south) for each side. */

@@ -9,12 +9,20 @@ import { starScatter, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/st
 import { orbits, ORBITS_OPTIONS } from "../src/worldgen/procedural/orbits";
 import type { GenerationContext, ProcGrid, ProcOption, Side } from "../src/worldgen/procedural/common";
 import { planetSurface, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
-import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_TERRAIN_PALETTE, DEFAULT_PATH_TYPES } from "../src/constants";
+import { routeContextPaths } from "../src/worldgen/procedural/contextPaths";
 import { drawPreview } from "../src/worldgen/preview";
 
 type Gen = "sector" | "system" | "region";
 /** Region detail: the parent hex and its N/E/S/W neighbours (terrain names from Expanded). */
-const region: { parent: string; sides: Partial<Record<Side, string>> } = { parent: "forest", sides: { E: "ocean" } };
+const region: { parent: string; sides: Partial<Record<Side, string>>; road: string; river: string } = {
+  parent: "forest", sides: { E: "ocean" }, road: "W-E", river: "N-S",
+};
+/** "W-E" → { from: W, to: E }; "S-" → ends in the hex. */
+const pathSpec = (v: string) => {
+  const [from, to] = v.split("-") as [Side | "", Side | ""];
+  return { from: from || undefined, to: to || undefined };
+};
 const state = {
   gen: "sector" as Gen,
   orientation: "flat" as "flat" | "pointy",
@@ -33,7 +41,7 @@ function regionContext(): GenerationContext {
   for (const [s, name] of Object.entries(region.sides)) if (name) sides[s as Side] = typed(name);
   return { parent: typed(region.parent), sides };
 }
-const pathColors = new Map([...SPACE_PATH_TYPES, ...SYSTEM_PATH_TYPES].map((p) => [p.name, p.color]));
+const pathColors = new Map([...SPACE_PATH_TYPES, ...SYSTEM_PATH_TYPES, ...DEFAULT_PATH_TYPES].map((p) => [p.name, p.color]));
 
 function controls(): void {
   const box = document.getElementById("controls")!;
@@ -52,6 +60,19 @@ function controls(): void {
       box.append(l);
     };
     pick("Parent hex", region.parent, (v) => { region.parent = v || "grass"; });
+    const routes = ["", "W-E", "N-S", "NW-SE", "SW-NE", "W-", "S-"];
+    const routePick = (label: string, value: string, set: (v: string) => void) => {
+      const l = document.createElement("label");
+      l.textContent = label + " ";
+      const sel = document.createElement("select");
+      for (const r of routes) sel.add(new Option(r ? r.replace("-", " → ").replace(/→ $/, "→ ends here") : "—", r));
+      sel.value = value;
+      sel.onchange = () => { set(sel.value); render(); };
+      l.append(sel);
+      box.append(l);
+    };
+    routePick("Road", region.road, (v) => { region.road = v; });
+    routePick("River", region.river, (v) => { region.river = v; });
     for (const s of ["N", "E", "S", "W"] as Side[]) pick(s, region.sides[s] ?? "", (v) => { region.sides[s] = v || undefined; });
   }
   for (const o of opts) {
@@ -64,6 +85,15 @@ function controls(): void {
     label.append(sel);
     box.append(label);
   }
+}
+
+/** Region mode: carry the parent hex's road / river across the generated map. */
+function withPaths<T extends { cells: Map<string, string>; paths: { type: string; hexes: string[] }[] }>(r: T, grid: ProcGrid, seed: number): T {
+  const carry = [
+    ...(region.road ? [{ type: "Road", routing: "through" as const, ...pathSpec(region.road) }] : []),
+    ...(region.river ? [{ type: "River", routing: "meander" as const, ...pathSpec(region.river) }] : []),
+  ];
+  return { ...r, paths: [...r.paths, ...routeContextPaths(r.cells, DEFAULT_TERRAIN_PALETTE, grid, carry, seed)] };
 }
 
 function render(): void {
@@ -79,7 +109,7 @@ function render(): void {
       ? starScatter(SPACE_SECTOR_TERRAINS, grid, seed, state.options, "Jump route")
       : state.gen === "system"
         ? orbits(SPACE_SYSTEM_TERRAINS, grid, seed, state.options, "Orbit")
-        : planetSurface(DEFAULT_TERRAIN_PALETTE, grid, seed, state.options, regionContext());
+        : withPaths(planetSurface(DEFAULT_TERRAIN_PALETTE, grid, seed, state.options, regionContext()), grid, seed);
     const fig = document.createElement("figure");
     const canvas = document.createElement("canvas");
     drawPreview(canvas, r.cells, grid, state.orientation, colors(state.gen), undefined, r.paths, pathColors, 300, 18);

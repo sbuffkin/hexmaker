@@ -4,6 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { SubmapDefault, TerrainColor } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
+import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { defaultSubmapName } from "../hex-map/submapNav";
@@ -282,11 +283,12 @@ export class NewMapSetupModal extends HexmakerModal {
       let cells = new Map<string, string>();
       let paths: { type: string; route?: string; hexes: string[] }[] = [];
       let featureCells: Set<string> | undefined;
-      if (kind && kind.id !== BLANK_ID) {
+      const carriesPaths = !!this.context?.paths?.length;
+      if (kind && (kind.id !== BLANK_ID || carriesPaths)) {
         if (this.cols * this.rows > PREVIEW_AUTO_LIMIT) {
           status.setText("Large map — the preview is skipped; terrain is generated on create.");
         } else {
-          const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
+          const outcome = this.generate(kind, terrains);
           this.lastOutcome = outcome;
           if (!outcome.ok) {
             status.setText(outcome.message);
@@ -377,6 +379,27 @@ export class NewMapSetupModal extends HexmakerModal {
     await this.plugin.saveSubmapDefault(this.origin.map, this.originTerrain, set, clear);
   }
 
+  /**
+   * Run a generator with this map's context, then continue the parent
+   * hex's paths (roads, rivers…) across the result. Space maps skip the
+   * path carry-over (a jump route through a sector hex isn't a lane in
+   * the system).
+   */
+  private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[]): GenerateOutcome {
+    const grid = this.grid();
+    const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
+    const carry = this.context?.paths ?? [];
+    if (!outcome.ok || carry.length === 0 || kind.mapKind === "space") return outcome;
+    const routed = routeContextPaths(
+      outcome.cells,
+      terrains,
+      { ...grid, orientation: this.plugin.settings.hexOrientation },
+      carry,
+      this.seed,
+    );
+    return { ...outcome, paths: [...outcome.paths, ...routed] };
+  }
+
   private row(parent: HTMLElement, label: string): HTMLElement {
     const r = parent.createDiv({ cls: "duckmage-setup-row" });
     r.createDiv({ cls: "duckmage-setup-label", text: label });
@@ -412,9 +435,12 @@ export class NewMapSetupModal extends HexmakerModal {
     const kind = this.kind();
     const terrains = this.terrains(paletteName);
     let outcome: GenerateOutcome | undefined;
-    if (!openGenerator && kind && kind.id !== BLANK_ID) {
-      outcome = this.lastOutcome
-        ?? kind.generate({ terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context });
+    // "Open in generator" makes the map blank — but still carries the
+    // parent's roads / rivers across it.
+    const blank = this.kinds.find((k) => k.id === BLANK_ID);
+    const effective = openGenerator ? blank : kind;
+    if (effective && (effective.id !== BLANK_ID || this.context?.paths?.length)) {
+      outcome = (!openGenerator ? this.lastOutcome : undefined) ?? this.generate(effective, terrains);
       if (!outcome.ok) {
         new Notice(outcome.message);
         return;
