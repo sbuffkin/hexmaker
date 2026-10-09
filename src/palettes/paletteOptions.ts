@@ -1,6 +1,6 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { PALETTE_PRESETS } from "./presets";
-import { isKindEnabled } from "../mapKinds";
+import { isKindEnabled, isSpacePalette } from "../mapKinds";
 
 /**
  * Fill a palette <select> with the installed palettes, then any built-in
@@ -14,7 +14,11 @@ export function fillPaletteSelect(
 ): void {
   select.empty();
   const installed = new Set(plugin.settings.terrainPalettes.map((p) => p.name));
+  // Installed space palettes are hidden too while Space is off — unless
+  // selected, so a map or saved default using one still shows it.
+  const spaceOn = isKindEnabled(plugin.settings, "space");
   for (const pal of plugin.settings.terrainPalettes) {
+    if (!spaceOn && pal.name !== selected && isSpacePalette(pal.terrains)) continue;
     select.createEl("option", { value: pal.name, text: pal.name });
   }
   // Presets of disabled map types are hidden — unless already selected (e.g.

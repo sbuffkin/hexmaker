@@ -18,7 +18,7 @@ import {
   planetSurface,
   planetSurfaceFits,
 } from "./procedural/planetSurface";
-import { isKindEnabled, type MapKind } from "../mapKinds";
+import { generatorMapKind, isGeneratorShown, type MapKind } from "../mapKinds";
 import { generateConnected, type NewRegion } from "./neighbours";
 
 /**
@@ -61,7 +61,8 @@ export interface TerrainGeneratorKind {
   label: string;
   description: string;
   source: "blank" | "built-in" | "learned";
-  /** Map type that owns a built-in generator (hidden when that type is off). */
+  /** Map type that owns the generator (hidden when that type is off; see
+   *  visibleKinds). Learned ones take it from their `map-kind` frontmatter. */
   mapKind?: MapKind;
   /** Only meaningful inside a bigger map (offered for submaps only). */
   needsContext?: boolean;
@@ -156,7 +157,10 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     {
       id: PLANET_SURFACE_ID,
       label: "Planet surface",
-      mapKind: "world",
+      // Space: made for the planets of a star system (System palette submap
+      // defaults). Offered there — and to space users — but not on a plain
+      // fantasy map, where Region detail / learned generators fit better.
+      mapKind: "space",
       description: "Region map from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
       source: "built-in",
       options: PLANET_SURFACE_OPTIONS,
@@ -168,7 +172,9 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       toChains,
     },
   ];
-  const kinds = builtIn.filter((k) => isKindEnabled(plugin.settings, k.mapKind));
+  // Every generator, tagged with its map type: callers filter with
+  // visibleKinds (they know the palette, the parent map and the current choice).
+  const kinds = [...builtIn];
 
   for (const g of await listGenerators(plugin)) {
     kinds.push({
@@ -176,6 +182,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       label: g.file.basename,
       description: "Learned from a painted map.",
       source: "learned",
+      mapKind: generatorMapKind(g.model.meta),
       options: [],
       generatorPath: g.file.path,
       fits: (terrains) => generatorFitsPalette(g.model, terrains.map((t) => t.name)),
@@ -191,6 +198,19 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     });
   }
   return kinds;
+}
+
+/**
+ * Generators to offer: those whose map type is on, space ones on a space
+ * map (`spaceContext`), and the current/saved choice (`selectedId`).
+ */
+export function visibleKinds(
+  kinds: TerrainGeneratorKind[],
+  settings: { mapKinds?: string[] },
+  spaceContext: boolean,
+  selectedId?: string,
+): TerrainGeneratorKind[] {
+  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
 }
 
 /** Generators usable with a palette, Blank first. Context-only ones need `hasContext`. */

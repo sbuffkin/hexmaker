@@ -124,7 +124,7 @@ function makeWelcomeStep(): WizardStep {
 				ctx.paletteName = SPACE_SECTOR_PALETTE_NAME;
 			}
 			await plugin.saveSettings();
-			plugin.loadAvailableIcons();
+			plugin.onMapKindsChanged();
 		},
 	};
 }
