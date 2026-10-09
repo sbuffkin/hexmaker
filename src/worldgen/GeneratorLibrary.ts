@@ -65,7 +65,7 @@ export class GeneratorLibrary {
     };
     const tabBtns = [
       tabBtn("generators", "Generators", this.generators.length),
-      tabBtn("regions", "Regions", this.plugin.settings.maps.length),
+      tabBtn("regions", "Maps", this.plugin.settings.maps.length),
     ];
 
     const draw = () => {
@@ -115,12 +115,12 @@ export class GeneratorLibrary {
         redraw();
       });
     }
-    if (!rows.length) list.createDiv({ text: this.generators.length ? "No generator matches." : "No generators yet. Learn one on the Regions tab.", cls: "duckmage-wfc-library-empty" });
+    if (!rows.length) list.createDiv({ text: this.generators.length ? "No generator matches." : "No generators yet. Learn one on the Maps tab.", cls: "duckmage-wfc-library-empty" });
 
     const selected = this.generators.filter((g) => checked.has(g.file.path));
     actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick generators to act on them", cls: "duckmage-map-origin-desc" });
     const open = actions.createEl("button", { text: "Open file" });
-    const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the regions they came from, keeping their settings" } });
+    const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the maps they came from, keeping their settings" } });
     const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
     for (const b of [open, relearn, del]) b.disabled = !selected.length;
     relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length);
@@ -170,7 +170,7 @@ export class GeneratorLibrary {
       GeneratorLibrary.query,
     );
     const table = list.createDiv({ cls: "duckmage-wfc-library-table is-regions" });
-    this.header(table, ["Region", "Size", "Palette", "Generators"], rows.map((r) => r.name), checked, redraw);
+    this.header(table, ["Map", "Size", "Palette", "Generators"], rows.map((r) => r.name), checked, redraw);
     for (const r of rows) {
       const row = this.row(table, r.name, checked, redraw);
       this.cells(row, [r.name, r.size, r.palette, r.generators ? String(r.generators) : "–"]);
@@ -181,7 +181,7 @@ export class GeneratorLibrary {
         redraw();
       });
     }
-    if (!rows.length) list.createDiv({ text: "No region matches.", cls: "duckmage-wfc-library-empty" });
+    if (!rows.length) list.createDiv({ text: "No map matches.", cls: "duckmage-wfc-library-empty" });
 
     // Keep the order the regions were ticked in; it names the generator.
     const picked = [...checked];
@@ -190,18 +190,18 @@ export class GeneratorLibrary {
       attr: { placeholder: picked.length ? combinedName(picked) : "Generator name" },
     });
     const learn = actions.createEl("button", {
-      text: picked.length > 1 ? `Learn combined generator (${picked.length} regions)` : "Learn generator",
+      text: picked.length > 1 ? `Learn combined generator (${picked.length} maps)` : "Learn generator",
       cls: "mod-cta",
     });
     learn.disabled = !picked.length;
     const palettes = new Set(picked.map((n) => this.plugin.getMap(n)?.paletteName));
     if (palettes.size > 1) {
       actions.createDiv({
-        text: `⚠ These regions use different palettes; the generator uses ${this.plugin.getMap(picked[0])?.paletteName ?? "the first"}'s.`,
+        text: `⚠ These maps use different palettes; the generator uses ${this.plugin.getMap(picked[0])?.paletteName ?? "the first"}'s.`,
         cls: "duckmage-map-origin-desc duckmage-wfc-library-note",
       });
     } else if (!picked.length) {
-      actions.createDiv({ text: "Tick one region, or several to combine them into one generator.", cls: "duckmage-map-origin-desc duckmage-wfc-library-note" });
+      actions.createDiv({ text: "Tick one map, or several to combine them into one generator.", cls: "duckmage-map-origin-desc duckmage-wfc-library-note" });
     }
     learn.addEventListener("click", () => {
       learn.disabled = true;

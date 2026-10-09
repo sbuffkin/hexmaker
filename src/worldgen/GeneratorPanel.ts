@@ -146,7 +146,7 @@ export class GeneratorPanel {
       const g = current();
       if (g) this.renderGenerator(body, side, g);
       else {
-        const text = generators.length ? "Click a generator above to load it." : "No generators yet. Learn one from a region above.";
+        const text = generators.length ? "Click a generator above to load it." : "No generators yet. Learn one from a map above.";
         body.createEl("p", { text, cls: "duckmage-map-origin-desc" });
         side.createEl("p", { text: "Pick a generator to preview it here.", cls: "duckmage-map-origin-desc" });
       }
@@ -291,8 +291,8 @@ export class GeneratorPanel {
     const sources = sourceMapsOf(model);
     const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     sourceRow.createSpan({ text: "From", cls: "duckmage-map-origin-label" });
-    sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No region recorded", cls: "duckmage-wfc-source" });
-    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these regions, keeping the settings below" } });
+    sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No map recorded", cls: "duckmage-wfc-source" });
+    const relearnBtn = sourceRow.createEl("button", { text: "Re-learn", attr: { title: "Learn again from these maps, keeping the settings below" } });
     relearnBtn.disabled = !sources.length;
     relearnBtn.addEventListener("click", () => {
       relearnBtn.disabled = true;
@@ -313,7 +313,7 @@ export class GeneratorPanel {
     // add up to 100%; letting go of one re-learns with the new mix.
     if (sources.length > 1) {
       const box = el.createDiv({ cls: "duckmage-wfc-influence" });
-      box.createEl("label", { text: "Region influence", cls: "duckmage-map-field-label" });
+      box.createEl("label", { text: "Map influence", cls: "duckmage-map-field-label" });
       const stored = sourceInfluenceOf(model);
       let weights = toPercents(stored ?? regionSizes(this.plugin, sources));
       const rows = sources.map((name) => {
@@ -331,8 +331,8 @@ export class GeneratorPanel {
       showWeights();
       const note = box.createEl("p", {
         text: stored
-          ? "Each region's share of what the generator learns."
-          : "Set by each region's size (painted hexes). Move a slider to choose your own mix.",
+          ? "Each map's share of what the generator learns."
+          : "Set by each map's size (painted hexes). Move a slider to choose your own mix.",
         cls: "duckmage-map-origin-desc",
       });
       const relearnWith = (next: number[] | null) => {
@@ -360,7 +360,7 @@ export class GeneratorPanel {
         }, { passive: false });
       });
       if (stored) {
-        const bySize = box.createEl("button", { text: "Back to region size", attr: { title: "Let each region count by how many hexes it has painted" } });
+        const bySize = box.createEl("button", { text: "Back to map size", attr: { title: "Let each map count by how many hexes it has painted" } });
         bySize.addEventListener("click", () => relearnWith(null));
       }
     }
@@ -883,7 +883,7 @@ export class GeneratorPanel {
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
     el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the region it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
     const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
@@ -893,7 +893,7 @@ export class GeneratorPanel {
       ["Mix", ""],
       ["Min", "Fewest separate patches"],
       ["Max", "Most separate patches"],
-      ["Example", "Share of the region this generator was learned from"],
+      ["Example", "Share of the map this generator was learned from"],
       ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
     ];
     for (const [h, title] of headings) head.createSpan({ text: h, attr: title ? { title } : {} });
