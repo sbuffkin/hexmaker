@@ -8,7 +8,7 @@ import {
   type GridSpec,
 } from "./generators";
 import { findTerrain, type GenerationContext, type ProcGrid, type ProcOption } from "./procedural/common";
-import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterFits } from "./procedural/starScatter";
+import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
 import {
   PLANET_SURFACE_ID,
@@ -117,7 +117,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
       options: STAR_SCATTER_OPTIONS,
-      fits: starScatterFits,
+      fits: starScatterOffered,
       generate: (req) => {
         const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, jumpRoute);
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };

@@ -1,4 +1,5 @@
 import { mulberry32 } from "../../../packages/hex-wfc/src";
+import { orbitsFits } from "./orbits";
 import type { TerrainColor } from "../../types";
 import {
   cellKey,
@@ -233,4 +234,14 @@ export function starScatter(
   }
   if (systems.length === 0) warnings.push("No systems rolled — try a higher density or another seed.");
   return { cells, paths, warnings };
+}
+
+/**
+ * Offer Star scatter on sector-style palettes only. Once terrains are
+ * typed, a system palette also "fits" (its bodies are world-typed), but
+ * scattering planets across a star system makes no sense — so a palette
+ * that Orbits fits (stars + bodies) is a system, not a sector.
+ */
+export function starScatterOffered(terrains: TerrainColor[]): boolean {
+  return starScatterFits(terrains) && !orbitsFits(terrains);
 }

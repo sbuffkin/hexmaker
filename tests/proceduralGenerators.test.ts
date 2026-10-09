@@ -403,3 +403,12 @@ describe("terrain types", () => {
 		});
 	});
 });
+
+describe("Star scatter offering (owner decision 2026-10-09: sectors only)", () => {
+	it("is offered on the sector palette but not on the system palette", async () => {
+		const { starScatterOffered } = await import("../src/worldgen/procedural/starScatter");
+		const { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } = await import("../src/palettes/presets");
+		expect(starScatterOffered(SPACE_SECTOR_TERRAINS)).toBe(true);
+		expect(starScatterOffered(SPACE_SYSTEM_TERRAINS)).toBe(false);
+	});
+});
