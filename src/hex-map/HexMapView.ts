@@ -3457,8 +3457,9 @@ export class HexMapView extends ItemView {
     // ── Writes ──
     const layer = gridContainer.createDiv({ cls: "duckmage-region-shadow-layer" });
     for (const { s, at, color } of items) {
+      // Not a .duckmage-hex: painting, overlays and labels all look for those.
       const el = layer.createDiv({
-        cls: "duckmage-hex duckmage-hex-shadow",
+        cls: "duckmage-region-shadow-hex",
         attr: { title: `${s.map}: hex ${s.x}, ${s.y}`, "data-region": s.map },
       });
       el.setCssProps({
@@ -3466,8 +3467,8 @@ export class HexMapView extends ItemView {
         "--duckmage-shadow-y": `${at.y - A.h / 2}px`,
         "--duckmage-shadow-w": `${A.w}px`,
         "--duckmage-shadow-h": `${A.h}px`,
+        ...(color ? { "--duckmage-shadow-color": color } : {}),
       });
-      this.setHexColor(el, color);
       el.addEventListener("click", () => {
         new RegionNavigateModal(this.app, this.plugin, { map: s.map, x: s.x, y: s.y }, () => this.goToRegionHex(s.map, s.x, s.y)).open();
       });

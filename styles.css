@@ -5694,20 +5694,25 @@ button.duckmage-wfc-library-tab.is-active {
     pointer-events: none;
 }
 
-.duckmage-hex.duckmage-hex-shadow {
+.duckmage-region-shadow-hex {
     position: absolute;
     left: var(--duckmage-shadow-x, 0px);
     top: var(--duckmage-shadow-y, 0px);
     width: var(--duckmage-shadow-w);
     height: var(--duckmage-shadow-h);
-    box-sizing: border-box;
-    margin: 0;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: var(--duckmage-shadow-color, var(--background-secondary));
     opacity: 0.35;
-    pointer-events: auto;
     filter: saturate(0.6);
+    pointer-events: auto;
+    cursor: pointer;
 }
 
-.duckmage-hex.duckmage-hex-shadow:hover {
+.duckmage-grid-flat .duckmage-region-shadow-hex {
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+.duckmage-region-shadow-hex:hover {
     opacity: 0.7;
 }
 
