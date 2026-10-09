@@ -131,6 +131,16 @@ describe("worldgen generators", () => {
     expect([...readLockedHexes(plugin, "sample")]).toEqual(["3_4"]);
   });
 
+  it("reads locked hexes from the map note once the map store is ready", () => {
+    // After migration hex notes carry no `locked:`; the map note does.
+    const { plugin } = makePlugin({ "0_0": "Grass", "3_4": "Water" });
+    (plugin as unknown as { mapStore: unknown }).mapStore = {
+      isReady: () => true,
+      all: () => new Map([["3_4", { terrain: "Water", locked: true }], ["0_0", { terrain: "Grass" }]]),
+    };
+    expect([...readLockedHexes(plugin, "sample")]).toEqual(["3_4"]);
+  });
+
   it("learns from a map, saves a readable file, and lists it back", async () => {
     const { plugin, files } = makePlugin(lakeSample());
     const saved = await saveGeneratorFromMap(plugin, "sample", "My Lakes");

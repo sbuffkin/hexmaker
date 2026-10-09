@@ -3473,7 +3473,7 @@ export class HexMapView extends ItemView {
       // Submap marker: shows which hexes drill down (a system in a sector,
       // a dungeon in a region). Clicking it enters the submap when no tool
       // is active; with a tool active the click falls through to the hex.
-      const submapName: unknown = fm?.["duckmage-submap"];
+      const submapName: unknown = fromStore ? stored?.submap : fm?.["duckmage-submap"];
       if (typeof submapName === "string" && submapName && this.plugin.getMap(submapName)) {
         hexEl.addClass("duckmage-hex-has-submap");
         const badge = hexEl.createSpan({

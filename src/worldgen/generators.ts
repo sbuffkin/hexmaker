@@ -100,11 +100,18 @@ export function readMapTerrain(plugin: HexmakerPlugin, mapName: string): Map<str
   return cells;
 }
 
-/** Hexes whose note has `locked: true` in its frontmatter. */
+/**
+ * Locked hexes: from the map note once the map store is ready, else from
+ * hex-note frontmatter (`locked: true`, pre-migration notes).
+ */
 export function readLockedHexes(plugin: HexmakerPlugin, mapName: string): Set<string> {
   const map = plugin.getMap(mapName);
   const out = new Set<string>();
   if (!map) return out;
+  if (plugin.mapStore?.isReady()) {
+    for (const [key, h] of plugin.mapStore.all(mapName)) if (h.locked) out.add(key);
+    return out;
+  }
   const { cols, rows } = map.gridSize;
   const { x: ox, y: oy } = map.gridOffset;
   for (let x = ox; x < ox + cols; x++) {
