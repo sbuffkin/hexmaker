@@ -3430,6 +3430,9 @@ export class HexMapView extends ItemView {
       return { x: (r.left + r.width / 2 - g.left) / sx, y: (r.top + r.height / 2 - g.top) / sy, w: r.width / sx, h: r.height / sy };
     };
     const A = centre(origin);
+    // Positions are written in em: zooming bakes a new font size into the
+    // grid and the hexes (sized in em) resize with it; px would be left behind.
+    const em = parseFloat(getComputedStyle(gridContainer).fontSize) || 16;
     const right = cols > 1 ? hexAt(ox + 1, oy) : null, below = rows > 1 ? hexAt(ox, oy + 1) : null;
     const B = right ? centre(right) : null, C = below ? centre(below) : null;
     let place: (x: number, y: number) => { x: number; y: number };
@@ -3463,10 +3466,10 @@ export class HexMapView extends ItemView {
         attr: { title: `${s.map}: hex ${s.x}, ${s.y}`, "data-region": s.map },
       });
       el.setCssProps({
-        "--duckmage-shadow-x": `${at.x - A.w / 2}px`,
-        "--duckmage-shadow-y": `${at.y - A.h / 2}px`,
-        "--duckmage-shadow-w": `${A.w}px`,
-        "--duckmage-shadow-h": `${A.h}px`,
+        "--duckmage-shadow-x": `${(at.x - A.w / 2) / em}em`,
+        "--duckmage-shadow-y": `${(at.y - A.h / 2) / em}em`,
+        "--duckmage-shadow-w": `${A.w / em}em`,
+        "--duckmage-shadow-h": `${A.h / em}em`,
         ...(color ? { "--duckmage-shadow-color": color } : {}),
       });
       el.addEventListener("click", () => {
