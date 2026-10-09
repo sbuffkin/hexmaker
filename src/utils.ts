@@ -24,6 +24,17 @@ export function makeTableTemplate(dice: number, extraFrontmatter?: Record<string
 }
 
 /**
+ * A CSS `url("…")` value for `src`. SVG icons are inlined as raw
+ * `data:image/svg+xml,<svg xmlns="…">` text, whose quotes would end the
+ * string early and make the whole value invalid (the mask is then dropped
+ * and the icon shows as a solid block), so quotes, backslashes and line
+ * breaks are percent-encoded.
+ */
+export function cssUrl(src: string): string {
+	return `url("${src.replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
+}
+
+/**
  * Creates an icon element inside `parent`.
  * When `iconColor` is provided the icon is rendered as a CSS-masked div: the icon
  * shape is used as a mask and `iconColor` is the fill (ideal for monochrome icons).
@@ -39,7 +50,7 @@ export function createIconEl(
 	if (iconColor) {
 		const div = parent.createDiv({ cls: `${cls} duckmage-masked-icon`, title: alt });
 		div.setCssProps({
-			'--duckmage-mask-url': `url("${src}")`,
+			'--duckmage-mask-url': cssUrl(src),
 			'--duckmage-bg': iconColor,
 		});
 		return div;
