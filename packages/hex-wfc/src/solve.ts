@@ -24,6 +24,7 @@
 import { hexNeighbors, directionRing, cellKey, parseCellKey, toCellMap, type Orientation, type Stagger } from "./grid";
 import {
   adjacencyLookup,
+  effectivePathTweaks,
   resolveSettings,
   type HexWfcModel,
   type GeneratorSettings,
@@ -251,7 +252,7 @@ export function solve(model: HexWfcModel, opts: SolveOptions): SolveResult {
   if (pathsEnabled(model, opts) && model.paths?.length) {
     const N = grid.cols * grid.rows;
     const scale = model.exampleHexes ? Math.sqrt(N / model.exampleHexes) : 1;
-    const routed = routePaths(model.paths, best.cells, grid, mulberry32(opts.seed ^ 0x7f4a7c15), scale, s.paths);
+    const routed = routePaths(model.paths, best.cells, grid, mulberry32(opts.seed ^ 0x7f4a7c15), scale, effectivePathTweaks(model.paths, s.paths, s.pathTypes));
     paths = routed.paths;
     pathRoutes = routed.routes;
     best.warnings.push(...routed.warnings);

@@ -5608,3 +5608,62 @@ button.duckmage-wfc-library-tab.is-active {
     gap: 0.25em 1em;
     margin-top: 0.35em;
 }
+
+/* One group per path type: a header with the type's checkbox, summary and
+   sliders for all its routes, and the routes themselves (folded by default). */
+.duckmage-wfc-path-group {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    overflow: hidden;
+}
+
+.duckmage-wfc-path-group-head {
+    padding: 0.4em 0.6em;
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-path-group-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.duckmage-wfc-path-group-summary {
+    flex: 1;
+    margin: 0;
+}
+
+.duckmage-wfc-path-group-title .duckmage-wfc-fold {
+    padding: 0.15em;
+    height: auto;
+}
+
+.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-title .duckmage-wfc-fold {
+    transform: rotate(-90deg);
+}
+
+.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-body {
+    display: none;
+}
+
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-knobs,
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    opacity: 0.45;
+}
+
+/* In a group the route name is its own span; the note (why it's off) takes
+   only the space left over, so it never pushes the placed count down. */
+.duckmage-wfc-path-group-body .duckmage-wfc-path-route {
+    min-width: 0;
+}
+
+.duckmage-wfc-path-group-body {
+    display: grid;
+    gap: 0.4em;
+    padding: 0.4em 0.6em 0.6em 1.6em;
+}

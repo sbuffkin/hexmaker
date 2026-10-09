@@ -40,6 +40,9 @@ import {
   pathsEnabled,
   pathRouteKey,
   type PathTweak,
+  type PathTypeTweak,
+  type PathFeature,
+  effectivePathTweaks,
   type RouteStat,
   randomSeed,
   SYMMETRIES,
@@ -68,6 +71,8 @@ export class GeneratorPanel {
   static seedLocked = false;
   /** Titles of the setting sections folded away. */
   static collapsed = new Set<string>();
+  /** Path types whose routes are shown (groups start folded). */
+  static openPathTypes = new Set<string>();
   /**
    * The save last loaded. While the page still shows its generator, seed and
    * size (and no setting has changed), the preview and Create map use the
@@ -500,6 +505,8 @@ export class GeneratorPanel {
     // Path rows (filled in further down) and the last drawn preview, so
     // hovering a row can redraw it with that route highlighted.
     const pathRows = new Map<string, { placed: HTMLElement; count: HTMLInputElement; auto: number }>();
+    /** Each path type's "placed of wanted" total in its group header. */
+    const pathGroupPlaced = new Map<string, { el: HTMLElement; routes: string[] }>();
     let lastDraw: ((highlight?: string) => void) | null = null;
     let hoveredRoute: string | undefined;
     const updatePathRows = (stats: RouteStat[]) => {
@@ -515,6 +522,17 @@ export class GeneratorPanel {
         }
         row.placed.setText(`${st.placed} of ${st.wanted}`);
         row.placed.toggleClass("is-short", st.placed < st.wanted);
+      }
+      for (const { el: placedEl, routes } of pathGroupPlaced.values()) {
+        let placed = 0, wanted = 0;
+        for (const r of routes) {
+          const st = byRoute.get(r);
+          if (!st || !pathsEnabled(model)) continue;
+          placed += st.placed;
+          wanted += st.wanted;
+        }
+        placedEl.setText(wanted ? `${placed} of ${wanted}` : "Off");
+        placedEl.toggleClass("is-short", placed < wanted);
       }
     };
     /** The loaded save, while the page shows exactly its generator, seed and size. */
@@ -823,7 +841,7 @@ export class GeneratorPanel {
     if (model.paths?.length) {
       el = this.section(main, "Paths");
       el.createEl("p", {
-        text: "Roads and rivers drawn over the terrain. Count is how many of each route to draw; leave it blank for the learned amount for this map size (drag or scroll on it). Hover a row to highlight its paths on the preview.",
+        text: "Roads and rivers drawn over the terrain, grouped by type. Each type's checkbox and sliders apply to all its routes; Amount turns off the routes the example had least of. Open a type to set single routes: Count is how many to draw (blank = learned amount for this map size; drag or scroll on it). Hover a route to highlight it on the preview.",
         cls: "duckmage-map-origin-desc",
       });
       const tweaks: Record<string, PathTweak> = Object.fromEntries(Object.entries(s().paths).map(([k, t]) => [k, { ...t }]));
@@ -834,6 +852,16 @@ export class GeneratorPanel {
         else delete tweaks[route];
         save({ paths: Object.keys(tweaks).length ? { ...tweaks } : undefined });
       };
+      const types: Record<string, PathTypeTweak> = Object.fromEntries(Object.entries(s().pathTypes).map(([k, t]) => [k, { ...t }]));
+      const effective = () => effectivePathTweaks(model.paths ?? [], tweaks, types);
+      const saveType = (type: string, patch: Partial<PathTypeTweak>) => {
+        const t: PathTypeTweak = { ...(types[type] ?? {}), ...patch };
+        for (const k of Object.keys(t) as (keyof PathTypeTweak)[]) if (t[k] === undefined || t[k] === false) delete t[k];
+        if (Object.keys(t).length) types[type] = t;
+        else delete types[type];
+        save({ pathTypes: Object.keys(types).length ? { ...types } : undefined });
+        refreshGroups();
+      };
       const table = el.createDiv({ cls: "duckmage-wfc-paths" });
       this.toggle(table, "Draw paths", "", pathsEnabled(model), (v) => {
         save({ drawPaths: v });
@@ -842,84 +870,180 @@ export class GeneratorPanel {
       table.toggleClass("is-off", !pathsEnabled(model));
       const mapTypes = (this.plugin.settings.pathTypes ?? []).map((t) => t.name);
       const typeColors = pathColors(this.plugin);
-      for (const f of model.paths) {
-        const route = pathRouteKey(f);
-        const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
-        const tw = tweaks[route] ?? {};
-        const row = table.createDiv({ cls: "duckmage-wfc-path-row" + (tw.off ? " is-off" : "") });
-        row.addEventListener("mouseenter", () => {
-          hoveredRoute = route;
-          lastDraw?.(route);
-        });
-        row.addEventListener("mouseleave", () => {
-          hoveredRoute = undefined;
-          lastDraw?.();
+
+      // One collapsible group per path type, most common type first.
+      const byType = new Map<string, PathFeature[]>();
+      for (const f of model.paths) byType.set(f.type, [...(byType.get(f.type) ?? []), f]);
+      const groupOrder = [...byType].sort((a, b) =>
+        b[1].reduce((n, f) => n + f.count, 0) - a[1].reduce((n, f) => n + f.count, 0) || a[0].localeCompare(b[0]));
+      const groupRefreshers: (() => void)[] = [];
+      const refreshGroups = () => groupRefreshers.forEach((r) => r());
+      for (const [type, routes] of groupOrder) {
+        const group = table.createDiv({ cls: "duckmage-wfc-path-group" });
+        const open = () => GeneratorPanel.openPathTypes.has(type);
+        group.toggleClass("is-collapsed", !open());
+        const head = group.createDiv({ cls: "duckmage-wfc-path-group-head" });
+        const title = head.createDiv({ cls: "duckmage-wfc-path-group-title" });
+        const fold = title.createEl("button", { cls: "clickable-icon duckmage-wfc-fold", attr: { "aria-label": `Show ${type} routes` } });
+        setIcon(fold, "chevron-down");
+        const all = title.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${type} paths` } });
+        const name = title.createSpan({ cls: "duckmage-wfc-terrain-name" });
+        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": typeColors.get(type) ?? "var(--background-modifier-border)" });
+        name.createSpan({ text: type });
+        const summary = title.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-group-summary" });
+        const placedEl = title.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" });
+        const toggleOpen = () => {
+          if (!GeneratorPanel.openPathTypes.delete(type)) GeneratorPanel.openPathTypes.add(type);
+          group.toggleClass("is-collapsed", !open());
+          fold.setAttr("aria-expanded", String(open()));
+        };
+        fold.addEventListener("click", toggleOpen);
+        name.addEventListener("click", toggleOpen);
+        all.addEventListener("change", () => {
+          if (all.checked) {
+            // Turning a type on also turns its routes back on.
+            for (const f of routes) {
+              const key = pathRouteKey(f);
+              if (tweaks[key]?.off) {
+                const { off: _off, ...rest } = tweaks[key];
+                if (Object.keys(rest).length) tweaks[key] = rest;
+                else delete tweaks[key];
+              }
+            }
+            save({ paths: Object.keys(tweaks).length ? { ...tweaks } : undefined });
+            saveType(type, { off: undefined });
+          } else saveType(type, { off: true });
         });
 
-        // Line 1: on, name, route, count, becomes, placed
-        const top = row.createDiv({ cls: "duckmage-wfc-path-top" });
-        const on = top.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${f.type} (${end(f.from)} to ${end(f.to)})` } });
-        on.checked = !tw.off;
-        on.addEventListener("change", () => {
-          row.toggleClass("is-off", !on.checked);
-          saveTweak(route, { off: !on.checked || undefined });
-        });
-        const name = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
-        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
-          "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
-        });
-        name.createSpan({ text: f.type });
-        top.createSpan({ text: `${end(f.from)} → ${end(f.to)}`, cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
-
-        const countWrap = top.createSpan({ cls: "duckmage-wfc-path-count" });
-        countWrap.createSpan({ text: "Count", cls: "duckmage-map-origin-label" });
-        const count = countWrap.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "Auto" } });
-        count.value = tw.count === undefined ? "" : String(tw.count);
-        const rowState = { placed: top.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" }), count, auto: 1 };
-        makeScrubbable(count, { min: 0, max: 99, pxPerStep: 8, initial: () => rowState.auto });
-        count.addEventListener("input", () => {
-          if (count.hasClass("is-scrubbing")) {
-            tweaks[route] = { ...(tweaks[route] ?? {}), count: Number(count.value) };
-            model.settings = { ...(model.settings ?? {}), paths: { ...tweaks } };
-            schedulePreview();
-          }
-        });
-        count.addEventListener("change", () => {
-          saveTweak(route, { count: count.value === "" ? undefined : Math.max(0, Math.floor(Number(count.value) || 0)) });
-        });
-
-        const asWrap = top.createSpan({ cls: "duckmage-wfc-path-as" });
-        asWrap.createSpan({ text: "As", cls: "duckmage-map-origin-label" });
-        const asSel = asWrap.createEl("select", { attr: { title: "Path type it is drawn as on the map" } });
-        const learnedKnown = mapTypes.includes(f.type);
-        asSel.createEl("option", { value: "", text: learnedKnown ? f.type : `${f.type} (no such type: skipped)` });
-        for (const t of mapTypes) if (t !== f.type) asSel.createEl("option", { value: t, text: t });
-        asSel.value = tw.as && mapTypes.includes(tw.as) ? tw.as : "";
-        asSel.addEventListener("change", () => saveTweak(route, { as: asSel.value || undefined }));
-        top.appendChild(rowState.placed);
-        pathRows.set(route, rowState);
-
-        // Line 2: shape of the route
-        const knobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
-        const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
+        // Settings for the whole type: how many of its routes, and multipliers
+        // on every route's own wiggle, length and terrain following.
+        const knobs = head.createDiv({ cls: "duckmage-wfc-path-knobs duckmage-wfc-path-group-knobs" });
+        const amountCell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title: `How many of the ${type} routes to draw. Lower turns off the ones the example had least of.` } });
+        amountCell.createSpan({ text: "Amount", cls: "duckmage-map-origin-label" });
+        const amount = amountCell.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5" } });
+        amount.value = String(Math.round((types[type]?.keep ?? 1) * 100));
+        const amountLabel = amountCell.createSpan();
+        const showAmount = () => amountLabel.setText(amount.value === "100" ? "All" : `${amount.value}%`);
+        showAmount();
+        amount.addEventListener("input", showAmount);
+        amount.addEventListener("change", () => saveType(type, { keep: amount.value === "100" ? undefined : Number(amount.value) / 100 }));
+        const typeKnob = (label: string, key: "wiggle" | "length" | "follow", title: string) => {
           const cell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
           cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
-          const slider = cell.createEl("input", { type: "range" });
-          slider.min = "0";
-          slider.max = String(max);
-          slider.step = "0.25";
-          slider.value = String(tw[key] ?? 1);
+          const slider = cell.createEl("input", { type: "range", attr: { min: "0", max: "3", step: "0.25" } });
+          slider.value = String(types[type]?.[key] ?? 1);
           const valueLabel = cell.createSpan({ text: `×${slider.value}` });
           slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
-          slider.addEventListener("change", () => {
-            const v = Number(slider.value);
-            saveTweak(route, { [key]: v === 1 ? undefined : v });
-          });
+          slider.addEventListener("change", () => saveType(type, { [key]: Number(slider.value) === 1 ? undefined : Number(slider.value) }));
         };
-        knob("Wiggle", "How much it meanders. 0 = as straight as the terrain allows.", "wiggle", 3);
-        if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
-        knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
+        typeKnob("Wiggle", "wiggle", `Multiplies every ${type} route's wiggle.`);
+        if (routes.some((f) => f.to === "none" || f.to === "edge")) typeKnob("Length", "length", `Multiplies every ${type} route's length.`);
+        typeKnob("Follow terrain", "follow", `Multiplies how strongly every ${type} route keeps to its terrains.`);
+
+        const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
+        const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];
+        for (const f of [...routes].sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)))) {
+          const route = pathRouteKey(f);
+          const end = (e: string) => (e === "edge" ? "map edge" : e === "path" ? `a ${f.type}` : e === "none" ? "anywhere" : e);
+          const tw = tweaks[route] ?? {};
+          const row = body.createDiv({ cls: "duckmage-wfc-path-row" });
+          row.addEventListener("mouseenter", () => {
+            hoveredRoute = route;
+            lastDraw?.(route);
+          });
+          row.addEventListener("mouseleave", () => {
+            hoveredRoute = undefined;
+            lastDraw?.();
+          });
+
+          // Line 1: on, route, count, becomes, placed
+          const top = row.createDiv({ cls: "duckmage-wfc-path-top" });
+          const on = top.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${f.type} (${end(f.from)} to ${end(f.to)})` } });
+          on.checked = !tw.off;
+          on.addEventListener("change", () => {
+            saveTweak(route, { off: !on.checked || undefined });
+            refreshGroups();
+          });
+          const routeName = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
+          routeName.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
+            "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
+          });
+          routeName.createSpan({ text: `${end(f.from)} → ${end(f.to)}` });
+          const why = top.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
+
+          const countWrap = top.createSpan({ cls: "duckmage-wfc-path-count" });
+          countWrap.createSpan({ text: "Count", cls: "duckmage-map-origin-label" });
+          const count = countWrap.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "Auto" } });
+          count.value = tw.count === undefined ? "" : String(tw.count);
+          const rowState = { placed: top.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" }), count, auto: 1 };
+          makeScrubbable(count, { min: 0, max: 99, pxPerStep: 8, initial: () => rowState.auto });
+          count.addEventListener("input", () => {
+            if (count.hasClass("is-scrubbing")) {
+              tweaks[route] = { ...(tweaks[route] ?? {}), count: Number(count.value) };
+              model.settings = { ...(model.settings ?? {}), paths: { ...tweaks } };
+              schedulePreview();
+            }
+          });
+          count.addEventListener("change", () => {
+            saveTweak(route, { count: count.value === "" ? undefined : Math.max(0, Math.floor(Number(count.value) || 0)) });
+          });
+
+          const asWrap = top.createSpan({ cls: "duckmage-wfc-path-as" });
+          asWrap.createSpan({ text: "As", cls: "duckmage-map-origin-label" });
+          const asSel = asWrap.createEl("select", { attr: { title: "Path type it is drawn as on the map" } });
+          const learnedKnown = mapTypes.includes(f.type);
+          asSel.createEl("option", { value: "", text: learnedKnown ? f.type : `${f.type} (no such type: skipped)` });
+          for (const t of mapTypes) if (t !== f.type) asSel.createEl("option", { value: t, text: t });
+          asSel.value = tw.as && mapTypes.includes(tw.as) ? tw.as : "";
+          asSel.addEventListener("change", () => saveTweak(route, { as: asSel.value || undefined }));
+          top.appendChild(rowState.placed);
+          pathRows.set(route, rowState);
+
+          // Line 2: shape of the route
+          const routeKnobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
+          const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
+            const cell = routeKnobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
+            cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
+            const slider = cell.createEl("input", { type: "range" });
+            slider.min = "0";
+            slider.max = String(max);
+            slider.step = "0.25";
+            slider.value = String(tw[key] ?? 1);
+            const valueLabel = cell.createSpan({ text: `×${slider.value}` });
+            slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
+            slider.addEventListener("change", () => {
+              const v = Number(slider.value);
+              saveTweak(route, { [key]: v === 1 ? undefined : v });
+            });
+          };
+          knob("Wiggle", "How much it meanders, on top of the type's. 0 = as straight as the terrain allows.", "wiggle", 3);
+          if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
+          knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
+          rowEls.push({ route, row, on, why });
+        }
+
+        // Header checkbox, summary and each row's on/off state, from the
+        // route settings with the type's applied.
+        groupRefreshers.push(() => {
+          const eff = effective();
+          const own = rowEls.filter((r) => !tweaks[r.route]?.off).length;
+          const drawn = rowEls.filter((r) => !eff[r.route]?.off).length;
+          const typeOff = !!types[type]?.off;
+          all.checked = !typeOff && own > 0;
+          all.indeterminate = !typeOff && own > 0 && own < rowEls.length;
+          group.toggleClass("is-off", drawn === 0);
+          summary.setText(`${drawn} of ${rowEls.length} route${rowEls.length === 1 ? "" : "s"} on`);
+          for (const r of rowEls) {
+            const ownOff = !!tweaks[r.route]?.off;
+            const byType = !ownOff && !!eff[r.route]?.off;
+            r.on.checked = !ownOff;
+            r.row.toggleClass("is-off", ownOff || byType);
+            r.why.setText(byType ? (typeOff ? `off: all ${type} off` : `off: ${type} amount`) : "");
+          }
+        });
+        pathGroupPlaced.set(type, { el: placedEl, routes: rowEls.map((r) => r.route) });
       }
+      refreshGroups();
     }
 
 

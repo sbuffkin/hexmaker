@@ -110,6 +110,63 @@ export interface PathTweak {
   as?: string;
 }
 
+/**
+ * Adjustments to every learned route of one path type (all Roads, say).
+ * Applied on top of each route's own PathTweak; see effectivePathTweaks().
+ */
+export interface PathTypeTweak {
+  /** Place none of this type. */
+  off?: boolean;
+  /**
+   * Share of the type's routes to keep (0–1). The routes the example had most
+   * of are kept; the rest are turned off. Unset = all.
+   */
+  keep?: number;
+  /** Multipliers on every route's wiggle, length and terrain following. */
+  wiggle?: number;
+  length?: number;
+  follow?: number;
+}
+
+/**
+ * Each route's tweak with its path type's settings applied: a type that's off
+ * turns its routes off, `keep` turns off the least common of the type's
+ * routes that are still on, and the type's multipliers multiply the route's.
+ * Routes are grouped by their learned type.
+ */
+export function effectivePathTweaks(
+  routes: PathFeature[],
+  tweaks: Record<string, PathTweak> = {},
+  types: Record<string, PathTypeTweak> = {},
+): Record<string, PathTweak> {
+  const out: Record<string, PathTweak> = {};
+  for (const r of routes) {
+    const key = pathRouteKey(r);
+    out[key] = { ...(tweaks[key] ?? {}) };
+  }
+  const byType = new Map<string, PathFeature[]>();
+  for (const r of routes) byType.set(r.type, [...(byType.get(r.type) ?? []), r]);
+  for (const [type, list] of byType) {
+    const t = types[type];
+    if (!t) continue;
+    for (const r of list) {
+      const tw = out[pathRouteKey(r)];
+      if (t.off) tw.off = true;
+      for (const k of ["wiggle", "length", "follow"] as const) {
+        if (t[k] !== undefined) tw[k] = (tw[k] ?? 1) * t[k];
+      }
+    }
+    if (!t.off && t.keep !== undefined && t.keep < 1) {
+      const on = list
+        .filter((r) => !out[pathRouteKey(r)].off)
+        .sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)));
+      const kept = t.keep <= 0 ? 0 : Math.max(1, Math.round(t.keep * on.length));
+      for (const r of on.slice(kept)) out[pathRouteKey(r)].off = true;
+    }
+  }
+  return out;
+}
+
 /** Key that identifies a learned path route, e.g. "Road: edge > peak". */
 export function pathRouteKey(p: { type: string; from: string; to: string }): string {
   return `${p.type}: ${p.from} > ${p.to}`;
@@ -178,6 +235,8 @@ export interface GeneratorSettings {
   drawPaths?: boolean;
   /** Per-route adjustments, keyed by pathRouteKey(). */
   paths?: Record<string, PathTweak>;
+  /** Per path type adjustments (all Roads, all Rivers), on top of `paths`. */
+  pathTypes?: Record<string, PathTypeTweak>;
 }
 
 export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
@@ -203,6 +262,7 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   features: true,
   drawPaths: true,
   paths: {},
+  pathTypes: {},
 };
 
 export interface AdjacencyEntry {

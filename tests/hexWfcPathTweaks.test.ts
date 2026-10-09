@@ -3,6 +3,7 @@ import expect from "expect";
 import {
   cellKey,
   decodeSetting,
+  effectivePathTweaks,
   encodeSetting,
   hexNeighbors,
   learnModel,
@@ -133,5 +134,41 @@ describe("wheelValue", () => {
     expect(wheelValue(3, 100, { min: 0, max: 9 })).toBe(2);
     expect(wheelValue(0, 100, { min: 0, max: 9 })).toBe(0);
     expect(wheelValue(9, -100, { min: 0, max: 9 })).toBe(9);
+  });
+});
+
+describe("path type settings", () => {
+  const route = (type: string, to: string, count: number) => ({ type, from: "edge", to, count, turn: 0.2, length: 0.5, through: {} });
+  const routes = [route("Road", "town", 3), route("Road", "peak", 1), route("Road", "lake", 2), route("River", "sea", 1)];
+  const key = (type: string, to: string) => pathRouteKey({ type, from: "edge", to });
+
+  it("turning a type off turns off its routes only", () => {
+    const t = effectivePathTweaks(routes, {}, { Road: { off: true } });
+    expect([t[key("Road", "town")].off, t[key("Road", "peak")].off, t[key("River", "sea")].off]).toEqual([true, true, undefined]);
+  });
+
+  it("keep turns off the type's least common routes, among those still on", () => {
+    const half = effectivePathTweaks(routes, {}, { Road: { keep: 0.5 } });
+    // 3 roads: keep round(1.5) = 2, the two most common (town 3, lake 2).
+    expect([half[key("Road", "town")].off, half[key("Road", "lake")].off, half[key("Road", "peak")].off]).toEqual([undefined, undefined, true]);
+    // With town turned off by hand, keep 0.5 of the remaining two = lake.
+    const manual = effectivePathTweaks(routes, { [key("Road", "town")]: { off: true } }, { Road: { keep: 0.5 } });
+    expect([manual[key("Road", "lake")].off, manual[key("Road", "peak")].off]).toEqual([undefined, true]);
+    // Keeping something always keeps at least one route.
+    expect(Object.values(effectivePathTweaks(routes, {}, { Road: { keep: 0.01 } })).filter((t) => !t.off)).toHaveLength(2);
+  });
+
+  it("type multipliers multiply each route's own", () => {
+    const t = effectivePathTweaks(routes, { [key("Road", "town")]: { wiggle: 2, count: 4 } }, { Road: { wiggle: 0.5, length: 1.5 } });
+    expect(t[key("Road", "town")]).toEqual({ wiggle: 1, count: 4, length: 1.5 });
+    expect(t[key("Road", "peak")]).toEqual({ wiggle: 0.5, length: 1.5 });
+    expect(t[key("River", "sea")]).toEqual({});
+  });
+
+  it("round-trip through the file", () => {
+    const types = { Road: { keep: 0.5, wiggle: 1.25 }, "Old river": { off: true, follow: 0 } };
+    const back = decodeSetting("pathTypes", String(encodeSetting("pathTypes", types)));
+    expect(back).toEqual({ value: types });
+    expect(decodeSetting("pathTypes", "Road = sometimes")).toHaveProperty("error");
   });
 });
