@@ -150,6 +150,27 @@ export class HexmakerModal extends Modal {
 	}
 
 	/**
+	 * Keep a draggable modal whose content grows after opening (generator
+	 * options, preview, notes) on screen: makeDraggable fixes its top when it
+	 * opens, so a taller modal ran off the bottom of the window with its
+	 * buttons out of reach. Whenever it resizes, move it up just enough to
+	 * fit (never above the top padding; its CSS max-height caps the rest).
+	 * Returns a stop function: call it from onClose.
+	 */
+	protected keepInViewport(): () => void {
+		const modalEl = this.modalEl;
+		const win = modalEl.ownerDocument.defaultView ?? window;
+		const PADDING = 8;
+		const observer = new win.ResizeObserver(() => {
+			const r = modalEl.getBoundingClientRect();
+			const overflow = r.bottom - (win.innerHeight - PADDING);
+			if (overflow > 0) modalEl.setCssProps({ top: `${Math.max(PADDING, r.top - overflow)}px` });
+		});
+		observer.observe(modalEl);
+		return () => observer.disconnect();
+	}
+
+	/**
 	 * Anchor a combo dropdown to its trigger as a viewport-`fixed` element.
 	 *
 	 * The dropdown markup lives inside the modal's scrolling `.modal-content`.

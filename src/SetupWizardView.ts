@@ -1,11 +1,25 @@
-import { App, ItemView, Notice, WorkspaceLeaf } from "obsidian";
+import { App, ItemView, Notice, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import type { HexMapView } from "./hex-map/HexMapView";
+import type { TerrainColor } from "./types";
 import { normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
-import { fillPaletteSelect } from "./palettes/paletteOptions";
-import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
-import { SPACE_SECTOR_PALETTE_NAME } from "./palettes/presets";
+import { defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
+import { MAP_KINDS, enabledKinds, isSpacePalette, type MapKind } from "./mapKinds";
+import { randomSeed } from "../packages/hex-wfc/src";
+import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
+import { pathColors } from "./worldgen/generators";
+import {
+	BLANK_ID,
+	firstMapGenerator,
+	kindsForPalette,
+	listGeneratorKinds,
+	suggestBaseTerrain,
+	visibleKinds,
+	type GenerateOutcome,
+	type TerrainGeneratorKind,
+} from "./worldgen/registry";
+import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +46,13 @@ interface WizardContext {
 	hexOrientation: "flat" | "pointy";
 	/** Map types to enable (src/mapKinds.ts). */
 	mapKinds: MapKind[];
+	/** Generator for the first map (registry id); undefined = pick the
+	 *  default for the map types and palette (firstMapGenerator). */
+	generatorId?: string;
+	generatorOptions: Record<string, string>;
+	seed: number;
+	/** Label of the generator the map was made with (summary); undefined = blank. */
+	generatedWith?: string;
 }
 
 interface WizardCallbacks {
@@ -78,6 +99,85 @@ async function ensureFolder(app: App, path: string): Promise<void> {
 	}
 }
 
+function wizardGrid(plugin: HexmakerPlugin, ctx: WizardContext) {
+	return {
+		cols: ctx.mapCols,
+		rows: ctx.mapRows,
+		offset: { x: 0, y: 0 },
+		stagger: plugin.settings.staggerOffset ?? "odd",
+	};
+}
+
+function resolvedOptions(kind: TerrainGeneratorKind, ctx: WizardContext): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const o of kind.options) out[o.key] = ctx.generatorOptions[o.key] ?? o.default;
+	return out;
+}
+
+/**
+ * Run the chosen generator for the wizard's map. Generators read the hex
+ * orientation from settings, which the wizard only saves on Next, so the
+ * picked orientation is applied for the (synchronous) run.
+ */
+function runGenerator(
+	plugin: HexmakerPlugin,
+	ctx: WizardContext,
+	kind: TerrainGeneratorKind,
+	terrains: TerrainColor[],
+): GenerateOutcome {
+	const saved = plugin.settings.hexOrientation;
+	plugin.settings.hexOrientation = ctx.hexOrientation;
+	try {
+		return kind.generate({ terrains, grid: wizardGrid(plugin, ctx), seed: ctx.seed, options: resolvedOptions(kind, ctx) });
+	} finally {
+		plugin.settings.hexOrientation = saved;
+	}
+}
+
+/** Generators to offer for the wizard's palette, and the one to select. */
+function wizardKinds(
+	kinds: TerrainGeneratorKind[],
+	ctx: WizardContext,
+	terrains: TerrainColor[],
+): { fitting: TerrainGeneratorKind[]; selected: string } {
+	const shown = visibleKinds(kinds, { mapKinds: ctx.mapKinds }, isSpacePalette(terrains), ctx.generatorId);
+	const fitting = kindsForPalette(shown, terrains);
+	const selected = ctx.generatorId && fitting.some((k) => k.id === ctx.generatorId)
+		? ctx.generatorId
+		: firstMapGenerator(fitting, ctx.mapKinds);
+	return { fitting, selected };
+}
+
+/**
+ * Remove the shipped "default" map once the user has their own, if it was
+ * never used (see setupPlaceholder.ts). Settings are saved by the caller.
+ */
+async function removeUnusedPlaceholder(plugin: HexmakerPlugin, keep: string): Promise<void> {
+	if (keep === PLACEHOLDER_MAP_NAME) return;
+	const map = plugin.getMap(PLACEHOLDER_MAP_NAME);
+	if (!map) return;
+	const folder = plugin.app.vault.getAbstractFileByPath(plugin.mapStore.mapFolder(PLACEHOLDER_MAP_NAME));
+	const others = plugin.settings.maps.filter((m) => m.name !== PLACEHOLDER_MAP_NAME);
+	const referenced = others.some((m) =>
+		m.parent?.map === PLACEHOLDER_MAP_NAME ||
+		[...plugin.mapStore.all(m.name).values()].some((h) => h.submap === PLACEHOLDER_MAP_NAME));
+	const unused = isUnusedPlaceholderMap(map, {
+		hexCount: plugin.mapStore.all(PLACEHOLDER_MAP_NAME).size,
+		folderEntries: folder instanceof TFolder ? folder.children.map((c) => c.name) : [],
+		referenced,
+	});
+	if (!unused) return;
+	plugin.settings.maps = others;
+	plugin.mapStore.forgetMap(PLACEHOLDER_MAP_NAME);
+	if (folder instanceof TFolder) {
+		try {
+			await plugin.app.fileManager.trashFile(folder);
+		} catch {
+			// Leave the empty folder; the map itself is gone from the list.
+		}
+	}
+}
+
 // ─── Step 1 — Welcome ─────────────────────────────────────────────────────────
 
 function makeWelcomeStep(): WizardStep {
@@ -90,7 +190,7 @@ function makeWelcomeStep(): WizardStep {
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
-				text: "In the next few steps we'll set up your world folders, pick a layout for your first map, and generate all the hex notes. It takes about a minute.",
+				text: "In the next few steps we'll set up your world folders, pick a layout for your first map, and generate its terrain. It takes about a minute.",
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
@@ -119,9 +219,11 @@ function makeWelcomeStep(): WizardStep {
 		canProceed: (ctx) => ctx.mapKinds.length > 0,
 		async onNext(ctx, plugin) {
 			plugin.settings.mapKinds = [...ctx.mapKinds];
-			// Space only: start the first map as a sector chart.
-			if (!ctx.mapKinds.includes("world") && ctx.mapKinds.includes("space")) {
-				ctx.paletteName = SPACE_SECTOR_PALETTE_NAME;
+			// Start the first map on a palette of a chosen map type: Space
+			// only → a sector chart (Space - Sector, installed on create).
+			const palIsSpace = isSpacePalette(plugin.getPaletteOrPresetTerrains(ctx.paletteName));
+			if (palIsSpace ? !ctx.mapKinds.includes("space") : !ctx.mapKinds.includes("world")) {
+				ctx.paletteName = defaultPaletteFor(plugin.settings);
 			}
 			await plugin.saveSettings();
 			plugin.onMapKindsChanged();
@@ -160,10 +262,12 @@ function makeFolderStep(): WizardStep {
 			const previewList = previewWrap.createEl("ul", { cls: "duckmage-wizard-preview-list" });
 
 			// Advanced toggle
-			const advRow = container.createDiv({ cls: "duckmage-wizard-advanced-row" });
+			// The whole row is the checkbox's <label>, so the text names it
+			// (screen readers, label clicks).
+			const advRow = container.createEl("label", { cls: "duckmage-wizard-advanced-row" });
 			const advCheckbox = advRow.createEl("input", { type: "checkbox" });
 			advCheckbox.checked = ctx.useAdvanced;
-			advRow.createEl("label", {
+			advRow.createSpan({
 				text: "Configure each folder path individually",
 				cls: "duckmage-wizard-advanced-label",
 			});
@@ -269,7 +373,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 		title: "Create your first map",
 		render(container, ctx, cb) {
 			container.createEl("p", {
-				text: "Give your map a name and choose how big it should be. You can always expand the grid or add more maps later.",
+				text: "Give your map a name, choose how big it should be, and how to fill it. You can always expand the grid, repaint, or add more maps later.",
 				cls: "duckmage-wizard-text",
 			});
 
@@ -294,6 +398,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const colsInput = sizeInputs.createEl("input", {
 				type: "number",
 				cls: "duckmage-wizard-input-num",
+				attr: { "aria-label": "Columns" },
 			});
 			colsInput.value = String(ctx.mapCols);
 			colsInput.min = "2";
@@ -302,6 +407,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const rowsInput = sizeInputs.createEl("input", {
 				type: "number",
 				cls: "duckmage-wizard-input-num",
+				attr: { "aria-label": "Rows" },
 			});
 			rowsInput.value = String(ctx.mapRows);
 			rowsInput.min = "2";
@@ -311,18 +417,20 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const noteCount = sizeRow.createEl("p", { cls: "duckmage-wizard-note-count" });
 			const updateCount = () => {
 				const n = ctx.mapCols * ctx.mapRows;
-				noteCount.setText(`This will create ${n.toLocaleString()} hex note${n !== 1 ? "s" : ""} in your vault.`);
+				noteCount.setText(`${n.toLocaleString()} hex${n !== 1 ? "es" : ""}. The map is one note; a hex gets its own note when you first add something to it.`);
 			};
 			updateCount();
 
-			colsInput.addEventListener("input", () => {
-				ctx.mapCols = Math.max(2, Number(colsInput.value) || 20);
+			colsInput.addEventListener("change", () => {
+				ctx.mapCols = Math.max(2, Math.min(200, Number(colsInput.value) || 20));
 				updateCount();
+				refresh();
 				cb.onUpdate();
 			});
-			rowsInput.addEventListener("input", () => {
-				ctx.mapRows = Math.max(2, Number(rowsInput.value) || 16);
+			rowsInput.addEventListener("change", () => {
+				ctx.mapRows = Math.max(2, Math.min(200, Number(rowsInput.value) || 16));
 				updateCount();
+				refresh();
 				cb.onUpdate();
 			});
 
@@ -346,6 +454,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 						.querySelectorAll<HTMLElement>(".duckmage-wizard-orient-btn")
 						.forEach(el => el.removeClass("is-active"));
 					btn.addClass("is-active");
+					refresh();
 				});
 			}
 
@@ -356,6 +465,102 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			fillPaletteSelect(plugin, paletteSelect, ctx.paletteName);
 			paletteSelect.addEventListener("change", () => {
 				ctx.paletteName = paletteSelect.value;
+				renderGenerators();
+				refresh();
+			});
+
+			// Terrain: generator choice + small live preview. The same
+			// generators as Maps → New map → Guided setup (src/worldgen/registry.ts).
+			const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
+			genField.createEl("label", { text: "Terrain", cls: "duckmage-wizard-label" });
+			const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });
+			const genSide = genBody.createDiv({ cls: "duckmage-wizard-generator-choices" });
+			const genList = genSide.createDiv({ cls: "duckmage-setup-generators", text: "Loading generators…" });
+			const optsBox = genSide.createDiv({ cls: "duckmage-wizard-generator-options" });
+			const previewBox = genBody.createDiv({ cls: "duckmage-wizard-generator-preview" });
+			const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
+			const rerollBtn = previewBox.createEl("button", { text: "🎲 Re-roll", attr: { title: "Generate again with a new random seed" } });
+			const status = previewBox.createDiv({ cls: "duckmage-setup-status" });
+			rerollBtn.addEventListener("click", () => { ctx.seed = randomSeed(); refresh(); });
+
+			let kinds: TerrainGeneratorKind[] = [];
+			const terrains = () => plugin.getPaletteOrPresetTerrains(ctx.paletteName);
+
+			const renderGenerators = () => {
+				if (!kinds.length) return;
+				const { fitting, selected } = wizardKinds(kinds, ctx, terrains());
+				if (selected !== ctx.generatorId) {
+					ctx.generatorId = selected;
+					ctx.generatorOptions = {};
+				}
+				genList.empty();
+				for (const k of fitting) {
+					const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === ctx.generatorId ? " is-active" : ""}` });
+					card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
+					card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+					card.addEventListener("click", () => {
+						ctx.generatorId = k.id;
+						ctx.generatorOptions = {};
+						renderGenerators();
+						refresh();
+					});
+				}
+				optsBox.empty();
+				const kind = kinds.find((k) => k.id === ctx.generatorId);
+				for (const opt of kind?.options ?? []) {
+					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
+					row.createSpan({ text: opt.label });
+					const sel = row.createEl("select");
+					for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
+					sel.value = ctx.generatorOptions[opt.key] ?? opt.default;
+					sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
+				}
+			};
+
+			const refresh = () => {
+				const kind = kinds.find((k) => k.id === ctx.generatorId);
+				const pal = terrains();
+				const grid = wizardGrid(plugin, ctx);
+				status.empty();
+				status.removeClass("mod-warning");
+				let cells = new Map<string, string>();
+				let paths: { type: string; route?: string; hexes: string[] }[] = [];
+				let featureCells: Set<string> | undefined;
+				if (kind && kind.id !== BLANK_ID) {
+					if (ctx.mapCols * ctx.mapRows > PREVIEW_AUTO_LIMIT) {
+						status.setText("Large map — no preview; terrain is generated when you continue.");
+					} else {
+						const outcome = runGenerator(plugin, ctx, kind, pal);
+						if (!outcome.ok) {
+							status.setText(outcome.message);
+							status.addClass("mod-warning");
+						} else {
+							cells = outcome.cells;
+							paths = outcome.paths;
+							featureCells = outcome.featureCells;
+							if (outcome.warnings.length) status.setText(outcome.warnings.join(" "));
+						}
+					}
+				} else if (kind) {
+					status.setText("A blank map to paint by hand.");
+				}
+				const base = suggestBaseTerrain(pal);
+				if (base) {
+					for (let i = 0; i < ctx.mapCols; i++)
+						for (let j = 0; j < ctx.mapRows; j++) {
+							const k = `${i}_${j}`;
+							if (!cells.has(k)) cells.set(k, base);
+						}
+				}
+				rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
+				drawPreview(canvas, cells, grid, ctx.hexOrientation, new Map(pal.map((t) => [t.name, t.color])),
+					featureCells, paths, pathColors(plugin), 240, 12);
+			};
+
+			void listGeneratorKinds(plugin).then((k) => {
+				kinds = k;
+				renderGenerators();
+				refresh();
 			});
 
 			// Progress display (populated by onNext)
@@ -370,52 +575,60 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 		async onNext(ctx, plugin, onProgress) {
 			const name = slugify(ctx.mapName);
 			if (!name) return;
+			if (plugin.getMap(name)) throw new Error(`a map named "${name}" already exists. Pick another name.`);
 
 			plugin.settings.hexOrientation = ctx.hexOrientation;
 
-			// Remove the placeholder "default" map if it has no vault folder yet
-			const hexBase = normalizeFolder(plugin.settings.hexFolder);
-			const hasDefaultFolder = !!plugin.app.vault.getAbstractFileByPath(
-				hexBase ? `${hexBase}/default` : "default",
+			// Generate the terrain the preview showed (same seed and options).
+			const terrains = plugin.getPaletteOrPresetTerrains(ctx.paletteName);
+			const kinds = await listGeneratorKinds(plugin);
+			const { selected } = wizardKinds(kinds, ctx, terrains);
+			const kind = kinds.find((k) => k.id === selected);
+			let outcome: GenerateOutcome | undefined;
+			if (kind && kind.id !== BLANK_ID) {
+				onProgress(`Generating terrain (${kind.label})…`);
+				outcome = runGenerator(plugin, ctx, kind, terrains);
+				if (!outcome.ok) throw new Error(outcome.message);
+			}
+
+			// The map is one map note: terrain goes there, and hex notes
+			// appear as hexes get content (createNewMap installs a preset
+			// palette such as Space - Sector on first use).
+			onProgress("Creating the map…");
+			const result = await plugin.createNewMap(
+				name,
+				ctx.mapCols,
+				ctx.mapRows,
+				ctx.paletteName,
+				0,
+				0,
+				plugin.settings.staggerOffset,
+				undefined,
+				outcome?.ok ? outcome.cells : undefined,
+				{ baseTerrain: suggestBaseTerrain(terrains), quiet: true },
 			);
-			if (!hasDefaultFolder) {
-				plugin.settings.maps = plugin.settings.maps.filter(m => m.name !== "default");
-			}
+			if ("error" in result) throw new Error(result.error);
 
-			// Create map folder and register in settings
-			const folderPath = hexBase ? `${hexBase}/${name}` : name;
-			await ensureFolder(plugin.app, folderPath);
-
-			await plugin.ensurePaletteInstalled(ctx.paletteName);
-			if (!plugin.settings.maps.find(m => m.name === name)) {
-				plugin.settings.maps.push({
-					name,
-					paletteName: ctx.paletteName,
-					gridSize: { cols: ctx.mapCols, rows: ctx.mapRows },
-					gridOffset: { x: 0, y: 0 },
-					pathChains: [],
-				});
+			// Generated paths (jump routes…) become map path chains.
+			if (outcome?.ok && outcome.paths.length && kind) {
+				const map = plugin.getMap(result.name);
+				const { chains } = kind.toChains(outcome.paths);
+				if (map && chains.length) map.pathChains.push(...chains);
 			}
-			plugin.settings.defaultMap = name;
+			ctx.generatedWith = outcome?.ok ? kind?.label : undefined;
+			plugin.settings.defaultMap = result.name;
+			// The shipped "default" map is clutter now that there's a real one.
+			await removeUnusedPlaceholder(plugin, result.name);
 			await plugin.saveSettings();
-
-			// Generate hex notes with progress feedback
-			const total = ctx.mapCols * ctx.mapRows;
-			const xs = Array.from({ length: ctx.mapCols }, (_, i) => i);
-			const ys = Array.from({ length: ctx.mapRows }, (_, i) => i);
-			onProgress(`Generating hex notes 0 / ${total}…`);
-			await plugin.generateHexNotes(name, xs, ys, (done) => {
-				onProgress(`Generating hex notes ${done} / ${total}…`);
-			});
 
 			// Generate terrain description/encounters tables (and the generic
 			// landmark/hidden/secret ones) + the [Roll] preamble. Without this
 			// step the user has a map but no tables — they'd have to hunt the
 			// settings tab for "Generate terrain tables & hex links".
 			//
-			// We skip backfillTerrainLinks here because freshly-generated hexes
-			// have no terrain painted yet, so it's a no-op; syncHexEncounterTableLink
-			// wires up the link automatically when the user paints terrain later.
+			// We skip backfillTerrainLinks here: there are no hex notes yet
+			// (they're created on use), and syncHexEncounterTableLink wires up
+			// the link when a hex note is created or its terrain painted.
 			onProgress("Generating terrain tables…");
 			await plugin.ensureTerrainTables();
 			onProgress("Adding roller links…");
@@ -441,7 +654,8 @@ function makeDoneStep(): WizardStep {
 			const world = normalizeFolder(ctx.worldFolder) || "world";
 			const name = slugify(ctx.mapName) || ctx.mapName;
 			summary.createEl("li", { text: `World folder: ${world}` });
-			summary.createEl("li", { text: `Map: "${name}" — ${ctx.mapCols} × ${ctx.mapRows} (${(ctx.mapCols * ctx.mapRows).toLocaleString()} hex notes)` });
+			summary.createEl("li", { text: `Map: "${name}" — ${ctx.mapCols} × ${ctx.mapRows}, ${ctx.generatedWith ? `terrain generated with ${ctx.generatedWith}` : "blank, ready to paint"}` });
+			summary.createEl("li", { text: `Map note: _${name}.md in the map folder holds the terrain and paths; a hex gets its own note when you first add something to it` });
 			summary.createEl("li", { text: `Hex orientation: ${ctx.hexOrientation === "flat" ? "Flat-top" : "Pointy-top"}` });
 			summary.createEl("li", { text: `Terrain palette: ${ctx.paletteName}` });
 			summary.createEl("li", { text: "Description and encounter tables for every terrain (auto-linked when you paint terrain)" });
@@ -453,7 +667,9 @@ function makeDoneStep(): WizardStep {
 
 			const tips = container.createEl("ul", { cls: "duckmage-wizard-tips" });
 			for (const tip of [
-				"Paint terrain — the terrain picker opens automatically when you hit \"Open hex map\". Pick a type and click hexes to paint.",
+				ctx.generatedWith
+					? "Repaint anything you like: open Terrain in the drawing tools, pick a type and click hexes."
+					: "Paint terrain — the terrain picker opens automatically when you hit \"Open hex map\". Pick a type and click hexes to paint.",
 				"Right-click any hex to open its full editor: add towns, dungeons, notes, and more.",
 				"Open the 🎲 tab to browse and roll your random tables.",
 				"Use the toolbar to paint icons, draw roads or rivers, and link factions.",
@@ -502,9 +718,11 @@ export class SetupWizardView extends ItemView {
 			mapName: "",
 			mapCols: 20,
 			mapRows: 16,
-			paletteName: plugin.settings.terrainPalettes[0]?.name ?? "Limited",
+			paletteName: defaultPaletteFor(plugin.settings),
 			hexOrientation: plugin.settings.hexOrientation ?? "flat",
 			mapKinds: [...enabledKinds(plugin.settings)],
+			generatorOptions: {},
+			seed: randomSeed(),
 		};
 		this.steps = [
 			makeWelcomeStep(),
@@ -650,7 +868,8 @@ export class SetupWizardView extends ItemView {
 		if (openMap) {
 			const leaf = this.app.workspace.getLeaf("tab");
 			await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
-			(leaf.view as HexMapView).openTerrainPicker();
+			// A blank map starts in the terrain picker; a generated one is shown as is.
+			if (!this.ctx.generatedWith) (leaf.view as HexMapView).openTerrainPicker();
 		}
 		this.leaf.detach();
 	}

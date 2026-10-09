@@ -9,7 +9,7 @@ import { neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewReg
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
-import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
 import { isSpacePalette } from "../mapKinds";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
@@ -65,6 +65,7 @@ export class NewMapSetupModal extends HexmakerModal {
   private placement: NewRegion | undefined;
   /** "Default for <terrain>" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
+  private stopKeepInViewport?: () => void;
 
   constructor(
     app: App,
@@ -99,6 +100,7 @@ export class NewMapSetupModal extends HexmakerModal {
   onOpen(): void {
     this.makeDraggable();
     this.modalEl.addClass("duckmage-setup-modal");
+    this.stopKeepInViewport = this.keepInViewport();
     this.titleEl.setText(
       this.origin
         ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.origin.map} hex ${this.origin.x}, ${this.origin.y}`
@@ -112,6 +114,7 @@ export class NewMapSetupModal extends HexmakerModal {
   }
 
   onClose(): void {
+    this.stopKeepInViewport?.();
     this.contentEl.empty();
   }
 
@@ -141,7 +144,7 @@ export class NewMapSetupModal extends HexmakerModal {
       this.plugin,
       paletteSelect,
       this.saved?.palette
-        ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : this.plugin.settings.terrainPalettes[0]?.name),
+        ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : defaultPaletteFor(this.plugin.settings)),
     );
     this.rememberBox(palRow, "palette");
 

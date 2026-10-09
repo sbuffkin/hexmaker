@@ -6314,3 +6314,91 @@ button.duckmage-wfc-library-tab.is-active {
     margin: 0.5em auto;
     border-radius: var(--radius-s);
 }
+
+/* ── New map / submap setup modal: never taller than the window ──────
+   The form scrolls; the preview stays in view beside it and the
+   Generate / Cancel row is pinned to the bottom (fresh-eyes G11).
+   The draggable-modal rules (.duckmage-editor-modal-drag: 620px, flex
+   column) out-ranked the two-column setup layout, so it is restated at
+   higher specificity. NewMapSetupModal also keeps the modal on screen
+   as it grows (HexmakerModal.keepInViewport). */
+.modal.duckmage-setup-modal.duckmage-editor-modal-drag {
+    width: min(860px, 94vw);
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.duckmage-setup-modal > .modal-content.duckmage-setup-layout {
+    display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    align-items: start;
+}
+
+.duckmage-setup-layout > .duckmage-setup-preview {
+    position: sticky;
+    top: 0;
+}
+
+.duckmage-setup-layout > .duckmage-setup-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 0.6em 0 0.2em;
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--modal-background, var(--background-primary));
+}
+
+@media (max-width: 700px) {
+    .duckmage-setup-layout > .duckmage-setup-preview {
+        position: static;
+    }
+}
+
+/* The preview canvas sits in the neighbour frame's centre cell; the 6em cap
+   on the frame's name cells shrank it to a thumbnail (fresh-eyes T8). */
+.duckmage-setup-ctx.duckmage-setup-ctx-C {
+    max-width: 100%;
+}
+
+/* ── Setup wizard: first-map generator choice + preview ─────────────── */
+.duckmage-wizard-generator-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    align-items: flex-start;
+}
+
+.duckmage-wizard-generator-choices {
+    flex: 1 1 18em;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+}
+
+.duckmage-wizard-generator-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1em;
+}
+
+.duckmage-wizard-generator-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.duckmage-wizard-generator-preview {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4em;
+    width: 240px;
+}
