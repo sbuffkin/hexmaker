@@ -37,6 +37,7 @@ import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks } from "../encounterLinks";
 import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
+import { openNoteFocused } from "../openNote";
 
 /** What each link field links, for its placeholder ("Search or create a town…"). */
 const LINK_FIELD_NOUN: Record<LinkSection, string> = {
@@ -188,7 +189,7 @@ export class HexEditorModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        void this.app.workspace.getLeaf("tab").openFile(fileNow);
+        void openNoteFocused(this.app, fileNow);
         this.close();
       });
       const exportLink = titleLeft.createEl("a", {
@@ -1200,7 +1201,7 @@ export class HexEditorModal extends HexmakerModal {
             if (onItemClick) {
               void onItemClick(link, file);
             } else {
-              void this.app.workspace.getLeaf("tab").openFile(file);
+              void openNoteFocused(this.app, file);
               this.close();
             }
           });

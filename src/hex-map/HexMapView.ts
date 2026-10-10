@@ -29,6 +29,7 @@ import {
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
+import { openNoteFocused } from "../openNote";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -3849,7 +3850,7 @@ export class HexMapView extends ItemView {
             existing instanceof TFile
               ? existing
               : await this.plugin.createHexNote(x, y, this.activeMapName);
-          if (file) await this.app.workspace.getLeaf().openFile(file);
+          if (file) await openNoteFocused(this.app, file);
         }),
     );
 
@@ -6442,7 +6443,7 @@ export class HexMapView extends ItemView {
         .onClick(() => {
           const file = this.app.vault.getAbstractFileByPath(token.filePath);
           if (file instanceof TFile) {
-            void this.app.workspace.getLeaf("tab").openFile(file);
+            void openNoteFocused(this.app, file);
           }
         }),
     );

@@ -1,5 +1,6 @@
 import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { openNoteFocused } from "../openNote";
 import type { TokenEntry } from "../types";
 
 export class TokenInfoModal extends HexmakerModal {
@@ -44,7 +45,7 @@ export class TokenInfoModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        void this.app.workspace.getLeaf("tab").openFile(noteFile);
+        void openNoteFocused(this.app, noteFile);
         this.close();
       });
     }
