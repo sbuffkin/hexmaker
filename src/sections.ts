@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { escapeRegex } from "./textUtils";
+import { splitGuidance } from "./hexGuidance";
 
 /** Insert a wiki-link under the named ### section, creating the section if absent. */
 export async function addLinkToSection(app: App, filePath: string, section: string, linkText: string): Promise<void> {
@@ -84,7 +85,8 @@ export async function getSectionContent(app: App, filePath: string, section: str
 	const afterHeading = match.index + match[0].length;
 	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
-	return content.slice(afterHeading, sectionEnd).trim();
+	// The template's guidance prompt under the heading isn't section text.
+	return splitGuidance(content.slice(afterHeading, sectionEnd)).text.trim();
 }
 
 /** Read a file once and return all text and link section content in a single pass. */
@@ -118,7 +120,8 @@ export async function getAllSectionData(
 		while ((lm = lr.exec(body)) !== null) sectionLinks.push(lm[1]);
 
 		links.set(name, sectionLinks);
-		text.set(name, body.trim());
+		// The template's guidance prompt under the heading isn't section text.
+		text.set(name, splitGuidance(body).text.trim());
 	}
 	return { text, links };
 }
@@ -160,7 +163,12 @@ export async function setSectionContent(app: App, filePath: string, section: str
 		const afterHeading = match.index + match[0].length;
 		const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 		const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
-		const replacement = newText.trim() ? `\n${newText.trim()}\n` : "\n";
+		// Keep the template's guidance prompt on top of the section.
+		const { guidance } = splitGuidance(content.slice(afterHeading, sectionEnd));
+		const guide = guidance.length ? `${guidance.join("\n")}\n` : "";
+		const replacement = newText.trim()
+			? `\n${guide}${guide ? "\n" : ""}${newText.trim()}\n`
+			: `\n${guide}`;
 		return content.slice(0, afterHeading) + replacement + content.slice(sectionEnd);
 	});
 }

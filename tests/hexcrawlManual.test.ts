@@ -39,6 +39,10 @@ describe("placeholder text", () => {
     expect(filter.clean("Normal for region, or special (e.g. always pleasant, sandstorms, magic zone effect).")).toBe("");
   });
 
+  it("drops a hint italicised under its heading (template since fresh-eyes r4)", () => {
+    expect(new PlaceholderFilter().clean("*Seeds for adventures, things locals might mention, or what finding this hex could lead to.*\n\nA rumour.")).toBe("A rumour.");
+  });
+
   it("keeps real writing, including short lines ending in 'here'", () => {
     expect(filter.clean("The dragon sleeps here.")).toBe("The dragon sleeps here.");
     expect(filter.clean("What the party sees and feels.\nA ruined tower leans over the road.")).toBe("A ruined tower leans over the road.");
