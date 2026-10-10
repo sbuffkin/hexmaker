@@ -1,6 +1,7 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
 import {
+  drawnPathType,
   generateTerrain,
   generatorFitsPalette,
   listGenerators,
@@ -25,6 +26,8 @@ import { generatorMapKind, isGeneratorShown, isSpacePalette, type MapKind } from
 import { routeContextPaths } from "./procedural/contextPaths";
 import { hasFeature, type FeatureSettings } from "../featureLevel";
 import { generateConnected, type NewRegion } from "./neighbours";
+import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -272,8 +275,19 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
   // Every generator, tagged with its map type: callers filter with
   // visibleKinds (they know the palette, the parent map and the current choice).
   const kinds = [...builtIn];
+  const learned = await listGenerators(plugin);
 
-  for (const g of await listGenerators(plugin)) {
+  // Shipped biome / preset generators, fitted to the palette by terrain
+  // type (builtinGenerators.ts). A learned generator file of the same name
+  // (e.g. the vault copy they were written in) takes their place.
+  const learnedNames = new Set(learned.map((g) => g.file.basename.toLowerCase()));
+  for (const def of BUILTIN_GENERATORS) {
+    const model = builtinModel(def.slug);
+    if (!model || learnedNames.has(def.slug)) continue;
+    kinds.push(builtinKind(plugin, def.slug, def.label, def.description, model));
+  }
+
+  for (const g of learned) {
     kinds.push({
       id: `wfc:${g.file.path}`,
       label: g.file.basename,
@@ -296,6 +310,47 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     });
   }
   return kinds;
+}
+
+/**
+ * A shipped biome / preset generator as a generator kind. World type and
+ * outside STARTER_IDS, so Simple doesn't offer it.
+ */
+export function builtinKind(
+  plugin: HexmakerPlugin,
+  slug: string,
+  label: string,
+  description: string,
+  model: HexWfcModel,
+): TerrainGeneratorKind {
+  // The last fitted model, for drawing its paths (route keys follow the palette).
+  let fitted: HexWfcModel = model;
+  return {
+    id: `${BUILTIN_PREFIX}${slug}`,
+    label,
+    description,
+    source: "built-in",
+    mapKind: "world",
+    continuesNeighbours: true,
+    options: [],
+    fits: (terrains) => fitBuiltinModel(model, terrains) !== undefined,
+    generate: (req) => {
+      const fit = fitBuiltinModel(model, req.terrains);
+      if (!fit) return { ok: false, message: "This palette has too few terrains with a type for this generator." };
+      fitted = fit;
+      const names = req.terrains.map((t) => t.name);
+      const res = req.region
+        ? generateConnected(plugin, fit, names, req.region, req.seed)
+        : generateTerrain(plugin, fit, names, req.grid, req.seed);
+      if (!res.ok) return { ok: false, message: res.message };
+      return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
+    },
+    toChains: (paths) => {
+      // Streams and trails draw as the vault's river / road types when it has no such type.
+      const known = (plugin.settings.pathTypes ?? []).map((t) => t.name);
+      return toPathChains(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })));
+    },
+  };
 }
 
 /**
