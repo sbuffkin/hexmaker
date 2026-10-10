@@ -17,6 +17,8 @@ import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
+import { renderPreviewLegend } from "../hex-map/terrainLegend";
+import { getIconUrl } from "../utils";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
@@ -369,6 +371,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const seedRow = side.createDiv({ cls: "duckmage-setup-seed-row" });
     const rerollBtn = seedRow.createEl("button", { text: "🎲 Re-roll", attr: { title: "New random seed" } });
     const seedLabel = seedRow.createSpan({ cls: "duckmage-setup-seed" });
+    const legendBox = side.createDiv();
     const seamNote = side.createDiv({ cls: "setting-item-description duckmage-setup-seam-note" });
     const status = side.createDiv({ cls: "duckmage-setup-status" });
     rerollBtn.addEventListener("click", () => { this.seed = randomSeed(); refresh(); });
@@ -552,6 +555,7 @@ export class NewMapSetupModal extends HexmakerModal {
         undefined,
         { shadow },
       );
+      renderPreviewLegend(legendBox, this.plugin, terrains, cells.values(), (i) => getIconUrl(this.plugin, i));
     };
 
     paletteSelect.addEventListener("change", () => { renderGenerators(); renderBase(); refresh(); });

@@ -187,6 +187,8 @@ Toggled from the **layers** panel on the right edge of the map.
 - **Region overlay** — paint a geographic region colour on any hex. Regions render as filled blobs with a scaled label centred on the blob. Region data is stored in each hex note's frontmatter.
 - Both overlays can be shown simultaneously and toggled independently.
 - Additional toggles: **Show coordinates**, **Show terrain icons**, **Show icon overrides**, **GM layer**, **Tokens**.
+- **Show link badges** (on by default) — a small badge at a hex's corner for each kind of link in its note: towns, dungeons, features, quests, factions. Your hex icon stays as it is. The ▸ next to the toggle picks which kinds show. Saved per map.
+- **Show legend** (on by default) — a terrain legend in the map's bottom-right corner listing only the terrains used on this map. **S / M / L** sets its size; **×** hides it. The new-map and generator previews show the same legend. Size and visibility are remembered.
 
 ### GM layer
 Toggle from the overlay panel. When active:

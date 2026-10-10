@@ -55,6 +55,8 @@ import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
+import { hexKeyFromBasename, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
+import { legendSize, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
@@ -184,6 +186,10 @@ export class HexMapView extends ItemView {
   private coordPlacements: { key: string; ox: number; oy: number }[] = [];
   private coordGridSize = { w: 1, h: 1 };
   private coordLabels = new Map<string, HTMLElement>();
+  // Link badges + terrain legend refresh on note / map-store changes (debounced).
+  private badgeTimer: number | null = null;
+  private legendTimer: number | null = null;
+  private controlsEl: HTMLElement | null = null;
   private settleTimer: number | null = null;
   // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
   // paints (esp. trackpads). We sum the log-zoom delta of all events that
@@ -664,6 +670,7 @@ export class HexMapView extends ItemView {
     const controlsEl = contentEl.createDiv({
       cls: "duckmage-hex-map-controls",
     });
+    this.controlsEl = controlsEl;
 
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
     this.applyTransform();
@@ -1197,6 +1204,7 @@ export class HexMapView extends ItemView {
       (show) => { if (show) this.updateRegionOverlay(); else this.clearRegionOverlay(); },
       () => { this.updateGmIcons(); },
       (show) => { if (show) this.updateTokenLayer(); else this.viewportEl?.querySelector(".duckmage-token-layer")?.remove(); },
+      { onLegendChange: () => this.refreshTerrainLegend() },
     );
     toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
     this.overlayPanel.onBeforeOpen = () => toolsPanel.close();
@@ -1235,7 +1243,11 @@ export class HexMapView extends ItemView {
         const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
         const mapPrefix =
           (hexFolder ? hexFolder + "/" : "") + this.activeMapName + "/";
-        if (file.path.startsWith(mapPrefix)) this.markStaleFromExternal();
+        if (file.path.startsWith(mapPrefix)) {
+          this.markStaleFromExternal();
+          // A hex note's links may have changed → its link badges.
+          if (hexKeyFromBasename(file.basename)) this.scheduleLinkBadges();
+        }
 
         if (this.getActiveMap().showFactionOverlay) {
           const folder = normalizeFolder(this.plugin.settings.factionsFolder);
@@ -1260,6 +1272,18 @@ export class HexMapView extends ItemView {
         const hasToken  = !!cache?.frontmatter?.["token"];
         const wasToken  = this.tokenEntries.some((t) => t.filePath === file.path);
         if (hasToken || wasToken) this.updateTokenLayer();
+      }),
+    );
+    // A deleted hex note takes its badges with it.
+    this.registerEvent(
+      this.app.metadataCache.on("deleted", (file) => {
+        if (hexKeyFromBasename(file.basename)) this.scheduleLinkBadges();
+      }),
+    );
+    // Terrain painted / generated → the legend lists what the map now uses.
+    this.register(
+      this.plugin.mapStore.onChange((map) => {
+        if (map === this.activeMapName) this.scheduleTerrainLegend();
       }),
     );
 
@@ -3138,6 +3162,8 @@ export class HexMapView extends ItemView {
    */
   async onClose(): Promise<void> {
     if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
+    if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
+    if (this.legendTimer !== null) window.clearTimeout(this.legendTimer);
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
     }
@@ -3896,6 +3922,9 @@ export class HexMapView extends ItemView {
     // SVG, GM-icon overlay, faction overlay, and region overlay — paths
     // and icons can no longer cover up the hex coordinates.
     this.renderCoordLabelsLayer(gridContainer);
+    // Badges reuse the hex centres the coord labels just measured.
+    this.renderLinkBadges(gridContainer);
+    this.refreshTerrainLegend();
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
       this.applyCalibrationFocusStyles();
@@ -5734,6 +5763,87 @@ export class HexMapView extends ItemView {
       });
       this.coordLabels.set(p.key, label);
     }
+  }
+
+  // ── Link badges + terrain legend (see linkBadges.ts / terrainLegend.ts) ──
+
+  /**
+   * Corner badges for the hex notes of this map that link towns, dungeons,
+   * features, quests or factions. Reads only the metadata cache of the map's
+   * existing notes and positions from `coordPlacements` (no layout reads);
+   * the layers menu hides them by CSS class.
+   */
+  private renderLinkBadges(gridContainer: HTMLElement): void {
+    const sections = new Map<string, BadgeSection[]>();
+    const folder = this.app.vault.getAbstractFileByPath(this.plugin.mapStore.mapFolder(this.activeMapName));
+    if (folder instanceof TFolder) {
+      for (const child of folder.children) {
+        if (!(child instanceof TFile) || child.extension !== "md") continue;
+        const key = hexKeyFromBasename(child.basename);
+        if (!key) continue;
+        const found = linkSectionsFromCache(this.app.metadataCache.getFileCache(child));
+        if (found.length) sections.set(key, found);
+      }
+    }
+    renderLinkBadgeLayer(gridContainer, this.coordPlacements, this.coordGridSize, sections);
+  }
+
+  private scheduleLinkBadges(): void {
+    if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
+    this.badgeTimer = window.setTimeout(() => {
+      this.badgeTimer = null;
+      const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+      if (grid) this.renderLinkBadges(grid);
+    }, 300);
+  }
+
+  private scheduleTerrainLegend(): void {
+    if (this.legendTimer !== null) window.clearTimeout(this.legendTimer);
+    this.legendTimer = window.setTimeout(() => {
+      this.legendTimer = null;
+      this.refreshTerrainLegend();
+    }, 250);
+  }
+
+  /** The terrains used on this map (own terrain, or the base terrain where unset). */
+  private refreshTerrainLegend(): void {
+    const parent = this.controlsEl;
+    if (!parent) return;
+    const settings = this.plugin.settings;
+    if (!(settings.showTerrainLegend ?? true)) {
+      parent.querySelector(":scope > .duckmage-terrain-legend")?.remove();
+      return;
+    }
+    const map = this.getActiveMap();
+    const { cols, rows } = map.gridSize;
+    const { x: ox, y: oy } = map.gridOffset;
+    const used: string[] = [];
+    let painted = 0;
+    for (const [key, h] of this.plugin.mapStore.all(this.activeMapName)) {
+      if (!h.terrain) continue;
+      const [x, y] = key.split("_").map(Number);
+      if (x < ox || y < oy || x >= ox + cols || y >= oy + rows) continue;
+      used.push(h.terrain);
+      painted++;
+    }
+    if (map.baseTerrain && painted < cols * rows) used.push(map.baseTerrain);
+    const entries = usedTerrainEntries(this.plugin.getMapPalette(this.activeMapName), used);
+    renderTerrainLegend(parent, entries, {
+      size: legendSize(settings.terrainLegendSize),
+      cls: "duckmage-terrain-legend-map",
+      iconUrl: (icon) => getIconUrl(this.plugin, icon),
+      onSize: (size) => {
+        settings.terrainLegendSize = size;
+        void this.plugin.saveSettings();
+        this.refreshTerrainLegend();
+      },
+      onHide: () => {
+        settings.showTerrainLegend = false;
+        void this.plugin.saveSettings();
+        this.overlayPanel?.syncLegendToggle();
+        this.refreshTerrainLegend();
+      },
+    });
   }
 
 

@@ -7084,3 +7084,171 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-map-side-crumbs {
     max-width: 30vw;
 }
+
+/* ── Link badges (N2): one small marker per link type at a hex corner ──────
+   Positioned like the coord labels (% of the grid + em offset), so they
+   follow zoom bakes. The layers menu hides them by viewport class. */
+.duckmage-link-badges-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9;
+}
+.duckmage-link-badges {
+    position: absolute;
+    left: calc(var(--duckmage-badge-x, 50%) + 1.5em);
+    top: calc(var(--duckmage-badge-y, 50%) - 0.9em);
+    transform: translate(-100%, -50%);
+    width: 2.6em;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.06em;
+}
+.duckmage-grid-flat .duckmage-link-badges {
+    left: calc(var(--duckmage-badge-x, 50%) + 1.35em);
+    top: calc(var(--duckmage-badge-y, 50%) - 1.1em);
+}
+.duckmage-link-badge-towns    { --duckmage-badge-color: #c0803a; }
+.duckmage-link-badge-dungeons { --duckmage-badge-color: #8e3b46; }
+.duckmage-link-badge-features { --duckmage-badge-color: #3f7f5f; }
+.duckmage-link-badge-quests   { --duckmage-badge-color: #b59a2a; }
+.duckmage-link-badge-factions { --duckmage-badge-color: #5a5fb0; }
+.duckmage-link-badge {
+    width: 0.8em;
+    height: 0.8em;
+    border-radius: 50%;
+    background: var(--duckmage-badge-color, #666666);
+    color: #ffffff;
+    border: 0.06em solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 0.12em rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.duckmage-link-badge svg {
+    width: 0.52em;
+    height: 0.52em;
+    stroke-width: 2.6;
+}
+.duckmage-hide-link-badges .duckmage-link-badges-layer { display: none; }
+.duckmage-hide-badge-towns .duckmage-link-badge-towns,
+.duckmage-hide-badge-dungeons .duckmage-link-badge-dungeons,
+.duckmage-hide-badge-features .duckmage-link-badge-features,
+.duckmage-hide-badge-quests .duckmage-link-badge-quests,
+.duckmage-hide-badge-factions .duckmage-link-badge-factions { display: none; }
+
+/* Layers menu: the ▸ that unfolds the per-type badge chips */
+.duckmage-overlay-more {
+    margin-left: auto;
+    padding: 0 2px;
+    height: auto;
+}
+.duckmage-overlay-more svg { transition: transform 120ms ease; }
+.duckmage-overlay-more.is-open svg { transform: rotate(90deg); }
+.duckmage-overlay-subrow {
+    display: flex;
+    gap: 4px;
+    padding-left: 20px;
+}
+.duckmage-overlay-chip {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--duckmage-badge-color, var(--interactive-normal));
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
+}
+.duckmage-overlay-chip svg { width: 14px; height: 14px; }
+.duckmage-overlay-chip.is-off {
+    opacity: 0.3;
+    filter: grayscale(1);
+}
+
+/* ── Terrain legend (L1): map corner + generator previews ─────────────────── */
+.duckmage-terrain-legend {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 4px 8px 6px;
+    font-size: var(--duckmage-legend-font, 0.85em);
+    --duckmage-legend-swatch: 1.3em;
+}
+.duckmage-terrain-legend-s { --duckmage-legend-font: 0.72em; }
+.duckmage-terrain-legend-m { --duckmage-legend-font: 0.85em; }
+.duckmage-terrain-legend-l { --duckmage-legend-font: 1.05em; --duckmage-legend-swatch: 1.6em; }
+.duckmage-terrain-legend-map {
+    position: absolute;
+    right: 8px;
+    bottom: 32px;
+    max-height: 45%;
+    max-width: 40%;
+    overflow-y: auto;
+    z-index: 10;
+}
+.duckmage-terrain-legend-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+}
+.duckmage-terrain-legend-title {
+    font-weight: 600;
+    margin-right: auto;
+}
+.duckmage-terrain-legend-sizes { display: flex; gap: 2px; }
+.duckmage-terrain-legend-size,
+.duckmage-terrain-legend-hide {
+    font-size: 0.85em;
+    padding: 0 5px;
+    height: 1.6em;
+    min-width: 1.6em;
+    box-shadow: none;
+}
+.duckmage-terrain-legend-size.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-terrain-legend-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.duckmage-terrain-legend-preview .duckmage-terrain-legend-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: 12px;
+}
+.duckmage-terrain-legend-preview { margin-top: 6px; }
+.duckmage-terrain-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.duckmage-terrain-legend-swatch {
+    width: var(--duckmage-legend-swatch);
+    height: calc(var(--duckmage-legend-swatch) * 0.866);
+    flex-shrink: 0;
+    background: var(--duckmage-legend-color, #888888);
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.duckmage-terrain-legend-icon {
+    width: 70%;
+    height: 70%;
+    object-fit: contain;
+}
+.duckmage-terrain-legend-show {
+    font-size: var(--font-ui-smaller);
+    margin-top: 4px;
+}

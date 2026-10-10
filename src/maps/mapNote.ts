@@ -64,6 +64,7 @@ const SCALAR_KEYS: [keyof MapSettings, string][] = [
   ["showRegionOverlay", "show-region-overlay"],
   ["showGmLayer", "show-gm-layer"],
   ["showTokens", "show-tokens"],
+  ["showLinkBadges", "show-link-badges"],
   ["gridDisplayScale", "grid-display-scale"],
   ["gridDisplayScaleX", "grid-display-scale-x"],
   ["gridDisplayScaleY", "grid-display-scale-y"],
@@ -75,6 +76,7 @@ const JSON_KEYS: [keyof MapSettings, string][] = [
   ["parent", "parent"],
   ["world", "world"],
   ["backgroundImage", "background-image"],
+  ["hiddenLinkBadges", "hidden-link-badges"],
 ];
 /**
  * Region biome (MapData.biome = { generator, from? }) as two readable keys,

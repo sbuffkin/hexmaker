@@ -83,6 +83,10 @@ export interface MapData {
 	showRegionOverlay?: boolean;  // undefined = false (opt-in)
 	showGmLayer?: boolean;        // undefined = true (on by default)
 	showTokens?: boolean;         // undefined = true (on by default)
+	/** Corner badges per link type (towns, dungeons…). undefined = true. */
+	showLinkBadges?: boolean;
+	/** Badge types turned off in the layers menu (BADGE_SECTIONS names). */
+	hiddenLinkBadges?: string[];
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting
 	/** Slot on a shared grid of neighbouring regions (see src/worldgen/world.ts). */
 	world?: { id: string; cx: number; cy: number };
@@ -220,6 +224,10 @@ export interface HexmakerPluginSettings {
 	advancedNudgeOff?: boolean;
 	/** True once existing palettes got terrain types (one-time seeding). */
 	terrainTypesSeeded: boolean;
+	/** Terrain legend on the map and generator previews. Unset = shown. */
+	showTerrainLegend?: boolean;
+	/** Terrain legend size. Unset = "m". */
+	terrainLegendSize?: "s" | "m" | "l";
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

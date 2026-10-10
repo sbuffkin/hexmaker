@@ -30,6 +30,8 @@ import {
   type GeneratorFile,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
+import { renderPreviewLegend } from "../hex-map/terrainLegend";
+import { getIconUrl } from "../utils";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
@@ -504,6 +506,7 @@ export class GeneratorPanel {
     const previewBox = side.createDiv({ cls: "duckmage-wfc-section" });
     previewBox.createEl("h4", { text: "Preview" });
     const canvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
+    const legendBox = previewBox.createDiv();
     const status = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
     const previewRow = previewBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     previewRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
@@ -779,6 +782,9 @@ export class GeneratorPanel {
           Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight, { shadow });
       };
       lastDraw(hoveredRoute);
+      renderPreviewLegend(legendBox, this.plugin,
+        this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? this.plugin.settings.terrainPalettes[0]?.terrains ?? [],
+        cells.values(), (i) => getIconUrl(this.plugin, i));
       updateShares(cells, grid, palette);
       updatePathRows(r.pathRoutes);
       // Short: size and time, plus a hoverable count if anything didn't fit.
