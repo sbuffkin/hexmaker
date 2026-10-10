@@ -1377,9 +1377,8 @@ export default class HexmakerPlugin extends Plugin {
     /** Optional generated terrain per hex, keyed "x_y". */
     terrainAt?: Map<string, string>,
     extra: {
-      /** Terrain shown on unpainted hexes. When set, hex notes are created
-       *  on use: only hexes that get a terrain other than the base get a
-       *  note now; the rest appear when clicked, painted, or linked. */
+      /** Terrain shown on unpainted hexes. Cells equal to it aren't
+       *  written to the map note. Hex notes are created on use either way. */
       baseTerrain?: string;
       parent?: { map: string; hex: string };
       /** Silence the "generated N notes" notice (caller reports instead). */

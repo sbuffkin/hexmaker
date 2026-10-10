@@ -8,6 +8,7 @@ import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
+import { OVERLAND_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
 import { isSpacePalette } from "../mapKinds";
@@ -16,9 +17,11 @@ import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
+import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
   BLANK_ID,
   defaultGeneratorFor,
+  describeKind,
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
@@ -34,6 +37,26 @@ export const SUBMAP_SIZE_PRESETS: SizePreset[] = [
   { label: "Medium", cols: 13, rows: 13 },
   { label: "Large", cols: 19, rows: 19 },
 ];
+
+/**
+ * Base terrain wording. With map notes a hex note is only ever created
+ * when a hex first gets content, whatever the base terrain; the base only
+ * decides what an unpainted hex shows (fresh-eyes r4: the old "None
+ * (create every hex note)" was outdated and alarming).
+ */
+export const BASE_TERRAIN_NONE_LABEL = "None (unpainted hexes stay blank)";
+export const BASE_TERRAIN_HELP =
+  "What hexes you haven't painted show: this terrain, or nothing with None. Painting a hex overrides it. Either way a hex only gets its own note when you first add something to it.";
+
+/** Why Overland's Sea starts where it does next to a neighbouring map. */
+export function neighbourSeaText(hint: NeighbourSea, anchor: string): string {
+  switch (hint.why) {
+    case "edge": return `Picked from ${anchor}: its sea reaches the shared edge, so the sea is on the ${hint.side}.`;
+    case "end": return `Picked from ${anchor}: its coast meets the shared edge at the ${hint.side} end, so the sea runs along the ${hint.side}.`;
+    case "middle": return `Picked from ${anchor}: its shared edge has water only in the middle, so lakes and inlets.`;
+    case "dry": return `Picked from ${anchor}: its shared edge has no water, so no sea by default.`;
+  }
+}
 
 export interface NewMapSetupResult {
   name: string;
@@ -72,6 +95,9 @@ export class NewMapSetupModal extends HexmakerModal {
   private shadow: Map<string, string> | undefined;
   /** Set once the user clicks a generator card: placement then stops re-picking one. */
   private pickedKind = false;
+  /** Overland's Sea was set from the neighbour's coast (not by the user):
+   *  re-derived when the placement changes, dropped when the user picks one. */
+  private seaFromNeighbour = false;
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -188,14 +214,28 @@ export class NewMapSetupModal extends HexmakerModal {
       presetBtns.push(b);
     }
     syncPresetBtns();
-    const onSize = () => {
-      this.cols = Math.max(1, Math.min(200, Number(colsInput.value) || 1));
-      this.rows = Math.max(1, Math.min(200, Number(rowsInput.value) || 1));
+    // The preview follows the size while typing (debounced); blur / Enter
+    // commits the clamped value at once.
+    let sizeTimer: number | undefined;
+    const onSize = (committed: boolean) => {
+      const cols = sizeFromInput(colsInput.value, { min: 1, max: 200, fallback: 1, committed });
+      const rows = sizeFromInput(rowsInput.value, { min: 1, max: 200, fallback: 1, committed });
+      if (cols === undefined && rows === undefined) return;
+      this.cols = cols ?? this.cols;
+      this.rows = rows ?? this.rows;
       syncPresetBtns();
       refresh();
     };
-    colsInput.addEventListener("change", onSize);
-    rowsInput.addEventListener("change", onSize);
+    for (const input of [colsInput, rowsInput]) {
+      input.addEventListener("input", () => {
+        window.clearTimeout(sizeTimer);
+        sizeTimer = window.setTimeout(() => onSize(false), LIVE_PREVIEW_DELAY_MS);
+      });
+      input.addEventListener("change", () => {
+        window.clearTimeout(sizeTimer);
+        onSize(true);
+      });
+    }
     this.rememberBox(sizeRow, "size");
 
     // ── Next to (new top-level maps): join a world of neighbouring regions.
@@ -211,6 +251,11 @@ export class NewMapSetupModal extends HexmakerModal {
       for (const s of ["east", "west", "north", "south"] as const) sideSel.createEl("option", { value: s, text: `${s} of it` });
       const note = nextRow.createDiv({ cls: "setting-item-description" });
       const onPlace = () => {
+        // A sea side read from the old neighbour no longer applies.
+        if (this.seaFromNeighbour) {
+          delete this.options.sea;
+          this.seaFromNeighbour = false;
+        }
         this.placement = undefined;
         this.context = undefined;
         this.shadow = undefined;
@@ -280,7 +325,7 @@ export class NewMapSetupModal extends HexmakerModal {
     this.rememberBox(baseRow, "base", "base terrain");
     baseRow.createDiv({
       cls: "setting-item-description",
-      text: "Shown on unpainted hexes. With a base terrain, hex notes are created as you use hexes instead of all up front.",
+      text: BASE_TERRAIN_HELP,
     });
 
     // ── Preview ──
@@ -348,7 +393,7 @@ export class NewMapSetupModal extends HexmakerModal {
           attr: { role: "radio", "aria-checked": on ? "true" : "false" },
         });
         card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-        card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+        card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains) });
         if (where.neighbour && k.id !== BLANK_ID) {
           card.createDiv({
             cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,
@@ -375,12 +420,31 @@ export class NewMapSetupModal extends HexmakerModal {
       // Options for the chosen generator.
       optsBox.empty();
       const kind = this.kind();
+      // Overland next to a map: the sea starts where the neighbour's coast
+      // says (not a random side that contradicts it), until the user picks.
+      const seaHint = kind?.id === OVERLAND_ID && this.placement
+        ? seaSideFromNeighbours(this.grid(), this.context?.edgeCells)
+        : undefined;
+      if (seaHint && this.options.sea === undefined) {
+        this.options.sea = seaHint.side;
+        this.seaFromNeighbour = true;
+      }
       for (const opt of kind?.options ?? []) {
         const r = this.row(optsBox, opt.label);
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
-        sel.addEventListener("change", () => { this.options[opt.key] = sel.value; refresh(); });
+        const hint = opt.key === "sea" && seaHint && this.seaFromNeighbour
+          ? r.createDiv({ cls: "setting-item-description duckmage-setup-sea-hint", text: neighbourSeaText(seaHint, anchor ?? "the neighbouring map") })
+          : undefined;
+        sel.addEventListener("change", () => {
+          this.options[opt.key] = sel.value;
+          if (opt.key === "sea") {
+            this.seaFromNeighbour = false;
+            hint?.remove();
+          }
+          refresh();
+        });
       }
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
     };
@@ -388,7 +452,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const renderBase = () => {
       const terrains = this.terrains(paletteSelect.value);
       baseSelect.empty();
-      baseSelect.createEl("option", { value: "", text: "None (create every hex note)" });
+      baseSelect.createEl("option", { value: "", text: BASE_TERRAIN_NONE_LABEL });
       for (const t of terrains) baseSelect.createEl("option", { value: t.name, text: t.name });
       const savedBase = this.saved?.baseTerrain;
       this.baseTerrain = savedBase !== undefined && (savedBase === "" || terrains.some((t) => t.name === savedBase))

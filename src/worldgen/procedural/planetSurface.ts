@@ -112,6 +112,65 @@ export function resolveSeaSide(option: string | undefined, seed: number): SeaSid
 }
 
 /**
+ * Overland's default Sea for a map placed next to existing regions, read
+ * from the neighbours' border hexes (context `edgeCells`, just outside the
+ * grid). Fresh-eyes r4: the random default could put the sea south when
+ * the neighbour's coast ran east.
+ *  - "edge":   the border across one seam is mostly water → the sea is on
+ *              that side, continuing the neighbour's sea.
+ *  - "end":    some water, gathered at one end of the seam → the
+ *              neighbour's coast meets the seam there; the sea runs along
+ *              that side (not toward the neighbour's land).
+ *  - "middle": some water in the middle of the seam (an inlet / lake) →
+ *              scattered water.
+ *  - "dry":    no water on any seam → none (landlocked).
+ * Undefined when there's no neighbour border to read.
+ */
+export interface NeighbourSea {
+  side: SeaSide;
+  why: "edge" | "end" | "middle" | "dry";
+  /** The seam (side of this map) the decision was read from. */
+  seam?: "north" | "east" | "south" | "west";
+}
+
+const WET = new Set(["water", "deep-water", "shallows"]);
+
+export function seaSideFromNeighbours(
+  grid: Pick<ProcGrid, "cols" | "rows" | "offset">,
+  edgeCells: Map<string, ContextTerrain> | undefined,
+): NeighbourSea | undefined {
+  if (!edgeCells?.size) return undefined;
+  const { offset: o, cols, rows } = grid;
+  type Seam = "north" | "east" | "south" | "west";
+  const seams = new Map<Seam, { n: number; wet: number[] }>();
+  for (const [k, c] of edgeCells) {
+    const [x, y] = k.split("_").map(Number);
+    const w = x < o.x, e = x > o.x + cols - 1, nn = y < o.y, s = y > o.y + rows - 1;
+    if (Number(w) + Number(e) + Number(nn) + Number(s) !== 1) continue; // corners: ambiguous
+    const seam: Seam = w ? "west" : e ? "east" : nn ? "north" : "south";
+    const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+    if (!type) continue;
+    const at = seams.get(seam) ?? { n: 0, wet: [] };
+    at.n++;
+    // Position along the seam, 0 at its west / north end .. 1 at the other.
+    if (WET.has(type)) at.wet.push(seam === "north" || seam === "south"
+      ? (x - o.x) / Math.max(1, cols - 1)
+      : (y - o.y) / Math.max(1, rows - 1));
+    seams.set(seam, at);
+  }
+  if (!seams.size) return undefined;
+  const ranked = [...seams].sort((a, b) => b[1].wet.length / b[1].n - a[1].wet.length / a[1].n);
+  const [seam, best] = ranked[0];
+  if (!best.wet.length) return { side: "none", why: "dry" };
+  if (best.wet.length / best.n >= 0.5) return { side: seam, why: "edge", seam };
+  const mean = best.wet.reduce((a, b) => a + b, 0) / best.wet.length;
+  if (mean > 0.35 && mean < 0.65) return { side: "scattered", why: "middle", seam };
+  const across = seam === "north" || seam === "south";
+  const side: SeaSide = mean <= 0.35 ? (across ? "west" : "north") : (across ? "east" : "south");
+  return { side, why: "end", seam };
+}
+
+/**
  * How far inland a point is, 0 at the sea edge .. 1 at the far edge
  * (u, v in 0..1, west→east and north→south). "around": 0 at every edge,
  * 1 in the middle.
@@ -357,6 +416,45 @@ function makeNoise(rand: () => number): (x: number, y: number) => number {
   };
 }
 
+/**
+ * Land elevation quantile where mountains start (1 − share of land that is
+ * mountain). Overland's Normal keeps mountains a minority feature, about
+ * 7% of the land (fresh-eyes r4: a "farmland and hills" barony came out
+ * with a mountain range at 13%); Rugged is the mountainous choice. A whole
+ * planet keeps its old Normal.
+ */
+export function mountainQuantile(relief: string, flavor: "planet" | "overland"): number {
+  if (relief === "flat") return 0.97;
+  if (relief === "rugged") return 0.72;
+  return flavor === "overland" ? 0.93 : 0.87;
+}
+
+/**
+ * Overland's generator card text for a palette: only the kinds of terrain
+ * this palette can actually give (the Limited palette has no coast terrain,
+ * so it doesn't promise one).
+ */
+export function overlandDescription(terrains: TerrainColor[]): string {
+  const r = planetRoles(terrains);
+  const tail = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.";
+  if (!r) return `A region from noise. ${tail}`;
+  const parts = [
+    r.sea && "sea",
+    r.beach && "coast",
+    r.plains && "plains",
+    r.forest && "forests",
+    r.swamp && "swamps",
+    r.hills && "hills",
+    r.mountain && "mountains",
+  ].filter((p): p is string => !!p);
+  const extras = [
+    (r.desert ?? r.badlands) && "deserts when arid",
+    r.snow && "snow when frozen",
+  ].filter((p): p is string => !!p);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts.join("");
+  return `A region from noise: ${list}${extras.length ? ` (${extras.join(", ")})` : ""}. ${tail}`;
+}
+
 /** Value at quantile q (0..1) of a list. */
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -526,7 +624,7 @@ export function planetSurface(
     lv = {
       sea: seaLevel,
       hill: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7),
-      mountain: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.97 : relief === "rugged" ? 0.72 : 0.87),
+      mountain: quantile(landElev.length ? landElev : [1], mountainQuantile(relief, flavor)),
       peak: quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97),
       // Overland: only the far offshore water is deep (no trench band along the edge).
       deep: quantile(seaElev.length ? seaElev : [0], overland ? 0.12 : 0.35),

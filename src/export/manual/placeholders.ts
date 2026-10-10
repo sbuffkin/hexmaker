@@ -23,7 +23,9 @@ const BUILT_IN_HINTS = [
   "- **Notes:** Trail condition, shortcuts, routes to key adjacent hexes.",
 ];
 
-const norm = (line: string) => line.replace(/\s+/g, " ").trim().toLowerCase();
+/** Ignores case, spacing and a wrapping *emphasis* (the built-in template italicises its prompts). */
+const norm = (line: string) =>
+  line.trim().replace(/^([*_]{1,2})(.+)\1$/, "$2").replace(/\s+/g, " ").trim().toLowerCase();
 
 /**
  * A line that is only a fill-in prompt: a parenthesised note such as

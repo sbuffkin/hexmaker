@@ -42,6 +42,7 @@ type ModalTab = "Maps" | "Properties" | "New map" | "Export";
 
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
+  private stopKeepInViewport?: () => void;
   private activeTab: ModalTab = "Maps";
   /** Set by "New region here" in Properties: prefills the New map tab's placement. */
   private newMapPlacement: { anchor: string; side: Side } | null = null;
@@ -58,6 +59,10 @@ export class MapModal extends HexmakerModal {
   onOpen(): void {
     this.titleEl.setText("Maps");
     this.makeDraggable();
+    // Never taller than the window: the tab content scrolls and the modal
+    // moves up as a tab grows (fresh-eyes r4: Export ran off the bottom).
+    this.modalEl.addClass("duckmage-map-modal");
+    this.stopKeepInViewport = this.keepInViewport();
     this.render();
   }
 
@@ -112,11 +117,9 @@ export class MapModal extends HexmakerModal {
 
   private renderMapsTab(el: HTMLElement): void {
     const list = el.createEl("ul", { cls: "duckmage-region-list" });
-    const canDelete = this.plugin.settings.maps.length > 1;
 
     for (const map of this.plugin.settings.maps) {
       const isActive = map.name === this.view.activeMapName;
-      const isConfirming = this.confirmingDelete === map.name;
 
       const li = list.createEl("li", {
         cls: "duckmage-region-item duckmage-map-list-item" + (isActive ? " is-active" : ""),
@@ -147,59 +150,28 @@ export class MapModal extends HexmakerModal {
         });
       });
 
-      if (isConfirming) {
-        li.addClass("duckmage-map-item-confirming");
-        li.createSpan({
-          cls: "duckmage-map-delete-warning",
-          text: `Delete "${map.name}"? This will trash all its hex notes.`,
-        });
-        const confirmBtn = li.createEl("button", {
-          text: "Delete",
-          cls: "mod-warning duckmage-map-confirm-btn",
-        });
-        confirmBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          void this.deleteMap(map.name);
-        });
-        const cancelBtn = li.createEl("button", {
-          text: "Cancel",
-          cls: "duckmage-map-cancel-btn",
-        });
-        cancelBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.confirmingDelete = null;
-          this.render();
-        });
-      } else {
-        const terrainEntry = map.terrainType
-          ? this.plugin.getMapPalette(map.name).find((t) => t.name === map.terrainType)
-          : undefined;
-        const swatch = li.createSpan({ cls: "duckmage-map-terrain-swatch" });
-        if (terrainEntry?.color) {
-          swatch.style.backgroundColor = terrainEntry.color;
-          swatch.addClass("duckmage-map-terrain-swatch--set");
-        }
-
-        const nameSpan = li.createSpan({ text: map.name, cls: "duckmage-map-list-name" });
-        nameSpan.addEventListener("click", () => {
-          this.view.switchMapFromModal(map.name);
-          this.close();
-        });
-        li.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
-        if (canDelete) {
-          const deleteBtn = li.createEl("button", {
-            text: "✕",
-            cls: "duckmage-map-delete-btn",
-          });
-          deleteBtn.setAttribute("aria-label", "Delete map");
-          deleteBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this.confirmingDelete = map.name;
-            this.render();
-          });
-        }
+      const terrainEntry = map.terrainType
+        ? this.plugin.getMapPalette(map.name).find((t) => t.name === map.terrainType)
+        : undefined;
+      const swatch = li.createSpan({ cls: "duckmage-map-terrain-swatch" });
+      if (terrainEntry?.color) {
+        swatch.style.backgroundColor = terrainEntry.color;
+        swatch.addClass("duckmage-map-terrain-swatch--set");
       }
+
+      const nameSpan = li.createSpan({ text: map.name, cls: "duckmage-map-list-name" });
+      nameSpan.addEventListener("click", () => {
+        this.view.switchMapFromModal(map.name);
+        this.close();
+      });
+      li.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
     }
+    // Deleting lives in Properties (with a confirm), away from the names
+    // you click to switch maps (fresh-eyes r4: a ✕ beside every name).
+    el.createEl("p", {
+      cls: "duckmage-map-origin-desc duckmage-map-list-hint",
+      text: "Click a name to open that map. Rename or delete the open map in its properties tab.",
+    });
   }
 
   // ── Properties tab ────────────────────────────────────────────────────────
@@ -352,6 +324,43 @@ export class MapModal extends HexmakerModal {
         this.view.enterBgCalibration();
       });
     }
+
+    if (currentMap) this.renderDeleteBlock(el, currentMap.name);
+  }
+
+  /**
+   * Delete the open map: at the bottom of Properties, behind a confirm, so
+   * it can't be hit by accident from the map list.
+   */
+  private renderDeleteBlock(el: HTMLElement, name: string): void {
+    el.createEl("h4", { text: "Delete map" });
+    if (this.plugin.settings.maps.length <= 1) {
+      el.createEl("p", { text: "This is the only map, so it can't be deleted.", cls: "duckmage-map-origin-desc" });
+      return;
+    }
+    const box = el.createDiv({ cls: "duckmage-map-delete-block" });
+    if (this.confirmingDelete !== name) {
+      box.createEl("p", {
+        text: `Moves "${name}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
+        cls: "duckmage-map-origin-desc",
+      });
+      box.createEl("button", { text: `Delete "${name}"…` }).addEventListener("click", () => {
+        this.confirmingDelete = name;
+        this.render();
+      });
+      return;
+    }
+    box.addClass("duckmage-map-item-confirming");
+    box.createSpan({
+      cls: "duckmage-map-delete-warning",
+      text: `Delete "${name}"? This will trash all its hex notes.`,
+    });
+    box.createEl("button", { text: "Delete", cls: "mod-warning duckmage-map-confirm-btn" })
+      .addEventListener("click", () => void this.deleteMap(name));
+    box.createEl("button", { text: "Cancel", cls: "duckmage-map-cancel-btn" }).addEventListener("click", () => {
+      this.confirmingDelete = null;
+      this.render();
+    });
   }
 
   /**
@@ -1051,6 +1060,7 @@ export class MapModal extends HexmakerModal {
   }
 
   onClose(): void {
+    this.stopKeepInViewport?.();
     this.contentEl.empty();
   }
 }

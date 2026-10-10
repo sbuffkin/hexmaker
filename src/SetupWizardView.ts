@@ -11,6 +11,7 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { pathColors } from "./worldgen/generators";
 import {
 	BLANK_ID,
+	describeKind,
 	firstMapGenerator,
 	generationKey,
 	kindsForPalette,
@@ -22,6 +23,8 @@ import {
 } from "./worldgen/registry";
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
+import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
+import { TERRAIN_TABLES_SUMMARY } from "./wizardText";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -450,18 +453,32 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			};
 			updateCount();
 
-			colsInput.addEventListener("change", () => {
-				ctx.mapCols = Math.max(2, Math.min(200, Number(colsInput.value) || 20));
+			// The preview follows the size while typing (debounced), not only
+			// once the field loses focus; a half-typed value waits. Blur / Enter
+			// commits (clamped) at once.
+			let sizeTimer: number | undefined;
+			const applySize = (committed: boolean) => {
+				const cols = sizeFromInput(colsInput.value, { min: 2, max: 200, fallback: 20, committed });
+				const rows = sizeFromInput(rowsInput.value, { min: 2, max: 200, fallback: 16, committed });
+				if (committed) { colsInput.value = String(cols); rowsInput.value = String(rows); }
+				const next = { cols: cols ?? ctx.mapCols, rows: rows ?? ctx.mapRows };
+				if (next.cols === ctx.mapCols && next.rows === ctx.mapRows) return;
+				ctx.mapCols = next.cols;
+				ctx.mapRows = next.rows;
 				updateCount();
 				refresh();
 				cb.onUpdate();
-			});
-			rowsInput.addEventListener("change", () => {
-				ctx.mapRows = Math.max(2, Math.min(200, Number(rowsInput.value) || 16));
-				updateCount();
-				refresh();
-				cb.onUpdate();
-			});
+			};
+			for (const input of [colsInput, rowsInput]) {
+				input.addEventListener("input", () => {
+					window.clearTimeout(sizeTimer);
+					sizeTimer = window.setTimeout(() => applySize(false), LIVE_PREVIEW_DELAY_MS);
+				});
+				input.addEventListener("change", () => {
+					window.clearTimeout(sizeTimer);
+					applySize(true);
+				});
+			}
 
 			// Hex orientation
 			const orientRow = container.createDiv({ cls: "duckmage-wizard-field" });
@@ -567,7 +584,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				for (const k of fitting) {
 					const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === ctx.generatorId ? " is-active" : ""}` });
 					card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-					card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+					card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains()) });
 					card.addEventListener("click", () => {
 						ctx.generatorId = k.id;
 						ctx.generatorOptions = {};
@@ -744,7 +761,7 @@ function makeDoneStep(): WizardStep {
 			summary.createEl("li", { text: `Map note: _${name}.md in the map folder holds the terrain and paths; a hex gets its own note when you first add something to it` });
 			summary.createEl("li", { text: `Hex orientation: ${ctx.hexOrientation === "flat" ? "Flat-top" : "Pointy-top"}` });
 			summary.createEl("li", { text: `Terrain palette: ${ctx.paletteName}` });
-			summary.createEl("li", { text: "Description and encounter tables for every terrain (auto-linked when you paint terrain)" });
+			summary.createEl("li", { text: TERRAIN_TABLES_SUMMARY });
 
 			container.createEl("p", {
 				text: "A few things to try first:",
@@ -757,7 +774,7 @@ function makeDoneStep(): WizardStep {
 					? "Repaint anything you like: open Terrain in the drawing tools, pick a type and click hexes."
 					: "Paint terrain — the terrain picker opens automatically when you hit \"Open hex map\". Pick a type and click hexes to paint.",
 				"Click any hex to open its editor: terrain, notes, towns, dungeons and more. Right-click a hex for its menu (open note, new submap, tokens).",
-				"Open the 🎲 tab to browse and roll your random tables.",
+				"Open the 🎲 tab to fill in your terrain tables (Edit) and roll on them.",
 				"The pencil button (top right of the map) opens the drawing tools: paint icons, draw roads or rivers, link factions.",
 			]) {
 				tips.createEl("li", { text: tip, cls: "duckmage-wizard-tip-item" });

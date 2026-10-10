@@ -6869,3 +6869,61 @@ button.duckmage-wfc-library-tab.is-active {
     stroke: var(--background-primary);
     stroke-width: 0.06;
 }
+
+/* ── Fresh-eyes r4 (setup, new map, maps modal) — fix/fresh-eyes-r4-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Maps modal: never taller than the window. The tab bar stays put, the
+   tab content scrolls, and the Export buttons stay pinned at the bottom
+   (it ran off-screen at a 900px window). MapModal also keeps the modal
+   on screen as a tab grows (HexmakerModal.keepInViewport). */
+.modal.duckmage-map-modal.duckmage-editor-modal-drag {
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.duckmage-map-modal > .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.duckmage-map-modal .duckmage-map-modal-tabs {
+    flex: none;
+}
+.duckmage-map-modal .duckmage-map-modal-tab-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.duckmage-map-modal .duckmage-export-tab-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: 0.2em;
+    background: var(--modal-background, var(--background-primary));
+}
+
+/* Maps list: a hint instead of a delete ✕ per name; delete is in Properties. */
+.duckmage-map-list-hint {
+    margin-top: 0.6em;
+}
+.duckmage-map-delete-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-map-delete-block > p {
+    flex: 1 1 100%;
+    margin: 0;
+}
+
+/* New map setup: where Overland's Sea default came from (the neighbour). */
+.duckmage-setup-control > .duckmage-setup-sea-hint {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}

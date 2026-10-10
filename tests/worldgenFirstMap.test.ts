@@ -5,16 +5,20 @@ import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/pr
 import {
 	OVERLAND_OPTIONS,
 	maxLakeSize,
+	mountainQuantile,
+	overlandDescription,
 	planetRoles,
 	sideSeaMask,
 	planetSurface,
 	resolveSeaSide,
+	seaSideFromNeighbours,
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
 import { defaultPaletteFor } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
+import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
 import { hexNeighbors } from "../packages/hex-wfc/src";
 import type { TerrainColor } from "../src/types";
@@ -375,5 +379,102 @@ describe("isUnusedPlaceholderMap (the shipped 'default' map)", () => {
 		expect(isUnusedPlaceholderMap(map, { ...unused, referenced: true })).toBe(false);
 		expect(isUnusedPlaceholderMap({ ...map, pathChains: [{}] }, unused)).toBe(false);
 		expect(isUnusedPlaceholderMap({ ...map, world: { id: "w", cx: 0, cy: 0 } }, unused)).toBe(false);
+	});
+});
+
+describe("Overland relief (fresh-eyes r4: Normal is not a mountain range)", () => {
+	const HIGH = new Set(["mountains", "peaks"]);
+	for (const [label, pal] of [["Limited", LIMITED_TERRAIN_PALETTE], ["Expanded", DEFAULT_TERRAIN_PALETTE]] as const) {
+		const types = typeOf(pal);
+		const high = (t: string | undefined) => !!t && HIGH.has(types.get(t) ?? "");
+		const hill = (t: string | undefined) => !!t && types.get(t) === "hills";
+		const all = () => true;
+		const run = (relief: string, water: string) => (s: number) => overland(s, { relief, water, sea: "west" }, pal);
+
+		it(`${label}: Normal keeps mountains to a minority (≤ 8% of the map) at every water level and seed`, () => {
+			for (const water of ["10", "30", "50"]) {
+				for (const seed of SEEDS) {
+					const cells = run("normal", water)(seed);
+					const n = [...cells.values()].filter(high).length;
+					expect(n / cells.size).toBeLessThanOrEqual(0.08);
+				}
+			}
+		});
+
+		it(`${label}: Normal has more hills than mountains; Rugged stays the mountainous choice; Flat the least`, () => {
+			const normal = share(run("normal", "30"), all, high);
+			expect(share(run("normal", "30"), all, hill)).toBeGreaterThan(normal * 1.5);
+			expect(share(run("rugged", "30"), all, high)).toBeGreaterThan(normal * 2);
+			expect(share(run("flat", "30"), all, high)).toBeLessThan(normal);
+			expect(normal).toBeGreaterThan(0.02); // still some mountains
+		});
+	}
+
+	it("a whole planet (Planet surface) keeps its old Normal", () => {
+		expect(mountainQuantile("normal", "planet")).toBe(0.87);
+		expect(mountainQuantile("normal", "overland")).toBeGreaterThan(0.9);
+		expect(mountainQuantile("rugged", "overland")).toBe(mountainQuantile("rugged", "planet"));
+	});
+});
+
+describe("Overland description follows the palette (fresh-eyes r4)", () => {
+	it("Limited has no coast terrain, so the card doesn't promise a coast", () => {
+		const text = overlandDescription(LIMITED_TERRAIN_PALETTE);
+		expect(text).not.toMatch(/coast/i);
+		expect(text).toMatch(/sea/);
+		expect(text).toMatch(/hills and mountains|hills, mountains/);
+	});
+
+	it("Expanded has a beach / coast terrain, so it says coast", () => {
+		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/coast/);
+	});
+
+	it("only names terrain kinds the palette has", () => {
+		const tiny: TerrainColor[] = [
+			{ name: "ocean", color: "#00f", type: "water" },
+			{ name: "grass", color: "#0f0", type: "grassland" },
+		];
+		expect(overlandDescription(tiny)).toMatch(/^A region from noise: sea and plains\. /);
+	});
+});
+
+describe("Overland Sea default next to a neighbour (fresh-eyes r4)", () => {
+	// The new map sits east of its neighbour: its west seam is x = 9.
+	const g = { cols: 10, rows: 8, offset: { x: 10, y: 0 } };
+	const seam = (wetAt: (y: number) => boolean) =>
+		new Map(Array.from({ length: 8 }, (_, y) => [`9_${y}`, wetAt(y) ? { terrain: "ocean", type: "water" } : { terrain: "grass", type: "grassland" }] as const));
+
+	it("a seam that's mostly water puts the sea on that side", () => {
+		expect(seaSideFromNeighbours(g, seam(() => true))).toEqual({ side: "west", why: "edge", seam: "west" });
+		expect(seaSideFromNeighbours(g, seam((y) => y !== 3))?.side).toBe("west");
+	});
+
+	it("a coast meeting one end of the seam runs the sea along that side, not toward the neighbour", () => {
+		expect(seaSideFromNeighbours(g, seam((y) => y >= 6))).toEqual({ side: "south", why: "end", seam: "west" });
+		expect(seaSideFromNeighbours(g, seam((y) => y <= 1))?.side).toBe("north");
+	});
+
+	it("no water on the seam → no sea; water only mid-seam → scattered", () => {
+		expect(seaSideFromNeighbours(g, seam(() => false))).toEqual({ side: "none", why: "dry" });
+		expect(seaSideFromNeighbours(g, seam((y) => y === 3 || y === 4))?.side).toBe("scattered");
+	});
+
+	it("north / south seams map their ends to west / east", () => {
+		// New map south of its neighbour: its north seam is y = -1.
+		const below = { cols: 10, rows: 8, offset: { x: 0, y: 0 } };
+		const cells = new Map(Array.from({ length: 10 }, (_, x) => [`${x}_-1`, x >= 8 ? { terrain: "ocean", type: "water" } : { terrain: "forest", type: "forest" }] as const));
+		expect(seaSideFromNeighbours(below, cells)).toEqual({ side: "east", why: "end", seam: "north" });
+	});
+
+	it("reads untyped terrain by name, skips corners, and is undefined with no neighbour", () => {
+		const cells = new Map([["9_2", { terrain: "ocean" }], ["9_-1", { terrain: "grass" }], ["9_3", { terrain: "ocean" }]]);
+		expect(seaSideFromNeighbours(g, cells)?.side).toBe("west");
+		expect(seaSideFromNeighbours(g, undefined)).toBeUndefined();
+		expect(seaSideFromNeighbours(g, new Map())).toBeUndefined();
+	});
+
+	it("the setup modal says where the default came from", () => {
+		expect(neighbourSeaText({ side: "east", why: "edge", seam: "east" }, "ashby-vale")).toMatch(/ashby-vale.*sea is on the east/);
+		expect(neighbourSeaText({ side: "none", why: "dry" }, "ashby-vale")).toMatch(/no water/);
 	});
 });
