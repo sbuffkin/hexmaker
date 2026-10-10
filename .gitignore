@@ -8,3 +8,4 @@ data.json
 .claude/worktrees/
 .claude/worktrees/*
 .integration-out/
+dev/overworld-preview.js
