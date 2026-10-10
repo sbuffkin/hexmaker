@@ -194,9 +194,10 @@ export class WorkflowWizardModal extends HexmakerModal {
       this.workflow.resultsFolder ?? "",
     );
 
+    // Run from a hex, "Add to this hex" is the main action; saving a note is secondary.
     this.saveNoteBtn = contentEl.createEl("button", {
       text: "Save as note",
-      cls: "mod-cta",
+      cls: this.hexTarget ? "" : "mod-cta",
     });
     this.saveStatusEl = contentEl.createDiv({ cls: "duckmage-wf-save-status" });
 

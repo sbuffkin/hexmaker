@@ -6169,7 +6169,7 @@ export class HexMapView extends ItemView {
     // a "Legend" chip (MK2).
     renderTerrainLegend(parent, entries, {
       badges,
-      size: legendSize(settings.terrainLegendSize),
+      size: legendSize(settings.terrainLegendSize, "s"),
       cls: "duckmage-terrain-legend-map",
       maxName: MAP_LEGEND_NAME_MAX,
       collapsed: settings.terrainLegendCollapsed ?? false,

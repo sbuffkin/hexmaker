@@ -19,8 +19,9 @@ export interface LegendEntry {
 }
 
 /** Settings value → a valid size (unset or junk = medium). */
-export function legendSize(v: unknown): LegendSize {
-  return v === "s" || v === "l" ? v : "m";
+/** The saved size, or `fallback` when unset (the map legend starts small; previews medium). */
+export function legendSize(v: unknown, fallback: LegendSize = "m"): LegendSize {
+  return v === "s" || v === "m" || v === "l" ? v : fallback;
 }
 
 /**

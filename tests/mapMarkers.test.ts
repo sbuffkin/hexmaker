@@ -138,6 +138,9 @@ describe("terrain legend", () => {
 		expect(legendSize(undefined)).toBe("m");
 		expect(legendSize("x")).toBe("m");
 		expect(legendSize("s")).toBe("s");
+		// The on-map legend starts small (owner MK2); previews keep medium.
+		expect(legendSize(undefined, "s")).toBe("s");
+		expect(legendSize("l", "s")).toBe("l");
 		expect(legendSize("l")).toBe("l");
 	});
 });
