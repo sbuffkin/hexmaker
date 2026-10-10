@@ -148,8 +148,10 @@ describe("the tool mode bar (round 4)", () => {
 		expect(view).toMatch(/this\.topBandEls = \[tableBtn, rtBtn, mapNavGroup, this\.undoBtn, this\.redoBtn\];\n\s+if \(this\.modeBarEl\) this\.topBandEls\.push\(this\.modeBarEl\);/);
 	});
 
-	it("pulses when a tool starts and keeps hexes out from under it", () => {
-		expect(view).toMatch(/bar\.addClass\("is-new"\);\n\s+if \(!wasShown\) this\.uncoverGrid\(\);/);
+	it("pulses when a tool starts, without moving the map (round 5)", () => {
+		// Round 4 also uncovered the grid here; round 5 found that slid the
+		// map under the cursor as a tool started (see safeArea.test.ts).
+		expect(view).toMatch(/window\.requestAnimationFrame\(\(\) => bar\.addClass\("is-new"\)\);/);
 		expect(r4).toMatch(/\.duckmage-mode-bar\.is-new \{[^}]*animation: duckmage-mode-bar-pulse/);
 	});
 
