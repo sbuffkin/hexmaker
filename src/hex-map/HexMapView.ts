@@ -5457,7 +5457,8 @@ export class HexMapView extends ItemView {
 
   /** Deep-clone a pathChains array for undo/redo snapshot. */
   private cloneChains(chains: PathChain[]): PathChain[] {
-    return chains.map((c) => ({ typeName: c.typeName, hexes: [...c.hexes] }));
+    // Keep unknown map-note columns (extra) through undo/redo snapshots.
+    return chains.map((c) => ({ ...c, hexes: [...c.hexes], ...(c.extra ? { extra: { ...c.extra } } : {}) }));
   }
 
   private pushPathUndo(
