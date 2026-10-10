@@ -14,6 +14,10 @@ import {
 	type HexData,
 	type MapNoteData,
 } from "../src/maps/mapNote";
+import type { MapPath } from "../src/types";
+
+/** An old every-hex path as the reader makes it: every hex an anchor, named after its type. */
+const dense = (typeName: string, hexes: string[], more: Partial<MapPath> = {}): MapPath => ({ name: typeName, typeName, branches: [{ anchors: hexes }], ...more });
 
 const sample = (): MapNoteData => ({
 	settings: {
@@ -37,8 +41,8 @@ const sample = (): MapNoteData => ({
 		["5_5", {}],
 	]),
 	paths: [
-		{ typeName: "Road", hexes: ["3_4", "4_4", "5_4"] },
-		{ typeName: "River | big", hexes: ["0_0", "0_1"] },
+		{ name: "King's Road", typeName: "Road", notes: "Paved | mostly", branches: [{ anchors: ["3_4", "5_4"] }, { anchors: ["4_4", "4_6"], label: "to the mill" }] },
+		{ name: "Big River", typeName: "River | big", branches: [{ anchors: ["0_0", "0_1"] }], extra: { Ford: "at 0, 1" } },
 	],
 });
 
@@ -171,8 +175,9 @@ describe("unknown table columns (forward compatibility)", () => {
 		expect(d.hexes.get("2_1")).toEqual({ terrain: "hills", locked: true });
 		// A hex whose only data is in an unknown column is still a row.
 		expect(d.hexes.get("3_1")).toEqual({ extra: { "Ruler": "reedholm" } });
-		expect(d.paths[0]).toEqual({ typeName: "Road", hexes: ["1_1", "2_1"], extra: { Name: "King's | Way" } });
-		expect(d.paths[1]).toEqual({ typeName: "River", hexes: ["0_0", "0_1"] });
+		expect(d.paths[0]).toEqual(dense("Road", ["1_1", "2_1"], { extra: { Name: "King's | Way" } }));
+		expect(d.paths[1]).toEqual(dense("River", ["0_0", "0_1"]));
+		expect(d.legacyPaths).toEqual(["Road", "River"]);
 	});
 
 	it("round-trips unknown columns through parse → update → parse, in their original order", () => {
@@ -196,12 +201,12 @@ describe("unknown table columns (forward compatibility)", () => {
 		// what MapStore.set does: spread the old hex, patch known fields
 		d.hexes.set("1_1", { ...d.hexes.get("1_1")!, terrain: "swamp", name: "Fen" });
 		d.hexes.set("3_1", { ...d.hexes.get("3_1")!, terrain: "grass" });
-		d.paths[0] = { ...d.paths[0], hexes: [...d.paths[0].hexes, "3_1"] };
+		d.paths[0] = { ...d.paths[0], branches: [{ anchors: [...d.paths[0].branches[0].anchors, "3_1"] }] };
 		const back = parseMapNote(updateMapNote(newer, "m", d))!;
 		expect(back.hexes.get("1_1")).toEqual({ name: "Fen", terrain: "swamp", region: "Basin", extra: { "Ruler": "fenmarch", Rumours: "saltmere, old-mine" } });
 		expect(back.hexes.get("3_1")).toEqual({ terrain: "grass", extra: { "Ruler": "reedholm" } });
 		expect(back.paths[0].extra).toEqual({ Name: "King's | Way" });
-		expect(back.paths[0].hexes).toEqual(["1_1", "2_1", "3_1"]);
+		expect(back.paths[0].branches[0].anchors).toEqual(["1_1", "2_1", "3_1"]);
 	});
 
 	it("a hex with only the base terrain plus an unknown value is still written", () => {
@@ -212,7 +217,8 @@ describe("unknown table columns (forward compatibility)", () => {
 	it("notes without unknown columns are written exactly as before", () => {
 		const note = buildMapNote("m", sample());
 		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |\n");
-		expect(note).toContain("| Type | Route | Hexes |\n");
+		expect(note).toContain("| Path | Type | Route | Notes | Ford |\n");
+		expect(note).toContain("| Path | Branch | Anchors |\n");
 	});
 
 	it("keeps the column order (and header spelling) the user gave both tables", () => {
@@ -230,10 +236,11 @@ describe("unknown table columns (forward compatibility)", () => {
 			"",
 		].join("\n");
 		const d = parseMapNote(reordered)!;
-		// Converted to format 4 once: the derived Summary and Route column are added, nothing else moves.
+		// Converted once: the derived Summary is added, the old Paths table becomes Paths + Path routes (its extra column kept).
 		const current = updateMapNote(reordered, "m", d);
 		expect(current).toContain(reordered.slice(reordered.indexOf("| Terrain | Rumours"), reordered.indexOf("\n\n## Paths")));
-		expect(current).toContain("| Name | Hexes | Type | Route |\n| --- | --- | --- | --- |\n| King's Way | 1_1 2_1 | Road | 1, 1 → 2, 1 (2 hexes) |");
+		expect(current).toContain("| Path | Type | Route | Notes | Name |\n| --- | --- | --- | --- | --- |\n| Road | Road | 1, 1 → 2, 1 |  | King's Way |");
+		expect(current).toContain("## Path routes\n\n| Path | Branch | Anchors |\n| --- | --- | --- |\n| Road | main | 1, 1 → 2, 1 |");
 		expect(updateMapNote(current, "m", parseMapNote(current)!)).toBe(current);
 		// an edit rewrites values in place, order unchanged (and the legend follows)
 		d.hexes.set("2_1", { ...d.hexes.get("2_1")!, terrain: "swamp" });
@@ -319,7 +326,7 @@ describe("map notes: plain keys instead of JSON (#42)", () => {
 		expect(fm).toContain("\nworld: wabc\nworld-x: 1\nworld-y: -1\n");
 		expect(fm).toContain('\nbackground-image: "[[maps/bg.png]]"\nbackground-x: 10\nbackground-y: -5\nbackground-scale: 1.5\nbackground-rotation: 0\nbackground-opacity: 0.8');
 		expect(fm).toContain("\nswatch-terrain: grass\n");
-		expect(fm).toMatch(/^hexmaker-map: 4$/m);
+		expect(fm).toMatch(/^hexmaker-map: 5$/m);
 		expect(fm).not.toMatch(/[{}]/);
 	});
 
@@ -485,7 +492,7 @@ describe("map notes: forgiving tables (#42)", () => {
 		expect(d.hexes.get("7_8")).toEqual({ terrain: "Swamp", locked: true });
 		expect(d.hexes.get("1_1")).toEqual({ terrain: "grass" });
 		expect(d.hexes.get("2_2")).toEqual({ terrain: "sand" });
-		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["3_4", "5_6", "7_8"] }]);
+		expect(d.paths).toEqual([dense("Road", ["3_4", "5_6", "7_8"])]);
 	});
 
 	it("the next write tidies the formatting without changing any value, and keeps the column order", () => {
@@ -496,7 +503,8 @@ describe("map notes: forgiving tables (#42)", () => {
 		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Region | Locations |");
 		expect(lines[head + 1]).toMatch(/^\| --- \|/);
 		expect(out).toContain("| forest | 3_4 | skull.png, trap.png | yes | keep me |  |  |  |  |");
-		expect(out).toContain("| Type | Route | Hexes |\n| --- | --- | --- |\n| Road | 3, 4 → 7, 8 (3 hexes) | 3_4 5_6 7_8 |");
+		expect(out).toContain("| Path | Type | Route | Notes |\n| --- | --- | --- | --- |\n| Road | Road | 3, 4 → 7, 8 |  |");
+		expect(out).toContain("| Road | main | 3, 4 → 5, 6 → 7, 8 |");
 		expect(out).toContain("Some prose under the paths.");
 		const back = parseMapNote(out)!;
 		expect([...back.hexes].sort()).toEqual([...d.hexes].sort());
@@ -506,7 +514,7 @@ describe("map notes: forgiving tables (#42)", () => {
 });
 
 describe("map notes: rows and settings that can't be read (#42)", () => {
-	const base = buildMapNote("m", { settings: { paletteName: "Default", gridSize: { cols: 5, rows: 5 } }, hexes: new Map([["1_1", { terrain: "grass" }]]), paths: [{ typeName: "Road", hexes: ["1_1", "2_1"] }] });
+	const base = buildMapNote("m", { settings: { paletteName: "Default", gridSize: { cols: 5, rows: 5 } }, hexes: new Map([["1_1", { terrain: "grass" }]]), paths: [dense("Road", ["1_1", "2_1"])] });
 	const withRows = (rows: string[]) => base.replace("| 1_1 |  | grass |  |  |  |  |  |", ["| 1_1 |  | grass |  |  |  |  |  |", ...rows].join("\n"));
 
 	it("keeps them as written at the end of the table and lists them in a warning callout", () => {
@@ -537,13 +545,13 @@ describe("map notes: rows and settings that can't be read (#42)", () => {
 	});
 
 	it("bad path rows are kept and reported the same way", () => {
-		const road = "| Road | 1, 1 → 2, 1 (2 hexes) | 1_1 2_1 |";
-		const note = base.replace(road, `${road}\n| River |  | 1_1 there |\n|  |  | 2_2 |`);
+		const road = "| Road | main | 1, 1 → 2, 1 |";
+		const note = base.replace(road, `${road}\n| River | main | 1, 1 → there |\n|  | fork | 2, 2 |`);
 		const d = parseMapNote(note)!;
-		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["1_1", "2_1"] }]);
-		expect(d.problems!.map((p) => p.where)).toEqual(["Paths", "Paths"]);
+		expect(d.paths).toEqual([dense("Road", ["1_1", "2_1"])]);
+		expect(d.problems!.map((p) => p.where)).toEqual(["Path routes", "Path routes"]);
 		const out = updateMapNote(note, "m", d);
-		expect(out).toContain("| River |  | 1_1 there |");
+		expect(out).toContain("| River | main | 1, 1 → there |");
 		expect(out).toContain("> [!warning] Hexmaker couldn't read 2 rows in this table");
 	});
 
@@ -641,7 +649,7 @@ describe("map notes: the derived Summary (format 4, #46 M1)", () => {
 			["2_0", { terrain: "Mountain Ridge", locations: ["saltmere", "old-mine"] }],
 			["3_0", { name: "Lone Oak" }],
 		]),
-		paths: [{ typeName: "Road", hexes: ["0_0", "1_0", "2_0"] }, { typeName: "Trail", hexes: ["-7_-8"] }],
+		paths: [dense("Road", ["0_0", "1_0", "2_0"]), dense("Trail", ["-7_-8"])],
 	});
 	const summaryOf = (note: string) => note.slice(note.indexOf("## Summary"), note.indexOf("## Hexes"));
 
@@ -702,30 +710,35 @@ describe("map notes: the derived Summary (format 4, #46 M1)", () => {
 	});
 });
 
-describe("map notes: derived Paths columns (format 4, #46 M2)", () => {
+describe("map notes: the derived Route column (format 5)", () => {
 	const ctx = { pathTypes: ["Road", "River"] };
 	const data = (paths: MapNoteData["paths"]): MapNoteData => ({ settings: { paletteName: "Default" }, hexes: new Map(), paths });
 
-	it("Route reads start → end and the length; Warning only while a type isn't in the palette", () => {
-		const note = buildMapNote("m", data([{ typeName: "Road", hexes: ["3_4", "4_4", "5_4"] }, { typeName: "Trail", hexes: ["-1_2"] }]), ctx);
-		expect(note).toContain("| Type | Route | Warning | Hexes |");
-		expect(note).toContain("| Road | 3, 4 → 5, 4 (3 hexes) |  | 3_4 4_4 5_4 |");
-		expect(note).toContain("| Trail | -1, 2 (1 hex) | ⚠ not a path type in the palette | -1_2 |");
-		const d = parseMapNote(note)!;
+	it("reads main-line ends and forks; with routed stats the hexes; warns about the type and straight segments", () => {
+		const road: MapPath = { name: "King's Road", typeName: "Road", branches: [{ anchors: ["0_8", "9_8", "13_8"] }, { anchors: ["9_8", "9_12"] }, { anchors: ["13_8", "15_5"] }] };
+		const trail: MapPath = { name: "Old Track", typeName: "Trail", branches: [{ anchors: ["-1_2"] }] };
+		const bare: MapPath = { name: "Plan", typeName: "Road", branches: [] };
+		const note = buildMapNote("m", data([road, trail, bare]), {
+			...ctx,
+			pathRoutes: { "king's road": { hexes: 31, fallbacks: [["9_8", "9_12"]] } },
+		});
+		expect(note).toContain("| King's Road | Road | 0, 8 → 13, 8 · 2 forks · 31 hexes · ⚠ no route from 9, 8 to 9, 12: drawn straight |  |");
+		expect(note).toContain("| Old Track | Trail | -1, 2 · ⚠ type not in palette |  |");
+		expect(note).toContain("| Plan | Road | no route yet |  |");
 		// derived cells are never read back (not kept as unknown columns)
-		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["3_4", "4_4", "5_4"] }, { typeName: "Trail", hexes: ["-1_2"] }]);
+		const d = parseMapNote(note)!;
+		expect(d.paths).toEqual([road, trail, bare]);
 		d.paths[1].typeName = "River";
-		const out = updateMapNote(note, "m", d, ctx);
-		expect(out).toContain("| Type | Route | Hexes |");
-		expect(out).not.toContain("| Warning");
-		expect(out).not.toContain("⚠");
+		expect(updateMapNote(note, "m", d, ctx)).not.toContain("⚠");
 	});
 
-	it("hand edits to Hexes regenerate Route; a hand-edited Route is replaced", () => {
-		const note = buildMapNote("m", data([{ typeName: "Road", hexes: ["3_4", "4_4"] }]), ctx);
-		const edited = note.replace("| Road | 3, 4 → 4, 4 (2 hexes) | 3_4 4_4 |", "| Road | the old road | 3_4 4_4 4_5 |");
-		const d = parseMapNote(edited)!;
-		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["3_4", "4_4", "4_5"] }]);
-		expect(updateMapNote(edited, "m", d, ctx)).toContain("| Road | 3, 4 → 4, 5 (3 hexes) | 3_4 4_4 4_5 |");
+	it("a hand-edited Route is replaced; format 4's Warning column is dropped", () => {
+		const note = buildMapNote("m", data([dense("Road", ["3_4", "4_4"])]), ctx);
+		const edited = note.replace("| Road | Road | 3, 4 → 4, 4 |  |", "| Road | Road | the old road |  |");
+		expect(updateMapNote(edited, "m", parseMapNote(edited)!, ctx)).toBe(note);
+		const withWarning = note.replace("| Path | Type | Route | Notes |\n| --- | --- | --- | --- |\n| Road | Road | 3, 4 → 4, 4 |  |", "| Path | Type | Route | Warning | Notes |\n| --- | --- | --- | --- | --- |\n| Road | Road | 3, 4 → 4, 4 | ⚠ old |  |");
+		expect(parseMapNote(withWarning)!.paths).toEqual([dense("Road", ["3_4", "4_4"])]);
+		expect(updateMapNote(withWarning, "m", parseMapNote(withWarning)!, ctx)).toBe(note);
 	});
 });
+

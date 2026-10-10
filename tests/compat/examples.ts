@@ -9,6 +9,7 @@ import { cellKey, learnModel, modelToMarkdown, pathRouteKey, solve, type HexWfcM
 import { VERSION_KEY } from "../../src/compat";
 import { serializeSave } from "../../src/worldgen/saveFormat";
 import { buildMapNote, type HexData } from "../../src/maps/mapNote";
+import { legacyChainsToPaths } from "../../src/paths/legacy";
 import type { MapData } from "../../src/types";
 
 const COLS = 14, ROWS = 10, SEED = 7;
@@ -134,6 +135,7 @@ export function exampleMapNote(version: string): string {
   return buildMapNote("compat-example", {
     settings,
     hexes,
-    paths: paths.map((p) => ({ typeName: p.type, hexes: p.hexes })),
+    // Every hex an anchor (what an older table converts to); the version snapshot pins this.
+    paths: legacyChainsToPaths(paths.map((p) => ({ typeName: p.type, hexes: p.hexes }))),
   });
 }

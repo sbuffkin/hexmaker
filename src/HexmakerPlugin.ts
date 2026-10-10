@@ -108,8 +108,8 @@ export default class HexmakerPlugin extends Plugin {
    * resolved until the map's terrain and palette are loaded.
    */
   paths = new PathsService({
-    // PHASE-3: becomes this.mapStore.isReady(map) && the palette check.
-    isMapReady: () => this.mapStore.isReady() && this.paletteStore.isReady(),
+    // The map's terrain is loaded (MapStore) and the palettes (PaletteStore).
+    isMapReady: (map) => this.mapStore.isReady(map) && this.paletteStore.isReady(),
     getMap: (name) => this.getMap(name),
     orientation: () => this.settings.hexOrientation,
     stagger: (map) => map.staggerOffset ?? this.settings.staggerOffset ?? "odd",
