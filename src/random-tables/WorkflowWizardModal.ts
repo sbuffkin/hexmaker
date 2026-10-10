@@ -40,8 +40,10 @@ interface PickEntry {
 }
 
 /** The note a table row links to, when the whole row is a link. */
-function rowLinkTarget(result: string, isLink?: boolean): string | undefined {
+function rowLinkTarget(result: string, isLink?: boolean, linkedFolder?: string): string | undefined {
   if (isLink) return result;
+  // A linked-folder table lists its notes by name.
+  if (linkedFolder) return `${normalizeFolder(linkedFolder)}/${result.replace(/\.md$/i, "")}`;
   return /^\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(result.trim())?.[1];
 }
 
@@ -113,7 +115,7 @@ export class WorkflowWizardModal extends HexmakerModal {
           die: dieLabel(table.dice),
         };
         return table.entries.map((e) => {
-          const target = rowLinkTarget(e.result, e.isLink);
+          const target = rowLinkTarget(e.result, e.isLink, table.linkedFolder);
           if (!target) return { label: e.result };
           return { label: target.split("/").pop() ?? target, link: this.linkTextFor(target) };
         });
@@ -413,7 +415,7 @@ export class WorkflowWizardModal extends HexmakerModal {
     const entry = outcome.entry;
 
     // A linked row keeps its link (shown by name in the wizard).
-    const target = rowLinkTarget(entry.result, entry.isLink);
+    const target = rowLinkTarget(entry.result, entry.isLink, table.linkedFolder);
     this.rolls[stepIdx][rollIdx] = target ? (target.split("/").pop() ?? target) : entry.result;
     this.slots[stepIdx][rollIdx] = {
       link: target ? this.linkTextFor(target) : undefined,
