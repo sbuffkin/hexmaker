@@ -68,6 +68,16 @@ export function toAxial(x: number, y: number, orientation: Orientation, stagger:
   return [x - shift, y];
 }
 
+/** Axial (q, r) → offset coords; the inverse of toAxial. */
+export function fromAxial(q: number, r: number, orientation: Orientation, stagger: Stagger = "odd"): [number, number] {
+  if (orientation === "flat") {
+    const shift = stagger === "odd" ? (q - (q & 1)) / 2 : (q + (q & 1)) / 2;
+    return [q, r + shift];
+  }
+  const shift = stagger === "odd" ? (r - (r & 1)) / 2 : (r + (r & 1)) / 2;
+  return [q + shift, r];
+}
+
 /** Number of steps between two hexes. */
 export function hexDistance(
   a: [number, number],

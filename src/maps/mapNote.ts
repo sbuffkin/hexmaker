@@ -36,6 +36,12 @@ export interface HexData {
   region?: string;
   submap?: string;
   locked?: boolean;
+  /**
+   * Cells of Hexes-table columns this build doesn't know (header → value),
+   * in the table's column order. Kept opaque and written back unchanged, so
+   * an older build rewriting the note never drops a newer build's column.
+   */
+  extra?: Record<string, string>;
 }
 
 /** Settings stored in a map note: MapData minus its name, paths and the
@@ -196,6 +202,8 @@ function parseFrontmatter(body: string): Partial<MapSettings> {
 
 const HEX_HEADERS = ["Hex", "Name", "Terrain", "Icon", "GM icons", "Region", "Submap", "Locked"];
 const PATH_HEADERS = ["Type", "Hexes"];
+const KNOWN_HEX_COLS = new Set(HEX_HEADERS.map((h) => h.toLowerCase()));
+const KNOWN_PATH_COLS = new Set(PATH_HEADERS.map((h) => h.toLowerCase()));
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 function splitRow(line: string): string[] {
@@ -216,16 +224,46 @@ function splitRow(line: string): string[] {
 const esc = (v: string | undefined) => (v ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 
 /** First table whose header has all of `need` (case-insensitive). */
-function findTable(lines: string[], need: string[]): { start: number; end: number; cols: string[] } | null {
+function findTable(lines: string[], need: string[]): { start: number; end: number; cols: string[]; headers: string[] } | null {
   for (let i = 0; i < lines.length - 1; i++) {
     if (!lines[i].trim().startsWith("|") || !SEPARATOR_ROW.test(lines[i + 1])) continue;
-    const cols = splitRow(lines[i]).map((c) => c.toLowerCase());
+    const headers = splitRow(lines[i]);
+    const cols = headers.map((c) => c.toLowerCase());
     if (!need.every((n) => cols.includes(n))) continue;
     let end = i + 2;
     while (end < lines.length && lines[end].trim().startsWith("|")) end++;
-    return { start: i, end, cols };
+    return { start: i, end, cols, headers };
   }
   return null;
+}
+
+/** [index, header] of the columns not in `known` (first of any repeated name). */
+function unknownColumns(t: { cols: string[]; headers: string[] }, known: Set<string>): [number, string][] {
+  const seen = new Set<string>();
+  const out: [number, string][] = [];
+  t.cols.forEach((c, i) => {
+    if (!c || known.has(c) || seen.has(c)) return;
+    seen.add(c);
+    out.push([i, t.headers[i]]);
+  });
+  return out;
+}
+
+/** A row's non-empty cells in unknown columns, or undefined when it has none. */
+function readExtra(cells: string[], unknown: [number, string][]): Record<string, string> | undefined {
+  let out: Record<string, string> | undefined;
+  for (const [i, header] of unknown) {
+    const v = cells[i];
+    if (v) (out ??= {})[header] = v;
+  }
+  return out;
+}
+
+/** Unknown column headers across rows, in first-seen order. */
+function extraHeaders(rows: Iterable<{ extra?: Record<string, string> }>): string[] {
+  const seen = new Set<string>();
+  for (const r of rows) for (const k of Object.keys(r.extra ?? {})) seen.add(k);
+  return [...seen];
 }
 
 /** Sort "x_y" keys by row then column, like reading a map. */
@@ -237,7 +275,8 @@ export function compareHexKeys(a: string, b: string): number {
 
 /** Anything besides terrain set on a hex. */
 function hasNonTerrainData(h: HexData): boolean {
-  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.submap || h.locked);
+  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.submap || h.locked
+    || (h.extra && Object.values(h.extra).some(Boolean)));
 }
 
 function isEmptyHex(h: HexData): boolean {
@@ -255,17 +294,76 @@ export function hexRowsToWrite(hexes: Map<string, HexData>, baseTerrain?: string
     .sort(([a], [b]) => compareHexKeys(a, b));
 }
 
-function hexTable(hexes: Map<string, HexData>, baseTerrain?: string): string {
-  const lines = [`| ${HEX_HEADERS.join(" | ")} |`, `| ${HEX_HEADERS.map(() => "---").join(" | ")} |`];
-  for (const [k, h] of hexRowsToWrite(hexes, baseTerrain)) {
-    lines.push(`| ${[k, h.name, h.terrain, h.icon, h.gmIcons?.join(", "), h.region, h.submap, h.locked ? "yes" : ""].map(esc).join(" | ")} |`);
+function tableHead(headers: string[]): string[] {
+  return [`| ${headers.map(esc).join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`];
+}
+
+/**
+ * Headers to write, in order: the existing table's columns as the user
+ * arranged and spelled them (repeats dropped), then any known column it
+ * lacks (canonical order), then unknown columns that only the data has.
+ */
+function columnOrder(known: string[], existing: string[] | undefined, extras: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (h: string) => {
+    const k = h.toLowerCase();
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(h);
+  };
+  for (const h of existing ?? []) add(h);
+  for (const h of known) add(h);
+  for (const h of extras) add(h);
+  return out;
+}
+
+/** An unknown column's value, matching its header case-insensitively. */
+function extraValue(extra: Record<string, string> | undefined, header: string): string | undefined {
+  if (!extra) return undefined;
+  if (header in extra) return extra[header];
+  const k = header.toLowerCase();
+  for (const [h, v] of Object.entries(extra)) if (h.toLowerCase() === k) return v;
+  return undefined;
+}
+
+const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = {
+  hex: (k) => k,
+  name: (_k, h) => h.name,
+  terrain: (_k, h) => h.terrain,
+  icon: (_k, h) => h.icon,
+  "gm icons": (_k, h) => h.gmIcons?.join(", "),
+  region: (_k, h) => h.region,
+  submap: (_k, h) => h.submap,
+  locked: (_k, h) => (h.locked ? "yes" : ""),
+};
+
+function hexTable(hexes: Map<string, HexData>, baseTerrain?: string, existing?: string[]): string {
+  const rows = hexRowsToWrite(hexes, baseTerrain);
+  const headers = columnOrder(HEX_HEADERS, existing, extraHeaders(rows.map(([, h]) => h)));
+  const lines = tableHead(headers);
+  for (const [k, h] of rows) {
+    const cells = headers.map((c) => {
+      const known = HEX_CELL[c.toLowerCase()];
+      return known ? known(k, h) : extraValue(h.extra, c);
+    });
+    lines.push(`| ${cells.map(esc).join(" | ")} |`);
   }
   return lines.join("\n");
 }
 
-function pathTable(paths: PathChain[]): string {
-  const lines = [`| ${PATH_HEADERS.join(" | ")} |`, `| ${PATH_HEADERS.map(() => "---").join(" | ")} |`];
-  for (const p of paths) lines.push(`| ${esc(p.typeName)} | ${p.hexes.join(" ")} |`);
+function pathTable(paths: PathChain[], existing?: string[]): string {
+  const headers = columnOrder(PATH_HEADERS, existing, extraHeaders(paths));
+  const lines = tableHead(headers);
+  for (const p of paths) {
+    const cells = headers.map((c) => {
+      const k = c.toLowerCase();
+      if (k === "type") return esc(p.typeName);
+      if (k === "hexes") return p.hexes.join(" ");
+      return esc(extraValue(p.extra, c));
+    });
+    lines.push(`| ${cells.join(" | ")} |`);
+  }
   return lines.join("\n");
 }
 
@@ -275,6 +373,7 @@ function parseHexTable(lines: string[]): Map<string, HexData> {
   if (!t) return out;
   const col = (name: string) => t.cols.indexOf(name);
   const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), submap: col("submap"), locked: col("locked") };
+  const unknown = unknownColumns(t, KNOWN_HEX_COLS);
   for (let i = t.start + 2; i < t.end; i++) {
     const c = splitRow(lines[i]);
     const key = c[ci.hex];
@@ -290,6 +389,8 @@ function parseHexTable(lines: string[]): Map<string, HexData> {
     if (get(ci.region)) h.region = get(ci.region);
     if (get(ci.submap)) h.submap = get(ci.submap);
     if (/^(yes|true|x|✓)$/i.test(get(ci.locked) ?? "")) h.locked = true;
+    const extra = readExtra(c, unknown);
+    if (extra) h.extra = extra;
     out.set(key, h);
   }
   return out;
@@ -299,11 +400,16 @@ function parsePathTable(lines: string[]): PathChain[] {
   const t = findTable(lines, ["type", "hexes"]);
   if (!t) return [];
   const ti = t.cols.indexOf("type"), hi = t.cols.indexOf("hexes");
+  const unknown = unknownColumns(t, KNOWN_PATH_COLS);
   const out: PathChain[] = [];
   for (let i = t.start + 2; i < t.end; i++) {
     const c = splitRow(lines[i]);
     const hexes = (c[hi] ?? "").split(/[\s,]+/).filter((k) => /^-?\d+_-?\d+$/.test(k));
-    if (c[ti] && hexes.length) out.push({ typeName: c[ti], hexes });
+    if (!c[ti] || !hexes.length) continue;
+    const p: PathChain = { typeName: c[ti], hexes };
+    const extra = readExtra(c, unknown);
+    if (extra) p.extra = extra;
+    out.push(p);
   }
   return out;
 }
@@ -353,13 +459,14 @@ export function updateMapNote(content: string, name: string, data: MapNoteData):
     return !m || !OWNED.has(m[1]);
   });
   let lines = text.slice(fm[0].length).split("\n");
-  const replace = (need: string[], table: string, heading: string) => {
+  // Tables are rewritten in the column order the user gave them.
+  const replace = (need: string[], table: (existing?: string[]) => string, heading: string) => {
     const t = findTable(lines, need);
-    if (t) lines = [...lines.slice(0, t.start), ...table.split("\n"), ...lines.slice(t.end)];
-    else lines = [...lines, "", heading, "", ...table.split("\n")];
+    if (t) lines = [...lines.slice(0, t.start), ...table(t.headers).split("\n"), ...lines.slice(t.end)];
+    else lines = [...lines, "", heading, "", ...table().split("\n")];
   };
-  replace(["hex", "terrain"], hexTable(data.hexes, data.settings.baseTerrain), "## Hexes");
-  replace(["type", "hexes"], pathTable(data.paths), "## Paths");
+  replace(["hex", "terrain"], (ex) => hexTable(data.hexes, data.settings.baseTerrain, ex), "## Hexes");
+  replace(["type", "hexes"], (ex) => pathTable(data.paths, ex), "## Paths");
   return ["---", ...frontmatterLines(data.settings), ...userFm.filter((l) => l.trim()), "---", ...lines].join("\n");
 }
 
@@ -368,7 +475,7 @@ export function mapNoteKey(data: MapNoteData): string {
   const s = data.settings as Record<string, unknown>;
   const settings = Object.keys(s).filter((k) => s[k] !== undefined && !SKIP_FIELDS.has(k) || k === "gridSize" || k === "gridOffset").sort().map((k) => [k, s[k]]);
   const hexes = hexRowsToWrite(data.hexes, data.settings.baseTerrain);
-  return JSON.stringify([settings, hexes, data.paths.map((p) => [p.typeName, p.hexes])]);
+  return JSON.stringify([settings, hexes, data.paths.map((p) => (p.extra ? [p.typeName, p.hexes, p.extra] : [p.typeName, p.hexes]))]);
 }
 
 /** Hex-note frontmatter keys that hold map data (they live in the map note). */

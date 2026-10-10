@@ -3,6 +3,7 @@ export {
   hexCenter,
   hexDistance,
   toAxial,
+  fromAxial,
   directionRing,
   cellKey,
   parseCellKey,

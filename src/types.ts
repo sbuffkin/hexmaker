@@ -34,6 +34,8 @@ export interface PathType {
 export interface PathChain {
 	typeName: string;         // references PathType.name
 	hexes: string[];          // "x_y" keys
+	/** Paths-table columns this build doesn't know (header → value), kept and written back as-is. */
+	extra?: Record<string, string>;
 }
 
 /**
