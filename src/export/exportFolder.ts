@@ -6,6 +6,7 @@ import { TFile, type App, type WorkspaceLeaf } from "obsidian";
 import { leafShowingPath } from "../openNote";
 import { normalizeFolder } from "../utils";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { localIsoDateTime, withFrontmatterEntries, yamlLink } from "../provenance";
 
 /**
  * Resolve the configured export folder, defaulting to `{worldFolder}/exports`
@@ -44,6 +45,23 @@ async function ensureFolder(app: App, path: string): Promise<void> {
  */
 export function exportedMessage(path: string, replaced: boolean): string {
   return replaced ? `Replaced ${path}` : `Exported to ${path}`;
+}
+
+/** What an exported note is: the `hexmaker-export` value. */
+export type ExportKind = "note" | "hex" | "table" | "workflow";
+
+/**
+ * An exported markdown note with where it came from in its frontmatter
+ * (X1): `exported-from` links the source note, `exported` is when, and
+ * `hexmaker-export` says what kind of export it is, so the copy can't be
+ * mistaken for the note it was made from.
+ */
+export function withExportProvenance(md: string, sourcePath: string, kind: ExportKind, when: Date = new Date()): string {
+  return withFrontmatterEntries(md, [
+    ["exported-from", yamlLink(sourcePath)],
+    ["exported", localIsoDateTime(when)],
+    ["hexmaker-export", kind],
+  ]);
 }
 
 /**
