@@ -168,6 +168,19 @@ function frontmatterOf(content: string): { body: string; length: number } | null
   return m ? { body: m[1], length: m[0].length } : null;
 }
 
+/** The die named by `dice:` in the frontmatter (0 when absent or unreadable). */
+export function frontmatterDie(content: string): number {
+  const fm = frontmatterOf(content);
+  const m = fm ? /^dice:[ \t]*(.*?)[ \t]*$/m.exec(fm.body) : null;
+  return m ? parseDie(m[1]) : 0;
+}
+
+/** The die named by the roll column's header (0 when there's no such column or it names none). */
+export function rangeHeaderDie(block: TableBlock | null): number {
+  if (!block || block.cols.range < 0) return 0;
+  return parseDie(headerKey(block.header[block.cols.range] ?? "").replace(/^#$/, ""));
+}
+
 // ── Locating the roll table ─────────────────────────────────────────────────
 
 interface TableRun {
@@ -766,6 +779,25 @@ export interface TableWrite {
   dropPlaceholders?: boolean;
 }
 
+/**
+ * The text to write in each row's range cell. "keep": stored ranges as
+ * typed, blank ones filled from the weights; "regenerate": all from the
+ * weights. Rows that don't fit the die stay blank (shown as "—"), so the
+ * table keeps rolling by weight until the die is bigger.
+ */
+export function rangeCellTexts(dice: number, entries: RandomTableEntry[], mode: "keep" | "regenerate"): string[] {
+  const faces = dieFaces(dice).length;
+  if (mode === "regenerate") {
+    const fits = entries.filter((e) => e.weight > 0).length <= faces;
+    return fits ? getDieRanges({ dice, entries }) : entries.map((e) => (e.weight > 0 ? "" : "—"));
+  }
+  const resolved = resolveTable({ dice, entries });
+  const overflow = resolved.issues.some((i) => i.code === "too-many-rows");
+  return entries.map((e, i) =>
+    e.range !== undefined && e.range.trim() ? e.range.trim() : overflow && e.weight > 0 ? "" : resolved.labels[i],
+  );
+}
+
 function escapeCell(s: string): string {
   return s.replace(/\\?\|/g, "\\|");
 }
@@ -817,22 +849,7 @@ export function writeRollTable(content: string, write: TableWrite): string {
   const linkCells = write.linkCells ?? false;
 
   // Range text per row (null = leave range cells alone).
-  let labels: string[] | null = null;
-  if (write.ranges !== "untouched" && dice > 0) {
-    const faces = dieFaces(dice).length;
-    if (write.ranges === "regenerate") {
-      const fits = entries.filter((e) => e.weight > 0).length <= faces;
-      // Rows that don't fit stay blank in the note (shown as "—"); the
-      // table keeps rolling by weight until the die is bigger.
-      labels = fits ? getDieRanges({ dice, entries }) : entries.map((e) => (e.weight > 0 ? "" : "—"));
-    } else {
-      const resolved = resolveTable({ dice, entries });
-      const overflow = resolved.issues.some((i) => i.code === "too-many-rows");
-      labels = entries.map((e, i) =>
-        e.range !== undefined && e.range.trim() ? e.range.trim() : overflow && e.weight > 0 ? "" : resolved.labels[i],
-      );
-    }
-  }
+  const labels = write.ranges !== "untouched" && dice > 0 ? rangeCellTexts(dice, entries, write.ranges) : null;
 
   if (!block) {
     const eol = content.includes("\r\n") ? "\r\n" : "\n";
@@ -870,6 +887,9 @@ export function writeRollTable(content: string, write: TableWrite): string {
   let header = block.lines[0];
   if (labels && cols.range >= 0 && headerKey(block.header[cols.range] ?? "") !== dieLabel(dice)) {
     header = setCells(header, new Map([[cols.range, dieLabel(dice)]]));
+  } else if (dice <= 0 && write.ranges !== "untouched" && cols.range >= 0 && parseDie(headerKey(block.header[cols.range] ?? "")) > 0) {
+    // No die any more: the column stays (nothing typed is lost) but stops naming one.
+    header = setCells(header, new Map([[cols.range, "Roll"]]));
   }
   out.push(widen(header, dieLabel(dice), "Weight"));
   if (block.separator >= 0) {
@@ -943,7 +963,7 @@ export function rangesFollowWeights(table: RandomTable): boolean {
 
 /** How automatic edits (linked-folder sync) write ranges. */
 export function autoRangeMode(table: RandomTable): TableWrite["ranges"] {
-  return rangesFollowWeights(table) ? "untouched" : "untouched";
+  return rangesFollowWeights(table) ? "regenerate" : "keep";
 }
 
 /**

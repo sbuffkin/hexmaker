@@ -5,7 +5,7 @@ import {
   formatLinkedNotesAppendix,
 } from "../src/export/exporters/randomTable";
 import { stripFrontmatter } from "../src/export/mdSerializer";
-import type { RandomTable } from "../src/random-tables/randomTable";
+import { parseRandomTable, type RandomTable } from "../src/random-tables/randomTable";
 
 const makeTable = (overrides: Partial<RandomTable> = {}): RandomTable => ({
   dice: 0,
@@ -57,7 +57,7 @@ describe("formatRandomTableMarkdown", () => {
     expect(md).toMatch(/\| # \| Result \|/);
   });
 
-  it("uses 'Roll' header column with die ranges when dice > 0", () => {
+  it("uses the die as the header of the range column when dice > 0, and keeps weights", () => {
     const md = formatRandomTableMarkdown(
       "T",
       makeTable({
@@ -68,13 +68,25 @@ describe("formatRandomTableMarkdown", () => {
         ],
       }),
     );
-    expect(md).toMatch(/\| Roll \| Result \| Weight \|/);
+    expect(md).toMatch(/\| d10 \| Result \| Weight \|/);
     // 10 faces, 4:6 split → 1–4 and 5–10
     expect(md).toMatch(/\| 1–4 \| A \| 4 \|/);
     expect(md).toMatch(/\| 5–10 \| B \| 6 \|/);
   });
 
-  it("omits the Weight column when all weights are 1", () => {
+  it("round-trips: the export reads back as the same table", () => {
+    const table = parseRandomTable(
+      "---\ndice: 20\n---\n| d20 | Result | Weight |\n|---|---|---|\n| 1–16 | crabmen | 4 |\n| 17–20 | [[Mage Tower]] | 1 |\n| — | kraken | 0 |\n",
+    );
+    const back = parseRandomTable(formatRandomTableMarkdown("Beach", table));
+    expect(back.dice).toBe(20);
+    expect(back.entries).toEqual(table.entries);
+    // A hand-typed range that disagrees with its weight survives too.
+    const typed = parseRandomTable("---\ndice: 6\n---\n| d6 | Result | Weight |\n|---|---|---|\n| 1 | a | 5 |\n| 2–6 | b | 1 |\n");
+    expect(parseRandomTable(formatRandomTableMarkdown("T", typed)).entries).toEqual(typed.entries);
+  });
+
+  it("omits the Weight column when all weights are 1 (no die)", () => {
     const md = formatRandomTableMarkdown(
       "T",
       makeTable({

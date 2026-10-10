@@ -142,8 +142,21 @@ Open via **Command palette → "Hexmap World Creator: Open random tables"** or t
 A two-panel view for managing and rolling on random tables.
 
 - **Left panel** — shows all `.md` files in the configured Tables folder as a collapsible folder tree. Click a folder header to expand or collapse it. Click a table to load it. The filter input at the top narrows results and temporarily expands all folders. **+ New** creates a file from the default template.
-- **Right panel** — shows the table's entries with odds (percentage or die range). **Roll** button highlights the winning row and shows the result. The result is editable before use. Roll history shows the last 5 results.
-- **Change die** dropdown — updates the `dice:` frontmatter and recalculates die ranges.
+- **Right panel** — shows the table's entries with their roll ranges and odds. **Roll** rolls the die, highlights the row and shows the face (e.g. `d20 → 14`) and the result. The result is editable before use. Roll history shows the last 5 results.
+- **Change die** dropdown — updates the `dice:` frontmatter and redoes the roll column for the new die.
+- **Problems** — if the ranges and weights disagree, or a range can't be read, a banner says so, with one-click fixes (**Keep ranges → set weights**, **Keep weights → redo ranges**).
+
+Table notes are meant to be rolled by hand, too. Each row shows its roll range for the table's die:
+
+```
+| d20   | Result  | Weight |
+|-------|---------|--------|
+| 1–16  | crabmen | 4 |
+| 17–20 | mage    | 1 |
+| —     | kraken  | 0 |
+```
+
+What you see in the roll column is what you get: the plugin rolls the same ranges. A range you type by hand is never overwritten; a blank range cell is filled in from the weights. Weight 0 (`—`) is never rolled. d100 accepts `01–05` and `00`; d66 is supported (`dice: d66`). Columns are found by name (Range/Roll/dN, Result/Entry, Weight/W), and extra columns and text around the table are kept. Older `| Result | Weight |` tables still work; **Add roll ranges to tables** upgrades them (after making a backup), and **Check tables** writes a report of anything that couldn't be read to `_table-check.md` in the tables folder.
 
 ### Workflows view
 Open via the Workflows tab in the Random Tables panel.
@@ -266,6 +279,8 @@ Every command, as it appears in the command palette:
 | **Hexmap World Creator: Export current note to Markdown** | Exports the open note as Markdown. |
 | **Hexmap World Creator: Export current hex (structured PDF / Markdown)** | Exports the open hex note with its sections. |
 | **Hexmap World Creator: Export current workflow with rolled samples** | Exports the open workflow with example rolls. |
+| **Hexmap World Creator: Add roll ranges to tables** | Adds a roll column with die ranges (e.g. `1–6`) to older tables, after a backup. Asks first. |
+| **Hexmap World Creator: Check tables** | Writes `_table-check.md` listing tables whose ranges, weights or columns couldn't be read cleanly. |
 
 ---
 

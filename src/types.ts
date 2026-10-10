@@ -235,6 +235,8 @@ export interface HexmakerPluginSettings {
 	advancedFeatures: string[];
 	/** Advanced hints the user closed, by spot id. */
 	dismissedHints: string[];
+	/** The one-time "Add roll ranges to tables?" offer: answered ("done") or turned off ("never"). Unset = not asked yet. */
+	tableRangesPrompt?: "done" | "never";
 	/** When the plugin first ran (ISO date), for the "ready for more?" check-in. */
 	installedAt?: string;
 	/** Last time the check-in was shown (ISO date). */

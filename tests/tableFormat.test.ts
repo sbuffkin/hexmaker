@@ -414,19 +414,25 @@ describe("withRollerBlock", () => {
 describe("syncLinkedRows", () => {
   const linked = '---\ndice: 6\nlinkedFolder: "[[world/towns]]"\n---\n\nTowns.\n\n| Result | Weight | Notes |\n|---|---|---|\n| [[Amber]] | 3 | port |\n| [[Briar]] | 1 | |\n\nAfter.\n';
 
-  it("adds rows for new notes and keeps rows whose note is missing", () => {
+  it("adds rows for new notes and keeps rows whose note is missing; the roll column follows", () => {
     const out = syncLinkedRows(linked, ["Amber", "Cove"]);
-    expect(out).toContain("| [[Amber]] | 3 | port |\n| [[Briar]] | 1 | |\n| [[Cove]] | 1 |  |\n\nAfter.\n");
+    expect(out).toContain("Towns.\n\n| d6 | Result | Weight | Notes |\n|-----|---|---|---|\n| 1–4 | [[Amber]] | 3 | port |\n| 5 | [[Briar]] | 1 | |\n| 6 | [[Cove]] | 1 |  |\n\nAfter.\n");
   });
 
   it("a renamed note keeps its row and weight", () => {
     const out = syncLinkedRows(linked, ["Amberly", "Briar"], { renamed: ["Amber", "Amberly"] });
-    expect(out).toContain("| [[Amberly]] | 3 | port |\n| [[Briar]] | 1 | |\n");
+    expect(out).toContain("| 1–5 | [[Amberly]] | 3 | port |\n| 6 | [[Briar]] | 1 | |\n");
   });
 
   it("a deleted or retired note removes its row", () => {
-    expect(syncLinkedRows(linked, ["Amber"], { removed: "Briar" })).toContain("| [[Amber]] | 3 | port |\n\nAfter.");
-    expect(syncLinkedRows(linked, ["Amber"], { renamed: ["Briar", "_Briar"] })).toContain("| [[Amber]] | 3 | port |\n\nAfter.");
+    expect(syncLinkedRows(linked, ["Amber"], { removed: "Briar" })).toContain("| 1–6 | [[Amber]] | 3 | port |\n\nAfter.");
+    expect(syncLinkedRows(linked, ["Amber"], { renamed: ["Briar", "_Briar"] })).toContain("| 1–6 | [[Amber]] | 3 | port |\n\nAfter.");
+  });
+
+  it("ranges typed by hand that disagree with the weights are kept", () => {
+    const typed = linked.replace("| Result | Weight | Notes |\n|---|---|---|\n| [[Amber]] | 3 | port |\n| [[Briar]] | 1 | |", "| d6 | Result | Weight | Notes |\n|---|---|---|---|\n| 1 | [[Amber]] | 3 | port |\n| 2–6 | [[Briar]] | 1 | |");
+    const out = syncLinkedRows(typed, ["Amber", "Briar"], { renamed: ["Briar", "Bryony"] });
+    expect(out).toContain("| 1 | [[Amber]] | 3 | port |\n| 2–6 | [[Bryony]] | 1 | |");
   });
 
   it("nothing to do leaves the note untouched", () => {

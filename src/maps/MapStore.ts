@@ -11,6 +11,7 @@ import {
   type MapNoteData,
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
+import { writeJsonBackup } from "../backup";
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
@@ -435,18 +436,7 @@ export class MapStore {
       const notes: Record<string, string> = {};
       for (const f of files) notes[f.path] = await vault.read(f);
       const json = JSON.stringify({ map, savedAt: new Date().toISOString(), notes });
-      const dir = this.backupDir();
-      if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
-      const gz = typeof CompressionStream === "function";
-      const ext = gz ? ".json.gz" : ".json";
-      let path = `${dir}/${map}-hex-notes${ext}`;
-      for (let n = 2; await adapter.exists(path); n++) path = `${dir}/${map}-hex-notes-${n}${ext}`;
-      if (gz) {
-        const stream = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
-        await adapter.writeBinary(path, await new Response(stream).arrayBuffer());
-      } else {
-        await adapter.write(path, json);
-      }
+      await writeJsonBackup(adapter, this.backupDir(), `${map}-hex-notes`, json);
       return true;
     } catch (e) {
       console.error(`Hexmap World Creator: couldn't back up hex notes for ${map}; they were left untouched`, e);

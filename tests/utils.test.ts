@@ -3,6 +3,7 @@ import expect from "expect";
 import { TFile } from "obsidian";
 import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl, iconPackTabs } from "../src/utils";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
+import { parseRandomTable, parseRandomTableWithReport } from "../src/random-tables/randomTable";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
 // ── normalizeFolder ───────────────────────────────────────────────────────────
@@ -55,20 +56,28 @@ describe("makeTableTemplate", () => {
 		expect(t).toContain("\n---\n");
 	});
 
-	it("generates a single blank example row", () => {
+	it("generates a single blank example row (range left blank)", () => {
 		const t = makeTableTemplate(6);
-		expect(t).toContain("|  | 1 |");
+		expect(t).toContain("\n|  |  | 1 |\n");
 	});
 
-	it("includes the Result/Weight table header", () => {
+	it("names the die in the roll column: | d6 | Result | Weight |", () => {
 		const t = makeTableTemplate(6);
-		expect(t).toContain("| Result | Weight |");
-		expect(t).toContain("|--------|--------|");
+		expect(t).toContain("| d6 | Result | Weight |\n|-----|--------|--------|\n");
 	});
 
-	it("dice: 0 still produces valid frontmatter", () => {
+	it("starter rows get roll ranges for the die, never past it", () => {
+		const t = makeTableTemplate(20, undefined, undefined, [["crabmen", 4], ["mage", 1], ["kraken", 0], ["a | b", 1]]);
+		expect(t).toContain("| 1–13 | crabmen | 4 |\n| 14–17 | mage | 1 |\n| — | kraken | 0 |\n| 18–20 | a \\| b | 1 |\n");
+		const table = parseRandomTable(t);
+		expect(table.entries.map((e) => e.range)).toEqual(["1–13", "14–17", "—", "18–20"]);
+		expect(parseRandomTableWithReport(t).issues).toEqual([]);
+	});
+
+	it("dice: 0 still produces valid frontmatter and the old two-column table", () => {
 		const t = makeTableTemplate(0);
 		expect(t).toContain("dice: 0");
+		expect(t).toContain("| Result | Weight |\n|--------|--------|\n|  | 1 |\n");
 	});
 
 	it("includes extra frontmatter fields when provided", () => {
@@ -91,7 +100,7 @@ describe("makeTableTemplate", () => {
 		const t = makeTableTemplate(6, undefined, "[🎲 Open](obsidian://roll)");
 		expect(t).toContain("[🎲 Open](obsidian://roll)");
 		const preambleIdx = t.indexOf("[🎲 Open]");
-		const tableIdx = t.indexOf("| Result |");
+		const tableIdx = t.indexOf("| d6 |");
 		expect(preambleIdx).toBeLessThan(tableIdx);
 	});
 });

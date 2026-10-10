@@ -4,17 +4,21 @@ import {
   parseRandomTableWithReport,
   parseMarkdownListItems,
   writeRollTable,
+  rangeCellTexts,
+  resolveTable,
+  dieLabel,
   type RandomTableEntry,
   type TableWrite,
 } from "./randomTable";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { processTableNote } from "./TableStore";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { escapeRegex } from "../textUtils";
 
 /** How the editor writes the die column: ranges are redone when weights or rows change. */
 export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
-  return rowsOrWeightsChanged ? "untouched" : "untouched";
+  return rowsOrWeightsChanged ? "regenerate" : "keep";
 }
 
 /**
@@ -236,10 +240,23 @@ export class RandomTableEditorModal extends HexmakerModal {
       el.setCssProps({ height: `${el.scrollHeight}px` });
     };
 
-    const onWeightsChanged = (): void => {};
+    // Rows added, removed, reordered or reweighted: the ranges are redone.
+    const rowsOrWeightsChanged = (): boolean =>
+      entries.length !== table.entries.length ||
+      entries.some((e, i) => entrySource.get(e) !== i || e.weight !== table.entries[i].weight);
+    // Each row's roll range, as it will be written.
+    let rangeEls: HTMLElement[] = [];
+    const onWeightsChanged = (): void => {
+      if (table.dice <= 0) return;
+      const labels = rowsOrWeightsChanged()
+        ? rangeCellTexts(table.dice, entries, "regenerate")
+        : resolveTable({ dice: table.dice, entries }).labels;
+      rangeEls.forEach((el, i) => el.setText(labels[i] || "—"));
+    };
 
     const renderRows = () => {
       rowsEl.empty();
+      rangeEls = [];
       if (entries.length === 0) {
         rowsEl.createSpan({
           text: "No entries yet.",
@@ -257,6 +274,11 @@ export class RandomTableEditorModal extends HexmakerModal {
           text: "⠿",
         });
         handle.title = "Drag to reorder";
+        if (table.dice > 0) {
+          const rangeEl = row.createSpan({ cls: "duckmage-table-editor-range" });
+          rangeEl.title = `Roll range on the ${dieLabel(table.dice)} (from the weights)`;
+          rangeEls.push(rangeEl);
+        }
 
         const resultInput = row.createEl("textarea", {
           cls: "duckmage-table-editor-result",
@@ -336,6 +358,7 @@ export class RandomTableEditorModal extends HexmakerModal {
           renderRows();
         });
       }
+      onWeightsChanged();
     };
     renderRows();
 
@@ -559,19 +582,17 @@ export class RandomTableEditorModal extends HexmakerModal {
 
       // ── Table: only its own lines are rewritten, and only if it changed.
       const orig = table.entries;
-      const rowsOrWeightsChanged =
-        entries.length !== orig.length ||
-        entries.some((e, i) => entrySource.get(e) !== i || e.weight !== orig[i].weight);
+      const reweighted = rowsOrWeightsChanged();
       const textChanged = entries.some((e) => {
         const src = entrySource.get(e);
         return src === undefined || orig[src].result !== e.result || !!orig[src].isLink !== !!e.isLink;
       });
       let next = rawContent;
-      if (rowsOrWeightsChanged || textChanged) {
+      if (reweighted || textChanged) {
         next = writeRollTable(rawContent, {
           dice: table.dice,
           rows: entries.map((entry) => ({ entry, source: entrySource.get(entry) })),
-          ranges: editorRangeMode(rowsOrWeightsChanged),
+          ranges: editorRangeMode(reweighted),
           linkCells: !!linkedFolder,
           dropPlaceholders: true,
         });
@@ -596,7 +617,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       if (updatedFm !== frontmatter) next = updatedFm + next.slice(frontmatter.length);
       if (next === rawContent) return;
       try {
-        await this.app.vault.process(this.file, () => next);
+        await processTableNote(this.app, this.file, () => next);
         this.onSaved?.();
       } catch {
         /* best-effort */
