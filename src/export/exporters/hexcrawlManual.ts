@@ -131,13 +131,15 @@ export async function collectManualData(
       for (let col = 0; col < cols; col++) {
         const x = col + ox, y = row + oy;
         const path = plugin.hexPath(x, y, mapName);
-        const file = app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof TFile)) continue;
-        hexCount++;
+        // Terrain and region are map data: count every hex, noted or not
+        // (most painted hexes have no note). Only noted hexes have content.
         const terrain = getTerrainFromFile(app, path) ?? "";
         const region = getHexRegionFromFile(app, path) ?? "";
         if (terrain) terrainCounts.set(terrain, (terrainCounts.get(terrain) ?? 0) + 1);
         if (region) regionCounts.set(region, (regionCounts.get(region) ?? 0) + 1);
+        const file = app.vault.getAbstractFileByPath(path);
+        if (!(file instanceof TFile)) continue;
+        hexCount++;
 
         const content = await app.vault.cachedRead(file);
         const { text, links } = await getAllSectionData(app, path, content);

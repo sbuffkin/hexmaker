@@ -211,16 +211,17 @@ export async function renderMapToPngBlob(
       let iconOverride: string | undefined;
       const factions: { color: string; style: OverlayStyle }[] = [];
       let region: { color: string; style: OverlayStyle } | undefined;
-      if (file instanceof TFile) {
-        const terrainName = getTerrainFromFile(plugin.app, file.path);
-        if (terrainName) terrain = terrainByName.get(terrainName);
-      }
-      // Unpainted hexes (often noteless) draw as the map's base terrain,
-      // matching the on-screen map.
+      // Terrain, icon and region are map data (map note): read them for
+      // every hex, noted or not — most painted hexes have no note.
+      const terrainName = getTerrainFromFile(plugin.app, notePath);
+      if (terrainName) terrain = terrainByName.get(terrainName);
+      // Unpainted hexes draw as the map's base terrain, matching the
+      // on-screen map.
       if (!terrain && map?.baseTerrain) terrain = terrainByName.get(map.baseTerrain);
-      if (file instanceof TFile) {
-        iconOverride = getIconOverrideFromFile(plugin.app, file.path) ?? undefined;
-        if (showFactionOverlay) {
+      iconOverride = getIconOverrideFromFile(plugin.app, notePath) ?? undefined;
+      {
+        // Faction links live in the hex note's body.
+        if (showFactionOverlay && file instanceof TFile) {
           for (const fName of getHexFactionLinks(plugin.app, file)) {
             const c = factionColorMap.get(fName);
             const s = factionStyleMap.get(fName);
@@ -231,7 +232,7 @@ export async function renderMapToPngBlob(
           }
         }
         if (showRegionOverlay) {
-          const regionName = getHexRegionName(plugin.app, file);
+          const regionName = getHexRegionFromFile(plugin.app, notePath);
           if (regionName) {
             const c = regionColorMap.get(regionName);
             const s = regionStyleMap.get(regionName);
@@ -788,10 +789,6 @@ function getHexFactionLinks(app: App, file: TFile): string[] {
     });
 }
 
-/** Read the `region:` frontmatter of a hex note via metadata cache. */
-function getHexRegionName(app: App, file: TFile): string | null {
-  return getHexRegionFromFile(app, file.path);
-}
 
 function dashFor(style: "solid" | "dashed" | "dotted"): number[] {
   switch (style) {
