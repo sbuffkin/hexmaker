@@ -28,6 +28,7 @@ import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
+import { resolveExpandedDefault } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
@@ -580,7 +581,11 @@ export default class HexmakerPlugin extends Plugin {
     this.settings.dismissedHints = Array.isArray(data["dismissedHints"]) ? (data["dismissedHints"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
     const firstLevel = rawData?.["featureLevel"] === undefined;
     if (!this.settings.installedAt) this.settings.installedAt = new Date().toISOString().slice(0, 10);
-    if (firstLevel || !rawData?.["installedAt"]) await this.saveData(this.settings);
+    // New maps default to Expanded on fresh installs only (GEN1): decided
+    // once from the raw data, like the level, and saved with it.
+    this.settings.expandedByDefault = resolveExpandedDefault(rawData);
+    const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
+    if (firstLevel || firstExpanded || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
   async saveSettings() {

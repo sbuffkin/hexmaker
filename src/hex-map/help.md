@@ -116,7 +116,7 @@ Pickers that link notes (to hexes, tokens, sections) never offer template notes 
 
 ## Palettes
 
-**Expanded** is the default fantasy palette: more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
 
 ## Rolling from a hex
 
