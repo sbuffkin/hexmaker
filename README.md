@@ -72,7 +72,7 @@ Open **Settings → Hexmap World Creator** and enter a root folder name in **Wor
 Click **Generate folders**. This fills in the hex, towns, dungeons, tables, and other folder settings with sensible defaults under your world folder and creates them in your vault. Any field you've already filled in is left untouched.
 
 ### 3. Open the Hex Map
-Click the map icon in the left ribbon (or use the command palette: **Open Hexmaker hex map**). You'll be prompted to create your first map — give it a name, choose its size, and pick a terrain palette.
+Click the map icon in the left ribbon (or use the command palette: **Hexmap World Creator: Open hex map**). You'll be prompted to create your first map — give it a name, choose its size, and pick a terrain palette.
 
 ### 4. Generate terrain tables
 Once your folders are set, go back to **Settings → Hexmap World Creator** and click **Generate terrain tables & hex links**. This creates a description and encounters table file for every terrain type and links them into any existing hex notes. It's safe to run again at any time.
@@ -110,7 +110,9 @@ Maps can be generated instead of painted hex by hex. When you create a map (**Ma
 - **Overland** — a region from noise: seas, coasts, plains, forests, hills, mountains. Set water %, climate, and which side the sea is on.
 - **Region detail** (submaps) — zooms into the parent hex: its terrain fills the map and each neighbouring hex shapes the matching edge.
 - **Star scatter**, **Orbits**, **Planet surface** (space maps) — a star sector, a star system around its star, and a planet's surface.
-- **Learned generators** — made in the **Terrain generator** view (command palette: *Open terrain generator*) by learning from maps you've already painted, or by blending several.
+- **Learned generators** — made in the **Terrain generator** view (command palette: **Hexmap World Creator: Open terrain generator**) by learning from maps you've already painted, or by blending several.
+
+**Neighbouring maps.** In **Maps → New map**, **Place next to** makes the new map a region beside an existing one (same size and palette, lined up hex for hex). **Guided setup…** keeps the name and neighbour you picked. There, the generators marked *Continues … edge* (Overland and learned generators) carry the neighbour's terrain on across the shared border, and the preview shows the neighbour's edge faded around the new map. Region detail is only offered for submaps, since it zooms into a parent hex.
 
 Generators only change hexes when a map is created or regenerated; you can always repaint by hand afterwards.
 
@@ -126,7 +128,7 @@ A modal for editing a hex note without leaving the map.
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
 
 ### Random Tables view
-Open via **Command palette → "Open Hexmaker random tables"** or the 🎲 ribbon button.
+Open via **Command palette → "Hexmap World Creator: Open random tables"** or the 🎲 button in the hex map toolbar.
 
 A two-panel view for managing and rolling on random tables.
 
@@ -207,7 +209,7 @@ Place movable tokens on the map — useful for tracking party position, NPCs, or
 Token state is stored in the linked note's frontmatter (`token`, `token-hex`, `token-map`, `token-icon`, `token-shape`, `token-color`, `token-border`, `token-visible`). Tokens follow the map they were placed on and persist with the note.
 
 ### Hex table view
-Open via **Command palette → "Open Hexmaker hex table"**.
+Open via **Command palette → "Hexmap World Creator: Open hex table"** or the ⊞ button in the hex map toolbar.
 
 A scrollable reference table of every hex note, with one row per hex and columns for all sections.
 
@@ -218,6 +220,33 @@ A scrollable reference table of every hex note, with one row per hex and columns
 - **Resize columns** by dragging the border between column headers.
 - **Filter** by map, terrain type, or the presence of specific link types using the toolbar controls.
 - **Refresh** button reloads all data from disk.
+
+### Export
+Export a map for printing or for your players.
+
+- **Where:** the command **Hexmap World Creator: Export current map…** (any map; it starts on the one open in the hex map view), or the map-name button in the hex map toolbar → **Export** tab. Both show the same form.
+- **Formats:** **Export PNG** (an image of the map), **Export PDF with reference table** (the map, then a table per section listing each hex's linked notes and the start of its Description), and **Export hexcrawl manual (PDF)** (a printable gazetteer with legend, encounter tables and keyed hexes).
+- **Options:** file name, coordinate labels, terrain / override icons, paths, faction overlay, region overlay, output size. The form lists the exact file names it will write; files go to the export folder and open in a new tab.
+- **What players see:** the PNG never includes GM-layer icons, tokens or any note text (Description, Landmark, Hidden, Secret), so it is safe as a handout. The faction and region overlays show their names when ticked; leave them off if those are secret. The PDF's table has no Hidden or Secret text. The hexcrawl manual is the full GM book unless you tick **player version**, which leaves out Hidden and Secret.
+- A single note or hex can also be exported: **Hexmap World Creator: Export current note to PDF**, **… to Markdown**, **Export current hex (structured PDF / Markdown)**, or the **Export** link in the hex editor.
+
+### Commands
+Every command, as it appears in the command palette:
+
+| Command | What it does |
+|---------|--------------|
+| **Hexmap World Creator: Open hex map** | Opens the hex map view. |
+| **Hexmap World Creator: Open hex table** | Opens the spreadsheet of hex notes. |
+| **Hexmap World Creator: Open random tables** | Opens the random tables and workflows view. |
+| **Hexmap World Creator: Open terrain generator** | Opens the terrain generator (learn, blend and run generators). |
+| **Hexmap World Creator: Open palette editor** | Opens the terrain palette editor. |
+| **Hexmap World Creator: Go up to parent map** | From a submap, back to the map it belongs to. |
+| **Hexmap World Creator: Go back to previous map** | Returns to the map you were on before. |
+| **Hexmap World Creator: Export current map…** | Opens the map export form (PNG, PDF, hexcrawl manual). |
+| **Hexmap World Creator: Export current note to PDF** | Exports the open note as a PDF. |
+| **Hexmap World Creator: Export current note to Markdown** | Exports the open note as Markdown. |
+| **Hexmap World Creator: Export current hex (structured PDF / Markdown)** | Exports the open hex note with its sections. |
+| **Hexmap World Creator: Export current workflow with rolled samples** | Exports the open workflow with example rolls. |
 
 ---
 
