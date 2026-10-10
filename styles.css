@@ -6779,3 +6779,26 @@ button.duckmage-wfc-library-tab.is-active {
         -1px 0 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
         0 0 3px var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85));
 }
+
+/* Token form icon picker: roomy, with full names. It was a 220px box
+   with names cut to "ship a…", so look-alike ships couldn't be told
+   apart. Taller (still drag-resizable), fixed-width tiles whose names
+   wrap instead of truncating; hovering a tile shows its name too. */
+.duckmage-token-modal .duckmage-icon-picker-inline {
+    height: min(360px, 45vh);
+    min-height: 160px;
+    align-content: flex-start;
+    align-items: flex-start;
+}
+.duckmage-token-modal .duckmage-icon-option {
+    width: 76px;
+    min-width: 76px;
+}
+.duckmage-token-modal .duckmage-icon-option-name {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+}

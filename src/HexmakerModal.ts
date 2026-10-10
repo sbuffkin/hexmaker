@@ -38,6 +38,13 @@ export class HexmakerModal extends Modal {
 		const tiles = (): HTMLElement[] =>
 			Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-icon-option[data-icon]"));
 
+		// Full names on hover: tile captions are cut short ("ship a…"), and
+		// look-alike icons can only be told apart by name (fresh-eyes round 4).
+		for (const tile of tiles()) {
+			const icon = tile.dataset["icon"];
+			if (icon && !tile.title) tile.title = iconLabel(icon);
+		}
+
 		let pack: IconPack | "all" = lastIconPack;
 		const apply = () => {
 			const query = search.value.trim().toLowerCase();

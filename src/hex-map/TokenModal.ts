@@ -167,7 +167,11 @@ export class TokenModal extends HexmakerModal {
             resultsEl.hide();
           }
         });
-        this.modalEl.addEventListener("pointerdown", (e: PointerEvent) => {
+        // Close the list on click, not pointerdown: closing it on press
+        // shifted everything below up under the pointer, so the release
+        // landed elsewhere and the first click on an icon was lost
+        // (fresh-eyes round 4).
+        this.modalEl.addEventListener("click", (e: MouseEvent) => {
           const t = e.target as Node | null;
           if (t && (el.contains(t) || resultsEl.contains(t))) return;
           resultsEl.hide();
@@ -204,6 +208,7 @@ export class TokenModal extends HexmakerModal {
         img.alt = label;
       }
       tile.createSpan({ text: label, cls: "duckmage-icon-option-name" });
+      tile.title = label;
       tile.dataset["icon"] = icon ?? "";
       tile.addEventListener("click", () => {
         this.pendingIcon = icon ?? undefined;
