@@ -128,3 +128,14 @@ export function unionBoxes(boxes: readonly Box[]): Box | null {
   }
   return out;
 }
+
+/**
+ * Whether the map may move on its own (uncover an edge, reveal a hex). Never
+ * while a drawing tool is on: the user is aiming at hexes, and a slide
+ * between two clicks sends the next click to the wrong hex (round 5: the mode
+ * bar appearing as Road started slid the map 53px, so a road zig-zagged).
+ * Only the user's own pan/zoom moves the map then.
+ */
+export function mayAutoPan(drawingTool: string | null): boolean {
+  return drawingTool === null;
+}

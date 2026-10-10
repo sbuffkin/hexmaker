@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import {
 	fitToSafeArea,
+	mayAutoPan,
 	NO_INSETS,
 	OVERLAY_GAP,
 	overlayInsets,
@@ -128,5 +129,33 @@ describe("the map keeps hexes clear of its overlays", () => {
 		expect(view).toMatch(/private flashHex[\s\S]{0,250}this\.revealHexEl\(hexEl\);/);
 		expect(view).toMatch(/toolsPanel\.onAfterOpen = \(\) => this\.uncoverGrid\(\);/);
 		expect(view).toMatch(/centerOnHex[\s\S]{0,1400}this\.measureOverlayInsets\(\)/);
+	});
+});
+
+describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => {
+	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const body = (name: string) => {
+		const start = view.indexOf(`private ${name}(`);
+		expect(start).toBeGreaterThan(-1);
+		return view.slice(start, view.indexOf("\n  }\n", start));
+	};
+
+	it("auto-pans only with no tool active", () => {
+		expect(mayAutoPan(null)).toBe(true);
+		for (const tool of ["path", "terrain", "icon", "tableLink", "submapLink", "factionLink", "regionLink", "swap", "placeToken"])
+			expect(mayAutoPan(tool)).toBe(false);
+	});
+
+	it("uncovering an edge and revealing a hex are gated on it", () => {
+		expect(body("uncoverGrid")).toMatch(/^private uncoverGrid\(\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
+		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
+	});
+
+	it("starting or changing a tool (the mode bar) never pans the map", () => {
+		// Round 5 regression: the mode bar appearing as Road started ran
+		// uncoverGrid, sliding the map 53px out from under the tools panel.
+		const modeBar = body("updateModeBar");
+		expect(modeBar.length).toBeGreaterThan(100);
+		expect(modeBar).not.toMatch(/uncoverGrid|revealHexEl|fitGridToView|centerOnHex|this\.pan[XY]|applyTransform/);
 	});
 });

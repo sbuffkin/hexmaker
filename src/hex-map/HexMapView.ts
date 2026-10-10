@@ -32,7 +32,7 @@ import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
-import { fitToSafeArea, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
+import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -525,6 +525,7 @@ export class HexMapView extends ItemView {
    *  rows and an open side panel (round 4: the tools panel hid the hex a
    *  tester came back to from a submap). */
   private revealHexEl(hexEl: HTMLElement): void {
+    if (!mayAutoPan(this.drawingMode)) return;
     const clipEl = this.viewportEl?.parentElement;
     if (!clipEl) return;
     const clip = clipEl.getBoundingClientRect();
@@ -2359,19 +2360,17 @@ export class HexMapView extends ItemView {
       factionPath: this.paintFactionPath,
       regionPath: this.paintRegionPath,
     });
-    const wasShown = this.modeBarEl.isShown();
     const changed = this.modeBarTextEl.getText() !== (label ?? "");
     this.modeBarTextEl.setText(label ?? "");
     this.modeBarEl.toggle(label !== null);
     if (label === null || !changed) return;
     // A tool just started or changed: pulse the bar so it's noticed
-    // (round 4: a tester never saw it), and keep it off the hexes.
+    // (round 4: a tester never saw it). The map does NOT move here: a tool
+    // is on now, and a slide under the cursor sends the next click to the
+    // wrong hex (round 5, see mayAutoPan).
     const bar = this.modeBarEl;
     bar.removeClass("is-new");
-    window.requestAnimationFrame(() => {
-      bar.addClass("is-new");
-      if (!wasShown) this.uncoverGrid();
-    });
+    window.requestAnimationFrame(() => bar.addClass("is-new"));
   }
 
   private applyTransform(): void {
@@ -3337,6 +3336,7 @@ export class HexMapView extends ItemView {
    * panel hid edge hexes; the mode bar covered the bottom row).
    */
   private uncoverGrid(): void {
+    if (!mayAutoPan(this.drawingMode)) return;
     const clipEl = this.viewportEl?.parentElement;
     if (!clipEl) return;
     const clip = clipEl.getBoundingClientRect();
