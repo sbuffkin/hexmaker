@@ -7954,6 +7954,10 @@ button.duckmage-terrain-legend-chip {
 }
 
 /* ── Palette notes in reading view (swatches, icons, path previews) ── */
+.markdown-rendered td.duckmage-palette-color-cell {
+    white-space: nowrap;
+}
+
 .duckmage-palette-swatch {
     display: inline-block;
     width: 0.9em;

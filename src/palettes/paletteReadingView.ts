@@ -88,6 +88,7 @@ function decorateTable(plugin: HexmakerPlugin, table: HTMLTableElement): void {
         const swatch = colorCell.createSpan({ cls: "duckmage-palette-swatch", attr: { "aria-hidden": "true" } });
         swatch.setCssProps({ "--duckmage-palette-swatch": color });
         colorCell.prepend(swatch);
+        colorCell.addClass("duckmage-palette-color-cell");
       }
       const icon = view.icon >= 0 ? rows[r][view.icon] : "";
       const iconCell = tds[view.icon];
