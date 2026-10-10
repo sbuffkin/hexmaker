@@ -1,4 +1,4 @@
-import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { MarkdownView, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
@@ -8,16 +8,19 @@ import {
   parsePaletteNote,
   readChildPalette,
   readSubmapDefaults,
+  refreshPaletteDerived,
   setChildPalette,
   setSubmapDefaults,
   submapDefaultsKey,
   terrainsEqual,
   updatePaletteNote,
 } from "./paletteNote";
-import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } from "./presets";
 import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { DEFAULT_PATH_TYPES } from "../constants";
-import { inferTerrainType } from "../terrainTypes";
+import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
+import { repointPaletteName } from "./paletteOptions";
 
 /**
  * Fill in missing terrain types: a same-named terrain in a preset wins,
@@ -39,10 +42,47 @@ export function seedTerrainTypes(palettes: TerrainPalette[]): number {
 }
 
 /**
+ * One-time upgrade of data that used to be worked out from names at run
+ * time, so from now on only what the palette note says counts:
+ *  - space terrains typed before the space roles had their own types get
+ *    them (a "moon" typed world becomes a moon; see refinedSpaceType);
+ *  - an installed palette named like a built-in preset gets that preset's
+ *    child palette and Submap defaults rows it doesn't have yet (they used
+ *    to be borrowed from the preset by name on every lookup).
+ * Returns how many palettes changed.
+ */
+export function upgradePaletteData(palettes: TerrainPalette[]): number {
+  let n = 0;
+  for (const pal of palettes) {
+    let changed = false;
+    for (const t of pal.terrains) {
+      const refined = refinedSpaceType(t);
+      if (refined) { t.type = refined; changed = true; }
+    }
+    const preset = getPreset(pal.name);
+    if (preset?.childPalette && !pal.childPalette) {
+      pal.childPalette = preset.childPalette;
+      changed = true;
+    }
+    if (preset?.submapDefaults) {
+      const missing = Object.keys(preset.submapDefaults).filter((k) => !pal.submapDefaults?.[k]);
+      if (missing.length) {
+        const rows = cloneSubmapDefaults(preset.submapDefaults);
+        pal.submapDefaults = { ...(pal.submapDefaults ?? {}) };
+        for (const k of missing) pal.submapDefaults[k] = rows[k];
+        changed = true;
+      }
+    }
+    if (changed) n++;
+  }
+  return n;
+}
+
+/**
  * Copy a note's metadata (`child-palette`, the Submap defaults table) onto
  * the palette. Returns true if anything changed.
  */
-function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
+function applyNoteMeta(pal: TerrainPalette, content: string, legacy = false): boolean {
   let changed = false;
   const child = readChildPalette(content);
   if (pal.childPalette !== child) {
@@ -58,13 +98,28 @@ function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
   }
   // Path types: a note without the table keeps the ones we have (a slip
   // that breaks the table header mustn't wipe them; sync writes it back).
-  const paths = parsePathTypes(content);
+  const paths = parsePathTypes(content, { legacy });
   if (paths && pathTypesKey(pal.pathTypes) !== pathTypesKey(paths.types)) {
     if (pal.pathTypes) pal.pathTypes.splice(0, pal.pathTypes.length, ...paths.types);
     else pal.pathTypes = paths.types;
     changed = true;
   }
   return changed;
+}
+
+/**
+ * The note with every derived or defaulted cell filled in: the terrain
+ * table's Type and Impassable in parentheses, and the path types' behaviour
+ * cells (blank ones written out). `pathTypes` is what the palette holds
+ * (read with the rules that applied when it was loaded); without it the
+ * note's own table is used. Unchanged when nothing is missing; a path-types
+ * table with unreadable rows is left alone.
+ */
+export function refreshNoteDerived(content: string, pathTypes?: PathType[]): string {
+  const next = refreshPaletteDerived(content);
+  const paths = parsePathTypes(next);
+  if (!paths || paths.skipped.length || !paths.implicit) return next;
+  return setPathTypes(next, pathTypes ?? paths.types);
 }
 
 /** A fresh note for a palette, metadata included. */
@@ -121,6 +176,8 @@ export class PaletteStore {
   /** Palette notes whose terrain table doesn't parse: never rewritten until
    *  fixed by hand (a sync would otherwise replace the half-edited note). */
   private broken = new Set<string>();
+  /** Hand-edited notes whose derived cells wait until the user stops editing them. */
+  private pendingDerived = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -199,11 +256,9 @@ export class PaletteStore {
     }
   }
 
-  /** Rename a palette in memory and repoint every map that uses it. */
+  /** Rename a palette in memory and repoint everything that names it. */
   private renamePalette(pal: TerrainPalette, newName: string): void {
-    for (const m of this.plugin.settings.maps) {
-      if (m.paletteName === pal.name) m.paletteName = newName;
-    }
+    repointPaletteName(this.plugin.settings, pal.name, newName);
     pal.name = newName;
   }
 
@@ -224,6 +279,9 @@ export class PaletteStore {
     await this.ensureFolder();
     const settings = this.plugin.settings;
     let dirty = false;
+    // PA5: path types from older builds get explicit behaviour (from the old
+    // name rules, once), so nothing changes look.
+    if (!settings.pathTypesExplicit && fillLegacyPathTypes(settings.terrainPalettes, settings.pathTypes)) dirty = true;
 
     // Migration (and safety net): when the folder holds no palette notes —
     // first run after upgrading, or the folder setting was pointed somewhere
@@ -279,11 +337,28 @@ export class PaletteStore {
       settings.terrainTypesSeeded = true;
       dirty = true;
     }
+    // One-time: write into the palettes what used to be inferred from
+    // names at run time (space role types, a preset's child palette and
+    // Submap defaults). Runs after the seeding so freshly typed terrains
+    // are upgraded too.
+    let upgraded = false;
+    if (!settings.paletteDataUpgraded) {
+      upgraded = upgradePaletteData(settings.terrainPalettes) > 0;
+      settings.paletteDataUpgraded = true;
+      dirty = true;
+    }
     this.ready = true;
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded || filled) await this.syncNow();
+    if (seeded || filled || upgraded) await this.syncNow();
+    // Notes from older builds (or edited by hand since) get their derived
+    // cells shown: the Impassable column, inferred types in parentheses.
+    for (const file of this.paletteFiles()) await this.refreshDerived(file);
+    if (!settings.pathTypesExplicit) {
+      settings.pathTypesExplicit = true;
+      dirty = true;
+    }
     if (dirty) await this.persist();
   }
 
@@ -316,7 +391,7 @@ export class PaletteStore {
         pal = { name: file.basename, terrains };
         changed = true;
       }
-      if (applyNoteMeta(pal, content)) changed = true;
+      if (applyNoteMeta(pal, content, !settings.pathTypesExplicit)) changed = true;
       this.bind(pal, file.path, content);
       next.push(pal);
     }
@@ -411,7 +486,7 @@ export class PaletteStore {
           const withMeta = setSubmapDefaults(
             setChildPalette(
               parsed && terrainsEqual(parsed, pal.terrains)
-                ? current
+                ? this.isBeingEdited(target) ? current : refreshPaletteDerived(current)
                 : updatePaletteNote(current, pal.terrains),
               pal.childPalette,
             ),
@@ -440,6 +515,43 @@ export class PaletteStore {
       }
 
       if (renamedInMemory) await this.persist();
+    }
+  }
+
+  /** Whether the user is typing in this note right now (active editor, not reading view). */
+  private isBeingEdited(path: string): boolean {
+    const view = this.plugin.app.workspace?.getActiveViewOfType?.(MarkdownView);
+    return !!view && view.file?.path === path && view.getMode() === "source";
+  }
+
+  /**
+   * Bring a palette note's derived cells up to date (call inside the queue).
+   * Only a note that reads cleanly is touched; our write is recorded so the
+   * modify event it fires is recognised as ours.
+   */
+  private async refreshDerived(file: TFile): Promise<void> {
+    if (!this.knownPaths.has(file.path)) return;
+    const { vault } = this.plugin.app;
+    const current = await vault.read(file);
+    if (!parsePaletteNote(current)) return;
+    const next = refreshNoteDerived(current, this.paletteBoundTo(file.path)?.pathTypes);
+    if (next === current) return;
+    this.lastContent.set(file.path, next);
+    await vault.modify(file, next);
+  }
+
+  /**
+   * Refresh derived cells of hand-edited notes the user has stopped editing
+   * (called when the active leaf changes). Rewriting a note mid-typing would
+   * fight the cursor, so onModify leaves those for here.
+   */
+  flushPendingDerived(): void {
+    if (!this.ready || !this.pendingDerived.size) return;
+    for (const path of [...this.pendingDerived]) {
+      if (this.isBeingEdited(path)) continue;
+      this.pendingDerived.delete(path);
+      const file = this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) void this.enqueue(() => this.refreshDerived(file));
     }
   }
 
@@ -501,6 +613,13 @@ export class PaletteStore {
       if (fillPalettePathTypes([pal], this.plugin.settings.pathTypes)) changed = true;
       this.bind(pal, file.path, content);
       if (changed) await this.persist();
+      // The hand edit may have changed what the derived cells should say
+      // (a new type, a terrain added without a type): refresh them now, or
+      // once the user leaves the note if they're still typing in it.
+      if (refreshNoteDerived(content, pal.pathTypes) !== content) {
+        if (this.isBeingEdited(file.path)) this.pendingDerived.add(file.path);
+        else await this.refreshDerived(file);
+      }
     });
   }
 

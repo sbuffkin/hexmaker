@@ -19,16 +19,27 @@ export interface TokenEntry {
 
 export type PathLineStyle = "solid" | "dashed" | "dotted";
 export type PathRouting   = "through" | "meander" | "edge";
+/** How auto-route picks hexes: "direct" keeps to the straight line, "winding" wanders. */
+export type PathAutoRoute = "direct" | "winding";
 
+/**
+ * A kind of path. Every behaviour is one of these fields; none follows the
+ * type's name, so a palette built from scratch can make any look (PA5).
+ */
 export interface PathType {
 	name: string;
 	color: string;
 	width: number;            // 1–10, direct SVG stroke-width
 	lineStyle: PathLineStyle;
-	routing: PathRouting;     // "through" = hex centers; "meander" = edge midpoints (curved); "edge" = along hex boundary lines
-	/** Auto-route goes around impassable terrain. Unset = yes, except river-like
-	 *  names (see pathAvoidsImpassable in src/impassable.ts). */
-	avoidImpassable?: boolean;
+	/** How the line is drawn: "through" = smooth curve through hex centres;
+	 *  "meander" = smooth curve through the midpoints of the edges between
+	 *  hexes; "edge" = straight segments along hex borders. */
+	routing: PathRouting;
+	/** Auto-route goes around impassable terrain (and, for generated submaps,
+	 *  avoids water; off = prefers low ground and water, like a river). */
+	avoidImpassable: boolean;
+	/** Auto-route keeps to the straight line ("direct") or wanders ("winding"). */
+	autoRoute: PathAutoRoute;
 }
 
 export interface PathChain {
@@ -300,6 +311,12 @@ export interface HexmakerPluginSettings {
 	palettesFolder: string;
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
+	/**
+	 * True once every path type's behaviour (avoid impassable, auto-route,
+	 * routing) was written out explicitly (PA5). Before that, blank cells in
+	 * palette notes are read with the old name rules (pathTypeLegacy.ts).
+	 */
+	pathTypesExplicit?: boolean;
 	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
 	mapKinds: string[];
 	/** Simple or Advanced (see src/featureLevel.ts). */
@@ -327,8 +344,18 @@ export interface HexmakerPluginSettings {
 	/** On-map legend folded to a small "Legend" chip. */
 	terrainLegendCollapsed?: boolean;
 	/** New maps default to the Expanded palette: true on fresh installs,
-	 *  false for installs that predate it (GEN1; see resolveExpandedDefault). */
+	 *  false for installs that predate it (GEN1; see resolveExpandedDefault).
+	 *  Only seeds `defaultPalette` now. */
 	expandedByDefault?: boolean;
+	/** "Palette for new maps": a palette name; "" or unset = the first
+	 *  palette of an enabled map type (see defaultPaletteFor). Seeded once
+	 *  by resolveDefaultPalette. */
+	defaultPalette?: string;
+	/** One-time upgrades of palette data that used to be inferred from
+	 *  names at run time (see PaletteStore.load): space role types (moon,
+	 *  comet, starport…) and a preset's child palette / submap defaults
+	 *  copied into same-named installed palettes. */
+	paletteDataUpgraded?: boolean;
 	/** Folder holding the plugin's note templates (hex, town). Empty =
 	 *  "{worldFolder}/templates" (see src/noteTemplates.ts). */
 	templatesFolder: string;

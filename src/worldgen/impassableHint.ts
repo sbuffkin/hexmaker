@@ -9,7 +9,8 @@
  * small terrains the paths simply weren't drawn near aren't suggested.
  *
  * Fallback, only for generators without paths: a big terrain that looks like
- * water (blue, or named like it).
+ * water (blue) or that the palette marks impassable (its Impassable column
+ * or type group). Never by name.
  */
 
 import type { HexWfcModel, PathFeature } from "../../packages/hex-wfc/src";
@@ -25,8 +26,6 @@ const MIN_SHARE = 0.03;
 const AVOID_RATIO = 0.25;
 /** Suggest only if missing it this completely by chance is under this probability. */
 const MAX_CHANCE = 0.001;
-
-const WATERY = /\b(ocean|sea|lake|water|shallows|deep|trench|abyss|chasm|lava|magma|void|reef|lagoon|bay)\b/i;
 
 /** Roughly how many hexes a route covered in the example. */
 function routeHexes(p: PathFeature, exampleHexes: number): number {
@@ -52,6 +51,8 @@ export function suggestImpassable(
   model: HexWfcModel,
   colors: Map<string, string> = new Map(),
   already: string[] = [],
+  /** Terrains the palette marks impassable (see isImpassable). */
+  paletteImpassable: ReadonlySet<string> = new Set(),
 ): ImpassableHint[] {
   const total = model.terrains.reduce((n, t) => n + Math.max(0, t.weight), 0);
   if (total <= 0) return [];
@@ -90,17 +91,19 @@ export function suggestImpassable(
     return out.sort((a, b) => a.terrain.localeCompare(b.terrain));
   }
 
-  // No paths to go on: only big terrain that looks like water.
+  // No paths to go on: only big terrain that looks like water or that the
+  // palette marks impassable.
   const out: ImpassableHint[] = [];
   for (const c of candidates) {
     if (c.share < 0.05) continue;
     const hs = hueSat(colors.get(c.name));
     const blue = !!hs && hs.h >= 185 && hs.h <= 250 && hs.s >= 0.25;
-    const named = WATERY.test(c.name);
-    if (!blue && !named) continue;
+    const marked = paletteImpassable.has(c.name);
+    if (!blue && !marked) continue;
+    const why = [marked ? "the palette marks it impassable" : "", blue ? "its colour looks like water" : ""].filter(Boolean).join(" and ");
     out.push({
       terrain: c.name,
-      reason: `looks like water (${[named ? "its name" : "", blue ? "its colour" : ""].filter(Boolean).join(" and ")}) and covers ${pct(c.share)}; there are no paths to tell for sure`,
+      reason: `${why}, and it covers ${pct(c.share)}; there are no paths to tell for sure`,
     });
   }
   return out.sort((a, b) => a.terrain.localeCompare(b.terrain));

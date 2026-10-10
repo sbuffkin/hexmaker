@@ -15,10 +15,14 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { getFrontMatter, getTerrainFromFile, setTerrainInFile } from "../frontmatter";
 import { normalizeFolder, slugify } from "../utils";
 import { VERSION_KEY, pluginVersion } from "../compat";
+import { isImpassable } from "../impassable";
+import type { TerrainColor } from "../types";
 import {
   learnModel,
   mergeModels,
   modelToMarkdown,
+  refreshShareColumn,
+  missingTerrains,
   parseModelMarkdown,
   isModelMarkdown,
   restrictModel,
@@ -80,6 +84,19 @@ export function generatorFitsPalette(model: HexWfcModel, paletteTerrains: string
   const names = new Set(paletteTerrains);
   const placeable = model.terrains.filter((t) => t.weight > 0);
   return placeable.length > 0 && placeable.every((t) => names.has(t.name));
+}
+
+/**
+ * What a palette lacks for this generator, as one sentence naming the
+ * terrains and where the generator uses them (G2), or "" when nothing is
+ * missing. Generating leaves those out, so the message says so.
+ */
+export function paletteGapMessage(model: HexWfcModel, paletteTerrains: string[], paletteName?: string): string {
+  const missing = missingTerrains(model, paletteTerrains);
+  if (!missing.length) return "";
+  const list = missing.map((m) => `${m.name} (${m.where.join(", ")})`).join("; ");
+  const where = paletteName ? `palette ${paletteName}` : "this palette";
+  return `Not in ${where}: ${list}. Generating leaves ${missing.length === 1 ? "it" : "them"} out.`;
 }
 
 export function mapStagger(plugin: HexmakerPlugin, mapName: string): "odd" | "even" {
@@ -360,6 +377,20 @@ export async function saveGeneratorSettings(
     }
     fm[VERSION_KEY] = pluginVersion(plugin);
   });
+  // A mix, counts or near change moves the derived Share column.
+  await refreshGeneratorShares(plugin, file);
+}
+
+/**
+ * Bring a generator note's derived Share column up to date (G1): after a
+ * settings change, and when the generator is shown (so hand edits to the
+ * frontmatter or weights show up). Reads first and writes only on a change.
+ */
+export async function refreshGeneratorShares(plugin: HexmakerPlugin, file: TFile): Promise<boolean> {
+  const text = await plugin.app.vault.read(file);
+  if (refreshShareColumn(text) === text) return false;
+  await plugin.app.vault.process(file, refreshShareColumn);
+  return true;
 }
 
 export interface GridSpec {
@@ -369,24 +400,49 @@ export interface GridSpec {
   stagger: "odd" | "even";
 }
 
-/** Terrain names treated as impassable until a generator sets its own list. */
-export const DEFAULT_IMPASSABLE = ["shallows", "ocean", "trench"];
-
 /**
  * Impassable terrains for a generator that has never saved the setting: its
- * terrains named like DEFAULT_IMPASSABLE (any case), so "Connected land"
- * works out of the box. Once the generator saves a list (even an empty one),
- * that list is used instead.
+ * terrains that the palette marks impassable (the palette's Impassable
+ * column, else the terrain type's group: water by default; see
+ * isImpassable), so "Connected land" works out of the box on any palette
+ * and agrees with the path tool. Once the generator saves a list (even an
+ * empty one), that list is used instead.
  */
-export function defaultImpassable(model: HexWfcModel): string[] | undefined {
+export function defaultImpassable(model: HexWfcModel, palette: readonly TerrainColor[]): string[] | undefined {
   if (model.settings?.impassable !== undefined) return undefined;
-  return model.terrains.map((t) => t.name).filter((n) => DEFAULT_IMPASSABLE.includes(n.toLowerCase()));
+  const blocked = new Set(palette.filter(isImpassable).map((t) => t.name.toLowerCase()));
+  return model.terrains.map((t) => t.name).filter((n) => blocked.has(n.toLowerCase()));
 }
 
 /** Saved settings with the plugin's defaults filled in (see defaultImpassable). */
-export function generatorSettings(model: HexWfcModel): Required<GeneratorSettings> {
-  const impassable = defaultImpassable(model);
+export function generatorSettings(model: HexWfcModel, palette: readonly TerrainColor[]): Required<GeneratorSettings> {
+  const impassable = defaultImpassable(model, palette);
   return resolveSettings(model, impassable ? { impassable } : {});
+}
+
+/**
+ * The palette entries for a list of terrain names: from the palette that
+ * has them all (the one the map or generator panel uses), else the first
+ * entry of each name across palettes.
+ */
+export function paletteEntriesFor(plugin: HexmakerPlugin, names: readonly string[]): TerrainColor[] {
+  const palettes = plugin.settings.terrainPalettes ?? [];
+  const own = palettes.find((p) => names.every((n) => p.terrains.some((t) => t.name === n)));
+  const want = new Set(names);
+  const seen = new Set<string>();
+  const out: TerrainColor[] = [];
+  for (const t of own ? own.terrains : palettes.flatMap((p) => p.terrains)) {
+    if (!want.has(t.name) || seen.has(t.name)) continue;
+    seen.add(t.name);
+    out.push(t);
+  }
+  return out;
+}
+
+/** The solver's `impassable` option from defaultImpassable, when it applies. */
+function impassableDefault(model: HexWfcModel, palette: readonly TerrainColor[]): { impassable?: string[] } {
+  const list = defaultImpassable(model, palette);
+  return list ? { impassable: list } : {};
 }
 
 /**
@@ -402,6 +458,7 @@ export function generateTerrain(
   seed: number,
   fixed?: Map<string, string>,
 ): SolveResult {
+  const gap = paletteGapMessage(model, paletteTerrains);
   let fitted = restrictModel(model, paletteTerrains);
   const unknown = new Set([...(fixed?.values() ?? [])].filter((t) => !fitted.terrains.some((e) => e.name === t)));
   if (unknown.size) {
@@ -415,7 +472,7 @@ export function generateTerrain(
       ],
     };
   }
-  return solve(fitted, {
+  const res = solve(fitted, {
     cols: grid.cols,
     rows: grid.rows,
     offset: grid.offset,
@@ -423,8 +480,11 @@ export function generateTerrain(
     stagger: grid.stagger,
     seed,
     fixed,
-    ...(defaultImpassable(model) ? { impassable: defaultImpassable(model) } : {}),
+    ...impassableDefault(model, paletteEntriesFor(plugin, paletteTerrains)),
   });
+  // Terrains the palette lacks were left out: say which (G2), not silently.
+  if (gap && res.ok) res.warnings.unshift(gap);
+  return res;
 }
 
 /**

@@ -17,7 +17,7 @@
  */
 
 import type { MapData, MapPath, PathChain, PathType, TerrainColor } from "../types";
-import { impassableNames, pathAvoidsImpassable, pathMeanders } from "../impassable";
+import { impassableNames } from "../impassable";
 import type { RouteContext, SegmentStyle } from "./router";
 import { contextSignature } from "./router";
 import { RouteCache } from "./routeCache";
@@ -38,7 +38,7 @@ import { UNKNOWN_PATH_TYPE } from "../constants";
  * and nothing else changes. No other code reads avoid or winding.
  */
 export function pathTypeStyle(t: PathType | undefined): SegmentStyle | undefined {
-  return t && { avoid: pathAvoidsImpassable(t), winding: pathMeanders(t) };
+  return t && { avoid: t.avoidImpassable, winding: t.autoRoute === "winding" };
 }
 
 /** StyleFor over a map's path types (first of a name wins, as the palette does). */

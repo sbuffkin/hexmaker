@@ -1,10 +1,18 @@
 import { App, Setting } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { PathType, PathLineStyle, PathRouting } from "../types";
+import type { PathAutoRoute, PathType, PathLineStyle, PathRouting } from "../types";
 import { buildPathPreviewSvg } from "./PathPickerModal";
-import { pathAvoidsImpassable } from "../impassable";
+import { pathAvoidsImpassable, pathMeanders } from "../impassable";
 import { countPathsOfType, removePathTypeFromChains, renamePathTypeInChains } from "../paths/typeRefs";
+
+/** One line on what auto-route does with a type (the preview can't show it). */
+export function pathBehaviourSummary(pt: Pick<PathType, "avoidImpassable" | "autoRoute">): string {
+	const route = pt.autoRoute === "winding" ? "winds" : "keeps direct";
+	return pt.avoidImpassable
+		? `Auto-route ${route} and goes around impassable terrain.`
+		: `Auto-route ${route} and crosses impassable terrain.`;
+}
 
 export class PathTypeEditorModal extends HexmakerModal {
 	private pendingName: string;
@@ -13,6 +21,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 	private pendingLineStyle: PathLineStyle;
 	private pendingRouting: PathRouting;
 	private pendingAvoid: boolean;
+	private pendingAutoRoute: PathAutoRoute;
 	private readonly originalName: string;
 	private savedOrDeleted = false;
 
@@ -33,6 +42,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.pendingLineStyle  = entry.lineStyle;
 		this.pendingRouting    = entry.routing;
 		this.pendingAvoid      = pathAvoidsImpassable(entry);
+		this.pendingAutoRoute  = pathMeanders(entry) ? "winding" : "direct";
 	}
 
 	onOpen(): void {
@@ -42,8 +52,10 @@ export class PathTypeEditorModal extends HexmakerModal {
 		contentEl.addClass("duckmage-hex-editor");
 		contentEl.createEl("h2", { text: "Edit path type" });
 
-		// Live preview div
+		// Live preview: how the line is drawn, plus what auto-route does
+		// (which the drawing can't show).
 		const previewDiv = contentEl.createDiv({ cls: "duckmage-path-preview duckmage-path-editor-preview" });
+		const behaviourEl = contentEl.createDiv({ cls: "duckmage-path-editor-behaviour" });
 		const redrawPreview = () => {
 			previewDiv.empty();
 			previewDiv.appendChild(buildPathPreviewSvg({
@@ -52,7 +64,10 @@ export class PathTypeEditorModal extends HexmakerModal {
 				width: this.pendingWidth,
 				lineStyle: this.pendingLineStyle,
 				routing: this.pendingRouting,
+				avoidImpassable: this.pendingAvoid,
+				autoRoute: this.pendingAutoRoute,
 			}));
+			behaviourEl.setText(pathBehaviourSummary({ avoidImpassable: this.pendingAvoid, autoRoute: this.pendingAutoRoute }));
 		};
 		redrawPreview();
 
@@ -105,11 +120,12 @@ export class PathTypeEditorModal extends HexmakerModal {
 
 		new Setting(contentEl)
 			.setName("Routing")
+			.setDesc("How the line runs between hexes: a smooth curve through hex centres, a smooth curve through the middles of the edges between hexes, or straight along the hex borders.")
 			.addDropdown(dd =>
 				dd
-					.addOption("through",  "Through hex centers")
-					.addOption("meander",  "Meander (curves via edge midpoints)")
-					.addOption("edge",     "Along hex edges (tight boundary)")
+					.addOption("through",  "Through hex centres")
+					.addOption("meander",  "Across edge middles")
+					.addOption("edge",     "Along hex borders")
 					.setValue(this.pendingRouting)
 					.onChange(value => {
 						this.pendingRouting = value as PathRouting;
@@ -119,11 +135,25 @@ export class PathTypeEditorModal extends HexmakerModal {
 
 		new Setting(contentEl)
 			.setName("Avoid impassable terrain")
-			.setDesc("Auto-route goes around impassable terrain, so roads avoid water. Turn off for rivers. Hex-by-hex drawing ignores this.")
+			.setDesc("On: auto-route goes around impassable terrain (water, by default), and paths carried into generated submaps keep off water. Off: it goes anywhere, and submap paths prefer low ground and water, like a river. Drawing hex by hex ignores this.")
 			.addToggle(toggle =>
 				toggle
 					.setValue(this.pendingAvoid)
-					.onChange(value => { this.pendingAvoid = value; }),
+					.onChange(value => { this.pendingAvoid = value; redrawPreview(); }),
+			);
+
+		new Setting(contentEl)
+			.setName("Auto-route")
+			.setDesc("Direct keeps the route close to the straight line between the two hexes you click. Winding lets it wander. Also applies to paths carried into generated submaps.")
+			.addDropdown(dd =>
+				dd
+					.addOption("direct",  "Direct")
+					.addOption("winding", "Winding")
+					.setValue(this.pendingAutoRoute)
+					.onChange(value => {
+						this.pendingAutoRoute = value as PathAutoRoute;
+						redrawPreview();
+					}),
 			);
 
 		// Save button
@@ -186,6 +216,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.entry.lineStyle  = this.pendingLineStyle;
 		this.entry.routing    = this.pendingRouting;
 		this.entry.avoidImpassable = this.pendingAvoid;
+		this.entry.autoRoute  = this.pendingAutoRoute;
 
 		// If name changed, point every path of this type at the new name.
 		// PHASE-3: while maps store pathChains (src/paths/mapPaths.ts) this edits

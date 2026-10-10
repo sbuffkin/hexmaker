@@ -16,7 +16,7 @@ import {
 import { builtinKind, visibleKinds } from "../src/worldgen/registry";
 import { validateModel, type HexWfcModel } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
-import type { TerrainColor } from "../src/types";
+import type { PathType, TerrainColor } from "../src/types";
 
 /**
  * G12: the biome / preset generators ship with the plugin and work on any
@@ -103,6 +103,37 @@ describe("shipped biome / preset generators", () => {
 		const used = new Set(out.cells.values());
 		expect(used.has("dark wood")).toBe(true);
 		for (const t of used) expect(custom.some((c) => c.name === t)).toBe(true);
+	});
+
+	it("the Expanded palette renamed maps every generator terrain to the same palette entry", () => {
+		const renamed = DEFAULT_TERRAIN_PALETTE.map((t, i) => ({ ...t, name: `Terrain ${i}` }));
+		for (const [slug, model] of models) {
+			const a = mapTerrainsByType(model, DEFAULT_TERRAIN_PALETTE);
+			const b = mapTerrainsByType(model, renamed);
+			for (const t of model.terrains) {
+				const ia = DEFAULT_TERRAIN_PALETTE.findIndex((x) => x.name === a.get(t.name));
+				const ib = renamed.findIndex((x) => x.name === b.get(t.name));
+				// Same type always; same entry unless a word-match tie-break picked a sibling.
+				expect({ slug, t: t.name, type: renamed[ib]?.type }).toEqual({ slug, t: t.name, type: DEFAULT_TERRAIN_PALETTE[ia]?.type });
+			}
+		}
+	});
+
+	it("a same-named palette terrain of another type is not used (an \"ocean\" typed desert is not the sea)", () => {
+		const pal: TerrainColor[] = [
+			{ name: "ocean", type: "desert", color: "#ff0" },
+			{ name: "Brine", type: "water", color: "#00f" },
+		];
+		const mapping = mapTerrainsByType(models.get("preset-archipelago")!, pal);
+		expect(mapping.get("ocean")).toBe("Brine");
+	});
+
+	it("untyped palettes (or everything deleted) fit no shipped generator", () => {
+		const untyped = DEFAULT_TERRAIN_PALETTE.map(({ type: _t, ...rest }) => rest);
+		for (const model of models.values()) {
+			expect(fitBuiltinModel(model, untyped)).toBeUndefined();
+			expect(fitBuiltinModel(model, [])).toBeUndefined();
+		}
 	});
 
 	it("doesn't fit a space palette", () => {
@@ -194,11 +225,22 @@ describe("remapModel", () => {
 });
 
 describe("builtinPathType", () => {
+	const pt = (name: string, avoidImpassable: boolean, autoRoute: "direct" | "winding"): PathType =>
+		({ name, color: "#000", width: 3, lineStyle: "solid", routing: "through", avoidImpassable, autoRoute });
+
 	it("draws streams as rivers and trails as roads when the vault lacks them", () => {
-		expect(builtinPathType("stream", ["Road", "River"])).toBe("River");
-		expect(builtinPathType("creek", ["Road", "River"])).toBe("River");
-		expect(builtinPathType("trail", ["Road", "River"])).toBe("Road");
-		expect(builtinPathType("trail", ["Road", "River", "trail"])).toBe("trail");
-		expect(builtinPathType("Jump", ["Road"])).toBe("Jump");
+		const known = [pt("Road", true, "direct"), pt("River", false, "winding")];
+		expect(builtinPathType("stream", known)).toBe("River");
+		expect(builtinPathType("creek", known)).toBe("River");
+		expect(builtinPathType("trail", known)).toBe("Road");
+		expect(builtinPathType("trail", [...known, pt("trail", true, "direct")])).toBe("trail");
+		expect(builtinPathType("Jump", [pt("Road", true, "direct")])).toBe("Jump");
+	});
+
+	it("picks the stand-in by its options, never its name (PA5)", () => {
+		// The palette's water-like type is called "Brook"; its "River" is a straight road-like type.
+		const known = [pt("River", true, "direct"), pt("Brook", false, "winding")];
+		expect(builtinPathType("stream", known)).toBe("Brook");
+		expect(builtinPathType("trail", known)).toBe("River");
 	});
 });

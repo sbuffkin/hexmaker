@@ -15,6 +15,8 @@ import {
   generatorSettings,
   drawnPathType,
   generatorFitsPalette,
+  paletteGapMessage,
+  refreshGeneratorShares,
   paletteColors,
   pathColors,
   sourceMapsOf,
@@ -35,6 +37,7 @@ import { getIconUrl, linkLabel } from "../utils";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
+import { isImpassable } from "../impassable";
 import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
@@ -262,7 +265,7 @@ export class GeneratorPanel {
     summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
 
     // Current settings, kept in sync with the file.
-    const s = () => generatorSettings(model);
+    const s = () => generatorSettings(model, this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? []);
     // A just-loaded save's settings win over a possibly stale read of the file.
     const isThisGenerator = (sv: GeneratorSave) => (!!file && sv.generatorPath === file.path) || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
@@ -530,13 +533,17 @@ export class GeneratorPanel {
       GeneratorPanel.paletteName = paletteSelect.value;
       this.host.rerender();
     });
-    if (!generatorFitsPalette(model, this.paletteTerrains())) {
+    // Name what the palette lacks (G2) rather than dropping it silently.
+    const gap = paletteGapMessage(model, this.paletteTerrains());
+    if (gap) {
       paletteRow.createSpan({
-        text: "⚠ Some of this generator's terrains aren't in this palette",
+        text: `⚠ ${gap}`,
         cls: "duckmage-map-origin-desc",
         attr: { title: `Learned with palette ${model.meta.palette ?? "unknown"}` },
       });
     }
+    // The note's derived Share column follows hand edits too (G1).
+    if (file) void refreshGeneratorShares(this.plugin, file);
 
     // Map settings lead the controls: preset sizes for now. The exact size,
     // seed and palette sit under the preview.
@@ -1005,7 +1012,8 @@ export class GeneratorPanel {
     // Terrain the learned paths go around, offered to add (never added for you).
     const drawHints = () => {
       hintBox.empty();
-      const hints = suggestImpassable(model, colors, s().impassable);
+      const palette = this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? [];
+      const hints = suggestImpassable(model, colors, s().impassable, new Set(palette.filter(isImpassable).map((t) => t.name)));
       if (!hints.length) return;
       const row = hintBox.createDiv({ cls: "duckmage-region-row" });
       row.createSpan({ text: "Suggested", cls: "duckmage-map-origin-label" });

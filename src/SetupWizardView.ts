@@ -15,6 +15,7 @@ import {
 	describeKind,
 	firstMapGenerator,
 	generationKey,
+	kindOptions,
 	kindsForPalette,
 	listGeneratorKinds,
 	suggestBaseTerrain,
@@ -640,7 +641,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				optsBox.empty();
 				seaRandomOption = undefined;
 				const kind = kinds.find((k) => k.id === ctx.generatorId);
-				for (const opt of kind?.options ?? []) {
+				for (const opt of kind ? kindOptions(kind, terrains()) : []) {
 					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
 					row.createSpan({ text: opt.label });
 					const sel = row.createEl("select");
@@ -649,6 +650,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 						if (kind?.id === OVERLAND_ID && opt.key === "sea" && c.value === "random") seaRandomOption = o;
 					}
 					sel.value = ctx.generatorOptions[opt.key] ?? opt.default;
+					if (sel.selectedIndex < 0) sel.value = opt.default;
 					sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
 				}
 				syncSeaLabel();

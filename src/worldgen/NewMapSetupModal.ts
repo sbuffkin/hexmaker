@@ -31,6 +31,7 @@ import {
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
+  kindOptions,
   optionsWithDefaults,
   regionDetailDescription,
   runGenerator,
@@ -605,11 +606,13 @@ export class NewMapSetupModal extends HexmakerModal {
         this.options.sea = seaHint.side;
         this.seaFromNeighbour = true;
       }
-      for (const opt of kind?.options ?? []) {
+      for (const opt of kind ? kindOptions(kind, terrains) : []) {
         const r = this.row(optsBox, opt.label);
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
+        // A saved choice this palette doesn't offer (a star it hasn't got).
+        if (sel.selectedIndex < 0) sel.value = opt.default;
         const hint = opt.key === "sea" && seaHint && this.seaFromNeighbour
           ? r.createDiv({ cls: "setting-item-description duckmage-setup-sea-hint", text: neighbourSeaText(seaHint, anchor ?? "the neighbouring map") })
           : undefined;

@@ -38,6 +38,8 @@ export {
   type PathTypeTweak,
   effectivePathTweaks,
   pathRouteKey,
+  weightShares,
+  missingTerrains,
 } from "./model";
 export { mergeModels, compassLayout, isCompass, COMPASS, type Compass } from "./merge";
 export { learnModel, measurePatches, measureLayout, measureNear, LAYOUT_5_MIN_HEXES, NEAR_THRESHOLDS, SHAPE_THRESHOLDS, type LearnOptions, type TerrainAnalysis } from "./learn";
@@ -46,6 +48,8 @@ export { countPatches, smoothEdges, removeSpecks, untouchableTerrains, enforceNe
 export { learnPaths, routePaths, edgeSide, isEdgeAnchor, type PathInput, type PathOutput, type RouteStat } from "./paths";
 export {
   modelToMarkdown,
+  refreshShareColumn,
+  shareCell,
   parseModelMarkdown,
   parseNear,
   isModelMarkdown,

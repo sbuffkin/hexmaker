@@ -59,7 +59,7 @@ const close = (a: Pt[], b: Pt[], tol: number) => {
 };
 
 const type = (name: string, routing: PathType["routing"], width = 4): PathType =>
-  ({ name, color: "#000", width, lineStyle: "solid", routing });
+  ({ name, color: "#000", width, lineStyle: "solid", routing, avoidImpassable: true, autoRoute: "direct" });
 
 describe("pathGeometry: lattice units", () => {
   it("lattice centres are hexGeometry centres at radius 1, in absolute coordinates", () => {
@@ -174,8 +174,8 @@ describe("pathGeometry: strokes", () => {
   const rb = (path: string, typeName: string, hexes: string[]) => ({ path, typeName, branch: 0, hexes, anchorIdx: [0, hexes.length - 1], fallbackSegments: [] });
 
   it("widths, dashes and lane gaps are in lattice units (px / 35.2)", () => {
-    const road: PathType = { name: "Road", color: "#a00", width: 4, lineStyle: "dashed", routing: "through" };
-    const river: PathType = { name: "River", color: "#00a", width: 6, lineStyle: "solid", routing: "through" };
+    const road: PathType = { name: "Road", color: "#a00", width: 4, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" };
+    const river: PathType = { name: "River", color: "#00a", width: 6, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" };
     const shared = ["1_1", "2_1", "3_1"];
     const [r, v] = buildPathStrokes([rb("Road", "Road", shared), rb("River", "River", shared)], [road, river], g, { unknownType: UNKNOWN_PATH_TYPE });
     expect(r.width).toBeCloseTo(4 / 35.2, 12);

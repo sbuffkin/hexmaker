@@ -6,16 +6,14 @@ import {
 } from "../src/palettes/presets";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { starScatter, starScatterFits, starScatterRoles } from "../src/worldgen/procedural/starScatter";
-import { orbits, orbitsFits, orbitRoles } from "../src/worldgen/procedural/orbits";
+import { orbits, orbitsFits, orbitRoles, orbitsOptions } from "../src/worldgen/procedural/orbits";
 import { planetSurface, planetSurfaceFits, planetRoles } from "../src/worldgen/procedural/planetSurface";
 import {
 	centerHex,
 	distance,
 	findByType,
-	findRole,
 	findTerrain,
 	ofType,
-	untyped,
 	weightedPick,
 	type ProcGrid,
 } from "../src/worldgen/procedural/common";
@@ -31,10 +29,9 @@ const count = (cells: Map<string, string>, pred: (t: string) => boolean) =>
 	[...cells.values()].filter(pred).length;
 
 describe("procedural helpers", () => {
-	it("findTerrain matches names case-insensitively, then falls back to a category", () => {
+	it("findTerrain matches names case-insensitively (a tie-break only; categories never pick)", () => {
 		const t = [{ name: "Void", color: "#000", category: "space" }, { name: "x", color: "#111", category: "space" }];
 		expect(findTerrain(t, ["void"])).toBe("Void");
-		expect(findTerrain(t, ["nothing"], "space")).toBe("Void");
 		expect(findTerrain(t, ["nothing"])).toBeUndefined();
 	});
 
@@ -46,10 +43,13 @@ describe("procedural helpers", () => {
 		expect(weightedPick(mulberry32(5), [], {})).toBeUndefined();
 	});
 
-	it("suggests void / empty space as the base terrain", () => {
+	it("suggests the first void-typed terrain as the base terrain, whatever its name", () => {
 		expect(suggestBaseTerrain(SPACE_SYSTEM_TERRAINS)).toBe("void");
 		expect(suggestBaseTerrain(SPACE_SECTOR_TERRAINS)).toBe("empty space");
 		expect(suggestBaseTerrain(DEFAULT_TERRAIN_PALETTE)).toBeUndefined();
+		expect(suggestBaseTerrain([{ name: "The Black", color: "#000", type: "void" }])).toBe("The Black");
+		// Named like a background but not typed as one: not a background.
+		expect(suggestBaseTerrain([{ name: "void", color: "#000" }])).toBeUndefined();
 	});
 });
 
@@ -115,14 +115,19 @@ describe("star scatter", () => {
 		expect(none.paths).toEqual([]);
 	});
 
-	it("works on a minimal custom palette (renamed terrains, categories only)", () => {
+	it("works on a minimal custom palette (renamed terrains, typed)", () => {
 		const custom = [
-			{ name: "Black", color: "#000", category: "space" },
-			{ name: "Haven", color: "#0f0", category: "worlds" },
+			{ name: "Black", color: "#000", type: "void" },
+			{ name: "Haven", color: "#0f0", type: "world" },
 		];
 		expect(starScatterFits(custom)).toBe(true);
 		const r = starScatter(custom, grid(6, 6), 1, { density: "dense" });
 		expect(new Set(r.cells.values())).toEqual(new Set(["Black", "Haven"]));
+	});
+
+	it("an untyped palette fits nothing, even with the shipped names and categories", () => {
+		const untypedSector = SPACE_SECTOR_TERRAINS.map(({ type: _t, ...rest }) => rest);
+		expect(starScatterFits(untypedSector)).toBe(false);
 	});
 });
 
@@ -259,7 +264,6 @@ describe("terrain types", () => {
 		it("ofType lists terrains of the given types in palette order; unknown types count as untyped", () => {
 			expect(ofType(pal, ["forest"])).toEqual(["Forest heavy", "forest", "Pinewood"]);
 			expect(ofType([t("x", "bogus")], ["bogus"])).toEqual([]);
-			expect(untyped([...pal, t("y", "bogus")]).map((x) => x.name)).toEqual(["sea", "y"]);
 		});
 
 		it("findByType prefers name hints within the type, then palette order, then later types", () => {
@@ -270,9 +274,9 @@ describe("terrain types", () => {
 			expect(findByType(pal, ["water"], ["ocean"])).toBeUndefined();
 		});
 
-		it("findRole falls back to names only among untyped terrains", () => {
-			expect(findRole(pal, ["water"], ["ocean", "sea"])).toBe("sea");
-			expect(findRole([t("ocean", "desert")], ["water"], ["ocean"])).toBeUndefined();
+		it("an untyped terrain fills no role, even named like one", () => {
+			expect(findByType(pal, ["water"], ["ocean", "sea"])).toBeUndefined();
+			expect(findByType([t("ocean", "desert")], ["water"], ["ocean"])).toBeUndefined();
 		});
 	});
 
@@ -323,14 +327,14 @@ describe("terrain types", () => {
 			t("Big Blue", "gas-giant"),
 			t("Rubble ring", "asteroids"),
 			t("Luna", "world"),
-			t("Pale moon", "world"),
-			t("Iceball comet", "asteroids"),
-			t("Highport", "station"),
-			t("Gateway", "station"),
+			t("Pale moon", "moon"),
+			t("Iceball comet", "comet"),
+			t("Highport", "starport"),
+			t("Gateway", "jump-point"),
 			t("Outpost", "station"),
 		];
 
-		it("resolves roles from types, splitting coarse types by name hints", () => {
+		it("resolves every role from types alone", () => {
 			const r = orbitRoles(custom)!;
 			expect(r.background).toBe("Abyssal Drift");
 			expect(r.stars).toEqual(["Embers"]);
@@ -369,7 +373,36 @@ describe("terrain types", () => {
 		});
 
 		it("does not take a sector's star-system marker for a star", () => {
-			expect(orbitRoles([t("void", "void"), t("star system", "star"), t("Eden", "world")])).toBeUndefined();
+			expect(orbitRoles([t("void", "void"), t("star system", "star-system"), t("Eden", "world")])).toBeUndefined();
+		});
+
+		it("names play no part: a moon named like a planet is a moon, a planet named Moonbase is a planet", () => {
+			const r = orbitRoles([t("Edge", "void"), t("Sol", "star"), t("Moonbase", "world"), t("Terra Minor", "moon")])!;
+			expect(r.bodies).toEqual(["Moonbase"]);
+			expect(r.moon).toBe("Terra Minor");
+		});
+
+		it("the Star option lists the palette's own stars", () => {
+			const star = orbitsOptions(custom).find((o) => o.key === "star")!;
+			expect(star.choices).toEqual([{ value: "random", label: "Random" }, { value: "embers", label: "Embers" }]);
+			const shipped = orbitsOptions(SPACE_SYSTEM_TERRAINS).find((o) => o.key === "star")!;
+			expect(shipped.choices.map((c) => c.value)).toEqual(["random", "yellow star", "red dwarf", "blue giant", "white dwarf", "brown dwarf"]);
+			const r = orbits(custom, grid(13, 13), 3, { star: "embers" });
+			expect([...r.cells.values()]).toContain("Embers");
+		});
+
+		it("the shipped System palette, renamed, fills every role the same way", () => {
+			const renamed = SPACE_SYSTEM_TERRAINS.map((x, i) => ({ ...x, name: `Body ${i}` }));
+			const rename = (n: string | undefined) => (n === undefined ? undefined : renamed[SPACE_SYSTEM_TERRAINS.findIndex((x) => x.name === n)].name);
+			const a = orbitRoles(SPACE_SYSTEM_TERRAINS)!;
+			const b = orbitRoles(renamed)!;
+			for (const k of ["background", "moon", "comet", "station", "starport", "jumpPoint", "jumpLimit", "belt"] as const) expect(b[k]).toBe(rename(a[k]));
+			for (const k of ["stars", "bodies", "belts", "giants"] as const) expect(b[k]).toEqual(a[k].map(rename));
+			for (let seed = 1; seed <= 5; seed++) {
+				const cells = orbits(renamed, grid(13, 13), seed, {}).cells;
+				const [cx, cy] = centerHex(grid(13, 13));
+				expect(b.stars).toContain(cells.get(`${cx}_${cy}`));
+			}
 		});
 	});
 
@@ -418,11 +451,23 @@ describe("terrain types", () => {
 			expect(planetSurfaceFits([t("ocean", "desert"), t("grass", "grassland")])).toBe(false);
 		});
 
-		it("untyped palettes still resolve by name and category", () => {
+		it("untyped palettes fit nothing, even with the shipped names and categories", () => {
 			const pal = [t("ocean"), t("Lowland", undefined, "lowlands"), t("forest"), t("hills")];
-			const r = planetRoles(pal)!;
-			expect(r).toMatchObject({ sea: "ocean", plains: "Lowland", forest: "forest", hills: "hills" });
-			expect(r.variants).toEqual({ forest: {}, hills: {}, mountain: {} });
+			expect(planetRoles(pal)).toBeUndefined();
+			expect(planetSurfaceFits(DEFAULT_TERRAIN_PALETTE.map(({ type: _t, ...rest }) => rest))).toBe(false);
+		});
+
+		it("the shipped Expanded palette, renamed, fills the same roles", () => {
+			const renamed = DEFAULT_TERRAIN_PALETTE.map((x, i) => ({ ...x, name: `T${i}` }));
+			const a = planetRoles(DEFAULT_TERRAIN_PALETTE)!;
+			const b = planetRoles(renamed)!;
+			const idx = (r: typeof a) => (n: string | undefined) => n === undefined ? -1 : (r === a ? DEFAULT_TERRAIN_PALETTE : renamed).findIndex((x) => x.name === n);
+			// Same type for every base role (which one of several same-typed
+			// terrains is a tie-break; see findByType).
+			for (const k of ["sea", "plains", "deep", "shallows", "beach", "forest", "jungle", "swamp", "hills", "mountain", "peak", "snow", "desert", "badlands", "volcano"] as const) {
+				const ia = idx(a)(a[k]), ib = idx(b)(b[k]);
+				expect(ib >= 0 ? renamed[ib].type : undefined).toBe(ia >= 0 ? DEFAULT_TERRAIN_PALETTE[ia].type : undefined);
+			}
 		});
 
 		it("spreads the Expanded palette's woodland variants by climate", () => {
@@ -437,14 +482,24 @@ describe("terrain types", () => {
 		});
 	});
 
-	describe("untyped space fallback", () => {
-		it("orbits still resolves from categories and exact names", () => {
+	describe("untyped space palettes", () => {
+		it("orbits needs types: shipped names and categories alone don't fit", () => {
 			const pal = [
 				t("void", undefined, "space"), t("Sol", undefined, "stars"),
 				t("Terra", undefined, "bodies"), t("moon", undefined, "bodies"), t("jump point"),
 			];
-			const r = orbitRoles(pal)!;
-			expect(r).toMatchObject({ background: "void", stars: ["Sol"], bodies: ["Terra"], moon: "moon", jumpPoint: "jump point" });
+			expect(orbitRoles(pal)).toBeUndefined();
+			expect(orbitsFits(SPACE_SYSTEM_TERRAINS.map(({ type: _t, ...rest }) => rest))).toBe(false);
+		});
+
+		it("with everything deleted, no space generator fits and nothing throws", () => {
+			expect(orbitRoles([])).toBeUndefined();
+			expect(starScatterRoles([])).toBeUndefined();
+			expect(planetRoles([])).toBeUndefined();
+			expect(orbits([], grid(5, 5), 1).cells.size).toBe(0);
+			expect(starScatter([], grid(5, 5), 1).cells.size).toBe(0);
+			expect(planetSurface([], grid(5, 5), 1).cells.size).toBe(0);
+			expect(suggestBaseTerrain([])).toBeUndefined();
 		});
 	});
 });

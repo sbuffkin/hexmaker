@@ -18,6 +18,7 @@ import {
 } from "../src/worldgen/generators";
 import { findViolation, parseModelMarkdown, type HexWfcModel } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
+import type { TerrainColor } from "../src/types";
 
 /**
  * In-memory vault + plugin stub. Hex notes are represented only by their
@@ -60,6 +61,12 @@ function makePlugin(painted: Record<string, string>, locked: string[] = []) {
       },
       getMarkdownFiles: () => [...files.keys()].map(fileObj),
       cachedRead: async (f: TFile) => files.get(f.path) ?? "",
+      read: async (f: TFile) => files.get(f.path) ?? "",
+      process: async (f: TFile, fn: (text: string) => string) => {
+        const next = fn(files.get(f.path) ?? "");
+        files.set(f.path, next);
+        return next;
+      },
     },
     metadataCache: {
       getFileCache: (f: TFile) => {
@@ -259,18 +266,36 @@ describe("default impassable terrain", () => {
     adjacency: [],
   };
 
-  it("uses the generator's shallows, ocean and trench, in any case", () => {
-    expect(defaultImpassable(base)).toEqual(["Shallows", "ocean", "TRENCH"]);
-    expect(generatorSettings(base).impassable).toEqual(["Shallows", "ocean", "TRENCH"]);
+  // The palette says what is impassable (type group or the Impassable
+  // column), in any case; never the terrain's name.
+  const palette: TerrainColor[] = [
+    { name: "grass", color: "#0f0", type: "grassland" },
+    { name: "shallows", color: "#00f", type: "shallows" },
+    { name: "Ocean", color: "#00f", type: "water" },
+    { name: "trench", color: "#00f", type: "deep-water" },
+    { name: "hills", color: "#aa0", type: "hills" },
+  ];
+
+  it("uses the terrains the palette marks impassable, in any case", () => {
+    expect(defaultImpassable(base, palette)).toEqual(["Shallows", "ocean", "TRENCH"]);
+    expect(generatorSettings(base, palette).impassable).toEqual(["Shallows", "ocean", "TRENCH"]);
+  });
+
+  it("goes by the palette, not the names: flagged, untyped or none", () => {
+    const flagged: TerrainColor[] = palette.map((t) => (t.name === "hills" ? { ...t, impassable: true } : t));
+    expect(defaultImpassable(base, flagged)).toEqual(["Shallows", "ocean", "TRENCH", "Hills"]);
+    const untyped: TerrainColor[] = palette.map(({ type: _t, ...rest }) => rest);
+    expect(defaultImpassable(base, untyped)).toEqual([]);
+    expect(defaultImpassable(base, [])).toEqual([]);
   });
 
   it("only covers terrains the generator has", () => {
-    expect(defaultImpassable({ ...base, terrains: [{ name: "Grass", weight: 1 }] })).toEqual([]);
+    expect(defaultImpassable({ ...base, terrains: [{ name: "Grass", weight: 1 }] }, palette)).toEqual([]);
   });
 
   it("steps aside once the generator saves its own list, even an empty one", () => {
-    expect(defaultImpassable({ ...base, settings: { impassable: ["Hills"] } })).toBeUndefined();
-    expect(generatorSettings({ ...base, settings: { impassable: [] } }).impassable).toEqual([]);
+    expect(defaultImpassable({ ...base, settings: { impassable: ["Hills"] } }, palette)).toBeUndefined();
+    expect(generatorSettings({ ...base, settings: { impassable: [] } }, palette).impassable).toEqual([]);
   });
 });
 

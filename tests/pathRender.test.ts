@@ -10,8 +10,8 @@ import { hexCenter } from "../src/hex-map/hexGeometry";
 import { countPathsOfType, removePathTypeFromChains, removePathTypeFromPaths, renamePathTypeInChains, renamePathTypeInPaths } from "../src/paths/typeRefs";
 import { legacyChainsToPaths } from "../src/paths/legacy";
 
-const ROAD: PathType = { name: "Road", color: "#a33", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true };
-const TRAIL: PathType = { name: "Trail", color: "#555", width: 2, lineStyle: "dashed", routing: "meander", avoidImpassable: true };
+const ROAD: PathType = { name: "Road", color: "#a33", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" };
+const TRAIL: PathType = { name: "Trail", color: "#555", width: 2, lineStyle: "dashed", routing: "meander", avoidImpassable: true, autoRoute: "winding" };
 const WATER: TerrainColor = { name: "lake", color: "#00f", impassable: true };
 const GRASS: TerrainColor = { name: "grass", color: "#0f0", impassable: false };
 
@@ -126,12 +126,15 @@ describe("paths service: style comes from the explicit type fields, in one place
     const f = styleForTypes([ROAD]);
     expect(f("Road")).toEqual({ avoid: true, winding: false });
     expect(f("River")).toBeUndefined();
+    // A type named "River" with explicit settings routes by them, not its name.
+    expect(styleForTypes([{ ...ROAD, name: "River" }])("River")).toEqual({ avoid: true, winding: false });
+    expect(styleForTypes([TRAIL])("Trail")).toEqual({ avoid: true, winding: true });
   });
 
-  it("is the only reader of avoid/winding (the PA5 switch is one line)", () => {
+  it("reads avoid/winding only from the explicit PathType fields, in one place", () => {
     const src = readFileSync(path.join(process.cwd(), "src", "paths", "PathsService.ts"), "utf8");
-    expect(src.match(/pathAvoidsImpassable\(|pathMeanders\(/g)?.length).toBe(2);
-    expect(src).toMatch(/return t && \{ avoid: pathAvoidsImpassable\(t\), winding: pathMeanders\(t\) \};/);
+    expect(src).not.toMatch(/pathAvoidsImpassable\(|pathMeanders\(/);
+    expect(src).toMatch(/return t && \{ avoid: t\.avoidImpassable, winding: t\.autoRoute === "winding" \};/);
     for (const f of ["src/hex-map/HexMapView.ts", "src/export/mapPngRenderer.ts", "src/paths/pathGeometry.ts"]) {
       const body = readFileSync(path.join(process.cwd(), f), "utf8");
       // The renderers never route by themselves (the draw tool's own route click aside).

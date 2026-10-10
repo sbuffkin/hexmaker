@@ -1,6 +1,6 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
-import { inferTerrainType, isTerrainType } from "../../terrainTypes";
+import { effectiveTerrainType } from "../../terrainTypes";
 import { SIDE_VECTORS, cellKey, centerHex, gridKeys, type ContextPath, type ProcGrid, type ProcPath, type Side } from "./common";
 
 /**
@@ -10,12 +10,14 @@ import { SIDE_VECTORS, cellKey, centerHex, gridKeys, type ContextPath, type Proc
  * submaps of two adjacent parent hexes meet at the same spot on their
  * shared edge and the road/river lines up across the seam.
  *
- * Routing is a cheapest path over the generated terrain: roads avoid
- * water (crossing only if they must — a bridge), mountains and swamps;
- * rivers prefer low ground, run into water happily, and meander.
+ * Routing is a cheapest path over the generated terrain. A path type that
+ * avoids impassable terrain keeps off water (crossing only if it must — a
+ * bridge), mountains and swamps; one that doesn't prefers low ground and
+ * runs into water happily, like a river. Winding types wander; direct ones
+ * keep to the line. All of it comes from the type's options, never its name.
  */
 
-/** Movement cost per terrain type, for roads and for rivers. */
+/** Movement cost per terrain type, for paths that avoid impassable terrain and for those that don't. */
 const ROAD_COST: Record<string, number> = {
   "deep-water": 60, water: 40, shallows: 25, wetland: 3, forest: 1.6, jungle: 2.2,
   hills: 2.5, mountains: 7, peaks: 14, snow: 3, desert: 1.4, badlands: 2.5, volcanic: 9,
@@ -25,9 +27,6 @@ const RIVER_COST: Record<string, number> = {
   badlands: 1.8, volcanic: 6,
 };
 
-function isRiver(p: ContextPath): boolean {
-  return p.routing === "meander" || /river|stream|creek|brook/i.test(p.type);
-}
 
 /**
  * The hex where a path crosses a side of the grid: the middle row of the
@@ -49,7 +48,7 @@ export function edgeHex(grid: ProcGrid, side: Side): [number, number] {
 
 /**
  * Route each context path over the generated cells. `terrains` gives each
- * cell's type (falling back to a name guess); unpainted cells cost 1.
+ * cell's type (its Type column; untyped and unpainted cells cost 1).
  */
 export function routeContextPaths(
   cells: Map<string, string>,
@@ -58,7 +57,7 @@ export function routeContextPaths(
   paths: ContextPath[],
   seed: number,
 ): ProcPath[] {
-  const typeByName = new Map(terrains.map((t) => [t.name, isTerrainType(t.type) ? t.type : inferTerrainType(t.name, t.category)]));
+  const typeByName = new Map(terrains.map((t) => [t.name, effectiveTerrainType(t)]));
   const hexes = gridKeys(grid);
   const inGrid = new Set(hexes.map(([x, y]) => cellKey(x, y)));
   const out: ProcPath[] = [];
@@ -69,9 +68,9 @@ export function routeContextPaths(
     const end = at(p.toHex) ?? (p.to ? edgeHex(grid, p.to) : centerHex(grid));
     const sk = cellKey(start[0], start[1]), ek = cellKey(end[0], end[1]);
     if (sk === ek) return;
-    const river = isRiver(p);
-    const costs = river ? RIVER_COST : ROAD_COST;
-    // Per-path seeded jitter makes rivers wander; roads stay direct.
+    const costs = p.avoidImpassable === false ? RIVER_COST : ROAD_COST;
+    const winding = p.autoRoute === "winding";
+    // Per-path seeded jitter makes winding paths wander; direct ones stay direct.
     const rand = mulberry32((seed ^ (n + 1) * 0x9e3779b9) >>> 0);
     const jitter = new Map<string, number>();
     // Many routes across a hex grid tie on length; a small penalty for
@@ -80,7 +79,7 @@ export function routeContextPaths(
     const [ax, ay] = hexCenter(start[0], start[1], grid.orientation, grid.stagger);
     const [bx, by] = hexCenter(end[0], end[1], grid.orientation, grid.stagger);
     const len = Math.hypot(bx - ax, by - ay) || 1;
-    const stray = river ? 0.04 : 0.12;
+    const stray = winding ? 0.04 : 0.12;
     const cost = (k: string) => {
       const t = cells.get(k);
       const type = t ? typeByName.get(t) : undefined;
@@ -88,7 +87,7 @@ export function routeContextPaths(
       const [hx, hy] = k.split("_").map(Number);
       const [px, py] = hexCenter(hx, hy, grid.orientation, grid.stagger);
       c += stray * Math.abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / len / Math.sqrt(3);
-      if (river) {
+      if (winding) {
         if (!jitter.has(k)) jitter.set(k, rand() * 0.9);
         c += jitter.get(k)!;
       }
@@ -135,8 +134,16 @@ export function routeContextPaths(
  * road entering in the west and one entering in the east become one road
  * through; an odd one out runs to the centre (it ends here, e.g. at a town).
  */
+/** A path type's routing options, as carried on a context path. */
+export function behaviourOf(
+  pt: Pick<ContextPath, "routing" | "avoidImpassable" | "autoRoute"> | undefined,
+): Pick<ContextPath, "routing" | "avoidImpassable" | "autoRoute"> {
+  if (!pt) return {};
+  return { routing: pt.routing, avoidImpassable: pt.avoidImpassable, autoRoute: pt.autoRoute };
+}
+
 export function pairCrossings(
-  crossings: { type: string; routing?: ContextPath["routing"]; hex: string }[],
+  crossings: ({ type: string; hex: string } & Pick<ContextPath, "routing" | "avoidImpassable" | "autoRoute">)[],
   grid: ProcGrid,
 ): ContextPath[] {
   const [mx, my] = hexCenter(...centerHex(grid), grid.orientation, grid.stagger);
@@ -161,11 +168,11 @@ export function pairCrossings(
     const half = Math.floor(sorted.length / 2);
     for (let i = 0; i < half; i++) {
       const a = sorted[i], b = sorted[i + half];
-      out.push({ type: a.type, routing: a.routing, fromHex: a.hex, toHex: b.hex });
+      out.push({ type: a.type, ...behaviourOf(a), fromHex: a.hex, toHex: b.hex });
     }
     if (sorted.length % 2 === 1) {
       const last = sorted[sorted.length - 1];
-      out.push({ type: last.type, routing: last.routing, fromHex: last.hex });
+      out.push({ type: last.type, ...behaviourOf(last), fromHex: last.hex });
     }
   }
   return out;

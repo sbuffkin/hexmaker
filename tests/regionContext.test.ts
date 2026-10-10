@@ -87,10 +87,14 @@ describe("Region detail (planet surface with context)", () => {
 		expect(east).toBeLessThan(0.15);
 	});
 
-	it("untyped context terrains are read from their names", () => {
-		const ctx: GenerationContext = { parent: { terrain: "dark forest" }, sides: { S: { terrain: "salt sea" } } };
-		const r = planetSurface(DEFAULT_TERRAIN_PALETTE, grid, 2, {}, ctx);
+	it("context terrains are read by type, never by name", () => {
+		const typed: GenerationContext = { parent: { terrain: "Gloomwood", type: "forest" }, sides: { S: { terrain: "Brine", type: "water" } } };
+		const r = planetSurface(DEFAULT_TERRAIN_PALETTE, grid, 2, {}, typed);
 		expect(share(r.cells, all, new Set(["forest"]))).toBeGreaterThan(0.3);
+		// Untyped: "dark forest" says nothing about the parent; no forest target.
+		const untyped: GenerationContext = { parent: { terrain: "dark forest" } };
+		const u = planetSurface(DEFAULT_TERRAIN_PALETTE, grid, 2, {}, untyped);
+		expect(share(u.cells, all, new Set(["forest"]))).toBeLessThan(share(r.cells, all, new Set(["forest"])));
 	});
 
 	it("is deterministic per seed", () => {
@@ -133,11 +137,11 @@ describe("Region detail keeps its card's promise (fresh-eyes round 7)", () => {
 	// SE and mixed forest to the SW. Both neighbours are forest-type, so the
 	// type blend alone produced no evergreen at all.
 	const ctx: GenerationContext = {
-		parent: { terrain: "mixed forest heavy" },
+		parent: { terrain: "mixed forest heavy", type: "forest" },
 		sides: {
-			NE: { terrain: "evergreen heavy" },
-			SE: { terrain: "evergreen heavy" },
-			SW: { terrain: "mixed forest" },
+			NE: { terrain: "evergreen heavy", type: "forest" },
+			SE: { terrain: "evergreen heavy", type: "forest" },
+			SW: { terrain: "mixed forest", type: "forest" },
 		},
 	};
 	const g: ProcGrid = { cols: 13, rows: 13, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };

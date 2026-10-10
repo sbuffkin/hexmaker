@@ -131,12 +131,12 @@ export class PaletteEditorView extends ItemView {
     contentEl.createEl("h3", { text: `Terrains (${pal.terrains.length})` });
     contentEl.createDiv({
       cls: "setting-item-description",
-      text: "Type gives a terrain its defaults, whatever its name: water types (deep water, water, shallows) are impassable to auto-routed roads. Tick or untick Impassable to override one terrain.",
+      text: "Type gives a terrain its defaults, whatever its name: water types (deep water, water, shallows) are impassable to auto-routed paths, and generators place terrains by type. Tick or untick Impassable to override one terrain.",
     });
     const untyped = pal.terrains.filter((t) => !t.type).length;
     if (untyped) {
       const hint = contentEl.createDiv({ cls: "duckmage-pe-hint" });
-      hint.createSpan({ text: `${untyped} terrain${untyped === 1 ? " has" : "s have"} no type. ` });
+      hint.createSpan({ text: `${untyped} terrain${untyped === 1 ? " has" : "s have"} no type, so no defaults, and generators skip ${untyped === 1 ? "it" : "them"}. ` });
       hint.createEl("button", { text: "Guess types from names" }).addEventListener("click", () => {
         let n = 0;
         for (const t of pal.terrains) {
@@ -237,7 +237,7 @@ export class PaletteEditorView extends ItemView {
     add.addEventListener("click", () => {
       let name = "New path";
       for (let n = 2; types.some((p) => p.name.toLowerCase() === name.toLowerCase()); n++) name = `New path ${n}`;
-      const pt = { name, color: "#888888", width: 3, lineStyle: "solid" as const, routing: "through" as const };
+      const pt = { name, color: "#888888", width: 3, lineStyle: "solid" as const, routing: "through" as const, avoidImpassable: true, autoRoute: "direct" as const };
       types.push(pt);
       void this.plugin.saveSettings().then(() => {
         this.render();

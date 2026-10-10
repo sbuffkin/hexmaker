@@ -1,15 +1,21 @@
-import type { PathLineStyle, PathRouting, PathType } from "../types";
+import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../types";
 import { parseImpassableCell } from "../impassable";
+import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTypeLegacy";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
 //
 //   ## Path types
 //
-//   | Path | Color | Width | Style | Routing | Avoid impassable |
-//   | --- | --- | --- | --- | --- | --- |
-//   | Road | #a16207 | 4 | solid | through | yes |
-//   | River | #3b82f6 | 3 | solid | meander | no |
+//   | Path | Color | Width | Style | Routing | Avoid impassable | Auto-route |
+//   | --- | --- | --- | --- | --- | --- | --- |
+//   | Road | #a16207 | 4 | solid | through | yes | direct |
+//   | River | #3b82f6 | 3 | solid | meander | no | winding |
+//
+// Every behaviour is a column, written out for every row: nothing follows a
+// path type's name (PA5). A blank or missing cell reads as the plain default
+// (through, yes, direct) and is written back filled in. Notes from before
+// PA5 are read once with the old name rules instead (pathTypeLegacy.ts).
 //
 // Read forgivingly, since people edit it by hand: columns by name in any
 // order (Path or Name, Color or Colour, Style or Line…), values in any case,
@@ -21,14 +27,15 @@ export const PATH_TYPES_HEADING = "## Path types";
 
 export const PATH_TYPES_INTRO =
   "Paths maps on this palette can draw. Width is 1 (thin) to 10 (thick). Style is solid, dashed or dotted. " +
-  "Routing is how a path runs between hexes: through (centre to centre), meander (curving across hex edges, " +
-  "like a river) or edge (along the hex borders). Avoid impassable is yes or no: whether auto-route goes " +
-  "around impassable terrain (blank = yes, except for rivers). To have no path types, delete the rows but keep " +
-  "the header line.";
+  "Routing is how the line is drawn: through (a smooth curve through hex centres), meander (a smooth curve " +
+  "through the middles of the edges between hexes) or edge (straight along the hex borders). Avoid impassable " +
+  "is yes or no: whether auto-route goes around impassable terrain (no also lets generated submaps run it " +
+  "through water, like a river). Auto-route is direct (keeps to the straight line) or winding (wanders). " +
+  "To have no path types, delete the rows but keep the header line.";
 
-const HEADERS = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable"] as const;
+const HEADERS = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable", "Auto-route"] as const;
 
-type Column = "name" | "color" | "width" | "style" | "routing" | "avoid";
+type Column = "name" | "color" | "width" | "style" | "routing" | "avoid" | "autoRoute";
 
 function columnFor(header: string): Column | null {
   const h = header.trim().toLowerCase().replace(/\s+/g, " ");
@@ -36,7 +43,8 @@ function columnFor(header: string): Column | null {
   if (h === "color" || h === "colour") return "color";
   if (h === "width" || h === "thickness" || h === "size") return "width";
   if (h === "style" || h === "line" || h === "line style" || h === "linestyle") return "style";
-  if (h === "routing" || h === "route" || h === "runs") return "routing";
+  if (/^auto[\s-]?rout(e|ing)$/.test(h) || h === "route style" || h === "auto") return "autoRoute";
+  if (h === "routing" || h === "route" || h === "runs" || h === "drawn" || h === "draw") return "routing";
   if (h.startsWith("avoid")) return "avoid";
   return null;
 }
@@ -109,12 +117,19 @@ function parseStyle(raw: string | undefined): PathLineStyle {
   return "solid";
 }
 
-function parseRouting(raw: string | undefined, name: string): PathRouting {
+function parseRouting(raw: string | undefined): PathRouting | undefined {
   const v = (raw ?? "").trim().toLowerCase();
   if (/meander|curv|wind|river/.test(v)) return "meander";
   if (/edge|border|side/.test(v)) return "edge";
   if (/through|centre|center|straight/.test(v)) return "through";
-  return /\b(river|stream|creek)s?\b/i.test(name) ? "meander" : "through";
+  return undefined;
+}
+
+function parseAutoRoute(raw: string | undefined): PathAutoRoute | undefined {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (/wind|wand|meander|curv|twist|river/.test(v)) return "winding";
+  if (/direct|straight|short|road/.test(v)) return "direct";
+  return undefined;
 }
 
 function parseWidth(raw: string | undefined): number {
@@ -131,6 +146,16 @@ export interface ParsedPathTypes {
   extraHeaders: string[];
   /** Rows that couldn't be read, as typed, for a notice. */
   skipped: string[];
+  /** Some behaviour cell was blank or missing (filled with its default), so a rewrite would fill it in. */
+  implicit: boolean;
+}
+
+export interface ParsePathTypesOptions {
+  /**
+   * Read blank behaviour cells with the old name rules (notes saved before
+   * PA5, read once while migrating). Otherwise blanks are the plain defaults.
+   */
+  legacy?: boolean;
 }
 
 /**
@@ -138,7 +163,7 @@ export interface ParsedPathTypes {
  * read (none, or one with no Path/Name column, e.g. a typo in the header):
  * callers then keep the types they had rather than lose them all.
  */
-export function parsePathTypes(content: string): ParsedPathTypes | null {
+export function parsePathTypes(content: string, opts: ParsePathTypesOptions = {}): ParsedPathTypes | null {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
   const span = findPathTypesTable(lines);
   if (!span || !span.columns.includes("name")) return null;
@@ -147,6 +172,7 @@ export function parsePathTypes(content: string): ParsedPathTypes | null {
   const extraHeaders = span.headers.filter((_, i) => span.columns[i] === null && span.headers[i] !== "");
   const skipped: string[] = [];
   const seen = new Set<string>();
+  let implicit = false;
   for (let i = span.start + 2; i < span.end; i++) {
     const cells = splitRow(lines[i]);
     if (cells.every((c) => c === "")) continue;
@@ -163,19 +189,24 @@ export function parsePathTypes(content: string): ParsedPathTypes | null {
       continue;
     }
     seen.add(name.toLowerCase());
+    const routing = parseRouting(row.routing);
+    const avoid = parseImpassableCell(row.avoid);
+    const auto = parseAutoRoute(row.autoRoute);
+    if (routing === undefined || avoid === undefined || auto === undefined) implicit = true;
+    const avoidImpassable = avoid ?? (opts.legacy ? legacyAvoidsImpassable(name) : true);
     const t: PathType = {
       name,
       color: row.color?.trim() || "#888888",
       width: parseWidth(row.width),
       lineStyle: parseStyle(row.style),
-      routing: parseRouting(row.routing, name),
+      routing: routing ?? (opts.legacy ? legacyRouting(name) : "through"),
+      avoidImpassable,
+      autoRoute: auto ?? (opts.legacy ? legacyAutoRoute(name, avoidImpassable) : "direct"),
     };
-    const avoid = parseImpassableCell(row.avoid);
-    if (avoid !== undefined) t.avoidImpassable = avoid;
     types.push(t);
     if (Object.keys(own).length) extra.set(name, own);
   }
-  return { types, extra, extraHeaders, skipped };
+  return { types, extra, extraHeaders, skipped, implicit };
 }
 
 function escapeCell(value: string | undefined): string {
@@ -191,9 +222,9 @@ export function serializePathTypes(
   const headers = [...HEADERS, ...extraHeaders];
   const lines = [`| ${headers.join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`];
   for (const t of types) {
-    const avoid = t.avoidImpassable === undefined ? "" : t.avoidImpassable ? "yes" : "no";
     const own = extra?.rows.get(t.name) ?? {};
-    const cells = [t.name, t.color, String(t.width), t.lineStyle, t.routing, avoid, ...extraHeaders.map((h) => own[h])];
+    const avoid = t.avoidImpassable === false ? "no" : "yes";
+    const cells = [t.name, t.color, String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...extraHeaders.map((h) => own[h])];
     lines.push(`| ${cells.map(escapeCell).join(" | ")} |`);
   }
   return lines.join("\n");
@@ -201,7 +232,7 @@ export function serializePathTypes(
 
 /** Order-sensitive comparison key (order is the picker's order). */
 export function pathTypesKey(types: PathType[] | undefined): string {
-  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null]));
+  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null, t.autoRoute ?? null]));
 }
 
 /**
@@ -211,7 +242,9 @@ export function pathTypesKey(types: PathType[] | undefined): string {
  */
 export function setPathTypes(content: string, types: PathType[]): string {
   const parsed = parsePathTypes(content);
-  if (parsed && pathTypesKey(parsed.types) === pathTypesKey(types) && !parsed.skipped.length) return content;
+  if (parsed && pathTypesKey(parsed.types) === pathTypesKey(types) && !parsed.skipped.length && !parsed.implicit) {
+    return content;
+  }
   const text = content.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
   const span = findPathTypesTable(lines);
