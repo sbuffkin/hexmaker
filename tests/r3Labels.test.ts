@@ -34,7 +34,7 @@ import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
 
-const read = (...p: string[]) => readFileSync(p.join("/"), "utf8");
+const read = (...p: string[]) => readFileSync(p.join("/"), "utf8").replace(/\r\n/g, "\n");
 
 // ── NM3: hex names always legible, overflow allowed, font options ──────────
 

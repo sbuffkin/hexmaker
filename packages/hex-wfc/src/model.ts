@@ -444,6 +444,46 @@ export function restrictModel(model: HexWfcModel, allowed: Iterable<string>): He
   };
 }
 
+/**
+ * Each terrain's share of the map going by weights alone (0–1): `mixed`
+ * false uses the table's weights, true multiplies them by the `mix`
+ * setting first, as the solver does.
+ */
+export function weightShares(model: HexWfcModel, mixed = false): Map<string, number> {
+  const mix = model.settings?.mix ?? {};
+  const w = (t: TerrainEntry) => Math.max(0, t.weight) * (mixed ? mix[t.name] ?? 1 : 1);
+  const total = model.terrains.reduce((sum, t) => sum + w(t), 0) || 1;
+  return new Map(model.terrains.map((t) => [t.name, w(t) / total]));
+}
+
+/**
+ * Terrain names a model uses that aren't in `allowed` (a palette), with
+ * where each is used. Generating on that palette leaves them out, along with
+ * the adjacency rows, features and path ends that name them.
+ */
+export function missingTerrains(model: HexWfcModel, allowed: Iterable<string>): { name: string; where: string[] }[] {
+  const keep = new Set(allowed);
+  const found = new Map<string, Set<string>>();
+  const note = (name: string, where: string) => {
+    if (!name || keep.has(name)) return;
+    if (!found.has(name)) found.set(name, new Set());
+    found.get(name)!.add(where);
+  };
+  const end = (e: string) => !isEdgeAnchor(e) && e !== "none" && e !== "path";
+  for (const t of model.terrains) if (t.weight > 0) note(t.name, "terrains");
+  for (const t of model.terrains) if (t.near && t.weight > 0) note(t.near.terrain, "near");
+  for (const e of model.adjacency) if (e.weight > 0) { note(e.a, "adjacency"); note(e.b, "adjacency"); }
+  for (const f of model.features ?? []) {
+    note(f.terrain, "features");
+    for (const x of [f.from, f.to]) if (end(x)) note(x, "features");
+  }
+  for (const p of model.paths ?? []) {
+    for (const x of [p.from, p.to]) if (end(x)) note(x, "paths");
+    for (const t of Object.keys(p.through)) note(t, "paths");
+  }
+  return [...found].map(([name, where]) => ({ name, where: [...where] }));
+}
+
 /** Settings with defaults filled in; `override` wins over the model's saved ones. */
 export function resolveSettings(model: HexWfcModel, override: GeneratorSettings = {}): Required<GeneratorSettings> {
   const out: Required<GeneratorSettings> = { ...DEFAULT_SETTINGS };

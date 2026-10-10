@@ -3,7 +3,7 @@
  * covers, so the Advanced table can show what a mix or count change does.
  */
 
-import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { weightShares, type HexWfcModel } from "../../packages/hex-wfc/src";
 
 /** Fraction of hexes (0–1) per terrain in a generated map. */
 export function terrainShares(cells: Map<string, string>): Map<string, number> {
@@ -13,10 +13,12 @@ export function terrainShares(cells: Map<string, string>): Map<string, number> {
   return new Map([...counts].map(([t, n]) => [t, n / total]));
 }
 
-/** The learned mix: each terrain's weight as a fraction of all weights. */
+/**
+ * The learned mix: each terrain's weight as a fraction of all weights. The
+ * same numbers as the generator note's Share column (weightShares).
+ */
 export function exampleShares(model: HexWfcModel): Map<string, number> {
-  const total = model.terrains.reduce((sum, t) => sum + Math.max(0, t.weight), 0) || 1;
-  return new Map(model.terrains.map((t) => [t.name, Math.max(0, t.weight) / total]));
+  return weightShares(model);
 }
 
 /** True when the model has per-terrain mix or count settings. */

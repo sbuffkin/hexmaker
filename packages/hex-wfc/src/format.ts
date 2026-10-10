@@ -32,6 +32,7 @@ import {
   type PathTypeTweak,
   type NearRule,
   type TerrainEntry,
+  weightShares,
 } from "./model";
 
 export const FORMAT_VERSION = 1;
@@ -286,6 +287,52 @@ function parseYamlValue(raw: string): string {
 }
 
 const cell = (s: string) => s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
+
+/** "12%", "<1%" for present but rare, "0%" for none. */
+function pct(share: number): string {
+  if (share > 0 && share < 0.005) return "<1%";
+  return `${Math.round(share * 100)}%`;
+}
+
+function countText(r: CountRange): string {
+  if (r.min !== undefined && r.min === r.max) return `${r.min} patch${r.min === 1 ? "" : "es"}`;
+  if (r.min !== undefined && r.max !== undefined) return `${r.min}–${r.max} patches`;
+  if (r.min !== undefined) return `at least ${r.min} patch${r.min === 1 ? "" : "es"}`;
+  return `at most ${r.max ?? 0} patch${r.max === 1 ? "" : "es"}`;
+}
+
+/**
+ * The derived Share cell of a Terrains row: the terrain's share of the map
+ * by weight, then what the frontmatter changes. `mix` shows the share
+ * after it ("21% (×2 mix → 35%)"; other rows move too: "30% (→ 26%)").
+ * `counts` and `near` overrides are marked "(frontmatter)". Written by
+ * modelToMarkdown and refreshShareColumn; the parser ignores the column.
+ */
+export function shareCell(model: HexWfcModel, t: TerrainEntry): string {
+  const base = weightShares(model).get(t.name) ?? 0;
+  const s = model.settings ?? {};
+  const parts: string[] = [];
+  const mix = s.mix ?? {};
+  if (Object.keys(mix).length) {
+    const after = weightShares(model, true).get(t.name) ?? 0;
+    const own = mix[t.name];
+    if (own !== undefined && own !== 1) parts.push(`×${num(own)} mix → ${pct(after)}`);
+    else if (pct(after) !== pct(base)) parts.push(`→ ${pct(after)}`);
+  }
+  const marks: string[] = [];
+  const range = s.counts?.[t.name];
+  if (range && (range.min !== undefined || range.max !== undefined)) marks.push(countText(range));
+  if (s.near && t.name in s.near) {
+    const rule = s.near[t.name];
+    const was = t.near ? `${t.near.terrain} ${num(t.near.distance)}` : "";
+    const now = rule ? `${rule.terrain} ${num(rule.distance)}` : "off";
+    if (was !== now) marks.push(`near ${was ? `${was} → ` : ""}${now}`);
+  }
+  let out = pct(base);
+  if (parts.length) out += ` (${parts.join("; ")})`;
+  if (marks.length) out += ` · ${marks.join(", ")} (frontmatter)`;
+  return out;
+}
 const opt = (n: number | undefined, scale = 1) => (n === undefined ? "" : num(n * scale));
 
 export function modelToMarkdown(model: HexWfcModel): string {
@@ -316,6 +363,8 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "A wave function collapse generator. You can edit the tables and settings by hand.",
     "",
     "- **Terrains**: *Weight* is how common the terrain is; 0 means the solver never places it.",
+    "  *Share* is worked out by the plugin (editing it does nothing): the terrain's share of",
+    "  the map by weight, and what the frontmatter `mix`, `counts` and `near` change.",
     "  *Patch %* is the size of a typical patch as a share of the map, so patches scale",
     "  with the map. *Shape* is how it spreads: `blob` (compact patches), `line` (long",
     "  thin runs), `scatter` (single hexes) or `none` (left to the neighbour rules).",
@@ -346,11 +395,11 @@ export function modelToMarkdown(model: HexWfcModel): string {
     "",
     "## Terrains",
     "",
-    "| Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge | Near |",
-    "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |",
+    "| Terrain | Weight | Patch % | Shape | Turn | Width | Spacing | Edge | Near | Share |",
+    "| --- | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- | --- |",
     ...model.terrains.map(
       (t) =>
-        `| ${cell(t.name)} | ${num(t.weight)} | ${opt(t.patch, 100)} | ${t.shape ?? ""} | ${opt(t.turn)} | ${opt(t.width)} | ${opt(t.spacing)} | ${opt(t.edge)} | ${t.near ? cell(`${t.near.terrain} ${num(t.near.distance)}`) : ""} |`,
+        `| ${cell(t.name)} | ${num(t.weight)} | ${opt(t.patch, 100)} | ${t.shape ?? ""} | ${opt(t.turn)} | ${opt(t.width)} | ${opt(t.spacing)} | ${opt(t.edge)} | ${t.near ? cell(`${t.near.terrain} ${num(t.near.distance)}`) : ""} | ${cell(shareCell(model, t))} |`,
     ),
     "",
     "## Adjacency",
@@ -603,4 +652,82 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
   if (Object.keys(settings).length) model.settings = settings;
   model.name = name || fallbackName;
   return { model, warnings };
+}
+
+/** A table line cut at its unescaped pipes, keeping each piece as typed. */
+function rawCells(line: string): string[] {
+  const out: string[] = [];
+  let cur = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "\\" && i + 1 < line.length) {
+      cur += ch + line[++i];
+    } else if (ch === "|") {
+      out.push(cur);
+      cur = "";
+    } else cur += ch;
+  }
+  out.push(cur);
+  return out;
+}
+
+/**
+ * Bring the Terrains table's derived Share column up to date (adding it to
+ * files from older builds), leaving every other cell, row and line as it is.
+ * Returns the text unchanged when it already shows the current shares, or
+ * when it isn't a generator file.
+ */
+export function refreshShareColumn(text: string): string {
+  if (!isModelMarkdown(text)) return text;
+  let model: HexWfcModel;
+  try {
+    model = parseModelMarkdown(text).model;
+  } catch {
+    return text;
+  }
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const lines = text.split(/\r?\n/);
+  const byName = new Map(model.terrains.map((t) => [t.name, t]));
+  let inTerrains = false;
+  let header = -1;
+  let shareAt = -1;
+  let changed = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const h = /^#{1,6}\s+(.*)$/.exec(line.trim());
+    if (h) {
+      if (inTerrains && header >= 0) break;
+      inTerrains = h[1].trim().toLowerCase() === "terrains";
+      header = -1;
+      continue;
+    }
+    if (!inTerrains) continue;
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("|")) {
+      if (trimmed && header >= 0) break; // prose after the table
+      continue;
+    }
+    const pieces = rawCells(line);
+    // A row without its closing pipe still has a last cell.
+    if (pieces.length < 3 || pieces[pieces.length - 1].trim() !== "") pieces.push("");
+    // pieces[0] is what's before the first pipe; the last is after the last one.
+    const cells = pieces.slice(1, -1).map((c) => c.trim());
+    const put = (value: string) => {
+      const next = [...pieces];
+      if (shareAt + 1 < next.length - 1) next[shareAt + 1] = ` ${value} `;
+      else next.splice(next.length - 1, 0, ` ${value} `);
+      const out = next.join("|");
+      if (out !== line) { lines[i] = out; changed = true; }
+    };
+    if (header < 0) {
+      header = i;
+      shareAt = cells.findIndex((c) => c.toLowerCase() === "share");
+      if (shareAt < 0) { shareAt = cells.length; put("Share"); }
+      continue;
+    }
+    if (cells.every((c) => /^:?-+:?$/.test(c))) { put("---"); continue; }
+    const t = cells[0] ? byName.get(cells[0].replace(/\\(.)/g, "$1")) : undefined;
+    if (t) put(cell(shareCell(model, t)));
+  }
+  return changed ? lines.join(eol) : text;
 }

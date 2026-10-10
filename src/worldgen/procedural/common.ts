@@ -64,8 +64,13 @@ export interface GenerationContext {
  */
 export interface ContextPath {
   type: string;
-  /** The path type's routing; "meander" paths (rivers) wander a little. */
+  /** The path type's routing (how it's drawn). */
   routing?: "through" | "meander" | "edge";
+  /** The path type's Avoid impassable: off = routed like a river (prefers
+   *  low ground and water); on or unset = like a road (keeps off water). */
+  avoidImpassable?: boolean;
+  /** The path type's Auto-route: "winding" wanders, "direct" (or unset) keeps straight. */
+  autoRoute?: "direct" | "winding";
   from?: Side;
   to?: Side;
   /** Exact entry / exit hex ("x_y" in this map) — e.g. where a neighbouring

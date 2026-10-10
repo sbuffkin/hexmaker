@@ -55,9 +55,10 @@ describe("templates folder (PA3)", () => {
 
 	it("new town notes from the hex editor and link pickers use the town template", () => {
 		const editor = readFileSync("src/hex-map/HexEditorModal.ts", "utf8");
-		expect(editor).toContain("this.plugin.newLinkedNoteContent(section, name)");
+		// …and say which hex they're in (a Location line, R3).
+		expect(editor).toContain("this.plugin.newLinkedNoteContent(section, name, path)");
 		const picker = readFileSync("src/hex-table/LinkPickerModal.ts", "utf8");
-		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.section, name)");
+		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.section, name, this.hexPath)");
 	});
 
 	it("the Templates folder setting is in both settings paths", () => {

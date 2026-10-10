@@ -1293,7 +1293,8 @@ export class HexEditorModal extends HexmakerModal {
             await this.app.vault.createFolder(folder);
           }
           // Towns start from the town template (PA3), tables from a table.
-          file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent(section, name));
+          // Places made here say where they are (a Location line, R3).
+          file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent(section, name, path));
         } catch (err) {
           new Notice(`Could not create ${newPath}: ${String(err)}`);
           return;

@@ -18,7 +18,7 @@ import {
 	presetToPalette,
 	uniquePaletteName,
 } from "../src/palettes/presets";
-import { parsePathTypes } from "../src/palettes/pathTypeTable";
+import { parsePathTypes, setPathTypes } from "../src/palettes/pathTypeTable";
 import { PaletteStore } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { iconLabel, iconPack } from "../src/utils";
@@ -557,5 +557,115 @@ describe("PaletteStore: hand edits are never overwritten", () => {
 		const row = out.find((l) => l.startsWith(`| ${pal.terrains[0].name} |`))!;
 		expect(row).toContain("#000005");
 		expect(row.endsWith("| windy |")).toBe(true);
+	});
+});
+
+// #46 P1: derived cells ("(yes)", "(mountains)") in palette notes.
+describe("PaletteStore derived cells", () => {
+	const OLD = [
+		"---",
+		"hexmaker-palette: 1",
+		"---",
+		"",
+		"My notes.",
+		"",
+		"| Terrain | Color | Icon | Icon color | Category | Type |",
+		"| --- | --- | --- | --- | --- | --- |",
+		"| sea | #0000ff |  |  |  | water |",
+		"| crags | #777777 |  |  |  |  |",
+		"",
+	].join("\n");
+
+	it("an older-format note gets its derived cells on load, nothing else changes", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set("world/palettes/Limited.md", OLD);
+		await h.store.init();
+		const note = h.vault.files.get("world/palettes/Limited.md")!;
+		expect(note).toContain("My notes.");
+		expect(note).toContain("| sea | #0000ff |  |  |  | water | (yes) |");
+		expect(note).toContain("| crags | #777777 |  |  |  | (mountains) | (no) |");
+		expect(h.settings.terrainPalettes.find((p) => p.name === "Limited")!.terrains.slice(0, 2)).toEqual([
+			{ name: "sea", color: "#0000ff", type: "water" },
+			{ name: "crags", color: "#777777" },
+		]);
+		const writes = h.vault.writes;
+		await h.store.sync();
+		expect(h.vault.writes).toBe(writes);
+	});
+
+	it("a hand edit is imported and the derived cells follow it", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, buildPaletteNote([{ name: "crags", color: "#777777" }]).replace("| (mountains) |", "| water |"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.terrains).toEqual([{ name: "crags", color: "#777777", type: "water" }]);
+		expect(h.vault.files.get(p)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
+	});
+
+	it("waits until the user leaves a note they're typing in", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		let editing = true;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(h.store as any).plugin.app.workspace = {
+			getActiveViewOfType: () => (editing ? { file: { path: p }, getMode: () => "source" } : null),
+		};
+		const pathTypes = h.settings.terrainPalettes.find((x) => x.name === "Limited")!.pathTypes!;
+		const typed = setPathTypes(buildPaletteNote([{ name: "crags", color: "#777777" }]), pathTypes).replace("| (mountains) |", "| water |");
+		h.vault.files.set(p, typed);
+		h.store.onModify(h.file(p));
+		// An in-app sync while they type leaves the note alone too.
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toBe(typed);
+		editing = false;
+		h.store.flushPendingDerived();
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toContain("| water | (yes) |");
+	});
+});
+
+// PA5: notes from before every path option was explicit are migrated once,
+// with the old name rules, so no map changes look.
+describe("PaletteStore path type migration (PA5)", () => {
+	const OLD = [
+		"---",
+		"hexmaker-palette: 1",
+		"---",
+		"",
+		"| Terrain | Color |",
+		"| --- | --- |",
+		"| grass | #00ff00 |",
+		"",
+		"## Path types",
+		"",
+		"| Path | Color | Width | Style | Routing | Avoid impassable |",
+		"| --- | --- | --- | --- | --- | --- |",
+		"| Road | #a16207 | 4 | solid | through | yes |",
+		"| Creek | #39f | 2 | solid |  |  |",
+		"",
+	].join("\n");
+
+	it("reads blanks with the old rules once, writes them out, then blanks are plain defaults", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true });
+		await h.vault.createFolder("world/palettes");
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, OLD);
+		await h.store.init();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.pathTypes!.find((t) => t.name === "Creek")).toMatchObject({ routing: "meander", avoidImpassable: false, autoRoute: "winding" });
+		expect(h.vault.files.get(p)).toContain("| Creek | #39f | 2 | solid | meander | no | winding |");
+		expect(h.vault.files.get(p)).toContain("| Road | #a16207 | 4 | solid | through | yes | direct |");
+		expect(h.settings.pathTypesExplicit).toBe(true);
+		// After the migration a hand-typed row with blanks gets the plain defaults, whatever its name.
+		h.vault.files.set(p, h.vault.files.get(p)! + "| River two | #00f | 2 | solid |  |  |  |\n");
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		expect(pal.pathTypes!.find((t) => t.name === "River two")).toMatchObject({ routing: "through", avoidImpassable: true, autoRoute: "direct" });
+		expect(h.vault.files.get(p)).toContain("| River two | #00f | 2 | solid | through | yes | direct |");
 	});
 });
