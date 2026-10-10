@@ -76,11 +76,11 @@ try {
     await sleep(2500);
     // second draw: bitmaps cached (only the composite)
     const first = await page.evaluate((id) => window.app.plugins.plugins[id].devTools.overworldStats(), PLUGIN_ID);
-    await page.evaluate((id) => {
-      const leaf = window.app.workspace.getLeavesOfType("duckmage-hex-map")[0];
-      leaf?.view?.redraw?.();
-    }, PLUGIN_ID);
-    await sleep(1500);
+    // Two redraws: the first may still follow the restored zoom; the second is the cached one.
+    for (let i = 0; i < 2; i++) {
+      await page.evaluate(() => window.app.workspace.getLeavesOfType("duckmage-hex-map")[0]?.view?.redraw?.());
+      await sleep(1500);
+    }
     const cached = await page.evaluate((id) => window.app.plugins.plugins[id].devTools.overworldStats(), PLUGIN_ID);
     return { first, cached };
   };

@@ -269,13 +269,19 @@ export class OverworldLayer {
       ctx.stroke();
     }
     drawRiver(ctx, parseBiomeRiver(map.biomeRiver), at, Math.max(2, 3 * k * s / 20));
-    ctx.fillStyle = "#000";
+    // Biome names in the hex's upper half (its coordinates sit lower), sized
+    // to fit the hex: the preview's labels, scaled to the map's hexes.
     ctx.textAlign = "center";
-    ctx.font = `${Math.round(Math.max(8, 9 * k * s / 20))}px system-ui`;
+    ctx.font = `600 ${Math.round(Math.max(8, 0.2 * k * s))}px system-ui`;
+    ctx.lineWidth = Math.max(2, 0.05 * k * s);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.fillStyle = "#000";
     for (const [key, b] of biomes) {
       const [x, y] = key.split("_").map(Number);
       const [X, Y] = at(x, y);
-      ctx.fillText((biomeInfo(b)?.label ?? "").slice(0, 10), X, Y + 3 * k * s / 20);
+      const text = biomeInfo(b)?.label ?? "";
+      ctx.strokeText(text, X, Y - 0.3 * k * s);
+      ctx.fillText(text, X, Y - 0.3 * k * s);
     }
   }
 }

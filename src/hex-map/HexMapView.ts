@@ -708,16 +708,33 @@ export class HexMapView extends ItemView {
     // hex's six neighbours, named by true bearing ("North-east: Fenmarch").
     const home = regionHome(this.plugin, this.activeMapName);
     if (home) {
-      for (const n of regionNeighbourMaps(maps, home.overworld.name, home.layout, home.px, home.py)) {
-        const word = n.bearing[0].toUpperCase() + n.bearing.slice(1);
-        const title = `Neighbouring region to the ${n.bearing}: ${this.plugin.mapLabel(n.map.name)}`;
-        el.createEl("button", {
+      const near = regionNeighbourMaps(maps, home.overworld.name, home.layout, home.px, home.py);
+      const word = (b: string) => b[0].toUpperCase() + b.slice(1);
+      if (near.length <= 2) {
+        for (const n of near) {
+          const title = `Neighbouring region to the ${n.bearing}: ${this.plugin.mapLabel(n.map.name)}`;
+          el.createEl("button", {
+            cls: "duckmage-map-crumb duckmage-map-side-crumb",
+            text: `${word(n.bearing)}: ${this.plugin.mapLabel(n.map.name)}`,
+            attr: { title, "aria-label": title, "data-side": n.bearing },
+          }).addEventListener("click", () => this.navigateToMap(n.map.name));
+        }
+      } else {
+        // Up to six neighbours: one crumb that lists them, so the bar stays short.
+        const btn = el.createEl("button", {
           cls: "duckmage-map-crumb duckmage-map-side-crumb",
-          text: `${word}: ${this.plugin.mapLabel(n.map.name)}`,
-          attr: { title, "aria-label": title, "data-side": n.bearing },
-        }).addEventListener("click", () => this.navigateToMap(n.map.name));
+          text: `Next to (${near.length}) ▾`,
+          attr: { title: "The regions around this one", "aria-label": "The regions around this one" },
+        });
+        btn.addEventListener("click", (e) => {
+          const menu = new Menu();
+          for (const n of near) {
+            menu.addItem((item) => item.setTitle(`${word(n.bearing)}: ${this.plugin.mapLabel(n.map.name)}`).onClick(() => this.navigateToMap(n.map.name)));
+          }
+          menu.showAtMouseEvent(e);
+        });
       }
-      el.toggle(el.childElementCount > 0);
+      el.toggle(near.length > 0);
       return;
     }
     let side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), maps);
