@@ -22,7 +22,7 @@ import {
   rollOnTable,
   getDieRanges,
   setDiceInFrontmatter,
-  extractPostTableContent,
+  syncLinkedRows,
   parseMarkdownListItems,
   type RandomTable,
 } from "./randomTable";
@@ -474,34 +474,33 @@ export class RandomTableView extends ItemView {
       }),
     );
 
-    // ── Auto-sync: note renamed/deleted in a linked folder → rebuild table entries ──
+    // ── Auto-sync: note renamed/deleted in a linked folder → update its row ──
+    const baseOf = (path: string) => path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "");
+    const dirOf = (path: string) => normalizeFolder(path.slice(0, Math.max(0, path.lastIndexOf("/"))));
+    const syncFolderTable = async (dir: string, change?: { removed?: string; renamed?: [string, string] }) => {
+      const tableFilePath = this.linkedFolderMap.get(dir);
+      if (!tableFilePath) return;
+      const tableFile = this.app.vault.getAbstractFileByPath(tableFilePath);
+      if (tableFile instanceof TFile) await this.autoSyncLinkedFolder(tableFile, change);
+    };
     this.registerEvent(
       this.app.vault.on("rename", async (file, oldPath) => {
-        if (!(file instanceof TFile)) return;
-        const oldDir = normalizeFolder(
-          oldPath.slice(0, oldPath.lastIndexOf("/")),
-        );
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        const oldDir = dirOf(oldPath);
         const newDir = normalizeFolder(file.parent?.path ?? "");
-        for (const dir of new Set([oldDir, newDir])) {
-          const tableFilePath = this.linkedFolderMap.get(dir);
-          if (!tableFilePath) continue;
-          const tableFile = this.app.vault.getAbstractFileByPath(tableFilePath);
-          if (tableFile instanceof TFile)
-            await this.autoSyncLinkedFolder(tableFile);
+        if (oldDir === newDir) {
+          // Renamed in place: the row keeps its weight (a "_" name retires it).
+          await syncFolderTable(newDir, { renamed: [baseOf(oldPath), file.basename] });
+          return;
         }
+        await syncFolderTable(oldDir, { removed: baseOf(oldPath) });
+        await syncFolderTable(newDir);
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", async (file) => {
-        if (!(file instanceof TFile)) return;
-        const dir = normalizeFolder(
-          file.path.slice(0, file.path.lastIndexOf("/")),
-        );
-        const tableFilePath = this.linkedFolderMap.get(dir);
-        if (!tableFilePath) return;
-        const tableFile = this.app.vault.getAbstractFileByPath(tableFilePath);
-        if (tableFile instanceof TFile)
-          await this.autoSyncLinkedFolder(tableFile);
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        await syncFolderTable(dirOf(file.path), { removed: file.basename });
       }),
     );
 
@@ -517,26 +516,7 @@ export class RandomTableView extends ItemView {
         const dir = normalizeFolder(createdFile.parent?.path ?? "");
         const tableFilePath = this.linkedFolderMap.get(dir);
         if (!tableFilePath) return;
-        const tableFile = this.app.vault.getAbstractFileByPath(tableFilePath);
-        if (!(tableFile instanceof TFile)) return;
-        await this.app.vault.process(tableFile, (content) => {
-          const table = parseRandomTable(content);
-          if (table.entries.some((e) => e.result === createdFile.basename))
-            return content;
-          const suffix = extractPostTableContent(content);
-          const newRow = `| ${createdFile.basename} | 1 |`;
-          const replaced = content.replace(
-            /(\| Result \| Weight \|\n\|[-| ]+\|\n)([\s\S]*)$/,
-            (_, hdr, body: string) => {
-              const tableLines = body
-                .split("\n")
-                .filter((l: string) => l.trimStart().startsWith("|"))
-                .join("\n");
-              return `${hdr}${tableLines.trimEnd() ? tableLines.trimEnd() + "\n" : ""}${newRow}\n`;
-            },
-          );
-          return suffix ? replaced.trimEnd() + "\n\n" + suffix : replaced;
-        });
+        await syncFolderTable(dir);
         this.loadList();
         if (this.activeFile?.path === tableFilePath) await this.renderDetail();
       }),
@@ -1341,47 +1321,35 @@ export class RandomTableView extends ItemView {
   }
 
   /**
-   * If tableFile has a linkedFolder, rebuild its entries from the folder:
-   * keep existing entries (preserving weights), add new notes, remove stale ones.
-   * No-op when there's no linked folder or nothing has changed.
+   * If tableFile has a linkedFolder, bring its rows in line with the folder:
+   * add rows for new notes; rename or remove the row of a note that was
+   * renamed or deleted (`change`). Rows whose note is missing for other
+   * reasons are kept and reported in the detail view. Only the table's own
+   * lines are rewritten, and nothing is written when nothing changed.
    */
-  private async autoSyncLinkedFolder(tableFile: TFile): Promise<void> {
-    await this.app.vault.process(tableFile, (content) => {
-      const table = parseRandomTable(content);
-      if (!table.linkedFolder) return content;
+  private async autoSyncLinkedFolder(
+    tableFile: TFile,
+    change?: { removed?: string; renamed?: [string, string] },
+  ): Promise<void> {
+    const content = await this.app.vault.read(tableFile);
+    const table = parseRandomTable(content);
+    if (!table.linkedFolder) return;
+    const lf = normalizeFolder(table.linkedFolder);
+    const names = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.parent?.path === lf && !f.basename.startsWith("_"))
+      .map((f) => f.basename);
+    if (syncLinkedRows(content, names, change) === content) return;
+    await this.app.vault.process(tableFile, (cur) => syncLinkedRows(cur, names, change));
+  }
 
-      const lf = normalizeFolder(table.linkedFolder);
-      const folderFiles = this.app.vault
-        .getMarkdownFiles()
-        .filter((f) => f.parent?.path === lf && !f.basename.startsWith("_"))
-        .sort((a, b) => a.basename.localeCompare(b.basename));
-
-      const folderBasenames = new Set(folderFiles.map((f) => f.basename));
-      const currentNames = new Set(table.entries.map((e) => e.result));
-
-      const hasNew = folderFiles.some((f) => !currentNames.has(f.basename));
-      const hasStale = table.entries.some(
-        (e) => !folderBasenames.has(e.result),
-      );
-      if (!hasNew && !hasStale) return content;
-
-      const kept = table.entries.filter((e) => folderBasenames.has(e.result));
-      const added = folderFiles
-        .filter((f) => !currentNames.has(f.basename))
-        .map((f) => ({ result: f.basename, weight: 1 }));
-      const newEntries = [...kept, ...added];
-
-      const suffix = extractPostTableContent(content);
-      const rows = newEntries
-        .map((e) => `| ${escapeTableCell(e.result)} | ${e.weight} |`)
-        .join("\n");
-      const replaced = content.replace(
-        /(\| Result \| Weight \|\n\|[-| ]+\|\n)([\s\S]*)$/,
-        (_m: string, head: string) => `${head}${rows}\n`,
-      );
-      const updated = suffix ? replaced.trimEnd() + "\n\n" + suffix : replaced;
-      return updated !== content ? updated : content;
-    });
+  /** Linked-folder rows whose note doesn't exist (kept, and shown in the view). */
+  private missingLinkedRows(table: RandomTable): string[] {
+    if (!table.linkedFolder) return [];
+    const lf = normalizeFolder(table.linkedFolder);
+    return table.entries
+      .filter((e) => !(this.app.vault.getAbstractFileByPath(`${lf}/${e.result}.md`) instanceof TFile))
+      .map((e) => e.result);
   }
 
   private renderDetailSeq = 0;
@@ -1484,6 +1452,16 @@ export class RandomTableView extends ItemView {
         await this.renderDetail();
       })();
     });
+
+    // Linked-folder rows whose note is gone are kept; say so.
+    const missing = this.missingLinkedRows(table);
+    if (missing.length) {
+      const them = missing.length === 1 ? "it" : "them";
+      this.detailEl.createDiv({
+        cls: "duckmage-rt-banner",
+        text: `${missing.length === 1 ? "1 row has" : `${missing.length} rows have`} no note in ${table.linkedFolder}: ${missing.slice(0, 6).join(", ")}${missing.length > 6 ? ", …" : ""}. Delete ${them} in the editor if the note is gone for good.`,
+      });
+    }
 
     // ── Description ────────────────────────────────────────────────────
     if (table.description) {

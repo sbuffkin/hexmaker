@@ -3744,6 +3744,16 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     margin-top: 4px;
 }
+.duckmage-table-editor-warning,
+.duckmage-rt-banner {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
 .duckmage-table-editor-footer {
     display: flex;
     justify-content: flex-end;
