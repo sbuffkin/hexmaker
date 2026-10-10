@@ -17,6 +17,24 @@ export function linkLabel(label: HTMLElement, control: HTMLElement): void {
 	label.setAttr("for", control.id);
 }
 
+/**
+ * The first click (or tab) into `input` selects all of it, so typing
+ * replaces a pre-filled default; later clicks place the cursor as usual.
+ */
+export function selectAllOnFocus(input: HTMLInputElement): void {
+	let justFocused = false;
+	input.addEventListener("focus", () => {
+		input.select();
+		justFocused = true;
+	});
+	// The mouseup that follows a focusing click would drop the selection.
+	input.addEventListener("mouseup", (e) => {
+		if (justFocused) e.preventDefault();
+		justFocused = false;
+	});
+	input.addEventListener("blur", () => { justFocused = false; });
+}
+
 export function slugify(name: string): string {
 	return name
 		.toLowerCase()

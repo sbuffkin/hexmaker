@@ -36,11 +36,33 @@ export function defaultSubmapName(
   y: number,
   taken: Iterable<string>,
 ): string {
+  return uniqueMapSlug(`${parentMap}-${x}-${y}`, taken);
+}
+
+/**
+ * A free folder name (slug) for a map called `name`: slugified, suffixed
+ * `-2`, `-3`, … if taken; "submap" when nothing is left of the name.
+ */
+export function uniqueMapSlug(name: string, taken: Iterable<string>): string {
   const used = new Set(taken);
-  const base = slugify(`${parentMap}-${x}-${y}`) || "submap";
+  const base = slugify(name.trim()).replace(/^-+|-+$/g, "") || "submap";
   if (!used.has(base)) return base;
   for (let i = 2; ; i++) {
     const candidate = `${base}-${i}`;
     if (!used.has(candidate)) return candidate;
   }
+}
+
+/**
+ * Readable default name for a submap of hex (x, y) (NAV2): the hex's name
+ * when it has one, else "<parent display name> x, y".
+ */
+export function defaultSubmapLabel(
+  hexName: string | null | undefined,
+  parentLabel: string,
+  x: number,
+  y: number,
+): string {
+  const named = (hexName ?? "").replace(/\s+/g, " ").trim();
+  return named || `${parentLabel} ${x}, ${y}`;
 }

@@ -1590,10 +1590,13 @@ export default class HexmakerPlugin extends Plugin {
       parent?: { map: string; hex: string };
       /** Silence the "generated N notes" notice (caller reports instead). */
       quiet?: boolean;
+      /** Folder name (slug) to use instead of one made from rawName (NAV2). */
+      slug?: string;
     } = {},
   ): Promise<{ name: string } | { error: string }> {
-    const name = slugify(rawName);
-    if (!name) return { error: "Enter a map name." };
+    if (!rawName.trim()) return { error: "Enter a map name." };
+    const name = slugify(extra.slug?.trim() || rawName);
+    if (!name) return { error: extra.slug ? "Enter a folder name." : "Enter a map name." };
     if (this.settings.maps.some((r) => r.name === name))
       return { error: `Map "${name}" already exists.` };
 

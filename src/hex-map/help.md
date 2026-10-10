@@ -16,7 +16,7 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 | Action | Result |
 |--------|--------|
-| **Right-click → Create / link submap…** | Create a submap for this hex (auto-named after the map and hex, with the suggested palette pre-selected) and go straight into it, or link an existing map |
+| **Right-click → Create / link submap…** | Create a submap for this hex (named after the hex, or the map name and the hex's coordinates; click the name to type your own; its folder name is under **More**), with the suggested palette pre-selected, and go straight into it, or link an existing map |
 | **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the submap |
 | **Ctrl/Cmd+Shift+click** the hex | Open the submap in a new tab |
 | **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
@@ -92,7 +92,7 @@ Opening the layers panel or the drawing tools never moves the map.
 
 ## Names and labels
 
-Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it. Hex notes also get "<map name> x, y" as an alias, so you can find a hex by typing its map and coordinates.
+Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it. Hex notes also get their map name and coordinates as an alias ("Gloomwood 3, 4"), so you can find a hex by typing them.
 
 Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names shrink and wrap at spaces (never mid-word) inside the hex, clear of its badges, in a colour that reads on the terrain; zoom in to read small ones. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 

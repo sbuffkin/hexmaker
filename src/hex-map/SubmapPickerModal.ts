@@ -1,9 +1,9 @@
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { getIconUrl, createIconEl } from "../utils";
+import { getIconUrl, createIconEl, selectAllOnFocus } from "../utils";
 import { attachPaletteHint, fillPaletteSelect } from "../palettes/paletteOptions";
-import { defaultSubmapName } from "./submapNav";
+import { defaultSubmapLabel, uniqueMapSlug } from "./submapNav";
 
 export class SubmapPickerModal extends HexmakerModal {
   constructor(
@@ -14,7 +14,7 @@ export class SubmapPickerModal extends HexmakerModal {
     private onLink: (mapName: string, created: boolean) => void,
     private onUnlink: () => void,
     /** The hex being linked. Enables the create-first layout: section open,
-     *  auto-named `<parent>-x-y`, child palette pre-selected. */
+     *  named after the hex (or "<parent> x, y"), child palette pre-selected. */
     private origin?: { map: string; x: number; y: number },
     /** When set (single-hex use), "create" hands off to the new-submap setup
      *  modal (size, generator, preview) instead of the inline form. */
@@ -135,10 +135,10 @@ export class SubmapPickerModal extends HexmakerModal {
       cls: "duckmage-submap-create-name",
     });
     if (this.origin) {
-      nameInput.value = defaultSubmapName(
-        this.origin.map, this.origin.x, this.origin.y,
-        this.plugin.settings.maps.map((m) => m.name),
-      );
+      // A readable default (NAV2): the hex's name, else "<parent> x, y".
+      const { map, x, y } = this.origin;
+      nameInput.value = defaultSubmapLabel(this.plugin.mapStore.get(map, `${x}_${y}`)?.name, this.plugin.mapLabel(map), x, y);
+      selectAllOnFocus(nameInput);
     }
 
     // Size (cols × rows on one row)
@@ -297,6 +297,9 @@ export class SubmapPickerModal extends HexmakerModal {
     const result = await this.plugin.createNewMap(
       raw, cols, rows, paletteName, initialX, initialY, staggerOffset,
       (done, total) => btn.setText(`Creating ${done} / ${total}…`),
+      undefined,
+      // From a hex: a free folder name made from the readable name.
+      this.origin ? { slug: uniqueMapSlug(raw, this.plugin.settings.maps.map((m) => m.name)) } : {},
     );
 
     if ("error" in result) {
