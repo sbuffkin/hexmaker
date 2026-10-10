@@ -249,6 +249,13 @@ export class MockWorkspace {
   getLeaf(_arg?: unknown): MockLeaf {
     return new MockLeaf();
   }
+  /** No open tabs (exports look for one showing the file first). */
+  iterateAllLeaves(_cb: (leaf: MockLeaf) => unknown): void {
+    /* no leaves */
+  }
+  async revealLeaf(_leaf: MockLeaf): Promise<void> {
+    /* no-op */
+  }
 }
 
 // ─── App ────────────────────────────────────────────────────────────────────

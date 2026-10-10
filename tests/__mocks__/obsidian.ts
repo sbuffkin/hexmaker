@@ -25,6 +25,7 @@ export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: stri
 export class Notice { constructor(_msg: string, _timeout?: number) {} setMessage(_msg: string) { return this; } hide() {} }
 export class Plugin { constructor(_app: App, _manifest: any) {} }
 export function setIcon(_el: HTMLElement, _icon: string): void {}
+export function getIcon(_icon: string): SVGSVGElement | null { return null; }
 
 export function normalizePath(path: string): string {
 	return path.replace(/[\\/]+/g, "/").replace(/\u00A0/g, " ").normalize().replace(/^\/+|\/+$/g, "");

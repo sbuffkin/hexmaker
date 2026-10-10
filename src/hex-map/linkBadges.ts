@@ -2,7 +2,7 @@ import { setIcon } from "obsidian";
 
 /**
  * Link badges: a small marker per link type (town, dungeon, feature, quest,
- * faction) at a hex corner, drawn when that hex's note links something under
+ * faction) at a hex's right side, drawn when that hex's note links something under
  * the matching section heading. Additive: the hex's own icon is untouched.
  *
  * Links are note content, so they're read from the metadata cache (headings +
@@ -13,18 +13,21 @@ import { setIcon } from "obsidian";
 export const BADGE_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions"] as const;
 export type BadgeSection = typeof BADGE_SECTIONS[number];
 
-export const BADGE_INFO: Record<BadgeSection, { icon: string; label: string; cls: string }> = {
-  Towns:    { icon: "home",     label: "Towns",    cls: "towns" },
-  Dungeons: { icon: "skull",    label: "Dungeons", cls: "dungeons" },
-  Features: { icon: "landmark", label: "Features", cls: "features" },
-  Quests:   { icon: "scroll",   label: "Quests",   cls: "quests" },
-  Factions: { icon: "flag",     label: "Factions", cls: "factions" },
+export const BADGE_INFO: Record<BadgeSection, { icon: string; label: string; one: string; cls: string; color: string }> = {
+  Towns:    { icon: "home",     label: "Towns",    one: "Town",    cls: "towns",    color: "#c0803a" },
+  Dungeons: { icon: "skull",    label: "Dungeons", one: "Dungeon", cls: "dungeons", color: "#8e3b46" },
+  Features: { icon: "landmark", label: "Features", one: "Feature", cls: "features", color: "#3f7f5f" },
+  Quests:   { icon: "scroll",   label: "Quests",   one: "Quest",   cls: "quests",   color: "#b59a2a" },
+  Factions: { icon: "flag",     label: "Factions", one: "Faction", cls: "factions", color: "#5a5fb0" },
 };
+
+/** Badges stack in one column at the hex's right side up to this many, then two. */
+export const BADGES_PER_COLUMN = 3;
 
 /** The bits of an Obsidian CachedMetadata this needs. */
 export interface LinkCacheLike {
   headings?: { heading: string; level: number; position: { start: { offset: number } } }[];
-  links?: { position: { start: { offset: number } } }[];
+  links?: { link?: string; displayText?: string; position: { start: { offset: number } } }[];
 }
 
 /**
@@ -33,10 +36,19 @@ export interface LinkCacheLike {
  * BADGE_SECTIONS.
  */
 export function linkSectionsFromCache(cache: LinkCacheLike | null | undefined): BadgeSection[] {
+  return [...linksBySection(cache).keys()];
+}
+
+/**
+ * The links under each link section, as people read them (the link's alias,
+ * else its note name without folders), in BADGE_SECTIONS order; sections
+ * with no links are left out.
+ */
+export function linksBySection(cache: LinkCacheLike | null | undefined): Map<BadgeSection, string[]> {
   const headings = cache?.headings ?? [];
   const links = cache?.links ?? [];
-  if (!headings.length || !links.length) return [];
-  const found = new Set<BadgeSection>();
+  const found = new Map<BadgeSection, string[]>();
+  if (!headings.length || !links.length) return found;
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i];
     const name = BADGE_SECTIONS.find((s) => s.toLowerCase() === h.heading.trim().toLowerCase());
@@ -46,9 +58,37 @@ export function linkSectionsFromCache(cache: LinkCacheLike | null | undefined): 
     for (let j = i + 1; j < headings.length; j++) {
       if (headings[j].level <= h.level) { end = headings[j].position.start.offset; break; }
     }
-    if (links.some((l) => l.position.start.offset > start && l.position.start.offset < end)) found.add(name);
+    const inside = links.filter((l) => l.position.start.offset > start && l.position.start.offset < end);
+    if (inside.length) found.set(name, inside.map(linkLabel));
   }
-  return BADGE_SECTIONS.filter((s) => found.has(s));
+  const out = new Map<BadgeSection, string[]>();
+  for (const s of BADGE_SECTIONS) {
+    const names = found.get(s);
+    if (names) out.set(s, names);
+  }
+  return out;
+}
+
+/** "world/towns/Gullmouth" → "Gullmouth"; an alias wins. */
+function linkLabel(l: { link?: string; displayText?: string }): string {
+  const target = (l.link ?? "").split("#")[0];
+  const base = target.slice(target.lastIndexOf("/") + 1).replace(/\.md$/i, "");
+  const alias = l.displayText?.trim();
+  return alias && alias !== l.link ? alias : base || alias || "";
+}
+
+/**
+ * Hover text for a hex's links (S3): "Town: Gullmouth", "Dungeons: A, B".
+ * Empty when the hex links nothing.
+ */
+export function linkedNotesText(bySection: ReadonlyMap<BadgeSection, readonly string[]>): string {
+  const parts: string[] = [];
+  for (const [s, names] of bySection) {
+    const shown = names.filter(Boolean);
+    if (!shown.length) continue;
+    parts.push(`${shown.length === 1 ? BADGE_INFO[s].one : BADGE_INFO[s].label}: ${shown.join(", ")}`);
+  }
+  return parts.join(" · ");
 }
 
 /** The viewport class that hides one badge type (layers menu sub-toggle). */
@@ -93,7 +133,7 @@ export function renderLinkBadgeLayer(
   for (const p of placements) {
     const sections = sectionsByHex.get(p.key.replace(",", "_"));
     if (!sections?.length) continue;
-    const group = layer.createDiv({ cls: "duckmage-link-badges" });
+    const group = layer.createDiv({ cls: `duckmage-link-badges${sections.length > BADGES_PER_COLUMN ? " is-two-col" : ""}` });
     group.setCssProps({
       "--duckmage-badge-x": `${((p.ox / gw) * 100).toFixed(3)}%`,
       "--duckmage-badge-y": `${((p.oy / gh) * 100).toFixed(3)}%`,

@@ -85,14 +85,14 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 
 The layers button (top right) turns these on and off.
 
-- **Link badges**: a small badge at a hex's corner for each kind of link in its note (towns, dungeons, features, quests, factions). Click ▸ to pick which kinds show.
+- **Link badges**: a small badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). Hover the hex to see what it links. Click ▸ to pick which kinds show.
 - **Legend**: the terrains used on this map, bottom right. **S / M / L** sets its size, **×** hides it.
 
 ## Names and labels
 
 Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it.
 
-Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. **Export** can include hex names and tokens, and lets you pick the PDF table's columns and the manual's parts for a handout.
+Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names wrap onto two lines inside the hex, in a colour that reads on the terrain. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 
 ---
 

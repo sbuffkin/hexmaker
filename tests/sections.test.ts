@@ -508,3 +508,38 @@ describe("links above a --- rule stay links", () => {
 		expect(separateRulesFromText("a\r\n---\r\n")).toBe("a\r\n\r\n---\r\n");
 	});
 });
+
+// ── Round 6 S2: back-links name the map ───────────────────────────────────
+import { hexBacklinkText } from "../src/sections";
+
+describe("hex back-links are path-qualified (round 6 S2)", () => {
+	it("links the full path, shown as the alias", () => {
+		expect(hexBacklinkText("world/hexes/space/7_7.md", "Kerrigan IV"))
+			.toBe("[[world/hexes/space/7_7|Kerrigan IV]]");
+	});
+
+	it("drops characters that would break the link", () => {
+		expect(hexBacklinkText("h/m/1_1.md", "A | [B]")).toBe("[[h/m/1_1|A B]]");
+		expect(hexBacklinkText("h/m/1_1.md", "")).toBe("[[h/m/1_1]]");
+	});
+
+	it("addBacklinkToFile writes the aliased link when given one", async () => {
+		const { app, getContent } = makeAppForBacklink("world/hexes/space/7_7.md", "", "notes/town.md", "");
+		await addBacklinkToFile(app, "notes/town.md", "world/hexes/space/7_7.md", "Space 7, 7");
+		expect(getContent("notes/town.md")).toBe("[[world/hexes/space/7_7|Space 7, 7]]\n");
+	});
+
+	it("the hex editor and link picker pass an alias", () => {
+		for (const f of ["src/hex-map/HexEditorModal.ts", "src/hex-table/LinkPickerModal.ts"]) {
+			const src = readFileSync(f, "utf8");
+			expect(src).toMatch(/addBacklinkToFile\([^)]*hexLinkAlias\(/);
+		}
+	});
+
+	it("new maps start with the GM layer off (round 6 S7)", () => {
+		const src = readFileSync("src/HexmakerPlugin.ts", "utf8");
+		const at = src.indexOf("async createNewMap(");
+		const body = src.slice(at, src.indexOf("await this.saveSettings();", at));
+		expect(body).toContain("showGmLayer: false");
+	});
+});

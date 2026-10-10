@@ -41,3 +41,75 @@ export function pngTokenSpread(hexRadius: number): number {
   // The short side is √3·R for both orientations.
   return 0.28 * Math.sqrt(3) * hexRadius;
 }
+
+/**
+ * X for a centred label `width` wide so it stays inside a canvas
+ * `canvasWidth` wide with `margin` to spare (round 6 S5: token names were cut
+ * at the image edge, "CSV Meridian Reso"). A label wider than the canvas
+ * stays centred on the canvas.
+ */
+export function clampLabelX(x: number, width: number, canvasWidth: number, margin: number): number {
+  const lo = margin + width / 2;
+  const hi = canvasWidth - margin - width / 2;
+  if (lo > hi) return canvasWidth / 2;
+  return Math.min(hi, Math.max(lo, x));
+}
+
+/** Top Y for a label `height` tall so it ends inside the canvas (see clampLabelX). */
+export function clampLabelTop(y: number, height: number, canvasHeight: number, margin: number): number {
+  return Math.max(margin, Math.min(y, canvasHeight - margin - height));
+}
+
+/**
+ * Split a hex name onto at most two lines no wider than `maxWidth` (as
+ * measured by `measure`), breaking at the space that best balances the
+ * lines; a name with no space, or that fits, stays on one line. Mirrors the
+ * on-screen labels (round 6 U5).
+ */
+export function wrapHexName(name: string, maxWidth: number, measure: (s: string) => number): string[] {
+  const text = name.trim();
+  if (measure(text) <= maxWidth) return [text];
+  const words = text.split(/\s+/);
+  if (words.length < 2) return [text];
+  let best: string[] = [text];
+  let bestWidth = Infinity;
+  for (let i = 1; i < words.length; i++) {
+    const a = words.slice(0, i).join(" ");
+    const b = words.slice(i).join(" ");
+    const w = Math.max(measure(a), measure(b));
+    if (w < bestWidth) { bestWidth = w; best = [a, b]; }
+  }
+  return best;
+}
+
+
+/**
+ * Link badges in the PNG: circles (centre + radius) for `count` badges at a
+ * hex's right side, laid out like the on-screen badges: one column centred
+ * on the hex's middle row (clear of the name above and the coordinates
+ * below), two columns for four or five kinds. Units follow the map: the
+ * on-screen hex radius is 2.2em, a badge 0.8em across.
+ */
+export function pngBadgeCircles(
+  cx: number,
+  cy: number,
+  hexRadius: number,
+  isFlat: boolean,
+  count: number,
+): { x: number; y: number; r: number }[] {
+  const em = hexRadius / 2.2;
+  const r = 0.4 * em;
+  const gap = 0.06 * em;
+  const right = cx + (isFlat ? 1.95 : 1.75) * em;
+  const cols = count > 3 ? 2 : 1;
+  const rows = Math.ceil(count / cols);
+  const top = cy - (rows * 2 * r + (rows - 1) * gap) / 2;
+  const out: { x: number; y: number; r: number }[] = [];
+  for (let i = 0; i < count; i++) {
+    const row = Math.floor(i / cols);
+    const col = i % cols;
+    const x = right - (cols - col) * 2 * r - (cols - 1 - col) * gap + r;
+    out.push({ x, y: top + r + row * (2 * r + gap), r });
+  }
+  return out;
+}

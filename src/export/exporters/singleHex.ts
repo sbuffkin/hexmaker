@@ -22,6 +22,7 @@ import { serializeMarkdown } from "../mdSerializer";
 import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile } from "../../frontmatter";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { openExported } from "../exportFolder";
 
 /**
  * Hex section descriptor. To add a new section to the export:
@@ -254,8 +255,5 @@ async function writeTextToVault(
 }
 
 async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
+  await openExported(app, path);
 }

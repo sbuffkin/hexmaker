@@ -141,3 +141,79 @@ describe("terrain legend", () => {
 		expect(legendSize("l")).toBe("l");
 	});
 });
+
+// ── Round 6 R1/S3: badges are visible and the hover names the links ────────
+import { BADGES_PER_COLUMN, linkedNotesText, linksBySection } from "../src/hex-map/linkBadges";
+
+/** z-index of the first CSS rule whose selector is exactly `selector`. */
+function zIndexOf(css: string, selector: string): number {
+	// The rule that starts a line (not e.g. ".duckmage-hide-x .layer { … }").
+	const at = css.search(new RegExp(`^${selector.replace(/[.]/g, "\\.")} \\{`, "m"));
+	if (at < 0) throw new Error(`no rule for ${selector}`);
+	const body = css.slice(at, css.indexOf("}", at));
+	const m = /z-index:\s*(\d+)/.exec(body);
+	if (!m) throw new Error(`no z-index in ${selector}`);
+	return Number(m[1]);
+}
+
+/** Like cacheOf, with each link's target (as Obsidian's cache has it). */
+function cacheWithLinks(md: string): LinkCacheLike {
+	const headings: NonNullable<LinkCacheLike["headings"]> = [];
+	const links: NonNullable<LinkCacheLike["links"]> = [];
+	let offset = 0;
+	for (const line of md.split("\n")) {
+		const h = /^(#+)\s+(.*)$/.exec(line);
+		if (h) headings.push({ heading: h[2], level: h[1].length, position: { start: { offset } } });
+		const re = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g;
+		let m: RegExpExecArray | null;
+		while ((m = re.exec(line))) links.push({ link: m[1], displayText: m[2] ?? m[1], position: { start: { offset: offset + m.index } } });
+		offset += line.length + 1;
+	}
+	return { headings, links };
+}
+
+describe("link badges stay visible (round 6 R1)", () => {
+	// The region tester's 6_6 note: a town link under "### Towns", hex names
+	// shown. The name label (z 11) sat on the badge (z 9), so the badge
+	// never showed, though detection and rendering were fine.
+	const css = readFileSync("styles.css", "utf8");
+
+	it("draws the badge layer above the hex names and the coordinates", () => {
+		const badges = zIndexOf(css, ".duckmage-link-badges-layer");
+		expect(badges).toBeGreaterThan(zIndexOf(css, ".duckmage-hex-names-layer"));
+		expect(badges).toBeGreaterThan(zIndexOf(css, ".duckmage-coord-labels-layer"));
+	});
+
+	it("centres the badges on the hex's middle row, away from the name and coordinates", () => {
+		const at = css.indexOf(".duckmage-link-badges {");
+		const rule = css.slice(at, css.indexOf("}", at));
+		expect(rule).toMatch(/top:\s*var\(--duckmage-badge-y, 50%\);/);
+	});
+
+	it("finds the town link in the tester's note", () => {
+		const md = [
+			"# Hex 6, 6", "", "---", "### description", "*guidance*", "", "A huddle of shacks.", "", "---",
+			"### landmark", "", "---", "", "### Towns", "", "[[Gullmouth]]", "", "---", "### Dungeons", "", "---",
+			"### Encounters Table", "", "[[world/tables/terrain/encounters/beach]]",
+		].join("\n");
+		expect(linkSectionsFromCache(cacheWithLinks(md))).toEqual(["Towns"]);
+	});
+
+	it("goes to two columns past BADGES_PER_COLUMN kinds", () => {
+		expect(BADGES_PER_COLUMN).toBe(3);
+		expect(css).toMatch(/\.duckmage-link-badges\.is-two-col\s*\{/);
+	});
+});
+
+describe("hover names the linked notes (round 6 S3)", () => {
+	it("lists the links per section, by name or alias", () => {
+		const by = linksBySection(cacheWithLinks("### Towns\n[[world/towns/Gullmouth]]\n### Dungeons\n[[Abbey|The Drowned Abbey]] [[Crypt.md]]\n"));
+		expect([...by]).toEqual([["Towns", ["Gullmouth"]], ["Dungeons", ["The Drowned Abbey", "Crypt"]]]);
+	});
+
+	it("words one link singular and several plural", () => {
+		const by = linksBySection(cacheWithLinks("### Towns\n[[Gullmouth]]\n### Dungeons\n[[A]] [[B]]\n"));
+		expect(linkedNotesText(by)).toBe("Town: Gullmouth · Dungeons: A, B");
+		expect(linkedNotesText(new Map())).toBe("");
+	});
+});

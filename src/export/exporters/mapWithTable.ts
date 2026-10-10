@@ -29,6 +29,7 @@ import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { mapLabel } from "../../maps/mapTree";
+import { exportedMessage, openExported } from "../exportFolder";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
   /** Filename stem (no extension). Defaults to mapName. */
@@ -100,6 +101,8 @@ export async function exportMapAsPdf(
     for (const section of sections) {
       const sectionPng = await renderMapToPngBlob(plugin, mapName, {
         ...opts,
+        // The legend goes with the full map only.
+        showLegend: false,
         subgrid: {
           colStart: section.colStart,
           colEnd: section.colEnd,
@@ -134,8 +137,9 @@ export async function exportMapAsPdf(
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
 
+    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
     await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(`Exported to ${outPath}`);
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);
@@ -466,8 +470,5 @@ export async function writeBinaryToVault(
 }
 
 export async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
+  await openExported(app, path);
 }

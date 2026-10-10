@@ -49,3 +49,65 @@ export function mapExportFileNames(o: MapExportNameOptions): { png: string; pdf:
     manual: `${sanitiseFilename(`${base} ${o.player ? "player" : "manual"}`)}.pdf`,
   };
 }
+
+/** The "On the map" ticks of the export form, in display order. */
+export const EXPORT_LAYER_KEYS = [
+  "showCoords",
+  "showIcons",
+  "showPaths",
+  "showHexNames",
+  "showTokens",
+  "showLinkBadges",
+  "showLegend",
+  "showFactionOverlay",
+  "showRegionOverlay",
+] as const;
+export type ExportLayerKey = typeof EXPORT_LAYER_KEYS[number];
+
+/** The export form's last choices for one map (data.json, per map). */
+export interface MapExportPrefs {
+  /** What was typed in File name. */
+  fileName?: string;
+  /** The Output size preset (hex radius in px). */
+  hexRadius?: number;
+  layers?: Partial<Record<ExportLayerKey, boolean>>;
+}
+
+/** The map view's toggles the export form starts from (MapData fields + the legend setting). */
+export interface ExportViewState {
+  showCoords?: boolean;
+  showTerrainIcons?: boolean;
+  showIconOverrides?: boolean;
+  showPaths?: boolean;
+  showHexNames?: boolean;
+  showTokens?: boolean;
+  showLinkBadges?: boolean;
+  showLegend?: boolean;
+}
+
+/**
+ * The "On the map" ticks the export form opens with (round 6 S9): the
+ * user's last choices for this map, else what the map view shows. The
+ * faction and region overlays start off unless the user ticked them for
+ * this map before: they print names players may not be meant to see.
+ */
+export function exportLayerDefaults(view: ExportViewState, prefs?: MapExportPrefs): Record<ExportLayerKey, boolean> {
+  const fromView: Record<ExportLayerKey, boolean> = {
+    showCoords: view.showCoords ?? true,
+    showIcons: (view.showTerrainIcons ?? true) || (view.showIconOverrides ?? true),
+    showPaths: view.showPaths ?? true,
+    showHexNames: view.showHexNames ?? true,
+    showTokens: view.showTokens ?? true,
+    showLinkBadges: view.showLinkBadges ?? true,
+    showLegend: view.showLegend ?? true,
+    showFactionOverlay: false,
+    showRegionOverlay: false,
+  };
+  const saved = prefs?.layers ?? {};
+  const out = { ...fromView };
+  for (const k of EXPORT_LAYER_KEYS) {
+    const v = saved[k];
+    if (typeof v === "boolean") out[k] = v;
+  }
+  return out;
+}

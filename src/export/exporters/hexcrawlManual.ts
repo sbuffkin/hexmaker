@@ -33,6 +33,7 @@ import { mapLabel } from "../../maps/mapTree";
 import { PlaceholderFilter } from "../manual/placeholders";
 import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "../manual/manualHtml";
 import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection, ManualTable } from "../manual/manualModel";
+import { exportedMessage } from "../exportFolder";
 
 export interface ManualExportOptions {
   /** Filename stem (no extension). Defaults to "<map> manual". */
@@ -77,8 +78,9 @@ export async function exportMapAsManual(plugin: HexmakerPlugin, mapName: string,
         footerTemplate: `<div style="width:100%;font-family:Segoe UI,Helvetica,Arial,sans-serif;font-size:7.5px;color:#8a8174;padding:0 0.65in;display:flex;justify-content:space-between;"><span>${escapeHtml(data.title)}${data.player ? " · Player edition" : ""}</span><span><span class="pageNumber"></span> / <span class="totalPages"></span></span></div>`,
       },
     );
+    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
     await writeBinaryToVault(plugin.app, outPath, bytes);
-    new Notice(`Exported to ${outPath}`);
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);

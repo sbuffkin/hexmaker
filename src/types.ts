@@ -1,3 +1,4 @@
+import type { MapExportPrefs } from "./export/exportNames";
 export type TokenShape = "circle" | "square" | "hexagon";
 export type TokenSize  = "sm" | "md" | "lg";
 
@@ -89,7 +90,7 @@ export interface MapData {
 	showPaths?: boolean;         // undefined = true
 	showFactionOverlay?: boolean; // undefined = false (opt-in)
 	showRegionOverlay?: boolean;  // undefined = false (opt-in)
-	showGmLayer?: boolean;        // undefined = true (on by default)
+	showGmLayer?: boolean;        // undefined = true (older maps); new maps are created with false
 	showTokens?: boolean;         // undefined = true (on by default)
 	/** Corner badges per link type (towns, dungeons…). undefined = true. */
 	showLinkBadges?: boolean;
@@ -240,6 +241,8 @@ export interface HexmakerPluginSettings {
 	terrainTypesSeeded: boolean;
 	/** Terrain legend on the map and generator previews. Unset = shown. */
 	showTerrainLegend?: boolean;
+	/** The map export form's last choices, per map name (round 6 S9). */
+	mapExportPrefs?: Record<string, MapExportPrefs>;
 	/** Terrain legend size. Unset = "m". */
 	terrainLegendSize?: "s" | "m" | "l";
 }

@@ -12,7 +12,7 @@
  *   then draw all path chains via the same routing helpers HexMapView uses.
  */
 
-import { Notice, TFile, type App } from "obsidian";
+import { getIcon, Notice, TFile, type App } from "obsidian";
 import {
   hexCenter,
   hexPolygonPoints,
@@ -23,7 +23,7 @@ import {
   offsetPolyline,
   computeLaneOffsets,
 } from "../hex-map/hexGeometry";
-import { ensureExportFolder } from "./exportFolder";
+import { ensureExportFolder, exportedMessage, openExported } from "./exportFolder";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -36,7 +36,19 @@ import {
   getTokenDataFromCache,
   type OverlayStyle,
 } from "../frontmatter";
-import { pngHexNamePx, pngHexNameY, pngTokenRadius, pngTokenSpread } from "./handoutLabels";
+import {
+  clampLabelTop,
+  clampLabelX,
+  pngBadgeCircles,
+  pngHexNamePx,
+  pngHexNameY,
+  pngTokenRadius,
+  pngTokenSpread,
+  wrapHexName,
+} from "./handoutLabels";
+import { BADGE_INFO, BADGE_SECTIONS, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
+import { usedTerrainEntries } from "../hex-map/terrainLegend";
+import { hexNameTone } from "../hex-map/hexNameLayer";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
 import { getIconUrl, normalizeFolder } from "../utils";
 import { drawPatternTile } from "../overlayPatterns";
@@ -86,6 +98,12 @@ export interface MapPngRenderOptions {
   showHexNames?: boolean;
   /** Draw the map's tokens (hidden ones never), with their names. Default false. */
   showTokens?: boolean;
+  /** A terrain legend (the terrains used, plus the link badge kinds drawn)
+   *  beside the map. Default false (the export form ticks it). */
+  showLegend?: boolean;
+  /** Link badges at hex corners, as on the map (the map's hidden badge
+   *  kinds stay hidden). Default false. */
+  showLinkBadges?: boolean;
   /** Tint hexes by their linked factions. Default false. */
   showFactionOverlay?: boolean;
   /** Tint hexes by their region. Default false. */
@@ -118,6 +136,9 @@ export async function renderMapToPngBlob(
   const showRegionOverlay = opts.showRegionOverlay ?? false;
   const showHexNames = opts.showHexNames ?? false;
   const showTokens = opts.showTokens ?? false;
+  const showLegend = opts.showLegend ?? false;
+  const showLinkBadges = opts.showLinkBadges ?? false;
+  const hiddenBadges = new Set(map.hiddenLinkBadges ?? []);
   const background = opts.background ?? "#1a1a1a";
   const borderColor = opts.borderColor ?? "#222";
   // Labels follow the coordinate settings, with a contrast halo, so they
@@ -172,8 +193,8 @@ export async function renderMapToPngBlob(
   for (const [k, c] of centerMap) {
     shifted.set(k, { cx: c.cx - minX + padding, cy: c.cy - minY + padding });
   }
-  const W = Math.ceil(maxX - minX + padding * 2);
-  const H = Math.ceil(maxY - minY + padding * 2);
+  const gridW = Math.ceil(maxX - minX + padding * 2);
+  const gridH = Math.ceil(maxY - minY + padding * 2);
 
   // Step 3a: build colour maps for overlays (faction-basename → hex colour,
   // region-name → hex colour). Empty if the respective overlay is off.
@@ -206,6 +227,7 @@ export async function renderMapToPngBlob(
     factions: { color: string; style: OverlayStyle }[];
     region?: { color: string; style: OverlayStyle };
     name?: string;
+    badges: BadgeSection[];
   }
   const hexes: HexState[] = [];
   const iconsNeeded = new Set<string>();
@@ -269,6 +291,10 @@ export async function renderMapToPngBlob(
           }
         }
       }
+      // Link badges come from the hex note's links (metadata cache).
+      const badges = showLinkBadges && file instanceof TFile
+        ? linkSectionsFromCache(plugin.app.metadataCache.getFileCache(file)).filter((s) => !hiddenBadges.has(s))
+        : [];
       const iconName = iconOverride ?? terrain?.icon;
       if (iconName && showIcons) iconsNeeded.add(iconName);
       hexes.push({
@@ -281,6 +307,7 @@ export async function renderMapToPngBlob(
         factions,
         region,
         name: showHexNames ? getHexNameFromFile(notePath) ?? undefined : undefined,
+        badges,
       });
     }
   }
@@ -296,7 +323,29 @@ export async function renderMapToPngBlob(
     }
   }
 
+  // Legend: the terrains drawn, in palette order, and the badge kinds drawn.
+  const legendTerrains = showLegend
+    ? usedTerrainEntries(palette?.terrains ?? [], hexes.map((h) => h.terrain?.name))
+    : [];
+  const badgeKinds = BADGE_SECTIONS.filter((s) => hexes.some((h) => h.badges.includes(s)));
+  if (showLegend && showIcons) for (const t of legendTerrains) if (t.icon) iconsNeeded.add(t.icon);
+
   const iconCache = await loadIcons(plugin, iconsNeeded);
+  const badgeIcons = badgeKinds.length ? await loadBadgeIcons(badgeKinds) : new Map<BadgeSection, HTMLImageElement>();
+
+  // The legend sits beside the grid (not over edge hexes): measure it first
+  // and widen the canvas to fit.
+  const legendFont = Math.max(12, Math.round(R * 0.26));
+  const legendRows: TerrainLegendRow[] = [
+    ...legendTerrains.map((t): TerrainLegendRow => ({ name: t.name, color: t.color, icon: showIcons ? t.icon : undefined, iconColor: t.iconColor })),
+    ...(showLegend ? badgeKinds : []).map((s): TerrainLegendRow => ({ name: BADGE_INFO[s].label, color: BADGE_INFO[s].color, badge: s })),
+  ];
+  const legendSize = showLegend && legendRows.length
+    ? drawTerrainLegend(measureContext(), 0, 0, legendRows, legendFont, orientation, true)
+    : { width: 0, height: 0 };
+  const legendGap = Math.round(padding / 2);
+  const W = legendSize.width ? gridW - padding + legendGap + legendSize.width + legendGap : gridW;
+  const H = Math.max(gridH, legendSize.height ? legendSize.height + padding * 2 : 0);
 
   // Tinted icon variants — canvas equivalent of the on-screen CSS
   // mask-image tint (solid colour in the shape of the icon's alpha).
@@ -490,13 +539,36 @@ export async function renderMapToPngBlob(
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
     ctx.lineWidth = Math.max(3, px * 0.3);
+    const margin = Math.ceil(ctx.lineWidth / 2) + 2;
     for (const hex of hexes) {
       if (!hex.name) continue;
       const y = pngHexNameY(coordPlacement, showCoords && !!opts.coordLabel, hex.cy, R);
-      ctx.strokeStyle = coordHalo;
-      ctx.strokeText(hex.name, hex.cx, y);
-      ctx.fillStyle = coordColor;
-      ctx.fillText(hex.name, hex.cx, y);
+      // Within about the hex's width: two smaller lines for long names.
+      ctx.font = `700 ${px}px sans-serif`;
+      let lines = wrapHexName(hex.name, R * 1.8, (s) => ctx.measureText(s).width);
+      let linePx = px;
+      if (lines.length > 1) {
+        linePx = Math.max(10, Math.round(px * 0.85));
+        ctx.font = `700 ${linePx}px sans-serif`;
+        lines = wrapHexName(hex.name, R * 1.8, (s) => ctx.measureText(s).width);
+      }
+      const lineH = linePx * 1.1;
+      // Two lines centre on the one-line spot, so both stay in the hex's half.
+      const firstY = y - ((lines.length - 1) * lineH) / 2;
+      const top = clampLabelTop(firstY - lineH / 2, lines.length * lineH, H, margin);
+      // Dark text on light terrain and vice versa, as on the map (S4).
+      const tone = hexNameTone(hex.terrain?.color);
+      const ink = tone === "dark" ? "#1b1b1b" : tone === "light" ? "#ffffff" : coordColor;
+      const halo = tone === "dark" ? "rgba(255, 255, 255, 0.92)" : tone === "light" ? "rgba(0, 0, 0, 0.85)" : coordHalo;
+      lines.forEach((line, i) => {
+        const w = ctx.measureText(line).width;
+        const x = clampLabelX(hex.cx, w, W, margin);
+        const ly = top + lineH / 2 + i * lineH;
+        ctx.strokeStyle = halo;
+        ctx.strokeText(line, x, ly);
+        ctx.fillStyle = ink;
+        ctx.fillText(line, x, ly);
+      });
     }
   }
 
@@ -516,12 +588,163 @@ export async function renderMapToPngBlob(
       const namePx = Math.max(10, Math.round(r * 0.75));
       tokens.forEach((t, i) => {
         const place = tokenNamePlacement(offsets, i);
-        drawTokenName(ctx, t.title, c.cx + place.dx * spread, c.cy + place.dy * spread + r + 3 + place.line * namePx * 1.15, namePx, coordColor, coordHalo);
+        drawTokenName(ctx, t.title, c.cx + place.dx * spread, c.cy + place.dy * spread + r + 3 + place.line * namePx * 1.15, namePx, coordColor, coordHalo, W, H);
       });
     }
   }
 
+  // Link badges at the hexes' right sides, as on the map.
+  if (showLinkBadges) {
+    for (const hex of hexes) {
+      if (!hex.badges.length) continue;
+      const circles = pngBadgeCircles(hex.cx, hex.cy, R, isFlat, hex.badges.length);
+      hex.badges.forEach((s, i) => drawBadge(ctx, circles[i].x, circles[i].y, circles[i].r, BADGE_INFO[s].color, badgeIcons.get(s)));
+    }
+  }
+
+  if (legendSize.width) {
+    drawTerrainLegend(ctx, gridW - padding + legendGap, padding, legendRows, legendFont, orientation, false, iconCache, tintedIcon, badgeIcons);
+  }
+
   return canvas.convertToBlob({ type: "image/png" });
+}
+
+/** A scratch 2D context for measuring text before the canvas size is known. */
+function measureContext(): OffscreenCanvasRenderingContext2D {
+  const ctx = new OffscreenCanvas(1, 1).getContext("2d");
+  if (!ctx) throw new Error("Could not get 2D canvas context");
+  return ctx;
+}
+
+/** One link badge: a coloured disc with a white ring and its icon. */
+function drawBadge(
+  ctx: OffscreenCanvasRenderingContext2D,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+  icon: HTMLImageElement | undefined,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.shadowColor = "rgba(0,0,0,0.6)";
+  ctx.shadowBlur = Math.max(1, r * 0.3);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = Math.max(1, r * 0.15);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.stroke();
+  if (icon) {
+    const s = r * 1.3;
+    ctx.drawImage(icon, x - s / 2, y - s / 2, s, s);
+  }
+  ctx.restore();
+}
+
+/** The badge kinds' icons (Obsidian's Lucide icons), drawn white. */
+async function loadBadgeIcons(kinds: readonly BadgeSection[]): Promise<Map<BadgeSection, HTMLImageElement>> {
+  const out = new Map<BadgeSection, HTMLImageElement>();
+  await Promise.all(kinds.map(async (s) => {
+    const svg = getIcon(BADGE_INFO[s].icon);
+    if (!svg) return;
+    svg.setAttribute("stroke", "#ffffff");
+    svg.setAttribute("stroke-width", "2.6");
+    svg.setAttribute("width", "48");
+    svg.setAttribute("height", "48");
+    const xml = new XMLSerializer().serializeToString(svg);
+    try {
+      out.set(s, await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`));
+    } catch {
+      /* drawn without its icon */
+    }
+  }));
+  return out;
+}
+
+interface TerrainLegendRow {
+  name: string;
+  color: string;
+  icon?: string;
+  iconColor?: string;
+  /** A link badge kind (drawn as a badge, not a hex). */
+  badge?: BadgeSection;
+}
+
+/**
+ * Draw (or measure) the terrain legend: a "Legend" title, then a hex swatch
+ * (with the terrain's icon) per terrain used, then the badge kinds drawn
+ * (round 6 S6: players couldn't tell ice planet from moon).
+ */
+function drawTerrainLegend(
+  ctx: OffscreenCanvasRenderingContext2D,
+  x: number,
+  y: number,
+  rows: readonly TerrainLegendRow[],
+  fontSize: number,
+  orientation: "flat" | "pointy",
+  measureOnly: boolean,
+  icons?: Map<string, HTMLImageElement>,
+  tinted?: (img: HTMLImageElement, name: string, color: string) => OffscreenCanvas,
+  badgeIcons?: Map<BadgeSection, HTMLImageElement>,
+): { width: number; height: number } {
+  const pad = Math.round(fontSize * 0.8);
+  const swatch = Math.round(fontSize * 1.7);
+  const lineHeight = Math.max(Math.round(fontSize * 1.45), swatch + 4);
+  const gap = Math.round(fontSize * 0.5);
+  ctx.save();
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  let widest = ctx.measureText("Legend").width;
+  ctx.font = `${fontSize}px sans-serif`;
+  for (const r of rows) widest = Math.max(widest, swatch + gap + ctx.measureText(r.name).width);
+  ctx.restore();
+  const width = Math.ceil(widest) + pad * 2;
+  const height = pad * 2 + lineHeight * (rows.length + 1);
+  if (measureOnly) return { width, height };
+
+  ctx.save();
+  ctx.fillStyle = "rgba(20, 20, 20, 0.86)";
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = "#555";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, width - 1, height - 1);
+  ctx.textBaseline = "middle";
+  ctx.textAlign = "left";
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  ctx.fillStyle = "#fff";
+  ctx.fillText("Legend", x + pad, y + pad + lineHeight / 2);
+  ctx.font = `${fontSize}px sans-serif`;
+  let rowY = y + pad + lineHeight;
+  for (const r of rows) {
+    const cx = x + pad + swatch / 2;
+    const cy = rowY + lineHeight / 2;
+    if (r.badge) {
+      drawBadge(ctx, cx, cy, swatch * 0.36, r.color, badgeIcons?.get(r.badge));
+    } else {
+      const pts = hexPolygonPoints(cx, cy, orientation, swatch / 2 - 1);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.closePath();
+      ctx.fillStyle = r.color;
+      ctx.fill();
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      const img = r.icon ? icons?.get(r.icon) : undefined;
+      if (img && r.icon) {
+        const s = swatch * 0.7;
+        const src = r.iconColor && tinted ? tinted(img, r.icon, r.iconColor) : img;
+        ctx.drawImage(src, cx - s / 2, cy - s / 2, s, s);
+      }
+    }
+    ctx.fillStyle = "#fff";
+    ctx.fillText(r.name, x + pad + swatch + gap, cy);
+    rowY += lineHeight;
+  }
+  ctx.restore();
+  return { width, height };
 }
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
@@ -582,16 +805,22 @@ function drawTokenName(
   px: number,
   color: string,
   halo: string,
+  canvasW: number,
+  canvasH: number,
 ): void {
   ctx.font = `600 ${px}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.lineJoin = "round";
   ctx.lineWidth = Math.max(3, px * 0.3);
+  // Kept inside the image (round 6 S5).
+  const margin = Math.ceil(ctx.lineWidth / 2) + 2;
+  const cx = clampLabelX(x, ctx.measureText(name).width, canvasW, margin);
+  const top = clampLabelTop(y, px * 1.2, canvasH, margin);
   ctx.strokeStyle = halo;
-  ctx.strokeText(name, x, y);
+  ctx.strokeText(name, cx, top);
   ctx.fillStyle = color;
-  ctx.fillText(name, x, y);
+  ctx.fillText(name, cx, top);
 }
 
 function drawHex(
@@ -999,9 +1228,10 @@ export async function exportMapAsPng(
   try {
     const blob = await renderMapToPngBlob(plugin, mapName, opts);
     const buf = new Uint8Array(await blob.arrayBuffer());
+    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
     await writeBinaryToVault(plugin, outPath, buf);
-    new Notice(`Exported to ${outPath}`);
-    void openInVault(plugin, outPath);
+    new Notice(exportedMessage(outPath, replaced));
+    void openExported(plugin.app, outPath);
   } catch (err) {
     console.error(err);
     new Notice(`Map export failed: ${(err as Error).message ?? err}`);
@@ -1027,16 +1257,6 @@ async function writeBinaryToVault(
     await plugin.app.vault.modifyBinary(existing, buf);
   } else {
     await plugin.app.vault.createBinary(path, buf);
-  }
-}
-
-async function openInVault(
-  plugin: HexmakerPlugin,
-  path: string,
-): Promise<void> {
-  const file = plugin.app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await plugin.app.workspace.getLeaf(false).openFile(file);
   }
 }
 
