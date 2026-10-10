@@ -14,9 +14,11 @@ import {
   submapDefaultsKey,
   terrainsEqual,
   updatePaletteNote,
+  wrapPaletteColors,
 } from "./paletteNote";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
+import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { DEFAULT_PATH_TYPES } from "../constants";
 import { inferTerrainType } from "../terrainTypes";
@@ -78,10 +80,19 @@ function applyNoteMeta(pal: TerrainPalette, content: string, legacy = false): bo
  * table with unreadable rows is left alone.
  */
 export function refreshNoteDerived(content: string, pathTypes?: PathType[]): string {
-  const next = refreshPaletteDerived(content);
+  const next = wrapPathTypeColors(refreshPaletteDerived(content));
   const paths = parsePathTypes(next);
   if (!paths || paths.skipped.length || !paths.implicit) return next;
   return setPathTypes(next, pathTypes ?? paths.types);
+}
+
+/**
+ * The note with every colour cell (terrain Color and Icon color, path type
+ * Color) written as inline code, so Obsidian doesn't read `#14223d` as a
+ * tag. Nothing else in the note changes; the same string when nothing needs to.
+ */
+export function wrapNoteColors(content: string): string {
+  return wrapPathTypeColors(wrapPaletteColors(content));
 }
 
 /** A fresh note for a palette, metadata included. */
@@ -289,19 +300,59 @@ export class PaletteStore {
       settings.terrainTypesSeeded = true;
       dirty = true;
     }
+    // Colours in palette notes became inline code (Obsidian read `#14223d`
+    // as a tag). Before the first pass that converts them, every palette
+    // note is backed up; if that fails, the load-time pass waits for the
+    // next load (a note the plugin rewrites in the meantime still converts).
+    let refresh = true;
+    if (!settings.paletteColorsCode) {
+      refresh = await this.backupBeforeColorConversion();
+      if (refresh) {
+        settings.paletteColorsCode = true;
+        dirty = true;
+      }
+    }
     this.ready = true;
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
     if (seeded || filled) await this.syncNow();
     // Notes from older builds (or edited by hand since) get their derived
-    // cells shown: the Impassable column, inferred types in parentheses.
-    for (const file of this.paletteFiles()) await this.refreshDerived(file);
+    // cells shown (the Impassable column, inferred types in parentheses)
+    // and their colours written as inline code.
+    if (refresh) for (const file of this.paletteFiles()) await this.refreshDerived(file);
     if (!settings.pathTypesExplicit) {
       settings.pathTypesExplicit = true;
       dirty = true;
     }
     if (dirty) await this.persist();
+  }
+
+  /**
+   * Save the full text of every palette note (gzipped JSON in the plugin's
+   * backups folder) when any of them still has colours that aren't inline
+   * code. Returns false, after saying so, if the backup couldn't be saved.
+   */
+  private async backupBeforeColorConversion(): Promise<boolean> {
+    const { vault } = this.plugin.app;
+    const notes: Record<string, string> = {};
+    let needed = false;
+    for (const file of this.paletteFiles()) {
+      const content = await vault.read(file);
+      notes[file.path] = content;
+      if (parsePaletteNote(content) && wrapNoteColors(content) !== content) needed = true;
+    }
+    if (!needed) return true;
+    try {
+      const dir = `${this.plugin.manifest.dir}/backups/palette-colours-${new Date().toISOString().slice(0, 10)}`;
+      const json = JSON.stringify({ kind: "palette-colours", savedAt: new Date().toISOString(), notes });
+      await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
+      return true;
+    } catch (e) {
+      console.error("Hexmaker: couldn't back up palette notes; their colours weren't converted", e);
+      new Notice("Hexmaker: couldn't save a backup of the palette notes, so their colours weren't converted yet. It will try again next time.", 10000);
+      return false;
+    }
   }
 
   /**
@@ -425,13 +476,14 @@ export class PaletteStore {
             this.bind(pal, target, current);
             continue;
           }
+          // A note the user is typing in keeps its text (derived cells and
+          // colour cells are brought up to date once they leave it).
+          const editing = this.isBeingEdited(target);
+          const base = parsed && terrainsEqual(parsed, pal.terrains)
+            ? editing ? current : refreshPaletteDerived(current)
+            : updatePaletteNote(current, pal.terrains);
           const withMeta = setSubmapDefaults(
-            setChildPalette(
-              parsed && terrainsEqual(parsed, pal.terrains)
-                ? this.isBeingEdited(target) ? current : refreshPaletteDerived(current)
-                : updatePaletteNote(current, pal.terrains),
-              pal.childPalette,
-            ),
+            setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette),
             pal.submapDefaults,
           );
           const next = pal.pathTypes ? setPathTypes(withMeta, pal.pathTypes) : withMeta;

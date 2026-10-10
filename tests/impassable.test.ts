@@ -72,7 +72,7 @@ describe("palette note Impassable column", () => {
   it("is always written, the type's default in parentheses (#46 P1)", () => {
     const table = serializePaletteTable([{ name: "ocean", color: "#29507f", type: "water" }]);
     expect(table).toContain("| Impassable |");
-    expect(table).toContain("| ocean | #29507f |  |  |  | water | (yes) |");
+    expect(table).toContain("| ocean | `#29507f` |  |  |  | water | (yes) |");
   });
 
   it("round-trips overrides", () => {
