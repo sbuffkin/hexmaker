@@ -6,6 +6,7 @@ import { isModelMarkdown, parseModelMarkdown, solve } from "../packages/hex-wfc/
 import { compareVersions, migrateMapData, VERSION_KEY } from "../src/compat";
 import { isSaveMarkdown, parseSave, retargetSave, serializeSave, decodeCells, encodeCells } from "../src/worldgen/saveFormat";
 import { exampleFiles } from "./compat/examples";
+import { mapNoteKey, parseMapNote, updateMapNote } from "../src/maps/mapNote";
 
 /**
  * Every released version leaves an example generator, save and map in
@@ -56,6 +57,54 @@ describe("compat examples", () => {
         expect(Object.keys(save.settings).length).toBeGreaterThan(0);
         expect(parseModelMarkdown(save.generatorMarkdown, "copy").warnings).toEqual([]);
       });
+
+      // Map notes arrived in 1.5.6; older sets have none.
+      const mapNoteFile = path.join(dir, "map-note.md");
+      if (existsSync(mapNoteFile)) {
+        it("map note still reads, every setting and hex intact", () => {
+          const d = parseMapNote(read(mapNoteFile));
+          if (!d) throw new Error("map note didn't parse");
+          const s = d.settings as Record<string, unknown>;
+          expect(s).toMatchObject({
+            displayName: "Compat Example",
+            createdWith: version,
+            paletteName: "Default",
+            gridSize: { cols: 14, rows: 10 },
+            gridOffset: { x: 0, y: 0 },
+            staggerOffset: "odd",
+            baseTerrain: "grass",
+            terrainType: "forest",
+            weatherTable: "world/tables/weather.md",
+            showCoords: true,
+            showGmLayer: false,
+            hiddenLinkBadges: ["Quests"],
+            parent: { map: "compat-world", hex: "3_4" },
+            world: { id: "w-compat", cx: 1, cy: -1 },
+            biome: { generator: "preset-valley", from: ["preset-deep-forest"] },
+            originX: 2,
+          });
+          expect(s.backgroundImage).toMatchObject({ path: "world/maps/compat example.png", offsetX: 12.5, offsetY: -4, scale: 1.25, rotation: 0, opacity: 0.8 });
+          expect(s.gridDisplayScaleX as number).toBeCloseTo(1.0123, 3);
+          expect(s.gridDisplayOffsetX as number).toBeCloseTo(-3.3333, 3);
+          expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", submap: "compat-example-3-4", locked: true });
+          expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
+          expect(d.hexes.get("4_5")).toEqual({ terrain: "shallows" });
+          expect(d.paths.map((p) => p.typeName)).toEqual(["Road", "River"]);
+          expect(d.paths[1].hexes[0]).toBe("4_0");
+        });
+
+        it("map note rewritten by this build keeps its values and the user's text", () => {
+          const text = read(mapNoteFile).replace("\n## Hexes", "\nMy notes about the coast.\n\n## Hexes") + "\n## Session log\nWe crossed the river.\n";
+          const d = parseMapNote(text)!;
+          const out = updateMapNote(text, "compat-example", d);
+          expect(out).toContain("My notes about the coast.");
+          expect(out).toContain("## Session log\nWe crossed the river.");
+          const back = parseMapNote(out)!;
+          expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+          // and a second write changes nothing
+          expect(updateMapNote(out, "compat-example", back)).toBe(out);
+        });
+      }
 
       it("map entry migrates to the current shape", () => {
         const map = migrateMapData(JSON.parse(read(dir, "map.json")));

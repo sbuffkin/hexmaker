@@ -8,6 +8,7 @@
 import { cellKey, learnModel, modelToMarkdown, pathRouteKey, solve, type HexWfcModel } from "../../packages/hex-wfc/src";
 import { VERSION_KEY } from "../../src/compat";
 import { serializeSave } from "../../src/worldgen/saveFormat";
+import { buildMapNote, type HexData } from "../../src/maps/mapNote";
 import type { MapData } from "../../src/types";
 
 const COLS = 14, ROWS = 10, SEED = 7;
@@ -56,7 +57,7 @@ export function exampleGenerator(version: string): HexWfcModel {
   return model;
 }
 
-export function exampleFiles(version: string): { "generator.md": string; "save.md": string; "map.json": string } {
+export function exampleFiles(version: string): { "generator.md": string; "save.md": string; "map.json": string; "map-note.md": string } {
   const model = exampleGenerator(version);
   const generatorMarkdown = modelToMarkdown(model);
   const solved = solve(model, { cols: COLS, rows: ROWS, orientation: "flat", stagger: "odd", seed: SEED });
@@ -89,5 +90,50 @@ export function exampleFiles(version: string): { "generator.md": string; "save.m
     staggerOffset: "odd",
     showCoords: true,
   };
-  return { "generator.md": generatorMarkdown, "save.md": save, "map.json": JSON.stringify(map, null, 2) + "\n" };
+  return {
+    "generator.md": generatorMarkdown,
+    "save.md": save,
+    "map.json": JSON.stringify(map, null, 2) + "\n",
+    "map-note.md": exampleMapNote(version),
+  };
+}
+
+/**
+ * The map note (hexes/<map>/_<map>.md) this version writes for the example
+ * map, with every kind of map setting, hex column and path set, so a format
+ * change shows up in tests/compat.test.ts.
+ */
+export function exampleMapNote(version: string): string {
+  const { cells, paths } = exampleMap();
+  const hexes = new Map<string, HexData>();
+  for (const [k, t] of cells) if (t === "shallows") hexes.set(k, { terrain: t });
+  hexes.set("3_4", { name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", submap: "compat-example-3-4", locked: true });
+  hexes.set("6_2", { terrain: "grass", extra: { Notes: "a newer build's column" } });
+  const settings = {
+    displayName: "Compat Example",
+    createdWith: version,
+    paletteName: "Default",
+    gridSize: { cols: COLS, rows: ROWS },
+    gridOffset: { x: 0, y: 0 },
+    staggerOffset: "odd" as const,
+    baseTerrain: "grass",
+    terrainType: "forest",
+    weatherTable: "world/tables/weather.md",
+    showCoords: true,
+    showGmLayer: false,
+    hiddenLinkBadges: ["Quests"],
+    parent: { map: "compat-world", hex: "3_4" },
+    world: { id: "w-compat", cx: 1, cy: -1 },
+    biome: { generator: "preset-valley", from: ["preset-deep-forest"] },
+    backgroundImage: { path: "world/maps/compat example.png", offsetX: 12.5, offsetY: -4, scale: 1.25, rotation: 0, opacity: 0.8 },
+    gridDisplayScaleX: 1.0123456789012345,
+    gridDisplayOffsetX: -3.3333333333333335,
+    // A MapData field this version doesn't know (kept, never dropped).
+    originX: 2,
+  };
+  return buildMapNote("compat-example", {
+    settings,
+    hexes,
+    paths: paths.map((p) => ({ typeName: p.type, hexes: p.hexes })),
+  });
 }
