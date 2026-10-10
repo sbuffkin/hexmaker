@@ -325,13 +325,13 @@ export const LIMITED_TERRAIN_PALETTE: TerrainColor[] = [
 ];
 
 export const DEFAULT_PATH_TYPES: PathType[] = [
-  { name: "Road",  color: "#a16207", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true },
-  { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false },
+  { name: "Road",  color: "#a16207", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" },
+  { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false, autoRoute: "winding" },
 ];
 
 /** How a path is drawn when its type isn't in the map's palette (renamed or
  *  deleted there): plain grey, so it stays visible and can be fixed. */
-export const UNKNOWN_PATH_TYPE: PathType = { name: "", color: "#9ca3af", width: 3, lineStyle: "dashed", routing: "through" };
+export const UNKNOWN_PATH_TYPE: PathType = { name: "", color: "#9ca3af", width: 3, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" };
 
 export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   mySetting: "default",

@@ -346,8 +346,8 @@ export function builtinKind(
       return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
     },
     toChains: (paths, paletteName) => {
-      // Streams and trails draw as the palette's river / road types when it has no such type.
-      const known = plugin.getPathTypes(paletteName).map((t) => t.name);
+      // Streams and trails draw as the palette's type that behaves like them when it has no such type.
+      const known = plugin.getPathTypes(paletteName);
       return toPathChains(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })), undefined, paletteName);
     },
   };

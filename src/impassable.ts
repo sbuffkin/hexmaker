@@ -1,5 +1,13 @@
 import type { PathType, TerrainColor } from "./types";
-import { effectiveTerrainType, terrainTypeGroup, TERRAIN_GROUPS, typesInGroup, type TerrainGroup } from "./terrainTypes";
+import {
+  derivedCell,
+  effectiveTerrainType,
+  isDerivedCell,
+  terrainTypeGroup,
+  TERRAIN_GROUPS,
+  typesInGroup,
+  type TerrainGroup,
+} from "./terrainTypes";
 
 /**
  * Impassable terrain, for the path tool's auto-route.
@@ -61,27 +69,21 @@ export function impassableNames(palette: readonly TerrainColor[]): string[] {
   return palette.filter(isImpassable).map((t) => t.name);
 }
 
-/** Path type names that cross water by nature (rivers), when unset. */
-const WATERY_PATH = /\b(river|stream|creek|brook|canal|waterway|sea lane|shipping)\b/i;
-
 /**
- * Whether auto-routes of this path type go around impassable terrain.
- * Unset: yes, except for river-like types (a river runs into the sea).
+ * Whether auto-routes of this path type go around impassable terrain: the
+ * type's own setting (never its name). Missing only on data from older
+ * builds before migration; that counts as yes.
  */
-export function pathAvoidsImpassable(pt: Pick<PathType, "name" | "avoidImpassable">): boolean {
-  return pt.avoidImpassable ?? !WATERY_PATH.test(pt.name);
+export function pathAvoidsImpassable(pt: { avoidImpassable?: boolean }): boolean {
+  return pt.avoidImpassable ?? true;
 }
 
-/** River-like path names (they wind when auto-routed). */
-const RIVER_PATH = /\b(river|stream|creek)s?\b/i;
-
 /**
- * Whether auto-routes of this path type meander (rivers) rather than keep to
- * the straight line (roads): types that don't avoid impassable terrain, or
- * that are named like a river (round 7 U17).
+ * Whether auto-routes of this path type wander rather than keep to the
+ * straight line: the type's Auto-route option (round 7 U17, PA5).
  */
-export function pathMeanders(pt: Pick<PathType, "name" | "avoidImpassable">): boolean {
-  return !pathAvoidsImpassable(pt) || RIVER_PATH.test(pt.name);
+export function pathMeanders(pt: { autoRoute?: PathType["autoRoute"] }): boolean {
+  return pt.autoRoute === "winding";
 }
 
 /** Palette-note cell for the flag: "yes"/"no" for overrides, "" for the type default. */
@@ -89,8 +91,22 @@ export function impassableCell(t: Pick<TerrainColor, "impassable">): string {
   return t.impassable === undefined ? "" : t.impassable ? "yes" : "no";
 }
 
-/** Parse a palette-note cell: yes/no (and friends), or undefined for blank/unknown. */
+/**
+ * Palette-note Impassable cell as written: "yes"/"no" for a terrain's own
+ * setting, else its type's default in parentheses ("(yes)"/"(no)"), so the
+ * note always shows what auto-route uses. The parentheses read as unset.
+ */
+export function impassableNoteCell(t: ImpassableInput): string {
+  return impassableCell(t) || derivedCell(impassableByDefault(t) ? "yes" : "no");
+}
+
+/**
+ * Parse a palette-note cell: yes/no (and friends), or undefined for blank,
+ * unknown, or a derived value in parentheses ("(yes)" is the default shown,
+ * not a choice).
+ */
 export function parseImpassableCell(raw: string | undefined): boolean | undefined {
+  if (isDerivedCell(raw)) return undefined;
   const v = (raw ?? "").trim().toLowerCase();
   if (["yes", "y", "true", "x", "✓", "impassable"].includes(v)) return true;
   if (["no", "n", "false", "-", "passable"].includes(v)) return false;

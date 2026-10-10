@@ -28,9 +28,32 @@ describe("palette path types table", () => {
 		const types = parsePathTypes(note)!.types;
 		expect(types[0]).toMatchObject({ name: "Trail", lineStyle: "dashed", routing: "through", avoidImpassable: false });
 		expect(types[1]).toMatchObject({ name: "Ley line", color: "violet", lineStyle: "dotted", routing: "edge" });
-		expect(types[1].avoidImpassable).toBeUndefined();
-		// No routing given: a creek meanders like a river; a missing width is the default.
-		expect(types[2]).toMatchObject({ routing: "meander", width: 3, avoidImpassable: true });
+		// Blanks are the plain defaults, whatever the name (PA5): a creek
+		// doesn't meander or wind unless the table says so.
+		expect(types[1]).toMatchObject({ avoidImpassable: true, autoRoute: "direct" });
+		expect(types[2]).toMatchObject({ routing: "through", width: 3, avoidImpassable: true, autoRoute: "direct" });
+		expect(parsePathTypes(note)!.implicit).toBe(true);
+	});
+
+	it("notes from before PA5 are read once with the old name rules (legacy)", () => {
+		const note = [
+			"## Path types",
+			"",
+			"| Path | Color | Width | Style | Routing | Avoid impassable |",
+			"| --- | --- | --- | --- | --- | --- |",
+			"| Creek | #39f | 2 | solid |  |  |",
+			"| Canal | #39f | 2 | solid | through |  |",
+			"| Trail | #8b5a2b | 2 | dashed | through |  |",
+		].join("\n");
+		const types = parsePathTypes(note, { legacy: true })!.types;
+		expect(types[0]).toMatchObject({ routing: "meander", avoidImpassable: false, autoRoute: "winding" });
+		expect(types[1]).toMatchObject({ routing: "through", avoidImpassable: false, autoRoute: "winding" });
+		expect(types[2]).toMatchObject({ routing: "through", avoidImpassable: true, autoRoute: "direct" });
+		// Written back with every option filled in.
+		const out = setPathTypes(note, types);
+		expect(out).toContain("| Creek | #39f | 2 | solid | meander | no | winding |");
+		expect(parsePathTypes(out)!.types).toEqual(types);
+		expect(parsePathTypes(out)!.implicit).toBe(false);
 	});
 
 	it("clamps widths to 1–10", () => {
@@ -67,7 +90,7 @@ describe("palette path types table", () => {
 		const types = parsePathTypes(note)!.types;
 		types[0].color = "#000000";
 		const out = setPathTypes(note, types);
-		expect(out).toContain("| Road | #000000 | 4 | solid | through | yes | 1 per 3 hexes |");
+		expect(out).toContain("| Road | #000000 | 4 | solid | through | yes | direct | 1 per 3 hexes |");
 		expect(out).toContain("Intro.");
 		expect(out).toContain("Outro.");
 	});
