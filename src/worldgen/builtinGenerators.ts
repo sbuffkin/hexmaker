@@ -184,6 +184,28 @@ export function mapTerrainsByType(model: HexWfcModel, palette: TerrainColor[]): 
 }
 
 /**
+ * Which of a model's paths still make sense after the terrain mapping.
+ * A path whose start or end terrain was dropped (no palette terrain for it),
+ * or whose two different end terrains merged into one ("water to shallows"
+ * on a palette with one water terrain), can never be routed, so it's left
+ * out rather than reported as "Placed 0 of N". Branches (a "path" end) go
+ * too when no path of their type is left to branch from.
+ */
+export function keptPathIndexes(paths: PathFeature[], to: (name: string) => string | undefined): number[] {
+  const terrainEnd = (e: string) => !(isEdgeAnchor(e) || e === "none" || e === "path");
+  const routable = (p: PathFeature): boolean => {
+    if (terrainEnd(p.from) && !to(p.from)) return false;
+    if (terrainEnd(p.to) && !to(p.to)) return false;
+    if (terrainEnd(p.from) && terrainEnd(p.to) && p.from !== p.to && to(p.from) === to(p.to)) return false;
+    return true;
+  };
+  const kept = paths.map((p, i) => ({ p, i })).filter(({ p }) => routable(p));
+  const joins = (p: PathFeature) => p.from === "path" || p.to === "path";
+  const parentTypes = new Set(kept.filter(({ p }) => !joins(p)).map(({ p }) => p.type));
+  return kept.filter(({ p }) => !joins(p) || parentTypes.has(p.type)).map(({ i }) => i);
+}
+
+/**
  * The model with its terrains renamed to palette terrains (`mapping`).
  * Terrains mapped to the same palette terrain become one entry: weights add
  * up, sizes and edge preference average by weight, the heaviest one's shape
@@ -240,8 +262,11 @@ export function remapModel(model: HexWfcModel, mapping: Map<string, string>): He
     if (a && b) adjacency.push({ a, b, weight: e.weight });
   }
 
-  const end = (e: string) => (isEdgeAnchor(e) || e === "none" || e === "path" ? e : to(e) ?? e);
-  const paths: PathFeature[] | undefined = model.paths?.map((p) => {
+  const isTerrainEnd = (e: string) => !(isEdgeAnchor(e) || e === "none" || e === "path");
+  const end = (e: string) => (isTerrainEnd(e) ? to(e) ?? e : e);
+  const keptPaths = model.paths ? keptPathIndexes(model.paths, to) : [];
+  const paths: PathFeature[] | undefined = model.paths && keptPaths.map((i) => {
+    const p = model.paths![i];
     const through: Record<string, number> = {};
     for (const [t, share] of Object.entries(p.through)) {
       const m = to(t);
@@ -304,8 +329,8 @@ export function remapModel(model: HexWfcModel, mapping: Map<string, string>): He
     }
     if (s.paths && model.paths) {
       const tweaks: Record<string, PathTweak> = {};
-      model.paths.forEach((p, i) => {
-        const tweak = s.paths![pathRouteKey(p)];
+      keptPaths.forEach((orig, i) => {
+        const tweak = s.paths![pathRouteKey(model.paths![orig])];
         if (tweak && paths) tweaks[pathRouteKey(paths[i])] = { ...tweak };
       });
       s.paths = tweaks;

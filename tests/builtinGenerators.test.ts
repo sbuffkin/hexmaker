@@ -8,6 +8,7 @@ import {
 	BUILTIN_GENERATORS,
 	builtinPathType,
 	fitBuiltinModel,
+	keptPathIndexes,
 	mapTerrainsByType,
 	parseBuiltin,
 	remapModel,
@@ -145,6 +146,44 @@ describe("remapModel", () => {
 		expect(out.settings!.counts).toEqual({ y: { min: 2 } });
 		expect(out.settings!.impassable).toBeUndefined();
 		expect(out.settings!.paths).toEqual({ "River: x > edge": { count: 2 } });
+	});
+
+	it("leaves out paths whose end terrain was dropped or merged into the other end", () => {
+		const p = (type: string, from: string, to: string) => ({ type, from, to, count: 1, turn: 0, length: 0.5, through: {} });
+		const withPaths: HexWfcModel = {
+			...model,
+			paths: [
+				p("stream", "A", "B"), // A and B merge into x: can't be routed
+				p("stream", "C", "edge"),
+				p("trail", "edge", "D"), // D isn't on the palette
+				p("trail", "path", "edge"), // branch of the dropped trail
+				p("road", "A", "A"), // same terrain both ends by design: kept
+			],
+			settings: { paths: { "stream: C > edge": { count: 3 } } },
+		};
+		const mapping = new Map([["A", "x"], ["B", "x"], ["C", "y"]]);
+		expect(keptPathIndexes(withPaths.paths!, (n) => mapping.get(n))).toEqual([1, 4]);
+		const out = remapModel(withPaths, mapping);
+		expect(out.paths!.map((q) => `${q.type}: ${q.from} > ${q.to}`)).toEqual(["stream: y > edge", "road: x > x"]);
+		expect(out.settings!.paths).toEqual({ "stream: y > edge": { count: 3 } });
+	});
+
+	it("on Limited, no shipped generator keeps a path that can't be routed", () => {
+		const names = new Set(LIMITED_TERRAIN_PALETTE.map((t) => t.name));
+		for (const [slug, m] of models) {
+			const fitted = fitBuiltinModel(m, LIMITED_TERRAIN_PALETTE)!;
+			for (const q of fitted.paths ?? []) {
+				for (const e of [q.from, q.to]) {
+					if (e === "none" || e === "path" || e === "edge" || /^edge-/.test(e)) continue;
+					expect({ slug, end: e, known: names.has(e) }).toEqual({ slug, end: e, known: true });
+				}
+			}
+		}
+		// river-delta's "water > shallows" stream and "urban > edge" trail go; deep-forest's trail and its branch go.
+		const delta = fitBuiltinModel(models.get("biome-river-delta")!, LIMITED_TERRAIN_PALETTE)!;
+		expect(delta.paths!.some((q) => q.from === "ocean" && q.to === "ocean")).toBe(false);
+		const forest = fitBuiltinModel(models.get("preset-deep-forest")!, LIMITED_TERRAIN_PALETTE)!;
+		expect(forest.paths!.some((q) => q.from === "path")).toBe(false);
 	});
 
 	it("drops a near rule that would point at itself", () => {
