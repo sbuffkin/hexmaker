@@ -3,7 +3,19 @@ import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
-let lastIconPack: IconPack | "all" = "all";
+let lastIconPack: IconPack | "all" | undefined;
+
+/** The tab a filter opens on until the user picks one (see setIconPackDefault). */
+let iconPackDefault: () => IconPack | "all" = () => "all";
+
+/**
+ * Where icon filters start before the user picks a tab this session. The
+ * plugin passes a getter over its settings (defaultIconPack), so a change
+ * of map types applies to the next picker opened.
+ */
+export function setIconPackDefault(fn: () => IconPack | "all"): void {
+	iconPackDefault = fn;
+}
 
 /** Base class for all Hexmaker modals. Provides shared behaviour. */
 export class HexmakerModal extends Modal {
@@ -45,7 +57,7 @@ export class HexmakerModal extends Modal {
 			if (icon && !tile.title) tile.title = iconLabel(icon);
 		}
 
-		let pack: IconPack | "all" = lastIconPack;
+		let pack: IconPack | "all" = lastIconPack ?? iconPackDefault();
 		const apply = () => {
 			const query = search.value.trim().toLowerCase();
 			let shown = 0;

@@ -34,7 +34,8 @@ import {
   presetToPalette,
   uniquePaletteName,
 } from "./palettes/presets";
-import { normalizeFolder, makeTableTemplate, slugify } from "./utils";
+import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack } from "./utils";
+import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
@@ -67,6 +68,8 @@ export default class HexmakerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // Icon pickers open on the Space tab for space-only setups.
+    setIconPackDefault(() => defaultIconPack(this.settings));
     setHexDataSource(this.mapStore);
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
