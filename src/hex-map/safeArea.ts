@@ -139,3 +139,21 @@ export function unionBoxes(boxes: readonly Box[]): Box | null {
 export function mayAutoPan(drawingTool: string | null): boolean {
   return drawingTool === null;
 }
+
+/**
+ * Viewport zoom that shows a hex at `targetWidth` px on screen, given that
+ * it measures `measuredWidth` px at the current `zoom`. Crossing into a
+ * neighbouring region keeps the hex size you were looking at (round 5: the
+ * zoom jumped to a fixed 1.5×). Falls back to the current zoom when either
+ * width is unknown; clamped to the wheel-zoom range.
+ */
+export function zoomForHexWidth(
+  targetWidth: number,
+  measuredWidth: number,
+  zoom: number,
+  minZoom = 0.2,
+  maxZoom = 5,
+): number {
+  if (!(targetWidth > 0) || !(measuredWidth > 0) || !(zoom > 0)) return zoom;
+  return Math.min(maxZoom, Math.max(minZoom, (targetWidth / measuredWidth) * zoom));
+}

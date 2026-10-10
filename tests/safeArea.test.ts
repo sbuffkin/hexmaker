@@ -12,6 +12,7 @@ import {
 	uncoverEdgeDelta,
 	unionBoxes,
 	usableInsets,
+	zoomForHexWidth,
 } from "../src/hex-map/safeArea";
 
 const clip = { left: 100, top: 50, right: 1100, bottom: 850 }; // 1000 × 800
@@ -157,5 +158,28 @@ describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => 
 		const modeBar = body("updateModeBar");
 		expect(modeBar.length).toBeGreaterThan(100);
 		expect(modeBar).not.toMatch(/uncoverGrid|revealHexEl|fitGridToView|centerOnHex|this\.pan[XY]|applyTransform/);
+	});
+});
+
+describe("crossing into a neighbouring region keeps the zoom (fresh-eyes round 5)", () => {
+	it("picks the zoom that shows the arrival hex at the size you were looking at", () => {
+		// 30px hexes before; the new map's hex measures 60px at zoom 1 → 0.5.
+		expect(zoomForHexWidth(30, 60, 1)).toBeCloseTo(0.5);
+		// Same size already: zoom unchanged.
+		expect(zoomForHexWidth(48, 48, 1.3)).toBeCloseTo(1.3);
+		// Measured at zoom 2 (24px) → 40px needs zoom 2 × 40/24.
+		expect(zoomForHexWidth(40, 24, 2)).toBeCloseTo((2 * 40) / 24);
+	});
+
+	it("clamps to the wheel range and keeps the zoom when a width is unknown", () => {
+		expect(zoomForHexWidth(1000, 10, 1)).toBe(5);
+		expect(zoomForHexWidth(1, 100, 1)).toBe(0.2);
+		expect(zoomForHexWidth(0, 50, 1.7)).toBe(1.7);
+		expect(zoomForHexWidth(30, 0, 1.7)).toBe(1.7);
+	});
+
+	it("goToRegionHex measures the hex size before leaving and centres with it", () => {
+		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+		expect(view).toMatch(/private goToRegionHex[\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.centerOnHex\(x, y, hexWidth\);/);
 	});
 });

@@ -32,7 +32,7 @@ import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
-import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
+import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -3501,7 +3501,9 @@ export class HexMapView extends ItemView {
       ?.addClass("is-selected");
   }
 
-  centerOnHex(x: number, y: number): void {
+  /** Centre the view on a hex. `keepHexWidth` (on-screen px) keeps that hex
+   *  size instead of zooming to the default 1.5× (crossing regions). */
+  centerOnHex(x: number, y: number, keepHexWidth?: number): void {
     const hexEl = this.viewportEl?.querySelector<HTMLElement>(
       `[data-x="${x}"][data-y="${y}"]`,
     );
@@ -3524,7 +3526,7 @@ export class HexMapView extends ItemView {
     const hexViewX = (hexScreenX - clipRect.left - this.panX) / this.zoom;
     const hexViewY = (hexScreenY - clipRect.top - this.panY) / this.zoom;
 
-    const targetZoom = 1.5;
+    const targetZoom = keepHexWidth ? zoomForHexWidth(keepHexWidth, hexRect.width, this.zoom) : 1.5;
     // Centre in the part of the view no toolbar or open panel covers.
     const ins = usableInsets(clipRect.width, clipRect.height, this.measureOverlayInsets());
     const midX = ins.left + (clipRect.width - ins.left - ins.right) / 2;
@@ -3939,10 +3941,14 @@ export class HexMapView extends ItemView {
 
   /** Switch to a neighbouring region and land on one of its hexes. */
   private goToRegionHex(mapName: string, x: number, y: number, openEditor = false): void {
+    // Walking across keeps the hex size on screen (round 5: the zoom jumped
+    // to a fixed 1.5× on arrival); the arrival hex is centred in the
+    // uncovered part of the view.
+    const hexWidth = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex")?.getBoundingClientRect().width;
     this.navigateToMap(mapName);
     window.setTimeout(() => {
       this.setSelectedHex(x, y);
-      this.centerOnHex(x, y);
+      this.centerOnHex(x, y, hexWidth);
       if (openEditor) this.openHexEditorModal(x, y);
     }, 80);
   }
