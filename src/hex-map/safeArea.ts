@@ -3,8 +3,8 @@
  * (the toolbar rows with the tool mode bar, and an open side panel). Round 4:
  * the drawing tools panel hid the very hex a tester came back to, and the
  * mode bar (then at the bottom) covered the bottom row. Fitting, centring and
- * flashing a hex now keep hexes inside the safe area, and opening a panel or
- * the mode bar nudges a covered map edge out from under it. Pure (numbers in,
+ * flashing a hex now keep hexes inside the safe area. Opening a panel never
+ * moves the map (round 7 R9: it slid left each time). Pure (numbers in,
  * numbers out) so it's unit-testable; HexMapView measures the rectangles.
  */
 
@@ -90,31 +90,6 @@ export function revealDelta(start: number, end: number, safeStart: number, safeE
   return 0;
 }
 
-/**
- * Pan delta (one axis) that moves the grid's edge out from under an overlay
- * when that edge is on screen but covered. An edge that's off screen means
- * the user panned there on purpose: leave it alone. (A grid that fits the
- * safe span ends up fully inside it, since only one edge can be covered.)
- * It never moves further than the free room on the other side (round 6:
- * opening the layers panel on a zoomed-in map slid it sideways, pushing its
- * other edge off screen; when nothing is free, it stays put).
- */
-export function uncoverEdgeDelta(
-  start: number,
-  end: number,
-  safeStart: number,
-  safeEnd: number,
-  viewStart: number,
-  viewEnd: number,
-): number {
-  if (end <= viewStart || start >= viewEnd) return 0; // not on screen at all
-  // Move at most by the free room on the other side: never push the
-  // opposite edge under an overlay or off screen to uncover this one.
-  if (start >= viewStart && start < safeStart) return Math.max(0, Math.min(safeStart - start, safeEnd - end));
-  if (end <= viewEnd && end > safeEnd) return Math.min(0, Math.max(safeEnd - end, safeStart - start));
-  return 0;
-}
-
 /** The smallest box around all non-empty boxes, or null if there are none.
  *  The map's content box: its edge hexes (a flat-top grid's last column
  *  pokes out of the grid element by a quarter hex) plus the neighbour strip. */
@@ -135,7 +110,7 @@ export function unionBoxes(boxes: readonly Box[]): Box | null {
 }
 
 /**
- * Whether the map may move on its own (uncover an edge, reveal a hex). Never
+ * Whether the map may move on its own (reveal a hex). Never
  * while a drawing tool is on: the user is aiming at hexes, and a slide
  * between two clicks sends the next click to the wrong hex (round 5: the mode
  * bar appearing as Road started slid the map 53px, so a road zig-zagged).

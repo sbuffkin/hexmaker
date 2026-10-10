@@ -172,7 +172,7 @@ describe("X1: handout options", () => {
 });
 
 // ── Round 6: readable names (S4, U5), token names (S8), PNG labels (S5) ────
-import { hexNameFit, hexNameTone, NAME_FONT_EM, NAME_LONG_FONT_EM } from "../src/hex-map/hexNameLayer";
+import { balancedLines, ellipsize, hexHalfWidthAt, hexNameTone, layoutHexName, NAME_MAX_FONT_EM, NAME_MIN_FONT_EM, NAME_LINE_HEIGHT } from "../src/hex-map/hexNameLayer";
 import { clampLabelTop, clampLabelX, pngBadgeCircles, wrapHexName } from "../src/export/handoutLabels";
 import { readFileSync as readCss } from "node:fs";
 
@@ -196,36 +196,110 @@ describe("hex name labels read on any terrain (round 6 S4)", () => {
 	});
 });
 
-describe("hex names stay inside their hex (round 6 U5)", () => {
-	const flatHexEm = 4.4; // 2 × the 2.2em hex radius
+describe("hex names stay inside their hex (round 6 U5, round 7 R7)", () => {
+	// A bold sans font: about 0.6em a character, narrower for i/l/space.
+	const measure = (t: string) => [...t].reduce((w, c) => w + (c === " " ? 0.28 : /[il.']/.test(c) ? 0.3 : /[mwMW]/.test(c) ? 0.9 : 0.6), 0);
+	const flat = { measure, hexW: 4.4, hexH: 3.81, flat: true };
+	const pointy = { measure, hexW: 3.81, hexH: 4.4, flat: false };
+	const fitsInHex = (l: ReturnType<typeof layoutHexName>, o: typeof flat) => {
+		const h = l.lines.length * NAME_LINE_HEIGHT * l.fontEm;
+		const far = Math.abs(l.dyEm) + h / 2;
+		const room = 2 * hexHalfWidthAt(far, o.hexW, o.hexH, o.flat);
+		return l.lines.every((line) => measure(line) * l.fontEm <= room + 1e-9);
+	};
 
-	it("keeps a short name on one line at the normal size", () => {
-		const fit = hexNameFit("Hut", flatHexEm);
-		expect(fit.long).toBe(false);
-		expect(fit.maxWidthEm).toBeCloseTo((flatHexEm * 0.92) / NAME_FONT_EM, 2);
+	it("keeps a short name on one line at full size", () => {
+		const l = layoutHexName("Hut", flat);
+		expect(l.lines).toEqual(["Hut"]);
+		expect(l.fontEm).toBe(NAME_MAX_FONT_EM);
+		expect(l.cut).toBe(false);
 	});
 
-	it("shrinks and wraps a name wider than the hex", () => {
-		const fit = hexNameFit("Hermit's Hut", flatHexEm);
-		expect(fit.long).toBe(true);
-		expect(fit.maxWidthEm).toBeCloseTo((flatHexEm * 0.92) / NAME_LONG_FONT_EM, 2);
+	it("never breaks inside a word (the tester saw 'The / Drowne', 'Gullmout / h')", () => {
+		for (const o of [flat, pointy]) {
+			for (const name of ["The Drowned Abbey", "Gullmouth", "Saltmere Keep", "Hermit's Hut"]) {
+				const l = layoutHexName(name, o);
+				expect(l.cut).toBe(false);
+				// Joined back with spaces, the lines are exactly the name.
+				expect(l.lines.join(" ")).toBe(name);
+				expect(l.lines.length).toBeLessThanOrEqual(3);
+				expect(fitsInHex(l, o)).toBe(true);
+			}
+		}
 	});
 
-	it("clamps labels to two lines in CSS", () => {
+	it("shrinks a single long word rather than wrapping it", () => {
+		const l = layoutHexName("Gullmouth", flat);
+		expect(l.lines).toEqual(["Gullmouth"]);
+		expect(l.fontEm).toBeLessThan(NAME_MAX_FONT_EM);
+		expect(l.fontEm).toBeGreaterThanOrEqual(NAME_MIN_FONT_EM);
+	});
+
+	it("splits at the most balanced spaces", () => {
+		expect(balancedLines(["The", "Drowned", "Abbey"], 2, measure)).toEqual(["The Drowned", "Abbey"]);
+		expect(balancedLines(["The", "Drowned", "Abbey"], 3, measure)).toEqual(["The", "Drowned", "Abbey"]);
+		expect(balancedLines(["Old", "Mill", "of", "the", "Fens"], 2, measure)).toEqual(["Old Mill of", "the Fens"]);
+		expect(balancedLines(["Hut"], 2, measure)).toEqual(["Hut"]);
+	});
+
+	it("uses a third line rather than cutting a name beside the badges", () => {
+		// Flat hex, one M badge at the right: the tester's dungeon.
+		const l = layoutHexName("The Drowned Abbey", { ...flat, rightLimit: 2.55 - 1.2 - 0.08 });
+		expect(l.cut).toBe(false);
+		expect(l.lines.join(" ")).toBe("The Drowned Abbey");
+		expect(l.dxEm).toBeLessThan(0); // shifted left, clear of the badge
+	});
+
+	it("ellipsizes a word too wide even at the smallest size", () => {
+		const l = layoutHexName("Supercalifragilisticexpialidocious", flat);
+		expect(l.lines).toHaveLength(1);
+		expect(l.lines[0].endsWith("…")).toBe(true);
+		expect(l.cut).toBe(true);
+		expect(l.fontEm).toBe(NAME_MIN_FONT_EM);
+		expect(fitsInHex(l, flat)).toBe(true);
+	});
+
+	it("cuts a name that needs more than three lines after whole words", () => {
+		const name = "Old Mill of the Fens by the Long Grey Lake of Kings";
+		const l = layoutHexName(name, flat);
+		expect(l.lines.length).toBeLessThanOrEqual(3);
+		expect(l.cut).toBe(true);
+		expect(l.lines[l.lines.length - 1].endsWith("…")).toBe(true);
+		// The lines before the last hold whole words only.
+		expect(name.startsWith(l.lines.slice(0, -1).join(" ") + " ")).toBe(true);
+		expect(fitsInHex(l, flat)).toBe(true);
+	});
+
+	it("sits on the side away from the coordinates", () => {
+		expect(layoutHexName("Saltmere Keep", { ...flat, coords: "bottom" }).dyEm).toBeLessThanOrEqual(0);
+		expect(layoutHexName("Saltmere Keep", { ...flat, coords: "top" }).dyEm).toBeGreaterThanOrEqual(0);
+		// Coordinates in the middle: the name keeps clear of the centre.
+		const mid = layoutHexName("Hut", { ...flat, coords: "middle" });
+		expect(mid.dyEm - (NAME_LINE_HEIGHT * mid.fontEm) / 2).toBeGreaterThanOrEqual(0.5 - 1e-3);
+	});
+
+	it("ellipsize keeps what fits and adds an ellipsis", () => {
+		expect(ellipsize("Abbey", 10, measure)).toBe("Abbey");
+		const cut = ellipsize("Abbeyfield", 3, measure);
+		expect(cut.endsWith("…")).toBe(true);
+		expect(measure(cut)).toBeLessThanOrEqual(3);
+	});
+
+	it("lets CSS show the computed lines as they are (no CSS word breaking)", () => {
 		const css = readCss("styles.css", "utf8");
 		const at = css.indexOf(".duckmage-hex-name-label {");
 		const rule = css.slice(at, css.indexOf("}", at));
-		expect(rule).toMatch(/-webkit-line-clamp:\s*2/);
-		expect(rule).toMatch(/max-width:\s*var\(--duckmage-name-max-w/);
-		expect(rule).not.toMatch(/white-space:\s*nowrap/);
+		expect(rule).toMatch(/white-space:\s*pre/);
+		expect(rule).toMatch(/font-size:\s*var\(--duckmage-name-font/);
+		expect(rule).not.toMatch(/overflow-wrap:\s*anywhere|line-clamp/);
 	});
 
 	it("wraps PNG names at the most balanced space", () => {
-		const measure = (s: string) => s.length * 10;
-		expect(wrapHexName("Hut", 100, measure)).toEqual(["Hut"]);
-		expect(wrapHexName("Frostfang Watchtower of the Old Kings", 100, measure))
+		const m = (s: string) => s.length * 10;
+		expect(wrapHexName("Hut", 100, m)).toEqual(["Hut"]);
+		expect(wrapHexName("Frostfang Watchtower of the Old Kings", 100, m))
 			.toEqual(["Frostfang Watchtower", "of the Old Kings"]);
-		expect(wrapHexName("Supercalifragilistic", 100, measure)).toEqual(["Supercalifragilistic"]);
+		expect(wrapHexName("Supercalifragilistic", 100, m)).toEqual(["Supercalifragilistic"]);
 	});
 });
 
@@ -254,8 +328,8 @@ describe("PNG labels stay inside the image (round 6 S5)", () => {
 });
 
 describe("link badges in the PNG (round 6 R6)", () => {
-	it("stacks up to three in one column at the hex's right side", () => {
-		const c = pngBadgeCircles(100, 100, 44, true, 2); // em = 20px
+	it("stacks up to three in one column at the hex's right side (size S)", () => {
+		const c = pngBadgeCircles(100, 100, 44, true, 2, "s"); // em = 20px
 		expect(c).toHaveLength(2);
 		expect(c[0].r).toBeCloseTo(8);
 		// Right edge at cx + 1.95em, centred on the middle row.
@@ -264,7 +338,7 @@ describe("link badges in the PNG (round 6 R6)", () => {
 	});
 
 	it("uses two columns for four or five kinds", () => {
-		const c = pngBadgeCircles(0, 0, 22, false, 5);
+		const c = pngBadgeCircles(0, 0, 22, false, 5, "s");
 		expect(new Set(c.map((p) => p.x.toFixed(2))).size).toBe(2);
 		expect(new Set(c.map((p) => p.y.toFixed(2))).size).toBe(3);
 	});

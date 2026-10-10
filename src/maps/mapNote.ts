@@ -69,6 +69,7 @@ const SCALAR_KEYS: [keyof MapSettings, string][] = [
   ["showGmLayer", "show-gm-layer"],
   ["showTokens", "show-tokens"],
   ["showLinkBadges", "show-link-badges"],
+  ["linkBadgeSize", "link-badge-size"],
   ["showHexNames", "show-hex-names"],
   ["showTokenNames", "show-token-names"],
   ["gridDisplayScale", "grid-display-scale"],

@@ -21,8 +21,69 @@ export const BADGE_INFO: Record<BadgeSection, { icon: string; label: string; one
   Factions: { icon: "flag",     label: "Factions", one: "Faction", cls: "factions", color: "#5a5fb0" },
 };
 
-/** Badges stack in one column at the hex's right side up to this many, then two. */
+/** Badges stack in one column at the hex's right side up to this many (at size S), then two. */
 export const BADGES_PER_COLUMN = 3;
+
+/** Badge size, per map (layers menu S / M / L). */
+export type BadgeSize = "s" | "m" | "l";
+export const BADGE_SIZES: BadgeSize[] = ["s", "m", "l"];
+
+/**
+ * Size for maps that haven't picked one. Round 7 R8: at S (the round 6
+ * size) testers didn't notice the badges, so the default is M. The owner
+ * is still deciding (MK1): switch the default here.
+ */
+export const DEFAULT_BADGE_SIZE: BadgeSize = "m";
+
+/** Map setting → a valid size (unset or junk = the default). */
+export function badgeSize(v: unknown): BadgeSize {
+  return v === "s" || v === "m" || v === "l" ? v : DEFAULT_BADGE_SIZE;
+}
+
+/**
+ * How badges of each size sit in a hex, in grid em (the hex radius is
+ * 2.2em): the chip's diameter, how many stack in one column before a second
+ * starts, and how far right of the hex centre the column's right edge is
+ * (flat-top / pointy-top). S is the round 6 size, inside the hex. M and L
+ * are pinned on the hex's right point / side, partly over the gap, so the
+ * hex keeps its middle for the name (see badgeNameLimit). In the PNG the
+ * names sit high in the hex, so there every size stays inside (png*).
+ */
+export const BADGE_LAYOUT: Record<BadgeSize, { chip: number; perColumn: number; rightFlat: number; rightPointy: number; pngRightFlat: number; pngRightPointy: number }> = {
+  s: { chip: 0.8, perColumn: 3, rightFlat: 1.95, rightPointy: 1.75, pngRightFlat: 1.95, pngRightPointy: 1.75 },
+  m: { chip: 1.2, perColumn: 2, rightFlat: 2.55, rightPointy: 2.35, pngRightFlat: 1.7, pngRightPointy: 1.85 },
+  l: { chip: 1.6, perColumn: 2, rightFlat: 2.8, rightPointy: 2.55, pngRightFlat: 1.6, pngRightPointy: 1.6 },
+};
+
+/** Gap (grid em) kept between a hex name and the hex's badges. */
+const NAME_BADGE_GAP = 0.08;
+
+/**
+ * How far right of the hex centre (grid em) a hex name may reach when the
+ * hex shows `count` badges: up to the badges' left edge (round 7 R8: at M
+ * the badges hid the ends of names). Infinity with no badges.
+ */
+export function badgeNameLimit(size: BadgeSize, flat: boolean, count: number): number {
+  if (count <= 0) return Infinity;
+  const l = BADGE_LAYOUT[size];
+  const cols = count > l.perColumn ? 2 : 1;
+  return (flat ? l.rightFlat : l.rightPointy) - cols * l.chip - (cols - 1) * 0.06 - NAME_BADGE_GAP;
+}
+
+/**
+ * The badge kinds the legend lists: the kinds some hex on the map shows,
+ * minus the ones hidden in the layers menu; none with badges off.
+ */
+export function legendBadgeKinds(
+  present: Iterable<BadgeSection>,
+  show: boolean,
+  hidden: readonly string[] | undefined,
+): BadgeSection[] {
+  if (!show) return [];
+  const has = new Set(present);
+  const off = new Set(hidden ?? []);
+  return BADGE_SECTIONS.filter((s) => has.has(s) && !off.has(s));
+}
 
 /** The bits of an Obsidian CachedMetadata this needs. */
 export interface LinkCacheLike {
@@ -124,16 +185,22 @@ export function renderLinkBadgeLayer(
   placements: readonly { key: string; ox: number; oy: number }[],
   gridSize: { w: number; h: number },
   sectionsByHex: ReadonlyMap<string, BadgeSection[]>,
+  size: BadgeSize = DEFAULT_BADGE_SIZE,
 ): void {
   grid.querySelector(".duckmage-link-badges-layer")?.remove();
   if (sectionsByHex.size === 0) return;
-  const layer = grid.createDiv({ cls: "duckmage-link-badges-layer" });
+  const layout = BADGE_LAYOUT[size];
+  const layer = grid.createDiv({ cls: `duckmage-link-badges-layer duckmage-badges-${size}` });
+  layer.setCssProps({
+    "--duckmage-badge-size": `${layout.chip}em`,
+    "--duckmage-badge-right": `${grid.hasClass("duckmage-grid-flat") ? layout.rightFlat : layout.rightPointy}em`,
+  });
   const gw = gridSize.w || 1;
   const gh = gridSize.h || 1;
   for (const p of placements) {
     const sections = sectionsByHex.get(p.key.replace(",", "_"));
     if (!sections?.length) continue;
-    const group = layer.createDiv({ cls: `duckmage-link-badges${sections.length > BADGES_PER_COLUMN ? " is-two-col" : ""}` });
+    const group = layer.createDiv({ cls: `duckmage-link-badges${sections.length > layout.perColumn ? " is-two-col" : ""}` });
     group.setCssProps({
       "--duckmage-badge-x": `${((p.ox / gw) * 100).toFixed(3)}%`,
       "--duckmage-badge-y": `${((p.oy / gh) * 100).toFixed(3)}%`,
