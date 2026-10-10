@@ -824,9 +824,12 @@ export default class HexmakerPlugin extends Plugin {
       });
       if (added) count++;
     }
-    new Notice(
-      `Hexmaker: added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
-    );
+    // Nothing to report when every table already had its link (the setup
+    // wizard runs this right after creating tables that include one).
+    if (count > 0)
+      new Notice(
+        `Hexmaker: added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
+      );
   }
 
   /** Create missing description/encounters table files for every terrain type in the palette. */
