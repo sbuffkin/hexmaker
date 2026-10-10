@@ -6549,3 +6549,39 @@ button.duckmage-wfc-library-tab.is-active {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* ── Fresh-eyes r3 (setup, new map, export) — fix/fresh-eyes-r3-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Setup wizard: the chosen orientation card is ticked and filled; hover
+   only lightens a card so it never reads as chosen. */
+.duckmage-wizard-orient-btn:hover:not(.is-active) {
+    border-color: var(--background-modifier-border-hover);
+    background: var(--background-modifier-hover);
+}
+.duckmage-wizard-orient-btn.is-active {
+    border-color: var(--interactive-accent);
+    background: hsla(var(--interactive-accent-hsl), 0.18);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+.duckmage-wizard-orient-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+.duckmage-wizard-orient-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+.duckmage-wizard-orient-mark {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--interactive-accent);
+}
+.duckmage-wizard-preview-exact {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    text-align: center;
+    max-width: 240px;
+}

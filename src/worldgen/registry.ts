@@ -242,6 +242,27 @@ export function firstMapGenerator(fitting: { id: string }[], mapKinds: Iterable<
   return prefs.find((id) => fitting.some((k) => k.id === id)) ?? BLANK_ID;
 }
 
+/**
+ * Everything a generator run depends on, as one string: when a preview's
+ * key matches the create-time key, the previewed outcome is what gets
+ * created (no second run that could differ). Option order doesn't matter.
+ */
+export function generationKey(req: {
+  generatorId: string;
+  options: Record<string, string>;
+  seed: number;
+  cols: number;
+  rows: number;
+  orientation: string;
+  stagger: string;
+  palette: string;
+  /** Anything else the run reads (neighbour, parent hex…). */
+  extra?: string;
+}): string {
+  const opts = Object.keys(req.options).sort().map((k) => [k, req.options[k]]);
+  return JSON.stringify([req.generatorId, opts, req.seed, req.cols, req.rows, req.orientation, req.stagger, req.palette, req.extra ?? ""]);
+}
+
 /** Generators usable with a palette, Blank first. Context-only ones need `hasContext`. */
 export function kindsForPalette(
   kinds: TerrainGeneratorKind[],

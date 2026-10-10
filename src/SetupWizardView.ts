@@ -12,6 +12,7 @@ import { pathColors } from "./worldgen/generators";
 import {
 	BLANK_ID,
 	firstMapGenerator,
+	generationKey,
 	kindsForPalette,
 	listGeneratorKinds,
 	suggestBaseTerrain,
@@ -20,6 +21,7 @@ import {
 	type TerrainGeneratorKind,
 } from "./worldgen/registry";
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
+import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -51,6 +53,9 @@ interface WizardContext {
 	generatorId?: string;
 	generatorOptions: Record<string, string>;
 	seed: number;
+	/** The last previewed run and its generationKey: Next creates exactly
+	 *  this map when nothing changed since (no second run). */
+	preview?: { key: string; outcome: GenerateOutcome };
 	/** Label of the generator the map was made with (summary); undefined = blank. */
 	generatedWith?: string;
 }
@@ -112,6 +117,21 @@ function resolvedOptions(kind: TerrainGeneratorKind, ctx: WizardContext): Record
 	const out: Record<string, string> = {};
 	for (const o of kind.options) out[o.key] = ctx.generatorOptions[o.key] ?? o.default;
 	return out;
+}
+
+/** generationKey of the wizard's current choices (see WizardContext.preview). */
+function wizardRunKey(plugin: HexmakerPlugin, ctx: WizardContext, kind: TerrainGeneratorKind): string {
+	const grid = wizardGrid(plugin, ctx);
+	return generationKey({
+		generatorId: kind.id,
+		options: resolvedOptions(kind, ctx),
+		seed: ctx.seed,
+		cols: grid.cols,
+		rows: grid.rows,
+		orientation: ctx.hexOrientation,
+		stagger: grid.stagger,
+		palette: ctx.paletteName,
+	});
 }
 
 /**
@@ -386,8 +406,17 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				cls: "duckmage-wizard-input",
 			});
 			nameInput.value = ctx.mapName;
+			// Map names are slugs (folder + note names): say so before Next.
+			const slugNote = nameRow.createEl("p", { cls: "duckmage-wizard-note-count" });
+			const syncSlug = () => {
+				const slug = slugify(ctx.mapName);
+				slugNote.setText(slug && slug !== ctx.mapName ? `Saved as "${slug}" (map names are lower-case, with dashes).` : "");
+				slugNote.toggle(!!slugNote.getText());
+			};
+			syncSlug();
 			nameInput.addEventListener("input", () => {
 				ctx.mapName = nameInput.value.trim();
+				syncSlug();
 				cb.onUpdate();
 			});
 
@@ -437,26 +466,55 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// Hex orientation
 			const orientRow = container.createDiv({ cls: "duckmage-wizard-field" });
 			orientRow.createEl("label", { text: "Hex orientation", cls: "duckmage-wizard-label" });
-			const orientBtns = orientRow.createDiv({ cls: "duckmage-wizard-orient-row" });
+			// A radio group: the chosen card is ticked and filled; hover only
+			// lightens a card, so it never looks chosen.
+			const orientBtns = orientRow.createDiv({
+				cls: "duckmage-wizard-orient-row",
+				attr: { role: "radiogroup", "aria-label": "Hex orientation" },
+			});
 
+			const orientCards: { value: "flat" | "pointy"; el: HTMLElement; mark: HTMLElement }[] = [];
+			const syncOrient = () => {
+				for (const c of orientCards) {
+					const on = ctx.hexOrientation === c.value;
+					c.el.toggleClass("is-active", on);
+					c.el.setAttr("aria-checked", on ? "true" : "false");
+					c.el.setAttr("tabindex", on ? "0" : "-1");
+					c.mark.setText(on ? "✓ Selected" : "");
+				}
+			};
 			for (const { value, label, desc } of [
 				{ value: "flat"   as const, label: "Flat-top",   desc: "Flat sides face north and south — wider hexes" },
 				{ value: "pointy" as const, label: "Pointy-top", desc: "Points face north and south — taller hexes" },
 			]) {
 				const btn = orientBtns.createDiv({
-					cls: "duckmage-wizard-orient-btn" + (ctx.hexOrientation === value ? " is-active" : ""),
+					cls: "duckmage-wizard-orient-btn",
+					attr: { role: "radio" },
 				});
-				btn.createSpan({ text: label, cls: "duckmage-wizard-orient-label" });
+				const head = btn.createDiv({ cls: "duckmage-wizard-orient-head" });
+				head.createSpan({ text: label, cls: "duckmage-wizard-orient-label" });
+				const mark = head.createSpan({ cls: "duckmage-wizard-orient-mark" });
 				btn.createSpan({ text: desc,  cls: "duckmage-wizard-orient-desc" });
-				btn.addEventListener("click", () => {
+				orientCards.push({ value, el: btn, mark });
+				const choose = () => {
+					if (ctx.hexOrientation === value) return;
 					ctx.hexOrientation = value;
-					orientBtns
-						.querySelectorAll<HTMLElement>(".duckmage-wizard-orient-btn")
-						.forEach(el => el.removeClass("is-active"));
-					btn.addClass("is-active");
+					syncOrient();
 					refresh();
+				};
+				btn.addEventListener("click", choose);
+				btn.addEventListener("keydown", (e) => {
+					if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); }
+					if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+						e.preventDefault();
+						ctx.hexOrientation = ctx.hexOrientation === "flat" ? "pointy" : "flat";
+						syncOrient();
+						refresh();
+						orientCards.find((c) => c.value === ctx.hexOrientation)?.el.focus();
+					}
 				});
 			}
+			syncOrient();
 
 			// Terrain palette
 			const paletteRow = container.createDiv({ cls: "duckmage-wizard-field" });
@@ -481,7 +539,18 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
 			const rerollBtn = previewBox.createEl("button", { text: "🎲 Re-roll", attr: { title: "Generate again with a new random seed" } });
 			const status = previewBox.createDiv({ cls: "duckmage-setup-status" });
+			const exactNote = previewBox.createDiv({
+				cls: "duckmage-wizard-preview-exact",
+				text: "Next creates exactly this map. Re-roll for another.",
+			});
 			rerollBtn.addEventListener("click", () => { ctx.seed = randomSeed(); refresh(); });
+			/** Overland's "One side (random)": say which side this seed picked. */
+			let seaRandomOption: HTMLOptionElement | undefined;
+			const syncSeaLabel = () => {
+				if (!seaRandomOption) return;
+				const side = resolveSeaSide("random", ctx.seed);
+				seaRandomOption.text = `One side (random: ${side})`;
+			};
 
 			let kinds: TerrainGeneratorKind[] = [];
 			const terrains = () => plugin.getPaletteOrPresetTerrains(ctx.paletteName);
@@ -506,15 +575,20 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 					});
 				}
 				optsBox.empty();
+				seaRandomOption = undefined;
 				const kind = kinds.find((k) => k.id === ctx.generatorId);
 				for (const opt of kind?.options ?? []) {
 					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
 					row.createSpan({ text: opt.label });
 					const sel = row.createEl("select");
-					for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
+					for (const c of opt.choices) {
+						const o = sel.createEl("option", { value: c.value, text: c.label });
+						if (kind?.id === OVERLAND_ID && opt.key === "sea" && c.value === "random") seaRandomOption = o;
+					}
 					sel.value = ctx.generatorOptions[opt.key] ?? opt.default;
 					sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
 				}
+				syncSeaLabel();
 			};
 
 			const refresh = () => {
@@ -526,11 +600,15 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				let cells = new Map<string, string>();
 				let paths: { type: string; route?: string; hexes: string[] }[] = [];
 				let featureCells: Set<string> | undefined;
+				syncSeaLabel();
+				exactNote.hide();
 				if (kind && kind.id !== BLANK_ID) {
 					if (ctx.mapCols * ctx.mapRows > PREVIEW_AUTO_LIMIT) {
 						status.setText("Large map — no preview; terrain is generated when you continue.");
 					} else {
 						const outcome = runGenerator(plugin, ctx, kind, pal);
+						ctx.preview = { key: wizardRunKey(plugin, ctx, kind), outcome };
+						if (outcome.ok) exactNote.show();
 						if (!outcome.ok) {
 							status.setText(outcome.message);
 							status.addClass("mod-warning");
@@ -586,8 +664,15 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const kind = kinds.find((k) => k.id === selected);
 			let outcome: GenerateOutcome | undefined;
 			if (kind && kind.id !== BLANK_ID) {
-				onProgress(`Generating terrain (${kind.label})…`);
-				outcome = runGenerator(plugin, ctx, kind, terrains);
+				// The map the preview showed, as is, when nothing changed since;
+				// otherwise (large map, no preview) run it now.
+				const key = wizardRunKey(plugin, ctx, kind);
+				if (ctx.preview?.key === key) {
+					outcome = ctx.preview.outcome;
+				} else {
+					onProgress(`Generating terrain (${kind.label})…`);
+					outcome = runGenerator(plugin, ctx, kind, terrains);
+				}
 				if (!outcome.ok) throw new Error(outcome.message);
 			}
 
@@ -670,9 +755,9 @@ function makeDoneStep(): WizardStep {
 				ctx.generatedWith
 					? "Repaint anything you like: open Terrain in the drawing tools, pick a type and click hexes."
 					: "Paint terrain — the terrain picker opens automatically when you hit \"Open hex map\". Pick a type and click hexes to paint.",
-				"Right-click any hex to open its full editor: add towns, dungeons, notes, and more.",
+				"Click any hex to open its editor: terrain, notes, towns, dungeons and more. Right-click a hex for its menu (open note, new submap, tokens).",
 				"Open the 🎲 tab to browse and roll your random tables.",
-				"Use the toolbar to paint icons, draw roads or rivers, and link factions.",
+				"The pencil button (top right of the map) opens the drawing tools: paint icons, draw roads or rivers, link factions.",
 			]) {
 				tips.createEl("li", { text: tip, cls: "duckmage-wizard-tip-item" });
 			}

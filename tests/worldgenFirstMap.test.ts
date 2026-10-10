@@ -12,7 +12,7 @@ import {
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
-import { BLANK_ID, firstMapGenerator } from "../src/worldgen/registry";
+import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
 import { defaultPaletteFor } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
@@ -331,6 +331,31 @@ describe("firstMapGenerator (setup wizard default)", () => {
 	it("falls back to Blank", () => {
 		expect(firstMapGenerator(k(BLANK_ID), ["world"])).toBe(BLANK_ID);
 		expect(firstMapGenerator([], ["space"])).toBe(BLANK_ID);
+	});
+});
+
+describe("generationKey (create exactly the previewed map)", () => {
+	const base = {
+		generatorId: OVERLAND_ID, options: { water: "30", sea: "west" }, seed: 42,
+		cols: 20, rows: 16, orientation: "flat", stagger: "odd", palette: "Limited",
+	};
+
+	it("is the same for the same run, whatever the option order", () => {
+		expect(generationKey(base)).toBe(generationKey({ ...base, options: { sea: "west", water: "30" } }));
+	});
+
+	it("changes with anything the run reads", () => {
+		const k = generationKey(base);
+		for (const change of [
+			{ seed: 43 }, { options: { water: "30", sea: "east" } }, { cols: 21 }, { rows: 15 },
+			{ orientation: "pointy" }, { stagger: "even" }, { palette: "Expanded" }, { generatorId: BLANK_ID },
+			{ extra: "next to thornwood (east)" },
+		]) expect(generationKey({ ...base, ...change })).not.toBe(k);
+	});
+
+	it("a preview run and a create run with the same key give the same map", () => {
+		const run = () => planetSurface(LIMITED_TERRAIN_PALETTE, { ...grid, cols: 20, rows: 16 }, base.seed, base.options, undefined, "overland").cells;
+		expect([...run()]).toEqual([...run()]);
 	});
 });
 
