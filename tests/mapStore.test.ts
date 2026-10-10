@@ -7,6 +7,11 @@ import type { MapData } from "../src/types";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
+async function gunzipJson(bytes: Uint8Array) {
+	const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+	return JSON.parse(await new Response(stream).text());
+}
+
 const HEX = (fm: string, body = "# Hex\n\n### Description\nA ruined tower.\n") => `---\n${fm}\n---\n${body}`;
 
 /** Old-format vault: map data in hex-note frontmatter. */
@@ -91,6 +96,38 @@ describe("map store: migration from hex-note frontmatter", () => {
 		expect(backups.map((p) => p.split("/").pop()).sort()).toEqual(["coast-3-4.json", "coast.json"]);
 		const b = JSON.parse(vault.files.get(backups.find((p) => p.endsWith("/coast.json"))!)!);
 		expect(new Map(b.hexes).get("3_4")).toMatchObject({ terrain: "forest", locked: true });
+	});
+
+	it("keeps a gzipped full-text copy of every hex note it cleans", async () => {
+		const original = new Map(vault.files);
+		await boot(vault);
+		const gz = [...vault.binaries.keys()].filter((p) => p.includes("/backups/map-notes-"));
+		expect(gz.map((p) => p.split("/").pop()).sort()).toEqual(["coast-3-4-hex-notes.json.gz", "coast-hex-notes.json.gz"]);
+		const b = await gunzipJson(vault.binaries.get(gz.find((p) => p.endsWith("/coast-hex-notes.json.gz"))!)!);
+		expect(b.map).toBe("coast");
+		// Exactly the notes that were cleaned, byte for byte as they were
+		expect(Object.keys(b.notes).sort()).toEqual(["world/hexes/coast/0_0.md", "world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md"]);
+		for (const [p, text] of Object.entries(b.notes)) expect(text).toBe(original.get(p));
+	});
+
+	it("leaves hex notes untouched if the full-text backup can't be written", async () => {
+		vault.failBinary = true;
+		const original = new Map(vault.files);
+		const { store } = await boot(vault);
+		for (const p of ["world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md", "world/hexes/coast-3-4/0_0.md"]) {
+			expect(vault.files.get(p)).toBe(original.get(p));
+		}
+		// The map notes still exist and are used
+		expect(store.get("coast", "3_4")?.terrain).toBe("forest");
+	});
+
+	it("never overwrites an earlier full-text backup", async () => {
+		await boot(vault);
+		// An old device syncs map data back into a hex note; the next start cleans it again.
+		vault.files.set("world/hexes/coast/1_2.md", HEX("terrain: desert"));
+		await boot(vault);
+		const names = [...vault.binaries.keys()].map((p) => p.split("/").pop()).filter((n) => n!.startsWith("coast-hex"));
+		expect(names.sort()).toEqual(["coast-hex-notes-2.json.gz", "coast-hex-notes.json.gz"]);
 	});
 
 	it("leaves hex notes untouched if the map note doesn't read back the same", async () => {

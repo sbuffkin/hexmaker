@@ -336,7 +336,7 @@ export class MapStore {
 
   private async migrate(maps: MapData[]): Promise<void> {
     const notice = new Notice(`Hexmaker: moving map data into map notes (0/${maps.length} maps)…`, 0);
-    const backupDir = `${this.plugin.manifest.dir}/backups/map-notes-${new Date().toISOString().slice(0, 10)}`;
+    const backupDir = this.backupDir();
     const adapter = this.plugin.app.vault.adapter;
     let done = 0;
     const failed: string[] = [];
@@ -372,7 +372,7 @@ export class MapStore {
     if (failed.length) {
       new Notice(`Hexmaker: couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
     } else {
-      new Notice(`Hexmaker: map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text.`);
+      new Notice(`Hexmaker: map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
     }
     await this.plugin.saveData(this.plugin.settings);
   }
@@ -387,9 +387,17 @@ export class MapStore {
     const { fileManager } = this.plugin.app;
     for (const map of maps) {
       const link = `[[_${map.name}]]`;
+      const toClean: { file: TFile; fm: Record<string, unknown> }[] = [];
       for (const file of this.hexFiles(map.name)) {
         const fm = await this.frontmatterOf(file);
-        if (!fm || !HEX_DATA_KEYS.some((k) => k in fm)) continue;
+        if (fm && HEX_DATA_KEYS.some((k) => k in fm)) toClean.push({ file, fm });
+      }
+      if (!toClean.length) continue;
+      // processFrontMatter re-serialises the whole frontmatter, so comments
+      // and formatting in other keys can change. Keep the full text of every
+      // note we're about to touch; if that can't be saved, touch none.
+      if (!(await this.backupHexNotes(map.name, toClean.map((c) => c.file)))) continue;
+      for (const { file, fm } of toClean) {
         const fromNote = hexDataFromFrontmatter(fm);
         const stored = this.get(map.name, file.basename) ?? {};
         if (!trustNote && JSON.stringify(fromNote) !== JSON.stringify(pick(stored, fromNote))) {
@@ -402,6 +410,41 @@ export class MapStore {
           f[MAP_LINK_KEY] = link;
         });
       }
+    }
+  }
+
+  private backupDir(): string {
+    return `${this.plugin.manifest.dir}/backups/map-notes-${new Date().toISOString().slice(0, 10)}`;
+  }
+
+  /**
+   * Save the full text of `files` as `<backupDir>/<map>-hex-notes.json.gz`
+   * (`.json` where gzip isn't available), never overwriting an earlier one.
+   * About 110 bytes per note gzipped. Returns false if it couldn't be saved.
+   */
+  private async backupHexNotes(map: string, files: TFile[]): Promise<boolean> {
+    const { vault } = this.plugin.app;
+    const adapter = vault.adapter;
+    try {
+      const notes: Record<string, string> = {};
+      for (const f of files) notes[f.path] = await vault.read(f);
+      const json = JSON.stringify({ map, savedAt: new Date().toISOString(), notes });
+      const dir = this.backupDir();
+      if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+      const gz = typeof CompressionStream === "function";
+      const ext = gz ? ".json.gz" : ".json";
+      let path = `${dir}/${map}-hex-notes${ext}`;
+      for (let n = 2; await adapter.exists(path); n++) path = `${dir}/${map}-hex-notes-${n}${ext}`;
+      if (gz) {
+        const stream = new Blob([json]).stream().pipeThrough(new CompressionStream("gzip"));
+        await adapter.writeBinary(path, await new Response(stream).arrayBuffer());
+      } else {
+        await adapter.write(path, json);
+      }
+      return true;
+    } catch (e) {
+      console.error(`Hexmaker: couldn't back up hex notes for ${map}; they were left untouched`, e);
+      return false;
     }
   }
 }
