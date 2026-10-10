@@ -6510,3 +6510,38 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-token {
     pointer-events: none;
 }
+
+/* Mode bar: which drawing tool is on and how to stop it (T3). Sits above
+   the bottom expand button, centred over the map. */
+.duckmage-mode-bar {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    max-width: calc(100% - 2em);
+    padding: 0.3em 0.4em 0.3em 0.8em;
+    border-radius: 999px;
+    border: 1px solid var(--interactive-accent);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    font-size: var(--font-ui-small);
+    white-space: nowrap;
+}
+.duckmage-mode-bar-text {
+    font-weight: 600;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.duckmage-mode-bar-hint {
+    color: var(--text-muted);
+}
+.duckmage-mode-bar-stop {
+    padding: 0 0.5em;
+    height: 1.7em;
+    border-radius: 999px;
+    box-shadow: none;
+}

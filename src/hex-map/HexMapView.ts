@@ -28,7 +28,7 @@ import {
 } from "../constants";
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
-import { pathClickOutcome } from "./toolMode";
+import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -212,6 +212,11 @@ export class HexMapView extends ItemView {
     | "placeToken"
     | null = null;
   private isErasingMode = false;
+  /** On-map "which tool is on" bar (fresh-eyes T3); text set in updateModeBar. */
+  private modeBarEl: HTMLElement | null = null;
+  private modeBarTextEl: HTMLElement | null = null;
+  /** Time of the last right-click while a tool was active (double-right-click exits). */
+  private lastToolContextMenuAt = 0;
   private pathToolbarBtn: HTMLButtonElement | null = null;
   private pathBtnSwatch: HTMLElement | null = null;
   private terrainToolbarBtn: HTMLButtonElement | null = null;
@@ -585,6 +590,32 @@ export class HexMapView extends ItemView {
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
     this.applyTransform();
 
+    // Mode bar: paint/draw tools are sticky, so say which one is on and how
+    // to stop it (fresh-eyes T3). Hidden while no tool is active.
+    this.modeBarEl = controlsEl.createDiv({
+      cls: "duckmage-mode-bar",
+      attr: { role: "status", "aria-live": "polite" },
+    });
+    this.modeBarTextEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-text" });
+    this.modeBarEl.createSpan({
+      cls: "duckmage-mode-bar-hint",
+      text: "Right-click: options · Esc: stop",
+    });
+    const modeBarStop = this.modeBarEl.createEl("button", {
+      cls: "duckmage-mode-bar-stop",
+      text: "✕",
+      attr: { title: "Stop this tool", "aria-label": "Stop this tool" },
+    });
+    modeBarStop.addEventListener("click", () => this.exitCurrentMode());
+    this.modeBarEl.hide();
+
+    // Esc leaves the active tool (modals and menus handle their own Esc first).
+    this.scope.register([], "Escape", () => {
+      if (this.drawingMode === null) return true;
+      this.exitCurrentMode();
+      return false;
+    });
+
     this.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
     this.factionTooltipEl.hide();
 
@@ -840,6 +871,15 @@ export class HexMapView extends ItemView {
         if (this.drawingMode === null) return;
         e.preventDefault();
         e.stopPropagation();
+        // Double-right-click anywhere exits the tool (as the help says).
+        const now = performance.now();
+        const isDouble = now - this.lastToolContextMenuAt < 400;
+        this.lastToolContextMenuAt = isDouble ? 0 : now;
+        if (isDouble) {
+          activeDocument.querySelectorAll(".duckmage-painter-ctx-menu").forEach((m) => m.remove());
+          this.exitCurrentMode();
+          return;
+        }
         const hexEl = (e.target as HTMLElement).closest<HTMLElement>(".duckmage-hex");
         const hexX = hexEl ? Number(hexEl.dataset.x) : null;
         const hexY = hexEl ? Number(hexEl.dataset.y) : null;
@@ -2216,7 +2256,30 @@ export class HexMapView extends ItemView {
     // Terrain / icon erase visual feedback
     this.terrainToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "terrain");
     this.iconToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "icon");
+
+    this.updateModeBar();
   }
+
+  /** Show which tool is on (and how to stop it) on the map itself. */
+  private updateModeBar(): void {
+    if (!this.modeBarEl || !this.modeBarTextEl) return;
+    const label = toolModeLabel({
+      mode: this.drawingMode,
+      erasing: this.isErasingMode,
+      terrainName: this.paintTerrainName,
+      terrainPick: this.terrainPickMode,
+      iconName: this.paintIconName,
+      iconGmOnly: this.paintIconGmOnly,
+      pathTypeName: this.activePathTypeName,
+      tablePath: this.paintTablePath,
+      submapName: this.paintSubmapName,
+      factionPath: this.paintFactionPath,
+      regionPath: this.paintRegionPath,
+    });
+    this.modeBarTextEl.setText(label ?? "");
+    this.modeBarEl.toggle(label !== null);
+  }
+
   private applyTransform(): void {
     if (this.viewportEl) {
       this.viewportEl.setCssProps({
