@@ -6939,6 +6939,13 @@ button.duckmage-wfc-library-tab.is-active {
     text-overflow: ellipsis;
 }
 
+/* Export: the overlay suffix ("-region") right after the File name box. */
+.duckmage-export-name-suffix {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    white-space: nowrap;
+}
+
 /* Maps → New map: the chosen generator's description under the dropdown. */
 .duckmage-map-generator-desc {
     margin-top: 0.25em;
