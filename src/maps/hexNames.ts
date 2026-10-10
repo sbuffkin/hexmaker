@@ -6,9 +6,9 @@ import { TFile, type App } from "obsidian";
  * quick switcher, search and [[links]] find "Glass Wastes" while the file
  * stays `x_y.md`.
  *
- * The plugin manages exactly one alias per note: the hex's current name.
- * On rename it swaps the old name for the new one and leaves every other
- * alias (the user's own) alone. The old name comes from the map note
+ * The plugin manages two aliases per note: the hex's current name, and
+ * "<map> x, y" (NM2, see coordAlias). On rename it swaps the old value for
+ * the new one and leaves every other alias (the user's own) alone. The old name comes from the map note
  * (the name before the change), so nothing extra is stored in the note.
  */
 
@@ -43,6 +43,51 @@ export function nextAliases(
   return same ? null : out;
 }
 
+/**
+ * A hex note's coordinate alias (NM2): "<map display name> x, y", so the
+ * quick switcher finds "Gloomwood 3, 4". Managed like the name alias: the
+ * plugin swaps its own old value for the new one (map renamed) and never
+ * touches the user's aliases.
+ */
+export function coordAlias(mapLabel: string, x: number | string, y: number | string): string {
+  return cleanHexName(`${mapLabel} ${x}, ${y}`);
+}
+
+/** One plugin-managed alias changing from `from` to `to` (either may be empty). */
+export interface AliasSwap {
+  from: string | null | undefined;
+  to: string | null | undefined;
+}
+
+/** nextAliases for several managed aliases at once; null when nothing changes. */
+export function nextAliasesMulti(current: unknown, swaps: readonly AliasSwap[]): string[] | null {
+  let list: unknown = current;
+  let changed = false;
+  for (const s of swaps) {
+    const next = nextAliases(list, s.from, s.to);
+    if (next !== null) {
+      list = next;
+      changed = true;
+    }
+  }
+  return changed ? (list as string[]) : null;
+}
+
+/** Apply alias swaps to one note's `aliases`. No-op when nothing changes. */
+export async function syncHexAliases(app: App, path: string, swaps: readonly AliasSwap[]): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) return;
+  // Skip the write when the indexed frontmatter already agrees.
+  const cache = app.metadataCache.getFileCache(file);
+  if (cache && nextAliasesMulti(cache.frontmatter?.aliases, swaps) === null) return;
+  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    const next = nextAliasesMulti(fm.aliases, swaps);
+    if (next === null) return;
+    if (next.length) fm.aliases = next;
+    else delete fm.aliases;
+  });
+}
+
 /** Apply a rename to one note's `aliases`. No-op when nothing changes. */
 export async function syncHexNameAlias(
   app: App,
@@ -50,17 +95,7 @@ export async function syncHexNameAlias(
   oldName: string | null | undefined,
   newName: string | null | undefined,
 ): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (!(file instanceof TFile)) return;
-  // Skip the write when the indexed frontmatter already agrees.
-  const cache = app.metadataCache.getFileCache(file);
-  if (cache && nextAliases(cache.frontmatter?.aliases, oldName, newName) === null) return;
-  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-    const next = nextAliases(fm.aliases, oldName, newName);
-    if (next === null) return;
-    if (next.length) fm.aliases = next;
-    else delete fm.aliases;
-  });
+  await syncHexAliases(app, path, [{ from: oldName, to: newName }]);
 }
 
 /** Names that changed between two versions of a map's hexes (hand edits of the map note). */

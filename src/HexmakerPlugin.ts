@@ -55,7 +55,7 @@ import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDa
 import { MapStore } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
-import { cleanHexName, syncHexNameAlias } from "./maps/hexNames";
+import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -1421,7 +1421,37 @@ export default class HexmakerPlugin extends Plugin {
     const old = this.mapStore.get(mapName, key)?.name;
     if ((old ?? "") === name) return;
     this.mapStore.set(mapName, key, { name: name || null });
-    await syncHexNameAlias(this.app, this.hexPath(x, y, mapName), old, name);
+    // The "<map> x, y" alias rides along (added if the note lacks it).
+    const coord = this.hexCoordAlias(mapName, x, y);
+    await syncHexAliases(this.app, this.hexPath(x, y, mapName), [
+      { from: old, to: name },
+      { from: coord, to: coord },
+    ]);
+  }
+
+  /** A hex note's "<map display name> x, y" alias (NM2). */
+  hexCoordAlias(mapName: string, x: number | string, y: number | string): string {
+    return coordAlias(this.mapLabel(mapName), x, y);
+  }
+
+  /**
+   * A map's display name changed from `oldLabel` to its current one: swap
+   * the "<map> x, y" alias on every hex note of the map. User aliases stay;
+   * a note without the old alias gets the new one.
+   */
+  async syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> {
+    const newLabel = this.mapLabel(mapName);
+    if (newLabel === oldLabel) return;
+    const folder = this.app.vault.getAbstractFileByPath(this.mapStore.mapFolder(mapName));
+    if (!(folder instanceof TFolder)) return;
+    for (const child of folder.children) {
+      if (!(child instanceof TFile)) continue;
+      const m = /^(-?\d+)_(-?\d+)$/.exec(child.basename);
+      if (!m || child.extension !== "md") continue;
+      await syncHexAliases(this.app, child.path, [
+        { from: coordAlias(oldLabel, m[1], m[2]), to: coordAlias(newLabel, m[1], m[2]) },
+      ]);
+    }
   }
 
   /** Create a hex note from the configured template (or the built-in default). */
@@ -1470,9 +1500,13 @@ export default class HexmakerPlugin extends Plugin {
 
     try {
       const file = await this.app.vault.create(path, content);
-      // A named hex's note gets its name as an alias (X4).
+      // A named hex's note gets its name as an alias (X4), and every hex
+      // note gets "<map> x, y" (NM2).
       const name = this.mapStore.get(mapName, `${x}_${y}`)?.name;
-      if (name) await syncHexNameAlias(this.app, path, undefined, name);
+      await syncHexAliases(this.app, path, [
+        { from: undefined, to: name },
+        { from: undefined, to: this.hexCoordAlias(mapName, x, y) },
+      ]);
       return file;
     } catch {
       // A concurrent worker may have created this file between our existence check and
@@ -1717,8 +1751,10 @@ export default class HexmakerPlugin extends Plugin {
   async setMapDisplayName(name: string, typed: string): Promise<void> {
     const map = this.getMap(name);
     if (!map) return;
+    const oldLabel = this.mapLabel(name);
     map.displayName = displayNameFor(typed, name);
     await this.saveSettings();
+    await this.syncMapCoordAliases(name, oldLabel);
   }
 
   getPaletteByName(name: string): TerrainPalette | undefined {

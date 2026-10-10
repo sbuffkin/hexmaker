@@ -124,7 +124,7 @@ Generators only change hexes when a map is created or regenerated; you can alway
 ### Hex editor (click a hex)
 A modal for editing a hex note without leaving the map.
 
-- **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept.
+- **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept. Every hex note also gets the alias "<map name> x, y" ("Gloomwood 3, 4"), so the quick switcher finds a hex by its coordinates; renaming the map updates it.
 - **Terrain picker** — select the terrain type for the hex from the map's palette.
 - **Icon override** — override the default terrain icon with any icon in your icons folder. Icon pickers have **All / Terrain / Custom** tabs (plus **Space** when space maps are on); **Custom** holds the images in your icons folder.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
