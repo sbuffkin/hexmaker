@@ -16,7 +16,9 @@ import {
 } from "./paletteNote";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
 import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
-import { DEFAULT_PATH_TYPES } from "../constants";
+import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
+import { applyPresetTerrains, planPresetTerrains } from "./presetUpdates";
+import { writeJsonBackup } from "../backup";
 import { inferTerrainType } from "../terrainTypes";
 
 /**
@@ -261,6 +263,9 @@ export class PaletteStore {
     }
 
     if (await this.loadAll()) dirty = true;
+    // Terrains added to a bundled palette since it was installed: once each.
+    const added = await this.addNewPresetTerrains();
+    if (added) dirty = true;
     // Path types moved from settings into palettes: every palette without
     // them gets the full old list, and the notes get their table below.
     const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
@@ -278,7 +283,7 @@ export class PaletteStore {
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded || filled) await this.syncNow();
+    if (seeded || filled || added) await this.syncNow();
     if (dirty) await this.persist();
   }
 
@@ -334,6 +339,39 @@ export class PaletteStore {
       const loaded = await this.loadAll();
       if (fillPalettePathTypes(this.plugin.settings.terrainPalettes, this.plugin.settings.pathTypes) || loaded) await this.persist();
     });
+  }
+
+  /**
+   * Give installed copies of bundled palettes the terrains added to them
+   * since (OW8), once each, after backing up the palette notes. A terrain
+   * the palette already has is left exactly as the user made it. Returns
+   * true when anything changed (settings or palettes).
+   */
+  private async addNewPresetTerrains(): Promise<boolean> {
+    const settings = this.plugin.settings;
+    const done = new Set(settings.presetTerrainsAdded ?? []);
+    const plan = planPresetTerrains(settings.terrainPalettes, ADDED_PRESET_TERRAINS, done, (n) => PALETTE_PRESETS.find((p) => p.name === n)?.terrains);
+    if (!plan.done.length) return false;
+    if (plan.add.length) {
+      try {
+        const notes: Record<string, string> = {};
+        for (const { palette } of plan.add) {
+          const path = this.boundPath.get(palette);
+          if (path) notes[path] = this.lastContent.get(path) ?? "";
+        }
+        const dir = `${this.plugin.manifest.dir}/backups/palettes-${new Date().toISOString().slice(0, 10)}`;
+        await writeJsonBackup(this.plugin.app.vault.adapter, dir, "palettes-before-new-terrains", JSON.stringify({ savedAt: new Date().toISOString(), notes }));
+      } catch (e) {
+        // No backup, no change: try again next start.
+        console.error("Hexmap World Creator: couldn't back up palette notes; new terrains not added", e);
+        return false;
+      }
+      applyPresetTerrains(plan);
+      const what = plan.add.map(({ palette, terrains }) => `${terrains.map((t) => t.name).join(", ")} to "${palette.name}"`).join("; ");
+      new Notice(`Hexmap World Creator: added ${what}.`);
+    }
+    settings.presetTerrainsAdded = [...done, ...plan.done];
+    return true;
   }
 
   private async persist(): Promise<void> {

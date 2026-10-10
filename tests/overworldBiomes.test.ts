@@ -90,16 +90,19 @@ describe("biomes: terrain ↔ biome", () => {
 		}
 	});
 
-	it("Expanded shows every biome but the delta; Limited shows fewer and the rest fall back", () => {
+	it("Expanded shows every biome (savanna and river delta have their own terrains, OW8); Limited shows fewer and the rest fall back", () => {
 		const exp = representableBiomes(EXP);
-		expect(exp.size).toBe(BIOMES.length - 1);
-		expect(exp.has("river-delta")).toBe(false);
+		expect(exp.size).toBe(BIOMES.length);
+		expect(representativeTerrain("savanna", EXP)).toBe("savanna");
+		expect(representativeTerrain("river-delta", EXP)).toBe("river delta");
+		expect(biomeForTerrain("savanna", EXP)).toBe("savanna");
+		expect(biomeForTerrain("river delta", EXP)).toBe("river-delta");
 		const lim = representableBiomes(LIMITED_TERRAIN_PALETTE);
 		expect([...lim].sort()).toEqual(["alpine", "badlands", "grassland", "open-sea", "temperate-forest", "tundra", "valley"]);
 		expect(resolveBiome("taiga", lim)).toBe("tundra");
 		expect(resolveBiome("jungle", lim)).toBe("temperate-forest");
 		expect(resolveBiome("archipelago", lim)).toBe("open-sea");
-		expect(resolveBiome("river-delta", exp)).toBe("swamp");
+		expect(resolveBiome("river-delta", lim)).toBe("grassland");
 	});
 
 	it("ecotones: incompatible pairs and their transitions", () => {
