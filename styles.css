@@ -6930,6 +6930,15 @@ button.duckmage-wfc-library-tab.is-active {
 
 /* ── Fresh-eyes r5 (setup, new map, export) ── */
 
+/* Wizard: the "Saved as …" line always holds one line of space, so the
+   form doesn't jump under the cursor when it appears while typing. */
+.duckmage-wizard-slug-note {
+    min-height: calc(1em * var(--line-height-normal, 1.5));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Maps → New map: the chosen generator's description under the dropdown. */
 .duckmage-map-generator-desc {
     margin-top: 0.25em;
