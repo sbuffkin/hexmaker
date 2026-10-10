@@ -157,10 +157,15 @@ export async function buildHexMarkdown(
 
   // Section bodies
   const data = await getAllSectionData(app, hexFile.path);
+  // Link sections in the map type's words (G4b: Settlements on a space map).
+  const words = plugin.sectionWordsFor(plugin.mapStore?.resolve(hexFile.path)?.map);
   for (const section of HEX_SECTIONS) {
     if (section.gmOnly && !opts.includeGmSections) continue;
     if (opts.excludeSections?.has(section.id)) continue;
-    const block = renderSectionBlock(section, data);
+    const shown = section.kind === "links" && section.id !== "encounters table"
+      ? { ...section, title: words(section.title).label }
+      : section;
+    const block = renderSectionBlock(shown, data);
     if (block) lines.push(block);
   }
   return lines.join("\n");

@@ -144,13 +144,13 @@ export function entryTitle(h: Pick<ManualHex, "landmark" | "terrain" | "links" |
   return esc(capitalise(h.terrain || "Hex"));
 }
 
-function hexEntry(h: ManualHex, player: boolean): string {
+function hexEntry(h: ManualHex, player: boolean, labels: ManualData["linkLabels"] = {}): string {
   const title = entryTitle(h);
   const parts: string[] = [];
   if (h.description) parts.push(`<div class="hx-read">${h.description}</div>`);
   if (h.landmark && stripTags(h.landmark).replace(/[.]$/, "") !== stripTags(title)) parts.push(runIn("Landmark", h.landmark));
   for (const [key, label] of LINK_LABELS) {
-    if (h.links[key].length) parts.push(runIn(label, esc(h.links[key].join(", "))));
+    if (h.links[key].length) parts.push(runIn(labels[key] ?? label, esc(h.links[key].join(", "))));
   }
   if (h.weather) parts.push(runIn("Weather", h.weather));
   if (h.hooks) parts.push(runIn("Hooks and rumors", h.hooks));
@@ -166,14 +166,14 @@ function hexEntry(h: ManualHex, player: boolean): string {
 </article>`;
 }
 
-function section(s: ManualSection, player: boolean, single: boolean): string {
+function section(s: ManualSection, player: boolean, single: boolean, labels?: ManualData["linkLabels"]): string {
   const heading = single ? "Hex key" : `Section ${esc(s.label)}`;
   return `
 <section class="hx-page hx-section">
   <h2>${heading} <span class="hx-sub">hexes ${esc(s.range)}</span></h2>
   <img class="hx-section-map" src="${s.mapUri}" alt="${heading} map">
   ${s.hexes.length
-    ? `<div class="hx-key">${s.hexes.map((h) => hexEntry(h, player)).join("\n")}</div>`
+    ? `<div class="hx-key">${s.hexes.map((h) => hexEntry(h, player, labels)).join("\n")}</div>`
     : `<p class="hx-empty">No keyed hexes in this section.</p>`}
 </section>`;
 }
@@ -201,7 +201,7 @@ ${contents(d)}
 ${includes(d, "legend") ? legend(d) : ""}
 ${includes(d, "tables") ? tables(d) : ""}
 ${includes(d, "factions") ? factionsAndRegions(d) : ""}
-${d.sections.map((s) => section(s, d.player, d.sections.length === 1)).join("\n")}
+${d.sections.map((s) => section(s, d.player, d.sections.length === 1, d.linkLabels)).join("\n")}
 ${includes(d, "index") ? index(d) : ""}
 </div>`;
 }

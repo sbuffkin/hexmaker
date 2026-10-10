@@ -1,4 +1,5 @@
 import type { MapData, PathChain, RegionSettings } from "../types";
+import { parseNameFamily, parseNameSize, parseNameStyle } from "../hex-map/hexNameFont";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -344,6 +345,10 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["linkBadgeSize", "link-badge-size", "str"],
   ["showHexNames", "show-hex-names", "bool"],
   ["showTokenNames", "show-token-names", "bool"],
+  // Hex-name font (NM3): plain words, read forgivingly (hexNameFont.ts).
+  ["hexNameFont", "name-font", "str"],
+  ["hexNameSize", "name-size", "str"],
+  ["hexNameStyle", "name-style", "str"],
   ["gridDisplayScale", "grid-display-scale", "num"],
   ["gridDisplayScaleX", "grid-display-scale-x", "num"],
   ["gridDisplayScaleY", "grid-display-scale-y", "num"],
@@ -630,6 +635,12 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
     else if (field === "staggerOffset") {
       if (/^(odd|even)$/i.test(t)) out[field] = t.toLowerCase();
       else bad(k, field, "should be odd or even");
+    } else if (field === "hexNameFont" && !parseNameFamily(t)) {
+      bad(k, field, "should be theme, serif, sans or handwritten");
+    } else if (field === "hexNameSize" && parseNameSize(t) === undefined) {
+      bad(k, field, "should be small, medium, large, huge or a size like 120%");
+    } else if (field === "hexNameStyle" && !parseNameStyle(t)) {
+      bad(k, field, "should be bold, bold italic, regular or italic");
     } else if (field === "submapKind") {
       if (/^(region|location)$/i.test(t)) out[field] = t.toLowerCase();
       else bad(k, field, "should be region or location");

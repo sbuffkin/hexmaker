@@ -66,7 +66,8 @@ describe("S13: installing a palette gives its terrains their tables", () => {
 	it("installPalettePreset creates terrain tables when the vault uses them", () => {
 		const src = read("src", "HexmakerPlugin.ts");
 		const m = /async installPalettePreset[\s\S]*?\n {2}\}/.exec(src);
-		expect(m![0]).toMatch(/await this\.ensureTerrainTables\(palette\.terrains\)/);
+		// HG5: the save gives new terrains their tables; the install waits for them.
+		expect(m![0]).toMatch(/await this\.ensureTablesForNewTerrains\(\)/);
 	});
 });
 

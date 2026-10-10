@@ -109,7 +109,7 @@ Opening the layers panel or the drawing tools never moves the map.
 
 Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it. Hex notes also get their map name and coordinates as an alias ("Gloomwood 3, 4"), so you can find a hex by typing them.
 
-Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names shrink and wrap at spaces (never mid-word) inside the hex, clear of its badges, in a colour that reads on the terrain; zoom in to read small ones. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
+Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Hex names never get smaller than readable on screen: a long name shrinks and wraps at spaces (never mid-word) to fit inside the hex, clear of its badges, and spills past the hex when it can't fit at a readable size. **Aa** beside the Labels heading picks this map's hex-name font, size, bold and italic (the default is in settings); the PNG export uses it too. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 
 ---
 
@@ -128,6 +128,10 @@ With generators on, new maps can also use the built-in **biomes and presets** (G
 **New map…** (in Maps) is one form: generator cards with a live preview, Next to (Advanced), and **More** for starting coordinates, stagger and a background image (pick one from the vault, or drop one from your computer). A new map starts on Overland; pick Blank to paint by hand.
 
 Pickers that link notes (to hexes, tokens, sections) never offer template notes (the hex template, workflow templates, a Templates folder); pickers for choosing a template do. Notes starting with `_` are never offered.
+
+On **space maps** (a palette with space terrain types, or a map under one), the hex editor, hex table, badge legend and exports call the link sections **Settlements**, **Sites**, **Points of Interest** and **Missions** instead of Towns, Dungeons, Features and Quests. Only the labels change: notes keep their usual headings, so links keep working.
+
+Every new terrain (from the terrain tool, the palette editor, a new palette or a palette note) gets its description and encounter tables right away, empty. Renaming a terrain renames its tables.
 
 **Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes and `town.md` for new towns made from the hex editor. Edit them there and new notes follow.
 

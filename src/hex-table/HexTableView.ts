@@ -5,7 +5,8 @@ import {
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
-import type { TerrainColor } from "../types";
+import { LINK_SECTIONS, type TerrainColor } from "../types";
+import type { SectionWordsFn } from "../mapKinds";
 import { getAllSectionData } from "../sections";
 import { displayedEncounterLinks } from "../encounterLinks";
 import { getTerrainFromFile, getHexNameFromFile } from "../frontmatter";
@@ -82,6 +83,8 @@ export class HexTableView extends ItemView {
   private filterHasQuest = false;
   private filterHasFaction = false;
   private mapFilter = "all";
+  /** Column names for link sections, per the shown maps' type (G4b). */
+  private words: SectionWordsFn | null = null;
   private mapSelectEl: HTMLSelectElement | null = null;
 
   // Filter UI elements (created once in onOpen)
@@ -105,6 +108,24 @@ export class HexTableView extends ItemView {
 
   getViewType(): string {
     return VIEW_TYPE_HEX_TABLE;
+  }
+
+  /**
+   * Section words for the shown hexes (G4b): the filtered map's type; with
+   * all maps shown, their shared type's words, or the usual ones if mixed.
+   */
+  private sectionWords(): SectionWordsFn {
+    if (this.mapFilter !== "all") return this.plugin.sectionWordsFor(this.mapFilter);
+    const all = this.plugin.settings.maps.map((m) => this.plugin.sectionWordsFor(m.name));
+    const sig = (w: SectionWordsFn) => LINK_SECTIONS.map((s) => w(s).label).join("|");
+    if (all.length && all.every((w) => sig(w) === sig(all[0]))) return all[0];
+    return this.plugin.sectionWordsFor(undefined);
+  }
+
+  /** A column's header: link sections in the map type's words. */
+  private colLabel(col: { key: string; label: string; isLink: boolean }): string {
+    if (!col.isLink || col.key === "encounters table") return col.label;
+    return (this.words ?? this.sectionWords())(col.key).label;
   }
   getDisplayText(): string {
     return this.mapFilter && this.mapFilter !== "all"
@@ -218,7 +239,7 @@ export class HexTableView extends ItemView {
     });
     this.townCb = townLabel.createEl("input");
     this.townCb.type = "checkbox";
-    townLabel.appendText("Town");
+    townLabel.createSpan({ text: "Town", attr: { "data-duckmage-section": "Towns" } });
     this.townCb.addEventListener("change", () => {
       this.filterHasTown = this.townCb!.checked;
       this.applyFilters();
@@ -230,7 +251,7 @@ export class HexTableView extends ItemView {
     });
     this.dungeonCb = dungeonLabel.createEl("input");
     this.dungeonCb.type = "checkbox";
-    dungeonLabel.appendText("Dungeon");
+    dungeonLabel.createSpan({ text: "Dungeon", attr: { "data-duckmage-section": "Dungeons" } });
     this.dungeonCb.addEventListener("change", () => {
       this.filterHasDungeon = this.dungeonCb!.checked;
       this.applyFilters();
@@ -242,7 +263,7 @@ export class HexTableView extends ItemView {
     });
     this.featureCb = featureLabel.createEl("input");
     this.featureCb.type = "checkbox";
-    featureLabel.appendText("Feature");
+    featureLabel.createSpan({ text: "Feature", attr: { "data-duckmage-section": "Features" } });
     this.featureCb.addEventListener("change", () => {
       this.filterHasFeature = this.featureCb!.checked;
       this.applyFilters();
@@ -254,7 +275,7 @@ export class HexTableView extends ItemView {
     });
     this.questCb = questLabel.createEl("input");
     this.questCb.type = "checkbox";
-    questLabel.appendText("Quest");
+    questLabel.createSpan({ text: "Quest", attr: { "data-duckmage-section": "Quests" } });
     this.questCb.addEventListener("change", () => {
       this.filterHasQuest = this.questCb!.checked;
       this.applyFilters();
@@ -266,7 +287,7 @@ export class HexTableView extends ItemView {
     });
     this.factionCb = factionLabel.createEl("input");
     this.factionCb.type = "checkbox";
-    factionLabel.appendText("Faction");
+    factionLabel.createSpan({ text: "Faction", attr: { "data-duckmage-section": "Factions" } });
     this.factionCb.addEventListener("change", () => {
       this.filterHasFaction = this.factionCb!.checked;
       this.applyFilters();
@@ -542,8 +563,14 @@ export class HexTableView extends ItemView {
     headerRow.createEl("th", { text: "Hex" });
     headerRow.createEl("th", { text: "Terrain" });
     headerRow.createEl("th", { text: "Type" });
+    const words = this.sectionWords();
+    this.words = words;
+    // The "has a …" filters follow too.
+    this.contentEl.querySelectorAll<HTMLElement>("[data-duckmage-section]").forEach((el) => {
+      el.setText(words(el.dataset.duckmageSection ?? "").one);
+    });
     for (const col of COLUMNS) {
-      headerRow.createEl("th", { text: col.label });
+      headerRow.createEl("th", { text: this.colLabel(col) });
     }
 
     const tbody = table.createEl("tbody");
@@ -1005,7 +1032,7 @@ export class HexTableView extends ItemView {
             const current = td.dataset.fullContent ?? "";
             new HexCellModal(
               this.app,
-              `${x}, ${y} — ${col.label}`,
+              `${x}, ${y} — ${this.colLabel(col)}`,
               current,
               true,
             ).open();
@@ -1028,7 +1055,7 @@ export class HexTableView extends ItemView {
           const current = td.dataset.fullContent ?? "";
           new HexCellModal(
             this.app,
-            `${x}, ${y} — ${col.label}`,
+            `${x}, ${y} — ${this.colLabel(col)}`,
             current,
             false,
             path,

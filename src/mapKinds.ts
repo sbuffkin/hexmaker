@@ -9,12 +9,30 @@ import { terrainTypeInfo } from "./terrainTypes";
 
 export type MapKind = "world" | "space";
 
+/**
+ * What a link section is called on screen: the plural (headings, columns,
+ * legend), one item ("Town: Gullmouth") and the noun for "Search or create
+ * a town…".
+ */
+export interface SectionWords {
+  label: string;
+  one: string;
+  noun: string;
+}
+
 export interface MapKindInfo {
   id: MapKind;
   label: string;
   description: string;
   /** Bundled icon prefix this kind owns (hidden from pickers when off). */
   iconPrefix?: string;
+  /**
+   * Display names for link sections on maps of this kind (G4b), keyed by
+   * the section's heading ("Towns"). Display only: the note keeps its
+   * headings, so links and older notes still read. Sections not listed
+   * keep their usual words.
+   */
+  sectionWords?: Partial<Record<string, SectionWords>>;
 }
 
 export const MAP_KINDS: MapKindInfo[] = [
@@ -29,8 +47,59 @@ export const MAP_KINDS: MapKindInfo[] = [
     label: "Space",
     description: "Sector charts, star systems and planets: Space - Sector / Space - System palettes, Star scatter, Orbits and Planet surface generators, planet generators, the space icon pack.",
     iconPrefix: "space-",
+    sectionWords: {
+      Towns: { label: "Settlements", one: "Settlement", noun: "a settlement" },
+      Dungeons: { label: "Sites", one: "Site", noun: "a site" },
+      Features: { label: "Points of Interest", one: "Point of interest", noun: "a point of interest" },
+      Quests: { label: "Missions", one: "Mission", noun: "a mission" },
+    },
   },
 ];
+
+/** The usual words for each link section (any map without its own). */
+export const DEFAULT_SECTION_WORDS: Record<string, SectionWords> = {
+  Towns: { label: "Towns", one: "Town", noun: "a town" },
+  Dungeons: { label: "Dungeons", one: "Dungeon", noun: "a dungeon" },
+  Features: { label: "Features", one: "Feature", noun: "a feature" },
+  Quests: { label: "Quests", one: "Quest", noun: "a quest" },
+  Factions: { label: "Factions", one: "Faction", noun: "a faction" },
+  "Encounters Table": { label: "Encounters Table", one: "Encounter table", noun: "an encounter table" },
+};
+
+/** Looks up a link section's display words; `section` is the heading ("Towns"), any case. */
+export type SectionWordsFn = (section: string) => SectionWords;
+
+/** Words for `section` under `kind` (undefined = the usual words). */
+export function sectionWords(section: string, kind?: MapKindInfo): SectionWords {
+  const key = Object.keys(DEFAULT_SECTION_WORDS).find((k) => k.toLowerCase() === section.toLowerCase()) ?? section;
+  return kind?.sectionWords?.[key]
+    ?? DEFAULT_SECTION_WORDS[key]
+    ?? { label: section, one: section, noun: section.toLowerCase() };
+}
+
+/** A lookup bound to one map type. */
+export function sectionWordsFor(kind?: MapKindInfo): SectionWordsFn {
+  return (section) => sectionWords(section, kind);
+}
+
+/**
+ * The map type whose section words a map uses (G4b). `chain` is the
+ * terrain lists of the map's palette, then its parent's, and so on up: the
+ * first one using terrain types of a map type that names its sections
+ * decides (a planet submap of a star system keeps the system's words).
+ * Driven by the types' data, so any map type with `sectionWords` works.
+ */
+export function sectionKindFor(
+  chain: readonly (readonly { type?: string }[])[],
+  kinds: readonly MapKindInfo[] = MAP_KINDS,
+): MapKindInfo | undefined {
+  for (const terrains of chain) {
+    const used = new Set(terrains.map((t) => terrainTypeInfo(t.type)?.kind).filter(Boolean));
+    const hit = kinds.find((k) => k.sectionWords && used.has(k.id));
+    if (hit) return hit;
+  }
+  return undefined;
+}
 
 export const ALL_MAP_KINDS: MapKind[] = MAP_KINDS.map((k) => k.id);
 
@@ -74,14 +143,17 @@ export function isSpacePalette(terrains: readonly { type?: string }[] | undefine
  * by name, in palette order.
  */
 export function terrainsForTables<T extends { name: string; type?: string }>(
-  palettes: readonly { terrains: readonly T[] }[],
+  palettes: readonly { name?: string; terrains: readonly T[] }[],
   kinds: Iterable<string>,
+  /** Palettes a map uses: their terrains always get tables (HG5). */
+  inUse: Iterable<string> = [],
 ): T[] {
   const spaceOnly = !new Set(kinds).has("world");
+  const used = new Set(inUse);
   const seen = new Set<string>();
   const out: T[] = [];
   for (const p of palettes) {
-    if (spaceOnly && !isSpacePalette(p.terrains)) continue;
+    if (spaceOnly && !isSpacePalette(p.terrains) && !(p.name !== undefined && used.has(p.name))) continue;
     for (const t of p.terrains) {
       if (seen.has(t.name)) continue;
       seen.add(t.name);
@@ -89,6 +161,19 @@ export function terrainsForTables<T extends { name: string; type?: string }>(
     }
   }
   return out;
+}
+
+/**
+ * Terrains in `terrains` that weren't in `known` (by name): the ones that
+ * still need their tables (HG5). Deduplicated, in order.
+ */
+export function newTerrains<T extends { name: string }>(known: ReadonlySet<string>, terrains: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return terrains.filter((t) => {
+    if (known.has(t.name) || seen.has(t.name)) return false;
+    seen.add(t.name);
+    return true;
+  });
 }
 
 export interface GeneratorShowContext {

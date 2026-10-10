@@ -5,6 +5,7 @@
  */
 
 import type { CoordPlacement } from "../coordStyle";
+import { MIN_NAME_SCREEN_PX } from "../hex-map/hexNameFont";
 import type { TokenSize } from "../types";
 import { BADGE_LAYOUT, DEFAULT_BADGE_SIZE, type BadgeSize } from "../hex-map/linkBadges";
 
@@ -40,9 +41,10 @@ export function pngPathWidth(width: number, hexRadius: number): number {
   return Math.max(width, width * (hexRadius / SCREEN_HEX_RADIUS) * PNG_PATH_BOLD);
 }
 
-/** Hex name font size in the PNG, in pixels (readable at every output size). */
-export function pngHexNamePx(hexRadius: number): number {
-  return Math.max(11, Math.round(hexRadius * 0.27));
+/** Hex name font size in the PNG, in pixels (readable at every output size; `scale` = the map's name size). */
+export function pngHexNamePx(hexRadius: number, scale = 1): number {
+  // The map's name size scales it (NM3); never below the readable minimum.
+  return Math.max(MIN_NAME_SCREEN_PX, Math.round(hexRadius * 0.27 * scale));
 }
 
 /** A token's radius in the PNG: the on-screen size relative to the hex. */

@@ -2,7 +2,7 @@ import type { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { exportMapAsPng } from "./mapPngRenderer";
-import { exportMapAsPdf, HANDOUT_COLUMNS } from "./exporters/mapWithTable";
+import { exportMapAsPdf, HANDOUT_COLUMNS, handoutColumnLabel } from "./exporters/mapWithTable";
 import { MANUAL_PARTS } from "./manual/manualModel";
 import { exportMapAsManual } from "./exporters/hexcrawlManual";
 import {
@@ -126,7 +126,7 @@ export function renderMapExportForm(
   const columnsBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
   columnsBox.createEl("summary", { text: "PDF table columns" });
   const columnsRow = columnsBox.createDiv({ cls: "duckmage-export-inline" });
-  const columnChecks = HANDOUT_COLUMNS.map((c) => ({ key: c.key, cb: inlineCheck(columnsRow, c.label, true) }));
+  const columnChecks = HANDOUT_COLUMNS.map((c) => ({ key: c.key, cb: inlineCheck(columnsRow, handoutColumnLabel(c, plugin.sectionWordsFor(mapName)), true) }));
 
   // The hexcrawl manual's edition and optional parts.
   const manualBox = optsForm.createEl("details", { cls: "duckmage-export-group" });

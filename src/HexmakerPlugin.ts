@@ -32,7 +32,7 @@ import {
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
+import { enabledKinds, isIconHiddenByKind, isSpacePalette, newTerrains, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type SectionWordsFn } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
@@ -95,9 +95,17 @@ export default class HexmakerPlugin extends Plugin {
   paletteStore = new PaletteStore(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
+  /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
+  private tableTerrainNames: Set<string> | null = null;
+  /** Table creation runs one batch at a time; awaiting any call waits for those before it. */
+  private terrainTablesQueue: Promise<void> = Promise.resolve();
 
   async onload() {
     await this.loadSettings();
+    // Terrains known now (data.json's copy of the palettes). Any a palette
+    // note adds while Obsidian was closed get their tables once the notes
+    // are read (HG5).
+    this.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
     // Icon pickers open on the Space tab for space-only setups.
     setIconPackDefault(() => defaultIconPack(this.settings));
     setHexDataSource(this.mapStore);
@@ -109,7 +117,7 @@ export default class HexmakerPlugin extends Plugin {
       this.loadAvailableIcons();
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
-      void this.paletteStore.init().then(() => this.mapStore.init());
+      void this.paletteStore.init().then(() => this.mapStore.init()).then(() => this.ensureTablesForNewTerrains());
       void this.autoRegisterMapsFromVault();
       // Hand edits to table notes (ranges, die, weights) are imported.
       TableStore.register(this);
@@ -705,6 +713,9 @@ export default class HexmakerPlugin extends Plugin {
     await this.saveData(this.settings);
     // Mirror palette edits (from any editor) into the palette notes.
     void this.paletteStore.sync();
+    // A terrain added anywhere (palette editor, terrain editor, a new or
+    // imported palette) gets its empty tables (HG5).
+    void this.ensureTablesForNewTerrains();
     void this.mapStore.sync();
     // Settings hold map-level state (paths, palette, grid size, overlays).
     // A save made from one view/window leaves sibling map views stale —
@@ -1148,30 +1159,75 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     // Create any still-missing table files
+    await this.createTerrainTableFiles(terrains);
+  }
+
+  /**
+   * Terrains whose description / encounter tables the vault keeps: those of
+   * the enabled map types' palettes (terrainsForTables), plus every palette
+   * a map uses.
+   */
+  tableTerrains(): TerrainColor[] {
+    const inUse = this.settings.maps.map((m) => m.paletteName).filter((n): n is string => !!n);
+    return terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings), inUse);
+  }
+
+  /**
+   * Give terrains created since the last check their tables (HG5): a new
+   * terrain in any palette in use, from any editor, an imported palette or
+   * a palette note edited by hand. The tables start empty (the usual
+   * template, no rows). Only when the vault keeps tables (the tables folder
+   * exists). Awaiting it waits for the files.
+   */
+  ensureTablesForNewTerrains(): Promise<void> {
+    const terrains = this.tableTerrains();
+    const known = this.tableTerrainNames;
+    this.tableTerrainNames = new Set(terrains.map((t) => t.name));
+    const added = known ? newTerrains(known, terrains) : [];
+    if (added.length) {
+      this.terrainTablesQueue = this.terrainTablesQueue.then(async () => {
+        const folder = normalizeFolder(this.settings.tablesFolder);
+        if (folder && !this.app.vault.getAbstractFileByPath(folder)) return;
+        await this.createTerrainTableFiles(added);
+      }).catch((e) => console.error("Hexmaker: terrain tables", e));
+    }
+    return this.terrainTablesQueue;
+  }
+
+  /** Create each terrain's missing description / encounter table (empty). */
+  private async createTerrainTableFiles(terrains: readonly TerrainColor[]): Promise<void> {
+    if (!terrains.length) return;
+    const folder = normalizeFolder(this.settings.tablesFolder);
+    const subfolder = folder ? `${folder}/terrain` : "terrain";
+    for (const dir of [subfolder, `${subfolder}/description`, `${subfolder}/encounters`]) {
+      if (this.app.vault.getAbstractFileByPath(dir)) continue;
+      try {
+        await this.app.vault.createFolder(dir);
+      } catch {
+        /* may already exist */
+      }
+    }
     for (const entry of terrains) {
       for (const tableType of ["description", "encounters"] as const) {
-        const path = `${subfolder}/${tableType}/${entry.name}.md`;
-        if (!this.app.vault.getAbstractFileByPath(path)) {
-          try {
-            await this.app.vault.create(
-              path,
-              makeTableTemplate(
-                this.settings.defaultTableDice,
-                // No `terrain:` key (T2): nothing read it; the table's
-                // path ({tables}/terrain/{type}/{terrain}.md) is what links
-                // it to its terrain. Older tables keep theirs (renames
-                // still update it).
-                {
-                  "table-type": tableType,
-                  "roll-filter": false,
-                  "encounter-filter": false,
-                },
-                this.buildRollerLink(),
-              ),
-            );
-          } catch {
-            /* ignore */
-          }
+        const path = this.terrainTablePath(entry.name, tableType);
+        if (this.app.vault.getAbstractFileByPath(path)) continue;
+        try {
+          await this.app.vault.create(
+            path,
+            makeTableTemplate(
+              this.settings.defaultTableDice,
+              // No `terrain:` key (T2): the table's path
+              // ({tables}/terrain/{type}/{terrain}.md) links it to its terrain.
+              {
+                "table-type": tableType,
+                "roll-filter": false,
+                "encounter-filter": false,
+              },
+              this.buildRollerLink(),
+            ),
+          );
+        } catch {
+          /* ignore */
         }
       }
     }
@@ -1465,7 +1521,10 @@ export default class HexmakerPlugin extends Plugin {
     const oldName = entry.name;
     if (!newName || newName === oldName) return;
     const overrides = await this.renameTerrainInHexes(oldName, newName);
-    await this.renameTerrainTables(oldName, newName);
+    // Another palette still has a terrain of the old name: its tables stay
+    // and the renamed one gets a copy.
+    const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t !== entry && t.name === oldName));
+    await this.renameTerrainTables(oldName, newName, shared);
     entry.name = newName;
     await this.saveSettings();
     this.refreshHexMapWithOverrides(overrides);
@@ -1478,7 +1537,14 @@ export default class HexmakerPlugin extends Plugin {
     return `${sub}/${type}/${name}.md`;
   }
 
-  private async renameTerrainTables(oldName: string, newName: string): Promise<void> {
+  /**
+   * A renamed terrain's tables follow it (HG5): moved when no other terrain
+   * has the old name (links to them are updated), copied when one does.
+   * When there are none, the new name gets empty ones (via the save).
+   */
+  private async renameTerrainTables(oldName: string, newName: string, keepOld = true): Promise<void> {
+    // Tables still being made for the old name (a just-added terrain) first.
+    await this.terrainTablesQueue;
     for (const type of ["description", "encounters"] as const) {
       const oldPath = this.terrainTablePath(oldName, type);
       const newPath = this.terrainTablePath(newName, type);
@@ -1486,6 +1552,18 @@ export default class HexmakerPlugin extends Plugin {
       if (this.app.vault.getAbstractFileByPath(newPath)) continue;
       const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
       if (!(oldFile instanceof TFile)) continue;
+      if (!keepOld) {
+        try {
+          await this.app.fileManager.renameFile(oldFile, newPath);
+          await this.app.vault.process(oldFile, (content) =>
+            content
+              .replace(/^terrain:[ \t].+$/m, `terrain: ${newName}`)
+              .replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, ""),
+          );
+          await this.ensureRollerLink(newPath);
+        } catch { /* ignore */ }
+        continue;
+      }
       try {
         let content = await this.app.vault.read(oldFile);
         // Update the terrain frontmatter property to the new name
@@ -2160,10 +2238,7 @@ export default class HexmakerPlugin extends Plugin {
     // vault uses terrain tables, so a submap's hexes get an encounters
     // table like the parent's (round 7: a system map installed "Space -
     // System" and its "ice planet" hex showed Encounters Table "None").
-    const tables = normalizeFolder(this.settings.tablesFolder);
-    if (this.app.vault.getAbstractFileByPath(tables ? `${tables}/terrain` : "terrain")) {
-      await this.ensureTerrainTables(palette.terrains);
-    }
+    await this.ensureTablesForNewTerrains();
     new Notice(`Added palette "${name}".`);
     return name;
   }
@@ -2359,6 +2434,21 @@ export default class HexmakerPlugin extends Plugin {
       const paletteName = this.getMap(m)?.paletteName;
       return !!paletteName && isSpacePalette(this.getPaletteOrPresetTerrains(paletteName));
     });
+  }
+
+  /**
+   * Display words for link sections on `mapName` (G4b): its map type's
+   * (space maps say Settlements, Sites…), from the palettes of the map and
+   * its parents. Headings in notes don't change. No map = the usual words.
+   */
+  sectionWordsFor(mapName: string | undefined): SectionWordsFn {
+    if (!mapName || !this.getMap(mapName)) return sectionWordsFor(undefined);
+    const chain = [mapName, ...mapAncestors(mapName, (m) => this.parentOf(m)?.map).reverse()];
+    const terrains = chain.map((m) => {
+      const paletteName = this.getMap(m)?.paletteName;
+      return paletteName ? this.getPaletteOrPresetTerrains(paletteName) : [];
+    });
+    return sectionWordsFor(sectionKindFor(terrains));
   }
 
   getAllTerrains(): TerrainColor[] {

@@ -174,7 +174,7 @@ describe("X1: handout options", () => {
 });
 
 // ── Round 6: readable names (S4, U5), token names (S8), PNG labels (S5) ────
-import { balancedLines, ellipsize, hexHalfWidthAt, hexNameTone, layoutHexName, NAME_MAX_FONT_EM, NAME_MIN_FONT_EM, NAME_LINE_HEIGHT } from "../src/hex-map/hexNameLayer";
+import { balancedLines, hexHalfWidthAt, hexNameTone, layoutHexName, NAME_MAX_FONT_EM, NAME_MIN_FONT_EM, NAME_LINE_HEIGHT } from "../src/hex-map/hexNameLayer";
 import { clampLabelTop, clampLabelX, pngBadgeCircles, wrapHexName } from "../src/export/handoutLabels";
 import { readFileSync as readCss } from "node:fs";
 
@@ -214,14 +214,14 @@ describe("hex names stay inside their hex (round 6 U5, round 7 R7)", () => {
 		const l = layoutHexName("Hut", flat);
 		expect(l.lines).toEqual(["Hut"]);
 		expect(l.fontEm).toBe(NAME_MAX_FONT_EM);
-		expect(l.cut).toBe(false);
+		expect(l.overflow).toBe(false);
 	});
 
 	it("never breaks inside a word (the tester saw 'The / Drowne', 'Gullmout / h')", () => {
 		for (const o of [flat, pointy]) {
 			for (const name of ["The Drowned Abbey", "Gullmouth", "Saltmere Keep", "Hermit's Hut"]) {
 				const l = layoutHexName(name, o);
-				expect(l.cut).toBe(false);
+				expect(l.overflow).toBe(false);
 				// Joined back with spaces, the lines are exactly the name.
 				expect(l.lines.join(" ")).toBe(name);
 				expect(l.lines.length).toBeLessThanOrEqual(3);
@@ -247,29 +247,25 @@ describe("hex names stay inside their hex (round 6 U5, round 7 R7)", () => {
 	it("uses a third line rather than cutting a name beside the badges", () => {
 		// Flat hex, one M badge at the right: the tester's dungeon.
 		const l = layoutHexName("The Drowned Abbey", { ...flat, rightLimit: 2.55 - 1.2 - 0.08 });
-		expect(l.cut).toBe(false);
+		expect(l.overflow).toBe(false);
 		expect(l.lines.join(" ")).toBe("The Drowned Abbey");
 		expect(l.dxEm).toBeLessThan(0); // shifted left, clear of the badge
 	});
 
-	it("ellipsizes a word too wide even at the smallest size", () => {
+	it("lets a word too wide even at the smallest size spill past the hex, whole (NM3)", () => {
 		const l = layoutHexName("Supercalifragilisticexpialidocious", flat);
-		expect(l.lines).toHaveLength(1);
-		expect(l.lines[0].endsWith("…")).toBe(true);
-		expect(l.cut).toBe(true);
+		expect(l.lines).toEqual(["Supercalifragilisticexpialidocious"]);
+		expect(l.overflow).toBe(true);
 		expect(l.fontEm).toBe(NAME_MIN_FONT_EM);
-		expect(fitsInHex(l, flat)).toBe(true);
 	});
 
-	it("cuts a name that needs more than three lines after whole words", () => {
+	it("puts a very long name on three lines of whole words, never cut (NM3)", () => {
 		const name = "Old Mill of the Fens by the Long Grey Lake of Kings";
 		const l = layoutHexName(name, flat);
 		expect(l.lines.length).toBeLessThanOrEqual(3);
-		expect(l.cut).toBe(true);
-		expect(l.lines[l.lines.length - 1].endsWith("…")).toBe(true);
-		// The lines before the last hold whole words only.
-		expect(name.startsWith(l.lines.slice(0, -1).join(" ") + " ")).toBe(true);
-		expect(fitsInHex(l, flat)).toBe(true);
+		expect(l.lines.join(" ")).toBe(name);
+		expect(l.lines.join("")).not.toContain("…");
+		expect(l.overflow).toBe(true);
 	});
 
 	it("sits on the side away from the coordinates", () => {
@@ -278,13 +274,6 @@ describe("hex names stay inside their hex (round 6 U5, round 7 R7)", () => {
 		// Coordinates in the middle: the name keeps clear of the centre.
 		const mid = layoutHexName("Hut", { ...flat, coords: "middle" });
 		expect(mid.dyEm - (NAME_LINE_HEIGHT * mid.fontEm) / 2).toBeGreaterThanOrEqual(0.5 - 1e-3);
-	});
-
-	it("ellipsize keeps what fits and adds an ellipsis", () => {
-		expect(ellipsize("Abbey", 10, measure)).toBe("Abbey");
-		const cut = ellipsize("Abbeyfield", 3, measure);
-		expect(cut.endsWith("…")).toBe(true);
-		expect(measure(cut)).toBeLessThanOrEqual(3);
 	});
 
 	it("lets CSS show the computed lines as they are (no CSS word breaking)", () => {

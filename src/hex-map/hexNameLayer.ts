@@ -8,10 +8,15 @@
  *
  * Line breaks are worked out here, not by CSS (round 7 R7: CSS wrapping in a
  * box sized from a guessed character width broke words mid-letter, "The /
- * Drowne"). `layoutHexName` wraps only at spaces, shrinks the font until the
- * name fits inside the hex, and ellipsizes only when the smallest size still
- * doesn't fit. Everything is in em, so the labels scale with the map's zoom.
+ * Drowne"). `layoutHexName` wraps only at spaces and shrinks the font until
+ * the name fits inside the hex, but never below a readable size on screen
+ * (NM3: names are map locales, always legible). A name that doesn't fit at
+ * that size spills past its hex, still broken only at spaces, never cut.
+ * Everything is in em, so the labels scale with the map's zoom; the view
+ * redraws them when the zoom settles, to keep the readable floor.
  */
+
+import { nameFontFamily, readableFloorEm, type ResolvedNameFont, DEFAULT_NAME_FONT } from "./hexNameFont";
 
 import { parseColor, relativeLuminance } from "../coordStyle";
 
@@ -29,7 +34,6 @@ export const NAME_WIDTH_SHARE = 0.96;
 const NAME_CROSS_EM = 0.35;
 /** With the coordinates in the middle, the gap (grid em) kept clear of the centre. */
 const NAME_MIDDLE_CLEAR_EM = 0.5;
-const ELLIPSIS = "…";
 
 /**
  * Text tone for a name on a hex of fill colour `fill` (round 6 S4: a white
@@ -55,6 +59,11 @@ export interface HexNameLayoutOptions {
   /** How far right of the centre (grid em) the name may reach: the left
    *  edge of the hex's link badges (badgeNameLimit). Default: no limit. */
   rightLimit?: number;
+  /** Font size multiplier from the map's name font (NM3). Default 1. */
+  scale?: number;
+  /** Smallest font (grid em) that still reads on screen (readableFloorEm).
+   *  The name never goes below it, even if that means spilling out. */
+  floorEm?: number;
 }
 
 export interface HexNameLayout {
@@ -68,8 +77,8 @@ export interface HexNameLayout {
   /** Horizontal offset of the label's centre, grid em (negative = left,
    *  clear of the badges). */
   dxEm: number;
-  /** True when an ellipsis cut the name (the hover shows it whole). */
-  cut: boolean;
+  /** True when the name is wider or taller than its hex (it spills past). */
+  overflow: boolean;
 }
 
 /** Half the hex's width at `dy` (grid em) from its centre. */
@@ -78,14 +87,6 @@ export function hexHalfWidthAt(dy: number, hexW: number, hexH: number, flat: boo
   if (flat) return Math.max(0, (hexW / 2) * (1 - d / hexH));
   if (d <= hexH / 4) return hexW / 2;
   return Math.max(0, (hexW / 2) * ((hexH / 2 - d) / (hexH / 4)));
-}
-
-/** Cut `text` to fit `room` (em at 1em), ending in an ellipsis. */
-export function ellipsize(text: string, room: number, measure: (t: string) => number): string {
-  if (measure(text) <= room) return text;
-  let t = text;
-  while (t.length > 1 && measure(t.trimEnd() + ELLIPSIS) > room) t = t.slice(0, -1);
-  return t.trimEnd() + ELLIPSIS;
 }
 
 /**
@@ -105,18 +106,19 @@ export function balancedLines(words: readonly string[], lines: number, measure: 
   return best;
 }
 
-/** At most this many lines; a longer name is cut with an ellipsis. */
+/** At most this many lines; a longer name puts more words on each. */
 export const NAME_MAX_LINES = 3;
 
 /**
- * Lay a name out inside its hex: the biggest font (from NAME_MAX_FONT_EM
- * down to NAME_MIN_FONT_EM) at which it fits on one line, or on two or
- * three lines broken at spaces. Words are never broken; a word too wide
- * even at the smallest size is cut with an ellipsis, and so is a name that
- * needs more lines. The label sits on the side of the hex away from the
- * coordinates, clear of the hex's link badges, and its width is checked
- * against the hex's real outline at the label's height, so it stays inside
- * the hex.
+ * Lay a name out in its hex: the biggest font (from NAME_MAX_FONT_EM times
+ * the map's size scale, down to `floorEm`, the smallest size that reads on
+ * screen; NAME_MIN_FONT_EM without one) at which it fits on one line, or on
+ * two or three lines broken at spaces. Words are never broken and nothing is
+ * cut: a name that doesn't fit at the smallest allowed size keeps that size
+ * and spills past the hex, on the split that spills least. The label sits
+ * on the side of the hex away from the coordinates (and grows away from
+ * them), clear of the hex's link badges, and its width is checked against
+ * the hex's real outline at the label's height.
  */
 export function layoutHexName(name: string, opts: HexNameLayoutOptions): HexNameLayout {
   const { measure, hexW, hexH, flat } = opts;
@@ -125,6 +127,12 @@ export function layoutHexName(name: string, opts: HexNameLayoutOptions): HexName
   const dir = coords === "bottom" ? -1 : 1;
   const nearMin = coords === "middle" ? NAME_MIDDLE_CLEAR_EM : -NAME_CROSS_EM;
   const limit = opts.rightLimit ?? Infinity;
+  const scale = opts.scale && opts.scale > 0 ? opts.scale : 1;
+  const maxF = NAME_MAX_FONT_EM * scale;
+  // With a readable floor, that's the smallest size (zoomed in, a long name
+  // may shrink below NAME_MIN_FONT_EM to stay in its hex, clear of the
+  // badges, and still read); without one, NAME_MIN_FONT_EM.
+  const minF = opts.floorEm !== undefined ? Math.max(opts.floorEm, 1e-3) : NAME_MIN_FONT_EM * scale;
   const place = (lines: number, f: number) => {
     const h = lines * NAME_LINE_HEIGHT * f;
     const centre = Math.max(0, h / 2 + nearMin);
@@ -136,55 +144,55 @@ export function layoutHexName(name: string, opts: HexNameLayoutOptions): HexName
     // Room in the label's own em (what `measure` returns).
     return { centre, room: (half + right) / f, dx: (right - half) / 2 };
   };
-  const done = (lines: string[], f: number, cut = false): HexNameLayout => {
+  const done = (lines: string[], f: number, overflow = false): HexNameLayout => {
     const p = place(lines.length, f);
     return {
       lines,
       fontEm: Number(f.toFixed(3)),
       dyEm: Number((dir * p.centre).toFixed(3)) || 0,
       dxEm: Number(p.dx.toFixed(3)) || 0,
-      cut,
+      overflow,
     };
   };
 
   const words = name.trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return { lines: [], fontEm: NAME_MAX_FONT_EM, dyEm: 0, dxEm: 0, cut: false };
+  if (!words.length) return { lines: [], fontEm: Number(maxF.toFixed(3)), dyEm: 0, dxEm: 0, overflow: false };
   const maxLines = Math.min(NAME_MAX_LINES, words.length);
   const splits: string[][] = [];
   for (let n = 1; n <= maxLines; n++) splits.push(balancedLines(words, n, measure));
   const widest = (lines: readonly string[]) => Math.max(...lines.map(measure));
+  const fits = (lines: readonly string[], f: number) => widest(lines) <= place(lines.length, f).room + 1e-9;
 
-  const steps = Math.round((NAME_MAX_FONT_EM - NAME_MIN_FONT_EM) / NAME_FONT_STEP);
-  for (let i = 0; i <= steps; i++) {
-    const f = NAME_MAX_FONT_EM - i * NAME_FONT_STEP;
-    for (const lines of splits) if (widest(lines) <= place(lines.length, f).room) return done(lines, f);
+  if (minF <= maxF) {
+    const step = NAME_FONT_STEP * scale;
+    for (let f = maxF; f > minF + 1e-9; f -= step) {
+      for (const lines of splits) if (fits(lines, f)) return done(lines, f);
+    }
+    for (const lines of splits) if (fits(lines, minF)) return done(lines, minF);
   }
 
-  // Too long even at the smallest size: fill the lines with whole words and
-  // cut the last with an ellipsis (a word wider than the room is cut too).
-  const f = NAME_MIN_FONT_EM;
-  const room = place(maxLines, f).room;
-  const out: string[] = [];
-  let w = 0;
-  while (w < words.length && out.length < maxLines - 1) {
-    let n = 1;
-    while (w + n < words.length && measure(words.slice(w, w + n + 1).join(" ")) <= room) n++;
-    out.push(ellipsize(words.slice(w, w + n).join(" "), room, measure));
-    w += n;
+  // Too long for the hex at the smallest readable size (or the readable
+  // size is bigger than the hex allows): keep that size and spill past the
+  // hex on the split that spills least: the larger of its width over the
+  // hex's and its height over the hex's (fewer lines on a tie).
+  const f = minF;
+  let best = splits[0];
+  let bestOver = Infinity;
+  for (const lines of splits) {
+    const over = Math.max((widest(lines) * f) / (hexW * NAME_WIDTH_SHARE), (lines.length * NAME_LINE_HEIGHT * f) / hexH);
+    if (over < bestOver - 1e-9) { bestOver = over; best = lines; }
   }
-  if (w < words.length) out.push(ellipsize(words.slice(w).join(" "), room, measure));
-  const cut = out.join(" ") !== words.join(" ");
-  return done(out, f, cut);
+  return done(best, f, !fits(best, f));
 }
 
 /**
  * A text measurer for the label font: canvas measureText (no DOM layout),
  * in em at 1em, cached per string.
  */
-export function canvasMeasure(fontFamily: string, weight = 700): (text: string) => number {
+export function canvasMeasure(fontFamily: string, weight = 700, italic = false): (text: string) => number {
   const ctx = typeof OffscreenCanvas === "undefined" ? null : new OffscreenCanvas(1, 1).getContext("2d");
   const cache = new Map<string, number>();
-  if (ctx) ctx.font = `${weight} 100px ${fontFamily || "sans-serif"}`;
+  if (ctx) ctx.font = `${italic ? "italic " : ""}${weight} 100px ${fontFamily || "sans-serif"}`;
   return (text: string) => {
     let w = cache.get(text);
     if (w === undefined) {
@@ -208,6 +216,10 @@ export function renderHexNameLayer(
   coords: "top" | "middle" | "bottom" = "bottom",
   /** Per hex ("x_y"): how far right its name may reach (badgeNameLimit). */
   rightLimits: ReadonlyMap<string, number> = new Map(),
+  /** The map's name font (NM3). */
+  font: ResolvedNameFont = DEFAULT_NAME_FONT,
+  /** The view's pending CSS zoom (1 once baked into the font size). */
+  zoom = 1,
 ): void {
   gridContainer.querySelector(`.${HEX_NAMES_LAYER_CLASS}`)?.remove();
   if (names.size === 0) return;
@@ -240,10 +252,20 @@ export function renderHexNameLayer(
     placements.push({ name, ox, oy, key });
   }
   if (!placements.length) return;
-  const measure = canvasMeasure(style.fontFamily);
+  const family = nameFontFamily(font.family, style.fontFamily);
+  const measure = canvasMeasure(family, font.bold ? 700 : 400, font.italic);
+  // A bigger name size raises the floor too, so L / XL still read bigger
+  // when the map is zoomed out (never below the readable minimum).
+  const floorEm = readableFloorEm(gridFont, zoom) * Math.max(1, font.scale);
 
   // ── writes ──
   const layer = gridContainer.createDiv({ cls: HEX_NAMES_LAYER_CLASS });
+  // One font for the layer; the labels inherit it.
+  layer.setCssProps({
+    "--duckmage-name-family": family,
+    "--duckmage-name-weight": font.bold ? "700" : "400",
+    "--duckmage-name-style": font.italic ? "italic" : "normal",
+  });
   for (const p of placements) {
     const fit = layoutHexName(p.name, {
       measure,
@@ -252,11 +274,13 @@ export function renderHexNameLayer(
       flat,
       coords,
       rightLimit: rightLimits.get(p.key),
+      scale: font.scale,
+      floorEm,
     });
     const tone = hexNameTone(fills.get(p.key));
     const label = layer.createDiv({
       cls: "duckmage-hex-name-label"
-        + (fit.cut ? " is-cut" : "")
+        + (fit.overflow ? " is-overflow" : "")
         + (tone ? ` is-on-${tone === "dark" ? "light" : "dark"}` : ""),
       text: fit.lines.join("\n"),
     });

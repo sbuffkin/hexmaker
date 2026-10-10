@@ -2,6 +2,7 @@ import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
+import { NAME_FAMILIES, NAME_SIZES, nameStyleId, resolveNameFont, type HexNameSize, type ResolvedNameFont } from "./hexNameFont";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
 
@@ -116,6 +117,8 @@ export interface OverlayPanelExtras {
   onLegendChange?: (show: boolean) => void;
   /** Badge size or the badge kinds shown changed (redraw badges + legend). */
   onBadgesChange?: () => void;
+  /** The map's hex-name font changed (redraw the names). */
+  onHexNameFontChange?: () => void;
 }
 
 export class OverlayPanel extends HexSidePanel {
@@ -135,6 +138,10 @@ export class OverlayPanel extends HexSidePanel {
   private badgeChips = new Map<string, HTMLButtonElement>();
   private badgeSizeBtns = new Map<string, HTMLButtonElement>();
   private legendCb: HTMLInputElement | null = null;
+  private nameFamilySelect: HTMLSelectElement | null = null;
+  private nameSizeBtns = new Map<HexNameSize, HTMLButtonElement>();
+  private nameBoldBtn: HTMLButtonElement | null = null;
+  private nameItalicBtn: HTMLButtonElement | null = null;
   private extras: OverlayPanelExtras;
 
   constructor(
@@ -163,8 +170,10 @@ export class OverlayPanel extends HexSidePanel {
   protected buildPanel(panel: HTMLDivElement): void {
     // The Labels group comes first: one heading, its toggles side by side.
     const labelGroup = panel.createDiv({ cls: "duckmage-overlay-group" });
-    labelGroup.createDiv({ cls: "duckmage-overlay-group-title", text: "Labels" });
+    const labelTitle = labelGroup.createDiv({ cls: "duckmage-overlay-group-title" });
+    labelTitle.createSpan({ text: "Labels" });
     const labelRow = labelGroup.createDiv({ cls: "duckmage-overlay-group-row" });
+    this.buildNameFontRow(labelTitle, labelGroup);
     for (const opt of OVERLAY_OPTIONS) {
       const row = opt.inLabels
         ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-label-toggle" })
@@ -308,6 +317,97 @@ export class OverlayPanel extends HexSidePanel {
   }
 
   /**
+   * Hex-name font (NM3): an "Aa" button in the Labels heading unfolds one
+   * compact row (font, size S–XL, bold, italic, back to the default), so
+   * the menu doesn't grow. Saved per map; unset parts follow the default
+   * in the plugin settings.
+   */
+  private buildNameFontRow(title: HTMLElement, group: HTMLElement): void {
+    const btn = title.createEl("button", {
+      cls: "duckmage-overlay-font-btn",
+      text: "Aa",
+      attr: { "aria-label": "Hex name font", "aria-expanded": "false" },
+    });
+    const row = group.createDiv({ cls: "duckmage-overlay-subrow duckmage-overlay-font-row" });
+    row.hide();
+    btn.addEventListener("click", () => {
+      const open = !row.isShown();
+      row.toggle(open);
+      btn.toggleClass("is-open", open);
+      btn.setAttr("aria-expanded", String(open));
+    });
+
+    const changed = () => {
+      void this.plugin.saveSettings();
+      this.syncNameFont();
+      this.extras.onHexNameFontChange?.();
+    };
+
+    const family = row.createEl("select", { cls: "dropdown duckmage-overlay-font-family", attr: { "aria-label": "Font" } });
+    for (const f of NAME_FAMILIES) family.createEl("option", { value: f.id, text: f.label });
+    family.addEventListener("change", () => {
+      this.getActiveMap().hexNameFont = family.value;
+      changed();
+    });
+    this.nameFamilySelect = family;
+
+    const sizes = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Name size" } });
+    for (const s of NAME_SIZES) {
+      const b = sizes.createEl("button", {
+        cls: "duckmage-overlay-size",
+        text: s.label,
+        attr: { "aria-label": `Name size ${s.label}` },
+      });
+      this.nameSizeBtns.set(s.id, b);
+      b.addEventListener("click", () => {
+        this.getActiveMap().hexNameSize = s.id;
+        changed();
+      });
+    }
+
+    const styles = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Name style" } });
+    const styleBtn = (text: string, label: string, cls: string, flip: (f: ResolvedNameFont) => ResolvedNameFont) => {
+      const b = styles.createEl("button", { cls: `duckmage-overlay-size ${cls}`, text, attr: { "aria-label": label } });
+      b.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        const next = flip(resolveNameFont(map, this.plugin.settings));
+        map.hexNameStyle = nameStyleId(next.bold, next.italic);
+        changed();
+      });
+      return b;
+    };
+    this.nameBoldBtn = styleBtn("B", "Bold", "duckmage-overlay-font-bold", (f) => ({ ...f, bold: !f.bold }));
+    this.nameItalicBtn = styleBtn("I", "Italic", "duckmage-overlay-font-italic", (f) => ({ ...f, italic: !f.italic }));
+
+    const reset = row.createEl("button", {
+      cls: "clickable-icon duckmage-overlay-font-reset",
+      attr: { "aria-label": "Use the default name font (settings)" },
+    });
+    setIcon(reset, "rotate-ccw");
+    reset.addEventListener("click", () => {
+      const map = this.getActiveMap();
+      delete map.hexNameFont;
+      delete map.hexNameSize;
+      delete map.hexNameStyle;
+      changed();
+    });
+  }
+
+  /** Name-font controls ← the current map's font. */
+  private syncNameFont(): void {
+    const font = resolveNameFont(this.getActiveMap(), this.plugin.settings);
+    if (this.nameFamilySelect) this.nameFamilySelect.value = font.family;
+    for (const [id, b] of this.nameSizeBtns) {
+      b.toggleClass("is-active", id === font.size);
+      b.setAttr("aria-pressed", String(id === font.size));
+    }
+    this.nameBoldBtn?.toggleClass("is-active", font.bold);
+    this.nameBoldBtn?.setAttr("aria-pressed", String(font.bold));
+    this.nameItalicBtn?.toggleClass("is-active", font.italic);
+    this.nameItalicBtn?.setAttr("aria-pressed", String(font.italic));
+  }
+
+  /**
    * Link badges: one row (master toggle + a ▸ that unfolds a compact strip
    * of per-type chips) so the menu doesn't grow a row per link type.
    * Only CSS classes on the viewport change: no re-render on toggle.
@@ -389,7 +489,10 @@ export class OverlayPanel extends HexSidePanel {
       b.toggleClass("is-active", s === size);
       b.setAttr("aria-pressed", String(s === size));
     }
+    // Chip names in the map type's words (G4b).
+    const words = this.plugin.sectionWordsFor(map.name);
     for (const [s, chip] of this.badgeChips) {
+      chip.setAttr("aria-label", `${words(s).label} badges`);
       chip.toggleClass("is-off", hidden.has(s));
       chip.setAttr("aria-pressed", String(!hidden.has(s)));
     }
@@ -435,6 +538,7 @@ export class OverlayPanel extends HexSidePanel {
       this.onTokensChange(show);
     }
     this.applyBadgeClasses(map);
+    this.syncNameFont();
     this.syncLegendToggle();
   }
 

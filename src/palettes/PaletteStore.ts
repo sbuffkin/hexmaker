@@ -413,6 +413,8 @@ export class PaletteStore {
 
   private async persist(): Promise<void> {
     await this.plugin.saveData(this.plugin.settings);
+    // A terrain added in a palette note gets its tables (HG5).
+    void this.plugin.ensureTablesForNewTerrains();
     this.plugin.refreshHexMap();
     this.plugin.refreshPaletteEditors();
   }

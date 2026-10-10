@@ -262,7 +262,8 @@ describe("badge size (round 7 R8)", () => {
 					const limit = badgeNameLimit(s, flat, n);
 					expect(limit).toBeLessThan(chipsLeft);
 					for (const name of ["Gullmouth", "The Drowned Abbey", "Hut"]) {
-						const l = layoutHexName(name, { measure, hexW: flat ? 4.4 : 3.81, hexH: flat ? 3.81 : 4.4, flat, rightLimit: limit });
+						// Zoomed in enough that the readable floor (NM3) leaves room to shrink.
+						const l = layoutHexName(name, { measure, hexW: flat ? 4.4 : 3.81, hexH: flat ? 3.81 : 4.4, flat, rightLimit: limit, floorEm: 0.1 });
 						const widest = Math.max(...l.lines.map(measure)) * l.fontEm;
 						expect(l.dxEm + widest / 2).toBeLessThanOrEqual(limit + 1e-6);
 					}
