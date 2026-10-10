@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import {
+	ancestorNeighbourCrumbs,
 	buildMapTree,
 	countMaps,
 	displayNameFor,
@@ -101,12 +102,32 @@ describe("sideways crumbs", () => {
 		{ name: "elsewhere", world: { id: "x", cx: 1, cy: 0 } },
 	];
 
-	it("list each side's neighbour with an arrow on its side", () => {
+	it("list each side's neighbour with the side in words, not an arrow", () => {
 		expect(neighbourCrumbs(world[0], world)).toEqual([
-			{ side: "west", name: "west-wood", text: "← west-wood" },
-			{ side: "south", name: "marsh", text: "↓ marsh" },
-			{ side: "east", name: "coles-ford", text: "Cole's Ford →" },
+			{ side: "west", name: "west-wood", text: "West: west-wood" },
+			{ side: "south", name: "marsh", text: "South: marsh" },
+			{ side: "east", name: "coles-ford", text: "East: Cole's Ford" },
 		]);
+	});
+
+	it("offer a submap its nearest ancestor's neighbours (round 6 U13)", () => {
+		const maps: NamedMap[] = [
+			...world,
+			{ name: "deep", parent: { map: "thornwood", hex: "4_4" } },
+			{ name: "hut", parent: { map: "deep", hex: "6_6" } },
+		];
+		const thornwoodSides = neighbourCrumbs(world[0], world);
+		expect(ancestorNeighbourCrumbs("deep", maps)).toEqual({ via: "thornwood", crumbs: thornwoodSides });
+		expect(ancestorNeighbourCrumbs("hut", maps)).toEqual({ via: "thornwood", crumbs: thornwoodSides });
+		// A map with neighbours of its own uses those instead.
+		expect(ancestorNeighbourCrumbs("thornwood", maps)).toBeNull();
+		// No ancestor with neighbours, or a parent cycle: nothing.
+		expect(ancestorNeighbourCrumbs("solo", [{ name: "solo" }])).toBeNull();
+		const loop: NamedMap[] = [
+			{ name: "a", parent: { map: "b", hex: "0_0" } },
+			{ name: "b", parent: { map: "a", hex: "0_0" } },
+		];
+		expect(ancestorNeighbourCrumbs("a", loop)).toBeNull();
 	});
 
 	it("are empty for a map outside any world", () => {

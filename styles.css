@@ -4147,11 +4147,10 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-region-palette-badge {
     font-size: 0.75em;
-    color: var(--text-muted);
-    background: var(--background-modifier-hover);
-    border-radius: 3px;
+    color: var(--text-faint);
     padding: 1px 5px;
     margin-left: auto;
+    white-space: nowrap;
 }
 
 .duckmage-palette-mgmt-list {
@@ -7084,6 +7083,38 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-map-side-crumbs {
     max-width: 30vw;
 }
+/* "beside Thornwood:" before a submap's parent's neighbours (round 6 U13). */
+.duckmage-map-side-via {
+    font-size: 0.72em;
+    color: var(--text-faint);
+    white-space: nowrap;
+    padding: 0 2px 0 4px;
+}
+
+/* Round 6 U9: the toolbar sits above the map (controls z-index 20), but its
+   buttons were see-through (transparent background, opacity < 1), so a
+   panned map showed through and looked drawn on top of them. Give every
+   toolbar control an opaque backing; the muted look comes from text colour. */
+.duckmage-map-nav-group .duckmage-region-btn,
+.duckmage-map-nav-group .duckmage-map-up-btn,
+.duckmage-map-nav-group .duckmage-map-back-btn {
+    opacity: 1;
+    background: var(--background-secondary);
+}
+.duckmage-hex-map-controls .duckmage-table-btn,
+.duckmage-hex-map-controls .duckmage-rt-btn,
+.duckmage-hex-map-controls .duckmage-undo-btn-map {
+    opacity: 1;
+}
+.duckmage-hex-map-controls .duckmage-undo-btn-map:disabled {
+    opacity: 1;
+    color: var(--text-faint);
+}
+.duckmage-map-nav-group .duckmage-map-crumbs {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+}
 
 /* ── Link badges (N2): one small marker per link type at a hex corner ──────
    Positioned like the coord labels (% of the grid + em offset), so they
@@ -7312,6 +7343,14 @@ button.duckmage-wfc-library-tab.is-active {
 }
 .duckmage-path-draw-mode-hint {
     margin-bottom: 0.6em;
+}
+/* "1. How to draw:" / "2. Pick a path type…" step labels (round 6 U7). */
+.duckmage-path-draw-mode-label {
+    font-weight: 600;
+    font-size: var(--font-ui-small);
+}
+.duckmage-path-type-step {
+    margin-bottom: 0.3em;
 }
 
 /* Roll result: "Add to this hex" section picker (P2). */

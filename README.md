@@ -12,7 +12,7 @@ Hexmap World Creator gives you an interactive hex grid that lives inside Obsidia
 
 ### Hex editor
 
-Click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret, plus Weather and Hooks & Rumors). Roll a table from the editor and **Add to this hex** puts the result in the section you pick. Link a submap to the hex and click the center dot in the hex flower to dive into it.
+Click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret, plus Weather and Hooks & Rumors). Roll a table from the editor and **Add to this hex** puts the result in the section you pick. Link a submap to the hex and click the center dot in the hex flower to dive into it. There is no Save button: the editor saves a moment after you stop typing ("Saving shortly…", then "✓ All changes saved"), and closing it saves straight away.
 
 ![The hex editor showing terrain, links, and notes for a single hex](docs/Editor.PNG)
 
@@ -117,7 +117,7 @@ Maps can be generated instead of painted hex by hex. When you create a map (**Ma
 
 **Neighbouring maps.** In **Maps → New map**, **Place next to** makes the new map a region beside an existing one (same size and palette, lined up hex for hex). **Guided setup…** keeps the name and neighbour you picked. There, the generators marked *Continues … edge* (Overland and learned generators) carry the neighbour's terrain on across the shared border, and the preview shows the neighbour's edge faded around the new map. Region detail is only offered for submaps, since it zooms into a parent hex.
 
-**Shared coordinates.** Neighbouring regions number their hexes on one grid, so a hex number is unique across the world: the map east of a 20-column map that starts at 0 starts at column 20. The placement note shows the range ("Hexes 20, 0 to 39, 13"). Maps joined before this, or two existing maps linked in **Properties → Neighbouring regions**, keep their own numbers; nothing is renamed. Next to the map button, the neighbouring regions show as crumbs ("thornwood ▾  Cole's Ford →"); click one to go there.
+**Shared coordinates.** Neighbouring regions number their hexes on one grid, so a hex number is unique across the world: the map east of a 20-column map that starts at 0 starts at column 20. The placement note shows the range ("Hexes 20, 0 to 39, 13"). Maps joined before this, or two existing maps linked in **Properties → Neighbouring regions**, keep their own numbers; nothing is renamed. Next to the map button, the neighbouring regions show as crumbs named by side ("Thornwood ▾  East: Cole's Ford"); click one to go there. Inside a submap, the crumbs offer its parent's neighbours ("beside Thornwood: South: Cole's Ford"), one click away. A road or river that ends on a region's edge, next to the end of the neighbour's path of the same type, is drawn on to the shared edge on both maps so they join.
 
 Generators only change hexes when a map is created or regenerated; you can always repaint by hand afterwards.
 
@@ -126,7 +126,7 @@ A modal for editing a hex note without leaving the map.
 
 - **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept.
 - **Terrain picker** — select the terrain type for the hex from the map's palette.
-- **Icon override** — override the default terrain icon with any icon in your icons folder.
+- **Icon override** — override the default terrain icon with any icon in your icons folder. Icon pickers have **All / Terrain / Custom** tabs (plus **Space** when space maps are on); **Custom** holds the images in your icons folder.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
 - **Towns / Dungeons / Features / Quests / Factions** — link existing notes from their configured folders, or create a new note by name. Linked items are clickable and open in a new tab. Each entry has a remove button.
 - **Encounters Table** — link random table files to a hex. Clicking a linked table opens the Random Tables view with that table pre-selected.
@@ -183,7 +183,7 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 - **Meander** — gentle curve through the midpoints between hex centres (good for rivers).
 - **Edge** — traces strictly along the hex polygon boundary lines between hexes.
 
-**Auto-route:** the picker (and the bar at the top of the map while drawing) switches between **Hex by hex** and **Auto-route**. With Auto-route, click a start hex and then an end hex: the path takes the shortest way inside the map, around impassable terrain, and then carries on from that end, so you can route leg by leg. The result is an ordinary path: right-click hexes to remove them, or switch back to hex by hex to extend it.
+**Auto-route:** the picker (and the bar at the top of the map while drawing) switches between **Hex by hex** and **Auto-route**: in the picker, choose how to draw (step 1), then the path type (step 2). With Auto-route, click a start hex and then an end hex: the path takes the shortest way inside the map, around impassable terrain, keeping close to the straight line between the two, and then carries on from that end, so you can route leg by leg. The result is an ordinary path: right-click hexes to remove them, or switch back to hex by hex to extend it.
 
 - **Impassable terrain** — set per terrain in the palette editor (Impassable column) or the terrain editor. Water types (ocean, trench, shallows…) are impassable unless you untick them. A palette with no impassable terrain says so in the bar.
 - **Per path type** — each path type has **Avoid impassable terrain** (in its editor). Roads avoid water; rivers don't (they're off by default for river-like names).

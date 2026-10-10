@@ -125,12 +125,13 @@ export function countMaps(nodes: MapTreeNode[]): number {
 }
 
 export type NeighbourSide = "north" | "east" | "south" | "west";
-const ARROW: Record<NeighbourSide, string> = { west: "←", north: "↑", south: "↓", east: "→" };
+const SIDE_WORD: Record<NeighbourSide, string> = { west: "West", north: "North", south: "South", east: "East" };
 
 /**
  * Sideways crumbs for the breadcrumb: the map on each side of `map`, west
- * first, then north, south, east. `text` puts the arrow on the side the
- * map is on ("← thornwood", "coles-ford →").
+ * first, then north, south, east. `text` names the side in words
+ * ("North: Thornwood"). Round 6: arrows here ("↑ Thornwood") read like
+ * "↑ parent map", so a neighbour to the north looked like a parent.
  */
 export function neighbourCrumbs(
   map: NamedMap | undefined,
@@ -145,7 +146,31 @@ export function neighbourCrumbs(
     const m = at(dx, dy);
     if (!m) continue;
     const label = mapLabel(m);
-    out.push({ side, name: m.name, text: side === "east" ? `${label} ${ARROW[side]}` : `${ARROW[side]} ${label}` });
+    out.push({ side, name: m.name, text: `${SIDE_WORD[side]}: ${label}` });
   }
   return out;
+}
+
+/**
+ * Neighbour crumbs for a map with no neighbours of its own (a submap): the
+ * neighbours of its nearest ancestor that has any, so a submap reaches its
+ * parent's neighbour in one click (round 6: it took two hops). `via` is that
+ * ancestor. Null when the map has its own neighbours or no ancestor has any.
+ */
+export function ancestorNeighbourCrumbs(
+  mapName: string,
+  maps: NamedMap[],
+  parentOf: (name: string) => string | undefined = (n) => maps.find((m) => m.name === n)?.parent?.map,
+): { via: string; crumbs: { side: NeighbourSide; name: string; text: string }[] } | null {
+  const byName = (n: string) => maps.find((m) => m.name === n);
+  if (neighbourCrumbs(byName(mapName), maps).length > 0) return null;
+  const seen = new Set([mapName]);
+  let cur = parentOf(mapName);
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const crumbs = neighbourCrumbs(byName(cur), maps);
+    if (crumbs.length > 0) return { via: cur, crumbs };
+    cur = parentOf(cur);
+  }
+  return null;
 }

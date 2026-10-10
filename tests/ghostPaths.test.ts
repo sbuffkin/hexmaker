@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { ghostPathRuns, ghostRunPoints, type ShadowRef } from "../src/hex-map/ghostPaths";
+import { ghostPathRuns, ghostRunPoints, seamJoins, seamPoint, type ShadowRef } from "../src/hex-map/ghostPaths";
+import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 /**
  * This map: 4×3 at offset 0,0. Its southern neighbour "south" is 4×3 too,
@@ -86,5 +87,37 @@ describe("HexMapView draws them in the strip", () => {
 		expect(body).toMatch(/layer\.appendChild\(svg\)/);
 		// Reads (place/offsetWidth) before the first write (createDiv).
 		expect(body.indexOf("gridContainer.offsetWidth / em")).toBeLessThan(body.indexOf("gridContainer.createDiv"));
+	});
+});
+
+describe("seamJoins (round 6 U8: roads meeting at a seam left a gap)", () => {
+	const touches = (a: string, b: string) => {
+		const [x, y] = a.split("_").map(Number);
+		return hexNeighbors(x, y, "flat", "odd").some(([nx, ny]) => `${nx}_${ny}` === b);
+	};
+
+	it("joins this map's road ending on the edge with the neighbour's road starting across it", () => {
+		// Ours runs down to 2_2 (bottom row); south's starts at its 2_0 = our 2_3.
+		const ours = [{ typeName: "Road", hexes: ["2_0", "2_1", "2_2"] }];
+		const joins = seamJoins(ours, strip(), () => [{ typeName: "Road", hexes: ["2_0", "2_1"] }], touches);
+		expect(joins).toEqual([{ map: "south", typeName: "Road", own: "2_2", other: "2_3" }]);
+	});
+
+	it("works from either end of either chain", () => {
+		const ours = [{ typeName: "Road", hexes: ["2_2", "1_1"] }];
+		const joins = seamJoins(ours, strip(), () => [{ typeName: "Road", hexes: ["3_2", "2_1", "2_0"] }], touches);
+		expect(joins.map((j) => `${j.own}>${j.other}`)).toEqual(["2_2>2_3"]);
+	});
+
+	it("doesn't join different path types, hexes that don't touch, or a path that carries on", () => {
+		const ours = [{ typeName: "Road", hexes: ["0_0", "0_1", "0_2"] }];
+		expect(seamJoins(ours, strip(), () => [{ typeName: "River", hexes: ["0_0", "0_1"] }], touches)).toEqual([]);
+		expect(seamJoins(ours, strip(), () => [{ typeName: "Road", hexes: ["3_0", "3_1"] }], touches)).toEqual([]);
+		// South's road only passes along its top row: its ends are deep inside, not at our seam.
+		expect(seamJoins(ours, strip(), () => [{ typeName: "Road", hexes: ["0_2", "0_1", "0_0", "1_0", "1_1", "1_2"] }], touches)).toEqual([]);
+	});
+
+	it("meets halfway: the shared edge between the two hex centres", () => {
+		expect(seamPoint({ cx: 10, cy: 20 }, { cx: 10, cy: 40 })).toEqual({ cx: 10, cy: 30 });
 	});
 });

@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
+import { iconLabel, iconPack, iconPackTabs, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
@@ -45,6 +45,7 @@ export class HexmakerModal extends Modal {
 		});
 		const tabs = bar.createDiv({ cls: "duckmage-icon-filter-tabs" });
 		const empty = createDiv({ cls: "duckmage-icon-filter-empty", text: "No icons match." });
+		const NO_CUSTOM = "No custom icons yet. Put your own images (a castle, a village…) in the icons folder set in Hexmaker settings.";
 		grid.after(empty);
 
 		const tiles = (): HTMLElement[] =>
@@ -70,6 +71,7 @@ export class HexmakerModal extends Modal {
 				tile.toggle(match);
 				if (match) shown++;
 			}
+			empty.setText(pack === "custom" && !query && shown === 0 ? NO_CUSTOM : "No icons match.");
 			empty.toggle(shown === 0);
 		};
 
@@ -80,19 +82,11 @@ export class HexmakerModal extends Modal {
 				const icon = tile.dataset["icon"];
 				if (icon) counts.set(iconPack(icon, vaultIcons), (counts.get(iconPack(icon, vaultIcons)) ?? 0) + 1);
 			}
-			// One pack (or none) → tabs add nothing; search alone is enough.
-			if (counts.size < 2) {
-				pack = "all";
-				return;
-			}
-			if (pack !== "all" && !counts.has(pack)) pack = "all";
-			const total = [...counts.values()].reduce((a, b) => a + b, 0);
-			const entries: [IconPack | "all", string, number][] = [
-				["all", "All", total],
-				...(Object.keys(ICON_PACK_LABELS) as IconPack[])
-					.filter((p) => counts.has(p))
-					.map((p): [IconPack, string, number] => [p, ICON_PACK_LABELS[p], counts.get(p) ?? 0]),
-			];
+			// Round 6 R4: the tabs always show (with Custom even when empty, so
+			// it says where your own icons come from); they used to hide when
+			// only one pack had icons, and the docs' tabs were nowhere to be seen.
+			const entries = iconPackTabs(counts);
+			if (!entries.some(([key]) => key === pack)) pack = "all";
 			for (const [key, label, n] of entries) {
 				const tab = tabs.createEl("button", {
 					cls: `duckmage-icon-filter-tab${pack === key ? " is-active" : ""}`,

@@ -2,7 +2,7 @@ import { App, ItemView, Notice, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import type { HexMapView } from "./hex-map/HexMapView";
 import type { TerrainColor } from "./types";
-import { normalizeFolder, slugify } from "./utils";
+import { linkLabel, normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, isSpacePalette, terrainsForTables, type MapKind } from "./mapKinds";
@@ -295,12 +295,13 @@ function makeFolderStep(): WizardStep {
 
 			// World folder input
 			const folderRow = container.createDiv({ cls: "duckmage-wizard-field" });
-			folderRow.createEl("label", { text: "World folder", cls: "duckmage-wizard-label" });
+			const folderLabel = folderRow.createEl("label", { text: "World folder", cls: "duckmage-wizard-label" });
 			const folderInput = folderRow.createEl("input", {
 				type: "text",
 				placeholder: "world",
 				cls: "duckmage-wizard-input",
 			});
+			linkLabel(folderLabel, folderInput);
 			folderInput.value = ctx.worldFolder;
 
 			// Subfolder preview
@@ -342,11 +343,12 @@ function makeFolderStep(): WizardStep {
 			const advInputs: Partial<Record<FolderKey, HTMLInputElement>> = {};
 			for (const { key, label } of FOLDER_KEYS) {
 				const row = advSection.createDiv({ cls: "duckmage-wizard-field" });
-				row.createEl("label", { text: label, cls: "duckmage-wizard-label" });
+				const rowLabel = row.createEl("label", { text: label, cls: "duckmage-wizard-label" });
 				const inp = row.createEl("input", {
 					type: "text",
 					cls: "duckmage-wizard-input duckmage-wizard-input-sm",
 				});
+				linkLabel(rowLabel, inp);
 				advInputs[key] = inp;
 				inp.addEventListener("input", () => {
 					ctx.advancedFolders[key] = inp.value.trim();
@@ -429,12 +431,13 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 			// Map name
 			const nameRow = container.createDiv({ cls: "duckmage-wizard-field" });
-			nameRow.createEl("label", { text: "Map name", cls: "duckmage-wizard-label" });
+			const nameLabel = nameRow.createEl("label", { text: "Map name", cls: "duckmage-wizard-label" });
 			const nameInput = nameRow.createEl("input", {
 				type: "text",
 				placeholder: "my-world",
 				cls: "duckmage-wizard-input",
 			});
+			linkLabel(nameLabel, nameInput);
 			nameInput.value = ctx.mapName;
 			// Map names are slugs (folder + note names): say so before Next.
 			// The line always keeps its space (one line, empty when there is
@@ -455,13 +458,14 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 			// Grid size
 			const sizeRow = container.createDiv({ cls: "duckmage-wizard-field" });
-			sizeRow.createEl("label", { text: "Grid size", cls: "duckmage-wizard-label" });
+			const sizeLabel = sizeRow.createEl("label", { text: "Grid size", cls: "duckmage-wizard-label" });
 			const sizeInputs = sizeRow.createDiv({ cls: "duckmage-wizard-size-inputs" });
 			const colsInput = sizeInputs.createEl("input", {
 				type: "number",
 				cls: "duckmage-wizard-input-num",
 				attr: { "aria-label": "Columns" },
 			});
+			linkLabel(sizeLabel, colsInput);
 			colsInput.value = String(ctx.mapCols);
 			colsInput.min = "2";
 			colsInput.max = "200";
@@ -566,8 +570,9 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 			// Terrain palette
 			const paletteRow = container.createDiv({ cls: "duckmage-wizard-field" });
-			paletteRow.createEl("label", { text: "Terrain palette", cls: "duckmage-wizard-label" });
+			const paletteLabel = paletteRow.createEl("label", { text: "Terrain palette", cls: "duckmage-wizard-label" });
 			const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-wizard-select" });
+			linkLabel(paletteLabel, paletteSelect);
 			fillPaletteSelect(plugin, paletteSelect, ctx.paletteName);
 			attachPaletteHint(paletteRow, paletteSelect);
 			paletteSelect.addEventListener("change", () => {

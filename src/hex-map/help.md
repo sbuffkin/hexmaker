@@ -22,7 +22,7 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 | **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
 | **← back** button / **Alt+←** | Return to the previously viewed map |
 | Breadcrumb (top left) | Jump to any map above this one |
-| Crumbs after the map button ("Cole's Ford →") | Jump to a neighbouring region |
+| Crumbs after the map button ("East: Cole's Ford") | Jump to a neighbouring region. Inside a submap they show its parent's neighbours ("beside Thornwood: South: Cole's Ford") |
 
 "Go up to parent map" and "Go back to previous map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
 
@@ -45,7 +45,7 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ### Road / River
 Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
 
-**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once.
+**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once.
 
 ### Terrain
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
@@ -103,6 +103,8 @@ Tokens show their name underneath. The layers panel's **Labels** group turns coo
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
 
 Neighbouring regions share one set of hex numbers: a new region carries on from the map it was placed next to, so each hex number names one place in the world. Maps you join later keep their own numbers.
+
+A road or river that ends on the edge of a region, next to where the neighbour's road of the same type ends, is drawn on to the shared edge on both maps, so the two join up.
 
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 

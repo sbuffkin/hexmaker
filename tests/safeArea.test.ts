@@ -88,7 +88,15 @@ describe("revealDelta (flash the hex you came back to)", () => {
 
 describe("uncoverEdgeDelta (a panel or the mode bar opens over the map)", () => {
 	it("pulls the grid's right edge out from under a just-opened panel", () => {
-		expect(uncoverEdgeDelta(100, 980, 0, 794, 0, 1000)).toBe(794 - 980);
+		expect(uncoverEdgeDelta(300, 980, 0, 794, 0, 1000)).toBe(794 - 980);
+	});
+	it("moves no further than the free room on the other side (round 6: the map jumped)", () => {
+		// 100px free on the left: slide 100, not the full 186 that would cut the left column.
+		expect(uncoverEdgeDelta(100, 980, 0, 794, 0, 1000)).toBe(-100);
+		// Zoomed in, left edge already off screen: nothing is free, so stay put.
+		expect(uncoverEdgeDelta(-300, 900, 0, 794, 0, 1000)).toBe(0);
+		// Same on the top band: the bottom edge has only 20px to give.
+		expect(uncoverEdgeDelta(30, 780, 74, 800, 0, 800)).toBe(20);
 	});
 	it("pushes the grid's top edge below the toolbar band", () => {
 		expect(uncoverEdgeDelta(30, 700, 74, 800, 0, 800)).toBe(44);

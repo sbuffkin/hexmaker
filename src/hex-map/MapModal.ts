@@ -4,7 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
 import { renderPreviewLegend } from "./terrainLegend";
-import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
+import { linkLabel, normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
 import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
@@ -287,7 +287,8 @@ export class MapModal extends HexmakerModal {
         this.view.switchMapFromModal(map.name);
         this.close();
       });
-      row.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
+      // "palette: Expanded" in muted text; a bare "Expanded" read like a fold state (round 6 U10).
+      row.createSpan({ cls: "duckmage-region-palette-badge", text: `palette: ${map.paletteName}`, attr: { title: "Terrain palette" } });
     }
   }
 
@@ -848,17 +849,20 @@ export class MapModal extends HexmakerModal {
     });
 
     // Starting coordinates
-    el.createEl("label", { text: "Starting coordinates", cls: "duckmage-map-field-label" });
+    const originLabel = el.createEl("label", { text: "Starting coordinates", cls: "duckmage-map-field-label" });
     el.createEl("p", {
       text: "Hex labels and filenames start from these values instead of 0,0.",
       cls: "duckmage-map-origin-desc",
     });
     const originRow = el.createDiv({ cls: "duckmage-region-row" });
-    originRow.createSpan({ text: "X", cls: "duckmage-map-origin-label" });
+    const originXLabel = originRow.createEl("label", { text: "X", cls: "duckmage-map-origin-label" });
     const originXInput = originRow.createEl("input", { type: "number", value: "0" });
+    linkLabel(originLabel, originXInput);
+    linkLabel(originXLabel, originXInput);
     originXInput.setCssProps({ width: "70px" });
-    originRow.createSpan({ text: "Y", cls: "duckmage-map-origin-label" });
+    const originYLabel = originRow.createEl("label", { text: "Y", cls: "duckmage-map-origin-label" });
     const originYInput = originRow.createEl("input", { type: "number", value: "0" });
+    linkLabel(originYLabel, originYInput);
     originYInput.setCssProps({ width: "70px" });
 
     // Background image (optional). User can either pick an existing vault file

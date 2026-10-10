@@ -28,11 +28,11 @@ import {
 } from "../constants";
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
-import { neighbourCrumbs } from "../maps/mapTree";
+import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
-import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
+import { ghostPathRuns, ghostRunPoints, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
@@ -172,6 +172,22 @@ export class HexMapView extends ItemView {
   // Coord labels are created only for on-screen hexes big enough to read
   // (see syncCoordLabels). Placements are measured once per renderGrid.
   private coordPlacements: { key: string; ox: number; oy: number }[] = [];
+  /** The neighbour strip last drawn (map name + its hexes), so the path
+   *  overlay can join paths across the seam (round 6 U8). */
+  private lastShadow: { map: string; shadow: ReadonlyMap<string, ShadowRef> } | null = null;
+
+  /** Paths of the open map that meet a neighbour's path across the seam. */
+  private currentSeamJoins(region: MapData) {
+    const s = this.lastShadow;
+    if (!s || s.map !== region.name || !s.shadow.size) return [];
+    const orientation = this.plugin.settings.hexOrientation;
+    const stagger = this.getActiveStagger();
+    const touches = (a: string, b: string) => {
+      const [x, y] = a.split("_").map(Number);
+      return hexNeighbors(x, y, orientation, stagger).some(([nx, ny]) => `${nx}_${ny}` === b);
+    };
+    return seamJoins(region.pathChains, s.shadow, (m) => this.plugin.getMap(m)?.pathChains, touches);
+  }
   private coordGridSize = { w: 1, h: 1 };
   private coordLabels = new Map<string, HTMLElement>();
   // Link badges + terrain legend refresh on note / map-store changes (debounced).
@@ -601,12 +617,26 @@ export class HexMapView extends ItemView {
     const el = this.sideCrumbsEl;
     if (!el) return;
     el.empty();
-    const side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), this.plugin.settings.maps);
+    const maps = this.plugin.settings.maps;
+    let side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), maps);
+    let via: string | null = null;
+    if (side.length === 0) {
+      // A submap: offer its parent's neighbours too ("beside Thornwood: South: Cole's Ford").
+      const up = ancestorNeighbourCrumbs(this.activeMapName, maps, (m) => this.plugin.parentOf(m)?.map);
+      if (up) {
+        via = up.via;
+        side = up.crumbs;
+        el.createSpan({ cls: "duckmage-map-side-via", text: `beside ${this.plugin.mapLabel(via)}:` });
+      }
+    }
     for (const c of side) {
+      const title = via
+        ? `Neighbouring region to the ${c.side} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}`
+        : `Neighbouring region to the ${c.side}: ${this.plugin.mapLabel(c.name)}`;
       const crumb = el.createEl("button", {
         cls: "duckmage-map-crumb duckmage-map-side-crumb",
         text: c.text,
-        attr: { title: `Neighbouring region to the ${c.side}: ${this.plugin.mapLabel(c.name)}`, "data-side": c.side },
+        attr: { title, "aria-label": title, "data-side": c.side },
       });
       crumb.addEventListener("click", () => this.navigateToMap(c.name));
     }
@@ -3967,8 +3997,10 @@ export class HexMapView extends ItemView {
    * reads first, then the writes (see the read-then-write rule in CLAUDE.md).
    */
   private renderNeighbourShadow(gridContainer: HTMLElement, region: MapData): void {
+    this.lastShadow = null;
     if (!region.world) return;
     const shadow = neighbourShadow(this.plugin, region);
+    this.lastShadow = { map: region.name, shadow };
     if (!shadow.size) return;
     const { x: ox, y: oy } = region.gridOffset;
     const { cols, rows } = region.gridSize;
@@ -4023,12 +4055,21 @@ export class HexMapView extends ItemView {
       const p = place(x, y);
       return { cx: p.x / em, cy: p.y / em };
     };
+    // A neighbour path that ends where one of ours does draws on to the
+    // shared edge (no end dot there): the two read as one road (round 6 U8).
+    const joins = this.currentSeamJoins(region);
+    const joinedAt = (run: { map: string; typeName: string }, key: string) =>
+      joins.find((j) => j.map === run.map && j.typeName === run.typeName && j.other === key);
     const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
       const pt = typeByName.get(run.typeName);
       if (!pt) return [];
       const pts = ghostRunPoints(run, centreEm);
-      const ends = [run.stubStart ? null : pts[0], run.stubEnd ? null : pts[pts.length - 1]]
+      const startJoin = run.stubStart ? undefined : joinedAt(run, run.hexes[0]);
+      const endJoin = run.stubEnd ? undefined : joinedAt(run, run.hexes[run.hexes.length - 1]);
+      const ends = [run.stubStart || startJoin ? null : pts[0], run.stubEnd || endJoin ? null : pts[pts.length - 1]]
         .filter((p): p is { cx: number; cy: number } => p !== null);
+      if (startJoin) pts.unshift(seamPoint(centreEm(startJoin.other), centreEm(startJoin.own)));
+      if (endJoin) pts.push(seamPoint(centreEm(endJoin.other), centreEm(endJoin.own)));
       return [{ run, pt, pts, ends }];
     });
     const gridWEm = gridContainer.offsetWidth / em;
@@ -5637,6 +5678,41 @@ export class HexMapView extends ItemView {
     // route (e.g. a road and a river on the same hexes) render side by side
     // instead of one stroke covering the other (issue #30). Chains that don't
     // share any segment with another keep offset 0 → pixel-identical output.
+    // Ends that meet a neighbour's path across the seam reach on to the
+    // shared edge (round 6 U8). The neighbour hex is off this grid, so its
+    // centre is extrapolated from the grid's pitch.
+    const joins = this.currentSeamJoins(region);
+    const stagger = this.getActiveStagger();
+    const shifted = (n: number) => ((stagger === "odd" ? n % 2 !== 0 : n % 2 === 0) ? 1 : 0);
+    let colPitch = 0;
+    let rowPitch = 0;
+    if (joins.length > 0) {
+      for (const [k, c] of centerMap) {
+        const [x, y] = k.split("_").map(Number);
+        const r = centerMap.get(`${x + 1}_${y}`);
+        const b = centerMap.get(`${x}_${y + 1}`);
+        if (!colPitch && r) colPitch = r.cx - c.cx;
+        if (!rowPitch && b) rowPitch = b.cy - c.cy;
+        if (colPitch && rowPitch) break;
+      }
+    }
+    const beyond = (own: string, other: string): { cx: number; cy: number } | null => {
+      const e = centerMap.get(own);
+      if (!e || !colPitch || !rowPitch) return null;
+      const [ex, ey] = own.split("_").map(Number);
+      const [nx, ny] = other.split("_").map(Number);
+      return isFlat
+        ? { cx: e.cx + (nx - ex) * colPitch, cy: e.cy + (ny - ey) * rowPitch + ((shifted(nx) - shifted(ex)) * rowPitch) / 2 }
+        : { cx: e.cx + (nx - ex) * colPitch + ((shifted(ny) - shifted(ey)) * colPitch) / 2, cy: e.cy + (ny - ey) * rowPitch };
+    };
+    const seamEnd = (typeName: string, own: string | undefined) => {
+      if (own === undefined) return null;
+      const j = joins.find((jj) => jj.typeName === typeName && jj.own === own);
+      const n = j ? beyond(j.own, j.other) : null;
+      const e = centerMap.get(own);
+      return n && e ? seamPoint(e, n) : null;
+    };
+
     const laneOffset = computeLaneOffsets(
       renderables.map((r) => ({
         hexes: r.chain.hexes,
@@ -5660,6 +5736,12 @@ export class HexMapView extends ItemView {
           .map((k) => centerMap.get(k))
           .filter((p): p is { cx: number; cy: number } => !!p);
         smooth = true;
+      }
+      if (pt.routing !== "edge" && pts.length >= 1) {
+        const head = seamEnd(pt.name, chain.hexes[0]);
+        const tail = chain.hexes.length > 1 ? seamEnd(pt.name, chain.hexes[chain.hexes.length - 1]) : null;
+        if (head) pts = [head, ...pts];
+        if (tail) pts = [...pts, tail];
       }
       if (pts.length < 2) return;
       pts = offsetPolyline(pts, laneOffset[idx]);

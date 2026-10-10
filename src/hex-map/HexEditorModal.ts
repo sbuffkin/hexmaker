@@ -50,8 +50,8 @@ import { hasFeature } from "../featureLevel";
 import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
-import { displayedEncounterLinks } from "../encounterLinks";
-import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
+import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
+import { SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
@@ -255,13 +255,13 @@ export class HexEditorModal extends HexmakerModal {
     const s = this.plugin.settings;
 
     // A hex that already has a terrain opens with Terrain collapsed to a
-    // one-line summary unless the user expanded it last time (round 5: the
-    // 50-swatch grid reopened expanded on every hex).
+    // one-line summary (round 5: the 50-swatch grid reopened expanded on
+    // every hex; round 6: expanding it once must not stick).
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
       "hexEditorTerrainCollapsed",
-      terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false, s.hexEditorTerrainExpanded),
+      terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false),
     );
     const headerPreview = terrainHeader.createSpan({
       cls: "duckmage-terrain-header-preview",
@@ -437,6 +437,7 @@ export class HexEditorModal extends HexmakerModal {
     for (const el of [this.saveStatusEl, this.notesStatusEl]) {
       if (!el) continue;
       el.setText(SAVE_STATUS_TEXT[state]);
+      el.title = SAVE_STATUS_TITLE;
       el.dataset["state"] = state;
     }
     // The title row only speaks up once something happened; the Notes
@@ -655,9 +656,8 @@ export class HexEditorModal extends HexmakerModal {
       }
       arrow.textContent = collapsed ? "▼" : "▶";
       this.plugin.settings[flag] = !collapsed;
-      // Expanding Terrain is remembered too: it then opens expanded even
-      // on hexes that have a terrain (see terrainStartsCollapsed).
-      if (flag === "hexEditorTerrainCollapsed") this.plugin.settings.hexEditorTerrainExpanded = collapsed;
+      // Expanding Terrain is NOT remembered: on hexes with a terrain it opens
+      // collapsed again (round 6; see terrainStartsCollapsed).
       void this.plugin.saveSettings();
     });
     return { body, header };
@@ -1291,9 +1291,11 @@ export class HexEditorModal extends HexmakerModal {
     } else {
       for (const link of links) {
         const item = container.createDiv({ cls: "duckmage-link-item" });
+        // The note's name, with the full link on hover (round 6 U2).
         const label = item.createSpan({
-          text: `[[${link}]]`,
+          text: linkDisplayName(link),
           cls: "duckmage-link-item-label",
+          attr: { title: `[[${link}]]` },
         });
         const file = this.app.metadataCache.getFirstLinkpathDest(
           link,

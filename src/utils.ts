@@ -2,6 +2,18 @@ import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
 
+let labelSeq = 0;
+
+/**
+ * Tie a <label> to its control so clicking the label focuses it (round 6:
+ * clicking "Map name" in the setup wizard did nothing). Gives the control a
+ * unique id if it has none.
+ */
+export function linkLabel(label: HTMLElement, control: HTMLElement): void {
+	if (!control.id) control.id = `duckmage-field-${++labelSeq}`;
+	label.setAttr("for", control.id);
+}
+
 export function slugify(name: string): string {
 	return name
 		.toLowerCase()
@@ -98,6 +110,20 @@ export const ICON_PACK_LABELS: Record<IconPack, string> = {
 export function defaultIconPack(settings: { mapKinds?: string[] }): IconPack | "all" {
 	const kinds = settings.mapKinds;
 	return Array.isArray(kinds) && kinds.includes("space") && !kinds.includes("world") ? "space" : "all";
+}
+
+/**
+ * The tabs an icon picker shows, with counts: All, every pack that has
+ * icons, and Custom always (empty until the user adds their own).
+ */
+export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack | "all", string, number][] {
+	const total = [...counts.values()].reduce((a, b) => a + b, 0);
+	return [
+		["all", "All", total],
+		...(Object.keys(ICON_PACK_LABELS) as IconPack[])
+			.filter((p) => p === "custom" || (counts.get(p) ?? 0) > 0)
+			.map((p): [IconPack, string, number] => [p, ICON_PACK_LABELS[p], counts.get(p) ?? 0]),
+	];
 }
 
 /** Which picker tab an icon belongs to: the user's icons folder wins over bundled names. */

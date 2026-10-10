@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { findRoute, hexDistance, type RouteBounds } from "../src/hex-map/autoRoute";
+import { findRoute, hexCenter, hexDistance, type RouteBounds } from "../src/hex-map/autoRoute";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 type Orientation = "flat" | "pointy";
@@ -124,4 +124,37 @@ describe("findRoute", () => {
     expect(r.ok).toBe(true);
     expect(Date.now() - t0).toBeLessThan(1000);
   });
+});
+
+describe("findRoute keeps to the straight line on open ground (round 6 R5)", () => {
+	/** Distance of a hex centre from the line between two hex centres. */
+	const offLine = (k: string, a: string, b: string, o: Orientation, s: Stagger) => {
+		const c = (key: string) => {
+			const [x, y] = key.split("_").map(Number);
+			return hexCenter(x, y, o, s);
+		};
+		const [ax, ay] = c(a);
+		const [bx, by] = c(b);
+		const [px, py] = c(k);
+		return Math.abs((bx - ax) * (py - ay) - (by - ay) * (px - ax)) / Math.hypot(bx - ax, by - ay);
+	};
+	const ONE_HEX = Math.sqrt(3); // centre-to-centre distance
+
+	for (const [o, s] of CONFIGS) {
+		it(`stays within one hex of the line, still shortest (${o}/${s})`, () => {
+			const b = bounds(30, 30);
+			const pairs: [string, string][] = [["2_3", "25_17"], ["1_20", "22_2"], ["4_4", "26_9"], ["3_25", "9_1"], ["0_0", "29_29"]];
+			for (const [from, to] of pairs) {
+				const r = findRoute(from, to, { orientation: o, stagger: s, bounds: b });
+				expect(r.ok).toBe(true);
+				if (!r.ok) continue;
+				const f = from.split("_").map(Number) as [number, number];
+				const t = to.split("_").map(Number) as [number, number];
+				expect(r.hexes.length - 1).toBe(hexDistance(f, t, o, s));
+				expect(isConnected(r.hexes, o, s)).toBe(true);
+				const worst = Math.max(...r.hexes.map((k) => offLine(k, from, to, o, s)));
+				expect(worst).toBeLessThanOrEqual(ONE_HEX);
+			}
+		});
+	}
 });

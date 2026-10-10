@@ -17,3 +17,22 @@ export function displayedEncounterLinks(
   if (noteExists) return noteLinks;
   return terrainTableLink ? [terrainTableLink] : [];
 }
+
+/** Folder names that say what kind of table a file is (terrain tables live
+ *  at `terrain/encounters/grass.md`, `terrain/descriptions/grass.md`). */
+const KIND_FOLDERS = new Set(["encounters", "descriptions", "description", "weather", "rumors", "rumours"]);
+
+/**
+ * A link as the hex editor shows it: the note's name, not its wiki path
+ * (round 6: `[[world/tables/terrain/encounters/grass]]` was noisy). An alias
+ * wins; a terrain table keeps its kind ("grass encounters"), since a bare
+ * "grass" could be the description table too.
+ */
+export function linkDisplayName(link: string): string {
+  const [target, alias] = link.split("|");
+  if (alias?.trim()) return alias.trim();
+  const parts = target.split("#")[0].replace(/\.md$/i, "").split("/").filter(Boolean);
+  const base = parts[parts.length - 1] ?? target;
+  const folder = parts.length > 1 ? parts[parts.length - 2].toLowerCase() : undefined;
+  return folder && KIND_FOLDERS.has(folder) ? `${base} ${folder}` : base;
+}

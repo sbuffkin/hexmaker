@@ -99,3 +99,61 @@ export function ghostRunPoints<P extends { cx: number; cy: number }>(
   if (run.stubEnd && pts.length >= 2) pts[pts.length - 1] = mid(pts[pts.length - 1], pts[pts.length - 2]);
   return pts;
 }
+
+/**
+ * A path of this map that meets a neighbour's path of the same type across
+ * the seam: this map's chain ends on `own`, the neighbour's chain ends on
+ * `other` (a hex in the strip, in this map's frame), and the two hexes touch.
+ * Round 6: each path stopped at its own hex centre, leaving a gap at the
+ * seam; both maps now draw their end on to the shared edge so they join.
+ */
+export interface SeamJoin {
+  map: string;
+  typeName: string;
+  /** This map's end hex. */
+  own: string;
+  /** The neighbour's end hex, in this map's frame. */
+  other: string;
+}
+
+export function seamJoins(
+  ownChains: readonly ChainLike[],
+  shadow: ReadonlyMap<string, ShadowRef>,
+  chainsOf: (map: string) => readonly ChainLike[] | undefined,
+  touches: (a: string, b: string) => boolean,
+): SeamJoin[] {
+  const offsets = new Map<string, { dx: number; dy: number }>();
+  for (const [key, ref] of shadow) {
+    if (offsets.has(ref.map)) continue;
+    const [x, y] = parse(key);
+    offsets.set(ref.map, { dx: x - ref.x, dy: y - ref.y });
+  }
+  const ends = (c: ChainLike): string[] => (c.hexes.length === 0 ? [] : c.hexes.length === 1 ? [c.hexes[0]] : [c.hexes[0], c.hexes[c.hexes.length - 1]]);
+  const out: SeamJoin[] = [];
+  const seen = new Set<string>();
+  for (const [map, { dx, dy }] of offsets) {
+    for (const theirs of chainsOf(map) ?? []) {
+      for (const end of ends(theirs)) {
+        const [x, y] = parse(end);
+        const other = `${x + dx}_${y + dy}`;
+        if (shadow.get(other)?.map !== map) continue;
+        for (const mine of ownChains) {
+          if (mine.typeName !== theirs.typeName) continue;
+          for (const own of ends(mine)) {
+            if (shadow.has(own) || !touches(own, other)) continue;
+            const id = `${map}|${mine.typeName}|${own}|${other}`;
+            if (seen.has(id)) continue;
+            seen.add(id);
+            out.push({ map, typeName: mine.typeName, own, other });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/** Halfway between two points: where two touching hexes share an edge. */
+export function seamPoint(a: { cx: number; cy: number }, b: { cx: number; cy: number }): { cx: number; cy: number } {
+  return { cx: (a.cx + b.cx) / 2, cy: (a.cy + b.cy) / 2 };
+}

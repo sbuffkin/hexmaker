@@ -61,6 +61,23 @@ export function hexDistance(
   return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
 }
 
+/**
+ * A hex's centre on the page, in units of the hex's outer radius (so
+ * neighbouring centres are √3 apart). Used to keep routes near the straight
+ * line between their ends.
+ */
+export function hexCenter(
+  x: number,
+  y: number,
+  orientation: "flat" | "pointy",
+  stagger: "odd" | "even" = "odd",
+): [number, number] {
+  const [q, r] = toAxial(x, y, orientation, stagger);
+  return orientation === "flat"
+    ? [1.5 * q, Math.sqrt(3) * (r + q / 2)]
+    : [Math.sqrt(3) * (q + r / 2), 1.5 * r];
+}
+
 function inBounds(x: number, y: number, b: RouteBounds): boolean {
   return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY;
 }
@@ -118,13 +135,26 @@ export function findRoute(from: string, to: string, opts: RouteOptions): RouteRe
   if (from === to) return { ok: true, hexes: [from] };
 
   const h = (x: number, y: number) => hexDistance([x, y], [tx, ty], opts.orientation, stagger);
+  // Many routes are equally short on a hex grid. Among them, take the one
+  // that keeps closest to the straight line between the ends (round 6: on
+  // open ground the road bowed off to one side). Each hex entered adds its
+  // distance from that line to a secondary cost `p`; routes compare by
+  // steps first, then `p`, so the step count is still the shortest.
+  const [ax, ay] = hexCenter(fx, fy, opts.orientation, stagger);
+  const [bx, by] = hexCenter(tx, ty, opts.orientation, stagger);
+  const len = Math.hypot(bx - ax, by - ay) || 1;
+  const offLine = (x: number, y: number) => {
+    const [px, py] = hexCenter(x, y, opts.orientation, stagger);
+    return Math.abs((bx - ax) * (py - ay) - (by - ay) * (px - ax)) / len;
+  };
   const g = new Map<string, number>([[from, 0]]);
+  const p = new Map<string, number>([[from, 0]]);
   const cameFrom = new Map<string, string>();
   const closed = new Set<string>();
   const open = new MinHeap<string>();
-  // Ties on f go to the hex nearer the goal (larger g): fewer wandering
-  // expansions, and routes that head straight for the end.
-  const key = (f: number, gv: number) => f * 1e6 - gv;
+  // Order by f, then by the off-line cost (rounded; f is a whole number of
+  // steps, so it dominates).
+  const key = (f: number, pv: number) => f * 1e12 + Math.round(pv * 100);
   open.push(key(h(fx, fy), 0), from);
 
   while (open.size) {
@@ -142,16 +172,20 @@ export function findRoute(from: string, to: string, opts: RouteOptions): RouteRe
     closed.add(cur);
     const [cx, cy] = cur.split("_").map(Number);
     const gCur = g.get(cur)!;
+    const pCur = p.get(cur)!;
     for (const [nx, ny] of hexNeighbors(cx, cy, opts.orientation, stagger)) {
       if (!inBounds(nx, ny, opts.bounds)) continue;
       const nk = `${nx}_${ny}`;
       if (closed.has(nk)) continue;
       if (nk !== to && opts.blocked?.(nx, ny)) continue;
       const gNext = gCur + 1;
-      if (gNext >= (g.get(nk) ?? Infinity)) continue;
+      const pNext = pCur + offLine(nx, ny);
+      const gOld = g.get(nk) ?? Infinity;
+      if (gNext > gOld || (gNext === gOld && pNext >= p.get(nk)!)) continue;
       g.set(nk, gNext);
+      p.set(nk, pNext);
       cameFrom.set(nk, cur);
-      open.push(key(gNext + h(nx, ny), gNext), nk);
+      open.push(key(gNext + h(nx, ny), pNext), nk);
     }
   }
   return { ok: false, reason: "no-route" };

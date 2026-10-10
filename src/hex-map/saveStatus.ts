@@ -5,7 +5,7 @@
  * small, far from the box they were typing in, and vanished after 2 s).
  *
  * So the status is now persistent: it always says where things stand
- * ("Changes save automatically" → "Not saved yet…" while typing → "Saving…"
+ * ("Changes save automatically" → "Saving shortly…" while typing → "Saving…"
  * → "✓ All changes saved"), and HexEditorModal shows it next to the text box
  * being edited as well as in the title row. "saved" is the fresh state (shown
  * in the success colour for a moment); it then settles to "settled" with the
@@ -16,12 +16,17 @@ export type SaveState = "idle" | "pending" | "saving" | "saved" | "settled" | "e
 
 export const SAVE_STATUS_TEXT: Record<SaveState, string> = {
   idle: "Changes save automatically",
-  pending: "Not saved yet…",
+  // Round 6: "Not saved yet…" with no Save button made testers fear closing
+  // would lose their text. It won't: closing the editor saves at once.
+  pending: "Saving shortly…",
   saving: "Saving…",
   saved: "✓ All changes saved",
   settled: "✓ All changes saved",
   error: "Couldn't save",
 };
+
+/** Tooltip on the status: what "automatically" means. */
+export const SAVE_STATUS_TITLE = "Saves a moment after you stop typing, and when you close the editor. There is no Save button.";
 
 /** How long the fresh "saved" colour stays before settling. */
 export const SAVED_SHOWN_MS = 2500;

@@ -85,7 +85,10 @@ export class PathPickerModal extends HexmakerModal {
     const ar = this.autoRoute;
     if (!ar) return;
     const row = container.createDiv({ cls: "duckmage-path-draw-mode" });
-    row.createSpan({ text: "Draw:", cls: "duckmage-path-draw-mode-label" });
+    // Round 6 U7: testers weren't sure whether to set this before or after
+    // the path type. Number the two steps, and say it can change later from
+    // the bar at the top, so either order is fine.
+    row.createSpan({ text: "1. How to draw:", cls: "duckmage-path-draw-mode-label" });
     const seg = row.createDiv({ cls: "duckmage-path-draw-mode-seg", attr: { role: "group", "aria-label": "How to draw" } });
     const hint = container.createDiv({ cls: "setting-item-description duckmage-path-draw-mode-hint" });
     const paint = () => {
@@ -105,6 +108,7 @@ export class PathPickerModal extends HexmakerModal {
             (ar.noImpassable ? " This palette has no impassable terrain yet: mark the terrains paths can't cross (e.g. water) in the palette editor." : "")
           : "Click neighbouring hexes one by one.",
       );
+      hint.createSpan({ text: " You can switch this while drawing, from the bar at the top." });
     };
     paint();
   }
@@ -155,6 +159,9 @@ export class PathPickerModal extends HexmakerModal {
 
     const section = contentEl.createDiv({ cls: "duckmage-editor-section" });
     this.renderDrawMode(section);
+    if (this.autoRoute) {
+      section.createDiv({ cls: "duckmage-path-draw-mode-label duckmage-path-type-step", text: "2. Pick a path type to start drawing:" });
+    }
     const grid = section.createDiv({
       cls: "duckmage-terrain-picker duckmage-terrain-picker-full",
     });

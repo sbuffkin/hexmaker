@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { SAVE_STATUS_TEXT, SAVED_SHOWN_MS, SaveTracker, type SaveState } from "../src/hex-map/saveStatus";
+import { SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SAVED_SHOWN_MS, SaveTracker, type SaveState } from "../src/hex-map/saveStatus";
 
 /** A tracker wired to a log of rendered states and a manual clock. */
 function harness() {
@@ -45,11 +45,13 @@ describe("SaveTracker (fresh-eyes rounds 3-4: no noticeable 'saved' cue)", () =>
 		expect(SAVE_STATUS_TEXT.settled).not.toBe("");
 	});
 
-	it("says 'not saved yet' while typing, before the autosave runs", () => {
+	it("says it will save shortly while typing (round 6: 'Not saved yet' read like 'press Save')", () => {
 		const h = harness();
 		h.tracker.markPending();
 		expect(h.shown.at(-1)).toBe("pending");
-		expect(SAVE_STATUS_TEXT.pending).toMatch(/not saved/i);
+		expect(SAVE_STATUS_TEXT.pending).toMatch(/saving shortly/i);
+		expect(SAVE_STATUS_TEXT.pending).not.toMatch(/not saved/i);
+		expect(SAVE_STATUS_TITLE).toMatch(/close the editor/);
 	});
 
 	it("a pending edit that needs no write returns to the last resting state", async () => {

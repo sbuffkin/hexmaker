@@ -31,7 +31,7 @@ import {
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
-import { getIconUrl } from "../utils";
+import { getIconUrl, linkLabel } from "../utils";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
@@ -1398,9 +1398,10 @@ export class GeneratorPanel {
     value: number,
     onChange: (v: number) => void,
   ): void {
-    el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
     const row = el.createDiv({ cls: "duckmage-region-row" });
     const input = row.createEl("input", { type: "range" });
+    linkLabel(labelEl, input);
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
@@ -1419,8 +1420,9 @@ export class GeneratorPanel {
     value: T,
     onChange: (v: T) => void,
   ): void {
-    el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
     const sel = el.createDiv({ cls: "duckmage-region-row" }).createEl("select");
+    linkLabel(labelEl, sel);
     for (const [v, text] of options) sel.createEl("option", { value: v, text });
     sel.value = value;
     el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
@@ -1447,10 +1449,11 @@ export class GeneratorPanel {
     selected: string[],
     onChange: (list: string[]) => void,
   ): void {
-    el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
     const chosen = new Set(selected.filter((t) => terrains.includes(t)));
     const chips = el.createDiv({ cls: "duckmage-wfc-chips" });
     const search = el.createEl("input", { type: "search", cls: "duckmage-wfc-filter", attr: { placeholder: "Search terrain to add…" } });
+    linkLabel(labelEl, search);
     const matches = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-matches" });
     const swatch = (parent: HTMLElement, t: string) =>
       parent.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": colors.get(t) ?? "var(--background-modifier-border)" });

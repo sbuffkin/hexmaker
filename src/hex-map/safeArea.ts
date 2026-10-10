@@ -95,6 +95,9 @@ export function revealDelta(start: number, end: number, safeStart: number, safeE
  * when that edge is on screen but covered. An edge that's off screen means
  * the user panned there on purpose: leave it alone. (A grid that fits the
  * safe span ends up fully inside it, since only one edge can be covered.)
+ * It never moves further than the free room on the other side (round 6:
+ * opening the layers panel on a zoomed-in map slid it sideways, pushing its
+ * other edge off screen; when nothing is free, it stays put).
  */
 export function uncoverEdgeDelta(
   start: number,
@@ -105,8 +108,10 @@ export function uncoverEdgeDelta(
   viewEnd: number,
 ): number {
   if (end <= viewStart || start >= viewEnd) return 0; // not on screen at all
-  if (start >= viewStart && start < safeStart) return safeStart - start;
-  if (end <= viewEnd && end > safeEnd) return safeEnd - end;
+  // Move at most by the free room on the other side: never push the
+  // opposite edge under an overlay or off screen to uncover this one.
+  if (start >= viewStart && start < safeStart) return Math.max(0, Math.min(safeStart - start, safeEnd - end));
+  if (end <= viewEnd && end > safeEnd) return Math.min(0, Math.max(safeEnd - end, safeStart - start));
   return 0;
 }
 

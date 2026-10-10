@@ -1,7 +1,7 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl } from "../src/utils";
+import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl, iconPackTabs } from "../src/utils";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
@@ -208,4 +208,22 @@ describe("cssUrl", () => {
       if (/["\\n\r]/.test(v)) throw new Error(`${name} would break url("…")`);
     }
   });
+});
+
+describe("iconPackTabs (round 6 R4: the Paint icon picker had no tabs)", () => {
+	it("shows All, Terrain and an empty Custom tab when only terrain icons exist", () => {
+		expect(iconPackTabs(new Map([["terrain", 40]]))).toEqual([
+			["all", "All", 40],
+			["terrain", "Terrain", 40],
+			["custom", "Custom", 0],
+		]);
+	});
+	it("adds Space when space icons are enabled, and counts custom icons", () => {
+		expect(iconPackTabs(new Map([["terrain", 40], ["space", 30], ["custom", 2]])).map(([k, , n]) => `${k}:${n}`)).toEqual([
+			"all:72",
+			"terrain:40",
+			"space:30",
+			"custom:2",
+		]);
+	});
 });
