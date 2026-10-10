@@ -6563,3 +6563,20 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-editor-save-status[data-state="error"] {
     color: var(--text-error);
 }
+
+/* Token form: what the Note field will do, and clickable field names
+   (fresh-eyes round 3). */
+.duckmage-token-note-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin: -0.4em 0 0.5em;
+}
+.duckmage-token-note-status.is-new {
+    color: var(--text-accent);
+}
+.duckmage-note-picker-item.is-active {
+    background: var(--background-modifier-hover);
+}
+.duckmage-token-field-label {
+    cursor: pointer;
+}

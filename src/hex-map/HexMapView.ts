@@ -30,6 +30,7 @@ import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
+import { pickTokenFill } from "./tokenDefaults";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -1874,7 +1875,7 @@ export class HexMapView extends ItemView {
       this.plugin,
       undefined,
       "",
-      {},
+      { color: this.nextTokenFill() },
       (notePath, data) => {
         this.leaveOtherToolFor("placeToken");
         this.pendingTokenNotePath  = notePath;
@@ -1983,7 +1984,7 @@ export class HexMapView extends ItemView {
       this.plugin,
       undefined,
       "",
-      {},
+      { color: this.nextTokenFill() },
       (notePath, data) => {
         void applyTokenFrontmatter(this.app, notePath, {
           icon: data.icon,
@@ -6164,6 +6165,13 @@ export class HexMapView extends ItemView {
   }
 
   // ── Token layer ───────────────────────────────────────────────────────────
+
+  /** Default fill for a new token: the palette colour least used on this
+   *  map, so new tokens don't all come out the same blue. */
+  private nextTokenFill(): string {
+    this.loadTokensForMap();
+    return pickTokenFill(this.tokenEntries.map((t) => t.color));
+  }
 
   private loadTokensForMap(): void {
     this.tokenEntries = [];
