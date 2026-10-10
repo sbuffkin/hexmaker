@@ -271,6 +271,8 @@ export const ROLLED_TEXT_SECTIONS = [
 export interface HexEditorOptions {
 	/** GM layer is active: force Notes open, highlight Hidden/Secret sections. */
 	gmLayerActive?: boolean;
+	/** Turns the map's GM layer on (offered when Hidden/Secret are hidden because it's off). */
+	onEnableGmLayer?: () => void;
 	/** Called when the user clicks a neighbour tile to navigate to an adjacent hex. */
 	onNavigate?: (x: number, y: number) => void;
 	/** Called when the modal closes (e.g. to clear the selected-hex highlight). */

@@ -297,6 +297,19 @@ export class HexEditorModal extends HexmakerModal {
         allText.get(key) ?? "",
       );
     }
+    // New maps start with the GM layer off, which hides Hidden and Secret;
+    // say so rather than leave a GM wondering where they went.
+    if (!this.options.gmLayerActive && this.options.onEnableGmLayer) {
+      const hint = notesBody.createDiv({ cls: "duckmage-editor-gm-hint" });
+      hint.createSpan({ text: "Hidden and Secret notes show while the GM layer is on. " });
+      const show = hint.createEl("a", { text: "Show them", href: "#" });
+      show.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.options.onEnableGmLayer?.();
+        this.options.gmLayerActive = true;
+        this.onOpen();
+      });
+    }
     // Weather and Hooks & Rumors (E2): rolled from the region's tables,
     // folded away unless the hex already has some.
     const rolled = notesBody.createEl("details", { cls: "duckmage-editor-rolled-sections" });

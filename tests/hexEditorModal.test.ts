@@ -229,6 +229,55 @@ describe("HexEditorModal section start-collapsed settings", () => {
 	});
 });
 
+// ── Hidden/Secret hint when the GM layer is off (fresh-eyes round 6) ─────────
+
+describe("HexEditorModal GM-layer hint", () => {
+	/** Render with stubs; return the texts of hint divs and a "Show them" click. */
+	function render(gmLayerActive: boolean, onEnableGmLayer?: () => void) {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		(plugin as any).getMapPalette = () => [];
+		const modal = new HexEditorModal(
+			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive, onEnableGmLayer },
+		) as any;
+		const hints: string[] = [];
+		let click: (() => void) | null = null;
+		const el = (): any => ({
+			dataset: {}, setText: () => {}, toggleClass: () => {}, addClass: () => {}, isShown: () => true,
+			createEl: (_t: string, o?: { text?: string }) => {
+				const a = el();
+				if (o?.text === "Show them") a.addEventListener = (_e: string, fn: (e: { preventDefault(): void }) => void) => { click = () => fn({ preventDefault: () => {} }); };
+				return a;
+			},
+			createSpan: (o?: { text?: string }) => { if (o?.text) hints.push(o.text); return el(); },
+			createDiv: (o?: { cls?: string }) => (o?.cls === "duckmage-editor-gm-hint" ? (hints.push("<hint>"), el()) : el()),
+			addEventListener: () => {},
+			toggle: () => {},
+		});
+		modal.makeCollapsible = () => ({ body: el(), header: el() });
+		modal.renderTerrainHeader = () => {};
+		modal.renderTerrainSection = () => {};
+		modal.renderIconSections = () => {};
+		modal.renderTextSection = () => {};
+		modal.renderDropdownSection = () => {};
+		modal.onOpen = () => {};
+		modal.renderBody(el(), "hex/1_1.md");
+		return { hints, click: () => click?.(), modal };
+	}
+
+	it("offers to show Hidden and Secret when the GM layer is off", () => {
+		let enabled = 0;
+		const r = render(false, () => enabled++);
+		expect(r.hints).toContain("<hint>");
+		r.click();
+		expect(enabled).toBe(1);
+		expect(r.modal.options.gmLayerActive).toBe(true);
+	});
+
+	it("shows no hint when the GM layer is on", () => {
+		expect(render(true, () => {}).hints).not.toContain("<hint>");
+	});
+});
+
 // ── Navigation: reload on hex change ─────────────────────────────────────────
 
 describe("HexEditorModal navigation reload", () => {

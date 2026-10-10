@@ -7560,3 +7560,10 @@ button.duckmage-wfc-library-tab.is-active {
     white-space: nowrap;
     cursor: pointer;
 }
+
+/* Hex editor: why Hidden/Secret are missing when the GM layer is off. */
+.duckmage-editor-gm-hint {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin: 4px 0;
+}

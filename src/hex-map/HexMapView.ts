@@ -4169,6 +4169,12 @@ export class HexMapView extends ItemView {
       },
       {
         gmLayerActive: this.getActiveMap().showGmLayer ?? true,
+        onEnableGmLayer: () => {
+          this.getActiveMap().showGmLayer = true;
+          void this.plugin.saveSettings();
+          this.overlayPanel?.syncToRegion();
+          this.updateGmIcons();
+        },
         onNavigate: (nx: number, ny: number) => this.setSelectedHex(nx, ny),
         onModalClose: () => {
           if (this.selectedHex) {
