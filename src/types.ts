@@ -96,6 +96,8 @@ export interface MapData {
 	showLinkBadges?: boolean;
 	/** Badge types turned off in the layers menu (BADGE_SECTIONS names). */
 	hiddenLinkBadges?: string[];
+	/** Link badge size, "s" | "m" | "l"; undefined = DEFAULT_BADGE_SIZE (linkBadges.ts). */
+	linkBadgeSize?: string;
 	showHexNames?: boolean;       // undefined = true: hex name labels on the map
 	showTokenNames?: boolean;     // undefined = true: name under each token
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting

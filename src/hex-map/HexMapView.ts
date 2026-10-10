@@ -33,7 +33,7 @@ import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
-import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
+import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
@@ -42,8 +42,8 @@ import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
-import { findRoute } from "./autoRoute";
-import { impassableNames, noRouteMessage, pathAvoidsImpassable } from "../impassable";
+import { addRoutedLeg, findRoute } from "./autoRoute";
+import { impassableNames, noRouteMessage, pathAvoidsImpassable, pathMeanders } from "../impassable";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
   hexNeighbors,
@@ -60,7 +60,7 @@ import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
-import { hexKeyFromBasename, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
+import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, legendBadgeKinds, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
 import { legendSize, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
@@ -195,6 +195,10 @@ export class HexMapView extends ItemView {
   private coordLabels = new Map<string, HTMLElement>();
   // Link badges + terrain legend refresh on note / map-store changes (debounced).
   private badgeTimer: number | null = null;
+  /** Badge kinds some hex of the map shows (for the legend). */
+  private badgeKindsOnMap: BadgeSection[] = [];
+  /** Link sections per hex ("x_y") from the last badge render; names keep clear of them. */
+  private badgeSectionsByHex = new Map<string, BadgeSection[]>();
   /** Cancels a renderGrid waiting for the grid to get a layout size. */
   private cancelMeasuredLayers: (() => void) | null = null;
   private legendTimer: number | null = null;
@@ -774,19 +778,7 @@ export class HexMapView extends ItemView {
     // current terrain (painting doesn't re-render the grid).
     this.registerDomEvent(clipEl, "mouseover", (e: MouseEvent) => {
       const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
-      if (!hexEl) return;
-      const x = Number(hexEl.dataset.x);
-      const y = Number(hexEl.dataset.y);
-      const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
-      const own = getTerrainFromFile(this.app, hexPath);
-      // The notes it links (towns, dungeons…), from the metadata cache (S3).
-      const note = this.app.vault.getAbstractFileByPath(hexPath);
-      const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note))) : "";
-      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked);
-      if (hexEl.title !== label) {
-        hexEl.title = label;
-        hexEl.setAttr("aria-label", label);
-      }
+      if (hexEl) this.labelHex(hexEl);
     });
 
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
@@ -1242,14 +1234,24 @@ export class HexMapView extends ItemView {
       (show) => { if (show) this.updateRegionOverlay(); else this.clearRegionOverlay(); },
       () => { this.updateGmIcons(); },
       (show) => { if (show) this.updateTokenLayer(); else this.viewportEl?.querySelector(".duckmage-token-layer")?.remove(); },
-      { onLegendChange: () => this.refreshTerrainLegend() },
+      {
+        onLegendChange: () => this.refreshTerrainLegend(),
+        // Badge size or kinds changed: redraw the badges and the legend.
+        onBadgesChange: () => {
+          const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+          if (grid && !this.cancelMeasuredLayers) {
+            this.renderLinkBadges(grid);
+            this.drawHexNames(grid, true);
+          }
+          this.refreshTerrainLegend();
+        },
+      },
     );
     toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
     this.overlayPanel.onBeforeOpen = () => toolsPanel.close();
-    // An open panel covers the map's right side: move a covered map edge
-    // out from under it (round 4: the panel hid edge hexes).
-    toolsPanel.onAfterOpen = () => this.uncoverGrid();
-    this.overlayPanel.onAfterOpen = () => this.uncoverGrid();
+    // Opening or closing a panel never moves the map (round 7 R9: the map
+    // slid left each time the layers panel opened). A panel may cover a few
+    // hexes; fitting and centring a hex still keep clear of it.
 
     // Saving indicator — appears while background writes are in flight
     this.savingIndicatorEl = controlsEl.createSpan({
@@ -3465,28 +3467,6 @@ export class HexMapView extends ItemView {
     return overlayInsets(clip, top, right);
   }
 
-  /**
-   * Pan so a map edge that sits on screen under the toolbar rows, the mode
-   * bar or an open side panel comes out from under it (round 4: the tools
-   * panel hid edge hexes; the mode bar covered the bottom row).
-   */
-  private uncoverGrid(): void {
-    if (!mayAutoPan(this.drawingMode)) return;
-    const clipEl = this.viewportEl?.parentElement;
-    if (!clipEl) return;
-    const clip = clipEl.getBoundingClientRect();
-    if (clip.width === 0 || clip.height === 0) return;
-    const g = this.measureContentBox();
-    if (!g) return;
-    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
-    const dx = uncoverEdgeDelta(g.left - clip.left, g.right - clip.left, ins.left, clip.width - ins.right, 0, clip.width);
-    const dy = uncoverEdgeDelta(g.top - clip.top, g.bottom - clip.top, ins.top, clip.height - ins.bottom, 0, clip.height);
-    if (dx === 0 && dy === 0) return;
-    this.panX += dx;
-    this.panY += dy;
-    this.applyTransform();
-  }
-
   private flushPendingZoom(): void {
     if (this.pendingZoomLog === 0 || !this.pendingZoomPivot) {
       this.pendingZoomLog = 0;
@@ -3968,10 +3948,16 @@ export class HexMapView extends ItemView {
     this.cancelMeasuredLayers?.();
     this.coordPlacements = [];
     this.coordLabels.clear();
-    this.cancelMeasuredLayers = whenSized(gridContainer, () => {
+    // whenSized may draw right away (the usual case): only keep the cancel
+    // while it's still waiting, or later redraws (names, badges) think the
+    // grid never got a size and skip (round 7: badge size didn't apply).
+    let drawn = false;
+    const cancel = whenSized(gridContainer, () => {
+      drawn = true;
       this.cancelMeasuredLayers = null;
       if (gridContainer.isConnected) this.renderMeasuredLayers(gridContainer, region);
     });
+    if (!drawn) this.cancelMeasuredLayers = cancel;
   }
 
   /** The layers placed from measured hex geometry (see renderGrid). */
@@ -4475,6 +4461,8 @@ export class HexMapView extends ItemView {
           );
         }
         if (terrain !== null) hexEl.addClass("duckmage-hex-exists");
+        // The pointer is usually still on this hex: refresh its label now (S18).
+        this.labelHex(hexEl, terrain);
       }
 
       // ── Queue background file write (coalescing per-hex) ────────────────
@@ -4804,10 +4792,35 @@ export class HexMapView extends ItemView {
     }
   }
 
+  /**
+   * A hex's tooltip / accessible name: name, terrain, coords, links.
+   * `terrain` (when given) is the terrain just painted, ahead of its queued
+   * write; otherwise a queued write wins over the saved map data. Called on
+   * hover and right after a repaint (round 7 S18: the label said "void (map
+   * base)" until the hex was hovered again).
+   */
+  private labelHex(hexEl: HTMLElement, terrain?: string | null): void {
+    const x = Number(hexEl.dataset.x);
+    const y = Number(hexEl.dataset.y);
+    const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
+    const pending = this.pendingTerrainWrites.get(hexPath);
+    const own = terrain !== undefined ? terrain : pending ? pending.terrain : getTerrainFromFile(this.app, hexPath);
+    // The notes it links (towns, dungeons…), from the metadata cache (S3).
+    const note = this.app.vault.getAbstractFileByPath(hexPath);
+    const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note))) : "";
+    const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked);
+    if (hexEl.title !== label) {
+      hexEl.title = label;
+      hexEl.setAttr("aria-label", label);
+    }
+  }
+
   private applyTerrainToHexEl(
     hexEl: HTMLElement,
     terrain: string | null,
   ): void {
+    // Undo/redo repaints too: keep the hover label in step (S18).
+    if (hexEl.title) this.labelHex(hexEl, terrain);
     const palette = this.plugin.getMapPalette(this.activeMapName);
     const entry =
       terrain != null ? palette.find((p) => p.name === terrain) : undefined;
@@ -5409,25 +5422,23 @@ export class HexMapView extends ItemView {
             return t !== null && blockedSet.has(t);
           }
         : undefined,
+      // Rivers wind; roads keep to the straight line (round 7 U17).
+      meander: type ? pathMeanders(type) : false,
     });
     if (!result.ok) {
       new Notice(result.reason === "no-route" ? noRouteMessage(blockedNames) : "Both ends must be on the map.");
       return;
     }
     const before = this.cloneChains(map.pathChains);
-    const start = this.activePathEnd;
-    let target: PathChain | undefined =
-      this.activePathChain && this.activePathChain.hexes[this.activePathChain.hexes.length - 1] === start
-        ? this.activePathChain
-        : map.pathChains.find(
-            (c) => c.typeName === this.activePathTypeName && c.hexes[c.hexes.length - 1] === start,
-          );
-    if (target) {
-      target.hexes.push(...result.hexes.slice(1));
-    } else {
-      target = { typeName: this.activePathTypeName, hexes: result.hexes };
-      map.pathChains.push(target);
-    }
+    // Continues a path only when it starts on that path's end; otherwise a
+    // new path. Existing hexes are never changed (round 7 R11).
+    const target = addRoutedLeg(
+      map.pathChains,
+      this.activePathTypeName,
+      result.hexes,
+      this.activePathChain,
+      (typeName, hexes): PathChain => ({ typeName, hexes }),
+    );
     this.activePathEnd = key;
     this.activePathChain = target;
     this.pushPathUndo(map.name, before, this.cloneChains(map.pathChains));
@@ -6042,7 +6053,15 @@ export class HexMapView extends ItemView {
         if (found.length) sections.set(key, found);
       }
     }
-    renderLinkBadgeLayer(gridContainer, this.coordPlacements, this.coordGridSize, sections);
+    this.badgeSectionsByHex = sections;
+    const map = this.getActiveMap();
+    renderLinkBadgeLayer(gridContainer, this.coordPlacements, this.coordGridSize, sections, badgeSize(map.linkBadgeSize));
+    // The legend lists the kinds on the map: redraw it when they change.
+    const kinds = [...new Set([...sections.values()].flat())];
+    if (kinds.sort().join() !== [...this.badgeKindsOnMap].sort().join()) {
+      this.badgeKindsOnMap = kinds;
+      this.refreshTerrainLegend();
+    }
   }
 
   private scheduleLinkBadges(): void {
@@ -6050,7 +6069,11 @@ export class HexMapView extends ItemView {
     this.badgeTimer = window.setTimeout(() => {
       this.badgeTimer = null;
       const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-      if (grid) this.renderLinkBadges(grid);
+      if (grid) {
+        this.renderLinkBadges(grid);
+        // Badges came or went: names make room for them.
+        if (!this.cancelMeasuredLayers) this.drawHexNames(grid, true);
+      }
     }, 300);
   }
 
@@ -6070,10 +6093,27 @@ export class HexMapView extends ItemView {
     const names = this.hexNames();
     const fills = this.hexNameFills(names);
     // The fill is in the signature: repainting a named hex can flip its name's tone.
-    const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}`).sort().join("\n");
+    // Badges in the signature too: names make room for them (R8).
+    const limits = this.nameBadgeLimits(names);
+    const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}|${limits.get(k) ?? ""}`).sort().join("\n");
     if (onlyIfChanged && sig === this.drawnHexNames) return;
     this.drawnHexNames = sig;
-    renderHexNameLayer(gridContainer, names, fills);
+    renderHexNameLayer(gridContainer, names, fills, this.plugin.settings.coordPlacement ?? "bottom", limits);
+  }
+
+  /** How far right each named hex's name may reach: clear of its shown badges (R8). */
+  private nameBadgeLimits(names: ReadonlyMap<string, string>): Map<string, number> {
+    const out = new Map<string, number>();
+    const map = this.getActiveMap();
+    if (!(map.showLinkBadges ?? true)) return out;
+    const hidden = new Set(map.hiddenLinkBadges ?? []);
+    const size = badgeSize(map.linkBadgeSize);
+    const flat = this.plugin.settings.hexOrientation === "flat";
+    for (const key of names.keys()) {
+      const n = (this.badgeSectionsByHex.get(key) ?? []).filter((s) => !hidden.has(s)).length;
+      if (n) out.set(key, badgeNameLimit(size, flat, n));
+    }
+    return out;
   }
 
   /** Terrain colour under each named hex (map data + palette; no DOM reads). */
@@ -6122,7 +6162,11 @@ export class HexMapView extends ItemView {
     }
     if (map.baseTerrain && painted < cols * rows) used.push(map.baseTerrain);
     const entries = usedTerrainEntries(this.plugin.getMapPalette(this.activeMapName), used);
+    // The link badge kinds on the map, as on the PNG legend (round 7 R8).
+    const badges = legendBadgeKinds(this.badgeKindsOnMap, map.showLinkBadges ?? true, map.hiddenLinkBadges)
+      .map((s) => ({ label: BADGE_INFO[s].label, icon: BADGE_INFO[s].icon, cls: BADGE_INFO[s].cls }));
     renderTerrainLegend(parent, entries, {
+      badges,
       size: legendSize(settings.terrainLegendSize),
       cls: "duckmage-terrain-legend-map",
       iconUrl: (icon) => getIconUrl(this.plugin, icon),

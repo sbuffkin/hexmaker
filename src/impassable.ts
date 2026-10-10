@@ -46,6 +46,18 @@ export function pathAvoidsImpassable(pt: Pick<PathType, "name" | "avoidImpassabl
   return pt.avoidImpassable ?? !WATERY_PATH.test(pt.name);
 }
 
+/** River-like path names (they wind when auto-routed). */
+const RIVER_PATH = /\b(river|stream|creek)s?\b/i;
+
+/**
+ * Whether auto-routes of this path type meander (rivers) rather than keep to
+ * the straight line (roads): types that don't avoid impassable terrain, or
+ * that are named like a river (round 7 U17).
+ */
+export function pathMeanders(pt: Pick<PathType, "name" | "avoidImpassable">): boolean {
+  return !pathAvoidsImpassable(pt) || RIVER_PATH.test(pt.name);
+}
+
 /** Palette-note cell for the flag: "yes"/"no" for overrides, "" for the type default. */
 export function impassableCell(t: Pick<TerrainColor, "impassable">): string {
   return t.impassable === undefined ? "" : t.impassable ? "yes" : "no";

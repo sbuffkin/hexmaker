@@ -43,10 +43,11 @@ import {
   pngHexNamePx,
   pngHexNameY,
   pngTokenRadius,
+  pngPathWidth,
   pngTokenSpread,
   wrapHexName,
 } from "./handoutLabels";
-import { BADGE_INFO, BADGE_SECTIONS, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
+import { BADGE_INFO, BADGE_SECTIONS, badgeSize, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
 import { usedTerrainEntries } from "../hex-map/terrainLegend";
 import { hexNameTone } from "../hex-map/hexNameLayer";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
@@ -526,8 +527,11 @@ export async function renderMapToPngBlob(
         smooth = true;
       }
       if (pts.length < 2) return;
-      pts = offsetPolyline(pts, laneOffset[idx]);
-      drawPath(ctx, pts, pt.color, pt.width, dash, smooth);
+      // Lanes, stroke and dashes grow with the image's hex size (U18).
+      const width = pngPathWidth(pt.width, R);
+      const k = width / (pt.width || 1);
+      pts = offsetPolyline(pts, laneOffset[idx] * k);
+      drawPath(ctx, pts, pt.color, width, dash.map((d) => d * k), smooth);
     });
   }
 
@@ -597,7 +601,7 @@ export async function renderMapToPngBlob(
   if (showLinkBadges) {
     for (const hex of hexes) {
       if (!hex.badges.length) continue;
-      const circles = pngBadgeCircles(hex.cx, hex.cy, R, isFlat, hex.badges.length);
+      const circles = pngBadgeCircles(hex.cx, hex.cy, R, isFlat, hex.badges.length, badgeSize(map.linkBadgeSize));
       hex.badges.forEach((s, i) => drawBadge(ctx, circles[i].x, circles[i].y, circles[i].r, BADGE_INFO[s].color, badgeIcons.get(s)));
     }
   }

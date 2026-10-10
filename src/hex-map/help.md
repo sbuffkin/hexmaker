@@ -45,7 +45,7 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ### Road / River
 Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
 
-**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once.
+**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once. Rivers wind gently; roads keep straight. Starting on the end of a path of the same type continues it; starting anywhere else makes a new path.
 
 ### Terrain
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
@@ -85,14 +85,16 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 
 The layers button (top right) turns these on and off.
 
-- **Link badges**: a small badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). Hover the hex to see what it links. Click ▸ to pick which kinds show.
-- **Legend**: the terrains used on this map, bottom right. **S / M / L** sets its size, **×** hides it.
+- **Link badges**: a coloured icon badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). **S / M / L** beside the toggle sets their size for this map. Hover the hex to see what it links. Click ▸ to pick which kinds show.
+- **Legend**: the terrains used on this map and the badge kinds shown, bottom right. **S / M / L** sets its size, **×** hides it.
+
+Opening the layers panel or the drawing tools never moves the map.
 
 ## Names and labels
 
 Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it.
 
-Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names wrap onto two lines inside the hex, in a colour that reads on the terrain. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
+Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names shrink and wrap at spaces (never mid-word) inside the hex, clear of its badges, in a colour that reads on the terrain; zoom in to read small ones. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 
 ---
 

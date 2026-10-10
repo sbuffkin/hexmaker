@@ -1,7 +1,7 @@
 import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
-import { BADGE_INFO, BADGE_SECTIONS, badgeHideClass, toggleHiddenBadge } from "./linkBadges";
+import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, toggleHiddenBadge } from "./linkBadges";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
 
@@ -11,8 +11,6 @@ export abstract class HexSidePanel {
   private _isOpen = false;
   /** Called just before this panel opens — used for mutual exclusion. */
   public onBeforeOpen?: () => void;
-  /** Called once the panel is shown (the map moves hexes out from under it). */
-  public onAfterOpen?: () => void;
 
   constructor(
     container: HTMLElement,
@@ -47,7 +45,6 @@ export abstract class HexSidePanel {
     this._isOpen = true;
     this.panelEl.show();
     this.toggleBtn.addClass("is-active");
-    this.onAfterOpen?.();
   }
 
   close(): void {
@@ -117,6 +114,8 @@ const OVERLAY_OPTIONS: OverlayOption[] = [
 export interface OverlayPanelExtras {
   /** Terrain legend toggled (a plugin-wide setting, not per map). */
   onLegendChange?: (show: boolean) => void;
+  /** Badge size or the badge kinds shown changed (redraw badges + legend). */
+  onBadgesChange?: () => void;
 }
 
 export class OverlayPanel extends HexSidePanel {
@@ -134,6 +133,7 @@ export class OverlayPanel extends HexSidePanel {
   private tokensCb: HTMLInputElement | null = null;
   private badgesCb: HTMLInputElement | null = null;
   private badgeChips = new Map<string, HTMLButtonElement>();
+  private badgeSizeBtns = new Map<string, HTMLButtonElement>();
   private legendCb: HTMLInputElement | null = null;
   private extras: OverlayPanelExtras;
 
@@ -318,6 +318,23 @@ export class OverlayPanel extends HexSidePanel {
     cb.checked = true;
     this.badgesCb = cb;
     const label = row.createSpan({ text: "Show link badges", cls: "duckmage-overlay-label" });
+    // Badge size, per map (round 7 R8): S / M / L beside the toggle.
+    const sizes = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Badge size" } });
+    for (const s of BADGE_SIZES) {
+      const b = sizes.createEl("button", {
+        cls: "duckmage-overlay-size",
+        text: s.toUpperCase(),
+        attr: { "aria-label": `Badge size ${s.toUpperCase()}` },
+      });
+      this.badgeSizeBtns.set(s, b);
+      b.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        map.linkBadgeSize = s;
+        void this.plugin.saveSettings();
+        this.applyBadgeClasses(map);
+        this.extras.onBadgesChange?.();
+      });
+    }
     const more = row.createEl("button", {
       cls: "clickable-icon duckmage-overlay-more",
       attr: { "aria-label": "Pick badge types", "aria-expanded": "false" },
@@ -337,6 +354,7 @@ export class OverlayPanel extends HexSidePanel {
       map.showLinkBadges = cb.checked;
       void this.plugin.saveSettings();
       this.applyBadgeClasses(map);
+      this.extras.onBadgesChange?.();
     };
     cb.addEventListener("change", apply);
     label.addEventListener("click", () => {
@@ -357,6 +375,7 @@ export class OverlayPanel extends HexSidePanel {
         map.hiddenLinkBadges = toggleHiddenBadge(map.hiddenLinkBadges, s);
         void this.plugin.saveSettings();
         this.applyBadgeClasses(map);
+        this.extras.onBadgesChange?.();
       });
     }
   }
@@ -365,6 +384,11 @@ export class OverlayPanel extends HexSidePanel {
     const show = map.showLinkBadges ?? true;
     const hidden = new Set(map.hiddenLinkBadges ?? []);
     if (this.badgesCb) this.badgesCb.checked = show;
+    const size = badgeSize(map.linkBadgeSize);
+    for (const [s, b] of this.badgeSizeBtns) {
+      b.toggleClass("is-active", s === size);
+      b.setAttr("aria-pressed", String(s === size));
+    }
     for (const [s, chip] of this.badgeChips) {
       chip.toggleClass("is-off", hidden.has(s));
       chip.setAttr("aria-pressed", String(!hidden.has(s)));

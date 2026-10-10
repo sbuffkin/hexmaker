@@ -217,3 +217,107 @@ describe("hover names the linked notes (round 6 S3)", () => {
 		expect(linkedNotesText(new Map())).toBe("");
 	});
 });
+
+// ── Round 7 R8: badge size (S / M / L) and badges in the live legend ──
+import { BADGE_LAYOUT, badgeNameLimit, badgeSize, DEFAULT_BADGE_SIZE, legendBadgeKinds } from "../src/hex-map/linkBadges";
+import { layoutHexName } from "../src/hex-map/hexNameLayer";
+import { pngBadgeCircles as pngBadges, pngPathWidth } from "../src/export/handoutLabels";
+
+describe("badge size (round 7 R8)", () => {
+	it("defaults to M from one constant; S is the round 6 size", () => {
+		expect(DEFAULT_BADGE_SIZE).toBe("m");
+		expect(badgeSize(undefined)).toBe(DEFAULT_BADGE_SIZE);
+		expect(badgeSize("junk")).toBe(DEFAULT_BADGE_SIZE);
+		expect(badgeSize("s")).toBe("s");
+		expect(BADGE_LAYOUT.s.chip).toBe(0.8);
+		expect(BADGE_LAYOUT.m.chip).toBeGreaterThan(BADGE_LAYOUT.s.chip);
+		expect(BADGE_LAYOUT.l.chip).toBeGreaterThan(BADGE_LAYOUT.m.chip);
+	});
+
+	it("keeps hex names clear of the badges, at every size", () => {
+		// Hex radius 2.2em, so pngBadgeCircles works in grid em here.
+		const measure = (t: string) => t.length * 0.6;
+		for (const s of ["s", "m", "l"] as const) {
+			for (const flat of [true, false]) {
+				for (let n = 1; n <= 5; n++) {
+					const chipsLeft = Math.min(...pngBadges(0, 0, 2.2, flat, n, s, "map").map((c) => c.x - c.r));
+					const limit = badgeNameLimit(s, flat, n);
+					expect(limit).toBeLessThan(chipsLeft);
+					for (const name of ["Gullmouth", "The Drowned Abbey", "Hut"]) {
+						const l = layoutHexName(name, { measure, hexW: flat ? 4.4 : 3.81, hexH: flat ? 3.81 : 4.4, flat, rightLimit: limit });
+						const widest = Math.max(...l.lines.map(measure)) * l.fontEm;
+						expect(l.dxEm + widest / 2).toBeLessThanOrEqual(limit + 1e-6);
+					}
+				}
+			}
+		}
+		expect(badgeNameLimit("m", true, 0)).toBe(Infinity);
+	});
+
+	it("draws the PNG badges at the map's size", () => {
+		expect(pngBadges(0, 0, 22, true, 1, "s")[0].r).toBeCloseTo(4);
+		expect(pngBadges(0, 0, 22, true, 1, "m")[0].r).toBeCloseTo(6);
+		expect(pngBadges(0, 0, 22, true, 1)[0].r).toBeCloseTo((BADGE_LAYOUT[DEFAULT_BADGE_SIZE].chip / 2) * 10);
+		// M stacks two in a column, then starts a second.
+		expect(new Set(pngBadges(0, 0, 22, true, 3, "m").map((c) => c.x.toFixed(2))).size).toBe(2);
+	});
+
+	it("saves the size in the map note", () => {
+		const data = { settings: { paletteName: "Default", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, linkBadgeSize: "l" }, hexes: new Map(), paths: [] };
+		const note = buildMapNote("m", data);
+		expect(note).toContain("link-badge-size: l");
+		expect(parseMapNote(note)!.settings.linkBadgeSize).toBe("l");
+	});
+
+	it("sizes chips from a CSS variable, with a size picker in the layers menu", () => {
+		const css = readFileSync("styles.css", "utf8");
+		const at = css.indexOf(".duckmage-link-badge {");
+		expect(css.slice(at, css.indexOf("}", at))).toMatch(/width:\s*var\(--duckmage-badge-size/);
+		const panel = readFileSync("src/hex-map/HexSidePanel.ts", "utf8");
+		expect(panel).toMatch(/for \(const s of BADGE_SIZES\)/);
+		expect(panel).toContain("map.linkBadgeSize = s;");
+	});
+});
+
+describe("the live legend lists the badge kinds (round 7 R8)", () => {
+	it("lists kinds on the map that are shown, in badge order", () => {
+		expect(legendBadgeKinds(["Dungeons", "Towns"], true, undefined)).toEqual(["Towns", "Dungeons"]);
+		expect(legendBadgeKinds(["Dungeons", "Towns"], true, ["Dungeons"])).toEqual(["Towns"]);
+		expect(legendBadgeKinds(["Dungeons", "Towns"], false, undefined)).toEqual([]);
+		expect(legendBadgeKinds([], true, undefined)).toEqual([]);
+	});
+
+	it("is wired into the map's legend", () => {
+		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8");
+		expect(view).toMatch(/legendBadgeKinds\(this\.badgeKindsOnMap/);
+		expect(view).toMatch(/renderTerrainLegend\(parent, entries, \{\s*badges,/);
+	});
+});
+
+describe("paths are bolder in PNG exports (round 7 U18)", () => {
+	it("scales the stroke with the image's hex size, never thinner than on screen", () => {
+		expect(pngPathWidth(3, 50)).toBeGreaterThan(3 * 1.9);
+		expect(pngPathWidth(3, 100)).toBeCloseTo(pngPathWidth(3, 50) * 2);
+		expect(pngPathWidth(3, 10)).toBe(3);
+	});
+});
+
+describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
+	it("keeps a column of chips inside the hex's outline, clear of the PNG name band", () => {
+		// Hex radius 2.2 (em units). PNG names sit 0.55 radius above the centre.
+		for (const s of ["m", "l"] as const) {
+			for (const flat of [true, false]) {
+				for (let n = 1; n <= BADGE_LAYOUT[s].perColumn; n++) {
+					for (const c of pngBadges(0, 0, 2.2, flat, n, s)) {
+						// The chip's point at 45° away from the centre.
+						const x = Math.abs(c.x) + c.r * 0.7;
+						const y = Math.abs(c.y) + c.r * 0.7;
+						const edge = flat ? (x <= 1.1 ? 1.905 : (1.905 * (2.2 - x)) / 1.1) : 2.2 - x / Math.sqrt(3);
+						expect(x).toBeLessThanOrEqual(flat ? 2.2 : 1.905);
+						expect(y).toBeLessThanOrEqual(edge + 1e-9);
+					}
+				}
+			}
+		}
+	});
+});

@@ -7133,43 +7133,52 @@ button.duckmage-wfc-library-tab.is-active {
 }
 /* A column at the hex's right side, centred on its middle row: the hex name
    and the coordinates sit above and below the middle, so a badge there
-   covers neither (round 6 R1). Four or five kinds go in two columns. */
+   covers neither (round 6 R1). More kinds go in two columns. Chip size
+   and the column's right edge come from the map's badge size (S / M / L,
+   BADGE_LAYOUT in linkBadges.ts), set on the layer. */
 .duckmage-link-badges {
     position: absolute;
-    left: calc(var(--duckmage-badge-x, 50%) + 1.75em);
+    left: calc(var(--duckmage-badge-x, 50%) + var(--duckmage-badge-right, 1.95em));
     top: var(--duckmage-badge-y, 50%);
     transform: translate(-100%, -50%);
     display: grid;
-    grid-template-columns: 0.8em;
+    grid-template-columns: var(--duckmage-badge-size, 0.8em);
     gap: 0.06em;
 }
 .duckmage-link-badges.is-two-col {
-    grid-template-columns: 0.8em 0.8em;
-}
-.duckmage-grid-flat .duckmage-link-badges {
-    left: calc(var(--duckmage-badge-x, 50%) + 1.95em);
+    grid-template-columns: var(--duckmage-badge-size, 0.8em) var(--duckmage-badge-size, 0.8em);
 }
 .duckmage-link-badge-towns    { --duckmage-badge-color: #c0803a; }
 .duckmage-link-badge-dungeons { --duckmage-badge-color: #8e3b46; }
 .duckmage-link-badge-features { --duckmage-badge-color: #3f7f5f; }
 .duckmage-link-badge-quests   { --duckmage-badge-color: #b59a2a; }
 .duckmage-link-badge-factions { --duckmage-badge-color: #5a5fb0; }
+/* A filled chip: the kind's colour, a white rim and a dark outline so it
+   reads on any terrain, and its icon in white (round 7 R8). */
 .duckmage-link-badge {
-    width: 0.8em;
-    height: 0.8em;
+    width: var(--duckmage-badge-size, 0.8em);
+    height: var(--duckmage-badge-size, 0.8em);
+    box-sizing: border-box;
     border-radius: 50%;
     background: var(--duckmage-badge-color, #666666);
     color: #ffffff;
-    border: 0.06em solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 0 0.12em rgba(0, 0, 0, 0.6);
+    border: max(1px, calc(var(--duckmage-badge-size, 0.8em) * 0.09)) solid #ffffff;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.55),
+        0 0.05em 0.2em rgba(0, 0, 0, 0.55);
     display: flex;
     align-items: center;
     justify-content: center;
 }
 .duckmage-link-badge svg {
-    width: 0.52em;
-    height: 0.52em;
+    width: 64%;
+    height: 64%;
     stroke-width: 2.6;
+}
+/* Badge kinds in the map's legend */
+.duckmage-terrain-legend .duckmage-link-badge {
+    --duckmage-badge-size: var(--duckmage-legend-swatch, 1.3em);
+    flex-shrink: 0;
 }
 .duckmage-hide-link-badges .duckmage-link-badges-layer { display: none; }
 .duckmage-hide-badge-towns .duckmage-link-badge-towns,
@@ -7183,6 +7192,24 @@ button.duckmage-wfc-library-tab.is-active {
     margin-left: auto;
     padding: 0 2px;
     height: auto;
+}
+/* Badge size S / M / L, in the badges row (round 7 R8) */
+.duckmage-overlay-sizes {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.duckmage-overlay-sizes + .duckmage-overlay-more { margin-left: 2px; }
+.duckmage-overlay-sizes button.duckmage-overlay-size {
+    font-size: 0.8em;
+    padding: 0 4px;
+    height: 1.6em;
+    min-width: 1.6em;
+    box-shadow: none;
+}
+.duckmage-overlay-sizes button.duckmage-overlay-size.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
 }
 .duckmage-overlay-more svg { transition: transform 120ms ease; }
 .duckmage-overlay-more.is-open svg { transform: rotate(90deg); }
@@ -7422,28 +7449,20 @@ button.duckmage-wfc-library-tab.is-active {
     position: absolute;
     left: var(--duckmage-name-x, 50%);
     top: var(--duckmage-name-y, 50%);
-    /* Below the centre (the icon), or above it when coordinates sit at the bottom. */
-    transform: translate(-50%, calc(-50% + var(--duckmage-name-y-offset, 1.35em)));
-    font-size: 0.95em;
+    /* On the side away from the coordinates; offset, size and line breaks
+       come from layoutHexName (hexNameLayer.ts), all in em so the name
+       scales with the zoom. Lines break only at spaces (round 7 R7). */
+    transform: translate(calc(-50% + var(--duckmage-name-dx, 0em)), calc(-50% + var(--duckmage-name-dy, 0em)));
+    font-size: var(--duckmage-name-font, 0.95em);
     font-weight: 700;
     line-height: 1.1;
     --duckmage-name-ink: var(--text-normal);
     --duckmage-name-halo: var(--background-primary);
     color: var(--duckmage-name-ink);
-    /* Kept inside the hex (round 6 U5): at most two lines within about the
-       hex's width (set from JS in em), then an ellipsis; the hex's hover
-       shows the whole name. */
     width: max-content;
-    max-width: var(--duckmage-name-max-w, 4em);
     text-align: center;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    overflow: hidden;
-    padding: 0 2px;
+    white-space: pre;
+    padding: 0;
     user-select: none;
     text-shadow:
         -1px -1px 0 var(--duckmage-name-halo),
@@ -7460,18 +7479,6 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-hex-name-label.is-on-dark {
     --duckmage-name-ink: #ffffff;
     --duckmage-name-halo: rgba(0, 0, 0, 0.85);
-}
-/* Long names: smaller, two lines, nearer the centre so both lines stay in
-   the hex's half away from the coordinates. */
-.duckmage-hex-name-label.is-long {
-    font-size: 0.8em;
-    --duckmage-name-y-offset: 1.2em;
-}
-.duckmage-hex-map-viewport.duckmage-coord-bottom .duckmage-hex-name-label {
-    --duckmage-name-y-offset: -1.35em;
-}
-.duckmage-hex-map-viewport.duckmage-coord-bottom .duckmage-hex-name-label.is-long {
-    --duckmage-name-y-offset: -1.2em;
 }
 
 /* ── Token names under tokens (N5); hidden by the toggle but shown on hover ── */

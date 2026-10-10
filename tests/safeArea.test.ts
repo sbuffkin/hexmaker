@@ -9,7 +9,6 @@ import {
 	OVERLAY_GAP,
 	overlayInsets,
 	revealDelta,
-	uncoverEdgeDelta,
 	unionBoxes,
 	usableInsets,
 	zoomForHexWidth,
@@ -86,33 +85,6 @@ describe("revealDelta (flash the hex you came back to)", () => {
 	});
 });
 
-describe("uncoverEdgeDelta (a panel or the mode bar opens over the map)", () => {
-	it("pulls the grid's right edge out from under a just-opened panel", () => {
-		expect(uncoverEdgeDelta(300, 980, 0, 794, 0, 1000)).toBe(794 - 980);
-	});
-	it("moves no further than the free room on the other side (round 6: the map jumped)", () => {
-		// 100px free on the left: slide 100, not the full 186 that would cut the left column.
-		expect(uncoverEdgeDelta(100, 980, 0, 794, 0, 1000)).toBe(-100);
-		// Zoomed in, left edge already off screen: nothing is free, so stay put.
-		expect(uncoverEdgeDelta(-300, 900, 0, 794, 0, 1000)).toBe(0);
-		// Same on the top band: the bottom edge has only 20px to give.
-		expect(uncoverEdgeDelta(30, 780, 74, 800, 0, 800)).toBe(20);
-	});
-	it("pushes the grid's top edge below the toolbar band", () => {
-		expect(uncoverEdgeDelta(30, 700, 74, 800, 0, 800)).toBe(44);
-	});
-	it("leaves an edge alone when it's off screen (the user panned there)", () => {
-		expect(uncoverEdgeDelta(-500, 1500, 0, 794, 0, 1000)).toBe(0);
-		expect(uncoverEdgeDelta(-500, 2000, 74, 800, 0, 800)).toBe(0);
-	});
-	it("does nothing when the grid isn't on screen at all", () => {
-		expect(uncoverEdgeDelta(1200, 1600, 0, 794, 0, 1000)).toBe(0);
-	});
-	it("does nothing when nothing is covered", () => {
-		expect(uncoverEdgeDelta(100, 700, 0, 794, 0, 1000)).toBe(0);
-	});
-});
-
 describe("unionBoxes (the map's content box)", () => {
 	it("covers the grid, its overhanging edge hexes and the neighbour strip", () => {
 		const grid = { left: 539, top: 198, right: 1230, bottom: 886 };
@@ -130,13 +102,19 @@ describe("unionBoxes (the map's content box)", () => {
 describe("the map keeps hexes clear of its overlays", () => {
 	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
 
-	it("fitting, centring, flashing and opening a panel all respect the overlays", () => {
+	it("opening or closing a side panel never moves the map (round 7 R9)", () => {
+		const panel = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexSidePanel.ts"), "utf8").replace(/\r\n/g, "\n");
+		const open = panel.slice(panel.indexOf("  open(): void {"), panel.indexOf("  get isOpen()"));
+		expect(open).toContain("this.panelEl.show();");
+		expect(open).not.toMatch(/onAfterOpen|this\.pan[XY]|applyTransform/);
+		expect(view).not.toMatch(/onAfterOpen|uncoverGrid/);
+	});
+
+	it("fitting, centring and flashing a hex respect the overlays", () => {
 		expect(view).toMatch(/fitToSafeArea\(clipW, clipH, vw, vh, this\.measureOverlayInsets\(\)\)/);
 		// The content box (edge hexes + neighbour strip), not the grid element.
-		expect(view).toMatch(/private uncoverGrid[\s\S]{0,400}const g = this\.measureContentBox\(\);/);
 		expect(view).toMatch(/private measureContentBox[\s\S]{0,900}duckmage-region-shadow-hex/);
 		expect(view).toMatch(/private flashHex[\s\S]{0,250}this\.revealHexEl\(hexEl\);/);
-		expect(view).toMatch(/toolsPanel\.onAfterOpen = \(\) => this\.uncoverGrid\(\);/);
 		expect(view).toMatch(/centerOnHex[\s\S]{0,1400}this\.measureOverlayInsets\(\)/);
 	});
 });
@@ -155,8 +133,7 @@ describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => 
 			expect(mayAutoPan(tool)).toBe(false);
 	});
 
-	it("uncovering an edge and revealing a hex are gated on it", () => {
-		expect(body("uncoverGrid")).toMatch(/^private uncoverGrid\(\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
+	it("revealing a hex is gated on it", () => {
 		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
 	});
 

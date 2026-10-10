@@ -1,3 +1,4 @@
+import { setIcon } from "obsidian";
 import { createIconEl } from "../utils";
 
 /**
@@ -51,6 +52,16 @@ export interface LegendOptions {
   iconUrl?: (icon: string) => string;
   /** Extra class on the box (placement). */
   cls?: string;
+  /** Link badge kinds shown on the map, listed after the terrains. */
+  badges?: readonly LegendBadge[];
+}
+
+/** A link badge kind in the legend (as drawn on the map). */
+export interface LegendBadge {
+  label: string;
+  icon: string;
+  /** Suffix of the badge's colour class (duckmage-link-badge-<cls>). */
+  cls: string;
 }
 
 /** Build the legend box under `parent`, replacing a previous one there. */
@@ -60,7 +71,8 @@ export function renderTerrainLegend(
   opts: LegendOptions,
 ): HTMLElement | null {
   parent.querySelector(":scope > .duckmage-terrain-legend")?.remove();
-  if (entries.length === 0) return null;
+  const badges = opts.badges ?? [];
+  if (entries.length === 0 && badges.length === 0) return null;
   const box = parent.createDiv({
     cls: `duckmage-terrain-legend duckmage-terrain-legend-${opts.size}${opts.cls ? " " + opts.cls : ""}`,
   });
@@ -99,6 +111,12 @@ export function renderTerrainLegend(
       createIconEl(sw, opts.iconUrl(t.icon), t.name, t.iconColor, "duckmage-terrain-legend-icon");
     }
     row.createSpan({ cls: "duckmage-terrain-legend-name", text: t.name });
+  }
+  for (const b of badges) {
+    const row = list.createDiv({ cls: "duckmage-terrain-legend-row duckmage-terrain-legend-badge" });
+    const chip = row.createSpan({ cls: `duckmage-link-badge duckmage-link-badge-${b.cls}` });
+    setIcon(chip, b.icon);
+    row.createSpan({ cls: "duckmage-terrain-legend-name", text: b.label });
   }
   // Keep a press on the legend from starting a map pan.
   for (const ev of ["mousedown", "pointerdown"]) {

@@ -158,3 +158,114 @@ describe("findRoute keeps to the straight line on open ground (round 6 R5)", () 
 		});
 	}
 });
+
+// ── Round 7: rivers meander (U17); a new route never joins or reshapes (R11) ──
+import { addRoutedLeg, routeExtendTarget, type RouteChain } from "../src/hex-map/autoRoute";
+import { pathMeanders } from "../src/impassable";
+
+describe("auto-routed rivers wind (round 7 U17)", () => {
+	const sideOf = (k: string, a: string, b: string, o: Orientation, s: Stagger) => {
+		const c = (key: string) => {
+			const [x, y] = key.split("_").map(Number);
+			return hexCenter(x, y, o, s);
+		};
+		const [ax, ay] = c(a);
+		const [bx, by] = c(b);
+		const [px, py] = c(k);
+		return ((bx - ax) * (py - ay) - (by - ay) * (px - ax)) / Math.hypot(bx - ax, by - ay) / Math.sqrt(3);
+	};
+
+	for (const [o, s] of CONFIGS) {
+		it(`is a valid hex-by-hex route that bends away from the straight line (${o}/${s})`, () => {
+			const b = bounds(24, 16);
+			for (const [from, to] of [["11_13", "1_13"], ["2_8", "21_8"], ["3_2", "18_13"]] as [string, string][]) {
+				const r = findRoute(from, to, { orientation: o, stagger: s, bounds: b, meander: true });
+				expect(r.ok).toBe(true);
+				if (!r.ok) continue;
+				expect(r.hexes[0]).toBe(from);
+				expect(r.hexes[r.hexes.length - 1]).toBe(to);
+				expect(isConnected(r.hexes, o, s)).toBe(true);
+				expect(new Set(r.hexes).size).toBe(r.hexes.length); // never crosses itself
+				// Bends: some hex is a hex or more off the line (the tester's was dead straight).
+				const off = Math.max(...r.hexes.map((k) => Math.abs(sideOf(k, from, to, o, s))));
+				expect(off).toBeGreaterThanOrEqual(0.9);
+				// Gently: not much longer than the shortest route.
+				const f = from.split("_").map(Number) as [number, number];
+				const t = to.split("_").map(Number) as [number, number];
+				expect(r.hexes.length - 1).toBeLessThanOrEqual(Math.ceil(hexDistance(f, t, o, s) * 1.6) + 1);
+			}
+		});
+	}
+
+	it("gives the same river for the same two clicks, and honours a seed", () => {
+		const opts = { orientation: "flat" as const, bounds: bounds(24, 16), meander: true };
+		expect(findRoute("2_8", "21_8", opts)).toEqual(findRoute("2_8", "21_8", opts));
+		const a = findRoute("2_8", "21_8", { ...opts, meander: { seed: 1 } });
+		const b = findRoute("2_8", "21_8", { ...opts, meander: { seed: 1 } });
+		expect(a).toEqual(b);
+	});
+
+	it("still goes around blocked hexes and stays on the map", () => {
+		const wall = new Set(["10_5", "10_6", "10_7", "10_8", "10_9", "10_10"]);
+		const b = bounds(20, 16);
+		const r = findRoute("2_8", "18_8", { orientation: "flat", bounds: b, meander: true, blocked: (x, y) => wall.has(`${x}_${y}`) });
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.hexes.some((k) => wall.has(k))).toBe(false);
+		expect(r.hexes.every((k) => { const [x, y] = k.split("_").map(Number); return x >= 0 && x < 20 && y >= 0 && y < 16; })).toBe(true);
+	});
+
+	it("roads keep the straight line; only river-like path types meander", () => {
+		expect(pathMeanders({ name: "Road" })).toBe(false);
+		expect(pathMeanders({ name: "Trail" })).toBe(false);
+		expect(pathMeanders({ name: "River" })).toBe(true);
+		expect(pathMeanders({ name: "Mountain stream" })).toBe(true);
+		expect(pathMeanders({ name: "Creek" })).toBe(true);
+		// A type that crosses impassable terrain is river-like too…
+		expect(pathMeanders({ name: "Canal" })).toBe(true);
+		expect(pathMeanders({ name: "Old way", avoidImpassable: false })).toBe(true);
+		expect(pathMeanders({ name: "Road", avoidImpassable: true })).toBe(false);
+		// Without meander, the river from the tester's map is the straight shortest route.
+		const straight = findRoute("11_13", "6_14", { orientation: "flat", bounds: bounds(20, 16) });
+		expect(straight.ok && straight.hexes.length - 1).toBe(hexDistance([11, 13], [6, 14], "flat"));
+	});
+});
+
+describe("a second auto-route starts a new path (round 7 R11)", () => {
+	// The region tester's map: road keep (12_8) → Gullmouth (7_5), then a
+	// second road from the keep to the east edge.
+	const make = (typeName: string, hexes: string[]): RouteChain => ({ typeName, hexes });
+	const first = () => [make("Road", ["12_8", "11_7", "10_7", "9_6", "8_6", "7_5"]), make("River", ["11_13", "10_14", "9_13"])];
+
+	it("starting on the first road's first hex makes a new road and leaves the first untouched", () => {
+		const chains = first();
+		const before = JSON.parse(JSON.stringify(chains));
+		const leg = addRoutedLeg(chains, "Road", ["12_8", "13_8", "14_8", "15_8"], null, make);
+		expect(chains).toHaveLength(3);
+		expect(chains.slice(0, 2)).toEqual(before);
+		expect(leg).toBe(chains[2]);
+		expect(leg.hexes).toEqual(["12_8", "13_8", "14_8", "15_8"]);
+	});
+
+	it("starting in the middle of a road makes a new road", () => {
+		const chains = first();
+		expect(routeExtendTarget(chains, "Road", "10_7", null)).toBeNull();
+		addRoutedLeg(chains, "Road", ["10_7", "10_8"], chains[0], make);
+		expect(chains[0].hexes).toEqual(["12_8", "11_7", "10_7", "9_6", "8_6", "7_5"]);
+		expect(chains).toHaveLength(3);
+	});
+
+	it("starting exactly on a road's end continues it, adding only new hexes", () => {
+		const chains = first();
+		const leg = addRoutedLeg(chains, "Road", ["7_5", "7_4", "7_3"], null, make);
+		expect(leg).toBe(chains[0]);
+		expect(chains).toHaveLength(2);
+		expect(chains[0].hexes).toEqual(["12_8", "11_7", "10_7", "9_6", "8_6", "7_5", "7_4", "7_3"]);
+	});
+
+	it("a river's end doesn't continue a road", () => {
+		const chains = first();
+		expect(routeExtendTarget(chains, "Road", "9_13", null)).toBeNull();
+		expect(routeExtendTarget(chains, "River", "9_13", null)).toBe(chains[1]);
+	});
+});

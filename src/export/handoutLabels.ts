@@ -6,6 +6,7 @@
 
 import type { CoordPlacement } from "../coordStyle";
 import type { TokenSize } from "../types";
+import { BADGE_LAYOUT, DEFAULT_BADGE_SIZE, type BadgeSize } from "../hex-map/linkBadges";
 
 /**
  * Y of a hex name's baseline centre. Coordinates default to the bottom, so
@@ -22,6 +23,21 @@ export function pngHexNameY(
   return placement === "top" || placement === "middle"
     ? cy + hexRadius * 0.55
     : cy - hexRadius * 0.55;
+}
+
+/** The map's hex radius on screen at zoom 1, px (2.2em at 16px). */
+const SCREEN_HEX_RADIUS = 35.2;
+/** How much bolder than on screen paths are drawn in the PNG. */
+const PNG_PATH_BOLD = 1.4;
+
+/**
+ * Stroke width of a path in the PNG (round 7 U18: paths were too thin in
+ * exports). A path type's width is in screen px for the map's hexes, so it
+ * grows with the export's hex size, then a bit more so roads and rivers
+ * read on a printed handout; never thinner than on screen.
+ */
+export function pngPathWidth(width: number, hexRadius: number): number {
+  return Math.max(width, width * (hexRadius / SCREEN_HEX_RADIUS) * PNG_PATH_BOLD);
 }
 
 /** Hex name font size in the PNG, in pixels (readable at every output size). */
@@ -87,8 +103,10 @@ export function wrapHexName(name: string, maxWidth: number, measure: (s: string)
  * Link badges in the PNG: circles (centre + radius) for `count` badges at a
  * hex's right side, laid out like the on-screen badges: one column centred
  * on the hex's middle row (clear of the name above and the coordinates
- * below), two columns for four or five kinds. Units follow the map: the
- * on-screen hex radius is 2.2em, a badge 0.8em across.
+ * below), two columns past the size's per-column count. Units follow the
+ * map: the on-screen hex radius is 2.2em; chip sizes are BADGE_LAYOUT's.
+ * `place` "png" keeps M and L inside the hex (PNG names sit high, away from
+ * the middle row); "map" is the live map's layout, pinned on the hex's side.
  */
 export function pngBadgeCircles(
   cx: number,
@@ -96,12 +114,17 @@ export function pngBadgeCircles(
   hexRadius: number,
   isFlat: boolean,
   count: number,
+  size: BadgeSize = DEFAULT_BADGE_SIZE,
+  place: "png" | "map" = "png",
 ): { x: number; y: number; r: number }[] {
+  const layout = BADGE_LAYOUT[size];
   const em = hexRadius / 2.2;
-  const r = 0.4 * em;
+  const r = (layout.chip / 2) * em;
   const gap = 0.06 * em;
-  const right = cx + (isFlat ? 1.95 : 1.75) * em;
-  const cols = count > 3 ? 2 : 1;
+  const right = cx + (place === "png"
+    ? (isFlat ? layout.pngRightFlat : layout.pngRightPointy)
+    : (isFlat ? layout.rightFlat : layout.rightPointy)) * em;
+  const cols = count > layout.perColumn ? 2 : 1;
   const rows = Math.ceil(count / cols);
   const top = cy - (rows * 2 * r + (rows - 1) * gap) / 2;
   const out: { x: number; y: number; r: number }[] = [];
