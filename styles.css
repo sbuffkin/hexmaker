@@ -6927,3 +6927,12 @@ button.duckmage-wfc-library-tab.is-active {
     margin-left: 0;
     white-space: normal;
 }
+
+/* ── Fresh-eyes r5 (map view, editor, tokens) ─────────────────────────────── */
+
+/* A modal or menu just closed over the map: no hover highlight on the hex
+   under the unmoved pointer until it really moves (a stray highlight was
+   left on a hex after Create token). The selection still shows. */
+.duckmage-hex-map-viewport.duckmage-hover-paused .duckmage-hex:not(.is-selected):hover::after {
+    content: none;
+}

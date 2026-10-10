@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { hexHoverLabel, hexKeyCoords } from "../src/hex-map/hexHover";
+import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "../src/hex-map/hexHover";
 
 describe("hexHoverLabel", () => {
 	it("names the hex's terrain and coordinates", () => {
@@ -39,5 +39,30 @@ describe("coordinates read \"x, y\" everywhere people see them (fresh-eyes round
 			expect(src).not.toMatch(/on \$\{x\},\$\{y\}/);
 		}
 		expect(read("hex-table", "HexTableView.ts")).not.toMatch(/`\$\{x\},\$\{y\}/);
+	});
+});
+
+describe("no stray hover highlight after a modal closes (fresh-eyes round 5)", () => {
+	const el = (...classes: string[]) => ({ nodeType: 1, classList: { contains: (c: string) => classes.includes(c) } }) as unknown as Node;
+
+	it("notices a modal or menu leaving the page", () => {
+		expect(overlayClosed([el("modal-container", "mod-dim")])).toBe(true);
+		expect(overlayClosed([el("menu")])).toBe(true);
+		expect(overlayClosed([el("notice-container"), { nodeType: 3 } as unknown as Node])).toBe(false);
+		expect(overlayClosed([])).toBe(false);
+	});
+
+	it("resumes hover only once the pointer really moves", () => {
+		expect(pointerMovedFrom(null, 5, 5)).toBe(false);
+		expect(pointerMovedFrom({ x: 5, y: 5 }, 5, 5)).toBe(false);
+		expect(pointerMovedFrom({ x: 5, y: 5 }, 6, 5)).toBe(true);
+	});
+
+	it("the map pauses hover on close and the CSS hides it meanwhile", () => {
+		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+		const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
+		expect(view).toMatch(/overlayClosed\(Array\.from\(r\.removedNodes\)\)[\s\S]{0,200}addClass\("duckmage-hover-paused"\)/);
+		expect(view).toMatch(/pointerMovedFrom\(hoverPausedAt, e\.clientX, e\.clientY\)[\s\S]{0,120}removeClass\("duckmage-hover-paused"\)/);
+		expect(css.slice(css.indexOf("Fresh-eyes r5 (map view"))).toMatch(/\.duckmage-hover-paused \.duckmage-hex:not\(\.is-selected\):hover::after \{\s*content: none;/);
 	});
 });

@@ -35,7 +35,7 @@ import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
-import { hexHoverLabel, hexKeyCoords } from "./hexHover";
+import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
@@ -684,6 +684,26 @@ export class HexMapView extends ItemView {
     this.registerDomEvent(clipEl, "mouseleave", () => {
       this.updateBrushHighlight(null, null);
     });
+
+    // A modal or menu closing over the map leaves the hex under the unmoved
+    // pointer lit as if hovered (round 5: a stray highlight after Create
+    // token). Pause the hover highlight until the pointer really moves.
+    const doc = contentEl.ownerDocument;
+    let lastPointer = { x: -1, y: -1 };
+    let hoverPausedAt: { x: number; y: number } | null = null;
+    this.registerDomEvent(doc, "mousemove", (e: MouseEvent) => {
+      lastPointer = { x: e.clientX, y: e.clientY };
+      if (!pointerMovedFrom(hoverPausedAt, e.clientX, e.clientY)) return;
+      hoverPausedAt = null;
+      this.viewportEl?.removeClass("duckmage-hover-paused");
+    });
+    const overlayWatch = new MutationObserver((records) => {
+      if (!records.some((r) => overlayClosed(Array.from(r.removedNodes)))) return;
+      hoverPausedAt = { ...lastPointer };
+      this.viewportEl?.addClass("duckmage-hover-paused");
+    });
+    overlayWatch.observe(doc.body, { childList: true });
+    this.register(() => overlayWatch.disconnect());
 
     // Hover info: a hex's terrain + coords as its tooltip / accessible name.
     // One delegated listener, filled in on first hover of each hex — no
