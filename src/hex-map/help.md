@@ -78,6 +78,13 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 | **🎲** | Open the Random Tables browser — roll on any table, view odds, edit entries |
 | **⌖** | Go to a specific hex by entering X, Y coordinates |
 
+## Badges and legend
+
+The layers button (top right) turns these on and off.
+
+- **Link badges**: a small badge at a hex's corner for each kind of link in its note (towns, dungeons, features, quests, factions). Click ▸ to pick which kinds show.
+- **Legend**: the terrains used on this map, bottom right. **S / M / L** sets its size, **×** hides it.
+
 ## Simple and Advanced
 
 **Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes and neighbouring regions (maps joined into one world).

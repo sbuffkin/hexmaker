@@ -1,6 +1,7 @@
 import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
+import { BADGE_INFO, BADGE_SECTIONS, badgeHideClass, toggleHiddenBadge } from "./linkBadges";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
 
@@ -105,6 +106,12 @@ const OVERLAY_OPTIONS: OverlayOption[] = [
   { key: "showPaths",         label: "Show paths",         cssClass: "duckmage-hide-paths" },
 ];
 
+/** Optional layers-menu rows (kept out of the positional callbacks). */
+export interface OverlayPanelExtras {
+  /** Terrain legend toggled (a plugin-wide setting, not per map). */
+  onLegendChange?: (show: boolean) => void;
+}
+
 export class OverlayPanel extends HexSidePanel {
   private plugin: HexmakerPlugin;
   private getViewportEl: () => HTMLElement | null;
@@ -118,6 +125,10 @@ export class OverlayPanel extends HexSidePanel {
   private regionOverlayCb: HTMLInputElement | null = null;
   private gmLayerCb: HTMLInputElement | null = null;
   private tokensCb: HTMLInputElement | null = null;
+  private badgesCb: HTMLInputElement | null = null;
+  private badgeChips = new Map<string, HTMLButtonElement>();
+  private legendCb: HTMLInputElement | null = null;
+  private extras: OverlayPanelExtras;
 
   constructor(
     container: HTMLElement,
@@ -128,6 +139,7 @@ export class OverlayPanel extends HexSidePanel {
     onRegionOverlayChange: (show: boolean) => void,
     onGmLayerChange: (show: boolean) => void,
     onTokensChange: (show: boolean) => void,
+    extras: OverlayPanelExtras = {},
   ) {
     super(container, "layers", 44, "Map overlays");
     this.plugin = plugin;
@@ -137,6 +149,7 @@ export class OverlayPanel extends HexSidePanel {
     this.onRegionOverlayChange = onRegionOverlayChange;
     this.onGmLayerChange = onGmLayerChange;
     this.onTokensChange = onTokensChange;
+    this.extras = extras;
     this.buildPanel(this.panelEl);
   }
 
@@ -260,7 +273,93 @@ export class OverlayPanel extends HexSidePanel {
       applyGm();
     });
 
+    this.buildBadgeRows(panel);
 
+    // Terrain legend — plugin-wide (also in generator previews), on by default
+    const legendRow = panel.createDiv({ cls: "duckmage-overlay-row" });
+    const legendCb = legendRow.createEl("input", { type: "checkbox" });
+    legendCb.checked = this.plugin.settings.showTerrainLegend ?? true;
+    this.legendCb = legendCb;
+    const legendLabel = legendRow.createSpan({ text: "Show legend", cls: "duckmage-overlay-label" });
+    const applyLegend = () => {
+      this.plugin.settings.showTerrainLegend = legendCb.checked;
+      void this.plugin.saveSettings();
+      this.extras.onLegendChange?.(legendCb.checked);
+    };
+    legendCb.addEventListener("change", applyLegend);
+    legendLabel.addEventListener("click", () => {
+      legendCb.checked = !legendCb.checked;
+      applyLegend();
+    });
+
+  }
+
+  /**
+   * Link badges: one row (master toggle + a ▸ that unfolds a compact strip
+   * of per-type chips) so the menu doesn't grow a row per link type.
+   * Only CSS classes on the viewport change: no re-render on toggle.
+   */
+  private buildBadgeRows(panel: HTMLDivElement): void {
+    const row = panel.createDiv({ cls: "duckmage-overlay-row" });
+    const cb = row.createEl("input", { type: "checkbox" });
+    cb.checked = true;
+    this.badgesCb = cb;
+    const label = row.createSpan({ text: "Show link badges", cls: "duckmage-overlay-label" });
+    const more = row.createEl("button", {
+      cls: "clickable-icon duckmage-overlay-more",
+      attr: { "aria-label": "Pick badge types", "aria-expanded": "false" },
+    });
+    setIcon(more, "chevron-right");
+    const chips = panel.createDiv({ cls: "duckmage-overlay-subrow" });
+    chips.hide();
+    more.addEventListener("click", () => {
+      const open = !chips.isShown();
+      chips.toggle(open);
+      more.toggleClass("is-open", open);
+      more.setAttr("aria-expanded", String(open));
+    });
+
+    const apply = () => {
+      const map = this.getActiveMap();
+      map.showLinkBadges = cb.checked;
+      void this.plugin.saveSettings();
+      this.applyBadgeClasses(map);
+    };
+    cb.addEventListener("change", apply);
+    label.addEventListener("click", () => {
+      cb.checked = !cb.checked;
+      apply();
+    });
+
+    for (const s of BADGE_SECTIONS) {
+      const info = BADGE_INFO[s];
+      const chip = chips.createEl("button", {
+        cls: `duckmage-overlay-chip duckmage-link-badge-${info.cls}`,
+        attr: { "aria-label": `${info.label} badges` },
+      });
+      setIcon(chip, info.icon);
+      this.badgeChips.set(s, chip);
+      chip.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        map.hiddenLinkBadges = toggleHiddenBadge(map.hiddenLinkBadges, s);
+        void this.plugin.saveSettings();
+        this.applyBadgeClasses(map);
+      });
+    }
+  }
+
+  private applyBadgeClasses(map: MapData): void {
+    const show = map.showLinkBadges ?? true;
+    const hidden = new Set(map.hiddenLinkBadges ?? []);
+    if (this.badgesCb) this.badgesCb.checked = show;
+    for (const [s, chip] of this.badgeChips) {
+      chip.toggleClass("is-off", hidden.has(s));
+      chip.setAttr("aria-pressed", String(!hidden.has(s)));
+    }
+    const vp = this.getViewportEl();
+    if (!vp) return;
+    vp.toggleClass("duckmage-hide-link-badges", !show);
+    for (const s of BADGE_SECTIONS) vp.toggleClass(badgeHideClass(s), hidden.has(s));
   }
 
   /** Read the current map's saved state and apply it to the viewport + checkboxes. */
@@ -298,6 +397,13 @@ export class OverlayPanel extends HexSidePanel {
       this.tokensCb.checked = show;
       this.onTokensChange(show);
     }
+    this.applyBadgeClasses(map);
+    this.syncLegendToggle();
+  }
+
+  /** Legend checkbox ← setting (the legend's own × also turns it off). */
+  syncLegendToggle(): void {
+    if (this.legendCb) this.legendCb.checked = this.plugin.settings.showTerrainLegend ?? true;
   }
 
   private applyClass(opt: OverlayOption, show: boolean): void {
