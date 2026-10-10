@@ -21,7 +21,8 @@ export const MAP_KINDS: MapKindInfo[] = [
   {
     id: "world",
     label: "World / fantasy overland",
-    description: "Continents, regions and local areas: forests, mountains, coasts. Includes the Limited and Expanded palettes and the Region detail generator.",
+    description: "Continents, regions and local areas: forests, mountains, coasts. Includes the Limited and Expanded palettes, the Region detail generator and the Places icon pack (towns, castles, ruins…).",
+    iconPrefix: "place-",
   },
   {
     id: "space",

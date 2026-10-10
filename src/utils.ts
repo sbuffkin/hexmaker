@@ -1,6 +1,7 @@
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
+import { BUNDLED_PLACE_ICONS, PLACE_KINDS } from "./bundledPlaceIcons";
 import { rangeCellTexts } from "./random-tables/randomTable";
 
 let labelSeq = 0;
@@ -124,13 +125,43 @@ export function getIconUrl(plugin: HexmakerPlugin, iconFilename: string): string
 }
 
 /** Icon groups shown as tabs in icon pickers. */
-export type IconPack = "terrain" | "space" | "custom";
+export type IconPack = "terrain" | "places" | "space" | "custom";
 
+/** Pack labels, in tab order. */
 export const ICON_PACK_LABELS: Record<IconPack, string> = {
 	terrain: "Terrain",
+	places: "Places",
 	space: "Space",
 	custom: "Custom",
 };
+
+const PLACE_KIND_OF = new Map(BUNDLED_PLACE_ICONS.map(([file, , kind]) => [file, kind]));
+
+/** Sub-groups of the Places pack (Settlements, Castles…), in display order: [id, label]. */
+export const PLACE_ICON_KINDS: readonly (readonly [string, string])[] = PLACE_KINDS;
+
+/** The Places sub-group a bundled place icon belongs to (undefined for other icons). */
+export function placeIconKind(icon: string): string | undefined {
+	return PLACE_KIND_OF.get(icon);
+}
+
+const PLACE_INDEX = new Map(BUNDLED_PLACE_ICONS.map(([file], i) => [file, i]));
+
+/**
+ * Default icon order (before the user's saved order): by name, except the
+ * bundled place icons keep their pack order so settlements, castles, towers…
+ * sit together.
+ */
+export function sortIcons(icons: string[]): string[] {
+	const key = (icon: string): string => {
+		const i = PLACE_INDEX.get(icon);
+		return i === undefined ? icon : `place-${String(i).padStart(4, "0")}`;
+	};
+	return icons
+		.map((icon) => [key(icon), icon] as const)
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([, icon]) => icon);
+}
 
 /**
  * The icon tab a picker opens on before the user picks one this session:
@@ -161,6 +192,7 @@ export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack |
 export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
 	if (vaultIcons.has(icon)) return "custom";
 	if (icon.startsWith("space-")) return "space";
+	if (icon.startsWith("place-")) return "places";
 	if (icon.startsWith("bw-")) return "terrain";
 	return "custom";
 }
@@ -168,7 +200,7 @@ export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
 /** Human label for an icon file name: drops the pack prefix and extension. */
 export function iconLabel(icon: string): string {
 	return icon
-		.replace(/^(bw|space)-/, "")
+		.replace(/^(bw|space|place)-/, "")
 		.replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
 		.replace(/-/g, " ");
 }
