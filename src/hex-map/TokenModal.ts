@@ -133,6 +133,7 @@ export class TokenModal extends HexmakerModal {
     const visibleIcons = this.plugin.availableIcons.filter((i) => !hidden.has(i));
     contentEl.createEl("p", { text: "Icon", cls: "duckmage-icon-inline-label" });
     const iconGrid = contentEl.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(iconGrid);
 
     const makeIconTile = (icon: string | null) => {
       const label = icon

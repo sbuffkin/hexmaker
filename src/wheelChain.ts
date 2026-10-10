@@ -10,33 +10,58 @@ export interface ScrollBox {
   clientHeight: number;
 }
 
-/** How long after the outer pane last scrolled a wheel step still counts as
- *  the same scroll gesture (so a grid sliding under the pointer mid-scroll
- *  doesn't steal it). */
+/** How long after a pane last scrolled a wheel step still counts as the
+ *  same scroll gesture (so a grid sliding under the pointer mid-scroll
+ *  doesn't steal it, and a grid being scrolled keeps the wheel). */
 export const WHEEL_CONTINUE_MS = 400;
 
+/** Can `box` scroll any further in the direction of `deltaY`? */
+export function canScroll(box: ScrollBox, deltaY: number): boolean {
+  const max = box.scrollHeight - box.clientHeight;
+  if (max <= 1 || deltaY === 0) return false;
+  return deltaY > 0 ? box.scrollTop < max - 1 : box.scrollTop > 0;
+}
+
+export interface WheelChainState {
+  /** The nested grid under the pointer. */
+  inner: ScrollBox;
+  /** The modal's own scroll pane. */
+  outer: ScrollBox;
+  deltaY: number;
+  msSinceOuterScroll: number;
+  msSinceInnerScroll: number;
+  /** The user clicked into the grid (or its filter) and hasn't left it:
+   *  they are browsing it, so it owns the wheel. */
+  innerEngaged: boolean;
+}
+
 /**
- * Should a wheel step of `deltaY` over the inner scroll area `inner` scroll
- * the outer pane instead?
+ * Which pane a wheel step over a nested grid should scroll.
  *
- * Yes when the user is mid-way through scrolling the outer pane
- * (`msSinceOuterScroll` < `continueMs`), when the inner area can't scroll at
- * all, or when it is already at its end in the wheel's direction (Chromium
- * "latches" a wheel gesture to the inner area, so without this the modal
- * wouldn't move until the user paused and started a new gesture).
+ * Outer first: round-3 testers parked the pointer over the big icon grids
+ * (they fill most of the editor) and the first wheel scrolled the grid,
+ * never the modal, so Notes/Linked notes stayed out of reach. The old rule
+ * ("the grid scrolls until it hits its end") made every grid a wheel trap.
+ * Now the modal scrolls unless the grid is clearly what the user means:
+ *
+ *  - the grid can't move that way → modal;
+ *  - the modal can't move that way (scrolled to its end) → grid;
+ *  - a gesture already in progress keeps its pane (whichever scrolled
+ *    within `continueMs`, the most recent winning);
+ *  - the user engaged the grid (clicked it) → grid;
+ *  - otherwise → modal.
  */
-export function wheelGoesToOuter(
-  inner: ScrollBox,
-  deltaY: number,
-  msSinceOuterScroll: number,
-  continueMs = WHEEL_CONTINUE_MS,
-): boolean {
-  if (deltaY === 0) return false;
-  if (msSinceOuterScroll < continueMs) return true;
-  const max = inner.scrollHeight - inner.clientHeight;
-  if (max <= 1) return true;
-  if (deltaY > 0) return inner.scrollTop >= max - 1;
-  return inner.scrollTop <= 0;
+export function wheelTarget(s: WheelChainState, continueMs = WHEEL_CONTINUE_MS): "inner" | "outer" | "none" {
+  if (s.deltaY === 0) return "none";
+  const innerCan = canScroll(s.inner, s.deltaY);
+  const outerCan = canScroll(s.outer, s.deltaY);
+  if (!innerCan) return outerCan ? "outer" : "none";
+  if (!outerCan) return "inner";
+  const innerRecent = s.msSinceInnerScroll < continueMs;
+  const outerRecent = s.msSinceOuterScroll < continueMs;
+  if (innerRecent && (!outerRecent || s.msSinceInnerScroll <= s.msSinceOuterScroll)) return "inner";
+  if (outerRecent) return "outer";
+  return s.innerEngaged ? "inner" : "outer";
 }
 
 /** Wheel delta in pixels (WheelEvent.deltaMode: 0 px, 1 lines, 2 pages). */

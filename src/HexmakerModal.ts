@@ -1,6 +1,6 @@
 import { App, Modal } from "obsidian";
 import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
-import { wheelDeltaPx, wheelGoesToOuter } from "./wheelChain";
+import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" = "all";
@@ -103,10 +103,10 @@ export class HexmakerModal extends Modal {
 
 	/**
 	 * Stop a nested scroll area (an icon or terrain grid inside a long,
-	 * scrolling modal) from trapping the mouse wheel: the wheel scrolls the
-	 * modal when the area is at its end, can't scroll, or the user is in the
-	 * middle of scrolling the modal (see wheelGoesToOuter). Inside the area,
-	 * away from its ends, the wheel still scrolls the area itself.
+	 * scrolling modal) from trapping the mouse wheel. The modal scrolls
+	 * first; the area only takes the wheel once the modal is at its end, the
+	 * user has clicked into the area, or a gesture that started on the area
+	 * is still going (see wheelTarget for the full rule).
 	 */
 	protected chainWheelToModal(inner: HTMLElement): void {
 		inner.dataset["wheelChain"] = "1";
@@ -123,16 +123,37 @@ export class HexmakerModal extends Modal {
 				{ capture: true, passive: true },
 			);
 		}
+		// When the wheel last scrolled this area (programmatic scrolls, like
+		// bringing the current terrain into view, don't count).
+		let lastInnerWheel = -Infinity;
+		// Clicked into the area and still over it: the user is browsing it.
+		let engaged = false;
+		inner.addEventListener("pointerdown", () => { engaged = true; });
+		inner.addEventListener("pointerleave", () => { engaged = false; });
 		inner.addEventListener(
 			"wheel",
 			(e: WheelEvent) => {
 				if (e.ctrlKey || e.deltaY === 0) return;
 				const pane = this.scrollParentOf(inner);
-				if (!pane) return;
-				const box = { scrollTop: inner.scrollTop, scrollHeight: inner.scrollHeight, clientHeight: inner.clientHeight };
-				if (!wheelGoesToOuter(box, e.deltaY, performance.now() - this.lastOuterScroll)) return;
+				const now = performance.now();
+				const box = (el: HTMLElement) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
+				const target = pane
+					? wheelTarget({
+						inner: box(inner),
+						outer: box(pane),
+						deltaY: e.deltaY,
+						msSinceOuterScroll: now - this.lastOuterScroll,
+						msSinceInnerScroll: now - lastInnerWheel,
+						innerEngaged: engaged,
+					})
+					: "inner";
+				if (target === "inner") {
+					// Let the browser scroll the area natively.
+					lastInnerWheel = now;
+					return;
+				}
 				e.preventDefault();
-				pane.scrollTop += wheelDeltaPx(e.deltaY, e.deltaMode, pane.clientHeight);
+				if (target === "outer" && pane) pane.scrollTop += wheelDeltaPx(e.deltaY, e.deltaMode, pane.clientHeight);
 			},
 			{ passive: false },
 		);
