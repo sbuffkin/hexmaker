@@ -45,6 +45,8 @@ Hex names, terrain, icons, GM icons, regions, region maps and locations live in 
 
 The **How to edit this note** box at the top of the map note explains the columns. Regions, locations and region maps are links (`[[Basin]]`, `[[_saltmere]]`), so renaming the note in Obsidian keeps the map right; plain names work too and become links on the next save. Notes from older versions (a single Submap column) are converted once, after a backup. Column order, header case and `3_4` vs `3, 4` don't matter, and your own columns and text are kept. A row that can't be read stays as you wrote it and is listed in a warning box until you fix it. If the note can't be read at all, the plugin stops saving to it and tells you, rather than writing over it.
 
+The map note's **Summary** (above the Hexes table) and the *Route* and *Warning* columns in Paths are written by the plugin: extent, base terrain, a terrain legend with counts, regions, and a ⚠ for any terrain or path type not in the palette. They update on each save, so edits there are replaced.
+
 ---
 
 ## Expand buttons
