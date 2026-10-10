@@ -29,7 +29,10 @@ import {
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
-import { pathClickOutcome, toolModeLabel } from "./toolMode";
+import { toolModeLabel } from "./toolMode";
+import { PathTool } from "./pathTool";
+import type { PinRecord } from "../paths/routePins";
+import { pathSummary } from "./pathTool";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
@@ -43,14 +46,14 @@ import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
-import { addRoutedLeg, findRoute } from "./autoRoute";
-import { impassableNames, noRouteMessage, pathAvoidsImpassable, pathMeanders } from "../impassable";
-import type { MapData, PathChain, TokenEntry } from "../types";
+import { impassableNames } from "../impassable";
+import type { MapData, MapPath, TokenEntry } from "../types";
 import { hexNeighbors, smoothPath, sharpPath } from "./hexGeometry";
 import {
   applyAffine,
   calibrateAffine,
   END_DOT_PX,
+  HANDLE_PX,
   fmt,
   latticeCenter,
   pxToLattice,
@@ -120,7 +123,8 @@ interface CalibrateSnapshot {
 }
 
 type UndoItem =
-  | { kind: "terrain"; entries: TerrainUndoEntry[] }
+  /** `pins`: anchors the stroke made paths gain to keep their routes (undone with it). */
+  | { kind: "terrain"; entries: TerrainUndoEntry[]; pins?: PinRecord[] }
   | { kind: "icon"; entries: IconUndoEntry[] }
   | { kind: "faction"; entries: FactionUndoEntry[] }
   | { kind: "region"; entries: RegionUndoEntry[] }
@@ -128,8 +132,8 @@ type UndoItem =
   | {
       kind: "path";
       mapName: string;
-      before: PathChain[];
-      after: PathChain[];
+      before: MapPath[];
+      after: MapPath[];
     }
   | {
       kind: "calibrate";
@@ -296,15 +300,11 @@ export class HexMapView extends ItemView {
   private toolsPanel: DrawingToolPanel | null = null;
   private swapSource: { x: number; y: number } | null = null;
   private swapDest: { x: number; y: number } | null = null;
-  // The last-clicked hex key and the specific chain being extended
-  private activePathTypeName: string | null = null;
-  private activePathEnd: string | null = null;
-  private activePathChain: PathChain | null = null;
-  /** Path tool: route between two clicked hexes instead of hex by hex. */
-  private pathAutoRoute = false;
-  /** Auto-route: go through impassable terrain this time (bar checkbox). */
-  private routeCrossImpassable = false;
-  /** Auto-route controls in the mode bar (shown while drawing a path). */
+  /** The path tool: drawing, selecting, reshaping (src/hex-map/pathTool.ts). */
+  private pathTool: PathTool;
+  /** Pins made while a terrain stroke is painted or its writes land (see routePins.ts). */
+  private strokePins: PinRecord[] | null = null;
+  /** Path tool controls in the mode bar (shown while drawing a path). */
   private modeBarRouteEl: HTMLElement | null = null;
   private paintTerrainName: string | null = null;
   private paintIconName: string | null = null;
@@ -380,6 +380,20 @@ export class HexMapView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: HexmakerPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.pathTool = new PathTool({
+      plugin: this.plugin,
+      mapName: () => this.activeMapName,
+      pointerLattice: (e) => this.pointerLattice(e),
+      hexAtPoint: (x, y) => {
+        const hexEl = this.hexElAt(this.contentEl.ownerDocument.elementFromPoint(x, y), x, y);
+        return hexEl ? `${hexEl.dataset.x}_${hexEl.dataset.y}` : null;
+      },
+      ownerDocument: () => this.contentEl.ownerDocument,
+      pushUndo: (map, before, after) => this.pushPathUndo(map, before, after),
+      redraw: () => this.updatePathOverlay(),
+      refreshBar: () => this.updateModeBar(),
+      setGrabCursor: (on) => this.viewportEl?.toggleClass("duckmage-path-grab", on),
+    });
   }
 
   getViewType(): string {
@@ -805,9 +819,18 @@ export class HexMapView extends ItemView {
         return false;
       }
       if (this.drawingMode === null) return true;
+      // The path tool steps out one level at a time (finish → deselect → leave).
+      if (this.drawingMode === "path" && !this.isErasingMode && this.pathTool.escape()) return false;
       this.exitCurrentMode();
       return false;
     });
+    // Path tool: Backspace / Delete removes the hovered anchor, else the active end's.
+    for (const key of ["Backspace", "Delete"]) {
+      this.scope.register([], key, () => {
+        if (this.drawingMode !== "path" || this.isErasingMode) return true;
+        return !this.pathTool.deleteKey();
+      });
+    }
 
     this.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
     this.factionTooltipEl.hide();
@@ -930,8 +953,10 @@ export class HexMapView extends ItemView {
       if (this.drawingMode === "terrain" || this.drawingMode === "icon" || this.drawingMode === "factionLink" || this.drawingMode === "regionLink") {
         isTerrainPainting = true;
         lastPaintedKey = null;
-        if (this.drawingMode === "terrain")
+        if (this.drawingMode === "terrain") {
           this.currentTerrainStroke = new Map();
+          this.strokePins = [];
+        }
         else if (this.drawingMode === "icon")
           this.currentIconStroke = new Map();
         else if (this.drawingMode === "factionLink")
@@ -954,6 +979,8 @@ export class HexMapView extends ItemView {
         beginDrag();
         return; // skip pan setup
       }
+      // The path tool takes a press on the selected path (drag to reshape).
+      if (this.drawingMode === "path" && this.pathTool.pointerDown(e, this.isErasingMode)) return;
       // Any other active tool (road, river, tableLink, swap):
       // let the click event handle it — don't set up drag/pan so hasDragged
       // never swallows the click.
@@ -973,6 +1000,7 @@ export class HexMapView extends ItemView {
     // document (issue #32). Stroke-time highlight is owned by onDragMove.
     this.registerDomEvent(contentEl, "mousemove", (e: MouseEvent) => {
       if (isTerrainPainting) return;
+      if (this.drawingMode === "path" && e.buttons === 0) this.pathTool.pointerMove(e);
       if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
         const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(
           ".duckmage-hex",
@@ -1110,18 +1138,15 @@ export class HexMapView extends ItemView {
           this.removeOneGmIconFromHex(hexEl, hexX, hexY, this.paintIconName);
           return;
         }
-        // Path tool: right-click a hex of the path type being drawn removes
-        // it from its chain, as the help says (fresh-eyes T2). Anywhere else
-        // still opens the tool menu.
-        if (
-          this.drawingMode === "path" &&
-          hexX !== null && hexY !== null &&
-          this.pathChainWithHex(`${hexX}_${hexY}`, this.activePathTypeName)
-        ) {
-          void this.onHexPathDeleteClick(hexX, hexY, this.activePathTypeName);
-          return;
+        // Path tool: right-click an anchor handle of the selected path
+        // deletes it; on a path, the menu adds that path's actions.
+        let pathItems: { label: string; onClick: () => void }[] = [];
+        if (this.drawingMode === "path" && !this.isErasingMode) {
+          const r = this.pathTool.contextMenu(e);
+          if (r && "handled" in r) return;
+          if (r) pathItems = r.items;
         }
-        this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY);
+        this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY, pathItems);
       },
       { capture: true },
     );
@@ -1387,6 +1412,12 @@ export class HexMapView extends ItemView {
     this.registerEvent(
       this.app.metadataCache.on("deleted", (file) => {
         if (hexKeyFromBasename(file.basename)) this.scheduleLinkBadges();
+      }),
+    );
+    // Paths that kept their route because of a terrain stroke: undone with it.
+    this.register(
+      this.plugin.pathPins.onPinned((r) => {
+        if (r.map === this.activeMapName && this.strokePins) this.strokePins.push(r);
       }),
     );
     // Terrain painted / generated → the legend lists what the map now uses.
@@ -1807,6 +1838,7 @@ export class HexMapView extends ItemView {
     clientY: number,
     hexX: number | null,
     hexY: number | null,
+    pathItems: { label: string; onClick: () => void }[] = [],
   ): void {
     const mode = this.drawingMode;
     let onSwitch: (() => void) | null = null;
@@ -1847,6 +1879,8 @@ export class HexMapView extends ItemView {
       onSwitch = () => this.handlePathButton();
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
+      if (!erasing) extra.push({ label: "New path", onClick: () => this.pathTool.startNewPath() });
+      extra.push(...pathItems);
     } else if (mode === "placeToken") {
       onSwitch = () => this.handleTokenButton(true);
       switchLabel = "Switch token";
@@ -1886,8 +1920,7 @@ export class HexMapView extends ItemView {
   }
 
   private exitPathMode(): void {
-    this.activePathEnd = null;
-    this.activePathChain = null;
+    this.pathTool.reset();
   }
 
   openTerrainPicker(): void {
@@ -2217,12 +2250,9 @@ export class HexMapView extends ItemView {
   }
 
   // Double-click on the destination confirms the swap
-  private onHexDblClick(x: number, y: number): void {
-    if (this.drawingMode === "path") {
-      this.exitPathMode();
-      this.updatePathOverlay();
-      return;
-    }
+  private onHexDblClick(_x: number, _y: number): void {
+    // Path tool: a double-click is two clicks on one hex, and the second
+    // one (on the active end) already finishes the branch.
   }
 
   /** Right-click → "Create token here": same TokenModal as the toolbar
@@ -2389,10 +2419,9 @@ export class HexMapView extends ItemView {
     this.pathToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "path");
     // Update path button swatch color to show active type
     if (this.pathBtnSwatch) {
-      const activeType = this.activePathTypeName
-        ? this.mapPathTypes().find(
-            (p) => p.name === this.activePathTypeName,
-          )
+      const current = this.pathTool.currentType();
+      const activeType = current
+        ? this.mapPathTypes().find((p) => p.name === current)
         : this.mapPathTypes()[0];
       if (activeType) {
         this.pathBtnSwatch.setCssProps({
@@ -2553,9 +2582,13 @@ export class HexMapView extends ItemView {
       terrainPick: this.terrainPickMode,
       iconName: this.paintIconName,
       iconGmOnly: this.paintIconGmOnly,
-      pathTypeName: this.activePathTypeName,
-      pathAuto: this.pathAutoRoute,
-      pathHasStart: this.activePathEnd !== null,
+      pathTypeName: this.pathTool.currentType(),
+      pathAuto: this.pathTool.autoRoute,
+      pathDrawing: this.pathTool.labelState().drawing,
+      pathSelected: this.pathTool.labelState().selected,
+      pathSummary: this.pathTool.labelState().summary,
+      pathNew: this.pathTool.labelState().forceNew,
+      pathNote: this.pathTool.labelState().note,
       tablePath: this.paintTablePath,
       submapName: this.paintSubmapName,
       factionPath: this.paintFactionPath,
@@ -4433,9 +4466,7 @@ export class HexMapView extends ItemView {
 
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {
     if (this.drawingMode === "path") {
-      if (this.isErasingMode) { await this.onHexPathDeleteClick(x, y); return; }
-      if (this.pathAutoRoute) { await this.onHexPathRouteClick(x, y); return; }
-      await this.onHexPathDrawClick(x, y);
+      this.pathTool.click(x, y, e, this.isErasingMode);
       return;
     }
     if (this.drawingMode === "terrain") {
@@ -4953,11 +4984,15 @@ export class HexMapView extends ItemView {
       return;
     }
     const entries = [...this.currentTerrainStroke.values()];
-    this.undoStack.push({ kind: "terrain", entries });
+    // Pins made by this stroke's writes (some land after the mouse is up).
+    const pins = this.strokePins ?? [];
+    this.strokePins = pins;
+    this.undoStack.push({ kind: "terrain", entries, pins });
     if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
     this.redoStack = [];
     this.currentTerrainStroke = null;
     this.updateUndoButton();
+    void this.releaseStrokePins(pins);
   }
 
   private commitIconStroke(): void {
@@ -5004,7 +5039,14 @@ export class HexMapView extends ItemView {
     if (!item) return;
     this.redoStack.push(item);
     if (item.kind === "terrain") {
+      this.strokePins = null;
       this.applyStroke(item.entries, "old");
+      // Once the old terrain is back, the anchors the stroke pinned go too.
+      if (item.pins?.length) {
+        const pins = item.pins;
+        await this.terrainWritesSettled();
+        this.plugin.pathPins.rerouteInstead(pins);
+      }
     } else if (item.kind === "icon") {
       await this.applyIconStroke(item.entries, "old");
     } else if (item.kind === "faction") {
@@ -5026,7 +5068,11 @@ export class HexMapView extends ItemView {
     if (!item) return;
     this.undoStack.push(item);
     if (item.kind === "terrain") {
+      // Repainting pins the routes again (and they're recorded afresh).
+      item.pins = [];
+      this.strokePins = item.pins;
       this.applyStroke(item.entries, "new");
+      void this.releaseStrokePins(item.pins);
     } else if (item.kind === "icon") {
       await this.applyIconStroke(item.entries, "new");
     } else if (item.kind === "faction") {
@@ -5043,17 +5089,22 @@ export class HexMapView extends ItemView {
     this.updateUndoButton();
   }
 
-  private async applyPathSnapshot(
-    mapName: string,
-    chains: PathChain[],
-  ): Promise<void> {
-    const region = this.plugin.getMap(mapName);
-    if (!region) return;
-    region.pathChains = this.cloneChains(chains);
-    // Clear active chain tracking — the restored state may not match
-    this.exitPathMode();
-    await this.plugin.saveSettings();
-    this.updatePathOverlay();
+  private applyPathSnapshot(mapName: string, paths: MapPath[]): Promise<void> {
+    if (!this.plugin.getMap(mapName)) return Promise.resolve();
+    this.pathTool.applySnapshot(mapName, paths);
+    return Promise.resolve();
+  }
+
+  /** Wait (briefly) until every queued terrain write has landed in the map store. */
+  private async terrainWritesSettled(): Promise<void> {
+    const busy = () => this.pendingTerrainWrites.size > 0 || [...this.flushing].some((k) => k.startsWith("t:"));
+    for (let i = 0; i < 100 && busy(); i++) await new Promise<void>((r) => window.setTimeout(r, 50));
+  }
+
+  /** Stop collecting pins into `pins` once the stroke's writes have landed. */
+  private async releaseStrokePins(pins: PinRecord[]): Promise<void> {
+    await this.terrainWritesSettled();
+    if (this.strokePins === pins) this.strokePins = null;
   }
 
   private applyStroke(stroke: TerrainUndoEntry[], which: "old" | "new"): void {
@@ -5397,13 +5448,12 @@ export class HexMapView extends ItemView {
       this.app,
       this.plugin,
       this.plugin.mapPaletteName(this.activeMapName),
-      this.activePathTypeName,
+      this.pathTool.typeName,
       (typeName) => {
         this.leaveOtherToolFor("path");
-        // A new type starts a new chain rather than continuing the old one;
-        // re-picking the type being drawn keeps the chain going.
-        if (this.drawingMode !== "path" || typeName !== this.activePathTypeName) this.exitPathMode();
-        this.activePathTypeName = typeName;
+        // A new type ends the branch being drawn; re-picking the type keeps it going.
+        if (this.drawingMode !== "path") this.exitPathMode();
+        this.pathTool.setType(typeName);
         this.drawingMode = "path";
         this.isErasingMode = false;
         this.updateToolbarButtonStates();
@@ -5419,295 +5469,62 @@ export class HexMapView extends ItemView {
         this.updatePathOverlay();
       },
       {
-        value: this.pathAutoRoute,
-        onChange: (on) => this.setPathAutoRoute(on),
+        value: this.pathTool.autoRoute,
+        onChange: (on) => this.pathTool.setAutoRoute(on),
         noImpassable: impassableNames(this.plugin.getMapPalette(this.activeMapName)).length === 0,
+      },
+      {
+        list: this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathSummary(p) })),
+        selected: this.pathTool.selected,
+        onPick: (name) => {
+          this.leaveOtherToolFor("path");
+          this.drawingMode = "path";
+          this.isErasingMode = false;
+          this.pathTool.selectPath(name);
+          this.updateToolbarButtonStates();
+          this.updatePathOverlay();
+        },
       },
     ).open();
   }
 
-  /** Switch the path tool between hex-by-hex drawing and auto-route. */
-  private setPathAutoRoute(on: boolean): void {
-    if (this.pathAutoRoute === on) return;
-    this.pathAutoRoute = on;
-    // A start picked for a route isn't a path yet: hex-by-hex drawing
-    // can't extend it, so drop it. A drawn path keeps going either way.
-    if (!on && this.activePathChain === null) this.activePathEnd = null;
-    this.updateModeBar();
-  }
-
-  /** Auto-route toggle, "Cross impassable" and the setup hint, in the mode bar. */
+  /** The path tool's controls in the mode bar (src/hex-map/pathTool.ts). */
   private renderRouteControls(): void {
     const el = this.modeBarRouteEl;
     if (!el) return;
     el.empty();
     const show = this.drawingMode === "path" && !this.isErasingMode;
     el.toggle(show);
-    if (!show) return;
-    const auto = el.createEl("button", {
-      cls: "duckmage-mode-bar-route-toggle",
-      text: "Auto-route",
-      attr: {
-        "aria-pressed": String(this.pathAutoRoute),
-        title: this.pathAutoRoute
-          ? "On: click a start and an end, the path finds its way. Click to draw hex by hex."
-          : "Off: drawing hex by hex. Click to route between two hexes instead.",
-      },
-    });
-    auto.toggleClass("is-active", this.pathAutoRoute);
-    auto.addEventListener("click", () => this.setPathAutoRoute(!this.pathAutoRoute));
-    if (!this.pathAutoRoute) return;
-    const type = this.mapPathTypes().find((p) => p.name === this.activePathTypeName);
-    if (type && !pathAvoidsImpassable(type)) return; // e.g. rivers: they go anywhere
-    const blocked = impassableNames(this.plugin.getMapPalette(this.activeMapName));
-    if (!blocked.length) {
-      el.createSpan({
-        cls: "duckmage-mode-bar-route-note",
-        text: "No impassable terrain",
-        attr: { title: "Nothing in this map's palette is impassable, so routes go straight through anything. Mark terrains (e.g. water) impassable in the palette editor or the terrain editor." },
-      });
-      return;
-    }
-    const label = el.createEl("label", {
-      cls: "duckmage-mode-bar-route-cross",
-      attr: { title: `Let the route go through ${blocked.join(", ")}` },
-    });
-    const box = label.createEl("input", { type: "checkbox" });
-    box.checked = this.routeCrossImpassable;
-    box.addEventListener("change", () => { this.routeCrossImpassable = box.checked; });
-    label.createSpan({ text: "Cross impassable" });
+    if (show) this.pathTool.renderBarControls(el);
   }
 
-  /** Terrain shown on a hex (its own, else the map's base terrain). */
-  private terrainShownAt(x: number, y: number): string | null {
-    return getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.activeMapName))
-      ?? this.getActiveMap().baseTerrain
-      ?? null;
-  }
-
-  /**
-   * Auto-route click: the first click picks the start, the next one routes
-   * there from the start (or from the end of the last route, so a path can
-   * be routed leg by leg). The route is an ordinary chain: edit it like any
-   * drawn path.
-   */
-  private async onHexPathRouteClick(x: number, y: number): Promise<void> {
-    if (!this.activePathTypeName) return;
-    const key = `${x}_${y}`;
-    if (this.activePathEnd === null) {
-      this.activePathEnd = key;
-      this.activePathChain = null;
-      this.flashHex(x, y);
-      this.updateModeBar();
-      return;
-    }
-    if (key === this.activePathEnd) return;
-    const map = this.getActiveMap();
-    const type = this.mapPathTypes().find((p) => p.name === this.activePathTypeName);
-    const avoid = (type ? pathAvoidsImpassable(type) : true) && !this.routeCrossImpassable;
-    const blockedNames = avoid ? impassableNames(this.plugin.getMapPalette(this.activeMapName)) : [];
-    const blockedSet = new Set(blockedNames);
-    const result = findRoute(this.activePathEnd, key, {
-      orientation: this.plugin.settings.hexOrientation,
-      stagger: this.getActiveStagger(),
-      bounds: {
-        minX: map.gridOffset.x,
-        minY: map.gridOffset.y,
-        maxX: map.gridOffset.x + map.gridSize.cols - 1,
-        maxY: map.gridOffset.y + map.gridSize.rows - 1,
-      },
-      blocked: blockedSet.size
-        ? (hx, hy) => {
-            const t = this.terrainShownAt(hx, hy);
-            return t !== null && blockedSet.has(t);
-          }
-        : undefined,
-      // Rivers wind; roads keep to the straight line (round 7 U17).
-      meander: type ? pathMeanders(type) : false,
-    });
-    if (!result.ok) {
-      new Notice(result.reason === "no-route" ? noRouteMessage(blockedNames) : "Both ends must be on the map.");
-      return;
-    }
-    const before = this.cloneChains(map.pathChains);
-    // Continues a path only when it starts on that path's end; otherwise a
-    // new path. Existing hexes are never changed (round 7 R11).
-    const target = addRoutedLeg(
-      map.pathChains,
-      this.activePathTypeName,
-      result.hexes,
-      this.activePathChain,
-      (typeName, hexes): PathChain => ({ typeName, hexes }),
-    );
-    this.activePathEnd = key;
-    this.activePathChain = target;
-    this.pushPathUndo(map.name, before, this.cloneChains(map.pathChains));
-    await this.plugin.saveSettings();
-    this.updatePathOverlay();
-    this.updateModeBar();
-  }
-
-  /** Deep-clone a pathChains array for undo/redo snapshot. */
-  private cloneChains(chains: PathChain[]): PathChain[] {
-    // Keep unknown map-note columns (extra) through undo/redo snapshots.
-    return chains.map((c) => ({ ...c, hexes: [...c.hexes], ...(c.extra ? { extra: { ...c.extra } } : {}) }));
-  }
-
-  private pushPathUndo(
-    mapName: string,
-    before: PathChain[],
-    after: PathChain[],
-  ): void {
+  private pushPathUndo(mapName: string, before: MapPath[], after: MapPath[]): void {
     this.undoStack.push({ kind: "path", mapName, before, after });
     if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
     this.redoStack = [];
     this.updateUndoButton();
   }
 
-  private async onHexPathDrawClick(x: number, y: number): Promise<void> {
-    if (!this.activePathTypeName) return;
-    const key = `${x}_${y}`;
-    const region = this.getActiveMap();
-    const chains = region.pathChains.filter(
-      (c) => c.typeName === this.activePathTypeName,
-    );
-    const before = this.cloneChains(region.pathChains);
-
-    let neighbourKeys: string[] = [];
-    if (this.activePathEnd !== null) {
-      const [ax, ay] = this.activePathEnd.split("_").map(Number);
-      neighbourKeys = hexNeighbors(
-        ax,
-        ay,
-        this.plugin.settings.hexOrientation,
-        this.getActiveStagger(),
-      ).map(([nx, ny]) => `${nx}_${ny}`);
-    }
-    const outcome = pathClickOutcome(this.activePathEnd, key, neighbourKeys);
-    // Clicking the end again would stack a second one-hex chain on it.
-    if (outcome === "same") return;
-    if (outcome === "restart") {
-      // Paths don't auto-route between distant hexes; say so instead of
-      // silently leaving a lone dot (fresh-eyes T7).
-      new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here. To join distant hexes, turn on auto-route in the tool bar.");
-      // A one-hex chain is never drawn (a line needs two hexes), so the
-      // abandoned start would linger invisibly in the map data: drop it.
-      const abandoned = this.activePathChain;
-      if (abandoned && abandoned.hexes.length === 1) {
-        const i = region.pathChains.indexOf(abandoned);
-        if (i !== -1) region.pathChains.splice(i, 1);
-        this.activePathChain = null;
-      }
-    }
-
-    // ── If adjacent to active end, extend that chain ─────────────────────
-    if (this.activePathEnd !== null) {
-      if (outcome === "extend") {
-        let target: PathChain | undefined;
-        if (
-          this.activePathChain !== null &&
-          this.activePathChain.hexes[this.activePathChain.hexes.length - 1] ===
-            this.activePathEnd
-        ) {
-          target = this.activePathChain;
-        } else {
-          target = chains.find(
-            (c) => c.hexes[c.hexes.length - 1] === this.activePathEnd,
-          );
-        }
-        if (target) {
-          target.hexes.push(key);
-          this.activePathEnd = key;
-          this.activePathChain = target;
-          this.pushPathUndo(
-            region.name,
-            before,
-            this.cloneChains(region.pathChains),
-          );
-          await this.plugin.saveSettings();
-          this.updatePathOverlay();
-          return;
-        }
-      }
-    }
-
-    // ── Not adjacent (or no active chain) — start a new chain ────────────
-    const newChain: PathChain = {
-      typeName: this.activePathTypeName,
-      hexes: [key],
-    };
-    region.pathChains.push(newChain);
-    this.activePathEnd = key;
-    this.activePathChain = newChain;
-    this.pushPathUndo(region.name, before, this.cloneChains(region.pathChains));
-    await this.plugin.saveSettings();
-    this.updatePathOverlay();
-  }
-
-  /** First path chain (of `typeName`, or any type when null) through hex `key`. */
-  private pathChainWithHex(key: string, typeName: string | null): PathChain | undefined {
-    return this.getActiveMap().pathChains.find(
-      (c) => (typeName === null || c.typeName === typeName) && c.hexes.includes(key),
-    );
-  }
-
-  /** Remove hex (x, y) from the first chain through it — only chains of
-   *  `typeName` when given (right-click while drawing that type). */
-  private async onHexPathDeleteClick(x: number, y: number, typeName: string | null = null): Promise<void> {
-    const key = `${x}_${y}`;
-    const region = this.getActiveMap();
-    const chains = region.pathChains;
-    const before = this.cloneChains(region.pathChains);
-
-    for (let ci = 0; ci < chains.length; ci++) {
-      if (typeName !== null && chains[ci].typeName !== typeName) continue;
-      const pos = chains[ci].hexes.indexOf(key);
-      if (pos === -1) continue;
-
-      const chain = chains[ci];
-      const isActiveChain = chain === this.activePathChain;
-
-      if (chain.hexes.length === 1) {
-        // Remove entire chain from region.pathChains
-        const idx = region.pathChains.indexOf(chain);
-        if (idx !== -1) region.pathChains.splice(idx, 1);
-        if (isActiveChain) this.activePathChain = null;
-      } else if (pos === 0) {
-        chain.hexes.splice(0, 1);
-      } else if (pos === chain.hexes.length - 1) {
-        chain.hexes.splice(pos, 1);
-      } else {
-        // Split: replace with two chains
-        const left: PathChain = {
-          typeName: chain.typeName,
-          hexes: chain.hexes.slice(0, pos),
-        };
-        const right: PathChain = {
-          typeName: chain.typeName,
-          hexes: chain.hexes.slice(pos + 1),
-        };
-        const idx = region.pathChains.indexOf(chain);
-        if (idx !== -1) region.pathChains.splice(idx, 1, left, right);
-        if (isActiveChain) this.activePathChain = null;
-      }
-
-      if (this.activePathEnd === key) {
-        // Removing the end of the path being drawn steps it back one hex,
-        // so drawing carries on from there.
-        const stepBack = pos === chain.hexes.length && chain.hexes.length > 0;
-        this.activePathEnd = stepBack ? chain.hexes[chain.hexes.length - 1] : null;
-        this.activePathChain = stepBack ? chain : null;
-      }
-
-      this.pushPathUndo(
-        region.name,
-        before,
-        this.cloneChains(region.pathChains),
-      );
-      await this.plugin.saveSettings();
-      this.updatePathOverlay();
-      return;
-    }
+  /**
+   * A pointer position in the path layer's lattice units (for hit-testing
+   * paths): one read of the grid's box and font size per event, no writes,
+   * inverted through the layer's calibration. Null before it's calibrated.
+   */
+  private pointerLattice(e: { clientX: number; clientY: number }): { cx: number; cy: number } | null {
+    const calib = this.pathCalib;
+    const grid = calib?.grid;
+    if (!calib || !grid || !grid.isConnected) return null;
+    const style = getComputedStyle(grid);
+    const em = parseFloat(style.fontSize) || 16;
+    const g = grid.getBoundingClientRect();
+    const layoutW = parseFloat(style.width) || grid.offsetWidth;
+    const layoutH = parseFloat(style.height) || grid.offsetHeight;
+    const sx = layoutW ? g.width / layoutW : 1;
+    const sy = layoutH ? g.height / layoutH : 1;
+    const ex = (e.clientX - g.left) / sx / em;
+    const ey = (e.clientY - g.top) / sy / em;
+    const a = calib.affine;
+    return { cx: (ex - a.tx) / a.sx, cy: (ey - a.ty) / a.sy };
   }
 
   /**
@@ -5802,27 +5619,43 @@ export class HexMapView extends ItemView {
         dash: s.dash.map((d) => fmt(d * scale)).join(" "),
       };
     });
-    // Small circle to mark the active endpoint (only in path mode)
+    // The path tool: the selected path highlighted, its anchor handles
+    // (ends bigger: continue from there) and the dot where clicks add.
+    const tool = calib && this.drawingMode === "path" ? this.pathTool.overlay() : null;
     let dot: { cx: string; cy: string; r: string; sw: string; color: string } | null = null;
-    if (calib && this.drawingMode === "path" && this.activePathEnd) {
-      const activeType = this.activePathTypeName ? this.mapPathTypes().find((p) => p.name === this.activePathTypeName) : undefined;
-      const [c] = em([latticeCenter(this.activePathEnd, calib.lattice)]);
-      dot = {
-        cx: fmt(c.cx),
-        cy: fmt(c.cy),
-        r: fmt(pxToLattice(END_DOT_PX.r) * scale),
-        sw: fmt(pxToLattice(END_DOT_PX.stroke) * scale),
-        color: activeType?.color ?? "#888888",
-      };
+    const handles: { cx: string; cy: string; r: string; sw: string; hover: boolean }[] = [];
+    if (calib && tool) {
+      const activeType = this.mapPathTypes().find((p) => p.name === this.pathTool.currentType());
+      if (tool.active) {
+        const [c] = em([latticeCenter(tool.active, calib.lattice)]);
+        dot = {
+          cx: fmt(c.cx),
+          cy: fmt(c.cy),
+          r: fmt(pxToLattice(END_DOT_PX.r) * scale),
+          sw: fmt(pxToLattice(END_DOT_PX.stroke) * scale),
+          color: activeType?.color ?? "#888888",
+        };
+      }
+      for (const h of tool.handles) {
+        const [c] = em([latticeCenter(h.hex, calib.lattice)]);
+        handles.push({
+          cx: fmt(c.cx),
+          cy: fmt(c.cy),
+          r: fmt(pxToLattice(h.end ? HANDLE_PX.end : HANDLE_PX.r) * scale),
+          sw: fmt(pxToLattice(HANDLE_PX.stroke) * scale),
+          hover: h.hover,
+        });
+      }
     }
-    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot]);
+    const selected = tool?.selected ?? null;
+    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot, handles, selected]);
     const existing = gridContainer.querySelector("svg.duckmage-path-svg");
 
     // ── Writes ──
     if (!existing || key !== this.pathLayerKey) {
       existing?.remove();
       this.pathLayerKey = key;
-      if (lines.length || dot) {
+      if (lines.length || dot || handles.length) {
         const svgNS = "http://www.w3.org/2000/svg";
         const svg = activeDocument.createElementNS(svgNS, "svg");
         svg.classList.add("duckmage-path-svg");
@@ -5830,6 +5663,20 @@ export class HexMapView extends ItemView {
         svg.setAttribute("width", "1em");
         svg.setAttribute("height", "1em");
         svg.setAttribute("viewBox", "0 0 1 1");
+        // The selected path's halo, under every line.
+        for (const l of lines) {
+          if (l.s.path !== selected) continue;
+          const halo = activeDocument.createElementNS(svgNS, "path");
+          halo.setAttribute("class", "duckmage-svg-path-line duckmage-svg-path-selected");
+          halo.setAttribute("d", l.d);
+          halo.setAttribute("stroke", l.s.color);
+          halo.setAttribute("stroke-width", fmt(Number(l.width) * 2.6));
+          halo.setAttribute("stroke-linecap", "round");
+          halo.setAttribute("stroke-linejoin", "round");
+          halo.setAttribute("fill", "none");
+          halo.setAttribute("opacity", "0.3");
+          svg.appendChild(halo);
+        }
         for (const l of lines) {
           const path = activeDocument.createElementNS(svgNS, "path");
           path.setAttribute("class", "duckmage-svg-path-line");
@@ -5843,6 +5690,17 @@ export class HexMapView extends ItemView {
           path.setAttribute("data-path", l.s.path);
           path.setAttribute("data-branch", String(l.s.branch));
           svg.appendChild(path);
+        }
+        for (const h of handles) {
+          const handle = activeDocument.createElementNS(svgNS, "circle");
+          handle.setAttribute("class", "duckmage-svg-path-line duckmage-svg-path-handle");
+          handle.setAttribute("cx", h.cx);
+          handle.setAttribute("cy", h.cy);
+          handle.setAttribute("r", h.r);
+          handle.setAttribute("fill", h.hover ? "#ffd84d" : "white");
+          handle.setAttribute("stroke", "#222222");
+          handle.setAttribute("stroke-width", h.sw);
+          svg.appendChild(handle);
         }
         if (dot) {
           const circle = activeDocument.createElementNS(svgNS, "circle");

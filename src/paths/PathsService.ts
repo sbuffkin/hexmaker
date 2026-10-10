@@ -19,7 +19,7 @@
 import type { MapData, MapPath, PathChain, PathType, TerrainColor } from "../types";
 import { impassableNames } from "../impassable";
 import type { RouteContext, SegmentStyle } from "./router";
-import { contextSignature } from "./router";
+import { contextSignature, DEFAULT_SEGMENT_STYLE } from "./router";
 import { RouteCache } from "./routeCache";
 import { resolvePaths, resolvedToChains, type ResolvedBranch, type StyleFor } from "./resolve";
 import { storedMapPaths } from "./mapPaths";
@@ -66,6 +66,13 @@ export interface PathsHost {
   palette(map: string): readonly TerrainColor[];
   /** The map's hexes with data (own terrain). */
   hexData(map: string): ReadonlyMap<string, { terrain?: string }>;
+  /**
+   * Called before a map's paths are resolved whenever its routing context
+   * or its types' routing styles differ from the last resolve (and on the
+   * first one): the plugin's chance to keep existing routes where they
+   * were (phase 7 pins) before anything draws the new ones.
+   */
+  routesChanging?(map: string): void;
 }
 
 interface Memo {
@@ -77,12 +84,46 @@ interface Memo {
 export class PathsService {
   private caches = new Map<string, RouteCache>();
   private memo = new Map<string, Memo>();
+  /** Per map: the context signature and styles of the last resolve (see PathsHost.routesChanging). */
+  private seen = new Map<string, string>();
+  /** Per map: paths drawn instead of the stored ones (the path tool's live drag preview). */
+  private previews = new Map<string, MapPath[]>();
 
   constructor(private host: PathsHost) {}
 
   /** The map's stored paths (anchors), whatever its readiness. */
   storedPaths(map: MapData): MapPath[] {
     return storedMapPaths(map);
+  }
+
+  /**
+   * Draw `paths` for this map instead of its stored ones until cleared
+   * (null). Nothing is saved: the path tool shows a drag's reroute live and
+   * commits once on release.
+   */
+  setPreview(mapName: string, paths: MapPath[] | null): void {
+    if (paths) this.previews.set(mapName, paths);
+    else this.previews.delete(mapName);
+  }
+
+  /** The paths being drawn for the map: the preview if any, else the stored ones. */
+  shownPaths(map: MapData): MapPath[] {
+    return this.previews.get(map.name) ?? storedMapPaths(map);
+  }
+
+  /**
+   * The map's router under its current context (cached segments), or null
+   * when the map isn't ready. Resolves first, so a pending context change
+   * has been dealt with.
+   */
+  router(mapName: string): RouteCache | null {
+    if (!this.compute(mapName)) return null;
+    return this.cacheFor(mapName);
+  }
+
+  /** The routing style of a type on this map (DEFAULT_SEGMENT_STYLE's when unknown). */
+  styleOf(mapName: string, typeName: string): SegmentStyle {
+    return styleForTypes(this.host.pathTypes(mapName))(typeName) ?? DEFAULT_SEGMENT_STYLE;
   }
 
   /** Can this map's paths be resolved yet (terrain and palette loaded)? */
@@ -155,18 +196,32 @@ export class PathsService {
   forget(mapName: string): void {
     this.caches.delete(mapName);
     this.memo.delete(mapName);
+    this.seen.delete(mapName);
+    this.previews.delete(mapName);
   }
 
   private compute(mapName: string): Memo | null {
     const map = this.host.getMap(mapName);
-    const ctx = this.context(mapName);
+    let ctx = this.context(mapName);
     if (!map || !ctx) return null;
-    const paths = storedMapPaths(map);
     const types = this.host.pathTypes(mapName);
     const styleFor = styleForTypes(types);
-    const styles = [...new Set(paths.map((p) => p.typeName))]
+    const stylesOf = (ps: readonly MapPath[]) => [...new Set(ps.map((p) => p.typeName))]
       .map((n) => { const s = styleFor(n); return `${n}=${s ? `${+s.avoid}${+s.winding}` : "?"}`; })
       .join(",");
+    // Routing inputs changed since the last resolve: let the host keep the
+    // old routes (pins add anchors) before the new ones are drawn.
+    const inputs = `${contextSignature(ctx)}|${stylesOf(storedMapPaths(map))}`;
+    if (this.seen.get(mapName) !== inputs) {
+      this.seen.set(mapName, inputs);
+      if (this.host.routesChanging) {
+        this.host.routesChanging(mapName);
+        ctx = this.context(mapName);
+        if (!ctx) return null;
+      }
+    }
+    const paths = this.shownPaths(map);
+    const styles = stylesOf(paths);
     const key = `${contextSignature(ctx)}|${styles}|${JSON.stringify(paths.map((p) => [p.name, p.typeName, p.branches.map((b) => b.anchors)]))}`;
     const hit = this.memo.get(mapName);
     if (hit && hit.key === key) return hit;

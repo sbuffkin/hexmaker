@@ -2,9 +2,18 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { pathClickOutcome, toolModeLabel, type DrawingMode } from "../src/hex-map/toolMode";
+import { toolModeLabel, type DrawingMode } from "../src/hex-map/toolMode";
 
 const viewSrc = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+const toolSrc = readFileSync(path.join(process.cwd(), "src", "hex-map", "pathTool.ts"), "utf8").replace(/\r\n/g, "\n");
+
+/** Source of the PathTool method `name`. */
+function toolMethod(name: string): string {
+	const m = new RegExp(`\\n  (?:private )?(?:async )?${name}\\(`).exec(toolSrc);
+	const start = m ? m.index + 1 : -1;
+	expect(start).toBeGreaterThan(-1);
+	return toolSrc.slice(start, toolSrc.indexOf("\n  }\n", start));
+}
 
 /** Source of the HexMapView method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {
@@ -14,26 +23,6 @@ function method(name: string): string {
 	return viewSrc.slice(start, viewSrc.indexOf("\n  }\n", start));
 }
 
-describe("pathClickOutcome (fresh-eyes T7)", () => {
-	const around = ["2_1", "3_2", "3_3", "2_3", "1_3", "1_2"]; // neighbours of 2_2
-
-	it("starts a path when none is in progress", () => {
-		expect(pathClickOutcome(null, "5_5", [])).toBe("start");
-	});
-
-	it("extends the path on a neighbour of its end", () => {
-		expect(pathClickOutcome("2_2", "3_2", around)).toBe("extend");
-	});
-
-	it("ignores a click on the end itself (no stacked dot)", () => {
-		expect(pathClickOutcome("2_2", "2_2", around)).toBe("same");
-	});
-
-	it("reports a restart for a distant hex so the caller can explain it", () => {
-		expect(pathClickOutcome("2_2", "6_6", around)).toBe("restart");
-	});
-});
-
 describe("Path tool button (fresh-eyes T7)", () => {
 	it("clicking Path while drawing reopens the picker instead of exiting", () => {
 		const body = method("handlePathButton");
@@ -41,42 +30,44 @@ describe("Path tool button (fresh-eyes T7)", () => {
 		expect(body).not.toMatch(/exitPathMode\(\);\s*this\.drawingMode = null/);
 	});
 
-	it("a restart on a non-adjacent hex shows a hint", () => {
-		const body = method("onHexPathDrawClick");
-		expect(body).toMatch(/outcome === "restart"[\s\S]*new Notice\(/);
+	it("a hex-by-hex click away from the end is routed, and the bar says so (no lonely restart dots)", () => {
+		expect(toolMethod("noteGap")).toMatch(/if \(this\.autoRoute\) return;[\s\S]*hexNeighbors\([\s\S]*this\.hint = /);
 	});
 });
 
-describe("Path tool auto-route (P1)", () => {
-	it("a click in auto-route mode routes instead of drawing hex by hex", () => {
-		expect(viewSrc).toMatch(/if \(this\.pathAutoRoute\) \{ await this\.onHexPathRouteClick\(x, y\); return; \}\s*await this\.onHexPathDrawClick\(x, y\);/);
+describe("Path tool auto-route (P1, anchored paths)", () => {
+	it("a click in path mode goes to the path tool (auto-route or hex by hex is its switch)", () => {
+		expect(viewSrc).toMatch(/if \(this\.drawingMode === "path"\) \{\s*this\.pathTool\.click\(x, y, e, this\.isErasingMode\);\s*return;\s*\}/);
 	});
 
-	it("the route avoids impassable terrain unless the path type or the override says otherwise", () => {
-		const body = method("onHexPathRouteClick");
-		expect(body).toMatch(/pathAvoidsImpassable\(type\)[\s\S]*!this\.routeCrossImpassable/);
-		expect(body).toMatch(/findRoute\(/);
-		expect(body).toMatch(/noRouteMessage\(blockedNames\)/);
-		// Saved as an ordinary chain with undo, so it stays editable.
-		expect(body).toMatch(/pushPathUndo\([\s\S]*saveSettings\(\)/);
+	it("a leg avoids impassable terrain unless the type's explicit field or Cross impassable says otherwise", () => {
+		const body = toolMethod("legAnchors");
+		expect(body).toMatch(/this\.plugin\.paths\.styleOf\(this\.map, typeName\)/);
+		expect(body).toMatch(/this\.crossImpassable && style\.avoid/);
+		// a crossing is kept by pinning it with anchors the normal router reproduces
+		expect(body).toMatch(/anchorsFor\(through\.hexes, routeFnFor\(router, style\)/);
+		expect(body).toMatch(/noRouteMessage\(/);
 	});
 
-	it("bounds come from the map's grid", () => {
-		const body = method("onHexPathRouteClick");
-		expect(body).toMatch(/maxX: map\.gridOffset\.x \+ map\.gridSize\.cols - 1/);
-		expect(body).toMatch(/maxY: map\.gridOffset\.y \+ map\.gridSize\.rows - 1/);
+	it("edits are saved through the map store with one undo step, behind the edit gate", () => {
+		const body = toolMethod("commit");
+		expect(body).toMatch(/canEditPaths\(map, action\)/);
+		expect(body).toMatch(/this\.plugin\.mapStore\.setPaths\(map, next\)/);
+		expect(body).toMatch(/this\.host\.pushUndo\(map, before, clonePaths\(next\)\)/);
+		// nothing else in the tool writes paths
+		expect(toolSrc.match(/mapStore\.setPaths\(/g)!.length).toBe(2); // commit + applySnapshot
+		expect(toolMethod("applySnapshot")).toMatch(/canEditPaths\(mapName, "history"\)/);
 	});
 });
 
 describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
-	it("right-click on a hex of the path being drawn removes it instead of opening the menu", () => {
+	it("right-click on an anchor handle deletes it; on a path the menu gets that path's actions", () => {
 		const start = viewSrc.indexOf('"contextmenu",');
 		const handler = viewSrc.slice(start, viewSrc.indexOf("{ capture: true }", start));
-		expect(handler).toMatch(/this\.drawingMode === "path"[\s\S]*pathChainWithHex\([\s\S]*onHexPathDeleteClick\(hexX, hexY, this\.activePathTypeName\)[\s\S]*return;[\s\S]*showPainterContextMenu/);
-	});
-
-	it("the delete only touches chains of the given path type", () => {
-		expect(method("onHexPathDeleteClick")).toMatch(/typeName !== null && chains\[ci\]\.typeName !== typeName\) continue/);
+		expect(handler).toMatch(/this\.drawingMode === "path"[\s\S]*this\.pathTool\.contextMenu\(e\)[\s\S]*"handled" in r\) return;[\s\S]*showPainterContextMenu\(e\.clientX, e\.clientY, hexX, hexY, pathItems\)/);
+		const menu = toolMethod("contextMenu");
+		for (const label of ["Split here", "Delete path: ", "Rename…", "Change type…", "Reverse"]) expect(menu).toContain(label);
+		expect(menu).toMatch(/hit\.anchor !== null\) \{\s*this\.deleteAnchor\(/);
 	});
 
 	it("tokens let clicks through while a drawing tool is active", () => {
@@ -96,10 +87,12 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "terrain", erasing: false, terrainPick: true })).toMatch(/^Picking terrain/);
 		expect(toolModeLabel({ mode: "icon", erasing: false, iconName: "bw-castle.svg" })).toBe("Painting icon: bw-castle");
 		expect(toolModeLabel({ mode: "icon", erasing: false, iconName: "x.png", iconGmOnly: true })).toBe("Painting GM icon: x");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road" })).toBe("Drawing Road: click neighbouring hexes");
-		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths/);
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true })).toBe("Auto-routing Road: click the start hex");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathHasStart: true })).toBe("Auto-routing Road: click where it goes");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road" })).toBe("Road: click to start a path · click a path to edit it");
+		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths: click a path to split it/);
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathDrawing: true, pathSelected: "King's Road" })).toBe("King's Road: click to add (auto-routes) · Esc to finish");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · Esc to finish · not next to the end, so the gap was routed");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathSelected: "King's Road", pathSummary: "Road, 2 forks" })).toBe("King's Road (Road, 2 forks): drag the line to reshape · click an end to continue · click the line to fork");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNew: true })).toBe("New Road: click where it starts");
 		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region: Kerrigan");
 		expect(toolModeLabel({ mode: "factionLink", erasing: true })).toBe("Erasing factions");
 		expect(toolModeLabel({ mode: "tableLink", erasing: false, tablePath: "world/tables/ocean.md" })).toBe("Linking table: ocean");
@@ -138,13 +131,26 @@ describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
 	});
 });
 
-describe("Path chain upkeep (fresh-eyes T7/T2 follow-up)", () => {
-	it("a restart drops the abandoned one-hex start (never drawn, would linger in the data)", () => {
-		expect(method("onHexPathDrawClick")).toMatch(/abandoned && abandoned\.hexes\.length === 1[\s\S]*pathChains\.splice\(i, 1\)/);
+describe("Path tool upkeep (anchored paths)", () => {
+	it("a path or fork started by one click isn't stored until its second anchor (no one-hex leftovers)", () => {
+		const click = toolMethod("click");
+		expect(click).toMatch(/this\.pending = \{ kind: "new", hex: key \}/);
+		expect(click).not.toMatch(/commit\(/);
+		expect(toolMethod("append")).toMatch(/p\.branches\[0\]\.anchors\.push\(\.\.\.leg\)[\s\S]*this\.commit\(/);
 	});
 
-	it("removing the end of the path being drawn steps the end back one hex", () => {
-		expect(method("onHexPathDeleteClick")).toMatch(/const stepBack = pos === chain\.hexes\.length && chain\.hexes\.length > 0;/);
+	it("Esc steps out one level (drag → branch → selection) before leaving the tool; Backspace deletes an anchor", () => {
+		expect(viewSrc).toMatch(/this\.drawingMode === "path" && !this\.isErasingMode && this\.pathTool\.escape\(\)\) return false;\s*this\.exitCurrentMode\(\);/);
+		expect(toolMethod("escape")).toMatch(/this\.drag[\s\S]*cancelDrag[\s\S]*this\.done\(\)/);
+		expect(viewSrc).toMatch(/for \(const key of \["Backspace", "Delete"\]\)[\s\S]{0,200}this\.pathTool\.deleteKey\(\)/);
+	});
+
+	it("a drag previews without saving and commits once on release; dropping it back cancels", () => {
+		expect(toolMethod("updatePreview")).toMatch(/this\.plugin\.paths\.setPreview\(this\.map, d\.preview\)/);
+		expect(toolMethod("updatePreview")).not.toMatch(/commit\(/);
+		expect(toolMethod("dragEnd")).toMatch(/if \(d\.lastHex !== d\.startHex && d\.preview\) this\.commit\(d\.preview\);/);
+		// one reroute per animation frame, only on entering a new hex
+		expect(toolMethod("dragMove")).toMatch(/hex === d\.lastHex\) return;[\s\S]*requestAnimationFrame/);
 	});
 });
 

@@ -32,6 +32,7 @@ import {
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
+import { RoutePins } from "./paths/routePins";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, newTerrains, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type SectionWordsFn } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
@@ -114,10 +115,15 @@ export default class HexmakerPlugin extends Plugin {
     pathTypes: (map) => this.getMapPathTypes(map),
     palette: (map) => this.getMapPalette(map),
     hexData: (map) => this.mapStore.all(map),
+    // Keep routes where they were when their inputs change (phase 7).
+    routesChanging: (map) => this.pathPins.sync(map),
   });
+  /** Keeps routes in place when terrain, the palette, the size or a type's routing changes (Decision 3). */
+  pathPins = new RoutePins(this);
 
   async onload() {
     await this.loadSettings();
+    this.pathPins.attach();
     // Terrains known now (data.json's copy of the palettes). Any a palette
     // note adds while Obsidian was closed get their tables once the notes
     // are read (HG5).
@@ -581,6 +587,7 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   onunload() {
+    this.pathPins.detach();
     clearPendingTerrain();
   }
 
