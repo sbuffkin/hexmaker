@@ -5,24 +5,35 @@
 | **Middle-mouse drag** (or click + drag on empty space) | Pan the map |
 | **Scroll wheel** | Zoom in / out |
 | **Left-click** a hex | Open the hex editor (terrain, notes, links) |
-| **Right-click** a hex | Context menu: center on hex, open note, create / link submap, link table, swap hex, create token here, clear terrain |
+| **Right-click** a hex | Context menu: center on hex, open note, enter its region or locations, new map from this hex, link a map, link table, swap hex, create token here, clear terrain |
 | **Double-right-click** anywhere | Exit the active tool and return to normal mode |
 
 ---
 
-## Submaps
+## Submaps: regions and locations
 
-A hex can drill down into its own map: a star system inside a sector, a dungeon inside a region. Hexes with a submap show a small ring at the top.
+A hex can open into maps of its own. There are two kinds:
+
+- **Location**: a separate place in the hex, like a town, a dungeon or a ship, with its own size and palette. A hex can have any number. Every submap made before regions is a location.
+- **Region** (Advanced): the hex itself, up close. Every region of a map uses the same shape and size, so regions line up with each other. A hex has at most one.
+
+Hexes with locations show a small ring at the top, with a count once there are two or more. A hex with a region has a thin outline inside it.
 
 | Action | Result |
 |--------|--------|
-| **Right-click → Create / link submap…** | Create a submap for this hex (named after the hex, or the map name and the hex's coordinates; click the name to type your own; its folder name is under **More**), with the suggested palette pre-selected, and go straight into it, or link an existing map |
-| **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the submap |
-| **Ctrl/Cmd+Shift+click** the hex | Open the submap in a new tab |
+| **Right-click → New map from this hex…** | Pick **Region** or **Location**, then set the map up and go straight into it. A location is named after the hex, or the map name and the hex's coordinates; click the name to type your own |
+| **Right-click → Enter region / Open: …** | Go into the hex's region, or one of its (up to two) locations |
+| **Right-click → Locations (3)…** | From three locations on: a list to search, open, unlink and drag into order. Also **Manage locations…** |
+| **Right-click → Link existing map…** | Add a map you already have as one of the hex's locations |
+| **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the hex's region, or its location (the list when there are several) |
+| **Ctrl/Cmd+Shift+click** the hex | Open it in a new tab |
+| Hex editor **Maps** strip | The region chip (outlined) and one chip per location; **+** for a new map, linking one, or the locations list |
 | **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
 | **← back** button / **Alt+←** | Return to the previously viewed map |
 | Breadcrumb (top left) | Jump to any map above this one |
 | Crumbs after the map button ("East: Cole's Ford") | Jump to a neighbouring region. Inside a submap they show its parent's neighbours ("beside Thornwood: South: Cole's Ford") |
+
+**Region settings.** The first region you make on a map asks once how its regions cover its hexes: **Hex flower** (a hex of 7, 19, 37, 61 or 91 hexes) or **Rectangle** (6×6, 8×8, 10×10 or your own size), the palette, and how far neighbouring regions blend. They stay in the map menu's **Regions** tab, which also lists the regions. Shape, size and palette are fixed once a region exists, so every region lines up; delete the regions to change them. Blend stays editable and applies to regions made afterwards.
 
 "Go up to parent map" and "Go back to previous map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
 
@@ -30,9 +41,9 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 ## Where the map is stored
 
-Hex names, terrain, icons, GM icons, regions and submap links live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
+Hex names, terrain, icons, GM icons, regions, region maps and locations live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
 
-The **How to edit this note** box at the top of the map note explains the columns. Column order, header case and `3_4` vs `3, 4` don't matter, and your own columns and text are kept. A row that can't be read stays as you wrote it and is listed in a warning box until you fix it. If the note can't be read at all, the plugin stops saving to it and tells you, rather than writing over it.
+The **How to edit this note** box at the top of the map note explains the columns. Regions, locations and region maps are links (`[[Basin]]`, `[[_saltmere]]`), so renaming the note in Obsidian keeps the map right; plain names work too and become links on the next save. Notes from older versions (a single Submap column) are converted once, after a backup. Column order, header case and `3_4` vs `3, 4` don't matter, and your own columns and text are kept. A row that can't be read stays as you wrote it and is listed in a warning box until you fix it. If the note can't be read at all, the plugin stops saving to it and tells you, rather than writing over it.
 
 ---
 
@@ -102,7 +113,7 @@ Tokens show their name underneath. The layers panel's **Labels** group turns coo
 
 ## Simple and Advanced
 
-**Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes and neighbouring regions (maps joined into one world).
+**Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes, and regions and overworlds (a region map per hex at one scale, and maps joined into one world). Locations (towns, dungeons… inside a hex) are in Simple too.
 
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
 
