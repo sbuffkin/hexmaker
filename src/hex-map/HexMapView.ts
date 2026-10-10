@@ -31,6 +31,7 @@ import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
+import { fitToSafeArea, overlayInsets, revealDelta, uncoverEdgeDelta, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -220,6 +221,9 @@ export class HexMapView extends ItemView {
   /** On-map "which tool is on" bar (fresh-eyes T3); text set in updateModeBar. */
   private modeBarEl: HTMLElement | null = null;
   private modeBarTextEl: HTMLElement | null = null;
+  /** Toolbar rows (and the mode bar) along the top of the map: hexes are
+   *  kept out from under them (see safeArea.ts). */
+  private topBandEls: HTMLElement[] = [];
   /** Time of the last right-click while a tool was active (double-right-click exits). */
   private lastToolContextMenuAt = 0;
   /** The open (or last) right-click tool menu, so Esc can close it first. */
@@ -511,8 +515,27 @@ export class HexMapView extends ItemView {
   private flashHex(x: number, y: number): void {
     const hexEl = this.viewportEl?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`);
     if (!hexEl) return;
+    this.revealHexEl(hexEl);
     const blip = hexEl.createSpan({ cls: "duckmage-hex-blip" });
     blip.addEventListener("animationend", () => blip.remove(), { once: true });
+  }
+
+  /** Pan just enough that a hex is fully visible, clear of the toolbar
+   *  rows and an open side panel (round 4: the tools panel hid the hex a
+   *  tester came back to from a submap). */
+  private revealHexEl(hexEl: HTMLElement): void {
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return;
+    const h = hexEl.getBoundingClientRect();
+    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
+    const dx = revealDelta(h.left - clip.left, h.right - clip.left, ins.left, clip.width - ins.right);
+    const dy = revealDelta(h.top - clip.top, h.bottom - clip.top, ins.top, clip.height - ins.bottom);
+    if (dx === 0 && dy === 0) return;
+    this.panX += dx;
+    this.panY += dy;
+    this.applyTransform();
   }
 
   /** Breadcrumb (ancestors), Up and Back buttons for the active map. */
@@ -1085,6 +1108,8 @@ export class HexMapView extends ItemView {
     this.redoBtn.addEventListener("click", () => {
       void this.redo();
     });
+    this.topBandEls = [tableBtn, rtBtn, mapNavGroup, this.undoBtn, this.redoBtn];
+    if (this.modeBarEl) this.topBandEls.push(this.modeBarEl);
 
     const helpBtn = controlsEl.createEl("button", {
       cls: "duckmage-help-btn",
@@ -1110,6 +1135,10 @@ export class HexMapView extends ItemView {
     );
     toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
     this.overlayPanel.onBeforeOpen = () => toolsPanel.close();
+    // An open panel covers the map's right side: move a covered map edge
+    // out from under it (round 4: the panel hid edge hexes).
+    toolsPanel.onAfterOpen = () => this.uncoverGrid();
+    this.overlayPanel.onAfterOpen = () => this.uncoverGrid();
 
     // Saving indicator — appears while background writes are in flight
     this.savingIndicatorEl = controlsEl.createSpan({
@@ -3235,10 +3264,50 @@ export class HexMapView extends ItemView {
     const gridW = gridEl.offsetWidth;
     const gridH = gridEl.offsetHeight;
     if (clipW === 0 || clipH === 0 || gridW === 0 || gridH === 0) return;
-    const raw = Math.min(clipW / gridW, clipH / gridH) * 0.92;
-    this.zoom  = Math.min(5, Math.max(0.2, raw));
-    this.panX  = (clipW - gridW * this.zoom) / 2;
-    this.panY  = (clipH - gridH * this.zoom) / 2;
+    // Fit into the part of the view the toolbar rows and an open side
+    // panel don't cover, so no hex starts out hidden under them.
+    const fit = fitToSafeArea(clipW, clipH, gridW, gridH, this.measureOverlayInsets());
+    this.zoom = fit.zoom;
+    this.panX = fit.panX;
+    this.panY = fit.panY;
+    this.applyTransform();
+  }
+
+  /**
+   * How far the toolbar rows (with the mode bar) and an open side panel
+   * reach into the map view, in px from the clip's edges. Reads only.
+   */
+  private measureOverlayInsets(): Insets {
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return NO_INSETS;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return NO_INSETS;
+    const box = (el: HTMLElement): Box => el.getBoundingClientRect();
+    const top = this.topBandEls.filter((el) => el.isConnected).map(box);
+    const right = [this.toolsPanel, this.overlayPanel]
+      .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
+      .map((p) => box(p.element));
+    return overlayInsets(clip, top, right);
+  }
+
+  /**
+   * Pan so a map edge that sits on screen under the toolbar rows, the mode
+   * bar or an open side panel comes out from under it (round 4: the tools
+   * panel hid edge hexes; the mode bar covered the bottom row).
+   */
+  private uncoverGrid(): void {
+    const clipEl = this.viewportEl?.parentElement;
+    const gridEl = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (!clipEl || !gridEl) return;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return;
+    const g = gridEl.getBoundingClientRect();
+    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
+    const dx = uncoverEdgeDelta(g.left - clip.left, g.right - clip.left, ins.left, clip.width - ins.right, 0, clip.width);
+    const dy = uncoverEdgeDelta(g.top - clip.top, g.bottom - clip.top, ins.top, clip.height - ins.bottom, 0, clip.height);
+    if (dx === 0 && dy === 0) return;
+    this.panX += dx;
+    this.panY += dy;
     this.applyTransform();
   }
 
@@ -3415,9 +3484,13 @@ export class HexMapView extends ItemView {
     const hexViewY = (hexScreenY - clipRect.top - this.panY) / this.zoom;
 
     const targetZoom = 1.5;
+    // Centre in the part of the view no toolbar or open panel covers.
+    const ins = usableInsets(clipRect.width, clipRect.height, this.measureOverlayInsets());
+    const midX = ins.left + (clipRect.width - ins.left - ins.right) / 2;
+    const midY = ins.top + (clipRect.height - ins.top - ins.bottom) / 2;
     this.zoom = targetZoom;
-    this.panX = clipRect.width / 2 - hexViewX * targetZoom;
-    this.panY = clipRect.height / 2 - hexViewY * targetZoom;
+    this.panX = midX - hexViewX * targetZoom;
+    this.panY = midY - hexViewY * targetZoom;
     this.applyTransform();
     this.scheduleZoomBake();
   }
