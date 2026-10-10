@@ -6851,3 +6851,21 @@ button.duckmage-wfc-library-tab.is-active {
     overflow-wrap: anywhere;
     line-height: 1.2;
 }
+
+/* Neighbouring maps' roads and rivers in the ghost strip (read-only), so
+   a path can be continued to meet them; a dot marks where one ends. The
+   SVG covers the grid (one user unit = 1em) and overflows into the strip. */
+.duckmage-region-shadow-paths {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0.75;
+}
+.duckmage-region-shadow-path-end {
+    stroke: var(--background-primary);
+    stroke-width: 0.06;
+}

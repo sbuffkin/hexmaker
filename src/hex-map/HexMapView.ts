@@ -31,6 +31,7 @@ import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
+import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
 import { fitToSafeArea, overlayInsets, revealDelta, uncoverEdgeDelta, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
@@ -3833,6 +3834,25 @@ export class HexMapView extends ItemView {
       const [x, y] = key.split("_").map(Number);
       return { s, at: place(x, y), color: colorOf(s.map, s.terrain) };
     });
+    // The neighbours' roads and rivers across the strip (read-only), so a
+    // path here can be drawn to meet them (round 4: testers lined roads up
+    // by eye). In em, like the strip's hexes; a dot marks where one ends.
+    const typeByName = new Map(this.plugin.settings.pathTypes.map((t) => [t.name, t]));
+    const centreEm = (key: string) => {
+      const [x, y] = key.split("_").map(Number);
+      const p = place(x, y);
+      return { cx: p.x / em, cy: p.y / em };
+    };
+    const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
+      const pt = typeByName.get(run.typeName);
+      if (!pt) return [];
+      const pts = ghostRunPoints(run, centreEm);
+      const ends = [run.stubStart ? null : pts[0], run.stubEnd ? null : pts[pts.length - 1]]
+        .filter((p): p is { cx: number; cy: number } => p !== null);
+      return [{ run, pt, pts, ends }];
+    });
+    const gridWEm = gridContainer.offsetWidth / em;
+    const gridHEm = gridContainer.offsetHeight / em;
 
     // ── Writes ──
     const layer = gridContainer.createDiv({ cls: "duckmage-region-shadow-layer" });
@@ -3852,6 +3872,39 @@ export class HexMapView extends ItemView {
       el.addEventListener("click", () => {
         new RegionNavigateModal(this.app, this.plugin, { map: s.map, x: s.x, y: s.y }, () => this.goToRegionHex(s.map, s.x, s.y)).open();
       });
+    }
+
+    if (ghostPaths.length > 0 && gridWEm > 0 && gridHEm > 0) {
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = activeDocument.createElementNS(svgNS, "svg");
+      svg.classList.add("duckmage-region-shadow-paths");
+      // One user unit = 1em of the grid, so it scales with zoom like the strip.
+      svg.setAttribute("viewBox", `0 0 ${gridWEm} ${gridHEm}`);
+      svg.setAttribute("preserveAspectRatio", "none");
+      const dashFor: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
+      for (const { run, pt, pts, ends } of ghostPaths) {
+        const path = activeDocument.createElementNS(svgNS, "path");
+        path.setAttribute("d", smoothPath(pts));
+        path.setAttribute("stroke", pt.color);
+        path.setAttribute("stroke-width", String(pt.width / em));
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("fill", "none");
+        const dash = dashFor[pt.lineStyle];
+        if (dash) path.setAttribute("stroke-dasharray", dash.map((d) => d / em).join(" "));
+        path.setAttribute("data-region", run.map);
+        svg.appendChild(path);
+        for (const end of ends) {
+          const dot = activeDocument.createElementNS(svgNS, "circle");
+          dot.setAttribute("class", "duckmage-region-shadow-path-end");
+          dot.setAttribute("cx", String(end.cx));
+          dot.setAttribute("cy", String(end.cy));
+          dot.setAttribute("r", String(Math.max(3, pt.width * 0.9) / em));
+          dot.setAttribute("fill", pt.color);
+          svg.appendChild(dot);
+        }
+      }
+      layer.appendChild(svg);
     }
   }
 
