@@ -31,6 +31,7 @@ import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
+import { hexHoverLabel } from "./hexHover";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -654,6 +655,23 @@ export class HexMapView extends ItemView {
 
     this.registerDomEvent(clipEl, "mouseleave", () => {
       this.updateBrushHighlight(null, null);
+    });
+
+    // Hover info: a hex's terrain + coords as its tooltip / accessible name.
+    // One delegated listener, filled in on first hover of each hex — no
+    // per-hex listeners or per-render work on big maps, and always the
+    // current terrain (painting doesn't re-render the grid).
+    this.registerDomEvent(clipEl, "mouseover", (e: MouseEvent) => {
+      const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
+      if (!hexEl) return;
+      const x = Number(hexEl.dataset.x);
+      const y = Number(hexEl.dataset.y);
+      const own = getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.activeMapName));
+      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null);
+      if (hexEl.title !== label) {
+        hexEl.title = label;
+        hexEl.setAttr("aria-label", label);
+      }
     });
 
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
