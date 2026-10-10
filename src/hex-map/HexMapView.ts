@@ -29,6 +29,7 @@ import {
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
+import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -655,32 +656,31 @@ export class HexMapView extends ItemView {
     });
 
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
-    // Delta-aware + rAF-batched. Mouse notch (deltaY=100) → ~1.33× per event.
-    // Trackpads (deltaY≈2-10) → tiny per-event factors that look smooth
-    // because many events fire per frame and the rAF tick applies them as
-    // one update. NO easing tail — the visual lands exactly at the
-    // cumulative wheel delta and stops the frame after the last event.
-    const ZOOM_SENSITIVITY = 0.0028;
+    // Delta-aware + rAF-batched (see wheelZoom.ts). Mouse notch (deltaY=100)
+    // → ~1.16× per event. Trackpads (deltaY≈2-10) → tiny per-event factors
+    // that look smooth because many events fire per frame and the rAF tick
+    // applies them as one update. NO easing tail — the visual lands exactly
+    // at the cumulative wheel delta and stops the frame after the last event.
     this.registerDomEvent(
       contentEl,
       "wheel",
       (e: WheelEvent) => {
+        // Over the toolbar panels/menus the wheel scrolls them; with a modal
+        // open it belongs to the modal (fresh-eyes round 3: "scroll-to-zoom
+        // when I meant to scroll the modal").
+        const overMap = e.target instanceof Node && clipEl.contains(e.target);
+        const modalOpen = !!contentEl.ownerDocument.body.querySelector(":scope > .modal-container");
+        if (!wheelZoomsMap(overMap, modalOpen)) {
+          if (modalOpen) e.preventDefault();
+          return;
+        }
         // Calibration mode: image/grid wheel handlers own plain-wheel scaling
         // (they stopPropagation), so this only fires for Ctrl/Cmd+wheel
         // (which the layer handlers explicitly let through) or wheels outside
         // both layers. Treat both as a viewport zoom.
         e.preventDefault();
         const rect = contentEl.getBoundingClientRect();
-        // Normalize deltaY across deltaMode (LINE: ~33px/line, PAGE: ~400px).
-        const PX_PER_LINE = 33;
-        const PX_PER_PAGE = 400;
-        const dyPx =
-          e.deltaMode === WheelEvent.DOM_DELTA_LINE
-            ? e.deltaY * PX_PER_LINE
-            : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? e.deltaY * PX_PER_PAGE
-            : e.deltaY;
-        this.pendingZoomLog += -dyPx * ZOOM_SENSITIVITY;
+        this.pendingZoomLog += wheelZoomLog(e.deltaY, e.deltaMode);
         this.pendingZoomPivot = {
           cx: e.clientX - rect.left,
           cy: e.clientY - rect.top,
