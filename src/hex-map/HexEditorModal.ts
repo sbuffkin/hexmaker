@@ -14,7 +14,7 @@ import {
   setIconOverrideInFile,
   setGmIconsInFile,
   getGmIconsFromFile,
-  getSubmapFromFile,
+  getHexMapsFromFile,
   getHexNameFromFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
@@ -230,6 +230,7 @@ export class HexEditorModal extends HexmakerModal {
     }
     this.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
+    this.renderMapsStrip(contentEl);
 
     this.makeDraggable();
     // The body renders after an async read, so the modal opens short and
@@ -590,26 +591,73 @@ export class HexEditorModal extends HexmakerModal {
       }
     }
 
-    // Centre dot — only shown when a submap is linked
-    const hexPath = this.plugin.hexPath(this.x, this.y, this.mapName);
-    const submap = getSubmapFromFile(this.app, hexPath);
-    if (submap) {
+    // Centre dot: enters the hex's region, or its only location. With
+    // several locations the Maps strip below the name lists them all.
+    const maps = getHexMapsFromFile(this.app, this.plugin.hexPath(this.x, this.y, this.mapName));
+    const target = maps.regionMap ?? (maps.locations.length === 1 ? maps.locations[0] : undefined);
+    if (target && this.plugin.getMap(target)) {
       const centre = widget.createDiv({ cls: "duckmage-neighbor-centre duckmage-neighbor-centre--linked" });
       // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
       const cy = isFlat ? 24 : 20;
       centre.setCssProps({ left: "24px", top: `${cy}px` });
-      centre.title = `Submap: ${this.plugin.mapLabel(submap)}`;
+      centre.title = `${maps.regionMap ? "Region" : "Location"}: ${this.plugin.mapLabel(target)}`;
       // Color the dot with the linked map's terrain type color (if configured)
-      const submapData = this.plugin.getMap(submap);
-      if (submapData?.terrainType) {
-        const terrainEntry = this.plugin.getMapPalette(submap).find((t) => t.name === submapData.terrainType);
-        if (terrainEntry?.color) centre.style.backgroundColor = terrainEntry.color;
+      const targetData = this.plugin.getMap(target);
+      if (targetData?.terrainType) {
+        const terrainEntry = this.plugin.getMapPalette(target).find((t) => t.name === targetData.terrainType);
+        if (terrainEntry?.color) centre.setCssProps({ "--duckmage-bg": terrainEntry.color });
       }
       centre.addEventListener("click", () => {
         this.close();
-        this.options.onSwitchMap?.(submap);
+        this.options.onSwitchMap?.(target);
       });
     }
+  }
+
+  /**
+   * "Maps" strip: the hex's region chip first (accent outline), then a
+   * chip per location (scrolls sideways), then "+" (new map, link existing,
+   * manage locations). Hidden when the hex has no maps and the host can't
+   * make any.
+   */
+  private renderMapsStrip(container: HTMLElement): void {
+    const { regionMap, locations } = getHexMapsFromFile(this.app, this.plugin.hexPath(this.x, this.y, this.mapName));
+    const locs = locations.filter((l) => l !== regionMap);
+    if (!regionMap && !locs.length && !this.options.onNewChildMap) return;
+    const strip = container.createDiv({ cls: "duckmage-maps-strip" });
+    strip.createSpan({ cls: "duckmage-maps-strip-label", text: "Maps" });
+    const chips = strip.createDiv({ cls: "duckmage-maps-strip-chips" });
+    const chip = (name: string, kind: "region" | "location") => {
+      const exists = !!this.plugin.getMap(name);
+      const label = this.plugin.mapLabel(name);
+      const c = chips.createEl("button", {
+        cls: `duckmage-maps-chip duckmage-maps-chip--${kind}${exists ? "" : " is-missing"}`,
+        text: label,
+        attr: { title: exists ? `${kind === "region" ? "Region" : "Location"}: ${label}` : `No map named ${name}` },
+      });
+      c.disabled = !exists;
+      c.addEventListener("click", () => {
+        this.close();
+        this.options.onSwitchMap?.(name);
+      });
+    };
+    if (regionMap) chip(regionMap, "region");
+    for (const l of locs) chip(l, "location");
+    if (!regionMap && !locs.length) chips.createSpan({ cls: "duckmage-maps-strip-empty", text: "None yet" });
+    if (!this.options.onNewChildMap) return;
+    const add = strip.createEl("button", { cls: "duckmage-maps-chip-add", text: "+", attr: { "aria-label": "Add a map to this hex", title: "New map from this hex, link one, or manage locations" } });
+    add.addEventListener("click", (e) => {
+      const { x, y } = this;
+      const menu = new Menu();
+      menu.addItem((i) => i.setTitle("New map from this hex…").setIcon("map-plus").onClick(() => { this.close(); this.options.onNewChildMap?.(x, y); }));
+      if (this.options.onLinkExistingMap) {
+        menu.addItem((i) => i.setTitle("Link existing map…").setIcon("link").onClick(() => { this.close(); this.options.onLinkExistingMap?.(x, y); }));
+      }
+      if (locs.length && this.options.onManageLocations) {
+        menu.addItem((i) => i.setTitle(`Manage locations (${locs.length})…`).setIcon("list").onClick(() => { this.close(); this.options.onManageLocations?.(x, y); }));
+      }
+      menu.showAtMouseEvent(e);
+    });
   }
 
   /** Terrain header summary: swatch + current terrain name ("(base)" when

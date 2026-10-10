@@ -62,13 +62,13 @@ describe("map store: migration from hex-note frontmatter", () => {
 		expect(store.get("coast", "1_2")).toEqual({ terrain: "ocean" });
 		expect(store.get("coast", "3_4")).toEqual({
 			terrain: "forest", icon: "castle.png", gmIcons: ["skull.png", "skull.png"],
-			region: "Basin", submap: "coast-3-4", locked: true,
+			region: "Basin", locations: ["coast-3-4"], locked: true,
 		});
 		expect(store.get("coast", "0_0")).toEqual({ gmIcons: ["trap.png"] });
 		expect(store.get("coast-3-4", "0_0")).toEqual({ terrain: "hills" });
 
 		const note = parseMapNote(vault.files.get("world/hexes/coast/_coast.md")!)!;
-		expect(note.hexes.get("3_4")?.submap).toBe("coast-3-4");
+		expect(note.hexes.get("3_4")?.locations).toEqual(["coast-3-4"]);
 		expect(note.paths).toEqual([{ typeName: "Road", hexes: ["1_2", "3_4"] }]);
 		expect(note.settings.gridSize).toEqual({ cols: 6, rows: 6 });
 	});
@@ -360,7 +360,7 @@ describe("map store: a note broken by hand mid-session (#42)", () => {
 		const { store } = await boot(v, oneMap());
 		store.set("m", "1_1", { terrain: "grass" });
 		await store.flush();
-		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 2", "hexmaker-mpa: 2");
+		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 3", "hexmaker-mpa: 3");
 		v.files.set(NOTE, broken); // onModify hasn't run yet
 		store.set("m", "2_2", { terrain: "lava" });
 		await store.flush();
@@ -404,7 +404,7 @@ describe("map store: older map notes are converted once, after a backup (#42)", 
 		expect(backups.map((k) => k.split("/").pop())).toEqual(["m-map-note.md"]);
 		expect(v.files.get(backups[0])).toBe(old);
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 2");
+		expect(now).toContain("hexmaker-map: 3");
 		expect(now).toContain('parent: "[[_world]]"\nparent-hex: 3, 4');
 		expect(now).toContain('background-image: "[[art/bg.png]]"');
 		expect(now).toContain("hexmaker-origin-x: 0");
@@ -532,5 +532,49 @@ describe("map store: paths live only in the map note", () => {
 		expect(fresh[0].pathChains).toEqual([{ typeName: "Road", hexes: ["1_2", "3_4"] }]);
 		await store.sync();
 		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toHaveLength(1);
+	});
+});
+
+describe("map store: format 2 notes and region mirrors (overworld phase 1)", () => {
+	const V2 = [
+		"---", "hexmaker-map: 2", "palette: Default", "cols: 6", "rows: 6", "offset-x: 0", "offset-y: 0", "---", "# m", "",
+		"Our notes.", "",
+		"## Hexes", "",
+		"| Hex | Terrain | Region | Submap |",
+		"| --- | --- | --- | --- |",
+		"| 1_1 | forest | Basin | town |",
+		"| 2_2 | hills |  | fen |",
+		"", "## Paths", "", "| Type | Hexes |", "| --- | --- |", "",
+	].join("\n");
+	const world = (): MapData[] => [
+		...oneMap(),
+		{ name: "town", paletteName: "Default", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [], parent: { map: "m", hex: "1_1" } } as MapData,
+		// fen's own record says it is hex 2_2's region: the hex is brought in line.
+		{ name: "fen", paletteName: "Default", gridSize: { cols: 7, rows: 7 }, gridOffset: { x: 0, y: 0 }, pathChains: [], parent: { map: "m", hex: "2_2" }, submapKind: "region" } as MapData,
+	];
+
+	it("reads the Submap column as locations, converts the note once after a backup, and keeps the user's text", async () => {
+		const v = new MemVault({ [NOTE]: V2 });
+		const { store } = await boot(v, world());
+		expect(store.get("m", "1_1")).toEqual({ terrain: "forest", region: "Basin", locations: ["town"] });
+		const now = v.files.get(NOTE)!;
+		expect(now).toContain("hexmaker-map: 3");
+		expect(now).toContain("Our notes.");
+		expect(now).toContain("| 1_1 | forest | [[Basin]] | [[_town]] |");
+		expect(now).not.toContain("Submap");
+		const backups = [...v.files.keys()].filter((k) => k.includes("/backups/map-notes-") && k.endsWith("-map-note.md"));
+		expect(backups.map((k) => k.split("/").pop())).toEqual(["m-map-note.md"]);
+		expect(v.files.get(backups[0])).toBe(V2);
+	});
+
+	it("repairs the hex's region map from the region map's own record (the record wins)", async () => {
+		const v = new MemVault({ [NOTE]: V2 });
+		const { store } = await boot(v, world());
+		expect(store.get("m", "2_2")).toEqual({ terrain: "hills", regionMap: "fen" });
+		expect(parseMapNote(v.files.get(NOTE)!)!.hexes.get("2_2")).toEqual({ terrain: "hills", regionMap: "fen" });
+		// a second start changes nothing
+		const before = v.files.get(NOTE);
+		await boot(v, world());
+		expect(v.files.get(NOTE)).toBe(before);
 	});
 });

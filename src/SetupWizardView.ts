@@ -194,7 +194,7 @@ async function removeUnusedPlaceholder(plugin: HexmakerPlugin, keep: string): Pr
 	const others = plugin.settings.maps.filter((m) => m.name !== PLACEHOLDER_MAP_NAME);
 	const referenced = others.some((m) =>
 		m.parent?.map === PLACEHOLDER_MAP_NAME ||
-		[...plugin.mapStore.all(m.name).values()].some((h) => h.submap === PLACEHOLDER_MAP_NAME));
+		[...plugin.mapStore.all(m.name).values()].some((h) => h.regionMap === PLACEHOLDER_MAP_NAME || !!h.locations?.includes(PLACEHOLDER_MAP_NAME)));
 	const unused = isUnusedPlaceholderMap(map, {
 		hexCount: plugin.mapStore.all(PLACEHOLDER_MAP_NAME).size,
 		folderEntries: folder instanceof TFolder ? folder.children.map((c) => c.name) : [],

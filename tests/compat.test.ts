@@ -6,7 +6,7 @@ import { isModelMarkdown, parseModelMarkdown, solve } from "../packages/hex-wfc/
 import { compareVersions, migrateMapData, VERSION_KEY } from "../src/compat";
 import { isSaveMarkdown, parseSave, retargetSave, serializeSave, decodeCells, encodeCells } from "../src/worldgen/saveFormat";
 import { exampleFiles } from "./compat/examples";
-import { mapNoteKey, parseMapNote, updateMapNote } from "../src/maps/mapNote";
+import { MAP_NOTE_FORMAT, mapNoteKey, parseMapNote, updateMapNote } from "../src/maps/mapNote";
 
 /**
  * Every released version leaves an example generator, save and map in
@@ -86,7 +86,9 @@ describe("compat examples", () => {
           expect(s.backgroundImage).toMatchObject({ path: "world/maps/compat example.png", offsetX: 12.5, offsetY: -4, scale: 1.25, rotation: 0, opacity: 0.8 });
           expect(s.gridDisplayScaleX as number).toBeCloseTo(1.0123, 3);
           expect(s.gridDisplayOffsetX as number).toBeCloseTo(-3.3333, 3);
-          expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", submap: "compat-example-3-4", locked: true });
+          expect(d.hexes.get("3_4")).toMatchObject({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", locked: true });
+          // A Submap (format 2 and older) reads as the first location; later sets add more.
+          expect(d.hexes.get("3_4")!.locations?.[0]).toBe("compat-example-3-4");
           expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
           expect(d.hexes.get("4_5")).toEqual({ terrain: "shallows" });
           expect(d.paths.map((p) => p.typeName)).toEqual(["Road", "River"]);
@@ -106,7 +108,7 @@ describe("compat examples", () => {
           expect(mapNoteKey(back)).toBe(mapNoteKey(rounded));
           // Converted to the current format: plain keys, no JSON, the help box once.
           const fm = out.slice(0, out.indexOf("\n---", 4));
-          expect(fm).toMatch(/^hexmaker-map: 2$/m);
+          expect(fm).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
           expect(fm).not.toMatch(/[{}]/);
           expect(fm).not.toContain("hexmaker-extra");
           expect(out.match(/\[!info\]- How to edit this note/g)).toHaveLength(1);
@@ -139,8 +141,22 @@ describe("map note formats", () => {
     expect(d.format).toBe(2);
     expect(d.problems).toEqual([]);
     expect(d.settings).toMatchObject({ displayName: "Compat Example", parent: { map: "compat-world", hex: "3_4" }, world: { id: "w-compat", cx: 1, cy: -1 }, originX: 2 });
-    expect(d.hexes.get("3_4")).toMatchObject({ name: "Glass Wastes", terrain: "hills", region: "Basin", locked: true });
+    expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", locations: ["compat-example-3-4"], locked: true });
     expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
+  });
+
+  it("format 2 converts once: Submap becomes Locations, maps and regions become links, nothing else changes", () => {
+    const text = read(formatsDir, "format-2.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
+    const d = parseMapNote(text)!;
+    const out = updateMapNote(text, "compat-example", d);
+    expect(out).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
+    expect(out).toContain("My notes.");
+    expect(out).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked | Notes |");
+    expect(out).toContain("| 3_4 | Glass Wastes | hills | bw-castle.png | skull.png, trap.png | [[Basin]] | [[_compat-example-3-4]] | yes |  |");
+    expect(out).toContain("*Locations* links the maps");
+    const back = parseMapNote(out)!;
+    expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+    expect(updateMapNote(out, "compat-example", back)).toBe(out);
   });
 });
 

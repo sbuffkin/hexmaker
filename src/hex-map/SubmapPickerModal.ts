@@ -12,13 +12,15 @@ export class SubmapPickerModal extends HexmakerModal {
     private current: string | undefined,
     /** `created` is true when the map was just made in this modal. */
     private onLink: (mapName: string, created: boolean) => void,
-    private onUnlink: () => void,
+    private onUnlink: (() => void) | undefined,
     /** The hex being linked. Enables the create-first layout: section open,
      *  named after the hex (or "<parent> x, y"), child palette pre-selected. */
     private origin?: { map: string; x: number; y: number },
     /** When set (single-hex use), "create" hands off to the new-submap setup
      *  modal (size, generator, preview) instead of the inline form. */
     private onNewSubmap?: () => void,
+    /** Title, and maps not to offer (already linked to the hex, the map itself). */
+    private opts: { title?: string; exclude?: string[] } = {},
   ) {
     super(app);
   }
@@ -30,7 +32,7 @@ export class SubmapPickerModal extends HexmakerModal {
     this.modalEl.addClass("duckmage-submap-picker-modal");
     this.makeDraggable();
 
-    contentEl.createEl("h2", { text: "Link submap" });
+    contentEl.createEl("h2", { text: this.opts.title ?? "Link submap" });
 
     // ── Current submap indicator ──────────────────────────────────────────
     if (this.current) {
@@ -40,7 +42,8 @@ export class SubmapPickerModal extends HexmakerModal {
     }
 
     // ── Link existing map ─────────────────────────────────────────────────
-    const maps = this.plugin.settings.maps;
+    const exclude = new Set(this.opts.exclude ?? []);
+    const maps = this.plugin.settings.maps.filter((m) => !exclude.has(m.name));
     let selectedMap = this.current ?? maps[0]?.name ?? "";
 
     if (maps.length > 0) {
@@ -100,7 +103,7 @@ export class SubmapPickerModal extends HexmakerModal {
 
     if (this.onNewSubmap) {
       const newRow = contentEl.createDiv({ cls: "duckmage-submap-new-row" });
-      const newBtn = newRow.createEl("button", { text: "New submap…", cls: maps.length ? "" : "mod-cta" });
+      const newBtn = newRow.createEl("button", { text: "New location…", cls: maps.length ? "" : "mod-cta" });
       newRow.createSpan({ cls: "setting-item-description", text: "Choose size, palette and a generator, then go straight in." });
       newBtn.addEventListener("click", () => { this.close(); this.onNewSubmap?.(); });
       this.renderButtons(contentEl, maps.length > 0, () => selectedMap);
@@ -264,9 +267,10 @@ export class SubmapPickerModal extends HexmakerModal {
   private renderButtons(contentEl: HTMLElement, hasMaps: boolean, selected: () => string): void {
     const bottomRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     if (hasMaps) {
-      if (this.current) {
+      if (this.current && this.onUnlink) {
+        const unlink = this.onUnlink;
         bottomRow.createEl("button", { text: "Remove link", cls: "mod-warning" })
-          .addEventListener("click", () => { this.close(); this.onUnlink(); });
+          .addEventListener("click", () => { this.close(); unlink(); });
       }
       bottomRow.createEl("button", { text: "Link", cls: "mod-cta" })
         .addEventListener("click", () => {

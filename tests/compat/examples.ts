@@ -107,7 +107,7 @@ export function exampleMapNote(version: string): string {
   const { cells, paths } = exampleMap();
   const hexes = new Map<string, HexData>();
   for (const [k, t] of cells) if (t === "shallows") hexes.set(k, { terrain: t });
-  hexes.set("3_4", { name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", submap: "compat-example-3-4", locked: true });
+  hexes.set("3_4", { name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", regionMap: "compat-example-region", locations: ["compat-example-3-4", "compat-example-inn"], locked: true });
   hexes.set("6_2", { terrain: "grass", extra: { Notes: "a newer build's column" } });
   const settings = {
     displayName: "Compat Example",

@@ -5,6 +5,7 @@ import { normalizeFolder } from "../utils";
 import {
   buildMapNote,
   MAP_NOTE_FORMAT,
+  READABLE_KEYS_FORMAT,
   mapNoteKey,
   parseMapNote,
   readMapNote,
@@ -17,6 +18,7 @@ import {
   type MapNoteReadOptions,
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
+import { regionMirrorFixes } from "./submaps";
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
@@ -35,7 +37,7 @@ export function hexDataFromFrontmatter(fm: Record<string, unknown> | null | unde
     : typeof fm["gm-icon"] === "string" ? [fm["gm-icon"]] : [];
   if (gm.length) h.gmIcons = gm;
   if (typeof fm.region === "string" && fm.region) h.region = fm.region;
-  if (typeof fm["duckmage-submap"] === "string" && fm["duckmage-submap"]) h.submap = fm["duckmage-submap"];
+  if (typeof fm["duckmage-submap"] === "string" && fm["duckmage-submap"]) h.locations = [fm["duckmage-submap"]];
   if (fm.locked === true || fm.locked === "true") h.locked = true;
   return h;
 }
@@ -300,7 +302,7 @@ export class MapStore {
    */
   private apply(map: MapData, data: MapNoteData): void {
     Object.assign(map, data.settings);
-    if ((data.format ?? 1) >= MAP_NOTE_FORMAT) {
+    if ((data.format ?? 1) >= READABLE_KEYS_FORMAT) {
       const unreadable = new Set((data.problems ?? []).map((p) => p.field));
       const m = map as unknown as Record<string, unknown>;
       for (const f of RESETTABLE_FIELDS) if (!(f in data.settings) && !unreadable.has(f)) delete m[f];
@@ -356,7 +358,7 @@ export class MapStore {
     for (const k of new Set([...Object.keys(bs), ...Object.keys(ts)])) {
       if (same(bs[k], ts[k])) continue;
       if (k in ts) m[k] = ts[k];
-      else if ((theirs.format ?? 1) >= MAP_NOTE_FORMAT && RESETTABLE_FIELDS.includes(k)) delete m[k];
+      else if ((theirs.format ?? 1) >= READABLE_KEYS_FORMAT && RESETTABLE_FIELDS.includes(k)) delete m[k];
     }
     if (!same(base.paths, theirs.paths)) map.pathChains = theirs.paths;
   }
@@ -501,6 +503,22 @@ export class MapStore {
     await this.flush();
   }
 
+  /**
+   * Make each hex's Region map cell agree with the region maps' records
+   * (the map record wins; see regionMirrorFixes). Logged, never silent.
+   * Maps in `skip` (unreadable notes) aren't touched.
+   */
+  repairRegionMirrors(skip: string[] = []): number {
+    const maps = this.uniqueMaps();
+    const fixes = regionMirrorFixes(maps, (m, k) => this.get(m, k), (m) => this.all(m))
+      .filter((f) => !skip.includes(f.map) && !this.broken.has(f.map));
+    for (const f of fixes) {
+      console.warn(`Hexmap World Creator: fixed a region link: ${f.map} hex ${f.hex}: ${f.reason}.`);
+      this.set(f.map, f.hex, f.patch);
+    }
+    return fixes.length;
+  }
+
   forgetMap(name: string): void {
     this.hexes.delete(name);
     this.lastKey.delete(name);
@@ -538,6 +556,8 @@ export class MapStore {
       // Hex notes still carrying map data after a load (an interrupted
       // cleanup, or notes synced in from an older device) get cleaned now.
       await this.cleanHexNotes(maps.filter((m) => !toMigrate.includes(m) && !unreadable.includes(m)), false);
+      // Region map cells follow the region maps' own records.
+      this.repairRegionMirrors(unreadable.map((m) => m.name));
       // Notes in the older format (JSON values) are converted once, after a
       // backup; unreadable rows in the others are reported.
       for (const name of [...this.dirty]) {

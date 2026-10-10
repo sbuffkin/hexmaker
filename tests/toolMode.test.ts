@@ -127,11 +127,14 @@ describe("Map navigation buttons say where they go (fresh-eyes T4)", () => {
 });
 
 describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
-	it("reads the submap from the map note, not only when a hex note exists", () => {
+	it("reads the hex's region and locations from the map note, not only when a hex note exists", () => {
 		const menu = method("onHexContextMenu");
-		expect(menu).toMatch(/const submap = getSubmapFromFile\(this\.app, hexPath\);/);
+		expect(menu).toMatch(/submapMenuPlan\(this\.plugin\.mapStore\.get\(this\.activeMapName/);
 		expect(menu).not.toMatch(/hexExists \?/);
-		expect(menu).toContain("Enter submap: ${this.plugin.mapLabel(submap)}");
+		expect(menu).toContain("Enter region: ${this.plugin.mapLabel(region)}");
+		expect(menu).toContain("Open: ${this.plugin.mapLabel(loc)}");
+		expect(menu).toContain("Locations (${childPlan.listCount})…");
+		expect(menu).toContain('"New map from this hex…"');
 	});
 });
 

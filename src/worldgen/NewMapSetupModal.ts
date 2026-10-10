@@ -1,7 +1,8 @@
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { SubmapDefault, TerrainColor } from "../types";
+import type { RegionSettings, SubmapDefault, TerrainColor } from "../types";
+import { regionGridSize, regionSettingsLabel } from "../maps/submaps";
 import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
@@ -131,6 +132,9 @@ export class NewMapSetupModal extends HexmakerModal {
     private origin?: { map: string; x: number; y: number },
     /** Starting values carried over from Maps → New map (top-level maps only). */
     private prefill?: { name?: string; anchor?: string; side?: WorldSide },
+    /** Making the hex's Region map: size and palette come from the parent's
+     *  region settings and can't be changed here. */
+    private asRegion?: { settings: RegionSettings },
   ) {
     super(app);
     this.stagger = plugin.settings.staggerOffset ?? "odd";
@@ -154,6 +158,14 @@ export class NewMapSetupModal extends HexmakerModal {
         base: d?.baseTerrain !== undefined,
       };
     }
+    if (asRegion) {
+      const g = regionGridSize(asRegion.settings);
+      this.cols = g.cols;
+      this.rows = g.rows;
+      // Saved submap defaults are for locations: a region uses its settings.
+      this.saved = undefined;
+      this.remember = { palette: false, size: false, generator: false, base: false };
+    }
   }
 
   onOpen(): void {
@@ -161,8 +173,10 @@ export class NewMapSetupModal extends HexmakerModal {
     this.modalEl.addClass("duckmage-setup-modal");
     this.stopKeepInViewport = this.keepInViewport();
     this.titleEl.setText(
-      this.origin
-        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
+      this.asRegion && this.origin
+        ? `New region — ${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
+        : this.origin
+        ? `New location — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
         : "New map",
     );
     void listGeneratorKinds(this.plugin).then((kinds) => {
@@ -233,6 +247,11 @@ export class NewMapSetupModal extends HexmakerModal {
       this.saved?.palette
         ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : defaultPaletteFor(this.plugin.settings)),
     );
+    if (this.asRegion) {
+      const fixed = this.asRegion.settings.palette;
+      if (fixed && [...paletteSelect.options].some((o) => o.value === fixed)) paletteSelect.value = fixed;
+      paletteSelect.disabled = true;
+    }
     this.rememberBox(palRow, "palette");
     attachPaletteHint(palRow, paletteSelect);
 
@@ -281,6 +300,13 @@ export class NewMapSetupModal extends HexmakerModal {
       });
     }
     this.rememberBox(sizeRow, "size");
+    if (this.asRegion) {
+      for (const el of [colsInput, rowsInput, ...presetBtns]) el.disabled = true;
+      sizeRow.createDiv({
+        cls: "setting-item-description",
+        text: `${regionSettingsLabel(this.asRegion.settings)}: fixed by this map's region settings, so every region lines up.`,
+      });
+    }
 
     // ── Next to (new top-level maps): join a world of neighbouring regions.
     // Size, palette, offset and stagger then follow the neighbour; terrain
@@ -700,7 +726,7 @@ export class NewMapSetupModal extends HexmakerModal {
    * from a hex with a terrain.
    */
   private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], what: string = key): void {
-    if (!this.originTerrain) return;
+    if (!this.originTerrain || this.asRegion) return;
     const label = row.createEl("label", {
       cls: "duckmage-setup-default",
       attr: { title: `Saved when you create this submap, and used to start every new submap of a ${this.originTerrain} hex` },
@@ -713,7 +739,7 @@ export class NewMapSetupModal extends HexmakerModal {
 
   /** Store (or forget) the ticked choices as this terrain's submap defaults. */
   private async saveDefaults(paletteName: string): Promise<void> {
-    if (!this.origin || !this.originTerrain) return;
+    if (!this.origin || !this.originTerrain || this.asRegion) return;
     const set: SubmapDefault = {};
     const clear: (keyof SubmapDefault)[] = [];
     if (this.remember.palette) set.palette = paletteName; else clear.push("palette");

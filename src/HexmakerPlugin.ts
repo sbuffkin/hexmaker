@@ -56,6 +56,17 @@ import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
+import {
+  addLocationPatch,
+  applyRegionSettingsEdit,
+  hexChildMaps,
+  regionMapAt,
+  regionsLocked,
+  removeMapPatch,
+  renameMapPatch,
+  setRegionPatch,
+} from "./maps/submaps";
+import type { RegionSettings } from "./types";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
 import {
@@ -888,11 +899,12 @@ export default class HexmakerPlugin extends Plugin {
       : `${mapName}/${x}_${y}.md`;
   }
 
-  /** Update duckmage-submap frontmatter in all hex notes when a map is renamed. */
+  /** A map was renamed: every hex's Region map / Locations link to it follows. */
   async updateSubmapReferences(oldName: string, newName: string): Promise<void> {
     for (const m of this.settings.maps) {
-      for (const [key, h] of this.mapStore.all(m.name)) {
-        if (h.submap === oldName) this.mapStore.set(m.name, key, { submap: newName });
+      for (const [key, h] of [...this.mapStore.all(m.name)]) {
+        const patch = renameMapPatch(h, oldName, newName);
+        if (patch) this.mapStore.set(m.name, key, patch);
       }
     }
     this.noParentMaps.clear();
@@ -1914,37 +1926,86 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /**
-   * Link hex (x, y) of `parentMap` to `childMap` as its submap: creates the
-   * hex note if needed, writes `duckmage-submap`, and records the parent on
-   * the child map (first link wins, so re-linking a shared submap from a
-   * second hex doesn't move its breadcrumb).
+   * Add `childMap` to the Locations of hex (x, y) on `parentMap` (K7: any
+   * number per hex) and record the parent on the child map (first link
+   * wins, so linking a shared map from a second hex doesn't move its
+   * breadcrumb).
    */
   async linkSubmap(parentMap: string, x: number, y: number, childMap: string): Promise<void> {
-    this.mapStore.set(parentMap, `${x}_${y}`, { submap: childMap });
+    if (childMap === parentMap) return;
+    const key = `${x}_${y}`;
+    const patch = addLocationPatch(this.mapStore.get(parentMap, key), childMap);
+    if (patch.locations) this.mapStore.set(parentMap, key, patch);
     this.noParentMaps.clear();
     const child = this.getMap(childMap);
-    if (child && !child.parent && childMap !== parentMap) {
-      child.parent = { map: parentMap, hex: `${x}_${y}` };
-      await this.saveSettings();
-    }
-  }
-
-  /** Remove the submap link from hex (x, y); clears the child's parent if it pointed here. */
-  async unlinkSubmap(parentMap: string, x: number, y: number): Promise<void> {
-    const fm = this.mapStore.get(parentMap, `${x}_${y}`)?.submap;
-    this.mapStore.set(parentMap, `${x}_${y}`, { submap: null });
-    this.noParentMaps.clear();
-    const child = typeof fm === "string" ? this.getMap(fm) : undefined;
-    if (child?.parent?.map === parentMap && child.parent.hex === `${x}_${y}`) {
-      delete child.parent;
+    if (child && !child.parent) {
+      child.parent = { map: parentMap, hex: key };
+      child.submapKind = "location";
       await this.saveSettings();
     }
   }
 
   /**
-   * The map `mapName` was opened from as a submap. Uses the stored parent;
-   * for maps linked before parents were stored, scans hex notes for a
-   * `duckmage-submap` pointing here and remembers the first hit.
+   * Make `childMap` the Region map of hex (x, y) on `parentMap`: the child
+   * becomes a region of it (its record is the truth; the hex mirrors it).
+   * Refused when the hex already has another region (one per hex).
+   */
+  async linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> {
+    const key = `${x}_${y}`;
+    const other = regionMapAt(this.settings.maps, parentMap, key);
+    if (childMap === parentMap || (other && other.name !== childMap)) return false;
+    const child = this.getMap(childMap);
+    if (!child) return false;
+    child.parent = { map: parentMap, hex: key };
+    child.submapKind = "region";
+    this.mapStore.set(parentMap, key, setRegionPatch(this.mapStore.get(parentMap, key), childMap));
+    this.noParentMaps.clear();
+    await this.saveSettings();
+    return true;
+  }
+
+  /**
+   * Unlink `childMap` (or, without one, every map) from hex (x, y): its
+   * region and/or locations. A child whose parent was this hex loses it.
+   */
+  async unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> {
+    const key = `${x}_${y}`;
+    const h = this.mapStore.get(parentMap, key);
+    const names = childMap ? [childMap] : hexChildMaps(h);
+    let changed = false;
+    for (const n of names) {
+      const patch = removeMapPatch(this.mapStore.get(parentMap, key), n);
+      if (Object.keys(patch).length) this.mapStore.set(parentMap, key, patch);
+      const child = this.getMap(n);
+      if (child?.parent?.map === parentMap && child.parent.hex === key) {
+        delete child.parent;
+        // A region without its hex is just a map (it keeps its world slot).
+        delete child.submapKind;
+        changed = true;
+      }
+    }
+    this.noParentMaps.clear();
+    if (changed) await this.saveSettings();
+  }
+
+  /** Reorder the Locations of hex (x, y). */
+  setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void {
+    this.mapStore.set(parentMap, `${x}_${y}`, { locations: locations.length ? locations : null });
+  }
+
+  /** Save region settings on `mapName` (fixed fields stay put while it has regions). */
+  async setRegionSettings(mapName: string, next: RegionSettings): Promise<void> {
+    const map = this.getMap(mapName);
+    if (!map) return;
+    const locked = regionsLocked(this.settings.maps, mapName);
+    map.regions = map.regions ? applyRegionSettingsEdit(map.regions, next, locked) : next;
+    await this.saveSettings();
+  }
+
+  /**
+   * The map `mapName` was opened from (as a region or location). Uses the
+   * stored parent; for maps linked before parents were stored, scans the
+   * hexes' Region map and Locations for it and remembers the first hit.
    */
   parentOf(mapName: string): { map: string; hex: string } | undefined {
     const map = this.getMap(mapName);
@@ -1955,7 +2016,7 @@ export default class HexmakerPlugin extends Plugin {
     for (const m of this.settings.maps) {
       if (m.name === mapName) continue;
       for (const [key, h] of this.mapStore.all(m.name)) {
-        if (h.submap !== mapName) continue;
+        if (h.regionMap !== mapName && !h.locations?.includes(mapName)) continue;
         map.parent = { map: m.name, hex: key };
         void this.saveSettings();
         return map.parent;

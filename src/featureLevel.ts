@@ -40,8 +40,8 @@ export const ADVANCED_FEATURES: AdvancedFeatureInfo[] = [
   },
   {
     id: "regions",
-    label: "Neighbouring regions",
-    pitch: "Join maps edge to edge into one big world and walk from one into the next.",
+    label: "Regions and overworlds",
+    pitch: "Give each hex its own region map at one shared scale, join maps edge to edge into one big world, and walk from one into the next.",
   },
 ];
 

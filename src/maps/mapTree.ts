@@ -16,6 +16,7 @@ export interface NamedMap {
   displayName?: string;
   parent?: { map: string; hex: string };
   world?: { id: string; cx: number; cy: number };
+  submapKind?: "region" | "location";
 }
 
 /** What to show for a map: its display name, or its slug. */
@@ -33,7 +34,9 @@ export function displayNameFor(typed: string, slug: string): string | undefined 
 
 export type MapTreeNode =
   | { kind: "map"; name: string; label: string; children: MapTreeNode[] }
-  | { kind: "world"; id: string; label: string; children: MapTreeNode[] };
+  | { kind: "world"; id: string; label: string; children: MapTreeNode[] }
+  /** A map's regions, one group ("Regions (19)"), in reading order. */
+  | { kind: "regions"; parent: string; label: string; children: MapTreeNode[] };
 
 /**
  * The map list as a tree. `parentOf` gives a map's parent map (or undefined
@@ -67,6 +70,13 @@ export function buildMapTree<T extends NamedMap>(maps: T[], parentOf: (name: str
     const list = kids.get(p) ?? [];
     const out: MapTreeNode[] = [];
     const done = new Set<string>();
+    // A map's regions sit together in one group, before its locations.
+    const regions = p === undefined ? [] : list.filter((m) => m.submapKind === "region");
+    if (regions.length) {
+      regions.sort((a, b) => hexOrder(a.parent?.hex ?? "", b.parent?.hex ?? ""));
+      for (const r of regions) done.add(r.name);
+      out.push({ kind: "regions", parent: p!, label: `Regions (${regions.length})`, children: regions.map(node) });
+    }
     for (const m of list) {
       if (done.has(m.name)) continue;
       const id = m.world?.id;
@@ -86,6 +96,13 @@ export function buildMapTree<T extends NamedMap>(maps: T[], parentOf: (name: str
   return level(undefined);
 }
 
+/** Reading order of "x_y" hexes: by row, then column. */
+function hexOrder(a: string, b: string): number {
+  const [ax, ay] = a.split("_").map(Number);
+  const [bx, by] = b.split("_").map(Number);
+  return (ay - by) || (ax - bx) || a.localeCompare(b);
+}
+
 /** A world group's label: its regions' names, the first few. */
 export function worldLabel(members: NamedMap[]): string {
   const names = members.map((m) => mapLabel(m));
@@ -94,7 +111,8 @@ export function worldLabel(members: NamedMap[]): string {
 }
 
 /** A stable key for a node (for remembering what's collapsed). */
-export const nodeKey = (n: MapTreeNode): string => (n.kind === "map" ? `map:${n.name}` : `world:${n.id}`);
+export const nodeKey = (n: MapTreeNode): string =>
+  n.kind === "map" ? `map:${n.name}` : n.kind === "world" ? `world:${n.id}` : `regions:${n.parent}`;
 
 /** Whether a node or anything under it is the map `name`. */
 export function treeContains(n: MapTreeNode, name: string): boolean {

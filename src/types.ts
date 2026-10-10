@@ -60,6 +60,35 @@ export interface RegionBiome {
 	from?: string[];
 }
 
+/**
+ * A child map's role under its parent hex (plan-overworld-regions §1).
+ * Named to avoid clashing with src/mapKinds.ts `MapKind` ("world" | "space").
+ * - region: the parent hex itself, at the scale the parent picked once;
+ *   at most one per hex.
+ * - location: a separate place (town, dungeon, ship) with its own size; any
+ *   number per hex. Every submap made before regions is a location.
+ */
+export type SubmapKind = "region" | "location";
+
+/** How a map's regions cover its hexes. Set once, fixed once a region exists. */
+export interface RegionSettings {
+	/** "hex": a hex of hexes (hex flower); "rect": an n×n block per hex. */
+	footprint: "hex" | "rect";
+	/** hex: radius r (1..5 → 7/19/37/61/91 hexes); rect: n (n×n). */
+	size: number;
+	/** How far neighbouring regions blend into each other. Unset = "normal".
+	 *  Stays editable: it only affects regions made afterwards. */
+	blend?: "narrow" | "normal" | "wide";
+	/** Palette every region uses (fixed with the rest). */
+	palette?: string;
+	/** World id the regions share (phase 2 meshing). */
+	worldId?: string;
+	/** Stagger of the regions' shared grid (phase 2 meshing). */
+	stagger?: "odd" | "even";
+	/** Default generator for new regions; unset = match the hex's terrain. */
+	generator?: string;
+}
+
 export interface MapData {
 	/** The map's slug: its folder and map note name, and its id everywhere. */
 	name: string;
@@ -74,6 +103,11 @@ export interface MapData {
 	 *  the breadcrumb and "Up". Set by plugin.linkSubmap; recovered by scanning
 	 *  hex notes when missing (maps linked before this existed). */
 	parent?: { map: string; hex: string };
+	/** Role under `parent`. Unset with a parent = "location" (every older submap). */
+	submapKind?: SubmapKind;
+	/** How this map's regions cover its hexes, once set up (see RegionSettings).
+	 *  Locked while any region of this map exists (regionsLocked). */
+	regions?: RegionSettings;
 	/** Terrain shown on hexes with no terrain of their own (e.g. "void").
 	 *  Display only: hex notes are created on use for every map, with or
 	 *  without a base terrain. */
@@ -293,8 +327,14 @@ export interface HexEditorOptions {
 	onNavigate?: (x: number, y: number) => void;
 	/** Called when the modal closes (e.g. to clear the selected-hex highlight). */
 	onModalClose?: () => void;
-	/** Called when the user clicks the submap centre-dot to drill into another map. */
+	/** Called when the user picks a map from the hex's Maps strip (or the flower's centre dot). */
 	onSwitchMap?: (mapName: string) => void;
+	/** "New map from this hex…" (Region or Location) for hex (x, y). */
+	onNewChildMap?: (x: number, y: number) => void;
+	/** "Link existing map…" for hex (x, y). */
+	onLinkExistingMap?: (x: number, y: number) => void;
+	/** The hex's Locations list (reorder, unlink). */
+	onManageLocations?: (x: number, y: number) => void;
 	/** Called after the user agrees to step from the hex flower into a neighbouring region's hex. */
 	onCrossToRegion?: (mapName: string, x: number, y: number) => void;
 }

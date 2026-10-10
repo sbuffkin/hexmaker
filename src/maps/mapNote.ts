@@ -1,4 +1,4 @@
-import type { MapData, PathChain } from "../types";
+import type { MapData, PathChain, RegionSettings } from "../types";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -18,8 +18,8 @@ import type { MapData, PathChain } from "../types";
  *   # The Coast
  *   > [!info]- How to edit this note
  *   ## Hexes
- *   | Hex | Name | Terrain | Icon | GM icons | Region | Submap | Locked |
- *   | 3_4 | Glass Wastes | dunes |  |  | Basin |  |  |
+ *   | Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |
+ *   | 3_4 | Glass Wastes | dunes |  |  | [[Basin]] | [[_saltmere]], [[_old-mine]] |  |
  *   ## Paths
  *   | Type | Hexes |
  *   | Road | 3_4 4_4 5_4 |
@@ -37,12 +37,23 @@ import type { MapData, PathChain } from "../types";
  *   doesn't own, are the user's and survive rewrites;
  * - notes written before this format (`hexmaker-map: 1`, JSON values) still
  *   read and are converted on their next write (MapStore backs them up
- *   first). The 1.5.6 compat fixture pins the old form.
+ *   first). The 1.5.6 compat fixture pins the old form;
+ * - format 2 had one "Submap" column and plain region names. Format 3 splits
+ *   the submap into "Region map" (at most one: the hex's own region map,
+ *   written only once some hex has one) and "Locations" (any number), and
+ *   writes maps and regions as wikilinks (`[[_saltmere]]`, `[[Basin]]`) so
+ *   renaming a note through Obsidian updates them. Plain names still read;
+ *   a Submap column reads as Locations. Both are converted on the next write
+ *   (backed up first, like format 1). tests/fixtures/compat/map-note-formats
+ *   pins format 2.
  */
 
 export const MAP_NOTE_MARKER = "hexmaker-map";
-/** Format written by this build (the marker's value). 1 = JSON values. */
-export const MAP_NOTE_FORMAT = 2;
+/** Format written by this build (the marker's value). 1 = JSON values,
+ *  2 = readable keys + one Submap column, 3 = Region map + Locations, links. */
+export const MAP_NOTE_FORMAT = 3;
+/** First format with one readable key per setting (deleting a key resets it). */
+export const READABLE_KEYS_FORMAT = 2;
 
 /** Map data for one hex. Absent fields = nothing set. */
 export interface HexData {
@@ -52,7 +63,11 @@ export interface HexData {
   icon?: string;
   gmIcons?: string[];
   region?: string;
-  submap?: string;
+  /** The hex's Region map (at most one). Mirrors that map's own `parent` +
+   *  `submapKind: region`, which win when they disagree (MapStore repairs). */
+  regionMap?: string;
+  /** Location maps opened from this hex (towns, dungeons…), in the user's order. */
+  locations?: string[];
   locked?: boolean;
   /**
    * Cells of Hexes-table columns this build doesn't know (header → value),
@@ -291,6 +306,8 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["weatherTable", "weather-table", "note"],
   ["rumorsTable", "rumors-table", "note"],
   ["createdWith", "created-with", "str"],
+  // "region" or "location": this map's role under its parent hex.
+  ["submapKind", "submap-kind", "str"],
   ["showCoords", "show-coords", "bool"],
   ["showTerrainIcons", "show-terrain-icons", "bool"],
   ["showIconOverrides", "show-icon-overrides", "bool"],
@@ -317,6 +334,16 @@ const BG_KEYS = ["background-image", "background-x", "background-y", "background
 const SIZE_KEYS = ["cols", "rows", "offset-x", "offset-y"];
 const BIOME_KEY = "biome";
 const BIOME_FROM_KEY = "biome-from";
+/** Region settings (MapData.regions), one plain key each. */
+const REGION_KEYS = {
+  shape: "region-shape",
+  size: "region-size",
+  blend: "region-blend",
+  palette: "region-palette",
+  world: "region-world",
+  stagger: "region-stagger",
+  generator: "region-generator",
+} as const;
 /** Prefix for MapData fields this build doesn't know (`hexmaker-origin-x`). */
 const OTHER_PREFIX = "hexmaker-";
 /** Format 1's one-line JSON catch-all, still read. */
@@ -328,7 +355,7 @@ function ownsKey(key: string): boolean {
   return OWNED_KEYS.has(key) || key.startsWith(OTHER_PREFIX);
 }
 const OWNED_KEYS = new Set<string>([
-  MAP_NOTE_MARKER, ...SIZE_KEYS, ...PARENT_KEYS, ...WORLD_KEYS, ...BG_KEYS, BIOME_KEY, BIOME_FROM_KEY,
+  MAP_NOTE_MARKER, ...SIZE_KEYS, ...PARENT_KEYS, ...WORLD_KEYS, ...BG_KEYS, BIOME_KEY, BIOME_FROM_KEY, ...Object.values(REGION_KEYS),
   ...SIMPLE_KEYS.flatMap(([, k, , old]) => [k, ...(old ?? [])]),
 ]);
 
@@ -345,8 +372,105 @@ const KNOWN_FIELDS = new Set<string>([
  */
 export const RESETTABLE_FIELDS: readonly string[] = [
   ...SIMPLE_KEYS.map(([f]) => f as string).filter((f) => f !== "paletteName"),
-  "parent", "world", "backgroundImage", "biome",
+  "parent", "world", "backgroundImage", "biome", "regions",
 ];
+
+const FLOWER_CELLS = [7, 19, 37, 61, 91];
+
+/** "hex flower" / "rectangle" (also hex, flower, rect, brick, square, block). */
+export function parseRegionShape(raw: string): RegionSettings["footprint"] | null {
+  const t = raw.trim().toLowerCase();
+  if (/hex|flower/.test(t)) return "hex";
+  if (/rect|brick|square|block/.test(t)) return "rect";
+  return null;
+}
+
+/**
+ * Region size as written: hex flowers by hex count ("37 hexes", also a
+ * radius 1–5 or "radius 3"), rectangles as "8x8" (also "8 x 8", "8×8", "8").
+ * Returns the radius / side, or a reason it can't be read.
+ */
+export function parseRegionSize(raw: string, footprint: RegionSettings["footprint"]): number | string {
+  const t = raw.trim().toLowerCase();
+  if (footprint === "hex") {
+    const r = /radius\s*(\d+)|r\s*=?\s*(\d+)/.exec(t);
+    if (r) {
+      const n = Number(r[1] ?? r[2]);
+      return n >= 1 && n <= 5 ? n : "a hex flower's radius is 1 to 5";
+    }
+    const m = /^(\d+)/.exec(t);
+    if (!m) return "should be a hex count: 7, 19, 37, 61 or 91";
+    const n = Number(m[1]);
+    if (FLOWER_CELLS.includes(n)) return FLOWER_CELLS.indexOf(n) + 1;
+    if (n >= 1 && n <= 5) return n;
+    return "should be a hex count: 7, 19, 37, 61 or 91";
+  }
+  const m = /^(\d+)\s*(?:[x×*]\s*(\d+))?/.exec(t);
+  if (!m) return "should be a size like 8x8";
+  if (m[2] && m[2] !== m[1]) return "regions are square: write it like 8x8";
+  return Number(m[1]);
+}
+
+/** Region size as written in the note ("37 hexes", "8x8"). */
+export function regionSizeText(s: Pick<RegionSettings, "footprint" | "size">): string {
+  return s.footprint === "hex" ? `${3 * s.size * s.size + 3 * s.size + 1} hexes` : `${s.size}x${s.size}`;
+}
+
+// ── links in table cells (format 3) ──────────────────────────────────────
+
+/** A name that can sit inside [[…]] unchanged. */
+const linkSafe = (s: string) => !!s && !/[[\]|#^]/.test(s);
+
+/** A map as a link to its map note (`[[_saltmere]]`), or the plain name if it can't be one. */
+export function mapLinkText(map: string): string {
+  return linkSafe(map) ? `[[_${map}]]` : map;
+}
+
+/** A region (overlay area) as a link to its note (`[[Basin]]`), or plain. */
+export function regionLinkText(region: string): string {
+  return linkSafe(region) ? `[[${region}]]` : region;
+}
+
+/** A note name from a cell entry: `[[a/b|c]]` → `b`; plain text stays as written. */
+function noteName(raw: string): string {
+  const t = raw.trim();
+  const m = WIKILINK.exec(t);
+  if (!m) return t;
+  return m[1].trim().split("/").pop()!.replace(/\.md$/i, "");
+}
+
+/** A map name from a cell entry: a link to its map note (`[[_slug]]`), a path, or a name. */
+function mapName(raw: string): string {
+  const t = raw.trim();
+  if (!WIKILINK.test(t)) return t;
+  return noteName(t).replace(/^_/, "");
+}
+
+/** Split a list cell at commas / semicolons outside [[ ]]. */
+export function splitLinkList(cell: string): string[] {
+  const out: string[] = [];
+  let depth = 0, cur = "";
+  for (let i = 0; i < cell.length; i++) {
+    const c = cell[i];
+    if (c === "[" && cell[i + 1] === "[") { depth++; cur += "[["; i++; continue; }
+    if (c === "]" && cell[i + 1] === "]") { depth = Math.max(0, depth - 1); cur += "]]"; i++; continue; }
+    if ((c === "," || c === ";") && depth === 0) { if (cur.trim()) out.push(cur.trim()); cur = ""; continue; }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/** Map names in a Locations / Region map cell, in order, without repeats. */
+export function parseMapList(cell: string | undefined): string[] {
+  if (!cell) return [];
+  const out: string[] = [];
+  for (const part of splitLinkList(cell)) {
+    const n = mapName(part);
+    if (n && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
 
 const kebab = (k: string) => k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
 const camel = (k: string) => k.replace(/-([a-z0-9])/g, (_, c: string) => c.toUpperCase());
@@ -483,6 +607,9 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
     else if (field === "staggerOffset") {
       if (/^(odd|even)$/i.test(t)) out[field] = t.toLowerCase();
       else bad(k, field, "should be odd or even");
+    } else if (field === "submapKind") {
+      if (/^(region|location)$/i.test(t)) out[field] = t.toLowerCase();
+      else bad(k, field, "should be region or location");
     } else out[field] = t;
   }
 
@@ -558,6 +685,38 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
     out.biome = biome;
   }
 
+  // region-shape: hex flower + region-size: 37 hexes (+ blend, palette, …)
+  const shapeRaw = textOf(REGION_KEYS.shape);
+  const sizeRaw = textOf(REGION_KEYS.size);
+  if (shapeRaw || sizeRaw) {
+    const footprint = shapeRaw ? parseRegionShape(shapeRaw) : null;
+    if (!footprint) bad(REGION_KEYS.shape, "regions", shapeRaw ? "should be hex flower or rectangle" : "is missing (hex flower or rectangle)");
+    else {
+      const size = sizeRaw ? parseRegionSize(sizeRaw, footprint) : footprint === "hex" ? 3 : 8;
+      if (typeof size === "string") bad(REGION_KEYS.size, "regions", size);
+      else {
+        const r: RegionSettings = { footprint, size };
+        const blend = textOf(REGION_KEYS.blend)?.toLowerCase();
+        if (blend) {
+          if (blend === "narrow" || blend === "normal" || blend === "wide") r.blend = blend;
+          else bad(REGION_KEYS.blend, "regions", "should be narrow, normal or wide");
+        }
+        const pal = textOf(REGION_KEYS.palette);
+        if (pal) r.palette = noteName(pal);
+        const world = textOf(REGION_KEYS.world);
+        if (world) r.worldId = world;
+        const st = textOf(REGION_KEYS.stagger)?.toLowerCase();
+        if (st) {
+          if (st === "odd" || st === "even") r.stagger = st;
+          else bad(REGION_KEYS.stagger, "regions", "should be odd or even");
+        }
+        const gen = textOf(REGION_KEYS.generator);
+        if (gen) r.generator = gen;
+        if (!problems.some((p) => p.field === "regions")) out.regions = r;
+      }
+    }
+  }
+
   // fields this build doesn't know: hexmaker-<name> keys, then format 1's JSON catch-all
   for (const [k, node] of values) {
     if (!k.startsWith(OTHER_PREFIX) || k === MAP_NOTE_MARKER || k === LEGACY_EXTRA_KEY) continue;
@@ -616,7 +775,22 @@ function frontmatterLines(settings: Partial<MapSettings>, keep: Set<string> = ne
     put(BIOME_KEY, biome.generator);
     if (Array.isArray(biome.from) && biome.from.length) put(BIOME_FROM_KEY, biome.from);
   }
+  const reg = s.regions as Partial<RegionSettings> | undefined;
+  const regKnown = ["footprint", "size", "blend", "palette", "worldId", "stagger", "generator"];
+  const regionsReadable = !!reg && (reg.footprint === "hex" || reg.footprint === "rect")
+    && typeof reg.size === "number" && Number.isInteger(reg.size) && reg.size > 0
+    && Object.keys(reg).every((k) => regKnown.includes(k) && (reg[k as keyof RegionSettings] === undefined || typeof reg[k as keyof RegionSettings] === (k === "size" ? "number" : "string")));
+  if (regionsReadable) {
+    put(REGION_KEYS.shape, reg.footprint === "hex" ? "hex flower" : "rectangle");
+    put(REGION_KEYS.size, regionSizeText(reg as RegionSettings));
+    put(REGION_KEYS.blend, reg.blend);
+    put(REGION_KEYS.palette, reg.palette);
+    put(REGION_KEYS.world, reg.worldId);
+    put(REGION_KEYS.stagger, reg.stagger);
+    put(REGION_KEYS.generator, reg.generator);
+  }
   const readable = new Set<string>(KNOWN_FIELDS);
+  if (regionsReadable) readable.add("regions");
   if (!parentReadable) readable.delete("parent");
   if (!worldReadable) readable.delete("world");
   if (!bgReadable) readable.delete("backgroundImage");
@@ -632,12 +806,19 @@ const FRONTMATTER = /^---[ \t]*\n(?:([\s\S]*?)\n)?---[ \t]*(\n|$)/;
 
 // ── tables ───────────────────────────────────────────────────────────────
 
-const HEX_HEADERS = ["Hex", "Name", "Terrain", "Icon", "GM icons", "Region", "Submap", "Locked"];
+const HEX_HEADERS = ["Hex", "Name", "Terrain", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked"];
+/** Known columns written only when the table has them or some row needs them. */
+const OPTIONAL_HEX_HEADERS = new Set(["region map"]);
 const PATH_HEADERS = ["Type", "Hexes"];
 /** Header → canonical column, ignoring case, spaces, dashes and markup. */
 const HEX_COL_ALIASES: Record<string, string> = {
   hex: "hex", name: "name", terrain: "terrain", icon: "icon",
-  gmicons: "gm icons", gmicon: "gm icons", region: "region", submap: "submap", locked: "locked",
+  gmicons: "gm icons", gmicon: "gm icons", region: "region",
+  regionmap: "region map", regionsubmap: "region map",
+  locations: "locations", location: "locations",
+  // Format 2's one-submap column: read as Locations, renamed on write.
+  submap: "locations", submaps: "locations",
+  locked: "locked",
 };
 const PATH_COL_ALIASES: Record<string, string> = { type: "type", hexes: "hexes" };
 const CANONICAL: Record<string, string> = Object.fromEntries([...HEX_HEADERS, ...PATH_HEADERS].map((h) => [h.toLowerCase(), h]));
@@ -748,7 +929,7 @@ export function compareHexKeys(a: string, b: string): number {
 
 /** Anything besides terrain set on a hex. */
 function hasNonTerrainData(h: HexData): boolean {
-  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.submap || h.locked
+  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.regionMap || (h.locations && h.locations.length) || h.locked
     || (h.extra && Object.values(h.extra).some(Boolean)));
 }
 
@@ -784,7 +965,7 @@ function tableHead(headers: string[]): string[] {
  * repeats and blanks dropped), then any known column it lacks (canonical
  * order), then unknown columns that only the data has.
  */
-function columnOrder(known: string[], aliases: Record<string, string>, existing: string[] | undefined, extras: string[]): string[] {
+function columnOrder(known: string[], aliases: Record<string, string>, existing: string[] | undefined, extras: string[], skip: Set<string> = new Set()): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   const add = (h: string) => {
@@ -796,7 +977,8 @@ function columnOrder(known: string[], aliases: Record<string, string>, existing:
     out.push(label);
   };
   for (const h of existing ?? []) add(h);
-  for (const h of known) add(h);
+  // Optional known columns ("Region map") only once something needs them.
+  for (const h of known) if (!skip.has(aliases[normHeader(h)])) add(h);
   for (const h of extras) add(h);
   return out;
 }
@@ -816,14 +998,16 @@ const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = 
   terrain: (_k, h) => h.terrain,
   icon: (_k, h) => h.icon,
   "gm icons": (_k, h) => h.gmIcons?.join(", "),
-  region: (_k, h) => h.region,
-  submap: (_k, h) => h.submap,
+  region: (_k, h) => (h.region ? regionLinkText(h.region) : undefined),
+  "region map": (_k, h) => (h.regionMap ? mapLinkText(h.regionMap) : undefined),
+  locations: (_k, h) => h.locations?.map(mapLinkText).join(", "),
   locked: (_k, h) => (h.locked ? "yes" : ""),
 };
 
 function hexTable(hexes: Map<string, HexData>, baseTerrain?: string, existing?: string[], keptRows: string[] = []): string {
   const rows = hexRowsToWrite(hexes, baseTerrain);
-  const headers = columnOrder(HEX_HEADERS, HEX_COL_ALIASES, existing, extraHeaders(rows.map(([, h]) => h)));
+  const skip = new Set([...OPTIONAL_HEX_HEADERS].filter((c) => c !== "region map" || !rows.some(([, h]) => h.regionMap)));
+  const headers = columnOrder(HEX_HEADERS, HEX_COL_ALIASES, existing, extraHeaders(rows.map(([, h]) => h)), skip);
   const lines = tableHead(headers);
   for (const [k, h] of rows) {
     const cells = headers.map((c) => {
@@ -888,7 +1072,11 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
   const bad: MapNoteProblem[] = [];
   if (!t) return { rows: out, bad };
   const col = (name: string) => t.cols.indexOf(name);
-  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), submap: col("submap"), locked: col("locked") };
+  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked") };
+  // Locations may sit in more than one column (a Submap column next to a
+  // Locations one): all are read, in column order.
+  const locCols = t.cols.flatMap((c, i) => (c === "locations" ? [i] : []));
+  const regionMapCols = t.cols.flatMap((c, i) => (c === "region map" ? [i] : []));
   const unknown = unknownColumns(t);
   for (let i = t.body; i < t.end; i++) {
     const line = lines[i];
@@ -909,8 +1097,15 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
     if (get(ci.icon)) h.icon = get(ci.icon);
     const gm = get(ci.gm);
     if (gm) h.gmIcons = gm.split(/[,;]/).map((s) => s.trim()).filter(Boolean);
-    if (get(ci.region)) h.region = get(ci.region);
-    if (get(ci.submap)) h.submap = get(ci.submap);
+    const region = get(ci.region);
+    if (region) h.region = noteName(region) || region;
+    // Region map: one map. More than one listed: the first is the region,
+    // the rest are kept as locations (nothing typed is dropped).
+    const regionMaps = regionMapCols.flatMap((j) => parseMapList(c[j]));
+    const locations = locCols.flatMap((j) => parseMapList(c[j]));
+    if (regionMaps.length) h.regionMap = regionMaps[0];
+    const locs = [...regionMaps.slice(1), ...locations].filter((m, i, a) => m !== h.regionMap && a.indexOf(m) === i);
+    if (locs.length) h.locations = locs;
     if (TRUE_WORDS.test(lockedRaw)) h.locked = true;
     const extra = readExtra(c, unknown);
     if (extra) h.extra = extra;
@@ -952,10 +1147,14 @@ const PROBLEM_TITLE = /^>\s*\[!warning\][+-]?\s*hexmaker couldn't read/i;
 /** The one-line description format-1 notes opened with (plugin text, replaced by the help box). */
 const OLD_INTRO = "Hexmap World Creator map. Each hex's name, terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.";
 
+/** Format 2's Hexes help line (one Submap column), replaced when still word for word. */
+const HEX_HELP_LINE_V2 = "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* and *Region* use names from the map's palette. *Icon* and *GM icons* are icon file names; separate several with commas. *Submap* is the map that opens from the hex. *Locked* `yes` keeps generators off it.";
+const HEX_HELP_LINE = "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* uses names from the map's palette; *Region* links the region's note. *Icon* and *GM icons* are icon file names; separate several with commas. *Locations* links the maps that open from the hex (towns, dungeons…), separated by commas; *Region map*, when there is one, is the map of the hex itself. *Locked* `yes` keeps generators off it.";
+
 export const HELP_CALLOUT = [
   "> [!info]- How to edit this note",
   "> This note holds the map's data. Painting on the map updates it, and your edits here update the map.",
-  "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* and *Region* use names from the map's palette. *Icon* and *GM icons* are icon file names; separate several with commas. *Submap* is the map that opens from the hex. *Locked* `yes` keeps generators off it.",
+  HEX_HELP_LINE,
   "> - **Paths**: *Type* is a path type (Road, River…). *Hexes* lists its hexes in order, separated by spaces.",
   "> - Columns can be in any order, and you can add your own; they're kept. A row that can't be read is kept as written and flagged.",
   "> - The properties at the top are the map's settings. Delete one to reset it. Keys starting with `hexmaker-` come from other versions of the plugin; leave them be.",
@@ -1108,7 +1307,9 @@ export function updateMapNote(content: string, name: string, data: MapNoteData):
     (ex) => pathTable(data.paths, ex, pathBad.map((b) => b.text)), "## Paths", pathBad, "Paths");
 
   // Format 1 → 2: add the help box once (in place of the old one-line intro, if it's still there).
-  if (front.format < MAP_NOTE_FORMAT && !lines.some((l) => HELP_TITLE.test(l))) {
+  // Format 2 → 3: the help box's Hexes line, if it's still the plugin's own words.
+  if (front.format < MAP_NOTE_FORMAT) lines = lines.map((l) => (l.trim() === HEX_HELP_LINE_V2 ? HEX_HELP_LINE : l));
+  if (front.format < READABLE_KEYS_FORMAT && !lines.some((l) => HELP_TITLE.test(l))) {
     const intro = lines.findIndex((l) => l.trim() === OLD_INTRO);
     if (intro >= 0) lines.splice(intro, 1, ...HELP_CALLOUT);
     else {

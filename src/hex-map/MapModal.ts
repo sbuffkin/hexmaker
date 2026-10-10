@@ -1,4 +1,4 @@
-import { App, Menu, Notice, TFolder } from "obsidian";
+import { App, Menu, Notice, TFolder, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
@@ -21,11 +21,14 @@ import {
 } from "../worldgen/neighbours";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, withFeature } from "../advancedHints";
+import { regionsOf, removeMapPatch } from "../maps/submaps";
+import { RegionSettingsModal } from "./newChildMap";
+import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 
-type ModalTab = "Maps" | "Properties" | "Export";
+type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
 
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
@@ -61,7 +64,11 @@ export class MapModal extends HexmakerModal {
 
     // Tab bar
     const tabBar = contentEl.createDiv({ cls: "duckmage-rt-mode-tabs duckmage-map-modal-tabs" });
-    const tabNames: ModalTab[] = ["Maps", "Properties", "Export"];
+    // Regions: shown once the map has region settings, or Regions are on.
+    const active = this.plugin.getMap(this.view.activeMapName);
+    const showRegions = !!active && (!!active.regions || hasFeature(this.plugin.settings, "regions"));
+    const tabNames: ModalTab[] = showRegions ? ["Maps", "Properties", "Regions", "Export"] : ["Maps", "Properties", "Export"];
+    if (!tabNames.includes(this.activeTab)) this.activeTab = "Maps";
 
     const contentDivs = new Map<ModalTab, HTMLElement>();
     for (const tab of tabNames) {
@@ -96,7 +103,55 @@ export class MapModal extends HexmakerModal {
 
     this.renderMapsTab(contentDivs.get("Maps")!);
     this.renderPropertiesTab(contentDivs.get("Properties")!);
+    if (showRegions) this.renderRegionsTab(contentDivs.get("Regions")!);
     this.renderExportTab(contentDivs.get("Export")!);
+  }
+
+  // ── Regions tab ───────────────────────────────────────────────────────────
+
+  /**
+   * The map's region settings (K1): set once (on the first region, or here),
+   * then fixed while any region exists; blend stays editable. Lists the
+   * regions, in reading order.
+   */
+  private renderRegionsTab(el: HTMLElement): void {
+    const map = this.plugin.getMap(this.view.activeMapName);
+    if (!map) return;
+    el.createEl("p", {
+      cls: "duckmage-map-origin-desc",
+      text: "A region is a map of one hex of this map, at one scale for every hex, lining up with the regions next to it. Make one from a hex's right-click menu.",
+    });
+    if (!map.regions) {
+      const btn = el.createEl("button", { text: "Set up regions…" });
+      btn.addEventListener("click", () => withFeature(this.plugin, "regions", () => {
+        new RegionSettingsModal(this.app, this.plugin, map.name, () => this.render()).open();
+      }));
+      return;
+    }
+    const regions = regionsOf(this.plugin.settings.maps, map.name);
+    const locked = regions.length > 0;
+    if (locked) {
+      const note = el.createDiv({ cls: "duckmage-regions-tab-locked" });
+      setIcon(note.createSpan(), "lock");
+      note.createSpan({ text: `Fixed: ${regions.length} region${regions.length === 1 ? " uses" : "s use"} these. Delete ${regions.length === 1 ? "it" : "them"} to change shape, size or palette.` });
+    }
+    renderRegionSettingsForm(el, this.plugin, map.regions, {
+      locked,
+      onChange: (s) => void this.plugin.setRegionSettings(map.name, s),
+    });
+    if (!regions.length) return;
+    el.createEl("h4", { text: `Regions (${regions.length})` });
+    const list = el.createEl("ul", { cls: "duckmage-region-list" });
+    for (const r of regions) {
+      const li = list.createEl("li", { cls: "duckmage-region-item duckmage-map-list-item" });
+      const [hx, hy] = r.parent!.hex.split("_");
+      const a = li.createEl("a", { text: this.plugin.mapLabel(r.name), cls: "duckmage-map-list-name" });
+      li.createSpan({ cls: "duckmage-region-palette-badge", text: `hex ${hx}, ${hy}` });
+      a.addEventListener("click", () => {
+        this.view.switchMapFromModal(r.name);
+        this.close();
+      });
+    }
   }
 
   // ── Export tab ────────────────────────────────────────────────────────────
@@ -159,14 +214,24 @@ export class MapModal extends HexmakerModal {
     const key = nodeKey(node);
     const hasKids = node.children.length > 0;
     // Default: open on the open map's branch, and everywhere in a short list.
-    const defaultOpen = treeContains(node, active) || this.plugin.settings.maps.length <= 12;
+    // A map's regions group starts collapsed unless the open map is in it.
+    const defaultOpen = treeContains(node, active) || (node.kind !== "regions" && this.plugin.settings.maps.length <= 12);
     const open = filtering || (MapModal.expanded.get(key) ?? defaultOpen);
     const toggleTo = (to: boolean) => {
       MapModal.expanded.set(key, to);
       this.rerenderMapsTab();
     };
 
-    if (node.kind === "world") {
+    if (node.kind === "regions") {
+      const row = li.createDiv({ cls: "duckmage-region-item duckmage-map-tree-world" });
+      this.renderTreeToggle(row, open, () => toggleTo(!open), true);
+      row.createSpan({ cls: "duckmage-map-tree-world-label", text: node.label });
+      row.setAttr("title", `Regions of ${this.plugin.mapLabel(node.parent)}: one per hex, in reading order`);
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".duckmage-map-tree-toggle")) return;
+        toggleTo(!open);
+      });
+    } else if (node.kind === "world") {
       const row = li.createDiv({ cls: "duckmage-region-item duckmage-map-tree-world" });
       this.renderTreeToggle(row, open, () => toggleTo(!open), true);
       row.createSpan({ cls: "duckmage-map-tree-world-label", text: `Neighbours: ${node.label}` });
@@ -684,11 +749,17 @@ export class MapModal extends HexmakerModal {
       this.view.activeMapName = this.plugin.settings.maps[0]?.name ?? "";
     }
 
-    // Hexes pointing at the deleted map lose their submap link.
+    // Hexes pointing at the deleted map lose that link (region or location);
+    // its own regions and locations become top-level maps.
     this.plugin.mapStore.forgetMap(name);
     for (const m of this.plugin.settings.maps) {
-      for (const [key, h] of this.plugin.mapStore.all(m.name)) {
-        if (h.submap === name) this.plugin.mapStore.set(m.name, key, { submap: null });
+      for (const [key, h] of [...this.plugin.mapStore.all(m.name)]) {
+        const patch = removeMapPatch(h, name);
+        if (Object.keys(patch).length) this.plugin.mapStore.set(m.name, key, patch);
+      }
+      if (m.parent?.map === name) {
+        delete m.parent;
+        delete m.submapKind;
       }
     }
 

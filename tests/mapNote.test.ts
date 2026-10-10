@@ -33,7 +33,7 @@ const sample = (): MapNoteData => ({
 	hexes: new Map<string, HexData>([
 		["3_4", { terrain: "dunes", region: "Basin" }],
 		["-1_0", { terrain: "ocean" }],
-		["12_9", { terrain: "forest", icon: "bw-castle.png", gmIcons: ["skull.png", "skull.png"], submap: "the-coast-12-9", locked: true }],
+		["12_9", { terrain: "forest", icon: "bw-castle.png", gmIcons: ["skull.png", "skull.png"], locations: ["the-coast-12-9"], locked: true }],
 		["5_5", {}],
 	]),
 	paths: [
@@ -147,12 +147,12 @@ describe("map notes", () => {
 });
 
 describe("unknown table columns (forward compatibility)", () => {
-	// A note written by a newer build: Hexes has "Region map" + "Locations",
+	// A note written by a newer build: Hexes has "Ruler" + "Rumours",
 	// Paths has a "Name" column. This build must keep them on every rewrite.
 	const newer = [
 		"---", "hexmaker-map: 1", "cols: 4", "rows: 4", "---", "# m", "",
 		"## Hexes", "",
-		"| Hex | Name | Terrain | Icon | GM icons | Region | Region map | Locations | Locked |",
+		"| Hex | Name | Terrain | Icon | GM icons | Region | Ruler | Rumours | Locked |",
 		"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 		"| 1_1 |  | forest |  |  | Basin | fenmarch | saltmere, old-mine |  |",
 		"| 2_1 |  | hills |  |  |  |  |  | yes |",
@@ -167,10 +167,10 @@ describe("unknown table columns (forward compatibility)", () => {
 
 	it("parses unknown columns into opaque per-hex extras", () => {
 		const d = parseMapNote(newer)!;
-		expect(d.hexes.get("1_1")).toEqual({ terrain: "forest", region: "Basin", extra: { "Region map": "fenmarch", Locations: "saltmere, old-mine" } });
+		expect(d.hexes.get("1_1")).toEqual({ terrain: "forest", region: "Basin", extra: { "Ruler": "fenmarch", Rumours: "saltmere, old-mine" } });
 		expect(d.hexes.get("2_1")).toEqual({ terrain: "hills", locked: true });
 		// A hex whose only data is in an unknown column is still a row.
-		expect(d.hexes.get("3_1")).toEqual({ extra: { "Region map": "reedholm" } });
+		expect(d.hexes.get("3_1")).toEqual({ extra: { "Ruler": "reedholm" } });
 		expect(d.paths[0]).toEqual({ typeName: "Road", hexes: ["1_1", "2_1"], extra: { Name: "King's | Way" } });
 		expect(d.paths[1]).toEqual({ typeName: "River", hexes: ["0_0", "0_1"] });
 	});
@@ -179,8 +179,8 @@ describe("unknown table columns (forward compatibility)", () => {
 		const d = parseMapNote(newer)!;
 		const out = updateMapNote(newer, "m", d);
 		const header = out.split("\n").find((l) => l.startsWith("| Hex"))!;
-		expect(header.indexOf("Region map")).toBeGreaterThan(0);
-		expect(header.indexOf("Region map")).toBeLessThan(header.indexOf("Locations"));
+		expect(header.indexOf("Ruler")).toBeGreaterThan(0);
+		expect(header.indexOf("Ruler")).toBeLessThan(header.indexOf("Rumours"));
 		const back = parseMapNote(out)!;
 		expect([...back.hexes]).toEqual([...d.hexes]);
 		expect(back.paths).toEqual(d.paths);
@@ -198,28 +198,28 @@ describe("unknown table columns (forward compatibility)", () => {
 		d.hexes.set("3_1", { ...d.hexes.get("3_1")!, terrain: "grass" });
 		d.paths[0] = { ...d.paths[0], hexes: [...d.paths[0].hexes, "3_1"] };
 		const back = parseMapNote(updateMapNote(newer, "m", d))!;
-		expect(back.hexes.get("1_1")).toEqual({ name: "Fen", terrain: "swamp", region: "Basin", extra: { "Region map": "fenmarch", Locations: "saltmere, old-mine" } });
-		expect(back.hexes.get("3_1")).toEqual({ terrain: "grass", extra: { "Region map": "reedholm" } });
+		expect(back.hexes.get("1_1")).toEqual({ name: "Fen", terrain: "swamp", region: "Basin", extra: { "Ruler": "fenmarch", Rumours: "saltmere, old-mine" } });
+		expect(back.hexes.get("3_1")).toEqual({ terrain: "grass", extra: { "Ruler": "reedholm" } });
 		expect(back.paths[0].extra).toEqual({ Name: "King's | Way" });
 		expect(back.paths[0].hexes).toEqual(["1_1", "2_1", "3_1"]);
 	});
 
 	it("a hex with only the base terrain plus an unknown value is still written", () => {
-		const hexes = new Map<string, HexData>([["0_0", { terrain: "void", extra: { Locations: "a" } }], ["1_0", { terrain: "void" }]]);
+		const hexes = new Map<string, HexData>([["0_0", { terrain: "void", extra: { Rumours: "a" } }], ["1_0", { terrain: "void" }]]);
 		expect(hexRowsToWrite(hexes, "void").map(([k]) => k)).toEqual(["0_0"]);
 	});
 
 	it("notes without unknown columns are written exactly as before", () => {
 		const note = buildMapNote("m", sample());
-		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Submap | Locked |\n");
+		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |\n");
 		expect(note).toContain("| Type | Hexes |\n");
 	});
 
 	it("keeps the column order (and header spelling) the user gave both tables", () => {
 		const reordered = [
-			"---", "hexmaker-map: 2", "---", "# m", "",
+			"---", "hexmaker-map: 3", "---", "# m", "",
 			"## Hexes", "",
-			"| Terrain | Locations | Hex | Name | Locked | Submap | Region | GM icons | Icon |",
+			"| Terrain | Rumours | Hex | Name | Locked | Locations | Region | GM icons | Icon |",
 			"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
 			"| forest | saltmere | 1_1 | Fen |  |  |  |  |  |",
 			"| hills |  | 2_1 |  | yes |  |  |  |  |",
@@ -243,14 +243,14 @@ describe("unknown table columns (forward compatibility)", () => {
 		d.hexes.set("0_0", { ...d.hexes.get("0_0")!, name: "Sea" });
 		const out = updateMapNote(old, "m", d);
 		const header = out.split("\n").find((l) => l.includes("| Hex |"))!;
-		expect(header).toBe("| Terrain | Hex | Notes | Name | Icon | GM icons | Region | Submap | Locked |");
+		expect(header).toBe("| Terrain | Hex | Notes | Name | Icon | GM icons | Region | Locations | Locked |");
 		expect(parseMapNote(out)!.hexes.get("0_0")).toEqual({ name: "Sea", terrain: "ocean", extra: { Notes: "deep" } });
 	});
 
 	it("unknown values change the comparison key", () => {
 		const d = parseMapNote(newer)!;
 		const before = mapNoteKey(d);
-		d.hexes.set("3_1", { extra: { "Region map": "other" } });
+		d.hexes.set("3_1", { extra: { "Ruler": "other" } });
 		expect(mapNoteKey(d)).not.toBe(before);
 	});
 });
@@ -315,7 +315,7 @@ describe("map notes: plain keys instead of JSON (#42)", () => {
 		expect(fm).toContain("\nworld: wabc\nworld-x: 1\nworld-y: -1\n");
 		expect(fm).toContain('\nbackground-image: "[[maps/bg.png]]"\nbackground-x: 10\nbackground-y: -5\nbackground-scale: 1.5\nbackground-rotation: 0\nbackground-opacity: 0.8');
 		expect(fm).toContain("\nswatch-terrain: grass\n");
-		expect(fm).toMatch(/^hexmaker-map: 2$/m);
+		expect(fm).toMatch(/^hexmaker-map: 3$/m);
 		expect(fm).not.toMatch(/[{}]/);
 	});
 
@@ -489,7 +489,7 @@ describe("map notes: forgiving tables (#42)", () => {
 		const out = updateMapNote(messy, "m", d);
 		const lines = out.split("\n");
 		const head = lines.findIndex((l) => l.startsWith("| Terrain"));
-		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Region | Submap |");
+		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Region | Locations |");
 		expect(lines[head + 1]).toMatch(/^\| --- \|/);
 		expect(out).toContain("| forest | 3_4 | skull.png, trap.png | yes | keep me |  |  |  |  |");
 		expect(out).toContain("| Type | Hexes |\n| --- | --- |\n| Road | 3_4 5_6 7_8 |");

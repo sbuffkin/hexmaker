@@ -546,20 +546,35 @@ export async function applyTokenFrontmatter(
   });
 }
 
-export function getSubmapFromFile(app: App, path: string): string | undefined {
+/**
+ * The maps a hex opens into: its Region map (at most one) and its
+ * Locations, in order. Hex notes outside a map folder (older notes) read
+ * their `duckmage-submap` key as the one location.
+ */
+export function getHexMapsFromFile(app: App, path: string): { regionMap?: string; locations: string[] } {
   const loc = hexLoc(path);
-  if (loc) return hexSource!.get(loc.map, loc.key)?.submap;
+  if (loc) {
+    const h = hexSource!.get(loc.map, loc.key);
+    return { regionMap: h?.regionMap, locations: [...(h?.locations ?? [])] };
+  }
   const val = getFrontMatter(app, path)?.["duckmage-submap"];
-  return typeof val === "string" ? val : undefined;
+  return { locations: typeof val === "string" && val ? [val] : [] };
 }
 
+/** The map a hex opens into first: its region, else its first location. */
+export function getSubmapFromFile(app: App, path: string): string | undefined {
+  const m = getHexMapsFromFile(app, path);
+  return m.regionMap ?? m.locations[0];
+}
+
+/** Older hex notes' one-submap key (map-folder hexes: sets the only location). */
 export async function setSubmapInFile(
   app: App,
   path: string,
   mapName: string | null,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { submap: mapName }); return true; }
+  if (loc) { hexSource!.set(loc.map, loc.key, { locations: mapName ? [mapName] : null }); return true; }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {

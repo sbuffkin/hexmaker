@@ -18,7 +18,7 @@ import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
-import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getHexRegionFromFile, getSubmapFromFile, type OverlayStyle } from "../frontmatter";
+import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFile, getRegionStyleFromFile, setHexRegionInFile, getHexRegionFromFile, getSubmapFromFile, getHexMapsFromFile, type OverlayStyle } from "../frontmatter";
 import { buildSvgPattern, colorToIdToken, type OverlayPatternKey } from "../overlayPatterns";
 import { renderHexPreview } from "./overlayPatternControls";
 import {
@@ -65,7 +65,9 @@ import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, legendBadgeK
 import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
-import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
+import { LocationsModal } from "./LocationsModal";
+import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
+import { hexChildMaps, submapMenuPlan } from "../maps/submaps";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { neighbourShadow } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
@@ -513,24 +515,63 @@ export class HexMapView extends ItemView {
   }
 
   /**
-   * "New submap…" for hex (x, y): the setup modal (size, palette, generator,
-   * base terrain, preview). On create, links the hex and enters the new map;
-   * "Open in generator" also opens the Generator view on it.
+   * "New map from this hex…" for hex (x, y): Region or Location (K1), then
+   * the setup modal (size, palette, generator, preview). On create, links
+   * the hex and enters the new map.
    */
   openNewSubmapSetup(x: number, y: number): void {
+    startNewChildMap(this.childMapHost(), this.activeMapName, x, y);
+  }
+
+  /** "+ New location…" straight away (the Locations list's button). */
+  private openNewLocationSetup(x: number, y: number): void {
+    startNewLocation(this.childMapHost(), this.activeMapName, x, y);
+  }
+
+  private childMapHost(): NewChildMapHost {
     const parentMap = this.activeMapName;
-    new NewMapSetupModal(
+    return {
+      app: this.app,
+      plugin: this.plugin,
+      onCreated: (name) => {
+        if (this.activeMapName === parentMap) this.navigateToMap(name);
+        else this.renderGrid();
+      },
+      onEnter: (name) => this.navigateToMap(name),
+    };
+  }
+
+  /** "Link existing map…" for hex (x, y): the picked map joins its locations. */
+  private openLinkExistingMap(x: number, y: number): void {
+    const parentMap = this.activeMapName;
+    const linked = hexChildMaps(this.plugin.mapStore.get(parentMap, `${x}_${y}`));
+    new SubmapPickerModal(
       this.app,
       this.plugin,
-      ({ name }) => {
+      undefined,
+      (mapName, created) => {
         void (async () => {
-          await this.plugin.linkSubmap(parentMap, x, y, name);
-          if (this.activeMapName === parentMap) this.navigateToMap(name);
+          await this.plugin.linkSubmap(parentMap, x, y, mapName);
+          // A freshly made map is where the user wants to be next.
+          if (created && this.activeMapName === parentMap) this.navigateToMap(mapName);
           else this.renderGrid();
         })();
       },
+      undefined,
       { map: parentMap, x, y },
+      () => this.openNewLocationSetup(x, y),
+      { title: "Link existing map", exclude: [...linked, parentMap] },
     ).open();
+  }
+
+  /** The hex's Locations list (search, open, unlink, reorder). */
+  openLocationsList(x: number, y: number): void {
+    new LocationsModal(this.app, this.plugin, this.activeMapName, x, y, {
+      open: (name) => this.navigateToMap(name),
+      newLocation: () => this.openNewLocationSetup(x, y),
+      linkExisting: () => this.openLinkExistingMap(x, y),
+      changed: () => this.renderGrid(),
+    }).open();
   }
 
   canNavigateBack(): boolean {
@@ -1990,7 +2031,7 @@ export class HexMapView extends ItemView {
         this.paintSubmapName = mapName;
         this.updateToolbarButtonStates();
       },
-      () => { /* unlink not meaningful in tool mode */ },
+      undefined,
     ).open();
   }
 
@@ -3871,17 +3912,36 @@ export class HexMapView extends ItemView {
       // Submap marker: shows which hexes drill down (a system in a sector,
       // a dungeon in a region). Clicking it enters the submap when no tool
       // is active; with a tool active the click falls through to the hex.
-      const submapName: unknown = fromStore ? stored?.submap : fm?.["duckmage-submap"];
-      if (typeof submapName === "string" && submapName && this.plugin.getMap(submapName)) {
+      // A Region map: a thin inner hex outline. Locations: the badge, with
+      // a count from two on; its tooltip lists them.
+      const legacySubmap: unknown = fromStore ? undefined : fm?.["duckmage-submap"];
+      const regionMap = stored?.regionMap && this.plugin.getMap(stored.regionMap) ? stored.regionMap : undefined;
+      const locations = (fromStore ? stored?.locations ?? [] : typeof legacySubmap === "string" && legacySubmap ? [legacySubmap] : [])
+        .filter((m) => m !== regionMap && !!this.plugin.getMap(m));
+      if (regionMap) {
+        hexEl.addClass("duckmage-hex-has-region-map");
+        hexEl.createSpan({
+          cls: "duckmage-hex-region-outline",
+          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (Ctrl+click hex to enter)` },
+        });
+      }
+      if (locations.length) {
         hexEl.addClass("duckmage-hex-has-submap");
+        const names = locations.map((m) => this.plugin.mapLabel(m));
+        const one = locations.length === 1;
+        const title = one
+          ? `Enter location: ${names[0]}${regionMap ? "" : " (Ctrl+click hex)"}`
+          : `Locations: ${names.join(", ")} (click for the list)`;
         const badge = hexEl.createSpan({
-          cls: "duckmage-hex-submap-badge",
-          attr: { title: `Enter submap: ${this.plugin.mapLabel(submapName)} (Ctrl+click hex)`, "aria-label": `Enter submap ${this.plugin.mapLabel(submapName)}` },
+          cls: "duckmage-hex-submap-badge" + (one ? "" : " has-count"),
+          text: one ? "" : String(locations.length),
+          attr: { title, "aria-label": title },
         });
         badge.addEventListener("click", (e) => {
           if (this.drawingMode) return;
           e.stopPropagation();
-          this.navigateToMap(submapName);
+          if (one) this.navigateToMap(locations[0]);
+          else this.openLocationsList(x, y);
         });
       }
 
@@ -4180,6 +4240,9 @@ export class HexMapView extends ItemView {
           }
         },
         onSwitchMap: (name: string) => this.navigateToMap(name),
+        onNewChildMap: (hx: number, hy: number) => this.openNewSubmapSetup(hx, hy),
+        onLinkExistingMap: (hx: number, hy: number) => this.openLinkExistingMap(hx, hy),
+        onManageLocations: (hx: number, hy: number) => this.openLocationsList(hx, hy),
         onCrossToRegion: (name: string, nx: number, ny: number) => this.goToRegionHex(name, nx, ny, true),
       },
     );
@@ -4200,7 +4263,8 @@ export class HexMapView extends ItemView {
     // terrain" on such hexes (fresh-eyes N3).
     const terrain = getTerrainFromFile(this.app, hexPath);
     const iconOverride = getIconOverrideFromFile(this.app, hexPath);
-    const submap = getSubmapFromFile(this.app, hexPath);
+    const childPlan = submapMenuPlan(this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
+      ?? { locations: getHexMapsFromFile(this.app, hexPath).locations });
 
     const menu = new Menu();
 
@@ -4227,51 +4291,57 @@ export class HexMapView extends ItemView {
         }),
     );
 
-    if (submap) {
+    // Maps from this hex (K7): its region, then up to two locations by
+    // name, or one "Locations (n)…" item that opens the list.
+    const region = childPlan.region;
+    if (region && this.plugin.getMap(region)) {
       menu.addItem((item) =>
         item
-          .setTitle(`Enter submap: ${this.plugin.mapLabel(submap)}`)
+          .setTitle(`Enter region: ${this.plugin.mapLabel(region)}`)
           .setIcon("log-in")
-          .onClick(() => this.navigateToMap(submap)),
+          .onClick(() => this.navigateToMap(region)),
       );
     }
-
-    if (!submap) {
+    for (const loc of childPlan.open) {
       menu.addItem((item) =>
         item
-          .setTitle("New submap…")
-          .setIcon("map-plus")
-          .onClick(() => this.openNewSubmapSetup(x, y)),
+          .setTitle(`Open: ${this.plugin.mapLabel(loc)}`)
+          .setIcon("map-pin")
+          .onClick(() => {
+            if (this.plugin.getMap(loc)) this.navigateToMap(loc);
+            else this.openLocationsList(x, y);
+          }),
       );
     }
-
+    if (childPlan.listCount) {
+      menu.addItem((item) =>
+        item
+          .setTitle(`Locations (${childPlan.listCount})…`)
+          .setIcon("list")
+          .onClick(() => this.openLocationsList(x, y)),
+      );
+    }
     menu.addItem((item) =>
       item
-        .setTitle(submap ? "Change submap…" : "Link existing map…")
-        .setIcon("map-pin")
-        .onClick(() => {
-          const parentMap = this.activeMapName;
-          const current = getSubmapFromFile(this.app, hexPath);
-          new SubmapPickerModal(
-            this.app,
-            this.plugin,
-            current,
-            (mapName, created) => {
-              void (async () => {
-                await this.plugin.linkSubmap(parentMap, x, y, mapName);
-                // A freshly made submap is where the user wants to be next.
-                if (created && this.activeMapName === parentMap) this.navigateToMap(mapName);
-                else this.renderGrid();
-              })();
-            },
-            () => {
-              void this.plugin.unlinkSubmap(parentMap, x, y).then(() => this.renderGrid());
-            },
-            { map: parentMap, x, y },
-            () => this.openNewSubmapSetup(x, y),
-          ).open();
-        }),
+        .setTitle("New map from this hex…")
+        .setIcon("map-plus")
+        .onClick(() => this.openNewSubmapSetup(x, y)),
     );
+    menu.addItem((item) =>
+      item
+        .setTitle("Link existing map…")
+        .setIcon("link")
+        .onClick(() => this.openLinkExistingMap(x, y)),
+    );
+    if (childPlan.open.length) {
+      // Unlinking and reordering live in the list.
+      menu.addItem((item) =>
+        item
+          .setTitle("Manage locations…")
+          .setIcon("list")
+          .onClick(() => this.openLocationsList(x, y)),
+      );
+    }
 
     menu.addItem((item) =>
       item
@@ -4634,7 +4704,7 @@ export class HexMapView extends ItemView {
   private async onHexSubmapLinkClick(x: number, y: number): Promise<void> {
     if (this.drawingMode !== "submapLink") return;
     if (this.isErasingMode) {
-      await this.plugin.unlinkSubmap(this.activeMapName, x, y);
+      await this.plugin.unlinkSubmap(this.activeMapName, x, y, this.paintSubmapName ?? undefined);
       this.renderGrid();
       return;
     }
