@@ -198,7 +198,7 @@ export function drawRegionCells(
   layout: RegionLayout,
   cells: RegionCell[],
   toCanvas: Affine,
-  opts: { seams?: boolean } = {},
+  opts: { seams?: boolean; seamColour?: string; seamWidth?: number } = {},
 ): void {
   const s = affineScale(toCanvas);
   const own = new Set(cells.map((c) => `${c.x}_${c.y}`));
@@ -210,8 +210,8 @@ export function drawRegionCells(
     ctx.fill();
   }
   if (opts.seams === false) return;
-  ctx.strokeStyle = SEAM_COLOUR;
-  ctx.lineWidth = Math.max(1, s * 0.18);
+  ctx.strokeStyle = opts.seamColour ?? SEAM_COLOUR;
+  ctx.lineWidth = Math.max(1, s * (opts.seamWidth ?? 0.18));
   for (const c of cells) {
     const [ax, ay] = childPoint(layout, c.x, c.y);
     for (const [nx, ny] of childNeighbours(layout, c.x, c.y)) {

@@ -203,6 +203,9 @@ export interface MapData {
 	overworldView?: "regions" | "biomes";
 	/** Overworlds and their regions: the small overworld panel. Unset = shown. */
 	showMinimap?: boolean;
+	/** Work mode (Play / Build / God, src/workMode.ts), as written in the
+	 *  map note (`mode: god`). Unset = Build. */
+	workMode?: string;
 	/** Overworlds made by World biomes: the river's hexes, source to mouth,
 	 *  as "x,y > x,y > …" (biome data drawn on the overworld; not a path). */
 	biomeRiver?: string;

@@ -278,6 +278,16 @@ export default class HexmakerPlugin extends Plugin {
       },
     });
     this.addCommand({
+      id: "map-go-forward",
+      name: "Go forward to the next map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateForward()) return false;
+        if (!checking) view.navigateForward();
+        return true;
+      },
+    });
+    this.addCommand({
       id: "open-random-tables",
       name: "Open random tables",
       callback: () =>

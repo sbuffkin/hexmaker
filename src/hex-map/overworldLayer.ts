@@ -6,6 +6,9 @@
  * that region's map changes or the zoom moves a lot), and the layer is just
  * those bitmaps copied into place.
  *
+ * Slots with no region yet are drawn as blank bricks (outline only): the
+ * overworld's own hexes aren't shown in this view at all.
+ *
  * In the "biomes" view the same canvas carries the preview's minimap marks
  * over the overworld's own hexes instead: biome labels, white outlines on
  * transition hexes, the river.
@@ -58,9 +61,25 @@ interface RegionBitmap {
   box: { x: number; y: number; w: number; h: number };
 }
 
+/** Cache name of the one bitmap holding every empty slot ("blank bricks"). */
+const BLANK = "*blank slots*";
+/** Empty slots: a faint fill and a light outline, so they read on light and dark themes. */
+const BLANK_FILL = "rgba(128, 128, 128, 0.10)";
+const BLANK_EDGE = "rgba(128, 128, 128, 0.55)";
+
 /** Largest composite canvas side and area (device px): beyond it the layer drops resolution. */
 const MAX_SIDE = 8192;
 const MAX_AREA = 24e6;
+
+/** The overworld hexes (its whole grid) that have no region yet, in reading order. */
+export function blankSlots(map: Pick<MapData, "gridOffset" | "gridSize">, taken: ReadonlySet<string>): [number, number][] {
+  const out: [number, number][] = [];
+  const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
+  for (let y = oy; y < oy + rows; y++) {
+    for (let x = ox; x < ox + cols; x++) if (!taken.has(`${x}_${y}`)) out.push([x, y]);
+  }
+  return out;
+}
 
 export class OverworldLayer {
   readonly cache = new RegionBitmapCache<RegionBitmap>();
@@ -128,10 +147,9 @@ export class OverworldLayer {
     this.draw();
   }
 
-  /** A region's map changed: rebuild its bitmap on the next draw. */
+  /** A region's map changed: rebuild its bitmap on the next draw (callers redraw when it's on screen). */
   invalidate(regionName: string): void {
     this.cache.invalidate(regionName);
-    this.scheduleRedraw();
   }
 
   /** The overworld itself changed (biomes view): redraw. */
@@ -194,14 +212,27 @@ export class OverworldLayer {
 
   private drawRegions(canvas: HTMLCanvasElement, geom: Geometry, map: MapData): void {
     const regions = regionsOf(this.plugin.settings.maps, map.name);
-    this.cache.retain(new Set(regions.map((r) => r.name)));
+    this.cache.retain(new Set([...regions.map((r) => r.name), BLANK]));
     const k0 = geom.pxScale;
     const bitmaps: RegionBitmap[] = [];
     let cells = 0;
+    const geoKey = `${k0.toFixed(3)}|${geom.c2g.map((v) => v.toFixed(2)).join(",")}`;
+    // Built before the map data and palettes were loaded (startup, plugin
+    // reload), a region bitmap is empty: never let that one stick.
+    const loaded = this.plugin.mapStore.isReady() && this.plugin.paletteStore.isReady() ? "ready" : "loading";
+    // Slots with no region yet: blank bricks (just their outline), one
+    // bitmap for all of them, rebuilt when a region is made or removed.
+    const taken = new Set(regions.map((r) => r.parent!.hex));
+    const empty = blankSlots(map, taken);
+    if (empty.length) {
+      const blankKey = `${geoKey}|${empty.map(([x, y]) => `${x}_${y}`).join(",")}`;
+      const blank = this.cache.get(BLANK, blankKey, () => this.buildBlank(empty, geom, k0));
+      if (blank.canvas) bitmaps.push(blank);
+    }
     for (const r of regions) {
       const [px, py] = r.parent!.hex.split("_").map(Number);
       const palette = this.plugin.getMapPalette(r.name);
-      const key = `${k0.toFixed(3)}|${geom.c2g.map((v) => v.toFixed(2)).join(",")}|${palette.map((t) => t.color).join("")}`;
+      const key = `${geoKey}|${loaded}|${r.baseTerrain ?? ""}|${palette.map((t) => t.color).join("")}`;
       const bmp = this.cache.get(r.name, key, () => this.buildRegion(r, px, py, geom, k0));
       cells += regionCells(geom.layout, px, py).length;
       if (bmp.canvas) bitmaps.push(bmp);
@@ -240,6 +271,23 @@ export class OverworldLayer {
     // Grid px → this bitmap: shift by the box corner, scale by k.
     const toBitmap = composeAffine(geom.c2g, [k, 0, 0, k, -box.x * k, -box.y * k]);
     drawRegionCells(ctx, geom.layout, cells, toBitmap);
+    return { canvas, box };
+  }
+
+  /** Every empty slot's outline in one bitmap. */
+  private buildBlank(slots: [number, number][], geom: Geometry, k: number): RegionBitmap {
+    const all = slots.flatMap(([px, py]) => regionCells(geom.layout, px, py).map(([x, y]) => ({ x, y })));
+    const box = cellsBox(geom.layout, all, geom.c2g);
+    const canvas = createEl("canvas");
+    canvas.width = Math.max(1, Math.ceil(box.w * k));
+    canvas.height = Math.max(1, Math.ceil(box.h * k));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { canvas: null, box };
+    const toBitmap = composeAffine(geom.c2g, [k, 0, 0, k, -box.x * k, -box.y * k]);
+    for (const [px, py] of slots) {
+      const cells = regionCells(geom.layout, px, py).map(([x, y]) => ({ x, y, color: BLANK_FILL }));
+      drawRegionCells(ctx, geom.layout, cells, toBitmap, { seamColour: BLANK_EDGE, seamWidth: 0.12 });
+    }
     return { canvas, box };
   }
 

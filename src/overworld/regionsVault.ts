@@ -17,6 +17,7 @@ import { regionMapAt } from "../maps/submaps";
 import { biomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
+import { canReshape, RESHAPE_LOCKED_HINT } from "../workMode";
 import {
   defaultRegionName,
   dominantTerrain,
@@ -256,14 +257,15 @@ export function regionBlockKeys(layout: RegionLayout, px: number, py: number): s
 // ── reshaping: set a biome, regenerate, reroll ───────────────────────────
 
 /**
- * Whether reshaping a hex's region (repainting its biome, rerolling,
- * regenerating) may go ahead, and how. The single gate for work modes
- * (plan-work-modes: God mode) to plug into later. Today: making a region
- * for the first time is always allowed; replacing an existing region's
- * generated terrain asks first.
+ * Whether reshaping hex (px, py)'s region (swapping its biome, rerolling,
+ * regenerating, applying region settings) may go ahead. Making a region
+ * for the first time is allowed in Build and God; changing one that's
+ * already there needs the map in God mode (src/workMode.ts). No confirm:
+ * the mode is the safety catch.
  */
-export function canReshape(plugin: HexmakerPlugin, parentName: string, px: number, py: number): "allowed" | "confirm" {
-  return regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`) ? "confirm" : "allowed";
+export function reshapeGate(plugin: HexmakerPlugin, parentName: string, px: number, py: number): "allowed" | "locked" {
+  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return "allowed";
+  return canReshape(plugin.getMap(parentName)) ? "allowed" : "locked";
 }
 
 /**
@@ -274,6 +276,7 @@ export function canReshape(plugin: HexmakerPlugin, parentName: string, px: numbe
 export async function regenerateRegion(plugin: HexmakerPlugin, regionName: string, opts: RegionGenOptions = {}): Promise<number> {
   const region = plugin.getMap(regionName);
   if (region?.submapKind !== "region" || !region.parent) return 0;
+  if (!canReshape(plugin.getMap(region.parent.map))) return 0; // see reshapeGate
   const [px, py] = region.parent.hex.split("_").map(Number);
   const plan = planRegionAt(plugin, region.parent.map, px, py, opts);
   if (!plan) return 0;
@@ -291,8 +294,8 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
 /**
  * Set an overworld hex's biome: paint it with the biome's terrain on the
  * overworld's palette (the terrain IS the biome signal), then make its
- * region (first placement) or regenerate it (callers confirm first; see
- * canReshape). Returns the region's name, or an error.
+ * region (first placement) or regenerate it (God mode only; see
+ * reshapeGate). Returns the region's name, or an error.
  */
 export async function setBiomeAt(
   plugin: HexmakerPlugin,
@@ -307,6 +310,7 @@ export async function setBiomeAt(
   const terrain = representativeTerrain(biome, plugin.getMapPalette(parentName));
   if (!terrain) return { error: "This map's palette has no terrain for that biome." };
   const hex = `${px}_${py}`;
+  if (reshapeGate(plugin, parentName, px, py) === "locked") return { error: RESHAPE_LOCKED_HINT };
   if (plugin.mapStore.get(parentName, hex)?.terrain !== terrain) {
     plugin.mapStore.set(parentName, hex, { terrain });
     await plugin.mapStore.flush();

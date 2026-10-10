@@ -51,11 +51,13 @@ export class OverworldMinimap {
     this.el = box;
     if (t.isOverworld) {
       const sw = box.createDiv({ cls: "duckmage-ow-view-toggle", attr: { role: "group", "aria-label": "Overworld view" } });
+      sw.createSpan({ cls: "duckmage-ow-view-label", text: "View:" });
       for (const [id, label, tip] of [
-        ["regions", "Regions", "Every region's hexes, stitched together. Click to enter a region; the terrain tool paints its hexes."],
-        ["biomes", "Biomes", "One biome per hex. Click a hex to set its biome; its region is made or remade from it."],
+        ["regions", "Regions", "Every region's hexes, stitched together (blank bricks where there's none yet). Click to enter a region; the terrain tool paints its hexes."],
+        ["biomes", "Biomes", "One biome per hex. Click a hex to set its biome: a hex with no region gets one; changing a placed one needs God mode."],
       ] as const) {
-        const b = sw.createEl("button", { text: label, cls: view === id ? "is-active" : "", attr: { title: tip } });
+        const on = view === id;
+        const b = sw.createEl("button", { text: label, cls: on ? "is-active" : "", attr: { title: on ? `${tip} (showing now)` : tip, "aria-pressed": on ? "true" : "false" } });
         b.addEventListener("click", () => {
           if (view === id) return;
           map.overworldView = id;
