@@ -1,5 +1,13 @@
 import type { PathType, TerrainColor } from "./types";
-import { effectiveTerrainType, terrainTypeGroup, TERRAIN_GROUPS, typesInGroup, type TerrainGroup } from "./terrainTypes";
+import {
+  derivedCell,
+  effectiveTerrainType,
+  isDerivedCell,
+  terrainTypeGroup,
+  TERRAIN_GROUPS,
+  typesInGroup,
+  type TerrainGroup,
+} from "./terrainTypes";
 
 /**
  * Impassable terrain, for the path tool's auto-route.
@@ -89,8 +97,31 @@ export function impassableCell(t: Pick<TerrainColor, "impassable">): string {
   return t.impassable === undefined ? "" : t.impassable ? "yes" : "no";
 }
 
-/** Parse a palette-note cell: yes/no (and friends), or undefined for blank/unknown. */
+/**
+ * Palette-note Impassable cell as written: "yes"/"no" for a terrain's own
+ * setting, else its type's default in parentheses ("(yes)"/"(no)"), so the
+ * note always shows what auto-route uses. The parentheses read as unset.
+ */
+export function impassableNoteCell(t: ImpassableInput): string {
+  return impassableCell(t) || derivedCell(impassableByDefault(t) ? "yes" : "no");
+}
+
+/**
+ * Palette-note Avoid impassable cell for a path type: "yes"/"no" when set,
+ * else the default in parentheses (rivers "(no)", other paths "(yes)").
+ */
+export function avoidImpassableNoteCell(pt: Pick<PathType, "name" | "avoidImpassable">): string {
+  if (pt.avoidImpassable !== undefined) return pt.avoidImpassable ? "yes" : "no";
+  return derivedCell(pathAvoidsImpassable(pt) ? "yes" : "no");
+}
+
+/**
+ * Parse a palette-note cell: yes/no (and friends), or undefined for blank,
+ * unknown, or a derived value in parentheses ("(yes)" is the default shown,
+ * not a choice).
+ */
 export function parseImpassableCell(raw: string | undefined): boolean | undefined {
+  if (isDerivedCell(raw)) return undefined;
   const v = (raw ?? "").trim().toLowerCase();
   if (["yes", "y", "true", "x", "✓", "impassable"].includes(v)) return true;
   if (["no", "n", "false", "-", "passable"].includes(v)) return false;

@@ -69,9 +69,10 @@ describe("impassable terrain (P1)", () => {
 });
 
 describe("palette note Impassable column", () => {
-  it("is left out when no terrain overrides its default (notes don't churn)", () => {
+  it("is always written, the type's default in parentheses (#46 P1)", () => {
     const table = serializePaletteTable([{ name: "ocean", color: "#29507f", type: "water" }]);
-    expect(table).not.toContain("Impassable");
+    expect(table).toContain("| Impassable |");
+    expect(table).toContain("| ocean | #29507f |  |  |  | water | (yes) |");
   });
 
   it("round-trips overrides", () => {

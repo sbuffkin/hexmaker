@@ -1,4 +1,4 @@
-import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { MarkdownView, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
@@ -8,6 +8,7 @@ import {
   parsePaletteNote,
   readChildPalette,
   readSubmapDefaults,
+  refreshPaletteDerived,
   setChildPalette,
   setSubmapDefaults,
   submapDefaultsKey,
@@ -15,7 +16,7 @@ import {
   updatePaletteNote,
 } from "./paletteNote";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { clonePathTypes, parsePathTypes, pathTypesDerivedStale, pathTypesKey, setPathTypes } from "./pathTypeTable";
 import { DEFAULT_PATH_TYPES } from "../constants";
 import { inferTerrainType } from "../terrainTypes";
 
@@ -65,6 +66,18 @@ function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
     changed = true;
   }
   return changed;
+}
+
+/**
+ * The note with every derived cell (Type, Impassable, Avoid impassable in
+ * parentheses) showing what the plugin works out now. Unchanged when they
+ * already do; a path-types table with unreadable rows is left alone.
+ */
+export function refreshNoteDerived(content: string): string {
+  let next = refreshPaletteDerived(content);
+  const paths = parsePathTypes(next);
+  if (paths && !paths.skipped.length && pathTypesDerivedStale(next)) next = setPathTypes(next, paths.types);
+  return next;
 }
 
 /** A fresh note for a palette, metadata included. */
@@ -121,6 +134,8 @@ export class PaletteStore {
   /** Palette notes whose terrain table doesn't parse: never rewritten until
    *  fixed by hand (a sync would otherwise replace the half-edited note). */
   private broken = new Set<string>();
+  /** Hand-edited notes whose derived cells wait until the user stops editing them. */
+  private pendingDerived = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -272,6 +287,9 @@ export class PaletteStore {
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
     if (seeded || filled) await this.syncNow();
+    // Notes from older builds (or edited by hand since) get their derived
+    // cells shown: the Impassable column, inferred types in parentheses.
+    for (const file of this.paletteFiles()) await this.refreshDerived(file);
     if (dirty) await this.persist();
   }
 
@@ -399,7 +417,7 @@ export class PaletteStore {
           const withMeta = setSubmapDefaults(
             setChildPalette(
               parsed && terrainsEqual(parsed, pal.terrains)
-                ? current
+                ? this.isBeingEdited(target) ? current : refreshPaletteDerived(current)
                 : updatePaletteNote(current, pal.terrains),
               pal.childPalette,
             ),
@@ -428,6 +446,43 @@ export class PaletteStore {
       }
 
       if (renamedInMemory) await this.persist();
+    }
+  }
+
+  /** Whether the user is typing in this note right now (active editor, not reading view). */
+  private isBeingEdited(path: string): boolean {
+    const view = this.plugin.app.workspace?.getActiveViewOfType?.(MarkdownView);
+    return !!view && view.file?.path === path && view.getMode() === "source";
+  }
+
+  /**
+   * Bring a palette note's derived cells up to date (call inside the queue).
+   * Only a note that reads cleanly is touched; our write is recorded so the
+   * modify event it fires is recognised as ours.
+   */
+  private async refreshDerived(file: TFile): Promise<void> {
+    if (!this.knownPaths.has(file.path)) return;
+    const { vault } = this.plugin.app;
+    const current = await vault.read(file);
+    if (!parsePaletteNote(current)) return;
+    const next = refreshNoteDerived(current);
+    if (next === current) return;
+    this.lastContent.set(file.path, next);
+    await vault.modify(file, next);
+  }
+
+  /**
+   * Refresh derived cells of hand-edited notes the user has stopped editing
+   * (called when the active leaf changes). Rewriting a note mid-typing would
+   * fight the cursor, so onModify leaves those for here.
+   */
+  flushPendingDerived(): void {
+    if (!this.ready || !this.pendingDerived.size) return;
+    for (const path of [...this.pendingDerived]) {
+      if (this.isBeingEdited(path)) continue;
+      this.pendingDerived.delete(path);
+      const file = this.plugin.app.vault.getAbstractFileByPath(path);
+      if (file instanceof TFile) void this.enqueue(() => this.refreshDerived(file));
     }
   }
 
@@ -489,6 +544,13 @@ export class PaletteStore {
       if (fillPalettePathTypes([pal], this.plugin.settings.pathTypes)) changed = true;
       this.bind(pal, file.path, content);
       if (changed) await this.persist();
+      // The hand edit may have changed what the derived cells should say
+      // (a new type, a terrain added without a type): refresh them now, or
+      // once the user leaves the note if they're still typing in it.
+      if (refreshNoteDerived(content) !== content) {
+        if (this.isBeingEdited(file.path)) this.pendingDerived.add(file.path);
+        else await this.refreshDerived(file);
+      }
     });
   }
 

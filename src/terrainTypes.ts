@@ -112,6 +112,40 @@ export function normalizeTerrainType(raw: string | undefined): string | undefine
   return undefined;
 }
 
+/**
+ * A note cell holding a value the plugin worked out rather than one a person
+ * chose: written in parentheses, e.g. "(yes)" or "(mountains)". It reads as
+ * unset (still derived); removing the parentheses makes it the person's own.
+ */
+export function isDerivedCell(raw: string | undefined): boolean {
+  return /^\(.*\)$/.test((raw ?? "").trim());
+}
+
+/** "(value)" for a derived cell, "" when there's nothing to show. */
+export function derivedCell(value: string | undefined): string {
+  return value ? `(${value})` : "";
+}
+
+/**
+ * Palette-note Type cell: the terrain's own type as set, else the type its
+ * name suggests in parentheses ("(mountains)"), else blank.
+ */
+export function terrainTypeCell(t: { type?: string; name?: string; category?: string }): string {
+  if (t.type) return t.type;
+  return derivedCell(t.name ? inferTerrainType(t.name, t.category) : undefined);
+}
+
+/**
+ * Parse a palette-note Type cell: a derived "(…)" value or a blank is unset;
+ * a type typed in any case or as its label reads as its id; anything else is
+ * kept as typed (and shows as untyped).
+ */
+export function parseTerrainTypeCell(raw: string | undefined): string | undefined {
+  const v = (raw ?? "").trim();
+  if (!v || isDerivedCell(v)) return undefined;
+  return normalizeTerrainType(v) ?? v;
+}
+
 export function isTerrainType(id: string | undefined): boolean {
   return !!id && BY_ID.has(id);
 }

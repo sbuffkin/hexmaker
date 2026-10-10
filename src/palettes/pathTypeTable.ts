@@ -1,5 +1,6 @@
 import type { PathLineStyle, PathRouting, PathType } from "../types";
-import { parseImpassableCell } from "../impassable";
+import { avoidImpassableNoteCell, parseImpassableCell } from "../impassable";
+import { isDerivedCell } from "../terrainTypes";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
@@ -8,8 +9,12 @@ import { parseImpassableCell } from "../impassable";
 //
 //   | Path | Color | Width | Style | Routing | Avoid impassable |
 //   | --- | --- | --- | --- | --- | --- |
-//   | Road | #a16207 | 4 | solid | through | yes |
-//   | River | #3b82f6 | 3 | solid | meander | no |
+//   | Road | #a16207 | 4 | solid | through | (yes) |
+//   | River | #3b82f6 | 3 | solid | meander | (no) |
+//
+// Avoid impassable in parentheses is the default the plugin works out
+// (rivers don't avoid, other paths do): shown, read back as unset. Without
+// the parentheses it's the user's choice.
 //
 // Read forgivingly, since people edit it by hand: columns by name in any
 // order (Path or Name, Color or Colour, Style or Line…), values in any case,
@@ -23,7 +28,7 @@ export const PATH_TYPES_INTRO =
   "Paths maps on this palette can draw. Width is 1 (thin) to 10 (thick). Style is solid, dashed or dotted. " +
   "Routing is how a path runs between hexes: through (centre to centre), meander (curving across hex edges, " +
   "like a river) or edge (along the hex borders). Avoid impassable is yes or no: whether auto-route goes " +
-  "around impassable terrain (blank = yes, except for rivers). To have no path types, delete the rows but keep " +
+  "around impassable terrain (blank or in parentheses = the default: yes, except for rivers). To have no path types, delete the rows but keep " +
   "the header line.";
 
 const HEADERS = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable"] as const;
@@ -191,7 +196,7 @@ export function serializePathTypes(
   const headers = [...HEADERS, ...extraHeaders];
   const lines = [`| ${headers.join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`];
   for (const t of types) {
-    const avoid = t.avoidImpassable === undefined ? "" : t.avoidImpassable ? "yes" : "no";
+    const avoid = avoidImpassableNoteCell(t);
     const own = extra?.rows.get(t.name) ?? {};
     const cells = [t.name, t.color, String(t.width), t.lineStyle, t.routing, avoid, ...extraHeaders.map((h) => own[h])];
     lines.push(`| ${cells.map(escapeCell).join(" | ")} |`);
@@ -205,13 +210,39 @@ export function pathTypesKey(types: PathType[] | undefined): string {
 }
 
 /**
+ * True when the table's derived Avoid impassable cells (blank or in
+ * parentheses) don't show the current default, or the column is missing.
+ * Filled-in cells are the user's and never count as stale.
+ */
+export function pathTypesDerivedStale(content: string): boolean {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const span = findPathTypesTable(lines);
+  const parsed = parsePathTypes(content);
+  if (!span || !parsed) return false;
+  const avoidAt = span.columns.indexOf("avoid");
+  if (avoidAt < 0) return parsed.types.length > 0;
+  const nameAt = span.columns.indexOf("name");
+  const byName = new Map(parsed.types.map((t) => [t.name, t]));
+  for (let i = span.start + 2; i < span.end; i++) {
+    const cells = splitRow(lines[i]);
+    const t = byName.get(cells[nameAt]?.trim() ?? "");
+    if (!t) continue;
+    const v = (cells[avoidAt] ?? "").trim();
+    if ((v === "" || isDerivedCell(v)) && v !== avoidImpassableNoteCell(t)) return true;
+  }
+  return false;
+}
+
+/**
  * Write the path-types table into a palette note, replacing the old one in
  * place (unknown columns and the text around it kept) or adding a "Path
  * types" section at the end. Unchanged content is returned as is.
  */
 export function setPathTypes(content: string, types: PathType[]): string {
   const parsed = parsePathTypes(content);
-  if (parsed && pathTypesKey(parsed.types) === pathTypesKey(types) && !parsed.skipped.length) return content;
+  if (parsed && pathTypesKey(parsed.types) === pathTypesKey(types) && !parsed.skipped.length && !pathTypesDerivedStale(content)) {
+    return content;
+  }
   const text = content.replace(/\r\n?/g, "\n");
   const lines = text.split("\n");
   const span = findPathTypesTable(lines);

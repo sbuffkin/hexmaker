@@ -18,7 +18,7 @@ import {
 	presetToPalette,
 	uniquePaletteName,
 } from "../src/palettes/presets";
-import { parsePathTypes } from "../src/palettes/pathTypeTable";
+import { parsePathTypes, setPathTypes } from "../src/palettes/pathTypeTable";
 import { PaletteStore } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { iconLabel, iconPack } from "../src/utils";
@@ -557,5 +557,74 @@ describe("PaletteStore: hand edits are never overwritten", () => {
 		const row = out.find((l) => l.startsWith(`| ${pal.terrains[0].name} |`))!;
 		expect(row).toContain("#000005");
 		expect(row.endsWith("| windy |")).toBe(true);
+	});
+});
+
+// #46 P1: derived cells ("(yes)", "(mountains)") in palette notes.
+describe("PaletteStore derived cells", () => {
+	const OLD = [
+		"---",
+		"hexmaker-palette: 1",
+		"---",
+		"",
+		"My notes.",
+		"",
+		"| Terrain | Color | Icon | Icon color | Category | Type |",
+		"| --- | --- | --- | --- | --- | --- |",
+		"| sea | #0000ff |  |  |  | water |",
+		"| crags | #777777 |  |  |  |  |",
+		"",
+	].join("\n");
+
+	it("an older-format note gets its derived cells on load, nothing else changes", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set("world/palettes/Limited.md", OLD);
+		await h.store.init();
+		const note = h.vault.files.get("world/palettes/Limited.md")!;
+		expect(note).toContain("My notes.");
+		expect(note).toContain("| sea | #0000ff |  |  |  | water | (yes) |");
+		expect(note).toContain("| crags | #777777 |  |  |  | (mountains) | (no) |");
+		expect(h.settings.terrainPalettes.find((p) => p.name === "Limited")!.terrains.slice(0, 2)).toEqual([
+			{ name: "sea", color: "#0000ff", type: "water" },
+			{ name: "crags", color: "#777777" },
+		]);
+		const writes = h.vault.writes;
+		await h.store.sync();
+		expect(h.vault.writes).toBe(writes);
+	});
+
+	it("a hand edit is imported and the derived cells follow it", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, buildPaletteNote([{ name: "crags", color: "#777777" }]).replace("| (mountains) |", "| water |"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.terrains).toEqual([{ name: "crags", color: "#777777", type: "water" }]);
+		expect(h.vault.files.get(p)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
+	});
+
+	it("waits until the user leaves a note they're typing in", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		let editing = true;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(h.store as any).plugin.app.workspace = {
+			getActiveViewOfType: () => (editing ? { file: { path: p }, getMode: () => "source" } : null),
+		};
+		const pathTypes = h.settings.terrainPalettes.find((x) => x.name === "Limited")!.pathTypes!;
+		const typed = setPathTypes(buildPaletteNote([{ name: "crags", color: "#777777" }]), pathTypes).replace("| (mountains) |", "| water |");
+		h.vault.files.set(p, typed);
+		h.store.onModify(h.file(p));
+		// An in-app sync while they type leaves the note alone too.
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toBe(typed);
+		editing = false;
+		h.store.flushPendingDerived();
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toContain("| water | (yes) |");
 	});
 });

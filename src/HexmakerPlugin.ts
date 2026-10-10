@@ -11,6 +11,7 @@ import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
+import { registerPaletteReadingView } from "./palettes/paletteReadingView";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
 import { maybePromptTableRanges, openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
@@ -159,6 +160,9 @@ export default class HexmakerPlugin extends Plugin {
         this.mapStore.onModify(f);
       }),
     );
+    // A hand-edited palette note's derived cells ("(yes)", "(mountains)")
+    // are refreshed once the user stops editing it.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.paletteStore.flushPendingDerived()));
 
     await this.migrateHexFilesToDefaultRegion();
 
@@ -339,6 +343,9 @@ export default class HexmakerPlugin extends Plugin {
 
     // Register the embedded roller code block processor
     registerRollerBlock(this);
+    // Palette notes in reading view: colour swatches, icon thumbnails and
+    // path-style previews beside the table text.
+    registerPaletteReadingView(this);
 
     // Right-click "Insert table roller" in any editor.
     // "editor-menu" is a valid Obsidian workspace event not yet in the official types.
