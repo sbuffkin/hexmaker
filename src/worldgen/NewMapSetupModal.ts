@@ -5,7 +5,7 @@ import type { SubmapDefault, TerrainColor } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
-import { neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
 import type { GenerationContext, Side } from "./procedural/common";
@@ -18,8 +18,10 @@ import { pathColors } from "./generators";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import {
   BLANK_ID,
+  defaultGeneratorFor,
   kindsForPalette,
   listGeneratorKinds,
+  neighbourFirst,
   suggestBaseTerrain,
   visibleKinds,
   type GenerateOutcome,
@@ -63,9 +65,15 @@ export class NewMapSetupModal extends HexmakerModal {
   private context: GenerationContext | undefined;
   /** "Next to" placement in a world of neighbouring regions (top-level maps). */
   private placement: NewRegion | undefined;
-  /** "Default for <terrain>" checkboxes, one per option row. */
+  /** "Use for new submaps of <terrain> hexes" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
   private stopKeepInViewport?: () => void;
+  /** The neighbours' terrain just past the new map's edges (faded in the preview). */
+  private shadow: Map<string, string> | undefined;
+  /** Set once the user clicks a generator card: placement then stops re-picking one. */
+  private pickedKind = false;
+  /** Ids for <label for> on this modal's controls. */
+  private static nextId = 0;
 
   constructor(
     app: App,
@@ -73,6 +81,8 @@ export class NewMapSetupModal extends HexmakerModal {
     private onCreated: (result: NewMapSetupResult, opts: { openGenerator: boolean }) => void,
     /** Hex this map is a submap of. Drives naming, palette and size defaults. */
     private origin?: { map: string; x: number; y: number },
+    /** Starting values carried over from Maps → New map (top-level maps only). */
+    private prefill?: { name?: string; anchor?: string; side?: WorldSide },
   ) {
     super(app);
     const preset = origin ? SUBMAP_SIZE_PRESETS[1] : SIZE_PRESETS[0];
@@ -129,17 +139,25 @@ export class NewMapSetupModal extends HexmakerModal {
     const side = contentEl.createDiv({ cls: "duckmage-setup-preview" });
     contentEl.addClass("duckmage-setup-layout");
 
+    // Submaps started from saved settings: say what the ticked boxes mean.
+    if (this.originTerrain && this.saved && Object.keys(this.saved).length) {
+      form.createDiv({
+        cls: "setting-item-description duckmage-setup-defaults-note",
+        text: `Started from the saved settings for new submaps of ${this.originTerrain} hexes (the ticked boxes). Untick a box to stop using that setting next time.`,
+      });
+    }
+
     // ── Name ──
     const nameRow = this.row(form, "Name");
-    const nameInput = nameRow.createEl("input", { type: "text", cls: "duckmage-setup-name" });
+    const nameInput = this.labelled(nameRow, nameRow.createEl("input", { type: "text", cls: "duckmage-setup-name" }));
     nameInput.value = this.origin
       ? defaultSubmapName(this.origin.map, this.origin.x, this.origin.y, this.plugin.settings.maps.map((m) => m.name))
-      : "";
+      : (this.prefill?.name ?? "");
     nameInput.placeholder = "Map name";
 
     // ── Palette ──
     const palRow = this.row(form, "Palette");
-    const paletteSelect = palRow.createEl("select");
+    const paletteSelect = this.labelled(palRow, palRow.createEl("select"));
     fillPaletteSelect(
       this.plugin,
       paletteSelect,
@@ -152,7 +170,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const sizeRow = this.row(form, "Size");
     const presetBox = sizeRow.createDiv({ cls: "duckmage-setup-size-presets" });
     const custom = sizeRow.createDiv({ cls: "duckmage-setup-size-custom" });
-    const colsInput = custom.createEl("input", { type: "number", value: String(this.cols), attr: { min: "1", max: "200", "aria-label": "Columns" } });
+    const colsInput = this.labelled(sizeRow, custom.createEl("input", { type: "number", value: String(this.cols), attr: { min: "1", max: "200", "aria-label": "Columns" } }));
     custom.createSpan({ text: "×" });
     const rowsInput = custom.createEl("input", { type: "number", value: String(this.rows), attr: { min: "1", max: "200", "aria-label": "Rows" } });
     const presets = this.origin ? SUBMAP_SIZE_PRESETS : SIZE_PRESETS;
@@ -183,17 +201,19 @@ export class NewMapSetupModal extends HexmakerModal {
     // ── Next to (new top-level maps): join a world of neighbouring regions.
     // Size, palette, offset and stagger then follow the neighbour; terrain
     // and roads continue across the borders.
+    let applyPrefill: (() => void) | undefined;
     if (!this.origin && this.plugin.settings.maps.length > 0) {
       const nextRow = this.row(form, "Next to");
-      const anchorSel = nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } });
+      const anchorSel = this.labelled(nextRow, nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } }));
       anchorSel.createEl("option", { value: "", text: "— none (stand-alone) —" });
       for (const m of this.plugin.settings.maps) anchorSel.createEl("option", { value: m.name, text: m.name });
-      const sideSel = nextRow.createEl("select", { attr: { "aria-label": "Side" } });
+      const sideSel = nextRow.createEl("select", { attr: { "aria-label": "Side of the neighbouring map" } });
       for (const s of ["east", "west", "north", "south"] as const) sideSel.createEl("option", { value: s, text: `${s} of it` });
       const note = nextRow.createDiv({ cls: "setting-item-description" });
       const onPlace = () => {
         this.placement = undefined;
         this.context = undefined;
+        this.shadow = undefined;
         note.setText("");
         const anchor = anchorSel.value;
         sideSel.disabled = !anchor;
@@ -212,6 +232,9 @@ export class NewMapSetupModal extends HexmakerModal {
             rowsInput.value = String(spec.rows);
             paletteSelect.value = spec.paletteName;
             this.context = buildRegionContext(this.plugin, this.placement);
+            // The neighbours' edge, drawn faded around the preview (the seam).
+            this.shadow = new Map();
+            for (const [k, c] of neighbourShadow(this.plugin, this.placement, 2)) if (c.terrain) this.shadow.set(k, c.terrain);
             const roads = this.context.paths?.length ?? 0;
             const borders = occupiedSides(this.plugin, this.placement).map((s) => `${s}: ${regionNameAt(this.plugin, this.placement!, s)}`);
             note.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.` +
@@ -231,18 +254,30 @@ export class NewMapSetupModal extends HexmakerModal {
       anchorSel.addEventListener("change", onPlace);
       sideSel.addEventListener("change", onPlace);
       sideSel.disabled = true;
+      // Carried over from Maps → New map: start next to that map.
+      const pre = this.prefill;
+      if (pre?.anchor && this.plugin.getMap(pre.anchor)) {
+        applyPrefill = () => {
+          anchorSel.value = pre.anchor!;
+          if (pre.side) sideSel.value = pre.side;
+          onPlace();
+        };
+      }
     }
 
     // ── Generator ──
     const genRow = this.row(form, "Generator");
-    this.rememberBox(genRow, "generator", "Generator and its options");
-    const genList = genRow.createDiv({ cls: "duckmage-setup-generators" });
+    // aria-labelledby (the row label), not aria-label: Obsidian shows aria-label as a tooltip.
+    const genLabelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
+    genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
+    const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
+    this.rememberBox(genRow, "generator", "generator and its options");
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
 
     // ── Base terrain ──
     const baseRow = this.row(form, "Base terrain");
-    const baseSelect = baseRow.createEl("select");
-    this.rememberBox(baseRow, "base");
+    const baseSelect = this.labelled(baseRow, baseRow.createEl("select"));
+    this.rememberBox(baseRow, "base", "base terrain");
     baseRow.createDiv({
       cls: "setting-item-description",
       text: "Shown on unpainted hexes. With a base terrain, hex notes are created as you use hexes instead of all up front.",
@@ -271,6 +306,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const seedRow = side.createDiv({ cls: "duckmage-setup-seed-row" });
     const rerollBtn = seedRow.createEl("button", { text: "🎲 Re-roll", attr: { title: "New random seed" } });
     const seedLabel = seedRow.createSpan({ cls: "duckmage-setup-seed" });
+    const seamNote = side.createDiv({ cls: "setting-item-description duckmage-setup-seam-note" });
     const status = side.createDiv({ cls: "duckmage-setup-status" });
     rerollBtn.addEventListener("click", () => { this.seed = randomSeed(); refresh(); });
 
@@ -287,22 +323,43 @@ export class NewMapSetupModal extends HexmakerModal {
       // submap default stays visible either way.
       const spaceContext = isSpacePalette(terrains) || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
       const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator);
-      const fitting = kindsForPalette(shown, terrains, !!this.context);
-      if (!fitting.some((k) => k.id === this.kindId)) {
-        // Default to the first built-in generator that fits, else Blank.
-        // Submaps zoom in: prefer the context-aware generator when it fits.
-        this.kindId = (this.context ? fitting.find((k) => k.needsContext)?.id : undefined)
-          ?? fitting.find((k) => k.source === "built-in")?.id
-          ?? BLANK_ID;
-        this.options = {};
+      // "Zoom into the parent hex" generators only for submaps (a neighbour
+      // has context but no parent hex); next to a neighbour, the ones that
+      // carry on from its edge come first.
+      const where = { parentHex: !!this.origin, neighbour: !!this.placement };
+      let fitting = kindsForPalette(shown, terrains, where.parentHex);
+      if (where.neighbour) fitting = neighbourFirst(fitting);
+      const stillFits = fitting.some((k) => k.id === this.kindId);
+      // Placed next to a map and no generator picked yet: start on one
+      // that continues the neighbour's edge.
+      if (!stillFits || (where.neighbour && !this.pickedKind && this.kindId === BLANK_ID)) {
+        const next = defaultGeneratorFor(fitting, where);
+        if (!stillFits || next !== BLANK_ID) {
+          this.kindId = next;
+          this.options = {};
+        }
       }
       genList.empty();
+      const anchor = this.placement?.anchor;
       for (const k of fitting) {
-        const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === this.kindId ? " is-active" : ""}` });
+        const on = k.id === this.kindId;
+        const card = genList.createEl("button", {
+          cls: `duckmage-setup-gen${on ? " is-active" : ""}`,
+          attr: { role: "radio", "aria-checked": on ? "true" : "false" },
+        });
         card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
         card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+        if (where.neighbour && k.id !== BLANK_ID) {
+          card.createDiv({
+            cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,
+            text: k.continuesNeighbours
+              ? `Continues ${anchor ?? "the neighbour"}'s edge`
+              : `Ignores ${anchor ?? "the neighbour"}'s edge`,
+          });
+        }
         card.addEventListener("click", () => {
           this.kindId = k.id;
+          this.pickedKind = true;
           this.options = {};
           renderGenerators();
           refresh();
@@ -312,7 +369,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (hidden > 0) {
         genList.createDiv({
           cls: "setting-item-description",
-          text: `${hidden} other generator${hidden === 1 ? "" : "s"} don't fit this palette.`,
+          text: `${hidden} other generator${hidden === 1 ? " doesn't" : "s don't"} fit this palette.`,
         });
       }
       // Options for the chosen generator.
@@ -320,7 +377,7 @@ export class NewMapSetupModal extends HexmakerModal {
       const kind = this.kind();
       for (const opt of kind?.options ?? []) {
         const r = this.row(optsBox, opt.label);
-        const sel = r.createEl("select");
+        const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
         sel.addEventListener("change", () => { this.options[opt.key] = sel.value; refresh(); });
@@ -379,6 +436,14 @@ export class NewMapSetupModal extends HexmakerModal {
           }
       }
       rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
+      const shadow = this.shadow?.size ? this.shadow : undefined;
+      const anchor = this.placement?.anchor ?? "the neighbouring map";
+      seamNote.setText(!shadow ? "" : !kind || kind.id === BLANK_ID
+        ? `Faded hexes: ${anchor}'s edge, where this map joins it.`
+        : kind.continuesNeighbours
+          ? `Faded hexes: ${anchor}'s edge. ${kind.label} carries its terrain on across the seam.`
+          : `Faded hexes: ${anchor}'s edge. ${kind.label} doesn't follow it; pick one marked "Continues" to match the seam.`);
+      seamNote.toggle(!!shadow);
       drawPreview(
         canvas,
         cells,
@@ -390,6 +455,8 @@ export class NewMapSetupModal extends HexmakerModal {
         pathColors(this.plugin),
         320,
         18,
+        undefined,
+        { shadow },
       );
     };
 
@@ -401,26 +468,31 @@ export class NewMapSetupModal extends HexmakerModal {
       if (e.key === "Enter") goBtn.click();
     });
 
-    renderGenerators();
-    renderBase();
-    refresh();
+    if (applyPrefill) applyPrefill();
+    else {
+      renderGenerators();
+      renderBase();
+      refresh();
+    }
     nameInput.focus();
     nameInput.select();
   }
 
   /**
-   * "Default for <terrain>" checkbox at the end of an option row. Only shown
-   * when the submap comes from a hex with a terrain.
+   * "Use this <setting> for new submaps of <terrain> hexes" checkbox at the
+   * end of an option row: ticked, the choice is saved when the submap is
+   * created and pre-filled next time. Only shown when the submap comes
+   * from a hex with a terrain.
    */
-  private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], what?: string): void {
+  private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], what: string = key): void {
     if (!this.originTerrain) return;
     const label = row.createEl("label", {
       cls: "duckmage-setup-default",
-      attr: { title: `Use this ${(what ?? key).toLowerCase()} for every new submap of a ${this.originTerrain} hex` },
+      attr: { title: `Saved when you create this submap, and used to start every new submap of a ${this.originTerrain} hex` },
     });
     const cb = label.createEl("input", { type: "checkbox" });
     cb.checked = this.remember[key];
-    label.createSpan({ text: `Default for ${this.originTerrain}` });
+    label.createSpan({ text: `Use this ${what} for new submaps of ${this.originTerrain} hexes` });
     cb.addEventListener("change", () => { this.remember[key] = cb.checked; });
   }
 
@@ -468,10 +540,21 @@ export class NewMapSetupModal extends HexmakerModal {
     return { ...outcome, paths: [...outcome.paths, ...routed] };
   }
 
+  /** A labelled form row; returns its control cell (see labelled). */
   private row(parent: HTMLElement, label: string): HTMLElement {
     const r = parent.createDiv({ cls: "duckmage-setup-row" });
-    r.createDiv({ cls: "duckmage-setup-label", text: label });
+    r.createEl("label", { cls: "duckmage-setup-label", text: label });
     return r.createDiv({ cls: "duckmage-setup-control" });
+  }
+
+  /** Tie a row's label to its main control (<label for>), so the label names it. */
+  private labelled<T extends HTMLElement>(control: HTMLElement, el: T): T {
+    const label = control.parentElement?.querySelector<HTMLLabelElement>(":scope > .duckmage-setup-label");
+    if (!label) return el;
+    const id = el.id || `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
+    el.id = id;
+    label.htmlFor = id;
+    return el;
   }
 
   private kind(): TerrainGeneratorKind | undefined {

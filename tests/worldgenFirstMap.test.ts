@@ -4,16 +4,19 @@ import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constan
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
 import {
 	OVERLAND_OPTIONS,
+	maxLakeSize,
 	planetRoles,
+	sideSeaMask,
 	planetSurface,
 	resolveSeaSide,
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
-import { BLANK_ID, firstMapGenerator } from "../src/worldgen/registry";
+import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
 import { defaultPaletteFor } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
+import { hexNeighbors } from "../packages/hex-wfc/src";
 import type { TerrainColor } from "../src/types";
 
 /** Fresh-eyes 2026-10-09 (#36): first-run wizard, Overland, Frozen, palette defaults. */
@@ -116,6 +119,153 @@ describe("Overland: a region, not a planet", () => {
 	});
 });
 
+/** Fresh-eyes round 3 (2026-10-09): Sea = West streaked water inland; a Temperate map grew a big desert. */
+describe("Overland round 3: the sea stays on its side, temperate has no desert", () => {
+	const big: ProcGrid = { cols: 20, rows: 16, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
+	const MANY = Array.from({ length: 30 }, (_, i) => i + 1);
+	const run = (seed: number, options: Record<string, string>, terrains: TerrainColor[] = LIMITED_TERRAIN_PALETTE) =>
+		planetSurface(terrains, big, seed, options, undefined, "overland").cells;
+
+	/** Water bodies (hex-connected), each with whether it touches `edge`. */
+	function waterBodies(cells: Map<string, string>, wet: (t: string | undefined) => boolean, edge: (x: number, y: number) => boolean) {
+		const seen = new Set<string>();
+		const bodies: { size: number; onEdge: boolean }[] = [];
+		for (const [k, t] of cells) {
+			if (!wet(t) || seen.has(k)) continue;
+			const stack = [k.split("_").map(Number) as [number, number]];
+			seen.add(k);
+			let size = 0, onEdge = false;
+			while (stack.length) {
+				const [x, y] = stack.pop()!;
+				size++;
+				if (edge(x, y)) onEdge = true;
+				for (const [nx, ny] of hexNeighbors(x, y, big.orientation, big.stagger)) {
+					const nk = `${nx}_${ny}`;
+					if (cells.has(nk) && !seen.has(nk) && wet(cells.get(nk))) { seen.add(nk); stack.push([nx, ny]); }
+				}
+			}
+			bodies.push({ size, onEdge });
+		}
+		return bodies;
+	}
+
+	const SIDE_EDGE: Record<string, (x: number, y: number) => boolean> = {
+		west: (x) => x === 0,
+		east: (x) => x === big.cols - 1,
+		north: (_x, y) => y === 0,
+		south: (_x, y) => y === big.rows - 1,
+	};
+	/** The half of the map away from the sea. */
+	const FAR_HALF: Record<string, (x: number, y: number) => boolean> = {
+		west: (x) => x >= big.cols / 2,
+		east: (x) => x < big.cols / 2,
+		north: (_x, y) => y >= big.rows / 2,
+		south: (_x, y) => y < big.rows / 2,
+	};
+
+	for (const [label, terrains] of [["Limited", LIMITED_TERRAIN_PALETTE], ["Expanded", DEFAULT_TERRAIN_PALETTE]] as const) {
+		it(`${label}: one sea on the chosen side; other water is only small lakes`, () => {
+			const wet = isWet(typeOf(terrains));
+			const lakeMax = maxLakeSize(big.cols * big.rows);
+			for (const side of Object.keys(SIDE_EDGE)) {
+				for (const seed of MANY) {
+					const cells = run(seed, { water: "30", climate: "temperate", sea: side }, terrains);
+					const bodies = waterBodies(cells, wet, SIDE_EDGE[side]);
+					const seas = bodies.filter((b) => b.onEdge);
+					expect(seas.length).toBe(1);
+					for (const lake of bodies.filter((b) => !b.onEdge)) expect(lake.size).toBeLessThanOrEqual(lakeMax);
+				}
+			}
+		});
+	}
+
+	it("no water streaks into the far half (30% water)", () => {
+		const wet = isWet(typeOf(LIMITED_TERRAIN_PALETTE));
+		for (const side of Object.keys(SIDE_EDGE)) {
+			let far = 0, n = 0;
+			for (const seed of MANY) {
+				const cells = run(seed, { water: "30", sea: side });
+				for (const [k, t] of cells) {
+					const [x, y] = k.split("_").map(Number);
+					if (!FAR_HALF[side](x, y)) continue;
+					n++;
+					if (wet(t)) far++;
+				}
+			}
+			expect(far / n).toBeLessThan(0.02);
+		}
+	});
+
+	it("keeps the water share with the sea on a side", () => {
+		const wet = isWet(typeOf(LIMITED_TERRAIN_PALETTE));
+		for (const water of ["10", "30", "65"]) {
+			for (const seed of MANY.slice(0, 8)) {
+				const cells = run(seed, { water, sea: "west" });
+				const frac = [...cells.values()].filter(wet).length / cells.size;
+				expect(Math.abs(frac - Number(water) / 100)).toBeLessThan(0.02);
+			}
+		}
+	});
+
+	for (const [label, terrains] of [["Limited", LIMITED_TERRAIN_PALETTE], ["Expanded", DEFAULT_TERRAIN_PALETTE]] as const) {
+		it(`${label}: Temperate and Lush regions grow no desert; Arid still does`, () => {
+			const deserts = new Set(terrains.filter((t) => t.type === "desert").map((t) => t.name));
+			const desertShare = (climate: string) => {
+				let d = 0, n = 0;
+				for (const seed of MANY) {
+					for (const sea of ["west", "random", "scattered", "none"]) {
+						for (const t of run(seed, { water: "30", climate, sea }, terrains).values()) { n++; if (deserts.has(t)) d++; }
+					}
+				}
+				return d / n;
+			};
+			expect(desertShare("temperate")).toBe(0);
+			expect(desertShare("lush")).toBe(0);
+			expect(desertShare("arid")).toBeGreaterThan(0.15);
+		});
+	}
+
+	it("Planet surface (a whole world) keeps its desert belts", () => {
+		let d = 0;
+		for (const seed of MANY) {
+			for (const t of planetSurface(LIMITED_TERRAIN_PALETTE, big, seed, { water: "30", climate: "temperate" }).cells.values()) if (t === "desert") d++;
+		}
+		expect(d).toBeGreaterThan(0);
+	});
+});
+
+describe("sideSeaMask", () => {
+	// A 6×1 strip: neighbours are left/right.
+	const keys: [number, number][] = [0, 1, 2, 3, 4, 5].map((x) => [x, 0]);
+	const strip = (x: number, _y: number): [number, number][] => [[x - 1, 0], [x + 1, 0]];
+	const west = (x: number) => x === 0;
+
+	it("keeps a small inland lake", () => {
+		// Lowest four: 0 (on the sea edge) and 3,4,5, a 3-hex body (maxLakeSize = 3).
+		const water = sideSeaMask(keys, [0, 0.9, 0.95, 0.1, 0.1, 0.1], 4, west, strip);
+		expect(water).toEqual([true, false, false, true, true, true]);
+	});
+
+	it("drops a big inland body and grows the sea from the coast instead", () => {
+		const long: [number, number][] = Array.from({ length: 10 }, (_, x) => [x, 0]);
+		// Lowest six: 0 (edge) and 5..9, a 5-hex body: too big for a lake.
+		const field = [0, 0.6, 0.7, 0.8, 0.9, 0.1, 0.1, 0.1, 0.1, 0.1];
+		const water = sideSeaMask(long, field, 6, west, strip);
+		expect(water).toEqual([true, true, true, true, true, true, false, false, false, false]);
+	});
+
+	it("hits the target exactly and always touches the sea edge", () => {
+		const field = [0.5, 0.4, 0.3, 0.2, 0.1, 0.0];
+		const water = sideSeaMask(keys, field, 2, west, strip);
+		expect(water.filter(Boolean).length).toBe(2);
+		expect(water[0]).toBe(true);
+	});
+
+	it("zero target → no water", () => {
+		expect(sideSeaMask(keys, [0, 0, 0, 0, 0, 0], 0, west, strip).some(Boolean)).toBe(false);
+	});
+});
+
 describe("Frozen climate: no temperate belt", () => {
 	const GREEN = new Set(["forest", "jungle", "grassland", "wetland"]);
 	for (const [label, terrains] of [["Expanded", DEFAULT_TERRAIN_PALETTE], ["Limited", LIMITED_TERRAIN_PALETTE]] as const) {
@@ -181,6 +331,31 @@ describe("firstMapGenerator (setup wizard default)", () => {
 	it("falls back to Blank", () => {
 		expect(firstMapGenerator(k(BLANK_ID), ["world"])).toBe(BLANK_ID);
 		expect(firstMapGenerator([], ["space"])).toBe(BLANK_ID);
+	});
+});
+
+describe("generationKey (create exactly the previewed map)", () => {
+	const base = {
+		generatorId: OVERLAND_ID, options: { water: "30", sea: "west" }, seed: 42,
+		cols: 20, rows: 16, orientation: "flat", stagger: "odd", palette: "Limited",
+	};
+
+	it("is the same for the same run, whatever the option order", () => {
+		expect(generationKey(base)).toBe(generationKey({ ...base, options: { sea: "west", water: "30" } }));
+	});
+
+	it("changes with anything the run reads", () => {
+		const k = generationKey(base);
+		for (const change of [
+			{ seed: 43 }, { options: { water: "30", sea: "east" } }, { cols: 21 }, { rows: 15 },
+			{ orientation: "pointy" }, { stagger: "even" }, { palette: "Expanded" }, { generatorId: BLANK_ID },
+			{ extra: "next to thornwood (east)" },
+		]) expect(generationKey({ ...base, ...change })).not.toBe(k);
+	});
+
+	it("a preview run and a create run with the same key give the same map", () => {
+		const run = () => planetSurface(LIMITED_TERRAIN_PALETTE, { ...grid, cols: 20, rows: 16 }, base.seed, base.options, undefined, "overland").cells;
+		expect([...run()]).toEqual([...run()]);
 	});
 });
 

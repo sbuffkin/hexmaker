@@ -4,6 +4,7 @@ import {
   exportSingleNoteAsMarkdown,
 } from "./export/exporters/singleNote";
 import { HexExportModal } from "./hex-map/HexExportModal";
+import { MapExportModal } from "./export/MapExportModal";
 import { WorkflowExportModal } from "./random-tables/WorkflowExportModal";
 import { HexMapView } from "./hex-map/HexMapView";
 import { HexTableView } from "./hex-table/HexTableView";
@@ -224,6 +225,21 @@ export default class HexmakerPlugin extends Plugin {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
         if (!file || !this.isWorkflowFile(file)) return false;
         if (!checking) new WorkflowExportModal(this.app, this, file).open();
+        return true;
+      },
+    });
+    // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
+    // Export, for the map open in the hex map view (else the default map).
+    this.addCommand({
+      id: "export-current-map",
+      name: "Export current map…",
+      checkCallback: (checking) => {
+        const open = this.app.workspace.getActiveViewOfType(HexMapView)
+          ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
+        const mapName = [open?.activeMapName, this.settings.defaultMap, this.settings.maps[0]?.name]
+          .find((n): n is string => !!n && !!this.getMap(n));
+        if (!mapName) return false;
+        if (!checking) new MapExportModal(this.app, this, mapName).open();
         return true;
       },
     });

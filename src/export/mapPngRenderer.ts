@@ -857,7 +857,8 @@ export async function exportMapAsPng(
   const stem = (opts.outputName ?? mapName).trim() || mapName;
   const outPath = `${folder}/${sanitiseFilename(stem)}.png`;
 
-  const notice = new Notice(`Exporting ${mapName}.png…`, 0);
+  // Name the file being written (not the map), matching the export form.
+  const notice = new Notice(`Exporting ${sanitiseFilename(stem)}.png…`, 0);
   try {
     const blob = await renderMapToPngBlob(plugin, mapName, opts);
     const buf = new Uint8Array(await blob.arrayBuffer());
