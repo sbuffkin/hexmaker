@@ -7249,15 +7249,41 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-terrain-legend-s { --duckmage-legend-font: 0.72em; }
 .duckmage-terrain-legend-m { --duckmage-legend-font: 0.85em; }
 .duckmage-terrain-legend-l { --duckmage-legend-font: 1.05em; --duckmage-legend-swatch: 1.6em; }
+/* Map legend (MK2): pinned to the view's bottom-left, beside the help
+   button (left column) and clear of Obsidian's status bar (bottom-right);
+   small and thin, names cut short in JS. */
 .duckmage-terrain-legend-map {
     position: absolute;
-    right: 8px;
-    bottom: 32px;
-    max-height: 45%;
-    max-width: 40%;
+    left: 42px;
+    bottom: 8px;
+    max-height: 40%;
+    max-width: min(220px, 45%);
     overflow-y: auto;
     z-index: 10;
+    padding: 2px 6px 4px;
+    opacity: 0.92;
 }
+.duckmage-terrain-legend-map:hover { opacity: 1; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-head { gap: 3px; margin-bottom: 2px; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-list { gap: 1px; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-row { gap: 4px; }
+.duckmage-terrain-legend-map.is-collapsed {
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: visible;
+}
+button.duckmage-terrain-legend-chip {
+    font-size: var(--font-ui-smaller);
+    height: 1.9em;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    box-shadow: none;
+}
+/* Saving… shows over the legend's corner while it's up. */
+.duckmage-hex-map-controls > .duckmage-saving-indicator { z-index: 11; }
 .duckmage-terrain-legend-head {
     display: flex;
     align-items: center;
@@ -7270,6 +7296,7 @@ button.duckmage-wfc-library-tab.is-active {
 }
 .duckmage-terrain-legend-sizes { display: flex; gap: 2px; }
 .duckmage-terrain-legend-size,
+.duckmage-terrain-legend-min,
 .duckmage-terrain-legend-hide {
     font-size: 0.85em;
     padding: 0 5px;
@@ -7389,6 +7416,13 @@ button.duckmage-wfc-library-tab.is-active {
 /* Roll result: "Add to this hex" section picker (P2). */
 .duckmage-roll-add-section {
     max-width: 12em;
+}
+/* Workflow run from a hex (PA2): Copy + section picker + Add to this hex. */
+.duckmage-wf-result-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
 }
 
 /* Hex editor: Weather + Hooks & Rumors, folded under Notes (E2). */

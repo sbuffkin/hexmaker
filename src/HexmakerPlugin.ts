@@ -28,6 +28,7 @@ import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
+import { resolveExpandedDefault } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
@@ -54,7 +55,7 @@ import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDa
 import { MapStore } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
-import { cleanHexName, syncHexNameAlias } from "./maps/hexNames";
+import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -65,6 +66,7 @@ import {
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
+import { DEFAULT_TOWN_TEMPLATE, fillNoteTemplate, hexTemplatePathFor, noteTemplateFor, templatesFolderFor, townTemplatePathFor } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -580,7 +582,11 @@ export default class HexmakerPlugin extends Plugin {
     this.settings.dismissedHints = Array.isArray(data["dismissedHints"]) ? (data["dismissedHints"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
     const firstLevel = rawData?.["featureLevel"] === undefined;
     if (!this.settings.installedAt) this.settings.installedAt = new Date().toISOString().slice(0, 10);
-    if (firstLevel || !rawData?.["installedAt"]) await this.saveData(this.settings);
+    // New maps default to Expanded on fresh installs only (GEN1): decided
+    // once from the raw data, like the level, and saved with it.
+    this.settings.expandedByDefault = resolveExpandedDefault(rawData);
+    const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
+    if (firstLevel || firstExpanded || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
   async saveSettings() {
@@ -1416,7 +1422,37 @@ export default class HexmakerPlugin extends Plugin {
     const old = this.mapStore.get(mapName, key)?.name;
     if ((old ?? "") === name) return;
     this.mapStore.set(mapName, key, { name: name || null });
-    await syncHexNameAlias(this.app, this.hexPath(x, y, mapName), old, name);
+    // The "<map> x, y" alias rides along (added if the note lacks it).
+    const coord = this.hexCoordAlias(mapName, x, y);
+    await syncHexAliases(this.app, this.hexPath(x, y, mapName), [
+      { from: old, to: name },
+      { from: coord, to: coord },
+    ]);
+  }
+
+  /** A hex note's "<map display name> x, y" alias (NM2). */
+  hexCoordAlias(mapName: string, x: number | string, y: number | string): string {
+    return coordAlias(this.mapLabel(mapName), x, y);
+  }
+
+  /**
+   * A map's display name changed from `oldLabel` to its current one: swap
+   * the "<map> x, y" alias on every hex note of the map. User aliases stay;
+   * a note without the old alias gets the new one.
+   */
+  async syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> {
+    const newLabel = this.mapLabel(mapName);
+    if (newLabel === oldLabel) return;
+    const folder = this.app.vault.getAbstractFileByPath(this.mapStore.mapFolder(mapName));
+    if (!(folder instanceof TFolder)) return;
+    for (const child of folder.children) {
+      if (!(child instanceof TFile)) continue;
+      const m = /^(-?\d+)_(-?\d+)$/.exec(child.basename);
+      if (!m || child.extension !== "md") continue;
+      await syncHexAliases(this.app, child.path, [
+        { from: coordAlias(oldLabel, m[1], m[2]), to: coordAlias(newLabel, m[1], m[2]) },
+      ]);
+    }
   }
 
   /** Create a hex note from the configured template (or the built-in default). */
@@ -1465,9 +1501,13 @@ export default class HexmakerPlugin extends Plugin {
 
     try {
       const file = await this.app.vault.create(path, content);
-      // A named hex's note gets its name as an alias (X4).
+      // A named hex's note gets its name as an alias (X4), and every hex
+      // note gets "<map> x, y" (NM2).
       const name = this.mapStore.get(mapName, `${x}_${y}`)?.name;
-      if (name) await syncHexNameAlias(this.app, path, undefined, name);
+      await syncHexAliases(this.app, path, [
+        { from: undefined, to: name },
+        { from: undefined, to: this.hexCoordAlias(mapName, x, y) },
+      ]);
       return file;
     } catch {
       // A concurrent worker may have created this file between our existence check and
@@ -1502,31 +1542,82 @@ export default class HexmakerPlugin extends Plugin {
         } catch { /* fall through */ }
       }
       new Notice(`Hex template not found at "${templatePath}" — using built-in default.`);
+      return DEFAULT_HEX_TEMPLATE;
+    }
+    // No path set: hex.md in the templates folder, if there is one (PA3).
+    const inFolder = this.app.vault.getAbstractFileByPath(hexTemplatePathFor(this.settings));
+    if (inFolder instanceof TFile) {
+      try {
+        return await this.app.vault.read(inFolder);
+      } catch { /* fall through */ }
     }
     return DEFAULT_HEX_TEMPLATE;
+  }
+
+  /** The plugin's templates folder (PA3; see src/noteTemplates.ts). */
+  templatesFolder(): string {
+    return templatesFolderFor(this.settings);
+  }
+
+  /** Create a note template file from its built-in default if it's missing. */
+  private async ensureTemplateFile(path: string, content: string): Promise<void> {
+    if (this.app.vault.getAbstractFileByPath(path)) return;
+    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch { /* exists */ }
+    }
+    try {
+      await this.app.vault.create(path, content);
+    } catch { /* created concurrently — fine */ }
+  }
+
+  /**
+   * Make sure the templates folder holds every plugin note template: the
+   * hex template (unless the user points templatePath elsewhere) and the
+   * town template. Existing files are never overwritten.
+   */
+  async ensureTemplates(): Promise<void> {
+    await this.ensureHexTemplate();
+    await this.ensureTemplateFile(townTemplatePathFor(this.settings), DEFAULT_TOWN_TEMPLATE);
+  }
+
+  /**
+   * Starting text for a note made from a link section's "create new" (towns
+   * get the town template, written to the templates folder on first use;
+   * encounter tables get a table). `title` fills {{title}}.
+   */
+  async newLinkedNoteContent(section: string, title: string): Promise<string> {
+    if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
+    if (noteTemplateFor(section) !== "town") return "";
+    const path = townTemplatePathFor(this.settings);
+    await this.ensureTemplateFile(path, DEFAULT_TOWN_TEMPLATE);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    let template = DEFAULT_TOWN_TEMPLATE;
+    if (file instanceof TFile) {
+      try {
+        template = await this.app.vault.read(file);
+      } catch { /* use the default */ }
+    }
+    return fillNoteTemplate(template, title);
   }
 
   /**
    * Ensure a hex template file exists on disk.
    * - If templatePath is set and the file exists: no-op.
    * - If templatePath is set but the file is missing: create it from the built-in default.
-   * - If templatePath is blank: create at {worldFolder}/hextemplate.md and persist the path.
+   * - If templatePath is blank: create hex.md in the templates folder (PA3)
+   *   and persist the path.
    */
   async ensureHexTemplate(): Promise<void> {
     let templatePath = normalizeFolder(this.settings.templatePath ?? "");
     if (!templatePath) {
-      const world = normalizeFolder(this.settings.worldFolder) || "world";
-      templatePath = `${world}/hextemplate.md`;
+      templatePath = hexTemplatePathFor(this.settings);
       this.settings.templatePath = templatePath;
       await this.saveSettings();
     }
-    if (!this.app.vault.getAbstractFileByPath(templatePath)) {
-      try {
-        await this.app.vault.create(templatePath, DEFAULT_HEX_TEMPLATE);
-      } catch {
-        /* created concurrently — fine */
-      }
-    }
+    await this.ensureTemplateFile(templatePath, DEFAULT_HEX_TEMPLATE);
   }
 
   /**
@@ -1551,10 +1642,13 @@ export default class HexmakerPlugin extends Plugin {
       parent?: { map: string; hex: string };
       /** Silence the "generated N notes" notice (caller reports instead). */
       quiet?: boolean;
+      /** Folder name (slug) to use instead of one made from rawName (NAV2). */
+      slug?: string;
     } = {},
   ): Promise<{ name: string } | { error: string }> {
-    const name = slugify(rawName);
-    if (!name) return { error: "Enter a map name." };
+    if (!rawName.trim()) return { error: "Enter a map name." };
+    const name = slugify(extra.slug?.trim() || rawName);
+    if (!name) return { error: extra.slug ? "Enter a folder name." : "Enter a map name." };
     if (this.settings.maps.some((r) => r.name === name))
       return { error: `Map "${name}" already exists.` };
 
@@ -1712,8 +1806,10 @@ export default class HexmakerPlugin extends Plugin {
   async setMapDisplayName(name: string, typed: string): Promise<void> {
     const map = this.getMap(name);
     if (!map) return;
+    const oldLabel = this.mapLabel(name);
     map.displayName = displayNameFor(typed, name);
     await this.saveSettings();
+    await this.syncMapCoordAliases(name, oldLabel);
   }
 
   getPaletteByName(name: string): TerrainPalette | undefined {

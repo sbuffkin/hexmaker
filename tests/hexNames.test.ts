@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { buildMapNote, mapNoteKey, parseMapNote, updateMapNote, type HexData, type MapNoteData } from "../src/maps/mapNote";
-import { cleanHexName, nextAliases, renamedHexes } from "../src/maps/hexNames";
+import { cleanHexName, coordAlias, nextAliases, nextAliasesMulti, renamedHexes } from "../src/maps/hexNames";
 import { hexHoverLabel } from "../src/hex-map/hexHover";
 import { hexTableLines, type HexRow } from "../src/export/exporters/mapWithTable";
 import { buildManualHtml, entryTitle, isKeyed } from "../src/export/manual/manualHtml";
@@ -341,5 +341,36 @@ describe("link badges in the PNG (round 6 R6)", () => {
 		const c = pngBadgeCircles(0, 0, 22, false, 5, "s");
 		expect(new Set(c.map((p) => p.x.toFixed(2))).size).toBe(2);
 		expect(new Set(c.map((p) => p.y.toFixed(2))).size).toBe(3);
+	});
+});
+
+// NM2 = B: hex notes also get "<map display name> x, y" as an alias.
+describe("NM2: coordinate alias", () => {
+	it("reads <map> x, y, tidied like a name", () => {
+		expect(coordAlias("Gloomwood", 3, 4)).toBe("Gloomwood 3, 4");
+		expect(coordAlias("The  Wilds", -1, 0)).toBe("The Wilds -1, 0");
+		expect(coordAlias("a|b", "2", "5")).toBe("a b 2, 5");
+	});
+
+	it("a new note gets the name then the coordinates; user aliases stay", () => {
+		expect(nextAliasesMulti(undefined, [{ from: undefined, to: "Glass Wastes" }, { from: undefined, to: "Dunes 1, 1" }]))
+			.toEqual(["Glass Wastes", "Dunes 1, 1"]);
+		expect(nextAliasesMulti(["Mine"], [{ from: undefined, to: undefined }, { from: undefined, to: "Dunes 1, 1" }]))
+			.toEqual(["Mine", "Dunes 1, 1"]);
+	});
+
+	it("a map rename swaps only the plugin's coordinate alias", () => {
+		const swap = [{ from: "Dunes 1, 1", to: "Red Dunes 1, 1" }];
+		expect(nextAliasesMulti(["Glass Wastes", "Dunes 1, 1", "My note"], swap)).toEqual(["Glass Wastes", "My note", "Red Dunes 1, 1"]);
+		// A note missing the old alias gets the new one.
+		expect(nextAliasesMulti(["My note"], swap)).toEqual(["My note", "Red Dunes 1, 1"]);
+		// Nothing to do: null (no write).
+		expect(nextAliasesMulti(["Red Dunes 1, 1"], swap)).toBeNull();
+		expect(nextAliasesMulti(["Glass Wastes", "Dunes 1, 1"], [{ from: "Dunes 1, 1", to: "Dunes 1, 1" }])).toBeNull();
+	});
+
+	it("renaming the hex keeps the coordinate alias", () => {
+		expect(nextAliasesMulti(["Glass Wastes", "Dunes 1, 1"], [{ from: "Glass Wastes", to: "Glass Sea" }, { from: "Dunes 1, 1", to: "Dunes 1, 1" }]))
+			.toEqual(["Dunes 1, 1", "Glass Sea"]);
 	});
 });

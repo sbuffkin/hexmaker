@@ -39,6 +39,7 @@ type FolderKey =
 	| "regionsFolder"
 	| "tablesFolder"
 	| "workflowsFolder"
+	| "templatesFolder"
 	| "iconsFolder";
 
 interface WizardContext {
@@ -95,6 +96,7 @@ const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
 	{ key: "regionsFolder",   label: "Regions",    suffix: "regions" },
 	{ key: "tablesFolder",    label: "Tables",     suffix: "tables" },
 	{ key: "workflowsFolder", label: "Workflows",  suffix: "workflows" },
+	{ key: "templatesFolder", label: "Templates",  suffix: "templates" },
 	{ key: "iconsFolder",     label: "Icons",      suffix: "icons" },
 ];
 
@@ -411,8 +413,8 @@ function makeFolderStep(): WizardStep {
 				await ensureFolder(plugin.app, path);
 			}
 			await plugin.saveSettings();
-			// Create the hex template file if it doesn't already exist
-			await plugin.ensureHexTemplate();
+			// Create the note templates (hex, town) if they don't already exist
+			await plugin.ensureTemplates();
 		},
 	};
 }

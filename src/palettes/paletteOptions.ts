@@ -43,24 +43,44 @@ export function refreshPaletteHint(select: HTMLSelectElement): void {
 }
 
 /**
+ * Whether new maps default to the Expanded palette (GEN1 = B: new installs
+ * only). A saved value wins; without one, a fresh install (no saved data)
+ * gets true and an update gets false, so existing users keep the default
+ * they had (their first overland palette).
+ */
+export function resolveExpandedDefault(raw: Record<string, unknown> | null | undefined): boolean {
+  const saved = raw?.["expandedByDefault"];
+  if (typeof saved === "boolean") return saved;
+  return !raw || Object.keys(raw).length === 0;
+}
+
+/**
  * Palette a new top-level map starts on when the user hasn't picked one.
- * World users get Expanded when it's installed (G7b), else their first
- * overland palette, else the Expanded preset; space-only users get Space -
- * Sector (installed, else the preset, which createNewMap installs on first
- * use) or another installed space palette.
+ * World users on a fresh install get Expanded when it's installed (G7b);
+ * existing installs (`expandedByDefault: false`) keep their first overland
+ * palette, as before G7b. With no overland palette installed: the
+ * Expanded preset (fresh) or the first world preset (existing). Space-only
+ * users get Space - Sector (installed, else the preset, which createNewMap
+ * installs on first use) or another installed space palette.
  */
 export function defaultPaletteFor(settings: {
   mapKinds?: string[];
   terrainPalettes: { name: string; terrains: readonly { type?: string }[] }[];
+  /** See resolveExpandedDefault. Unset = fresh-install behaviour. */
+  expandedByDefault?: boolean;
 }): string {
   const kinds = enabledKinds(settings);
   const pals = settings.terrainPalettes;
   if (kinds.has("world")) {
     const world = pals.filter((p) => !isSpacePalette(p.terrains));
-    const expanded = world.find((p) => p.name === EXPANDED_PALETTE_NAME);
-    if (expanded) return expanded.name;
+    const fresh = settings.expandedByDefault !== false;
+    if (fresh) {
+      const expanded = world.find((p) => p.name === EXPANDED_PALETTE_NAME);
+      if (expanded) return expanded.name;
+    }
     if (world.length) return world[0].name;
-    return EXPANDED_PALETTE_NAME;
+    if (fresh) return EXPANDED_PALETTE_NAME;
+    return PALETTE_PRESETS.find((p) => p.kind === "world")?.name ?? EXPANDED_PALETTE_NAME;
   }
   const space = pals.filter((p) => isSpacePalette(p.terrains));
   return space.find((p) => p.name === SPACE_SECTOR_PALETTE_NAME)?.name ?? space[0]?.name ?? SPACE_SECTOR_PALETTE_NAME;

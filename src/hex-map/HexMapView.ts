@@ -61,7 +61,7 @@ import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, legendBadgeKinds, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
-import { legendSize, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
+import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
@@ -6165,10 +6165,19 @@ export class HexMapView extends ItemView {
     // The link badge kinds on the map, as on the PNG legend (round 7 R8).
     const badges = legendBadgeKinds(this.badgeKindsOnMap, map.showLinkBadges ?? true, map.hiddenLinkBadges)
       .map((s) => ({ label: BADGE_INFO[s].label, icon: BADGE_INFO[s].icon, cls: BADGE_INFO[s].cls }));
+    // Pinned to the view's bottom-left, small, names cut short; folds to
+    // a "Legend" chip (MK2).
     renderTerrainLegend(parent, entries, {
       badges,
       size: legendSize(settings.terrainLegendSize),
       cls: "duckmage-terrain-legend-map",
+      maxName: MAP_LEGEND_NAME_MAX,
+      collapsed: settings.terrainLegendCollapsed ?? false,
+      onCollapse: (collapsed) => {
+        settings.terrainLegendCollapsed = collapsed;
+        void this.plugin.saveSettings();
+        this.refreshTerrainLegend();
+      },
       iconUrl: (icon) => getIconUrl(this.plugin, icon),
       onSize: (size) => {
         settings.terrainLegendSize = size;

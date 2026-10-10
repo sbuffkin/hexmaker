@@ -21,6 +21,47 @@ export interface RollHexTarget {
 }
 
 /**
+ * Section picker + "Add to this hex" button (P2), for a roll result or a
+ * filled-in workflow (PA2). `getText` is read on click.
+ */
+export function renderAddToHex(
+  parent: HTMLElement,
+  target: RollHexTarget,
+  getText: () => string,
+  opts: { cta?: boolean; onAdded?: () => void } = {},
+): void {
+  const select = parent.createEl("select", {
+    cls: "duckmage-roll-add-section",
+    attr: { "aria-label": "Section to add the result to" },
+  });
+  for (const s of target.sections) select.createEl("option", { value: s.key, text: s.label });
+  select.value = target.sections.some((s) => s.key === target.defaultSection)
+    ? target.defaultSection
+    : (target.sections[0]?.key ?? "");
+  const addBtn = parent.createEl("button", {
+    text: "Add to this hex",
+    cls: opts.cta ? "mod-cta" : "",
+    attr: { title: `Append the result to a section of ${target.label}'s note` },
+  });
+  addBtn.addEventListener("click", () => {
+    const text = getText().trim();
+    if (!text || !select.value) return;
+    addBtn.disabled = true;
+    void (async () => {
+      try {
+        await target.add(select.value, text);
+        const label = target.sections.find((s) => s.key === select.value)?.label ?? select.value;
+        new Notice(`Added to ${label} (${target.label}).`);
+        opts.onAdded?.();
+      } catch (err) {
+        new Notice(`Could not add the result: ${String(err)}`);
+        addBtn.disabled = false;
+      }
+    })();
+  });
+}
+
+/**
  * Lightweight inline roll modal — used by the 🎲 button inside HexEditorModal
  * so the user can roll on a table without leaving the hex editor context.
  *
@@ -228,34 +269,9 @@ export class RandomTableModal extends HexmakerModal {
 
     const target = this.hexTarget;
     if (target) {
-      const select = resultBtns.createEl("select", {
-        cls: "duckmage-roll-add-section",
-        attr: { "aria-label": "Section to add the result to" },
-      });
-      for (const s of target.sections) select.createEl("option", { value: s.key, text: s.label });
-      select.value = target.sections.some((s) => s.key === target.defaultSection)
-        ? target.defaultSection
-        : (target.sections[0]?.key ?? "");
-      const addBtn = resultBtns.createEl("button", {
-        text: "Add to this hex",
-        cls: this.onInsert ? "" : "mod-cta",
-        attr: { title: `Append the result to a section of ${target.label}'s note` },
-      });
-      addBtn.addEventListener("click", () => {
-        const text = resultTextarea.value.trim();
-        if (!text || !select.value) return;
-        addBtn.disabled = true;
-        void (async () => {
-          try {
-            await target.add(select.value, text);
-            const label = target.sections.find((s) => s.key === select.value)?.label ?? select.value;
-            new Notice(`Added to ${label} (${target.label}).`);
-            this.close();
-          } catch (err) {
-            new Notice(`Could not add the result: ${String(err)}`);
-            addBtn.disabled = false;
-          }
-        })();
+      renderAddToHex(resultBtns, target, () => resultTextarea.value, {
+        cta: !this.onInsert,
+        onAdded: () => this.close(),
       });
     }
 

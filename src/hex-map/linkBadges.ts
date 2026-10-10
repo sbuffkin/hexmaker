@@ -29,11 +29,11 @@ export type BadgeSize = "s" | "m" | "l";
 export const BADGE_SIZES: BadgeSize[] = ["s", "m", "l"];
 
 /**
- * Size for maps that haven't picked one. Round 7 R8: at S (the round 6
- * size) testers didn't notice the badges, so the default is M. The owner
- * is still deciding (MK1): switch the default here.
+ * Size for maps that haven't picked one: S, small and inside the hex
+ * (owner call MK1, 2026-10-10: keep the top-level view clean). S / M / L
+ * stays a per-map choice.
  */
-export const DEFAULT_BADGE_SIZE: BadgeSize = "m";
+export const DEFAULT_BADGE_SIZE: BadgeSize = "s";
 
 /** Map setting → a valid size (unset or junk = the default). */
 export function badgeSize(v: unknown): BadgeSize {

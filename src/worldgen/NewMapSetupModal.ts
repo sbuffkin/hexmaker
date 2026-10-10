@@ -13,12 +13,12 @@ import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea
 import type { GenerationContext, Side } from "./procedural/common";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
 import { enabledKinds, isSpacePalette } from "../mapKinds";
-import { defaultSubmapName } from "../hex-map/submapNav";
+import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
-import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder } from "../utils";
+import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
@@ -110,6 +110,8 @@ export class NewMapSetupModal extends HexmakerModal {
   /** Overland's Sea was set from the neighbour's coast (not by the user):
    *  re-derived when the placement changes, dropped when the user picks one. */
   private seaFromNeighbour = false;
+  /** The folder name (slug) to create the map under; set by render(). */
+  private folderSlug: () => string = () => "";
   /** Top-level maps (not placed next to another): where numbering starts,
    *  the stagger, and an optional background image (under "More"). */
   private originX = 0;
@@ -160,7 +162,7 @@ export class NewMapSetupModal extends HexmakerModal {
     this.stopKeepInViewport = this.keepInViewport();
     this.titleEl.setText(
       this.origin
-        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.origin.map} hex ${this.origin.x}, ${this.origin.y}`
+        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
         : "New map",
     );
     void listGeneratorKinds(this.plugin).then((kinds) => {
@@ -200,10 +202,27 @@ export class NewMapSetupModal extends HexmakerModal {
     // ── Name ──
     const nameRow = this.row(form, "Name");
     const nameInput = this.labelled(nameRow, nameRow.createEl("input", { type: "text", cls: "duckmage-setup-name" }));
+    // Submaps start on a readable name: the hex's name, else "<parent> x, y"
+    // (NAV2). The first click selects it all, so typing replaces it.
     nameInput.value = this.origin
-      ? defaultSubmapName(this.origin.map, this.origin.x, this.origin.y, this.plugin.settings.maps.map((m) => m.name))
+      ? defaultSubmapLabel(
+          this.plugin.mapStore.get(this.origin.map, `${this.origin.x}_${this.origin.y}`)?.name,
+          this.plugin.mapLabel(this.origin.map),
+          this.origin.x,
+          this.origin.y,
+        )
       : (this.prefill?.name ?? "");
     nameInput.placeholder = "Map name";
+    selectAllOnFocus(nameInput);
+    // Folder name (slug): follows the name until edited in "More".
+    const takenSlugs = this.plugin.settings.maps.map((m) => m.name);
+    const derivedSlug = () => this.origin ? uniqueMapSlug(nameInput.value, takenSlugs) : slugify(nameInput.value);
+    let slugInput: HTMLInputElement | undefined;
+    let slugEdited = false;
+    nameInput.addEventListener("input", () => {
+      if (slugInput && !slugEdited) slugInput.value = derivedSlug();
+    });
+    this.folderSlug = () => (slugEdited && slugInput ? slugInput.value.trim() : derivedSlug());
 
     // ── Palette ──
     const palRow = this.row(form, "Palette");
@@ -366,10 +385,20 @@ export class NewMapSetupModal extends HexmakerModal {
       text: BASE_TERRAIN_HELP,
     });
 
-    // ── More (top-level maps): starting coordinates, stagger, background.
+    // ── More: folder name; top-level maps also starting coordinates,
+    // stagger, background.
+    const more = form.createEl("details", { cls: "duckmage-setup-more" });
+    more.createEl("summary", {
+      text: this.origin ? "More: folder name" : "More: folder name, starting coordinates, stagger, background image",
+    });
+    const slugRow = this.row(more, "Folder name");
+    slugInput = this.labelled(slugRow, slugRow.createEl("input", { type: "text", cls: "duckmage-setup-slug", value: derivedSlug() }));
+    slugInput.addEventListener("input", () => { slugEdited = true; });
+    slugRow.createDiv({
+      cls: "setting-item-description",
+      text: "The map's folder. Made from the name; change it here or later in Map properties.",
+    });
     if (!this.origin) {
-      const more = form.createEl("details", { cls: "duckmage-setup-more" });
-      more.createEl("summary", { text: "More: starting coordinates, stagger, background image" });
       const coordRow = this.row(more, "Starting coordinates");
       const xIn = this.labelled(coordRow, coordRow.createEl("input", { type: "number", value: String(this.originX), cls: "duckmage-setup-coord", attr: { "aria-label": "X" } }));
       const yIn = coordRow.createEl("input", { type: "number", value: String(this.originY), cls: "duckmage-setup-coord", attr: { "aria-label": "Y" } });
@@ -797,6 +826,7 @@ export class NewMapSetupModal extends HexmakerModal {
         baseTerrain: this.baseTerrain,
         parent: this.origin ? { map: this.origin.map, hex: `${this.origin.x}_${this.origin.y}` } : undefined,
         quiet: true,
+        slug: this.folderSlug(),
       },
     );
     if ("error" in result) {

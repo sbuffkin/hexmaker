@@ -41,7 +41,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.pendingCategory  = entry.category;
 		this.pendingType      = entry.type ?? (isNew ? undefined : inferTerrainType(entry.name, entry.category));
 		this.typeTouched      = !!entry.type;
-		this.pendingImpassable = isImpassable({ impassable: entry.impassable, type: this.pendingType });
+		this.pendingImpassable = isImpassable({ impassable: entry.impassable, type: this.pendingType, name: entry.name, category: entry.category });
 	}
 
 	onOpen(): void {
@@ -84,7 +84,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 
 		new Setting(contentEl)
 			.setName("Impassable")
-			.setDesc("Auto-routed paths go around it (water types are impassable unless you turn this off).")
+			.setDesc("Auto-routed paths go around it. Water types (deep water, water, shallows) start impassable; turn this off to override.")
 			.addToggle(toggle =>
 				toggle
 					.setValue(this.pendingImpassable)

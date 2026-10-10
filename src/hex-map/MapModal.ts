@@ -733,6 +733,7 @@ export class MapModal extends HexmakerModal {
       }
     }
     const oldName = this.view.activeMapName;
+    const oldLabel = this.plugin.mapLabel(oldName);
     const map = this.plugin.getMap(oldName);
     if (map) map.name = newName;
     // The map note moved with its folder; give it the new name too.
@@ -743,6 +744,8 @@ export class MapModal extends HexmakerModal {
     this.view.activeMapName = newName;
     await this.plugin.updateSubmapReferences(oldName, newName);
     await this.plugin.saveSettings();
+    // A map shown by its folder name: its hex notes' "<map> x, y" aliases follow.
+    await this.plugin.syncMapCoordAliases(newName, oldLabel);
     this.onChanged();
     this.render();
   }

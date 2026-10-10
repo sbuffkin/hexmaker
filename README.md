@@ -107,7 +107,7 @@ Organise your world into multiple named hex maps, each stored as a subfolder und
 - **Back** (`← Back` button) — returns to the previously active map after following a submap link.
 
 ### Generators
-Maps can be generated instead of painted hex by hex. When you create a map (**Maps → New map…**, or the setup wizard's first map) or a submap (right-click a hex → **New submap…**), pick a generator and preview it before creating. A new map starts on Overland (Star scatter for space-only setups); pick Blank to paint it all yourself. **More** under the form sets the starting coordinates, stagger and a background image (picked from the vault or dropped from your computer).
+Maps can be generated instead of painted hex by hex. When you create a map (**Maps → New map…**, or the setup wizard's first map) or a submap (right-click a hex → **New submap…**), pick a generator and preview it before creating. A new map starts on Overland (Star scatter for space-only setups); pick Blank to paint it all yourself. **More** under the form sets the starting coordinates, stagger and a background image (picked from the vault or dropped from your computer), and the **folder name** (made from the name; you can change it later in Map properties). A new submap is named after its hex, or the parent map's name and the hex's coordinates ("Gloomwood 3, 4") if the hex has no name; click the name once to select it all and type your own.
 
 - **Overland** — a region from noise: seas, coasts, plains, forests, hills, mountains. Set water %, climate, and which side the sea is on.
 - **Region detail** (submaps) — zooms into the parent hex: its terrain fills the map and each neighbouring hex shapes the matching edge, with that neighbour's own terrain (evergreen next to evergreen) along it.
@@ -124,7 +124,7 @@ Generators only change hexes when a map is created or regenerated; you can alway
 ### Hex editor (click a hex)
 A modal for editing a hex note without leaving the map.
 
-- **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept.
+- **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept. Every hex note also gets its map name and coordinates as an alias ("Gloomwood 3, 4"), so the quick switcher finds a hex by its coordinates; renaming the map updates it.
 - **Terrain picker** — select the terrain type for the hex from the map's palette.
 - **Icon override** — override the default terrain icon with any icon in your icons folder. Icon pickers have **All / Terrain / Custom** tabs (plus **Space** when space maps are on); **Custom** holds the images in your icons folder.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
@@ -133,6 +133,7 @@ A modal for editing a hex note without leaving the map.
 - **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas; a 📖 button rolls the section's table where one exists.
 - **Weather and Hooks & Rumors** — folded under Notes. 🎲 rolls the map's weather or rumours table (set in **Maps → Properties → Weather and rumours**); ⋯ picks a different table for one hex. With neither set, the starter `weather.md` / `rumors.md` in your tables folder is used.
 - **Add to this hex** — any roll made from the editor (encounter tables, section tables) can be added to a section of this hex's note, chosen from a list (the section you rolled from comes first). The note is created if the hex has none. **Copy** is always there too.
+- **Run workflow** (Advanced: workflows) — the link beside the hex title picks a workflow and runs it for this hex; **Add to this hex** puts the filled-in result into a section (its headings become bold lines so the section stays whole).
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
 
 ### Random Tables view
@@ -185,7 +186,7 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 
 **Auto-route:** the picker (and the bar at the top of the map while drawing) switches between **Hex by hex** and **Auto-route**: in the picker, choose how to draw (step 1), then the path type (step 2). With Auto-route, click a start hex and then an end hex: the path takes the shortest way inside the map, around impassable terrain, keeping close to the straight line between the two, and then carries on from that end, so you can route leg by leg. Rivers (and other path types that cross impassable terrain, or are named river, stream or creek) wind gently instead of running straight. A route continues an existing path only when its start is that path's end; starting anywhere else (such as the first hex of another road) makes a new path, and existing paths are never changed. The result is an ordinary path: right-click hexes to remove them, or switch back to hex by hex to extend it.
 
-- **Impassable terrain** — set per terrain in the palette editor (Impassable column) or the terrain editor. Water types (ocean, trench, shallows…) are impassable unless you untick them. A palette with no impassable terrain says so in the bar.
+- **Impassable terrain** — set per terrain in the palette editor (Impassable column) or the terrain editor. Defaults go by terrain *type*, not name, so they work in any palette, custom ones included: every terrain of a water type (deep water, water, shallows) is impassable unless you untick it, and a terrain with no type counts as the type its name suggests ("Black Lake" is water). A palette with no impassable terrain says so in the bar.
 - **Per path type** — each path type has **Avoid impassable terrain** (in its editor). Roads avoid water; rivers don't (they're off by default for river-like names).
 - **Cross impassable** — tick it in the bar to let one route go through anyway. If no route exists the map tells you, and suggests this or changing which terrains are impassable.
 
@@ -199,9 +200,9 @@ Toggled from the **layers** panel on the right edge of the map.
 - Both overlays can be shown simultaneously and toggled independently.
 - Additional toggles: **Show terrain icons**, **Show icon overrides**, **Show paths**, **Show tokens**, **GM layer**.
 - **Labels** group: **Coordinates**, **Hex names** and **Token names** (all on by default). With token names off, a token's name still shows while you hover it. Hex names stay inside their hex and clear of its badges: a long name shrinks and wraps at spaces onto up to three lines (words are never split; an ellipsis cuts a name that still doesn't fit; the hover shows it whole). Names grow and shrink with the zoom like the rest of the map, and their colour follows the terrain (dark text on light terrain such as snow, light text on dark terrain).
-- **Show link badges** (on by default) — a coloured icon badge at a hex's right side for each kind of link in its note: towns, dungeons, features, quests, factions. **S / M / L** beside the toggle sets their size (M by default; S is small and stays inside the hex, M and L sit on the hex's right edge so they stand out). Badges sit above hex names and coordinates, and names make room for them. The legend lists the badge kinds shown on the map. Hovering the hex names the linked notes ("Gullmouth · beach · hex 6, 6 · Town: Gullmouth"). Your hex icon stays as it is. The ▸ next to the toggle picks which kinds show. Saved per map.
+- **Show link badges** (on by default) — a coloured icon badge at a hex's right side for each kind of link in its note: towns, dungeons, features, quests, factions. **S / M / L** beside the toggle sets their size (S by default; S is small and stays inside the hex, M and L sit on the hex's right edge so they stand out). Badges sit above hex names and coordinates, and names make room for them. The legend lists the badge kinds shown on the map. Hovering the hex names the linked notes ("Gullmouth · beach · hex 6, 6 · Town: Gullmouth"). Your hex icon stays as it is. The ▸ next to the toggle picks which kinds show. Saved per map.
 - Opening or closing the layers panel (or the drawing tools) never moves the map; the panel may cover a few hexes at the right edge.
-- **Show legend** (on by default) — a terrain legend in the map's bottom-right corner listing only the terrains used on this map. **S / M / L** sets its size; **×** hides it. The new-map and generator previews show the same legend. Size and visibility are remembered.
+- **Show legend** (on by default) — a small terrain legend pinned to the bottom-left of the map view, listing only the terrains used on this map (long names are cut short; hover a row for the full name). **S / M / L** sets its size; **–** folds it to a small **Legend** button (click to open it again); **×** hides it. The new-map and generator previews show the same legend. Size and visibility are remembered.
 
 ### GM layer
 Toggle from the overlay panel. When active:
@@ -282,14 +283,15 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Factions folder** | Scopes the Factions picker to a specific folder. |
 | **Tables folder** | Folder for random table files. Terrain tables are created in a `terrain/` subfolder here. |
 | **Workflows folder** | Folder for workflow definition files and their templates. |
+| **Templates folder** | One folder for the plugin's note templates, so they're easy to find and edit: `hex.md` (the hex note template, unless **Template path** points elsewhere) and `town.md` (new town notes made from the hex editor or a link picker start from it: a title and Description, People, Places and Rumours headings, to shape as you like). Blank = `templates` in the world folder. Made by **Generate folders** and the setup wizard; `town.md` also appears the first time you create a town. Workflow templates stay beside their workflows. |
 | **Default die** | Die size used when creating new table files (d4–d100). |
 | **Icons folder** | Folder containing `.png` icon files available as custom terrain/hex icons. |
-| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use the built-in template. |
+| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use `hex.md` in the templates folder (or the built-in template if there isn't one). A path you already set is kept. |
 | **Hex gap** | Gap between hexes in pixels. |
 | **Hex orientation** | `flat` (default) or `pointy` top hex style. |
 | **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
 | **Palettes folder** | Folder holding one note per terrain palette (default `{world folder}/palettes`). |
-| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note — copy a palette note into another vault's palettes folder to share it. **Add palette** offers built-in presets: *Expanded* (the default fantasy overland palette: coasts, wetlands, forest and mountain kinds; matches the generators) and *Limited* (fewer, simpler terrains; quicker to paint), plus *Space - Sector* (star charts, one hex per parsec; adds Jump route and Trade route path types) and *Space - System* (stars, planets, belts, stations) for sci-fi games such as Traveller. New-map palette menus list uninstalled presets too. |
+| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note — copy a palette note into another vault's palettes folder to share it. **Add palette** offers built-in presets: *Expanded* (the default fantasy overland palette on new installs; installs from before it keep their first palette as the new-map default: coasts, wetlands, forest and mountain kinds; matches the generators) and *Limited* (fewer, simpler terrains; quicker to paint), plus *Space - Sector* (star charts, one hex per parsec; adds Jump route and Trade route path types) and *Space - System* (stars, planets, belts, stations) for sci-fi games such as Traveller. New-map palette menus list uninstalled presets too. |
 | **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
 ---
@@ -366,6 +368,7 @@ src/
   sections.ts                         ← markdown section read/write helpers
   utils.ts                            ← shared utilities
   defaultHexTemplate.md               ← built-in hex note template
+  noteTemplates.ts                    ← templates folder paths + built-in town template (PA3)
   hex-map/
     HexMapView.ts                     ← interactive hex grid (ItemView)
     HexSidePanel.ts                   ← collapsible side panels (drawing tools, overlays)

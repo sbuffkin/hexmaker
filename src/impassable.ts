@@ -1,24 +1,41 @@
 import type { PathType, TerrainColor } from "./types";
+import { effectiveTerrainType, terrainTypeGroup, TERRAIN_GROUPS, typesInGroup, type TerrainGroup } from "./terrainTypes";
 
 /**
  * Impassable terrain, for the path tool's auto-route.
  *
  * A terrain is impassable when its palette entry says so (`impassable`), or,
- * when unset, by its terrain type: water types are impassable by default.
- * Hex-by-hex drawing ignores all of this; only auto-route asks.
+ * when unset, by its terrain type's GROUP (PA4): every type in the water
+ * group (deep water, water, shallows) is impassable by default. Defaults go
+ * by type, never by terrain name, so any palette (custom ones too) gets
+ * them; an untyped terrain counts as the type its name suggests
+ * (effectiveTerrainType). Hex-by-hex drawing ignores all of this; only
+ * auto-route asks.
  */
 
-/** Terrain types that are impassable unless a terrain says otherwise. */
-export const IMPASSABLE_BY_DEFAULT_TYPES: readonly string[] = ["deep-water", "water", "shallows"];
+/** Type groups that are impassable unless a terrain says otherwise. */
+export const IMPASSABLE_BY_DEFAULT_GROUPS: readonly TerrainGroup[] = ["water"];
+
+/** Terrain types that are impassable by default (the types of those groups). */
+export const IMPASSABLE_BY_DEFAULT_TYPES: readonly string[] = IMPASSABLE_BY_DEFAULT_GROUPS.flatMap(typesInGroup);
 
 /** Impassable by default for this terrain type (no explicit flag). */
 export function impassableByType(type: string | undefined): boolean {
-  return !!type && IMPASSABLE_BY_DEFAULT_TYPES.includes(type);
+  const group = terrainTypeGroup(type);
+  return !!group && IMPASSABLE_BY_DEFAULT_GROUPS.includes(group);
+}
+
+/** What a terrain needs for its impassable default. */
+type ImpassableInput = Pick<TerrainColor, "impassable" | "type"> & { name?: string; category?: string };
+
+/** Impassable by default for this terrain: by its (effective) type's group. */
+export function impassableByDefault(t: Omit<ImpassableInput, "impassable">): boolean {
+  return impassableByType(effectiveTerrainType(t));
 }
 
 /** Whether auto-routes avoid this terrain. */
-export function isImpassable(t: Pick<TerrainColor, "impassable" | "type">): boolean {
-  return t.impassable ?? impassableByType(t.type);
+export function isImpassable(t: ImpassableInput): boolean {
+  return t.impassable ?? impassableByDefault(t);
 }
 
 /**
@@ -26,8 +43,17 @@ export function isImpassable(t: Pick<TerrainColor, "impassable" | "type">): bool
  * "unset", so the palette note only records real overrides.
  */
 export function setImpassable(t: TerrainColor, value: boolean): void {
-  if (value === impassableByType(t.type)) delete t.impassable;
+  if (value === impassableByDefault(t)) delete t.impassable;
   else t.impassable = value;
+}
+
+/** Tooltip for a terrain's impassable box: where its value comes from. */
+export function impassableSourceText(t: ImpassableInput): string {
+  if (t.impassable !== undefined) return "Set for this terrain";
+  const group = terrainTypeGroup(effectiveTerrainType(t));
+  const label = TERRAIN_GROUPS.find((g) => g.id === group)?.label;
+  const state = impassableByDefault(t) ? "impassable" : "passable";
+  return label ? `Default for its type group (${label}: ${state})` : `Default (no type: ${state})`;
 }
 
 /** Names of the impassable terrains in a palette. */

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { defaultSubmapName, mapAncestors } from "../src/hex-map/submapNav";
+import { defaultSubmapLabel, defaultSubmapName, mapAncestors, uniqueMapSlug } from "../src/hex-map/submapNav";
 import {
 	buildPaletteNote,
 	parsePaletteNote,
@@ -109,5 +109,30 @@ describe("preset child palettes", () => {
 	it("every child palette names a real preset", () => {
 		const names = new Set(PALETTE_PRESETS.map((p) => p.name));
 		for (const p of PALETTE_PRESETS) if (p.childPalette) expect(names.has(p.childPalette)).toBe(true);
+	});
+});
+
+// NAV2 = A: new submaps get a readable default name; the folder name is derived.
+describe("NAV2: readable submap names", () => {
+	it("defaults to the hex's name, else '<parent display name> x, y'", () => {
+		expect(defaultSubmapLabel("Glass Wastes", "The Realm", 3, 4)).toBe("Glass Wastes");
+		expect(defaultSubmapLabel("  Glass   Wastes ", "The Realm", 3, 4)).toBe("Glass Wastes");
+		expect(defaultSubmapLabel(undefined, "The Realm", 3, 4)).toBe("The Realm 3, 4");
+		expect(defaultSubmapLabel("", "sector", -1, 0)).toBe("sector -1, 0");
+		expect(defaultSubmapLabel("   ", "sector", 2, 2)).toBe("sector 2, 2");
+	});
+
+	it("the folder name is a free slug made from the name", () => {
+		expect(uniqueMapSlug("The Realm 3, 4", [])).toBe("the-realm-3-4");
+		expect(uniqueMapSlug("sector -1, 0", [])).toBe("sector--1-0");
+		expect(uniqueMapSlug("Glass Wastes", ["glass-wastes"])).toBe("glass-wastes-2");
+		expect(uniqueMapSlug("Glass Wastes", ["glass-wastes", "glass-wastes-2"])).toBe("glass-wastes-3");
+		// Nothing left of the name: still a usable folder.
+		expect(uniqueMapSlug("!!!", [])).toBe("submap");
+		expect(uniqueMapSlug("!!!", ["submap"])).toBe("submap-2");
+	});
+
+	it("defaultSubmapName keeps its old slug shape", () => {
+		expect(defaultSubmapName("sector", 3, 4, [])).toBe("sector-3-4");
 	});
 });

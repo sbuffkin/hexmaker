@@ -16,7 +16,7 @@ import {
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
-import { defaultPaletteFor, paletteHint } from "../src/palettes/paletteOptions";
+import { defaultPaletteFor, paletteHint, resolveExpandedDefault } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
@@ -329,6 +329,23 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 
 	it("world users with no overland palette installed get the Expanded preset", () => {
 		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS)] })).toBe("Expanded");
+	});
+
+	// GEN1 = B: Expanded is the default for new installs only.
+	it("existing installs keep their first overland palette even with Expanded installed", () => {
+		const existing = [pal("Limited", LIMITED_TERRAIN_PALETTE), pal("Expanded", DEFAULT_TERRAIN_PALETTE)];
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, expandedByDefault: false })).toBe("Limited");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, expandedByDefault: true })).toBe("Expanded");
+		// Space users are unaffected either way.
+		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: existing, expandedByDefault: false })).toBe("Space - Sector");
+	});
+
+	it("fresh install vs update is decided from the raw saved data, and a saved answer wins", () => {
+		expect(resolveExpandedDefault(null)).toBe(true);
+		expect(resolveExpandedDefault({})).toBe(true);
+		expect(resolveExpandedDefault({ hexFolder: "world/hexes", maps: [] })).toBe(false);
+		expect(resolveExpandedDefault({ hexFolder: "x", expandedByDefault: true })).toBe(true);
+		expect(resolveExpandedDefault({ expandedByDefault: false })).toBe(false);
 	});
 });
 

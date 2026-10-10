@@ -247,6 +247,14 @@ export interface HexmakerPluginSettings {
 	mapExportPrefs?: Record<string, MapExportPrefs>;
 	/** Terrain legend size. Unset = "m". */
 	terrainLegendSize?: "s" | "m" | "l";
+	/** On-map legend folded to a small "Legend" chip. */
+	terrainLegendCollapsed?: boolean;
+	/** New maps default to the Expanded palette: true on fresh installs,
+	 *  false for installs that predate it (GEN1; see resolveExpandedDefault). */
+	expandedByDefault?: boolean;
+	/** Folder holding the plugin's note templates (hex, town). Empty =
+	 *  "{worldFolder}/templates" (see src/noteTemplates.ts). */
+	templatesFolder: string;
 }
 
 export const LINK_SECTIONS = ["Towns", "Dungeons", "Features", "Quests", "Factions", "Encounters Table"] as const;

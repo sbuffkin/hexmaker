@@ -339,6 +339,7 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   featuresFolder: "",
   iconsFolder: "",
   templatePath: "",
+  templatesFolder: "",
   hexGap: "0.15",
   // Expanded first: the default fantasy palette for new installs (G7b).
   // Existing installs keep their saved palettes and maps.

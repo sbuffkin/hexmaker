@@ -224,8 +224,8 @@ import { layoutHexName } from "../src/hex-map/hexNameLayer";
 import { pngBadgeCircles as pngBadges, pngPathWidth } from "../src/export/handoutLabels";
 
 describe("badge size (round 7 R8)", () => {
-	it("defaults to M from one constant; S is the round 6 size", () => {
-		expect(DEFAULT_BADGE_SIZE).toBe("m");
+	it("defaults to S from one constant (MK1)", () => {
+		expect(DEFAULT_BADGE_SIZE).toBe("s");
 		expect(badgeSize(undefined)).toBe(DEFAULT_BADGE_SIZE);
 		expect(badgeSize("junk")).toBe(DEFAULT_BADGE_SIZE);
 		expect(badgeSize("s")).toBe("s");
@@ -319,5 +319,49 @@ describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
 				}
 			}
 		}
+	});
+});
+
+// ── MK2: the map legend is small, bottom-left, names cut short, foldable ──
+import { MAP_LEGEND_NAME_MAX, shortLegendName, shortLegendNames } from "../src/hex-map/terrainLegend";
+
+describe("map legend (MK2)", () => {
+	it("shortens long names but keeps them readable and apart", () => {
+		expect(MAP_LEGEND_NAME_MAX).toBeGreaterThanOrEqual(6);
+		expect(MAP_LEGEND_NAME_MAX).toBeLessThanOrEqual(8);
+		expect(shortLegendName("forest", 8)).toBe("forest");
+		expect(shortLegendName("mountains", 9)).toBe("mountains");
+		// One long word: cut with an ellipsis.
+		expect(shortLegendName("brokenlands", 8)).toBe("brokenl…");
+		// Several words: initials, then the last word.
+		expect(shortLegendName("mixed forest", 8)).toBe("m. forest");
+		expect(shortLegendName("mixed forest hills", 8)).toBe("m.f. hills");
+		expect(shortLegendName("evergreen hills", 8)).toBe("e. hills");
+		expect([...shortLegendName("mixed forest mountains", 8)].length).toBeLessThanOrEqual(11);
+	});
+
+	it("a legend never shows two rows with the same short name", () => {
+		const names = ["forest", "mixed forest", "mixed forest hills", "mixed forest mountain", "mixed forest mountains", "evergreen", "evergreen hills", "forested mountain", "forested mountains"];
+		const short = shortLegendNames(names, MAP_LEGEND_NAME_MAX);
+		const shown = names.map((n) => short.get(n));
+		expect(new Set(shown).size).toBe(names.length);
+		expect(short.get("mixed forest mountain")).toBe("m.f. mountain");
+		expect(short.get("mixed forest mountains")).toBe("m.f. mountains");
+	});
+
+	it("sits at the view's bottom-left (not over the status bar corner)", () => {
+		const css = readFileSync("styles.css", "utf8");
+		const at = css.search(/^\.duckmage-terrain-legend-map \{/m);
+		expect(at).toBeGreaterThan(-1);
+		const body = css.slice(at, css.indexOf("}", at));
+		expect(body).toMatch(/left:\s*\d+px/);
+		expect(body).toMatch(/bottom:\s*\d+px/);
+		expect(body).not.toMatch(/\bright:/);
+	});
+
+	it("the map view passes the cut length and the fold state", () => {
+		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8");
+		expect(view).toContain("maxName: MAP_LEGEND_NAME_MAX");
+		expect(view).toContain("collapsed: settings.terrainLegendCollapsed");
 	});
 });

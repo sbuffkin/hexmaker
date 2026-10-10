@@ -16,7 +16,7 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 | Action | Result |
 |--------|--------|
-| **Right-click → Create / link submap…** | Create a submap for this hex (auto-named after the map and hex, with the suggested palette pre-selected) and go straight into it, or link an existing map |
+| **Right-click → Create / link submap…** | Create a submap for this hex (named after the hex, or the map name and the hex's coordinates; click the name to type your own; its folder name is under **More**), with the suggested palette pre-selected, and go straight into it, or link an existing map |
 | **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the submap |
 | **Ctrl/Cmd+Shift+click** the hex | Open the submap in a new tab |
 | **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
@@ -45,7 +45,7 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ### Road / River
 Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
 
-**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once. Rivers wind gently; roads keep straight. Starting on the end of a path of the same type continues it; starting anywhere else makes a new path.
+**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (every water-type terrain, in any palette, is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once. Rivers wind gently; roads keep straight. Starting on the end of a path of the same type continues it; starting anywhere else makes a new path.
 
 ### Terrain
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
@@ -86,13 +86,13 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 The layers button (top right) turns these on and off.
 
 - **Link badges**: a coloured icon badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). **S / M / L** beside the toggle sets their size for this map. Hover the hex to see what it links. Click ▸ to pick which kinds show.
-- **Legend**: the terrains used on this map and the badge kinds shown, bottom right. **S / M / L** sets its size, **×** hides it.
+- **Legend**: the terrains used on this map and the badge kinds shown, at the bottom left (hover a cut-short name for the full one). **S / M / L** sets its size, **–** folds it to a small **Legend** button, **×** hides it.
 
 Opening the layers panel or the drawing tools never moves the map.
 
 ## Names and labels
 
-Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it.
+Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it. Hex notes also get their map name and coordinates as an alias ("Gloomwood 3, 4"), so you can find a hex by typing them.
 
 Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Long hex names shrink and wrap at spaces (never mid-word) inside the hex, clear of its badges, in a colour that reads on the terrain; zoom in to read small ones. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 
@@ -114,10 +114,12 @@ With generators on, new maps can also use the built-in **biomes and presets** (G
 
 Pickers that link notes (to hexes, tokens, sections) never offer template notes (the hex template, workflow templates, a Templates folder); pickers for choosing a template do. Notes starting with `_` are never offered.
 
+**Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes and `town.md` for new towns made from the hex editor. Edit them there and new notes follow.
+
 ## Palettes
 
-**Expanded** is the default fantasy palette: more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
 
 ## Rolling from a hex
 
-Rolls made from the hex editor (🎲 on an encounter table, 📖 on a section) have **Add to this hex**: pick a section and the result is appended to it. Weather and Hooks & Rumors (under Notes) roll the map's weather and rumours tables, set in **Maps → Properties**; ⋯ next to the roll button picks a table for one hex.
+Rolls made from the hex editor (🎲 on an encounter table, 📖 on a section) have **Add to this hex**: pick a section and the result is appended to it. With workflows on, **Run workflow** beside the hex title runs a workflow for this hex, and its result can be added the same way. Weather and Hooks & Rumors (under Notes) roll the map's weather and rumours tables, set in **Maps → Properties**; ⋯ next to the roll button picks a table for one hex.
