@@ -199,8 +199,8 @@ describe("HexEditorModal section start-collapsed settings", () => {
 		modal.makeCollapsible = (_c: unknown, label: string, flag: string) => {
 			states.set(label, (plugin.settings as any)[flag] ?? false);
 			return {
-				body: { addClass: () => {}, createDiv: () => ({ dataset: {}, setText: () => {}, toggleClass: () => {} }) },
-				header: { createSpan: () => ({}) },
+				body: { addClass: () => {}, isShown: () => true, createDiv: () => ({ dataset: {}, setText: () => {}, toggleClass: () => {} }) },
+				header: { createSpan: () => ({ toggle: () => {} }), addEventListener: () => {} },
 			};
 		};
 		modal.renderTerrainHeader = () => {};

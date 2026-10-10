@@ -170,6 +170,8 @@ export interface HexmakerPluginSettings {
 	regionsFolder: string;
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;
+	/** The user expanded the hex editor's Terrain section (it then stays open). Unset = it opens collapsed on hexes that have a terrain. */
+	hexEditorTerrainExpanded?: boolean;
 	hexEditorFeaturesCollapsed: boolean;
 	hexEditorNotesCollapsed: boolean;
 	/** Hex editor "Icons" group collapsed. Unset = open. */

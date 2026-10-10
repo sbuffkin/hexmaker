@@ -38,6 +38,7 @@ import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks } from "../encounterLinks";
 import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
+import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
 /** What each link field links, for its placeholder ("Search or create a town…"). */
 const LINK_FIELD_NOUN: Record<LinkSection, string> = {
@@ -234,15 +235,23 @@ export class HexEditorModal extends HexmakerModal {
     const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
     const s = this.plugin.settings;
 
+    // A hex that already has a terrain opens with Terrain collapsed to a
+    // one-line summary unless the user expanded it last time (round 5: the
+    // 50-swatch grid reopened expanded on every hex).
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
       "hexEditorTerrainCollapsed",
+      terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false, s.hexEditorTerrainExpanded),
     );
     const headerPreview = terrainHeader.createSpan({
       cls: "duckmage-terrain-header-preview",
     });
     this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
+    const changeHint = terrainHeader.createSpan({ cls: "duckmage-terrain-change-hint", text: "▸ change" });
+    const syncChangeHint = () => changeHint.toggle(!terrainBody.isShown());
+    syncChangeHint();
+    terrainHeader.addEventListener("click", syncChangeHint);
     const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
     this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
 
@@ -547,8 +556,9 @@ export class HexEditorModal extends HexmakerModal {
       | "hexEditorNotesCollapsed"
       | "hexEditorFeaturesCollapsed"
       | "hexEditorIconsCollapsed",
+    startCollapsedOverride?: boolean,
   ): { body: HTMLElement; header: HTMLElement } {
-    const startCollapsed = this.plugin.settings[flag] ?? false;
+    const startCollapsed = startCollapsedOverride ?? this.plugin.settings[flag] ?? false;
     const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
     const header = wrapper.createDiv({
       cls: "duckmage-editor-collapsible-header",
@@ -572,6 +582,9 @@ export class HexEditorModal extends HexmakerModal {
       }
       arrow.textContent = collapsed ? "▼" : "▶";
       this.plugin.settings[flag] = !collapsed;
+      // Expanding Terrain is remembered too: it then opens expanded even
+      // on hexes that have a terrain (see terrainStartsCollapsed).
+      if (flag === "hexEditorTerrainCollapsed") this.plugin.settings.hexEditorTerrainExpanded = collapsed;
       void this.plugin.saveSettings();
     });
     return { body, header };
@@ -587,8 +600,19 @@ export class HexEditorModal extends HexmakerModal {
 
     const section = container.createDiv({ cls: "duckmage-editor-section" });
 
-    const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
-    this.chainWheelToModal(grid);
+    // Long palettes get a filter; the grid grows with the modal instead of
+    // scrolling in its own small box (round 5: only the first two rows of a
+    // 50-terrain palette were practically reachable).
+    const filter = palette.length > TERRAIN_FILTER_MIN
+      ? section.createEl("input", {
+          type: "search",
+          cls: "duckmage-terrain-filter",
+          attr: { placeholder: "Filter terrains…", "aria-label": "Filter terrains" },
+        })
+      : null;
+    const grid = section.createDiv({ cls: "duckmage-terrain-picker duckmage-terrain-picker-grow" });
+    const noMatch = section.createDiv({ cls: "duckmage-terrain-filter-empty", text: "No terrains match." });
+    noMatch.hide();
 
     // Picking a terrain keeps the editor open (E1): the map repaints via
     // onChanged, and the selection/header update in place here.
@@ -652,16 +676,20 @@ export class HexEditorModal extends HexmakerModal {
       });
     }
 
-    // The strip shows two rows; scroll the current terrain into view so the
-    // highlight is visible on open, not hidden further down the palette.
-    const current = grid.querySelector<HTMLElement>(".duckmage-terrain-option.is-selected");
-    if (current) {
-      window.requestAnimationFrame(() => {
-        const offset = current.getBoundingClientRect().top - grid.getBoundingClientRect().top;
-        grid.scrollTop += offset - 4;
+    if (filter) {
+      filter.addEventListener("input", () => {
+        const query = filter.value;
+        let shown = 0;
+        grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) => {
+          const match = terrainMatches(el.dataset["terrain"] ?? "", query);
+          el.toggle(match);
+          if (match) shown++;
+        });
+        // "Clear" only alongside the full list (and only when there's a terrain).
+        clearBtn.toggle(query.trim() === "" && selectedTerrain !== null);
+        noMatch.toggle(shown === 0);
       });
     }
-
   }
 
   /** Icon override + (GM layer) game master icon pickers. */

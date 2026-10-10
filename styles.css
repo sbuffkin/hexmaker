@@ -6936,3 +6936,25 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-hex-map-viewport.duckmage-hover-paused .duckmage-hex:not(.is-selected):hover::after {
     content: none;
 }
+
+/* Hex editor Terrain: the swatch grid grows with the modal (no nested two-row
+   scroll box); long palettes get a filter. Collapsed, the header reads
+   "Terrain [swatch] forest > change". */
+.duckmage-hex-editor .duckmage-terrain-picker.duckmage-terrain-picker-grow {
+    max-height: none;
+    overflow-y: visible;
+}
+.duckmage-terrain-filter {
+    width: 100%;
+    margin-bottom: 0.5em;
+}
+.duckmage-terrain-filter-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 0.75em;
+}
+.duckmage-terrain-change-hint {
+    margin-left: 0.5em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+}
