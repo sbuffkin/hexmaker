@@ -167,7 +167,7 @@ export class OverlayPanel extends HexSidePanel {
     const labelRow = labelGroup.createDiv({ cls: "duckmage-overlay-group-row" });
     for (const opt of OVERLAY_OPTIONS) {
       const row = opt.inLabels
-        ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-chip" })
+        ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-label-toggle" })
         : panel.createDiv({ cls: "duckmage-overlay-row" });
 
       const cb = row.createEl("input", { type: "checkbox" });

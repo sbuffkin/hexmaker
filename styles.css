@@ -7154,7 +7154,8 @@ button.duckmage-wfc-library-tab.is-active {
     gap: 4px;
     padding-left: 20px;
 }
-.duckmage-overlay-chip {
+/* button.… so Obsidian's `button:not(.clickable-icon)` background doesn't win */
+.duckmage-overlay-subrow button.duckmage-overlay-chip {
     width: 24px;
     height: 24px;
     padding: 0;
@@ -7167,7 +7168,7 @@ button.duckmage-wfc-library-tab.is-active {
     box-shadow: none;
 }
 .duckmage-overlay-chip svg { width: 14px; height: 14px; }
-.duckmage-overlay-chip.is-off {
+.duckmage-overlay-subrow button.duckmage-overlay-chip.is-off {
     opacity: 0.3;
     filter: grayscale(1);
 }
