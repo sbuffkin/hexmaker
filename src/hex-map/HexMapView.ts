@@ -38,6 +38,7 @@ import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
+import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
@@ -175,6 +176,8 @@ export class HexMapView extends ItemView {
   private coordLabels = new Map<string, HTMLElement>();
   // Link badges + terrain legend refresh on note / map-store changes (debounced).
   private badgeTimer: number | null = null;
+  /** Cancels a renderGrid waiting for the grid to get a layout size. */
+  private cancelMeasuredLayers: (() => void) | null = null;
   private legendTimer: number | null = null;
   private controlsEl: HTMLElement | null = null;
   private settleTimer: number | null = null;
@@ -3162,6 +3165,7 @@ export class HexMapView extends ItemView {
   async onClose(): Promise<void> {
     if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
     if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
+    this.cancelMeasuredLayers?.();
     if (this.legendTimer !== null) window.clearTimeout(this.legendTimer);
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
@@ -3913,6 +3917,22 @@ export class HexMapView extends ItemView {
       }
     }
 
+    this.refreshTerrainLegend();
+
+    // Everything below measures hex positions. A grid that isn't laid out
+    // yet (map tab in the background on plugin reload) measures 0 and would
+    // put every label at 0,0, so wait until it has a size.
+    this.cancelMeasuredLayers?.();
+    this.coordPlacements = [];
+    this.coordLabels.clear();
+    this.cancelMeasuredLayers = whenSized(gridContainer, () => {
+      this.cancelMeasuredLayers = null;
+      if (gridContainer.isConnected) this.renderMeasuredLayers(gridContainer, region);
+    });
+  }
+
+  /** The layers placed from measured hex geometry (see renderGrid). */
+  private renderMeasuredLayers(gridContainer: HTMLElement, region: MapData): void {
     this.renderNeighbourShadow(gridContainer, region);
     this.renderPathOverlay(gridContainer);
     this.renderRegionOverlay(gridContainer);
@@ -3923,7 +3943,6 @@ export class HexMapView extends ItemView {
     this.renderCoordLabelsLayer(gridContainer);
     // Badges reuse the hex centres the coord labels just measured.
     this.renderLinkBadges(gridContainer);
-    this.refreshTerrainLegend();
     renderHexNameLayer(gridContainer, this.hexNames());
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
