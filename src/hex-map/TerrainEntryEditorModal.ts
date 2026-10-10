@@ -227,11 +227,12 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		else delete this.entry.type;
 		setImpassable(this.entry, this.pendingImpassable);
 		if (this.isNew) {
-			// Brand-new entry — no hex can have this terrain yet and no table files exist
-			// to rename. Just commit the name and create fresh table files.
-			this.entry.name = this.pendingName;
-			await this.plugin.saveSettings();
-			await this.plugin.ensureTerrainTables();
+			// Brand-new entry: it was saved under its placeholder name ("New"),
+			// which already gave it empty tables (HG5). Naming it moves those
+			// tables to the real name; then make sure they exist.
+			if (nameChanged) await this.plugin.renameTerrain(this.entry, this.pendingName);
+			else await this.plugin.saveSettings();
+			await this.plugin.ensureTablesForNewTerrains();
 			this.plugin.refreshHexMap();
 		} else if (nameChanged) {
 			await this.plugin.renameTerrain(this.entry, this.pendingName);

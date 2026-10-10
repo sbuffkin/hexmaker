@@ -16,6 +16,7 @@
  * printed PDF is a complete offline reference for the map.
  */
 
+import type { SectionWordsFn } from "../../mapKinds";
 import { Notice, TFile, type App } from "obsidian";
 import { exportToPdfBytes } from "../pdfExporter";
 import { renderMarkdownToHtml } from "../htmlRenderer";
@@ -62,6 +63,17 @@ export const HANDOUT_COLUMNS: { key: HandoutColumn; label: string }[] = [
   { key: "encounters", label: "Encounters" },
   { key: "description", label: "Description" },
 ];
+
+/** Link-section columns, by the note heading they come from. */
+const SECTION_COLUMNS: Partial<Record<HandoutColumn, string>> = {
+  towns: "Towns", dungeons: "Dungeons", features: "Features", quests: "Quests", factions: "Factions",
+};
+
+/** A column's header: link sections in the map type's words (G4b). */
+export function handoutColumnLabel(col: { key: HandoutColumn; label: string }, words?: SectionWordsFn): string {
+  const section = SECTION_COLUMNS[col.key];
+  return section && words ? words(section).label : col.label;
+}
 
 const DEFAULT_MIN_HEX_PX = 60;
 // Approximate usable area on a landscape Letter page (after margins) for the
@@ -285,7 +297,7 @@ export async function buildMapPdfMarkdown(
     );
     lines.push("");
 
-    const table = hexTableLines(await collectHexRows(plugin, mapName, s), columns);
+    const table = hexTableLines(await collectHexRows(plugin, mapName, s), columns, plugin.sectionWordsFor(mapName));
     if (table.length === 0) {
       lines.push(`*No hex notes with content in this section.*`);
       continue;
@@ -301,12 +313,12 @@ export async function buildMapPdfMarkdown(
  * and hexes with nothing in the chosen columns are left out. [] when no
  * hex is left. Pure.
  */
-export function hexTableLines(rows: HexRow[], columns?: HandoutColumn[]): string[] {
+export function hexTableLines(rows: HexRow[], columns?: HandoutColumn[], words?: SectionWordsFn): string[] {
   const chosen = new Set(columns ?? HANDOUT_COLUMNS.map((c) => c.key));
   const cols = HANDOUT_COLUMNS.filter((c) => chosen.has(c.key) && (c.key !== "name" || rows.some((r) => r.name)));
   const kept = rows.filter((r) => cols.some((c) => r[c.key]));
   if (!kept.length) return [];
-  const headers = ["Hex", ...cols.map((c) => c.label)];
+  const headers = ["Hex", ...cols.map((c) => handoutColumnLabel(c, words))];
   return [
     `| ${headers.join(" | ")} |`,
     `| ${headers.map(() => "---").join(" | ")} |`,

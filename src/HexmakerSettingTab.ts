@@ -1,9 +1,13 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { DEFAULT_NAME_FONT, NAME_FAMILIES, NAME_SIZES, NAME_STYLES, nameStyleId, resolveNameFont, type HexNameSize } from "./hex-map/hexNameFont";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
 import { ADVANCED_FEATURES, hasFeature, isAdvanced } from "./featureLevel";
+
+/** Size names in the settings dropdowns. */
+const NAME_SIZE_TEXT: Record<HexNameSize, string> = { small: "Small", medium: "Medium", large: "Large", huge: "Huge" };
 
 const PALETTES_FOLDER_DESC =
   "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
@@ -121,6 +125,9 @@ const MAP_REFRESH_KEYS = new Set<string>([
   "coordFontFamily",
   "coordFontColor",
   "hexGap",
+  "hexNameFont",
+  "hexNameSize",
+  "hexNameStyle",
 ]);
 
 /** Settings keys that must be persisted as positive integers. */
@@ -354,6 +361,36 @@ export class HexmakerSettingTab extends PluginSettingTab {
           type: "color",
           key: "coordFontColor",
           defaultValue: "#ffffff",
+        },
+      },
+      {
+        name: "Hex name font",
+        desc: "Default font for hex names on maps and in PNG exports. Each map can pick its own in the layers menu.",
+        control: {
+          type: "dropdown",
+          key: "hexNameFont",
+          options: Object.fromEntries(NAME_FAMILIES.map((f) => [f.id, f.label])),
+          defaultValue: DEFAULT_NAME_FONT.family,
+        },
+      },
+      {
+        name: "Hex name size",
+        desc: "Default size for hex names. Names never get smaller than readable on screen.",
+        control: {
+          type: "dropdown",
+          key: "hexNameSize",
+          options: Object.fromEntries(NAME_SIZES.map((s) => [s.id, NAME_SIZE_TEXT[s.id]])),
+          defaultValue: "medium",
+        },
+      },
+      {
+        name: "Hex name style",
+        desc: "Default weight and slant for hex names.",
+        control: {
+          type: "dropdown",
+          key: "hexNameStyle",
+          options: Object.fromEntries(NAME_STYLES.map((s) => [s.id, s.label])),
+          defaultValue: "bold",
         },
       },
       {
@@ -1093,6 +1130,39 @@ export class HexmakerSettingTab extends PluginSettingTab {
               this.plugin.refreshHexMap();
             }),
         );
+    }
+
+    {
+      // Hex names (NM3): the default for maps without their own font.
+      const font = resolveNameFont(undefined, this.plugin.settings);
+      const save = async () => {
+        await this.plugin.saveSettings();
+        this.plugin.refreshHexMap();
+      };
+      new Setting(containerEl)
+        .setName("Hex name font")
+        .setDesc("Default font, size and style for hex names on maps and in PNG exports. Each map can pick its own in the layers menu.")
+        .addDropdown((dropdown) => {
+          for (const f of NAME_FAMILIES) dropdown.addOption(f.id, f.label);
+          dropdown.setValue(font.family).onChange(async (value) => {
+            this.plugin.settings.hexNameFont = value;
+            await save();
+          });
+        })
+        .addDropdown((dropdown) => {
+          for (const s of NAME_SIZES) dropdown.addOption(s.id, NAME_SIZE_TEXT[s.id]);
+          dropdown.setValue(font.size ?? "medium").onChange(async (value) => {
+            this.plugin.settings.hexNameSize = value;
+            await save();
+          });
+        })
+        .addDropdown((dropdown) => {
+          for (const s of NAME_STYLES) dropdown.addOption(s.id, s.label);
+          dropdown.setValue(nameStyleId(font.bold, font.italic)).onChange(async (value) => {
+            this.plugin.settings.hexNameStyle = value;
+            await save();
+          });
+        });
     }
 
     {

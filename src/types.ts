@@ -136,6 +136,12 @@ export interface MapData {
 	linkBadgeSize?: string;
 	showHexNames?: boolean;       // undefined = true: hex name labels on the map
 	showTokenNames?: boolean;     // undefined = true: name under each token
+	/** Hex-name font (NM3): "theme" | "serif" | "sans" | "handwritten"; unset = the plugin default. */
+	hexNameFont?: string;
+	/** Hex-name size: "small" | "medium" | "large" | "huge" (or a multiplier); unset = the plugin default. */
+	hexNameSize?: string;
+	/** Hex-name style: "bold" | "bold italic" | "regular" | "italic"; unset = the plugin default. */
+	hexNameStyle?: string;
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting
 	/** Slot on a shared grid of neighbouring regions (see src/worldgen/world.ts). */
 	world?: { id: string; cx: number; cy: number };
@@ -283,6 +289,10 @@ export interface HexmakerPluginSettings {
 	advancedNudgeOff?: boolean;
 	/** True once existing palettes got terrain types (one-time seeding). */
 	terrainTypesSeeded: boolean;
+	/** Default hex-name font for maps without their own (NM3; see hexNameFont.ts). Unset = theme font, medium, bold. */
+	hexNameFont?: string;
+	hexNameSize?: string;
+	hexNameStyle?: string;
 	/** Terrain legend on the map and generator previews. Unset = shown. */
 	showTerrainLegend?: boolean;
 	/** The map export form's last choices, per map name (round 6 S9). */

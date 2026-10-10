@@ -50,6 +50,7 @@ import {
 import { BADGE_INFO, BADGE_SECTIONS, badgeSize, hiddenBadges as hiddenBadgeKinds, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
 import { usedTerrainEntries } from "../hex-map/terrainLegend";
 import { hexNameTone } from "../hex-map/hexNameLayer";
+import { MIN_NAME_SCREEN_PX, nameFontShorthand, resolveNameFont } from "../hex-map/hexNameFont";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
 import { getIconUrl, normalizeFolder } from "../utils";
 import { UNKNOWN_PATH_TYPE } from "../constants";
@@ -128,6 +129,8 @@ export async function renderMapToPngBlob(
 ): Promise<Blob> {
   const map = plugin.settings.maps.find((m) => m.name === mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
+  // Link badge kinds in the legend use the map type's words (G4b).
+  const sectionWords = plugin.sectionWordsFor(mapName);
 
   const R = opts.hexRadius ?? 50;
   const padding = opts.padding ?? 40;
@@ -340,7 +343,7 @@ export async function renderMapToPngBlob(
   const legendFont = Math.max(12, Math.round(R * 0.26));
   const legendRows: TerrainLegendRow[] = [
     ...legendTerrains.map((t): TerrainLegendRow => ({ name: t.name, color: t.color, icon: showIcons ? t.icon : undefined, iconColor: t.iconColor })),
-    ...(showLegend ? badgeKinds : []).map((s): TerrainLegendRow => ({ name: BADGE_INFO[s].label, color: BADGE_INFO[s].color, badge: s })),
+    ...(showLegend ? badgeKinds : []).map((s): TerrainLegendRow => ({ name: sectionWords(s).label, color: BADGE_INFO[s].color, badge: s })),
   ];
   const legendSize = showLegend && legendRows.length
     ? drawTerrainLegend(measureContext(), 0, 0, legendRows, legendFont, orientation, true)
@@ -544,8 +547,13 @@ export async function renderMapToPngBlob(
 
   // Hex names, over paths, on the side of the hex away from its coordinates.
   if (showHexNames) {
-    const px = pngHexNamePx(R);
-    ctx.font = `700 ${px}px sans-serif`;
+    // The map's name font, as on screen (NM3); the theme font is the
+    // document's, which the map inherits.
+    const nameFont = resolveNameFont(map, plugin.settings);
+    const themeFamily = getComputedStyle(activeDocument.body).fontFamily || "sans-serif";
+    const fontAt = (size: number) => nameFontShorthand(nameFont, size, themeFamily);
+    const px = pngHexNamePx(R, nameFont.scale);
+    ctx.font = fontAt(px);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.lineJoin = "round";
@@ -555,12 +563,12 @@ export async function renderMapToPngBlob(
       if (!hex.name) continue;
       const y = pngHexNameY(coordPlacement, showCoords && !!opts.coordLabel, hex.cy, R);
       // Within about the hex's width: two smaller lines for long names.
-      ctx.font = `700 ${px}px sans-serif`;
+      ctx.font = fontAt(px);
       let lines = wrapHexName(hex.name, R * 1.8, (s) => ctx.measureText(s).width);
       let linePx = px;
       if (lines.length > 1) {
-        linePx = Math.max(10, Math.round(px * 0.85));
-        ctx.font = `700 ${linePx}px sans-serif`;
+        linePx = Math.max(MIN_NAME_SCREEN_PX, Math.round(px * 0.85));
+        ctx.font = fontAt(linePx);
         lines = wrapHexName(hex.name, R * 1.8, (s) => ctx.measureText(s).width);
       }
       const lineH = linePx * 1.1;

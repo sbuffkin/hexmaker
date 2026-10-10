@@ -59,16 +59,6 @@ import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type S
 import { openNoteFocused } from "../openNote";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
-/** What each link field links, for its placeholder ("Search or create a town…"). */
-const LINK_FIELD_NOUN: Record<LinkSection, string> = {
-  "Encounters Table": "an encounter table",
-  Towns: "a town",
-  Dungeons: "a dungeon",
-  Features: "a feature",
-  Quests: "a quest",
-  Factions: "a faction",
-};
-
 /** Typing pause after which a text section autosaves. */
 const TEXT_AUTOSAVE_MS = 800;
 /** Unique ids for label for= ↔ textarea pairs. */
@@ -1104,8 +1094,11 @@ export class HexEditorModal extends HexmakerModal {
     const sectionEl = container.createDiv({
       cls: "duckmage-editor-link-section duckmage-editor-link-card",
     });
+    // Display words follow the map type (G4b: Settlements on a space map);
+    // the note keeps its heading.
+    const words = this.plugin.sectionWordsFor(this.mapName)(section);
     sectionEl.createEl("h4", {
-      text: section,
+      text: words.label,
       cls: "duckmage-link-section-title",
     });
 
@@ -1114,9 +1107,9 @@ export class HexEditorModal extends HexmakerModal {
     const input = comboWrap.createEl("input", {
       type: "text",
       cls: "duckmage-link-combo-input",
-      attr: { "aria-label": `Link ${section.toLowerCase()}` },
+      attr: { "aria-label": `Link ${words.label.toLowerCase()}` },
     });
-    input.placeholder = `Search or create ${LINK_FIELD_NOUN[section]}…`;
+    input.placeholder = `Search or create ${words.noun}…`;
 
     const arrowBtn = comboWrap.createEl("button", {
       text: "▾",

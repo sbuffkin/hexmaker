@@ -1,4 +1,5 @@
 import { setIcon } from "obsidian";
+import type { SectionWordsFn } from "../mapKinds";
 
 /**
  * Link badges: a small marker per link type (town, dungeon, feature, quest,
@@ -142,12 +143,17 @@ function linkLabel(l: { link?: string; displayText?: string }): string {
  * Hover text for a hex's links (S3): "Town: Gullmouth", "Dungeons: A, B".
  * Empty when the hex links nothing.
  */
-export function linkedNotesText(bySection: ReadonlyMap<BadgeSection, readonly string[]>): string {
+export function linkedNotesText(
+  bySection: ReadonlyMap<BadgeSection, readonly string[]>,
+  /** Display words for the map's type (G4b). */
+  words?: SectionWordsFn,
+): string {
   const parts: string[] = [];
   for (const [s, names] of bySection) {
     const shown = names.filter(Boolean);
     if (!shown.length) continue;
-    parts.push(`${shown.length === 1 ? BADGE_INFO[s].one : BADGE_INFO[s].label}: ${shown.join(", ")}`);
+    const w = words?.(s) ?? BADGE_INFO[s];
+    parts.push(`${shown.length === 1 ? w.one : w.label}: ${shown.join(", ")}`);
   }
   return parts.join(" · ");
 }
@@ -199,6 +205,8 @@ export function renderLinkBadgeLayer(
   gridSize: { w: number; h: number },
   sectionsByHex: ReadonlyMap<string, BadgeSection[]>,
   size: BadgeSize = DEFAULT_BADGE_SIZE,
+  /** Display words for the map's type (G4b). */
+  words?: SectionWordsFn,
 ): void {
   grid.querySelector(".duckmage-link-badges-layer")?.remove();
   if (sectionsByHex.size === 0) return;
@@ -222,7 +230,7 @@ export function renderLinkBadgeLayer(
       const info = BADGE_INFO[s];
       const b = group.createSpan({
         cls: `duckmage-link-badge duckmage-link-badge-${info.cls}`,
-        attr: { "aria-label": info.label },
+        attr: { "aria-label": words?.(s).label ?? info.label },
       });
       setIcon(b, info.icon);
     }

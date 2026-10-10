@@ -7493,7 +7493,37 @@ button.duckmage-terrain-legend-chip {
 .duckmage-overlay-group-title {
     font-size: 0.8em;
     color: var(--text-muted);
+    display: flex;
+    align-items: center;
 }
+/* "Aa": unfolds the hex-name font row (NM3) */
+.duckmage-overlay-group-title button.duckmage-overlay-font-btn {
+    margin-left: auto;
+    font-size: 1em;
+    padding: 0 5px;
+    height: 1.6em;
+    box-shadow: none;
+}
+.duckmage-overlay-group-title button.duckmage-overlay-font-btn.is-open {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-overlay-font-row {
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 4px 0 2px 0;
+    max-width: 15em;
+}
+.duckmage-overlay-font-row .duckmage-overlay-sizes { margin-left: 0; }
+.duckmage-overlay-font-row select.duckmage-overlay-font-family {
+    font-size: 0.8em;
+    height: 1.8em;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.duckmage-overlay-font-row .duckmage-overlay-font-bold { font-weight: 700; }
+.duckmage-overlay-font-row .duckmage-overlay-font-italic { font-style: italic; }
+.duckmage-overlay-font-row .duckmage-overlay-font-reset { padding: 0 2px; height: auto; }
 .duckmage-overlay-group-row {
     display: flex;
     flex-wrap: wrap;
@@ -7522,7 +7552,10 @@ button.duckmage-terrain-legend-chip {
        scales with the zoom. Lines break only at spaces (round 7 R7). */
     transform: translate(calc(-50% + var(--duckmage-name-dx, 0em)), calc(-50% + var(--duckmage-name-dy, 0em)));
     font-size: var(--duckmage-name-font, 0.95em);
-    font-weight: 700;
+    /* The map's name font (NM3), set on the layer by renderHexNameLayer. */
+    font-family: var(--duckmage-name-family, inherit);
+    font-weight: var(--duckmage-name-weight, 700);
+    font-style: var(--duckmage-name-style, normal);
     line-height: 1.1;
     --duckmage-name-ink: var(--text-normal);
     --duckmage-name-halo: var(--background-primary);

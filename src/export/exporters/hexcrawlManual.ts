@@ -100,6 +100,7 @@ export async function collectManualData(
   const app = plugin.app;
   const map = plugin.settings.maps.find((m) => m.name === mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
+  const words = plugin.sectionWordsFor(mapName);
   const player = !!opts.player;
   const { x: ox, y: oy } = map.gridOffset;
   const { cols, rows } = map.gridSize;
@@ -323,12 +324,20 @@ export async function collectManualData(
     regions: [...regionCounts].map(([name, hexCount]) => ({ name, hexCount })).sort((a, b) => b.hexCount - a.hexCount),
     sections,
     index: (Object.keys(indexes) as (keyof typeof indexes)[]).map((category) => ({
-      category,
+      // Section categories in the map type's words (G4b).
+      category: category === "Named hexes" ? category : words(category).label,
       entries: [...indexes[category]]
         .map(([name, hexes]) => ({ name, hexes: [...new Set(hexes)].sort() }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     })),
     omit: opts.omit,
+    linkLabels: {
+      towns: words("Towns").label,
+      dungeons: words("Dungeons").label,
+      features: words("Features").label,
+      quests: words("Quests").label,
+      factions: words("Factions").label,
+    },
   };
 }
 

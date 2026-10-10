@@ -274,6 +274,7 @@ export class MockApp {
 // ─── Plugin ────────────────────────────────────────────────────────────────
 
 import { DEFAULT_SETTINGS } from "../../src/constants";
+import { sectionKindFor, sectionWordsFor } from "../../src/mapKinds";
 import type { HexmakerPluginSettings } from "../../src/types";
 
 export class MockHexmakerPlugin {
@@ -305,6 +306,11 @@ export class MockHexmakerPlugin {
       this.settings.terrainPalettes.find((p) => p.name === map?.paletteName)
         ?.terrains ?? this.settings.terrainPalettes[0]?.terrains ?? []
     );
+  }
+
+  /** Section display words by map type (G4b), from the map's own palette. */
+  sectionWordsFor(mapName: string | undefined) {
+    return sectionWordsFor(sectionKindFor(mapName ? [this.getMapPalette(mapName)] : []));
   }
 }
 

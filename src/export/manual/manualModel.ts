@@ -100,6 +100,9 @@ export interface ManualData {
   index: { category: string; entries: ManualIndexEntry[] }[];
   /** Front/back matter the user left out of this handout. */
   omit?: ManualPart[];
+  /** Link section names in the map type's words (G4b: Settlements on a
+   *  space map). Missing = the usual names. */
+  linkLabels?: Partial<Record<keyof ManualLinks, string>>;
 }
 
 /** Optional parts of the manual (the title page and hex key always print). */

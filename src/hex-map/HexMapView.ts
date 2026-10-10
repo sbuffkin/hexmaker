@@ -39,6 +39,7 @@ import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
+import { resolveNameFont } from "./hexNameFont";
 import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
@@ -208,6 +209,8 @@ export class HexMapView extends ItemView {
   private namesTimer: number | null = null;
   /** Names the hex-name layer was last drawn with ("x_y=name" lines), to skip no-op redraws. */
   private drawnHexNames = "";
+  /** Zoom at the last transform: a change redraws the names (readable size, NM3). */
+  private namesZoom = 1;
   private controlsEl: HTMLElement | null = null;
   private settleTimer: number | null = null;
   // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
@@ -1291,6 +1294,11 @@ export class HexMapView extends ItemView {
             this.drawHexNames(grid, true);
           }
           this.refreshTerrainLegend();
+        },
+        // Name font changed (NM3): redraw the names.
+        onHexNameFontChange: () => {
+          const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+          if (grid && !this.cancelMeasuredLayers) this.drawHexNames(grid, true);
         },
       },
     );
@@ -2560,6 +2568,11 @@ export class HexMapView extends ItemView {
         "--duckmage-vp-ty": `${this.panY}px`,
         "--duckmage-vp-scale": String(this.zoom),
       });
+    }
+    // Names keep a readable size on screen (NM3): redraw once the zoom settles.
+    if (this.zoom !== this.namesZoom) {
+      this.namesZoom = this.zoom;
+      this.scheduleHexNames();
     }
     this.updateCalHandleScale();
     this.onViewportMoved();
@@ -4884,7 +4897,7 @@ export class HexMapView extends ItemView {
     const own = terrain !== undefined ? terrain : pending ? pending.terrain : getTerrainFromFile(this.app, hexPath);
     // The notes it links (towns, dungeons…), from the metadata cache (S3).
     const note = this.app.vault.getAbstractFileByPath(hexPath);
-    const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note))) : "";
+    const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note)), this.plugin.sectionWordsFor(this.activeMapName)) : "";
     const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked);
     if (hexEl.title !== label) {
       hexEl.title = label;
@@ -6142,7 +6155,7 @@ export class HexMapView extends ItemView {
     }
     this.badgeSectionsByHex = sections;
     const map = this.getActiveMap();
-    renderLinkBadgeLayer(gridContainer, this.coordPlacements, this.coordGridSize, sections, badgeSize(map.linkBadgeSize));
+    renderLinkBadgeLayer(gridContainer, this.coordPlacements, this.coordGridSize, sections, badgeSize(map.linkBadgeSize), this.plugin.sectionWordsFor(this.activeMapName));
     // The legend lists the kinds on the map: redraw it when they change.
     const kinds = [...new Set([...sections.values()].flat())];
     if (kinds.sort().join() !== [...this.badgeKindsOnMap].sort().join()) {
@@ -6182,10 +6195,15 @@ export class HexMapView extends ItemView {
     // The fill is in the signature: repainting a named hex can flip its name's tone.
     // Badges in the signature too: names make room for them (R8).
     const limits = this.nameBadgeLimits(names);
-    const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}|${limits.get(k) ?? ""}`).sort().join("\n");
+    // The font and the grid's on-screen size too: a name's size has a
+    // readable floor (NM3), so zooming can change its layout.
+    const font = resolveNameFont(this.getActiveMap(), this.plugin.settings);
+    const screenEm = names.size ? (parseFloat(getComputedStyle(gridContainer).fontSize) || 16) * this.zoom : 0;
+    const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}|${limits.get(k) ?? ""}`).sort().join("\n")
+      + `\nfont=${font.family}|${font.scale}|${font.bold}|${font.italic}|${screenEm.toFixed(1)}`;
     if (onlyIfChanged && sig === this.drawnHexNames) return;
     this.drawnHexNames = sig;
-    renderHexNameLayer(gridContainer, names, fills, this.plugin.settings.coordPlacement ?? "bottom", limits);
+    renderHexNameLayer(gridContainer, names, fills, this.plugin.settings.coordPlacement ?? "bottom", limits, font, this.zoom);
   }
 
   /** How far right each named hex's name may reach: clear of its shown badges (R8). */
@@ -6249,9 +6267,11 @@ export class HexMapView extends ItemView {
     }
     if (map.baseTerrain && painted < cols * rows) used.push(map.baseTerrain);
     const entries = usedTerrainEntries(this.plugin.getMapPalette(this.activeMapName), used);
-    // The link badge kinds on the map, as on the PNG legend (round 7 R8).
+    // The link badge kinds on the map, as on the PNG legend (round 7 R8),
+    // named for the map type (G4b).
+    const words = this.plugin.sectionWordsFor(this.activeMapName);
     const badges = legendBadgeKinds(this.badgeKindsOnMap, map.showLinkBadges ?? true, hiddenBadges(map))
-      .map((s) => ({ label: BADGE_INFO[s].label, icon: BADGE_INFO[s].icon, cls: BADGE_INFO[s].cls }));
+      .map((s) => ({ label: words(s).label, icon: BADGE_INFO[s].icon, cls: BADGE_INFO[s].cls }));
     // Pinned to the view's bottom-left, small, names cut short; folds to
     // a "Legend" chip (MK2).
     renderTerrainLegend(parent, entries, {
