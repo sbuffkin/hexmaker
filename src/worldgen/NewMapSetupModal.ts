@@ -25,6 +25,7 @@ import {
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
+  submapStartKind,
   suggestBaseTerrain,
   visibleKinds,
   type GenerateOutcome,
@@ -374,6 +375,15 @@ export class NewMapSetupModal extends HexmakerModal {
       const where = { parentHex: !!this.origin, neighbour: !!this.placement };
       let fitting = kindsForPalette(shown, terrains, where.parentHex);
       if (where.neighbour) fitting = neighbourFirst(fitting);
+      // A submap of a painted hex starts on Region detail, not Blank
+      // (unless a saved default or the user's click says otherwise).
+      if (where.parentHex) {
+        this.kindId = submapStartKind(fitting, this.kindId, {
+          parentTerrain: this.originTerrain,
+          savedGenerator: this.saved?.generator,
+          picked: this.pickedKind,
+        });
+      }
       const stillFits = fitting.some((k) => k.id === this.kindId);
       // Placed next to a map and no generator picked yet: start on one
       // that continues the neighbour's edge.

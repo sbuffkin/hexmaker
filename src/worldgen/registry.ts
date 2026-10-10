@@ -89,6 +89,21 @@ export interface TerrainGeneratorKind {
 
 export const BLANK_ID = "blank";
 
+/**
+ * The generator a submap starts on. A saved choice (the per-terrain submap
+ * default) or one the user clicked stays; otherwise a submap of a hex with
+ * terrain starts on the generator that zooms into that hex (Region detail)
+ * instead of Blank, when it fits the palette (fresh-eyes r5).
+ */
+export function submapStartKind(
+  fitting: Pick<TerrainGeneratorKind, "id" | "needsContext">[],
+  current: string,
+  opts: { parentTerrain?: string; savedGenerator?: string; picked?: boolean },
+): string {
+  if (current !== BLANK_ID || opts.picked || opts.savedGenerator || !opts.parentTerrain) return current;
+  return fitting.find((k) => k.needsContext)?.id ?? current;
+}
+
 /** A generator card's text for this palette. */
 export function describeKind(kind: TerrainGeneratorKind, terrains: TerrainColor[]): string {
   return kind.describe?.(terrains) ?? kind.description;
