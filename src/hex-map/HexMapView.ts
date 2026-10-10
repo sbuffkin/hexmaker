@@ -4939,6 +4939,14 @@ export class HexMapView extends ItemView {
       // Paths don't auto-route between distant hexes; say so instead of
       // silently leaving a lone dot (fresh-eyes T7).
       new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here.");
+      // A one-hex chain is never drawn (a line needs two hexes), so the
+      // abandoned start would linger invisibly in the map data: drop it.
+      const abandoned = this.activePathChain;
+      if (abandoned && abandoned.hexes.length === 1) {
+        const i = region.pathChains.indexOf(abandoned);
+        if (i !== -1) region.pathChains.splice(i, 1);
+        this.activePathChain = null;
+      }
     }
 
     // ── If adjacent to active end, extend that chain ─────────────────────
@@ -5033,8 +5041,11 @@ export class HexMapView extends ItemView {
       }
 
       if (this.activePathEnd === key) {
-        this.activePathEnd = null;
-        this.activePathChain = null;
+        // Removing the end of the path being drawn steps it back one hex,
+        // so drawing carries on from there.
+        const stepBack = pos === chain.hexes.length && chain.hexes.length > 0;
+        this.activePathEnd = stepBack ? chain.hexes[chain.hexes.length - 1] : null;
+        this.activePathChain = stepBack ? chain : null;
       }
 
       this.pushPathUndo(

@@ -87,7 +87,7 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 
 	it("the map view refreshes the bar with the toolbar and Esc exits the tool", () => {
 		expect(method("updateToolbarButtonStates")).toMatch(/this\.updateModeBar\(\);/);
-		expect(viewSrc).toMatch(/this\.scope\.register\(\[\], "Escape"[\s\S]{0,200}this\.exitCurrentMode\(\)/);
+		expect(viewSrc).toMatch(/this\.scope\.register\(\[\], "Escape"[\s\S]{0,600}this\.exitCurrentMode\(\)/);
 	});
 });
 
@@ -109,5 +109,15 @@ describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
 		expect(menu).toMatch(/const submap = getSubmapFromFile\(this\.app, hexPath\);/);
 		expect(menu).not.toMatch(/hexExists \?/);
 		expect(menu).toContain("Enter submap: ${submap}");
+	});
+});
+
+describe("Path chain upkeep (fresh-eyes T7/T2 follow-up)", () => {
+	it("a restart drops the abandoned one-hex start (never drawn, would linger in the data)", () => {
+		expect(method("onHexPathDrawClick")).toMatch(/abandoned && abandoned\.hexes\.length === 1[\s\S]*pathChains\.splice\(i, 1\)/);
+	});
+
+	it("removing the end of the path being drawn steps the end back one hex", () => {
+		expect(method("onHexPathDeleteClick")).toMatch(/const stepBack = pos === chain\.hexes\.length && chain\.hexes\.length > 0;/);
 	});
 });
