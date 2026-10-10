@@ -6474,3 +6474,24 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-editor-link-card .duckmage-link-section-title {
     color: var(--text-normal);
 }
+
+/* Terrain swatches show the full name on up to two lines instead of
+   "forested ..." (E4); a tile's title holds the name if it's longer still. */
+.duckmage-terrain-picker .duckmage-terrain-option {
+    width: 72px;
+    min-width: 0;
+}
+.duckmage-terrain-picker .duckmage-terrain-option-name {
+    max-width: 100%;
+    min-height: 2.3em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+/* Two rows of the taller tiles in the hex editor's terrain strip. */
+.duckmage-hex-editor .duckmage-terrain-picker {
+    max-height: 164px;
+}
