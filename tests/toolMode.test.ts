@@ -46,3 +46,20 @@ describe("Path tool button (fresh-eyes T7)", () => {
 		expect(body).toMatch(/outcome === "restart"[\s\S]*new Notice\(/);
 	});
 });
+
+describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
+	it("right-click on a hex of the path being drawn removes it instead of opening the menu", () => {
+		const start = viewSrc.indexOf('"contextmenu",');
+		const handler = viewSrc.slice(start, viewSrc.indexOf("{ capture: true }", start));
+		expect(handler).toMatch(/this\.drawingMode === "path"[\s\S]*pathChainWithHex\([\s\S]*onHexPathDeleteClick\(hexX, hexY, this\.activePathTypeName\)[\s\S]*return;[\s\S]*showPainterContextMenu/);
+	});
+
+	it("the delete only touches chains of the given path type", () => {
+		expect(method("onHexPathDeleteClick")).toMatch(/typeName !== null && chains\[ci\]\.typeName !== typeName\) continue/);
+	});
+
+	it("tokens let clicks through while a drawing tool is active", () => {
+		const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\s+/g, " ");
+		expect(css).toContain(".duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-token { pointer-events: none; }");
+	});
+});

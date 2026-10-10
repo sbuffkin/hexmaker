@@ -853,6 +853,17 @@ export class HexMapView extends ItemView {
           this.removeOneGmIconFromHex(hexEl, hexX, hexY, this.paintIconName);
           return;
         }
+        // Path tool: right-click a hex of the path type being drawn removes
+        // it from its chain, as the help says (fresh-eyes T2). Anywhere else
+        // still opens the tool menu.
+        if (
+          this.drawingMode === "path" &&
+          hexX !== null && hexY !== null &&
+          this.pathChainWithHex(`${hexX}_${hexY}`, this.activePathTypeName)
+        ) {
+          void this.onHexPathDeleteClick(hexX, hexY, this.activePathTypeName);
+          return;
+        }
         this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY);
       },
       { capture: true },
@@ -4886,13 +4897,23 @@ export class HexMapView extends ItemView {
     this.updatePathOverlay();
   }
 
-  private async onHexPathDeleteClick(x: number, y: number): Promise<void> {
+  /** First path chain (of `typeName`, or any type when null) through hex `key`. */
+  private pathChainWithHex(key: string, typeName: string | null): PathChain | undefined {
+    return this.getActiveMap().pathChains.find(
+      (c) => (typeName === null || c.typeName === typeName) && c.hexes.includes(key),
+    );
+  }
+
+  /** Remove hex (x, y) from the first chain through it — only chains of
+   *  `typeName` when given (right-click while drawing that type). */
+  private async onHexPathDeleteClick(x: number, y: number, typeName: string | null = null): Promise<void> {
     const key = `${x}_${y}`;
     const region = this.getActiveMap();
     const chains = region.pathChains;
     const before = this.cloneChains(region.pathChains);
 
     for (let ci = 0; ci < chains.length; ci++) {
+      if (typeName !== null && chains[ci].typeName !== typeName) continue;
       const pos = chains[ci].hexes.indexOf(key);
       if (pos === -1) continue;
 

@@ -6504,3 +6504,9 @@ button.duckmage-wfc-library-tab.is-active {
     gap: 0.5em;
     margin: 0.5em 0;
 }
+
+/* While a drawing tool is active, clicks on a token fall through to the hex
+   under it (a token used to swallow path/paint clicks on its hex, T2). */
+.duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-token {
+    pointer-events: none;
+}
