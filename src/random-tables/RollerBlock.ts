@@ -1,6 +1,6 @@
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { parseRandomTable, rollOnTable } from "./randomTable";
+import { emptyTableMessage, parseRandomTable, rollOnTable } from "./randomTable";
 import { DIE_OPTIONS } from "./RandomTableView";
 
 /**
@@ -64,6 +64,16 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
         cls: "duckmage-roller-btn mod-cta",
       });
 
+      // Shown instead of a result when the table has nothing to roll yet
+      // (e.g. a terrain table setup created empty), with a way to fill it.
+      const emptyEl = block.createDiv({ cls: "duckmage-rt-empty-state" });
+      emptyEl.hide();
+      const emptyText = emptyEl.createDiv({ cls: "duckmage-rt-empty" });
+      const openTableBtn = emptyEl.createEl("button", { text: "Open table" });
+      openTableBtn.addEventListener("click", () => {
+        void plugin.app.workspace.getLeaf("tab").openFile(file);
+      });
+
       // Result area — hidden until first roll (reuses modal CSS classes)
       const resultBox = block.createDiv({ cls: "duckmage-roll-result" });
       resultBox.hide();
@@ -110,7 +120,13 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
           const content = await plugin.app.vault.read(file);
           const table = parseRandomTable(content);
           const rolled = rollOnTable(table);
-          if (!rolled) return;
+          if (!rolled) {
+            emptyText.setText(emptyTableMessage(content));
+            emptyEl.show();
+            resultBox.hide();
+            return;
+          }
+          emptyEl.hide();
 
           // For linked-folder / isLink entries strip the path prefix
           let display = rolled.result;

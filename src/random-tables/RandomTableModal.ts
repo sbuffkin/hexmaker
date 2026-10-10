@@ -2,7 +2,7 @@ import { App, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, rollOnTable, getDieRanges } from "./randomTable";
+import { parseRandomTable, rollOnTable, getDieRanges, emptyTableMessage } from "./randomTable";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 
@@ -232,12 +232,29 @@ export class RandomTableModal extends HexmakerModal {
     const ranges = table.dice > 0 ? getDieRanges(table) : null;
 
     if (table.entries.length === 0) {
-      tableContainer.createSpan({
-        text: "No entries found.",
-        cls: "duckmage-rt-empty",
+      const empty = tableContainer.createDiv({ cls: "duckmage-rt-empty-state" });
+      empty.createDiv({ text: emptyTableMessage(content), cls: "duckmage-rt-empty" });
+      const addBtn = empty.createEl("button", { text: "Add entries", cls: "mod-cta" });
+      addBtn.addEventListener("click", () => {
+        new RandomTableEditorModal(
+          this.app,
+          this.plugin,
+          file,
+          () => {
+            void (async () => {
+              tableContainer.empty();
+              resultBox.el.hide();
+              rollBtn.disabled = true;
+              await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+            })();
+          },
+          content,
+        ).open();
       });
+      rollBtn.title = "Add entries to roll on this table";
       return;
     }
+    rollBtn.removeAttribute("title");
 
     const tableEl = tableContainer.createEl("table", {
       cls: "duckmage-random-table",

@@ -16,6 +16,7 @@ import { WorkflowEditorModal } from "./WorkflowEditorModal";
 import { WorkflowWizardModal } from "./WorkflowWizardModal";
 import {
   parseRandomTable,
+  emptyTableMessage,
   rollOnTable,
   getDieRanges,
   setDiceInFrontmatter,
@@ -1525,9 +1526,17 @@ export class RandomTableView extends ItemView {
     });
 
     if (table.entries.length === 0) {
-      tableBody.createDiv({
-        cls: "duckmage-rt-empty",
-        text: "No entries found. Check the table format.",
+      const empty = tableBody.createDiv({ cls: "duckmage-rt-empty-state" });
+      empty.createDiv({ cls: "duckmage-rt-empty", text: emptyTableMessage(content) });
+      const addBtn = empty.createEl("button", { text: "Add entries", cls: "mod-cta" });
+      addBtn.addEventListener("click", () => {
+        new RandomTableEditorModal(
+          this.app,
+          this.plugin,
+          file,
+          () => void this.renderDetail(),
+          content,
+        ).open();
       });
     } else {
       const tableEl = tableBody.createEl("table", {
@@ -1621,6 +1630,10 @@ export class RandomTableView extends ItemView {
       text: "Roll",
       cls: "duckmage-rt-roll-btn mod-cta",
     });
+    if (table.entries.length === 0) {
+      rollBtn.disabled = true;
+      rollBtn.title = "Add entries to roll on this table";
+    }
 
     const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });
     resultBox.hide();

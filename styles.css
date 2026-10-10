@@ -6495,3 +6495,12 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-hex-editor .duckmage-terrain-picker {
     max-height: 164px;
 }
+
+/* Random tables with nothing to roll yet: message + a way to fill them (E6). */
+.duckmage-rt-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5em;
+    margin: 0.5em 0;
+}
