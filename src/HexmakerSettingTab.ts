@@ -92,6 +92,10 @@ type LocalSettingDefinitionItem =
   | LocalSettingGroup
   | LocalSettingList;
 
+/** The Templates folder setting's description (both settings paths). */
+const TEMPLATES_FOLDER_DESC =
+  "Vault-relative folder for the plugin's note templates: the hex template (unless Template path points elsewhere) and the town template. Edit them there; new notes use them. Blank = \"templates\" in the world folder. Workflow templates stay with their workflows.";
+
 /** Settings keys holding vault paths that must be run through normalizeFolder. */
 const FOLDER_PATH_KEYS = new Set<string>([
   "templatePath",
@@ -106,6 +110,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "regionsFolder",
   "tablesFolder",
   "workflowsFolder",
+  "templatesFolder",
   "palettesFolder",
 ]);
 
@@ -264,7 +269,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "Template path",
         "templatePath",
         "templates/hex.md",
-        "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ## Towns, ## Dungeons, and ## Features headings for the link sections.",
+        "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ### Towns, ### Dungeons, and ### Features headings for the link sections. Blank = hex.md in the templates folder.",
       ),
       {
         name: "Default map",
@@ -504,6 +509,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
                     ["regionsFolder", `${world}/regions`],
                     ["tablesFolder", `${world}/tables`],
                     ["workflowsFolder", `${world}/workflows`],
+                    ["templatesFolder", `${world}/templates`],
                   ];
                 for (const [key, path] of defaults) {
                   if (!this.plugin.settings[key]) {
@@ -520,6 +526,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
                   }
                 }
                 await this.plugin.saveSettings();
+                // Note templates (hex, town) into the templates folder (PA3).
+                await this.plugin.ensureTemplates();
                 // Ensure all map subfolders exist and generate hex notes
                 const hexF = normalizeFolder(this.plugin.settings.hexFolder);
                 if (hexF) {
@@ -607,6 +615,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "workflowsFolder",
         "World/workflows",
         "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.",
+      ),
+      folderText(
+        "Templates folder",
+        "templatesFolder",
+        "World/templates",
+        TEMPLATES_FOLDER_DESC,
       ),
       folderText(
         "Palettes folder",
@@ -958,7 +972,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Template path")
       .setDesc(
-        "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ## Towns, ## Dungeons, and ## Features headings for the link sections.",
+        "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ### Towns, ### Dungeons, and ### Features headings for the link sections. Blank = hex.md in the templates folder.",
       )
       .addText((text) =>
         text
@@ -1257,6 +1271,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
               ["regionsFolder",  `${world}/regions`],
               ["tablesFolder", `${world}/tables`],
               ["workflowsFolder", `${world}/workflows`],
+              ["templatesFolder", `${world}/templates`],
             ];
             for (const [key, path] of defaults) {
               if (!this.plugin.settings[key]) {
@@ -1273,6 +1288,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
               }
             }
             await this.plugin.saveSettings();
+            // Note templates (hex, town) into the templates folder (PA3).
+            await this.plugin.ensureTemplates();
             // Ensure all map subfolders exist and generate hex notes
             const hexF = normalizeFolder(this.plugin.settings.hexFolder);
             if (hexF) {
@@ -1435,6 +1452,19 @@ export class HexmakerSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.workflowsFolder)
           .onChange(async (value) => {
             this.plugin.settings.workflowsFolder = normalizeFolder(value ?? "");
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Templates folder")
+      .setDesc(TEMPLATES_FOLDER_DESC)
+      .addText((text) =>
+        text
+          .setPlaceholder("World/templates")
+          .setValue(this.plugin.settings.templatesFolder ?? "")
+          .onChange(async (value) => {
+            this.plugin.settings.templatesFolder = normalizeFolder(value ?? "");
             await this.plugin.saveSettings();
           }),
       );

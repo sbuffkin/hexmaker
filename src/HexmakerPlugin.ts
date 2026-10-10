@@ -66,6 +66,7 @@ import {
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
+import { DEFAULT_TOWN_TEMPLATE, fillNoteTemplate, hexTemplatePathFor, noteTemplateFor, templatesFolderFor, townTemplatePathFor } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -1541,31 +1542,82 @@ export default class HexmakerPlugin extends Plugin {
         } catch { /* fall through */ }
       }
       new Notice(`Hex template not found at "${templatePath}" — using built-in default.`);
+      return DEFAULT_HEX_TEMPLATE;
+    }
+    // No path set: hex.md in the templates folder, if there is one (PA3).
+    const inFolder = this.app.vault.getAbstractFileByPath(hexTemplatePathFor(this.settings));
+    if (inFolder instanceof TFile) {
+      try {
+        return await this.app.vault.read(inFolder);
+      } catch { /* fall through */ }
     }
     return DEFAULT_HEX_TEMPLATE;
+  }
+
+  /** The plugin's templates folder (PA3; see src/noteTemplates.ts). */
+  templatesFolder(): string {
+    return templatesFolderFor(this.settings);
+  }
+
+  /** Create a note template file from its built-in default if it's missing. */
+  private async ensureTemplateFile(path: string, content: string): Promise<void> {
+    if (this.app.vault.getAbstractFileByPath(path)) return;
+    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch { /* exists */ }
+    }
+    try {
+      await this.app.vault.create(path, content);
+    } catch { /* created concurrently — fine */ }
+  }
+
+  /**
+   * Make sure the templates folder holds every plugin note template: the
+   * hex template (unless the user points templatePath elsewhere) and the
+   * town template. Existing files are never overwritten.
+   */
+  async ensureTemplates(): Promise<void> {
+    await this.ensureHexTemplate();
+    await this.ensureTemplateFile(townTemplatePathFor(this.settings), DEFAULT_TOWN_TEMPLATE);
+  }
+
+  /**
+   * Starting text for a note made from a link section's "create new" (towns
+   * get the town template, written to the templates folder on first use;
+   * encounter tables get a table). `title` fills {{title}}.
+   */
+  async newLinkedNoteContent(section: string, title: string): Promise<string> {
+    if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
+    if (noteTemplateFor(section) !== "town") return "";
+    const path = townTemplatePathFor(this.settings);
+    await this.ensureTemplateFile(path, DEFAULT_TOWN_TEMPLATE);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    let template = DEFAULT_TOWN_TEMPLATE;
+    if (file instanceof TFile) {
+      try {
+        template = await this.app.vault.read(file);
+      } catch { /* use the default */ }
+    }
+    return fillNoteTemplate(template, title);
   }
 
   /**
    * Ensure a hex template file exists on disk.
    * - If templatePath is set and the file exists: no-op.
    * - If templatePath is set but the file is missing: create it from the built-in default.
-   * - If templatePath is blank: create at {worldFolder}/hextemplate.md and persist the path.
+   * - If templatePath is blank: create hex.md in the templates folder (PA3)
+   *   and persist the path.
    */
   async ensureHexTemplate(): Promise<void> {
     let templatePath = normalizeFolder(this.settings.templatePath ?? "");
     if (!templatePath) {
-      const world = normalizeFolder(this.settings.worldFolder) || "world";
-      templatePath = `${world}/hextemplate.md`;
+      templatePath = hexTemplatePathFor(this.settings);
       this.settings.templatePath = templatePath;
       await this.saveSettings();
     }
-    if (!this.app.vault.getAbstractFileByPath(templatePath)) {
-      try {
-        await this.app.vault.create(templatePath, DEFAULT_HEX_TEMPLATE);
-      } catch {
-        /* created concurrently — fine */
-      }
-    }
+    await this.ensureTemplateFile(templatePath, DEFAULT_HEX_TEMPLATE);
   }
 
   /**

@@ -88,7 +88,9 @@ export class LinkPickerModal extends HexmakerModal {
         if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
           await this.app.vault.createFolder(folder);
         }
-        file = await this.app.vault.create(newPath, this.createTemplate);
+        // Towns start from the town template (PA3) unless the caller gave one.
+        const content = this.createTemplate || (await this.plugin.newLinkedNoteContent(this.section, name));
+        file = await this.app.vault.create(newPath, content);
       } catch (err) {
         new Notice(`Could not create ${newPath}: ${String(err)}`);
         return;

@@ -4,7 +4,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   getIconUrl,
   normalizeFolder,
-  makeTableTemplate,
   createIconEl,
   iconLabel,
 } from "../utils";
@@ -1218,12 +1217,8 @@ export class HexEditorModal extends HexmakerModal {
           if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
             await this.app.vault.createFolder(folder);
           }
-          file = await this.app.vault.create(
-            newPath,
-            section === "Encounters Table"
-              ? makeTableTemplate(this.plugin.settings.defaultTableDice)
-              : "",
-          );
+          // Towns start from the town template (PA3), tables from a table.
+          file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent(section, name));
         } catch (err) {
           new Notice(`Could not create ${newPath}: ${String(err)}`);
           return;

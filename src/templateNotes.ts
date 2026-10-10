@@ -5,6 +5,8 @@
  * "hextemplate". Pure helpers; HexmakerPlugin.isLinkableNote wires them up.
  */
 
+import { templatesFolderFor } from "./noteTemplates";
+
 export interface TemplateNoteRules {
   /** Exact vault paths of template notes. */
   paths: string[];
@@ -17,7 +19,7 @@ const trimSlashes = (p: string): string => p.trim().replace(/^\/+|\/+$/g, "");
 /** The template rules for the plugin's settings plus any template folders
  *  other plugins use (core Templates, Templater). Blank entries are dropped. */
 export function templateNoteRules(
-  settings: { templatePath?: string; workflowsFolder?: string },
+  settings: { templatePath?: string; workflowsFolder?: string; templatesFolder?: string; worldFolder?: string },
   extraFolders: (string | undefined)[] = [],
 ): TemplateNoteRules {
   const paths: string[] = [];
@@ -26,6 +28,8 @@ export function templateNoteRules(
   const folders: string[] = [];
   const wf = trimSlashes(settings.workflowsFolder ?? "");
   folders.push(wf ? `${wf}/templates` : "templates");
+  // The plugin's own templates folder (PA3: hex and town templates).
+  folders.push(templatesFolderFor(settings));
   for (const f of extraFolders) {
     const t = trimSlashes(f ?? "");
     if (t) folders.push(t);

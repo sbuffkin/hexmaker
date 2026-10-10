@@ -283,9 +283,10 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Factions folder** | Scopes the Factions picker to a specific folder. |
 | **Tables folder** | Folder for random table files. Terrain tables are created in a `terrain/` subfolder here. |
 | **Workflows folder** | Folder for workflow definition files and their templates. |
+| **Templates folder** | One folder for the plugin's note templates, so they're easy to find and edit: `hex.md` (the hex note template, unless **Template path** points elsewhere) and `town.md` (new town notes made from the hex editor or a link picker start from it: a title and Description, People, Places and Rumours headings, to shape as you like). Blank = `templates` in the world folder. Made by **Generate folders** and the setup wizard; `town.md` also appears the first time you create a town. Workflow templates stay beside their workflows. |
 | **Default die** | Die size used when creating new table files (d4–d100). |
 | **Icons folder** | Folder containing `.png` icon files available as custom terrain/hex icons. |
-| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use the built-in template. |
+| **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use `hex.md` in the templates folder (or the built-in template if there isn't one). A path you already set is kept. |
 | **Hex gap** | Gap between hexes in pixels. |
 | **Hex orientation** | `flat` (default) or `pointy` top hex style. |
 | **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
@@ -367,6 +368,7 @@ src/
   sections.ts                         ← markdown section read/write helpers
   utils.ts                            ← shared utilities
   defaultHexTemplate.md               ← built-in hex note template
+  noteTemplates.ts                    ← templates folder paths + built-in town template (PA3)
   hex-map/
     HexMapView.ts                     ← interactive hex grid (ItemView)
     HexSidePanel.ts                   ← collapsible side panels (drawing tools, overlays)
