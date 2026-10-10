@@ -202,9 +202,9 @@ Place movable tokens on the map — useful for tracking party position, NPCs, or
 3. Click **Next: place on map**, then click any hex to place the token there.
 
 **Interacting with tokens:**
-- **Click** a token to open its info card — shows the linked note title and hex position, with a "Jump to hex" button and an "Open note" link.
+- **Click** a token to open the hex it stands on, just like clicking the hex.
 - **Drag** a token to a different hex to move it. The target hex is highlighted as you drag.
-- **Right-click** a token to edit its properties (icon, shape, colours) or remove it from the map.
+- **Right-click** a token for its menu: **Token info** (the linked note title and hex position, with "Jump to hex" and "Open note"), edit its properties (icon, shape, colours), or remove it from the map.
 
 Token state is stored in the linked note's frontmatter (`token`, `token-hex`, `token-map`, `token-icon`, `token-shape`, `token-color`, `token-border`, `token-visible`). Tokens follow the map they were placed on and persist with the note.
 

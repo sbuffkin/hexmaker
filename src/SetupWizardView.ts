@@ -24,7 +24,7 @@ import {
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
-import { TERRAIN_TABLES_SUMMARY } from "./wizardText";
+import { TERRAIN_TABLES_SUMMARY, slugHint } from "./wizardText";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -410,11 +410,14 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			});
 			nameInput.value = ctx.mapName;
 			// Map names are slugs (folder + note names): say so before Next.
-			const slugNote = nameRow.createEl("p", { cls: "duckmage-wizard-note-count" });
+			// The line always keeps its space (one line, empty when there is
+			// nothing to say), so the form never jumps under the cursor while
+			// typing (fresh-eyes r5).
+			const slugNote = nameRow.createEl("p", { cls: "duckmage-wizard-note-count duckmage-wizard-slug-note" });
 			const syncSlug = () => {
-				const slug = slugify(ctx.mapName);
-				slugNote.setText(slug && slug !== ctx.mapName ? `Saved as "${slug}" (map names are lower-case, with dashes).` : "");
-				slugNote.toggle(!!slugNote.getText());
+				const text = slugHint(ctx.mapName);
+				slugNote.setText(text);
+				slugNote.setAttr("title", text || null);
 			};
 			syncSlug();
 			nameInput.addEventListener("input", () => {

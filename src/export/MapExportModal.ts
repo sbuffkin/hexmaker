@@ -4,7 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { exportMapAsPng } from "./mapPngRenderer";
 import { exportMapAsPdf } from "./exporters/mapWithTable";
 import { exportMapAsManual } from "./exporters/hexcrawlManual";
-import { mapExportFileNames, mapExportStem } from "./exportNames";
+import { mapExportFileNames, mapExportStem, mapExportSuffix } from "./exportNames";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -83,6 +83,9 @@ export function renderMapExportForm(
     attr: { placeholder: mapName, id: nameId },
   });
   nameInput.value = mapName;
+  // The overlay suffix the files get, right after the box, so what's typed
+  // plus this reads as the "Writes:" names (fresh-eyes r5).
+  const suffixEl = nameRow.createSpan({ cls: "duckmage-export-name-suffix" });
 
   const showCoords = checkbox(optsForm, "Show coordinate labels", true);
   const showIcons = checkbox(optsForm, "Show terrain / override icons", true);
@@ -134,6 +137,10 @@ export function renderMapExportForm(
   });
   const updatePreview = () => {
     const n = names();
+    const suffix = mapExportSuffix({ showFactionOverlay: showFactionOverlay.checked, showRegionOverlay: showRegionOverlay.checked });
+    suffixEl.setText(suffix);
+    suffixEl.toggle(!!suffix);
+    suffixEl.setAttr("title", suffix ? "Added for the overlays you ticked, so each variant gets its own file" : null);
     preview.setText(`Writes: ${n.png} (PNG) · ${n.pdf} (PDF) · ${n.manual} (manual)`);
   };
   for (const input of [nameInput, showFactionOverlay, showRegionOverlay, playerEdition]) {

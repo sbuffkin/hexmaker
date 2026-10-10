@@ -27,8 +27,16 @@ export interface MapExportNameOptions {
  * order, so variants of one map form a predictable family.
  */
 export function mapExportStem(o: MapExportNameOptions): string {
-  const base = o.base.trim() || o.mapName;
-  return base + (o.showFactionOverlay ? "-faction" : "") + (o.showRegionOverlay ? "-region" : "");
+  return (o.base.trim() || o.mapName) + mapExportSuffix(o);
+}
+
+/**
+ * The overlay suffix added after the typed name ("-faction-region"…), or
+ * "". Shown next to the File name box so the box and the "Writes:" line
+ * agree (fresh-eyes r5).
+ */
+export function mapExportSuffix(o: Pick<MapExportNameOptions, "showFactionOverlay" | "showRegionOverlay">): string {
+  return (o.showFactionOverlay ? "-faction" : "") + (o.showRegionOverlay ? "-region" : "");
 }
 
 /** Every file a map export can write, as written to the export folder. */
