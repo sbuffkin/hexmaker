@@ -2368,7 +2368,7 @@ export class HexMapView extends ItemView {
     // (round 4: a tester never saw it), and keep it off the hexes.
     const bar = this.modeBarEl;
     bar.removeClass("is-new");
-    activeWindow.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
       bar.addClass("is-new");
       if (!wasShown) this.uncoverGrid();
     });
