@@ -1,4 +1,4 @@
-import { App, TFile } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
@@ -7,12 +7,27 @@ import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 
 /**
+ * "Add to this hex" target for a roll made from a hex (P2): which sections
+ * the result may go to, the one picked first (where the roll came from), and
+ * how to add it (the hex editor appends to its own text box; elsewhere
+ * plugin.appendToHexSection creates the note if needed).
+ */
+export interface RollHexTarget {
+  /** "Hex 3, 4", shown on the button's tooltip. */
+  label: string;
+  sections: readonly { key: string; label: string }[];
+  defaultSection: string;
+  add: (sectionKey: string, text: string) => Promise<void> | void;
+}
+
+/**
  * Lightweight inline roll modal — used by the 🎲 button inside HexEditorModal
  * so the user can roll on a table without leaving the hex editor context.
  *
  * When `initialFilePath` is supplied the dropdown is skipped and that table is
  * loaded immediately (used for terrain description tables via the 📖 button).
- * When `onInsert` is absent the result shows a Copy button instead of "Use result".
+ * The result always has Copy; "Use result" when `onInsert` is given, and
+ * "Add to this hex" with a section picker when `hexTarget` is given.
  */
 export class RandomTableModal extends HexmakerModal {
   constructor(
@@ -20,6 +35,7 @@ export class RandomTableModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private onInsert?: (result: string) => void,
     private initialFilePath?: string,
+    private hexTarget?: RollHexTarget,
   ) {
     super(app);
   }
@@ -208,15 +224,50 @@ export class RandomTableModal extends HexmakerModal {
         this.onInsert!(resultTextarea.value);
         this.close();
       });
-    } else {
-      const copyBtn = resultBtns.createEl("button", {
-        text: "Copy",
-        cls: "mod-cta",
+    }
+
+    const target = this.hexTarget;
+    if (target) {
+      const select = resultBtns.createEl("select", {
+        cls: "duckmage-roll-add-section",
+        attr: { "aria-label": "Section to add the result to" },
       });
-      copyBtn.addEventListener("click", () => {
-        void navigator.clipboard.writeText(resultTextarea.value);
+      for (const s of target.sections) select.createEl("option", { value: s.key, text: s.label });
+      select.value = target.sections.some((s) => s.key === target.defaultSection)
+        ? target.defaultSection
+        : (target.sections[0]?.key ?? "");
+      const addBtn = resultBtns.createEl("button", {
+        text: "Add to this hex",
+        cls: this.onInsert ? "" : "mod-cta",
+        attr: { title: `Append the result to a section of ${target.label}'s note` },
+      });
+      addBtn.addEventListener("click", () => {
+        const text = resultTextarea.value.trim();
+        if (!text || !select.value) return;
+        addBtn.disabled = true;
+        void (async () => {
+          try {
+            await target.add(select.value, text);
+            const label = target.sections.find((s) => s.key === select.value)?.label ?? select.value;
+            new Notice(`Added to ${label} (${target.label}).`);
+            this.close();
+          } catch (err) {
+            new Notice(`Could not add the result: ${String(err)}`);
+            addBtn.disabled = false;
+          }
+        })();
       });
     }
+
+    const copyBtn = resultBtns.createEl("button", {
+      text: "Copy",
+      cls: this.onInsert || target ? "" : "mod-cta",
+    });
+    copyBtn.addEventListener("click", () => {
+      void navigator.clipboard.writeText(resultTextarea.value);
+      copyBtn.setText("Copied");
+      window.setTimeout(() => copyBtn.setText("Copy"), 1200);
+    });
 
     return { el: resultBox, textarea: resultTextarea };
   }

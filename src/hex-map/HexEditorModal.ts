@@ -1,4 +1,4 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, Menu, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
@@ -24,10 +24,21 @@ import {
   getAllSectionData,
   setSectionContent,
   addBacklinkToFile,
+  joinSectionText,
 } from "../sections";
-import { TEXT_SECTIONS } from "../types";
+import { ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
 import type { LinkSection, HexEditorOptions, TerrainColor } from "../types";
-import { RandomTableModal } from "../random-tables/RandomTableModal";
+import { RandomTableModal, type RollHexTarget } from "../random-tables/RandomTableModal";
+import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
+import {
+  ROLLED_SECTION_TABLES,
+  isRolledSection,
+  mapSectionTable,
+  pickSectionTable,
+  starterTablePath,
+  tableSourceLabel,
+  type RolledSection,
+} from "../regionTables";
 import { HexExportModal } from "./HexExportModal";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { resolveHex, type Side } from "../worldgen/world";
@@ -93,6 +104,8 @@ export class HexEditorModal extends HexmakerModal {
   private setEncounterLinks: ((links: string[]) => void) | null = null;
   /** Text sections with typed-but-unsaved changes: flush on close/navigate. */
   private pendingTextSaves = new Set<() => void>();
+  /** Text boxes by section key: append a rolled result and save (P2). */
+  private textBoxes = new Map<string, (addition: string) => void>();
 
   constructor(
     app: App,
@@ -158,6 +171,7 @@ export class HexEditorModal extends HexmakerModal {
     const { contentEl } = this;
     // Re-render on navigation: save what was typed into the previous hex.
     this.flushTextSaves();
+    this.textBoxes.clear();
     contentEl.empty();
     contentEl.addClass("duckmage-hex-editor");
 
@@ -279,6 +293,14 @@ export class HexEditorModal extends HexmakerModal {
         label,
         allText.get(key) ?? "",
       );
+    }
+    // Weather and Hooks & Rumors (E2): rolled from the region's tables,
+    // folded away unless the hex already has some.
+    const rolled = notesBody.createEl("details", { cls: "duckmage-editor-rolled-sections" });
+    rolled.open = ROLLED_TEXT_SECTIONS.some(({ key }) => !!(allText.get(key) ?? "").trim());
+    rolled.createEl("summary", { text: ROLLED_TEXT_SECTIONS.map((s) => s.label).join(" · ") });
+    for (const { key, label } of ROLLED_TEXT_SECTIONS) {
+      this.renderTextSection(rolled, path, key, label, allText.get(key) ?? "");
     }
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
@@ -997,6 +1019,9 @@ export class HexEditorModal extends HexmakerModal {
               this.plugin,
               undefined,
               file.path,
+              // Encounters have no text section of their own: Description
+              // first (P2; the section list lets the user pick another).
+              this.rollTarget("description"),
             ).open()
         : undefined;
 
@@ -1332,16 +1357,17 @@ export class HexEditorModal extends HexmakerModal {
         new RandomTableModal(
           this.app,
           this.plugin,
-          (result) => {
-            if (textarea.value && !textarea.value.endsWith("\n"))
-              textarea.value += "\n";
-            textarea.value += result;
-            save();
-            this.onChanged();
-          },
+          undefined,
           capturedPath,
+          this.rollTarget(section),
         ).open();
       });
+    } else if (isRolledSection(section)) {
+      this.renderRolledControls(
+        labelRow.createDiv({ cls: "duckmage-text-section-btn-group" }),
+        path,
+        section,
+      );
     }
     textarea.rows = 3;
     textarea.placeholder = `${label}…`;
@@ -1380,10 +1406,114 @@ export class HexEditorModal extends HexmakerModal {
       this.saves.markPending();
     });
     textarea.addEventListener("blur", save);
+    // "Add to this hex" from a roll lands in this box (and saves), so the
+    // box and the note can't disagree.
+    this.textBoxes.set(section, (addition) => {
+      textarea.value = joinSectionText(textarea.value, addition);
+      save();
+      this.onChanged();
+    });
     // Keep the autosave status beside the box being typed in.
     textarea.addEventListener("focus", () => {
       const status = this.notesStatusEl;
       if (status && status.parentElement !== labelRow) labelEl.after(status);
+    });
+  }
+
+  /** "Add to this hex" for a roll made here (P2): every text section, `defaultSection` first. */
+  private rollTarget(defaultSection: string): RollHexTarget {
+    const hx = this.x;
+    const hy = this.y;
+    return {
+      label: `hex ${hx}, ${hy}`,
+      sections: [...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
+      defaultSection,
+      add: async (key, text) => {
+        // Still on this hex with the box showing: add through the box.
+        const box = hx === this.x && hy === this.y ? this.textBoxes.get(key) : undefined;
+        if (box) { box(text); return; }
+        await this.plugin.appendToHexSection(hx, hy, this.mapName, key, text);
+        if (hx === this.x && hy === this.y) this.allText.set(key, joinSectionText(this.allText.get(key) ?? "", text));
+        this.onChanged();
+      },
+    };
+  }
+
+  /** The hex's own table link for a rolled section, resolved to a path. */
+  private hexSectionTable(path: string, section: RolledSection): string | null {
+    const link = this.allLinks.get(ROLLED_SECTION_TABLES[section].hexSection.toLowerCase())?.[0];
+    if (!link) return null;
+    return this.app.metadataCache.getFirstLinkpathDest(link, path)?.path ?? null;
+  }
+
+  /** Roll button + table source for Weather / Hooks & Rumors (E2). */
+  private renderRolledControls(el: HTMLElement, path: string, section: RolledSection): void {
+    const spec = ROLLED_SECTION_TABLES[section];
+    const exists = (p: string) => this.app.vault.getAbstractFileByPath(p) instanceof TFile;
+    const pick = () =>
+      pickSectionTable(
+        {
+          hex: this.hexSectionTable(path, section),
+          map: mapSectionTable(this.plugin.getMap(this.mapName), section),
+          starter: starterTablePath(normalizeFolder(this.plugin.settings.tablesFolder ?? ""), section),
+        },
+        exists,
+      );
+    const rollBtn = el.createEl("button", { text: "🎲", cls: "duckmage-section-desc-table-btn" });
+    const srcBtn = el.createEl("button", { text: "⋯", cls: "duckmage-section-desc-table-btn", attr: { "aria-label": `Choose the ${spec.noun} table` } });
+    const refresh = () => {
+      const picked = pick();
+      rollBtn.title = picked
+        ? `Roll ${spec.noun} on ${picked.path.split("/").pop()?.replace(/\.md$/, "")} (${tableSourceLabel(picked.source)})`
+        : `No ${spec.noun} table yet: click to pick one for this map`;
+      srcBtn.title = `Choose the ${spec.noun} table (map or this hex)`;
+    };
+    refresh();
+
+    const chooseTable = (onChoose: (file: TFile) => void) =>
+      new FileLinkSuggestModal(this.app, this.plugin, onChoose, "", ["md"]).open();
+    const setMapTable = () =>
+      chooseTable((file) => {
+        const map = this.plugin.getMap(this.mapName);
+        if (!map) return;
+        map[spec.mapField] = file.path;
+        void this.plugin.saveSettings().then(refresh);
+        new Notice(`The map's ${spec.noun} table is now ${file.basename}.`);
+      });
+    const setHexTable = (file: TFile | null) => {
+      void this.saves.track(
+        (async () => {
+          const note = await this.ensureHexNote();
+          if (!note) throw new Error("Could not create the hex note");
+          for (const link of await getLinksInSection(this.app, path, spec.hexSection)) {
+            await removeLinkFromSection(this.app, path, spec.hexSection, link);
+          }
+          const links: string[] = [];
+          if (file) {
+            const linkText = this.app.metadataCache.fileToLinktext(file, path);
+            await addLinkToSection(this.app, path, spec.hexSection, `[[${linkText}]]`);
+            links.push(linkText);
+          }
+          this.allLinks.set(spec.hexSection.toLowerCase(), links);
+          refresh();
+        })(),
+      );
+    };
+
+    rollBtn.addEventListener("click", () => {
+      const picked = pick();
+      if (!picked) { setMapTable(); return; }
+      new RandomTableModal(this.app, this.plugin, undefined, picked.path, this.rollTarget(section)).open();
+    });
+    srcBtn.addEventListener("click", (e) => {
+      const menu = new Menu();
+      const mapTable = mapSectionTable(this.plugin.getMap(this.mapName), section);
+      menu.addItem((i) => i.setTitle(mapTable ? `Change the map's ${spec.noun} table…` : `Set the map's ${spec.noun} table…`).onClick(setMapTable));
+      menu.addItem((i) => i.setTitle(`Use a different table for this hex…`).onClick(() => chooseTable((f) => setHexTable(f))));
+      if (this.hexSectionTable(path, section)) {
+        menu.addItem((i) => i.setTitle("Use the map's table on this hex").onClick(() => setHexTable(null)));
+      }
+      menu.showAtMouseEvent(e);
     });
   }
 

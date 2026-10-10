@@ -7047,3 +7047,90 @@ button.duckmage-wfc-library-tab.is-active {
 .modal.duckmage-editor-modal-drag.duckmage-more-features-modal {
     min-height: 0;
 }
+
+/* Path tool auto-route (P1): toggle + "Cross impassable" in the mode bar. */
+.duckmage-mode-bar-route {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-route-toggle {
+    height: 1.6em;
+    padding: 0 0.6em;
+    border-radius: 999px;
+    box-shadow: none;
+    color: var(--text-normal);
+    background: var(--background-primary);
+    opacity: 0.8;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-route-toggle.is-active {
+    opacity: 1;
+    font-weight: 600;
+    outline: 2px solid var(--text-on-accent);
+}
+.duckmage-mode-bar-route-cross {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    cursor: pointer;
+}
+.duckmage-mode-bar-route-note {
+    font-style: italic;
+    opacity: 0.85;
+    cursor: help;
+}
+
+/* Path picker: Hex by hex / Auto-route switch. */
+.duckmage-path-draw-mode {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.3em;
+}
+.duckmage-path-draw-mode-seg {
+    display: inline-flex;
+    gap: 0;
+}
+.duckmage-path-draw-mode-seg button {
+    border-radius: 0;
+}
+.duckmage-path-draw-mode-seg button:first-child {
+    border-radius: var(--button-radius) 0 0 var(--button-radius);
+}
+.duckmage-path-draw-mode-seg button:last-child {
+    border-radius: 0 var(--button-radius) var(--button-radius) 0;
+}
+.duckmage-path-draw-mode-seg button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-path-draw-mode-hint {
+    margin-bottom: 0.6em;
+}
+
+/* Roll result: "Add to this hex" section picker (P2). */
+.duckmage-roll-add-section {
+    max-width: 12em;
+}
+
+/* Hex editor: Weather + Hooks & Rumors, folded under Notes (E2). */
+.duckmage-editor-rolled-sections {
+    margin-top: 0.4em;
+}
+.duckmage-editor-rolled-sections > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: 0.2em 0;
+}
+
+/* Palette editor: Impassable column (P1). */
+.duckmage-pe-impassable {
+    text-align: center;
+}
+
+/* Map properties: weather / rumours tables (E2). */
+.duckmage-region-table-label {
+    min-width: 5em;
+    font-weight: 600;
+}

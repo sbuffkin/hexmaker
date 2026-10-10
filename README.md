@@ -12,7 +12,7 @@ Hexmaker gives you an interactive hex grid that lives inside Obsidian. Paint ter
 
 ### Hex editor
 
-Click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret). A 🎲 button on each section lets you roll any random table and append the result inline. Link a submap to the hex and click the center dot in the hex flower to dive into it.
+Click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret, plus Weather and Hooks & Rumors). Roll a table from the editor and **Add to this hex** puts the result in the section you pick. Link a submap to the hex and click the center dot in the hex flower to dive into it.
 
 ![The hex editor showing terrain, links, and notes for a single hex](docs/Editor.PNG)
 
@@ -24,7 +24,7 @@ Switch to the Terrain tool, pick a colour from your palette, and drag across hex
 
 ### Path drawing
 
-Click the Path button to open the path picker. Select any defined path type — road, river, or anything you've created — then click hexes to lay down a chain. Each type has its own colour, width, line style (solid / dashed / dotted), and routing mode (through hex centres, meandering between them, or tracing hex edges). Edit types at any time from the map toolbar.
+Click the Path button to open the path picker. Select any defined path type — road, river, or anything you've created — then click hexes to lay down a chain, or turn on **Auto-route** and click a start and an end to let the path find its own way around impassable terrain. Each type has its own colour, width, line style (solid / dashed / dotted), and routing mode (through hex centres, meandering between them, or tracing hex edges). Edit types at any time from the map toolbar.
 
 ![A road path being drawn hex by hex across the map](docs/PathDraw.gif)
 
@@ -101,6 +101,7 @@ Organise your world into multiple named hex maps, each stored as a subfolder und
 - **Create** — enter a name, choose a grid size and terrain palette, then click Create.
 - **Rename** — update the name field and click Rename; all hex notes in the folder are moved automatically.
 - **Delete** — removes the map and moves all its hex notes to the trash.
+- **Weather and rumours** — the tables the hex editor rolls for Weather and Hooks & Rumors on this map (stored in the map note as `weather-table` and `rumors-table`).
 - **Terrain theme** — assign a terrain type to a map. The swatch appears next to the map name in the switch list and sets the colour of the submap center dot when this map is linked as a submap from a parent map.
 - **Back** (`← Back` button) — returns to the previously active map after following a submap link.
 
@@ -124,7 +125,9 @@ A modal for editing a hex note without leaving the map.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
 - **Towns / Dungeons / Features / Quests / Factions** — link existing notes from their configured folders, or create a new note by name. Linked items are clickable and open in a new tab. Each entry has a remove button.
 - **Encounters Table** — link random table files to a hex. Clicking a linked table opens the Random Tables view with that table pre-selected.
-- **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas with a 🎲 roll button to append a result from any random table.
+- **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas; a 📖 button rolls the section's table where one exists.
+- **Weather and Hooks & Rumors** — folded under Notes. 🎲 rolls the map's weather or rumours table (set in **Maps → Properties → Weather and rumours**); ⋯ picks a different table for one hex. With neither set, the starter `weather.md` / `rumors.md` in your tables folder is used.
+- **Add to this hex** — any roll made from the editor (encounter tables, section tables) can be added to a section of this hex's note, chosen from a list (the section you rolled from comes first). The note is created if the hex has none. **Copy** is always there too.
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
 
 ### Random Tables view
@@ -156,7 +159,7 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 |------|------------|----------------------|
 | **Terrain** | Paint terrain (drag to paint multiple hexes) | — |
 | **Icon** | Paint an icon override | — |
-| **Path** | Add hex to the active path chain | Remove hex from chain |
+| **Path** | Add hex to the active path chain (or, with Auto-route, pick the start and then the end) | Remove hex from chain |
 | **Link table** | Add the selected random table to the hex's Encounters Table section | — |
 | **Link submap** | Link the selected map to the hex as a submap | Remove submap link |
 | **Factions** | Paint a faction colour (drag to paint multiple hexes) | Erase faction from hex |
@@ -174,6 +177,12 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 - **Through** — smooth Bezier curve through hex centres.
 - **Meander** — gentle curve through the midpoints between hex centres (good for rivers).
 - **Edge** — traces strictly along the hex polygon boundary lines between hexes.
+
+**Auto-route:** the picker (and the bar at the top of the map while drawing) switches between **Hex by hex** and **Auto-route**. With Auto-route, click a start hex and then an end hex: the path takes the shortest way inside the map, around impassable terrain, and then carries on from that end, so you can route leg by leg. The result is an ordinary path: right-click hexes to remove them, or switch back to hex by hex to extend it.
+
+- **Impassable terrain** — set per terrain in the palette editor (Impassable column) or the terrain editor. Water types (ocean, trench, shallows…) are impassable unless you untick them. A palette with no impassable terrain says so in the bar.
+- **Per path type** — each path type has **Avoid impassable terrain** (in its editor). Roads avoid water; rivers don't (they're off by default for river-like names).
+- **Cross impassable** — tick it in the bar to let one route go through anyway. If no route exists the map tells you, and suggests this or changing which terrains are impassable.
 
 **Link table / Link submap:** Clicking either button opens a picker. For tables, the picker shows your tables folder as a collapsible folder tree with a filter input. For submaps, the picker shows a filterable list of your maps with their terrain theme swatches. Once a table or map is selected, click any number of hexes to link it. The hex flashes a ripple animation on each successful link.
 
@@ -308,6 +317,8 @@ hexmaker-map: "[[_Overworld]]"
 | `### secret` | Text | Revealed only through investigation |
 | `### weather` | Text | Weather notes |
 | `### hooks & rumors` | Text | Adventure seeds |
+| `### Weather Table` | Link | Optional: this hex's own weather table (instead of the map's) |
+| `### Rumors Table` | Link | Optional: this hex's own rumours table |
 
 You can use your own template (configured in Settings). Any `### Heading` that matches a section name will be picked up automatically.
 

@@ -25,6 +25,9 @@ export interface PathType {
 	width: number;            // 1–10, direct SVG stroke-width
 	lineStyle: PathLineStyle;
 	routing: PathRouting;     // "through" = hex centers; "meander" = edge midpoints (curved); "edge" = along hex boundary lines
+	/** Auto-route goes around impassable terrain. Unset = yes, except river-like
+	 *  names (see pathAvoidsImpassable in src/impassable.ts). */
+	avoidImpassable?: boolean;
 }
 
 export interface PathChain {
@@ -68,6 +71,11 @@ export interface MapData {
 	 *  Display only: hex notes are created on use for every map, with or
 	 *  without a base terrain. */
 	baseTerrain?: string;
+	/** Region weather table (vault path), rolled from the hex editor's
+	 *  Weather section unless the hex links its own (E2). */
+	weatherTable?: string;
+	/** Region rumours table (vault path), for Hooks & Rumors (E2). */
+	rumorsTable?: string;
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };
 	pathChains: PathChain[];
@@ -144,6 +152,10 @@ export interface TerrainColor {
 	 *  what this terrain *is*, whatever it's called. Used by generators and
 	 *  the hex table. Unset = unknown (inferred from the name where needed). */
 	type?: string;
+	/** Auto-routed paths go around this terrain. Unset = by type (water types
+	 *  are impassable, see src/impassable.ts). Stored as the palette note's
+	 *  Impassable column. */
+	impassable?: boolean;
 }
 
 export interface HexmakerPluginSettings {
@@ -226,6 +238,12 @@ export const TEXT_SECTIONS = [
 	{ key: "landmark",    label: "Landmark" },
 	{ key: "hidden",      label: "Hidden" },
 	{ key: "secret",      label: "Secret" },
+] as const;
+
+/** Text sections rolled from region tables (E2): shown collapsed under Notes. */
+export const ROLLED_TEXT_SECTIONS = [
+	{ key: "weather",        label: "Weather" },
+	{ key: "hooks & rumors", label: "Hooks & Rumors" },
 ] as const;
 
 /**

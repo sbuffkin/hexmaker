@@ -14,8 +14,16 @@ export function normalizeFolder(path: string): string {
 	return normalizePath(path);
 }
 
-export function makeTableTemplate(dice: number, extraFrontmatter?: Record<string, string | boolean | number>, preamble?: string): string {
-	const rows = "|  | 1 |";
+export function makeTableTemplate(
+	dice: number,
+	extraFrontmatter?: Record<string, string | boolean | number>,
+	preamble?: string,
+	/** Starter rows (result, weight); default is one empty row. */
+	entries?: readonly (readonly [string, number])[],
+): string {
+	const rows = entries?.length
+		? entries.map(([r, w]) => `| ${r.replace(/\|/g, "\\|")} | ${w} |`).join("\n")
+		: "|  | 1 |";
 	const extra = extraFrontmatter
 		? Object.entries(extraFrontmatter).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n"
 		: "";
