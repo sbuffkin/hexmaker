@@ -28,6 +28,7 @@ import {
 } from "../constants";
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
+import { pathClickOutcome } from "./toolMode";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -1511,7 +1512,7 @@ export class HexMapView extends ItemView {
       switchLabel = "Switch region";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "path") {
-      onSwitch = () => this.handlePathButton(true);
+      onSwitch = () => this.handlePathButton();
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "placeToken") {
@@ -4764,22 +4765,21 @@ export class HexMapView extends ItemView {
     }
   }
 
-  private handlePathButton(keep = false): void {
-    if (!keep && this.drawingMode === "path") {
-      this.exitPathMode();
-      this.drawingMode = null;
-      this.updateToolbarButtonStates();
-      this.updatePathOverlay();
-      return;
-    }
+  /**
+   * Open the path-type picker. Clicking the Path button while drawing reopens
+   * it (like Terrain) instead of silently turning the tool off (fresh-eyes
+   * T7); leave the tool with right-click → Exit tool, Esc, or the mode bar.
+   */
+  private handlePathButton(): void {
     new PathPickerModal(
       this.app,
       this.plugin,
       this.activePathTypeName,
       (typeName) => {
         this.leaveOtherToolFor("path");
-        // A new type starts a new chain rather than continuing the old one.
-        this.exitPathMode();
+        // A new type starts a new chain rather than continuing the old one;
+        // re-picking the type being drawn keeps the chain going.
+        if (this.drawingMode !== "path" || typeName !== this.activePathTypeName) this.exitPathMode();
         this.activePathTypeName = typeName;
         this.drawingMode = "path";
         this.isErasingMode = false;
@@ -4823,16 +4823,28 @@ export class HexMapView extends ItemView {
     );
     const before = this.cloneChains(region.pathChains);
 
-    // ── If adjacent to active end, extend that chain ─────────────────────
+    let neighbourKeys: string[] = [];
     if (this.activePathEnd !== null) {
       const [ax, ay] = this.activePathEnd.split("_").map(Number);
-      const isAdjacent = hexNeighbors(
+      neighbourKeys = hexNeighbors(
         ax,
         ay,
         this.plugin.settings.hexOrientation,
         this.getActiveStagger(),
-      ).some(([nx, ny]) => nx === x && ny === y);
-      if (isAdjacent) {
+      ).map(([nx, ny]) => `${nx}_${ny}`);
+    }
+    const outcome = pathClickOutcome(this.activePathEnd, key, neighbourKeys);
+    // Clicking the end again would stack a second one-hex chain on it.
+    if (outcome === "same") return;
+    if (outcome === "restart") {
+      // Paths don't auto-route between distant hexes; say so instead of
+      // silently leaving a lone dot (fresh-eyes T7).
+      new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here.");
+    }
+
+    // ── If adjacent to active end, extend that chain ─────────────────────
+    if (this.activePathEnd !== null) {
+      if (outcome === "extend") {
         let target: PathChain | undefined;
         if (
           this.activePathChain !== null &&
