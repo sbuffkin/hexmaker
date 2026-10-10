@@ -3,7 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
-import { IMAGE_EXTENSIONS, normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
+import { IMAGE_EXTENSIONS, attachImageDropZone, mapBgImportFolder, normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
 import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
@@ -406,9 +406,9 @@ export class MapModal extends HexmakerModal {
         this.render();
       });
     });
-    this.attachImageDropZone(bgRow, async (file) => {
+    attachImageDropZone(bgRow, async (file) => {
       const mapName = this.view.activeMapName;
-      const dest = this.bgImportFolder(mapName);
+      const dest = mapBgImportFolder(this.plugin.settings.hexFolder, mapName);
       const path = await importBinaryFileToVault(this.plugin, file, dest);
       this.setActiveMapBackground(path);
     });
@@ -577,12 +577,6 @@ export class MapModal extends HexmakerModal {
   }
 
   /** Compute the folder where dropped bg images should land for a given map. */
-  private bgImportFolder(mapName: string): string {
-    const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-    const base = hexFolder ? `${hexFolder}/${mapName}` : mapName;
-    return `${base}/_bg`;
-  }
-
   /**
    * Set the active map's bg image and drop the user straight into calibration
    * mode. A freshly-added background almost always needs calibration anyway —
@@ -604,36 +598,6 @@ export class MapModal extends HexmakerModal {
       this.onChanged();
       this.close();
       this.view.enterBgCalibration();
-    });
-  }
-
-  /**
-   * Make `el` a drop target for an image file. Calls `onFile` with the first
-   * image dropped. Adds/removes the `is-drop-target` class for visual feedback.
-   */
-  private attachImageDropZone(
-    el: HTMLElement,
-    onFile: (file: File) => Promise<void>,
-  ): void {
-    el.addEventListener("dragover", (e: DragEvent) => {
-      e.preventDefault();
-      el.addClass("is-drop-target");
-    });
-    el.addEventListener("dragleave", () => {
-      el.removeClass("is-drop-target");
-    });
-    el.addEventListener("drop", (e: DragEvent) => {
-      e.preventDefault();
-      el.removeClass("is-drop-target");
-      const file = e.dataTransfer?.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith("image/")) {
-        new Notice("Dropped file isn't an image.");
-        return;
-      }
-      void onFile(file).catch((err) => {
-        new Notice(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
     });
   }
 

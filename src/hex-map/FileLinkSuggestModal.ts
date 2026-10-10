@@ -1,6 +1,7 @@
 import { App, SuggestModal, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
+import type { NotePickPurpose } from "../templateNotes";
 
 export class FileLinkSuggestModal extends SuggestModal<TFile> {
 	constructor(
@@ -10,6 +11,9 @@ export class FileLinkSuggestModal extends SuggestModal<TFile> {
 		private folderOverride?: string,
 		/** If set, only files with one of these (lowercase, no leading dot) extensions are returned. */
 		private extensionFilter?: string[],
+		/** "link" (default) hides template notes; "template" is for pickers
+		 *  that choose a template (a template path, a workflow template). */
+		private purpose: NotePickPurpose = "link",
 	) {
 		super(app);
 		this.setPlaceholder("Search for a file to link...");
@@ -28,7 +32,7 @@ export class FileLinkSuggestModal extends SuggestModal<TFile> {
 		}
 		const exts = this.extensionFilter;
 		return files
-			.filter(f => (f.extension === "md" ? this.plugin.isLinkableNote(f) : !f.basename.startsWith("_")))
+			.filter(f => (f.extension === "md" ? this.plugin.isLinkableNote(f, this.purpose) : !f.basename.startsWith("_")))
 			.filter(f => !exts || exts.includes(f.extension.toLowerCase()))
 			.filter(f => f.basename.toLowerCase().contains(query.toLowerCase()))
 			.sort((a, b) => a.basename.localeCompare(b.basename));

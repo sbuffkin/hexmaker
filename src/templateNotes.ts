@@ -40,7 +40,21 @@ export function isTemplateNotePath(path: string, rules: TemplateNoteRules): bool
   return rules.folders.some((f) => p.startsWith(f.toLowerCase() + "/"));
 }
 
-/** Whether a note may be listed for linking: not `_`-prefixed, not a template. */
-export function isLinkableNotePath(path: string, basename: string, rules: TemplateNoteRules): boolean {
-  return !basename.startsWith("_") && !isTemplateNotePath(path, rules);
+/**
+ * What a note picker is for. "link" (the default): linking a note to a hex,
+ * token, section… — templates are hidden. "template": choosing a template
+ * (a template path, a workflow's template file) — templates are listed.
+ */
+export type NotePickPurpose = "link" | "template";
+
+/** Whether a note may be listed in a picker for `purpose`: never when
+ *  `_`-prefixed; templates only when choosing a template. */
+export function isLinkableNotePath(
+  path: string,
+  basename: string,
+  rules: TemplateNoteRules,
+  purpose: NotePickPurpose = "link",
+): boolean {
+  if (basename.startsWith("_")) return false;
+  return purpose === "template" || !isTemplateNotePath(path, rules);
 }

@@ -108,9 +108,9 @@ A road or river that ends on the edge of a region, next to where the neighbour's
 
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 
-**New map…** (in Maps) is one form: generator cards with a live preview, Next to (Advanced), and **More** for starting coordinates, stagger and a background image. A new map starts on Overland; pick Blank to paint by hand.
+**New map…** (in Maps) is one form: generator cards with a live preview, Next to (Advanced), and **More** for starting coordinates, stagger and a background image (pick one from the vault, or drop one from your computer). A new map starts on Overland; pick Blank to paint by hand.
 
-Note pickers never offer template notes (the hex template, workflow templates, a Templates folder) or notes starting with `_`.
+Pickers that link notes (to hexes, tokens, sections) never offer template notes (the hex template, workflow templates, a Templates folder); pickers for choosing a template do. Notes starting with `_` are never offered.
 
 ## Palettes
 

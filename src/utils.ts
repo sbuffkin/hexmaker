@@ -1,5 +1,5 @@
 import type HexmakerPlugin from "./HexmakerPlugin";
-import { normalizePath } from "obsidian";
+import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
 
 let labelSeq = 0;
@@ -151,6 +151,40 @@ export function iconLabel(icon: string): string {
  * (foo.png → foo (1).png) so existing assets aren't clobbered.
  * Returns the resolved vault-relative path of the written file.
  */
+/** Where a map's imported background images go: {hexFolder}/{map}/_bg. */
+export function mapBgImportFolder(hexFolder: string, mapName: string): string {
+	const folder = normalizeFolder(hexFolder);
+	return `${folder ? `${folder}/${mapName}` : mapName}/_bg`;
+}
+
+/**
+ * Make `el` a drop target for an image file from the computer: calls
+ * `onFile` with the first image dropped, toggling `is-drop-target` while
+ * dragging over. Shared by Maps → Properties and the New map form.
+ */
+export function attachImageDropZone(el: HTMLElement, onFile: (file: File) => Promise<void>): void {
+	el.addEventListener("dragover", (e: DragEvent) => {
+		e.preventDefault();
+		el.addClass("is-drop-target");
+	});
+	el.addEventListener("dragleave", () => {
+		el.removeClass("is-drop-target");
+	});
+	el.addEventListener("drop", (e: DragEvent) => {
+		e.preventDefault();
+		el.removeClass("is-drop-target");
+		const file = e.dataTransfer?.files?.[0];
+		if (!file) return;
+		if (!file.type.startsWith("image/")) {
+			new Notice("Dropped file isn't an image.");
+			return;
+		}
+		void onFile(file).catch((err) => {
+			new Notice(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+		});
+	});
+}
+
 export async function importBinaryFileToVault(
 	plugin: HexmakerPlugin,
 	file: File,

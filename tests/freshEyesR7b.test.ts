@@ -46,7 +46,7 @@ describe("R12: template notes are never offered for linking", () => {
 			["src", "hex-map", "FactionPickerModal.ts"],
 			["src", "hex-map", "GeoRegionPickerModal.ts"],
 		]) {
-			expect({ file: p.join("/"), ok: /this\.plugin\.isLinkableNote\(f\)/.test(read(...p)) }).toEqual({ file: p.join("/"), ok: true });
+			expect({ file: p.join("/"), ok: /this\.plugin\.isLinkableNote\(f(, this\.purpose)?\)/.test(read(...p)) }).toEqual({ file: p.join("/"), ok: true });
 		}
 	});
 });
@@ -76,5 +76,49 @@ describe("U15: a new stand-alone map starts on a generator", () => {
 		expect(src).toMatch(/firstMapGenerator\(fitting, enabledKinds\(this\.plugin\.settings\)\)/);
 		// …but a user's own pick (incl. Blank) stays.
 		expect(src).toMatch(/!this\.origin && !where\.neighbour && !this\.pickedKind && this\.kindId === BLANK_ID/);
+	});
+});
+
+describe("Note pickers say what they're for (template pickers list templates)", () => {
+	const rules = templateNoteRules({ templatePath: "world/hextemplate.md", workflowsFolder: "world/workflows" }, ["Templates"]);
+
+	it("'link' (the default) hides templates; 'template' lists them", () => {
+		for (const p of ["world/hextemplate.md", "world/workflows/templates/npc.md", "Templates/daily.md"]) {
+			const base = p.replace(/^.*\//, "").replace(/\.md$/, "");
+			expect(isLinkableNotePath(p, base, rules)).toBe(false);
+			expect(isLinkableNotePath(p, base, rules, "link")).toBe(false);
+			expect(isLinkableNotePath(p, base, rules, "template")).toBe(true);
+		}
+	});
+
+	it("'_' notes stay hidden whatever the purpose; ordinary notes show for both", () => {
+		expect(isLinkableNotePath("Templates/_wip.md", "_wip", rules, "template")).toBe(false);
+		expect(isLinkableNotePath("world/towns/A.md", "A", rules, "template")).toBe(true);
+		expect(isLinkableNotePath("world/towns/A.md", "A", rules, "link")).toBe(true);
+	});
+
+	it("the plugin and the general file picker take the purpose explicitly, defaulting to 'link'", () => {
+		expect(read("src", "HexmakerPlugin.ts")).toMatch(/isLinkableNote\(file: TFile, purpose: NotePickPurpose = "link"\)/);
+		const picker = read("src", "hex-map", "FileLinkSuggestModal.ts");
+		expect(picker).toMatch(/private purpose: NotePickPurpose = "link"/);
+		expect(picker).toMatch(/this\.plugin\.isLinkableNote\(f, this\.purpose\)/);
+	});
+});
+
+describe("New map form: a background image can be dropped from the computer", () => {
+	const src = read("src", "worldgen", "NewMapSetupModal.ts");
+	it("the More section's background row is a drop zone, imported into the map's _bg folder on create", () => {
+		expect(src).toMatch(/attachImageDropZone\(bgRowEl,/);
+		expect(src).toMatch(/importBinaryFileToVault\(this\.plugin, this\.bgFile, mapBgImportFolder\(this\.plugin\.settings\.hexFolder, result\.name\)\)/);
+	});
+	it("Properties uses the same shared drop zone and folder", () => {
+		const modal = read("src", "hex-map", "MapModal.ts");
+		expect(modal).toMatch(/attachImageDropZone\(bgRow,/);
+		expect(modal).toMatch(/mapBgImportFolder\(this\.plugin\.settings\.hexFolder, mapName\)/);
+	});
+	it("mapBgImportFolder is {hexFolder}/{map}/_bg", async () => {
+		const { mapBgImportFolder } = await import("../src/utils");
+		expect(mapBgImportFolder("world/hexes/", "test-land")).toBe("world/hexes/test-land/_bg");
+		expect(mapBgImportFolder("", "test-land")).toBe("test-land/_bg");
 	});
 });

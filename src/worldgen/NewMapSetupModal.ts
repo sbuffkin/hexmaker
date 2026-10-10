@@ -18,7 +18,7 @@ import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
-import { IMAGE_EXTENSIONS, getIconUrl } from "../utils";
+import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
@@ -116,6 +116,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private originY = 0;
   private stagger: "odd" | "even";
   private bgPath: string | null = null;
+  /** An image dropped from the computer: imported into the new map's _bg folder on create. */
+  private bgFile: File | null = null;
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -389,21 +391,32 @@ export class NewMapSetupModal extends HexmakerModal {
         refresh();
       });
       const bgRowEl = this.row(more, "Background image");
-      const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: "(None)" });
+      bgRowEl.addClass("duckmage-bg-image-row");
+      const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: "(None) — drop an image here" });
       const pick = bgRowEl.createEl("button", { text: "Pick image…" });
       const clear = bgRowEl.createEl("button", { text: "Clear" });
       clear.disabled = true;
       pick.addEventListener("click", () => {
         new FileLinkSuggestModal(this.app, this.plugin, (file) => {
           this.bgPath = file.path;
+          this.bgFile = null;
           bgLabel.setText(file.path);
           clear.disabled = false;
         }, "", IMAGE_EXTENSIONS).open();
       });
       clear.addEventListener("click", () => {
         this.bgPath = null;
-        bgLabel.setText("(None)");
+        this.bgFile = null;
+        bgLabel.setText("(None) — drop an image here");
         clear.disabled = true;
+      });
+      // An image dragged in from the computer, as in Properties: imported
+      // into the new map's _bg folder when the map is created.
+      attachImageDropZone(bgRowEl, async (file) => {
+        this.bgFile = file;
+        this.bgPath = null;
+        bgLabel.setText(`${file.name} (imported on create)`);
+        clear.disabled = false;
       });
       // Next to a map, its neighbour decides the numbering and stagger.
       lockMore = (locked) => {
@@ -807,11 +820,21 @@ export class NewMapSetupModal extends HexmakerModal {
     // Join the world grid next to the chosen neighbour.
     if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
     let backgroundImage: string | undefined;
-    const newMap = !this.origin && this.bgPath ? this.plugin.getMap(result.name) : undefined;
-    if (newMap && this.bgPath) {
-      newMap.backgroundImage = { path: this.bgPath, offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 1 };
+    let bgPath = this.origin ? null : this.bgPath;
+    if (!this.origin && this.bgFile) {
+      try {
+        goBtn.setText("Importing background…");
+        bgPath = await importBinaryFileToVault(this.plugin, this.bgFile, mapBgImportFolder(this.plugin.settings.hexFolder, result.name));
+      } catch (e) {
+        new Notice(`Background import failed: ${e instanceof Error ? e.message : String(e)}`);
+        bgPath = null;
+      }
+    }
+    const newMap = bgPath ? this.plugin.getMap(result.name) : undefined;
+    if (newMap && bgPath) {
+      newMap.backgroundImage = { path: bgPath, offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 1 };
       await this.plugin.saveSettings();
-      backgroundImage = this.bgPath;
+      backgroundImage = bgPath;
     }
     await this.saveDefaults(paletteName);
     this.close();

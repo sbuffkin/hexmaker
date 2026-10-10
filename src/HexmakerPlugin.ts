@@ -64,7 +64,7 @@ import {
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
-import { isLinkableNotePath, templateNoteRules, type TemplateNoteRules } from "./templateNotes";
+import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -813,12 +813,13 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /**
-   * Whether a note may be offered for linking: not `_`-prefixed and not a
-   * template (the hex template, workflow templates, the core Templates or
-   * Templater folder). Use in every note picker.
+   * Whether a note may be offered in a note picker: never `_`-prefixed;
+   * templates (the hex template, workflow templates, the core Templates or
+   * Templater folder) only when the picker is for choosing a template
+   * (`purpose` "template"). Use in every note picker.
    */
-  isLinkableNote(file: TFile): boolean {
-    return isLinkableNotePath(file.path, file.basename, this.templateRules());
+  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean {
+    return isLinkableNotePath(file.path, file.basename, this.templateRules(), purpose);
   }
 
   private templateRules(): TemplateNoteRules {

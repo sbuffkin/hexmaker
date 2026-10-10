@@ -107,7 +107,7 @@ Organise your world into multiple named hex maps, each stored as a subfolder und
 - **Back** (`← Back` button) — returns to the previously active map after following a submap link.
 
 ### Generators
-Maps can be generated instead of painted hex by hex. When you create a map (**Maps → New map…**, or the setup wizard's first map) or a submap (right-click a hex → **New submap…**), pick a generator and preview it before creating. A new map starts on Overland (Star scatter for space-only setups); pick Blank to paint it all yourself. **More** under the form sets the starting coordinates, stagger and a background image.
+Maps can be generated instead of painted hex by hex. When you create a map (**Maps → New map…**, or the setup wizard's first map) or a submap (right-click a hex → **New submap…**), pick a generator and preview it before creating. A new map starts on Overland (Star scatter for space-only setups); pick Blank to paint it all yourself. **More** under the form sets the starting coordinates, stagger and a background image (picked from the vault or dropped from your computer).
 
 - **Overland** — a region from noise: seas, coasts, plains, forests, hills, mountains. Set water %, climate, and which side the sea is on.
 - **Region detail** (submaps) — zooms into the parent hex: its terrain fills the map and each neighbouring hex shapes the matching edge, with that neighbour's own terrain (evergreen next to evergreen) along it.
