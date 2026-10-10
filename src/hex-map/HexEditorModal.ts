@@ -31,6 +31,7 @@ import {
 import { ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
 import type { LinkSection, HexEditorOptions, TerrainColor } from "../types";
 import { RandomTableModal, type RollHexTarget } from "../random-tables/RandomTableModal";
+import { WorkflowWizardModal } from "../random-tables/WorkflowWizardModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   ROLLED_SECTION_TABLES,
@@ -217,6 +218,16 @@ export class HexEditorModal extends HexmakerModal {
       exportLink.addEventListener("click", () => {
         new HexExportModal(this.app, this.plugin, fileNow).open();
       });
+    }
+    // Run a workflow for this hex (PA2): its result can be added to a
+    // section here. Workflows are an Advanced feature.
+    if (hasFeature(this.plugin.settings, "workflows")) {
+      const wfLink = titleLeft.createEl("a", {
+        text: "Run workflow",
+        cls: "duckmage-editor-open-link",
+        attr: { title: "Roll a workflow and add the result to this hex" },
+      });
+      wfLink.addEventListener("click", () => this.pickWorkflow());
     }
     this.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
@@ -1479,6 +1490,20 @@ export class HexEditorModal extends HexmakerModal {
       const status = this.notesStatusEl;
       if (status && status.parentElement !== labelRow) labelEl.after(status);
     });
+  }
+
+  /** "Run workflow" (PA2): pick a workflow note, then run it for this hex. */
+  private pickWorkflow(): void {
+    const folder = normalizeFolder(this.plugin.settings.workflowsFolder ?? "");
+    const picker = new FileLinkSuggestModal(
+      this.app,
+      this.plugin,
+      (file) => new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget("description")).open(),
+      folder || undefined,
+      ["md"],
+    );
+    picker.setPlaceholder("Pick a workflow to run…");
+    picker.open();
   }
 
   /** "Add to this hex" for a roll made here (P2): every text section, `defaultSection` first. */

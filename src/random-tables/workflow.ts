@@ -197,3 +197,22 @@ export function requiredPlaceholders(steps: WorkflowStep[]): string[] {
 	}
 	return placeholders;
 }
+
+/**
+ * A filled-in workflow made safe to add under one "### section" of a hex
+ * note (PA2): its headings become bold lines and its "---" rules go, since
+ * either would end the section early (sections.ts sectionText).
+ */
+export function workflowResultAsSectionText(text: string): string {
+	return text
+		.replace(/\r\n/g, "\n")
+		.split("\n")
+		.filter((line) => !/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line))
+		.map((line) => {
+			const h = /^\s*#{1,6}\s+(.*?)\s*#*\s*$/.exec(line);
+			return h ? (h[1] ? `**${h[1]}**` : "") : line;
+		})
+		.join("\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}

@@ -133,6 +133,7 @@ A modal for editing a hex note without leaving the map.
 - **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas; a 📖 button rolls the section's table where one exists.
 - **Weather and Hooks & Rumors** — folded under Notes. 🎲 rolls the map's weather or rumours table (set in **Maps → Properties → Weather and rumours**); ⋯ picks a different table for one hex. With neither set, the starter `weather.md` / `rumors.md` in your tables folder is used.
 - **Add to this hex** — any roll made from the editor (encounter tables, section tables) can be added to a section of this hex's note, chosen from a list (the section you rolled from comes first). The note is created if the hex has none. **Copy** is always there too.
+- **Run workflow** (Advanced: workflows) — the link beside the hex title picks a workflow and runs it for this hex; **Add to this hex** puts the filled-in result into a section (its headings become bold lines so the section stays whole).
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
 
 ### Random Tables view

@@ -8,10 +8,12 @@ import {
   stepPlaceholder,
   rollDiceFormulaWithBreakdown,
   type Workflow,
+  workflowResultAsSectionText,
   WorkflowStep,
 } from "./workflow";
 import { parseRandomTable, rollOnTable } from "./randomTable";
 import { fillPlaceholders } from "../textUtils";
+import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
 
 export class WorkflowWizardModal extends HexmakerModal {
   private workflow!: Workflow;
@@ -32,6 +34,8 @@ export class WorkflowWizardModal extends HexmakerModal {
     app: App,
     private plugin: HexmakerPlugin,
     private workflowFile: TFile,
+    /** Run from a hex (PA2): the result can be added to that hex's note. */
+    private hexTarget?: RollHexTarget,
   ) {
     super(app);
   }
@@ -122,7 +126,8 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.resultTextarea.readOnly = true;
     this.resultTextarea.value = this.assembleResult();
 
-    const copyResultBtn = contentEl.createEl("button", { text: "Copy result" });
+    const resultBtns = contentEl.createDiv({ cls: "duckmage-wf-result-buttons" });
+    const copyResultBtn = resultBtns.createEl("button", { text: "Copy result" });
     copyResultBtn.addEventListener("click", () => {
       void navigator.clipboard
         .writeText(this.resultTextarea?.value ?? "")
@@ -131,6 +136,13 @@ export class WorkflowWizardModal extends HexmakerModal {
           window.setTimeout(() => copyResultBtn.setText("Copy result"), 1500);
         });
     });
+    // Run from a hex: put the filled-in result into one of its sections.
+    if (this.hexTarget) {
+      renderAddToHex(resultBtns, this.hexTarget, () => workflowResultAsSectionText(this.resultTextarea?.value ?? ""), {
+        cta: true,
+        onAdded: () => this.close(),
+      });
+    }
 
     // ── Save section ──────────────────────────────────────────────────
     contentEl.createEl("p", {

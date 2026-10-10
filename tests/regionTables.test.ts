@@ -101,3 +101,33 @@ describe("Add to this hex (P2)", () => {
     expect(joinSectionText("a", "")).toBe("a");
   });
 });
+
+// PA2 = A: "Run workflow" in the hex editor; the result goes into a section.
+import { readFileSync } from "node:fs";
+import { workflowResultAsSectionText } from "../src/random-tables/workflow";
+
+describe("Run workflow from a hex (PA2)", () => {
+  const filled = "## Settlement\nGullmouth\n\n## Trouble\nPirates\n\n---\n# Notes ##\nbring a boat";
+
+  it("a workflow result keeps its text but loses headings and rules", () => {
+    const text = workflowResultAsSectionText(filled);
+    expect(text).toBe("**Settlement**\nGullmouth\n\n**Trouble**\nPirates\n\n**Notes**\nbring a boat");
+    expect(text).not.toMatch(/^#/m);
+    expect(text).not.toMatch(/^-{3,}$/m);
+  });
+
+  it("added to a section, all of it stays in that section", () => {
+    const note = "# Hex 1, 2\n\n---\n### description\n\nOld text\n\n---\n### landmark\n\n---\n";
+    const out = appendSectionText(note, "description", workflowResultAsSectionText(filled));
+    expect(sectionText(out, "description")).toBe("Old text\n**Settlement**\nGullmouth\n\n**Trouble**\nPirates\n\n**Notes**\nbring a boat");
+    expect(sectionText(out, "landmark")).toBe("");
+  });
+
+  it("the hex editor offers it only with workflows on, and passes this hex as the target", () => {
+    const src = readFileSync("src/hex-map/HexEditorModal.ts", "utf8");
+    expect(src).toMatch(/hasFeature\(this\.plugin\.settings, "workflows"\)[\s\S]{0,200}Run workflow/);
+    expect(src).toContain("new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget(");
+    const wizard = readFileSync("src/random-tables/WorkflowWizardModal.ts", "utf8");
+    expect(wizard).toContain("renderAddToHex(resultBtns, this.hexTarget");
+  });
+});

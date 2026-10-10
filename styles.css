@@ -7417,6 +7417,13 @@ button.duckmage-terrain-legend-chip {
 .duckmage-roll-add-section {
     max-width: 12em;
 }
+/* Workflow run from a hex (PA2): Copy + section picker + Add to this hex. */
+.duckmage-wf-result-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
 
 /* Hex editor: Weather + Hooks & Rumors, folded under Notes (E2). */
 .duckmage-editor-rolled-sections {
