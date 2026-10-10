@@ -95,6 +95,8 @@ export interface MapData {
 	showLinkBadges?: boolean;
 	/** Badge types turned off in the layers menu (BADGE_SECTIONS names). */
 	hiddenLinkBadges?: string[];
+	showHexNames?: boolean;       // undefined = true: hex name labels on the map
+	showTokenNames?: boolean;     // undefined = true: name under each token
 	staggerOffset?: "odd" | "even"; // undefined = inherit global setting
 	/** Slot on a shared grid of neighbouring regions (see src/worldgen/world.ts). */
 	world?: { id: string; cx: number; cy: number };

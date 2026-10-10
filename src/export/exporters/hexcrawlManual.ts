@@ -15,7 +15,7 @@ import { exportToPdfBytes } from "../pdfExporter";
 import { ensureExportFolder } from "../exportFolder";
 import { renderMapToPngBlob } from "../mapPngRenderer";
 import { getAllSectionData } from "../../sections";
-import { getHexRegionFromFile, getTerrainFromFile } from "../../frontmatter";
+import { getHexNameFromFile, getHexRegionFromFile, getTerrainFromFile } from "../../frontmatter";
 import { getIconUrl, normalizeFolder } from "../../utils";
 import { parseRandomTable, getDieRanges } from "../../random-tables/randomTable";
 import DEFAULT_HEX_TEMPLATE from "../../defaultHexTemplate.md";
@@ -31,7 +31,7 @@ import { hexNumbering } from "../manual/hexNumber";
 import { pluginVersion } from "../../compat";
 import { PlaceholderFilter } from "../manual/placeholders";
 import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "../manual/manualHtml";
-import type { ManualData, ManualHex, ManualLinks, ManualSection, ManualTable } from "../manual/manualModel";
+import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection, ManualTable } from "../manual/manualModel";
 
 export interface ManualExportOptions {
   /** Filename stem (no extension). Defaults to "<map> manual". */
@@ -45,6 +45,12 @@ export interface ManualExportOptions {
   showPaths?: boolean;
   showFactionOverlay?: boolean;
   showRegionOverlay?: boolean;
+  /** Hex names on the maps. Default true. */
+  showHexNames?: boolean;
+  /** Tokens (and their names) on the maps. Default false. */
+  showTokens?: boolean;
+  /** Optional parts to leave out. */
+  omit?: ManualPart[];
 }
 
 /** Usable map area on a portrait page with the manual's margins, in CSS px. */
@@ -119,8 +125,8 @@ export async function collectManualData(
   const regionCounts = new Map<string, number>();
   const factions = new Map<string, { hexCount: number; regions: Set<string> }>();
   const tableUse = new Map<string, number>();
-  const indexes: Record<"Towns" | "Dungeons" | "Features" | "Quests", Map<string, string[]>> = {
-    Towns: new Map(), Dungeons: new Map(), Features: new Map(), Quests: new Map(),
+  const indexes: Record<"Named hexes" | "Towns" | "Dungeons" | "Features" | "Quests", Map<string, string[]>> = {
+    "Named hexes": new Map(), Towns: new Map(), Dungeons: new Map(), Features: new Map(), Quests: new Map(),
   };
   const keyedByKey = new Map<string, ManualHex>();
   let hexCount = 0;
@@ -138,11 +144,14 @@ export async function collectManualData(
         if (terrain) terrainCounts.set(terrain, (terrainCounts.get(terrain) ?? 0) + 1);
         if (region) regionCounts.set(region, (regionCounts.get(region) ?? 0) + 1);
         const file = app.vault.getAbstractFileByPath(path);
-        if (!(file instanceof TFile)) continue;
+        // A named hex is keyed even without a note (its name is map data).
+        const name = getHexNameFromFile(path) ?? undefined;
+        if (!(file instanceof TFile) && !name) continue;
         hexCount++;
 
-        const content = await app.vault.cachedRead(file);
-        const { text, links } = await getAllSectionData(app, path, content);
+        const { text, links } = file instanceof TFile
+          ? await getAllSectionData(app, path, await app.vault.cachedRead(file))
+          : { text: new Map<string, string>(), links: new Map<string, string[]>() };
         const names = (key: string) => (links.get(key) ?? []).map(basename);
         const hexLinks: ManualLinks = {
           towns: names("towns"),
@@ -170,10 +179,11 @@ export async function collectManualData(
           weather: placeholders.clean(text.get("weather")),
           hooks: placeholders.clean(text.get("hooks & rumors")),
         };
-        const candidate = { x, y, terrain, region, ...raw, links: hexLinks };
+        const candidate = { x, y, name, terrain, region, ...raw, links: hexLinks };
         if (!isKeyed(candidate, player)) continue;
 
         const number = numbering.number(x, y);
+        if (name) indexes["Named hexes"].set(name, [...(indexes["Named hexes"].get(name) ?? []), number]);
         for (const [cat, key] of [["Towns", "towns"], ["Dungeons", "dungeons"], ["Features", "features"], ["Quests", "quests"]] as const) {
           for (const name of hexLinks[key]) indexes[cat].set(name, [...(indexes[cat].get(name) ?? []), number]);
         }
@@ -181,6 +191,7 @@ export async function collectManualData(
           number,
           x,
           y,
+          name,
           terrain,
           terrainColor: paletteByName.get(terrain)?.color,
           region: region || undefined,
@@ -206,6 +217,8 @@ export async function collectManualData(
     showPaths: opts.showPaths ?? true,
     showFactionOverlay: opts.showFactionOverlay ?? false,
     showRegionOverlay: opts.showRegionOverlay ?? false,
+    showHexNames: opts.showHexNames ?? true,
+    showTokens: opts.showTokens ?? false,
     showCoords: true,
     coordLabel: (x: number, y: number) => numbering.number(x, y),
     coordColor: "#1f1c17",
@@ -312,6 +325,7 @@ export async function collectManualData(
         .map(([name, hexes]) => ({ name, hexes: [...new Set(hexes)].sort() }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     })),
+    omit: opts.omit,
   };
 }
 

@@ -9,7 +9,7 @@
  * Hexes with nothing beyond their terrain aren't keyed: the map shows them.
  */
 
-import type { ManualData, ManualHex, ManualLinks, ManualSection } from "./manualModel";
+import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection } from "./manualModel";
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -28,7 +28,8 @@ const LINK_LABELS: [keyof ManualLinks, string][] = [
 export function isKeyed(h: Omit<ManualHex, "number">, player: boolean): boolean {
   const text = h.landmark || h.description || h.weather || h.hooks || (!player && (h.hidden || h.secret));
   const links = h.links.towns.length || h.links.dungeons.length || h.links.features.length || h.links.quests.length;
-  return !!(text || links);
+  // A named hex is a place worth a key entry, even with nothing else.
+  return !!(text || links || h.name);
 }
 
 function titlePage(d: ManualData): string {
@@ -42,14 +43,19 @@ function titlePage(d: ManualData): string {
 </section>`;
 }
 
+/** Whether an optional part prints (the user can leave parts out of a handout). */
+function includes(d: ManualData, part: ManualPart): boolean {
+  return !d.omit?.includes(part);
+}
+
 function contents(d: ManualData): string {
   const items = [
     "How to use this book",
-    "Map legend",
-    d.tables.length ? "Random encounter tables" : "",
-    d.factions.length || d.regions.length ? "Factions and regions" : "",
+    includes(d, "legend") ? "Map legend" : "",
+    d.tables.length && includes(d, "tables") ? "Random encounter tables" : "",
+    (d.factions.length || d.regions.length) && includes(d, "factions") ? "Factions and regions" : "",
     `Hex key (${plural(d.sections.length, "section")})`,
-    d.index.some((c) => c.entries.length) ? "Index of locations" : "",
+    d.index.some((c) => c.entries.length) && includes(d, "index") ? "Index of locations" : "",
   ].filter(Boolean);
   return `
 <section class="hx-page hx-front">
@@ -58,7 +64,7 @@ function contents(d: ManualData): string {
   <h2>How to use this book</h2>
   <p><b>Hex numbers.</b> Every hex has a ${d.numberDigits * 2}-digit number: the first ${d.numberDigits} digits count columns from the left edge of the map, the last ${d.numberDigits} count rows from the top, both starting at 01. The top-left hex is ${"0".repeat(d.numberDigits - 1)}1${"0".repeat(d.numberDigits - 1)}1. Numbers are printed in each hex on the maps.</p>
   <p><b>Keyed hexes.</b> The hex key lists only hexes with something to find. A hex that isn't listed is plain country of the terrain shown on the map; use its terrain's encounter table.</p>
-  ${d.tables.length ? `<p><b>Encounters.</b> When an encounter check calls for one, roll on the table for the hex's terrain (or the one named in its entry).</p>` : ""}
+  ${d.tables.length && includes(d, "tables") ? `<p><b>Encounters.</b> When an encounter check calls for one, roll on the table for the hex's terrain (or the one named in its entry).</p>` : ""}
   ${d.player ? `<p><b>Player edition.</b> Hidden and secret details are left out of this edition.</p>` : `<p><b>Game master material.</b> Entries marked <span class="hx-gm">GM</span> are hidden or secret: not for players until found.</p>`}
   <p class="hx-small">Each hex number is followed by the hex's map coordinates in grey, to find its note in Obsidian.</p>
 </section>`;
@@ -128,8 +134,9 @@ function factionsAndRegions(d: ManualData): string {
 </section>`;
 }
 
-/** Entry title: the first named location, else a short landmark, else the terrain. */
-export function entryTitle(h: Pick<ManualHex, "landmark" | "terrain" | "links">): string {
+/** Entry title: the hex's name, else the first named location, else a short landmark, else the terrain. */
+export function entryTitle(h: Pick<ManualHex, "landmark" | "terrain" | "links" | "name">): string {
+  if (h.name) return esc(h.name);
   const named = h.links.towns[0] ?? h.links.dungeons[0] ?? h.links.features[0];
   if (named) return esc(named);
   const landmark = stripTags(h.landmark).split(/\n/)[0]?.trim() ?? "";
@@ -191,11 +198,11 @@ export function buildManualHtml(d: ManualData): string {
   return `<div class="hx-manual">
 ${titlePage(d)}
 ${contents(d)}
-${legend(d)}
-${tables(d)}
-${factionsAndRegions(d)}
+${includes(d, "legend") ? legend(d) : ""}
+${includes(d, "tables") ? tables(d) : ""}
+${includes(d, "factions") ? factionsAndRegions(d) : ""}
 ${d.sections.map((s) => section(s, d.player, d.sections.length === 1)).join("\n")}
-${index(d)}
+${includes(d, "index") ? index(d) : ""}
 </div>`;
 }
 

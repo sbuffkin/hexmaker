@@ -25,7 +25,7 @@ import {
   type MapPngRenderOptions,
 } from "../mapPngRenderer";
 import { getAllSectionData } from "../../sections";
-import { getTerrainFromFile } from "../../frontmatter";
+import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 
@@ -41,7 +41,25 @@ export interface MapPdfExportOptions extends MapPngRenderOptions {
    * Drives the subdivision count. Default 60.
    */
   minHexPxOnPage?: number;
+  /** Reference-table columns to print (handout sections). Default: all. */
+  columns?: HandoutColumn[];
 }
+
+/** A column of the reference table; the user picks which to print. */
+export type HandoutColumn =
+  | "name" | "terrain" | "towns" | "dungeons" | "features" | "quests" | "factions" | "encounters" | "description";
+
+export const HANDOUT_COLUMNS: { key: HandoutColumn; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "terrain", label: "Terrain" },
+  { key: "towns", label: "Towns" },
+  { key: "dungeons", label: "Dungeons" },
+  { key: "features", label: "Features" },
+  { key: "quests", label: "Quests" },
+  { key: "factions", label: "Factions" },
+  { key: "encounters", label: "Encounters" },
+  { key: "description", label: "Description" },
+];
 
 const DEFAULT_MIN_HEX_PX = 60;
 // Approximate usable area on a landscape Letter page (after margins) for the
@@ -98,6 +116,7 @@ export async function exportMapAsPdf(
       fullDataUri,
       sections,
       sectionImages,
+      opts.columns,
     );
 
     // 5. Render to HTML and PDF
@@ -218,6 +237,7 @@ export async function buildMapPdfMarkdown(
   fullMapImageUri: string,
   sections: MapSection[],
   sectionImageUris: string[],
+  columns?: HandoutColumn[],
 ): Promise<string> {
   const map = plugin.settings.maps.find((m) => m.name === mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
@@ -260,46 +280,40 @@ export async function buildMapPdfMarkdown(
     );
     lines.push("");
 
-    const rows = await collectHexRows(plugin, mapName, s);
-    if (rows.length === 0) {
+    const table = hexTableLines(await collectHexRows(plugin, mapName, s), columns);
+    if (table.length === 0) {
       lines.push(`*No hex notes with content in this section.*`);
       continue;
     }
-    const headers = [
-      "Hex",
-      "Terrain",
-      "Towns",
-      "Dungeons",
-      "Features",
-      "Quests",
-      "Factions",
-      "Encounters",
-      "Description",
-    ];
-    lines.push(`| ${headers.join(" | ")} |`);
-    lines.push(`| ${headers.map(() => "---").join(" | ")} |`);
-    for (const row of rows) {
-      const cells = [
-        row.hex,
-        row.terrain,
-        row.towns,
-        row.dungeons,
-        row.features,
-        row.quests,
-        row.factions,
-        row.encounters,
-        row.description,
-      ].map(escapeTableCell);
-      lines.push(`| ${cells.join(" | ")} |`);
-    }
+    lines.push(...table);
   }
   return lines.join("\n");
 }
 
+/**
+ * The reference table for one section: "Hex" plus the chosen columns
+ * (default all). The Name column only appears when some hex has a name,
+ * and hexes with nothing in the chosen columns are left out. [] when no
+ * hex is left. Pure.
+ */
+export function hexTableLines(rows: HexRow[], columns?: HandoutColumn[]): string[] {
+  const chosen = new Set(columns ?? HANDOUT_COLUMNS.map((c) => c.key));
+  const cols = HANDOUT_COLUMNS.filter((c) => chosen.has(c.key) && (c.key !== "name" || rows.some((r) => r.name)));
+  const kept = rows.filter((r) => cols.some((c) => r[c.key]));
+  if (!kept.length) return [];
+  const headers = ["Hex", ...cols.map((c) => c.label)];
+  return [
+    `| ${headers.join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...kept.map((r) => `| ${[r.hex, ...cols.map((c) => r[c.key])].map(escapeTableCell).join(" | ")} |`),
+  ];
+}
+
 // ── Hex row collection ────────────────────────────────────────────────────
 
-interface HexRow {
+export interface HexRow {
   hex: string;
+  name: string;
   terrain: string;
   towns: string;
   dungeons: string;
@@ -327,10 +341,14 @@ async function collectHexRows(
       const hy = row + oy;
       const path = plugin.hexPath(hx, hy, mapName);
       const file = plugin.app.vault.getAbstractFileByPath(path);
-      if (!(file instanceof TFile)) continue;
+      // A named hex is listed even without a note (its name is map data).
+      const name = getHexNameFromFile(path) ?? "";
+      if (!(file instanceof TFile) && !name) continue;
 
       const terrain = getTerrainFromFile(plugin.app, path) ?? "";
-      const sections = await getAllSectionData(plugin.app, path);
+      const sections = file instanceof TFile
+        ? await getAllSectionData(plugin.app, path)
+        : { text: new Map<string, string>(), links: new Map<string, string[]>() };
       const description = extractDescriptionExcerpt(sections.text);
       const towns = joinBasenames(sections.links.get("towns"));
       const dungeons = joinBasenames(sections.links.get("dungeons"));
@@ -341,6 +359,7 @@ async function collectHexRows(
         sections.links.get("encounters table"),
       );
       const empty =
+        !name &&
         !terrain &&
         !description &&
         !towns &&
@@ -353,6 +372,7 @@ async function collectHexRows(
 
       out.push({
         hex: `${hx},${hy}`,
+        name,
         terrain,
         towns,
         dungeons,

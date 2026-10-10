@@ -35,8 +35,10 @@ import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
-import { pickTokenFill } from "./tokenDefaults";
+import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
+import { renderHexNameLayer } from "./hexNameLayer";
+import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
 import { findRoute } from "./autoRoute";
@@ -159,23 +161,6 @@ const GM_ICON_HEX_SUBGRID: [number, number][] = [
   [-0.34, +0.55], // SW
   [+0.34, +0.55], // SE
 ];
-
-// Returns [dx, dy] unit offsets (multiply by spread radius) for N tokens on one hex.
-// Presets keep 1-5 tokens visually distinct; 6+ use an even radial ring.
-function tokenGroupOffsets(n: number): [number, number][] {
-  const PRESETS: [number, number][][] = [
-    [[0, 0]],
-    [[-0.55, 0], [0.55, 0]],
-    [[0, -0.6], [-0.55, 0.4], [0.55, 0.4]],
-    [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.4], [0.5, 0.4]],
-    [[0, -0.65], [-0.6, -0.15], [0.6, -0.15], [-0.38, 0.55], [0.38, 0.55]],
-  ];
-  if (n >= 1 && n <= 5) return PRESETS[n - 1];
-  return Array.from({ length: n }, (_, i) => {
-    const a = (2 * Math.PI * i) / n - Math.PI / 2;
-    return [Math.cos(a) * 0.65, Math.sin(a) * 0.65];
-  });
-}
 
 export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
@@ -753,8 +738,9 @@ export class HexMapView extends ItemView {
       if (!hexEl) return;
       const x = Number(hexEl.dataset.x);
       const y = Number(hexEl.dataset.y);
-      const own = getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.activeMapName));
-      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null);
+      const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
+      const own = getTerrainFromFile(this.app, hexPath);
+      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath));
       if (hexEl.title !== label) {
         hexEl.title = label;
         hexEl.setAttr("aria-label", label);
@@ -3938,6 +3924,7 @@ export class HexMapView extends ItemView {
     // Badges reuse the hex centres the coord labels just measured.
     this.renderLinkBadges(gridContainer);
     this.refreshTerrainLegend();
+    renderHexNameLayer(gridContainer, this.hexNames());
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
       this.applyCalibrationFocusStyles();
@@ -6743,6 +6730,13 @@ export class HexMapView extends ItemView {
     return centerMap;
   }
 
+  /** "x_y" → name for the active map's named hexes (map note data). */
+  private hexNames(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const [key, h] of this.plugin.mapStore.all(this.activeMapName)) if (h.name) out.set(key, h.name);
+    return out;
+  }
+
   private renderTokenLayer(gridContainer: HTMLElement): void {
     this.viewportEl?.querySelector(".duckmage-token-layer")?.remove();
     if (this.getActiveMap().showTokens === false) return;
@@ -6800,6 +6794,23 @@ export class HexMapView extends ItemView {
             text: token.title.charAt(0).toUpperCase(),
           });
         }
+
+        // Name under the token (N5): a sibling, not a child — hexagon
+        // tokens clip their children. Hidden by the "Token names" toggle
+        // except while the token is hovered (CSS). Tokens sharing a hex
+        // list their names one per line under the group (no overlap).
+        const place = tokenNamePlacement(offsets, i);
+        const nameEl = layer.createDiv({
+          cls: `duckmage-token-name duckmage-token-name-${tokens.length > 1 ? groupSize(tokens) : size}`,
+          text: token.title,
+        });
+        nameEl.setCssProps({
+          "--duckmage-token-x": `${center.cx + place.dx * spread}px`,
+          "--duckmage-token-y": `${center.cy + place.dy * spread}px`,
+          "--duckmage-token-name-line": String(place.line),
+        });
+        if (token.color) nameEl.setCssProps({ "--token-color": token.color });
+        if (tokens.length > 1) nameEl.addClass("is-stacked");
 
         const snapToken = { ...token }; // capture for closures
 

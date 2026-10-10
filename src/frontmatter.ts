@@ -171,6 +171,16 @@ export async function setTerrainInFile(
   return true;
 }
 
+/**
+ * A hex's name. Names only exist in the map note (there is no hex-note
+ * frontmatter key to fall back to), so before the store is ready, or for a
+ * path that isn't a hex, there is no name.
+ */
+export function getHexNameFromFile(path: string): string | null {
+  const loc = hexLoc(path);
+  return loc ? hexSource!.get(loc.map, loc.key)?.name ?? null : null;
+}
+
 export function getFactionColorFromFile(app: App, path: string): string | null {
   const color = getFrontMatter(app, path)?.["faction-color"];
   return typeof color === "string" ? color : null;
