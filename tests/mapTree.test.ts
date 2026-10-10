@@ -74,7 +74,11 @@ describe("map list tree", () => {
 			{ name: "b", parent: { map: "a", hex: "0_0" } },
 			{ name: "c", parent: { map: "a", hex: "0_0" } },
 		];
-		expect(countMaps(buildMapTree(loop))).toBe(3);
+		const tree = buildMapTree(loop);
+		expect(countMaps(tree)).toBe(3);
+		// a and b loop, so both are roots; c (below the loop) stays under a.
+		expect(tree.map((n) => (n.kind === "map" ? n.name : ""))).toEqual(["a", "b"]);
+		expect(tree[0].children.map((n) => (n.kind === "map" ? n.name : ""))).toEqual(["c"]);
 	});
 
 	it("search keeps matches in context, by display name or slug", () => {

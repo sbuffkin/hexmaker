@@ -4324,7 +4324,7 @@ export class HexMapView extends ItemView {
     menu.addItem((item) =>
       item
         .setTitle("New map from this hex…")
-        .setIcon("map-plus")
+        .setIcon("plus")
         .onClick(() => this.openNewSubmapSetup(x, y)),
     );
     menu.addItem((item) =>

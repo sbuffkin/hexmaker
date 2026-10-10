@@ -49,14 +49,17 @@ export function buildMapTree<T extends NamedMap>(maps: T[], parentOf: (name: str
   const parent = new Map<string, string | undefined>();
   for (const m of maps) {
     // Walk up: a parent that's missing or loops back makes this a root.
+    // Walk up: a parent that's missing, or a loop back to this map, makes it
+    // a root. A loop higher up (a and b each other's parent) only makes the
+    // maps in it roots; a map below them stays under its parent.
     let p = parentOf(m.name);
-    const seen = new Set([m.name]);
+    const seen = new Set<string>();
     let cur = p;
-    while (cur && byName.has(cur) && !seen.has(cur)) {
+    while (cur && byName.has(cur) && cur !== m.name && !seen.has(cur)) {
       seen.add(cur);
       cur = parentOf(cur);
     }
-    if (!p || !byName.has(p) || (cur !== undefined && seen.has(cur))) p = undefined;
+    if (!p || !byName.has(p) || cur === m.name) p = undefined;
     parent.set(m.name, p);
   }
   const kids = new Map<string | undefined, T[]>();

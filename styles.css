@@ -7810,6 +7810,12 @@ button.duckmage-terrain-legend-chip {
     margin-top: 10px;
 }
 
+/* Short pickers: no tall empty space under them. */
+.modal.duckmage-editor-modal-drag.duckmage-child-kind-modal,
+.modal.duckmage-editor-modal-drag.duckmage-locations-modal {
+    min-height: 0;
+}
+
 /* Region or Location? */
 .duckmage-child-kind-card {
     display: block;

@@ -649,7 +649,7 @@ export class HexEditorModal extends HexmakerModal {
     add.addEventListener("click", (e) => {
       const { x, y } = this;
       const menu = new Menu();
-      menu.addItem((i) => i.setTitle("New map from this hex…").setIcon("map-plus").onClick(() => { this.close(); this.options.onNewChildMap?.(x, y); }));
+      menu.addItem((i) => i.setTitle("New map from this hex…").setIcon("plus").onClick(() => { this.close(); this.options.onNewChildMap?.(x, y); }));
       if (this.options.onLinkExistingMap) {
         menu.addItem((i) => i.setTitle("Link existing map…").setIcon("link").onClick(() => { this.close(); this.options.onLinkExistingMap?.(x, y); }));
       }
