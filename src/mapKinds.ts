@@ -66,6 +66,30 @@ export function isSpacePalette(terrains: readonly { type?: string }[] | undefine
   return (terrains ?? []).some((t) => terrainTypeInfo(t.type)?.kind === "space");
 }
 
+/**
+ * Terrains that get description / encounter tables: every palette's, but
+ * with World off (a Space-only setup), only the space palettes' — no
+ * tables for the fantasy palettes that ship installed (G4). Deduplicated
+ * by name, in palette order.
+ */
+export function terrainsForTables<T extends { name: string; type?: string }>(
+  palettes: readonly { terrains: readonly T[] }[],
+  kinds: Iterable<string>,
+): T[] {
+  const spaceOnly = !new Set(kinds).has("world");
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const p of palettes) {
+    if (spaceOnly && !isSpacePalette(p.terrains)) continue;
+    for (const t of p.terrains) {
+      if (seen.has(t.name)) continue;
+      seen.add(t.name);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
 export interface GeneratorShowContext {
   /** The map being made is in space: its palette, or a parent map's, is a
    *  space palette (planet submaps of a system still get planet generators). */

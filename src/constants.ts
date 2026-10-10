@@ -340,14 +340,16 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   iconsFolder: "",
   templatePath: "",
   hexGap: "0.15",
+  // Expanded first: the default fantasy palette for new installs (G7b).
+  // Existing installs keep their saved palettes and maps.
   terrainPalettes: [
-    { name: LIMITED_PALETTE_NAME,  terrains: LIMITED_TERRAIN_PALETTE },
     { name: EXPANDED_PALETTE_NAME, terrains: DEFAULT_TERRAIN_PALETTE },
+    { name: LIMITED_PALETTE_NAME,  terrains: LIMITED_TERRAIN_PALETTE },
   ],
   maps: [
     {
       name: "default",
-      paletteName: LIMITED_PALETTE_NAME,
+      paletteName: EXPANDED_PALETTE_NAME,
       gridSize: { cols: 20, rows: 16 },
       gridOffset: { x: 0, y: 0 },
       pathChains: [],

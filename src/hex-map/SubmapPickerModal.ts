@@ -2,7 +2,7 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getIconUrl, createIconEl } from "../utils";
-import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { attachPaletteHint, fillPaletteSelect } from "../palettes/paletteOptions";
 import { defaultSubmapName } from "./submapNav";
 
 export class SubmapPickerModal extends HexmakerModal {
@@ -159,6 +159,7 @@ export class SubmapPickerModal extends HexmakerModal {
       paletteSelect,
       this.origin ? this.plugin.childPaletteFor(this.origin.map) : undefined,
     );
+    attachPaletteHint(createBody, paletteSelect);
 
     // Starting coordinates
     const originRow = createBody.createDiv({ cls: "duckmage-submap-create-row" });

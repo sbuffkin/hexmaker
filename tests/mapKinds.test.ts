@@ -6,6 +6,7 @@ import {
 	isGeneratorShown,
 	isSpacePalette,
 	resolveMapKinds,
+	terrainsForTables,
 } from "../src/mapKinds";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, PALETTE_PRESETS } from "../src/palettes/presets";
@@ -198,5 +199,26 @@ describe("space presets end-to-end (submap defaults)", () => {
 				expect({ palette: p.name, terrain, ok: shown.includes(d.generator) }).toMatchObject({ ok: true });
 			}
 		}
+	});
+});
+
+describe("terrainsForTables (G4: Space-only setups skip fantasy terrain tables)", () => {
+	const palettes = [
+		{ terrains: DEFAULT_TERRAIN_PALETTE },
+		{ terrains: LIMITED_TERRAIN_PALETTE },
+		{ terrains: SPACE_SECTOR_TERRAINS },
+	];
+	it("space only: just the space palettes' terrains", () => {
+		const names = terrainsForTables(palettes, ["space"]).map((t) => t.name);
+		expect(names).toContain("garden world");
+		expect(names).not.toContain("forest");
+		expect(names).not.toContain("grass");
+	});
+	it("with World on: every palette's terrains, once each", () => {
+		const names = terrainsForTables(palettes, ["world", "space"]).map((t) => t.name);
+		expect(names).toContain("forest");
+		expect(names).toContain("garden world");
+		expect(new Set(names).size).toBe(names.length);
+		expect(terrainsForTables(palettes, ["world"]).map((t) => t.name)).toEqual(names);
 	});
 });

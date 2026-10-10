@@ -133,15 +133,15 @@ const SYSTEM_SUBMAP_DEFAULTS: Record<string, SubmapDefault> = {
 
 export const PALETTE_PRESETS: PalettePreset[] = [
   {
-    name: LIMITED_PALETTE_NAME,
-    description: "A small fantasy overland set: ocean, grass, hills, forest, mountains, desert, snow.",
-    terrains: LIMITED_TERRAIN_PALETTE,
+    name: EXPANDED_PALETTE_NAME,
+    description: "The full fantasy overland set with forests, mountains, wetlands, coasts, and more. The default; matches the generators.",
+    terrains: DEFAULT_TERRAIN_PALETTE,
     kind: "world",
   },
   {
-    name: EXPANDED_PALETTE_NAME,
-    description: "The full fantasy overland set with forests, mountains, wetlands, coasts, and more.",
-    terrains: DEFAULT_TERRAIN_PALETTE,
+    name: LIMITED_PALETTE_NAME,
+    description: "A small fantasy overland set: ocean, grass, hills, forest, mountains, desert, snow. Fewer, simpler terrains; quicker to paint.",
+    terrains: LIMITED_TERRAIN_PALETTE,
     kind: "world",
   },
   {

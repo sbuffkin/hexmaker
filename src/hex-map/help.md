@@ -83,3 +83,9 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 **Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes and neighbouring regions (maps joined into one world).
 
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
+
+With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
+
+## Palettes
+
+**Expanded** is the default fantasy palette: more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
