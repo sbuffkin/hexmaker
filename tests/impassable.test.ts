@@ -101,3 +101,62 @@ describe("palette note Impassable column", () => {
     ]);
   });
 });
+
+// PA4 = A: impassable defaults come from terrain type groups, so any palette works.
+import { IMPASSABLE_BY_DEFAULT_TYPES, impassableSourceText } from "../src/impassable";
+import { effectiveTerrainType, TERRAIN_TYPES, terrainTypeGroup, typesInGroup } from "../src/terrainTypes";
+
+describe("impassable by type group (PA4)", () => {
+	it("the whole water group is impassable by default, and nothing else", () => {
+		expect(typesInGroup("water")).toEqual(["deep-water", "water", "shallows"]);
+		expect([...IMPASSABLE_BY_DEFAULT_TYPES].sort()).toEqual(["deep-water", "shallows", "water"]);
+		for (const t of TERRAIN_TYPES) {
+			expect(isImpassable({ type: t.id })).toBe(t.group === "water");
+		}
+	});
+
+	it("every type has a group; coast is land, space types are space", () => {
+		for (const t of TERRAIN_TYPES) expect(["water", "land", "space"]).toContain(t.group);
+		expect(terrainTypeGroup("coast")).toBe("land");
+		expect(terrainTypeGroup("nebula")).toBe("space");
+		expect(terrainTypeGroup(undefined)).toBeUndefined();
+	});
+
+	it("a custom palette inherits by type, whatever the names", () => {
+		const custom: TerrainColor[] = [
+			{ name: "Mirror Mere", color: "#00f", type: "water" },
+			{ name: "Kraken Deeps", color: "#003", type: "deep-water" },
+			{ name: "Coral Shelf", color: "#0aa", type: "shallows" },
+			{ name: "Glass Strand", color: "#ffd", type: "coast" },
+			{ name: "Ashwood", color: "#333", type: "forest" },
+		];
+		expect(impassableNames(custom)).toEqual(["Mirror Mere", "Kraken Deeps", "Coral Shelf"]);
+	});
+
+	it("an untyped custom terrain counts as the type its name suggests", () => {
+		expect(effectiveTerrainType({ name: "Black Lake" })).toBe("water");
+		expect(effectiveTerrainType({ name: "Mirror Mere", type: "water" })).toBe("water");
+		expect(effectiveTerrainType({ name: "Mirror Mere" })).toBeUndefined();
+		expect(isImpassable({ name: "Black Lake" })).toBe(true);
+		expect(isImpassable({ name: "Old Forest" })).toBe(false);
+		// A known type wins over the name.
+		expect(isImpassable({ name: "Lake District", type: "hills" })).toBe(false);
+	});
+
+	it("a per-terrain override still wins, and only overrides are stored", () => {
+		expect(isImpassable({ name: "Ford", type: "shallows", impassable: false })).toBe(false);
+		expect(isImpassable({ name: "Lava Field", type: "volcanic", impassable: true })).toBe(true);
+		const lake: TerrainColor = { name: "Black Lake", color: "#00f" };
+		setImpassable(lake, true);
+		expect("impassable" in lake).toBe(false);
+		setImpassable(lake, false);
+		expect(lake.impassable).toBe(false);
+	});
+
+	it("the palette editor says where a value comes from", () => {
+		expect(impassableSourceText({ type: "water" })).toBe("Default for its type group (Water: impassable)");
+		expect(impassableSourceText({ type: "forest" })).toBe("Default for its type group (Land: passable)");
+		expect(impassableSourceText({ type: "forest", impassable: true })).toBe("Set for this terrain");
+		expect(impassableSourceText({ name: "Zorp" })).toBe("Default (no type: passable)");
+	});
+});

@@ -10,7 +10,7 @@ import { AddPaletteModal } from "./AddPaletteModal";
 import { fillPaletteSelect } from "./paletteOptions";
 import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { isSpacePalette } from "../mapKinds";
-import { isImpassable, setImpassable, impassableByType } from "../impassable";
+import { impassableSourceText, isImpassable, setImpassable } from "../impassable";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -127,6 +127,10 @@ export class PaletteEditorView extends ItemView {
 
     // ── Terrains ──
     contentEl.createEl("h3", { text: `Terrains (${pal.terrains.length})` });
+    contentEl.createDiv({
+      cls: "setting-item-description",
+      text: "Type gives a terrain its defaults, whatever its name: water types (deep water, water, shallows) are impassable to auto-routed roads. Tick or untick Impassable to override one terrain.",
+    });
     const untyped = pal.terrains.filter((t) => !t.type).length;
     if (untyped) {
       const hint = contentEl.createDiv({ cls: "duckmage-pe-hint" });
@@ -147,7 +151,7 @@ export class PaletteEditorView extends ItemView {
     const head = table.createEl("thead").createEl("tr");
     for (const h of ["", "Color", "Name", "Type", "Category", "Icon", "Icon tint", "Impassable", ""]) {
       const th = head.createEl("th", { text: h });
-      if (h === "Impassable") th.title = "Auto-routed paths (path tool) go around impassable terrain. Water types are impassable unless you untick them.";
+      if (h === "Impassable") th.title = "Auto-routed paths (path tool) go around impassable terrain. By default every terrain of a water type (deep water, water, shallows) is impassable, in any palette; set the Type column to change a terrain's default, or tick / untick it here.";
     }
     const body = table.createEl("tbody");
     const categories = [...new Set(pal.terrains.map((t) => t.category).filter((c): c is string => !!c))].sort();
@@ -319,9 +323,7 @@ export class PaletteEditorView extends ItemView {
     const blockCell = tr.createEl("td", { cls: "duckmage-pe-impassable" });
     const block = blockCell.createEl("input", { type: "checkbox", attr: { "aria-label": `${t.name} impassable` } });
     block.checked = isImpassable(t);
-    block.title = t.impassable === undefined
-      ? `Default for its type (${impassableByType(t.type) ? "impassable" : "passable"})`
-      : "Set for this terrain";
+    block.title = impassableSourceText(t);
     block.addEventListener("change", () => {
       setImpassable(t, block.checked);
       this.save();

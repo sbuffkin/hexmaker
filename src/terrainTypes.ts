@@ -8,19 +8,36 @@ import type { MapKind } from "./mapKinds";
  * filters by type — so custom names keep working everywhere.
  */
 
+/**
+ * Type groups: broad families of terrain types. Defaults that should hold
+ * for any palette (custom ones too) hang off a group rather than terrain
+ * names, e.g. the whole water group is impassable to roads (PA4).
+ */
+export type TerrainGroup = "water" | "land" | "space";
+
+export const TERRAIN_GROUPS: { id: TerrainGroup; label: string }[] = [
+  { id: "water", label: "Water" },
+  { id: "land", label: "Land" },
+  { id: "space", label: "Space" },
+];
+
 export interface TerrainTypeInfo {
   id: string;
   label: string;
   kind: MapKind;
+  /** Type group (water types, land types, space types). */
+  group: TerrainGroup;
   /** Lower-case words that suggest this type in a terrain's name. */
   keywords: string[];
 }
 
-export const TERRAIN_TYPES: TerrainTypeInfo[] = [
+type TypeDef = Omit<TerrainTypeInfo, "group"> & { group?: TerrainGroup };
+
+const TYPE_DEFS: TypeDef[] = [
   // World — water
-  { id: "deep-water", label: "Deep water", kind: "world", keywords: ["trench", "abyss", "deep"] },
-  { id: "water", label: "Water", kind: "world", keywords: ["ocean", "sea", "water", "lake", "river"] },
-  { id: "shallows", label: "Shallows", kind: "world", keywords: ["shallow", "reef", "shoal"] },
+  { id: "deep-water", label: "Deep water", kind: "world", group: "water", keywords: ["trench", "abyss", "deep"] },
+  { id: "water", label: "Water", kind: "world", group: "water", keywords: ["ocean", "sea", "water", "lake", "river"] },
+  { id: "shallows", label: "Shallows", kind: "world", group: "water", keywords: ["shallow", "reef", "shoal"] },
   { id: "coast", label: "Coast", kind: "world", keywords: ["beach", "coast", "shore", "salt flat", "sand"] },
   // World — land
   { id: "grassland", label: "Grassland", kind: "world", keywords: ["grass", "plain", "meadow", "steppe", "prairie", "savanna", "field", "farm"] },
@@ -47,10 +64,36 @@ export const TERRAIN_TYPES: TerrainTypeInfo[] = [
   { id: "anomaly", label: "Anomaly / hazard", kind: "space", keywords: ["anomaly", "black hole", "radiation", "hazard"] },
 ];
 
+/** Every type; ones without an explicit group are land (world) or space. */
+export const TERRAIN_TYPES: TerrainTypeInfo[] = TYPE_DEFS.map((t) => ({
+  ...t,
+  group: t.group ?? (t.kind === "space" ? "space" : "land"),
+}));
+
 const BY_ID = new Map(TERRAIN_TYPES.map((t) => [t.id, t]));
 
 export function terrainTypeInfo(id: string | undefined): TerrainTypeInfo | undefined {
   return id ? BY_ID.get(id) : undefined;
+}
+
+/** The group of a terrain type, or undefined for an unknown / unset type. */
+export function terrainTypeGroup(id: string | undefined): TerrainGroup | undefined {
+  return terrainTypeInfo(id)?.group;
+}
+
+/** The type ids in a group, in list order. */
+export function typesInGroup(group: TerrainGroup): string[] {
+  return TERRAIN_TYPES.filter((t) => t.group === group).map((t) => t.id);
+}
+
+/**
+ * The type a terrain counts as: its own (when a known type), else the
+ * best guess from its name and category, so untyped terrains in custom
+ * palettes still get type-based defaults.
+ */
+export function effectiveTerrainType(t: { type?: string; name?: string; category?: string }): string | undefined {
+  if (isTerrainType(t.type)) return t.type;
+  return t.name ? inferTerrainType(t.name, t.category) : undefined;
 }
 
 export function isTerrainType(id: string | undefined): boolean {
