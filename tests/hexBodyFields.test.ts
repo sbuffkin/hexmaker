@@ -26,6 +26,8 @@ describe("hex note body fields (older templates' Terrain / Region lines)", () =>
 		expect(out).toBe(OLD.replace("**Terrain:** mountain", "**Terrain:** desert rocky"));
 		expect(setBodyField("**Terrain:**\nrest", "Terrain", "grass")).toBe("**Terrain:** grass\nrest");
 		expect(setBodyField("nothing here", "Terrain", "grass")).toBe("nothing here");
+		// A trailing "  " (a Markdown line break) stays.
+		expect(setBodyField("**Region:** Mountains  \n**Terrain:** x", "Region", "Dustbowl")).toBe("**Region:** Dustbowl  \n**Terrain:** x");
 	});
 
 	it("compares names ignoring case and spacing", () => {

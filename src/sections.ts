@@ -52,10 +52,22 @@ export function sectionHeadings(content: string): HeadingMatch[] {
 	return out;
 }
 
-/** The first heading naming `section` (see canonicalSection), or null. */
+/**
+ * The heading naming `section` (see canonicalSection), or null. A heading
+ * with the section's own name wins over an alias: a note with both an old
+ * template's "### encounters" and the plugin's "### Encounters Table" reads
+ * and writes the latter (the former shows as a section of its own).
+ */
 export function findSectionHeading(content: string, section: string): HeadingMatch | null {
 	const want = canonicalSection(section);
-	return sectionHeadings(content).find((h) => canonicalSection(h.text) === want) ?? null;
+	const asWritten = normalizeHeading(section);
+	const matches = sectionHeadings(content).filter((h) => canonicalSection(h.text) === want);
+	// The heading exactly as asked for (an aliased section shown under its own
+	// name), then the section's own name, then the first alias.
+	return matches.find((h) => normalizeHeading(h.text) === asWritten)
+		?? matches.find((h) => normalizeHeading(h.text) === want)
+		?? matches[0]
+		?? null;
 }
 
 /** Where a section's body ends: the next heading of any level, a --- rule, or the end. */
@@ -200,9 +212,18 @@ export async function getAllSectionData(
 	const content = preloadedContent ?? await app.vault.read(file);
 
 	const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-	for (const h of sectionHeadings(content)) {
-		const name = canonicalSection(h.text);
-		// The first heading for a section is the one the plugin reads and writes.
+	const all = sectionHeadings(content);
+	// Per section, the heading the plugin reads and writes (findSectionHeading's
+	// choice); other headings that alias it are kept under their own names.
+	const primary = new Map<string, HeadingMatch>();
+	for (const h of all) {
+		const key = canonicalSection(h.text);
+		const cur = primary.get(key);
+		if (!cur || (normalizeHeading(cur.text) !== key && normalizeHeading(h.text) === key)) primary.set(key, h);
+	}
+	for (const h of all) {
+		const canon = canonicalSection(h.text);
+		const name = primary.get(canon) === h ? canon : normalizeHeading(h.text);
 		if (headings.has(name)) continue;
 		const body = content.slice(h.end, sectionEndAfter(content, h.end));
 		const sectionLinks: string[] = [];

@@ -13,7 +13,7 @@ export type BodyField = "Terrain" | "Region";
 
 export const BODY_FIELDS: BodyField[] = ["Terrain", "Region"];
 
-const lineRe = (field: BodyField) => new RegExp(`^([ \\t]*\\*\\*${field}:?\\*\\*:?[ \\t]*)(.*?)[ \\t]*$`, "mi");
+const lineRe = (field: BodyField) => new RegExp(`^([ \\t]*\\*\\*${field}:?\\*\\*:?[ \\t]*)(.*?)([ \\t]*)$`, "mi");
 
 /** Template placeholders like "*(woods / marsh / …)*" or "(fill in)": not a value. */
 function isPlaceholder(v: string): boolean {
@@ -31,7 +31,9 @@ export function readBodyField(content: string, field: BodyField): string | undef
 
 /** The note with its "**Field:**" line set to `value` (unchanged when there's no such line). */
 export function setBodyField(content: string, field: BodyField, value: string): string {
-  return content.replace(lineRe(field), (_m, head: string) => `${head.replace(/[ \t]*$/, " ")}${value}`.replace(/ $/, ""));
+  // Trailing spaces are kept: two of them are a Markdown line break.
+  return content.replace(lineRe(field), (_m, head: string, _old: string, tail: string) =>
+    `${head.replace(/[ \t]*$/, " ")}${value}`.replace(/ $/, "") + tail);
 }
 
 /** Two names for the same thing (case and spacing aside)? */

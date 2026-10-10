@@ -601,6 +601,21 @@ describe("sections as people write them", () => {
 		expect(sectionText(edited, "Description")).toBe("New.");
 	});
 
+	it("with an old 'encounters' and the plugin's 'Encounters Table', the latter is the section", async () => {
+		const note = "### encounters\n- **Table:** *(terrain table)*\n\n### Encounters Table\n\n[[tables/desert rocky]]\n";
+		const { app } = makeApp("h.md", note);
+		const data = await getAllSectionData(app as never, "h.md");
+		expect(data.links.get("encounters table")).toEqual(["tables/desert rocky"]);
+		// The old one is still there, under its own name.
+		expect(data.text.get("encounters")).toBe("- **Table:** *(terrain table)*");
+		// Writing each goes to its own heading.
+		const a = insertLinkInSection(note, "Encounters Table", "[[tables/wolves]]");
+		expect(a).toContain("### Encounters Table\n\n[[tables/desert rocky]]\n\n[[tables/wolves]]");
+		const b = replaceSectionText(note, "encounters", "Bandits at dusk.");
+		expect(sectionText(b, "encounters")).toBe("Bandits at dusk.");
+		expect(b).toContain("### Encounters Table\n\n[[tables/desert rocky]]");
+	});
+
 	it("keeps sections it doesn't know, readable by their own heading", async () => {
 		const note = "### description\nA.\n\n### Travel times\nTwo days to [[Brindle]].\n";
 		const { app } = makeApp("h.md", note);
