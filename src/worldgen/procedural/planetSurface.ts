@@ -112,6 +112,65 @@ export function resolveSeaSide(option: string | undefined, seed: number): SeaSid
 }
 
 /**
+ * Overland's default Sea for a map placed next to existing regions, read
+ * from the neighbours' border hexes (context `edgeCells`, just outside the
+ * grid). Fresh-eyes r4: the random default could put the sea south when
+ * the neighbour's coast ran east.
+ *  - "edge":   the border across one seam is mostly water → the sea is on
+ *              that side, continuing the neighbour's sea.
+ *  - "end":    some water, gathered at one end of the seam → the
+ *              neighbour's coast meets the seam there; the sea runs along
+ *              that side (not toward the neighbour's land).
+ *  - "middle": some water in the middle of the seam (an inlet / lake) →
+ *              scattered water.
+ *  - "dry":    no water on any seam → none (landlocked).
+ * Undefined when there's no neighbour border to read.
+ */
+export interface NeighbourSea {
+  side: SeaSide;
+  why: "edge" | "end" | "middle" | "dry";
+  /** The seam (side of this map) the decision was read from. */
+  seam?: "north" | "east" | "south" | "west";
+}
+
+const WET = new Set(["water", "deep-water", "shallows"]);
+
+export function seaSideFromNeighbours(
+  grid: Pick<ProcGrid, "cols" | "rows" | "offset">,
+  edgeCells: Map<string, ContextTerrain> | undefined,
+): NeighbourSea | undefined {
+  if (!edgeCells?.size) return undefined;
+  const { offset: o, cols, rows } = grid;
+  type Seam = "north" | "east" | "south" | "west";
+  const seams = new Map<Seam, { n: number; wet: number[] }>();
+  for (const [k, c] of edgeCells) {
+    const [x, y] = k.split("_").map(Number);
+    const w = x < o.x, e = x > o.x + cols - 1, nn = y < o.y, s = y > o.y + rows - 1;
+    if (Number(w) + Number(e) + Number(nn) + Number(s) !== 1) continue; // corners: ambiguous
+    const seam: Seam = w ? "west" : e ? "east" : nn ? "north" : "south";
+    const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+    if (!type) continue;
+    const at = seams.get(seam) ?? { n: 0, wet: [] };
+    at.n++;
+    // Position along the seam, 0 at its west / north end .. 1 at the other.
+    if (WET.has(type)) at.wet.push(seam === "north" || seam === "south"
+      ? (x - o.x) / Math.max(1, cols - 1)
+      : (y - o.y) / Math.max(1, rows - 1));
+    seams.set(seam, at);
+  }
+  if (!seams.size) return undefined;
+  const ranked = [...seams].sort((a, b) => b[1].wet.length / b[1].n - a[1].wet.length / a[1].n);
+  const [seam, best] = ranked[0];
+  if (!best.wet.length) return { side: "none", why: "dry" };
+  if (best.wet.length / best.n >= 0.5) return { side: seam, why: "edge", seam };
+  const mean = best.wet.reduce((a, b) => a + b, 0) / best.wet.length;
+  if (mean > 0.35 && mean < 0.65) return { side: "scattered", why: "middle", seam };
+  const across = seam === "north" || seam === "south";
+  const side: SeaSide = mean <= 0.35 ? (across ? "west" : "north") : (across ? "east" : "south");
+  return { side, why: "end", seam };
+}
+
+/**
  * How far inland a point is, 0 at the sea edge .. 1 at the far edge
  * (u, v in 0..1, west→east and north→south). "around": 0 at every edge,
  * 1 in the middle.

@@ -11,12 +11,14 @@ import {
 	sideSeaMask,
 	planetSurface,
 	resolveSeaSide,
+	seaSideFromNeighbours,
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
 import { defaultPaletteFor } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
+import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
 import { hexNeighbors } from "../packages/hex-wfc/src";
 import type { TerrainColor } from "../src/types";
@@ -433,5 +435,46 @@ describe("Overland description follows the palette (fresh-eyes r4)", () => {
 			{ name: "grass", color: "#0f0", type: "grassland" },
 		];
 		expect(overlandDescription(tiny)).toMatch(/^A region from noise: sea and plains\. /);
+	});
+});
+
+describe("Overland Sea default next to a neighbour (fresh-eyes r4)", () => {
+	// The new map sits east of its neighbour: its west seam is x = 9.
+	const g = { cols: 10, rows: 8, offset: { x: 10, y: 0 } };
+	const seam = (wetAt: (y: number) => boolean) =>
+		new Map(Array.from({ length: 8 }, (_, y) => [`9_${y}`, wetAt(y) ? { terrain: "ocean", type: "water" } : { terrain: "grass", type: "grassland" }] as const));
+
+	it("a seam that's mostly water puts the sea on that side", () => {
+		expect(seaSideFromNeighbours(g, seam(() => true))).toEqual({ side: "west", why: "edge", seam: "west" });
+		expect(seaSideFromNeighbours(g, seam((y) => y !== 3))?.side).toBe("west");
+	});
+
+	it("a coast meeting one end of the seam runs the sea along that side, not toward the neighbour", () => {
+		expect(seaSideFromNeighbours(g, seam((y) => y >= 6))).toEqual({ side: "south", why: "end", seam: "west" });
+		expect(seaSideFromNeighbours(g, seam((y) => y <= 1))?.side).toBe("north");
+	});
+
+	it("no water on the seam → no sea; water only mid-seam → scattered", () => {
+		expect(seaSideFromNeighbours(g, seam(() => false))).toEqual({ side: "none", why: "dry" });
+		expect(seaSideFromNeighbours(g, seam((y) => y === 3 || y === 4))?.side).toBe("scattered");
+	});
+
+	it("north / south seams map their ends to west / east", () => {
+		// New map south of its neighbour: its north seam is y = -1.
+		const below = { cols: 10, rows: 8, offset: { x: 0, y: 0 } };
+		const cells = new Map(Array.from({ length: 10 }, (_, x) => [`${x}_-1`, x >= 8 ? { terrain: "ocean", type: "water" } : { terrain: "forest", type: "forest" }] as const));
+		expect(seaSideFromNeighbours(below, cells)).toEqual({ side: "east", why: "end", seam: "north" });
+	});
+
+	it("reads untyped terrain by name, skips corners, and is undefined with no neighbour", () => {
+		const cells = new Map([["9_2", { terrain: "ocean" }], ["9_-1", { terrain: "grass" }], ["9_3", { terrain: "ocean" }]]);
+		expect(seaSideFromNeighbours(g, cells)?.side).toBe("west");
+		expect(seaSideFromNeighbours(g, undefined)).toBeUndefined();
+		expect(seaSideFromNeighbours(g, new Map())).toBeUndefined();
+	});
+
+	it("the setup modal says where the default came from", () => {
+		expect(neighbourSeaText({ side: "east", why: "edge", seam: "east" }, "ashby-vale")).toMatch(/ashby-vale.*sea is on the east/);
+		expect(neighbourSeaText({ side: "none", why: "dry" }, "ashby-vale")).toMatch(/no water/);
 	});
 });

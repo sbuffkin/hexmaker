@@ -8,6 +8,7 @@ import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
+import { OVERLAND_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
 import { isSpacePalette } from "../mapKinds";
@@ -47,6 +48,16 @@ export const BASE_TERRAIN_NONE_LABEL = "None (unpainted hexes stay blank)";
 export const BASE_TERRAIN_HELP =
   "What hexes you haven't painted show: this terrain, or nothing with None. Painting a hex overrides it. Either way a hex only gets its own note when you first add something to it.";
 
+/** Why Overland's Sea starts where it does next to a neighbouring map. */
+export function neighbourSeaText(hint: NeighbourSea, anchor: string): string {
+  switch (hint.why) {
+    case "edge": return `Picked from ${anchor}: its sea reaches the shared edge, so the sea is on the ${hint.side}.`;
+    case "end": return `Picked from ${anchor}: its coast meets the shared edge at the ${hint.side} end, so the sea runs along the ${hint.side}.`;
+    case "middle": return `Picked from ${anchor}: its shared edge has water only in the middle, so lakes and inlets.`;
+    case "dry": return `Picked from ${anchor}: its shared edge has no water, so no sea by default.`;
+  }
+}
+
 export interface NewMapSetupResult {
   name: string;
 }
@@ -84,6 +95,9 @@ export class NewMapSetupModal extends HexmakerModal {
   private shadow: Map<string, string> | undefined;
   /** Set once the user clicks a generator card: placement then stops re-picking one. */
   private pickedKind = false;
+  /** Overland's Sea was set from the neighbour's coast (not by the user):
+   *  re-derived when the placement changes, dropped when the user picks one. */
+  private seaFromNeighbour = false;
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -237,6 +251,11 @@ export class NewMapSetupModal extends HexmakerModal {
       for (const s of ["east", "west", "north", "south"] as const) sideSel.createEl("option", { value: s, text: `${s} of it` });
       const note = nextRow.createDiv({ cls: "setting-item-description" });
       const onPlace = () => {
+        // A sea side read from the old neighbour no longer applies.
+        if (this.seaFromNeighbour) {
+          delete this.options.sea;
+          this.seaFromNeighbour = false;
+        }
         this.placement = undefined;
         this.context = undefined;
         this.shadow = undefined;
@@ -401,12 +420,31 @@ export class NewMapSetupModal extends HexmakerModal {
       // Options for the chosen generator.
       optsBox.empty();
       const kind = this.kind();
+      // Overland next to a map: the sea starts where the neighbour's coast
+      // says (not a random side that contradicts it), until the user picks.
+      const seaHint = kind?.id === OVERLAND_ID && this.placement
+        ? seaSideFromNeighbours(this.grid(), this.context?.edgeCells)
+        : undefined;
+      if (seaHint && this.options.sea === undefined) {
+        this.options.sea = seaHint.side;
+        this.seaFromNeighbour = true;
+      }
       for (const opt of kind?.options ?? []) {
         const r = this.row(optsBox, opt.label);
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
-        sel.addEventListener("change", () => { this.options[opt.key] = sel.value; refresh(); });
+        const hint = opt.key === "sea" && seaHint && this.seaFromNeighbour
+          ? r.createDiv({ cls: "setting-item-description duckmage-setup-sea-hint", text: neighbourSeaText(seaHint, anchor ?? "the neighbouring map") })
+          : undefined;
+        sel.addEventListener("change", () => {
+          this.options[opt.key] = sel.value;
+          if (opt.key === "sea") {
+            this.seaFromNeighbour = false;
+            hint?.remove();
+          }
+          refresh();
+        });
       }
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
     };
