@@ -172,6 +172,8 @@ export interface HexmakerPluginSettings {
 	hexEditorTerrainCollapsed: boolean;
 	hexEditorFeaturesCollapsed: boolean;
 	hexEditorNotesCollapsed: boolean;
+	/** Hex editor "Icons" group collapsed. Unset = open. */
+	hexEditorIconsCollapsed?: boolean;
 	rollTableExcludedFolders: string[];
 	encounterTableExcludedFolders: string[];
 	defaultMap: string;

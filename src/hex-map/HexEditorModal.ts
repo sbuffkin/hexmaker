@@ -64,6 +64,8 @@ export class HexEditorModal extends HexmakerModal {
    *  read sites; `directGmIcon` is the first entry of this list. */
   private directGmIcons: string[] = [];
   private dataPreloaded = false;
+  /** Stops keepInViewport's observer (set on first open). */
+  private stopKeepInViewport: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -176,6 +178,10 @@ export class HexEditorModal extends HexmakerModal {
     this.renderNeighborWidget(titleRow, this.x, this.y);
 
     this.makeDraggable();
+    // The body renders after an async read, so the modal opens short and
+    // then grows: keep its bottom on screen (it ran off the window, and a
+    // click on the hidden half closed the editor — fresh-eyes round 3).
+    this.stopKeepInViewport ??= this.keepInViewport();
 
     // ── Body — populated after the single async read ──────────────────────
     const bodyEl = contentEl.createDiv({ cls: "duckmage-editor-body" });
@@ -206,14 +212,8 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-terrain-header-preview",
     });
     this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
-    this.renderTerrainSection(
-      terrainBody,
-      path,
-      directTerrain,
-      directIcon,
-      this.directGmIcons,
-      (terrain) => this.renderTerrainHeader(headerPreview, terrain, this.directIcon),
-    );
+    const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
+    this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
@@ -292,9 +292,21 @@ export class HexEditorModal extends HexmakerModal {
       s.featuresFolder,
       allLinks.get("features") ?? [],
     );
+
+    // Icon pickers last: they are long grids, and above Notes they pushed
+    // Description below the fold (fresh-eyes round 3).
+    bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
+    const { body: iconsBody } = this.makeCollapsible(
+      bodyEl,
+      "Icons",
+      "hexEditorIconsCollapsed",
+    );
+    this.renderIconSections(iconsBody, path, directIcon, this.directGmIcons, refreshHeader);
   }
 
   onClose() {
+    this.stopKeepInViewport?.();
+    this.stopKeepInViewport = null;
     this.options.onModalClose?.();
     this.contentEl.empty();
   }
@@ -473,7 +485,11 @@ export class HexEditorModal extends HexmakerModal {
   private makeCollapsible(
     container: HTMLElement,
     label: string,
-    flag: "hexEditorTerrainCollapsed" | "hexEditorNotesCollapsed" | "hexEditorFeaturesCollapsed",
+    flag:
+      | "hexEditorTerrainCollapsed"
+      | "hexEditorNotesCollapsed"
+      | "hexEditorFeaturesCollapsed"
+      | "hexEditorIconsCollapsed",
   ): { body: HTMLElement; header: HTMLElement } {
     const startCollapsed = this.plugin.settings[flag] ?? false;
     const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
@@ -508,9 +524,7 @@ export class HexEditorModal extends HexmakerModal {
     container: HTMLElement,
     path: string,
     currentTerrain: string | null,
-    currentIcon: string | null,
-    currentGmIcons: string[],
-    onTerrainChange: (terrain: string | null) => void,
+    onTerrainChange: () => void,
   ): void {
     const palette = this.plugin.getMapPalette(this.mapName);
 
@@ -522,8 +536,6 @@ export class HexEditorModal extends HexmakerModal {
     // Picking a terrain keeps the editor open (E1): the map repaints via
     // onChanged, and the selection/header update in place here.
     let selectedTerrain = currentTerrain;
-    const terrainOverrides = (): Map<string, string | null> | undefined =>
-      selectedTerrain ? new Map([[path, selectedTerrain]]) : undefined;
     const applyTerrain = async (terrain: string | null): Promise<void> => {
       if (terrain !== null) await this.ensureHexNote();
       await setTerrainInFile(this.app, path, terrain);
@@ -534,7 +546,7 @@ export class HexEditorModal extends HexmakerModal {
         el.toggleClass("is-selected", el.dataset["terrain"] === terrain),
       );
       clearBtn.toggle(terrain !== null);
-      onTerrainChange(terrain);
+      onTerrainChange();
       this.onChanged(new Map([[path, terrain]]));
     };
 
@@ -590,9 +602,21 @@ export class HexEditorModal extends HexmakerModal {
       });
     }
 
-    // Keep terrain in the overrides map (see terrainOverrides above) so
-    // renderGrid doesn't lose it during the brief window when Obsidian
-    // clears the metadata cache on file modify.
+  }
+
+  /** Icon override + (GM layer) game master icon pickers. */
+  private renderIconSections(
+    container: HTMLElement,
+    path: string,
+    currentIcon: string | null,
+    currentGmIcons: string[],
+    onIconChange: () => void,
+  ): void {
+    const section = container.createDiv({ cls: "duckmage-editor-section" });
+    // Keep terrain in the overrides map so renderGrid doesn't lose it during
+    // the brief window when Obsidian clears the metadata cache on file modify.
+    const terrainOverrides = (): Map<string, string | null> | undefined =>
+      this.directTerrain ? new Map([[path, this.directTerrain]]) : undefined;
 
     // Icon override palette
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
@@ -608,7 +632,7 @@ export class HexEditorModal extends HexmakerModal {
         await this.ensureHexNote();
         await setIconOverrideInFile(this.app, path, picked);
         this.directIcon = picked;
-        onTerrainChange(selectedTerrain); // header shows the icon override
+        onIconChange(); // header shows the icon override
         this.onChanged(terrainOverrides(), new Map([[path, picked]]));
       },
     );

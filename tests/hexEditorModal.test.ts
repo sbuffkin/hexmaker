@@ -201,6 +201,7 @@ describe("HexEditorModal section start-collapsed settings", () => {
 		};
 		modal.renderTerrainHeader = () => {};
 		modal.renderTerrainSection = () => {};
+		modal.renderIconSections = () => {};
 		modal.renderTextSection = () => {};
 		modal.renderDropdownSection = () => {};
 		modal.renderBody({ createEl: () => ({}) }, "hex/1_1.md");
@@ -217,6 +218,10 @@ describe("HexEditorModal section start-collapsed settings", () => {
 
 	it("starts Notes expanded when the setting is off", () => {
 		expect(collapsedStates(false, true).get("Notes")).toBe(false);
+	});
+
+	it("puts Notes right under Terrain and the long icon grids last (fresh-eyes round 3)", () => {
+		expect([...collapsedStates(false, true).keys()]).toEqual(["Terrain", "Notes", "Linked notes", "Icons"]);
 	});
 });
 
