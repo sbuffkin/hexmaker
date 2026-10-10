@@ -975,6 +975,18 @@ export default class HexmakerPlugin extends Plugin {
     return file instanceof TFile ? file : null;
   }
 
+  /**
+   * Link text (relative to `sourcePath`) of the encounters table for the
+   * hex's own terrain in the map note, or null. createHexNote links exactly
+   * this, and views show it for hexes that have no note yet
+   * (see displayedEncounterLinks).
+   */
+  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null {
+    const terrain = this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
+    const table = terrain ? this.terrainEncounterTable(terrain) : null;
+    return table ? this.app.metadataCache.fileToLinktext(table, sourcePath) : null;
+  }
+
   async syncHexEncounterTableLink(
     hexFilePath: string,
     terrain: string | null,
@@ -1267,13 +1279,9 @@ export default class HexmakerPlugin extends Plugin {
     if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
     // The hex's terrain (just set, or painted before it had a note) gets
     // its encounter-table link now rather than patched in later.
-    terrain ??= this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
-    if (terrain) {
-      const table = this.terrainEncounterTable(terrain);
-      if (table) {
-        const linkText = `[[${this.app.metadataCache.fileToLinktext(table, path)}]]`;
-        content = insertLinkInSection(content, "Encounters Table", linkText);
-      }
+    const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
+    if (encounterLink) {
+      content = insertLinkInSection(content, "Encounters Table", `[[${encounterLink}]]`);
     }
 
     const hexBase = normalizeFolder(this.settings.hexFolder);

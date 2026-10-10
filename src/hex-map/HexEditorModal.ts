@@ -20,6 +20,7 @@ import {
 import {
   addLinkToSection,
   removeLinkFromSection,
+  getLinksInSection,
   getAllSectionData,
   setSectionContent,
   addBacklinkToFile,
@@ -34,6 +35,7 @@ import { neighbourSpec } from "../worldgen/neighbours";
 import { WalkRegionModal } from "../worldgen/WalkRegionModal";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
+import { displayedEncounterLinks } from "../encounterLinks";
 import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
 
 /** What each link field links, for its placeholder ("Search or create a town…"). */
@@ -79,6 +81,8 @@ export class HexEditorModal extends HexmakerModal {
     (fn, ms) => window.setTimeout(fn, ms),
     (id) => window.clearTimeout(id),
   );
+  /** Replaces the Encounters Table field's list (set by renderBody). */
+  private setEncounterLinks: ((links: string[]) => void) | null = null;
   /** Text sections with typed-but-unsaved changes: flush on close/navigate. */
   private pendingTextSaves = new Set<() => void>();
 
@@ -265,13 +269,13 @@ export class HexEditorModal extends HexmakerModal {
       "hexEditorFeaturesCollapsed",
     );
     featuresBody.addClass("duckmage-editor-link-group");
-    this.renderDropdownSection(
+    this.setEncounterLinks = this.renderDropdownSection(
       featuresBody,
       path,
       "Encounters Table",
-      hexExists,
+      true,
       s.tablesFolder,
-      allLinks.get("encounters table") ?? [],
+      this.encounterLinksFor(path, hexExists, allLinks.get("encounters table") ?? []),
     );
     this.renderDropdownSection(
       featuresBody,
@@ -575,7 +579,10 @@ export class HexEditorModal extends HexmakerModal {
     const applyTerrain = async (terrain: string | null): Promise<void> => {
       if (terrain !== null) await this.ensureHexNote();
       await setTerrainInFile(this.app, path, terrain);
-      void this.plugin.syncHexEncounterTableLink(path, terrain);
+      // The terrain's encounters table follows the terrain: show the swap.
+      void this.plugin
+        .syncHexEncounterTableLink(path, terrain)
+        .then(() => this.reloadEncounterLinks(path));
       selectedTerrain = terrain;
       this.directTerrain = terrain;
       grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) =>
@@ -864,7 +871,7 @@ export class HexEditorModal extends HexmakerModal {
     hexExists: boolean,
     sourceFolder: string,
     initialLinks: string[],
-  ): void {
+  ): (links: string[]) => void {
     // Each link field is its own boxed card, and its input names what it
     // links, so a field can't be read as belonging to the label above or
     // below it (a tester linked a dungeon as a Quest, E5).
@@ -944,7 +951,13 @@ export class HexEditorModal extends HexmakerModal {
       currentLinks = currentLinks.filter((l) => l !== link);
       refresh();
       void this.saves.track(
-        removeLinkFromSection(this.app, path, section, link).then(() => this.onChanged()),
+        (async () => {
+          // A noteless hex shows its terrain's table (which the new note
+          // gets): make the note so removing it sticks.
+          await this.ensureHexNote();
+          await removeLinkFromSection(this.app, path, section, link);
+          this.onChanged();
+        })(),
       );
     };
 
@@ -1120,6 +1133,28 @@ export class HexEditorModal extends HexmakerModal {
         openDropdown();
       }
     });
+
+    return (links: string[]) => {
+      currentLinks = [...links];
+      refresh();
+    };
+  }
+
+  /** Encounter tables to show: the note's links, or for a hex with no note
+   *  yet the terrain table its note will get (displayedEncounterLinks). */
+  private encounterLinksFor(path: string, noteExists: boolean, noteLinks: string[]): string[] {
+    return displayedEncounterLinks(
+      noteExists,
+      noteLinks,
+      this.plugin.terrainEncounterLinkFor(this.mapName, this.x, this.y, path),
+    );
+  }
+
+  /** Re-read the Encounters Table field after a terrain change. */
+  private async reloadEncounterLinks(path: string): Promise<void> {
+    const exists = this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    const links = exists ? await getLinksInSection(this.app, path, "Encounters Table") : [];
+    this.setEncounterLinks?.(this.encounterLinksFor(path, exists, links));
   }
 
   private renderLinkList(

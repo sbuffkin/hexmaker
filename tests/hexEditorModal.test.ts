@@ -38,6 +38,7 @@ function makePlugin(hexPathFn: (x: number, y: number) => string) {
 			hexEditorStartCollapsed: false,
 		},
 		availableIcons: [],
+		terrainEncounterLinkFor: () => null,
 	} as unknown as import("../src/HexmakerPlugin").default;
 }
 
