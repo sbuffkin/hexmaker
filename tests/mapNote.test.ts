@@ -142,6 +142,83 @@ describe("map notes", () => {
 	});
 });
 
+describe("unknown table columns (forward compatibility)", () => {
+	// A note written by a newer build: Hexes has "Region map" + "Locations",
+	// Paths has a "Name" column. This build must keep them on every rewrite.
+	const newer = [
+		"---", "hexmaker-map: 1", "cols: 4", "rows: 4", "---", "# m", "",
+		"## Hexes", "",
+		"| Hex | Name | Terrain | Icon | GM icons | Region | Region map | Locations | Locked |",
+		"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+		"| 1_1 |  | forest |  |  | Basin | fenmarch | saltmere, old-mine |  |",
+		"| 2_1 |  | hills |  |  |  |  |  | yes |",
+		"| 3_1 |  |  |  |  |  | reedholm |  |  |",
+		"", "## Paths", "",
+		"| Type | Hexes | Name |",
+		"| --- | --- | --- |",
+		"| Road | 1_1 2_1 | King's \\| Way |",
+		"| River | 0_0 0_1 |  |",
+		"",
+	].join("\n");
+
+	it("parses unknown columns into opaque per-hex extras", () => {
+		const d = parseMapNote(newer)!;
+		expect(d.hexes.get("1_1")).toEqual({ terrain: "forest", region: "Basin", extra: { "Region map": "fenmarch", Locations: "saltmere, old-mine" } });
+		expect(d.hexes.get("2_1")).toEqual({ terrain: "hills", locked: true });
+		// A hex whose only data is in an unknown column is still a row.
+		expect(d.hexes.get("3_1")).toEqual({ extra: { "Region map": "reedholm" } });
+		expect(d.paths[0]).toEqual({ typeName: "Road", hexes: ["1_1", "2_1"], extra: { Name: "King's | Way" } });
+		expect(d.paths[1]).toEqual({ typeName: "River", hexes: ["0_0", "0_1"] });
+	});
+
+	it("round-trips unknown columns through parse → update → parse, in their original order", () => {
+		const d = parseMapNote(newer)!;
+		const out = updateMapNote(newer, "m", d);
+		const header = out.split("\n").find((l) => l.startsWith("| Hex"))!;
+		expect(header.indexOf("Region map")).toBeGreaterThan(0);
+		expect(header.indexOf("Region map")).toBeLessThan(header.indexOf("Locations"));
+		const back = parseMapNote(out)!;
+		expect([...back.hexes]).toEqual([...d.hexes]);
+		expect(back.paths).toEqual(d.paths);
+		expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+		// and through a fresh build too
+		const rebuilt = parseMapNote(buildMapNote("m", back))!;
+		expect([...rebuilt.hexes]).toEqual([...d.hexes]);
+		expect(rebuilt.paths).toEqual(d.paths);
+	});
+
+	it("edits to known columns keep the unknown values", () => {
+		const d = parseMapNote(newer)!;
+		// what MapStore.set does: spread the old hex, patch known fields
+		d.hexes.set("1_1", { ...d.hexes.get("1_1")!, terrain: "swamp", name: "Fen" });
+		d.hexes.set("3_1", { ...d.hexes.get("3_1")!, terrain: "grass" });
+		d.paths[0] = { ...d.paths[0], hexes: [...d.paths[0].hexes, "3_1"] };
+		const back = parseMapNote(updateMapNote(newer, "m", d))!;
+		expect(back.hexes.get("1_1")).toEqual({ name: "Fen", terrain: "swamp", region: "Basin", extra: { "Region map": "fenmarch", Locations: "saltmere, old-mine" } });
+		expect(back.hexes.get("3_1")).toEqual({ terrain: "grass", extra: { "Region map": "reedholm" } });
+		expect(back.paths[0].extra).toEqual({ Name: "King's | Way" });
+		expect(back.paths[0].hexes).toEqual(["1_1", "2_1", "3_1"]);
+	});
+
+	it("a hex with only the base terrain plus an unknown value is still written", () => {
+		const hexes = new Map<string, HexData>([["0_0", { terrain: "void", extra: { Locations: "a" } }], ["1_0", { terrain: "void" }]]);
+		expect(hexRowsToWrite(hexes, "void").map(([k]) => k)).toEqual(["0_0"]);
+	});
+
+	it("notes without unknown columns are written exactly as before", () => {
+		const note = buildMapNote("m", sample());
+		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Submap | Locked |\n");
+		expect(note).toContain("| Type | Hexes |\n");
+	});
+
+	it("unknown values change the comparison key", () => {
+		const d = parseMapNote(newer)!;
+		const before = mapNoteKey(d);
+		d.hexes.set("3_1", { extra: { "Region map": "other" } });
+		expect(mapNoteKey(d)).not.toBe(before);
+	});
+});
+
 describe("region biome", () => {
 	const withBiome = (biome: unknown): MapNoteData => ({ settings: { paletteName: "Default", biome } as never, hexes: new Map(), paths: [] });
 
