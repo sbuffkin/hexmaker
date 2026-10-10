@@ -8,7 +8,7 @@ import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import type { Side as WorldSide } from "./world";
 import { routeContextPaths } from "./procedural/contextPaths";
-import { OVERLAND_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
+import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
 import { isSpacePalette } from "../mapKinds";
@@ -25,6 +25,7 @@ import {
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
+  regionDetailDescription,
   submapStartKind,
   suggestBaseTerrain,
   visibleKinds,
@@ -403,7 +404,9 @@ export class NewMapSetupModal extends HexmakerModal {
           attr: { role: "radio", "aria-checked": on ? "true" : "false" },
         });
         card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-        card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains) });
+        // Region detail says what this hex's neighbours will do, not a generic example.
+        const desc = k.id === REGION_DETAIL_ID && this.origin ? regionDetailDescription(this.context) : describeKind(k, terrains);
+        card.createDiv({ cls: "duckmage-setup-gen-desc", text: desc });
         if (where.neighbour && k.id !== BLANK_ID) {
           card.createDiv({
             cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,

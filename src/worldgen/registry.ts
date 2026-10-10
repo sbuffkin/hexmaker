@@ -7,7 +7,7 @@ import {
   toPathChains,
   type GridSpec,
 } from "./generators";
-import { findTerrain, type GenerationContext, type ProcGrid, type ProcOption } from "./procedural/common";
+import { findTerrain, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
 import {
@@ -88,6 +88,50 @@ export interface TerrainGeneratorKind {
 }
 
 export const BLANK_ID = "blank";
+
+/**
+ * Region detail's card text with no hex to describe. Generic on purpose:
+ * a worked example ("sea to the east → coast on the east") read as if the
+ * sea had been detected (fresh-eyes r5).
+ */
+export const REGION_DETAIL_DESCRIPTION =
+  "Zoom into the parent hex: its terrain fills the map, and each neighbouring hex shapes the edge it touches.";
+
+const SIDE_WORDS: Record<Side, string> = {
+  N: "north", NE: "north-east", E: "east", SE: "south-east",
+  S: "south", SW: "south-west", W: "west", NW: "north-west",
+};
+
+function joinAnd(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Region detail's card text for an actual parent hex: what fills the map
+ * and which neighbours shape which edges, read from the hex's context.
+ * Falls back to the generic text when there's no context.
+ */
+export function regionDetailDescription(context: GenerationContext | undefined): string {
+  const parent = context?.parent?.terrain;
+  const sides = context?.sides ?? {};
+  const present = SIDES.filter((s) => sides[s]?.terrain);
+  if (!parent && present.length === 0) return REGION_DETAIL_DESCRIPTION;
+  const lead = parent ? `Zoom into this ${parent} hex: ${parent} fills the map` : "Zoom into this hex";
+  // Neighbours that differ from the hex itself, grouped by terrain.
+  const byTerrain = new Map<string, Side[]>();
+  for (const s of present) {
+    const t = sides[s]?.terrain;
+    if (!t || t === parent) continue;
+    byTerrain.set(t, [...(byTerrain.get(t) ?? []), s]);
+  }
+  if (byTerrain.size === 0) {
+    return present.length
+      ? `${lead}, and its neighbours are ${parent} too, so it runs to every edge.`
+      : `${lead} to every edge (no neighbouring hexes on the map).`;
+  }
+  const parts = [...byTerrain].map(([t, ss]) => `${t} on the ${joinAnd(ss.map((s) => SIDE_WORDS[s]))}`);
+  return `${lead}; its neighbours shape the edges: ${joinAnd(parts)}.`;
+}
 
 /**
  * The generator a submap starts on. A saved choice (the per-terrain submap
@@ -175,7 +219,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       label: "Region detail",
       mapKind: "world",
       needsContext: true,
-      description: "Zoom into the parent hex: its terrain fills the map, and each neighbour shapes its edge (sea to the east → coast on the east).",
+      description: REGION_DETAIL_DESCRIPTION,
       source: "built-in",
       options: REGION_DETAIL_OPTIONS,
       fits: planetSurfaceFits,
