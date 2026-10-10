@@ -6609,3 +6609,30 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-setup-defaults-note {
     margin-bottom: 0.4em;
 }
+
+/* Map export form (Maps → Export and "Export current map…"). */
+.duckmage-export-tab-row {
+    flex-wrap: wrap;
+}
+.duckmage-export-tab-row-hint {
+    flex-basis: 100%;
+    padding-left: 1.9em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-export-included {
+    margin: 0.5em 0;
+    padding: 0.5em 0.75em;
+    border-left: 3px solid var(--interactive-accent);
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-export-included-title {
+    font-weight: 600;
+    margin-bottom: 0.2em;
+}
+.duckmage-export-included ul {
+    margin: 0;
+    padding-left: 1.2em;
+}

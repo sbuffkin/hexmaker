@@ -4,9 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
 import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
-import { exportMapAsPng } from "../export/mapPngRenderer";
-import { exportMapAsPdf } from "../export/exporters/mapWithTable";
-import { exportMapAsManual } from "../export/exporters/hexcrawlManual";
+import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
@@ -41,31 +39,6 @@ import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
 type ModalTab = "Maps" | "Properties" | "New map" | "Export";
-
-function makeCheckbox(
-  parent: HTMLElement,
-  labelText: string,
-  initial: boolean,
-): HTMLInputElement {
-  const row = parent.createDiv({ cls: "duckmage-export-tab-row" });
-  const cb = row.createEl("input", {
-    type: "checkbox",
-    cls: "duckmage-export-tab-checkbox",
-  });
-  cb.checked = initial;
-  row.createEl("label", { text: labelText, cls: "duckmage-export-tab-label" });
-  // Make the label clickable to toggle the box.
-  row.addEventListener("click", (e) => {
-    if (e.target instanceof HTMLInputElement) return;
-    cb.checked = !cb.checked;
-  });
-  return cb;
-}
-
-function clampInt(v: number, lo: number, hi: number, fallback: number): number {
-  if (Number.isNaN(v)) return fallback;
-  return Math.max(lo, Math.min(hi, v));
-}
 
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
@@ -131,154 +104,8 @@ export class MapModal extends HexmakerModal {
   // ── Export tab ────────────────────────────────────────────────────────────
 
   private renderExportTab(el: HTMLElement): void {
-    el.empty();
-    el.addClass("duckmage-export-tab");
-
-    const mapName = this.view.activeMapName;
-
-    el.createEl("p", {
-      cls: "duckmage-export-tab-hint",
-      text: `Export the active map "${mapName}" as a PNG. The file is written to the configured export folder and opened in a new tab.`,
-    });
-
-    const optsForm = el.createDiv({ cls: "duckmage-export-tab-options" });
-
-    // File name override — defaults to the map name; suffixes are auto-appended
-    // based on overlay checkboxes so the user can do successive variants without
-    // hand-renaming each export.
-    const nameRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
-    nameRow.createEl("label", {
-      text: "File name",
-      cls: "duckmage-export-tab-label",
-    });
-    const nameInput = nameRow.createEl("input", {
-      type: "text",
-      cls: "duckmage-export-tab-text",
-      attr: { placeholder: mapName },
-    });
-    nameInput.value = mapName;
-
-    const showCoords = makeCheckbox(
-      optsForm,
-      "Show coordinate labels",
-      true,
-    );
-    const showIcons = makeCheckbox(
-      optsForm,
-      "Show terrain / override icons",
-      true,
-    );
-    const showPaths = makeCheckbox(
-      optsForm,
-      "Include paths (roads, rivers, etc.)",
-      true,
-    );
-    const showFactionOverlay = makeCheckbox(
-      optsForm,
-      "Include faction overlay",
-      false,
-    );
-    const showRegionOverlay = makeCheckbox(
-      optsForm,
-      "Include region overlay",
-      false,
-    );
-    const playerEdition = makeCheckbox(
-      optsForm,
-      "Manual: player edition (leave out hidden and secret)",
-      false,
-    );
-
-    // Output size: a dropdown of presets that map to a hex-radius value.
-    // The actual PNG dimensions depend on grid size too, so we phrase the
-    // presets by hex pixel size + approximate use-case.
-    const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
-    sizeRow.createEl("label", {
-      text: "Output size",
-      cls: "duckmage-export-tab-label",
-    });
-    const sizeSelect = sizeRow.createEl("select", {
-      cls: "duckmage-export-tab-select",
-    });
-    const sizePresets: { label: string; radius: number }[] = [
-      { label: "Small (30px hexes — quick preview)", radius: 30 },
-      { label: "Medium (50px hexes — standard)", radius: 50 },
-      { label: "Large (80px hexes — print quality)", radius: 80 },
-      { label: "Huge (120px hexes — max detail)", radius: 120 },
-    ];
-    for (const preset of sizePresets) {
-      const opt = sizeSelect.createEl("option", {
-        text: preset.label,
-        value: String(preset.radius),
-      });
-      if (preset.radius === 50) opt.selected = true;
-    }
-
-    // Live filename preview combines the user's base name with any overlay
-    // suffixes. Both suffixes attach in the order faction → region so multiple
-    // exports of the same map produce a predictable filename family. The
-    // preview shows the stem only — each export button adds its own extension.
-    const preview = el.createDiv({ cls: "duckmage-export-tab-preview" });
-    const buildStem = (): string => {
-      const base = nameInput.value.trim() || mapName;
-      let suffix = "";
-      if (showFactionOverlay.checked) suffix += "-faction";
-      if (showRegionOverlay.checked) suffix += "-region";
-      return base + suffix;
-    };
-    const updatePreview = () => {
-      preview.setText(`Output: ${buildStem()}.png  /  ${buildStem()}.pdf`);
-    };
-    nameInput.addEventListener("input", updatePreview);
-    showFactionOverlay.addEventListener("change", updatePreview);
-    showRegionOverlay.addEventListener("change", updatePreview);
-    updatePreview();
-
-    const collectOpts = () => ({
-      outputName: buildStem(),
-      hexRadius: clampInt(parseInt(sizeSelect.value, 10), 10, 200, 50),
-      showCoords: showCoords.checked,
-      showIcons: showIcons.checked,
-      showPaths: showPaths.checked,
-      showFactionOverlay: showFactionOverlay.checked,
-      showRegionOverlay: showRegionOverlay.checked,
-    });
-
-    const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });
-    const exportPngBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PNG",
-    });
-    exportPngBtn.addEventListener("click", () => {
-      void exportMapAsPng(this.plugin, mapName, collectOpts());
-      this.close();
-    });
-    const exportPdfBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PDF with reference table",
-    });
-    exportPdfBtn.addEventListener("click", () => {
-      void exportMapAsPdf(this.plugin, mapName, collectOpts());
-      this.close();
-    });
-    // A printable gazetteer: legend, encounter tables, keyed hexes by
-    // section, index. Uses its own print styling and hex numbering.
-    const exportManualBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export hexcrawl manual (PDF)",
-    });
-    exportManualBtn.addEventListener("click", () => {
-      const o = collectOpts();
-      void exportMapAsManual(this.plugin, mapName, {
-        outputName: `${nameInput.value.trim() || mapName} ${playerEdition.checked ? "player" : "manual"}`,
-        player: playerEdition.checked,
-        showIcons: o.showIcons,
-        showPaths: o.showPaths,
-        showFactionOverlay: o.showFactionOverlay,
-        showRegionOverlay: o.showRegionOverlay,
-      });
-      this.close();
-    });
+    // The same form as the "Export current map…" command (MapExportModal).
+    renderMapExportForm(el, this.plugin, this.view.activeMapName, { onExport: () => this.close() });
   }
 
   // ── Maps tab ──────────────────────────────────────────────────────────────
