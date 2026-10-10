@@ -195,6 +195,17 @@ export interface MapData {
 	 *  blend with it. `from` lists the neighbouring biomes it was blended with:
 	 *  a transition region between them and `generator`. */
 	biome?: RegionBiome;
+	/** Region maps: the seed its terrain was last generated with (Reroll picks a new one). */
+	regionSeed?: number;
+	/** Overworlds: "regions" shows every region's hexes stitched together on
+	 *  the map (the full view); "biomes" shows the overworld's own hexes, one
+	 *  biome each. Unset = regions once the map has any. */
+	overworldView?: "regions" | "biomes";
+	/** Overworlds and their regions: the small overworld panel. Unset = shown. */
+	showMinimap?: boolean;
+	/** Overworlds made by World biomes: the river's hexes, source to mouth,
+	 *  as "x,y > x,y > …" (biome data drawn on the overworld; not a path). */
+	biomeRiver?: string;
 	backgroundImage?: MapBackgroundImage;
 	/** Optional independent transform applied to the hex grid container,
 	 *  used during background-image calibration so the user can resize/shift
@@ -350,6 +361,8 @@ export interface HexmakerPluginSettings {
 	hexNameFont?: string;
 	hexNameSize?: string;
 	hexNameStyle?: string;
+	/** Bundled-palette terrains already offered to installed copies ("expanded/savanna"); see presetUpdates.ts. */
+	presetTerrainsAdded?: string[];
 	/** Terrain legend on the map and generator previews. Unset = shown. */
 	showTerrainLegend?: boolean;
 	/** The map export form's last choices, per map name (round 6 S9). */

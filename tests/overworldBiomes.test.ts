@@ -60,26 +60,34 @@ describe("biomes: terrain ↔ biome", () => {
 		}
 	});
 
-	it("reads biomes from terrain: label, name hints, then type (§4.1)", () => {
-		expect(biomeForTerrain("Taiga", EXP)).toBe("taiga");
-		expect(biomeForTerrain("evergreen hills", EXP)).toBe("taiga");
-		expect(biomeForTerrain("forest heavy", EXP)).toBe("deep-forest");
-		expect(biomeForTerrain("mixed forest", EXP)).toBe("temperate-forest");
-		expect(biomeForTerrain("jungle hills", EXP)).toBe("karst");
-		expect(biomeForTerrain("jungle heavy", EXP)).toBe("jungle");
-		expect(biomeForTerrain("mountains snow", EXP)).toBe("alpine");
-		expect(biomeForTerrain("evergreen mountain", EXP)).toBe("alpine");
+	it("reads biomes from terrain TYPES only, in palette order: the last terrains of a type are its variants (§4.1)", () => {
+		// forest: the last two forest-type terrains are taiga and deep forest, the rest temperate forest
+		expect(biomeForTerrain("forest", EXP)).toBe("temperate-forest");
+		expect(biomeForTerrain("mixed forest heavy", EXP)).toBe("temperate-forest");
+		expect(biomeForTerrain("evergreen", EXP)).toBe("taiga");
+		expect(biomeForTerrain("evergreen heavy", EXP)).toBe("deep-forest");
+		expect(biomeForTerrain("jungle hills", EXP)).toBe("karst"); // last hills-type terrain
 		expect(biomeForTerrain("hills", EXP)).toBe("valley");
-		expect(biomeForTerrain("dunes", EXP)).toBe("badlands");
+		expect(biomeForTerrain("savanna", EXP)).toBe("savanna");
+		expect(biomeForTerrain("grass", EXP)).toBe("grassland");
+		expect(biomeForTerrain("river delta", EXP)).toBe("river-delta");
 		expect(biomeForTerrain("bog", EXP)).toBe("swamp");
+		expect(biomeForTerrain("mountains snow", EXP)).toBe("alpine");
+		expect(biomeForTerrain("dunes", EXP)).toBe("badlands");
 		expect(biomeForTerrain("ocean", EXP)).toBe("open-sea");
 		expect(biomeForTerrain("shallows", EXP)).toBe("archipelago");
 		expect(biomeForTerrain("beach", EXP)).toBe("coastal-fjord");
 		expect(biomeForTerrain("volcano dormant", EXP)).toBe("volcanic");
 		expect(biomeForTerrain("urban", EXP)).toBeUndefined();
-		expect(biomeForTerrain("", EXP)).toBeUndefined();
-		// custom names fall back to their type
+		expect(biomeForTerrain("Taiga", EXP)).toBeUndefined(); // not a palette terrain: names are never guessed
+		// custom names work by type; untyped terrains have no biome
 		expect(biomeForTerrain("glass wastes", [{ name: "glass wastes", color: "#000", type: "desert" }])).toBe("badlands");
+		expect(biomeForTerrain("pine", [{ name: "pine", color: "#000" }])).toBeUndefined();
+		// reordering the palette chooses: put "pine" last among forests and it is deep forest
+		const pal = [{ name: "oak", color: "#1", type: "forest" }, { name: "pine", color: "#2", type: "forest" }, { name: "yew", color: "#3", type: "forest" }];
+		expect(pal.map((t) => biomeForTerrain(t.name, pal))).toEqual(["temperate-forest", "taiga", "deep-forest"]);
+		const one = [{ name: "oak", color: "#1", type: "forest" }];
+		expect(biomeForTerrain("oak", one)).toBe("temperate-forest"); // a lone terrain is always the main biome
 	});
 
 	it("each representative terrain reads back as its biome (round trip)", () => {
@@ -90,16 +98,19 @@ describe("biomes: terrain ↔ biome", () => {
 		}
 	});
 
-	it("Expanded shows every biome but the delta; Limited shows fewer and the rest fall back", () => {
+	it("Expanded shows every biome (savanna and river delta have their own terrains, OW8); Limited shows fewer and the rest fall back", () => {
 		const exp = representableBiomes(EXP);
-		expect(exp.size).toBe(BIOMES.length - 1);
-		expect(exp.has("river-delta")).toBe(false);
+		expect(exp.size).toBe(BIOMES.length);
+		expect(representativeTerrain("savanna", EXP)).toBe("savanna");
+		expect(representativeTerrain("river-delta", EXP)).toBe("river delta");
+		expect(biomeForTerrain("savanna", EXP)).toBe("savanna");
+		expect(biomeForTerrain("river delta", EXP)).toBe("river-delta");
 		const lim = representableBiomes(LIMITED_TERRAIN_PALETTE);
 		expect([...lim].sort()).toEqual(["alpine", "badlands", "grassland", "open-sea", "temperate-forest", "tundra", "valley"]);
 		expect(resolveBiome("taiga", lim)).toBe("tundra");
 		expect(resolveBiome("jungle", lim)).toBe("temperate-forest");
 		expect(resolveBiome("archipelago", lim)).toBe("open-sea");
-		expect(resolveBiome("river-delta", exp)).toBe("swamp");
+		expect(resolveBiome("river-delta", lim)).toBe("grassland");
 	});
 
 	it("ecotones: incompatible pairs and their transitions", () => {

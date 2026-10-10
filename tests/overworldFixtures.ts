@@ -5,7 +5,6 @@ import { BUILTIN_GENERATORS, parseBuiltin } from "../src/worldgen/builtinGenerat
 import type { HexWfcModel } from "../packages/hex-wfc/src";
 import { biomeProfiles } from "../src/overworld/biomes";
 import type { TerrainColor } from "../src/types";
-import { inferTerrainType } from "../src/terrainTypes";
 
 /** The shipped generators, read from disk (.md imports are stubbed in tests). */
 export const MODELS = new Map<string, HexWfcModel | undefined>(
@@ -15,6 +14,6 @@ export const MODELS = new Map<string, HexWfcModel | undefined>(
 export const profilesFor = (palette: TerrainColor[]) => biomeProfiles(MODELS, palette);
 
 export const typeLookup = (palette: TerrainColor[]) => {
-	const m = new Map(palette.map((t) => [t.name, t.type ?? inferTerrainType(t.name, t.category, "world")]));
+	const m = new Map(palette.map((t) => [t.name, t.type]));
 	return (name: string) => m.get(name);
 };

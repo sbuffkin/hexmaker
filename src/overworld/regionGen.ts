@@ -46,11 +46,13 @@ export interface RegionGenInput {
   sharpness?: number;
 }
 
-/** Child key → terrain for the region's own cells. */
+/** Child key → terrain for the region's own cells (except pinned ones, which are left alone). */
 export function generateRegion(input: RegionGenInput): Map<string, string> {
   const { layout, field, profiles, typeOf } = input;
   const pinned = input.pinned ?? new Map<string, string>();
-  const cells = regionCells(layout, input.parent[0], input.parent[1]);
+  // Pinned cells inside the region (hand-painted, locked) stay as they are
+  // and count as fixed context, like the neighbours' cells.
+  const cells = regionCells(layout, input.parent[0], input.parent[1]).filter(([x, y]) => !pinned.has(`${x}_${y}`));
   const own = new Set(cells.map(([x, y]) => `${x}_${y}`));
   const sharp = input.sharpness ?? 2;
 

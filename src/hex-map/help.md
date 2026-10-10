@@ -119,6 +119,8 @@ Tokens show their name underneath. The layers panel's **Labels** group turns coo
 
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
 
+**Overworlds** (Advanced: Regions and overworlds). **Maps → New overworld…** makes a map of biomes whose hexes each open into a rectangle region; regions next to each other share one grid, so they join hex for hex. The switch at the bottom right picks the view: **Regions** shows every region's hexes stitched together (click to go in at that spot; the terrain tool paints the regions' own hexes, across seams), **Biomes** shows one biome per hex (click to set one: an empty hex gets its region, a hex with one has it remade after asking). The minimap at the bottom right shows the overworld from any of its regions. Hand-painted region hexes are locked, so remaking a region keeps them.
+
 Neighbouring regions share one set of hex numbers: a new region carries on from the map it was placed next to, so each hex number names one place in the world. Maps you join later keep their own numbers.
 
 A road or river that ends on the edge of a region, next to where the neighbour's road of the same type ends, is drawn on to the shared edge on both maps, so the two join up.
@@ -137,7 +139,7 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 ## Palettes
 
-**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**. Expanded now has **savanna** and **river delta** too (World biomes paints those biomes with them); an Expanded palette you already have gets them once, after a backup, unless it already has terrains of those names. Delete them and they stay deleted.
 
 No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 

@@ -312,6 +312,17 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
     icon: "bw-dunes.png",
     category: "coast",
   },
+  // Added after release (OW8): the World biomes generator paints savanna and
+  // river delta overworld hexes with these. Existing Expanded palettes get
+  // them once (src/palettes/presetUpdates.ts, ADDED_PRESET_TERRAINS).
+  { name: "savanna", type: "grassland", color: "#c4b25c", icon: "bw-grassland.png", category: "lowlands" },
+  { name: "river delta", type: "wetland", color: "#5f9a7a", icon: "bw-marsh.png", category: "bog" },
+];
+
+/** Terrains added to a bundled palette after it shipped: offered once to installed copies. */
+export const ADDED_PRESET_TERRAINS: { preset: string; terrain: string }[] = [
+  { preset: EXPANDED_PALETTE_NAME, terrain: "savanna" },
+  { preset: EXPANDED_PALETTE_NAME, terrain: "river delta" },
 ];
 
 export const LIMITED_TERRAIN_PALETTE: TerrainColor[] = [
@@ -400,4 +411,5 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   advancedFeatures: [],
   dismissedHints: [],
   terrainTypesSeeded: false,
+  presetTerrainsAdded: [],
 };
