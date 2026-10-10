@@ -21,10 +21,10 @@ export function yamlLink(path: string): string {
  * every other line is kept as typed.
  */
 export function withFrontmatterEntries(content: string, entries: [key: string, yaml: string][]): string {
-	const eol = content.includes("\r\n") ? "\r\n" : "\n";
-	const text = content.replace(/\r\n/g, "\n");
-	const m = /^---\n([\s\S]*?)\n?---[ \t]*(?:\n|$)/.exec(text);
-	const lines = m ? (m[1] === "" ? [] : m[1].split("\n")) : [];
+	// The block uses the note's first line ending; the rest is kept byte for byte.
+	const eol = /^[^\n]*\r\n/.test(content) ? "\r\n" : "\n";
+	const m = /^---\r?\n([\s\S]*?)\r?\n?---[ \t]*(?:\r?\n|$)/.exec(content);
+	const lines = m ? (m[1] === "" ? [] : m[1].split(/\r?\n/)) : [];
 	for (const [key, yaml] of entries) {
 		const keyRe = new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
 		const at = lines.findIndex((l) => keyRe.test(l));
@@ -32,7 +32,6 @@ export function withFrontmatterEntries(content: string, entries: [key: string, y
 		if (at >= 0) lines[at] = line;
 		else lines.push(line);
 	}
-	const rest = m ? text.slice(m[0].length) : text;
-	const out = `---\n${lines.join("\n")}\n---\n${rest}`;
-	return eol === "\n" ? out : out.replace(/\n/g, "\r\n");
+	const rest = m ? content.slice(m[0].length) : content;
+	return ["---", ...lines, "---", ""].join(eol) + rest;
 }
