@@ -90,3 +90,15 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(viewSrc).toMatch(/this\.scope\.register\(\[\], "Escape"[\s\S]{0,200}this\.exitCurrentMode\(\)/);
 	});
 });
+
+describe("Map navigation buttons say where they go (fresh-eyes T4)", () => {
+	it("labels Up/Back as parent/previous map and names the target map", () => {
+		expect(viewSrc).toContain('text: "↑ parent map"');
+		expect(viewSrc).toContain('text: "← previous map"');
+		const nav = method("refreshMapNav");
+		expect(nav).toMatch(/backBtn\.setAttr\("aria-label", label\)/);
+		expect(nav).toMatch(/upBtn\.setAttr\("aria-label", label\)/);
+		expect(nav).toMatch(/previous map: \$\{prev\}/);
+		expect(nav).toMatch(/parent map: \$\{parent\.map\}/);
+	});
+});

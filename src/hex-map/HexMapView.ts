@@ -484,7 +484,16 @@ export class HexMapView extends ItemView {
   }
 
   canNavigateBack(): boolean {
-    return this.mapHistory.some((m) => m !== this.activeMapName && this.plugin.getMap(m));
+    return this.previousMapName() !== undefined;
+  }
+
+  /** The map Back would go to (skips maps deleted since and the current one). */
+  private previousMapName(): string | undefined {
+    for (let i = this.mapHistory.length - 1; i >= 0; i--) {
+      const m = this.mapHistory[i];
+      if (m !== this.activeMapName && this.plugin.getMap(m)) return m;
+    }
+    return undefined;
   }
 
   canNavigateUp(): boolean {
@@ -501,14 +510,28 @@ export class HexMapView extends ItemView {
 
   /** Breadcrumb (ancestors), Up and Back buttons for the active map. */
   private refreshMapNav(): void {
-    if (this.canNavigateBack()) this.backBtn?.show();
-    else this.backBtn?.hide();
+    // Both buttons name the map they go to (fresh-eyes T4: "↑ up" vs
+    // "← back" wasn't self-explanatory): Parent = the map this one is a
+    // submap of; Previous = the map viewed before this one (like a browser).
+    const prev = this.previousMapName();
+    if (this.backBtn) {
+      if (prev) {
+        this.backBtn.show();
+        const label = `Back to the previous map: ${prev} (Alt+←)`;
+        this.backBtn.title = label;
+        this.backBtn.setAttr("aria-label", label);
+      } else {
+        this.backBtn.hide();
+      }
+    }
 
     const parent = this.plugin.parentOf(this.activeMapName);
     if (this.upBtn) {
       if (parent) {
         this.upBtn.show();
-        this.upBtn.title = `Up to ${parent.map} (hex ${parent.hex.replace("_", ", ")})`;
+        const label = `Up to the parent map: ${parent.map}, hex ${parent.hex.replace("_", ", ")} (Alt+↑)`;
+        this.upBtn.title = label;
+        this.upBtn.setAttr("aria-label", label);
       } else {
         this.upBtn.hide();
       }
@@ -1001,15 +1024,14 @@ export class HexMapView extends ItemView {
 
     this.upBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-map-up-btn",
-      text: "↑ up",
+      text: "↑ parent map",
     });
     this.upBtn.hide();
     this.upBtn.addEventListener("click", () => this.navigateUp());
 
     this.backBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-map-back-btn",
-      text: "← back",
-      title: "Back to previous map",
+      text: "← previous map",
     });
     this.backBtn.hide();
     this.backBtn.addEventListener("click", () => this.navigateBack());
