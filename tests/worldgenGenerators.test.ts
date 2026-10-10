@@ -24,7 +24,7 @@ import type { TerrainColor } from "../src/types";
  * In-memory vault + plugin stub. Hex notes are represented only by their
  * frontmatter (terrain, locked); other written files are kept as text.
  */
-function makePlugin(painted: Record<string, string>, locked: string[] = []) {
+function makePlugin(painted: Record<string, string>, locked: string[] = [], drawnPaths: { typeName: string; hexes: string[] }[] = []) {
   const files = new Map<string, string>();
   const folders = new Set<string>();
   const fileObj = (path: string) => {
@@ -105,6 +105,8 @@ function makePlugin(painted: Record<string, string>, locked: string[] = []) {
     },
     hasTerrainEncounterTable: () => false,
     syncHexEncounterTableLink: async () => {},
+    // The map's anchored paths, resolved (what the map draws).
+    paths: { resolvedPathChains: () => drawnPaths },
   } as unknown as HexmakerPlugin;
   const terrainAt = (k: string) => {
     const [x, y] = k.split("_").map(Number);
@@ -169,6 +171,15 @@ describe("worldgen generators", () => {
     const listed = await listGenerators(plugin);
     expect(listed.map((g) => g.model.name)).toEqual(["my-lakes", "my-lakes-2"]);
     expect(listed[0].model.adjacency).toEqual(saved.model.adjacency);
+  });
+
+  it("learns paths from the map's resolved chains (anchored paths as drawn)", async () => {
+    const road = ["0_9", "1_9", "2_9", "3_9", "4_9", "5_9", "6_9", "7_9", "8_9", "9_9", "10_9", "11_9"];
+    const { plugin } = makePlugin(lakeSample(), [], [{ typeName: "Road", hexes: road }]);
+    const saved = await saveGeneratorFromMap(plugin, "sample", "with-road");
+    expect("error" in saved).toBe(false);
+    if ("error" in saved) return;
+    expect(saved.model.paths?.map((p) => p.type)).toEqual(["Road"]);
   });
 
   it("refuses to learn from an unpainted map", async () => {

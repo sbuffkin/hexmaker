@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_PATH_TYPES, LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { pairCrossings, routeContextPaths } from "../src/worldgen/procedural/contextPaths";
+import { generatedToMapPaths, routedBranches } from "../src/paths/fromGenerated";
+import { mapRouteContext, pathTypeStyleFor } from "../src/paths/mapContext";
+import { impassableNames } from "../src/impassable";
 import { edgePulls, planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { BLANK_ID, defaultGeneratorFor, kindsForPalette, neighbourFirst, type TerrainGeneratorKind } from "../src/worldgen/registry";
 import type { ContextTerrain, ProcGrid } from "../src/worldgen/procedural/common";
@@ -102,7 +106,7 @@ describe("generators offered for a new map", () => {
 		options: [],
 		fits: () => true,
 		generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
-		toChains: () => ({ chains: [], missing: [] }),
+		toPaths: () => ({ paths: [], missing: [] }),
 		...extra,
 	});
 	const blank = kind(BLANK_ID, { source: "blank" });
@@ -133,4 +137,38 @@ describe("generators offered for a new map", () => {
 		expect(defaultGeneratorFor(all, { parentHex: true })).toBe("region-detail");
 		expect(defaultGeneratorFor([blank, stars, overlandK], {})).toBe("star-scatter");
 	});
+});
+
+describe("paths carried across the seam from a neighbour (phase 6)", () => {
+	const styleFor = pathTypeStyleFor(DEFAULT_PATH_TYPES);
+
+	for (const seed of [1, 2, 3, 4, 5]) {
+		it(`a road crossing the border starts on the seam hex and draws exactly the generated hexes (seed ${seed})`, () => {
+			const edge = westBorder("grass", "grassland");
+			const cells = overland(seed, { water: "20", sea: "east" }, edge);
+			// The neighbour's road crosses into the first column at row 4; one
+			// river comes in from the north edge.
+			const carry = pairCrossings([
+				{ type: "Road", avoidImpassable: true, autoRoute: "direct", hex: `${grid.offset.x}_4` },
+				{ type: "Road", avoidImpassable: true, autoRoute: "direct", hex: `${grid.offset.x + grid.cols - 1}_6` },
+				{ type: "River", avoidImpassable: false, autoRoute: "winding", hex: `${grid.offset.x + 5}_0` },
+			], grid);
+			const routed = routeContextPaths(cells, LIMITED_TERRAIN_PALETTE, grid, carry, seed);
+			const ctx = mapRouteContext({
+				orientation: grid.orientation, stagger: grid.stagger,
+				gridSize: { cols: grid.cols, rows: grid.rows }, gridOffset: grid.offset,
+				terrainOf: [...cells].map(([k, terrain]): [string, { terrain: string }] => [k, { terrain }]),
+				impassable: impassableNames(LIMITED_TERRAIN_PALETTE),
+			});
+			const { paths, inexact } = generatedToMapPaths(routed.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctx, { styleFor });
+			expect(inexact).toEqual([]);
+			const road = paths.find((p) => p.typeName === "Road")!;
+			const genRoad = routed.find((p) => p.type === "Road")!.hexes;
+			expect(genRoad[0]).toBe(`${grid.offset.x}_4`);
+			expect(road.branches[0].anchors[0]).toBe(`${grid.offset.x}_4`);
+			expect(routedBranches(road, ctx, styleFor)).toEqual([genRoad]);
+			const river = paths.find((p) => p.typeName === "River")!;
+			expect(routedBranches(river, ctx, styleFor)).toEqual([routed.find((p) => p.type === "River")!.hexes]);
+		});
+	}
 });

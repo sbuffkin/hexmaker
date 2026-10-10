@@ -26,7 +26,8 @@ import {
   combinedSourcesOf,
   sourceDirectionsOf,
   setGeneratorPalette,
-  toPathChains,
+  toMapPaths,
+  addGeneratedPaths,
   remakeBlend,
   saveGeneratorModel,
   type GeneratorFile,
@@ -930,13 +931,6 @@ export class GeneratorPanel {
             new Notice(result.error);
             return;
           }
-          const { chains, missing } = toPathChains(this.plugin, r.paths, model, this.plugin.mapPaletteName(result.name));
-          const created = this.plugin.getMap(result.name);
-          if (created && chains.length) {
-            created.pathChains = [...created.pathChains, ...chains];
-            await this.plugin.saveSettings();
-          }
-          if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           if (connected) {
             // Record its biome (and what it was blended with) for later neighbours.
             const around = Object.values(regionNeighbourNames(this.plugin, connected))
@@ -950,6 +944,14 @@ export class GeneratorPanel {
             // Only clear the choice if it's still the one used; a newer one stays.
             if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
           }
+          // Generated paths become the map's anchored paths (after placing:
+          // that sets the stagger they're routed with).
+          const { paths, missing } = toMapPaths(this.plugin, r.paths, model, result.name);
+          if (paths.length) {
+            addGeneratedPaths(this.plugin, result.name, paths);
+            await this.plugin.saveSettings();
+          }
+          if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           new Notice(`Created map "${result.name}"${connected ? ` ${connected.side} of ${connected.anchor}` : ""}.`);
           GeneratorPanel.mapName = result.name;
           await this.plugin.showMap(result.name);

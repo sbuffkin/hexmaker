@@ -44,7 +44,7 @@ const kind = (id: string, extra: Partial<TerrainGeneratorKind> = {}): TerrainGen
 	options: [],
 	fits: () => true,
 	generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
-	toChains: () => ({ chains: [], missing: [] }),
+	toPaths: () => ({ paths: [], missing: [] }),
 	...extra,
 });
 

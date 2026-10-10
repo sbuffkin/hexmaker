@@ -1,13 +1,21 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { TerrainColor } from "../types";
+import type { MapPath, PathType, TerrainColor } from "../types";
 import {
   drawnPathType,
   generateTerrain,
   generatorFitsPalette,
   listGenerators,
-  toPathChains,
+  toMapPaths,
   type GridSpec,
 } from "./generators";
+import {
+  NO_PATHS,
+  ORBIT_TYPE_KEY,
+  ROUTE_TYPE_KEY,
+  chosenPathType,
+  pathTypeOption,
+  staticPathTypeOption,
+} from "./generatorPathTypes";
 import { ofType, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits, orbitsOptions } from "./procedural/orbits";
@@ -57,6 +65,9 @@ export interface GenerateRequest {
   grid: GridSpec;
   seed: number;
   options: Record<string, string>;
+  /** The target palette's path types (options that pick one, e.g. Star
+   *  scatter's "Path type for routes", choose among these). */
+  pathTypes?: readonly PathType[];
   /** Where the map sits in the bigger map (parent hex, neighbours). */
   context?: GenerationContext;
   /** A new region placed next to existing ones: learned generators solve
@@ -84,17 +95,18 @@ export interface TerrainGeneratorKind {
   continuesNeighbours?: boolean;
   options: ProcOption[];
   /** The options as shown for one palette, when a choice lists that
-   *  palette's own terrains (Orbits' Star). Same keys and defaults as
-   *  `options`; see kindOptions. */
-  optionsFor?(terrains: TerrainColor[]): ProcOption[];
+   *  palette's own terrains (Orbits' Star) or path types (Star scatter's
+   *  and Orbits' path type). Same keys as `options`; see kindOptions. */
+  optionsFor?(terrains: TerrainColor[], pathTypes?: readonly PathType[]): ProcOption[];
   /** Can this generator produce terrain for a palette with these terrains? */
   fits(terrains: TerrainColor[]): boolean;
   generate(req: GenerateRequest): GenerateOutcome;
   /** For learned generators: the generator note (for "Open generator"). */
   generatorPath?: string;
-  /** Turn generated paths into path chains for a map on `paletteName`
-   *  (drops path types that palette doesn't have). */
-  toChains(paths: GeneratedPath[], paletteName: string | undefined): { chains: { typeName: string; hexes: string[] }[]; missing: string[] };
+  /** Turn generated paths into anchored paths for the map `mapName`
+   *  (already created, with its terrain): drops path types its palette
+   *  doesn't have (named in `missing`); see generators.ts toMapPaths. */
+  toPaths(paths: GeneratedPath[], mapName: string, taken?: Iterable<string>): { paths: MapPath[]; missing: string[] };
 }
 
 export const BLANK_ID = "blank";
@@ -177,13 +189,7 @@ function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
 }
 
 export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<TerrainGeneratorKind[]> {
-  const toChains = (paths: GeneratedPath[], paletteName: string | undefined) => toPathChains(plugin, paths, undefined, paletteName);
-  // Path types for generated routes/orbits: a palette's own spelling if one
-  // has it, else the Space presets' names (their palettes carry them).
-  const pathTypeNamed = (re: RegExp, fallback: string) =>
-    (plugin.settings.terrainPalettes ?? []).flatMap((p) => p.pathTypes ?? []).find((t) => re.test(t.name))?.name ?? fallback;
-  const jumpRoute = pathTypeNamed(/jump route/i, "Jump route");
-  const orbitPath = pathTypeNamed(/^orbit$/i, "Orbit");
+  const toPaths = (paths: GeneratedPath[], mapName: string, taken?: Iterable<string>) => toMapPaths(plugin, paths, undefined, mapName, taken);
 
   const builtIn: TerrainGeneratorKind[] = [
     {
@@ -194,7 +200,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       options: [],
       fits: () => true,
       generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
-      toChains,
+      toPaths,
     },
     {
       id: STAR_SCATTER_ID,
@@ -202,13 +208,17 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       mapKind: "space",
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
-      options: STAR_SCATTER_OPTIONS,
+      options: [...STAR_SCATTER_OPTIONS, staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
+      optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
       fits: starScatterOffered,
       generate: (req) => {
-        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, jumpRoute);
+        const routeType = chosenPathType(req.options[ROUTE_TYPE_KEY], "routes", req.pathTypes);
+        // None picked on purpose: no routes, and nothing to warn about.
+        const options = !routeType && req.options[ROUTE_TYPE_KEY] === NO_PATHS ? { ...req.options, routes: "none" } : req.options;
+        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType);
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
-      toChains,
+      toPaths,
     },
     {
       id: ORBITS_ID,
@@ -216,14 +226,18 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       mapKind: "space",
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
-      options: ORBITS_OPTIONS,
-      optionsFor: orbitsOptions,
+      options: [...ORBITS_OPTIONS, staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
+      optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
       fits: orbitsFits,
       generate: (req) => {
-        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitPath, req.context);
+        const orbitType = chosenPathType(req.options[ORBIT_TYPE_KEY], "orbits", req.pathTypes);
+        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context);
+        // No type and not None on purpose: say why there are no rings.
+        if (!orbitType && req.options[ORBIT_TYPE_KEY] !== NO_PATHS && r.cells.size)
+          r.warnings.push("No path type for orbits, so the rings weren't drawn. Pick one under Path type for orbits (or add a path type to the palette).");
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
-      toChains,
+      toPaths,
     },
     {
       id: REGION_DETAIL_ID,
@@ -238,7 +252,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, req.context ?? {});
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
-      toChains,
+      toPaths,
     },
     {
       id: OVERLAND_ID,
@@ -258,7 +272,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, edge, "overland");
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
-      toChains,
+      toPaths,
     },
     {
       id: PLANET_SURFACE_ID,
@@ -275,7 +289,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options);
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
-      toChains,
+      toPaths,
     },
   ];
   // Every generator, tagged with its map type: callers filter with
@@ -312,7 +326,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         if (!res.ok) return { ok: false, message: res.message };
         return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
       },
-      toChains: (paths, paletteName) => toPathChains(plugin, paths, g.model, paletteName),
+      toPaths: (paths, mapName, taken) => toMapPaths(plugin, paths, g.model, mapName, taken),
     });
   }
   return kinds;
@@ -351,10 +365,10 @@ export function builtinKind(
       if (!res.ok) return { ok: false, message: res.message };
       return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
     },
-    toChains: (paths, paletteName) => {
+    toPaths: (paths, mapName, taken) => {
       // Streams and trails draw as the palette's type that behaves like them when it has no such type.
-      const known = plugin.getPathTypes(paletteName);
-      return toPathChains(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })), undefined, paletteName);
+      const known = plugin.getMapPathTypes(mapName);
+      return toMapPaths(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })), undefined, mapName, taken);
     },
   };
 }
@@ -379,8 +393,12 @@ export function runGenerator(
 }
 
 /** A generator's options as shown for a palette (see optionsFor). */
-export function kindOptions(kind: Pick<TerrainGeneratorKind, "options" | "optionsFor">, terrains: TerrainColor[]): ProcOption[] {
-  return kind.optionsFor?.(terrains) ?? kind.options;
+export function kindOptions(
+  kind: Pick<TerrainGeneratorKind, "options" | "optionsFor">,
+  terrains: TerrainColor[],
+  pathTypes?: readonly PathType[],
+): ProcOption[] {
+  return kind.optionsFor?.(terrains, pathTypes) ?? kind.options;
 }
 
 /** A generator's options at their defaults, overridden by `chosen`. */

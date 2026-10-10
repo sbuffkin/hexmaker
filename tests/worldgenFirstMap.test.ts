@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_PATH_TYPES, SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SYSTEM_PATH_TYPES } from "../src/palettes/presets";
 import {
 	OVERLAND_OPTIONS,
 	maxLakeSize,
@@ -15,13 +15,17 @@ import {
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
-import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
+import { BLANK_ID, firstMapGenerator, generationKey, kindOptions, listGeneratorKinds, optionsWithDefaults } from "../src/worldgen/registry";
+import { ORBITS_ID } from "../src/worldgen/procedural/orbits";
+import { NO_PATHS, ORBIT_TYPE_KEY, PRESET_PATH_TYPE, ROUTE_TYPE_KEY, chosenPathType, defaultPathTypeFor } from "../src/worldgen/generatorPathTypes";
+import { generatedToMapPaths, routedBranches } from "../src/paths/fromGenerated";
+import { mapRouteContext, pathTypeStyleFor } from "../src/paths/mapContext";
 import { defaultPaletteFor, paletteHint, repointPaletteName, resolveDefaultPalette, resolveExpandedDefault } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
 import { hexNeighbors } from "../packages/hex-wfc/src";
-import type { TerrainColor } from "../src/types";
+import type { PathType, TerrainColor } from "../src/types";
 
 /** Fresh-eyes 2026-10-09 (#36): first-run wizard, Overland, Frozen, palette defaults. */
 
@@ -548,5 +552,126 @@ describe("Overland Sea default next to a neighbour (fresh-eyes r4)", () => {
 	it("the setup modal says where the default came from", () => {
 		expect(neighbourSeaText({ side: "east", why: "edge", seam: "east" }, "ashby-vale")).toMatch(/ashby-vale.*sea is on the east/);
 		expect(neighbourSeaText({ side: "none", why: "dry" }, "ashby-vale")).toMatch(/no water/);
+	});
+});
+
+// ── Phase 6: generator path types are explicit options, never names ──────────
+
+describe("Star scatter and Orbits: the path type is an option from the palette", () => {
+	const fakePlugin = {
+		settings: { worldFolder: "world", hexOrientation: "flat", staggerOffset: "odd", terrainPalettes: [] },
+		app: { vault: { getMarkdownFiles: () => [] } },
+	};
+	const kindsP = listGeneratorKinds(fakePlugin as never);
+	const kindOf = async (id: string) => (await kindsP).find((k) => k.id === id)!;
+	const sector: ProcGrid = { cols: 16, rows: 16, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
+	const system: ProcGrid = { ...sector, cols: 13, rows: 13 };
+	const gridSpec = (g: ProcGrid) => ({ cols: g.cols, rows: g.rows, offset: g.offset, stagger: g.stagger });
+	const renamedSector: PathType[] = SPACE_PATH_TYPES.map((t, i) => ({ ...t, name: ["Hyperlane", "Spice run"][i] }));
+	const renamedSystem: PathType[] = SYSTEM_PATH_TYPES.map((t) => ({ ...t, name: "Ring" }));
+	const run = async (id: string, terrains: TerrainColor[], g: ProcGrid, pathTypes: PathType[] | undefined, options: Record<string, string> = {}) => {
+		const kind = await kindOf(id);
+		const out = kind.generate({ terrains, grid: gridSpec(g), seed: 9, options: optionsWithDefaults(kind, options), pathTypes });
+		if (!out.ok) throw new Error(out.message);
+		return out;
+	};
+	const optionOf = async (id: string, terrains: TerrainColor[], pathTypes: PathType[] | undefined, key: string) =>
+		kindOptions(await kindOf(id), terrains, pathTypes).find((o) => o.key === key)!;
+
+	it("the Space presets say, as data, which of their types draws routes and orbits", () => {
+		expect(defaultPathTypeFor("routes", SPACE_PATH_TYPES)).toBe("Jump route");
+		expect(defaultPathTypeFor("orbits", SYSTEM_PATH_TYPES)).toBe("Orbit");
+		// Only a preset's own designation counts: a type that merely sounds right doesn't.
+		expect(defaultPathTypeFor("routes", [{ name: "Orbit" }])).toBeUndefined();
+		expect(defaultPathTypeFor("routes", [{ name: "Jump route" }], [{ pathRoles: { routes: "Lane" } }])).toBeUndefined();
+		expect(defaultPathTypeFor("routes", [{ name: "Lane" }], [{ pathRoles: { routes: "Lane" } }])).toBe("Lane");
+	});
+
+	it("Star scatter: the preset's route type by default, listed among the palette's types", async () => {
+		const opt = await optionOf(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, SPACE_PATH_TYPES, ROUTE_TYPE_KEY);
+		expect(opt.label).toBe("Path type for routes");
+		expect(opt.choices.map((c) => c.value)).toEqual(["Jump route", "Trade route", NO_PATHS]);
+		expect(opt.default).toBe("Jump route");
+		const r = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, SPACE_PATH_TYPES);
+		expect(r.paths.length).toBeGreaterThan(0);
+		expect(new Set(r.paths.map((p) => p.type))).toEqual(new Set(["Jump route"]));
+		const trade = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, SPACE_PATH_TYPES, { [ROUTE_TYPE_KEY]: "Trade route" });
+		expect(new Set(trade.paths.map((p) => p.type))).toEqual(new Set(["Trade route"]));
+	});
+
+	it("Star scatter on a palette whose types are renamed: no guessing, and the option works", async () => {
+		const opt = await optionOf(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, renamedSector, ROUTE_TYPE_KEY);
+		expect(opt.choices.map((c) => c.value)).toEqual(["Hyperlane", "Spice run", NO_PATHS]);
+		expect(opt.default).toBe(NO_PATHS);
+		const byDefault = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, renamedSector);
+		expect(byDefault.paths).toEqual([]);
+		expect(byDefault.warnings.join(" ")).toContain("Path type for routes");
+		const chosen = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, renamedSector, { [ROUTE_TYPE_KEY]: "Hyperlane" });
+		expect(chosen.paths.length).toBeGreaterThan(0);
+		expect(new Set(chosen.paths.map((p) => p.type))).toEqual(new Set(["Hyperlane"]));
+		// The same routes as under the preset's names: the name changes nothing else.
+		const preset = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, SPACE_PATH_TYPES);
+		expect(chosen.paths.map((p) => p.hexes)).toEqual(preset.paths.map((p) => p.hexes));
+	});
+
+	it("Star scatter: None on purpose draws no routes quietly; a palette without types offers only None and says so", async () => {
+		const none = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, SPACE_PATH_TYPES, { [ROUTE_TYPE_KEY]: NO_PATHS });
+		expect(none.paths).toEqual([]);
+		expect(none.warnings.join(" ")).not.toContain("Path type for routes");
+		const opt = await optionOf(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, [], ROUTE_TYPE_KEY);
+		expect(opt.choices).toEqual([{ value: NO_PATHS, label: "None (this palette has no path types)" }]);
+		const bare = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, []);
+		expect(bare.paths).toEqual([]);
+		expect(bare.warnings.join(" ")).toContain("Path type for routes");
+	});
+
+	it("Orbits: the preset's orbit type by default; a renamed type works through the option", async () => {
+		const opt = await optionOf(ORBITS_ID, SPACE_SYSTEM_TERRAINS, SYSTEM_PATH_TYPES, ORBIT_TYPE_KEY);
+		expect(opt.label).toBe("Path type for orbits");
+		expect(opt.default).toBe("Orbit");
+		const r = await run(ORBITS_ID, SPACE_SYSTEM_TERRAINS, system, SYSTEM_PATH_TYPES, { bodies: "crowded" });
+		expect(r.paths.length).toBeGreaterThan(0);
+		expect(new Set(r.paths.map((p) => p.type))).toEqual(new Set(["Orbit"]));
+
+		expect((await optionOf(ORBITS_ID, SPACE_SYSTEM_TERRAINS, renamedSystem, ORBIT_TYPE_KEY)).default).toBe(NO_PATHS);
+		const byDefault = await run(ORBITS_ID, SPACE_SYSTEM_TERRAINS, system, renamedSystem, { bodies: "crowded" });
+		expect(byDefault.paths).toEqual([]);
+		expect(byDefault.warnings.join(" ")).toContain("Path type for orbits");
+		const ring = await run(ORBITS_ID, SPACE_SYSTEM_TERRAINS, system, renamedSystem, { bodies: "crowded", [ORBIT_TYPE_KEY]: "Ring" });
+		expect(new Set(ring.paths.map((p) => p.type))).toEqual(new Set(["Ring"]));
+		expect(ring.paths.map((p) => p.hexes)).toEqual(r.paths.map((p) => p.hexes));
+		const none = await run(ORBITS_ID, SPACE_SYSTEM_TERRAINS, system, SYSTEM_PATH_TYPES, { bodies: "crowded", [ORBIT_TYPE_KEY]: NO_PATHS });
+		expect(none.paths).toEqual([]);
+		expect(none.warnings.join(" ")).not.toContain("Path type for orbits");
+	});
+
+	it("a choice saved on another palette falls back to this palette's default", () => {
+		expect(chosenPathType("Hyperlane", "routes", SPACE_PATH_TYPES)).toBe("Jump route");
+		expect(chosenPathType(PRESET_PATH_TYPE, "routes", SPACE_PATH_TYPES)).toBe("Jump route");
+		expect(chosenPathType(NO_PATHS, "routes", SPACE_PATH_TYPES)).toBeUndefined();
+		expect(chosenPathType("Trade route", "routes", SPACE_PATH_TYPES)).toBe("Trade route");
+	});
+
+	it("orbit rings come out as anchored paths that draw exactly the ring hexes", async () => {
+		const r = await run(ORBITS_ID, SPACE_SYSTEM_TERRAINS, system, SYSTEM_PATH_TYPES, { bodies: "crowded" });
+		const ctx = mapRouteContext({ orientation: "flat", stagger: "odd", gridSize: { cols: 13, rows: 13 }, gridOffset: { x: 0, y: 0 }, terrainOf: [], impassable: [] });
+		const styleFor = pathTypeStyleFor(SYSTEM_PATH_TYPES);
+		const { paths, inexact } = generatedToMapPaths(r.paths.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctx, { styleFor });
+		expect(inexact).toEqual([]);
+		expect(paths.map((p) => p.name)).toEqual(r.paths.map((_, i) => (i ? `Orbit ${i + 1}` : "Orbit")));
+		paths.forEach((p, i) => {
+			expect(routedBranches(p, ctx, styleFor)).toEqual([r.paths[i].hexes]);
+			expect(p.branches[0].anchors.length).toBeLessThan(r.paths[i].hexes.length);
+		});
+	});
+
+	it("jump routes draw through every system they link (one network per joined set)", async () => {
+		const r = await run(STAR_SCATTER_ID, SPACE_SECTOR_TERRAINS, sector, SPACE_PATH_TYPES);
+		const ctx = mapRouteContext({ orientation: "flat", stagger: "odd", gridSize: { cols: 16, rows: 16 }, gridOffset: { x: 0, y: 0 }, terrainOf: [], impassable: [] });
+		const { paths } = generatedToMapPaths(r.paths.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctx, { styleFor: pathTypeStyleFor(SPACE_PATH_TYPES) });
+		expect(paths.length).toBeLessThan(r.paths.length);
+		// Systems a step apart may sit on a route between two anchors; every one is drawn.
+		const drawn = new Set(paths.flatMap((p) => routedBranches(p, ctx, pathTypeStyleFor(SPACE_PATH_TYPES)).flat()));
+		for (const p of r.paths) for (const h of p.hexes) expect(drawn.has(h)).toBe(true);
 	});
 });

@@ -25,6 +25,21 @@ export interface PalettePreset {
   kind: MapKind;
   /** Per-terrain submap setup (see SubmapDefault). */
   submapDefaults?: Record<string, SubmapDefault>;
+  /**
+   * Which of the preset's own path types the built-in generators draw with
+   * by default (data, so nothing in code picks a path type by its name).
+   * Only a default: each generator has an option to pick any of the
+   * palette's path types, so a renamed type works through that option.
+   */
+  pathRoles?: PresetPathRoles;
+}
+
+/** The generator path roles a preset can fill (see worldgen/generatorPathTypes.ts). */
+export interface PresetPathRoles {
+  /** Star scatter's routes between systems. */
+  routes?: string;
+  /** Orbits' rings around the star. */
+  orbits?: string;
 }
 
 export const SPACE_SECTOR_PALETTE_NAME = "Space - Sector";
@@ -151,6 +166,7 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     description: "Star charts: one hex per parsec, typed by mainworld. Adds jump and trade route path types.",
     terrains: SPACE_SECTOR_TERRAINS,
     pathTypes: SPACE_PATH_TYPES,
+    pathRoles: { routes: SPACE_PATH_TYPES[0].name },
     childPalette: SPACE_SYSTEM_PALETTE_NAME,
     kind: "space",
     submapDefaults: SECTOR_SUBMAP_DEFAULTS,
@@ -160,6 +176,7 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     description: "A single star system: stars, planets, belts, stations, and hazards. Adds an Orbit path type.",
     terrains: SPACE_SYSTEM_TERRAINS,
     pathTypes: SYSTEM_PATH_TYPES,
+    pathRoles: { orbits: SYSTEM_PATH_TYPES[0].name },
     kind: "space",
     submapDefaults: SYSTEM_SUBMAP_DEFAULTS,
   },

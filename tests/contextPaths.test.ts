@@ -2,7 +2,11 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { edgeHex, pairCrossings, routeContextPaths } from "../src/worldgen/procedural/contextPaths";
 import { centerHex, distance, type ProcGrid } from "../src/worldgen/procedural/common";
-import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE } from "../src/constants";
+import { generatedToMapPaths, routedBranches } from "../src/paths/fromGenerated";
+import { mapRouteContext, pathTypeStyleFor } from "../src/paths/mapContext";
+import { stepsOf } from "../src/paths/fromHexes";
+import { impassableNames } from "../src/impassable";
 
 const flat: ProcGrid = { cols: 13, rows: 9, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
 const pointy: ProcGrid = { ...flat, orientation: "pointy" };
@@ -147,5 +151,72 @@ describe("pairCrossings (neighbour regions' paths crossing into a new map)", () 
 		const [road] = routeContextPaths(cells(flat), DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Road", fromHex: "0_1", toHex: "12_7", from: "N", to: "S" }], 1);
 		expect(road.hexes[0]).toBe("0_1");
 		expect(road.hexes[road.hexes.length - 1]).toBe("12_7");
+	});
+});
+
+// Phase 6: generated paths are stored as anchors; what the map draws (the
+// editor router between those anchors, under the map's own routing context)
+// must be exactly the hexes the generator produced.
+describe("context paths become anchored map paths", () => {
+	const styleFor = pathTypeStyleFor(DEFAULT_PATH_TYPES);
+	const ctxFor = (grid: ProcGrid, c: Map<string, string>) => mapRouteContext({
+		orientation: grid.orientation, stagger: grid.stagger,
+		gridSize: { cols: grid.cols, rows: grid.rows }, gridOffset: grid.offset,
+		terrainOf: [...c].map(([k, terrain]): [string, { terrain: string }] => [k, { terrain }]),
+		impassable: impassableNames(DEFAULT_TERRAIN_PALETTE),
+	});
+	const sameSteps = (a: readonly (readonly string[])[], b: readonly (readonly string[])[]) => {
+		const x = stepsOf(a), y = stepsOf(b);
+		return x.size === y.size && [...x].every((k) => y.has(k));
+	};
+
+	for (const orientation of ["flat", "pointy"] as const) {
+		for (const stagger of ["odd", "even"] as const) {
+			it(`resolved chains equal the generated hexes (${orientation}, ${stagger})`, () => {
+				const grid: ProcGrid = { ...flat, orientation, stagger };
+				const c = cells(grid, [6]); // a sea channel the road has to bridge
+				for (let seed = 1; seed <= 8; seed++) {
+					const routed = routeContextPaths(c, DEFAULT_TERRAIN_PALETTE, grid, [
+						{ type: "Road", avoidImpassable: true, autoRoute: "direct", from: "W", to: "E" },
+						{ type: "River", avoidImpassable: false, autoRoute: "winding", from: "N", to: "S" },
+					], seed);
+					expect(routed).toHaveLength(2);
+					const ctx = ctxFor(grid, c);
+					const { paths, inexact } = generatedToMapPaths(routed.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctx, { styleFor });
+					expect(inexact).toEqual([]);
+					expect(paths.map((p) => [p.name, p.typeName, p.branches.length])).toEqual([["Road", "Road", 1], ["River", "River", 1]]);
+					for (const p of paths) {
+						const gen = routed.find((r) => r.type === p.typeName)!.hexes;
+						expect(routedBranches(p, ctx, styleFor)).toEqual([gen]);
+						expect(p.branches[0].anchors[0]).toBe(gen[0]);
+						expect(p.branches[0].anchors[p.branches[0].anchors.length - 1]).toBe(gen[gen.length - 1]);
+						expect(p.branches[0].anchors.length).toBeLessThanOrEqual(gen.length);
+					}
+				}
+			});
+		}
+	}
+
+	it("roads that meet at the centre become one road with branches, drawing the same steps", () => {
+		const c = cells(flat);
+		const routed = routeContextPaths(c, DEFAULT_TERRAIN_PALETTE, flat, [
+			{ type: "Road", from: "W" },
+			{ type: "Road", from: "E" },
+			{ type: "Road", from: "N" },
+		], 3);
+		expect(routed).toHaveLength(3);
+		const ctx = ctxFor(flat, c);
+		const { paths } = generatedToMapPaths(routed.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctx, { styleFor });
+		expect(paths).toHaveLength(1);
+		expect(paths[0].name).toBe("Road");
+		expect(paths[0].branches.length).toBeGreaterThan(1);
+		expect(sameSteps(routedBranches(paths[0], ctx, styleFor), routed.map((r) => r.hexes))).toBe(true);
+	});
+
+	it("names new paths around the map's existing ones", () => {
+		const c = cells(flat);
+		const routed = routeContextPaths(c, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Road", from: "W", to: "E" }], 1);
+		const { paths } = generatedToMapPaths(routed.map((p) => ({ typeName: p.type, hexes: p.hexes })), ctxFor(flat, c), { styleFor, taken: ["road", "Road 2"] });
+		expect(paths.map((p) => p.name)).toEqual(["Road 3"]);
 	});
 });

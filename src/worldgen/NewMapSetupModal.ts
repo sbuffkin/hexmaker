@@ -17,7 +17,7 @@ import { enabledKinds, isSpacePalette } from "../mapKinds";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
-import { pathColors } from "./generators";
+import { addGeneratedPaths, pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
@@ -606,7 +606,7 @@ export class NewMapSetupModal extends HexmakerModal {
         this.options.sea = seaHint.side;
         this.seaFromNeighbour = true;
       }
-      for (const opt of kind ? kindOptions(kind, terrains) : []) {
+      for (const opt of kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []) {
         const r = this.row(optsBox, opt.label);
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
@@ -656,7 +656,7 @@ export class NewMapSetupModal extends HexmakerModal {
         if (this.cols * this.rows > PREVIEW_AUTO_LIMIT) {
           status.setText("Large map — the preview is skipped; terrain is generated on create.");
         } else {
-          const outcome = this.generate(kind, terrains);
+          const outcome = this.generate(kind, terrains, paletteSelect.value);
           this.lastOutcome = outcome;
           if (!outcome.ok) {
             status.setText(outcome.message);
@@ -769,9 +769,10 @@ export class NewMapSetupModal extends HexmakerModal {
    * palette skip the path carry-over (a jump route through a sector hex
    * isn't a lane in the system).
    */
-  private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[]): GenerateOutcome {
+  private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[], paletteName: string): GenerateOutcome {
     return runGenerator(this.plugin.settings.hexOrientation, kind, {
       terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement,
+      pathTypes: this.plugin.getPathTypes(paletteName),
     });
   }
 
@@ -830,7 +831,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const blank = this.kinds.find((k) => k.id === BLANK_ID);
     const effective = openGenerator ? blank : kind;
     if (effective && (effective.id !== BLANK_ID || this.context?.paths?.length)) {
-      outcome = (!openGenerator ? this.lastOutcome : undefined) ?? this.generate(effective, terrains);
+      outcome = (!openGenerator ? this.lastOutcome : undefined) ?? this.generate(effective, terrains, paletteName);
       if (!outcome.ok) {
         new Notice(outcome.message);
         return;
@@ -865,19 +866,19 @@ export class NewMapSetupModal extends HexmakerModal {
       return;
     }
 
-    // Generated paths (jump routes, rivers…) become map path chains.
+    // Join the world grid next to the chosen neighbour (before the paths:
+    // placing sets the map's stagger, which the paths are routed with).
+    if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
+
+    // Generated paths (jump routes, rivers…) become the map's anchored paths.
     if (outcome?.ok && outcome.paths.length && kind) {
-      const { chains, missing } = kind.toChains(outcome.paths, this.plugin.mapPaletteName(result.name));
-      const map = this.plugin.getMap(result.name);
-      if (map && chains.length) {
-        map.pathChains.push(...chains);
+      const { paths, missing } = kind.toPaths(outcome.paths, result.name);
+      if (paths.length) {
+        addGeneratedPaths(this.plugin, result.name, paths);
         await this.plugin.saveSettings();
       }
       if (missing.length) new Notice(`Skipped paths with no matching path type: ${missing.join(", ")}`);
     }
-
-    // Join the world grid next to the chosen neighbour.
-    if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
     let backgroundImage: string | undefined;
     let bgPath = this.origin ? null : this.bgPath;
     if (!this.origin && this.bgFile) {

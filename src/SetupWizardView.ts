@@ -9,7 +9,7 @@ import { MAP_KINDS, enabledKinds, isSpacePalette, terrainsForTables, type MapKin
 import { FEATURE_LEVEL_CHOICES, type FeatureLevel } from "./featureLevel";
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
-import { pathColors } from "./worldgen/generators";
+import { addGeneratedPaths, pathColors } from "./worldgen/generators";
 import {
 	BLANK_ID,
 	describeKind,
@@ -157,7 +157,10 @@ function runGenerator(
 	const saved = plugin.settings.hexOrientation;
 	plugin.settings.hexOrientation = ctx.hexOrientation;
 	try {
-		return kind.generate({ terrains, grid: wizardGrid(plugin, ctx), seed: ctx.seed, options: resolvedOptions(kind, ctx) });
+		return kind.generate({
+			terrains, grid: wizardGrid(plugin, ctx), seed: ctx.seed, options: resolvedOptions(kind, ctx),
+			pathTypes: plugin.getPathTypes(ctx.paletteName),
+		});
 	} finally {
 		plugin.settings.hexOrientation = saved;
 	}
@@ -641,7 +644,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				optsBox.empty();
 				seaRandomOption = undefined;
 				const kind = kinds.find((k) => k.id === ctx.generatorId);
-				for (const opt of kind ? kindOptions(kind, terrains()) : []) {
+				for (const opt of kind ? kindOptions(kind, terrains(), plugin.getPathTypes(ctx.paletteName)) : []) {
 					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
 					row.createSpan({ text: opt.label });
 					const sel = row.createEl("select");
@@ -759,11 +762,10 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			);
 			if ("error" in result) throw new Error(result.error);
 
-			// Generated paths (jump routes…) become map path chains.
+			// Generated paths (jump routes…) become the map's anchored paths.
 			if (outcome?.ok && outcome.paths.length && kind) {
-				const map = plugin.getMap(result.name);
-				const { chains } = kind.toChains(outcome.paths, plugin.mapPaletteName(result.name));
-				if (map && chains.length) map.pathChains.push(...chains);
+				const { paths } = kind.toPaths(outcome.paths, result.name);
+				addGeneratedPaths(plugin, result.name, paths);
 			}
 			ctx.generatedWith = outcome?.ok ? kind?.label : undefined;
 			plugin.settings.defaultMap = result.name;

@@ -16,7 +16,8 @@ import { getFrontMatter, getTerrainFromFile, setTerrainInFile } from "../frontma
 import { normalizeFolder, slugify } from "../utils";
 import { VERSION_KEY, pluginVersion } from "../compat";
 import { isImpassable } from "../impassable";
-import type { TerrainColor } from "../types";
+import type { MapPath, TerrainColor } from "../types";
+import { generatedToMapPaths } from "../paths/fromGenerated";
 import {
   learnModel,
   mergeModels,
@@ -148,20 +149,45 @@ export function pathColors(plugin: HexmakerPlugin, paletteName: string | undefin
 }
 
 /**
- * Generated paths as map path chains for a map on `paletteName`. Path types
- * that palette doesn't have are dropped (and named in the returned warning
- * list).
+ * Generated paths as anchored map paths for the map `mapName` (already
+ * created, with its terrain): typed by drawnPathType, path types its palette
+ * doesn't have dropped (and named in `missing`), then turned into MapPaths
+ * against that map's routing context (see paths/fromGenerated.ts): chains of
+ * one type that join become one path with branches, and each branch gets
+ * the fewest anchors that route back to exactly the generated hexes. New
+ * names avoid `taken` (default: the map's current path names).
  */
-export function toPathChains(
+export function toMapPaths(
   plugin: HexmakerPlugin,
-  paths: { type: string; route?: string; hexes: string[] }[],
+  paths: readonly { type: string; route?: string; hexes: readonly string[] }[],
   model: HexWfcModel | undefined,
-  paletteName: string | undefined,
-): { chains: { typeName: string; hexes: string[] }[]; missing: string[] } {
-  const known = new Set(plugin.getPathTypes(paletteName).map((t) => t.name));
+  mapName: string,
+  taken?: Iterable<string>,
+): { paths: MapPath[]; missing: string[] } {
+  const map = plugin.getMap(mapName);
+  const known = new Set(plugin.getMapPathTypes(mapName).map((t) => t.name));
   const typed = paths.map((p) => ({ typeName: drawnPathType(model, p), hexes: [...p.hexes] }));
   const missing = [...new Set(typed.map((p) => p.typeName).filter((t) => !known.has(t)))];
-  return { chains: typed.filter((p) => known.has(p.typeName)), missing };
+  if (!map) return { paths: [], missing };
+  const store = plugin.mapStore;
+  const { paths: out } = generatedToMapPaths(
+    typed.filter((p) => known.has(p.typeName)),
+    store.routeContext(map),
+    { styleFor: store.pathStyleFor(map), taken: taken ?? store.paths(mapName).map((p) => p.name) },
+  );
+  return { paths: out, missing };
+}
+
+/**
+ * Add generated paths to a map through the map store (its note is
+ * written). With `replaceTypes`, the map's paths of those types go first
+ * (regenerating redraws the generator's own path types).
+ */
+export function addGeneratedPaths(plugin: HexmakerPlugin, mapName: string, paths: MapPath[], replaceTypes?: ReadonlySet<string>): void {
+  const current = plugin.mapStore.paths(mapName);
+  const kept = replaceTypes ? current.filter((p) => !replaceTypes.has(p.typeName)) : [...current];
+  if (!paths.length && kept.length === current.length) return;
+  plugin.mapStore.setPaths(mapName, [...kept, ...paths]);
 }
 
 /** The map path type a generated path is drawn as: its route's "as", else its learned type. */
@@ -283,7 +309,8 @@ function learnFromMaps(
       name,
       orientation: plugin.settings.hexOrientation,
       stagger: mapStagger(plugin, mapName),
-      paths: (map.pathChains ?? []).map((c) => ({ type: c.typeName, hexes: c.hexes })),
+      // The map's paths as drawn: anchored paths resolved to hex chains.
+      paths: plugin.paths.resolvedPathChains(mapName).map((c) => ({ type: c.typeName, hexes: c.hexes })),
       meta,
     }));
   }
@@ -526,8 +553,10 @@ export async function fillMap(
   // other path types, and every path when only filling, are left alone.
   if (mode === "regenerate" && model.paths?.length) {
     const learned = new Set(model.paths.map((p) => drawnPathType(model, { type: p.type, route: pathRouteKey(p) })));
-    const { chains, missing } = toPathChains(plugin, result.paths, model, plugin.mapPaletteName(mapName));
-    map.pathChains = [...(map.pathChains ?? []).filter((c) => !learned.has(c.typeName)), ...chains];
+    // Whole paths of those types go; the new ones are named around the rest.
+    const kept = plugin.mapStore.paths(mapName).filter((p) => !learned.has(p.typeName)).map((p) => p.name);
+    const { paths, missing } = toMapPaths(plugin, result.paths, model, mapName, kept);
+    addGeneratedPaths(plugin, mapName, paths, learned);
     if (missing.length) warnings.push(`No path type named ${missing.join(", ")}, so those paths were skipped`);
     await plugin.saveSettings();
   }

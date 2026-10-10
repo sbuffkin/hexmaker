@@ -102,7 +102,7 @@ describe("star scatter", () => {
 		const g = grid(16, 16);
 		const without = starScatter(SPACE_SECTOR_TERRAINS, g, 9, { routes: "2" });
 		expect(without.paths).toEqual([]);
-		expect(without.warnings.join(" ")).toMatch(/Jump route/);
+		expect(without.warnings.join(" ")).toMatch(/Path type for routes/);
 
 		const r = starScatter(SPACE_SECTOR_TERRAINS, g, 9, { routes: "2" }, "Jump route");
 		expect(r.paths.length).toBeGreaterThan(0);

@@ -8,7 +8,7 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData, RegionBiome } from "../types";
 import { getTerrainFromFile } from "../frontmatter";
-import { generateTerrain, readMapTerrain, toPathChains, type GeneratorFile, type GridSpec } from "./generators";
+import { addGeneratedPaths, generateTerrain, readMapTerrain, toMapPaths, type GeneratorFile, type GridSpec } from "./generators";
 import { learnModel, mergeModels, type Compass, type HexWfcModel, type SolveResult } from "../../packages/hex-wfc/src";
 import {
   link,
@@ -353,11 +353,15 @@ export async function createWalkRegion(
   );
   if ("error" in made) return made;
   const map = plugin.getMap(made.name);
-  if (map) {
-    const { chains } = toPathChains(plugin, r.paths, plan.model, plugin.mapPaletteName(made.name));
-    if (chains.length) map.pathChains = [...map.pathChains, ...chains];
-    map.biome = { ...plan.biome };
-  }
+  if (map) map.biome = { ...plan.biome };
   await placeNewRegion(plugin, made.name, region);
+  // Paths after placing (it sets the stagger they're routed with).
+  if (map) {
+    const { paths } = toMapPaths(plugin, r.paths, plan.model, made.name);
+    if (paths.length) {
+      addGeneratedPaths(plugin, made.name, paths);
+      await plugin.saveSettings();
+    }
+  }
   return made;
 }

@@ -197,7 +197,7 @@ export function starScatter(
   const warnings: string[] = [];
   if (range > 0 && systems.length > 1) {
     if (!jumpRouteType) {
-      warnings.push('No "Jump route" path type — routes skipped. Install the Space - Sector preset to add it.');
+      warnings.push("No path type for routes, so none were drawn. Pick one under Path type for routes (or add a path type to the palette).");
     } else {
       const seen = new Set<string>();
       for (const a of systems) {
