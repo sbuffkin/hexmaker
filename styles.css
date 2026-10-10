@@ -7358,6 +7358,8 @@ button.duckmage-wfc-library-tab.is-active {
     display: flex;
     flex-wrap: wrap;
     gap: 2px 10px;
+    /* Wrap onto two lines rather than doubling the menu's width. */
+    max-width: 15em;
 }
 
 /* ── Hex names on the map (N1) ── */
@@ -7377,7 +7379,7 @@ button.duckmage-wfc-library-tab.is-active {
     top: var(--duckmage-name-y, 50%);
     /* Below the centre (the icon), or above it when coordinates sit at the bottom. */
     transform: translate(-50%, calc(-50% + var(--duckmage-name-y-offset, 1.35em)));
-    font-size: 0.72em;
+    font-size: 0.95em;
     font-weight: 700;
     color: var(--text-normal);
     white-space: nowrap;
