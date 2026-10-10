@@ -22,7 +22,6 @@ import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
 import { applyPresetTerrains, planPresetTerrains } from "./presetUpdates";
-import { writeJsonBackup } from "../backup";
 import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 
