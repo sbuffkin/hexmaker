@@ -88,6 +88,8 @@ export class DrawingToolPanel extends HexSidePanel {
 
 export type OverlayKey =
   | "showCoords"
+  | "showHexNames"
+  | "showTokenNames"
   | "showTerrainIcons"
   | "showIconOverrides"
   | "showPaths";
@@ -96,13 +98,18 @@ interface OverlayOption {
   key: OverlayKey;
   label: string;
   cssClass: string;
+  /** Shown in the compact "Labels" group rather than as its own row. */
+  inLabels?: boolean;
 }
 
 const OVERLAY_OPTIONS: OverlayOption[] = [
-  { key: "showCoords",        label: "Show coordinates",   cssClass: "duckmage-hide-coords" },
   { key: "showTerrainIcons",  label: "Show terrain icons", cssClass: "duckmage-hide-terrain-icons" },
   { key: "showIconOverrides", label: "Show icon overrides",cssClass: "duckmage-hide-icon-overrides" },
   { key: "showPaths",         label: "Show paths",         cssClass: "duckmage-hide-paths" },
+  // Labels: one group, so the menu doesn't grow a row per label kind.
+  { key: "showCoords",     label: "Coordinates", cssClass: "duckmage-hide-coords",      inLabels: true },
+  { key: "showHexNames",   label: "Hex names",   cssClass: "duckmage-hide-hex-names",   inLabels: true },
+  { key: "showTokenNames", label: "Token names", cssClass: "duckmage-hide-token-names", inLabels: true },
 ];
 
 export class OverlayPanel extends HexSidePanel {
@@ -141,8 +148,14 @@ export class OverlayPanel extends HexSidePanel {
   }
 
   protected buildPanel(panel: HTMLDivElement): void {
+    // The Labels group comes first: one heading, its toggles side by side.
+    const labelGroup = panel.createDiv({ cls: "duckmage-overlay-group" });
+    labelGroup.createDiv({ cls: "duckmage-overlay-group-title", text: "Labels" });
+    const labelRow = labelGroup.createDiv({ cls: "duckmage-overlay-group-row" });
     for (const opt of OVERLAY_OPTIONS) {
-      const row = panel.createDiv({ cls: "duckmage-overlay-row" });
+      const row = opt.inLabels
+        ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-chip" })
+        : panel.createDiv({ cls: "duckmage-overlay-row" });
 
       const cb = row.createEl("input", { type: "checkbox" });
       cb.checked = true; // default — refreshed in syncToRegion()

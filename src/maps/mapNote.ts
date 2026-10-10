@@ -14,8 +14,8 @@ import type { MapData, PathChain } from "../types";
  *   …
  *   ---
  *   ## Hexes
- *   | Hex | Terrain | Icon | GM icons | Region | Submap | Locked |
- *   | 3_4 | dunes |  |  | Basin |  |  |
+ *   | Hex | Name | Terrain | Icon | GM icons | Region | Submap | Locked |
+ *   | 3_4 | Glass Wastes | dunes |  |  | Basin |  |  |
  *   ## Paths
  *   | Type | Hexes |
  *   | Road | 3_4 4_4 5_4 |
@@ -28,6 +28,8 @@ export const MAP_NOTE_MARKER = "hexmaker-map";
 
 /** Map data for one hex. Absent fields = nothing set. */
 export interface HexData {
+  /** The hex's own name ("Glass Wastes"): shown on the map, and its note's alias. */
+  name?: string;
   terrain?: string;
   icon?: string;
   gmIcons?: string[];
@@ -63,6 +65,8 @@ const SCALAR_KEYS: [keyof MapSettings, string][] = [
   ["showRegionOverlay", "show-region-overlay"],
   ["showGmLayer", "show-gm-layer"],
   ["showTokens", "show-tokens"],
+  ["showHexNames", "show-hex-names"],
+  ["showTokenNames", "show-token-names"],
   ["gridDisplayScale", "grid-display-scale"],
   ["gridDisplayScaleX", "grid-display-scale-x"],
   ["gridDisplayScaleY", "grid-display-scale-y"],
@@ -184,7 +188,7 @@ function parseFrontmatter(body: string): Partial<MapSettings> {
 
 // ── tables ───────────────────────────────────────────────────────────────
 
-const HEX_HEADERS = ["Hex", "Terrain", "Icon", "GM icons", "Region", "Submap", "Locked"];
+const HEX_HEADERS = ["Hex", "Name", "Terrain", "Icon", "GM icons", "Region", "Submap", "Locked"];
 const PATH_HEADERS = ["Type", "Hexes"];
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
@@ -225,8 +229,13 @@ export function compareHexKeys(a: string, b: string): number {
   return ay - by || ax - bx;
 }
 
+/** Anything besides terrain set on a hex. */
+function hasNonTerrainData(h: HexData): boolean {
+  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.submap || h.locked);
+}
+
 function isEmptyHex(h: HexData): boolean {
-  return !h.terrain && !h.icon && !(h.gmIcons && h.gmIcons.length) && !h.region && !h.submap && !h.locked;
+  return !h.terrain && !hasNonTerrainData(h);
 }
 
 /** Rows worth writing: hexes with any data, minus "just the base terrain". */
@@ -234,7 +243,7 @@ export function hexRowsToWrite(hexes: Map<string, HexData>, baseTerrain?: string
   return [...hexes]
     .filter(([, h]) => {
       if (isEmptyHex(h)) return false;
-      const onlyBase = h.terrain === baseTerrain && !h.icon && !(h.gmIcons && h.gmIcons.length) && !h.region && !h.submap && !h.locked;
+      const onlyBase = h.terrain === baseTerrain && !hasNonTerrainData(h);
       return !(baseTerrain && onlyBase);
     })
     .sort(([a], [b]) => compareHexKeys(a, b));
@@ -243,7 +252,7 @@ export function hexRowsToWrite(hexes: Map<string, HexData>, baseTerrain?: string
 function hexTable(hexes: Map<string, HexData>, baseTerrain?: string): string {
   const lines = [`| ${HEX_HEADERS.join(" | ")} |`, `| ${HEX_HEADERS.map(() => "---").join(" | ")} |`];
   for (const [k, h] of hexRowsToWrite(hexes, baseTerrain)) {
-    lines.push(`| ${[k, h.terrain, h.icon, h.gmIcons?.join(", "), h.region, h.submap, h.locked ? "yes" : ""].map(esc).join(" | ")} |`);
+    lines.push(`| ${[k, h.name, h.terrain, h.icon, h.gmIcons?.join(", "), h.region, h.submap, h.locked ? "yes" : ""].map(esc).join(" | ")} |`);
   }
   return lines.join("\n");
 }
@@ -259,13 +268,15 @@ function parseHexTable(lines: string[]): Map<string, HexData> {
   const t = findTable(lines, ["hex", "terrain"]);
   if (!t) return out;
   const col = (name: string) => t.cols.indexOf(name);
-  const ci = { hex: col("hex"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), submap: col("submap"), locked: col("locked") };
+  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), submap: col("submap"), locked: col("locked") };
   for (let i = t.start + 2; i < t.end; i++) {
     const c = splitRow(lines[i]);
     const key = c[ci.hex];
     if (!key || !/^-?\d+_-?\d+$/.test(key)) continue;
     const h: HexData = {};
     const get = (j: number) => (j >= 0 ? c[j] : "") || undefined;
+    // Notes from before hex names have no Name column (index -1): no name.
+    if (get(ci.name)) h.name = get(ci.name);
     if (get(ci.terrain)) h.terrain = get(ci.terrain);
     if (get(ci.icon)) h.icon = get(ci.icon);
     const gm = get(ci.gm);
@@ -310,7 +321,7 @@ export function buildMapNote(name: string, data: MapNoteData): string {
     "---",
     `# ${name}`,
     "",
-    "Hexmaker map. Each hex's terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.",
+    "Hexmaker map. Each hex's name, terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.",
     "",
     "## Hexes",
     "",

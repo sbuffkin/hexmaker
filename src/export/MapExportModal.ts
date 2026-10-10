@@ -2,7 +2,8 @@ import type { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { exportMapAsPng } from "./mapPngRenderer";
-import { exportMapAsPdf } from "./exporters/mapWithTable";
+import { exportMapAsPdf, HANDOUT_COLUMNS } from "./exporters/mapWithTable";
+import { MANUAL_PARTS } from "./manual/manualModel";
 import { exportMapAsManual } from "./exporters/hexcrawlManual";
 import { mapExportFileNames, mapExportStem, mapExportSuffix } from "./exportNames";
 
@@ -22,6 +23,15 @@ function checkbox(parent: HTMLElement, labelText: string, initial: boolean, hint
   cb.checked = initial;
   row.createEl("label", { text: labelText, cls: "duckmage-export-tab-label", attr: { for: id } });
   if (hint) row.createDiv({ cls: "duckmage-export-tab-row-hint", text: hint });
+  return cb;
+}
+
+/** A small checkbox for a row of options; the label wraps it, so its text toggles it. */
+function inlineCheck(parent: HTMLElement, labelText: string, initial: boolean, title?: string): HTMLInputElement {
+  const label = parent.createEl("label", { attr: title ? { title } : {} });
+  const cb = label.createEl("input", { type: "checkbox", cls: "duckmage-export-tab-checkbox" });
+  cb.checked = initial;
+  label.appendText(labelText);
   return cb;
 }
 
@@ -87,14 +97,32 @@ export function renderMapExportForm(
   // plus this reads as the "Writes:" names (fresh-eyes r5).
   const suffixEl = nameRow.createSpan({ cls: "duckmage-export-name-suffix" });
 
-  const showCoords = checkbox(optsForm, "Show coordinate labels", true);
-  const showIcons = checkbox(optsForm, "Show terrain / override icons", true);
-  const showPaths = checkbox(optsForm, "Include paths (roads, rivers, etc.)", true);
-  const showFactionOverlay = checkbox(optsForm, "Include faction overlay", false,
+  // What goes on the map images: one compact group of toggles (X1).
+  const layers = optsForm.createDiv({ cls: "duckmage-export-group" });
+  layers.createDiv({ cls: "duckmage-export-group-title", text: "On the map" });
+  const layerRow = layers.createDiv({ cls: "duckmage-export-inline" });
+  const showCoords = inlineCheck(layerRow, "Coordinates", true);
+  const showIcons = inlineCheck(layerRow, "Icons", true);
+  const showPaths = inlineCheck(layerRow, "Paths", true);
+  const showHexNames = inlineCheck(layerRow, "Hex names", true);
+  const showTokens = inlineCheck(layerRow, "Tokens", true, "Tokens and their names. Hidden tokens are never drawn.");
+  const showFactionOverlay = inlineCheck(layerRow, "Faction overlay", false,
     "Tints hexes by faction and lists the faction names: leave off if players shouldn't know them.");
-  const showRegionOverlay = checkbox(optsForm, "Include region overlay", false,
+  const showRegionOverlay = inlineCheck(layerRow, "Region overlay", false,
     "Tints hexes by region and labels each region by name.");
-  const playerEdition = checkbox(optsForm, "Hexcrawl manual: player version (leave out the hidden and secret sections)", false);
+
+  // What goes into the PDF's reference table.
+  const columnsBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
+  columnsBox.createEl("summary", { text: "PDF table columns" });
+  const columnsRow = columnsBox.createDiv({ cls: "duckmage-export-inline" });
+  const columnChecks = HANDOUT_COLUMNS.map((c) => ({ key: c.key, cb: inlineCheck(columnsRow, c.label, true) }));
+
+  // The hexcrawl manual's edition and optional parts.
+  const manualBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
+  manualBox.createEl("summary", { text: "Hexcrawl manual" });
+  const playerEdition = checkbox(manualBox, "Player version (leave out the hidden and secret sections)", false);
+  const partsRow = manualBox.createDiv({ cls: "duckmage-export-inline" });
+  const partChecks = MANUAL_PARTS.map((p) => ({ key: p.key, cb: inlineCheck(partsRow, p.label, true) }));
 
   // Output size: presets of hex radius (the image size also depends on the grid).
   const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
@@ -116,14 +144,14 @@ export function renderMapExportForm(
   included.createDiv({ cls: "duckmage-export-included-title", text: "What's in each file" });
   const list = included.createEl("ul");
   list.createEl("li", {
-    text: "PNG: the map as drawn: terrain, icons, paths and coordinates you tick, plus overlays you tick. " +
-      "Never game master icons, tokens or any note text (description, hidden, secret), so it's safe to hand to players.",
+    text: "PNG: the map with what you tick under On the map (the faction and region overlays print their names). " +
+      "Never game master icons, hidden tokens or any note text (description, hidden, secret), so it's safe to hand to players.",
   });
   list.createEl("li", {
-    text: "PDF with reference table: that map, then a table per section with each hex's linked notes (towns, dungeons, quests, factions…) and the start of its description; no hidden or secret sections.",
+    text: "PDF with reference table: that map, then a table per section with the columns you tick (name, linked notes, the start of the description…); no hidden or secret sections.",
   });
   list.createEl("li", {
-    text: "Hexcrawl manual: the full game master gazetteer, hidden and secret sections included, unless you tick the player version.",
+    text: "Hexcrawl manual: the full game master gazetteer with the parts you tick, hidden and secret sections included, unless you tick the player version.",
   });
 
   // The exact file names each button writes (shared with the exporters' naming).
@@ -162,6 +190,9 @@ export function renderMapExportForm(
     showPaths: showPaths.checked,
     showFactionOverlay: showFactionOverlay.checked,
     showRegionOverlay: showRegionOverlay.checked,
+    showHexNames: showHexNames.checked,
+    showTokens: showTokens.checked,
+    columns: columnChecks.filter((c) => c.cb.checked).map((c) => c.key),
   });
 
   const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });
@@ -184,6 +215,9 @@ export function renderMapExportForm(
       showPaths: o.showPaths,
       showFactionOverlay: o.showFactionOverlay,
       showRegionOverlay: o.showRegionOverlay,
+      showHexNames: o.showHexNames,
+      showTokens: o.showTokens,
+      omit: partChecks.filter((p) => !p.cb.checked).map((p) => p.key),
     });
     form.onExport?.();
   });

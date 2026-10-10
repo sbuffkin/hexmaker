@@ -29,7 +29,7 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 ## Where the map is stored
 
-Terrain, icons, GM icons, regions and submap links live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
+Hex names, terrain, icons, GM icons, regions and submap links live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
 
 ---
 
@@ -77,6 +77,14 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 | **⊞** | Open the Hex Table — a spreadsheet view of all hex notes with filters and sorting |
 | **🎲** | Open the Random Tables browser — roll on any table, view odds, edit entries |
 | **⌖** | Go to a specific hex by entering X, Y coordinates |
+
+## Names and labels
+
+Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it.
+
+Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. **Export** can include hex names and tokens, and lets you pick the PDF table's columns and the manual's parts for a handout.
+
+---
 
 ## Simple and Advanced
 

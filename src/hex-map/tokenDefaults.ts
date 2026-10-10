@@ -67,3 +67,40 @@ export function isTokenNoteCandidate(
   const inc = include.filter(Boolean);
   return inc.length === 0 || inc.some((f) => inFolder(path, f));
 }
+
+// Returns [dx, dy] unit offsets (multiply by spread radius) for N tokens on one hex.
+// Presets keep 1-5 tokens visually distinct; 6+ use an even radial ring.
+export function tokenGroupOffsets(n: number): [number, number][] {
+  const PRESETS: [number, number][][] = [
+    [[0, 0]],
+    [[-0.55, 0], [0.55, 0]],
+    [[0, -0.6], [-0.55, 0.4], [0.55, 0.4]],
+    [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.4], [0.5, 0.4]],
+    [[0, -0.65], [-0.6, -0.15], [0.6, -0.15], [-0.38, 0.55], [0.38, 0.55]],
+  ];
+  if (n >= 1 && n <= 5) return PRESETS[n - 1];
+  return Array.from({ length: n }, (_, i) => {
+    const a = (2 * Math.PI * i) / n - Math.PI / 2;
+    return [Math.cos(a) * 0.65, Math.sin(a) * 0.65];
+  });
+}
+
+/**
+ * Where a token's name label goes, as unit offsets like tokenGroupOffsets
+ * plus a line number. A lone token's name sits under it; tokens sharing a
+ * hex list their names one per line under the whole group, since names
+ * side by side overlap.
+ */
+export function tokenNamePlacement(offsets: [number, number][], i: number): { dx: number; dy: number; line: number } {
+  if (offsets.length <= 1) {
+    const [dx, dy] = offsets[0] ?? [0, 0];
+    return { dx, dy, line: 0 };
+  }
+  return { dx: 0, dy: Math.max(...offsets.map(([, dy]) => dy)), line: i };
+}
+
+/** The largest size among tokens sharing a hex (where their name list starts). */
+export function groupSize(tokens: { size?: "sm" | "md" | "lg" }[]): "sm" | "md" | "lg" {
+  if (tokens.some((t) => t.size === "lg")) return "lg";
+  return tokens.some((t) => (t.size ?? "md") === "md") ? "md" : "sm";
+}

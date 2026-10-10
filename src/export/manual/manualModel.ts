@@ -36,6 +36,8 @@ export interface ManualHex {
   /** The note's own coordinates, for finding it in Obsidian. */
   x: number;
   y: number;
+  /** The hex's own name (map note), if it has one. */
+  name?: string;
   terrain: string;
   terrainColor?: string;
   region?: string;
@@ -96,4 +98,16 @@ export interface ManualData {
   regions: { name: string; hexCount: number }[];
   sections: ManualSection[];
   index: { category: string; entries: ManualIndexEntry[] }[];
+  /** Front/back matter the user left out of this handout. */
+  omit?: ManualPart[];
 }
+
+/** Optional parts of the manual (the title page and hex key always print). */
+export type ManualPart = "legend" | "tables" | "factions" | "index";
+
+export const MANUAL_PARTS: { key: ManualPart; label: string }[] = [
+  { key: "legend", label: "Map legend" },
+  { key: "tables", label: "Encounter tables" },
+  { key: "factions", label: "Factions and regions" },
+  { key: "index", label: "Index" },
+];

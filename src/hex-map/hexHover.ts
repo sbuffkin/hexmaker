@@ -8,11 +8,16 @@ export function hexHoverLabel(
   y: number,
   ownTerrain: string | null,
   baseTerrain: string | null,
+  name: string | null = null,
 ): string {
   const where = `hex ${x}, ${y}`;
-  if (ownTerrain) return `${ownTerrain} · ${where}`;
-  if (baseTerrain) return `${baseTerrain} (map base) · ${where}`;
-  return `Hex ${x}, ${y}`;
+  const label = ownTerrain
+    ? `${ownTerrain} · ${where}`
+    : baseTerrain
+      ? `${baseTerrain} (map base) · ${where}`
+      : `Hex ${x}, ${y}`;
+  // A named hex leads with its name (N1).
+  return name ? `${name} · ${label}` : label;
 }
 
 /**

@@ -52,6 +52,7 @@ import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
+import { cleanHexName, syncHexNameAlias } from "./maps/hexNames";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -1346,6 +1347,20 @@ export default class HexmakerPlugin extends Plugin {
     });
   }
 
+  /**
+   * Name (or rename, or with "" unname) a hex. The name lives in the map
+   * note; a hex that has a note also gets it as an alias, replacing the
+   * previous name's alias and keeping any the user added.
+   */
+  async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
+    const key = `${x}_${y}`;
+    const name = cleanHexName(raw);
+    const old = this.mapStore.get(mapName, key)?.name;
+    if ((old ?? "") === name) return;
+    this.mapStore.set(mapName, key, { name: name || null });
+    await syncHexNameAlias(this.app, this.hexPath(x, y, mapName), old, name);
+  }
+
   /** Create a hex note from the configured template (or the built-in default). */
   async createHexNote(
     x: number,
@@ -1391,7 +1406,11 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     try {
-      return await this.app.vault.create(path, content);
+      const file = await this.app.vault.create(path, content);
+      // A named hex's note gets its name as an alias (X4).
+      const name = this.mapStore.get(mapName, `${x}_${y}`)?.name;
+      if (name) await syncHexNameAlias(this.app, path, undefined, name);
+      return file;
     } catch {
       // A concurrent worker may have created this file between our existence check and
       // this create call.  If the file now exists, use it rather than treating it as an error.

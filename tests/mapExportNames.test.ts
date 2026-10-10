@@ -43,12 +43,18 @@ describe("map export file names", () => {
 
 describe("PNG export carries no GM-only content", () => {
 	// A player handout is safe because the renderer never reads the GM
-	// layer, tokens or note sections. Fails loudly if someone adds them.
+	// layer or note sections. Fails loudly if someone adds them. Tokens are
+	// an export option (X1, owner decision 2026-10-10), but hidden ones are
+	// never drawn.
 	const src = readFileSync(new URL("../src/export/mapPngRenderer.ts", import.meta.url), "utf8");
 
-	it("never reads GM icons, tokens or hidden/secret sections", () => {
+	it("never reads GM icons or hidden/secret sections", () => {
 		expect(src).not.toMatch(/gmIcons|gm-icons|getGmIcon/i);
-		expect(src).not.toMatch(/\btokens?\b\s*[.:=[(]/i);
 		expect(src).not.toMatch(/["'](Hidden|Secret)["']/);
+	});
+
+	it("draws tokens only when asked, and never hidden ones", () => {
+		expect(src).toMatch(/const showTokens = opts\.showTokens \?\? false;/);
+		expect(src).toMatch(/!t\.visible/);
 	});
 });

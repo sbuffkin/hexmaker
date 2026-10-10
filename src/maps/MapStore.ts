@@ -10,6 +10,7 @@ import {
   type HexData,
   type MapNoteData,
 } from "./mapNote";
+import { renamedHexes, syncHexNameAlias } from "./hexNames";
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
@@ -257,7 +258,12 @@ export class MapStore {
       if (!data) return;
       this.broken.delete(map.name);
       this.lastContent.set(file.path, content);
+      const before = new Map(this.hexes.get(map.name) ?? []);
       this.apply(map, data);
+      // Names renamed by hand in the table: keep their notes' aliases in step.
+      for (const r of renamedHexes(before, data.hexes)) {
+        await syncHexNameAlias(this.plugin.app, `${this.mapFolder(map.name)}/${r.key}.md`, r.oldName, r.newName);
+      }
       await this.plugin.saveData(this.plugin.settings);
       this.emit(map.name);
       this.plugin.refreshHexMap();

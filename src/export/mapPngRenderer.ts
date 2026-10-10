@@ -32,13 +32,17 @@ import {
   getFactionStyleFromFile,
   getRegionStyleFromFile,
   getHexRegionFromFile,
+  getHexNameFromFile,
+  getTokenDataFromCache,
   type OverlayStyle,
 } from "../frontmatter";
+import { pngHexNamePx, pngHexNameY, pngTokenRadius, pngTokenSpread } from "./handoutLabels";
+import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
 import { getIconUrl, normalizeFolder } from "../utils";
 import { drawPatternTile } from "../overlayPatterns";
 import { coordHaloColor, pngCoordFontFamily, pngCoordFontPx, pngCoordY } from "../coordStyle";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { TerrainColor, MapData } from "../types";
+import type { TerrainColor, MapData, TokenEntry } from "../types";
 
 export interface MapPngRenderOptions {
   /** Pixel radius of each hex. Larger = higher-resolution output. Default 50. */
@@ -78,6 +82,10 @@ export interface MapPngRenderOptions {
     rowStart: number;
     rowEnd: number;
   };
+  /** Draw each named hex's name (N1). Default false. */
+  showHexNames?: boolean;
+  /** Draw the map's tokens (hidden ones never), with their names. Default false. */
+  showTokens?: boolean;
   /** Tint hexes by their linked factions. Default false. */
   showFactionOverlay?: boolean;
   /** Tint hexes by their region. Default false. */
@@ -108,6 +116,8 @@ export async function renderMapToPngBlob(
   const showPaths = opts.showPaths ?? true;
   const showFactionOverlay = opts.showFactionOverlay ?? false;
   const showRegionOverlay = opts.showRegionOverlay ?? false;
+  const showHexNames = opts.showHexNames ?? false;
+  const showTokens = opts.showTokens ?? false;
   const background = opts.background ?? "#1a1a1a";
   const borderColor = opts.borderColor ?? "#222";
   // Labels follow the coordinate settings, with a contrast halo, so they
@@ -195,6 +205,7 @@ export async function renderMapToPngBlob(
     iconTint?: string;
     factions: { color: string; style: OverlayStyle }[];
     region?: { color: string; style: OverlayStyle };
+    name?: string;
   }
   const hexes: HexState[] = [];
   const iconsNeeded = new Set<string>();
@@ -269,7 +280,19 @@ export async function renderMapToPngBlob(
         iconTint: iconOverride ? undefined : terrain?.iconColor,
         factions,
         region,
+        name: showHexNames ? getHexNameFromFile(notePath) ?? undefined : undefined,
       });
+    }
+  }
+
+  // Tokens on this map, grouped per hex (visible ones only, as on screen).
+  const tokensByHex = new Map<string, TokenEntry[]>();
+  if (showTokens) {
+    for (const file of plugin.app.vault.getMarkdownFiles()) {
+      const t = getTokenDataFromCache(plugin.app, file);
+      if (!t || t.map !== mapName || !t.visible || !shifted.has(t.hex)) continue;
+      tokensByHex.set(t.hex, [...(tokensByHex.get(t.hex) ?? []), t]);
+      if (t.icon) iconsNeeded.add(t.icon);
     }
   }
 
@@ -459,10 +482,117 @@ export async function renderMapToPngBlob(
     });
   }
 
+  // Hex names, over paths, on the side of the hex away from its coordinates.
+  if (showHexNames) {
+    const px = pngHexNamePx(R);
+    ctx.font = `700 ${px}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(3, px * 0.3);
+    for (const hex of hexes) {
+      if (!hex.name) continue;
+      const y = pngHexNameY(coordPlacement, showCoords && !!opts.coordLabel, hex.cy, R);
+      ctx.strokeStyle = coordHalo;
+      ctx.strokeText(hex.name, hex.cx, y);
+      ctx.fillStyle = coordColor;
+      ctx.fillText(hex.name, hex.cx, y);
+    }
+  }
+
+  // Tokens last, on top of everything, each with its name underneath.
+  if (showTokens) {
+    const spread = pngTokenSpread(R);
+    for (const [key, tokens] of tokensByHex) {
+      const c = shifted.get(key)!;
+      const offsets = tokenGroupOffsets(tokens.length);
+      tokens.forEach((t, i) => {
+        const [dx, dy] = offsets[i];
+        drawToken(ctx, t, c.cx + dx * spread, c.cy + dy * spread, pngTokenRadius(t.size, R), iconCache);
+      });
+      // Names under the tokens; tokens sharing a hex list theirs one per
+      // line under the group, as on the map.
+      const r = pngTokenRadius(tokens.length > 1 ? groupSize(tokens) : tokens[0].size, R);
+      const namePx = Math.max(10, Math.round(r * 0.75));
+      tokens.forEach((t, i) => {
+        const place = tokenNamePlacement(offsets, i);
+        drawTokenName(ctx, t.title, c.cx + place.dx * spread, c.cy + place.dy * spread + r + 3 + place.line * namePx * 1.15, namePx, coordColor, coordHalo);
+      });
+    }
+  }
+
   return canvas.convertToBlob({ type: "image/png" });
 }
 
 // ── Drawing primitives ──────────────────────────────────────────────────────
+
+/** One token: its shape in its fill (and border ring), icon or initial. */
+function drawToken(
+  ctx: OffscreenCanvasRenderingContext2D,
+  t: TokenEntry,
+  cx: number,
+  cy: number,
+  r: number,
+  icons: Map<string, HTMLImageElement>,
+): void {
+  ctx.save();
+  ctx.beginPath();
+  if (t.shape === "square") {
+    ctx.rect(cx - r, cy - r, r * 2, r * 2);
+  } else if (t.shape === "hexagon") {
+    // Pointy-top, like the on-screen clip-path.
+    const pts = hexPolygonPoints(cx, cy, "pointy", r);
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.closePath();
+  } else {
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  }
+  ctx.fillStyle = t.color ?? DEFAULT_TOKEN_FILL;
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = Math.max(2, r * 0.2);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  if (t.border) {
+    ctx.lineWidth = Math.max(2, r * 0.18);
+    ctx.strokeStyle = t.border;
+    ctx.stroke();
+  }
+  const img = t.icon ? icons.get(t.icon) : undefined;
+  if (img) {
+    const s = r * 1.4;
+    ctx.drawImage(img, cx - s / 2, cy - s / 2, s, s);
+  } else {
+    const px = Math.max(9, Math.round(r));
+    ctx.font = `700 ${px}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(t.title.charAt(0).toUpperCase(), cx, cy);
+  }
+  ctx.restore();
+}
+
+/** A token's name, top-centred at (x, y), with a halo like the coordinates. */
+function drawTokenName(
+  ctx: OffscreenCanvasRenderingContext2D,
+  name: string,
+  x: number,
+  y: number,
+  px: number,
+  color: string,
+  halo: string,
+): void {
+  ctx.font = `600 ${px}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = Math.max(3, px * 0.3);
+  ctx.strokeStyle = halo;
+  ctx.strokeText(name, x, y);
+  ctx.fillStyle = color;
+  ctx.fillText(name, x, y);
+}
 
 function drawHex(
   ctx: OffscreenCanvasRenderingContext2D,

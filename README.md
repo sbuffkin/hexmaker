@@ -119,6 +119,7 @@ Generators only change hexes when a map is created or regenerated; you can alway
 ### Hex editor (click a hex)
 A modal for editing a hex note without leaving the map.
 
+- **Name** — give the hex a name ("Glass Wastes"). It shows on the map under the hex's icon, in the hover text and in the hex table, and is stored in the map note, so a hex doesn't need a note to have one. When the hex has a note, the name is also added to the note's `aliases`, so the quick switcher, search and `[[links]]` find the note by name (the file stays `x_y.md`). Renaming swaps that alias; aliases you added yourself are kept.
 - **Terrain picker** — select the terrain type for the hex from the map's palette.
 - **Icon override** — override the default terrain icon with any icon in your icons folder.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
@@ -183,7 +184,8 @@ Toggled from the **layers** panel on the right edge of the map.
 - **Faction overlay** — paint a faction colour on any hex. Adjacent hexes of the same faction merge into smooth filled blobs with a coloured border. A legend lists each active faction. Edit faction names and colours from the overlay panel. Faction data is stored as wiki-links in each hex note's `### Factions` section.
 - **Region overlay** — paint a geographic region colour on any hex. Regions render as filled blobs with a scaled label centred on the blob. Region data is stored in each hex note's frontmatter.
 - Both overlays can be shown simultaneously and toggled independently.
-- Additional toggles: **Show coordinates**, **Show terrain icons**, **Show icon overrides**, **GM layer**, **Tokens**.
+- Additional toggles: **Show terrain icons**, **Show icon overrides**, **Show paths**, **Show tokens**, **GM layer**.
+- **Labels** group: **Coordinates**, **Hex names** and **Token names** (all on by default). With token names off, a token's name still shows while you hover it.
 
 ### GM layer
 Toggle from the overlay panel. When active:
@@ -194,7 +196,7 @@ Toggle from the overlay panel. When active:
 GM layer state is stored per map and persists across sessions.
 
 ### Tokens
-Place movable tokens on the map — useful for tracking party position, NPCs, or any note-backed marker.
+Place movable tokens on the map — useful for tracking party position, NPCs, or any note-backed marker. Each token's name shows under it (turn this off with **Labels → Token names** in the layers panel; the name still shows on hover).
 
 **Creating a token:**
 1. Click the **Token** button in the drawing tools panel.
@@ -213,7 +215,7 @@ Open via **Command palette → "Hexmap World Creator: Open hex table"** or the �
 
 A scrollable reference table of every hex note, with one row per hex and columns for all sections.
 
-- **Coordinates column** — click to open the hex note.
+- **Coordinates column** — click to open the hex note. A named hex shows its name beside the coordinates.
 - **Terrain column** — click to open the terrain picker.
 - **Town / Dungeon columns** — click an empty cell to add a link (pick existing or create new); click a populated cell to open the note (or a navigation list for multiple links).
 - **Text section columns** (Description, Landmark, etc.) — click any cell (including empty ones) to open an inline editor. Saves directly to the section in the hex note, creating the note and section if they don't exist yet.
@@ -226,8 +228,8 @@ Export a map for printing or for your players.
 
 - **Where:** the command **Hexmap World Creator: Export current map…** (any map; it starts on the one open in the hex map view), or the map-name button in the hex map toolbar → **Export** tab. Both show the same form.
 - **Formats:** **Export PNG** (an image of the map), **Export PDF with reference table** (the map, then a table per section listing each hex's linked notes and the start of its Description), and **Export hexcrawl manual (PDF)** (a printable gazetteer with legend, encounter tables and keyed hexes).
-- **Options:** file name, coordinate labels, terrain / override icons, paths, faction overlay, region overlay, output size. The form lists the exact file names it will write; files go to the export folder and open in a new tab.
-- **What players see:** the PNG never includes GM-layer icons, tokens or any note text (Description, Landmark, Hidden, Secret), so it is safe as a handout. The faction and region overlays show their names when ticked; leave them off if those are secret. The PDF's table has no Hidden or Secret text. The hexcrawl manual is the full GM book unless you tick **player version**, which leaves out Hidden and Secret.
+- **Options:** file name; **On the map**: coordinates, icons, paths, hex names, tokens (with their names), faction overlay, region overlay; output size. Hex names and tokens are on by default. **PDF table columns** picks which columns the reference table prints (name, terrain, towns, dungeons, features, quests, factions, encounters, description), so you can cut a handout down to what players should see. **Hexcrawl manual** holds the player-version switch and lets you leave out the legend, encounter tables, factions and regions, or index. The form lists the exact file names it will write; files go to the export folder and open in a new tab.
+- **What players see:** the PNG never includes GM-layer icons, hidden tokens or any note text (Description, Landmark, Hidden, Secret), so it is safe as a handout. The faction and region overlays show their names when ticked; leave them off if those are secret. The PDF's table has no Hidden or Secret text. The hexcrawl manual is the full GM book unless you tick **player version**, which leaves out Hidden and Secret.
 - A single note or hex can also be exported: **Hexmap World Creator: Export current note to PDF**, **… to Markdown**, **Export current hex (structured PDF / Markdown)**, or the **Export** link in the hex editor.
 
 ### Commands
@@ -278,7 +280,7 @@ Open **Settings → Hexmap World Creator** to configure:
 
 ## Map notes
 
-Each map has one **map note** at `{hexFolder}/{map}/_{map}.md` (e.g. `RPG/world/hexes/Overworld/_Overworld.md`). It holds the map's settings in its frontmatter and a table with one row per hex that has map data: terrain, icon, GM icons, region, submap and locked. Hexes with only the map's base terrain (or nothing) have no row. Painting updates the table; you can also edit the table by hand and the map follows. Anything you write in the note outside the "Hexes" and "Paths" tables is left alone.
+Each map has one **map note** at `{hexFolder}/{map}/_{map}.md` (e.g. `RPG/world/hexes/Overworld/_Overworld.md`). It holds the map's settings in its frontmatter and a table with one row per hex that has map data: name, terrain, icon, GM icons, region, submap and locked. Hexes with only the map's base terrain (or nothing) have no row. Painting updates the table; you can also edit the table by hand and the map follows. Anything you write in the note outside the "Hexes" and "Paths" tables is left alone.
 
 Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `hexmaker-map:` link to the map note. Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault.
 

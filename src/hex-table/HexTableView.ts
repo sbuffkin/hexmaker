@@ -8,7 +8,7 @@ import {
 import type { TerrainColor } from "../types";
 import { getAllSectionData } from "../sections";
 import { displayedEncounterLinks } from "../encounterLinks";
-import { getTerrainFromFile } from "../frontmatter";
+import { getTerrainFromFile, getHexNameFromFile } from "../frontmatter";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { TerrainFilterModal } from "./TerrainFilterModal";
 import { HexCellModal } from "./HexCellModal";
@@ -780,6 +780,8 @@ export class HexTableView extends ItemView {
       text: `${x}, ${y}`,
       cls: "duckmage-hex-table-coords",
     });
+    const hexName = getHexNameFromFile(path);
+    if (hexName) coordsTd.createSpan({ text: hexName, cls: "duckmage-hex-table-name" });
     coordsSpan.addEventListener("click", () => {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile) {

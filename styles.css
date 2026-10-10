@@ -7047,3 +7047,139 @@ button.duckmage-wfc-library-tab.is-active {
 .modal.duckmage-editor-modal-drag.duckmage-more-features-modal {
     min-height: 0;
 }
+
+/* ── Layers menu: the "Labels" group (coordinates, hex names, token names) ── */
+.duckmage-overlay-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.duckmage-overlay-group-title {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+.duckmage-overlay-group-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+}
+
+/* ── Hex names on the map (N1) ── */
+.duckmage-hide-hex-names .duckmage-hex-names-layer { display: none; }
+.duckmage-hex-names-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 11;
+}
+.duckmage-hex-name-label {
+    position: absolute;
+    left: var(--duckmage-name-x, 50%);
+    top: var(--duckmage-name-y, 50%);
+    /* Below the centre (the icon), or above it when coordinates sit at the bottom. */
+    transform: translate(-50%, calc(-50% + var(--duckmage-name-y-offset, 1.35em)));
+    font-size: 0.72em;
+    font-weight: 700;
+    color: var(--text-normal);
+    white-space: nowrap;
+    user-select: none;
+    text-shadow:
+        -1px -1px 0 var(--background-primary),
+        1px -1px 0 var(--background-primary),
+        -1px 1px 0 var(--background-primary),
+        1px 1px 0 var(--background-primary);
+}
+.duckmage-hex-map-viewport.duckmage-coord-bottom .duckmage-hex-name-label {
+    --duckmage-name-y-offset: -1.35em;
+}
+
+/* ── Token names under tokens (N5); hidden by the toggle but shown on hover ── */
+.duckmage-token-name {
+    position: absolute;
+    left: var(--duckmage-token-x, 0);
+    top: var(--duckmage-token-y, 0);
+    /* Drop below the token: (half the token's size + a gap) in this label's em. */
+    transform: translate(-50%, calc(var(--duckmage-token-name-drop, 2.2em) + var(--duckmage-token-name-line, 0) * 1.15em));
+    font-size: 0.6em;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--text-normal);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    text-shadow:
+        -1px -1px 0 var(--background-primary),
+        1px -1px 0 var(--background-primary),
+        -1px 1px 0 var(--background-primary),
+        1px 1px 0 var(--background-primary);
+}
+.duckmage-token-name.is-stacked::before {
+    content: "";
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.25em;
+    border-radius: 50%;
+    background: var(--token-color, #4a90e2);
+}
+.duckmage-token-name-sm { --duckmage-token-name-drop: 1.7em; }
+.duckmage-token-name-md { --duckmage-token-name-drop: 2.2em; }
+.duckmage-token-name-lg { --duckmage-token-name-drop: 2.95em; }
+.duckmage-hide-token-names .duckmage-token-name { display: none; }
+.duckmage-hide-token-names .duckmage-token:hover + .duckmage-token-name { display: block; z-index: 50; }
+.duckmage-token-dragging + .duckmage-token-name { display: none; }
+
+/* Hex editor: the hex's name, under the title. */
+.duckmage-editor-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+}
+.duckmage-editor-name-row label {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-editor-name-input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Hex table: the hex's name beside its coordinates. */
+.duckmage-hex-table-name {
+    margin-left: 6px;
+    font-weight: 600;
+}
+
+/* Export: compact groups of checkboxes. */
+.duckmage-export-group {
+    margin: 4px 0;
+}
+.duckmage-export-group > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-export-group-title {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-export-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+    margin: 2px 0 2px 2px;
+}
+.duckmage-export-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+}

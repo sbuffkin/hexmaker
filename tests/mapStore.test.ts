@@ -211,11 +211,26 @@ describe("map store: edits", () => {
 		store.set("m", "0_0", { terrain: "grass" });
 		await store.flush();
 		const path = "world/hexes/m/_m.md";
-		v.files.set(path, v.files.get(path)!.replace("| 0_0 | grass |", "| 0_0 | desert |").replace("cols: 3", "cols: 5"));
+		v.files.set(path, v.files.get(path)!.replace("| 0_0 |  | grass |", "| 0_0 |  | desert |").replace("cols: 3", "cols: 5"));
 		store.onModify(p.app.vault.getAbstractFileByPath(path) as never);
 		await store.flush();
 		expect(store.get("m", "0_0")?.terrain).toBe("desert");
 		expect(m[0].gridSize.cols).toBe(5);
+	});
+
+	it("renaming a hex in the map note by hand updates its note's alias, keeping the user's", async () => {
+		const v = new MemVault({ "world/hexes/m/1_1.md": HEX("hexmaker-map: \"[[_m]]\"\naliases:\n  - Old Oak\n  - My alias") });
+		const m = [{ name: "m", gridSize: { cols: 3, rows: 3 }, gridOffset: { x: 0, y: 0 } } as MapData];
+		const { store, p } = await boot(v, m);
+		store.set("m", "1_1", { name: "Old Oak", terrain: "grass" });
+		await store.flush();
+		const path = "world/hexes/m/_m.md";
+		expect(v.files.get(path)).toContain("| 1_1 | Old Oak | grass |");
+		v.files.set(path, v.files.get(path)!.replace("| 1_1 | Old Oak |", "| 1_1 | Lone Oak |"));
+		store.onModify(p.app.vault.getAbstractFileByPath(path) as never);
+		await store.flush();
+		expect(store.get("m", "1_1")?.name).toBe("Lone Oak");
+		expect(v.frontmatter("world/hexes/m/1_1.md")!.aliases).toEqual(["My alias", "Lone Oak"]);
 	});
 
 	it("rename moves the note with the map", async () => {

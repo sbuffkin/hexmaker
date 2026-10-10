@@ -16,7 +16,9 @@ import {
   setGmIconsInFile,
   getGmIconsFromFile,
   getSubmapFromFile,
+  getHexNameFromFile,
 } from "../frontmatter";
+import { cleanHexName } from "../maps/hexNames";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -210,6 +212,7 @@ export class HexEditorModal extends HexmakerModal {
     });
     this.renderSaveStatus(this.saves.current);
     this.renderNeighborWidget(titleRow, this.x, this.y);
+    this.renderNameField(contentEl, path);
 
     this.makeDraggable();
     // The body renders after an async read, so the modal opens short and
@@ -361,6 +364,46 @@ export class HexEditorModal extends HexmakerModal {
     this.stopKeepInViewport = null;
     this.options.onModalClose?.();
     this.contentEl.empty();
+  }
+
+  /**
+   * The hex's name (N1), top of the editor. Stored in the map note (no
+   * hex note needed); a hex with a note also gets it as an alias (X4).
+   * Saves when the box loses focus or Enter is pressed, and on close.
+   */
+  private renderNameField(container: HTMLElement, path: string): void {
+    const row = container.createDiv({ cls: "duckmage-editor-name-row" });
+    const id = `duckmage-hex-name-${textFieldSeq++}`;
+    row.createEl("label", { text: "Name", attr: { for: id } });
+    const input = row.createEl("input", {
+      type: "text",
+      cls: "duckmage-editor-name-input",
+      attr: { id, placeholder: "Name this hex (optional)", spellcheck: "false" },
+    });
+    input.value = getHexNameFromFile(path) ?? "";
+    const { x, y, mapName } = this;
+    let saved = cleanHexName(input.value);
+    const save = () => {
+      this.pendingTextSaves.delete(save);
+      const name = cleanHexName(input.value);
+      if (name === saved) {
+        this.saves.settle();
+        return;
+      }
+      saved = name;
+      void this.saves.track(this.plugin.setHexName(mapName, x, y, name).then(() => this.onChanged()));
+    };
+    input.addEventListener("input", () => {
+      this.pendingTextSaves.add(save);
+      this.saves.markPending();
+    });
+    input.addEventListener("change", save);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        save();
+      }
+    });
   }
 
   private flushTextSaves(): void {
