@@ -513,7 +513,8 @@ export default class HexmakerPlugin extends Plugin {
             );
             if (filtered.length === workflow.steps.length) return content;
             workflow.steps = filtered;
-            return buildWorkflowContent(workflow);
+            // Everything else in the note (other columns, text after the table) stays.
+            return buildWorkflowContent(workflow, { existing: content });
           });
         }
       }),

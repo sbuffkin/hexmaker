@@ -11,8 +11,11 @@ import {
   stepPlaceholder,
   stepVarName,
   isDiceFormula,
+  reconcileTemplate,
+  unfilledTokens,
   type WorkflowStep,
 } from "./workflow";
+import { newTemplatePath, resolveWorkflowTemplate, stepDieLabels } from "./workflowFiles";
 import { escapeRegex, placeholderPattern } from "../textUtils";
 
 /** Convert a table basename to a default label: spaces → underscores. */
@@ -49,19 +52,21 @@ export class WorkflowEditorModal extends HexmakerModal {
     let description = workflow.description ?? "";
     let templateContent = "";
 
-    // Load template file if it exists
+    // Load template file if it exists (however its path was typed)
     if (this.preloaded !== undefined) {
       templateContent = this.preloaded.templateContent;
     } else if (workflow.templateFile) {
-      const tmplFile = this.app.vault.getAbstractFileByPath(
-        workflow.templateFile,
-      );
-      if (tmplFile instanceof TFile) {
-        templateContent = await this.app.vault.read(tmplFile);
-      }
+      const tmplFile = resolveWorkflowTemplate(this.app, workflow.templateFile, this.file.path);
+      if (tmplFile) templateContent = await this.app.vault.read(tmplFile);
     }
     if (!templateContent) {
       templateContent = generateDefaultTemplate(steps);
+    }
+    // Steps whose placeholders the template lacks get them (saved on close).
+    const reconciled = reconcileTemplate(templateContent, steps);
+    templateContent = reconciled.template;
+    if (reconciled.added.length) {
+      new Notice(`Added ${reconciled.added.join(", ")} to the template: no part of it showed those steps' results.`);
     }
 
     // All table files in the tables folder for the picker
@@ -208,15 +213,18 @@ export class WorkflowEditorModal extends HexmakerModal {
     const updateValidation = () => {
       const required = requiredPlaceholders(steps);
       const missing = required.filter((p) => !templateContent.includes(p));
-      if (missing.length === 0) {
+      const unfilled = unfilledTokens(templateContent, steps);
+      validationEl.empty();
+      if (missing.length === 0 && unfilled.length === 0) {
         validationEl.className = "duckmage-wf-validation-ok";
         validationEl.setText(
           required.length > 0 ? "✓ All placeholders present" : "",
         );
-      } else {
-        validationEl.className = "duckmage-wf-validation-err";
-        validationEl.setText(`Missing: ${missing.join(", ")}`);
+        return;
       }
+      validationEl.className = "duckmage-wf-validation-err";
+      if (missing.length) validationEl.createDiv({ text: `Missing: ${missing.join(", ")}` });
+      if (unfilled.length) validationEl.createDiv({ text: `No step fills: ${unfilled.join(", ")}` });
     };
 
     const getTemplateLabel = (step: WorkflowStep): string => {
@@ -632,23 +640,33 @@ export class WorkflowEditorModal extends HexmakerModal {
 
     this.flushAndSave = async () => {
       const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
-      const templatePath = `${wfFolder}/templates/${this.file.basename}.md`;
+      // A template-file set by hand is kept; only a workflow without one
+      // gets the default beside its workflows.
+      const handSet = workflow.templateFile;
+      const existingTemplate = resolveWorkflowTemplate(this.app, handSet, this.file.path);
+      const templatePath = existingTemplate?.path
+        ?? newTemplatePath(handSet)
+        ?? `${wfFolder}/templates/${this.file.basename}.md`;
 
       const updatedWorkflow = {
         name: this.file.basename,
         description: description || undefined,
         resultsFolder: resultsFolder || undefined,
-        templateFile: templatePath,
+        templateFile: handSet || templatePath,
         steps,
       };
 
       try {
-        await this.app.vault.process(this.file, () =>
-          buildWorkflowContent(updatedWorkflow),
+        const dies = await stepDieLabels(this.app, steps, this.file.path);
+        await this.app.vault.process(this.file, (current) =>
+          buildWorkflowContent(updatedWorkflow, {
+            existing: current,
+            dieFor: (step) => dies.get(step.tablePath),
+          }),
         );
 
-        const templateDir = `${wfFolder}/templates`;
-        if (!this.app.vault.getAbstractFileByPath(templateDir)) {
+        const templateDir = templatePath.includes("/") ? templatePath.slice(0, templatePath.lastIndexOf("/")) : "";
+        if (templateDir && !this.app.vault.getAbstractFileByPath(templateDir)) {
           try {
             await this.app.vault.createFolder(templateDir);
           } catch {

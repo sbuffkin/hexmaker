@@ -10,17 +10,55 @@ import {
   type Workflow,
   workflowResultAsSectionText,
   WorkflowStep,
+  reconcileTemplate,
+  unfilledTokens,
+  fillWorkflowTemplate,
+  buildResultsNote,
+  type FilledValue,
+  type RollRecord,
 } from "./workflow";
-import { parseRandomTable, rollOnTable } from "./randomTable";
-import { fillPlaceholders } from "../textUtils";
+import { dieLabel, parseRandomTable, rollTable } from "./randomTable";
 import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
+import { resolveStepTable, resolveWorkflowTemplate } from "./workflowFiles";
+import { ConfirmModal } from "../worldgen/ConfirmModal";
+import { localIsoDateTime } from "../provenance";
+
+/** How a slot got its value, for the results note's Rolls table. */
+interface SlotInfo {
+  /** Link text of the note a linked result is. */
+  link?: string;
+  /** The face rolled (rolls by ranges) or the dice breakdown. */
+  roll?: string;
+  /** Picked from the list or typed, not rolled. */
+  manual?: "picked" | "typed";
+}
+
+/** A table row offered in the manual-pick list. */
+interface PickEntry {
+  label: string;
+  link?: string;
+}
+
+/** The note a table row links to, when the whole row is a link. */
+function rowLinkTarget(result: string, isLink?: boolean): string | undefined {
+  if (isLink) return result;
+  return /^\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(result.trim())?.[1];
+}
 
 export class WorkflowWizardModal extends HexmakerModal {
   private workflow!: Workflow;
   // rolls[stepIdx][rollIdx] = result string or null (not yet rolled)
   private rolls: (string | null)[][] = [];
   private templateContent = "";
-  private stepEntries: string[][] = []; // [stepIdx] → display labels from the table
+  private stepEntries: PickEntry[][] = []; // [stepIdx] → rows of the table
+  /** slots[stepIdx][rollIdx]: how the value was got. */
+  private slots: SlotInfo[][] = [];
+  /** Per step: its source (link or formula) and die, for the Rolls table. */
+  private stepSource: { source: string; die: string }[] = [];
+  /** $tokens in the template no step fills. */
+  private unfilled: string[] = [];
+  /** Placeholders the template lacked; added for this run. */
+  private addedToTemplate: string[] = [];
   private resultTextarea!: HTMLTextAreaElement;
   private saveNoteNameInput!: HTMLInputElement;
   private saveResultsFolderInput!: HTMLInputElement;
@@ -54,40 +92,45 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.sumOnly = this.workflow.steps.map((step: WorkflowStep) =>
       Array.from({ length: step.rolls }, () => false),
     );
+    this.slots = this.workflow.steps.map((step: WorkflowStep) =>
+      Array.from({ length: step.rolls }, (): SlotInfo => ({})),
+    );
+    this.stepSource = this.workflow.steps.map((step) => ({
+      source: step.kind === "dice" ? (step.diceFormula ?? "") : `[[${step.tablePath}]]`,
+      die: step.kind === "dice" ? (step.diceFormula ?? "") : "",
+    }));
 
     // Preload table entries for each step (for the manual-pick dropdown; dice steps have no entries)
     this.stepEntries = await Promise.all(
-      this.workflow.steps.map(async (step: WorkflowStep) => {
+      this.workflow.steps.map(async (step: WorkflowStep, si: number): Promise<PickEntry[]> => {
         if (step.kind === "dice") return [];
-        const tableFile =
-          this.app.vault.getAbstractFileByPath(step.tablePath + ".md") ??
-          this.app.metadataCache.getFirstLinkpathDest(
-            step.tablePath,
-            this.workflowFile.path,
-          );
-        if (!(tableFile instanceof TFile)) return [];
+        const tableFile = resolveStepTable(this.app, step, this.workflowFile.path);
+        if (!tableFile) return [];
         const content = await this.app.vault.read(tableFile);
         const table = parseRandomTable(content);
-        return table.entries.map((e) =>
-          e.result.startsWith("[[")
-            ? (e.result.slice(2, -2).split("/").pop() ?? e.result.slice(2, -2))
-            : e.result,
-        );
+        this.stepSource[si] = {
+          source: `[[${this.app.metadataCache.fileToLinktext(tableFile, this.workflowFile.path)}]]`,
+          die: dieLabel(table.dice),
+        };
+        return table.entries.map((e) => {
+          const target = rowLinkTarget(e.result, e.isLink);
+          if (!target) return { label: e.result };
+          return { label: target.split("/").pop() ?? target, link: this.linkTextFor(target) };
+        });
       }),
     );
 
-    // Load template
-    if (this.workflow.templateFile) {
-      const tmplFile = this.app.vault.getAbstractFileByPath(
-        this.workflow.templateFile,
-      );
-      if (tmplFile instanceof TFile) {
-        this.templateContent = await this.app.vault.read(tmplFile);
-      }
-    }
+    // Load the template (however its path was typed), and add any
+    // placeholders a step fills that it lacks, for this run.
+    const tmplFile = resolveWorkflowTemplate(this.app, this.workflow.templateFile, this.workflowFile.path);
+    if (tmplFile) this.templateContent = await this.app.vault.read(tmplFile);
     if (!this.templateContent) {
       this.templateContent = generateDefaultTemplate(this.workflow.steps);
     }
+    const reconciled = reconcileTemplate(this.templateContent, this.workflow.steps);
+    this.templateContent = reconciled.template;
+    this.addedToTemplate = reconciled.added;
+    this.unfilled = unfilledTokens(this.templateContent, this.workflow.steps);
 
     this.buildUI();
   }
@@ -110,6 +153,17 @@ export class WorkflowWizardModal extends HexmakerModal {
     const rerollAllBtn = header.createEl("button", { text: "Reroll all" });
     rerollAllBtn.title = "Reroll every slot";
     rerollAllBtn.addEventListener("click", () => { void this.rollAll(true); });
+
+    // The template and the steps disagree: say so (the editor fixes it).
+    if (this.unfilled.length || this.addedToTemplate.length) {
+      const warn = contentEl.createDiv({ cls: "duckmage-wf-validation-err duckmage-wf-wizard-warning" });
+      if (this.unfilled.length) {
+        warn.createDiv({ text: `No step fills ${this.unfilled.join(", ")}, so it stays as typed.` });
+      }
+      if (this.addedToTemplate.length) {
+        warn.createDiv({ text: `The template has no ${this.addedToTemplate.join(", ")}; added at the end for this run. Edit the workflow to keep them.` });
+      }
+    }
 
     // ── Steps area ────────────────────────────────────────────────────
     this.stepsArea = contentEl.createDiv({ cls: "duckmage-wf-wizard-steps" });
@@ -161,7 +215,7 @@ export class WorkflowWizardModal extends HexmakerModal {
       type: "text",
       cls: "duckmage-table-editor-name-input",
     });
-    this.saveNoteNameInput.value = "";
+    this.saveNoteNameInput.value = this.defaultNoteName();
 
     const saveResultsFolderRow = contentEl.createDiv({
       cls: "duckmage-table-editor-name-row",
@@ -271,6 +325,7 @@ export class WorkflowWizardModal extends HexmakerModal {
         rollInput.placeholder = "—";
         rollInput.addEventListener("input", () => {
           this.rolls[si][ri] = rollInput.value.trim() || null;
+          this.slots[si][ri] = { manual: "typed" };
           this.updateResultTextarea();
           this.updateSaveButton();
         });
@@ -281,13 +336,15 @@ export class WorkflowWizardModal extends HexmakerModal {
             cls: "duckmage-wf-pick-select",
           });
           pickerSelect.createEl("option", { value: "", text: "— pick —" });
-          for (const label of this.stepEntries[si] ?? []) {
-            pickerSelect.createEl("option", { value: label, text: label });
-          }
+          (this.stepEntries[si] ?? []).forEach((entry, ei) => {
+            pickerSelect.createEl("option", { value: String(ei), text: entry.label });
+          });
           pickerSelect.addEventListener("change", () => {
-            const picked = pickerSelect.value;
-            if (!picked) return;
+            const entry = pickerSelect.value === "" ? undefined : this.stepEntries[si]?.[Number(pickerSelect.value)];
+            if (!entry) return;
+            const picked = entry.label;
             this.rolls[si][ri] = picked;
+            this.slots[si][ri] = { link: entry.link, manual: "picked" };
             rollInput.value = picked;
             rollInput.classList.add("is-rolled");
             rollBtn.setText("Reroll");
@@ -337,33 +394,38 @@ export class WorkflowWizardModal extends HexmakerModal {
     const step = this.workflow.steps[stepIdx];
 
     if (step.kind === "dice") {
-      this.rolls[stepIdx][rollIdx] = rollDiceFormulaWithBreakdown(
-        step.diceFormula ?? "1d6",
-      );
+      const rolled = rollDiceFormulaWithBreakdown(step.diceFormula ?? "1d6");
+      this.rolls[stepIdx][rollIdx] = rolled;
+      this.slots[stepIdx][rollIdx] = { roll: rolled };
       return;
     }
 
     // Try exact path first, then Obsidian link resolution with workflow file as source
-    const tableFile =
-      this.app.vault.getAbstractFileByPath(step.tablePath + ".md") ??
-      this.app.metadataCache.getFirstLinkpathDest(
-        step.tablePath,
-        this.workflowFile.path,
-      );
-    if (!(tableFile instanceof TFile)) {
+    const tableFile = resolveStepTable(this.app, step, this.workflowFile.path);
+    if (!tableFile) {
       new Notice(`Table not found: ${step.tablePath}`);
       return;
     }
     const content = await this.app.vault.read(tableFile);
     const table = parseRandomTable(content);
-    const entry = rollOnTable(table);
-    if (!entry) return;
+    const outcome = rollTable(table);
+    if (!outcome) return;
+    const entry = outcome.entry;
 
-    const displayLabel = entry.isLink
-      ? (entry.result.split("/").pop() ?? entry.result)
-      : entry.result;
+    // A linked row keeps its link (shown by name in the wizard).
+    const target = rowLinkTarget(entry.result, entry.isLink);
+    this.rolls[stepIdx][rollIdx] = target ? (target.split("/").pop() ?? target) : entry.result;
+    this.slots[stepIdx][rollIdx] = {
+      link: target ? this.linkTextFor(target) : undefined,
+      roll: outcome.face !== undefined ? String(outcome.face) : "",
+    };
+  }
 
-    this.rolls[stepIdx][rollIdx] = displayLabel;
+  /** Shortest link text for a note path (the path itself if it doesn't resolve). */
+  private linkTextFor(target: string): string {
+    const clean = target.replace(/\.md$/i, "");
+    const file = this.app.metadataCache.getFirstLinkpathDest(clean, this.workflowFile.path);
+    return file ? this.app.metadataCache.fileToLinktext(file, this.workflowFile.path) : clean;
   }
 
   /** Roll all unfilled slots (rerollAll=false) or every slot (rerollAll=true). */
@@ -381,7 +443,35 @@ export class WorkflowWizardModal extends HexmakerModal {
   }
 
   private assembleResult(): string {
-    const values = new Map<string, string>();
+    return fillWorkflowTemplate(this.templateContent, this.filledValues());
+  }
+
+  /** One row per rolled slot, for the results note. */
+  private rollRecords(): RollRecord[] {
+    const values = this.filledValues();
+    const records: RollRecord[] = [];
+    this.workflow.steps.forEach((step, si) => {
+      for (let ri = 0; ri < step.rolls; ri++) {
+        if (this.rolls[si][ri] === null) continue;
+        const placeholder = stepPlaceholder(step, ri);
+        const v = values.get(placeholder);
+        const slot = this.slots[si]?.[ri] ?? {};
+        records.push({
+          placeholder,
+          source: this.stepSource[si]?.source ?? "",
+          die: this.stepSource[si]?.die ?? "",
+          roll: slot.manual ?? slot.roll ?? "",
+          // The result as it reads in the note (a link stays a link).
+          result: v ? fillWorkflowTemplate(placeholder, new Map([[placeholder, v]])) : "",
+        });
+      }
+    });
+    return records;
+  }
+
+  /** What each placeholder gets: the value shown, and its link if it's a linked row. */
+  private filledValues(): Map<string, FilledValue> {
+    const values = new Map<string, FilledValue>();
     for (let si = 0; si < this.workflow.steps.length; si++) {
       const step = this.workflow.steps[si];
       for (let ri = 0; ri < step.rolls; ri++) {
@@ -392,10 +482,11 @@ export class WorkflowWizardModal extends HexmakerModal {
           // Extract just the sum from "(d1+d2+...)=N" format
           display = display.replace(/^\(.*\)=(-?\d+)$/, "$1");
         }
-        values.set(placeholder, display !== null ? display : `[${placeholder}]`);
+        if (display === null) values.set(placeholder, { text: `[${placeholder}]` });
+        else values.set(placeholder, { text: display, link: this.slots[si]?.[ri]?.link });
       }
     }
-    return fillPlaceholders(this.templateContent, values);
+    return values;
   }
 
   private updateResultTextarea(): void {
@@ -421,7 +512,26 @@ export class WorkflowWizardModal extends HexmakerModal {
     return `${this.workflowFile.basename} ${ts}`;
   }
 
-  private async saveAsNote(): Promise<void> {
+  private saveAsNote(): Promise<void> {
+    const noteName = this.saveNoteNameInput.value.trim();
+    const folder = normalizeFolder(this.saveResultsFolderInput.value.trim());
+    const notePath = folder ? `${folder}/${noteName}.md` : `${noteName}.md`;
+    // Ask before writing over a note that's already there.
+    if (noteName && this.app.vault.getAbstractFileByPath(notePath) instanceof TFile) {
+      return new Promise((resolve) => {
+        new ConfirmModal(
+          this.app,
+          "Replace note?",
+          `"${notePath}" already exists. Replace it with this result?`,
+          "Replace",
+          () => void this.writeNote().then(resolve),
+        ).open();
+      });
+    }
+    return this.writeNote();
+  }
+
+  private async writeNote(): Promise<void> {
     const noteName = this.saveNoteNameInput.value.trim();
     if (!noteName) {
       this.saveStatusEl.setCssProps({ color: "var(--color-red)" });
@@ -440,7 +550,11 @@ export class WorkflowWizardModal extends HexmakerModal {
       }
     }
 
-    const noteContent = this.resultTextarea.value;
+    const noteContent = buildResultsNote(
+      this.resultTextarea.value,
+      { workflowPath: this.workflowFile.path, rolled: localIsoDateTime() },
+      this.rollRecords(),
+    );
 
     try {
       let savedFile: TFile;
