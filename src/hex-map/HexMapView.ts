@@ -32,7 +32,7 @@ import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
-import { ghostPathRuns, ghostRunPoints, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
+import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
@@ -175,6 +175,9 @@ export class HexMapView extends ItemView {
   /** The neighbour strip last drawn (map name + its hexes), so the path
    *  overlay can join paths across the seam (round 6 U8). */
   private lastShadow: { map: string; shadow: ReadonlyMap<string, ShadowRef> } | null = null;
+  /** The seam joins the neighbour strip was drawn with: drawing or erasing
+   *  a path that changes them redraws the strip. */
+  private shadowJoinKey = "";
 
   /** Paths of the open map that meet a neighbour's path across the seam. */
   private currentSeamJoins(region: MapData) {
@@ -3998,6 +4001,8 @@ export class HexMapView extends ItemView {
    */
   private renderNeighbourShadow(gridContainer: HTMLElement, region: MapData): void {
     this.lastShadow = null;
+    this.shadowJoinKey = "";
+    gridContainer.querySelectorAll(".duckmage-region-shadow-layer").forEach((el) => el.remove());
     if (!region.world) return;
     const shadow = neighbourShadow(this.plugin, region);
     this.lastShadow = { map: region.name, shadow };
@@ -4058,6 +4063,7 @@ export class HexMapView extends ItemView {
     // A neighbour path that ends where one of ours does draws on to the
     // shared edge (no end dot there): the two read as one road (round 6 U8).
     const joins = this.currentSeamJoins(region);
+    this.shadowJoinKey = seamJoinKey(joins);
     const joinedAt = (run: { map: string; typeName: string }, key: string) =>
       joins.find((j) => j.map === run.map && j.typeName === run.typeName && j.other === key);
     const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
@@ -5595,6 +5601,12 @@ export class HexMapView extends ItemView {
       });
 
     const region = this.getActiveMap();
+    // A path edit that starts or ends a seam join redraws the neighbour
+    // strip, so its road reaches the shared edge too (round 6 U8).
+    const joins = this.currentSeamJoins(region);
+    if (this.lastShadow?.map === region.name && seamJoinKey(joins) !== this.shadowJoinKey) {
+      this.renderNeighbourShadow(gridContainer, region);
+    }
     const gmLayerActive = region.showGmLayer ?? true;
     const hasContent =
       region.pathChains.some((c) => c.hexes.length > 0) ||
@@ -5681,7 +5693,6 @@ export class HexMapView extends ItemView {
     // Ends that meet a neighbour's path across the seam reach on to the
     // shared edge (round 6 U8). The neighbour hex is off this grid, so its
     // centre is extrapolated from the grid's pitch.
-    const joins = this.currentSeamJoins(region);
     const stagger = this.getActiveStagger();
     const shifted = (n: number) => ((stagger === "odd" ? n % 2 !== 0 : n % 2 === 0) ? 1 : 0);
     let colPitch = 0;

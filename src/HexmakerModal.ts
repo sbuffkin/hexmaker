@@ -59,6 +59,7 @@ export class HexmakerModal extends Modal {
 		}
 
 		let pack: IconPack | "all" = lastIconPack ?? iconPackDefault();
+		let opening = true;
 		const apply = () => {
 			const query = search.value.trim().toLowerCase();
 			let shown = 0;
@@ -87,6 +88,9 @@ export class HexmakerModal extends Modal {
 			// only one pack had icons, and the docs' tabs were nowhere to be seen.
 			const entries = iconPackTabs(counts);
 			if (!entries.some(([key]) => key === pack)) pack = "all";
+			// Don't reopen on a tab that has nothing in it (an empty Custom).
+			if (opening && pack !== "all" && !counts.get(pack)) pack = "all";
+			opening = false;
 			for (const [key, label, n] of entries) {
 				const tab = tabs.createEl("button", {
 					cls: `duckmage-icon-filter-tab${pack === key ? " is-active" : ""}`,

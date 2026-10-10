@@ -157,3 +157,8 @@ export function seamJoins(
 export function seamPoint(a: { cx: number; cy: number }, b: { cx: number; cy: number }): { cx: number; cy: number } {
   return { cx: (a.cx + b.cx) / 2, cy: (a.cy + b.cy) / 2 };
 }
+
+/** A stable key for a set of joins (to tell when they change). */
+export function seamJoinKey(joins: readonly SeamJoin[]): string {
+  return joins.map((j) => `${j.map}|${j.typeName}|${j.own}|${j.other}`).sort().join(";");
+}

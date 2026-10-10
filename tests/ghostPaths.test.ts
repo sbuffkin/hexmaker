@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { ghostPathRuns, ghostRunPoints, seamJoins, seamPoint, type ShadowRef } from "../src/hex-map/ghostPaths";
+import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "../src/hex-map/ghostPaths";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 /**
@@ -119,5 +119,15 @@ describe("seamJoins (round 6 U8: roads meeting at a seam left a gap)", () => {
 
 	it("meets halfway: the shared edge between the two hex centres", () => {
 		expect(seamPoint({ cx: 10, cy: 20 }, { cx: 10, cy: 40 })).toEqual({ cx: 10, cy: 30 });
+	});
+});
+
+describe("seamJoinKey", () => {
+	it("is the same for the same joins in any order, and changes when one goes", () => {
+		const a = { map: "south", typeName: "Road", own: "2_2", other: "2_3" };
+		const b = { map: "south", typeName: "River", own: "0_2", other: "0_3" };
+		expect(seamJoinKey([a, b])).toBe(seamJoinKey([b, a]));
+		expect(seamJoinKey([a])).not.toBe(seamJoinKey([a, b]));
+		expect(seamJoinKey([])).toBe("");
 	});
 });
