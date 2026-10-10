@@ -148,7 +148,7 @@ export default class HexmakerPlugin extends Plugin {
       VIEW_TYPE_RANDOM_TABLES,
       (leaf) => new RandomTableView(leaf, this),
     );
-    this.addRibbonIcon("map", "Hexmap World Creator: open hex map", () =>
+    this.addRibbonIcon("map", "Open hex map", () =>
       this.openHexMap(),
     );
     this.addCommand({

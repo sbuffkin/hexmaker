@@ -131,7 +131,7 @@ describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
 		const menu = method("onHexContextMenu");
 		expect(menu).toMatch(/const submap = getSubmapFromFile\(this\.app, hexPath\);/);
 		expect(menu).not.toMatch(/hexExists \?/);
-		expect(menu).toContain("Enter submap: ${submap}");
+		expect(menu).toContain("Enter submap: ${this.plugin.mapLabel(submap)}");
 	});
 });
 

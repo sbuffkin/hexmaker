@@ -218,7 +218,7 @@ function makeWelcomeStep(): WizardStep {
 		title: "Welcome to Hexmap World Creator!",
 		render(container, ctx, cbs) {
 			container.createEl("p", {
-				text: "Hexmap World Creator turns your Obsidian vault into a living, interactive hex map. Each hex on the map is a Markdown note — you can paint terrain, add icons, link towns, dungeons, factions, and encounter tables, and run random tables right from the map.",
+				text: "It turns your Obsidian vault into a living, interactive hex map. Paint terrain and icons, link towns, dungeons, factions and encounter tables to hexes, and roll random tables right from the map. Any hex can get its own Markdown note.",
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
@@ -878,7 +878,7 @@ export class SetupWizardView extends ItemView {
 	}
 
 	getViewType() { return VIEW_TYPE_SETUP_WIZARD; }
-	getDisplayText() { return "Hexmap World Creator setup"; }
+	getDisplayText() { return "Hex map setup"; }
 	getIcon() { return "map"; }
 
 	async onOpen() {
@@ -896,7 +896,7 @@ export class SetupWizardView extends ItemView {
 
 		// Header: plugin title + progress dots + step counter
 		const header = contentEl.createDiv({ cls: "duckmage-wizard-header" });
-		header.createEl("p", { text: "Hexmap World Creator setup", cls: "duckmage-wizard-title" });
+		header.createEl("p", { text: "Hex map setup", cls: "duckmage-wizard-title" });
 		const dotRow = header.createDiv({ cls: "duckmage-wizard-dots" });
 		for (let i = 0; i < this.steps.length; i++) {
 			dotRow.createDiv({
