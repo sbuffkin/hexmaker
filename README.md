@@ -12,7 +12,7 @@ Hexmaker gives you an interactive hex grid that lives inside Obsidian. Paint ter
 
 ### Hex editor
 
-Right-click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret, Weather, Hooks & Rumors). A 🎲 button on each section lets you roll any random table and append the result inline. Link a submap to the hex and click the center dot in the hex flower to dive into it.
+Click any hex to open the editor: set terrain, override the icon, link Towns, Dungeons, Features, Quests, Factions, and Encounters Tables, and write freeform notes (Description, Landmark, Hidden, Secret). A 🎲 button on each section lets you roll any random table and append the result inline. Link a submap to the hex and click the center dot in the hex flower to dive into it.
 
 ![The hex editor showing terrain, links, and notes for a single hex](docs/Editor.PNG)
 
@@ -61,7 +61,9 @@ Toggle the GM layer from the overlay panel to switch between player-facing and G
 
 ## Getting started
 
-After enabling the plugin, do this once before you start mapping:
+After enabling the plugin, a **setup wizard** opens. It asks what you'll map (a fantasy world, space, or both), where your world folder lives, and makes your first map. That last step can **generate the terrain** for you (Overland for a world map, Star scatter for a star sector), with a preview and a re-roll button, or start blank for painting by hand. It also creates the terrain description and encounter tables. That's all you need to start.
+
+To set things up by hand instead (or later):
 
 ### 1. Set your world folder
 Open **Settings → Hexmap World Creator** and enter a root folder name in **World folder** (e.g. `RPG/world`). This is the base for all other folders.
@@ -84,8 +86,8 @@ You're ready to start mapping.
 ### Hex Map view
 An interactive hex grid rendered as an Obsidian panel.
 
-- **Left-click** a hex to open (or create) its note.
-- **Right-click** a hex to open the hex editor.
+- **Left-click** a hex to open the hex editor.
+- **Right-click** a hex for its menu: centre on it, open its note, enter / create / link a submap, link a table, swap hexes, create a token here, clear terrain.
 - **Pan** by clicking and dragging with the left or middle mouse button.
 - **Zoom** with the scroll wheel.
 - **Expand** the grid with the `+`/`−` buttons at the map edges.
@@ -102,7 +104,17 @@ Organise your world into multiple named hex maps, each stored as a subfolder und
 - **Terrain theme** — assign a terrain type to a map. The swatch appears next to the map name in the switch list and sets the colour of the submap center dot when this map is linked as a submap from a parent map.
 - **Back** (`← Back` button) — returns to the previously active map after following a submap link.
 
-### Hex editor (right-click menu)
+### Generators
+Maps can be generated instead of painted hex by hex. When you create a map (**Maps → New map → Guided setup…**, or the setup wizard's first map) or a submap (right-click a hex → **New submap…**), pick a generator and preview it before creating:
+
+- **Overland** — a region from noise: seas, coasts, plains, forests, hills, mountains. Set water %, climate, and which side the sea is on.
+- **Region detail** (submaps) — zooms into the parent hex: its terrain fills the map and each neighbouring hex shapes the matching edge.
+- **Star scatter**, **Orbits**, **Planet surface** (space maps) — a star sector, a star system around its star, and a planet's surface.
+- **Learned generators** — made in the **Terrain generator** view (command palette: *Open terrain generator*) by learning from maps you've already painted, or by blending several.
+
+Generators only change hexes when a map is created or regenerated; you can always repaint by hand afterwards.
+
+### Hex editor (click a hex)
 A modal for editing a hex note without leaving the map.
 
 - **Terrain picker** — select the terrain type for the hex from the map's palette.
@@ -110,7 +122,7 @@ A modal for editing a hex note without leaving the map.
 - **Submap link** — link another map to this hex. The hex flower widget shows a center dot coloured by the linked map's terrain theme. Click the dot to navigate directly to that map.
 - **Towns / Dungeons / Features / Quests / Factions** — link existing notes from their configured folders, or create a new note by name. Linked items are clickable and open in a new tab. Each entry has a remove button.
 - **Encounters Table** — link random table files to a hex. Clicking a linked table opens the Random Tables view with that table pre-selected.
-- **Notes sections** — Description, Landmark, Hidden, Secret, Weather, Hooks & Rumors — inline text areas with a 🎲 roll button to append a result from any random table.
+- **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas with a 🎲 roll button to append a result from any random table.
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
 
 ### Random Tables view
@@ -308,7 +320,7 @@ src/
   hex-map/
     HexMapView.ts                     ← interactive hex grid (ItemView)
     HexSidePanel.ts                   ← collapsible side panels (drawing tools, overlays)
-    HexEditorModal.ts                 ← right-click hex editor (Modal)
+    HexEditorModal.ts                 ← hex editor, opened by clicking a hex (Modal)
     MapModal.ts                       ← map management (switch, create, rename, delete, terrain theme)
     SubmapPickerModal.ts              ← link submap to a hex (picker + create)
     TerrainPickerModal.ts             ← terrain palette picker
