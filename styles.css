@@ -6615,3 +6615,11 @@ button.duckmage-wfc-library-tab.is-active {
     background: var(--interactive-accent);
     transform: scale(1.2);
 }
+
+/* Token form: nothing in the scrolling column may shrink. The note
+   suggestion list (max-height + overflow) was flex-shrunk to a ~4px
+   sliver, so a click aimed at a suggestion landed on the "Icon" label
+   below it: the real cause of round 3's "list closes under the click". */
+.duckmage-token-modal .modal-content > * {
+    flex-shrink: 0;
+}
