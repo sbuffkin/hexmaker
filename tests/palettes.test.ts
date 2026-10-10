@@ -279,6 +279,8 @@ function makeHarness(settingsPatch: Partial<HexmakerPluginSettings> = {}) {
 			saves++;
 		},
 		refreshHexMap: () => {},
+		refreshPaletteEditors: () => {},
+		ensureTablesForNewTerrains: async () => {},
 		getPaletteByName: (name: string) => settings.terrainPalettes.find((p) => p.name === name),
 	};
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -754,12 +756,38 @@ describe("PaletteStore colour conversion", () => {
 		await h.store.init();
 		expect(h.vault.files.get(P)).toBe(BARE);
 		expect(h.settings.paletteColorsCode).toBeFalsy();
+		// The other load-time passes wait too (nothing written, run again next load).
+		expect(h.settings.presetTerrainsAdded ?? []).toHaveLength(0);
+		expect(h.settings.paletteDataUpgraded).toBeFalsy();
 
 		h.vault.failBackups = false;
 		await h.store.init();
 		expect(h.vault.raw.size).toBe(1);
 		expect(h.vault.files.get(P)).toContain("| sea | `#0000ff` |");
 		expect(h.settings.paletteColorsCode).toBe(true);
+	});
+
+	it("a failed backup also holds back new preset terrains (OW8) and leaves bare colours alone", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true });
+		await h.vault.createFolder("world/palettes");
+		const E = "world/palettes/Expanded.md";
+		const expanded = h.settings.terrainPalettes.find((p) => p.name === "Expanded")!;
+		// An installed Expanded from before savanna/river delta, colours bare.
+		const old = expanded.terrains.filter((t) => !/savanna|river delta/i.test(t.name));
+		const rows = old.map((t) => `| ${t.name} | ${t.color} |`).join("\n");
+		const note = ["---", "hexmaker-palette: 1", "---", "", "| Terrain | Color |", "| --- | --- |", rows, ""].join("\n");
+		h.vault.files.set(E, note);
+		h.vault.files.set(P, BARE);
+		h.vault.failBackups = true;
+		await h.store.init();
+		expect(h.vault.files.get(E)).toBe(note);
+		expect(h.vault.files.get(P)).toBe(BARE);
+		expect(h.settings.presetTerrainsAdded ?? []).toHaveLength(0);
+
+		h.vault.failBackups = false;
+		await h.store.init();
+		expect(h.vault.files.get(E)).toMatch(/\| savanna \| `#/i);
+		expect(h.vault.files.get(E)).not.toMatch(/\| #[0-9a-f]{3,8} \|/i);
 	});
 
 	it("needs no backup when every note is already converted", async () => {

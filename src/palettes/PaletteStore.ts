@@ -336,36 +336,14 @@ export class PaletteStore {
     }
 
     if (await this.loadAll()) dirty = true;
-    // Terrains added to a bundled palette since it was installed: once each.
-    const added = await this.addNewPresetTerrains();
-    if (added) dirty = true;
-    // Path types moved from settings into palettes: every palette without
-    // them gets the full old list, and the notes get their table below.
-    const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
-    if (filled) dirty = true;
-    // One-time: give existing palettes terrain types (from same-named
-    // preset terrains, else inferred from the name). Later blanks are the
-    // user's choice and stay blank.
-    let seeded = false;
-    if (!settings.terrainTypesSeeded) {
-      seeded = seedTerrainTypes(settings.terrainPalettes) > 0;
-      settings.terrainTypesSeeded = true;
-      dirty = true;
-    }
-    // One-time: write into the palettes what used to be inferred from
-    // names at run time (space role types, a preset's child palette and
-    // Submap defaults). Runs after the seeding so freshly typed terrains
-    // are upgraded too.
-    let upgraded = false;
-    if (!settings.paletteDataUpgraded) {
-      upgraded = upgradePaletteData(settings.terrainPalettes) > 0;
-      settings.paletteDataUpgraded = true;
-      dirty = true;
-    }
     // Colours in palette notes became inline code (Obsidian read `#14223d`
     // as a tag). Before the first pass that converts them, every palette
-    // note is backed up; if that fails, the load-time pass waits for the
-    // next load (a note the plugin rewrites in the meantime still converts).
+    // note is backed up. If that backup fails, NO load-time pass may
+    // rewrite a note (every note write puts colours in inline code): the
+    // one-time passes below still apply in memory for this session, but
+    // their flags stay unset and nothing is written, so all of it runs
+    // again, backup first, on the next load. (A note the plugin rewrites
+    // later because the user changed something still converts.)
     let refresh = true;
     if (!settings.paletteColorsCode) {
       refresh = await this.backupBeforeColorConversion();
@@ -374,16 +352,48 @@ export class PaletteStore {
         dirty = true;
       }
     }
+    const blocked = !refresh;
+    // Terrains added to a bundled palette since it was installed: once each
+    // (it takes its own backup; skipped entirely while notes can't change).
+    const added = blocked ? false : await this.addNewPresetTerrains();
+    if (added) dirty = true;
+    // Path types moved from settings into palettes: every palette without
+    // them gets the full old list, and the notes get their table below.
+    const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
+    if (filled && !blocked) dirty = true;
+    // One-time: give existing palettes terrain types (from same-named
+    // preset terrains, else inferred from the name). Later blanks are the
+    // user's choice and stay blank.
+    let seeded = false;
+    if (!settings.terrainTypesSeeded) {
+      seeded = seedTerrainTypes(settings.terrainPalettes) > 0;
+      if (!blocked) {
+        settings.terrainTypesSeeded = true;
+        dirty = true;
+      }
+    }
+    // One-time: write into the palettes what used to be inferred from
+    // names at run time (space role types, a preset's child palette and
+    // Submap defaults). Runs after the seeding so freshly typed terrains
+    // are upgraded too.
+    let upgraded = false;
+    if (!settings.paletteDataUpgraded) {
+      upgraded = upgradePaletteData(settings.terrainPalettes) > 0;
+      if (!blocked) {
+        settings.paletteDataUpgraded = true;
+        dirty = true;
+      }
+    }
     this.ready = true;
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded || filled || upgraded || added) await this.syncNow();
+    if (!blocked && (seeded || filled || upgraded || added)) await this.syncNow();
     // Notes from older builds (or edited by hand since) get their derived
     // cells shown (the Impassable column, inferred types in parentheses)
     // and their colours written as inline code.
     if (refresh) for (const file of this.paletteFiles()) await this.refreshDerived(file);
-    if (!settings.pathTypesExplicit) {
+    if (!settings.pathTypesExplicit && !blocked) {
       settings.pathTypesExplicit = true;
       dirty = true;
     }
