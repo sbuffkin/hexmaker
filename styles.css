@@ -6580,3 +6580,38 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-token-field-label {
     cursor: pointer;
 }
+
+/* Picker tiles: only the selected tile wears the accent ring. Hover used the
+   same purple border, so the tile under the pointer read as a second
+   selection (fresh-eyes round 3: "— terrain…" and "forest hea…" both
+   looked selected). */
+.duckmage-icon-option:hover:not(.is-selected),
+.duckmage-terrain-option:hover:not(.is-selected) {
+    border-color: var(--background-modifier-border-hover);
+}
+.duckmage-icon-option.is-selected,
+.duckmage-terrain-option.is-selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* Submap marker: bigger, and a white ring with a dark outline so it reads
+   on light and dark terrain alike ("tiny and greyish", round 3). Pointy-top
+   hexes come to a point at the top, so the marker sits a little lower. */
+.duckmage-hex-submap-badge {
+    top: 0.5em;
+    width: 0.95em;
+    height: 0.95em;
+    border: 0.17em solid #fff;
+    background: rgba(0, 0, 0, 0.45);
+    box-shadow:
+        0 0 0 0.06em rgba(0, 0, 0, 0.8),
+        0 0.05em 0.25em rgba(0, 0, 0, 0.5);
+}
+.duckmage-grid-flat .duckmage-hex-submap-badge {
+    top: 0.3em;
+}
+.duckmage-hex-submap-badge:hover {
+    background: var(--interactive-accent);
+    transform: scale(1.2);
+}
