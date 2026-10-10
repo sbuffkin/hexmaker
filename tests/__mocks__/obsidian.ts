@@ -22,7 +22,14 @@ export class TFolder extends TAbstractFile {
 export class App {}
 export class Modal { app: App; contentEl = { empty() {}, addClass() {}, createDiv() { return this; }, createEl() { return this; }, createSpan() { return this; }, setText() { return this; }, style: {} } as any; constructor(app: App) { this.app = app; } }
 export class SuggestModal<T> { constructor(_app: App) {} getSuggestions(_q: string): T[] { return []; } renderSuggestion(_v: T, _el: HTMLElement): void {} onChooseSuggestion(_v: T, _e: MouseEvent | KeyboardEvent): void {} }
-export class Notice { constructor(_msg: string, _timeout?: number) {} setMessage(_msg: string) { return this; } hide() {} }
+export class Notice {
+	/** Every notice shown, for tests to check (clear it yourself). */
+	static shown: { msg: string; timeout?: number; hidden: boolean }[] = [];
+	private rec: { msg: string; timeout?: number; hidden: boolean };
+	constructor(msg: string, timeout?: number) { this.rec = { msg, timeout, hidden: false }; Notice.shown.push(this.rec); }
+	setMessage(_msg: string) { return this; }
+	hide() { this.rec.hidden = true; }
+}
 export class Plugin { constructor(_app: App, _manifest: any) {} }
 export function setIcon(_el: HTMLElement, _icon: string): void {}
 export function getIcon(_icon: string): SVGSVGElement | null { return null; }

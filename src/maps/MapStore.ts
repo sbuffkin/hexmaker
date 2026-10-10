@@ -4,11 +4,17 @@ import type { MapData } from "../types";
 import { normalizeFolder } from "../utils";
 import {
   buildMapNote,
+  MAP_NOTE_FORMAT,
   mapNoteKey,
   parseMapNote,
+  readMapNote,
+  refreshProblemCallouts,
+  RESETTABLE_FIELDS,
   updateMapNote,
   type HexData,
   type MapNoteData,
+  type MapNoteProblem,
+  type MapNoteReadOptions,
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 
@@ -57,6 +63,15 @@ export class MapStore {
   private listeners = new Set<(map: string) => void>();
   /** Maps whose note exists but doesn't parse: never written over. */
   private broken = new Set<string>();
+  /** The sticky notice shown for each broken map (hidden once it reads again). */
+  private brokenNotices = new Map<string, Notice>();
+  /** Format-1 notes backed up this session before their first rewrite. */
+  private backedUp = new Set<string>();
+  /** Maps whose unreadable rows get reported once the note has been quiet a moment. */
+  private toReview = new Set<string>();
+  private reviewTimer: number | undefined;
+  /** Last reported unreadable rows per map (so a notice isn't repeated). */
+  private reported = new Map<string, string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -160,7 +175,7 @@ export class MapStore {
     return this.queue;
   }
 
-  /** Write every dirty map's note now. */
+  /** Write every dirty map's note now (and report unreadable rows still waiting). */
   flush(): Promise<void> {
     window.clearTimeout(this.writeTimer);
     return this.enqueue(async () => {
@@ -170,6 +185,7 @@ export class MapStore {
         const map = this.plugin.getMap(name);
         if (map) await this.writeNote(map);
       }
+      if (this.toReview.size) await this.review();
     });
   }
 
@@ -199,18 +215,39 @@ export class MapStore {
   private async writeNote(map: MapData): Promise<void> {
     if (this.broken.has(map.name)) return;
     const { vault } = this.plugin.app;
-    const data = this.dataFor(map);
-    const key = mapNoteKey(data);
     const path = this.notePath(map.name);
     const file = vault.getAbstractFileByPath(path);
     if (file instanceof TFile) {
       const current = await vault.read(file);
-      const next = updateMapNote(current, map.name, data);
-      if (next !== current) {
-        this.lastContent.set(path, next);
-        await vault.modify(file, next);
+      // Re-check what's on disk now: a hand edit may have broken it since
+      // we last read it (onModify not run yet). Never write over that.
+      const r = readMapNote(current, this.readOpts(path));
+      if (!r || !r.ok) {
+        this.markBroken(map.name, path, r ? r.reason : NO_FRONTMATTER);
+        return;
       }
+      const seen = this.lastContent.get(path);
+      if (seen !== undefined && seen !== current) {
+        // Edited outside (by hand, or synced in) and not loaded yet: fold
+        // those edits in first so this write doesn't undo them.
+        this.foldIn(map, seen, r.data);
+      }
+      if ((r.data.format ?? 1) < MAP_NOTE_FORMAT && !this.backedUp.has(path)) {
+        if (!(await this.backupMapNote(map.name, current))) {
+          this.markBroken(map.name, path, "it couldn't be backed up before converting it to the new format");
+          return;
+        }
+        this.backedUp.add(path);
+      }
+      const data = this.dataFor(map);
+      const next = updateMapNote(current, map.name, data);
+      // The write rewrites the warning callouts from what's in the note.
+      this.reported.set(map.name, problemSignature(r.data.problems));
+      this.lastContent.set(path, next);
+      if (next !== current) await vault.modify(file, next);
+      this.lastKey.set(map.name, mapNoteKey(data));
     } else {
+      const data = this.dataFor(map);
       const folder = this.mapFolder(map.name);
       if (!vault.getAbstractFileByPath(folder)) {
         try { await vault.createFolder(folder); } catch { /* exists */ }
@@ -218,30 +255,118 @@ export class MapStore {
       const content = buildMapNote(map.name, data);
       this.lastContent.set(path, content);
       await vault.create(path, content);
+      this.lastKey.set(map.name, mapNoteKey(data));
     }
-    this.lastKey.set(map.name, key);
   }
 
   // ── load / hand edits ────────────────────────────────────────────────
 
-  /** Apply a parsed note to a map: settings + paths onto MapData, hexes into memory. */
+  /** Wikilinks in the note (background image, tables) resolve like Obsidian's. */
+  private readOpts(notePath: string): MapNoteReadOptions {
+    const mc = this.plugin.app.metadataCache as { getFirstLinkpathDest?: (link: string, source: string) => TFile | null };
+    return { resolveLink: (link) => mc.getFirstLinkpathDest?.(link, notePath)?.path };
+  }
+
+  /**
+   * Apply a parsed note to a map: settings + paths onto MapData, hexes into
+   * memory. In current-format notes a settings key deleted by hand resets
+   * that setting (unless its line just couldn't be read).
+   */
   private apply(map: MapData, data: MapNoteData): void {
     Object.assign(map, data.settings);
+    if ((data.format ?? 1) >= MAP_NOTE_FORMAT) {
+      const unreadable = new Set((data.problems ?? []).map((p) => p.field));
+      const m = map as unknown as Record<string, unknown>;
+      for (const f of RESETTABLE_FIELDS) if (!(f in data.settings) && !unreadable.has(f)) delete m[f];
+    }
     map.pathChains = data.paths;
-    this.hexes.set(map.name, new Map(data.hexes));
+    this.hexes.set(map.name, this.matchCase(map, data.hexes));
     this.lastKey.set(map.name, mapNoteKey(this.dataFor(map)));
   }
 
-  /** "loaded", "missing" (no note: migrate), or "unreadable" (leave it alone). */
-  private async loadMap(map: MapData): Promise<"loaded" | "missing" | "unreadable"> {
+  /**
+   * Palette and terrain names typed in another case ("forest" for "Forest")
+   * read as the palette's own spelling; the next write puts that in the note.
+   */
+  private matchCase(map: MapData, hexes: Map<string, HexData>): Map<string, HexData> {
+    const out = new Map(hexes);
+    const palettes = (this.plugin.settings as { terrainPalettes?: { name: string }[] }).terrainPalettes;
+    if (Array.isArray(palettes) && map.paletteName && !palettes.some((p) => p.name === map.paletteName)) {
+      const hit = palettes.find((p) => p.name.toLowerCase() === map.paletteName.toLowerCase());
+      if (hit) map.paletteName = hit.name;
+    }
+    const getPalette = (this.plugin as { getMapPalette?: (name: string) => { name: string }[] }).getMapPalette;
+    const terrains = getPalette ? getPalette.call(this.plugin, map.name) : [];
+    if (!terrains.length) return out;
+    const exact = new Set(terrains.map((t) => t.name));
+    const lower = new Map(terrains.map((t) => [t.name.toLowerCase(), t.name]));
+    const fix = (t: string | undefined) => (t && !exact.has(t) ? lower.get(t.toLowerCase()) ?? t : t);
+    for (const [k, h] of out) {
+      const t = fix(h.terrain);
+      if (t !== h.terrain) out.set(k, { ...h, terrain: t });
+    }
+    if (map.baseTerrain) map.baseTerrain = fix(map.baseTerrain);
+    if (map.terrainType) map.terrainType = fix(map.terrainType);
+    return out;
+  }
+
+  /**
+   * Edits made to the note outside the plugin since `seenText` (the version
+   * we last read or wrote), folded into memory: any hex, setting or the
+   * path list they changed takes their value; everything else keeps ours.
+   */
+  private foldIn(map: MapData, seenText: string, theirs: MapNoteData): void {
+    const base = parseMapNote(seenText);
+    if (!base) { this.apply(map, theirs); return; }
+    const t = this.table(map.name);
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    for (const k of new Set([...base.hexes.keys(), ...theirs.hexes.keys()])) {
+      if (same(base.hexes.get(k), theirs.hexes.get(k))) continue;
+      const h = theirs.hexes.get(k);
+      if (h) t.set(k, h); else t.delete(k);
+    }
+    const m = map as unknown as Record<string, unknown>;
+    const bs = base.settings as Record<string, unknown>, ts = theirs.settings as Record<string, unknown>;
+    for (const k of new Set([...Object.keys(bs), ...Object.keys(ts)])) {
+      if (same(bs[k], ts[k])) continue;
+      if (k in ts) m[k] = ts[k];
+      else if ((theirs.format ?? 1) >= MAP_NOTE_FORMAT && RESETTABLE_FIELDS.includes(k)) delete m[k];
+    }
+    if (!same(base.paths, theirs.paths)) map.pathChains = theirs.paths;
+  }
+
+  /** "loaded", "missing" (no note: migrate), or why it can't be read (leave it alone). */
+  private async loadMap(map: MapData): Promise<"loaded" | "missing" | { unreadable: string }> {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map.name));
     if (!(file instanceof TFile)) return "missing";
     const content = await this.plugin.app.vault.read(file);
-    const data = parseMapNote(content);
-    if (!data) return "unreadable";
+    const r = readMapNote(content, this.readOpts(file.path));
     this.lastContent.set(file.path, content);
-    this.apply(map, data);
+    if (!r || !r.ok) return { unreadable: r ? r.reason : NO_FRONTMATTER };
+    this.apply(map, r.data);
+    if ((r.data.format ?? 1) < MAP_NOTE_FORMAT) this.dirty.add(map.name);
+    else if (r.data.problems?.length) this.toReview.add(map.name);
     return "loaded";
+  }
+
+  /**
+   * A map note that can't be read: hold every change in memory instead of
+   * writing over it (a rebuild would lose the user's text), and say so once
+   * with a notice that stays until it reads again.
+   */
+  private markBroken(map: string, path: string, reason: string): void {
+    if (this.broken.has(map)) return;
+    this.broken.add(map);
+    this.brokenNotices.set(map, new Notice(
+      `Hexmap World Creator: can't read the map note ${path}: ${reason}. Changes to this map aren't saved until it's fixed; fix it in the note and the map reloads from it.`,
+      0,
+    ));
+  }
+
+  private markReadable(map: string): void {
+    if (!this.broken.delete(map)) return;
+    this.brokenNotices.get(map)?.hide();
+    this.brokenNotices.delete(map);
   }
 
   /** A map note edited by hand (or synced in): reload that map. */
@@ -254,10 +379,16 @@ export class MapStore {
     void this.enqueue(async () => {
       const content = await this.plugin.app.vault.read(file);
       if (this.lastContent.get(file.path) === content) return; // our own write
-      const data = parseMapNote(content);
-      if (!data) return;
-      this.broken.delete(map.name);
       this.lastContent.set(file.path, content);
+      const r = readMapNote(content, this.readOpts(file.path));
+      if (!r || !r.ok) {
+        // Broken mid-session (a lost `---`, a renamed table header…): the
+        // next paint must not rebuild the note over the user's text.
+        this.markBroken(map.name, file.path, r ? r.reason : NO_FRONTMATTER);
+        return;
+      }
+      this.markReadable(map.name);
+      const data = r.data;
       const before = new Map(this.hexes.get(map.name) ?? []);
       this.apply(map, data);
       // Names renamed by hand in the table: keep their notes' aliases in step.
@@ -267,13 +398,75 @@ export class MapStore {
       await this.plugin.saveData(this.plugin.settings);
       this.emit(map.name);
       this.plugin.refreshHexMap();
+      this.scheduleReview(map.name);
     });
+  }
+
+  /** Report unreadable rows once the note has been left alone for a moment (not mid-typing). */
+  private scheduleReview(map: string): void {
+    this.toReview.add(map);
+    window.clearTimeout(this.reviewTimer);
+    this.reviewTimer = window.setTimeout(() => void this.enqueue(() => this.review()), 3000);
+  }
+
+  /**
+   * For each map waiting: a notice naming the note if its unreadable rows
+   * changed, and the note's warning callout brought in line (only the
+   * callout; the rest is tidied on the next real write).
+   */
+  private async review(): Promise<void> {
+    window.clearTimeout(this.reviewTimer);
+    const maps = [...this.toReview];
+    this.toReview.clear();
+    const { vault } = this.plugin.app;
+    for (const name of maps) {
+      if (this.broken.has(name)) continue;
+      const path = this.notePath(name);
+      const file = vault.getAbstractFileByPath(path);
+      if (!(file instanceof TFile)) continue;
+      const content = await vault.read(file);
+      const r = readMapNote(content);
+      if (!r || !r.ok) continue;
+      this.report(name, path, r.data.problems ?? []);
+      const next = refreshProblemCallouts(content);
+      if (next !== content) {
+        this.lastContent.set(path, next);
+        await vault.modify(file, next);
+      }
+    }
+  }
+
+  private report(map: string, path: string, problems: MapNoteProblem[]): void {
+    const sig = problemSignature(problems);
+    if ((this.reported.get(map) ?? "") === sig) return;
+    this.reported.set(map, sig);
+    if (!problems.length) return;
+    const n = problems.length;
+    const first = problems.slice(0, 2).map((p) => `"${p.text.length > 40 ? p.text.slice(0, 40) + "…" : p.text}" (${p.reason})`).join("; ");
+    new Notice(`Hexmap World Creator: ${n === 1 ? "a line" : `${n} lines`} in ${path} couldn't be read: ${first}${n > 2 ? "; …" : ""}. ${n === 1 ? "It's" : "They're"} kept as written; the warning box in the note lists ${n === 1 ? "it" : "them"}.`, 10000);
+  }
+
+  /** Copy a format-1 map note's text before its first rewrite. Never overwrites. */
+  private async backupMapNote(map: string, text: string): Promise<boolean> {
+    const adapter = this.plugin.app.vault.adapter;
+    try {
+      const dir = this.backupDir();
+      if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+      let path = `${dir}/${map}-map-note.md`;
+      for (let n = 2; await adapter.exists(path); n++) path = `${dir}/${map}-map-note-${n}.md`;
+      await adapter.write(path, text);
+      return true;
+    } catch (e) {
+      console.error(`Hexmap World Creator: couldn't back up the map note for ${map}; it wasn't converted`, e);
+      return false;
+    }
   }
 
   /** A map was renamed (folder already moved): move its note too. */
   async renameMap(oldName: string, newName: string): Promise<void> {
     const t = this.hexes.get(oldName);
     if (t) { this.hexes.delete(oldName); this.hexes.set(newName, t); }
+    if (this.broken.delete(oldName)) this.broken.add(newName);
     const { vault, fileManager } = this.plugin.app;
     const moved = vault.getAbstractFileByPath(`${this.mapFolder(newName)}/_${oldName}.md`);
     if (moved instanceof TFile) await fileManager.renameFile(moved, this.notePath(newName));
@@ -305,21 +498,28 @@ export class MapStore {
       for (const map of maps) {
         const r = await this.loadMap(map);
         if (r === "missing") toMigrate.push(map);
-        else if (r === "unreadable") unreadable.push(map);
-      }
-      // A map note that exists but doesn't parse (hand-broken frontmatter)
-      // must never be "migrated" over: its hex notes are already cleaned,
-      // so that would write an empty map. Keep the note, hold edits in
-      // memory only, and say so.
-      for (const m of unreadable) this.broken.add(m.name);
-      if (unreadable.length) {
-        new Notice(`Hexmap World Creator: couldn't read the map note for ${unreadable.map((m) => m.name).join(", ")} (${unreadable.map((m) => this.notePath(m.name)).join(", ")}). Fix its frontmatter (it needs "hexmaker-map: 1"); it won't be overwritten until then.`, 0);
+        else if (r !== "loaded") {
+          // A map note that exists but doesn't parse (hand-broken
+          // frontmatter or table) must never be "migrated" over: its hex
+          // notes are already cleaned, so that would write an empty map.
+          // Keep the note, hold edits in memory only, and say so.
+          unreadable.push(map);
+          this.markBroken(map.name, this.notePath(map.name), r.unreadable);
+        }
       }
       this.ready = true;
       if (toMigrate.length) await this.migrate(toMigrate);
       // Hex notes still carrying map data after a load (an interrupted
       // cleanup, or notes synced in from an older device) get cleaned now.
       await this.cleanHexNotes(maps.filter((m) => !toMigrate.includes(m) && !unreadable.includes(m)), false);
+      // Notes in the older format (JSON values) are converted once, after a
+      // backup; unreadable rows in the others are reported.
+      for (const name of [...this.dirty]) {
+        const map = this.plugin.getMap(name);
+        this.dirty.delete(name);
+        if (map) await this.writeNote(map);
+      }
+      await this.review();
       this.plugin.refreshHexMap();
     });
   }
@@ -453,6 +653,12 @@ export class MapStore {
       return false;
     }
   }
+}
+
+const NO_FRONTMATTER = "its frontmatter (the --- lines with hexmaker-map at the top) is missing or broken";
+
+function problemSignature(problems: MapNoteProblem[] | undefined): string {
+  return (problems ?? []).map((p) => `${p.where}\u0000${p.text}\u0000${p.reason}`).join("\u0001");
 }
 
 /** The fields of `a` that `like` has, for comparing partial hex data. */

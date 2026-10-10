@@ -101,7 +101,7 @@ describe("link badges", () => {
 		};
 		const note = buildMapNote("m", data);
 		expect(note).toContain("show-link-badges: false");
-		expect(note).toContain('hidden-link-badges: ["Dungeons","Quests"]');
+		expect(note).toContain("hidden-link-badges: [Dungeons, Quests]");
 		const back = parseMapNote(note)!;
 		expect(back.settings.showLinkBadges).toBe(false);
 		expect(back.settings.hiddenLinkBadges).toEqual(["Dungeons", "Quests"]);

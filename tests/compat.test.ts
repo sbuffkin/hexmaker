@@ -100,7 +100,16 @@ describe("compat examples", () => {
           expect(out).toContain("My notes about the coast.");
           expect(out).toContain("## Session log\nWe crossed the river.");
           const back = parseMapNote(out)!;
-          expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+          // Same data, except long decimals are written to 4 places.
+          const round = (x: unknown) => (typeof x === "number" ? Math.round(x * 10000) / 10000 : x);
+          const rounded = { ...d, settings: Object.fromEntries(Object.entries(d.settings).map(([k, v]) => [k, round(v)])) };
+          expect(mapNoteKey(back)).toBe(mapNoteKey(rounded));
+          // Converted to the current format: plain keys, no JSON, the help box once.
+          const fm = out.slice(0, out.indexOf("\n---", 4));
+          expect(fm).toMatch(/^hexmaker-map: 2$/m);
+          expect(fm).not.toMatch(/[{}]/);
+          expect(fm).not.toContain("hexmaker-extra");
+          expect(out.match(/\[!info\]- How to edit this note/g)).toHaveLength(1);
           // and a second write changes nothing
           expect(updateMapNote(out, "compat-example", back)).toBe(out);
         });

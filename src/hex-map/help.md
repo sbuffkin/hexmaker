@@ -32,6 +32,8 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 
 Hex names, terrain, icons, GM icons, regions and submap links live in the map's **map note** (`_<map>.md` in the map's folder): one table row per hex. Edit it by hand if you like; the map follows. Hex notes are only for descriptions and links, and appear when a hex gets some.
 
+The **How to edit this note** box at the top of the map note explains the columns. Column order, header case and `3_4` vs `3, 4` don't matter, and your own columns and text are kept. A row that can't be read stays as you wrote it and is listed in a warning box until you fix it. If the note can't be read at all, the plugin stops saving to it and tells you, rather than writing over it.
+
 ---
 
 ## Expand buttons
