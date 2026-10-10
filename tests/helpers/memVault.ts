@@ -30,6 +30,10 @@ const FM = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
 export class MemVault {
 	files = new Map<string, string>();
 	folders = new Set<string>([""]);
+	/** Files written with adapter.writeBinary (backups). */
+	binaries = new Map<string, Uint8Array>();
+	/** Test hook: make adapter.writeBinary fail. */
+	failBinary = false;
 	writes: string[] = [];
 	/** Test hook: mangle content on its way to disk (simulates a bad write). */
 	corrupt: ((path: string, content: string) => string) | null = null;
@@ -97,9 +101,13 @@ export class MemVault {
 				},
 				createFolder: async (p: string) => { v.ensureFolder(p); },
 				adapter: {
-					exists: async (p: string) => v.files.has(p) || v.folders.has(p),
+					exists: async (p: string) => v.files.has(p) || v.folders.has(p) || v.binaries.has(p),
 					mkdir: async (p: string) => { v.ensureFolder(p); },
 					write: async (p: string, c: string) => { v.put(p, c); },
+					writeBinary: async (p: string, data: ArrayBuffer) => {
+						if (v.failBinary) throw new Error("disk full");
+						v.binaries.set(p, new Uint8Array(data));
+					},
 				},
 			},
 			metadataCache: {
