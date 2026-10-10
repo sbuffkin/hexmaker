@@ -1,5 +1,6 @@
 import { App, Modal } from "obsidian";
 import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
+import { wheelDeltaPx, wheelGoesToOuter } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" = "all";
@@ -94,6 +95,60 @@ export class HexmakerModal extends Modal {
 			renderTabs();
 			apply();
 		};
+	}
+
+	/** When the modal's own scroll pane last scrolled (see chainWheelToModal). */
+	private lastOuterScroll = -Infinity;
+	private outerScrollWatched = false;
+
+	/**
+	 * Stop a nested scroll area (an icon or terrain grid inside a long,
+	 * scrolling modal) from trapping the mouse wheel: the wheel scrolls the
+	 * modal when the area is at its end, can't scroll, or the user is in the
+	 * middle of scrolling the modal (see wheelGoesToOuter). Inside the area,
+	 * away from its ends, the wheel still scrolls the area itself.
+	 */
+	protected chainWheelToModal(inner: HTMLElement): void {
+		inner.dataset["wheelChain"] = "1";
+		if (!this.outerScrollWatched) {
+			this.outerScrollWatched = true;
+			// `scroll` doesn't bubble: capture it on the modal and ignore the
+			// chained areas' own scrolling.
+			this.modalEl.addEventListener(
+				"scroll",
+				(e) => {
+					const t = e.target as HTMLElement | null;
+					if (t && !t.dataset?.["wheelChain"]) this.lastOuterScroll = performance.now();
+				},
+				{ capture: true, passive: true },
+			);
+		}
+		inner.addEventListener(
+			"wheel",
+			(e: WheelEvent) => {
+				if (e.ctrlKey || e.deltaY === 0) return;
+				const pane = this.scrollParentOf(inner);
+				if (!pane) return;
+				const box = { scrollTop: inner.scrollTop, scrollHeight: inner.scrollHeight, clientHeight: inner.clientHeight };
+				if (!wheelGoesToOuter(box, e.deltaY, performance.now() - this.lastOuterScroll)) return;
+				e.preventDefault();
+				pane.scrollTop += wheelDeltaPx(e.deltaY, e.deltaMode, pane.clientHeight);
+			},
+			{ passive: false },
+		);
+	}
+
+	/** Nearest ancestor of `el` (inside this modal) that scrolls vertically. */
+	private scrollParentOf(el: HTMLElement): HTMLElement | null {
+		const win = el.ownerDocument.defaultView ?? window;
+		for (let p = el.parentElement; p; p = p.parentElement) {
+			if (p.scrollHeight > p.clientHeight + 1) {
+				const oy = win.getComputedStyle(p).overflowY;
+				if (oy === "auto" || oy === "scroll") return p;
+			}
+			if (p === this.modalEl) break;
+		}
+		return null;
 	}
 
 	/** Make this modal draggable by its title-bar area. Safe to call multiple times. */

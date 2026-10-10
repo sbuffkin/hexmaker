@@ -517,6 +517,7 @@ export class HexEditorModal extends HexmakerModal {
     const section = container.createDiv({ cls: "duckmage-editor-section" });
 
     const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
+    this.chainWheelToModal(grid);
 
     // Picking a terrain keeps the editor open (E1): the map repaints via
     // onChanged, and the selection/header update in place here.
@@ -628,6 +629,7 @@ export class HexEditorModal extends HexmakerModal {
     // Working copy of the list (with duplicates) the user is editing.
     const list: string[] = [...initialList];
     const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(grid);
 
     const countOf = (icon: string): number => list.filter((i) => i === icon).length;
 
@@ -729,6 +731,7 @@ export class HexEditorModal extends HexmakerModal {
   ): void {
     let selected = current;
     const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(grid);
 
     const makeTile = (icon: string | null) => {
       const label = icon
