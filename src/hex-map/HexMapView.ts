@@ -2358,8 +2358,19 @@ export class HexMapView extends ItemView {
       factionPath: this.paintFactionPath,
       regionPath: this.paintRegionPath,
     });
+    const wasShown = this.modeBarEl.isShown();
+    const changed = this.modeBarTextEl.getText() !== (label ?? "");
     this.modeBarTextEl.setText(label ?? "");
     this.modeBarEl.toggle(label !== null);
+    if (label === null || !changed) return;
+    // A tool just started or changed: pulse the bar so it's noticed
+    // (round 4: a tester never saw it), and keep it off the hexes.
+    const bar = this.modeBarEl;
+    bar.removeClass("is-new");
+    activeWindow.requestAnimationFrame(() => {
+      bar.addClass("is-new");
+      if (!wasShown) this.uncoverGrid();
+    });
   }
 
   private applyTransform(): void {

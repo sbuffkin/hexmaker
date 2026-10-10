@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { pathClickOutcome, toolModeLabel } from "../src/hex-map/toolMode";
+import { pathClickOutcome, toolModeLabel, type DrawingMode } from "../src/hex-map/toolMode";
 
 const viewSrc = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
 
@@ -126,4 +126,31 @@ describe("Esc with the tool menu open (fresh-eyes T3 follow-up)", () => {
 	it("closes the menu first and keeps the tool", () => {
 		expect(viewSrc).toMatch(/"Escape", \(\) => \{[\s\S]{0,300}this\.painterMenu\?\.isOpen\(\)[\s\S]{0,80}this\.painterMenu\.close\(\);\s*return false;/);
 	});
+});
+
+describe("the tool mode bar (round 4)", () => {
+	it("has a label for every drawing tool", () => {
+		const modes: DrawingMode[] = ["path", "terrain", "icon", "tableLink", "submapLink", "factionLink", "regionLink", "swap", "placeToken"];
+		for (const mode of modes) {
+			for (const erasing of [false, true]) {
+				expect(toolModeLabel({ mode, erasing })).toEqual(expect.any(String));
+			}
+		}
+		expect(toolModeLabel({ mode: null, erasing: false })).toBeNull();
+	});
+
+	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
+	const r4 = css.slice(css.indexOf("Fresh-eyes r4"));
+
+	it("sits in the toolbar band, not over the bottom row", () => {
+		expect(r4).toMatch(/\.duckmage-hex-map-controls \.duckmage-mode-bar \{[^}]*top: 42px;[^}]*bottom: auto;/);
+		expect(view).toMatch(/this\.topBandEls = \[tableBtn, rtBtn, mapNavGroup, this\.undoBtn, this\.redoBtn\];\n\s+if \(this\.modeBarEl\) this\.topBandEls\.push\(this\.modeBarEl\);/);
+	});
+
+	it("pulses when a tool starts and keeps hexes out from under it", () => {
+		expect(view).toMatch(/bar\.addClass\("is-new"\);\n\s+if \(!wasShown\) this\.uncoverGrid\(\);/);
+		expect(r4).toMatch(/\.duckmage-mode-bar\.is-new \{[^}]*animation: duckmage-mode-bar-pulse/);
+	});
+
 });

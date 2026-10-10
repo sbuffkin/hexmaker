@@ -6763,6 +6763,55 @@ button.duckmage-wfc-library-tab.is-active {
     color: var(--text-success);
 }
 
+/* Tool mode bar: in the toolbar band (second row, right of undo/redo)
+   instead of floating over the bottom row of hexes, where a click on a
+   bottom-row hex hit the bar. HexMapView keeps hexes out of this band
+   (safeArea.ts). Filled with the accent colour and pulsed when a tool
+   starts, so it's noticed (round 4: one tester never saw it). */
+.duckmage-hex-map-controls .duckmage-mode-bar {
+    top: 42px;
+    bottom: auto;
+    left: 84px;
+    transform: none;
+    max-width: calc(100% - 300px);
+    min-height: 26px;
+    box-sizing: border-box;
+    padding: 0.15em 0.3em 0.15em 0.8em;
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    box-shadow: var(--shadow-s);
+    z-index: 11;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-text {
+    color: var(--text-on-accent);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-hint {
+    color: var(--text-on-accent);
+    opacity: 0.85;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-stop {
+    height: 1.6em;
+    color: var(--text-normal);
+    background: var(--background-primary);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+    animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
+}
+@keyframes duckmage-mode-bar-pulse {
+    0% {
+        box-shadow: 0 0 0 0 hsla(var(--interactive-accent-hsl), 0.7);
+    }
+    100% {
+        box-shadow: 0 0 0 10px hsla(var(--interactive-accent-hsl), 0);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+        animation: none;
+    }
+}
+
 /* Coordinate labels: a halo in the colour opposite to the text
    (--duckmage-coord-halo, set by HexMapView from the coordinate colour
    setting) so they read on white ice and pale hills, not just dark hexes.
