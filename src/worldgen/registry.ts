@@ -88,8 +88,9 @@ export interface TerrainGeneratorKind {
   generate(req: GenerateRequest): GenerateOutcome;
   /** For learned generators: the generator note (for "Open generator"). */
   generatorPath?: string;
-  /** Turn generated paths into map path chains (drops unknown path types). */
-  toChains(paths: GeneratedPath[]): { chains: { typeName: string; hexes: string[] }[]; missing: string[] };
+  /** Turn generated paths into path chains for a map on `paletteName`
+   *  (drops path types that palette doesn't have). */
+  toChains(paths: GeneratedPath[], paletteName: string | undefined): { chains: { typeName: string; hexes: string[] }[]; missing: string[] };
 }
 
 export const BLANK_ID = "blank";
@@ -171,12 +172,11 @@ function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
 }
 
 export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<TerrainGeneratorKind[]> {
-  const toChains = (paths: GeneratedPath[]) => toPathChains(plugin, paths);
-  // Path types for generated routes/orbits. Fall back to the preset names:
-  // the Space presets add these path types when they are installed, which
-  // happens during map creation — before the paths are turned into chains.
+  const toChains = (paths: GeneratedPath[], paletteName: string | undefined) => toPathChains(plugin, paths, undefined, paletteName);
+  // Path types for generated routes/orbits: a palette's own spelling if one
+  // has it, else the Space presets' names (their palettes carry them).
   const pathTypeNamed = (re: RegExp, fallback: string) =>
-    (plugin.settings.pathTypes ?? []).find((t) => re.test(t.name))?.name ?? fallback;
+    (plugin.settings.terrainPalettes ?? []).flatMap((p) => p.pathTypes ?? []).find((t) => re.test(t.name))?.name ?? fallback;
   const jumpRoute = pathTypeNamed(/jump route/i, "Jump route");
   const orbitPath = pathTypeNamed(/^orbit$/i, "Orbit");
 
@@ -306,7 +306,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         if (!res.ok) return { ok: false, message: res.message };
         return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
       },
-      toChains: (paths) => toPathChains(plugin, paths, g.model),
+      toChains: (paths, paletteName) => toPathChains(plugin, paths, g.model, paletteName),
     });
   }
   return kinds;
@@ -345,10 +345,10 @@ export function builtinKind(
       if (!res.ok) return { ok: false, message: res.message };
       return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
     },
-    toChains: (paths) => {
-      // Streams and trails draw as the vault's river / road types when it has no such type.
-      const known = (plugin.settings.pathTypes ?? []).map((t) => t.name);
-      return toPathChains(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })));
+    toChains: (paths, paletteName) => {
+      // Streams and trails draw as the palette's river / road types when it has no such type.
+      const known = plugin.getPathTypes(paletteName).map((t) => t.name);
+      return toPathChains(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })), undefined, paletteName);
     },
   };
 }

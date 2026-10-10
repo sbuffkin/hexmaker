@@ -29,7 +29,8 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
   const inGrid = (x: number, y: number) =>
     x >= region.offset.x && x < region.offset.x + region.cols &&
     y >= region.offset.y && y < region.offset.y + region.rows;
-  const routingOf = new Map((plugin.settings.pathTypes ?? []).map((p) => [p.name, p.routing]));
+  // Each neighbour's path types come from its own palette.
+  const routingOf = (map: string, type: string) => plugin.getMapPathTypes(map).find((p) => p.name === type)?.routing;
   const crossings: { type: string; routing?: "through" | "meander" | "edge"; hex: string }[] = [];
   for (const [key, cell] of shadow) {
     const map = plugin.getMap(cell.map);
@@ -39,7 +40,7 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
       if (!chain.hexes.includes(there)) continue;
       const [sx, sy] = key.split("_").map(Number);
       const inside = hexNeighbors(sx, sy, orientation, region.stagger).find(([nx, ny]) => inGrid(nx, ny));
-      if (inside) crossings.push({ type: chain.typeName, routing: routingOf.get(chain.typeName), hex: `${inside[0]}_${inside[1]}` });
+      if (inside) crossings.push({ type: chain.typeName, routing: routingOf(cell.map, chain.typeName), hex: `${inside[0]}_${inside[1]}` });
     }
   }
   const paths = pairCrossings(crossings, {

@@ -114,7 +114,7 @@ export class WalkRegionModal extends HexmakerModal {
         { cols: region.cols, rows: region.rows, offset: region.offset, stagger: region.stagger },
         this.plugin.settings.hexOrientation,
         paletteColors(this.plugin, region.paletteName),
-        undefined, preview.paths, pathColors(this.plugin), 360, 12,
+        undefined, preview.paths, pathColors(this.plugin, region.paletteName), 360, 12,
       );
     };
     select.addEventListener("change", refresh);

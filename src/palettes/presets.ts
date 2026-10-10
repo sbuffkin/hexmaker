@@ -1,6 +1,8 @@
 import type { PathType, SubmapDefault, TerrainColor, TerrainPalette } from "../types";
 import type { MapKind } from "../mapKinds";
+import { clonePathTypes } from "./pathTypeTable";
 import {
+  DEFAULT_PATH_TYPES,
   DEFAULT_TERRAIN_PALETTE,
   EXPANDED_PALETTE_NAME,
   LIMITED_PALETTE_NAME,
@@ -172,6 +174,7 @@ export function presetToPalette(preset: PalettePreset, name = preset.name): Terr
   const pal: TerrainPalette = { name, terrains: preset.terrains.map((t) => ({ ...t })) };
   if (preset.childPalette) pal.childPalette = preset.childPalette;
   if (preset.submapDefaults) pal.submapDefaults = cloneSubmapDefaults(preset.submapDefaults);
+  pal.pathTypes = clonePathTypes(preset.pathTypes ?? DEFAULT_PATH_TYPES);
   return pal;
 }
 
@@ -185,21 +188,6 @@ export function uniquePaletteName(base: string, taken: Iterable<string>): string
   }
 }
 
-/**
- * Append preset path types whose names aren't already present. Returns the
- * names that were added, so callers can tell the user.
- */
-export function mergePathTypes(existing: PathType[], incoming: PathType[] | undefined): string[] {
-  const added: string[] = [];
-  const have = new Set(existing.map((p) => p.name.toLowerCase()));
-  for (const pt of incoming ?? []) {
-    if (have.has(pt.name.toLowerCase())) continue;
-    existing.push({ ...pt });
-    have.add(pt.name.toLowerCase());
-    added.push(pt.name);
-  }
-  return added;
-}
 
 /** Deep copy of a submap-defaults map. */
 export function cloneSubmapDefaults(d: Record<string, SubmapDefault>): Record<string, SubmapDefault> {

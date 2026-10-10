@@ -144,6 +144,10 @@ export interface TerrainPalette {
 	 *  ("ocean world" → Space - System, 13×13, Orbits…). Stored as the
 	 *  "Submap defaults" table in the palette note. */
 	submapDefaults?: Record<string, SubmapDefault>;
+	/** Paths maps on this palette can draw (roads, rivers, jump routes…), in
+	 *  picker order. Stored as the "Path types" table in the palette note.
+	 *  Every palette has them once the palette store has loaded. */
+	pathTypes?: PathType[];
 }
 
 /** Saved choices for new submaps of one terrain. Every field is optional. */

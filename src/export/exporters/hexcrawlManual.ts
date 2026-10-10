@@ -290,7 +290,7 @@ export async function collectManualData(
       hexCount: count,
     });
   }
-  const pathTypes = new Map((plugin.settings.pathTypes ?? []).map((t) => [t.name, t]));
+  const pathTypes = new Map(plugin.getMapPathTypes(map.name).map((t) => [t.name, t]));
   const pathCounts = new Map<string, number>();
   for (const c of map.pathChains ?? []) pathCounts.set(c.typeName, (pathCounts.get(c.typeName) ?? 0) + c.hexes.length);
   const paths = [...pathCounts].map(([name, count]) => {

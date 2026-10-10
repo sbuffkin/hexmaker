@@ -695,7 +695,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				}
 				rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
 				drawPreview(canvas, cells, grid, ctx.hexOrientation, new Map(pal.map((t) => [t.name, t.color])),
-					featureCells, paths, pathColors(plugin), 240, 12);
+					featureCells, paths, pathColors(plugin, ctx.paletteName), 240, 12);
 			};
 
 			void listGeneratorKinds(plugin).then((k) => {
@@ -760,7 +760,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// Generated paths (jump routes…) become map path chains.
 			if (outcome?.ok && outcome.paths.length && kind) {
 				const map = plugin.getMap(result.name);
-				const { chains } = kind.toChains(outcome.paths);
+				const { chains } = kind.toChains(outcome.paths, plugin.mapPaletteName(result.name));
 				if (map && chains.length) map.pathChains.push(...chains);
 			}
 			ctx.generatedWith = outcome?.ok ? kind?.label : undefined;

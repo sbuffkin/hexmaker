@@ -666,7 +666,7 @@ export class NewMapSetupModal extends HexmakerModal {
         new Map(terrains.map((t) => [t.name, t.color])),
         featureCells,
         paths,
-        pathColors(this.plugin),
+        pathColors(this.plugin, paletteSelect.value),
         320,
         18,
         undefined,
@@ -838,7 +838,7 @@ export class NewMapSetupModal extends HexmakerModal {
 
     // Generated paths (jump routes, rivers…) become map path chains.
     if (outcome?.ok && outcome.paths.length && kind) {
-      const { chains, missing } = kind.toChains(outcome.paths);
+      const { chains, missing } = kind.toChains(outcome.paths, this.plugin.mapPaletteName(result.name));
       const map = this.plugin.getMap(result.name);
       if (map && chains.length) {
         map.pathChains.push(...chains);

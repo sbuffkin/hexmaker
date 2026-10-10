@@ -16,7 +16,7 @@ export interface ProcGrid {
 }
 
 export interface ProcPath {
-  /** Path type name (must exist in settings.pathTypes to be drawn). */
+  /** Path type name (must exist in the map palette's path types to be drawn). */
   type: string;
   hexes: string[];
 }

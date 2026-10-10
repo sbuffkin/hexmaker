@@ -71,6 +71,8 @@ export class PathPickerModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
+    /** The palette whose path types are picked and edited (the map's). */
+    private paletteName: string,
     private currentTypeName: string | null,
     private onSelect: (typeName: string) => void,
     private onDismiss?: () => void,
@@ -137,6 +139,12 @@ export class PathPickerModal extends HexmakerModal {
     header.createEl("h2", {
       text: this.editMode ? "Edit path types" : "Select path type",
     });
+    if (this.editMode) {
+      contentEl.createEl("p", {
+        text: `These belong to the "${this.paletteName}" palette: every map using it shares them. They're also the Path types table in the palette's note.`,
+        cls: "duckmage-map-origin-desc",
+      });
+    }
     const toggleBtn = header.createEl("button", {
       cls: "duckmage-tpe-edit-btn",
       text: this.editMode ? "← Done" : "✏ Edit",
@@ -155,7 +163,7 @@ export class PathPickerModal extends HexmakerModal {
 
   private renderPickMode(): void {
     const { contentEl } = this;
-    const pathTypes = this.plugin.settings.pathTypes;
+    const pathTypes = this.plugin.getPathTypes(this.paletteName);
 
     const section = contentEl.createDiv({ cls: "duckmage-editor-section" });
     this.renderDrawMode(section);
@@ -200,7 +208,7 @@ export class PathPickerModal extends HexmakerModal {
 
   private renderEditMode(): void {
     const { contentEl } = this;
-    const pathTypes = this.plugin.settings.pathTypes;
+    const pathTypes = this.plugin.getPathTypes(this.paletteName);
 
     const grid = contentEl.createDiv({
       cls: "duckmage-terrain-picker duckmage-terrain-picker-full",
@@ -224,6 +232,7 @@ export class PathPickerModal extends HexmakerModal {
           new PathTypeEditorModal(
             this.app,
             this.plugin,
+            this.paletteName,
             pt,
             () => { this.editChanged = true; renderTiles(); },
             () => { this.editChanged = true; renderTiles(); },
@@ -275,7 +284,9 @@ export class PathPickerModal extends HexmakerModal {
       addTile.createSpan({ text: "Add", cls: "duckmage-terrain-option-name" });
       addTile.addEventListener("click", () => {
         void (async () => {
-        const newPt: PathType = { name: "New path", color: "#888888", width: 3, lineStyle: "solid", routing: "through" };
+        let name = "New path";
+        for (let n = 2; pathTypes.some((p) => p.name.toLowerCase() === name.toLowerCase()); n++) name = `New path ${n}`;
+        const newPt: PathType = { name, color: "#888888", width: 3, lineStyle: "solid", routing: "through" };
         pathTypes.push(newPt);
         this.editChanged = true;
         await this.plugin.saveSettings();
@@ -283,6 +294,7 @@ export class PathPickerModal extends HexmakerModal {
         new PathTypeEditorModal(
           this.app,
           this.plugin,
+          this.paletteName,
           newPt,
           () => { this.editChanged = true; renderTiles(); },
           () => { this.editChanged = true; renderTiles(); },

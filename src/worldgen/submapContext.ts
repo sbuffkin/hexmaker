@@ -43,7 +43,7 @@ export function buildSubmapContext(
   // Paths through this hex: where each comes in and goes out, so the
   // submap can carry the road / river across instead of losing it.
   const key = `${x}_${y}`;
-  const routingOf = new Map((plugin.settings.pathTypes ?? []).map((p) => [p.name, p.routing]));
+  const routingOf = new Map(plugin.getPathTypes(map.paletteName).map((p) => [p.name, p.routing]));
   for (const chain of map.pathChains ?? []) {
     chain.hexes.forEach((h, i) => {
       if (h !== key) return;

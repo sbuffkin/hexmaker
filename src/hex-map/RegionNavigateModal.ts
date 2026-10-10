@@ -37,7 +37,7 @@ export class RegionNavigateModal extends HexmakerModal {
         paletteColors(this.plugin, map.paletteName),
         undefined,
         (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
-        pathColors(this.plugin),
+        pathColors(this.plugin, this.plugin.mapPaletteName(name)),
         360,
         12,
         undefined,

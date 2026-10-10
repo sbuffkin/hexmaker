@@ -22,6 +22,7 @@ import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFil
 import { buildSvgPattern, colorToIdToken, type OverlayPatternKey } from "../overlayPatterns";
 import { renderHexPreview } from "./overlayPatternControls";
 import {
+  UNKNOWN_PATH_TYPE,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
@@ -335,6 +336,11 @@ export class HexMapView extends ItemView {
   private undoBtn: HTMLButtonElement | null = null;
   private redoBtn: HTMLButtonElement | null = null;
   activeMapName = "default";
+
+  /** Path types the active map can draw: its palette's. */
+  private mapPathTypes() {
+    return this.plugin.getMapPathTypes(this.activeMapName);
+  }
   /** Set when another view/window mutated shared state while this view was
    *  inactive; consumed by a re-render on next activation (issue #32). */
   private needsRerender = false;
@@ -2321,10 +2327,10 @@ export class HexMapView extends ItemView {
     // Update path button swatch color to show active type
     if (this.pathBtnSwatch) {
       const activeType = this.activePathTypeName
-        ? this.plugin.settings.pathTypes.find(
+        ? this.mapPathTypes().find(
             (p) => p.name === this.activePathTypeName,
           )
-        : this.plugin.settings.pathTypes[0];
+        : this.mapPathTypes()[0];
       if (activeType) {
         this.pathBtnSwatch.setCssProps({
           "--duckmage-bg": activeType.color,
@@ -4043,7 +4049,8 @@ export class HexMapView extends ItemView {
     // The neighbours' roads and rivers across the strip (read-only), so a
     // path here can be drawn to meet them (round 4: testers lined roads up
     // by eye). In em, like the strip's hexes; a dot marks where one ends.
-    const typeByName = new Map(this.plugin.settings.pathTypes.map((t) => [t.name, t]));
+    // Each neighbour's paths in its own palette's styles.
+    const typeOf = (map: string, name: string) => this.plugin.getMapPathTypes(map).find((t) => t.name === name);
     const centreEm = (key: string) => {
       const [x, y] = key.split("_").map(Number);
       const p = place(x, y);
@@ -4056,7 +4063,7 @@ export class HexMapView extends ItemView {
     const joinedAt = (run: { map: string; typeName: string }, key: string) =>
       joins.find((j) => j.map === run.map && j.typeName === run.typeName && j.other === key);
     const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
-      const pt = typeByName.get(run.typeName);
+      const pt = typeOf(run.map, run.typeName);
       if (!pt) return [];
       const pts = ghostRunPoints(run, centreEm);
       const startJoin = run.stubStart ? undefined : joinedAt(run, run.hexes[0]);
@@ -5297,6 +5304,7 @@ export class HexMapView extends ItemView {
     new PathPickerModal(
       this.app,
       this.plugin,
+      this.plugin.mapPaletteName(this.activeMapName),
       this.activePathTypeName,
       (typeName) => {
         this.leaveOtherToolFor("path");
@@ -5357,7 +5365,7 @@ export class HexMapView extends ItemView {
     auto.toggleClass("is-active", this.pathAutoRoute);
     auto.addEventListener("click", () => this.setPathAutoRoute(!this.pathAutoRoute));
     if (!this.pathAutoRoute) return;
-    const type = this.plugin.settings.pathTypes.find((p) => p.name === this.activePathTypeName);
+    const type = this.mapPathTypes().find((p) => p.name === this.activePathTypeName);
     if (type && !pathAvoidsImpassable(type)) return; // e.g. rivers: they go anywhere
     const blocked = impassableNames(this.plugin.getMapPalette(this.activeMapName));
     if (!blocked.length) {
@@ -5403,7 +5411,7 @@ export class HexMapView extends ItemView {
     }
     if (key === this.activePathEnd) return;
     const map = this.getActiveMap();
-    const type = this.plugin.settings.pathTypes.find((p) => p.name === this.activePathTypeName);
+    const type = this.mapPathTypes().find((p) => p.name === this.activePathTypeName);
     const avoid = (type ? pathAvoidsImpassable(type) : true) && !this.routeCrossImpassable;
     const blockedNames = avoid ? impassableNames(this.plugin.getMapPalette(this.activeMapName)) : [];
     const blockedSet = new Set(blockedNames);
@@ -5701,11 +5709,19 @@ export class HexMapView extends ItemView {
 
     // Flatten every chain into a render list in path-type definition order,
     // pairing each chain with its resolved type. Stable order = draw order.
-    const renderables = this.plugin.settings.pathTypes.flatMap((pt) =>
+    const types = this.mapPathTypes();
+    const renderables = types.flatMap((pt) =>
       region.pathChains
         .filter((c) => c.typeName === pt.name)
         .map((chain) => ({ chain, pt })),
     );
+    // A path whose type isn't in this map's palette (renamed or removed in
+    // the palette note) still shows, plain grey, rather than vanishing.
+    const known = new Set(types.map((t) => t.name));
+    for (const chain of region.pathChains) {
+      if (!known.has(chain.typeName))
+        renderables.push({ chain, pt: { ...UNKNOWN_PATH_TYPE, name: chain.typeName } });
+    }
 
     // Assign each chain a perpendicular "lane" offset so chains that share a
     // route (e.g. a road and a river on the same hexes) render side by side
@@ -5783,7 +5799,7 @@ export class HexMapView extends ItemView {
     // Small circle to mark the active endpoint (only visible in path mode)
     if (this.drawingMode === "path" && this.activePathEnd) {
       const activeType = this.activePathTypeName
-        ? this.plugin.settings.pathTypes.find(
+        ? this.mapPathTypes().find(
             (p) => p.name === this.activePathTypeName,
           )
         : undefined;

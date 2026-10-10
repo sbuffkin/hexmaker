@@ -175,4 +175,19 @@ describe("migrateMapData", () => {
     const m = migrateMapData({ name: "old", gridSize: { cols: 3, rows: 2 }, futureField: 1 });
     expect(m).toMatchObject({ paletteName: "Default", gridOffset: { x: 0, y: 0 }, pathChains: [], futureField: 1 });
   });
+
+  it("turns pre-path-type roadChains / riverChains into Road and River paths", () => {
+    const m = migrateMapData({
+      name: "old",
+      roadChains: [["0_0", "1_0"], []],
+      riverChains: [["2_2", "2_3", "3_3"]],
+      pathChains: [{ typeName: "Trail", hexes: ["5_5", "5_6"] }],
+    });
+    expect(m.pathChains).toEqual([
+      { typeName: "Trail", hexes: ["5_5", "5_6"] },
+      { typeName: "Road", hexes: ["0_0", "1_0"] },
+      { typeName: "River", hexes: ["2_2", "2_3", "3_3"] },
+    ]);
+    expect("roadChains" in m || "riverChains" in m).toBe(false);
+  });
 });

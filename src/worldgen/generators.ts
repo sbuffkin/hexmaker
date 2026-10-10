@@ -125,21 +125,23 @@ export function readLockedHexes(plugin: HexmakerPlugin, mapName: string): Set<st
   return out;
 }
 
-/** Path colour per path type name, for previews. */
-export function pathColors(plugin: HexmakerPlugin): Map<string, string> {
-  return new Map((plugin.settings.pathTypes ?? []).map((t) => [t.name, t.color]));
+/** Path colour per path type name on a palette, for previews. */
+export function pathColors(plugin: HexmakerPlugin, paletteName: string | undefined): Map<string, string> {
+  return new Map(plugin.getPathTypes(paletteName).map((t) => [t.name, t.color]));
 }
 
 /**
- * Generated paths as map path chains. Path types the vault doesn't have are
- * dropped (and named in the returned warning list).
+ * Generated paths as map path chains for a map on `paletteName`. Path types
+ * that palette doesn't have are dropped (and named in the returned warning
+ * list).
  */
 export function toPathChains(
   plugin: HexmakerPlugin,
   paths: { type: string; route?: string; hexes: string[] }[],
-  model?: HexWfcModel,
+  model: HexWfcModel | undefined,
+  paletteName: string | undefined,
 ): { chains: { typeName: string; hexes: string[] }[]; missing: string[] } {
-  const known = new Set((plugin.settings.pathTypes ?? []).map((t) => t.name));
+  const known = new Set(plugin.getPathTypes(paletteName).map((t) => t.name));
   const typed = paths.map((p) => ({ typeName: drawnPathType(model, p), hexes: [...p.hexes] }));
   const missing = [...new Set(typed.map((p) => p.typeName).filter((t) => !known.has(t)))];
   return { chains: typed.filter((p) => known.has(p.typeName)), missing };
@@ -464,7 +466,7 @@ export async function fillMap(
   // other path types, and every path when only filling, are left alone.
   if (mode === "regenerate" && model.paths?.length) {
     const learned = new Set(model.paths.map((p) => drawnPathType(model, { type: p.type, route: pathRouteKey(p) })));
-    const { chains, missing } = toPathChains(plugin, result.paths, model);
+    const { chains, missing } = toPathChains(plugin, result.paths, model, plugin.mapPaletteName(mapName));
     map.pathChains = [...(map.pathChains ?? []).filter((c) => !learned.has(c.typeName)), ...chains];
     if (missing.length) warnings.push(`No path type named ${missing.join(", ")}, so those paths were skipped`);
     await plugin.saveSettings();

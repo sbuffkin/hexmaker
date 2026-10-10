@@ -11,6 +11,8 @@ import { fillPaletteSelect } from "./paletteOptions";
 import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { isSpacePalette } from "../mapKinds";
 import { impassableSourceText, isImpassable, setImpassable } from "../impassable";
+import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
+import { PathTypeEditorModal } from "../hex-map/PathTypeEditorModal";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -205,8 +207,43 @@ export class PaletteEditorView extends ItemView {
       this.save();
     });
 
+    // ── Path types ──
+    this.renderPathTypes(contentEl, pal);
+
     // ── Submap defaults ──
     this.renderSubmapDefaults(contentEl, pal);
+  }
+
+  /** The palette's path types: what maps on it can draw (its note's Path types table). */
+  private renderPathTypes(contentEl: HTMLElement, pal: TerrainPalette): void {
+    const types = this.plugin.getPathTypes(pal.name);
+    contentEl.createEl("h3", { text: `Path types (${types.length})` });
+    contentEl.createDiv({
+      cls: "setting-item-description",
+      text: "Roads, rivers and other paths maps using this palette can draw, in the order the path tool lists them. Click one to change it.",
+    });
+    const list = contentEl.createDiv({ cls: "duckmage-pe-path-types" });
+    const reopen = () => this.render();
+    for (const pt of types) {
+      const row = list.createDiv({ cls: "duckmage-pe-path-type", attr: { role: "button", tabindex: "0" } });
+      row.createDiv({ cls: "duckmage-path-preview" }).appendChild(buildPathPreviewSvg(pt));
+      row.createSpan({ text: pt.name, cls: "duckmage-pe-path-type-name" });
+      row.createSpan({ text: `${pt.width}, ${pt.lineStyle}, ${pt.routing}`, cls: "duckmage-pe-path-type-desc" });
+      const open = () => new PathTypeEditorModal(this.app, this.plugin, pal.name, pt, reopen, reopen).open();
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } });
+    }
+    const add = contentEl.createEl("button", { text: "Add path type" });
+    add.addEventListener("click", () => {
+      let name = "New path";
+      for (let n = 2; types.some((p) => p.name.toLowerCase() === name.toLowerCase()); n++) name = `New path ${n}`;
+      const pt = { name, color: "#888888", width: 3, lineStyle: "solid" as const, routing: "through" as const };
+      types.push(pt);
+      void this.plugin.saveSettings().then(() => {
+        this.render();
+        new PathTypeEditorModal(this.app, this.plugin, pal.name, pt, reopen, reopen).open();
+      });
+    });
   }
 
   private terrainRow(
