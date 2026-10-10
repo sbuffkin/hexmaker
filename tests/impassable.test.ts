@@ -134,24 +134,50 @@ describe("impassable by type group (PA4)", () => {
 		expect(impassableNames(custom)).toEqual(["Mirror Mere", "Kraken Deeps", "Coral Shelf"]);
 	});
 
-	it("an untyped custom terrain counts as the type its name suggests", () => {
-		expect(effectiveTerrainType({ name: "Black Lake" })).toBe("water");
-		expect(effectiveTerrainType({ name: "Mirror Mere", type: "water" })).toBe("water");
-		expect(effectiveTerrainType({ name: "Mirror Mere" })).toBeUndefined();
-		expect(isImpassable({ name: "Black Lake" })).toBe(true);
-		expect(isImpassable({ name: "Old Forest" })).toBe(false);
-		// A known type wins over the name.
+	// Owner rule (2026-10-10): never special-case names. The Type column is
+	// the only thing that gives a terrain its defaults, so an untyped "Black
+	// Lake" is passable (the editor shows Type blank and Impassable unticked:
+	// what it shows is what it does).
+	it("an untyped terrain has no type, whatever its name", () => {
+		expect(effectiveTerrainType({ name: "Black Lake" } as { type?: string })).toBeUndefined();
+		expect(effectiveTerrainType({ type: "water" })).toBe("water");
+		expect(effectiveTerrainType({ type: "made-up" })).toBeUndefined();
+		expect(isImpassable({ name: "Black Lake" })).toBe(false);
+		expect(isImpassable({ name: "ocean" })).toBe(false);
+		expect(impassableSourceText({ name: "Black Lake" })).toBe("Default (no type: passable)");
+		// The type decides, never the name.
 		expect(isImpassable({ name: "Lake District", type: "hills" })).toBe(false);
+		expect(isImpassable({ name: "Dry Gulch", type: "water" })).toBe(true);
 	});
 
 	it("a per-terrain override still wins, and only overrides are stored", () => {
 		expect(isImpassable({ name: "Ford", type: "shallows", impassable: false })).toBe(false);
 		expect(isImpassable({ name: "Lava Field", type: "volcanic", impassable: true })).toBe(true);
-		const lake: TerrainColor = { name: "Black Lake", color: "#00f" };
+		const lake: TerrainColor = { name: "Black Lake", color: "#00f", type: "water" };
 		setImpassable(lake, true);
 		expect("impassable" in lake).toBe(false);
 		setImpassable(lake, false);
 		expect(lake.impassable).toBe(false);
+		const untyped: TerrainColor = { name: "Black Lake", color: "#00f" };
+		setImpassable(untyped, true);
+		expect(untyped.impassable).toBe(true);
+	});
+
+	it("a palette with different names behaves the same as the shipped one", () => {
+		// Expanded's water group, renamed and reordered.
+		const shipped = impassableNames(DEFAULT_TERRAIN_PALETTE);
+		const renamed = DEFAULT_TERRAIN_PALETTE.map((t, i) => ({ ...t, name: `Terrain ${i}` })).reverse();
+		expect(impassableNames(renamed).length).toBe(shipped.length);
+		expect(renamed.filter(isImpassable).map((t) => t.type).sort())
+			.toEqual(DEFAULT_TERRAIN_PALETTE.filter(isImpassable).map((t) => t.type).sort());
+	});
+
+	it("a palette built from scratch (everything deleted) works: nothing typed, nothing blocked", () => {
+		expect(impassableNames([])).toEqual([]);
+		const scratch: TerrainColor[] = [{ name: "ocean", color: "#00f" }, { name: "river", color: "#00f" }];
+		expect(impassableNames(scratch)).toEqual([]);
+		scratch[0].type = "water";
+		expect(impassableNames(scratch)).toEqual(["ocean"]);
 	});
 
 	it("the palette editor says where a value comes from", () => {

@@ -25,7 +25,7 @@ import {
 } from "../../packages/hex-wfc/src";
 import type { PathType, TerrainColor } from "../types";
 import { DEFAULT_TERRAIN_PALETTE } from "../constants";
-import { inferTerrainType } from "../terrainTypes";
+import { effectiveTerrainType, inferTerrainType } from "../terrainTypes";
 
 import biomeAlpine from "./builtin/biome-alpine.md";
 import biomeBadlands from "./builtin/biome-badlands.md";
@@ -139,9 +139,10 @@ export const TYPE_FALLBACKS: Record<string, string[]> = {
   settlement: [],
 };
 
-/** A palette terrain's type: its own, else guessed from its name. */
+/** A palette terrain's type: its Type column only (untyped terrains are
+ *  never matched by name; see effectiveTerrainType). */
 function typeOf(t: TerrainColor): string | undefined {
-  return t.type ?? inferTerrainType(t.name, t.category, "world");
+  return effectiveTerrainType(t);
 }
 
 const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter(Boolean));
@@ -151,7 +152,7 @@ const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z]+/).filter(Boo
  * name). Generator terrains with no match are left out.
  */
 export function mapTerrainsByType(model: HexWfcModel, palette: TerrainColor[]): Map<string, string> {
-  const byName = new Map(palette.map((t) => [t.name.toLowerCase(), t.name]));
+  const byName = new Map(palette.map((t) => [t.name.toLowerCase(), t]));
   const byType = new Map<string, TerrainColor[]>();
   for (const t of palette) {
     const ty = typeOf(t);
@@ -160,10 +161,14 @@ export function mapTerrainsByType(model: HexWfcModel, palette: TerrainColor[]): 
   }
   const out = new Map<string, string>();
   for (const { name } of model.terrains) {
-    const exact = byName.get(name.toLowerCase());
-    if (exact) { out.set(name, exact); continue; }
+    // The generator's own terrains are typed from the shipped reference
+    // list (they were written against it); the palette's go by their Type
+    // column only. A same-named palette terrain wins only when its type
+    // agrees, so an "ocean" typed desert is never used as sea.
     const type = REFERENCE_TYPES.get(name.toLowerCase()) ?? inferTerrainType(name, undefined, "world");
     if (!type) continue;
+    const exact = byName.get(name.toLowerCase());
+    if (exact && typeOf(exact) === type) { out.set(name, exact.name); continue; }
     for (const ty of [type, ...(TYPE_FALLBACKS[type] ?? [])]) {
       const cands = byType.get(ty);
       if (!cands?.length) continue;

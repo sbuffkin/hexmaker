@@ -21,7 +21,6 @@
 
 import { hexDistance, hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import type { MapData, RegionBiome, RegionSettings, TerrainColor } from "../types";
-import { inferTerrainType } from "../terrainTypes";
 import { biomeForTerrain, biomeGeneratorId, ecotoneBetween, type BiomeId, type BiomeProfile } from "./biomes";
 import { BlendField, REGION_WARP, type BlendWidth } from "./blendField";
 import { regionBox, regionCells, regionCentrePoint, type RegionLayout } from "./layout";
@@ -281,9 +280,9 @@ export function dominantTerrain(terrains: Iterable<string>, typeOf: (t: string) 
   return [...top].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
 }
 
-/** A palette terrain's type lookup: its own type, else guessed from its name. */
+/** A palette terrain's type lookup: its Type column only (names are never guessed). */
 export function paletteTypeOf(palette: TerrainColor[]): (terrain: string) => string | undefined {
-  const m = new Map(palette.map((t) => [t.name, t.type ?? inferTerrainType(t.name, t.category, "world")]));
+  const m = new Map(palette.map((t) => [t.name, t.type]));
   return (name) => m.get(name);
 }
 

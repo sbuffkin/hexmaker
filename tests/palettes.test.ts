@@ -584,7 +584,7 @@ describe("PaletteStore derived cells", () => {
 		const note = h.vault.files.get("world/palettes/Limited.md")!;
 		expect(note).toContain("My notes.");
 		expect(note).toContain("| sea | #0000ff |  |  |  | water | (yes) |");
-		expect(note).toContain("| crags | #777777 |  |  |  | (mountains) | (no) |");
+		expect(note).toContain("| crags | #777777 |  |  |  |  | (no) |");
 		expect(h.settings.terrainPalettes.find((p) => p.name === "Limited")!.terrains.slice(0, 2)).toEqual([
 			{ name: "sea", color: "#0000ff", type: "water" },
 			{ name: "crags", color: "#777777" },
@@ -598,7 +598,7 @@ describe("PaletteStore derived cells", () => {
 		const h = makeHarness();
 		await h.store.init();
 		const p = "world/palettes/Limited.md";
-		h.vault.files.set(p, buildPaletteNote([{ name: "crags", color: "#777777" }]).replace("| (mountains) |", "| water |"));
+		h.vault.files.set(p, buildPaletteNote([{ name: "crags", color: "#777777" }]).replace("|  | (no) |", "| water | (no) |"));
 		h.store.onModify(h.file(p));
 		await h.store.sync();
 		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
@@ -616,7 +616,7 @@ describe("PaletteStore derived cells", () => {
 			getActiveViewOfType: () => (editing ? { file: { path: p }, getMode: () => "source" } : null),
 		};
 		const pathTypes = h.settings.terrainPalettes.find((x) => x.name === "Limited")!.pathTypes!;
-		const typed = setPathTypes(buildPaletteNote([{ name: "crags", color: "#777777" }]), pathTypes).replace("| (mountains) |", "| water |");
+		const typed = setPathTypes(buildPaletteNote([{ name: "crags", color: "#777777" }]), pathTypes).replace("|  | (no) |", "| water | (no) |");
 		h.vault.files.set(p, typed);
 		h.store.onModify(h.file(p));
 		// An in-app sync while they type leaves the note alone too.

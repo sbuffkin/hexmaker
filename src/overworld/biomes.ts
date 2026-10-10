@@ -13,7 +13,6 @@
 
 import type { HexWfcModel, TerrainEntry } from "../../packages/hex-wfc/src/model";
 import { mapTerrainsByType } from "../worldgen/builtinGenerators";
-import { inferTerrainType } from "../terrainTypes";
 import type { TerrainColor } from "../types";
 
 export type BiomeId = string;
@@ -71,82 +70,94 @@ export function biomeGeneratorId(id: BiomeId): string | undefined {
 
 // ── terrain ↔ biome ──────────────────────────────────────────────────────
 
-/** Terrain type → biome (§4.1 step 2). Water is open sea, shallows archipelago. */
-const TYPE_BIOME: Record<string, BiomeId> = {
-  forest: "temperate-forest",
-  jungle: "jungle",
-  snow: "tundra",
-  peaks: "alpine",
-  mountains: "alpine",
-  hills: "valley",
-  grassland: "grassland",
-  desert: "badlands",
-  badlands: "badlands",
-  wetland: "swamp",
-  water: OPEN_SEA,
-  "deep-water": OPEN_SEA,
-  shallows: "archipelago",
-  coast: "coastal-fjord",
-  volcanic: "volcanic",
+/**
+ * Terrain type → the biomes it stands for (§4.1): the main biome first,
+ * then variants that share the type. Types only: a terrain's name is never
+ * read (the owner's rule: the Type column drives type-based behaviour).
+ */
+const TYPE_BIOMES: Record<string, BiomeId[]> = {
+  forest: ["temperate-forest", "taiga", "deep-forest"],
+  jungle: ["jungle"],
+  snow: ["tundra"],
+  peaks: ["alpine"],
+  mountains: ["alpine"],
+  hills: ["valley", "karst"],
+  grassland: ["grassland", "savanna"],
+  desert: ["badlands"],
+  badlands: ["badlands"],
+  wetland: ["swamp", "river-delta"],
+  water: [OPEN_SEA],
+  "deep-water": [OPEN_SEA],
+  shallows: ["archipelago"],
+  coast: ["coastal-fjord"],
+  volcanic: ["volcanic"],
 };
 
-/** Name hints checked before the type (first match wins). */
-const NAME_HINTS: [RegExp, BiomeId, (type: string | undefined) => boolean][] = [
-  [/volcan|lava|magma/, "volcanic", () => true],
-  [/salt/, "badlands", () => true],
-  [/evergreen|pine|taiga|conifer/, "taiga", (t) => t !== "mountains" && t !== "peaks"],
-  [/heavy|deep|old/, "deep-forest", (t) => t === "forest"],
-  [/jungle/, "karst", (t) => t === "hills"],
-  [/cactus|savann|scrub|thorn/, "savanna", () => true],
-  [/fjord/, "coastal-fjord", () => true],
-];
+/** The types a biome is painted with, best first (alpine: peaks, else mountains). */
+const BIOME_TYPES: Record<BiomeId, string[]> = {
+  alpine: ["peaks", "mountains"],
+  badlands: ["badlands", "desert"],
+  [OPEN_SEA]: ["water", "deep-water"],
+};
 
-const typeOf = (t: TerrainColor) => t.type ?? inferTerrainType(t.name, t.category, "world");
+const typeOf = (t: TerrainColor): string | undefined => t.type;
 
 /**
- * The biome a terrain stands for, or undefined (settlements, space
- * terrains, unknown names). Order: a biome label equal to the name
- * ("Taiga"), then name hints ("evergreen hills" → taiga), then the type.
+ * Which biome each palette terrain stands for, by type and palette order:
+ * among the terrains of one type, the LAST ones stand for the type's
+ * variant biomes (in TYPE_BIOMES order) and the rest, the first one
+ * included, for its main biome. So on Expanded, the last wetland terrain
+ * ("river delta") is the river delta and the others are swamp; reorder the
+ * palette to choose. A variant with no terrain left over (a type with one
+ * terrain) can't be shown; resolveBiome then picks a similar biome.
  */
-export function biomeForTerrain(terrain: string, palette: TerrainColor[]): BiomeId | undefined {
-  const name = terrain.trim().toLowerCase();
-  if (!name) return undefined;
-  const label = BIOMES.find((b) => b.label.toLowerCase() === name || b.id === name);
-  if (label) return label.id;
-  const entry = palette.find((t) => t.name.toLowerCase() === name);
-  const type = entry ? typeOf(entry) : inferTerrainType(name, undefined, "world");
-  if (type === "settlement") return undefined;
-  for (const [re, biome, ok] of NAME_HINTS) if (re.test(name) && ok(type)) return biome;
-  return type ? TYPE_BIOME[type] : undefined;
+function terrainBiomes(palette: TerrainColor[]): Map<string, BiomeId> {
+  const byType = new Map<string, TerrainColor[]>();
+  for (const t of palette) {
+    const ty = typeOf(t);
+    if (!ty || !TYPE_BIOMES[ty]) continue;
+    byType.set(ty, [...(byType.get(ty) ?? []), t]);
+  }
+  const out = new Map<string, BiomeId>();
+  for (const [ty, terrains] of byType) {
+    const [main, ...variants] = TYPE_BIOMES[ty];
+    // Variants take the last terrains, never the first (it's the main biome's).
+    const k = Math.min(variants.length, terrains.length - 1);
+    const firstVariant = terrains.length - k;
+    terrains.forEach((t, i) => out.set(t.name, i >= firstVariant ? variants[i - firstVariant] : main));
+  }
+  return out;
 }
 
-/** Preferred representative terrain names per biome (Expanded first). */
-const REPRESENTATIVE: Record<BiomeId, string[]> = {
-  tundra: ["snow"],
-  taiga: ["evergreen", "evergreen heavy"],
-  "temperate-forest": ["mixed forest", "forest"],
-  "deep-forest": ["forest heavy", "mixed forest heavy"],
-  grassland: ["grass"],
-  savanna: ["savanna", "cactus", "cactus heavy"],
-  jungle: ["jungle", "jungle heavy"],
-  badlands: ["badlands", "desert rocky", "desert"],
-  swamp: ["swamp", "marsh", "bog"],
-  "river-delta": ["river delta"],
-  valley: ["hills", "foothills"],
-  karst: ["jungle hills"],
-  alpine: ["mountain", "mountains snow", "peak"],
-  volcanic: ["volcano", "volcano dormant"],
-  "coastal-fjord": ["beach"],
-  archipelago: ["shallows"],
-  [OPEN_SEA]: ["ocean", "water"],
-};
+const cache = new WeakMap<TerrainColor[], { key: string; map: Map<string, BiomeId> }>();
+function biomesOf(palette: TerrainColor[]): Map<string, BiomeId> {
+  const key = palette.map((t) => `${t.name}\u0000${t.type ?? ""}`).join("\u0001");
+  const hit = cache.get(palette);
+  if (hit && hit.key === key) return hit.map;
+  const map = terrainBiomes(palette);
+  cache.set(palette, { key, map });
+  return map;
+}
 
-/** The palette terrain painted for a biome, or undefined if none stands for it. */
+/**
+ * The biome a terrain stands for, or undefined (no type, settlements,
+ * space terrains, terrains not in the palette). See terrainBiomes.
+ */
+export function biomeForTerrain(terrain: string, palette: TerrainColor[]): BiomeId | undefined {
+  return biomesOf(palette).get(terrain);
+}
+
+/**
+ * The palette terrain painted for a biome, or undefined if none stands for
+ * it: the first terrain (palette order) that reads back as the biome, from
+ * the biome's preferred type first.
+ */
 export function representativeTerrain(biome: BiomeId, palette: TerrainColor[]): string | undefined {
-  const cands = palette.filter((t) => biomeForTerrain(t.name, palette) === biome);
+  const map = biomesOf(palette);
+  const cands = palette.filter((t) => map.get(t.name) === biome);
   if (!cands.length) return undefined;
-  for (const want of REPRESENTATIVE[biome] ?? []) {
-    const hit = cands.find((t) => t.name.toLowerCase() === want);
+  for (const ty of BIOME_TYPES[biome] ?? []) {
+    const hit = cands.find((t) => typeOf(t) === ty);
     if (hit) return hit.name;
   }
   return cands[0].name;

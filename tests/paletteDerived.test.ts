@@ -18,6 +18,9 @@ import type { PathType, TerrainColor } from "../src/types";
 const row = (table: string, name: string) => table.split("\n").find((l) => l.startsWith(`| ${name} |`));
 
 // P1: palette notes show the values the plugin works out, in parentheses.
+// An untyped terrain has no type (never one guessed from its name; owner
+// rule 2026-10-10), so its Type cell stays blank and its Impassable default
+// is that of no type: "(no)".
 describe("palette derived cells (P1)", () => {
 	const terrains: TerrainColor[] = [
 		{ name: "ocean", color: "#29507f", type: "water" },
@@ -30,9 +33,9 @@ describe("palette derived cells (P1)", () => {
 		const table = serializePaletteTable(terrains);
 		expect(table.split("\n")[0]).toBe("| Terrain | Color | Icon | Icon color | Category | Type | Impassable |");
 		expect(row(table, "ocean")).toBe("| ocean | #29507f |  |  |  | water | (yes) |");
-		expect(row(table, "crags")).toBe("| crags | #777777 |  |  |  | (mountains) | (no) |");
+		expect(row(table, "crags")).toBe("| crags | #777777 |  |  |  |  | (no) |");
 		expect(row(table, "ford")).toBe("| ford | #4a82a5 |  |  |  | shallows | no |");
-		// Nothing to infer: the type stays blank, the default still shows.
+		// No type: blank, and the default for no type shows.
 		expect(row(table, "Mirror Mere")).toBe("| Mirror Mere | #0000ff |  |  |  |  | (no) |");
 	});
 
@@ -49,7 +52,7 @@ describe("palette derived cells (P1)", () => {
 
 	it("a hand edit that removes the parentheses makes the value explicit", () => {
 		const note = buildPaletteNote(terrains)
-			.replace("| crags | #777777 |  |  |  | (mountains) | (no) |", "| crags | #777777 |  |  |  | mountains | yes |")
+			.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | mountains | yes |")
 			.replace("| ocean | #29507f |  |  |  | water | (yes) |", "| ocean | #29507f |  |  |  | water | yes |");
 		const parsed = parsePaletteNote(note)!;
 		expect(parsed.find((t) => t.name === "crags")).toEqual({ name: "crags", color: "#777777", type: "mountains", impassable: true });
@@ -69,9 +72,10 @@ describe("palette derived cells (P1)", () => {
 		expect(oldParseImpassable("(yes)")).toBeUndefined();
 		expect(oldParseImpassable("(no)")).toBeUndefined();
 		// Older builds kept an unknown type as typed; "(mountains)" isn't a
-		// type, so the name is used, as for a blank cell.
+		// type. This build reads it as no type (and never guesses from the name).
 		const oldType = normalizeTerrainType("(mountains)") ?? "(mountains)";
-		expect(effectiveTerrainType({ name: "crags", type: oldType })).toBe("mountains");
+		expect(effectiveTerrainType({ type: oldType })).toBeUndefined();
+		expect(parseTerrainTypeCell("(mountains)")).toBeUndefined();
 	});
 
 	it("an older-format note (no Impassable column, blank types) still reads, and is stale", () => {
@@ -83,7 +87,7 @@ describe("palette derived cells (P1)", () => {
 		expect(paletteDerivedStale(old)).toBe(true);
 		const fresh = refreshPaletteDerived(old);
 		expect(fresh).toContain("| sea | #00f |  |  |  | water | (yes) |");
-		expect(fresh).toContain("| crags | #777 |  |  |  | (mountains) | (no) |");
+		expect(fresh).toContain("| crags | #777 |  |  |  |  | (no) |");
 		expect(fresh).toContain("Intro.");
 		expect(fresh).toContain("Outro.");
 		expect(parsePaletteNote(fresh)).toEqual(parsePaletteNote(old));
@@ -95,11 +99,11 @@ describe("palette derived cells (P1)", () => {
 		const note = buildPaletteNote(terrains);
 		expect(paletteDerivedStale(note)).toBe(false);
 		// The user types a type: the Impassable default it implies changes.
-		const typed = note.replace("| crags | #777777 |  |  |  | (mountains) | (no) |", "| crags | #777777 |  |  |  | water | (no) |");
+		const typed = note.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | water | (no) |");
 		expect(paletteDerivedStale(typed)).toBe(true);
 		expect(refreshPaletteDerived(typed)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
 		// Filled-in values are the user's, whatever they say.
-		const own = note.replace("| crags | #777777 |  |  |  | (mountains) | (no) |", "| crags | #777777 |  |  |  | Mountains | Y |");
+		const own = note.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | Mountains | Y |");
 		expect(paletteDerivedStale(own)).toBe(false);
 	});
 
@@ -110,10 +114,10 @@ describe("palette derived cells (P1)", () => {
 	});
 
 	it("cell helpers", () => {
-		expect(terrainTypeCell({ name: "dark forest" })).toBe("(forest)");
-		expect(terrainTypeCell({ name: "x", type: "hills" })).toBe("hills");
-		expect(terrainTypeCell({ name: "Mirror Mere" })).toBe("");
-		expect(impassableNoteCell({ name: "lake" })).toBe("(yes)");
+		expect(terrainTypeCell({ name: "dark forest" } as { type?: string })).toBe("");
+		expect(terrainTypeCell({ type: "hills" })).toBe("hills");
+		expect(impassableNoteCell({ name: "lake" })).toBe("(no)");
+		expect(impassableNoteCell({ name: "lake", type: "water" })).toBe("(yes)");
 		expect(impassableNoteCell({ name: "lake", impassable: false })).toBe("no");
 	});
 });
@@ -138,7 +142,7 @@ describe("path types write every option out (PA5)", () => {
 	it("refreshNoteDerived fills blank path cells and the terrain cells, and leaves a full note alone", () => {
 		const old = "---\nhexmaker-palette: 1\n---\n\n| Terrain | Color |\n| --- | --- |\n| lake | #00f |\n\n## Path types\n\n| Path | Color | Width | Style | Routing | Avoid impassable |\n| --- | --- | --- | --- | --- | --- |\n| Ley line | #3b82f6 | 3 | solid | meander |  |\n";
 		const fresh = refreshNoteDerived(old);
-		expect(fresh).toContain("| lake | #00f |  |  |  | (water) | (yes) |");
+		expect(fresh).toContain("| lake | #00f |  |  |  |  | (no) |");
 		expect(fresh).toContain("| Ley line | #3b82f6 | 3 | solid | meander | yes | direct |");
 		expect(refreshNoteDerived(fresh)).toBe(fresh);
 		// With the palette's own types (read with the old rules while migrating), those are written.

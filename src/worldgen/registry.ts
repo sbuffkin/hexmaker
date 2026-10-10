@@ -10,9 +10,9 @@ import {
 } from "./generators";
 import { representableBiomes } from "../overworld/biomes";
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, worldBiomesFromOptions } from "../overworld/worldBiomes";
-import { findTerrain, gridKeys, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
+import { gridKeys, ofType, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
-import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
+import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits, orbitsOptions } from "./procedural/orbits";
 import {
   PLANET_SURFACE_ID,
   OVERLAND_ID,
@@ -85,6 +85,10 @@ export interface TerrainGeneratorKind {
    *  via generateConnected). */
   continuesNeighbours?: boolean;
   options: ProcOption[];
+  /** The options as shown for one palette, when a choice lists that
+   *  palette's own terrains (Orbits' Star). Same keys and defaults as
+   *  `options`; see kindOptions. */
+  optionsFor?(terrains: TerrainColor[]): ProcOption[];
   /** Can this generator produce terrain for a palette with these terrains? */
   fits(terrains: TerrainColor[]): boolean;
   generate(req: GenerateRequest): GenerateOutcome;
@@ -162,11 +166,12 @@ export function describeKind(kind: TerrainGeneratorKind, terrains: TerrainColor[
 }
 
 /**
- * The terrain a fresh map shows where nothing has been painted: the space
- * background on space palettes ("void" / "empty space"), otherwise none.
+ * The terrain a fresh map shows where nothing has been painted: the
+ * palette's first void-typed terrain (the space background), otherwise
+ * none. By type, so a renamed or custom background works too.
  */
 export function suggestBaseTerrain(terrains: TerrainColor[]): string | undefined {
-  return findTerrain(terrains, ["void", "empty space", "deep space"]);
+  return ofType(terrains, ["void"])[0];
 }
 
 function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
@@ -214,6 +219,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
       options: ORBITS_OPTIONS,
+      optionsFor: orbitsOptions,
       fits: orbitsFits,
       generate: (req) => {
         const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitPath, req.context);
@@ -388,6 +394,11 @@ export function runGenerator(
   if (!outcome.ok || carry.length === 0 || isSpacePalette(req.terrains)) return outcome;
   const routed = routeContextPaths(outcome.cells, req.terrains, { ...req.grid, orientation }, carry, req.seed);
   return { ...outcome, paths: [...outcome.paths, ...routed] };
+}
+
+/** A generator's options as shown for a palette (see optionsFor). */
+export function kindOptions(kind: Pick<TerrainGeneratorKind, "options" | "optionsFor">, terrains: TerrainColor[]): ProcOption[] {
+  return kind.optionsFor?.(terrains) ?? kind.options;
 }
 
 /** A generator's options at their defaults, overridden by `chosen`. */
