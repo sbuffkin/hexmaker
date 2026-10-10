@@ -42,6 +42,88 @@ export function renderAdvancedHint(
   return el;
 }
 
+/**
+ * One "More options" line for a screen where several Advanced features would
+ * sit, instead of a stack of single hints. Lists whichever of `features` are
+ * still off; "Show" opens MoreFeaturesModal to turn them on one by one. With
+ * only one left it's an ordinary single hint.
+ */
+export function renderAdvancedHints(
+  parent: HTMLElement,
+  plugin: HexmakerPlugin,
+  features: { feature: AdvancedFeature; text: string }[],
+  spot: string,
+): HTMLElement | null {
+  const s = plugin.settings;
+  const off = features.filter((f) => !hasFeature(s, f.feature));
+  if (!off.length || s.dismissedHints.includes(spot)) return null;
+  if (off.length === 1) return renderAdvancedHint(parent, plugin, off[0].feature, spot, off[0].text);
+  const el = parent.createDiv({ cls: "duckmage-advanced-hint" });
+  el.createSpan({ text: "✦", cls: "duckmage-advanced-hint-mark" });
+  el.createSpan({
+    text: `More options: ${off.map((f) => info(f.feature).label.toLowerCase()).join(", ")}.`,
+    cls: "duckmage-advanced-hint-text",
+  });
+  el.createEl("button", { text: "Show", cls: "duckmage-advanced-hint-on" })
+    .addEventListener("click", () => new MoreFeaturesModal(plugin.app, plugin, off).open());
+  const close = el.createEl("button", { text: "✕", cls: "duckmage-advanced-hint-close", attr: { "aria-label": "Hide this hint", title: "Hide this hint (the features section of settings can show it again)" } });
+  close.addEventListener("click", () => {
+    s.dismissedHints = [...new Set([...s.dismissedHints, spot])];
+    void plugin.saveSettings();
+    el.remove();
+  });
+  return el;
+}
+
+/** The features behind a "More options" hint, each with its own Turn on. */
+export class MoreFeaturesModal extends HexmakerModal {
+  constructor(
+    app: App,
+    private plugin: HexmakerPlugin,
+    private features: { feature: AdvancedFeature; text: string }[],
+  ) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.makeDraggable();
+    this.titleEl.setText("More options");
+    this.render();
+  }
+
+  private render(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("p", {
+      text: "These are advanced features. Turn on the ones you want; they can be turned off again in settings, and nothing you've made is touched.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const list = contentEl.createDiv({ cls: "duckmage-more-features" });
+    for (const f of this.features) {
+      const row = list.createDiv({ cls: "duckmage-more-features-row" });
+      const text = row.createDiv({ cls: "duckmage-more-features-text" });
+      text.createEl("strong", { text: info(f.feature).label });
+      text.createDiv({ text: f.text });
+      if (hasFeature(this.plugin.settings, f.feature)) {
+        row.createSpan({ text: "On", cls: "duckmage-more-features-on" });
+      } else {
+        row.createEl("button", { text: "Turn on" }).addEventListener("click", () => {
+          void this.plugin.enableAdvancedFeature(f.feature).then(() => this.render());
+        });
+      }
+    }
+    const row = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
+    row.createEl("button", { text: "Turn on all advanced features" }).addEventListener("click", () => {
+      void this.plugin.setFeatureLevel("advanced").then(() => this.close());
+    });
+    row.createEl("button", { text: "Done", cls: "mod-cta" }).addEventListener("click", () => this.close());
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+  }
+}
+
 /** "Turn on <feature>?": shown when a Simple user reaches for an Advanced feature. */
 export class EnableFeatureModal extends HexmakerModal {
   constructor(

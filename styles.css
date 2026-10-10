@@ -6490,3 +6490,30 @@ button.duckmage-wfc-library-tab.is-active {
     background: transparent;
     color: var(--text-faint);
 }
+
+/* "More options" (MoreFeaturesModal): one row per hidden feature. */
+.duckmage-more-features {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+    margin: 0.6em 0 1em;
+}
+
+.duckmage-more-features-row {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+}
+
+.duckmage-more-features-text {
+    flex: 1;
+    color: var(--text-muted);
+}
+
+.duckmage-more-features-text strong {
+    color: var(--text-normal);
+}
+
+.duckmage-more-features-on {
+    color: var(--text-success);
+}

@@ -37,7 +37,7 @@ import { randomSeed } from "../../packages/hex-wfc/src";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { hasFeature } from "../featureLevel";
-import { renderAdvancedHint, withFeature } from "../advancedHints";
+import { renderAdvancedHint, renderAdvancedHints, withFeature } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
@@ -683,13 +683,10 @@ export class MapModal extends HexmakerModal {
 
     // Place next to an existing map: it becomes a neighbouring region on the
     // same grid, so size, palette, stagger and coordinates follow from it.
-    // Neighbouring regions are an Advanced feature (hidden, with a hint, in Simple).
+    // Neighbouring regions are an Advanced feature (hidden in Simple; the
+    // "More options" hint under Palette offers it).
     const placeBox = el.createDiv();
-    if (!hasFeature(this.plugin.settings, "regions")) {
-      placeBox.hide();
-      renderAdvancedHint(el, this.plugin, "regions", "new-map-place",
-        "Place a new map next to an existing one, so they join into one world: neighbouring regions.");
-    }
+    if (!hasFeature(this.plugin.settings, "regions")) placeBox.hide();
     placeBox.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label" });
     placeBox.createEl("p", {
       text: "Make this map a neighbouring region of another: it's the same size and palette, and lines up with it hex for hex.",
@@ -745,15 +742,16 @@ export class MapModal extends HexmakerModal {
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
     fillPaletteSelect(this.plugin, paletteSelect);
-    renderAdvancedHint(el, this.plugin, "palettes", "new-map-palette",
-      "Design your own palette: its terrains, colours and icons, and the paths you can draw.");
+    // Everything New map hides in Simple, as one line rather than a stack.
+    renderAdvancedHints(el, this.plugin, [
+      { feature: "generators", text: "Fill a new map with generated terrain instead of painting it all by hand." },
+      { feature: "palettes", text: "Design your own palette: its terrains, colours and icons, and the paths you can draw." },
+      { feature: "regions", text: "Place a new map next to an existing one, so they join into one world." },
+    ], "new-map-more");
 
     // Generator (optional). Only generators whose terrains all exist in the
     // chosen palette are offered.
     const generatorBox = el.createDiv();
-    const generatorHint = el.createDiv();
-    renderAdvancedHint(generatorHint, this.plugin, "generators", "new-map-generator",
-      "Fill a new map with generated terrain instead of painting it all by hand: terrain generators.");
     generatorBox.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
     generatorBox.createEl("p", {
       text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings in the terrain generator.",
@@ -781,10 +779,9 @@ export class MapModal extends HexmakerModal {
           generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
       }
       generatorSelect.value = Array.from(generatorSelect.options).some((o) => o.value === current) ? current : "";
-      // Nothing but Blank to offer (Simple, no space generators): a hint instead.
+      // Nothing but Blank to offer (Simple, no space generators): hide it; the More options hint offers generators.
       const none = generatorSelect.options.length <= 1 && !hasFeature(this.plugin.settings, "generators");
       generatorBox.toggle(!none);
-      generatorHint.toggle(none);
     };
     fillGenerators();
     paletteSelect.addEventListener("change", fillGenerators);
