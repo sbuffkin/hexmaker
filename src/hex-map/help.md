@@ -86,7 +86,7 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 The layers button (top right) turns these on and off.
 
 - **Link badges**: a coloured icon badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). **S / M / L** beside the toggle sets their size for this map. Hover the hex to see what it links. Click ▸ to pick which kinds show.
-- **Legend**: the terrains used on this map and the badge kinds shown, bottom right. **S / M / L** sets its size, **×** hides it.
+- **Legend**: the terrains used on this map and the badge kinds shown, at the bottom left (hover a cut-short name for the full one). **S / M / L** sets its size, **–** folds it to a small **Legend** button, **×** hides it.
 
 Opening the layers panel or the drawing tools never moves the map.
 

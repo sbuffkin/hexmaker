@@ -321,3 +321,35 @@ describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
 		}
 	});
 });
+
+// ── MK2: the map legend is small, bottom-left, names cut short, foldable ──
+import { MAP_LEGEND_NAME_MAX, shortLegendName } from "../src/hex-map/terrainLegend";
+
+describe("map legend (MK2)", () => {
+	it("cuts long names to the limit with an ellipsis; short ones stay", () => {
+		expect(MAP_LEGEND_NAME_MAX).toBeGreaterThanOrEqual(6);
+		expect(MAP_LEGEND_NAME_MAX).toBeLessThanOrEqual(8);
+		expect(shortLegendName("forest", 8)).toBe("forest");
+		expect(shortLegendName("mountains", 9)).toBe("mountains");
+		expect(shortLegendName("mountain pass", 8)).toBe("mountai…");
+		expect([...shortLegendName("deep water", 8)].length).toBeLessThanOrEqual(8);
+		// No space left dangling before the ellipsis.
+		expect(shortLegendName("deep water", 6)).toBe("deep…");
+	});
+
+	it("sits at the view's bottom-left (not over the status bar corner)", () => {
+		const css = readFileSync("styles.css", "utf8");
+		const at = css.search(/^\.duckmage-terrain-legend-map \{/m);
+		expect(at).toBeGreaterThan(-1);
+		const body = css.slice(at, css.indexOf("}", at));
+		expect(body).toMatch(/left:\s*\d+px/);
+		expect(body).toMatch(/bottom:\s*\d+px/);
+		expect(body).not.toMatch(/\bright:/);
+	});
+
+	it("the map view passes the cut length and the fold state", () => {
+		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8");
+		expect(view).toContain("maxName: MAP_LEGEND_NAME_MAX");
+		expect(view).toContain("collapsed: settings.terrainLegendCollapsed");
+	});
+});

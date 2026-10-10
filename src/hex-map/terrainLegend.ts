@@ -54,6 +54,25 @@ export interface LegendOptions {
   cls?: string;
   /** Link badge kinds shown on the map, listed after the terrains. */
   badges?: readonly LegendBadge[];
+  /** Folded to a small "Legend" chip (the map's legend, MK2). */
+  collapsed?: boolean;
+  /** Minimize / expand button; omitted = no button. */
+  onCollapse?: (collapsed: boolean) => void;
+  /** Cut names longer than this (full name on hover); omitted = no cut. */
+  maxName?: number;
+}
+
+/** Longest name shown in the map's legend before it's cut (MK2). */
+export const MAP_LEGEND_NAME_MAX = 8;
+
+/**
+ * A legend name cut to `max` characters ("mountain pass" → "mountai…"),
+ * or unchanged when it fits. Trailing spaces before the "…" are dropped.
+ */
+export function shortLegendName(name: string, max: number): string {
+  const chars = [...name];
+  if (max < 2 || chars.length <= max) return name;
+  return chars.slice(0, max - 1).join("").trimEnd() + "…";
 }
 
 /** A link badge kind in the legend (as drawn on the map). */
@@ -76,6 +95,24 @@ export function renderTerrainLegend(
   const box = parent.createDiv({
     cls: `duckmage-terrain-legend duckmage-terrain-legend-${opts.size}${opts.cls ? " " + opts.cls : ""}`,
   });
+  // Keep a press on the legend from starting a map pan.
+  for (const ev of ["mousedown", "pointerdown"]) {
+    box.addEventListener(ev, (e) => e.stopPropagation());
+  }
+  const onCollapse = opts.onCollapse;
+  if (opts.collapsed && onCollapse) {
+    box.addClass("is-collapsed");
+    const chip = box.createEl("button", {
+      cls: "duckmage-terrain-legend-chip",
+      text: "Legend",
+      attr: { "aria-label": "Show the legend", title: "Show the legend" },
+    });
+    chip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onCollapse(false);
+    });
+    return box;
+  }
   const head = box.createDiv({ cls: "duckmage-terrain-legend-head" });
   head.createSpan({ cls: "duckmage-terrain-legend-title", text: "Legend" });
   const sizes = head.createDiv({ cls: "duckmage-terrain-legend-sizes" });
@@ -88,6 +125,17 @@ export function renderTerrainLegend(
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       opts.onSize(s);
+    });
+  }
+  if (onCollapse) {
+    const min = head.createEl("button", {
+      cls: "duckmage-terrain-legend-min",
+      text: "–",
+      attr: { "aria-label": "Minimize the legend", title: "Minimize" },
+    });
+    min.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onCollapse(true);
     });
   }
   if (opts.onHide) {
@@ -103,6 +151,13 @@ export function renderTerrainLegend(
     });
   }
   const list = box.createDiv({ cls: "duckmage-terrain-legend-list" });
+  // Long names are cut on the map; the row's tooltip has the full name.
+  const shown = (name: string) => (opts.maxName ? shortLegendName(name, opts.maxName) : name);
+  const nameSpan = (row: HTMLElement, name: string) => {
+    const text = shown(name);
+    row.createSpan({ cls: "duckmage-terrain-legend-name", text });
+    if (text !== name) row.setAttr("title", name);
+  };
   for (const t of entries) {
     const row = list.createDiv({ cls: "duckmage-terrain-legend-row" });
     const sw = row.createDiv({ cls: "duckmage-terrain-legend-swatch" });
@@ -110,17 +165,13 @@ export function renderTerrainLegend(
     if (t.icon && opts.iconUrl) {
       createIconEl(sw, opts.iconUrl(t.icon), t.name, t.iconColor, "duckmage-terrain-legend-icon");
     }
-    row.createSpan({ cls: "duckmage-terrain-legend-name", text: t.name });
+    nameSpan(row, t.name);
   }
   for (const b of badges) {
     const row = list.createDiv({ cls: "duckmage-terrain-legend-row duckmage-terrain-legend-badge" });
     const chip = row.createSpan({ cls: `duckmage-link-badge duckmage-link-badge-${b.cls}` });
     setIcon(chip, b.icon);
-    row.createSpan({ cls: "duckmage-terrain-legend-name", text: b.label });
-  }
-  // Keep a press on the legend from starting a map pan.
-  for (const ev of ["mousedown", "pointerdown"]) {
-    box.addEventListener(ev, (e) => e.stopPropagation());
+    nameSpan(row, b.label);
   }
   return box;
 }
