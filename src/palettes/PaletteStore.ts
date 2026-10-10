@@ -131,6 +131,13 @@ export class PaletteStore {
     return world ? `${world}/palettes` : "palettes";
   }
 
+  /** The note an installed palette lives in (where it's bound, else where it will be written). */
+  notePathOf(name: string): string | undefined {
+    const pal = this.plugin.settings.terrainPalettes.find((p) => p.name === name);
+    if (!pal) return undefined;
+    return this.boundPath.get(pal) ?? this.pathFor(name);
+  }
+
   private pathFor(name: string): string {
     return `${this.folder()}/${paletteFileName(name)}.md`;
   }

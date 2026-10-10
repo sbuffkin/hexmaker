@@ -159,6 +159,23 @@ describe("map note formats", () => {
     ]);
   });
 
+  it("format 3 converts once: the derived Summary and Route column are added, nothing else changes", () => {
+    const text = read(formatsDir, "format-3.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
+    const d = parseMapNote(text)!;
+    const out = updateMapNote(text, "compat-example", d);
+    expect(out).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
+    expect(out).toContain("My notes.\n\n## Summary\n");
+    expect(out).toContain("| Type | Route | Hexes |");
+    expect(out).toContain("| River | 4, 0 → 4, 5 (6 hexes) | 4_0 4_1 4_2 4_3 4_4 4_5 |");
+    expect(out).toContain("The plugin fills in *Route*");
+    // The Hexes table is untouched.
+    const hexTable = (s: string) => s.slice(s.indexOf("| Hex |"), s.indexOf("## Paths"));
+    expect(hexTable(out)).toBe(hexTable(text));
+    const back = parseMapNote(out)!;
+    expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+    expect(updateMapNote(out, "compat-example", back)).toBe(out);
+  });
+
   it("format 2 converts once: Submap becomes Locations, maps and regions become links, nothing else changes", () => {
     const text = read(formatsDir, "format-2.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
     const d = parseMapNote(text)!;

@@ -42,10 +42,10 @@ describe("map note format 3: Region map and Locations", () => {
 		expect(d.hexes.get("3_4")).toEqual({ terrain: "forest", locations: ["coast-3-4"] });
 	});
 
-	it("renames Submap to Locations in place on the next write, as links, and marks format 3", () => {
+	it("renames Submap to Locations in place on the next write, as links, and marks format 4", () => {
 		const text = note(["| 3_4 | forest | coast-3-4 |", "| 4_4 | hills |  |"]);
 		const out = updateMapNote(text, "m", parseMapNote(text)!);
-		expect(out).toMatch(/^hexmaker-map: 3$/m);
+		expect(out).toMatch(/^hexmaker-map: 4$/m);
 		expect(out).toContain("| Hex | Terrain | Locations |");
 		expect(out).toContain("| 3_4 | forest | [[_coast-3-4]] |");
 		expect(out).not.toContain("Submap");
@@ -104,7 +104,7 @@ describe("map note format 3: Region map and Locations", () => {
 
 	it("replaces the old help line only when it's still the plugin's own words", () => {
 		const v2 = buildMapNote("m", { settings: { paletteName: "D" }, hexes: new Map(), paths: [] })
-			.replace(/^hexmaker-map: 3$/m, "hexmaker-map: 2")
+			.replace(/^hexmaker-map: 4$/m, "hexmaker-map: 2")
 			.replace(/^> - \*\*Hexes\*\*.*$/m, "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* and *Region* use names from the map's palette. *Icon* and *GM icons* are icon file names; separate several with commas. *Submap* is the map that opens from the hex. *Locked* `yes` keeps generators off it.");
 		const out = updateMapNote(v2, "m", parseMapNote(v2)!);
 		expect(out).toContain("*Locations* links the maps");
