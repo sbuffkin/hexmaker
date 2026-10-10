@@ -6512,21 +6512,17 @@ export class HexMapView extends ItemView {
           this.showTokenContextMenu(e, snapToken);
         });
 
-        // Single mousedown handler — startTokenDrag calls onClickInstead if no drag occurs.
+        // Single mousedown handler — startTokenDrag calls onClickInstead if
+        // no drag occurs. A plain click opens the token's hex, like clicking
+        // the hex itself: the token sits on the hex centre and used to eat
+        // the click target (round 5). Its info card is in the right-click
+        // menu. (With a tool on, tokens let clicks through to the hex: CSS.)
         tokenEl.addEventListener("mousedown", (e) => {
           if (e.button !== 0 || this.drawingMode !== null) return;
           e.stopPropagation();
           this.startTokenDrag(snapToken, tokenEl, e, centerMap, () => {
-            new TokenInfoModal(
-              this.app,
-              snapToken,
-              (x, y) => this.centerOnHex(x, y),
-              () => {
-                void removeTokenFrontmatter(this.app, snapToken.filePath)
-                  .then(() => this.updateTokenLayer());
-              },
-              () => this.openTokenEditor(snapToken),
-            ).open();
+            const [hx, hy] = snapToken.hex.split("_").map(Number);
+            if (Number.isFinite(hx) && Number.isFinite(hy)) void this.onHexClick(hx, hy, e);
           });
         });
       }
@@ -6649,8 +6645,28 @@ export class HexMapView extends ItemView {
     ).open();
   }
 
+  private openTokenInfo(token: TokenEntry): void {
+    new TokenInfoModal(
+      this.app,
+      token,
+      (x, y) => this.centerOnHex(x, y),
+      () => {
+        void removeTokenFrontmatter(this.app, token.filePath)
+          .then(() => this.updateTokenLayer());
+      },
+      () => this.openTokenEditor(token),
+    ).open();
+  }
+
   private showTokenContextMenu(evt: MouseEvent, token: TokenEntry): void {
     const menu = new Menu();
+
+    menu.addItem((item) =>
+      item
+        .setTitle("Token info")
+        .setIcon("info")
+        .onClick(() => this.openTokenInfo(token)),
+    );
 
     menu.addItem((item) =>
       item

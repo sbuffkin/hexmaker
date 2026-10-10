@@ -31,3 +31,20 @@ describe("clicks between hexes go to the nearest hex (fresh-eyes round 5)", () =
 		expect(view).toMatch(/private hexElAt[\s\S]{0,1400}nearestHex\(clientX, clientY, boxes\)/);
 	});
 });
+
+describe("a token doesn't shrink its hex's click target (fresh-eyes round 5)", () => {
+	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
+
+	it("a plain left-click on a token opens its hex, like clicking the hex", () => {
+		expect(view).toMatch(/this\.startTokenDrag\(snapToken, tokenEl, e, centerMap, \(\) => \{\n\s+const \[hx, hy\] = snapToken\.hex\.split\("_"\)\.map\(Number\);\n\s+if \(Number\.isFinite\(hx\) && Number\.isFinite\(hy\)\) void this\.onHexClick\(hx, hy, e\);/);
+	});
+
+	it("the info card moved to the token's right-click menu", () => {
+		expect(view).toMatch(/private showTokenContextMenu[\s\S]{0,200}setTitle\("Token info"\)[\s\S]{0,80}this\.openTokenInfo\(token\)/);
+	});
+
+	it("with a tool on, clicks go through tokens to the hex", () => {
+		expect(css).toMatch(/\.duckmage-hex-map-viewport\.duckmage-draw-mode \.duckmage-token \{\s*pointer-events: none;/);
+	});
+});
