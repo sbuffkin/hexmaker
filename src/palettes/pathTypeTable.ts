@@ -1,6 +1,7 @@
 import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../types";
 import { parseImpassableCell } from "../impassable";
 import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTypeLegacy";
+import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
@@ -9,8 +10,10 @@ import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTy
 //
 //   | Path | Color | Width | Style | Routing | Avoid impassable | Auto-route |
 //   | --- | --- | --- | --- | --- | --- | --- |
-//   | Road | #a16207 | 4 | solid | through | yes | direct |
-//   | River | #3b82f6 | 3 | solid | meander | no | winding |
+//   | Road | `#a16207` | 4 | solid | through | yes | direct |
+//   | River | `#3b82f6` | 3 | solid | meander | no | winding |
+//
+// Colours are inline code so Obsidian doesn't read them as tags (colorCell.ts).
 //
 // Every behaviour is a column, written out for every row: nothing follows a
 // path type's name (PA5). A blank or missing cell reads as the plain default
@@ -196,7 +199,7 @@ export function parsePathTypes(content: string, opts: ParsePathTypesOptions = {}
     const avoidImpassable = avoid ?? (opts.legacy ? legacyAvoidsImpassable(name) : true);
     const t: PathType = {
       name,
-      color: row.color?.trim() || "#888888",
+      color: parseColorCell(row.color) || "#888888",
       width: parseWidth(row.width),
       lineStyle: parseStyle(row.style),
       routing: routing ?? (opts.legacy ? legacyRouting(name) : "through"),
@@ -224,7 +227,7 @@ export function serializePathTypes(
   for (const t of types) {
     const own = extra?.rows.get(t.name) ?? {};
     const avoid = t.avoidImpassable === false ? "no" : "yes";
-    const cells = [t.name, t.color, String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...extraHeaders.map((h) => own[h])];
+    const cells = [t.name, colorCell(t.color), String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...extraHeaders.map((h) => own[h])];
     lines.push(`| ${cells.map(escapeCell).join(" | ")} |`);
   }
   return lines.join("\n");
@@ -267,6 +270,21 @@ export function setPathTypes(content: string, types: PathType[]): string {
   }
   const base = text.endsWith("\n") ? text : text + "\n";
   return `${base}\n${PATH_TYPES_HEADING}\n\n${PATH_TYPES_INTRO}\n\n${serializePathTypes(types)}\n`;
+}
+
+/**
+ * The note with the path types table's Color cells written as inline code
+ * (`` `#a16207` ``), so Obsidian doesn't read them as tags. Only those cells
+ * change: every other character, line endings included, is kept. Unchanged
+ * (the same string) when they already are.
+ */
+export function wrapPathTypeColors(content: string): string {
+  const lines = content.split("\n");
+  const span = findPathTypesTable(lines.map((l) => l.replace(/\r$/, "")));
+  if (!span || !span.columns.includes("name")) return content;
+  const cols = span.columns.flatMap((c, i) => (c === "color" ? [i] : []));
+  const rows = Array.from({ length: span.end - span.start - 2 }, (_, k) => span.start + 2 + k);
+  return wrapColorCellsInRows(lines, rows, cols) ? lines.join("\n") : content;
 }
 
 export const clonePathTypes = (types: readonly PathType[]): PathType[] => types.map((t) => ({ ...t }));

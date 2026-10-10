@@ -323,6 +323,11 @@ export interface HexmakerPluginSettings {
 	 * palette notes are read with the old name rules (pathTypeLegacy.ts).
 	 */
 	pathTypesExplicit?: boolean;
+	/**
+	 * True once palette notes' colours were written as inline code
+	 * (`` `#14223d` ``, not a tag), after a backup of the notes.
+	 */
+	paletteColorsCode?: boolean;
 	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
 	mapKinds: string[];
 	/** Simple or Advanced (see src/featureLevel.ts). */
