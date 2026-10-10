@@ -267,8 +267,11 @@ export class NewMapSetupModal extends HexmakerModal {
 
     // ── Generator ──
     const genRow = this.row(form, "Generator");
+    // aria-labelledby (the row label), not aria-label: Obsidian shows aria-label as a tooltip.
+    const genLabelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
+    genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
+    const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
     this.rememberBox(genRow, "generator", "generator and its options");
-    const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-label": "Generator" } });
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
 
     // ── Base terrain ──
@@ -366,7 +369,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (hidden > 0) {
         genList.createDiv({
           cls: "setting-item-description",
-          text: `${hidden} other generator${hidden === 1 ? "" : "s"} don't fit this palette.`,
+          text: `${hidden} other generator${hidden === 1 ? " doesn't" : "s don't"} fit this palette.`,
         });
       }
       // Options for the chosen generator.

@@ -530,17 +530,19 @@ export class MapModal extends HexmakerModal {
     }
 
     // Size
-    el.createEl("label", { text: "Size", cls: "duckmage-map-field-label" });
+    el.createEl("label", { text: "Size", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-cols" } });
     const sizeRow = el.createDiv({ cls: "duckmage-region-row" });
     const colsInput = sizeRow.createEl("input", {
       type: "number",
       value: String(this.plugin.settings.defaultNewMapCols ?? 20),
+      attr: { id: "duckmage-new-map-cols", "aria-label": "Columns" },
     });
     colsInput.setCssProps({ width: "65px" });
     sizeRow.createSpan({ text: "cols ×", cls: "duckmage-map-size-sep" });
     const rowsInput = sizeRow.createEl("input", {
       type: "number",
       value: String(this.plugin.settings.defaultNewMapRows ?? 16),
+      attr: { "aria-label": "Rows" },
     });
     rowsInput.setCssProps({ width: "65px" });
     sizeRow.createSpan({ text: "rows", cls: "duckmage-map-size-sep" });
@@ -562,9 +564,9 @@ export class MapModal extends HexmakerModal {
     }
 
     // Palette
-    el.createEl("label", { text: "Palette", cls: "duckmage-map-field-label" });
+    el.createEl("label", { text: "Palette", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-palette" } });
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
-    const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
+    const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select", attr: { id: "duckmage-new-map-palette" } });
     fillPaletteSelect(this.plugin, paletteSelect);
 
     // Generator (optional). Only generators whose terrains all exist in the

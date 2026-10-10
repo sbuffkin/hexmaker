@@ -465,12 +465,13 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 			// Hex orientation
 			const orientRow = container.createDiv({ cls: "duckmage-wizard-field" });
-			orientRow.createEl("label", { text: "Hex orientation", cls: "duckmage-wizard-label" });
+			orientRow.createEl("label", { text: "Hex orientation", cls: "duckmage-wizard-label", attr: { id: "duckmage-wizard-orient-label" } });
 			// A radio group: the chosen card is ticked and filled; hover only
 			// lightens a card, so it never looks chosen.
 			const orientBtns = orientRow.createDiv({
 				cls: "duckmage-wizard-orient-row",
-				attr: { role: "radiogroup", "aria-label": "Hex orientation" },
+				// aria-labelledby, not aria-label: Obsidian shows aria-label as a hover tooltip.
+				attr: { role: "radiogroup", "aria-labelledby": "duckmage-wizard-orient-label" },
 			});
 
 			const orientCards: { value: "flat" | "pointy"; el: HTMLElement; mark: HTMLElement }[] = [];
