@@ -8,6 +8,7 @@ import {
 	hexKeyFromBasename,
 	linkSectionsFromCache,
 	toggleHiddenBadge,
+	hiddenBadges,
 	type LinkCacheLike,
 } from "../src/hex-map/linkBadges";
 import { legendSize, usedTerrainEntries } from "../src/hex-map/terrainLegend";
@@ -66,14 +67,28 @@ describe("link badges", () => {
 		expect(linkSectionsFromCache(cacheOf(md))).toEqual([]);
 	});
 
-	it("toggles hidden types in a stable order and drops an empty list", () => {
+	it("toggles hidden types in a stable order, starting from the default", () => {
+		// A map that never chose hides faction badges (the Factions overlay shows that).
 		let hidden = toggleHiddenBadge(undefined, "Quests");
-		expect(hidden).toEqual(["Quests"]);
+		expect(hidden).toEqual(["Quests", "Factions"]);
 		hidden = toggleHiddenBadge(hidden, "Towns");
-		expect(hidden).toEqual(["Towns", "Quests"]);
+		expect(hidden).toEqual(["Towns", "Quests", "Factions"]);
 		hidden = toggleHiddenBadge(hidden, "Quests");
 		hidden = toggleHiddenBadge(hidden, "Towns");
-		expect(hidden).toBeUndefined();
+		hidden = toggleHiddenBadge(hidden, "Factions");
+		// Showing everything is remembered as an empty list, not the default.
+		expect(hidden).toEqual([]);
+	});
+
+	it("faction badges are off on maps that haven't chosen", () => {
+		expect(hiddenBadges({})).toEqual(["Factions"]);
+		expect(hiddenBadges({ hiddenLinkBadges: [] })).toEqual([]);
+		expect(hiddenBadges({ hiddenLinkBadges: ["Towns"] })).toEqual(["Towns"]);
+	});
+
+	it("an empty hidden list survives the map note (all badges shown)", () => {
+		const note = buildMapNote("m", { settings: { paletteName: "Default", gridSize: { cols: 2, rows: 2 }, gridOffset: { x: 0, y: 0 }, hiddenLinkBadges: [] }, hexes: new Map(), paths: [] });
+		expect(parseMapNote(note)!.settings.hiddenLinkBadges).toEqual([]);
 	});
 
 	it("only treats x_y basenames as hex notes", () => {

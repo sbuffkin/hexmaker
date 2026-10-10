@@ -61,7 +61,7 @@ import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
-import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, legendBadgeKinds, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
+import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, hiddenBadges, legendBadgeKinds, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
 import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
@@ -6123,7 +6123,7 @@ export class HexMapView extends ItemView {
     const out = new Map<string, number>();
     const map = this.getActiveMap();
     if (!(map.showLinkBadges ?? true)) return out;
-    const hidden = new Set(map.hiddenLinkBadges ?? []);
+    const hidden = new Set(hiddenBadges(map));
     const size = badgeSize(map.linkBadgeSize);
     const flat = this.plugin.settings.hexOrientation === "flat";
     for (const key of names.keys()) {
@@ -6180,7 +6180,7 @@ export class HexMapView extends ItemView {
     if (map.baseTerrain && painted < cols * rows) used.push(map.baseTerrain);
     const entries = usedTerrainEntries(this.plugin.getMapPalette(this.activeMapName), used);
     // The link badge kinds on the map, as on the PNG legend (round 7 R8).
-    const badges = legendBadgeKinds(this.badgeKindsOnMap, map.showLinkBadges ?? true, map.hiddenLinkBadges)
+    const badges = legendBadgeKinds(this.badgeKindsOnMap, map.showLinkBadges ?? true, hiddenBadges(map))
       .map((s) => ({ label: BADGE_INFO[s].label, icon: BADGE_INFO[s].icon, cls: BADGE_INFO[s].cls }));
     // Pinned to the view's bottom-left, small, names cut short; folds to
     // a "Legend" chip (MK2).

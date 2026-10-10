@@ -47,7 +47,7 @@ import {
   pngTokenSpread,
   wrapHexName,
 } from "./handoutLabels";
-import { BADGE_INFO, BADGE_SECTIONS, badgeSize, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
+import { BADGE_INFO, BADGE_SECTIONS, badgeSize, hiddenBadges as hiddenBadgeKinds, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
 import { usedTerrainEntries } from "../hex-map/terrainLegend";
 import { hexNameTone } from "../hex-map/hexNameLayer";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
@@ -140,7 +140,7 @@ export async function renderMapToPngBlob(
   const showTokens = opts.showTokens ?? false;
   const showLegend = opts.showLegend ?? false;
   const showLinkBadges = opts.showLinkBadges ?? false;
-  const hiddenBadges = new Set(map.hiddenLinkBadges ?? []);
+  const hiddenBadges = new Set(hiddenBadgeKinds(map));
   const background = opts.background ?? "#1a1a1a";
   const borderColor = opts.borderColor ?? "#222";
   // Labels follow the coordinate settings, with a contrast halo, so they

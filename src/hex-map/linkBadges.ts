@@ -162,11 +162,24 @@ export function badgeHideClass(section: BadgeSection): string {
  * BADGE_SECTIONS order, or undefined when nothing is hidden (keeps the map
  * note free of an empty key).
  */
-export function toggleHiddenBadge(hidden: readonly string[] | undefined, section: BadgeSection): string[] | undefined {
-  const set = new Set(hidden ?? []);
+export function toggleHiddenBadge(hidden: readonly string[] | undefined, section: BadgeSection): string[] {
+  const set = new Set(hidden ?? DEFAULT_HIDDEN_BADGES);
   if (set.has(section)) set.delete(section); else set.add(section);
-  const out = BADGE_SECTIONS.filter((s) => set.has(s));
-  return out.length ? out : undefined;
+  // An empty list is kept (not undefined): "show them all", including the
+  // ones hidden by default.
+  return BADGE_SECTIONS.filter((s) => set.has(s));
+}
+
+/**
+ * Badge kinds hidden on a map that hasn't chosen in the layers menu. The
+ * faction badge is off by default: the Factions overlay already shows which
+ * hexes a faction holds (owner call, 2026-10-10).
+ */
+export const DEFAULT_HIDDEN_BADGES: readonly BadgeSection[] = ["Factions"];
+
+/** The badge kinds hidden on this map: its own choice, else the default. */
+export function hiddenBadges(map: { hiddenLinkBadges?: string[] }): string[] {
+  return map.hiddenLinkBadges ?? [...DEFAULT_HIDDEN_BADGES];
 }
 
 /** Hex key ("x_y") from a hex note's basename, or null for other notes. */
