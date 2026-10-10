@@ -1,24 +1,39 @@
 /**
- * The hex editor's small autosave cue ("Saving…" → "✓ Saved"). Round-3
- * testers reopened hexes to check their text had stuck, because nothing said
- * it had. DOM-free so it can be unit-tested; HexEditorModal renders it.
+ * The hex editor's autosave status. Round-3 testers reopened hexes to check
+ * their text had stuck, because nothing said it had; round 4 added a brief
+ * "✓ Saved" in the title row, which 2 of 3 testers still missed (it was
+ * small, far from the box they were typing in, and vanished after 2 s).
+ *
+ * So the status is now persistent: it always says where things stand
+ * ("Changes save automatically" → "Not saved yet…" while typing → "Saving…"
+ * → "✓ All changes saved"), and HexEditorModal shows it next to the text box
+ * being edited as well as in the title row. "saved" is the fresh state (shown
+ * in the success colour for a moment); it then settles to "settled" with the
+ * same words in a quieter colour. DOM-free so it can be unit-tested.
  */
 
-export type SaveState = "idle" | "saving" | "saved" | "error";
+export type SaveState = "idle" | "pending" | "saving" | "saved" | "settled" | "error";
 
 export const SAVE_STATUS_TEXT: Record<SaveState, string> = {
-  idle: "",
+  idle: "Changes save automatically",
+  pending: "Not saved yet…",
   saving: "Saving…",
-  saved: "✓ Saved",
+  saved: "✓ All changes saved",
+  settled: "✓ All changes saved",
   error: "Couldn't save",
 };
 
-/** How long "✓ Saved" stays up. */
-export const SAVED_SHOWN_MS = 2000;
+/** How long the fresh "saved" colour stays before settling. */
+export const SAVED_SHOWN_MS = 2500;
 
 export class SaveTracker {
-  private pending = 0;
+  private inFlight = 0;
   private failed = false;
+  /** Typed-but-not-yet-saved edits exist (see markPending). */
+  private dirty = false;
+  /** What to show when nothing is pending or in flight. */
+  private rest: SaveState = "idle";
+  private state: SaveState = "idle";
   private timer: number | null = null;
 
   constructor(
@@ -27,10 +42,27 @@ export class SaveTracker {
     private clearTimer: (id: number) => void,
   ) {}
 
+  get current(): SaveState {
+    return this.state;
+  }
+
+  /** Something was typed and will autosave shortly. */
+  markPending(): void {
+    this.dirty = true;
+    if (this.inFlight === 0) this.show("pending");
+  }
+
+  /** The pending edit turned out to need no write (text unchanged). */
+  settle(): void {
+    this.dirty = false;
+    if (this.inFlight === 0 && this.state === "pending") this.show(this.rest);
+  }
+
   /** Show "Saving…" until `work` (and any other tracked save) settles, then
-   *  "✓ Saved" for a moment — or "Couldn't save" if any of them failed. */
+   *  "✓ All changes saved" — or "Couldn't save" if any of them failed. */
   async track(work: Promise<unknown>): Promise<void> {
-    this.pending++;
+    this.inFlight++;
+    this.dirty = false;
     this.show("saving");
     try {
       await work;
@@ -38,9 +70,15 @@ export class SaveTracker {
       this.failed = true;
       console.error("Hexmaker: save failed", err);
     } finally {
-      this.pending--;
-      if (this.pending === 0) {
-        this.show(this.failed ? "error" : "saved");
+      this.inFlight--;
+      if (this.inFlight === 0) {
+        if (this.failed) {
+          this.rest = "error";
+          this.show("error");
+        } else {
+          this.rest = "settled";
+          this.show(this.dirty ? "pending" : "saved");
+        }
         this.failed = false;
       }
     }
@@ -53,11 +91,13 @@ export class SaveTracker {
 
   private show(state: SaveState): void {
     this.dispose();
+    this.state = state;
     this.render(state);
     if (state === "saved") {
       this.timer = this.setTimer(() => {
         this.timer = null;
-        this.render("idle");
+        this.state = "settled";
+        this.render("settled");
       }, SAVED_SHOWN_MS);
     }
   }

@@ -74,8 +74,12 @@ export class HexEditorModal extends HexmakerModal {
   private dataPreloaded = false;
   /** Stops keepInViewport's observer (set on first open). */
   private stopKeepInViewport: (() => void) | null = null;
-  /** "Saving…" / "✓ Saved" cue in the title row (fresh-eyes round 3). */
+  /** Autosave status in the title row (fresh-eyes round 3). */
   private saveStatusEl: HTMLElement | null = null;
+  /** The same status, persistent, beside the text box being edited (it
+   *  starts under the Notes heading). Round 4: the title-row cue alone was
+   *  missed by 2 of 3 testers. */
+  private notesStatusEl: HTMLElement | null = null;
   private saves = new SaveTracker(
     (state) => this.renderSaveStatus(state),
     (fn, ms) => window.setTimeout(fn, ms),
@@ -200,6 +204,7 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-editor-save-status",
       attr: { "aria-live": "polite" },
     });
+    this.renderSaveStatus(this.saves.current);
     this.renderNeighborWidget(titleRow, this.x, this.y);
 
     this.makeDraggable();
@@ -247,6 +252,12 @@ export class HexEditorModal extends HexmakerModal {
       "Notes",
       "hexEditorNotesCollapsed",
     );
+    // Persistent autosave status; renderTextSection moves it beside the box
+    // that has focus so it's in view while typing.
+    this.notesStatusEl = notesBody.createDiv({
+      cls: "duckmage-editor-notes-status",
+    });
+    this.renderSaveStatus(this.saves.current);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -333,6 +344,7 @@ export class HexEditorModal extends HexmakerModal {
     this.flushTextSaves();
     this.saves.dispose();
     this.saveStatusEl = null;
+    this.notesStatusEl = null;
     this.stopKeepInViewport?.();
     this.stopKeepInViewport = null;
     this.options.onModalClose?.();
@@ -345,10 +357,14 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   private renderSaveStatus(state: SaveState): void {
-    const el = this.saveStatusEl;
-    if (!el) return;
-    el.setText(SAVE_STATUS_TEXT[state]);
-    el.dataset["state"] = state;
+    for (const el of [this.saveStatusEl, this.notesStatusEl]) {
+      if (!el) continue;
+      el.setText(SAVE_STATUS_TEXT[state]);
+      el.dataset["state"] = state;
+    }
+    // The title row only speaks up once something happened; the Notes
+    // status always shows ("Changes save automatically" up front).
+    this.saveStatusEl?.toggleClass("is-quiet", state === "idle");
   }
 
   private isOnMap(nx: number, ny: number): boolean {
@@ -1307,7 +1323,10 @@ export class HexEditorModal extends HexmakerModal {
       timer = null;
       this.pendingTextSaves.delete(save);
       const value = textarea.value;
-      if (value === lastSaved) return;
+      if (value === lastSaved) {
+        this.saves.settle();
+        return;
+      }
       lastSaved = value;
       void this.saves.track(
         (async () => {
@@ -1321,14 +1340,22 @@ export class HexEditorModal extends HexmakerModal {
       if (timer !== null) window.clearTimeout(timer);
       timer = window.setTimeout(save, TEXT_AUTOSAVE_MS);
       this.pendingTextSaves.add(save);
+      this.saves.markPending();
     });
     textarea.addEventListener("blur", save);
+    // Keep the autosave status beside the box being typed in.
+    textarea.addEventListener("focus", () => {
+      const status = this.notesStatusEl;
+      if (status && status.parentElement !== labelRow) labelEl.after(status);
+    });
   }
 
   private async ensureHexNote(x = this.x, y = this.y): Promise<TFile | null> {
     const path = this.plugin.hexPath(x, y, this.mapName);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) return existing;
-    return this.plugin.createHexNote(this.x, this.y, this.mapName);
+    // (x, y), not this.x/this.y: a save that lands after navigating to a
+    // neighbour must create the note of the hex it was typed into.
+    return this.plugin.createHexNote(x, y, this.mapName);
   }
 }

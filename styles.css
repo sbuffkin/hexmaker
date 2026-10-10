@@ -6710,3 +6710,55 @@ button.duckmage-wfc-library-tab.is-active {
     margin: 0;
     padding-left: 1.2em;
 }
+
+/* ── Fresh-eyes r4 (map view, editor, tokens) ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Hex editor autosave status, persistent. It starts under the Notes
+   heading and moves beside the label of the box being typed in, so it's
+   in view while typing (round 4: the title-row cue alone went unseen). */
+.duckmage-editor-notes-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin: 0 0 0.6em;
+    padding: 0.1em 0.6em;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.duckmage-text-section-label-row .duckmage-editor-notes-status {
+    margin: 0 0.4em 0 auto;
+}
+.duckmage-editor-notes-status[data-state="pending"] {
+    font-style: italic;
+}
+.duckmage-editor-notes-status[data-state="saving"] {
+    color: var(--text-accent);
+    border-color: var(--interactive-accent);
+}
+.duckmage-editor-notes-status[data-state="saved"] {
+    color: var(--text-success);
+    border-color: var(--color-green);
+    background: rgba(var(--color-green-rgb), 0.15);
+    font-weight: 600;
+}
+.duckmage-editor-notes-status[data-state="settled"] {
+    color: var(--text-success);
+}
+.duckmage-editor-notes-status[data-state="error"] {
+    color: var(--text-error);
+    border-color: var(--color-red);
+    background: rgba(var(--color-red-rgb), 0.12);
+    font-weight: 600;
+}
+.duckmage-editor-save-status.is-quiet {
+    display: none;
+}
+.duckmage-editor-save-status[data-state="settled"] {
+    color: var(--text-success);
+}
