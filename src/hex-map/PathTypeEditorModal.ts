@@ -3,6 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType, PathLineStyle, PathRouting } from "../types";
 import { buildPathPreviewSvg } from "./PathPickerModal";
+import { pathAvoidsImpassable } from "../impassable";
 
 export class PathTypeEditorModal extends HexmakerModal {
 	private pendingName: string;
@@ -10,6 +11,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 	private pendingWidth: number;
 	private pendingLineStyle: PathLineStyle;
 	private pendingRouting: PathRouting;
+	private pendingAvoid: boolean;
 	private readonly originalName: string;
 	private savedOrDeleted = false;
 
@@ -27,6 +29,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.pendingWidth      = entry.width;
 		this.pendingLineStyle  = entry.lineStyle;
 		this.pendingRouting    = entry.routing;
+		this.pendingAvoid      = pathAvoidsImpassable(entry);
 	}
 
 	onOpen(): void {
@@ -111,6 +114,15 @@ export class PathTypeEditorModal extends HexmakerModal {
 					}),
 			);
 
+		new Setting(contentEl)
+			.setName("Avoid impassable terrain")
+			.setDesc("Auto-route goes around impassable terrain, so roads avoid water. Turn off for rivers. Hex-by-hex drawing ignores this.")
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.pendingAvoid)
+					.onChange(value => { this.pendingAvoid = value; }),
+			);
+
 		// Save button
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-editor-actions" });
 		btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => {
@@ -170,6 +182,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.entry.width      = this.pendingWidth;
 		this.entry.lineStyle  = this.pendingLineStyle;
 		this.entry.routing    = this.pendingRouting;
+		this.entry.avoidImpassable = this.pendingAvoid;
 
 		// If name changed, update all pathChain typeName refs
 		if (nameChanged) {

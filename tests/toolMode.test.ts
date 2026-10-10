@@ -47,6 +47,27 @@ describe("Path tool button (fresh-eyes T7)", () => {
 	});
 });
 
+describe("Path tool auto-route (P1)", () => {
+	it("a click in auto-route mode routes instead of drawing hex by hex", () => {
+		expect(viewSrc).toMatch(/if \(this\.pathAutoRoute\) \{ await this\.onHexPathRouteClick\(x, y\); return; \}\s*await this\.onHexPathDrawClick\(x, y\);/);
+	});
+
+	it("the route avoids impassable terrain unless the path type or the override says otherwise", () => {
+		const body = method("onHexPathRouteClick");
+		expect(body).toMatch(/pathAvoidsImpassable\(type\)[\s\S]*!this\.routeCrossImpassable/);
+		expect(body).toMatch(/findRoute\(/);
+		expect(body).toMatch(/noRouteMessage\(blockedNames\)/);
+		// Saved as an ordinary chain with undo, so it stays editable.
+		expect(body).toMatch(/pushPathUndo\([\s\S]*saveSettings\(\)/);
+	});
+
+	it("bounds come from the map's grid", () => {
+		const body = method("onHexPathRouteClick");
+		expect(body).toMatch(/maxX: map\.gridOffset\.x \+ map\.gridSize\.cols - 1/);
+		expect(body).toMatch(/maxY: map\.gridOffset\.y \+ map\.gridSize\.rows - 1/);
+	});
+});
+
 describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
 	it("right-click on a hex of the path being drawn removes it instead of opening the menu", () => {
 		const start = viewSrc.indexOf('"contextmenu",');
@@ -77,6 +98,8 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "icon", erasing: false, iconName: "x.png", iconGmOnly: true })).toBe("Painting GM icon: x");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road" })).toBe("Drawing Road: click neighbouring hexes");
 		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths/);
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true })).toBe("Auto-routing Road: click the start hex");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathHasStart: true })).toBe("Auto-routing Road: click where it goes");
 		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region: Kerrigan");
 		expect(toolModeLabel({ mode: "factionLink", erasing: true })).toBe("Erasing factions");
 		expect(toolModeLabel({ mode: "tableLink", erasing: false, tablePath: "world/tables/ocean.md" })).toBe("Linking table: ocean");

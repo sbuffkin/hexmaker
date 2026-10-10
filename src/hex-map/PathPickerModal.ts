@@ -75,8 +75,38 @@ export class PathPickerModal extends HexmakerModal {
     private onSelect: (typeName: string) => void,
     private onDismiss?: () => void,
     private onErase?: () => void,
+    /** Hex-by-hex vs auto-route switch, shown above the types. */
+    private autoRoute?: { value: boolean; onChange: (on: boolean) => void; noImpassable: boolean },
   ) {
     super(app);
+  }
+
+  private renderDrawMode(container: HTMLElement): void {
+    const ar = this.autoRoute;
+    if (!ar) return;
+    const row = container.createDiv({ cls: "duckmage-path-draw-mode" });
+    row.createSpan({ text: "Draw:", cls: "duckmage-path-draw-mode-label" });
+    const seg = row.createDiv({ cls: "duckmage-path-draw-mode-seg", attr: { role: "group", "aria-label": "How to draw" } });
+    const hint = container.createDiv({ cls: "setting-item-description duckmage-path-draw-mode-hint" });
+    const paint = () => {
+      seg.empty();
+      for (const [on, text] of [[false, "Hex by hex"], [true, "Auto-route"]] as const) {
+        const b = seg.createEl("button", { text, attr: { "aria-pressed": String(ar.value === on) } });
+        b.toggleClass("is-active", ar.value === on);
+        b.addEventListener("click", () => {
+          ar.value = on;
+          ar.onChange(on);
+          paint();
+        });
+      }
+      hint.setText(
+        ar.value
+          ? "Click a start hex, then an end hex: the path finds its own way and stays editable." +
+            (ar.noImpassable ? " This palette has no impassable terrain yet: mark the terrains paths can't cross (e.g. water) in the palette editor." : "")
+          : "Click neighbouring hexes one by one.",
+      );
+    };
+    paint();
   }
 
   onOpen(): void {
@@ -124,6 +154,7 @@ export class PathPickerModal extends HexmakerModal {
     const pathTypes = this.plugin.settings.pathTypes;
 
     const section = contentEl.createDiv({ cls: "duckmage-editor-section" });
+    this.renderDrawMode(section);
     const grid = section.createDiv({
       cls: "duckmage-terrain-picker duckmage-terrain-picker-full",
     });

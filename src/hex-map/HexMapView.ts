@@ -39,6 +39,8 @@ import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
 import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
+import { findRoute } from "./autoRoute";
+import { impassableNames, noRouteMessage, pathAvoidsImpassable } from "../impassable";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
   hexNeighbors,
@@ -264,6 +266,12 @@ export class HexMapView extends ItemView {
   private activePathTypeName: string | null = null;
   private activePathEnd: string | null = null;
   private activePathChain: PathChain | null = null;
+  /** Path tool: route between two clicked hexes instead of hex by hex. */
+  private pathAutoRoute = false;
+  /** Auto-route: go through impassable terrain this time (bar checkbox). */
+  private routeCrossImpassable = false;
+  /** Auto-route controls in the mode bar (shown while drawing a path). */
+  private modeBarRouteEl: HTMLElement | null = null;
   private paintTerrainName: string | null = null;
   private paintIconName: string | null = null;
   private paintIconGmOnly = false;
@@ -682,6 +690,8 @@ export class HexMapView extends ItemView {
       attr: { role: "status", "aria-live": "polite" },
     });
     this.modeBarTextEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-text" });
+    this.modeBarRouteEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-route" });
+    this.modeBarRouteEl.hide();
     this.modeBarEl.createSpan({
       cls: "duckmage-mode-bar-hint",
       text: "Right-click: options · Esc: stop",
@@ -2442,11 +2452,14 @@ export class HexMapView extends ItemView {
       iconName: this.paintIconName,
       iconGmOnly: this.paintIconGmOnly,
       pathTypeName: this.activePathTypeName,
+      pathAuto: this.pathAutoRoute,
+      pathHasStart: this.activePathEnd !== null,
       tablePath: this.paintTablePath,
       submapName: this.paintSubmapName,
       factionPath: this.paintFactionPath,
       regionPath: this.paintRegionPath,
     });
+    this.renderRouteControls();
     const changed = this.modeBarTextEl.getText() !== (label ?? "");
     this.modeBarTextEl.setText(label ?? "");
     this.modeBarEl.toggle(label !== null);
@@ -4267,6 +4280,7 @@ export class HexMapView extends ItemView {
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {
     if (this.drawingMode === "path") {
       if (this.isErasingMode) { await this.onHexPathDeleteClick(x, y); return; }
+      if (this.pathAutoRoute) { await this.onHexPathRouteClick(x, y); return; }
       await this.onHexPathDrawClick(x, y);
       return;
     }
@@ -5222,7 +5236,135 @@ export class HexMapView extends ItemView {
         this.updateToolbarButtonStates();
         this.updatePathOverlay();
       },
+      {
+        value: this.pathAutoRoute,
+        onChange: (on) => this.setPathAutoRoute(on),
+        noImpassable: impassableNames(this.plugin.getMapPalette(this.activeMapName)).length === 0,
+      },
     ).open();
+  }
+
+  /** Switch the path tool between hex-by-hex drawing and auto-route. */
+  private setPathAutoRoute(on: boolean): void {
+    if (this.pathAutoRoute === on) return;
+    this.pathAutoRoute = on;
+    // A start picked for a route isn't a path yet: hex-by-hex drawing
+    // can't extend it, so drop it. A drawn path keeps going either way.
+    if (!on && this.activePathChain === null) this.activePathEnd = null;
+    this.updateModeBar();
+  }
+
+  /** Auto-route toggle, "Cross impassable" and the setup hint, in the mode bar. */
+  private renderRouteControls(): void {
+    const el = this.modeBarRouteEl;
+    if (!el) return;
+    el.empty();
+    const show = this.drawingMode === "path" && !this.isErasingMode;
+    el.toggle(show);
+    if (!show) return;
+    const auto = el.createEl("button", {
+      cls: "duckmage-mode-bar-route-toggle",
+      text: "Auto-route",
+      attr: {
+        "aria-pressed": String(this.pathAutoRoute),
+        title: this.pathAutoRoute
+          ? "On: click a start and an end, the path finds its way. Click to draw hex by hex."
+          : "Off: drawing hex by hex. Click to route between two hexes instead.",
+      },
+    });
+    auto.toggleClass("is-active", this.pathAutoRoute);
+    auto.addEventListener("click", () => this.setPathAutoRoute(!this.pathAutoRoute));
+    if (!this.pathAutoRoute) return;
+    const type = this.plugin.settings.pathTypes.find((p) => p.name === this.activePathTypeName);
+    if (type && !pathAvoidsImpassable(type)) return; // e.g. rivers: they go anywhere
+    const blocked = impassableNames(this.plugin.getMapPalette(this.activeMapName));
+    if (!blocked.length) {
+      el.createSpan({
+        cls: "duckmage-mode-bar-route-note",
+        text: "No impassable terrain",
+        attr: { title: "Nothing in this map's palette is impassable, so routes go straight through anything. Mark terrains (e.g. water) impassable in the palette editor or the terrain editor." },
+      });
+      return;
+    }
+    const label = el.createEl("label", {
+      cls: "duckmage-mode-bar-route-cross",
+      attr: { title: `Let the route go through ${blocked.join(", ")}` },
+    });
+    const box = label.createEl("input", { type: "checkbox" });
+    box.checked = this.routeCrossImpassable;
+    box.addEventListener("change", () => { this.routeCrossImpassable = box.checked; });
+    label.createSpan({ text: "Cross impassable" });
+  }
+
+  /** Terrain shown on a hex (its own, else the map's base terrain). */
+  private terrainShownAt(x: number, y: number): string | null {
+    return getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.activeMapName))
+      ?? this.getActiveMap().baseTerrain
+      ?? null;
+  }
+
+  /**
+   * Auto-route click: the first click picks the start, the next one routes
+   * there from the start (or from the end of the last route, so a path can
+   * be routed leg by leg). The route is an ordinary chain: edit it like any
+   * drawn path.
+   */
+  private async onHexPathRouteClick(x: number, y: number): Promise<void> {
+    if (!this.activePathTypeName) return;
+    const key = `${x}_${y}`;
+    if (this.activePathEnd === null) {
+      this.activePathEnd = key;
+      this.activePathChain = null;
+      this.flashHex(x, y);
+      this.updateModeBar();
+      return;
+    }
+    if (key === this.activePathEnd) return;
+    const map = this.getActiveMap();
+    const type = this.plugin.settings.pathTypes.find((p) => p.name === this.activePathTypeName);
+    const avoid = (type ? pathAvoidsImpassable(type) : true) && !this.routeCrossImpassable;
+    const blockedNames = avoid ? impassableNames(this.plugin.getMapPalette(this.activeMapName)) : [];
+    const blockedSet = new Set(blockedNames);
+    const result = findRoute(this.activePathEnd, key, {
+      orientation: this.plugin.settings.hexOrientation,
+      stagger: this.getActiveStagger(),
+      bounds: {
+        minX: map.gridOffset.x,
+        minY: map.gridOffset.y,
+        maxX: map.gridOffset.x + map.gridSize.cols - 1,
+        maxY: map.gridOffset.y + map.gridSize.rows - 1,
+      },
+      blocked: blockedSet.size
+        ? (hx, hy) => {
+            const t = this.terrainShownAt(hx, hy);
+            return t !== null && blockedSet.has(t);
+          }
+        : undefined,
+    });
+    if (!result.ok) {
+      new Notice(result.reason === "no-route" ? noRouteMessage(blockedNames) : "Both ends must be on the map.");
+      return;
+    }
+    const before = this.cloneChains(map.pathChains);
+    const start = this.activePathEnd;
+    let target: PathChain | undefined =
+      this.activePathChain && this.activePathChain.hexes[this.activePathChain.hexes.length - 1] === start
+        ? this.activePathChain
+        : map.pathChains.find(
+            (c) => c.typeName === this.activePathTypeName && c.hexes[c.hexes.length - 1] === start,
+          );
+    if (target) {
+      target.hexes.push(...result.hexes.slice(1));
+    } else {
+      target = { typeName: this.activePathTypeName, hexes: result.hexes };
+      map.pathChains.push(target);
+    }
+    this.activePathEnd = key;
+    this.activePathChain = target;
+    this.pushPathUndo(map.name, before, this.cloneChains(map.pathChains));
+    await this.plugin.saveSettings();
+    this.updatePathOverlay();
+    this.updateModeBar();
   }
 
   /** Deep-clone a pathChains array for undo/redo snapshot. */
@@ -5266,7 +5408,7 @@ export class HexMapView extends ItemView {
     if (outcome === "restart") {
       // Paths don't auto-route between distant hexes; say so instead of
       // silently leaving a lone dot (fresh-eyes T7).
-      new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here.");
+      new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here. To join distant hexes, turn on auto-route in the tool bar.");
       // A one-hex chain is never drawn (a line needs two hexes), so the
       // abandoned start would linger invisibly in the map data: drop it.
       const abandoned = this.activePathChain;

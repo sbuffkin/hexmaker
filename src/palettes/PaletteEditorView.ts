@@ -10,6 +10,7 @@ import { AddPaletteModal } from "./AddPaletteModal";
 import { fillPaletteSelect } from "./paletteOptions";
 import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { isSpacePalette } from "../mapKinds";
+import { isImpassable, setImpassable, impassableByType } from "../impassable";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -144,7 +145,10 @@ export class PaletteEditorView extends ItemView {
     }
     const table = contentEl.createEl("table", { cls: "duckmage-pe-table" });
     const head = table.createEl("thead").createEl("tr");
-    for (const h of ["", "Color", "Name", "Type", "Category", "Icon", "Icon tint", ""]) head.createEl("th", { text: h });
+    for (const h of ["", "Color", "Name", "Type", "Category", "Icon", "Icon tint", "Impassable", ""]) {
+      const th = head.createEl("th", { text: h });
+      if (h === "Impassable") th.title = "Auto-routed paths (path tool) go around impassable terrain. Water types are impassable unless you untick them.";
+    }
     const body = table.createEl("tbody");
     const categories = [...new Set(pal.terrains.map((t) => t.category).filter((c): c is string => !!c))].sort();
     const dl = contentEl.createEl("datalist", { attr: { id: "duckmage-pe-categories" } });
@@ -310,6 +314,18 @@ export class PaletteEditorView extends ItemView {
       this.save();
     });
     tint.addEventListener("input", () => { if (tintOn.checked) { t.iconColor = tint.value; paintIcon(); this.save(); } });
+
+    // Impassable (path tool auto-route); unset follows the type's default.
+    const blockCell = tr.createEl("td", { cls: "duckmage-pe-impassable" });
+    const block = blockCell.createEl("input", { type: "checkbox", attr: { "aria-label": `${t.name} impassable` } });
+    block.checked = isImpassable(t);
+    block.title = t.impassable === undefined
+      ? `Default for its type (${impassableByType(t.type) ? "impassable" : "passable"})`
+      : "Set for this terrain";
+    block.addEventListener("change", () => {
+      setImpassable(t, block.checked);
+      this.save();
+    });
 
     // Delete (two clicks)
     const del = tr.createEl("td").createEl("button", { cls: "duckmage-pe-delete", text: "×", attr: { title: "Delete terrain", "aria-label": `Delete ${t.name}` } });

@@ -5,6 +5,7 @@ import type { TerrainColor } from "../types";
 import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "../utils";
 import { inferTerrainType } from "../terrainTypes";
 import { fillTerrainTypeSelect } from "../terrainTypeSelect";
+import { isImpassable, setImpassable } from "../impassable";
 
 export class TerrainEntryEditorModal extends HexmakerModal {
 	// Pending values — only written to the entry on Save
@@ -14,6 +15,8 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 	private pendingIconColor: string | undefined;
 	private pendingCategory: string | undefined;
 	private pendingType: string | undefined;
+	/** Auto-routed paths go around it (path tool). */
+	private pendingImpassable: boolean;
 	/** True once the user picked a type themselves (stops name-based suggestions). */
 	private typeTouched: boolean;
 	private readonly originalName: string;
@@ -38,6 +41,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.pendingCategory  = entry.category;
 		this.pendingType      = entry.type ?? (isNew ? undefined : inferTerrainType(entry.name, entry.category));
 		this.typeTouched      = !!entry.type;
+		this.pendingImpassable = isImpassable({ impassable: entry.impassable, type: this.pendingType });
 	}
 
 	onOpen(): void {
@@ -77,6 +81,15 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 					this.typeTouched = true;
 				});
 			});
+
+		new Setting(contentEl)
+			.setName("Impassable")
+			.setDesc("Auto-routed paths go around it (water types are impassable unless you turn this off).")
+			.addToggle(toggle =>
+				toggle
+					.setValue(this.pendingImpassable)
+					.onChange(value => { this.pendingImpassable = value; }),
+			);
 
 		new Setting(contentEl)
 			.setName("Color")
@@ -212,6 +225,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		this.entry.category  = this.pendingCategory;
 		if (this.pendingType) this.entry.type = this.pendingType;
 		else delete this.entry.type;
+		setImpassable(this.entry, this.pendingImpassable);
 		if (this.isNew) {
 			// Brand-new entry — no hex can have this terrain yet and no table files exist
 			// to rename. Just commit the name and create fresh table files.

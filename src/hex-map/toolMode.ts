@@ -41,6 +41,10 @@ export interface ToolModeState {
   iconName?: string | null;
   iconGmOnly?: boolean;
   pathTypeName?: string | null;
+  /** Path tool in auto-route mode (click a start, then an end). */
+  pathAuto?: boolean;
+  /** Auto-route: a start (or the end of the last route) is set. */
+  pathHasStart?: boolean;
   tablePath?: string | null;
   submapName?: string | null;
   factionPath?: string | null;
@@ -74,6 +78,11 @@ export function toolModeLabel(s: ToolModeState): string | null {
     }
     case "path":
       if (erasing) return "Erasing paths: click a path hex to remove it";
+      if (s.pathAuto) {
+        return s.pathHasStart
+          ? `Auto-routing ${s.pathTypeName ?? "path"}: click where it goes`
+          : `Auto-routing ${s.pathTypeName ?? "path"}: click the start hex`;
+      }
       return `Drawing ${s.pathTypeName ?? "path"}: click neighbouring hexes`;
     case "tableLink":
       return erasing ? "Unlinking tables" : `Linking table: ${baseName(s.tablePath) || "…"}`;

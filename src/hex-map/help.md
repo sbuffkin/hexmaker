@@ -45,6 +45,8 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ### Road / River
 Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
 
+**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain. Mark terrains impassable in the palette editor (water is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once.
+
 ### Terrain
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
 
@@ -99,3 +101,7 @@ With generators on, new maps can also use the built-in **biomes and presets** (G
 ## Palettes
 
 **Expanded** is the default fantasy palette: more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
+
+## Rolling from a hex
+
+Rolls made from the hex editor (🎲 on an encounter table, 📖 on a section) have **Add to this hex**: pick a section and the result is appended to it. Weather and Hooks & Rumors (under Notes) roll the map's weather and rumours tables, set in **Maps → Properties**; ⋯ next to the roll button picks a table for one hex.

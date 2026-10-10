@@ -55,6 +55,8 @@ const SCALAR_KEYS: [keyof MapSettings, string][] = [
   ["staggerOffset", "stagger"],
   ["baseTerrain", "base-terrain"],
   ["terrainType", "terrain-theme"],
+  ["weatherTable", "weather-table"],
+  ["rumorsTable", "rumors-table"],
   ["createdWith", "created-with"],
   ["showCoords", "show-coords"],
   ["showTerrainIcons", "show-terrain-icons"],

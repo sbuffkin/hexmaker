@@ -37,6 +37,7 @@ import {
   uniquePaletteName,
 } from "./palettes/presets";
 import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack } from "./utils";
+import { STARTER_RUMORS, STARTER_WEATHER, starterTablePath } from "./regionTables";
 import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
@@ -58,6 +59,7 @@ import {
   getLinksInSection,
   removeLinkFromSection,
   insertLinkInSection,
+  appendSectionText,
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
@@ -949,6 +951,30 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
 
+    // Starter weather and rumours tables (E2): rolled from the hex editor
+    // when the map and hex don't name their own.
+    for (const [section, rows] of [["weather", STARTER_WEATHER], ["hooks & rumors", STARTER_RUMORS]] as const) {
+      const path = starterTablePath(folder, section);
+      if (this.app.vault.getAbstractFileByPath(path)) continue;
+      try {
+        await this.app.vault.create(
+          path,
+          makeTableTemplate(
+            this.settings.defaultTableDice,
+            {
+              "table-type": section === "weather" ? "weather" : "rumors",
+              "roll-filter": false,
+              "encounter-filter": false,
+            },
+            this.buildRollerLink(),
+            rows,
+          ),
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+
     // Terrain-specific tables
     const subfolder = folder ? `${folder}/terrain` : "terrain";
     if (!this.app.vault.getAbstractFileByPath(subfolder)) {
@@ -1407,6 +1433,18 @@ export default class HexmakerPlugin extends Plugin {
       new Notice("Could not create note at " + path);
       return null;
     }
+  }
+
+  /**
+   * Append text to a section of a hex's note, creating the note first if
+   * the hex has none (P2 "Add to this hex").
+   */
+  async appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> {
+    const path = this.hexPath(x, y, mapName);
+    let file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) file = await this.createHexNote(x, y, mapName);
+    if (!(file instanceof TFile)) throw new Error(`Could not create the note for hex ${x}, ${y}`);
+    await this.app.vault.process(file, (content) => appendSectionText(content, section, text));
   }
 
   /** Read the hex template once (used by bulk generation to avoid N redundant reads). */

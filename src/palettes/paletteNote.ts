@@ -1,4 +1,5 @@
 import type { SubmapDefault, TerrainColor } from "../types";
+import { impassableCell, parseImpassableCell } from "../impassable";
 
 // Plain-text palette notes.
 //
@@ -10,7 +11,10 @@ import type { SubmapDefault, TerrainColor } from "../types";
 //   | ocean | #29507f |  |  | sea | water |
 //
 // Columns are matched by header name (case-insensitive, any order), so a
-// hand-edited or shared note only needs the Terrain and Color columns. Text
+// hand-edited or shared note only needs the Terrain and Color columns. An
+// optional Impassable column (yes / no) overrides the terrain type's default
+// for the path tool's auto-route (water types are impassable); it's only
+// written when some terrain overrides its default. Text
 // outside the table is the user's and is preserved when the plugin rewrites
 // the table after an in-app edit.
 
@@ -19,7 +23,7 @@ export const PALETTE_NOTE_MARKER = "hexmaker-palette";
 
 const HEADERS = ["Terrain", "Color", "Icon", "Icon color", "Category", "Type"] as const;
 
-type Column = "name" | "color" | "icon" | "iconColor" | "category" | "type";
+type Column = "name" | "color" | "icon" | "iconColor" | "category" | "type" | "impassable";
 
 function columnFor(header: string): Column | null {
   const h = header.trim().toLowerCase().replace(/\s+/g, " ");
@@ -29,6 +33,7 @@ function columnFor(header: string): Column | null {
   if (h === "icon color" || h === "icon colour" || h === "tint") return "iconColor";
   if (h === "category") return "category";
   if (h === "type" || h === "terrain type") return "type";
+  if (h === "impassable") return "impassable";
   return null;
 }
 
@@ -112,6 +117,8 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
     if (row.iconColor) entry.iconColor = row.iconColor;
     if (row.category) entry.category = row.category;
     if (row.type) entry.type = row.type;
+    const impassable = parseImpassableCell(row.impassable);
+    if (impassable !== undefined) entry.impassable = impassable;
     terrains.push(entry);
   }
   return terrains;
@@ -121,14 +128,19 @@ function escapeCell(value: string | undefined): string {
   return (value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
-/** Serialize terrains as the canonical five-column markdown table. */
+/** Serialize terrains as the canonical markdown table (plus an Impassable
+ *  column when any terrain overrides its type's default). */
 export function serializePaletteTable(terrains: TerrainColor[]): string {
+  const withImpassable = terrains.some((t) => t.impassable !== undefined);
+  const headers: string[] = withImpassable ? [...HEADERS, "Impassable"] : [...HEADERS];
   const lines = [
-    `| ${HEADERS.join(" | ")} |`,
-    `| ${HEADERS.map(() => "---").join(" | ")} |`,
+    `| ${headers.join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
   ];
   for (const t of terrains) {
-    const cells = [t.name, t.color, t.icon, t.iconColor, t.category, t.type].map(escapeCell);
+    const values = [t.name, t.color, t.icon, t.iconColor, t.category, t.type];
+    if (withImpassable) values.push(impassableCell(t));
+    const cells = values.map(escapeCell);
     lines.push(`| ${cells.join(" | ")} |`);
   }
   return lines.join("\n");
@@ -350,7 +362,8 @@ export function terrainsEqual(a: TerrainColor[], b: TerrainColor[]): boolean {
       (t.icon ?? "") === (u.icon ?? "") &&
       (t.iconColor ?? "") === (u.iconColor ?? "") &&
       (t.category ?? "") === (u.category ?? "") &&
-      (t.type ?? "") === (u.type ?? "")
+      (t.type ?? "") === (u.type ?? "") &&
+      t.impassable === u.impassable
     );
   });
 }

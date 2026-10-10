@@ -190,23 +190,51 @@ export async function addBacklinkToFile(app: App, targetFilePath: string, hexFil
 export async function setSectionContent(app: App, filePath: string, section: string, newText: string): Promise<void> {
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
-	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-		const match = headingRegex.exec(content);
-		if (!match) {
-			return newText.trim()
-				? content.trimEnd() + `\n\n### ${section}\n${newText.trim()}\n`
-				: content;
-		}
-		const afterHeading = match.index + match[0].length;
-		const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
-		const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
-		// Keep the template's guidance prompt on top of the section.
-		const { guidance } = splitGuidance(content.slice(afterHeading, sectionEnd));
-		const guide = guidance.length ? `${guidance.join("\n")}\n` : "";
-		const replacement = newText.trim()
-			? `\n${guide}${guide ? "\n" : ""}${newText.trim()}\n`
-			: `\n${guide}`;
-		return separateRulesFromText(content.slice(0, afterHeading) + replacement + content.slice(sectionEnd));
-	});
+	await app.vault.process(file, (content) => replaceSectionText(content, section, newText));
+}
+
+/** Text of a named ### section in `content` (guidance prompt left out). */
+export function sectionText(content: string, section: string): string {
+	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
+	const match = headingRegex.exec(content);
+	if (!match) return "";
+	const afterHeading = match.index + match[0].length;
+	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
+	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
+	return splitGuidance(content.slice(afterHeading, sectionEnd)).text.trim();
+}
+
+/** Note text with the body of "### section" replaced (heading appended if missing). */
+export function replaceSectionText(content: string, section: string, newText: string): string {
+	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
+	const match = headingRegex.exec(content);
+	if (!match) {
+		return newText.trim()
+			? content.trimEnd() + `\n\n### ${section}\n${newText.trim()}\n`
+			: content;
+	}
+	const afterHeading = match.index + match[0].length;
+	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
+	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
+	// Keep the template's guidance prompt on top of the section.
+	const { guidance } = splitGuidance(content.slice(afterHeading, sectionEnd));
+	const guide = guidance.length ? `${guidance.join("\n")}\n` : "";
+	const replacement = newText.trim()
+		? `\n${guide}${guide ? "\n" : ""}${newText.trim()}\n`
+		: `\n${guide}`;
+	return separateRulesFromText(content.slice(0, afterHeading) + replacement + content.slice(sectionEnd));
+}
+
+/** `existing` with `addition` on a new line (either may be empty). */
+export function joinSectionText(existing: string, addition: string): string {
+	const a = existing.trimEnd();
+	const b = addition.trim();
+	if (!b) return a;
+	return a ? `${a}\n${b}` : b;
+}
+
+/** Note text with `addition` appended to the end of "### section" (P2 "Add to this hex"). */
+export function appendSectionText(content: string, section: string, addition: string): string {
+	if (!addition.trim()) return content;
+	return replaceSectionText(content, section, joinSectionText(sectionText(content, section), addition));
 }

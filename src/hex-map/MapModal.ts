@@ -49,6 +49,7 @@ import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, renderAdvancedHints, withFeature } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
+import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 
 /** A neighbour shadow as terrain by hex key (the faded seam in previews). */
 function shadowTerrain(shadow: Map<string, { terrain?: string }>): Map<string, string> {
@@ -405,6 +406,9 @@ export class MapModal extends HexmakerModal {
       });
     }
 
+    // ── Region tables (E2) ─────────────────────────────────────────────────
+    if (currentMap) this.renderRegionTables(el, currentMap);
+
     // ── Background image ───────────────────────────────────────────────────
     el.createEl("h4", { text: "Background image" });
     const bgRow = el.createDiv({ cls: "duckmage-region-row duckmage-bg-image-row" });
@@ -473,6 +477,43 @@ export class MapModal extends HexmakerModal {
    * Delete the open map: at the bottom of Properties, behind a confirm, so
    * it can't be hit by accident from the map list.
    */
+  /** The map's weather and rumours tables, rolled from the hex editor (E2). */
+  private renderRegionTables(el: HTMLElement, map: MapData): void {
+    el.createEl("h4", { text: "Weather and rumours" });
+    el.createDiv({
+      cls: "duckmage-map-origin-desc",
+      text: "Tables the hex editor rolls for Weather and Hooks & Rumors on this map. A hex can use its own instead (⋯ in the editor).",
+    });
+    for (const section of ["weather", "hooks & rumors"] as const) {
+      const spec = ROLLED_SECTION_TABLES[section];
+      const row = el.createDiv({ cls: "duckmage-region-row duckmage-region-table-row" });
+      row.createSpan({ text: section === "weather" ? "Weather" : "Rumours", cls: "duckmage-region-table-label" });
+      const current = mapSectionTable(map, section);
+      row.createSpan({
+        text: current ?? `(none: uses ${starterTablePath(normalizeFolder(this.plugin.settings.tablesFolder ?? ""), section)} if it exists)`,
+        cls: "duckmage-bg-image-path",
+      });
+      row.createEl("button", { text: "Pick table…" }).addEventListener("click", () => {
+        new FileLinkSuggestModal(
+          this.app,
+          this.plugin,
+          (file) => {
+            map[spec.mapField] = file.path;
+            void this.plugin.saveSettings().then(() => this.render());
+          },
+          "",
+          ["md"],
+        ).open();
+      });
+      const clear = row.createEl("button", { text: "Clear" });
+      clear.disabled = !current;
+      clear.addEventListener("click", () => {
+        delete map[spec.mapField];
+        void this.plugin.saveSettings().then(() => this.render());
+      });
+    }
+  }
+
   private renderDeleteBlock(el: HTMLElement, name: string): void {
     el.createEl("h4", { text: "Delete map" });
     if (this.plugin.settings.maps.length <= 1) {
