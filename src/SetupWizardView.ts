@@ -24,6 +24,7 @@ import {
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
+import { TERRAIN_TABLES_SUMMARY } from "./wizardText";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -760,7 +761,7 @@ function makeDoneStep(): WizardStep {
 			summary.createEl("li", { text: `Map note: _${name}.md in the map folder holds the terrain and paths; a hex gets its own note when you first add something to it` });
 			summary.createEl("li", { text: `Hex orientation: ${ctx.hexOrientation === "flat" ? "Flat-top" : "Pointy-top"}` });
 			summary.createEl("li", { text: `Terrain palette: ${ctx.paletteName}` });
-			summary.createEl("li", { text: "Description and encounter tables for every terrain (auto-linked when you paint terrain)" });
+			summary.createEl("li", { text: TERRAIN_TABLES_SUMMARY });
 
 			container.createEl("p", {
 				text: "A few things to try first:",
@@ -773,7 +774,7 @@ function makeDoneStep(): WizardStep {
 					? "Repaint anything you like: open Terrain in the drawing tools, pick a type and click hexes."
 					: "Paint terrain — the terrain picker opens automatically when you hit \"Open hex map\". Pick a type and click hexes to paint.",
 				"Click any hex to open its editor: terrain, notes, towns, dungeons and more. Right-click a hex for its menu (open note, new submap, tokens).",
-				"Open the 🎲 tab to browse and roll your random tables.",
+				"Open the 🎲 tab to fill in your terrain tables (Edit) and roll on them.",
 				"The pencil button (top right of the map) opens the drawing tools: paint icons, draw roads or rivers, link factions.",
 			]) {
 				tips.createEl("li", { text: tip, cls: "duckmage-wizard-tip-item" });
