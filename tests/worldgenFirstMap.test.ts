@@ -407,7 +407,7 @@ describe("isUnusedPlaceholderMap (the shipped 'default' map)", () => {
 		expect(isUnusedPlaceholderMap(map, { ...unused, hexCount: 1 })).toBe(false);
 		expect(isUnusedPlaceholderMap(map, { ...unused, folderEntries: ["_default.md", "3_4.md"] })).toBe(false);
 		expect(isUnusedPlaceholderMap(map, { ...unused, referenced: true })).toBe(false);
-		expect(isUnusedPlaceholderMap({ ...map, pathChains: [{}] }, unused)).toBe(false);
+		expect(isUnusedPlaceholderMap({ ...map, pathChains: [{ typeName: "Road", hexes: ["1_1"] }] }, unused)).toBe(false);
 		expect(isUnusedPlaceholderMap({ ...map, world: { id: "w", cx: 0, cy: 0 } }, unused)).toBe(false);
 	});
 });

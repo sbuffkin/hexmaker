@@ -70,6 +70,8 @@ export interface MapExportPrefs {
   fileName?: string;
   /** The Output size preset (hex radius in px). */
   hexRadius?: number;
+  /** "Bolder paths" (unset = on, the PNG's usual look). */
+  boldPaths?: boolean;
   layers?: Partial<Record<ExportLayerKey, boolean>>;
 }
 

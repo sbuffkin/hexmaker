@@ -6,6 +6,9 @@
  * mystery entry in the map list, so the wizard removes it.
  */
 
+import type { PathChain } from "./types";
+import { storedMapPaths } from "./paths/mapPaths";
+
 export const PLACEHOLDER_MAP_NAME = "default";
 
 /**
@@ -16,7 +19,7 @@ export const PLACEHOLDER_MAP_NAME = "default";
 export function isUnusedPlaceholderMap(
   map: {
     name: string;
-    pathChains?: unknown[];
+    pathChains?: PathChain[];
     parent?: unknown;
     world?: unknown;
     backgroundImage?: unknown;
@@ -32,6 +35,6 @@ export function isUnusedPlaceholderMap(
 ): boolean {
   if (map.name !== PLACEHOLDER_MAP_NAME) return false;
   if (usage.hexCount > 0 || usage.referenced) return false;
-  if ((map.pathChains?.length ?? 0) > 0 || map.parent || map.world || map.backgroundImage) return false;
+  if (storedMapPaths(map).length > 0 || map.parent || map.world || map.backgroundImage) return false;
   return usage.folderEntries.every((n) => n === `_${PLACEHOLDER_MAP_NAME}.md`);
 }

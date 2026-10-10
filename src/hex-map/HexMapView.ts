@@ -22,7 +22,6 @@ import { getFactionColorFromFile, getRegionColorFromFile, getFactionStyleFromFil
 import { buildSvgPattern, colorToIdToken, type OverlayPatternKey } from "../overlayPatterns";
 import { renderHexPreview } from "./overlayPatternControls";
 import {
-  UNKNOWN_PATH_TYPE,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
@@ -46,15 +45,17 @@ import { PathPickerModal } from "./PathPickerModal";
 import { addRoutedLeg, findRoute } from "./autoRoute";
 import { impassableNames, noRouteMessage, pathAvoidsImpassable, pathMeanders } from "../impassable";
 import type { MapData, PathChain, TokenEntry } from "../types";
+import { hexNeighbors, smoothPath, sharpPath } from "./hexGeometry";
 import {
-  hexNeighbors,
-  smoothPath,
-  sharpPath,
-  offsetPolyline,
-  computeLaneOffsets,
-  buildMeanderPts,
-  buildEdgePts,
-} from "./hexGeometry";
+  applyAffine,
+  calibrateAffine,
+  END_DOT_PX,
+  fmt,
+  latticeCenter,
+  pxToLattice,
+  type LatticeAffine,
+  type LatticeGrid,
+} from "../paths/pathGeometry";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
@@ -166,6 +167,19 @@ const GM_ICON_HEX_SUBGRID: [number, number][] = [
   [+0.34, +0.55], // SE
 ];
 
+/** The path layer's measurement of one grid (see calibratePathLayer). */
+interface PathLayerCalibration {
+  grid: HTMLElement;
+  lattice: LatticeGrid;
+  /** Lattice units → em in the grid's frame. */
+  affine: LatticeAffine;
+  /** A hex's drawn radius, em: path widths (lattice units) scale by it. */
+  hexRadius: number;
+  /** A hex element's size, em. */
+  hexW: number;
+  hexH: number;
+}
+
 export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
   private zoom = 1;
@@ -192,7 +206,7 @@ export class HexMapView extends ItemView {
       const [x, y] = a.split("_").map(Number);
       return hexNeighbors(x, y, orientation, stagger).some(([nx, ny]) => `${nx}_${ny}` === b);
     };
-    return seamJoins(region.pathChains, s.shadow, (m) => this.plugin.getMap(m)?.pathChains, touches);
+    return seamJoins(this.plugin.paths.resolvedPathChains(region.name), s.shadow, (m) => this.plugin.paths.resolvedPathChains(m), touches);
   }
   private coordGridSize = { w: 1, h: 1 };
   private coordLabels = new Map<string, HTMLElement>();
@@ -3582,19 +3596,14 @@ export class HexMapView extends ItemView {
     const F = this.zoom;
     const currentFs = parseFloat(getComputedStyle(this.viewportEl).fontSize);
 
-    // Tear down the path SVG FIRST, before the font-size mutation below.
-    // The path SVG holds coord labels at pixel positions computed against
-    // the pre-bake hex sizes. After font-size grows the hexes, those
-    // pixel positions point to where the hexes USED to be, so any paint
-    // frame between the font-size change and the SVG rebuild shows
-    // labels visibly shifted up-left from the hexes. By removing the
-    // SVG (and its `duckmage-svg-labels-active` class) here, the
-    // intermediate frame shows only the HTML labels in
-    // `.duckmage-coord-labels-layer`, which sit at a % of the grid and so
-    // track the hex layout across font-size changes. The new path SVG is rebuilt
-    // via `updatePathOverlay()` further down. Sandbox repro of the
+    // The path layer is placed in em (lattice units, see renderPathOverlay),
+    // so it grows with the font size and is NOT rebuilt here. The icon
+    // layer over it holds px positions computed against the pre-bake hex
+    // sizes: tear it down FIRST, before the font-size mutation below, so no
+    // paint frame shows icons stranded where the hexes used to be; it is
+    // rebuilt via `updatePathIcons()` further down. Sandbox repro of the
     // pre-fix slip: dev/coord-slip-sandbox.html.
-    this.viewportEl.querySelector("svg.duckmage-path-svg")?.remove();
+    this.viewportEl.querySelector("svg.duckmage-path-icons-svg")?.remove();
     this.viewportEl.removeClass("duckmage-svg-labels-active");
     // Same for the faction/region overlays — they also hold pre-bake
     // pixel positions and would visibly mis-align during the transition.
@@ -3643,7 +3652,7 @@ export class HexMapView extends ItemView {
     };
     void this.plugin.saveSettings();
 
-    this.updatePathOverlay();
+    this.updatePathIcons();
     this.updateFactionOverlay();
     this.updateRegionOverlay();
     this.updateTokenLayer();
@@ -4122,7 +4131,7 @@ export class HexMapView extends ItemView {
     this.shadowJoinKey = seamJoinKey(joins);
     const joinedAt = (run: { map: string; typeName: string }, key: string) =>
       joins.find((j) => j.map === run.map && j.typeName === run.typeName && j.other === key);
-    const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
+    const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.paths.resolvedPathChains(m)).flatMap((run) => {
       const pt = typeOf(run.map, run.typeName);
       if (!pt) return [];
       const pts = ghostRunPoints(run, centreEm);
@@ -5688,8 +5697,175 @@ export class HexMapView extends ItemView {
     }
   }
 
+  /**
+   * The path layer's calibration (lattice → em for this grid) and what it
+   * was last drawn with. Measured once per grid (renderGrid rebuilds the
+   * grid); in em, so zoom bakes need no rebuild.
+   */
+  private pathCalib: PathLayerCalibration | null = null;
+  private pathLayerKey = "";
+
+  /**
+   * Measure the grid once for the path layer: three hexes (the origin, the
+   * far end of its row, the far end of its column), all reads, no writes.
+   * Their centres fix the affine from lattice units to em in the grid's own
+   * frame, which absorbs the CSS gap and any calibrated grid transform.
+   */
+  private calibratePathLayer(gridContainer: HTMLElement, region: MapData): PathLayerCalibration | null {
+    if (this.pathCalib?.grid === gridContainer) return this.pathCalib;
+    const { x: ox, y: oy } = region.gridOffset;
+    const { cols, rows } = region.gridSize;
+    const isFlat = this.plugin.settings.hexOrientation === "flat";
+    const lattice: LatticeGrid = { orientation: this.plugin.settings.hexOrientation, stagger: this.getActiveStagger() };
+    const hexAt = (x: number, y: number) => gridContainer.querySelector<HTMLElement>(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`);
+    const origin = hexAt(ox, oy);
+    if (!origin) return null;
+    const style = getComputedStyle(gridContainer);
+    const em = parseFloat(style.fontSize) || 16;
+    const g = gridContainer.getBoundingClientRect();
+    // Client px → the grid's own px (the viewport zoom and grid transforms
+    // scale both); the computed width is fractional, unlike offsetWidth.
+    const layoutW = parseFloat(style.width) || gridContainer.offsetWidth;
+    const layoutH = parseFloat(style.height) || gridContainer.offsetHeight;
+    const sx = layoutW ? g.width / layoutW : 1;
+    const sy = layoutH ? g.height / layoutH : 1;
+    const centre = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return { x: (r.left + r.width / 2 - g.left) / sx / em, y: (r.top + r.height / 2 - g.top) / sy / em, w: r.width / sx / em, h: r.height / sy / em };
+    };
+    const A = centre(origin);
+    if (!A.w || !A.h) return null;
+    const farX = cols > 1 ? hexAt(ox + cols - 1, oy) : null;
+    const farY = rows > 1 ? hexAt(ox, oy + rows - 1) : null;
+    const hexRadius = isFlat ? A.w / 2 : A.h / 2;
+    const affine = calibrateAffine(
+      { key: `${ox}_${oy}`, at: A },
+      farX ? { key: `${ox + cols - 1}_${oy}`, at: centre(farX) } : null,
+      farY ? { key: `${ox}_${oy + rows - 1}`, at: centre(farY) } : null,
+      lattice,
+      hexRadius,
+    );
+    this.pathCalib = { grid: gridContainer, lattice, affine, hexRadius, hexW: A.w, hexH: A.h };
+    this.pathLayerKey = "";
+    return this.pathCalib;
+  }
+
+  /**
+   * Paths of the open map: resolved by the plugin's paths service (nothing
+   * until the map's terrain and palette are loaded), turned into lattice
+   * polylines (src/paths/pathGeometry.ts, the same ones the PNG export
+   * draws), placed in em. One `<path data-path data-branch>` per branch.
+   * Stroke widths scale with the hexes (lattice units × the hex radius), so
+   * the map looks the same at every zoom. Rebuilt only when what it draws
+   * changes; zoom bakes leave it alone.
+   */
   private renderPathOverlay(gridContainer: HTMLElement): void {
-    this.viewportEl?.querySelector("svg.duckmage-path-svg")?.remove();
+    const region = this.getActiveMap();
+    // A path edit that starts or ends a seam join redraws the neighbour
+    // strip, so its road reaches the shared edge too (round 6 U8).
+    const joins = this.currentSeamJoins(region);
+    if (this.lastShadow?.map === region.name && seamJoinKey(joins) !== this.shadowJoinKey) {
+      this.renderNeighbourShadow(gridContainer, region);
+    }
+
+    // ── Reads (one calibration per grid) ──
+    const calib = this.calibratePathLayer(gridContainer, region);
+    // The same strokes the PNG export draws (plugin.paths.strokes); only
+    // the seam stubs are the view's own.
+    const strokes = calib
+      ? this.plugin.paths.strokes(region.name, {
+          seamEnd: (typeName, hex) => joins.find((j) => j.typeName === typeName && j.own === hex)?.other,
+        })
+      : [];
+    const em = (pts: { cx: number; cy: number }[]) =>
+      applyAffine(pts, calib!.affine).map((p) => ({ cx: Number(fmt(p.cx)), cy: Number(fmt(p.cy)) }));
+    const scale = calib?.hexRadius ?? 0;
+    const lines = strokes.map((s) => {
+      const pts = em(s.pts);
+      return {
+        s,
+        d: s.smooth ? smoothPath(pts) : sharpPath(pts),
+        width: fmt(s.width * scale),
+        dash: s.dash.map((d) => fmt(d * scale)).join(" "),
+      };
+    });
+    // Small circle to mark the active endpoint (only in path mode)
+    let dot: { cx: string; cy: string; r: string; sw: string; color: string } | null = null;
+    if (calib && this.drawingMode === "path" && this.activePathEnd) {
+      const activeType = this.activePathTypeName ? this.mapPathTypes().find((p) => p.name === this.activePathTypeName) : undefined;
+      const [c] = em([latticeCenter(this.activePathEnd, calib.lattice)]);
+      dot = {
+        cx: fmt(c.cx),
+        cy: fmt(c.cy),
+        r: fmt(pxToLattice(END_DOT_PX.r) * scale),
+        sw: fmt(pxToLattice(END_DOT_PX.stroke) * scale),
+        color: activeType?.color ?? "#888888",
+      };
+    }
+    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot]);
+    const existing = gridContainer.querySelector("svg.duckmage-path-svg");
+
+    // ── Writes ──
+    if (!existing || key !== this.pathLayerKey) {
+      existing?.remove();
+      this.pathLayerKey = key;
+      if (lines.length || dot) {
+        const svgNS = "http://www.w3.org/2000/svg";
+        const svg = activeDocument.createElementNS(svgNS, "svg");
+        svg.classList.add("duckmage-path-svg");
+        // One user unit = 1em of the grid (it overflows for seam stubs).
+        svg.setAttribute("width", "1em");
+        svg.setAttribute("height", "1em");
+        svg.setAttribute("viewBox", "0 0 1 1");
+        for (const l of lines) {
+          const path = activeDocument.createElementNS(svgNS, "path");
+          path.setAttribute("class", "duckmage-svg-path-line");
+          path.setAttribute("d", l.d);
+          path.setAttribute("stroke", l.s.color);
+          path.setAttribute("stroke-width", l.width);
+          path.setAttribute("stroke-linecap", "round");
+          path.setAttribute("stroke-linejoin", "round");
+          path.setAttribute("fill", "none");
+          if (l.dash) path.setAttribute("stroke-dasharray", l.dash);
+          path.setAttribute("data-path", l.s.path);
+          path.setAttribute("data-branch", String(l.s.branch));
+          svg.appendChild(path);
+        }
+        if (dot) {
+          const circle = activeDocument.createElementNS(svgNS, "circle");
+          circle.setAttribute("class", "duckmage-svg-path-line");
+          circle.setAttribute("cx", dot.cx);
+          circle.setAttribute("cy", dot.cy);
+          circle.setAttribute("r", dot.r);
+          circle.setAttribute("fill", dot.color);
+          circle.setAttribute("stroke", "white");
+          circle.setAttribute("stroke-width", dot.sw);
+          circle.setAttribute("opacity", "0.9");
+          svg.appendChild(circle);
+        }
+        // Under the icon layer (elevated and GM icons sit above paths).
+        const icons = gridContainer.querySelector("svg.duckmage-path-icons-svg");
+        if (icons) gridContainer.insertBefore(svg, icons);
+        else gridContainer.appendChild(svg);
+      }
+    }
+    this.renderPathIconsLayer(gridContainer);
+  }
+
+  /** Redraw only the icon layer (after a zoom bake: its sizes are in px). */
+  private updatePathIcons(): void {
+    const gridContainer = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (gridContainer) this.renderPathIconsLayer(gridContainer);
+  }
+
+  /**
+   * Override icons elevated above the paths, and GM-layer icons: their own
+   * SVG over the path layer, placed from the path layer's calibration (no
+   * per-hex layout reads). Rebuilt on zoom bakes (icon and badge sizes are
+   * px, as they always were).
+   */
+  private renderPathIconsLayer(gridContainer: HTMLElement): void {
+    gridContainer.querySelector("svg.duckmage-path-icons-svg")?.remove();
     this.viewportEl?.removeClass("duckmage-svg-labels-active");
     // Restore any icons that were hidden when the previous SVG elevated them
     gridContainer
@@ -5700,220 +5876,52 @@ export class HexMapView extends ItemView {
       });
 
     const region = this.getActiveMap();
-    // A path edit that starts or ends a seam join redraws the neighbour
-    // strip, so its road reaches the shared edge too (round 6 U8).
-    const joins = this.currentSeamJoins(region);
-    if (this.lastShadow?.map === region.name && seamJoinKey(joins) !== this.shadowJoinKey) {
-      this.renderNeighbourShadow(gridContainer, region);
-    }
     const gmLayerActive = region.showGmLayer ?? true;
-    const hasContent =
-      region.pathChains.some((c) => c.hexes.length > 0) ||
-      this.activePathEnd !== null ||
-      (gmLayerActive && gridContainer.querySelector("[data-gm-icons]") !== null);
-    if (!hasContent) return;
+    const overrides = Array.from(gridContainer.querySelectorAll<HTMLElement>("[data-icon-override]"));
+    const gmHexes = gmLayerActive ? Array.from(gridContainer.querySelectorAll<HTMLElement>("[data-gm-icons]")) : [];
+    if (!overrides.length && !gmHexes.length) return;
+    const calib = this.calibratePathLayer(gridContainer, region);
+    if (!calib) return;
 
-    // Build hex center map — offsetLeft/offsetTop are unaffected by CSS transform
-    const centerMap = new Map<string, { cx: number; cy: number }>();
-    let hexW = 0,
-      hexH = 0;
-    gridContainer
-      .querySelectorAll<HTMLElement>(".duckmage-hex")
-      .forEach((hexEl) => {
-        const x = Number(hexEl.dataset.x);
-        const y = Number(hexEl.dataset.y);
-        if (hexW === 0) {
-          hexW = hexEl.offsetWidth;
-          hexH = hexEl.offsetHeight;
-        }
-        let ox = hexEl.offsetWidth / 2;
-        let oy = hexEl.offsetHeight / 2;
-        let cur: HTMLElement | null = hexEl;
-        // Walk only up to gridContainer so coords are gridContainer-relative.
-        // The SVG itself lives inside gridContainer and inherits any
-        // gridDisplay transform — otherwise the overlay drifts away from
-        // the scaled hex grid on calibrated maps.
-        while (cur && cur !== gridContainer) {
-          ox += cur.offsetLeft;
-          oy += cur.offsetTop;
-          cur = cur.offsetParent as HTMLElement | null;
-        }
-        centerMap.set(`${x}_${y}`, { cx: ox, cy: oy });
-      });
+    // ── Reads: the font size (em → px) and the layer's size, once ──
+    const emPx = parseFloat(getComputedStyle(gridContainer).fontSize) || 16;
+    const svgW = gridContainer.offsetLeft + gridContainer.offsetWidth + 20;
+    const svgH = gridContainer.offsetTop + gridContainer.offsetHeight + 20;
+    const w = calib.hexW * emPx;
+    const h = calib.hexH * emPx;
+    const at = (hexEl: HTMLElement) => {
+      const [p] = applyAffine([latticeCenter(`${hexEl.dataset.x!}_${hexEl.dataset.y!}`, calib.lattice)], calib.affine);
+      return { cx: p.cx * emPx, cy: p.cy * emPx };
+    };
 
+    // ── Writes ──
     const svgNS = "http://www.w3.org/2000/svg";
     const svg = activeDocument.createElementNS(svgNS, "svg");
-    svg.classList.add("duckmage-path-svg");
-    const w = gridContainer.offsetLeft + gridContainer.offsetWidth + 20;
-    const h = gridContainer.offsetTop + gridContainer.offsetHeight + 20;
-    svg.setAttribute("width", String(w));
-    svg.setAttribute("height", String(h));
-
-    const DASH_ARRAYS: Record<string, string> = {
-      solid: "",
-      dashed: "8 4",
-      dotted: "2 4",
-    };
-
-    const appendPath = (
-      pts: { cx: number; cy: number }[],
-      color: string,
-      strokeWidth: number,
-      dashArray = "",
-      smooth = true,
-    ) => {
-      const path = activeDocument.createElementNS(svgNS, "path");
-      path.setAttribute("class", "duckmage-svg-path-line");
-      path.setAttribute("d", smooth ? smoothPath(pts) : sharpPath(pts));
-      path.setAttribute("stroke", color);
-      path.setAttribute("stroke-width", String(strokeWidth));
-      path.setAttribute("stroke-linecap", "round");
-      path.setAttribute("stroke-linejoin", "round");
-      path.setAttribute("fill", "none");
-      if (dashArray) path.setAttribute("stroke-dasharray", dashArray);
-      svg.appendChild(path);
-    };
-
-    const isFlat = this.plugin.settings.hexOrientation === "flat";
-    const hexRadius = isFlat ? hexW / 2 : hexH / 2;
-
-    // Flatten every chain into a render list in path-type definition order,
-    // pairing each chain with its resolved type. Stable order = draw order.
-    const types = this.mapPathTypes();
-    const renderables = types.flatMap((pt) =>
-      region.pathChains
-        .filter((c) => c.typeName === pt.name)
-        .map((chain) => ({ chain, pt })),
-    );
-    // A path whose type isn't in this map's palette (renamed or removed in
-    // the palette note) still shows, plain grey, rather than vanishing.
-    const known = new Set(types.map((t) => t.name));
-    for (const chain of region.pathChains) {
-      if (!known.has(chain.typeName))
-        renderables.push({ chain, pt: { ...UNKNOWN_PATH_TYPE, name: chain.typeName } });
-    }
-
-    // Assign each chain a perpendicular "lane" offset so chains that share a
-    // route (e.g. a road and a river on the same hexes) render side by side
-    // instead of one stroke covering the other (issue #30). Chains that don't
-    // share any segment with another keep offset 0 → pixel-identical output.
-    // Ends that meet a neighbour's path across the seam reach on to the
-    // shared edge (round 6 U8). The neighbour hex is off this grid, so its
-    // centre is extrapolated from the grid's pitch.
-    const stagger = this.getActiveStagger();
-    const shifted = (n: number) => ((stagger === "odd" ? n % 2 !== 0 : n % 2 === 0) ? 1 : 0);
-    let colPitch = 0;
-    let rowPitch = 0;
-    if (joins.length > 0) {
-      for (const [k, c] of centerMap) {
-        const [x, y] = k.split("_").map(Number);
-        const r = centerMap.get(`${x + 1}_${y}`);
-        const b = centerMap.get(`${x}_${y + 1}`);
-        if (!colPitch && r) colPitch = r.cx - c.cx;
-        if (!rowPitch && b) rowPitch = b.cy - c.cy;
-        if (colPitch && rowPitch) break;
-      }
-    }
-    const beyond = (own: string, other: string): { cx: number; cy: number } | null => {
-      const e = centerMap.get(own);
-      if (!e || !colPitch || !rowPitch) return null;
-      const [ex, ey] = own.split("_").map(Number);
-      const [nx, ny] = other.split("_").map(Number);
-      return isFlat
-        ? { cx: e.cx + (nx - ex) * colPitch, cy: e.cy + (ny - ey) * rowPitch + ((shifted(nx) - shifted(ex)) * rowPitch) / 2 }
-        : { cx: e.cx + (nx - ex) * colPitch + ((shifted(ny) - shifted(ey)) * colPitch) / 2, cy: e.cy + (ny - ey) * rowPitch };
-    };
-    const seamEnd = (typeName: string, own: string | undefined) => {
-      if (own === undefined) return null;
-      const j = joins.find((jj) => jj.typeName === typeName && jj.own === own);
-      const n = j ? beyond(j.own, j.other) : null;
-      const e = centerMap.get(own);
-      return n && e ? seamPoint(e, n) : null;
-    };
-
-    const laneOffset = computeLaneOffsets(
-      renderables.map((r) => ({
-        hexes: r.chain.hexes,
-        width: r.pt.width,
-        typeName: r.pt.name,
-      })),
-    );
-
-    renderables.forEach(({ chain, pt }, idx) => {
-      const dash = DASH_ARRAYS[pt.lineStyle] ?? "";
-      let pts: { cx: number; cy: number }[];
-      let smooth: boolean;
-      if (pt.routing === "meander") {
-        pts = buildMeanderPts(chain.hexes, centerMap);
-        smooth = true;
-      } else if (pt.routing === "edge") {
-        pts = buildEdgePts(chain.hexes, centerMap, isFlat, hexRadius);
-        smooth = false;
-      } else {
-        pts = chain.hexes
-          .map((k) => centerMap.get(k))
-          .filter((p): p is { cx: number; cy: number } => !!p);
-        smooth = true;
-      }
-      if (pt.routing !== "edge" && pts.length >= 1) {
-        const head = seamEnd(pt.name, chain.hexes[0]);
-        const tail = chain.hexes.length > 1 ? seamEnd(pt.name, chain.hexes[chain.hexes.length - 1]) : null;
-        if (head) pts = [head, ...pts];
-        if (tail) pts = [...pts, tail];
-      }
-      if (pts.length < 2) return;
-      pts = offsetPolyline(pts, laneOffset[idx]);
-      appendPath(pts, pt.color, pt.width, dash, smooth);
-    });
-
-    // Small circle to mark the active endpoint (only visible in path mode)
-    if (this.drawingMode === "path" && this.activePathEnd) {
-      const activeType = this.activePathTypeName
-        ? this.mapPathTypes().find(
-            (p) => p.name === this.activePathTypeName,
-          )
-        : undefined;
-      const color = activeType?.color ?? "#888888";
-      const pos = centerMap.get(this.activePathEnd);
-      if (pos) {
-        const circle = activeDocument.createElementNS(svgNS, "circle");
-        circle.setAttribute("class", "duckmage-svg-path-line");
-        circle.setAttribute("cx", String(pos.cx));
-        circle.setAttribute("cy", String(pos.cy));
-        circle.setAttribute("r", "5");
-        circle.setAttribute("fill", color);
-        circle.setAttribute("stroke", "white");
-        circle.setAttribute("stroke-width", "1.5");
-        circle.setAttribute("opacity", "0.9");
-        svg.appendChild(circle);
-      }
-    }
+    svg.classList.add("duckmage-path-icons-svg");
+    svg.setAttribute("width", String(svgW));
+    svg.setAttribute("height", String(svgH));
 
     // Elevate override icons above roads/rivers by rendering them inside the SVG.
-    gridContainer
-      .querySelectorAll<HTMLElement>("[data-icon-override]")
-      .forEach((hexEl) => {
-        const iconName = hexEl.dataset.iconOverride!;
-        const key = `${hexEl.dataset.x!}_${hexEl.dataset.y!}`;
-        const pos = centerMap.get(key);
-        if (!pos) return;
-        const origImg = hexEl.querySelector<HTMLElement>(".duckmage-hex-icon");
-        if (origImg) {
-          origImg.hide();
-          origImg.setAttribute("data-svg-elevated", "1");
-        }
-        const imgEl = activeDocument.createElementNS(svgNS, "image");
-        const iconW = hexEl.offsetWidth * 0.78;
-        const iconH = hexEl.offsetHeight * 0.78;
-        imgEl.setAttribute("x", String(pos.cx - iconW / 2));
-        imgEl.setAttribute("y", String(pos.cy - iconH / 2));
-        imgEl.setAttribute("width", String(iconW));
-        imgEl.setAttribute("height", String(iconH));
-        imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
-        imgEl.setAttribute("opacity", "0.75");
-        imgEl.setAttribute("class", "duckmage-svg-icon-override");
-        svg.appendChild(imgEl);
-      });
+    for (const hexEl of overrides) {
+      const iconName = hexEl.dataset.iconOverride!;
+      const pos = at(hexEl);
+      const origImg = hexEl.querySelector<HTMLElement>(".duckmage-hex-icon");
+      if (origImg) {
+        origImg.hide();
+        origImg.setAttribute("data-svg-elevated", "1");
+      }
+      const imgEl = activeDocument.createElementNS(svgNS, "image");
+      const iconW = w * 0.78;
+      const iconH = h * 0.78;
+      imgEl.setAttribute("x", String(pos.cx - iconW / 2));
+      imgEl.setAttribute("y", String(pos.cy - iconH / 2));
+      imgEl.setAttribute("width", String(iconW));
+      imgEl.setAttribute("height", String(iconH));
+      imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
+      imgEl.setAttribute("opacity", "0.75");
+      imgEl.setAttribute("class", "duckmage-svg-icon-override");
+      svg.appendChild(imgEl);
+    }
 
     // NOTE: coord labels are NO LONGER rendered in the SVG. The SVG
     // copies were a stable source of "label drift on zoom" — the SVG's
@@ -5935,67 +5943,57 @@ export class HexMapView extends ItemView {
     // down. Up to 7 unique icons display; further additions are kept
     // in frontmatter but don't render. A "×N" badge appears on a slot
     // when its icon was added 2+ times.
-    if (gmLayerActive) {
-      gridContainer
-        .querySelectorAll<HTMLElement>("[data-gm-icons]")
-        .forEach((hexEl) => {
-          const list = this.parseGmIconsDataset(hexEl.dataset.gmIcons);
-          if (list.length === 0) return;
-          const key = `${hexEl.dataset.x!}_${hexEl.dataset.y!}`;
-          const pos = centerMap.get(key);
-          if (!pos) return;
+    for (const hexEl of gmHexes) {
+      const list = this.parseGmIconsDataset(hexEl.dataset.gmIcons);
+      if (list.length === 0) continue;
+      const pos = at(hexEl);
 
-          // Count occurrences per icon, preserving first-seen order.
-          const counts = new Map<string, number>();
-          for (const ic of list) counts.set(ic, (counts.get(ic) ?? 0) + 1);
-          const slots = Array.from(counts.entries()).slice(0, GM_ICON_HEX_SUBGRID.length);
-          const slotCount = slots.length;
+      // Count occurrences per icon, preserving first-seen order.
+      const counts = new Map<string, number>();
+      for (const ic of list) counts.set(ic, (counts.get(ic) ?? 0) + 1);
+      const slots = Array.from(counts.entries()).slice(0, GM_ICON_HEX_SUBGRID.length);
+      const slotCount = slots.length;
 
-          const w = hexEl.offsetWidth;
-          const h = hexEl.offsetHeight;
-          // Spread = half the hex's short dimension so the sub-grid fits
-          // comfortably inside the parent hex's bounds.
-          const spread = Math.min(w, h) * 0.42;
-          // Icon size shrinks as the sub-grid fills so neighbouring icons
-          // don't overlap. Single-icon hexes keep ~legacy size.
-          const sizeFactor = slotCount === 1 ? 0.40
-            : slotCount <= 2 ? 0.30
-            : slotCount <= 4 ? 0.26
-            : 0.22;
-          const size = Math.round(w * sizeFactor);
+      // Spread = half the hex's short dimension so the sub-grid fits
+      // comfortably inside the parent hex's bounds.
+      const spread = Math.min(w, h) * 0.42;
+      // Icon size shrinks as the sub-grid fills so neighbouring icons
+      // don't overlap. Single-icon hexes keep ~legacy size.
+      const sizeFactor = slotCount === 1 ? 0.40
+        : slotCount <= 2 ? 0.30
+        : slotCount <= 4 ? 0.26
+        : 0.22;
+      const size = Math.round(w * sizeFactor);
 
-          slots.forEach(([iconName, count], slotIdx) => {
-            const [odx, ody] = GM_ICON_HEX_SUBGRID[slotIdx];
-            // Icons are positioned by top-left corner; subtract half the
-            // size so the icon CENTER lands on the sub-grid slot.
-            const ix = pos.cx + odx * spread - size / 2;
-            const iy = pos.cy + ody * spread - size / 2;
-            const imgEl = activeDocument.createElementNS(svgNS, "image");
-            imgEl.setAttribute("x", String(ix));
-            imgEl.setAttribute("y", String(iy));
-            imgEl.setAttribute("width", String(size));
-            imgEl.setAttribute("height", String(size));
-            imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
-            imgEl.setAttribute("class", "duckmage-svg-gm-icon");
-            svg.appendChild(imgEl);
+      slots.forEach(([iconName, count], slotIdx) => {
+        const [odx, ody] = GM_ICON_HEX_SUBGRID[slotIdx];
+        // Icons are positioned by top-left corner; subtract half the
+        // size so the icon CENTER lands on the sub-grid slot.
+        const ix = pos.cx + odx * spread - size / 2;
+        const iy = pos.cy + ody * spread - size / 2;
+        const imgEl = activeDocument.createElementNS(svgNS, "image");
+        imgEl.setAttribute("x", String(ix));
+        imgEl.setAttribute("y", String(iy));
+        imgEl.setAttribute("width", String(size));
+        imgEl.setAttribute("height", String(size));
+        imgEl.setAttribute("href", getIconUrl(this.plugin, iconName));
+        imgEl.setAttribute("class", "duckmage-svg-gm-icon");
+        svg.appendChild(imgEl);
 
-            if (count > 1) {
-              // Badge sits at the bottom-right corner of the icon glyph,
-              // tucked inside the icon's bounding box so it tracks the
-              // icon even at small sizes (was drifting away with the old
-              // `* 0.9 / * 1.02` offset which scaled badge-to-icon
-              // distance independent of the actual icon position).
-              const badgeEl = activeDocument.createElementNS(svgNS, "text");
-              badgeEl.setAttribute("x", String(ix + size));
-              badgeEl.setAttribute("y", String(iy + size));
-              badgeEl.setAttribute("text-anchor", "end");
-              badgeEl.setAttribute("dominant-baseline", "alphabetic");
-              badgeEl.setAttribute("class", "duckmage-svg-gm-icon-count");
-              badgeEl.textContent = `×${count}`;
-              svg.appendChild(badgeEl);
-            }
-          });
-        });
+        if (count > 1) {
+          // Badge sits at the bottom-right corner of the icon glyph,
+          // tucked inside the icon's bounding box so it tracks the
+          // icon even at small sizes.
+          const badgeEl = activeDocument.createElementNS(svgNS, "text");
+          badgeEl.setAttribute("x", String(ix + size));
+          badgeEl.setAttribute("y", String(iy + size));
+          badgeEl.setAttribute("text-anchor", "end");
+          badgeEl.setAttribute("dominant-baseline", "alphabetic");
+          badgeEl.setAttribute("class", "duckmage-svg-gm-icon-count");
+          badgeEl.textContent = `×${count}`;
+          svg.appendChild(badgeEl);
+        }
+      });
     }
 
     this.viewportEl?.addClass("duckmage-svg-labels-active");

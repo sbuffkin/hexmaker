@@ -273,7 +273,8 @@ export class MockApp {
 
 // ─── Plugin ────────────────────────────────────────────────────────────────
 
-import { DEFAULT_SETTINGS } from "../../src/constants";
+import { DEFAULT_PATH_TYPES, DEFAULT_SETTINGS } from "../../src/constants";
+import { PathsService } from "../../src/paths/PathsService";
 import type { HexmakerPluginSettings } from "../../src/types";
 
 export class MockHexmakerPlugin {
@@ -282,6 +283,16 @@ export class MockHexmakerPlugin {
   manifest = { dir: ".obsidian/plugins/duckmage-plugin", id: "duckmage" };
   // Field that real plugin uses for icon URL resolution.
   vaultIconsSet = new Set<string>();
+  /** The paths service, as the real plugin has it (always ready; terrain from hex frontmatter is not consulted). */
+  paths = new PathsService({
+    isMapReady: () => true,
+    getMap: (name) => this.getMap(name),
+    orientation: () => this.settings.hexOrientation,
+    stagger: (map) => map.staggerOffset ?? this.settings.staggerOffset ?? "odd",
+    pathTypes: (map) => this.getMapPathTypes(map),
+    palette: (map) => this.getMapPalette(map),
+    hexData: () => new Map(),
+  });
 
   constructor(outDir: string) {
     this.app = new MockApp(outDir);
@@ -297,6 +308,11 @@ export class MockHexmakerPlugin {
 
   getMap(mapName: string) {
     return this.settings.maps.find((m) => m.name === mapName);
+  }
+
+  getMapPathTypes(mapName: string) {
+    const map = this.getMap(mapName);
+    return this.settings.terrainPalettes.find((p) => p.name === map?.paletteName)?.pathTypes ?? DEFAULT_PATH_TYPES;
   }
 
   getMapPalette(mapName: string) {

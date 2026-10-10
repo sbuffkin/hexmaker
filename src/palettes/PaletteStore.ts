@@ -124,6 +124,11 @@ export class PaletteStore {
 
   constructor(private plugin: HexmakerPlugin) {}
 
+  /** The palette notes have been read (palettes, impassable flags and path types are final). */
+  isReady(): boolean {
+    return this.ready;
+  }
+
   folder(): string {
     const configured = normalizeFolder(this.plugin.settings.palettesFolder ?? "");
     if (configured) return configured;

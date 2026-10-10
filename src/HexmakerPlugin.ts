@@ -29,6 +29,7 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
+import { PathsService } from "./paths/PathsService";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
@@ -92,6 +93,21 @@ export default class HexmakerPlugin extends Plugin {
   paletteStore = new PaletteStore(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
+  /**
+   * Every map's paths resolved to hex chains (one resolver, a route cache
+   * per map). Readers use `paths.resolvedPathChains(map)`; nothing is
+   * resolved until the map's terrain and palette are loaded.
+   */
+  paths = new PathsService({
+    // PHASE-3: becomes this.mapStore.isReady(map) && the palette check.
+    isMapReady: () => this.mapStore.isReady() && this.paletteStore.isReady(),
+    getMap: (name) => this.getMap(name),
+    orientation: () => this.settings.hexOrientation,
+    stagger: (map) => map.staggerOffset ?? this.settings.staggerOffset ?? "odd",
+    pathTypes: (map) => this.getMapPathTypes(map),
+    palette: (map) => this.getMapPalette(map),
+    hexData: (map) => this.mapStore.all(map),
+  });
 
   async onload() {
     await this.loadSettings();

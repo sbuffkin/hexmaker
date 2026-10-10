@@ -36,7 +36,7 @@ export class RegionNavigateModal extends HexmakerModal {
         this.plugin.settings.hexOrientation,
         paletteColors(this.plugin, map.paletteName),
         undefined,
-        (map.pathChains ?? []).map((p) => ({ type: p.typeName, hexes: p.hexes })),
+        this.plugin.paths.resolvedPathChains(name).map((p) => ({ type: p.typeName, hexes: p.hexes })),
         pathColors(this.plugin, this.plugin.mapPaletteName(name)),
         360,
         12,

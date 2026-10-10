@@ -13,16 +13,8 @@
  */
 
 import { getIcon, Notice, TFile, type App } from "obsidian";
-import {
-  hexCenter,
-  hexPolygonPoints,
-  buildEdgePts,
-  buildMeanderPts,
-  smoothPath,
-  sharpPath,
-  offsetPolyline,
-  computeLaneOffsets,
-} from "../hex-map/hexGeometry";
+import { hexCenter, hexPolygonPoints, smoothPath, sharpPath } from "../hex-map/hexGeometry";
+import { applyAffine } from "../paths/pathGeometry";
 import { ensureExportFolder, exportedMessage, openExported } from "./exportFolder";
 import {
   getTerrainFromFile,
@@ -44,6 +36,7 @@ import {
   pngHexNameY,
   pngTokenRadius,
   pngPathWidth,
+  PNG_PATH_BOLD,
   pngTokenSpread,
   wrapHexName,
 } from "./handoutLabels";
@@ -52,7 +45,7 @@ import { usedTerrainEntries } from "../hex-map/terrainLegend";
 import { hexNameTone } from "../hex-map/hexNameLayer";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
 import { getIconUrl, normalizeFolder } from "../utils";
-import { UNKNOWN_PATH_TYPE } from "../constants";
+import { SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
 import { drawPatternTile } from "../overlayPatterns";
 import { coordHaloColor, pngCoordFontFamily, pngCoordFontPx, pngCoordY } from "../coordStyle";
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -84,6 +77,12 @@ export interface MapPngRenderOptions {
   showIcons?: boolean;
   /** Include road/river/path chains. Default true. */
   showPaths?: boolean;
+  /**
+   * Draw paths bolder than on screen (×1.4 strokes, lanes and dashes), so
+   * roads and rivers read on a printed handout (round 7 U18). The shape
+   * is the same either way. Default true (the export's usual look).
+   */
+  boldPaths?: boolean;
   /**
    * Restrict rendering to a sub-rectangle of the grid. When set, only hexes
    * inside the half-open range `[colStart, colEnd) × [rowStart, rowEnd)` are
@@ -134,6 +133,7 @@ export async function renderMapToPngBlob(
   const showCoords = opts.showCoords ?? true;
   const showIcons = opts.showIcons ?? true;
   const showPaths = opts.showPaths ?? true;
+  const boldPaths = opts.boldPaths ?? true;
   const showFactionOverlay = opts.showFactionOverlay ?? false;
   const showRegionOverlay = opts.showRegionOverlay ?? false;
   const showHexNames = opts.showHexNames ?? false;
@@ -180,7 +180,8 @@ export async function renderMapToPngBlob(
   const centerMap = new Map<string, { cx: number; cy: number }>();
   for (let row = rowStart; row < rowEnd; row++) {
     for (let col = colStart; col < colEnd; col++) {
-      const c = hexCenter(col, row, orientation, R, stagger);
+      // Absolute coordinates, as on screen: a hex's stagger follows its own x / y.
+      const c = hexCenter(col + ox, row + oy, orientation, R, stagger);
       centerMap.set(`${col + ox}_${row + oy}`, c);
     }
   }
@@ -499,47 +500,16 @@ export async function renderMapToPngBlob(
   // parallel lanes so a road and a river on the same hexes render side by side
   // (issue #30), matching HexMapView's on-screen behaviour.
   if (showPaths) {
-    const types = plugin.getMapPathTypes(map.name);
-    const renderables = types.flatMap((pt) =>
-      map.pathChains
-        .filter((c) => c.typeName === pt.name)
-        .map((chain) => ({ chain, pt })),
-    );
-    // Paths whose type isn't in the palette still print, plain grey (as on screen).
-    const known = new Set(types.map((t) => t.name));
-    for (const chain of map.pathChains) {
-      if (!known.has(chain.typeName)) renderables.push({ chain, pt: { ...UNKNOWN_PATH_TYPE, name: chain.typeName } });
+    // The same lattice polylines the map view draws (src/paths/pathGeometry.ts),
+    // scaled by this image's hex radius: paths look the same as on screen,
+    // only bolder when asked (decision 4 of the path-anchors design).
+    const strokes = plugin.paths.strokes(map.name, { laneScale: boldPaths ? PNG_PATH_BOLD : 1 });
+    const affine = { sx: R, sy: R, tx: padding - minX, ty: padding - minY };
+    for (const st of strokes) {
+      const width = boldPaths ? pngPathWidth(st.width * SCREEN_HEX_RADIUS, R) : st.width * R;
+      const k = width / (st.width * R || 1);
+      drawPath(ctx, applyAffine(st.pts, affine), st.color, width, st.dash.map((d) => d * R * k), st.smooth);
     }
-    const laneOffset = computeLaneOffsets(
-      renderables.map((r) => ({
-        hexes: r.chain.hexes,
-        width: r.pt.width,
-        typeName: r.pt.name,
-      })),
-    );
-    renderables.forEach(({ chain, pt }, idx) => {
-      const dash = dashFor(pt.lineStyle);
-      let pts;
-      let smooth: boolean;
-      if (pt.routing === "edge") {
-        pts = buildEdgePts(chain.hexes, shifted, isFlat, R);
-        smooth = false;
-      } else if (pt.routing === "meander") {
-        pts = buildMeanderPts(chain.hexes, shifted);
-        smooth = true;
-      } else {
-        pts = chain.hexes
-          .map((k) => shifted.get(k))
-          .filter((p): p is { cx: number; cy: number } => !!p);
-        smooth = true;
-      }
-      if (pts.length < 2) return;
-      // Lanes, stroke and dashes grow with the image's hex size (U18).
-      const width = pngPathWidth(pt.width, R);
-      const k = width / (pt.width || 1);
-      pts = offsetPolyline(pts, laneOffset[idx] * k);
-      drawPath(ctx, pts, pt.color, width, dash.map((d) => d * k), smooth);
-    });
   }
 
   // Hex names, over paths, on the side of the hex away from its coordinates.
@@ -1166,17 +1136,6 @@ function getHexFactionLinks(app: App, file: TFile): string[] {
     });
 }
 
-
-function dashFor(style: "solid" | "dashed" | "dotted"): number[] {
-  switch (style) {
-    case "dashed":
-      return [12, 8];
-    case "dotted":
-      return [2, 6];
-    default:
-      return [];
-  }
-}
 
 // ── Icon loading ───────────────────────────────────────────────────────────
 
