@@ -3791,10 +3791,13 @@ export class HexMapView extends ItemView {
     if (this.drawingMode !== null) return;
 
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
-    const hexExists = this.app.vault.getAbstractFileByPath(hexPath) instanceof TFile;
-    const terrain = hexExists ? getTerrainFromFile(this.app, hexPath) : null;
-    const iconOverride = hexExists ? getIconOverrideFromFile(this.app, hexPath) : null;
-    const submap = hexExists ? getSubmapFromFile(this.app, hexPath) : undefined;
+    // Terrain, icon and submap live in the map note, and a hex can have them
+    // before its hex note exists (a generated map, a submap made from this
+    // menu) — gating these on the note hid "Enter submap" and "Clear
+    // terrain" on such hexes (fresh-eyes N3).
+    const terrain = getTerrainFromFile(this.app, hexPath);
+    const iconOverride = getIconOverrideFromFile(this.app, hexPath);
+    const submap = getSubmapFromFile(this.app, hexPath);
 
     const menu = new Menu();
 
@@ -3824,8 +3827,8 @@ export class HexMapView extends ItemView {
     if (submap) {
       menu.addItem((item) =>
         item
-          .setTitle(`Open submap: ${submap}`)
-          .setIcon("map")
+          .setTitle(`Enter submap: ${submap}`)
+          .setIcon("log-in")
           .onClick(() => this.navigateToMap(submap)),
       );
     }

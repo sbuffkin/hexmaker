@@ -102,3 +102,12 @@ describe("Map navigation buttons say where they go (fresh-eyes T4)", () => {
 		expect(nav).toMatch(/parent map: \$\{parent\.map\}/);
 	});
 });
+
+describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
+	it("reads the submap from the map note, not only when a hex note exists", () => {
+		const menu = method("onHexContextMenu");
+		expect(menu).toMatch(/const submap = getSubmapFromFile\(this\.app, hexPath\);/);
+		expect(menu).not.toMatch(/hexExists \?/);
+		expect(menu).toContain("Enter submap: ${submap}");
+	});
+});
