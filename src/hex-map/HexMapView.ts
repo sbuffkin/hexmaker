@@ -179,6 +179,9 @@ export class HexMapView extends ItemView {
   /** Cancels a renderGrid waiting for the grid to get a layout size. */
   private cancelMeasuredLayers: (() => void) | null = null;
   private legendTimer: number | null = null;
+  private namesTimer: number | null = null;
+  /** Names the hex-name layer was last drawn with ("x_y=name" lines), to skip no-op redraws. */
+  private drawnHexNames = "";
   private controlsEl: HTMLElement | null = null;
   private settleTimer: number | null = null;
   // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
@@ -1282,7 +1285,10 @@ export class HexMapView extends ItemView {
     // Terrain painted / generated → the legend lists what the map now uses.
     this.register(
       this.plugin.mapStore.onChange((map) => {
-        if (map === this.activeMapName) this.scheduleTerrainLegend();
+        if (map !== this.activeMapName) return;
+        this.scheduleTerrainLegend();
+        // A name set without a redraw (hex table, code, map note edit) shows up.
+        this.scheduleHexNames();
       }),
     );
 
@@ -3167,6 +3173,7 @@ export class HexMapView extends ItemView {
     if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
     this.cancelMeasuredLayers?.();
     if (this.legendTimer !== null) window.clearTimeout(this.legendTimer);
+    if (this.namesTimer !== null) window.clearTimeout(this.namesTimer);
     if (this.bgCalibrating) {
       await this.exitBgCalibration(true);
     }
@@ -3943,7 +3950,7 @@ export class HexMapView extends ItemView {
     this.renderCoordLabelsLayer(gridContainer);
     // Badges reuse the hex centres the coord labels just measured.
     this.renderLinkBadges(gridContainer);
-    renderHexNameLayer(gridContainer, this.hexNames());
+    this.drawHexNames(gridContainer);
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
       this.applyCalibrationFocusStyles();
@@ -5943,6 +5950,26 @@ export class HexMapView extends ItemView {
       const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
       if (grid) this.renderLinkBadges(grid);
     }, 300);
+  }
+
+  private scheduleHexNames(): void {
+    if (this.namesTimer !== null) window.clearTimeout(this.namesTimer);
+    this.namesTimer = window.setTimeout(() => {
+      this.namesTimer = null;
+      // A grid still waiting for a size draws its names when it gets one.
+      if (this.cancelMeasuredLayers) return;
+      const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+      if (grid) this.drawHexNames(grid, true);
+    }, 300);
+  }
+
+  /** (Re)draw the hex-name layer; with `onlyIfChanged`, skip when no name changed. */
+  private drawHexNames(gridContainer: HTMLElement, onlyIfChanged = false): void {
+    const names = this.hexNames();
+    const sig = [...names].map(([k, n]) => `${k}=${n}`).sort().join("\n");
+    if (onlyIfChanged && sig === this.drawnHexNames) return;
+    this.drawnHexNames = sig;
+    renderHexNameLayer(gridContainer, names);
   }
 
   private scheduleTerrainLegend(): void {
