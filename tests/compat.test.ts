@@ -126,6 +126,24 @@ describe("compat examples", () => {
   }
 });
 
+/**
+ * Map-note formats by their hexmaker-map number (format 2 = readable keys,
+ * one Submap column). Written before a format change; the current code must
+ * keep reading each one and convert it on write.
+ */
+describe("map note formats", () => {
+  const formatsDir = path.join(compatDir, "map-note-formats");
+  it("format 2 reads every setting and hex", () => {
+    const d = parseMapNote(read(formatsDir, "format-2.md"));
+    if (!d) throw new Error("format 2 note didn't parse");
+    expect(d.format).toBe(2);
+    expect(d.problems).toEqual([]);
+    expect(d.settings).toMatchObject({ displayName: "Compat Example", parent: { map: "compat-world", hex: "3_4" }, world: { id: "w-compat", cx: 1, cy: -1 }, originX: 2 });
+    expect(d.hexes.get("3_4")).toMatchObject({ name: "Glass Wastes", terrain: "hills", region: "Basin", locked: true });
+    expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
+  });
+});
+
 describe("save format", () => {
   it("round-trips a save written now", () => {
     const text = exampleFiles("9.9.9")["save.md"];
