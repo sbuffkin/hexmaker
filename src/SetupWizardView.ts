@@ -582,7 +582,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			});
 
 			// Terrain: generator choice + small live preview. The same
-			// generators as Maps → New map → Guided setup (src/worldgen/registry.ts).
+			// generators as Maps → New map… (src/worldgen/registry.ts).
 			const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
 			genField.createEl("label", { text: "Terrain", cls: "duckmage-wizard-label" });
 			const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });

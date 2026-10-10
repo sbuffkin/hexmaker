@@ -5,6 +5,7 @@ import { SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
 import { planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { mainworldFor, orbits } from "../src/worldgen/procedural/orbits";
 import { sideOf, type GenerationContext, type ProcGrid } from "../src/worldgen/procedural/common";
+import { regionDetailDescription } from "../src/worldgen/registry";
 
 const grid: ProcGrid = { cols: 16, rows: 12, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
 const typeOf = new Map(DEFAULT_TERRAIN_PALETTE.map((t) => [t.name, t.type]));
@@ -124,5 +125,43 @@ describe("Orbits mainworld from the sector hex", () => {
 			const r = orbits(SPACE_SYSTEM_TERRAINS, g, seed, { bodies: "few" }, undefined, { parent: { terrain: "ocean world", type: "world" } });
 			expect([...r.cells.values()]).toContain("ocean planet");
 		}
+	});
+});
+
+describe("Region detail keeps its card's promise (fresh-eyes round 7)", () => {
+	// The tester's hex: mixed forest heavy with evergreen heavy to the NE and
+	// SE and mixed forest to the SW. Both neighbours are forest-type, so the
+	// type blend alone produced no evergreen at all.
+	const ctx: GenerationContext = {
+		parent: { terrain: "mixed forest heavy" },
+		sides: {
+			NE: { terrain: "evergreen heavy" },
+			SE: { terrain: "evergreen heavy" },
+			SW: { terrain: "mixed forest" },
+		},
+	};
+	const g: ProcGrid = { cols: 13, rows: 13, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
+	const at = (k: string) => k.split("_").map(Number) as [number, number];
+
+	it("the card promises evergreen heavy on the north-east and south-east", () => {
+		expect(regionDetailDescription(ctx)).toMatch(/evergreen heavy on the north-east and south-east/);
+	});
+
+	it("puts evergreen heavy in the north-east and south-east corners, and not on the west, for every seed", () => {
+		for (let seed = 1; seed <= 40; seed++) {
+			const cells = planetSurface(DEFAULT_TERRAIN_PALETTE, g, seed, {}, ctx).cells;
+			const ever = [...cells].filter(([, t]) => t === "evergreen heavy").map(([k]) => at(k));
+			const ne = ever.filter(([x, y]) => x >= 9 && y <= 4).length;
+			const se = ever.filter(([x, y]) => x >= 9 && y >= 8).length;
+			const west = ever.filter(([x]) => x <= 5).length;
+			expect({ seed, ne: ne > 0, se: se > 0, west }).toEqual({ seed, ne: true, se: true, west: 0 });
+		}
+	});
+
+	it("leaves the map to the parent terrain away from those edges", () => {
+		const cells = planetSurface(DEFAULT_TERRAIN_PALETTE, g, 3, {}, ctx).cells;
+		const forest = [...cells.values()].filter((t) => typeOf.get(t) === "forest").length;
+		const ever = [...cells.values()].filter((t) => t === "evergreen heavy").length;
+		expect(ever).toBeLessThan(forest / 2);
 	});
 });

@@ -107,3 +107,37 @@ export class SaveTracker {
     }
   }
 }
+
+/**
+ * "Save a moment after typing stops": each schedule() restarts the
+ * countdown; cancel() drops it (call it when saving now, e.g. on blur).
+ * Timers are injected so the transitions can be unit-tested.
+ */
+export class DebouncedSave {
+  private timer: number | null = null;
+
+  constructor(
+    private save: () => void,
+    private ms: number,
+    private setTimer: (fn: () => void, ms: number) => number,
+    private clearTimer: (id: number) => void,
+  ) {}
+
+  /** A save is counting down. */
+  get pending(): boolean {
+    return this.timer !== null;
+  }
+
+  schedule(): void {
+    this.cancel();
+    this.timer = this.setTimer(() => {
+      this.timer = null;
+      this.save();
+    }, this.ms);
+  }
+
+  cancel(): void {
+    if (this.timer !== null) this.clearTimer(this.timer);
+    this.timer = null;
+  }
+}

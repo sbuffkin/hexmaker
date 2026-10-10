@@ -64,6 +64,7 @@ import {
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
+import { isLinkableNotePath, templateNoteRules, type TemplateNoteRules } from "./templateNotes";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -809,6 +810,29 @@ export default class HexmakerPlugin extends Plugin {
     new Notice(
       `Hexmap World Creator: auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
     );
+  }
+
+  /**
+   * Whether a note may be offered for linking: not `_`-prefixed and not a
+   * template (the hex template, workflow templates, the core Templates or
+   * Templater folder). Use in every note picker.
+   */
+  isLinkableNote(file: TFile): boolean {
+    return isLinkableNotePath(file.path, file.basename, this.templateRules());
+  }
+
+  private templateRules(): TemplateNoteRules {
+    type Loose = {
+      internalPlugins?: {
+        getPluginById?(id: string): { enabled?: boolean; instance?: { options?: { folder?: string } } } | null;
+      };
+      plugins?: { plugins?: Record<string, { settings?: { templates_folder?: string } } | undefined> };
+    };
+    const loose = this.app as unknown as Loose;
+    const core = loose.internalPlugins?.getPluginById?.("templates");
+    const coreFolder = core?.enabled ? core.instance?.options?.folder : undefined;
+    const templater = loose.plugins?.plugins?.["templater-obsidian"]?.settings?.templates_folder;
+    return templateNoteRules(this.settings, [coreFolder, templater]);
   }
 
   /**
@@ -1716,9 +1740,18 @@ export default class HexmakerPlugin extends Plugin {
       asName ?? preset.name,
       this.settings.terrainPalettes.map((p) => p.name),
     );
-    this.settings.terrainPalettes.push(presetToPalette(preset, name));
+    const palette = presetToPalette(preset, name);
+    this.settings.terrainPalettes.push(palette);
     const added = mergePathTypes(this.settings.pathTypes, preset.pathTypes);
     await this.saveSettings();
+    // Give the new terrains their description/encounters tables when the
+    // vault uses terrain tables, so a submap's hexes get an encounters
+    // table like the parent's (round 7: a system map installed "Space -
+    // System" and its "ice planet" hex showed Encounters Table "None").
+    const tables = normalizeFolder(this.settings.tablesFolder);
+    if (this.app.vault.getAbstractFileByPath(tables ? `${tables}/terrain` : "terrain")) {
+      await this.ensureTerrainTables(palette.terrains);
+    }
     new Notice(
       `Added palette "${name}"` +
         (added.length ? ` and path types ${added.join(", ")}.` : "."),

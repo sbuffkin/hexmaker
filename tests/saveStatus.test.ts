@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SAVED_SHOWN_MS, SaveTracker, type SaveState } from "../src/hex-map/saveStatus";
+import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SAVED_SHOWN_MS, SaveTracker, type SaveState } from "../src/hex-map/saveStatus";
 
 /** A tracker wired to a log of rendered states and a manual clock. */
 function harness() {
@@ -138,5 +138,54 @@ describe("HexEditorModal autosave wiring (fresh-eyes round 4)", () => {
 		const m = /private async ensureHexNote[\s\S]*?\n {2}\}/.exec(src);
 		expect(m).not.toBeNull();
 		expect(m![0]).toMatch(/createHexNote\(x, y, this\.mapName\)/);
+	});
+});
+
+describe("DebouncedSave + SaveTracker (fresh-eyes round 7: 'Saving shortly…' stuck)", () => {
+	it("goes pending → saving → saved once typing stops, without a blur", async () => {
+		const h = harness();
+		const timers = new Map<number, { fn: () => void; ms: number }>();
+		let next = 100;
+		let writes = 0;
+		let work: Promise<void> = Promise.resolve();
+		const debounce = new DebouncedSave(
+			() => { writes++; work = h.tracker.track(Promise.resolve()); },
+			800,
+			(fn, ms) => { timers.set(next, { fn, ms }); return next++; },
+			(id) => { timers.delete(id); },
+		);
+		// Three keystrokes: each restarts the countdown.
+		for (let i = 0; i < 3; i++) { debounce.schedule(); h.tracker.markPending(); }
+		expect(timers.size).toBe(1);
+		expect([...timers.values()][0].ms).toBe(800);
+		expect(h.tracker.current).toBe("pending");
+		expect(writes).toBe(0);
+		// Typing stops: the countdown fires and the save runs.
+		for (const [id, t] of [...timers]) { timers.delete(id); t.fn(); }
+		await work;
+		expect(writes).toBe(1);
+		expect(debounce.pending).toBe(false);
+		expect(h.shown).toEqual(["pending", "pending", "pending", "saving", "saved"]);
+	});
+
+	it("cancel() drops a scheduled save", () => {
+		let writes = 0;
+		const timers = new Map<number, () => void>();
+		const d = new DebouncedSave(() => writes++, 800, (fn) => { timers.set(1, fn); return 1; }, (id) => timers.delete(id));
+		d.schedule();
+		expect(d.pending).toBe(true);
+		d.cancel();
+		expect(d.pending).toBe(false);
+		expect(timers.size).toBe(0);
+		expect(writes).toBe(0);
+	});
+
+	it("the hex editor shows the status in one place and debounces the Name box", () => {
+		const src = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexEditorModal.ts"), "utf8");
+		expect(src).not.toMatch(/duckmage-editor-save-status/);
+		expect((src.match(/cls: "duckmage-editor-notes-status"/g) ?? []).length).toBe(1);
+		const m = /private renderNameField[\s\S]*?\n {2}\}/.exec(src.replace(/\r\n/g, "\n"));
+		expect(m![0]).toMatch(/new DebouncedSave\(/);
+		expect(m![0]).toMatch(/debounce\.schedule\(\)/);
 	});
 });

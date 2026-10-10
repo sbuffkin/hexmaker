@@ -59,7 +59,7 @@ export class FolderTreePickerModal extends Modal {
         .filter(
           (f) =>
             (!prefix || f.path.startsWith(prefix)) &&
-            !f.basename.startsWith("_"),
+            this.plugin.isLinkableNote(f),
         )
         .sort((a, b) => a.path.localeCompare(b.path));
       if (query) {

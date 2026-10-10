@@ -28,7 +28,7 @@ export class FileLinkSuggestModal extends SuggestModal<TFile> {
 		}
 		const exts = this.extensionFilter;
 		return files
-			.filter(f => !f.basename.startsWith("_"))
+			.filter(f => (f.extension === "md" ? this.plugin.isLinkableNote(f) : !f.basename.startsWith("_")))
 			.filter(f => !exts || exts.includes(f.extension.toLowerCase()))
 			.filter(f => f.basename.toLowerCase().contains(query.toLowerCase()))
 			.sort((a, b) => a.basename.localeCompare(b.basename));

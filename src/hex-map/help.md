@@ -108,6 +108,10 @@ A road or river that ends on the edge of a region, next to where the neighbour's
 
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 
+**New map…** (in Maps) is one form: generator cards with a live preview, Next to (Advanced), and **More** for starting coordinates, stagger and a background image. A new map starts on Overland; pick Blank to paint by hand.
+
+Note pickers never offer template notes (the hex template, workflow templates, a Templates folder) or notes starting with `_`.
+
 ## Palettes
 
 **Expanded** is the default fantasy palette: more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.

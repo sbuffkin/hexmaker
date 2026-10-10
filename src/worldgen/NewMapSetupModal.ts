@@ -12,19 +12,21 @@ import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
-import { isSpacePalette } from "../mapKinds";
+import { enabledKinds, isSpacePalette } from "../mapKinds";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
-import { getIconUrl } from "../utils";
+import { IMAGE_EXTENSIONS, getIconUrl } from "../utils";
+import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
   BLANK_ID,
   defaultGeneratorFor,
   describeKind,
+  firstMapGenerator,
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
@@ -67,6 +69,8 @@ export function neighbourSeaText(hint: NeighbourSea, anchor: string): string {
 
 export interface NewMapSetupResult {
   name: string;
+  /** Background image path, when one was picked for a new top-level map. */
+  backgroundImage?: string;
 }
 
 /**
@@ -106,6 +110,12 @@ export class NewMapSetupModal extends HexmakerModal {
   /** Overland's Sea was set from the neighbour's coast (not by the user):
    *  re-derived when the placement changes, dropped when the user picks one. */
   private seaFromNeighbour = false;
+  /** Top-level maps (not placed next to another): where numbering starts,
+   *  the stagger, and an optional background image (under "More"). */
+  private originX = 0;
+  private originY = 0;
+  private stagger: "odd" | "even";
+  private bgPath: string | null = null;
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -119,6 +129,7 @@ export class NewMapSetupModal extends HexmakerModal {
     private prefill?: { name?: string; anchor?: string; side?: WorldSide },
   ) {
     super(app);
+    this.stagger = plugin.settings.staggerOffset ?? "odd";
     const preset = origin ? SUBMAP_SIZE_PRESETS[1] : SIZE_PRESETS[0];
     this.cols = preset.cols;
     this.rows = preset.rows;
@@ -255,6 +266,8 @@ export class NewMapSetupModal extends HexmakerModal {
     // and roads continue across the borders.
     // An Advanced feature (the More options hint under Generator offers it in Simple).
     let applyPrefill: (() => void) | undefined;
+    /** Set by the "More" section below: placement locks its fields. */
+    let lockMore: ((locked: boolean) => void) | undefined;
     if (!this.origin && this.plugin.settings.maps.length > 0 && hasFeature(this.plugin.settings, "regions")) {
       const nextRow = this.row(form, "Next to");
       const anchorSel = this.labelled(nextRow, nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } }));
@@ -301,6 +314,7 @@ export class NewMapSetupModal extends HexmakerModal {
           }
         }
         const locked = !!this.placement;
+        lockMore?.(locked);
         colsInput.disabled = locked;
         rowsInput.disabled = locked;
         paletteSelect.disabled = locked;
@@ -349,6 +363,55 @@ export class NewMapSetupModal extends HexmakerModal {
       cls: "setting-item-description",
       text: BASE_TERRAIN_HELP,
     });
+
+    // ── More (top-level maps): starting coordinates, stagger, background.
+    if (!this.origin) {
+      const more = form.createEl("details", { cls: "duckmage-setup-more" });
+      more.createEl("summary", { text: "More: starting coordinates, stagger, background image" });
+      const coordRow = this.row(more, "Starting coordinates");
+      const xIn = this.labelled(coordRow, coordRow.createEl("input", { type: "number", value: String(this.originX), cls: "duckmage-setup-coord", attr: { "aria-label": "X" } }));
+      const yIn = coordRow.createEl("input", { type: "number", value: String(this.originY), cls: "duckmage-setup-coord", attr: { "aria-label": "Y" } });
+      coordRow.createDiv({ cls: "setting-item-description", text: "Hex labels and file names start from these values instead of 0, 0." });
+      const onCoord = () => {
+        this.originX = Math.trunc(Number(xIn.value)) || 0;
+        this.originY = Math.trunc(Number(yIn.value)) || 0;
+        refresh();
+      };
+      xIn.addEventListener("change", onCoord);
+      yIn.addEventListener("change", onCoord);
+      const stagRow = this.row(more, "Stagger offset");
+      const stagSel = this.labelled(stagRow, stagRow.createEl("select"));
+      stagSel.createEl("option", { value: "odd", text: "Odd" });
+      stagSel.createEl("option", { value: "even", text: "Even" });
+      stagSel.value = this.stagger;
+      stagSel.addEventListener("change", () => {
+        this.stagger = stagSel.value === "even" ? "even" : "odd";
+        refresh();
+      });
+      const bgRowEl = this.row(more, "Background image");
+      const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: "(None)" });
+      const pick = bgRowEl.createEl("button", { text: "Pick image…" });
+      const clear = bgRowEl.createEl("button", { text: "Clear" });
+      clear.disabled = true;
+      pick.addEventListener("click", () => {
+        new FileLinkSuggestModal(this.app, this.plugin, (file) => {
+          this.bgPath = file.path;
+          bgLabel.setText(file.path);
+          clear.disabled = false;
+        }, "", IMAGE_EXTENSIONS).open();
+      });
+      clear.addEventListener("click", () => {
+        this.bgPath = null;
+        bgLabel.setText("(None)");
+        clear.disabled = true;
+      });
+      // Next to a map, its neighbour decides the numbering and stagger.
+      lockMore = (locked) => {
+        xIn.disabled = locked;
+        yIn.disabled = locked;
+        stagSel.disabled = locked;
+      };
+    }
 
     // ── Preview ──
     // For submaps: the preview sits inside a frame of the parent's
@@ -414,6 +477,16 @@ export class NewMapSetupModal extends HexmakerModal {
         const next = defaultGeneratorFor(fitting, where);
         if (!stillFits || next !== BLANK_ID) {
           this.kindId = next;
+          this.options = {};
+        }
+      }
+      // A new stand-alone map starts on the generator the setup wizard
+      // uses (Overland for world maps, Star scatter for space), not Blank,
+      // so the preview shows something (fresh-eyes round 7).
+      if (!this.origin && !where.neighbour && !this.pickedKind && this.kindId === BLANK_ID) {
+        const first = firstMapGenerator(fitting, enabledKinds(this.plugin.settings));
+        if (first !== BLANK_ID) {
+          this.kindId = first;
           this.options = {};
         }
       }
@@ -660,7 +733,10 @@ export class NewMapSetupModal extends HexmakerModal {
     if (this.placement) {
       return { cols: this.cols, rows: this.rows, offset: { ...this.placement.offset }, stagger: this.placement.stagger };
     }
-    const parent = this.origin ? this.plugin.getMap(this.origin.map) : undefined;
+    if (!this.origin) {
+      return { cols: this.cols, rows: this.rows, offset: { x: this.originX, y: this.originY }, stagger: this.stagger };
+    }
+    const parent = this.plugin.getMap(this.origin.map);
     return {
       cols: this.cols,
       rows: this.rows,
@@ -730,9 +806,16 @@ export class NewMapSetupModal extends HexmakerModal {
 
     // Join the world grid next to the chosen neighbour.
     if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
+    let backgroundImage: string | undefined;
+    const newMap = !this.origin && this.bgPath ? this.plugin.getMap(result.name) : undefined;
+    if (newMap && this.bgPath) {
+      newMap.backgroundImage = { path: this.bgPath, offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 1 };
+      await this.plugin.saveSettings();
+      backgroundImage = this.bgPath;
+    }
     await this.saveDefaults(paletteName);
     this.close();
-    this.onCreated(result, { openGenerator });
+    this.onCreated({ ...result, backgroundImage }, { openGenerator });
     if (openGenerator) {
       await this.plugin.openTerrainGenerator({
         mapName: result.name,

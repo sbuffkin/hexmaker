@@ -25,6 +25,8 @@ export class TokenModal extends HexmakerModal {
   private pendingBorder: string | undefined;
   private pendingDescription: string | undefined;
   private hasBorder: boolean;
+  /** The query the note list was last rendered for. */
+  private renderedQuery: string | undefined;
 
   constructor(
     app: App,
@@ -139,8 +141,13 @@ export class TokenModal extends HexmakerModal {
         noteSetting.nameEl.addClass("duckmage-token-field-label");
         noteSetting.nameEl.addEventListener("click", () => el.focus());
 
+        // Re-focusing (e.g. the window regaining focus) must not rebuild a
+        // list the pointer may be over: only re-render when the query
+        // changed (round 7: the list reflowed under a click).
         el.addEventListener("focus", () => {
-          this.refreshNoteResults(resultsEl, el.value.trim(), el, onPicked);
+          if (this.renderedQuery !== el.value.trim()) {
+            this.refreshNoteResults(resultsEl, el.value.trim(), el, onPicked);
+          }
           resultsEl.show();
         });
 
@@ -160,7 +167,7 @@ export class TokenModal extends HexmakerModal {
             rows[next].scrollIntoView({ block: "nearest" });
           } else if (e.key === "Enter" && at >= 0) {
             e.preventDefault();
-            rows[at].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+            rows[at].click();
           } else if (e.key === "Escape") {
             e.preventDefault();
             e.stopPropagation();
@@ -391,7 +398,8 @@ export class TokenModal extends HexmakerModal {
     ].map((f) => normalizeFolder(f ?? ""));
     return this.app.vault
       .getMarkdownFiles()
-      .filter((f) => isTokenNoteCandidate(f.path, f.basename, include, exclude));
+      .filter((f) => isTokenNoteCandidate(f.path, f.basename, include, exclude))
+      .filter((f) => this.plugin.isLinkableNote(f));
   }
 
   private getNoteMatches(query: string): TFile[] {
@@ -422,17 +430,29 @@ export class TokenModal extends HexmakerModal {
     onPicked: () => void,
   ): void {
     container.empty();
+    this.renderedQuery = query;
     const files = this.getNoteMatches(query);
     if (files.length === 0) {
       container.createDiv({ cls: "duckmage-note-picker-empty", text: "No matching notes" });
       return;
     }
+    let pressed: HTMLElement | null = null;
     for (const file of files) {
       const row = container.createDiv({ cls: "duckmage-note-picker-item" });
       row.createSpan({ text: file.basename });
       row.createEl("small", { text: file.path, cls: "duckmage-suggestion-path" });
+      // Press keeps focus in the input; the pick happens on click, and only
+      // when press and release were on the same row, so a list that moved
+      // under the pointer can't pick a neighbour (round 7: "hextemplate").
       row.addEventListener("mousedown", (e) => {
-        e.preventDefault(); // keep focus on input until selection committed
+        e.preventDefault();
+        pressed = row;
+      });
+      row.addEventListener("click", (e: MouseEvent) => {
+        // detail 0 = keyboard (Enter) pick, which has no press.
+        const ok = e.detail === 0 || pressed === row;
+        pressed = null;
+        if (!ok) return;
         this.pendingNoteTitle = file.basename;
         this.pendingNoteFile  = file;
         inputEl.value         = file.basename;

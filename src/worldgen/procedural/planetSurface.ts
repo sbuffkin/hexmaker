@@ -12,6 +12,7 @@ import {
   findByType,
   findRole,
   gridKeys,
+  typeIndex,
   ofType,
   type ProcGrid,
   type ProcOption,
@@ -567,13 +568,15 @@ export function planetSurface(
   const noiseM = centers.map(([px, py]) => moistNoise(oy + px * scale * 1.3, ox + py * scale * 1.3));
 
   let elev: number[], moistArr: number[], tempArr: number[], lv: Levels;
+  /** Region detail: how strongly each side's neighbour reaches each hex. */
+  let sideEdges: Map<Side, number[]> | undefined;
   /** Overland with a sea side: which hexes are water (else elevation decides). */
   let seaMask: boolean[] | undefined;
   // Overland next to an existing region: its border hexes pull this map's
   // edge toward them, so terrain carries on across the seam.
   const pulls = flavor === "overland" && context?.edgeCells?.size ? edgePulls(grid, hexes, context.edgeCells) : undefined;
   if (context && flavor !== "overland") {
-    ({ elev, moist: moistArr, temp: tempArr } = regionField(grid, hexes, centers, noiseE, noiseM, context, options));
+    ({ elev, moist: moistArr, temp: tempArr, sideEdges } = regionField(grid, hexes, centers, noiseE, noiseM, context, options));
     lv = { sea: 0.33, deep: 0.08, shelf: 0.27, hill: 0.64, mountain: 0.79, peak: 0.92 };
   } else {
     const water = Math.max(0, Math.min(95, Number(options.water ?? 50))) / 100;
@@ -734,6 +737,9 @@ export function planetSurface(
     cells.set(k, t ?? roles.plains);
   });
 
+  // Region detail: the neighbours' own terrains on their edges.
+  if (context && sideEdges) stampNeighbourTerrains(cells, hexes, isSea, terrains, context, sideEdges, noiseM);
+
   // Beaches on low, mild coasts.
   if (roles.beach) {
     hexes.forEach(([x, y], i) => {
@@ -841,7 +847,7 @@ function regionField(
   noiseM: number[],
   context: GenerationContext,
   options: Record<string, string>,
-): { elev: number[]; moist: number[]; temp: number[] } {
+): { elev: number[]; moist: number[]; temp: number[]; sideEdges: Map<Side, number[]> } {
   const parent = targetOf(context.parent) ?? TYPE_TARGETS.grassland;
   // Edge band: how far in from an edge its neighbour still pulls.
   const band = options.edges === "soft" ? 0.3 : options.edges === "strong" ? 0.65 : 0.45;
@@ -861,6 +867,7 @@ function regionField(
 
   const smooth = (t: number) => t * t * (3 - 2 * t);
   const elev: number[] = [], moist: number[] = [], temp: number[] = [];
+  const sideEdges = new Map<Side, number[]>(sides.map(({ s }) => [s, hexes.map(() => 0)]));
   hexes.forEach((h, i) => {
     const u = (centers[i][0] - midX) / halfW; // -1 west .. 1 east
     const v = (centers[i][1] - midY) / halfH; // -1 north .. 1 south
@@ -873,6 +880,7 @@ function regionField(
       const reach = s.length === 2 ? Math.min(u * Math.sign(dx), v * Math.sign(dy)) : u * dx + v * dy;
       const edge = smooth(Math.max(0, Math.min(1, (reach - (1 - band)) / band)));
       if (edge <= 0) continue;
+      sideEdges.get(s)![i] = edge;
       const ws = edge * (s.length === 2 ? 2 : 3);
       w += ws;
       for (let k = 0; k < 3; k++) acc[k] += t[k] * ws;
@@ -891,5 +899,60 @@ function regionField(
     moist.push(target[1] + (noiseM[i] - 0.5) * 0.5);
     temp.push(target[2] - Math.max(0, e - 0.6) * 0.5);
   });
-  return { elev, moist, temp };
+  return { elev, moist, temp, sideEdges };
+}
+
+const SEA_TYPES = new Set(["water", "deep-water", "shallows"]);
+
+/**
+ * Region detail's card promises e.g. "evergreen heavy on the north-east and
+ * south-east". The field above blends by terrain *type*, which can't tell
+ * evergreen from mixed forest (both forest), so the promised terrain never
+ * showed (fresh-eyes round 7). Near each edge, hexes of the neighbour's
+ * type take the neighbour's exact terrain (with a ragged inner line); a
+ * side where none matched still gets its edge-most land hex. Neighbours
+ * that are sea, the parent's own terrain, or not in this palette are left
+ * to the blend.
+ */
+function stampNeighbourTerrains(
+  cells: Map<string, string>,
+  hexes: [number, number][],
+  isSea: boolean[],
+  terrains: TerrainColor[],
+  context: GenerationContext,
+  sideEdges: Map<Side, number[]>,
+  noise: number[],
+): void {
+  const types = typeIndex(terrains);
+  const names = new Map(terrains.map((t) => [t.name.toLowerCase(), t.name]));
+  const parent = context.parent?.terrain?.toLowerCase();
+  // The side that reaches each hex hardest owns it.
+  const owner = hexes.map((_, i) => {
+    let best: Side | undefined;
+    let w = 0;
+    for (const [s, e] of sideEdges) if (e[i] > w) { w = e[i]; best = s; }
+    return best ? { s: best, w } : undefined;
+  });
+  for (const [s, edges] of sideEdges) {
+    const want = context.sides?.[s]?.terrain?.toLowerCase();
+    const name = want ? names.get(want) : undefined;
+    const type = want ? types.get(want) : undefined;
+    if (!name || want === parent || (type && SEA_TYPES.has(type))) continue;
+    let stamped = 0;
+    hexes.forEach(([x, y], i) => {
+      const o = owner[i];
+      if (!o || o.s !== s || isSea[i]) return;
+      const k = cellKey(x, y);
+      if (!type || types.get(cells.get(k)!.toLowerCase()) !== type) return;
+      if (o.w < 0.15 + (noise[i] - 0.5) * 0.3) return;
+      cells.set(k, name);
+      stamped++;
+    });
+    if (stamped > 0) continue;
+    let best = -1;
+    hexes.forEach((_, i) => {
+      if (!isSea[i] && edges[i] > 0 && (best < 0 || edges[i] > edges[best])) best = i;
+    });
+    if (best >= 0) cells.set(cellKey(hexes[best][0], hexes[best][1]), name);
+  }
 }

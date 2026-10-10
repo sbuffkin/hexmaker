@@ -180,6 +180,27 @@ describe("orbits", () => {
 		for (const t of a.cells.values()) expect(names.has(t)).toBe(true);
 	});
 
+	it("always gives a system with a planet at least one moon, beside a planet (round 7)", () => {
+		const roles = orbitRoles(SPACE_SYSTEM_TERRAINS)!;
+		const planets = new Set(roles.bodies.filter((b) => !roles.belts.includes(b)));
+		let systems = 0;
+		for (const size of [7, 9, 13]) {
+			const g = grid(size, size);
+			for (const bodies of ["few", "normal", "crowded"]) {
+				for (let seed = 1; seed <= 150; seed++) {
+					const r = orbits(SPACE_SYSTEM_TERRAINS, g, seed, { bodies });
+					const planetHexes = [...r.cells].filter(([, t]) => planets.has(t)).map(([k]) => k.split("_").map(Number) as [number, number]);
+					if (planetHexes.length === 0) continue;
+					systems++;
+					const moons = [...r.cells].filter(([, t]) => t === roles.moon).map(([k]) => k.split("_").map(Number) as [number, number]);
+					expect({ size, bodies, seed, moons: moons.length >= 1 }).toEqual({ size, bodies, seed, moons: true });
+					expect(moons.some((m) => planetHexes.some((p) => distance(m, p, g) === 1))).toBe(true);
+				}
+			}
+		}
+		expect(systems).toBeGreaterThan(1000);
+	});
+
 	it("draws each occupied orbit as a closed ring of adjacent hexes when given a path type", () => {
 		const g = grid(13, 13);
 		expect(orbits(SPACE_SYSTEM_TERRAINS, g, 21).paths).toEqual([]);

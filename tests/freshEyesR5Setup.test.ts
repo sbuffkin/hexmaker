@@ -163,11 +163,14 @@ describe("3. Maps → New map: procedural generators in the dropdown", () => {
 		if (out.ok) expect(out.paths.map((p) => p.type)).toEqual(["Road"]);
 	});
 
-	it("the tab lists them itself; Guided setup stays for options and previews", () => {
+	it("round 7: New map is one form, the guided one (preview, options), not a Blank-first quick form", () => {
 		const src = read("src", "hex-map", "MapModal.ts");
-		expect(src).not.toMatch(/Overland and more/);
-		expect(src).toMatch(/text: "Guided setup…"/);
-		expect(src).toMatch(/newMapGeneratorChoices\(kinds, this\.plugin\.settings, terrains, current, !!placement\)/);
+		expect(src).not.toMatch(/Guided setup…/);
+		expect(src).not.toMatch(/renderNewMapTab/);
+		expect(src).toMatch(/text: "New map…"/);
+		expect(src).toMatch(/new NewMapSetupModal\(/);
+		// "New region here…" opens it next to that map.
+		expect(src).toMatch(/this\.openNewMap\(\{ anchor: map\.name, side \}\)/);
 	});
 });
 

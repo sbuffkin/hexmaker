@@ -28,7 +28,7 @@ export class LinkPickerModal extends HexmakerModal {
     const files = this.app.vault
       .getMarkdownFiles()
       .filter((f) => !normalized || f.path.startsWith(normalized + "/"))
-      .filter((f) => !f.basename.startsWith("_"))
+      .filter((f) => this.plugin.isLinkableNote(f))
       .sort((a, b) => a.basename.localeCompare(b.basename));
 
     if (files.length > 0) {

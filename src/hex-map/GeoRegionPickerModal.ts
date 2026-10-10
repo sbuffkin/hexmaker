@@ -168,7 +168,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
 
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((f) => !f.basename.startsWith("_") && f.path.startsWith(folder + "/"))
+      .filter((f) => this.plugin.isLinkableNote(f) && f.path.startsWith(folder + "/"))
       .sort((a, b) => a.basename.localeCompare(b.basename));
 
     if (files.length === 0) {

@@ -51,7 +51,7 @@ import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
-import { SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
+import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
@@ -91,11 +91,9 @@ export class HexEditorModal extends HexmakerModal {
   private dataPreloaded = false;
   /** Stops keepInViewport's observer (set on first open). */
   private stopKeepInViewport: (() => void) | null = null;
-  /** Autosave status in the title row (fresh-eyes round 3). */
-  private saveStatusEl: HTMLElement | null = null;
-  /** The same status, persistent, beside the text box being edited (it
-   *  starts under the Notes heading). Round 4: the title-row cue alone was
-   *  missed by 2 of 3 testers. */
+  /** The autosave status, in ONE place: beside the box being edited (it
+   *  starts beside the Name box). Round 4: a title-row cue alone was missed;
+   *  round 7: a title-row copy next to this one read as redundant. */
   private notesStatusEl: HTMLElement | null = null;
   private saves = new SaveTracker(
     (state) => this.renderSaveStatus(state),
@@ -220,11 +218,6 @@ export class HexEditorModal extends HexmakerModal {
         new HexExportModal(this.app, this.plugin, fileNow).open();
       });
     }
-    this.saveStatusEl = titleLeft.createSpan({
-      cls: "duckmage-editor-save-status",
-      attr: { "aria-live": "polite" },
-    });
-    this.renderSaveStatus(this.saves.current);
     this.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
 
@@ -281,12 +274,6 @@ export class HexEditorModal extends HexmakerModal {
       "Notes",
       "hexEditorNotesCollapsed",
     );
-    // Persistent autosave status; renderTextSection moves it beside the box
-    // that has focus so it's in view while typing.
-    this.notesStatusEl = notesBody.createDiv({
-      cls: "duckmage-editor-notes-status",
-    });
-    this.renderSaveStatus(this.saves.current);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -393,7 +380,6 @@ export class HexEditorModal extends HexmakerModal {
   onClose() {
     this.flushTextSaves();
     this.saves.dispose();
-    this.saveStatusEl = null;
     this.notesStatusEl = null;
     this.stopKeepInViewport?.();
     this.stopKeepInViewport = null;
@@ -416,9 +402,29 @@ export class HexEditorModal extends HexmakerModal {
       attr: { id, placeholder: "Name this hex (optional)", spellcheck: "false" },
     });
     input.value = getHexNameFromFile(path) ?? "";
+    // The single autosave status starts here, beside the first box; text
+    // sections move it beside whichever box has focus.
+    this.notesStatusEl = row.createDiv({
+      cls: "duckmage-editor-notes-status",
+      attr: { "aria-live": "polite" },
+    });
+    this.renderSaveStatus(this.saves.current);
+    input.addEventListener("focus", () => {
+      const status = this.notesStatusEl;
+      if (status && status.parentElement !== row) row.appendChild(status);
+    });
     const { x, y, mapName } = this;
     let saved = cleanHexName(input.value);
+    // Saves a moment after typing stops, like the text boxes (round 7: the
+    // name only saved on blur, so "Saving shortly…" sat there).
+    const debounce = new DebouncedSave(
+      () => save(),
+      TEXT_AUTOSAVE_MS,
+      (fn, ms) => window.setTimeout(fn, ms),
+      (id) => window.clearTimeout(id),
+    );
     const save = () => {
+      debounce.cancel();
       this.pendingTextSaves.delete(save);
       const name = cleanHexName(input.value);
       if (name === saved) {
@@ -429,6 +435,7 @@ export class HexEditorModal extends HexmakerModal {
       void this.saves.track(this.plugin.setHexName(mapName, x, y, name).then(() => this.onChanged()));
     };
     input.addEventListener("input", () => {
+      debounce.schedule();
       this.pendingTextSaves.add(save);
       this.saves.markPending();
     });
@@ -447,15 +454,11 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   private renderSaveStatus(state: SaveState): void {
-    for (const el of [this.saveStatusEl, this.notesStatusEl]) {
-      if (!el) continue;
-      el.setText(SAVE_STATUS_TEXT[state]);
-      el.title = SAVE_STATUS_TITLE;
-      el.dataset["state"] = state;
-    }
-    // The title row only speaks up once something happened; the Notes
-    // status always shows ("Changes save automatically" up front).
-    this.saveStatusEl?.toggleClass("is-quiet", state === "idle");
+    const el = this.notesStatusEl;
+    if (!el) return;
+    el.setText(SAVE_STATUS_TEXT[state]);
+    el.title = SAVE_STATUS_TITLE;
+    el.dataset["state"] = state;
   }
 
   private isOnMap(nx: number, ny: number): boolean {
@@ -984,7 +987,7 @@ export class HexEditorModal extends HexmakerModal {
     const scoped = normalized
       ? all.filter((f) => f.path.startsWith(normalized + "/"))
       : all;
-    let filtered = scoped.filter((f) => !f.basename.startsWith("_"));
+    let filtered = scoped.filter((f) => this.plugin.isLinkableNote(f));
     if (filterType) {
       const excluded =
         filterType === "encounter-filter"

@@ -4,6 +4,9 @@ import { BUNDLED_ICONS } from "./bundledIcons";
 
 let labelSeq = 0;
 
+/** Image file extensions a map background can use. */
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
+
 /**
  * Tie a <label> to its control so clicking the label focuses it (round 6:
  * clicking "Map name" in the setup wizard did nothing). Gives the control a

@@ -259,6 +259,9 @@ export function orbits(
   // in the habitable zone); that orbit is never skipped.
   const mainBody = mainworldFor(context?.parent?.terrain, roles.bodies);
   const mainRing = mainBody ? first + Math.round(0.45 * (last - first)) : -1;
+  /** Planets placed (not belts), for the moon guarantee below. */
+  const planets: { pos: [number, number]; body: string }[] = [];
+  let moonCount = 0;
   for (let d = first; d <= last; d++) {
     if (d !== mainRing && rand() < skip) continue;
     // Draw the orbit itself: the ring, in order around the star, closed.
@@ -289,6 +292,7 @@ export function orbits(
     const choices = open.length ? open : hexesOnRing;
     const pos = choices[Math.floor(rand() * choices.length)];
     set(pos, body);
+    planets.push({ pos, body });
     if (d === mainRing) mainworld = pos;
     else if (zone === "habitable" && !mainworld && mainRing < 0) mainworld = pos;
     // Moons sit on free hexes next to their planet: giants often have one
@@ -298,7 +302,27 @@ export function orbits(
       let moons = rand() < (giant ? 0.7 : 0.3) ? 1 : 0;
       if (giant && moons && rand() < 0.35) moons++;
       const free = hexes.filter((h) => distance(h, pos, grid) === 1 && isFree(h));
-      for (; moons > 0 && free.length; moons--) set(free.splice(Math.floor(rand() * free.length), 1)[0], roles.moon);
+      for (; moons > 0 && free.length; moons--) {
+        set(free.splice(Math.floor(rand() * free.length), 1)[0], roles.moon);
+        moonCount++;
+      }
+    }
+  }
+
+  // The description promises moons: a system with a planet always gets at
+  // least one (round 7: a generated system had none). Giants first, then
+  // the other planets, in a seeded order; the first with a free neighbour.
+  if (roles.moon && moonCount === 0 && planets.length) {
+    const giants = planets.filter((p) => roles.giants.includes(p.body));
+    const pool = giants.length ? giants : planets;
+    const start = Math.floor(rand() * pool.length);
+    const tryOrder = [...pool.slice(start), ...pool.slice(0, start), ...planets.filter((p) => !pool.includes(p))];
+    for (const { pos } of tryOrder) {
+      const free = hexes.filter((h) => distance(h, pos, grid) === 1
+        && cells.get(cellKey(h[0], h[1])) === roles.background);
+      if (!free.length) continue;
+      set(free[Math.floor(rand() * free.length)], roles.moon);
+      break;
     }
   }
 

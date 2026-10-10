@@ -7567,3 +7567,42 @@ button.duckmage-wfc-library-tab.is-active {
     color: var(--text-muted);
     margin: 4px 0;
 }
+
+/* ── Fresh-eyes r7 (fix/r7-b) ── keep together at the end of the file. */
+
+/* Token form: the status line under Note keeps one line of height, so text
+   appearing there never moves the note list under the pointer; the buttons
+   stay in view at the bottom while the long icon grid scrolls. */
+.duckmage-token-note-status {
+    min-height: 1.4em;
+}
+.duckmage-token-modal .duckmage-token-modal-buttons {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: 8px;
+    padding: 10px 0 4px;
+    background: var(--modal-background, var(--background-primary));
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Hex editor: the single autosave status, beside the Name box at first. */
+.duckmage-editor-name-row .duckmage-editor-notes-status {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+/* New map: the folded "More" section (coordinates, stagger, background). */
+.duckmage-setup-more {
+    margin: 6px 0;
+}
+.duckmage-setup-more > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 4px;
+}
+.duckmage-setup-coord {
+    width: 70px;
+    margin-right: 6px;
+}
