@@ -41,7 +41,7 @@ import {
   uniquePaletteName,
 } from "./palettes/presets";
 import { clonePathTypes } from "./palettes/pathTypeTable";
-import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack } from "./utils";
+import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons } from "./utils";
 import { STARTER_RUMORS, STARTER_WEATHER, starterTablePath } from "./regionTables";
 import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
@@ -830,7 +830,7 @@ export default class HexmakerPlugin extends Plugin {
     const all = [...new Set([...pluginIcons, ...vaultIcons])];
     const order = this.settings.iconOrder ?? [];
     const ordered = order.filter((i) => all.includes(i));
-    const rest = all.filter((i) => !order.includes(i)).sort();
+    const rest = sortIcons(all.filter((i) => !order.includes(i)));
     this.availableIcons = [...ordered, ...rest];
   }
 
