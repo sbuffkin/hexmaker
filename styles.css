@@ -1764,6 +1764,29 @@ input.duckmage-input-error {
     color: var(--text-on-accent);
 }
 
+/* Places sub-groups (Settlements, Castles…): a quieter second row of chips. */
+.duckmage-icon-filter-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2em;
+    flex-basis: 100%;
+}
+
+.duckmage-icon-filter-kind {
+    font-size: var(--font-ui-smaller);
+    padding: 0.05em 0.5em;
+    height: auto;
+    box-shadow: none;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.duckmage-icon-filter-kind.is-active {
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+}
+
 .duckmage-icon-filter-empty {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);

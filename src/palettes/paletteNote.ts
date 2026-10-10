@@ -21,8 +21,9 @@ import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
 // Impassable column (yes / no) overrides the terrain type's default for the
 // path tool's auto-route (water types are impassable).
 //
-// Values in parentheses are derived, not chosen: the Type the plugin infers
-// from a terrain's name and the Impassable default of its type. They're
+// Values in parentheses are derived, not chosen: the Impassable default of
+// a terrain's type (a blank Type is no type; it is never guessed from the
+// name, so nothing is shown there). They're
 // written so the note shows what the plugin uses, and read back as unset;
 // a hand edit that drops the parentheses makes the value the user's own.
 // Older builds read them as unset too ("(yes)" isn't a yes/no, "(mountains)"

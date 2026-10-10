@@ -814,6 +814,8 @@ export class MapModal extends HexmakerModal {
     }
     this.view.activeMapName = newName;
     await this.plugin.updateSubmapReferences(oldName, newName);
+    // Tokens placed on the map (token-map) follow it.
+    await this.plugin.updateTokenMapReferences(oldName, newName);
     await this.plugin.saveSettings();
     // A map shown by its folder name: its hex notes' "<map> x, y" aliases follow.
     await this.plugin.syncMapCoordAliases(newName, oldLabel);

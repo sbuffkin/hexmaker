@@ -212,7 +212,7 @@ describe("unknown table columns (forward compatibility)", () => {
 	it("notes without unknown columns are written exactly as before", () => {
 		const note = buildMapNote("m", sample());
 		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |\n");
-		expect(note).toContain("| Type | Hexes |\n");
+		expect(note).toContain("| Type | Route | Hexes |\n");
 	});
 
 	it("keeps the column order (and header spelling) the user gave both tables", () => {
@@ -230,11 +230,15 @@ describe("unknown table columns (forward compatibility)", () => {
 			"",
 		].join("\n");
 		const d = parseMapNote(reordered)!;
-		expect(updateMapNote(reordered, "m", d)).toBe(reordered);
-		// an edit rewrites values in place, order unchanged
+		// Converted to format 4 once: the derived Summary and Route column are added, nothing else moves.
+		const current = updateMapNote(reordered, "m", d);
+		expect(current).toContain(reordered.slice(reordered.indexOf("| Terrain | Rumours"), reordered.indexOf("\n\n## Paths")));
+		expect(current).toContain("| Name | Hexes | Type | Route |\n| --- | --- | --- | --- |\n| King's Way | 1_1 2_1 | Road | 1, 1 → 2, 1 (2 hexes) |");
+		expect(updateMapNote(current, "m", parseMapNote(current)!)).toBe(current);
+		// an edit rewrites values in place, order unchanged (and the legend follows)
 		d.hexes.set("2_1", { ...d.hexes.get("2_1")!, terrain: "swamp" });
-		const out = updateMapNote(reordered, "m", d);
-		expect(out).toBe(reordered.replace("| hills |  | 2_1 |", "| swamp |  | 2_1 |"));
+		const out = updateMapNote(current, "m", d);
+		expect(out).toBe(current.replace("| hills |  | 2_1 |", "| swamp |  | 2_1 |").replace("| hills | 1 |", "| swamp | 1 |"));
 	});
 
 	it("appends known columns a hand-made table lacks at the end", () => {
@@ -315,7 +319,7 @@ describe("map notes: plain keys instead of JSON (#42)", () => {
 		expect(fm).toContain("\nworld: wabc\nworld-x: 1\nworld-y: -1\n");
 		expect(fm).toContain('\nbackground-image: "[[maps/bg.png]]"\nbackground-x: 10\nbackground-y: -5\nbackground-scale: 1.5\nbackground-rotation: 0\nbackground-opacity: 0.8');
 		expect(fm).toContain("\nswatch-terrain: grass\n");
-		expect(fm).toMatch(/^hexmaker-map: 3$/m);
+		expect(fm).toMatch(/^hexmaker-map: 4$/m);
 		expect(fm).not.toMatch(/[{}]/);
 	});
 
@@ -488,11 +492,11 @@ describe("map notes: forgiving tables (#42)", () => {
 		const d = parseMapNote(messy)!;
 		const out = updateMapNote(messy, "m", d);
 		const lines = out.split("\n");
-		const head = lines.findIndex((l) => l.startsWith("| Terrain"));
+		const head = lines.findIndex((l) => l.startsWith("| Terrain | Hex |"));
 		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Region | Locations |");
 		expect(lines[head + 1]).toMatch(/^\| --- \|/);
 		expect(out).toContain("| forest | 3_4 | skull.png, trap.png | yes | keep me |  |  |  |  |");
-		expect(out).toContain("| Type | Hexes |\n| --- | --- |\n| Road | 3_4 5_6 7_8 |");
+		expect(out).toContain("| Type | Route | Hexes |\n| --- | --- | --- |\n| Road | 3, 4 → 7, 8 (3 hexes) | 3_4 5_6 7_8 |");
 		expect(out).toContain("Some prose under the paths.");
 		const back = parseMapNote(out)!;
 		expect([...back.hexes].sort()).toEqual([...d.hexes].sort());
@@ -533,12 +537,13 @@ describe("map notes: rows and settings that can't be read (#42)", () => {
 	});
 
 	it("bad path rows are kept and reported the same way", () => {
-		const note = base.replace("| Road | 1_1 2_1 |", "| Road | 1_1 2_1 |\n| River | 1_1 there |\n|  | 2_2 |");
+		const road = "| Road | 1, 1 → 2, 1 (2 hexes) | 1_1 2_1 |";
+		const note = base.replace(road, `${road}\n| River |  | 1_1 there |\n|  |  | 2_2 |`);
 		const d = parseMapNote(note)!;
 		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["1_1", "2_1"] }]);
 		expect(d.problems!.map((p) => p.where)).toEqual(["Paths", "Paths"]);
 		const out = updateMapNote(note, "m", d);
-		expect(out).toContain("| River | 1_1 there |");
+		expect(out).toContain("| River |  | 1_1 there |");
 		expect(out).toContain("> [!warning] Hexmaker couldn't read 2 rows in this table");
 	});
 
@@ -592,7 +597,9 @@ describe("map notes: never rebuilt over the user's text (#42)", () => {
 describe("map notes: the help callout (#42)", () => {
 	it("new notes open with a collapsed How to edit callout, once", () => {
 		const note = buildMapNote("m", sample());
-		expect(note).toContain(`# m\n\n${HELP_CALLOUT.join("\n")}\n\n## Hexes`);
+		// then the derived Summary, then the Hexes
+		expect(note).toContain(`# m\n\n${HELP_CALLOUT.join("\n")}\n\n## Summary\n`);
+		expect(note).toMatch(/\n\| Terrain \| Hexes \|[^#]*\n\n## Hexes\n/);
 		expect(updateMapNote(note, "m", parseMapNote(note)!).match(/How to edit this note/g)).toHaveLength(1);
 	});
 
@@ -621,5 +628,104 @@ describe("parseHexKey", () => {
 		for (const s of ["3_4", "3,4", "3, 4", " 3 , 4 ", "(3, 4)", "3 4", "[[3_4]]", "[[world/hexes/m/3_4|Glass]]", "03_04"]) expect(parseHexKey(s)).toBe("3_4");
 		expect(parseHexKey("-1_-2")).toBe("-1_-2");
 		for (const s of ["", "3", "3_x", "a, b", "3_4_5"]) expect(parseHexKey(s)).toBeNull();
+	});
+});
+
+describe("map notes: the derived Summary (format 4, #46 M1)", () => {
+	const ctx = { paletteTerrains: ["grass", "forest", "dunes"], pathTypes: ["Road", "River"], paletteNote: "world/palettes/Default" };
+	const data = (): MapNoteData => ({
+		settings: { paletteName: "Default", gridSize: { cols: 38, rows: 25 }, gridOffset: { x: -7, y: -8 }, baseTerrain: "grass", regions: { footprint: "hex", size: 3, blend: "wide" } },
+		hexes: new Map<string, HexData>([
+			["0_0", { terrain: "forest", region: "Basin" }],
+			["1_0", { terrain: "forest", region: "Basin", regionMap: "basin-map" }],
+			["2_0", { terrain: "Mountain Ridge", locations: ["saltmere", "old-mine"] }],
+			["3_0", { name: "Lone Oak" }],
+		]),
+		paths: [{ typeName: "Road", hexes: ["0_0", "1_0", "2_0"] }, { typeName: "Trail", hexes: ["-7_-8"] }],
+	});
+	const summaryOf = (note: string) => note.slice(note.indexOf("## Summary"), note.indexOf("## Hexes"));
+
+	it("shows the palette, extent, base terrain, legend, regions, maps and what isn't in the palette", () => {
+		const s = summaryOf(buildMapNote("m", data(), ctx));
+		expect(s).toContain("*Generated by Hexmaker from the tables below and the map's palette. Edits here are replaced.*");
+		expect(s).toContain("- **Palette:** [[world/palettes/Default]]\n");
+		expect(s).toContain("- **Hexes:** −7…30 × −8…16 (38×25)\n");
+		expect(s).toContain("- **Base terrain:** grass (hexes not listed in the table)\n");
+		expect(s).toContain("- **Regions:** [[Basin]] (2 hexes)\n");
+		expect(s).toContain("- **Region settings:** hex flowers of 37 hexes, wide blend\n");
+		expect(s).toContain("- **Maps from hexes:** 1 region map, 2 locations\n");
+		expect(s).toContain("- **⚠ Not in the palette:** Mountain Ridge (1 hex).");
+		expect(s).toContain("- **⚠ Path types not in the palette:** Trail\n");
+		expect(s).toContain("| Terrain | Hexes |\n| --- | --- |\n| grass (base) | 947 |\n| forest | 2 |\n| Mountain Ridge (⚠ not in the palette) | 1 |\n");
+	});
+
+	it("without the palette, nothing is flagged and the palette is named plainly", () => {
+		const s = summaryOf(buildMapNote("m", data()));
+		expect(s).toContain("- **Palette:** Default\n");
+		expect(s).not.toContain("⚠");
+	});
+
+	it("is never read as data", () => {
+		const note = buildMapNote("m", data(), ctx);
+		const without = note.replace(summaryOf(note), "");
+		expect(mapNoteKey(parseMapNote(note)!)).toBe(mapNoteKey(parseMapNote(without)!));
+		expect(parseMapNote(note)!.problems).toEqual([]);
+	});
+
+	it("doesn't churn: a rewrite with the same data and palette changes nothing", () => {
+		const note = buildMapNote("m", data(), ctx);
+		expect(updateMapNote(note, "m", parseMapNote(note)!, ctx)).toBe(note);
+		// a palette that now has the terrain: the flag goes
+		const fixed = updateMapNote(note, "m", parseMapNote(note)!, { ...ctx, paletteTerrains: [...ctx.paletteTerrains, "Mountain Ridge"] });
+		expect(fixed).not.toContain("Not in the palette");
+	});
+
+	it("edits inside it are replaced; text typed under it and the user's own Summary are kept", () => {
+		const note = buildMapNote("m", data(), ctx) + "\n## Summary\nSession 3: we found the mine.\n";
+		const edited = note.replace("- **Regions:** [[Basin]] (2 hexes)", "- **Regions:** lots").replace("\n\n## Hexes", "\n\nMy note about the map.\n\n## Hexes");
+		const out = updateMapNote(edited, "m", parseMapNote(edited)!, ctx);
+		expect(out).toContain("- **Regions:** [[Basin]] (2 hexes)");
+		expect(out).not.toContain("lots");
+		expect(out).toContain("My note about the map.");
+		expect(out).toContain("## Summary\nSession 3: we found the mine.\n");
+		expect(out.match(/Generated by Hexmaker/g)).toHaveLength(1);
+	});
+
+	it("comes back above the Hexes when deleted, and is added to older notes there", () => {
+		const note = buildMapNote("m", data(), ctx);
+		const deleted = note.replace(summaryOf(note), "");
+		expect(updateMapNote(deleted, "m", parseMapNote(deleted)!, ctx)).toBe(note);
+		const v3 = "---\nhexmaker-map: 3\n---\n# m\n\nIntro.\n\n## Hexes\n\n| Hex | Terrain |\n| --- | --- |\n| 1_1 | forest |\n";
+		const out = updateMapNote(v3, "m", parseMapNote(v3)!);
+		expect(out).toContain("Intro.\n\n## Summary\n");
+		expect(out).toMatch(/\| forest \| 1 \|\n\n## Hexes\n/);
+	});
+});
+
+describe("map notes: derived Paths columns (format 4, #46 M2)", () => {
+	const ctx = { pathTypes: ["Road", "River"] };
+	const data = (paths: MapNoteData["paths"]): MapNoteData => ({ settings: { paletteName: "Default" }, hexes: new Map(), paths });
+
+	it("Route reads start → end and the length; Warning only while a type isn't in the palette", () => {
+		const note = buildMapNote("m", data([{ typeName: "Road", hexes: ["3_4", "4_4", "5_4"] }, { typeName: "Trail", hexes: ["-1_2"] }]), ctx);
+		expect(note).toContain("| Type | Route | Warning | Hexes |");
+		expect(note).toContain("| Road | 3, 4 → 5, 4 (3 hexes) |  | 3_4 4_4 5_4 |");
+		expect(note).toContain("| Trail | -1, 2 (1 hex) | ⚠ not a path type in the palette | -1_2 |");
+		const d = parseMapNote(note)!;
+		// derived cells are never read back (not kept as unknown columns)
+		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["3_4", "4_4", "5_4"] }, { typeName: "Trail", hexes: ["-1_2"] }]);
+		d.paths[1].typeName = "River";
+		const out = updateMapNote(note, "m", d, ctx);
+		expect(out).toContain("| Type | Route | Hexes |");
+		expect(out).not.toContain("| Warning");
+		expect(out).not.toContain("⚠");
+	});
+
+	it("hand edits to Hexes regenerate Route; a hand-edited Route is replaced", () => {
+		const note = buildMapNote("m", data([{ typeName: "Road", hexes: ["3_4", "4_4"] }]), ctx);
+		const edited = note.replace("| Road | 3, 4 → 4, 4 (2 hexes) | 3_4 4_4 |", "| Road | the old road | 3_4 4_4 4_5 |");
+		const d = parseMapNote(edited)!;
+		expect(d.paths).toEqual([{ typeName: "Road", hexes: ["3_4", "4_4", "4_5"] }]);
+		expect(updateMapNote(edited, "m", d, ctx)).toContain("| Road | 3, 4 → 4, 5 (3 hexes) | 3_4 4_4 4_5 |");
 	});
 });

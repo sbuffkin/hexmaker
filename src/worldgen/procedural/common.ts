@@ -126,45 +126,32 @@ export function centerHex(grid: ProcGrid): [number, number] {
 export { cellKey };
 
 /**
- * Find a palette terrain for a role: the first name match (case-insensitive),
- * else — when `category` is given — the first terrain in that category.
- * Lets the generators run on renamed or user-made palettes, not just the
- * shipped presets.
+ * The first terrain whose name is one of `names` (case-insensitive), in the
+ * order of `names`. Only used to break ties among terrains already chosen
+ * by type (findByType's `preferNames`); never to pick a terrain by name.
  */
-export function findTerrain(
-  terrains: TerrainColor[],
-  names: string[],
-  category?: string,
-): string | undefined {
+export function findTerrain(terrains: TerrainColor[], names: string[]): string | undefined {
   const byName = new Map(terrains.map((t) => [t.name.toLowerCase(), t.name]));
   for (const n of names) {
     const hit = byName.get(n.toLowerCase());
     if (hit) return hit;
   }
-  if (category) return terrains.find((t) => t.category?.toLowerCase() === category)?.name;
   return undefined;
 }
 
-/** All terrains in a category (case-insensitive), in palette order. */
-export function inCategory(terrains: TerrainColor[], category: string): string[] {
-  return terrains.filter((t) => t.category?.toLowerCase() === category).map((t) => t.name);
-}
-
 /*
- * Type-aware lookups. A terrain's `type` (see terrainTypes.ts) is
- * authoritative: a typed terrain fills only the roles of its type, however
- * it is named, so "ocean" typed desert is never used as sea. The name /
- * category guesses above are the fallback for untyped terrains only.
+ * Type-aware lookups. A terrain's `type` (see terrainTypes.ts) is the only
+ * thing that gives it a role: a typed terrain fills only the roles of its
+ * type, however it is named ("ocean" typed desert is never used as sea),
+ * and an untyped terrain fills none — not even one named "ocean" or filed
+ * under a "sea" category. Generators work the same on any palette, the
+ * shipped ones included; the palette editor's "Guess types from names"
+ * button types a hand-made palette in one go.
  */
 
 /** Terrains with a known type id. Unknown ids count as untyped. */
 function typeOf(t: TerrainColor): string | undefined {
   return isTerrainType(t.type) ? t.type : undefined;
-}
-
-/** Terrains without a (known) type: the ones name / category guesses may use. */
-export function untyped(terrains: TerrainColor[]): TerrainColor[] {
-  return terrains.filter((t) => !typeOf(t));
 }
 
 /** Names of all terrains of the given types, in palette order. */
@@ -193,19 +180,6 @@ export function findByType(
     if (hit) return hit.name;
   }
   return undefined;
-}
-
-/**
- * Resolve a role: by type first, else by name / category among the
- * untyped terrains (older or hand-made palettes).
- */
-export function findRole(
-  terrains: TerrainColor[],
-  typeIds: string[],
-  names: string[],
-  category?: string,
-): string | undefined {
-  return findByType(terrains, typeIds, names) ?? findTerrain(untyped(terrains), names, category);
 }
 
 /** Lower-case name → type id, for weight tables keyed by type. */

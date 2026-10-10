@@ -13,6 +13,7 @@ import {
   RESETTABLE_FIELDS,
   updateMapNote,
   type HexData,
+  type MapNoteContext,
   type MapNoteData,
   type MapNoteProblem,
   type MapNoteReadOptions,
@@ -59,6 +60,8 @@ export class MapStore {
   private lastContent = new Map<string, string>();
   /** Map-data key we last wrote per map (skip no-op writes). */
   private lastKey = new Map<string, string>();
+  /** Per map: the outside inputs (palette names, path types) its derived Summary/Route were last written or loaded with. */
+  private lastDerived = new Map<string, string>();
   private dirty = new Set<string>();
   private writeTimer: number | undefined;
   private ready = false;
@@ -232,8 +235,28 @@ export class MapStore {
     if (!this.ready) return this.queue;
     for (const m of this.uniqueMaps()) {
       if (this.lastKey.get(m.name) !== mapNoteKey(this.dataFor(m))) this.dirty.add(m.name);
+      // A palette change can change the derived Summary (a terrain no longer
+      // "not in the palette"): rewrite; the write is skipped if the text is the same.
+      else if (this.lastDerived.has(m.name) && this.lastDerived.get(m.name) !== JSON.stringify(this.contextFor(m))) this.dirty.add(m.name);
     }
     return this.flush();
+  }
+
+  /** What the note's derived parts need from the palette (see MapNoteContext). Tolerant of a partial plugin. */
+  contextFor(map: MapData): MapNoteContext {
+    const p = this.plugin as Partial<Pick<HexmakerPlugin, "getMapPalette" | "getMapPathTypes" | "mapPaletteName" | "paletteStore">>;
+    const ctx: MapNoteContext = {};
+    try {
+      if (p.getMapPalette) ctx.paletteTerrains = p.getMapPalette.call(this.plugin, map.name).map((t) => t.name);
+      if (p.getMapPathTypes) ctx.pathTypes = p.getMapPathTypes.call(this.plugin, map.name).map((t) => t.name);
+      // Only the palette the map names, when installed (else the name is shown plain).
+      const used = p.mapPaletteName?.call(this.plugin, map.name);
+      const note = used && used === map.paletteName ? p.paletteStore?.notePathOf(used) : undefined;
+      if (note) ctx.paletteNote = note.replace(/.md$/i, "");
+    } catch (e) {
+      console.error("Hexmaker: couldn't read the palette for a map note's summary", e);
+    }
+    return ctx;
   }
 
   dataFor(map: MapData): MapNoteData {
@@ -269,7 +292,9 @@ export class MapStore {
         this.backedUp.add(path);
       }
       const data = this.dataFor(map);
-      const next = updateMapNote(current, map.name, data);
+      const ctx = this.contextFor(map);
+      const next = updateMapNote(current, map.name, data, ctx);
+      this.lastDerived.set(map.name, JSON.stringify(ctx));
       // The write rewrites the warning callouts from what's in the note.
       this.reported.set(map.name, problemSignature(r.data.problems));
       this.lastContent.set(path, next);
@@ -281,7 +306,9 @@ export class MapStore {
       if (!vault.getAbstractFileByPath(folder)) {
         try { await vault.createFolder(folder); } catch { /* exists */ }
       }
-      const content = buildMapNote(map.name, data);
+      const ctx = this.contextFor(map);
+      const content = buildMapNote(map.name, data, ctx);
+      this.lastDerived.set(map.name, JSON.stringify(ctx));
       this.lastContent.set(path, content);
       await vault.create(path, content);
       this.lastKey.set(map.name, mapNoteKey(data));
@@ -311,6 +338,8 @@ export class MapStore {
     map.pathChains = data.paths;
     this.hexes.set(map.name, this.matchCase(map, data.hexes));
     this.lastKey.set(map.name, mapNoteKey(this.dataFor(map)));
+    // Loaded or hand-edited: taken as written. Derived parts catch up on the next write.
+    this.lastDerived.set(map.name, JSON.stringify(this.contextFor(map)));
   }
 
   /**
@@ -500,6 +529,7 @@ export class MapStore {
     const moved = vault.getAbstractFileByPath(`${this.mapFolder(newName)}/_${oldName}.md`);
     if (moved instanceof TFile) await fileManager.renameFile(moved, this.notePath(newName));
     this.lastKey.delete(oldName);
+    this.lastDerived.delete(oldName);
     this.dirty.add(newName);
     await this.flush();
   }
@@ -523,6 +553,7 @@ export class MapStore {
   forgetMap(name: string): void {
     this.hexes.delete(name);
     this.lastKey.delete(name);
+    this.lastDerived.delete(name);
     this.dirty.delete(name);
   }
 

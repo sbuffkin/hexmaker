@@ -16,12 +16,13 @@ import {
   updatePaletteNote,
   wrapPaletteColors,
 } from "./paletteNote";
-import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } from "./presets";
 import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
 import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { DEFAULT_PATH_TYPES } from "../constants";
-import { inferTerrainType } from "../terrainTypes";
+import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
+import { repointPaletteName } from "./paletteOptions";
 
 /**
  * Fill in missing terrain types: a same-named terrain in a preset wins,
@@ -38,6 +39,43 @@ export function seedTerrainTypes(palettes: TerrainPalette[]): number {
       const type = known.get(t.name.toLowerCase()) ?? inferTerrainType(t.name, t.category);
       if (type) { t.type = type; n++; }
     }
+  }
+  return n;
+}
+
+/**
+ * One-time upgrade of data that used to be worked out from names at run
+ * time, so from now on only what the palette note says counts:
+ *  - space terrains typed before the space roles had their own types get
+ *    them (a "moon" typed world becomes a moon; see refinedSpaceType);
+ *  - an installed palette named like a built-in preset gets that preset's
+ *    child palette and Submap defaults rows it doesn't have yet (they used
+ *    to be borrowed from the preset by name on every lookup).
+ * Returns how many palettes changed.
+ */
+export function upgradePaletteData(palettes: TerrainPalette[]): number {
+  let n = 0;
+  for (const pal of palettes) {
+    let changed = false;
+    for (const t of pal.terrains) {
+      const refined = refinedSpaceType(t);
+      if (refined) { t.type = refined; changed = true; }
+    }
+    const preset = getPreset(pal.name);
+    if (preset?.childPalette && !pal.childPalette) {
+      pal.childPalette = preset.childPalette;
+      changed = true;
+    }
+    if (preset?.submapDefaults) {
+      const missing = Object.keys(preset.submapDefaults).filter((k) => !pal.submapDefaults?.[k]);
+      if (missing.length) {
+        const rows = cloneSubmapDefaults(preset.submapDefaults);
+        pal.submapDefaults = { ...(pal.submapDefaults ?? {}) };
+        for (const k of missing) pal.submapDefaults[k] = rows[k];
+        changed = true;
+      }
+    }
+    if (changed) n++;
   }
   return n;
 }
@@ -161,6 +199,13 @@ export class PaletteStore {
     return world ? `${world}/palettes` : "palettes";
   }
 
+  /** The note an installed palette lives in (where it's bound, else where it will be written). */
+  notePathOf(name: string): string | undefined {
+    const pal = this.plugin.settings.terrainPalettes.find((p) => p.name === name);
+    if (!pal) return undefined;
+    return this.boundPath.get(pal) ?? this.pathFor(name);
+  }
+
   private pathFor(name: string): string {
     return `${this.folder()}/${paletteFileName(name)}.md`;
   }
@@ -217,11 +262,9 @@ export class PaletteStore {
     }
   }
 
-  /** Rename a palette in memory and repoint every map that uses it. */
+  /** Rename a palette in memory and repoint everything that names it. */
   private renamePalette(pal: TerrainPalette, newName: string): void {
-    for (const m of this.plugin.settings.maps) {
-      if (m.paletteName === pal.name) m.paletteName = newName;
-    }
+    repointPaletteName(this.plugin.settings, pal.name, newName);
     pal.name = newName;
   }
 
@@ -300,6 +343,16 @@ export class PaletteStore {
       settings.terrainTypesSeeded = true;
       dirty = true;
     }
+    // One-time: write into the palettes what used to be inferred from
+    // names at run time (space role types, a preset's child palette and
+    // Submap defaults). Runs after the seeding so freshly typed terrains
+    // are upgraded too.
+    let upgraded = false;
+    if (!settings.paletteDataUpgraded) {
+      upgraded = upgradePaletteData(settings.terrainPalettes) > 0;
+      settings.paletteDataUpgraded = true;
+      dirty = true;
+    }
     // Colours in palette notes became inline code (Obsidian read `#14223d`
     // as a tag). Before the first pass that converts them, every palette
     // note is backed up; if that fails, the load-time pass waits for the
@@ -316,7 +369,7 @@ export class PaletteStore {
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded || filled) await this.syncNow();
+    if (seeded || filled || upgraded) await this.syncNow();
     // Notes from older builds (or edited by hand since) get their derived
     // cells shown (the Impassable column, inferred types in parentheses)
     // and their colours written as inline code.

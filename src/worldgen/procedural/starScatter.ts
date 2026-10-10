@@ -4,13 +4,9 @@ import type { TerrainColor } from "../../types";
 import {
   cellKey,
   distance,
-  findRole,
-  findTerrain,
   gridKeys,
-  inCategory,
   ofType,
   typeIndex,
-  untyped,
   weightedPick,
   type ProcGrid,
   type ProcOption,
@@ -25,10 +21,8 @@ import {
  * them, rare features (black hole, anomaly, deep-space station) are
  * sprinkled in, and nearby systems can be joined by jump routes.
  *
- * Works on any palette with a background terrain (type void, or "empty
- * space" / "void" / first `space` terrain) and at least one world (type
- * world / gas-giant / asteroids, or the `worlds` category, or a "star
- * system" terrain).
+ * Works on any palette with a background terrain (type void) and at least
+ * one world (type world / gas-giant / asteroids, or a star-system terrain).
  */
 
 export const STAR_SCATTER_ID = "procedural:star-scatter";
@@ -96,38 +90,29 @@ export interface StarScatterRoles {
 
 /** Weights for typed terrains whose names aren't in the tables above. */
 const WORLD_TYPE_WEIGHTS: Record<string, number> = { world: 2.5, "gas-giant": 1, asteroids: 1.5 };
-const FEATURE_TYPE_WEIGHTS: Record<string, number> = { station: 3, anomaly: 1.5 };
+const FEATURE_TYPE_WEIGHTS: Record<string, number> = { station: 3, starport: 3, "jump-point": 3, anomaly: 1.5 };
 
-/** Typed worlds that aren't a system's mainworld: comets, debris fields. */
-const NOT_MAINWORLD = /comet|debris/i;
+/** Feature types that host a system (and so a jump route). */
+const HOSTS_SYSTEM = new Set(["station", "starport", "jump-point"]);
 
 /**
- * Roles by type first (void / world, gas-giant, asteroids / nebula /
- * station, anomaly), then by name and category for untyped terrains. List
- * roles take both, so a half-typed palette still uses everything.
+ * Roles by terrain type only: void (background), world / gas-giant /
+ * asteroids (mainworlds; comets and debris have their own types and are
+ * left out), nebula (clouds), station / starport / jump point / anomaly
+ * (features). With no worlds, a star-system (or star) terrain marks the
+ * systems. Names and categories play no part; untyped terrains are unused.
  */
 export function starScatterRoles(terrains: TerrainColor[]): StarScatterRoles | undefined {
-  const loose = untyped(terrains);
-  const background = findRole(terrains, ["void"], ["empty space", "void", "deep space", "space"], "space");
-  let worlds = [
-    ...ofType(terrains, ["world", "gas-giant", "asteroids"]).filter((t) => !NOT_MAINWORLD.test(t)),
-    ...inCategory(loose, "worlds"),
-  ];
+  const background = ofType(terrains, ["void"])[0];
+  let worlds = ofType(terrains, ["world", "gas-giant", "asteroids"]);
   if (worlds.length === 0) {
-    const system = findRole(terrains, ["star"], ["star system", "system", "star"]);
+    const system = ofType(terrains, ["star-system"])[0] ?? ofType(terrains, ["star"])[0];
     worlds = system ? [system] : [];
   }
   if (!background || worlds.length === 0) return undefined;
-  const clouds = [
-    ...ofType(terrains, ["nebula"]),
-    ...inCategory(loose, "space").filter((t) => t !== background && !/rift/i.test(t)),
-  ];
-  const cloudNames = clouds.length ? clouds : [findTerrain(loose, ["nebula", "dust cloud"])].filter((t): t is string => !!t);
-  const features = [
-    ...ofType(terrains, ["station", "anomaly"]),
-    ...inCategory(loose, "features").filter((t) => !/^star system$/i.test(t)),
-  ];
-  return { background, worlds, clouds: cloudNames, features };
+  const clouds = ofType(terrains, ["nebula"]);
+  const features = ofType(terrains, ["station", "starport", "jump-point", "anomaly"]);
+  return { background, worlds, clouds, features };
 }
 
 /** Name weights, else the terrain's type weight; unknowns fall through to the default. */
@@ -166,7 +151,7 @@ export function starScatter(
   const worldWeights = weightsFor(roles.worlds, types, WORLD_WEIGHTS, WORLD_TYPE_WEIGHTS);
   const featureWeights = weightsFor(roles.features, types, FEATURE_WEIGHTS, FEATURE_TYPE_WEIGHTS);
   // Stations host a system (and so a route); black holes and anomalies don't.
-  const hostsSystem = (t: string) => types.get(t.toLowerCase()) === "station" || /station/i.test(t);
+  const hostsSystem = (t: string) => HOSTS_SYSTEM.has(types.get(t.toLowerCase()) ?? "");
   const density = DENSITY[options.density ?? "standard"] ?? 0.5;
   const hexes = gridKeys(grid);
   const cells = new Map<string, string>();

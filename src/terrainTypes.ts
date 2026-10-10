@@ -52,15 +52,24 @@ const TYPE_DEFS: TypeDef[] = [
   { id: "badlands", label: "Badlands", kind: "world", keywords: ["badland", "brokenland", "waste", "canyon", "mesa"] },
   { id: "volcanic", label: "Volcanic", kind: "world", keywords: ["volcan", "lava", "ash", "magma"] },
   { id: "settlement", label: "Settlement", kind: "world", keywords: ["urban", "city", "town", "village", "ruin"] },
-  // Space
-  { id: "void", label: "Void / empty space", kind: "space", keywords: ["void", "empty space", "deep space", "jump limit"] },
+  // Space. The generators place by type (Orbits puts moons beside planets
+  // and a jump point past the last orbit), so each of those roles has its
+  // own type instead of being told apart by name.
+  { id: "void", label: "Void / empty space", kind: "space", keywords: ["void", "empty space", "deep space"] },
+  { id: "jump-limit", label: "Jump limit (ring)", kind: "space", keywords: ["jump limit"] },
   { id: "nebula", label: "Nebula / cloud", kind: "space", keywords: ["nebula", "dust", "cloud"] },
   { id: "rift", label: "Rift", kind: "space", keywords: ["rift"] },
   { id: "star", label: "Star", kind: "space", keywords: ["star", "sun", "dwarf", "giant star"] },
-  { id: "world", label: "World / planet", kind: "space", keywords: ["world", "planet", "moon"] },
+  { id: "star-system", label: "Star system (sector marker)", kind: "space", keywords: ["star system"] },
+  { id: "world", label: "World / planet", kind: "space", keywords: ["world", "planet"] },
+  { id: "moon", label: "Moon", kind: "space", keywords: ["moon", "satellite"] },
   { id: "gas-giant", label: "Gas giant", kind: "space", keywords: ["gas giant", "ice giant"] },
-  { id: "asteroids", label: "Asteroids / debris", kind: "space", keywords: ["asteroid", "belt", "debris", "comet", "meteor"] },
-  { id: "station", label: "Station / port", kind: "space", keywords: ["station", "starport", "port", "jump point", "gate"] },
+  { id: "asteroids", label: "Asteroid belt", kind: "space", keywords: ["asteroid", "belt", "meteor"] },
+  { id: "comet", label: "Comet", kind: "space", keywords: ["comet"] },
+  { id: "debris", label: "Debris field", kind: "space", keywords: ["debris", "wreck"] },
+  { id: "station", label: "Station", kind: "space", keywords: ["station", "outpost"] },
+  { id: "starport", label: "Starport", kind: "space", keywords: ["starport", "spaceport", "port"] },
+  { id: "jump-point", label: "Jump point / gate", kind: "space", keywords: ["jump point", "gate"] },
   { id: "anomaly", label: "Anomaly / hazard", kind: "space", keywords: ["anomaly", "black hole", "radiation", "hazard"] },
 ];
 
@@ -87,13 +96,16 @@ export function typesInGroup(group: TerrainGroup): string[] {
 }
 
 /**
- * The type a terrain counts as: its own (when a known type), else the
- * best guess from its name and category, so untyped terrains in custom
- * palettes still get type-based defaults.
+ * The type a terrain counts as: its own Type when that is a known type id,
+ * else none. Behaviour never guesses from the name (an untyped "Black
+ * Lake" is not water): the Type column is the one place that says what a
+ * terrain is, so what the palette editor shows is what the plugin does.
+ * Name guesses (inferTerrainType) only fill the Type column as a visible
+ * suggestion: the one-time seeding of old palettes, the editor's "Guess
+ * types from names" button, and a new terrain's name.
  */
-export function effectiveTerrainType(t: { type?: string; name?: string; category?: string }): string | undefined {
-  if (isTerrainType(t.type)) return t.type;
-  return t.name ? inferTerrainType(t.name, t.category) : undefined;
+export function effectiveTerrainType(t: { type?: string }): string | undefined {
+  return isTerrainType(t.type) ? t.type : undefined;
 }
 
 /**
@@ -127,12 +139,14 @@ export function derivedCell(value: string | undefined): string {
 }
 
 /**
- * Palette-note Type cell: the terrain's own type as set, else the type its
- * name suggests in parentheses ("(mountains)"), else blank.
+ * Palette-note Type cell: the terrain's own type as set, else blank. An
+ * untyped terrain has no type (never one guessed from its name; see
+ * effectiveTerrainType), so the note shows nothing rather than a guess the
+ * plugin would not use. Older notes' derived "(mountains)" cells read as
+ * unset (parseTerrainTypeCell) and are cleared on the next refresh.
  */
-export function terrainTypeCell(t: { type?: string; name?: string; category?: string }): string {
-  if (t.type) return t.type;
-  return derivedCell(t.name ? inferTerrainType(t.name, t.category) : undefined);
+export function terrainTypeCell(t: { type?: string }): string {
+  return t.type ?? "";
 }
 
 /**
@@ -177,4 +191,28 @@ export function inferTerrainType(name: string, category?: string, kind?: MapKind
     return best?.id;
   };
   return scan(name) ?? (category ? scan(category) : undefined);
+}
+
+/**
+ * One-time upgrade for palettes typed before the space roles got their own
+ * types (moon, comet, debris, starport, jump point, jump limit, star
+ * system). Back then Orbits and Star scatter told those apart by name
+ * inside a coarser type; this turns the same name rule into the terrain's
+ * Type once, so from then on the Type column alone decides (and can be
+ * changed). Returns the refined type, or undefined to leave it as is.
+ */
+export function refinedSpaceType(t: { name: string; type?: string }): string | undefined {
+  const n = t.name;
+  switch (t.type) {
+    case "world": return /\bmoons?\b|satellite/i.test(n) ? "moon" : undefined;
+    case "asteroids":
+      if (/comet/i.test(n)) return "comet";
+      return /debris|wreck/i.test(n) ? "debris" : undefined;
+    case "station":
+      if (/jump|gate/i.test(n)) return "jump-point";
+      return /port/i.test(n) ? "starport" : undefined;
+    case "void": return /limit/i.test(n) ? "jump-limit" : undefined;
+    case "star": return /system/i.test(n) ? "star-system" : undefined;
+    default: return undefined;
+  }
 }

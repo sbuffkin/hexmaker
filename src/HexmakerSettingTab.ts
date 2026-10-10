@@ -2,6 +2,7 @@ import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
+import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
 import { ADVANCED_FEATURES, hasFeature, isAdvanced } from "./featureLevel";
 
@@ -95,6 +96,10 @@ type LocalSettingDefinitionItem =
 /** The Templates folder setting's description (both settings paths). */
 const TEMPLATES_FOLDER_DESC =
   "Vault-relative folder for the plugin's note templates: the hex template (unless Template path points elsewhere) and the town template. Edit them there; new notes use them. Blank = \"templates\" in the world folder. Workflow templates stay with their workflows.";
+
+/** The "Palette for new maps" setting's description (both settings paths). */
+const DEFAULT_PALETTE_DESC =
+  "The palette a new map starts on. First palette = the first one listed below (overland before space).";
 
 /** Settings keys holding vault paths that must be run through normalizeFolder. */
 const FOLDER_PATH_KEYS = new Set<string>([
@@ -203,10 +208,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
                 nameInput.value = pal.name;
                 return;
               }
-              // Update any maps using this palette
-              for (const r of this.plugin.settings.maps) {
-                if (r.paletteName === pal.name) r.paletteName = trimmed;
-              }
+              // Repoint maps, the new-map default and child palettes.
+              repointPaletteName(this.plugin.settings, pal.name, trimmed);
               pal.name = trimmed;
               await this.plugin.saveSettings();
               this.requestDeclarativeRerender();
@@ -644,6 +647,16 @@ export class HexmakerSettingTab extends PluginSettingTab {
             desc: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note.",
             searchable: false,
           },
+          {
+            name: "Palette for new maps",
+            desc: DEFAULT_PALETTE_DESC,
+            control: {
+              type: "dropdown",
+              key: "defaultPalette",
+              options: this.defaultPaletteOptions(),
+              defaultValue: "",
+            },
+          },
         ],
       },
       {
@@ -755,6 +768,15 @@ export class HexmakerSettingTab extends PluginSettingTab {
     this.plugin.settings.mapKinds = MAP_KINDS.map((k) => k.id).filter((id) => kinds.has(id));
     await this.plugin.saveSettings();
     this.plugin.onMapKindsChanged();
+  }
+
+  /** Choices for "Palette for new maps": first palette, then every palette (the saved one kept even if gone). */
+  private defaultPaletteOptions(): Record<string, string> {
+    const out: Record<string, string> = { "": "First palette" };
+    for (const p of this.plugin.settings.terrainPalettes) out[p.name] = p.name;
+    const saved = this.plugin.settings.defaultPalette;
+    if (saved && !(saved in out)) out[saved] = `${saved} (not installed)`;
+    return out;
   }
 
   /** "Open note" button for a palette row — opens the palette's note in a new tab. */
@@ -1480,6 +1502,18 @@ export class HexmakerSettingTab extends PluginSettingTab {
       text: "Each region uses one palette. Assign a palette when creating a region — it cannot be changed after. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note.",
       cls: "setting-item-description",
     });
+    new Setting(containerEl)
+      .setName("Palette for new maps")
+      .setDesc(DEFAULT_PALETTE_DESC)
+      .addDropdown((d) =>
+        d
+          .addOptions(this.defaultPaletteOptions())
+          .setValue(this.plugin.settings.defaultPalette ?? "")
+          .onChange(async (v) => {
+            this.plugin.settings.defaultPalette = v;
+            await this.plugin.saveSettings();
+          }),
+      );
 
     const palettes = this.plugin.settings.terrainPalettes;
 
@@ -1521,10 +1555,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
               nameInput.value = pal.name;
               return;
             }
-            // Update any maps using this palette
-            for (const r of this.plugin.settings.maps) {
-              if (r.paletteName === pal.name) r.paletteName = trimmed;
-            }
+            // Repoint maps, the new-map default and child palettes.
+            repointPaletteName(this.plugin.settings, pal.name, trimmed);
             pal.name = trimmed;
             await this.plugin.saveSettings();
           })();

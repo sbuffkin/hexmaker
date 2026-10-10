@@ -1,6 +1,6 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
-import { inferTerrainType, isTerrainType } from "../../terrainTypes";
+import { effectiveTerrainType } from "../../terrainTypes";
 import { SIDE_VECTORS, cellKey, centerHex, gridKeys, type ContextPath, type ProcGrid, type ProcPath, type Side } from "./common";
 
 /**
@@ -48,7 +48,7 @@ export function edgeHex(grid: ProcGrid, side: Side): [number, number] {
 
 /**
  * Route each context path over the generated cells. `terrains` gives each
- * cell's type (falling back to a name guess); unpainted cells cost 1.
+ * cell's type (its Type column; untyped and unpainted cells cost 1).
  */
 export function routeContextPaths(
   cells: Map<string, string>,
@@ -57,7 +57,7 @@ export function routeContextPaths(
   paths: ContextPath[],
   seed: number,
 ): ProcPath[] {
-  const typeByName = new Map(terrains.map((t) => [t.name, isTerrainType(t.type) ? t.type : inferTerrainType(t.name, t.category)]));
+  const typeByName = new Map(terrains.map((t) => [t.name, effectiveTerrainType(t)]));
   const hexes = gridKeys(grid);
   const inGrid = new Set(hexes.map(([x, y]) => cellKey(x, y)));
   const out: ProcPath[] = [];

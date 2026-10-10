@@ -145,6 +145,37 @@ describe("map note formats", () => {
     expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
   });
 
+  it("format 3 reads every setting, hex and path", () => {
+    const d = parseMapNote(read(formatsDir, "format-3.md"));
+    if (!d) throw new Error("format 3 note didn't parse");
+    expect(d.format).toBe(3);
+    expect(d.problems).toEqual([]);
+    expect(d.settings).toMatchObject({ displayName: "Compat Example", baseTerrain: "grass", parent: { map: "compat-world", hex: "3_4" }, originX: 2 });
+    expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", regionMap: "compat-example-region", locations: ["compat-example-3-4", "compat-example-inn"], locked: true });
+    expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
+    expect(d.paths).toEqual([
+      { typeName: "Road", hexes: Array.from({ length: 14 }, (_, x) => `${x}_8`) },
+      { typeName: "River", hexes: ["4_0", "4_1", "4_2", "4_3", "4_4", "4_5"] },
+    ]);
+  });
+
+  it("format 3 converts once: the derived Summary and Route column are added, nothing else changes", () => {
+    const text = read(formatsDir, "format-3.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
+    const d = parseMapNote(text)!;
+    const out = updateMapNote(text, "compat-example", d);
+    expect(out).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
+    expect(out).toContain("My notes.\n\n## Summary\n");
+    expect(out).toContain("| Type | Route | Hexes |");
+    expect(out).toContain("| River | 4, 0 → 4, 5 (6 hexes) | 4_0 4_1 4_2 4_3 4_4 4_5 |");
+    expect(out).toContain("The plugin fills in *Route*");
+    // The Hexes table is untouched.
+    const hexTable = (s: string) => s.slice(s.indexOf("| Hex |"), s.indexOf("## Paths"));
+    expect(hexTable(out)).toBe(hexTable(text));
+    const back = parseMapNote(out)!;
+    expect(mapNoteKey(back)).toBe(mapNoteKey(d));
+    expect(updateMapNote(out, "compat-example", back)).toBe(out);
+  });
+
   it("format 2 converts once: Submap becomes Locations, maps and regions become links, nothing else changes", () => {
     const text = read(formatsDir, "format-2.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
     const d = parseMapNote(text)!;

@@ -16,8 +16,8 @@ import {
  * when unset, by its terrain type's GROUP (PA4): every type in the water
  * group (deep water, water, shallows) is impassable by default. Defaults go
  * by type, never by terrain name, so any palette (custom ones too) gets
- * them; an untyped terrain counts as the type its name suggests
- * (effectiveTerrainType). Hex-by-hex drawing ignores all of this; only
+ * them; an untyped terrain has no type default (passable unless ticked),
+ * whatever it is called (effectiveTerrainType). Hex-by-hex drawing ignores all of this; only
  * auto-route asks.
  */
 

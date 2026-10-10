@@ -45,6 +45,8 @@ Hex names, terrain, icons, GM icons, regions, region maps and locations live in 
 
 The **How to edit this note** box at the top of the map note explains the columns. Regions, locations and region maps are links (`[[Basin]]`, `[[_saltmere]]`), so renaming the note in Obsidian keeps the map right; plain names work too and become links on the next save. Notes from older versions (a single Submap column) are converted once, after a backup. Column order, header case and `3_4` vs `3, 4` don't matter, and your own columns and text are kept. A row that can't be read stays as you wrote it and is listed in a warning box until you fix it. If the note can't be read at all, the plugin stops saving to it and tells you, rather than writing over it.
 
+The map note's **Summary** (above the Hexes table) and the *Route* and *Warning* columns in Paths are written by the plugin: extent, base terrain, a terrain legend with counts, regions, and a ⚠ for any terrain or path type not in the palette. They update on each save, so edits there are replaced.
+
 ---
 
 ## Expand buttons
@@ -64,7 +66,7 @@ Paint a connected chain of road or river hexes. Left-click hexes to extend the c
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
 
 ### Icon
-Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations. Every icon list (here, in the token editor, and in the hex editor) has a filter box and **All / Terrain / Space / Custom** tabs; drag the bottom edge of an inline icon list to make it taller.
+Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations. Every icon list (here, in the token editor, and in the hex editor) has a filter box and **All / Terrain / Places / Space / Custom** tabs (Space only when space maps are on). **Places** holds settlement, castle, tower, ruin, temple, camp and cave icons, with a row of chips to narrow it down (Settlements, Castles…); drag the bottom edge of an inline icon list to make it taller.
 
 ### Link table
 Opens a folder-tree picker scoped to your Tables folder. Select a random-encounter table, then left-click hexes to link that table into each hex's **Encounters Table** section.
@@ -131,7 +133,9 @@ Pickers that link notes (to hexes, tokens, sections) never offer template notes 
 
 ## Palettes
 
-**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**.
+
+No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 
 ## Rolling from a hex
 

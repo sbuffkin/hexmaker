@@ -105,6 +105,37 @@ describe("shipped biome / preset generators", () => {
 		for (const t of used) expect(custom.some((c) => c.name === t)).toBe(true);
 	});
 
+	it("the Expanded palette renamed maps every generator terrain to the same palette entry", () => {
+		const renamed = DEFAULT_TERRAIN_PALETTE.map((t, i) => ({ ...t, name: `Terrain ${i}` }));
+		for (const [slug, model] of models) {
+			const a = mapTerrainsByType(model, DEFAULT_TERRAIN_PALETTE);
+			const b = mapTerrainsByType(model, renamed);
+			for (const t of model.terrains) {
+				const ia = DEFAULT_TERRAIN_PALETTE.findIndex((x) => x.name === a.get(t.name));
+				const ib = renamed.findIndex((x) => x.name === b.get(t.name));
+				// Same type always; same entry unless a word-match tie-break picked a sibling.
+				expect({ slug, t: t.name, type: renamed[ib]?.type }).toEqual({ slug, t: t.name, type: DEFAULT_TERRAIN_PALETTE[ia]?.type });
+			}
+		}
+	});
+
+	it("a same-named palette terrain of another type is not used (an \"ocean\" typed desert is not the sea)", () => {
+		const pal: TerrainColor[] = [
+			{ name: "ocean", type: "desert", color: "#ff0" },
+			{ name: "Brine", type: "water", color: "#00f" },
+		];
+		const mapping = mapTerrainsByType(models.get("preset-archipelago")!, pal);
+		expect(mapping.get("ocean")).toBe("Brine");
+	});
+
+	it("untyped palettes (or everything deleted) fit no shipped generator", () => {
+		const untyped = DEFAULT_TERRAIN_PALETTE.map(({ type: _t, ...rest }) => rest);
+		for (const model of models.values()) {
+			expect(fitBuiltinModel(model, untyped)).toBeUndefined();
+			expect(fitBuiltinModel(model, [])).toBeUndefined();
+		}
+	});
+
 	it("doesn't fit a space palette", () => {
 		for (const model of models.values()) expect(fitBuiltinModel(model, SPACE_SYSTEM_TERRAINS)).toBeUndefined();
 	});
