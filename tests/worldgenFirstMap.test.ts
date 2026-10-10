@@ -16,7 +16,7 @@ import {
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
-import { defaultPaletteFor, paletteHint, resolveExpandedDefault } from "../src/palettes/paletteOptions";
+import { defaultPaletteFor, paletteHint, repointPaletteName, resolveDefaultPalette, resolveExpandedDefault } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
@@ -299,11 +299,43 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 	const pal = (name: string, terrains: TerrainColor[]) => ({ name, terrains });
 	const fresh = [pal("Limited", LIMITED_TERRAIN_PALETTE), pal("Expanded", DEFAULT_TERRAIN_PALETTE)];
 
-	it("world users get Expanded when installed (G7b), else their first overland palette", () => {
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: fresh })).toBe("Expanded");
-		expect(defaultPaletteFor({ mapKinds: ["world", "space"], terrainPalettes: fresh })).toBe("Expanded");
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS), ...fresh] })).toBe("Expanded");
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Mine", LIMITED_TERRAIN_PALETTE), pal("Limited", LIMITED_TERRAIN_PALETTE)] })).toBe("Mine");
+	it("uses the Palette for new maps setting (seeded with Expanded, G7b), else the first overland palette", () => {
+		const d = "Expanded";
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: fresh, defaultPalette: d })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world", "space"], terrainPalettes: fresh, defaultPalette: d })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS), ...fresh], defaultPalette: d })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Mine", LIMITED_TERRAIN_PALETTE), pal("Limited", LIMITED_TERRAIN_PALETTE)], defaultPalette: d })).toBe("Mine");
+		// Unset: the first overland palette, whatever it is called.
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: fresh })).toBe("Limited");
+	});
+
+	it("no palette is special by name: any palette can be the default, renamed or not", () => {
+		const mine = [pal("Crayons", LIMITED_TERRAIN_PALETTE), pal("Big box", DEFAULT_TERRAIN_PALETTE)];
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: mine, defaultPalette: "Big box" })).toBe("Big box");
+		// A setting naming a deleted palette falls back to the first palette, not to a name.
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: mine, defaultPalette: "Expanded" })).toBe("Crayons");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: mine, defaultPalette: "Gone" })).toBe("Crayons");
+		// A space palette as the default while space is off: skipped.
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Stars", SPACE_SECTOR_TERRAINS), ...mine], defaultPalette: "Stars" })).toBe("Crayons");
+	});
+
+	it("with every palette deleted, still picks something", () => {
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [] })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: [] })).toBe("Space - Sector");
+	});
+
+	it("a rename repoints maps, the default and child palettes", () => {
+		const settings = {
+			maps: [{ paletteName: "Sector" }, { paletteName: "Other" }],
+			defaultPalette: "Sector",
+			terrainPalettes: [{ childPalette: "Sector", submapDefaults: { a: { palette: "Sector" }, b: { palette: "X" } } }],
+		};
+		repointPaletteName(settings, "Sector", "Galaxy");
+		expect(settings.maps.map((m) => m.paletteName)).toEqual(["Galaxy", "Other"]);
+		expect(settings.defaultPalette).toBe("Galaxy");
+		expect(settings.terrainPalettes[0].childPalette).toBe("Galaxy");
+		expect(settings.terrainPalettes[0].submapDefaults.a.palette).toBe("Galaxy");
+		expect(settings.terrainPalettes[0].submapDefaults.b.palette).toBe("X");
 	});
 
 	it("a fresh install starts on Expanded", () => {
@@ -318,26 +350,27 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 		expect(paletteHint("Space - Sector")).toBe("");
 	});
 
-	it("space-only users get a space palette, Space - Sector first", () => {
-		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: fresh })).toBe("Space - Sector");
+	it("space-only users get their first space palette, else the first space preset", () => {
+		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: fresh, defaultPalette: "Expanded" })).toBe("Space - Sector");
 		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: [...fresh, pal("Space - System", SPACE_SYSTEM_TERRAINS)] })).toBe("Space - System");
 		expect(defaultPaletteFor({
 			mapKinds: ["space"],
 			terrainPalettes: [...fresh, pal("Space - System", SPACE_SYSTEM_TERRAINS), pal("Space - Sector", SPACE_SECTOR_TERRAINS)],
+			defaultPalette: "Space - Sector",
 		})).toBe("Space - Sector");
 	});
 
-	it("world users with no overland palette installed get the Expanded preset", () => {
+	it("world users with no overland palette installed get the first overland preset", () => {
 		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS)] })).toBe("Expanded");
 	});
 
 	// GEN1 = B: Expanded is the default for new installs only.
 	it("existing installs keep their first overland palette even with Expanded installed", () => {
 		const existing = [pal("Limited", LIMITED_TERRAIN_PALETTE), pal("Expanded", DEFAULT_TERRAIN_PALETTE)];
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, expandedByDefault: false })).toBe("Limited");
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, expandedByDefault: true })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, defaultPalette: resolveDefaultPalette({ hexFolder: "x" }) })).toBe("Limited");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: existing, defaultPalette: resolveDefaultPalette(null) })).toBe("Expanded");
 		// Space users are unaffected either way.
-		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: existing, expandedByDefault: false })).toBe("Space - Sector");
+		expect(defaultPaletteFor({ mapKinds: ["space"], terrainPalettes: existing, defaultPalette: "" })).toBe("Space - Sector");
 	});
 
 	it("fresh install vs update is decided from the raw saved data, and a saved answer wins", () => {
@@ -346,6 +379,12 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 		expect(resolveExpandedDefault({ hexFolder: "world/hexes", maps: [] })).toBe(false);
 		expect(resolveExpandedDefault({ hexFolder: "x", expandedByDefault: true })).toBe(true);
 		expect(resolveExpandedDefault({ expandedByDefault: false })).toBe(false);
+		// The setting is seeded from it once, then the saved value wins.
+		expect(resolveDefaultPalette(null)).toBe("Expanded");
+		expect(resolveDefaultPalette({ hexFolder: "x" })).toBe("");
+		expect(resolveDefaultPalette({ hexFolder: "x", expandedByDefault: true })).toBe("Expanded");
+		expect(resolveDefaultPalette({ defaultPalette: "Crayons", expandedByDefault: true })).toBe("Crayons");
+		expect(resolveDefaultPalette({ defaultPalette: "" })).toBe("");
 	});
 });
 
@@ -496,9 +535,12 @@ describe("Overland Sea default next to a neighbour (fresh-eyes r4)", () => {
 		expect(seaSideFromNeighbours(below, cells)).toEqual({ side: "east", why: "end", seam: "north" });
 	});
 
-	it("reads untyped terrain by name, skips corners, and is undefined with no neighbour", () => {
-		const cells = new Map([["9_2", { terrain: "ocean" }], ["9_-1", { terrain: "grass" }], ["9_3", { terrain: "ocean" }]]);
+	it("reads terrain by type, never by name, skips corners, and is undefined with no neighbour", () => {
+		const cells = new Map([["9_2", { terrain: "Brine", type: "water" }], ["9_-1", { terrain: "grass", type: "grassland" }], ["9_3", { terrain: "Brine", type: "water" }]]);
 		expect(seaSideFromNeighbours(g, cells)?.side).toBe("west");
+		// An untyped "ocean" isn't read as water.
+		const untyped = new Map([["9_2", { terrain: "ocean" }], ["9_3", { terrain: "ocean" }]]);
+		expect(seaSideFromNeighbours(g, untyped)).toBeUndefined();
 		expect(seaSideFromNeighbours(g, undefined)).toBeUndefined();
 		expect(seaSideFromNeighbours(g, new Map())).toBeUndefined();
 	});

@@ -292,8 +292,18 @@ export interface HexmakerPluginSettings {
 	/** On-map legend folded to a small "Legend" chip. */
 	terrainLegendCollapsed?: boolean;
 	/** New maps default to the Expanded palette: true on fresh installs,
-	 *  false for installs that predate it (GEN1; see resolveExpandedDefault). */
+	 *  false for installs that predate it (GEN1; see resolveExpandedDefault).
+	 *  Only seeds `defaultPalette` now. */
 	expandedByDefault?: boolean;
+	/** "Palette for new maps": a palette name; "" or unset = the first
+	 *  palette of an enabled map type (see defaultPaletteFor). Seeded once
+	 *  by resolveDefaultPalette. */
+	defaultPalette?: string;
+	/** One-time upgrades of palette data that used to be inferred from
+	 *  names at run time (see PaletteStore.load): space role types (moon,
+	 *  comet, starport…) and a preset's child palette / submap defaults
+	 *  copied into same-named installed palettes. */
+	paletteDataUpgraded?: boolean;
 	/** Folder holding the plugin's note templates (hex, town). Empty =
 	 *  "{worldFolder}/templates" (see src/noteTemplates.ts). */
 	templatesFolder: string;

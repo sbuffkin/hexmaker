@@ -49,7 +49,7 @@ export const SPACE_SECTOR_TERRAINS: TerrainColor[] = [
   { name: "asteroid belt", type: "asteroids", color: "#5e554d", icon: "space-asteroid.png", iconColor: "#e7e5e4", category: "worlds" },
   { name: "gas giant", type: "gas-giant", color: "#b07d45", icon: "space-ringed-planet.svg", iconColor: "#fff7ed", category: "worlds" },
   // Points of interest
-  { name: "star system", type: "star", color: "#c9a227", icon: "space-orbit.svg", iconColor: "#fff7d6", category: "features" },
+  { name: "star system", type: "star-system", color: "#c9a227", icon: "space-orbit.svg", iconColor: "#fff7d6", category: "features" },
   { name: "deep-space station", type: "station", color: "#7d8794", icon: "space-orbital.svg", iconColor: "#f8fafc", category: "features" },
   { name: "black hole", type: "anomaly", color: "#000000", icon: "space-target-outline.svg", iconColor: "#a78bfa", category: "features" },
   { name: "anomaly", type: "anomaly", color: "#7c3aad", icon: "space-anomaly.svg", iconColor: "#f5d0fe", category: "features" },
@@ -60,7 +60,7 @@ export const SPACE_SYSTEM_TERRAINS: TerrainColor[] = [
   // Space
   { name: "void", type: "void", color: "#05070f", category: "space" },
   { name: "nebula", type: "nebula", color: "#3b2a5c", category: "space" },
-  { name: "jump limit", type: "void", color: "#1d1838", icon: "space-ring-dashed.svg", iconColor: "#c4b5fd", category: "space" },
+  { name: "jump limit", type: "jump-limit", color: "#1d1838", icon: "space-ring-dashed.svg", iconColor: "#c4b5fd", category: "space" },
   // Stars
   { name: "yellow star", type: "star", color: "#f2c94c", icon: "space-sun.svg", iconColor: "#7c2d12", category: "stars" },
   { name: "red dwarf", type: "star", color: "#d9573b", icon: "space-sun.svg", iconColor: "#fde68a", category: "stars" },
@@ -76,15 +76,15 @@ export const SPACE_SYSTEM_TERRAINS: TerrainColor[] = [
   { name: "molten planet", type: "world", color: "#a8402a", icon: "space-planet-core.svg", iconColor: "#fde68a", category: "bodies" },
   { name: "gas giant", type: "gas-giant", color: "#b07d45", icon: "space-ringed-planet.svg", iconColor: "#fff7ed", category: "bodies" },
   { name: "ice giant", type: "gas-giant", color: "#5f9fb8", icon: "space-frozen-orb.svg", iconColor: "#ecfeff", category: "bodies" },
-  { name: "moon", type: "world", color: "#9a9aa2", icon: "space-moon.svg", iconColor: "#111827", category: "bodies" },
+  { name: "moon", type: "moon", color: "#9a9aa2", icon: "space-moon.svg", iconColor: "#111827", category: "bodies" },
   { name: "asteroid belt", type: "asteroids", color: "#5e554d", icon: "space-asteroid.png", iconColor: "#e7e5e4", category: "bodies" },
-  { name: "comet", type: "asteroids", color: "#8fb3c4", icon: "space-meteor.svg", iconColor: "#0f172a", category: "bodies" },
+  { name: "comet", type: "comet", color: "#8fb3c4", icon: "space-meteor.svg", iconColor: "#0f172a", category: "bodies" },
   // Installations
   { name: "space station", type: "station", color: "#7d8794", icon: "space-orbital.svg", iconColor: "#f8fafc", category: "installations" },
-  { name: "starport", type: "station", color: "#c0c7cf", icon: "space-star-gate.svg", iconColor: "#111827", category: "installations" },
-  { name: "jump point", type: "station", color: "#5b3fc4", icon: "space-portal.svg", iconColor: "#ede9fe", category: "installations" },
+  { name: "starport", type: "starport", color: "#c0c7cf", icon: "space-star-gate.svg", iconColor: "#111827", category: "installations" },
+  { name: "jump point", type: "jump-point", color: "#5b3fc4", icon: "space-portal.svg", iconColor: "#ede9fe", category: "installations" },
   // Hazards
-  { name: "debris field", type: "asteroids", color: "#4d4640", icon: "space-dots-hex.svg", iconColor: "#e7e5e4", category: "hazards" },
+  { name: "debris field", type: "debris", color: "#4d4640", icon: "space-dots-hex.svg", iconColor: "#e7e5e4", category: "hazards" },
   { name: "radiation belt", type: "anomaly", color: "#7d6a1f", icon: "space-radioactive.svg", iconColor: "#fef08a", category: "hazards" },
 ];
 

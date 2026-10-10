@@ -1,6 +1,6 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
-import { inferTerrainType, isTerrainType } from "../../terrainTypes";
+import { isTerrainType } from "../../terrainTypes";
 import {
   SIDES,
   SIDE_VECTORS,
@@ -10,7 +10,6 @@ import {
   type GenerationContext,
   type Side,
   findByType,
-  findRole,
   gridKeys,
   typeIndex,
   ofType,
@@ -27,9 +26,9 @@ import {
  * water % and climate let one generator cover ocean worlds, deserts and
  * ice balls (the space presets set these per planet type).
  *
- * Terrain roles resolve by terrain type, then (for untyped terrains) by
- * name and category, so the Limited / Expanded palettes and user palettes
- * with any names all work.
+ * Terrain roles resolve by terrain type only, so the Limited / Expanded
+ * palettes and user palettes with any names work the same (untyped
+ * terrains get no role).
  */
 
 export const PLANET_SURFACE_ID = "procedural:planet-surface";
@@ -149,7 +148,7 @@ export function seaSideFromNeighbours(
     const w = x < o.x, e = x > o.x + cols - 1, nn = y < o.y, s = y > o.y + rows - 1;
     if (Number(w) + Number(e) + Number(nn) + Number(s) !== 1) continue; // corners: ambiguous
     const seam: Seam = w ? "west" : e ? "east" : nn ? "north" : "south";
-    const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+    const type = isTerrainType(c.type) ? c.type : undefined;
     if (!type) continue;
     const at = seams.get(seam) ?? { n: 0, wet: [] };
     at.n++;
@@ -351,34 +350,33 @@ function planetVariants(terrains: TerrainColor[], forest: string | undefined): P
 
 /**
  * Roles by terrain type first (water, grassland, forest, …), so custom
- * names like "Kelp sea" or "Pinewood" work; untyped palettes fall back to
- * the name and category guesses. The base hills / mountain role skips
+ * names like "Kelp sea" or "Pinewood" work; untyped terrains get no role. The base hills / mountain role skips
  * wooded variants ("forested hills"), which only appear on moist ground.
  */
 export function planetRoles(terrains: TerrainColor[]): PlanetRoles | undefined {
-  const sea = findRole(terrains, ["water"], ["ocean", "sea", "water"], "sea");
-  const plains = findRole(terrains, ["grassland"], ["grass", "grassland", "plains", "lowland", "meadow"], "lowlands");
+  const sea = findByType(terrains, ["water"], ["ocean", "sea", "water"]);
+  const plains = findByType(terrains, ["grassland"], ["grass", "grassland", "plains", "lowland", "meadow"]);
   if (!sea || !plains) return undefined;
   const bare = terrains.filter((t) => !WOODED.test(t.name));
-  const rugged = (type: string, names: string[], category?: string) =>
-    findByType(bare, [type], names) ?? findRole(terrains, [type], names, category);
-  const forest = findRole(terrains, ["forest"], ["forest", "mixed forest", "woods"], "forest");
+  const rugged = (type: string, names: string[]) =>
+    findByType(bare, [type], names) ?? findByType(terrains, [type], names);
+  const forest = findByType(terrains, ["forest"], ["forest", "mixed forest", "woods"]);
   return {
     sea,
     plains,
-    deep: findRole(terrains, ["deep-water"], ["trench", "deep ocean", "deep water", "abyss"]),
-    shallows: findRole(terrains, ["shallows"], ["shallows", "shallow water", "reef"]),
-    beach: findRole(terrains, ["coast"], ["beach", "coast", "shore", "sand"], "coast"),
+    deep: findByType(terrains, ["deep-water"], ["trench", "deep ocean", "deep water", "abyss"]),
+    shallows: findByType(terrains, ["shallows"], ["shallows", "shallow water", "reef"]),
+    beach: findByType(terrains, ["coast"], ["beach", "coast", "shore", "sand"]),
     forest,
-    jungle: findRole(terrains, ["jungle"], ["jungle", "rainforest"]),
-    swamp: findRole(terrains, ["wetland"], ["swamp", "marsh", "bog"], "bog"),
+    jungle: findByType(terrains, ["jungle"], ["jungle", "rainforest"]),
+    swamp: findByType(terrains, ["wetland"], ["swamp", "marsh", "bog"]),
     hills: rugged("hills", ["hills", "hill", "foothills"]),
-    mountain: rugged("mountains", ["mountain", "mountains"], "mountain"),
-    peak: findRole(terrains, ["peaks"], ["peak", "mountains snow", "mountain snow", "snowy peak"]),
-    snow: findRole(terrains, ["snow"], ["snow", "tundra", "ice", "glacier"], "snow"),
-    desert: findRole(terrains, ["desert"], ["desert", "dunes", "desert rocky"], "desert"),
-    badlands: findRole(terrains, ["badlands"], ["badlands", "brokenlands", "wasteland"]),
-    volcano: findRole(terrains, ["volcanic"], ["volcano", "volcanic"]),
+    mountain: rugged("mountains", ["mountain", "mountains"]),
+    peak: findByType(terrains, ["peaks"], ["peak", "mountains snow", "mountain snow", "snowy peak"]),
+    snow: findByType(terrains, ["snow"], ["snow", "tundra", "ice", "glacier"]),
+    desert: findByType(terrains, ["desert"], ["desert", "dunes", "desert rocky"]),
+    badlands: findByType(terrains, ["badlands"], ["badlands", "brokenlands", "wasteland"]),
+    volcano: findByType(terrains, ["volcanic"], ["volcano", "volcanic"]),
     variants: planetVariants(terrains, forest),
   };
 }
@@ -491,7 +489,7 @@ const TYPE_TARGETS: Record<string, [number, number, number]> = {
 
 function targetOf(c: ContextTerrain | undefined): [number, number, number] | undefined {
   if (!c) return undefined;
-  const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+  const type = isTerrainType(c.type) ? c.type : undefined;
   return type ? TYPE_TARGETS[type] : undefined;
 }
 
@@ -804,7 +802,7 @@ export function edgePulls(
 ): (EdgePull | undefined)[] {
   const cells = [...edgeCells]
     .map(([k, c]) => {
-      const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+      const type = isTerrainType(c.type) ? c.type : undefined;
       return { at: k.split("_").map(Number) as [number, number], type };
     })
     .filter((c): c is { at: [number, number]; type: NonNullable<typeof c.type> } => !!c.type && !!TYPE_TARGETS[c.type]);

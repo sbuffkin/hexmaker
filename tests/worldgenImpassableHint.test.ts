@@ -49,12 +49,14 @@ describe("impassable suggestions", () => {
     expect(suggestImpassable(model(coast, paths), new Map(), ["sea"])).toEqual([]);
   });
 
-  it("without paths, only suggests big terrain that looks like water", () => {
-    const colors = new Map([["deepblue", "#2a4d9b"], ["grass", "#5a9a3a"], ["Lake", "#999999"]]);
-    const m = model({ deepblue: 300, grass: 400, Lake: 100, forest: 200 });
-    const hints = suggestImpassable(m, colors);
-    expect(hints.map((h) => h.terrain)).toEqual(["deepblue", "Lake"]);
+  it("without paths, only suggests big terrain that looks like water or the palette marks impassable", () => {
+    const colors = new Map([["deepblue", "#2a4d9b"], ["grass", "#5a9a3a"], ["Lake", "#999999"], ["Glass", "#999999"]]);
+    const m = model({ deepblue: 300, grass: 400, Lake: 100, Glass: 100, forest: 200 });
+    // Named like water but neither blue nor marked: not suggested (never by name).
+    expect(suggestImpassable(m, colors).map((h) => h.terrain)).toEqual(["deepblue"]);
+    const hints = suggestImpassable(m, colors, [], new Set(["Glass"]));
+    expect(hints.map((h) => h.terrain)).toEqual(["deepblue", "Glass"]);
     expect(hints[0].reason).toContain("colour");
-    expect(hints[1].reason).toContain("name");
+    expect(hints[1].reason).toContain("palette marks it impassable");
   });
 });

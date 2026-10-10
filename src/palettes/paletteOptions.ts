@@ -1,6 +1,6 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { PALETTE_PRESETS, SPACE_SECTOR_PALETTE_NAME } from "./presets";
-import { enabledKinds, isKindEnabled, isSpacePalette } from "../mapKinds";
+import { PALETTE_PRESETS } from "./presets";
+import { ALL_MAP_KINDS, enabledKinds, isKindEnabled, isSpacePalette, type MapKind } from "../mapKinds";
 import { EXPANDED_PALETTE_NAME, LIMITED_PALETTE_NAME } from "../constants";
 
 /**
@@ -46,7 +46,8 @@ export function refreshPaletteHint(select: HTMLSelectElement): void {
  * Whether new maps default to the Expanded palette (GEN1 = B: new installs
  * only). A saved value wins; without one, a fresh install (no saved data)
  * gets true and an update gets false, so existing users keep the default
- * they had (their first overland palette).
+ * they had (their first overland palette). Only used to seed
+ * `defaultPalette` (see resolveDefaultPalette).
  */
 export function resolveExpandedDefault(raw: Record<string, unknown> | null | undefined): boolean {
   const saved = raw?.["expandedByDefault"];
@@ -55,35 +56,47 @@ export function resolveExpandedDefault(raw: Record<string, unknown> | null | und
 }
 
 /**
- * Palette a new top-level map starts on when the user hasn't picked one.
- * World users on a fresh install get Expanded when it's installed (G7b);
- * existing installs (`expandedByDefault: false`) keep their first overland
- * palette, as before G7b. With no overland palette installed: the
- * Expanded preset (fresh) or the first world preset (existing). Space-only
- * users get Space - Sector (installed, else the preset, which createNewMap
- * installs on first use) or another installed space palette.
+ * The "Palette for new maps" setting from data.json. A saved value wins
+ * ("" = first palette). Without one it is seeded once from GEN1: Expanded
+ * on fresh installs (and installs that already defaulted to it), blank for
+ * older installs. After that it is an ordinary setting the user can point
+ * at any palette; nothing looks for the name "Expanded" again.
+ */
+export function resolveDefaultPalette(raw: Record<string, unknown> | null | undefined): string {
+  const saved = raw?.["defaultPalette"];
+  if (typeof saved === "string") return saved;
+  return resolveExpandedDefault(raw) ? EXPANDED_PALETTE_NAME : "";
+}
+
+/**
+ * Palette a new top-level map starts on when the user hasn't picked one:
+ * the "Palette for new maps" setting (`defaultPalette`), when that palette
+ * is installed and its map type is on. Otherwise the first installed
+ * palette of an enabled map type (overland before space); with none
+ * installed, the setting's preset (createNewMap installs it on first use),
+ * else the first preset of an enabled type.
+ * No palette is special by name: rename or delete any of them and this
+ * still picks something sensible.
  */
 export function defaultPaletteFor(settings: {
   mapKinds?: string[];
   terrainPalettes: { name: string; terrains: readonly { type?: string }[] }[];
-  /** See resolveExpandedDefault. Unset = fresh-install behaviour. */
-  expandedByDefault?: boolean;
+  /** See resolveDefaultPalette. Unset or "" = first palette. */
+  defaultPalette?: string;
 }): string {
   const kinds = enabledKinds(settings);
   const pals = settings.terrainPalettes;
-  if (kinds.has("world")) {
-    const world = pals.filter((p) => !isSpacePalette(p.terrains));
-    const fresh = settings.expandedByDefault !== false;
-    if (fresh) {
-      const expanded = world.find((p) => p.name === EXPANDED_PALETTE_NAME);
-      if (expanded) return expanded.name;
-    }
-    if (world.length) return world[0].name;
-    if (fresh) return EXPANDED_PALETTE_NAME;
-    return PALETTE_PRESETS.find((p) => p.kind === "world")?.name ?? EXPANDED_PALETTE_NAME;
+  const kindOf = (terrains: readonly { type?: string }[]): MapKind => (isSpacePalette(terrains) ? "space" : "world");
+  const want = settings.defaultPalette;
+  const installed = want ? pals.find((p) => p.name === want) : undefined;
+  if (installed && kinds.has(kindOf(installed.terrains))) return installed.name;
+  for (const kind of ALL_MAP_KINDS) {
+    if (!kinds.has(kind)) continue;
+    const first = pals.find((p) => kindOf(p.terrains) === kind);
+    if (first) return first.name;
   }
-  const space = pals.filter((p) => isSpacePalette(p.terrains));
-  return space.find((p) => p.name === SPACE_SECTOR_PALETTE_NAME)?.name ?? space[0]?.name ?? SPACE_SECTOR_PALETTE_NAME;
+  const preset = want && !installed ? PALETTE_PRESETS.find((p) => p.name === want && kinds.has(p.kind)) : undefined;
+  return preset?.name ?? PALETTE_PRESETS.find((p) => kinds.has(p.kind))?.name ?? pals[0]?.name ?? "";
 }
 
 /**
@@ -125,4 +138,27 @@ export function fillPaletteSelect(
     if (Array.from(select.options).some((o) => o.value === fallback)) select.value = fallback;
   }
   hintUpdaters.get(select)?.();
+}
+
+/**
+ * A palette was renamed: repoint everything that names it (maps, the
+ * "Palette for new maps" setting, other palettes' child palette and
+ * Submap defaults), so a rename never silently drops a reference.
+ */
+export function repointPaletteName(
+  settings: {
+    maps: { paletteName: string }[];
+    defaultPalette?: string;
+    terrainPalettes: { childPalette?: string; submapDefaults?: Record<string, { palette?: string }> }[];
+  },
+  oldName: string,
+  newName: string,
+): void {
+  if (oldName === newName) return;
+  for (const m of settings.maps) if (m.paletteName === oldName) m.paletteName = newName;
+  if (settings.defaultPalette === oldName) settings.defaultPalette = newName;
+  for (const p of settings.terrainPalettes) {
+    if (p.childPalette === oldName) p.childPalette = newName;
+    for (const row of Object.values(p.submapDefaults ?? {})) if (row.palette === oldName) row.palette = newName;
+  }
 }

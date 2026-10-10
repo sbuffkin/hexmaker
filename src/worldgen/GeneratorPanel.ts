@@ -35,6 +35,7 @@ import { getIconUrl, linkLabel } from "../utils";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
+import { isImpassable } from "../impassable";
 import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
@@ -262,7 +263,7 @@ export class GeneratorPanel {
     summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
 
     // Current settings, kept in sync with the file.
-    const s = () => generatorSettings(model);
+    const s = () => generatorSettings(model, this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? []);
     // A just-loaded save's settings win over a possibly stale read of the file.
     const isThisGenerator = (sv: GeneratorSave) => (!!file && sv.generatorPath === file.path) || sv.generatorName === model.name;
     if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
@@ -1005,7 +1006,8 @@ export class GeneratorPanel {
     // Terrain the learned paths go around, offered to add (never added for you).
     const drawHints = () => {
       hintBox.empty();
-      const hints = suggestImpassable(model, colors, s().impassable);
+      const palette = this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? [];
+      const hints = suggestImpassable(model, colors, s().impassable, new Set(palette.filter(isImpassable).map((t) => t.name)));
       if (!hints.length) return;
       const row = hintBox.createDiv({ cls: "duckmage-region-row" });
       row.createSpan({ text: "Suggested", cls: "duckmage-map-origin-label" });

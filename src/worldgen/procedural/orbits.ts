@@ -4,13 +4,9 @@ import {
   cellKey,
   centerHex,
   distance,
-  findByType,
-  findTerrain,
   gridKeys,
-  inCategory,
   ofType,
   typeIndex,
-  untyped,
   weightedPick,
   type GenerationContext,
   type ProcGrid,
@@ -27,10 +23,11 @@ import {
  * giants more often, and up to two; the mainworld may get a station or starport alongside;
  * a comet and a jump point sit out past the last orbit.
  *
- * Works on any palette with a background (type void, or "void" / "empty
- * space" / first `space` terrain) and at least one star and one body — by
- * type (star; world / gas-giant / asteroids), else by name or the `stars`
- * / `bodies` categories.
+ * Works on any palette with a background (type void), at least one star
+ * (type star) and one body (world / gas-giant / asteroids). Every other
+ * role has its own type too — moon, comet, station, starport, jump point,
+ * jump limit — so it is the Type column, never a terrain's name, that
+ * decides what goes where.
  */
 
 export const ORBITS_ID = "procedural:orbits";
@@ -60,6 +57,20 @@ export const ORBITS_OPTIONS: ProcOption[] = [
     default: "normal",
   },
 ];
+
+/**
+ * Orbits' options for a palette: the Star choice lists that palette's own
+ * stars (star-typed terrains), so it only offers what it can place. With
+ * no palette given, the shipped star list.
+ */
+export function orbitsOptions(terrains?: TerrainColor[]): ProcOption[] {
+  if (!terrains) return ORBITS_OPTIONS;
+  const stars = ofType(terrains, ["star"]);
+  return ORBITS_OPTIONS.map((o) => o.key !== "star" ? o : {
+    ...o,
+    choices: [{ value: "random", label: "Random" }, ...stars.map((s) => ({ value: s.toLowerCase(), label: s.charAt(0).toUpperCase() + s.slice(1) }))],
+  });
+}
 
 /** Galactic mix: red dwarfs dominate. */
 const STAR_WEIGHTS: Record<string, number> = {
@@ -101,11 +112,6 @@ const ZONE_TYPE_WEIGHTS: Record<string, Record<Zone, number>> = {
   asteroids: { inner: 0.5, habitable: 1, outer: 1.5 },
 };
 
-/** Typed bodies that never take an orbit of their own. */
-const MOON = /\bmoons?\b|satellite/i;
-const COMET = /comet/i;
-const DEBRIS = /debris|wreck/i;
-
 export interface OrbitRoles {
   background: string;
   stars: string[];
@@ -117,56 +123,42 @@ export interface OrbitRoles {
   jumpPoint?: string;
   jumpLimit?: string;
   belt?: string;
-  /** Bodies drawn as an arc of their ring (asteroid-type bodies, belts). */
+  /** Bodies drawn as an arc of their ring (asteroid-belt type). */
   belts: string[];
-  /** Bodies that may get a moon (gas-giant type, or "giant" in the name). */
+  /** Bodies that may get two moons (gas-giant type). */
   giants: string[];
   /** Per-zone body weights (lower-case names) for weightedPick. */
   zoneWeights: Record<Zone, Record<string, number>>;
 }
 
 /**
- * Roles by type first — void, star, world / gas-giant / asteroids, station
- * — split by name hints where the type is coarse (moon vs planet, comet vs
- * belt, starport vs jump point); untyped terrains fall back to the
- * category and exact-name lookups.
+ * Roles by terrain type only: void (background), star, world / gas-giant /
+ * asteroids (bodies that take an orbit), and one terrain each for moon,
+ * comet, station, starport, jump point and jump limit. A terrain's name
+ * plays no part, so a custom palette ("Luna" typed moon) works the same as
+ * the shipped one, and an untyped terrain is never placed.
  */
 export function orbitRoles(terrains: TerrainColor[]): OrbitRoles | undefined {
-  const loose = untyped(terrains);
-  // "jump limit" is void-typed too, but it is a marker, not the background.
-  const background = findByType(terrains.filter((t) => !/limit/i.test(t.name)), ["void"], ["void", "empty space", "deep space", "space"])
-    ?? findTerrain(loose, ["void", "empty space", "deep space", "space"], "space");
-  // A sector's "star system" marker is star-typed but isn't a star.
-  let stars = [...ofType(terrains, ["star"]).filter((s) => !/system/i.test(s)), ...inCategory(loose, "stars")];
-  if (stars.length === 0) {
-    const s = findTerrain(loose, ["yellow star", "star", "sun"]);
-    stars = s ? [s] : [];
-  }
-  const typedBodies = ofType(terrains, ["world", "gas-giant", "asteroids"]);
-  let bodies = [
-    ...typedBodies.filter((b) => !MOON.test(b) && !COMET.test(b) && !DEBRIS.test(b)),
-    ...inCategory(loose, "bodies").filter((b) => !/^(moon|comet)$/i.test(b)),
-  ];
-  if (bodies.length === 0) bodies = loose.map((t) => t.name).filter((n) => BODY_NAMES.includes(n.toLowerCase()));
+  const background = ofType(terrains, ["void"])[0];
+  const stars = ofType(terrains, ["star"]);
+  const bodies = ofType(terrains, ["world", "gas-giant", "asteroids"]);
   if (!background || stars.length === 0 || bodies.length === 0) return undefined;
   const types = typeIndex(terrains);
-  const exact = (n: string) => findTerrain(loose, [n]);
-  const station = (want: RegExp | undefined, avoid: RegExp | undefined, prefer: string[]) =>
-    findByType(terrains.filter((t) => (!want || want.test(t.name)) && !avoid?.test(t.name)), ["station"], prefer);
-  const belts = bodies.filter((b) => types.get(b.toLowerCase()) === "asteroids" || /belt/i.test(b));
+  const first = (type: string) => ofType(terrains, [type])[0];
+  const belts = ofType(terrains, ["asteroids"]);
   return {
     background,
     stars,
     bodies,
-    moon: findByType(terrains.filter((t) => MOON.test(t.name)), ["world"], ["moon"]) ?? exact("moon"),
-    comet: findByType(terrains.filter((t) => COMET.test(t.name)), ["asteroids"], ["comet"]) ?? exact("comet"),
-    station: station(undefined, /port|jump|gate/i, ["space station", "station"]) ?? exact("space station"),
-    starport: station(/port/i, undefined, ["starport"]) ?? exact("starport"),
-    jumpPoint: station(/jump|gate/i, undefined, ["jump point"]) ?? exact("jump point"),
-    jumpLimit: findByType(terrains.filter((t) => /limit/i.test(t.name)), ["void"], ["jump limit"]) ?? exact("jump limit"),
+    moon: first("moon"),
+    comet: first("comet"),
+    station: first("station"),
+    starport: first("starport"),
+    jumpPoint: first("jump-point"),
+    jumpLimit: first("jump-limit"),
     belt: belts[0],
     belts,
-    giants: bodies.filter((b) => types.get(b.toLowerCase()) === "gas-giant" || /giant/i.test(b)),
+    giants: ofType(terrains, ["gas-giant"]),
     zoneWeights: {
       inner: zoneWeights(bodies, types, "inner"),
       habitable: zoneWeights(bodies, types, "habitable"),

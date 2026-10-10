@@ -32,7 +32,7 @@ import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
-import { resolveExpandedDefault } from "./palettes/paletteOptions";
+import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
@@ -644,7 +644,10 @@ export default class HexmakerPlugin extends Plugin {
     // once from the raw data, like the level, and saved with it.
     this.settings.expandedByDefault = resolveExpandedDefault(rawData);
     const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
-    if (firstLevel || firstExpanded || !rawData?.["installedAt"]) await this.saveData(this.settings);
+    // "Palette for new maps": seeded once from the above, then the user's.
+    this.settings.defaultPalette = resolveDefaultPalette(rawData);
+    const firstDefaultPalette = typeof rawData?.["defaultPalette"] !== "string";
+    if (firstLevel || firstExpanded || firstDefaultPalette || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
   /**
@@ -1987,16 +1990,20 @@ export default class HexmakerPlugin extends Plugin {
 
   /**
    * Palette to pre-select for a new submap of `parentMap`: the parent
-   * palette's `childPalette` (installed or a preset), else the parent's own
-   * palette, else the first palette.
+   * palette's `childPalette` (its note's `child-palette`; the preset's only
+   * while that preset isn't installed), else the parent's own palette, else
+   * the palette for new maps. An installed palette is never topped up from
+   * a same-named preset: clearing its child palette means none.
    */
   childPaletteFor(parentMap: string): string {
     const parentPaletteName = this.getMap(parentMap)?.paletteName;
     const parentPalette = parentPaletteName ? this.getPaletteByName(parentPaletteName) : undefined;
-    const child = parentPalette?.childPalette ?? (parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined);
+    const child = parentPalette
+      ? parentPalette.childPalette
+      : parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined;
     if (child && (this.getPaletteByName(child) || getPreset(child))) return child;
     if (parentPalette) return parentPalette.name;
-    return this.settings.terrainPalettes[0]?.name ?? DEFAULT_PALETTE_NAME;
+    return defaultPaletteFor(this.settings);
   }
 
   /**
@@ -2106,15 +2113,17 @@ export default class HexmakerPlugin extends Plugin {
   /**
    * Saved setup for a new submap made from a `terrain` hex on `parentMap`:
    * the parent palette's Submap defaults row for that terrain (from its
-   * note), else the matching preset's row (palettes installed before the
-   * preset gained defaults still get them).
+   * note). Only a preset that isn't installed answers from its own rows;
+   * palettes installed before their preset gained defaults got the rows
+   * copied in once (PaletteStore, `paletteDataUpgraded`), so a row the user
+   * deletes stays deleted.
    */
   submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined {
     if (!terrain) return undefined;
     const paletteName = this.getMap(parentMap)?.paletteName;
     if (!paletteName) return undefined;
-    const own = this.getPaletteByName(paletteName)?.submapDefaults?.[terrain];
-    if (own) return own;
+    const pal = this.getPaletteByName(paletteName);
+    if (pal) return pal.submapDefaults?.[terrain];
     return getPreset(paletteName)?.submapDefaults?.[terrain];
   }
 
@@ -2132,7 +2141,7 @@ export default class HexmakerPlugin extends Plugin {
     const paletteName = this.getMap(parentMap)?.paletteName;
     const pal = paletteName ? this.getPaletteByName(paletteName) : undefined;
     if (!pal) return;
-    // Start from what the user currently sees (own row, else the preset row).
+    // Start from what the user currently sees (see submapDefaultFor).
     const current: SubmapDefault = { ...(this.submapDefaultFor(parentMap, terrain) ?? {}) };
     for (const k of clear) delete current[k];
     Object.assign(current, set);
@@ -2191,7 +2200,7 @@ export default class HexmakerPlugin extends Plugin {
     if (!r) {
       r = {
         name,
-        paletteName: DEFAULT_PALETTE_NAME,
+        paletteName: defaultPaletteFor(this.settings),
         gridSize: { cols: 20, rows: 16 },
         gridOffset: { x: 0, y: 0 },
         pathChains: [],

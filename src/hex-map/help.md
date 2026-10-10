@@ -131,7 +131,9 @@ Pickers that link notes (to hexes, tokens, sections) never offer template notes 
 
 ## Palettes
 
-**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**.
+
+No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 
 ## Rolling from a hex
 
