@@ -69,27 +69,21 @@ export function impassableNames(palette: readonly TerrainColor[]): string[] {
   return palette.filter(isImpassable).map((t) => t.name);
 }
 
-/** Path type names that cross water by nature (rivers), when unset. */
-const WATERY_PATH = /\b(river|stream|creek|brook|canal|waterway|sea lane|shipping)\b/i;
-
 /**
- * Whether auto-routes of this path type go around impassable terrain.
- * Unset: yes, except for river-like types (a river runs into the sea).
+ * Whether auto-routes of this path type go around impassable terrain: the
+ * type's own setting (never its name). Missing only on data from older
+ * builds before migration; that counts as yes.
  */
-export function pathAvoidsImpassable(pt: Pick<PathType, "name" | "avoidImpassable">): boolean {
-  return pt.avoidImpassable ?? !WATERY_PATH.test(pt.name);
+export function pathAvoidsImpassable(pt: { avoidImpassable?: boolean }): boolean {
+  return pt.avoidImpassable ?? true;
 }
 
-/** River-like path names (they wind when auto-routed). */
-const RIVER_PATH = /\b(river|stream|creek)s?\b/i;
-
 /**
- * Whether auto-routes of this path type meander (rivers) rather than keep to
- * the straight line (roads): types that don't avoid impassable terrain, or
- * that are named like a river (round 7 U17).
+ * Whether auto-routes of this path type wander rather than keep to the
+ * straight line: the type's Auto-route option (round 7 U17, PA5).
  */
-export function pathMeanders(pt: Pick<PathType, "name" | "avoidImpassable">): boolean {
-  return !pathAvoidsImpassable(pt) || RIVER_PATH.test(pt.name);
+export function pathMeanders(pt: { autoRoute?: PathType["autoRoute"] }): boolean {
+  return pt.autoRoute === "winding";
 }
 
 /** Palette-note cell for the flag: "yes"/"no" for overrides, "" for the type default. */
@@ -104,15 +98,6 @@ export function impassableCell(t: Pick<TerrainColor, "impassable">): string {
  */
 export function impassableNoteCell(t: ImpassableInput): string {
   return impassableCell(t) || derivedCell(impassableByDefault(t) ? "yes" : "no");
-}
-
-/**
- * Palette-note Avoid impassable cell for a path type: "yes"/"no" when set,
- * else the default in parentheses (rivers "(no)", other paths "(yes)").
- */
-export function avoidImpassableNoteCell(pt: Pick<PathType, "name" | "avoidImpassable">): string {
-  if (pt.avoidImpassable !== undefined) return pt.avoidImpassable ? "yes" : "no";
-  return derivedCell(pathAvoidsImpassable(pt) ? "yes" : "no");
 }
 
 /**

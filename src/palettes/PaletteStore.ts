@@ -16,7 +16,8 @@ import {
   updatePaletteNote,
 } from "./paletteNote";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTypesDerivedStale, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { DEFAULT_PATH_TYPES } from "../constants";
 import { inferTerrainType } from "../terrainTypes";
 
@@ -43,7 +44,7 @@ export function seedTerrainTypes(palettes: TerrainPalette[]): number {
  * Copy a note's metadata (`child-palette`, the Submap defaults table) onto
  * the palette. Returns true if anything changed.
  */
-function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
+function applyNoteMeta(pal: TerrainPalette, content: string, legacy = false): boolean {
   let changed = false;
   const child = readChildPalette(content);
   if (pal.childPalette !== child) {
@@ -59,7 +60,7 @@ function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
   }
   // Path types: a note without the table keeps the ones we have (a slip
   // that breaks the table header mustn't wipe them; sync writes it back).
-  const paths = parsePathTypes(content);
+  const paths = parsePathTypes(content, { legacy });
   if (paths && pathTypesKey(pal.pathTypes) !== pathTypesKey(paths.types)) {
     if (pal.pathTypes) pal.pathTypes.splice(0, pal.pathTypes.length, ...paths.types);
     else pal.pathTypes = paths.types;
@@ -69,15 +70,18 @@ function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
 }
 
 /**
- * The note with every derived cell (Type, Impassable, Avoid impassable in
- * parentheses) showing what the plugin works out now. Unchanged when they
- * already do; a path-types table with unreadable rows is left alone.
+ * The note with every derived or defaulted cell filled in: the terrain
+ * table's Type and Impassable in parentheses, and the path types' behaviour
+ * cells (blank ones written out). `pathTypes` is what the palette holds
+ * (read with the rules that applied when it was loaded); without it the
+ * note's own table is used. Unchanged when nothing is missing; a path-types
+ * table with unreadable rows is left alone.
  */
-export function refreshNoteDerived(content: string): string {
-  let next = refreshPaletteDerived(content);
+export function refreshNoteDerived(content: string, pathTypes?: PathType[]): string {
+  const next = refreshPaletteDerived(content);
   const paths = parsePathTypes(next);
-  if (paths && !paths.skipped.length && pathTypesDerivedStale(next)) next = setPathTypes(next, paths.types);
-  return next;
+  if (!paths || paths.skipped.length || !paths.implicit) return next;
+  return setPathTypes(next, pathTypes ?? paths.types);
 }
 
 /** A fresh note for a palette, metadata included. */
@@ -227,6 +231,9 @@ export class PaletteStore {
     await this.ensureFolder();
     const settings = this.plugin.settings;
     let dirty = false;
+    // PA5: path types from older builds get explicit behaviour (from the old
+    // name rules, once), so nothing changes look.
+    if (!settings.pathTypesExplicit && fillLegacyPathTypes(settings.terrainPalettes, settings.pathTypes)) dirty = true;
 
     // Migration (and safety net): when the folder holds no palette notes —
     // first run after upgrading, or the folder setting was pointed somewhere
@@ -290,6 +297,10 @@ export class PaletteStore {
     // Notes from older builds (or edited by hand since) get their derived
     // cells shown: the Impassable column, inferred types in parentheses.
     for (const file of this.paletteFiles()) await this.refreshDerived(file);
+    if (!settings.pathTypesExplicit) {
+      settings.pathTypesExplicit = true;
+      dirty = true;
+    }
     if (dirty) await this.persist();
   }
 
@@ -322,7 +333,7 @@ export class PaletteStore {
         pal = { name: file.basename, terrains };
         changed = true;
       }
-      if (applyNoteMeta(pal, content)) changed = true;
+      if (applyNoteMeta(pal, content, !settings.pathTypesExplicit)) changed = true;
       this.bind(pal, file.path, content);
       next.push(pal);
     }
@@ -465,7 +476,7 @@ export class PaletteStore {
     const { vault } = this.plugin.app;
     const current = await vault.read(file);
     if (!parsePaletteNote(current)) return;
-    const next = refreshNoteDerived(current);
+    const next = refreshNoteDerived(current, this.paletteBoundTo(file.path)?.pathTypes);
     if (next === current) return;
     this.lastContent.set(file.path, next);
     await vault.modify(file, next);
@@ -547,7 +558,7 @@ export class PaletteStore {
       // The hand edit may have changed what the derived cells should say
       // (a new type, a terrain added without a type): refresh them now, or
       // once the user leaves the note if they're still typing in it.
-      if (refreshNoteDerived(content) !== content) {
+      if (refreshNoteDerived(content, pal.pathTypes) !== content) {
         if (this.isBeingEdited(file.path)) this.pendingDerived.add(file.path);
         else await this.refreshDerived(file);
       }

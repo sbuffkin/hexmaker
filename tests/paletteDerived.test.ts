@@ -8,10 +8,10 @@ import {
 	serializePaletteTable,
 	updatePaletteNote,
 } from "../src/palettes/paletteNote";
-import { parsePathTypes, pathTypesDerivedStale, serializePathTypes, setPathTypes } from "../src/palettes/pathTypeTable";
+import { parsePathTypes, serializePathTypes } from "../src/palettes/pathTypeTable";
 import { refreshNoteDerived } from "../src/palettes/PaletteStore";
 import { classifyPaletteTable, isPaletteFrontmatter, tableMarkdown } from "../src/palettes/paletteReadingView";
-import { avoidImpassableNoteCell, impassableNoteCell, parseImpassableCell, pathAvoidsImpassable } from "../src/impassable";
+import { impassableNoteCell, parseImpassableCell, pathAvoidsImpassable } from "../src/impassable";
 import { effectiveTerrainType, isDerivedCell, normalizeTerrainType, parseTerrainTypeCell, terrainTypeCell } from "../src/terrainTypes";
 import type { PathType, TerrainColor } from "../src/types";
 
@@ -118,48 +118,32 @@ describe("palette derived cells (P1)", () => {
 	});
 });
 
-describe("path types Avoid impassable derived cells (P1)", () => {
+// PA5: path type behaviour is always written out; no derived cells there.
+describe("path types write every option out (PA5)", () => {
 	const types: PathType[] = [
-		{ name: "Road", color: "#a16207", width: 4, lineStyle: "solid", routing: "through" },
-		{ name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander" },
-		{ name: "Trail", color: "#8b5a2b", width: 2, lineStyle: "dashed", routing: "through", avoidImpassable: false },
+		{ name: "Road", color: "#a16207", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" },
+		{ name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false, autoRoute: "winding" },
 	];
 
-	it("writes the default in parentheses and reads it back as unset", () => {
+	it("writes explicit values and round-trips", () => {
 		const table = serializePathTypes(types);
-		expect(row(table, "Road")).toBe("| Road | #a16207 | 4 | solid | through | (yes) |");
-		expect(row(table, "River")).toBe("| River | #3b82f6 | 3 | solid | meander | (no) |");
-		expect(row(table, "Trail")).toBe("| Trail | #8b5a2b | 2 | dashed | through | no |");
-		const back = parsePathTypes(`## Path types\n\n${table}\n`)!.types;
-		expect(back).toEqual(types);
-		expect(back.map(pathAvoidsImpassable)).toEqual([true, false, false]);
-		expect(avoidImpassableNoteCell({ name: "Creek" })).toBe("(no)");
+		expect(row(table, "Road")).toBe("| Road | #a16207 | 4 | solid | through | yes | direct |");
+		expect(row(table, "River")).toBe("| River | #3b82f6 | 3 | solid | meander | no | winding |");
+		const back = parsePathTypes(`## Path types\n\n${table}\n`)!;
+		expect(back.types).toEqual(types);
+		expect(back.implicit).toBe(false);
+		expect(back.types.map(pathAvoidsImpassable)).toEqual([true, false]);
 	});
 
-	it("a hand edit removing the parentheses makes it explicit", () => {
-		const note = setPathTypes(buildPaletteNote([{ name: "grass", color: "#0f0" }]), types).replace(
-			"| River | #3b82f6 | 3 | solid | meander | (no) |",
-			"| River | #3b82f6 | 3 | solid | meander | no |",
-		);
-		expect(parsePathTypes(note)!.types[1].avoidImpassable).toBe(false);
-	});
-
-	it("an older table with blank cells reads the same and gets its defaults shown", () => {
-		const old = "## Path types\n\n| Path | Color | Width | Style | Routing | Avoid impassable |\n| --- | --- | --- | --- | --- | --- |\n| Road | #a16207 | 4 | solid | through |  |\n| River | #3b82f6 | 3 | solid | meander |  |\n";
-		expect(parsePathTypes(old)!.types).toEqual(types.slice(0, 2));
-		expect(pathTypesDerivedStale(old)).toBe(true);
-		const fresh = setPathTypes(old, types.slice(0, 2));
-		expect(fresh).toContain("| River | #3b82f6 | 3 | solid | meander | (no) |");
-		expect(pathTypesDerivedStale(fresh)).toBe(false);
-		expect(setPathTypes(fresh, types.slice(0, 2))).toBe(fresh);
-	});
-
-	it("refreshNoteDerived updates both tables and leaves a fresh note alone", () => {
-		const old = "---\nhexmaker-palette: 1\n---\n\n| Terrain | Color |\n| --- | --- |\n| lake | #00f |\n\n## Path types\n\n| Path | Color | Width | Style | Routing | Avoid impassable |\n| --- | --- | --- | --- | --- | --- |\n| River | #3b82f6 | 3 | solid | meander |  |\n";
+	it("refreshNoteDerived fills blank path cells and the terrain cells, and leaves a full note alone", () => {
+		const old = "---\nhexmaker-palette: 1\n---\n\n| Terrain | Color |\n| --- | --- |\n| lake | #00f |\n\n## Path types\n\n| Path | Color | Width | Style | Routing | Avoid impassable |\n| --- | --- | --- | --- | --- | --- |\n| Ley line | #3b82f6 | 3 | solid | meander |  |\n";
 		const fresh = refreshNoteDerived(old);
 		expect(fresh).toContain("| lake | #00f |  |  |  | (water) | (yes) |");
-		expect(fresh).toContain("| River | #3b82f6 | 3 | solid | meander | (no) |");
+		expect(fresh).toContain("| Ley line | #3b82f6 | 3 | solid | meander | yes | direct |");
 		expect(refreshNoteDerived(fresh)).toBe(fresh);
+		// With the palette's own types (read with the old rules while migrating), those are written.
+		const migrated = refreshNoteDerived(old, [{ ...types[1], name: "Ley line" }]);
+		expect(migrated).toContain("| Ley line | #3b82f6 | 3 | solid | meander | no | winding |");
 	});
 });
 
@@ -176,11 +160,11 @@ describe("palette reading view (P2)", () => {
 	});
 
 	it("recognises the path types table and reads each row's style", () => {
-		const table = serializePathTypes([{ name: "Trail | old", color: "#8b5a2b", width: 2, lineStyle: "dashed", routing: "edge" }]);
+		const table = serializePathTypes([{ name: "Trail | old", color: "#8b5a2b", width: 2, lineStyle: "dashed", routing: "edge", avoidImpassable: true, autoRoute: "direct" }]);
 		const lines = table.split("\n");
-		const headers = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable"];
+		const headers = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable", "Auto-route"];
 		expect(lines[0]).toBe(`| ${headers.join(" | ")} |`);
-		const view = classifyPaletteTable(headers, [["Trail | old", "#8b5a2b", "2", "dashed", "edge", "(yes)"]])!;
+		const view = classifyPaletteTable(headers, [["Trail | old", "#8b5a2b", "2", "dashed", "edge", "yes", "direct"]])!;
 		expect(view.kind).toBe("paths");
 		if (view.kind !== "paths") return;
 		expect(view.types.get("Trail | old")).toMatchObject({ lineStyle: "dashed", routing: "edge", width: 2 });

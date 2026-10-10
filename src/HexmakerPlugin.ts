@@ -12,6 +12,7 @@ import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
+import { fillLegacyPathTypes } from "./palettes/pathTypeLegacy";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
 import { maybePromptTableRanges, openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
@@ -610,6 +611,10 @@ export default class HexmakerPlugin extends Plugin {
         }),
       );
     }
+    // PA5: path types saved before every behaviour was an explicit option get
+    // them filled in from the old name rules (once), so no map changes look.
+    // Notes are migrated by PaletteStore on attach.
+    if (!this.settings.pathTypesExplicit) fillLegacyPathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
     if (!this.settings.hexOrientation) this.settings.hexOrientation = "pointy";
     if (!this.settings.tablesFolder)
       this.settings.tablesFolder = "world/tables";

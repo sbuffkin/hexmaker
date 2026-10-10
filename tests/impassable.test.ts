@@ -47,10 +47,10 @@ describe("impassable terrain (P1)", () => {
     const river = DEFAULT_PATH_TYPES.find((p) => p.name === "River")!;
     expect(pathAvoidsImpassable(road)).toBe(true);
     expect(pathAvoidsImpassable(river)).toBe(false);
-    // Unset: by name.
-    expect(pathAvoidsImpassable({ name: "Trail" })).toBe(true);
-    expect(pathAvoidsImpassable({ name: "Mountain stream" })).toBe(false);
-    expect(pathAvoidsImpassable({ name: "River", avoidImpassable: true })).toBe(true);
+    // The type's own setting, never its name (PA5).
+    expect(pathAvoidsImpassable({ avoidImpassable: true })).toBe(true);
+    expect(pathAvoidsImpassable({ avoidImpassable: false })).toBe(false);
+    expect(pathAvoidsImpassable({})).toBe(true);
   });
 
   it("the no-route message names the blockers and the way out", () => {

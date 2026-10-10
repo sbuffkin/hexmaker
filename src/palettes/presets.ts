@@ -90,13 +90,13 @@ export const SPACE_SYSTEM_TERRAINS: TerrainColor[] = [
 
 // Sector-scale "roads".
 export const SPACE_PATH_TYPES: PathType[] = [
-  { name: "Jump route", color: "#60a5fa", width: 2, lineStyle: "dashed", routing: "through" },
-  { name: "Trade route", color: "#f59e0b", width: 3, lineStyle: "solid", routing: "through" },
+  { name: "Jump route", color: "#60a5fa", width: 2, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" },
+  { name: "Trade route", color: "#f59e0b", width: 3, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" },
 ];
 
 // System-scale: faint dotted rings the Orbits generator draws around the star.
 export const SYSTEM_PATH_TYPES: PathType[] = [
-  { name: "Orbit", color: "#3b4a6b", width: 1, lineStyle: "dotted", routing: "through" },
+  { name: "Orbit", color: "#3b4a6b", width: 1, lineStyle: "dotted", routing: "through", avoidImpassable: true, autoRoute: "direct" },
 ];
 
 // Drilling down: every system in a sector opens as an Orbits star system…

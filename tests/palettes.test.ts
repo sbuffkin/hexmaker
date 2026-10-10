@@ -628,3 +628,44 @@ describe("PaletteStore derived cells", () => {
 		expect(h.vault.files.get(p)).toContain("| water | (yes) |");
 	});
 });
+
+// PA5: notes from before every path option was explicit are migrated once,
+// with the old name rules, so no map changes look.
+describe("PaletteStore path type migration (PA5)", () => {
+	const OLD = [
+		"---",
+		"hexmaker-palette: 1",
+		"---",
+		"",
+		"| Terrain | Color |",
+		"| --- | --- |",
+		"| grass | #00ff00 |",
+		"",
+		"## Path types",
+		"",
+		"| Path | Color | Width | Style | Routing | Avoid impassable |",
+		"| --- | --- | --- | --- | --- | --- |",
+		"| Road | #a16207 | 4 | solid | through | yes |",
+		"| Creek | #39f | 2 | solid |  |  |",
+		"",
+	].join("\n");
+
+	it("reads blanks with the old rules once, writes them out, then blanks are plain defaults", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true });
+		await h.vault.createFolder("world/palettes");
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, OLD);
+		await h.store.init();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.pathTypes!.find((t) => t.name === "Creek")).toMatchObject({ routing: "meander", avoidImpassable: false, autoRoute: "winding" });
+		expect(h.vault.files.get(p)).toContain("| Creek | #39f | 2 | solid | meander | no | winding |");
+		expect(h.vault.files.get(p)).toContain("| Road | #a16207 | 4 | solid | through | yes | direct |");
+		expect(h.settings.pathTypesExplicit).toBe(true);
+		// After the migration a hand-typed row with blanks gets the plain defaults, whatever its name.
+		h.vault.files.set(p, h.vault.files.get(p)! + "| River two | #00f | 2 | solid |  |  |  |\n");
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		expect(pal.pathTypes!.find((t) => t.name === "River two")).toMatchObject({ routing: "through", avoidImpassable: true, autoRoute: "direct" });
+		expect(h.vault.files.get(p)).toContain("| River two | #00f | 2 | solid | through | yes | direct |");
+	});
+});
