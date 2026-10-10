@@ -67,7 +67,13 @@ import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { LocationsModal } from "./LocationsModal";
 import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
-import { hexChildMaps, submapMenuPlan } from "../maps/submaps";
+import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
+import { OverworldLayer } from "./overworldLayer";
+import { OverworldMinimap } from "./overworldMinimap";
+import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
+import { regionHome } from "../overworld/regionsVault";
+import { parentOf as parentOfCell } from "../overworld/layout";
+import { regionNeighbourMaps } from "../overworld/regionWorld";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { neighbourShadow } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
@@ -112,6 +118,14 @@ type RegionUndoEntry = {
   oldRegion: string | null;
   newRegion: string | null;
 };
+/** A sub-hex painted in an overworld's full view: a hex of a region map. */
+type SubHexUndoEntry = {
+  map: string;
+  key: string;
+  oldTerrain: string | null;
+  oldLocked: boolean;
+  newTerrain: string | null;
+};
 interface CalibrateSnapshot {
   bg?: { offsetX: number; offsetY: number; scale: number; rotation: number; opacity: number };
   grid: { scaleX: number; scaleY: number; offsetX: number; offsetY: number; legacyScale: number };
@@ -122,6 +136,7 @@ type UndoItem =
   | { kind: "icon"; entries: IconUndoEntry[] }
   | { kind: "faction"; entries: FactionUndoEntry[] }
   | { kind: "region"; entries: RegionUndoEntry[] }
+  | { kind: "subhex"; entries: SubHexUndoEntry[] }
   | { kind: "swap"; x1: number; y1: number; x2: number; y2: number }
   | {
       kind: "path";
@@ -335,6 +350,11 @@ export class HexMapView extends ItemView {
   private currentIconStroke: Map<string, IconUndoEntry> | null = null;
   private currentFactionStroke: Map<string, FactionUndoEntry> | null = null;
   private currentRegionStroke: Map<string, RegionUndoEntry> | null = null;
+  private currentSubStroke: Map<string, SubHexUndoEntry> | null = null;
+  /** Overworlds (OW1): every region's hexes stitched on one canvas, and the minimap. */
+  private overworldLayer!: OverworldLayer;
+  private minimap!: OverworldMinimap;
+  private minimapTimer: number | null = null;
   private undoBtn: HTMLButtonElement | null = null;
   private redoBtn: HTMLButtonElement | null = null;
   activeMapName = "default";
@@ -363,6 +383,18 @@ export class HexMapView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: HexmakerPlugin) {
     super(leaf);
     this.plugin = plugin;
+    this.overworldLayer = new OverworldLayer(plugin);
+    this.minimap = new OverworldMinimap(plugin, this);
+  }
+
+  /** Full redraw (the overworld view switch). */
+  redraw(): void {
+    this.renderGrid();
+  }
+
+  /** Timings of the overworld region layer's last draw (dev tools, bench). */
+  overworldStats(): { ms: number; builds: number; regions: number; cells: number } {
+    return { ...this.overworldLayer.lastStats };
   }
 
   getViewType(): string {
@@ -672,6 +704,22 @@ export class HexMapView extends ItemView {
     if (!el) return;
     el.empty();
     const maps = this.plugin.settings.maps;
+    // A region of an overworld: its neighbours are the regions of its parent
+    // hex's six neighbours, named by true bearing ("North-east: Fenmarch").
+    const home = regionHome(this.plugin, this.activeMapName);
+    if (home) {
+      for (const n of regionNeighbourMaps(maps, home.overworld.name, home.layout, home.px, home.py)) {
+        const word = n.bearing[0].toUpperCase() + n.bearing.slice(1);
+        const title = `Neighbouring region to the ${n.bearing}: ${this.plugin.mapLabel(n.map.name)}`;
+        el.createEl("button", {
+          cls: "duckmage-map-crumb duckmage-map-side-crumb",
+          text: `${word}: ${this.plugin.mapLabel(n.map.name)}`,
+          attr: { title, "aria-label": title, "data-side": n.bearing },
+        }).addEventListener("click", () => this.navigateToMap(n.map.name));
+      }
+      el.toggle(el.childElementCount > 0);
+      return;
+    }
     let side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), maps);
     let via: string | null = null;
     if (side.length === 0) {
@@ -910,6 +958,17 @@ export class HexMapView extends ItemView {
         return;
       }
       if (e.button !== 0) return;
+      // Overworld full view: the terrain tool paints the regions' own hexes.
+      if (this.drawingMode === "terrain" && this.overworldLayer.showsRegions(this.getActiveMap())) {
+        isTerrainPainting = true;
+        lastPaintedKey = null;
+        this.currentTerrainStroke = new Map();
+        this.currentSubStroke = new Map();
+        lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
+        hasDragged = true;
+        beginDrag();
+        return;
+      }
       if (this.drawingMode === "terrain" || this.drawingMode === "icon" || this.drawingMode === "factionLink" || this.drawingMode === "regionLink") {
         isTerrainPainting = true;
         lastPaintedKey = null;
@@ -978,6 +1037,11 @@ export class HexMapView extends ItemView {
     // window's document and drags silently die (issue #32).
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
+      if (isTerrainPainting && this.currentSubStroke) {
+        const key = this.subHexKeyAt(e.clientX, e.clientY);
+        if (key && key !== lastPaintedKey) lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
+        return;
+      }
       if (isTerrainPainting) {
         const el = dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null;
         const hexEl = this.hexElAt(el, e.clientX, e.clientY);
@@ -1370,6 +1434,7 @@ export class HexMapView extends ItemView {
     // Terrain painted / generated → the legend lists what the map now uses.
     this.register(
       this.plugin.mapStore.onChange((map) => {
+        this.onOverworldDataChange(map);
         if (map !== this.activeMapName) return;
         this.scheduleTerrainLegend();
         // A name set without a redraw (hex table, code, map note edit) shows up.
@@ -3799,6 +3864,7 @@ export class HexMapView extends ItemView {
     // ~600 fewer linear scans per renderGrid.
     const paletteByName = new Map(palette.map((p) => [p.name, p]));
     const isFlat = this.plugin.settings.hexOrientation === "flat";
+    const owView = OverworldLayer.viewOf(this.plugin, region);
     const gridContainer = this.viewportEl.createDiv({
       cls: `duckmage-hex-map-grid${isFlat ? " duckmage-grid-flat" : ""}`,
     });
@@ -3922,7 +3988,7 @@ export class HexMapView extends ItemView {
         hexEl.addClass("duckmage-hex-has-region-map");
         hexEl.createSpan({
           cls: "duckmage-hex-region-outline",
-          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (Ctrl+click hex to enter)` },
+          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (${owView === "regions" ? "click to enter at that spot" : owView ? "click to set its biome, Ctrl+click to enter" : "Ctrl+click hex to enter"})` },
         });
       }
       if (locations.length) {
@@ -4029,6 +4095,8 @@ export class HexMapView extends ItemView {
   /** The layers placed from measured hex geometry (see renderGrid). */
   private renderMeasuredLayers(gridContainer: HTMLElement, region: MapData): void {
     this.renderNeighbourShadow(gridContainer, region);
+    this.overworldLayer.render(gridContainer, region);
+    this.minimap.render(this.contentEl, region);
     this.renderPathOverlay(gridContainer);
     this.renderRegionOverlay(gridContainer);
     this.renderFactionOverlay(gridContainer);
@@ -4268,6 +4336,21 @@ export class HexMapView extends ItemView {
 
     const menu = new Menu();
 
+    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Set biome…")
+          .setIcon("trees")
+          .onClick(() => new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open()),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Edit hex…")
+          .setIcon("pencil")
+          .onClick(() => this.openHexEditorModal(x, y)),
+      );
+    }
+
     menu.addItem((item) =>
       item
         .setTitle("Center on this hex")
@@ -4438,6 +4521,20 @@ export class HexMapView extends ItemView {
     }
     if (this.drawingMode === "placeToken") {
       await this.onHexTokenPlaceClick(x, y);
+      return;
+    }
+
+    // Overworlds: the full view jumps into the region at the clicked hex;
+    // the biomes view (or a hex with no region yet) sets the hex's biome.
+    const ow = OverworldLayer.viewOf(this.plugin, this.getActiveMap());
+    if (ow && !e?.ctrlKey && !e?.metaKey) {
+      const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+      const cell = ow === "regions" && e && grid ? this.overworldLayer.cellAt(grid, e.clientX, e.clientY) : null;
+      if (cell?.region) {
+        this.enterRegionAt(cell.region, cell.x, cell.y);
+        return;
+      }
+      new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open();
       return;
     }
 
@@ -4925,7 +5022,113 @@ export class HexMapView extends ItemView {
     else hexEl.removeClass("duckmage-hex-exists");
   }
 
+  private commitSubStroke(): void {
+    const stroke = this.currentSubStroke;
+    this.currentSubStroke = null;
+    if (!stroke || stroke.size === 0) return;
+    this.undoStack.push({ kind: "subhex", entries: [...stroke.values()] });
+    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
+    this.redoStack = [];
+    this.updateUndoButton();
+  }
+
+  /** Undo / redo a full-view stroke: each touched region map gets its hexes back. */
+  private applySubStroke(entries: SubHexUndoEntry[], which: "old" | "new"): void {
+    for (const e of entries) {
+      const terrain = which === "old" ? e.oldTerrain : e.newTerrain;
+      const locked = which === "old" ? e.oldLocked : true;
+      this.plugin.mapStore.set(e.map, e.key, { terrain, locked: locked || null });
+    }
+    void this.plugin.mapStore.flush();
+  }
+
+  /** "x_y" of the region hex under a screen point in the full view (null: none). */
+  private subHexKeyAt(clientX: number, clientY: number): string | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
+    return cell?.region ? `${cell.region}|${cell.x}_${cell.y}` : null;
+  }
+
+  /**
+   * Paint the region hex under a screen point (full view): written to that
+   * region's map and locked, so regenerating the region keeps it. A brush
+   * wider than one hex reaches across seams into the next region.
+   */
+  private paintSubHexAt(clientX: number, clientY: number): string | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
+    if (!cell?.region) return null;
+    const home = regionHome(this.plugin, cell.region);
+    if (!home) return null;
+    if (this.terrainPickMode && !this.isErasingMode) {
+      this.terrainPickMode = false;
+      this.paintTerrainName = this.plugin.mapStore.get(cell.region, `${cell.x}_${cell.y}`)?.terrain ?? null;
+      this.updateToolbarButtonStates();
+      return null;
+    }
+    const terrain = this.isErasingMode ? null : this.paintTerrainName;
+    const brush: [number, number][] = [[cell.x, cell.y]];
+    if (this.paintBrushSize > 1) {
+      const nb = hexNeighbors(cell.x, cell.y, home.layout.orientation, home.layout.childStagger);
+      brush.push(...(this.paintBrushSize === 3 ? [nb[2], nb[3]] : nb));
+    }
+    const ow = home.overworld.name;
+    for (const [x, y] of brush) {
+      const ph = parentOfCell(home.layout, x, y).join("_");
+      const region = regionMapAt(this.plugin.settings.maps, ow, ph);
+      if (!region) continue;
+      const key = `${x}_${y}`;
+      const cur = this.plugin.mapStore.get(region.name, key);
+      const id = `${region.name}|${key}`;
+      const prev = this.currentSubStroke?.get(id);
+      if (prev) prev.newTerrain = terrain;
+      else this.currentSubStroke?.set(id, { map: region.name, key, oldTerrain: cur?.terrain ?? null, oldLocked: !!cur?.locked, newTerrain: terrain });
+      this.plugin.mapStore.set(region.name, key, { terrain, locked: terrain ? true : null });
+    }
+    return `${cell.region}|${cell.x}_${cell.y}`;
+  }
+
+  /** Enter a region from the overworld, centred on (and flashing) the hex that was clicked. */
+  private enterRegionAt(region: string, x: number, y: number): void {
+    this.navigateToMap(region);
+    window.requestAnimationFrame(() => {
+      this.centerOnHex(x, y);
+      window.requestAnimationFrame(() => this.flashHex(x, y));
+    });
+  }
+
+  /**
+   * A map's hexes changed: rebuild that region's bitmap when it's a region
+   * of the open overworld, redraw the biome marks when it's the open
+   * overworld, refresh the minimap when it's the overworld behind it.
+   */
+  private onOverworldDataChange(map: string): void {
+    const active = this.getActiveMap();
+    const changed = this.plugin.getMap(map);
+    if (changed?.submapKind === "region" && changed.parent?.map === active.name) this.overworldLayer.invalidate(map);
+    if (map === active.name) this.overworldLayer.scheduleRedraw();
+    const home = regionHome(this.plugin, active.name);
+    if (map === active.name || map === home?.overworld.name) {
+      if (this.minimapTimer !== null) window.clearTimeout(this.minimapTimer);
+      this.minimapTimer = window.setTimeout(() => {
+        this.minimapTimer = null;
+        this.minimap.render(this.contentEl, this.getActiveMap());
+      }, 300);
+    }
+  }
+
+  /** What the biome modals need from the view. */
+  private biomeHost(): BiomeHost {
+    return {
+      app: this.app,
+      plugin: this.plugin,
+      enter: (name) => this.navigateToMap(name),
+      changed: () => this.renderGrid(),
+    };
+  }
+
   private commitTerrainStroke(): void {
+    this.commitSubStroke();
     if (!this.currentTerrainStroke || this.currentTerrainStroke.size === 0) {
       this.currentTerrainStroke = null;
       return;
@@ -4989,6 +5192,8 @@ export class HexMapView extends ItemView {
       await this.applyFactionStroke(item.entries, "old");
     } else if (item.kind === "region") {
       await this.applyRegionStroke(item.entries, "old");
+    } else if (item.kind === "subhex") {
+      this.applySubStroke(item.entries, "old");
     } else if (item.kind === "swap") {
       await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
     } else if (item.kind === "calibrate") {
@@ -5011,6 +5216,8 @@ export class HexMapView extends ItemView {
       await this.applyFactionStroke(item.entries, "new");
     } else if (item.kind === "region") {
       await this.applyRegionStroke(item.entries, "new");
+    } else if (item.kind === "subhex") {
+      this.applySubStroke(item.entries, "new");
     } else if (item.kind === "swap") {
       await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
     } else if (item.kind === "calibrate") {

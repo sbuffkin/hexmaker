@@ -7952,3 +7952,117 @@ button.duckmage-terrain-legend-chip {
     color: var(--text-muted);
     margin: 0.4em 0;
 }
+
+/* Overworld (OW1): every region's hexes on one canvas over the grid, drawn
+   like the overworld preview's full view. Clicks go to the hexes below. */
+.duckmage-ow-layer {
+    position: absolute;
+    left: var(--duckmage-ow-left, 0);
+    top: var(--duckmage-ow-top, 0);
+    width: var(--duckmage-ow-width, 0);
+    height: var(--duckmage-ow-height, 0);
+    pointer-events: none;
+    z-index: 2; /* above the hexes, below the region (3), faction (4) and path (5) layers */
+}
+
+/* The overworld minimap and the Regions / Biomes switch: bottom-right,
+   clear of Obsidian's status bar. */
+.duckmage-ow-minimap {
+    position: absolute;
+    right: 12px;
+    bottom: 40px;
+    z-index: 10;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 4px;
+    opacity: 0.95;
+}
+.duckmage-ow-minimap-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+.duckmage-ow-minimap-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-ow-minimap-canvas {
+    display: block;
+    width: 220px;
+    height: 180px;
+    cursor: pointer;
+}
+.duckmage-ow-minimap.is-collapsed .duckmage-ow-minimap-canvas {
+    display: none;
+}
+.duckmage-ow-view-toggle {
+    display: flex;
+    margin-bottom: 4px;
+}
+.duckmage-ow-view-toggle button {
+    flex: 1;
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 0;
+}
+.duckmage-ow-view-toggle button:first-child { border-radius: 4px 0 0 4px; }
+.duckmage-ow-view-toggle button:last-child { border-radius: 0 4px 4px 0; }
+.duckmage-ow-view-toggle button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Biome picker and the region's small generator editor. */
+.duckmage-biome-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+    gap: 4px;
+    margin-bottom: 0.8em;
+}
+.duckmage-biome-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-start;
+}
+.duckmage-biome-option.is-active {
+    outline: 2px solid var(--interactive-accent);
+}
+.duckmage-biome-swatch {
+    width: 1em;
+    height: 1em;
+    border-radius: 3px;
+    flex: none;
+    background: var(--duckmage-biome-color, var(--background-modifier-border));
+}
+.duckmage-region-gen-form {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 0.6em;
+}
+.duckmage-region-gen-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.duckmage-region-gen-label {
+    min-width: 10em;
+    color: var(--text-muted);
+}
+.duckmage-region-gen-preview,
+.duckmage-ow-new-preview {
+    display: block;
+    max-width: 100%;
+    margin: 0 auto 0.4em;
+    background: var(--background-secondary);
+    border-radius: 6px;
+}
+.duckmage-ow-progress {
+    color: var(--text-muted);
+    min-height: 1.4em;
+}

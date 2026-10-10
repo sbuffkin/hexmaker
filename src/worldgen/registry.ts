@@ -8,7 +8,9 @@ import {
   toPathChains,
   type GridSpec,
 } from "./generators";
-import { findTerrain, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
+import { representableBiomes } from "../overworld/biomes";
+import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, worldBiomesFromOptions } from "../overworld/worldBiomes";
+import { findTerrain, gridKeys, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
 import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits } from "./procedural/orbits";
 import {
@@ -251,6 +253,22 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const edge = req.context?.edgeCells?.size ? { edgeCells: req.context.edgeCells } : undefined;
         const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, edge, "overland");
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+      },
+      toChains,
+    },
+    {
+      id: WORLD_BIOMES_ID,
+      label: "World biomes",
+      mapKind: "world",
+      description: "An overworld: each hex is one biome (tundra, forest, savanna…), laid out by climate, with transition biomes between ones that shouldn't touch. Its hexes then open into regions that blend with their neighbours.",
+      source: "built-in",
+      options: WORLD_BIOMES_OPTIONS,
+      fits: (terrains) => representableBiomes(terrains).size >= 3,
+      generate: (req) => {
+        const g = procGrid(plugin, req.grid);
+        const r = worldBiomesFromOptions(gridKeys(g), g.orientation, g.stagger, req.terrains, req.seed, req.options);
+        // The river is biome data on an overworld, not a path (paths come later).
+        return r.terrain.size ? { ok: true, cells: r.terrain, paths: [], warnings: [] } : { ok: false, message: "This palette has no terrains for biomes." };
       },
       toChains,
     },
