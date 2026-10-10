@@ -162,7 +162,7 @@ export class NewMapSetupModal extends HexmakerModal {
     this.stopKeepInViewport = this.keepInViewport();
     this.titleEl.setText(
       this.origin
-        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.origin.map} hex ${this.origin.x}, ${this.origin.y}`
+        ? `New submap — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
         : "New map",
     );
     void listGeneratorKinds(this.plugin).then((kinds) => {

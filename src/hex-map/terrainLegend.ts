@@ -65,14 +65,53 @@ export interface LegendOptions {
 /** Longest name shown in the map's legend before it's cut (MK2). */
 export const MAP_LEGEND_NAME_MAX = 8;
 
+/** Cut to `max` characters with "…" (trailing spaces dropped). */
+function cut(text: string, max: number): string {
+  const chars = [...text];
+  if (max < 2 || chars.length <= max) return text;
+  return chars.slice(0, max - 1).join("").trimEnd() + "…";
+}
+
 /**
- * A legend name cut to `max` characters ("mountain pass" → "mountai…"),
- * or unchanged when it fits. Trailing spaces before the "…" are dropped.
+ * A legend name shortened to about `max` characters, or unchanged when it
+ * fits. Several words keep the last one and shrink the rest to initials
+ * ("mixed forest hills" → "m.f. hills", a few characters of slack), so
+ * kinds of forest stay apart; one long word is cut ("brokenlands" →
+ * "brokenl…").
  */
 export function shortLegendName(name: string, max: number): string {
-  const chars = [...name];
-  if (max < 2 || chars.length <= max) return name;
-  return chars.slice(0, max - 1).join("").trimEnd() + "…";
+  const text = name.replace(/\s+/g, " ").trim();
+  if (max < 2 || [...text].length <= max) return text;
+  const words = text.split(" ");
+  if (words.length > 1) {
+    const last = words[words.length - 1];
+    const initials = words.slice(0, -1).map((w) => `${[...w][0]}.`).join("");
+    const room = max + 3 - initials.length - 1;
+    if (room >= 3) return `${initials} ${cut(last, room)}`;
+  }
+  return cut(text, max);
+}
+
+/**
+ * Short names for a whole legend: shortLegendName, except where two short
+ * forms would clash (the legend must tell them apart): those keep their
+ * last word whole ("m.f. mountain" / "m.f. mountains"), else the full name.
+ */
+export function shortLegendNames(names: readonly string[], max: number): Map<string, string> {
+  const short = new Map(names.map((n) => [n, shortLegendName(n, max)]));
+  const clashing = () => {
+    const count = new Map<string, number>();
+    for (const s of short.values()) count.set(s, (count.get(s) ?? 0) + 1);
+    return [...short].filter(([n, s]) => s !== n && (count.get(s) ?? 0) > 1).map(([n]) => n);
+  };
+  for (const n of clashing()) {
+    const words = n.replace(/\s+/g, " ").trim().split(" ");
+    if (words.length > 1) {
+      short.set(n, `${words.slice(0, -1).map((w) => `${[...w][0]}.`).join("")} ${words[words.length - 1]}`);
+    }
+  }
+  for (const n of clashing()) short.set(n, n);
+  return short;
 }
 
 /** A link badge kind in the legend (as drawn on the map). */
@@ -152,7 +191,10 @@ export function renderTerrainLegend(
   }
   const list = box.createDiv({ cls: "duckmage-terrain-legend-list" });
   // Long names are cut on the map; the row's tooltip has the full name.
-  const shown = (name: string) => (opts.maxName ? shortLegendName(name, opts.maxName) : name);
+  const shortNames = opts.maxName
+    ? shortLegendNames([...entries.map((t) => t.name), ...badges.map((b) => b.label)], opts.maxName)
+    : undefined;
+  const shown = (name: string) => shortNames?.get(name) ?? name;
   const nameSpan = (row: HTMLElement, name: string) => {
     const text = shown(name);
     row.createSpan({ cls: "duckmage-terrain-legend-name", text });

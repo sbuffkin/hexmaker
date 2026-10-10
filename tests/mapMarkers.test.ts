@@ -323,18 +323,30 @@ describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
 });
 
 // ── MK2: the map legend is small, bottom-left, names cut short, foldable ──
-import { MAP_LEGEND_NAME_MAX, shortLegendName } from "../src/hex-map/terrainLegend";
+import { MAP_LEGEND_NAME_MAX, shortLegendName, shortLegendNames } from "../src/hex-map/terrainLegend";
 
 describe("map legend (MK2)", () => {
-	it("cuts long names to the limit with an ellipsis; short ones stay", () => {
+	it("shortens long names but keeps them readable and apart", () => {
 		expect(MAP_LEGEND_NAME_MAX).toBeGreaterThanOrEqual(6);
 		expect(MAP_LEGEND_NAME_MAX).toBeLessThanOrEqual(8);
 		expect(shortLegendName("forest", 8)).toBe("forest");
 		expect(shortLegendName("mountains", 9)).toBe("mountains");
-		expect(shortLegendName("mountain pass", 8)).toBe("mountai…");
-		expect([...shortLegendName("deep water", 8)].length).toBeLessThanOrEqual(8);
-		// No space left dangling before the ellipsis.
-		expect(shortLegendName("deep water", 6)).toBe("deep…");
+		// One long word: cut with an ellipsis.
+		expect(shortLegendName("brokenlands", 8)).toBe("brokenl…");
+		// Several words: initials, then the last word.
+		expect(shortLegendName("mixed forest", 8)).toBe("m. forest");
+		expect(shortLegendName("mixed forest hills", 8)).toBe("m.f. hills");
+		expect(shortLegendName("evergreen hills", 8)).toBe("e. hills");
+		expect([...shortLegendName("mixed forest mountains", 8)].length).toBeLessThanOrEqual(11);
+	});
+
+	it("a legend never shows two rows with the same short name", () => {
+		const names = ["forest", "mixed forest", "mixed forest hills", "mixed forest mountain", "mixed forest mountains", "evergreen", "evergreen hills", "forested mountain", "forested mountains"];
+		const short = shortLegendNames(names, MAP_LEGEND_NAME_MAX);
+		const shown = names.map((n) => short.get(n));
+		expect(new Set(shown).size).toBe(names.length);
+		expect(short.get("mixed forest mountain")).toBe("m.f. mountain");
+		expect(short.get("mixed forest mountains")).toBe("m.f. mountains");
 	});
 
 	it("sits at the view's bottom-left (not over the status bar corner)", () => {
