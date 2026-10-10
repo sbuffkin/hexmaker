@@ -3,6 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
+import { renderPreviewLegend } from "./terrainLegend";
 import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
 import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
@@ -664,6 +665,7 @@ export class MapModal extends HexmakerModal {
     // Preview of the generated terrain; Create uses exactly this seed.
     const previewBox = el.createDiv({ cls: "duckmage-wfc-section" });
     const previewCanvas = previewBox.createEl("canvas", { cls: "duckmage-wfc-preview" });
+    const previewLegend = previewBox.createDiv();
     const previewStatus = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
     const seedRow = previewBox.createDiv({ cls: "duckmage-region-row" });
     seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
@@ -798,6 +800,7 @@ export class MapModal extends HexmakerModal {
       }
       const shadow = placement ? shadowTerrain(neighbourShadow(this.plugin, placement)) : undefined;
       drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin), 420, 14, undefined, { shadow });
+      renderPreviewLegend(previewLegend, this.plugin, this.plugin.getPaletteByName(paletteSelect.value)?.terrains ?? [], r.cells.values(), (i) => getIconUrl(this.plugin, i));
       previewStatus.setText(r.warnings.length ? `⚠ ${r.warnings.length}` : "");
       previewStatus.setAttr("title", r.warnings.join("\n"));
     };
