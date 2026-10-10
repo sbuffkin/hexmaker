@@ -313,7 +313,7 @@ export class MapStore {
       // memory only, and say so.
       for (const m of unreadable) this.broken.add(m.name);
       if (unreadable.length) {
-        new Notice(`Hexmaker: couldn't read the map note for ${unreadable.map((m) => m.name).join(", ")} (${unreadable.map((m) => this.notePath(m.name)).join(", ")}). Fix its frontmatter (it needs "hexmaker-map: 1"); it won't be overwritten until then.`, 0);
+        new Notice(`Hexmap World Creator: couldn't read the map note for ${unreadable.map((m) => m.name).join(", ")} (${unreadable.map((m) => this.notePath(m.name)).join(", ")}). Fix its frontmatter (it needs "hexmaker-map: 1"); it won't be overwritten until then.`, 0);
       }
       this.ready = true;
       if (toMigrate.length) await this.migrate(toMigrate);
@@ -341,7 +341,7 @@ export class MapStore {
   }
 
   private async migrate(maps: MapData[]): Promise<void> {
-    const notice = new Notice(`Hexmaker: moving map data into map notes (0/${maps.length} maps)…`, 0);
+    const notice = new Notice(`Hexmap World Creator: moving map data into map notes (0/${maps.length} maps)…`, 0);
     const backupDir = this.backupDir();
     const adapter = this.plugin.app.vault.adapter;
     let done = 0;
@@ -372,13 +372,13 @@ export class MapStore {
       }
       await this.cleanHexNotes([map], true);
       done++;
-      notice.setMessage(`Hexmaker: moving map data into map notes (${done}/${maps.length} maps)…`);
+      notice.setMessage(`Hexmap World Creator: moving map data into map notes (${done}/${maps.length} maps)…`);
     }
     notice.hide();
     if (failed.length) {
-      new Notice(`Hexmaker: couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
+      new Notice(`Hexmap World Creator: couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
     } else {
-      new Notice(`Hexmaker: map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
+      new Notice(`Hexmap World Creator: map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
     }
     await this.plugin.saveData(this.plugin.settings);
   }
@@ -449,7 +449,7 @@ export class MapStore {
       }
       return true;
     } catch (e) {
-      console.error(`Hexmaker: couldn't back up hex notes for ${map}; they were left untouched`, e);
+      console.error(`Hexmap World Creator: couldn't back up hex notes for ${map}; they were left untouched`, e);
       return false;
     }
   }

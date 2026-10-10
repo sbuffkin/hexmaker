@@ -323,7 +323,7 @@ export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string
     ...(childPalette ? [`child-palette: ${JSON.stringify(childPalette)}`] : []),
     "---",
     "",
-    "Hexmaker terrain palette. The note name is the palette name. Each table row is one terrain:",
+    "Hexmap World Creator terrain palette. The note name is the palette name. Each table row is one terrain:",
     "colors are any CSS color, icons are file names from the icon picker, categories group",
     "terrains in the picker, and the type says what a terrain is (water, forest, star…) for",
     "generators and the hex table. Edit here, in the palette editor, or from the terrain tool on",

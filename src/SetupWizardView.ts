@@ -215,10 +215,10 @@ async function removeUnusedPlaceholder(plugin: HexmakerPlugin, keep: string): Pr
 function makeWelcomeStep(): WizardStep {
 	return {
 		id: "welcome",
-		title: "Welcome to Hexmaker!",
+		title: "Welcome to Hexmap World Creator!",
 		render(container, ctx, cbs) {
 			container.createEl("p", {
-				text: "Hexmaker turns your Obsidian vault into a living, interactive hex map. Each hex on the map is a Markdown note — you can paint terrain, add icons, link towns, dungeons, factions, and encounter tables, and run random tables right from the map.",
+				text: "Hexmap World Creator turns your Obsidian vault into a living, interactive hex map. Each hex on the map is a Markdown note — you can paint terrain, add icons, link towns, dungeons, factions, and encounter tables, and run random tables right from the map.",
 				cls: "duckmage-wizard-text",
 			});
 			container.createEl("p", {
@@ -878,7 +878,7 @@ export class SetupWizardView extends ItemView {
 	}
 
 	getViewType() { return VIEW_TYPE_SETUP_WIZARD; }
-	getDisplayText() { return "Hexmaker setup"; }
+	getDisplayText() { return "Hexmap World Creator setup"; }
 	getIcon() { return "map"; }
 
 	async onOpen() {
@@ -896,7 +896,7 @@ export class SetupWizardView extends ItemView {
 
 		// Header: plugin title + progress dots + step counter
 		const header = contentEl.createDiv({ cls: "duckmage-wizard-header" });
-		header.createEl("p", { text: "Hexmaker setup", cls: "duckmage-wizard-title" });
+		header.createEl("p", { text: "Hexmap World Creator setup", cls: "duckmage-wizard-title" });
 		const dotRow = header.createDiv({ cls: "duckmage-wizard-dots" });
 		for (let i = 0; i < this.steps.length; i++) {
 			dotRow.createDiv({
@@ -995,7 +995,7 @@ export class SetupWizardView extends ItemView {
 					else if (navProgressEl) navProgressEl.setText(msg);
 				});
 			} catch (e) {
-				new Notice(`Hexmaker setup error: ${e instanceof Error ? e.message : String(e)}`);
+				new Notice(`Hexmap World Creator setup error: ${e instanceof Error ? e.message : String(e)}`);
 				nextBtn.setText("Next →");
 				nextBtn.disabled = false;
 				backBtn.disabled = false;

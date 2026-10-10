@@ -545,7 +545,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
                   }
                   if (totalCreated > 0)
                     new Notice(
-                      `Hexmaker: generated ${totalCreated} hex note${totalCreated !== 1 ? "s" : ""}.`,
+                      `Generated ${totalCreated} hex note${totalCreated !== 1 ? "s" : ""}.`,
                     );
                 }
                 new Notice("Folders generated.");
@@ -1298,7 +1298,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
               }
               if (totalCreated > 0)
                 new Notice(
-                  `Hexmaker: generated ${totalCreated} hex note${totalCreated !== 1 ? "s" : ""}.`,
+                  `Generated ${totalCreated} hex note${totalCreated !== 1 ? "s" : ""}.`,
                 );
             }
             new Notice("Folders generated.");

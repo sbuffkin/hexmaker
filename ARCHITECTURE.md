@@ -26,10 +26,10 @@ The clip/controls separation ensures toolbar buttons are never hidden by the vie
 
 | Tool | drawingMode | Opens | Section written |
 |------|-------------|-------|-----------------|
-| Road | `"road"` | (direct click) | `settings.roadChains` |
-| River | `"river"` | (direct click) | `settings.riverChains` |
-| Terrain | `"terrain"` | `TerrainPickerModal` | frontmatter `terrain:` |
-| Icon | `"icon"` | `IconPickerModal` | frontmatter `icon:` |
+| Road | `"road"` | (direct click) | map note Paths table |
+| River | `"river"` | (direct click) | map note Paths table |
+| Terrain | `"terrain"` | `TerrainPickerModal` | map note Hexes table (Terrain) |
+| Icon | `"icon"` | `IconPickerModal` | map note Hexes table (Icon) |
 | Link Table | `"tableLink"` | `TablePickerModal` | `### Encounters Table` |
 | Factions | `"factionLink"` | `FactionPickerModal` | `### Factions` |
 
@@ -110,13 +110,39 @@ A two-column browser with two modes toggled by tab buttons: **Tables** and **Wor
 
 ## Data model
 
+### Map notes
+Path: `{hexFolder}/{map}/_{map}.md` — one per map, owned by `MapStore` (`src/maps/MapStore.ts`), parsed/serialized by `src/maps/mapNote.ts`.
+
+```markdown
+---
+hexmaker-map: 1
+palette: Default
+cols: 38
+rows: 25
+---
+# Overworld
+
+## Hexes
+| Hex | Name | Terrain | Icon | GM icons | Region | Submap | Locked |
+| 3_4 | Glass Wastes | dunes |  |  | Basin |  |  |
+
+## Paths
+| Type | Hexes |
+| Road | 3_4 4_4 5_4 |
+```
+
+- All per-hex **map data** (name, terrain, icon override, GM icons, region, submap, locked) lives in the map note's Hexes table, and roads/rivers/paths in its Paths table. Read it through `plugin.mapStore` or the `frontmatter.ts` getters (which delegate to the store) — never from hex-note frontmatter, and never gate it on a hex note existing (most hexes have no note).
+- The map's settings (palette, size, layer toggles, display name…) are the map note's frontmatter. Only the per-session viewport stays in `data.json`.
+- Text outside the two tables and frontmatter keys the plugin doesn't own are the user's and survive rewrites.
+- Older versions kept terrain/icon/region in each hex note's frontmatter; `MapStore` migrates that into map notes once (with a backup).
+
 ### Hex notes
-Path: `{hexFolder}/{region}/{x}_{y}.md`
+Path: `{hexFolder}/{map}/{x}_{y}.md` — created only when a hex first gets prose or links.
 
 ```yaml
 ---
-terrain: forest
-icon: custom-castle.png   # optional override
+hexmaker-map: "[[_Overworld]]"
+aliases: [Glass Wastes]   # the hex's name, when it has one
 ---
 
 ### Towns
@@ -144,8 +170,8 @@ Rolling hills...
 ### Hooks & Rumors
 ```
 
-- `terrain` and `icon` live in YAML frontmatter (read via metadata cache, written via raw-text patching in `frontmatter.ts`).
-- All other data lives under `###` headings (read/written via `sections.ts`).
+- Hex notes hold no map data: their frontmatter only links back to the map note (plus the name alias).
+- All their content lives under `###` headings (read/written via `sections.ts`).
 
 ### Link sections (`LINK_SECTIONS`)
 ```
@@ -160,7 +186,7 @@ description | landmark | hidden | secret
 Weather and Hooks & Rumors are also free-text sections under `###` headings but are not part of the `TEXT_SECTIONS` constant.
 
 ### Roads & rivers
-Stored as `string[][]` in `settings.roadChains` / `settings.riverChains`. Each chain is an ordered array of `"x_y"` keys. Rendered as SVG polylines connecting adjacent hexes.
+Stored per map in the map note's Paths table (one row per chain: path type + ordered `x_y` keys; `MapData.pathChains` in memory). Rendered as SVG polylines connecting adjacent hexes.
 
 ### Random tables
 Markdown files with:
@@ -241,7 +267,7 @@ Parsed/serialized by `workflow.ts`. Template files live at `{workflowsFolder}/te
 | `FileLinkSuggestModal.ts` | Reusable fuzzy file picker |
 | `randomTable.ts` | Pure parse/roll/weight logic (no Obsidian API) |
 | `workflow.ts` | Pure workflow parse/serialize/template logic (no Obsidian API) |
-| `frontmatter.ts` | `terrain:` and `icon:` read/write |
+| `frontmatter.ts` | Map data getters/setters (terrain, icon, region, submap… — delegate to `MapStore`), token frontmatter |
 | `sections.ts` | `###` heading read/write (`addLinkToSection`, `getLinksInSection`, `getAllSectionData`, `setSectionContent`, `addBacklinkToFile`) |
 | `utils.ts` | `normalizeFolder`, `getIconUrl`, `makeTableTemplate`, `createIconEl` |
 | `types.ts` | `DuckmagePluginSettings`, `LINK_SECTIONS`, `TEXT_SECTIONS`, `TerrainColor` |

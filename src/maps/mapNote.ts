@@ -326,7 +326,7 @@ export function buildMapNote(name: string, data: MapNoteData): string {
     "---",
     `# ${data.settings.displayName || name}`,
     "",
-    "Hexmaker map. Each hex's name, terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.",
+    "Hexmap World Creator map. Each hex's name, terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.",
     "",
     "## Hexes",
     "",

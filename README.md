@@ -1,6 +1,6 @@
 # Hexmap World Creator
 
-An Obsidian plugin for tabletop RPG hex-map world-building. Each hex on the map is a Markdown note in your vault — attach terrain, locations, paths, and prose directly to the geography of your world.
+A hexmap maker and hexcrawl toolbox for Obsidian, for any TTRPG. Each map is a note in your vault, and any hex can get its own Markdown note — attach locations, paths, and prose directly to the geography of your world.
 
 ![A populated hex map showing multiple terrain types, icons, and drawn paths](docs/Hero.PNG)
 
@@ -8,7 +8,7 @@ An Obsidian plugin for tabletop RPG hex-map world-building. Each hex on the map 
 
 ## What it does
 
-Hexmaker gives you an interactive hex grid that lives inside Obsidian. Paint terrain, draw roads and rivers, link town and dungeon notes to individual hexes, overlay faction and geographic region fills, drill into submaps, roll random encounters, and browse everything in a spreadsheet view — all without leaving your vault. Every hex is a plain Markdown file you own.
+Hexmap World Creator gives you an interactive hex grid that lives inside Obsidian. Paint terrain, draw roads and rivers, link town and dungeon notes to individual hexes, overlay faction and geographic region fills, drill into submaps, roll random encounters, and browse everything in a spreadsheet view — all without leaving your vault. Your map and every hex note are plain Markdown files you own.
 
 ### Hex editor
 
@@ -53,7 +53,7 @@ Toggle the GM layer from the overlay panel to switch between player-facing and G
 ## Manual Installation
 
 1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/sbuffkin/hexmaker/releases/latest).
-2. In your vault, create the folder `.obsidian/plugins/hexmaker-plugin/`.
+2. In your vault, create the folder `.obsidian/plugins/hexmaker/`.
 3. Copy the three downloaded files into that folder.
 4. In Obsidian, open **Settings → Community plugins**, find **Hexmap World Creator** in the list, and enable it.
 
@@ -195,7 +195,7 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 Toggled from the **layers** panel on the right edge of the map.
 
 - **Faction overlay** — paint a faction colour on any hex. Adjacent hexes of the same faction merge into smooth filled blobs with a coloured border. A legend lists each active faction. Edit faction names and colours from the overlay panel. Faction data is stored as wiki-links in each hex note's `### Factions` section.
-- **Region overlay** — paint a geographic region colour on any hex. Regions render as filled blobs with a scaled label centred on the blob. Region data is stored in each hex note's frontmatter.
+- **Region overlay** — paint a geographic region colour on any hex. Regions render as filled blobs with a scaled label centred on the blob. Region data is stored in the map note (see [Map notes](#map-notes)).
 - Both overlays can be shown simultaneously and toggled independently.
 - Additional toggles: **Show terrain icons**, **Show icon overrides**, **Show paths**, **Show tokens**, **GM layer**.
 - **Labels** group: **Coordinates**, **Hex names** and **Token names** (all on by default). With token names off, a token's name still shows while you hover it.
@@ -347,8 +347,8 @@ The built output is `main.js` in the repo root. Obsidian loads this file directl
 **Reload the plugin after a build:**
 ```js
 // Paste in Obsidian developer console (Ctrl+Shift+I)
-app.plugins.disablePlugin('hexmaker-plugin');
-app.plugins.enablePlugin('hexmaker-plugin');
+app.plugins.disablePlugin('hexmaker');
+app.plugins.enablePlugin('hexmaker');
 ```
 
 ### Source layout
@@ -361,7 +361,7 @@ src/
   HexmakerModal.ts                    ← base modal class (makeDraggable, shared behaviour)
   types.ts                            ← interfaces and type constants
   constants.ts                        ← runtime constants and defaults
-  frontmatter.ts                      ← terrain/icon/submap YAML read/write
+  frontmatter.ts                      ← map data getters/setters (via the map store) + token YAML
   sections.ts                         ← markdown section read/write helpers
   utils.ts                            ← shared utilities
   defaultHexTemplate.md               ← built-in hex note template

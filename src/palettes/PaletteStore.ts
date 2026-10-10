@@ -217,7 +217,7 @@ export class PaletteStore {
       }
       if (!settings.palettesMigrated) {
         settings.palettesMigrated = true;
-        new Notice(`Hexmaker: terrain palettes are now notes in "${this.folder()}".`);
+        new Notice(`Hexmap World Creator: terrain palettes are now notes in "${this.folder()}".`);
       }
       dirty = true;
     }

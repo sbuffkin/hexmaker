@@ -148,7 +148,7 @@ export default class HexmakerPlugin extends Plugin {
       VIEW_TYPE_RANDOM_TABLES,
       (leaf) => new RandomTableView(leaf, this),
     );
-    this.addRibbonIcon("map", "Hexmaker: open hex map", () =>
+    this.addRibbonIcon("map", "Hexmap World Creator: open hex map", () =>
       this.openHexMap(),
     );
     this.addCommand({
@@ -807,7 +807,7 @@ export default class HexmakerPlugin extends Plugin {
     }
     await this.saveSettings();
     new Notice(
-      `Hexmaker: auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
+      `Hexmap World Creator: auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
     );
   }
 
@@ -908,7 +908,7 @@ export default class HexmakerPlugin extends Plugin {
     // wizard runs this right after creating tables that include one).
     if (count > 0)
       new Notice(
-        `Hexmaker: added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
+        `Added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
       );
   }
 
@@ -1082,7 +1082,7 @@ export default class HexmakerPlugin extends Plugin {
       linked++;
     }
     new Notice(
-      `Hexmaker: linked encounters tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
+      `Linked encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
     );
   }
 
@@ -1172,7 +1172,7 @@ export default class HexmakerPlugin extends Plugin {
       await this.syncHexEncounterTableLink(file.path, terrain);
     }
     new Notice(
-      `Hexmaker: refreshed encounter links for ${hexFiles.length} hex${hexFiles.length !== 1 ? "es" : ""}.`,
+      `Refreshed encounter links for ${hexFiles.length} hex${hexFiles.length !== 1 ? "es" : ""}.`,
     );
   }
 
@@ -1294,7 +1294,7 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     new Notice(
-      `Hexmaker: linked region encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
+      `Linked region encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
     );
   }
 
@@ -1567,7 +1567,7 @@ export default class HexmakerPlugin extends Plugin {
     this.mapStore.setMany(name, cells);
     onProgress?.(cols * rows, cols * rows);
     await this.mapStore.flush();
-    if (!extra.quiet) new Notice(`Hexmaker: created map "${displayName ?? name}".`);
+    if (!extra.quiet) new Notice(`Created map "${displayName ?? name}".`);
 
     return { name };
   }
@@ -1701,7 +1701,7 @@ export default class HexmakerPlugin extends Plugin {
     const added = mergePathTypes(this.settings.pathTypes, preset.pathTypes);
     await this.saveSettings();
     new Notice(
-      `Hexmaker: added palette "${name}"` +
+      `Added palette "${name}"` +
         (added.length ? ` and path types ${added.join(", ")}.` : "."),
     );
     return name;
@@ -1909,7 +1909,7 @@ export default class HexmakerPlugin extends Plugin {
     }
     if (moved > 0)
       new Notice(
-        `Hexmaker: migrated ${moved} hex file(s) to "default" region.`,
+        `Hexmap World Creator: migrated ${moved} hex file(s) to "default" region.`,
       );
   }
 }
