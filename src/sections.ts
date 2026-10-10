@@ -271,8 +271,13 @@ export async function addBacklinkToFile(app: App, targetFilePath: string, hexFil
 	const linkText = alias !== undefined
 		? hexBacklinkText(hexFile.path, alias)
 		: `[[${app.metadataCache.fileToLinktext(hexFile, targetFilePath)}]]`;
+	// The cache lags a just-created note: its Location line (R3) may
+	// already link the hex by path.
+	const target = hexFile.path.replace(/\.md$/i, "");
 	await app.vault.process(targetFile, (content) =>
-		content.trimEnd() + (content.trim() ? "\n\n" : "") + linkText + "\n",
+		content.includes(`[[${target}]]`) || content.includes(`[[${target}|`)
+			? content
+			: content.trimEnd() + (content.trim() ? "\n\n" : "") + linkText + "\n",
 	);
 }
 

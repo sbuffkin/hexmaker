@@ -237,7 +237,7 @@ export class PaletteEditorView extends ItemView {
     add.addEventListener("click", () => {
       let name = "New path";
       for (let n = 2; types.some((p) => p.name.toLowerCase() === name.toLowerCase()); n++) name = `New path ${n}`;
-      const pt = { name, color: "#888888", width: 3, lineStyle: "solid" as const, routing: "through" as const };
+      const pt = { name, color: "#888888", width: 3, lineStyle: "solid" as const, routing: "through" as const, avoidImpassable: true, autoRoute: "direct" as const };
       types.push(pt);
       void this.plugin.saveSettings().then(() => {
         this.render();

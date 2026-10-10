@@ -47,10 +47,10 @@ describe("impassable terrain (P1)", () => {
     const river = DEFAULT_PATH_TYPES.find((p) => p.name === "River")!;
     expect(pathAvoidsImpassable(road)).toBe(true);
     expect(pathAvoidsImpassable(river)).toBe(false);
-    // Unset: by name.
-    expect(pathAvoidsImpassable({ name: "Trail" })).toBe(true);
-    expect(pathAvoidsImpassable({ name: "Mountain stream" })).toBe(false);
-    expect(pathAvoidsImpassable({ name: "River", avoidImpassable: true })).toBe(true);
+    // The type's own setting, never its name (PA5).
+    expect(pathAvoidsImpassable({ avoidImpassable: true })).toBe(true);
+    expect(pathAvoidsImpassable({ avoidImpassable: false })).toBe(false);
+    expect(pathAvoidsImpassable({})).toBe(true);
   });
 
   it("the no-route message names the blockers and the way out", () => {
@@ -69,9 +69,10 @@ describe("impassable terrain (P1)", () => {
 });
 
 describe("palette note Impassable column", () => {
-  it("is left out when no terrain overrides its default (notes don't churn)", () => {
+  it("is always written, the type's default in parentheses (#46 P1)", () => {
     const table = serializePaletteTable([{ name: "ocean", color: "#29507f", type: "water" }]);
-    expect(table).not.toContain("Impassable");
+    expect(table).toContain("| Impassable |");
+    expect(table).toContain("| ocean | #29507f |  |  |  | water | (yes) |");
   });
 
   it("round-trips overrides", () => {

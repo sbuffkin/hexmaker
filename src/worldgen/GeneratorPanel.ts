@@ -15,6 +15,8 @@ import {
   generatorSettings,
   drawnPathType,
   generatorFitsPalette,
+  paletteGapMessage,
+  refreshGeneratorShares,
   paletteColors,
   pathColors,
   sourceMapsOf,
@@ -531,13 +533,17 @@ export class GeneratorPanel {
       GeneratorPanel.paletteName = paletteSelect.value;
       this.host.rerender();
     });
-    if (!generatorFitsPalette(model, this.paletteTerrains())) {
+    // Name what the palette lacks (G2) rather than dropping it silently.
+    const gap = paletteGapMessage(model, this.paletteTerrains());
+    if (gap) {
       paletteRow.createSpan({
-        text: "⚠ Some of this generator's terrains aren't in this palette",
+        text: `⚠ ${gap}`,
         cls: "duckmage-map-origin-desc",
         attr: { title: `Learned with palette ${model.meta.palette ?? "unknown"}` },
       });
     }
+    // The note's derived Share column follows hand edits too (G1).
+    if (file) void refreshGeneratorShares(this.plugin, file);
 
     // Map settings lead the controls: preset sizes for now. The exact size,
     // seed and palette sit under the preview.

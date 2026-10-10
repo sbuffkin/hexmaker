@@ -71,7 +71,7 @@ describe("routeContextPaths", () => {
 		for (let x = 5; x <= 7; x++) for (let y = 2; y <= 6; y++) m.set(`${x}_${y}`, "ocean");
 		const [road] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Road", from: "W", to: "E" }], 3);
 		expect(road.hexes.filter((k) => m.get(k) === "ocean")).toEqual([]);
-		const [river] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "River", routing: "meander", from: "W", to: "E" }], 3);
+		const [river] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "River", routing: "meander", avoidImpassable: false, autoRoute: "winding", from: "W", to: "E" }], 3);
 		expect(river.hexes.some((k) => m.get(k) === "ocean")).toBe(true);
 	});
 
@@ -85,10 +85,22 @@ describe("routeContextPaths", () => {
 		const grid: ProcGrid = { ...flat, cols: 21, rows: 15 };
 		const m = cells(grid);
 		const [road] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, grid, [{ type: "Road", from: "W", to: "E" }], 7);
-		const rivers = [1, 2, 3, 4].map((seed) => routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, grid, [{ type: "River", routing: "meander", from: "W", to: "E" }], seed)[0].hexes.join());
+		const rivers = [1, 2, 3, 4].map((seed) => routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, grid, [{ type: "River", routing: "meander", avoidImpassable: false, autoRoute: "winding", from: "W", to: "E" }], seed)[0].hexes.join());
 		expect(road.hexes.length).toBe(grid.cols); // straight across
 		expect(new Set(rivers).size).toBeGreaterThan(1); // seeds differ
-		expect(routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, grid, [{ type: "River", routing: "meander", from: "W", to: "E" }], 2)[0].hexes.join()).toBe(rivers[1]);
+		expect(routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, grid, [{ type: "River", routing: "meander", avoidImpassable: false, autoRoute: "winding", from: "W", to: "E" }], 2)[0].hexes.join()).toBe(rivers[1]);
+	});
+
+	it("goes by the type's options, never its name (PA5)", () => {
+		const m = cells(flat);
+		for (let x = 5; x <= 7; x++) for (let y = 2; y <= 6; y++) m.set(`${x}_${y}`, "ocean");
+		// A "River" set to avoid impassable terrain and route direct is routed like a road…
+		const [river] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "River", routing: "meander", avoidImpassable: true, autoRoute: "direct", from: "W", to: "E" }], 3);
+		const [road] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Road", from: "W", to: "E" }], 3);
+		expect(river.hexes).toEqual(road.hexes);
+		// …and any name with the river options runs into the water.
+		const [canal] = routeContextPaths(m, DEFAULT_TERRAIN_PALETTE, flat, [{ type: "Ley line", avoidImpassable: false, autoRoute: "winding", from: "W", to: "E" }], 3);
+		expect(canal.hexes.some((k) => m.get(k) === "ocean")).toBe(true);
 	});
 
 	it("routes over a blank map (no terrain) and skips paths with no sides", () => {
@@ -115,13 +127,13 @@ describe("pairCrossings (neighbour regions' paths crossing into a new map)", () 
 		const out = pairCrossings([
 			{ type: "Road", hex: "0_4" },
 			{ type: "Road", hex: "0_4" },
-			{ type: "River", routing: "meander", hex: "6_0" },
+			{ type: "River", routing: "meander", avoidImpassable: false, autoRoute: "winding", hex: "6_0" },
 		], flat);
 		expect(out).toHaveLength(2);
 		const river = out.find((p) => p.type === "River")!;
 		expect(river.fromHex).toBe("6_0");
 		expect(river.toHex).toBeUndefined();
-		expect(river.routing).toBe("meander");
+		expect(river).toMatchObject({ routing: "meander", avoidImpassable: false, autoRoute: "winding" });
 	});
 
 	it("four crossings pair across the map, not around a corner", () => {

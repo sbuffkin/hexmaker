@@ -18,8 +18,8 @@ export const HEX_TEMPLATE_FILE = "hex.md";
 export const TOWN_TEMPLATE_FILE = "town.md";
 
 /**
- * Built-in town note: a few open headings, nothing prescriptive. The
- * hex's back-link is added above it when the note is made from a hex.
+ * Built-in town note: a few open headings, nothing prescriptive. Made
+ * from a hex, it gets a "Location: [[hex]]" line under the title.
  * `{{title}}` is the town's name.
  */
 export const DEFAULT_TOWN_TEMPLATE = `# {{title}}
@@ -64,6 +64,37 @@ export function townTemplatePathFor(s: TemplateSettings): string {
 /** Fill a note template's `{{title}}` placeholders. */
 export function fillNoteTemplate(template: string, title: string): string {
   return template.replace(/\{\{title\}\}/g, title);
+}
+
+/** Link sections whose new notes are places on the map: they get a Location line (R3). */
+export const LOCATION_SECTIONS: readonly string[] = ["Towns", "Dungeons", "Features", "Quests"];
+
+/**
+ * A note made from a hex says where it is, as a labelled line under its
+ * title (or at the top): `Location: [[world/hexes/coast/3_4|The Coast 3, 4]]`.
+ * The full path keeps hexes of different maps apart. A note that already
+ * links the hex is returned unchanged.
+ */
+export function withLocationLine(content: string, hexPath: string, label: string): string {
+  const target = hexPath.replace(/\.md$/i, "");
+  if (content.includes(`[[${target}]]`) || content.includes(`[[${target}|`)) return content;
+  const shown = label.replace(/[|[\]]/g, "").replace(/\s+/g, " ").trim();
+  const line = `Location: ${shown ? `[[${target}|${shown}]]` : `[[${target}]]`}`;
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  if (content.trim() === "") return line + eol;
+  let at = 0;
+  if (lines[0]?.trim() === "---") {
+    const close = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+    if (close > 0) at = close + 1;
+  }
+  const afterFrontmatter = at;
+  const title = lines.findIndex((l, i) => i >= at && /^#\s/.test(l));
+  if (title >= 0) at = title + 1;
+  const before = at > 0 && at !== afterFrontmatter && lines[at - 1]?.trim() !== "" ? [""] : [];
+  const after = lines[at] !== undefined && lines[at].trim() !== "" ? [""] : [];
+  lines.splice(at, 0, ...before, line, ...after);
+  return lines.join(eol);
 }
 
 /** Which note template a new note in this link section starts from, if any. */

@@ -1,3 +1,4 @@
+import { BUNDLED_PLACE_ICONS } from "./bundledPlaceIcons";
 import { BUNDLED_SPACE_ICONS } from "./bundledSpaceIcons";
 import bwBadlands from "../icons/bw-badlands.png";
 import bwBrokenlands from "../icons/bw-brokenlands.png";
@@ -75,5 +76,6 @@ export const BUNDLED_ICONS: Map<string, string> = new Map([
 	["bw-swamp.png", bwSwamp],
 	["bw-volcano.png", bwVolcano],
 	["bw-volcano-dormant.png", bwVolcanoDormant],
+	...BUNDLED_PLACE_ICONS.map(([file, url]): [string, string] => [file, url]),
 	...BUNDLED_SPACE_ICONS,
 ]);

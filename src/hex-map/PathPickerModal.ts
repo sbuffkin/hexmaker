@@ -286,7 +286,7 @@ export class PathPickerModal extends HexmakerModal {
         void (async () => {
         let name = "New path";
         for (let n = 2; pathTypes.some((p) => p.name.toLowerCase() === name.toLowerCase()); n++) name = `New path ${n}`;
-        const newPt: PathType = { name, color: "#888888", width: 3, lineStyle: "solid", routing: "through" };
+        const newPt: PathType = { name, color: "#888888", width: 3, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" };
         pathTypes.push(newPt);
         this.editChanged = true;
         await this.plugin.saveSettings();

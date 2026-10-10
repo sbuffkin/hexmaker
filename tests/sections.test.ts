@@ -401,6 +401,13 @@ describe("addBacklinkToFile", () => {
 		// process should never have been called
 		assert.strictEqual(app.vault.process.mock.callCount(), 0, "process should not have been called");
 	});
+
+	it("does not append when a just-made note's Location line links the hex (cache not updated yet)", async () => {
+		const note = "# Saltmarsh\n\nLocation: [[hex/1_1|Coast 1, 1]]\n";
+		const { app, getContent } = makeAppForBacklink("hex/1_1.md", "", "notes/town.md", note);
+		await addBacklinkToFile(app, "notes/town.md", "hex/1_1.md", "Coast 1, 1");
+		expect(getContent("notes/town.md")).toBe(note);
+	});
 });
 
 // ── Template guidance under each heading (fresh-eyes r4) ─────────────────────

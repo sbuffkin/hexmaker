@@ -360,7 +360,7 @@ describe("map store: a note broken by hand mid-session (#42)", () => {
 		const { store } = await boot(v, oneMap());
 		store.set("m", "1_1", { terrain: "grass" });
 		await store.flush();
-		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 3", "hexmaker-mpa: 3");
+		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 4", "hexmaker-mpa: 4");
 		v.files.set(NOTE, broken); // onModify hasn't run yet
 		store.set("m", "2_2", { terrain: "lava" });
 		await store.flush();
@@ -404,7 +404,7 @@ describe("map store: older map notes are converted once, after a backup (#42)", 
 		expect(backups.map((k) => k.split("/").pop())).toEqual(["m-map-note.md"]);
 		expect(v.files.get(backups[0])).toBe(old);
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 3");
+		expect(now).toContain("hexmaker-map: 4");
 		expect(now).toContain('parent: "[[_world]]"\nparent-hex: 3, 4');
 		expect(now).toContain('background-image: "[[art/bg.png]]"');
 		expect(now).toContain("hexmaker-origin-x: 0");
@@ -558,7 +558,7 @@ describe("map store: format 2 notes and region mirrors (overworld phase 1)", () 
 		const { store } = await boot(v, world());
 		expect(store.get("m", "1_1")).toEqual({ terrain: "forest", region: "Basin", locations: ["town"] });
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 3");
+		expect(now).toContain("hexmaker-map: 4");
 		expect(now).toContain("Our notes.");
 		expect(now).toContain("| 1_1 | forest | [[Basin]] | [[_town]] |");
 		expect(now).not.toContain("Submap");
@@ -576,5 +576,54 @@ describe("map store: format 2 notes and region mirrors (overworld phase 1)", () 
 		const before = v.files.get(NOTE);
 		await boot(v, world());
 		expect(v.files.get(NOTE)).toBe(before);
+	});
+});
+
+describe("map store: derived Summary and Route (#46)", () => {
+	const withPalette = (v: MemVault, m: MapData[], terrains: string[]) => {
+		const p = plugin(v, m);
+		Object.assign(p, {
+			getMapPalette: () => terrains.map((name) => ({ name })),
+			getMapPathTypes: () => [{ name: "Road" }],
+			mapPaletteName: () => "Default",
+			paletteStore: { notePathOf: () => "world/palettes/Default.md" },
+		});
+		return p;
+	};
+
+	it("writes them with the palette, and a restart writes nothing", async () => {
+		const v = new MemVault();
+		const m = oneMap({ pathChains: [{ typeName: "Trail", hexes: ["1_1", "2_1"] }] });
+		const store = new MapStore(withPalette(v, m, ["grass"]) as never);
+		await store.init();
+		store.set("m", "1_1", { terrain: "lava" });
+		await store.flush();
+		const note = v.files.get(NOTE)!;
+		expect(note).toContain("- **Palette:** [[world/palettes/Default]]");
+		expect(note).toContain("| lava (⚠ not in the palette) | 1 |");
+		expect(note).toContain("| Trail | 1, 1 → 2, 1 (2 hexes) | ⚠ not a path type in the palette | 1_1 2_1 |");
+		// Restart: the note is current, so it isn't written.
+		v.writes.length = 0;
+		const again = new MapStore(withPalette(v, oneMap(), ["grass"]) as never);
+		await again.init();
+		expect(v.writes).toEqual([]);
+		expect(v.files.get(NOTE)).toBe(note);
+	});
+
+	it("a palette change rewrites the summary on the next sync; no change, no write", async () => {
+		const v = new MemVault();
+		const terrains = ["grass"];
+		const m = oneMap();
+		const store = new MapStore(withPalette(v, m, terrains) as never);
+		await store.init();
+		store.set("m", "1_1", { terrain: "lava" });
+		await store.flush();
+		v.writes.length = 0;
+		await store.sync();
+		expect(v.writes).toEqual([]);
+		terrains.push("lava");
+		await store.sync();
+		expect(v.writes).toEqual([NOTE]);
+		expect(v.files.get(NOTE)).not.toContain("not in the palette");
 	});
 });

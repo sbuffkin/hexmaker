@@ -1,7 +1,7 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexNeighbors } from "../../packages/hex-wfc/src";
 import { neighbourShadow, type NewRegion } from "./neighbours";
-import { pairCrossings } from "./procedural/contextPaths";
+import { behaviourOf, pairCrossings } from "./procedural/contextPaths";
 import type { ContextTerrain, GenerationContext } from "./procedural/common";
 
 /**
@@ -30,8 +30,8 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
     x >= region.offset.x && x < region.offset.x + region.cols &&
     y >= region.offset.y && y < region.offset.y + region.rows;
   // Each neighbour's path types come from its own palette.
-  const routingOf = (map: string, type: string) => plugin.getMapPathTypes(map).find((p) => p.name === type)?.routing;
-  const crossings: { type: string; routing?: "through" | "meander" | "edge"; hex: string }[] = [];
+  const pathTypeOf = (map: string, type: string) => plugin.getMapPathTypes(map).find((p) => p.name === type);
+  const crossings: Parameters<typeof pairCrossings>[0] = [];
   for (const [key, cell] of shadow) {
     const map = plugin.getMap(cell.map);
     if (!map) continue;
@@ -40,7 +40,7 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
       if (!chain.hexes.includes(there)) continue;
       const [sx, sy] = key.split("_").map(Number);
       const inside = hexNeighbors(sx, sy, orientation, region.stagger).find(([nx, ny]) => inGrid(nx, ny));
-      if (inside) crossings.push({ type: chain.typeName, routing: routingOf(cell.map, chain.typeName), hex: `${inside[0]}_${inside[1]}` });
+      if (inside) crossings.push({ type: chain.typeName, ...behaviourOf(pathTypeOf(cell.map, chain.typeName)), hex: `${inside[0]}_${inside[1]}` });
     }
   }
   const paths = pairCrossings(crossings, {

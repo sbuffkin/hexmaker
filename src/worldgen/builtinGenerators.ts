@@ -23,7 +23,7 @@ import {
   type PathTweak,
   type TerrainEntry,
 } from "../../packages/hex-wfc/src";
-import type { TerrainColor } from "../types";
+import type { PathType, TerrainColor } from "../types";
 import { DEFAULT_TERRAIN_PALETTE } from "../constants";
 import { effectiveTerrainType, inferTerrainType } from "../terrainTypes";
 
@@ -380,15 +380,29 @@ export function fitBuiltinModel(model: HexWfcModel, palette: TerrainColor[]): He
 }
 
 /**
- * The map path type a shipped generator's path is drawn as. Shipped
- * generators draw streams, creeks and trails too; vaults that don't have
- * those path types get them as their river / road type instead.
+ * How the shipped generators' own path types behave, as data: water-like
+ * ones run through anything and wind; land ones avoid impassable terrain and
+ * keep direct. Used only to pick a stand-in from the palette (below).
  */
-export function builtinPathType(type: string, known: string[]): string {
-  if (known.includes(type)) return type;
-  const lower = known.map((k) => k.toLowerCase());
-  const pick = (re: RegExp) => known[lower.findIndex((k) => re.test(k))];
-  if (/stream|creek|brook|river/i.test(type)) return pick(/river/) ?? type;
-  if (/trail|track|road|path/i.test(type)) return pick(/road/) ?? type;
-  return type;
+export const BUILTIN_PATH_BEHAVIOUR: Record<string, Pick<PathType, "avoidImpassable" | "autoRoute">> = {
+  River: { avoidImpassable: false, autoRoute: "winding" },
+  stream: { avoidImpassable: false, autoRoute: "winding" },
+  creek: { avoidImpassable: false, autoRoute: "winding" },
+  Road: { avoidImpassable: true, autoRoute: "direct" },
+  trail: { avoidImpassable: true, autoRoute: "direct" },
+};
+
+/**
+ * The map path type a shipped generator's path is drawn as: the palette's
+ * type of that name, else the first palette type that behaves the same
+ * (by its options, never its name), else the first that at least matches on
+ * avoiding impassable terrain. Unknown types are kept as they are.
+ */
+export function builtinPathType(type: string, known: readonly PathType[]): string {
+  if (known.some((k) => k.name === type)) return type;
+  const want = BUILTIN_PATH_BEHAVIOUR[type];
+  if (!want) return type;
+  const same = known.find((k) => k.avoidImpassable === want.avoidImpassable && k.autoRoute === want.autoRoute)
+    ?? known.find((k) => k.avoidImpassable === want.avoidImpassable);
+  return same?.name ?? type;
 }

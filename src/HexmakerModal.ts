@@ -1,9 +1,12 @@
 import { App, Modal } from "obsidian";
-import { iconLabel, iconPack, iconPackTabs, type IconPack } from "./utils";
+import { iconLabel, iconPack, iconPackTabs, placeIconKind, PLACE_ICON_KINDS, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" | undefined;
+
+/** Last Places sub-group picked (Settlements, Castles…); "" = all places. */
+let lastPlaceKind = "";
 
 /** The tab a filter opens on until the user picks one (see setIconPackDefault). */
 let iconPackDefault: () => IconPack | "all" = () => "all";
@@ -24,7 +27,8 @@ export class HexmakerModal extends Modal {
 	}
 
 	/**
-	 * Put a search box + pack tabs (All / Terrain / Space / Custom) above an
+	 * Put a search box + pack tabs (All / Terrain / Places / Space / Custom,
+	 * with Settlements / Castles / … chips on Places) above an
 	 * icon grid so large icon libraries stay navigable. Works on any grid
 	 * whose tiles are `.duckmage-icon-option` elements carrying
 	 * `data-icon="<file name>"`; tiles with an empty `data-icon` ("no icon",
@@ -44,6 +48,10 @@ export class HexmakerModal extends Modal {
 			attr: { placeholder: "Filter icons…", "aria-label": "Filter icons" },
 		});
 		const tabs = bar.createDiv({ cls: "duckmage-icon-filter-tabs" });
+		// Sub-groups of the Places tab (Settlements, Castles…), shown only on it.
+		const kinds = bar.createDiv({ cls: "duckmage-icon-filter-kinds" });
+		const kindLabel = new Map(PLACE_ICON_KINDS);
+		let placeKind = lastPlaceKind;
 		const empty = createDiv({ cls: "duckmage-icon-filter-empty", text: "No icons match." });
 		const NO_CUSTOM = "No custom icons yet. Put your own images (a castle, a village…) in the icons folder set in Hexmaker settings.";
 		grid.after(empty);
@@ -66,9 +74,14 @@ export class HexmakerModal extends Modal {
 			for (const tile of tiles()) {
 				const icon = tile.dataset["icon"] ?? "";
 				if (!icon) continue;
+				const kind = vaultIcons.has(icon) ? undefined : placeIconKind(icon);
 				const match =
 					(pack === "all" || iconPack(icon, vaultIcons) === pack) &&
-					(!query || iconLabel(icon).includes(query) || icon.toLowerCase().includes(query));
+					(pack !== "places" || !placeKind || kind === placeKind) &&
+					(!query ||
+						iconLabel(icon).includes(query) ||
+						icon.toLowerCase().includes(query) ||
+						(kind !== undefined && (kindLabel.get(kind) ?? "").toLowerCase().includes(query)));
 				tile.toggle(match);
 				if (match) shown++;
 			}
@@ -100,6 +113,32 @@ export class HexmakerModal extends Modal {
 					pack = key;
 					lastIconPack = key;
 					renderTabs();
+					apply();
+				});
+			}
+			renderKinds();
+		};
+
+		const renderKinds = () => {
+			kinds.empty();
+			const counts = new Map<string, number>();
+			for (const tile of tiles()) {
+				const icon = tile.dataset["icon"];
+				const kind = icon && !vaultIcons.has(icon) ? placeIconKind(icon) : undefined;
+				if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
+			}
+			if (!counts.get(placeKind)) placeKind = "";
+			kinds.toggle(pack === "places" && counts.size > 0);
+			const entries: (readonly [string, string])[] =[["", "All places"], ...PLACE_ICON_KINDS.filter(([id]) => counts.get(id))];
+			for (const [id, label] of entries) {
+				const chip = kinds.createEl("button", {
+					cls: `duckmage-icon-filter-kind${placeKind === id ? " is-active" : ""}`,
+					text: label,
+				});
+				chip.addEventListener("click", () => {
+					placeKind = id;
+					lastPlaceKind = id;
+					renderKinds();
 					apply();
 				});
 			}

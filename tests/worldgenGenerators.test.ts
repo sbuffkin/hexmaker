@@ -61,6 +61,12 @@ function makePlugin(painted: Record<string, string>, locked: string[] = []) {
       },
       getMarkdownFiles: () => [...files.keys()].map(fileObj),
       cachedRead: async (f: TFile) => files.get(f.path) ?? "",
+      read: async (f: TFile) => files.get(f.path) ?? "",
+      process: async (f: TFile, fn: (text: string) => string) => {
+        const next = fn(files.get(f.path) ?? "");
+        files.set(f.path, next);
+        return next;
+      },
     },
     metadataCache: {
       getFileCache: (f: TFile) => {

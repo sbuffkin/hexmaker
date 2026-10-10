@@ -16,7 +16,7 @@ import {
 import { builtinKind, visibleKinds } from "../src/worldgen/registry";
 import { validateModel, type HexWfcModel } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
-import type { TerrainColor } from "../src/types";
+import type { PathType, TerrainColor } from "../src/types";
 
 /**
  * G12: the biome / preset generators ship with the plugin and work on any
@@ -225,11 +225,22 @@ describe("remapModel", () => {
 });
 
 describe("builtinPathType", () => {
+	const pt = (name: string, avoidImpassable: boolean, autoRoute: "direct" | "winding"): PathType =>
+		({ name, color: "#000", width: 3, lineStyle: "solid", routing: "through", avoidImpassable, autoRoute });
+
 	it("draws streams as rivers and trails as roads when the vault lacks them", () => {
-		expect(builtinPathType("stream", ["Road", "River"])).toBe("River");
-		expect(builtinPathType("creek", ["Road", "River"])).toBe("River");
-		expect(builtinPathType("trail", ["Road", "River"])).toBe("Road");
-		expect(builtinPathType("trail", ["Road", "River", "trail"])).toBe("trail");
-		expect(builtinPathType("Jump", ["Road"])).toBe("Jump");
+		const known = [pt("Road", true, "direct"), pt("River", false, "winding")];
+		expect(builtinPathType("stream", known)).toBe("River");
+		expect(builtinPathType("creek", known)).toBe("River");
+		expect(builtinPathType("trail", known)).toBe("Road");
+		expect(builtinPathType("trail", [...known, pt("trail", true, "direct")])).toBe("trail");
+		expect(builtinPathType("Jump", [pt("Road", true, "direct")])).toBe("Jump");
+	});
+
+	it("picks the stand-in by its options, never its name (PA5)", () => {
+		// The palette's water-like type is called "Brook"; its "River" is a straight road-like type.
+		const known = [pt("River", true, "direct"), pt("Brook", false, "winding")];
+		expect(builtinPathType("stream", known)).toBe("Brook");
+		expect(builtinPathType("trail", known)).toBe("River");
 	});
 });

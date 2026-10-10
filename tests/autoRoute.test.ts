@@ -215,16 +215,13 @@ describe("auto-routed rivers wind (round 7 U17)", () => {
 		expect(r.hexes.every((k) => { const [x, y] = k.split("_").map(Number); return x >= 0 && x < 20 && y >= 0 && y < 16; })).toBe(true);
 	});
 
-	it("roads keep the straight line; only river-like path types meander", () => {
-		expect(pathMeanders({ name: "Road" })).toBe(false);
-		expect(pathMeanders({ name: "Trail" })).toBe(false);
-		expect(pathMeanders({ name: "River" })).toBe(true);
-		expect(pathMeanders({ name: "Mountain stream" })).toBe(true);
-		expect(pathMeanders({ name: "Creek" })).toBe(true);
-		// A type that crosses impassable terrain is river-like too…
-		expect(pathMeanders({ name: "Canal" })).toBe(true);
-		expect(pathMeanders({ name: "Old way", avoidImpassable: false })).toBe(true);
-		expect(pathMeanders({ name: "Road", avoidImpassable: true })).toBe(false);
+	it("winding is the type's Auto-route option, never its name (PA5)", () => {
+		expect(pathMeanders({ autoRoute: "direct" })).toBe(false);
+		expect(pathMeanders({ autoRoute: "winding" })).toBe(true);
+		// A type named River set to direct routes direct; a Road set to winding winds.
+		expect(pathMeanders({ name: "River", autoRoute: "direct" } as { autoRoute: "direct" })).toBe(false);
+		expect(pathMeanders({ name: "Road", autoRoute: "winding" } as { autoRoute: "winding" })).toBe(true);
+		expect(pathMeanders({})).toBe(false);
 		// Without meander, the river from the tester's map is the straight shortest route.
 		const straight = findRoute("11_13", "6_14", { orientation: "flat", bounds: bounds(20, 16) });
 		expect(straight.ok && straight.hexes.length - 1).toBe(hexDistance([11, 13], [6, 14], "flat"));
