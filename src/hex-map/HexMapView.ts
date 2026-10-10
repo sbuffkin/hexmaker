@@ -36,6 +36,7 @@ import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords } from "./hexHover";
+import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -794,10 +795,9 @@ export class HexMapView extends ItemView {
           this.currentFactionStroke = new Map();
         else if (this.drawingMode === "regionLink")
           this.currentRegionStroke = new Map();
-        // Paint the hex under the cursor immediately
-        const hexEl = (e.target as HTMLElement).closest<HTMLElement>(
-          ".duckmage-hex",
-        );
+        // Paint the hex under the cursor immediately (or the nearest one
+        // when the press landed in the gap between hexes).
+        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
@@ -853,11 +853,8 @@ export class HexMapView extends ItemView {
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
       if (isTerrainPainting) {
-        const el = dragDoc?.elementFromPoint(
-          e.clientX,
-          e.clientY,
-        ) as HTMLElement | null;
-        const hexEl = el?.closest<HTMLElement>(".duckmage-hex");
+        const el = dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null;
+        const hexEl = this.hexElAt(el, e.clientX, e.clientY);
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
@@ -957,7 +954,7 @@ export class HexMapView extends ItemView {
           this.exitCurrentMode();
           return;
         }
-        const hexEl = (e.target as HTMLElement).closest<HTMLElement>(".duckmage-hex");
+        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
         const hexX = hexEl ? Number(hexEl.dataset.x) : null;
         const hexY = hexEl ? Number(hexEl.dataset.y) : null;
         if (
@@ -985,6 +982,26 @@ export class HexMapView extends ItemView {
       },
       { capture: true },
     );
+
+    // A click or right-click in the gap between hexes (or on a hex's clipped
+    // corner) lands on the column box, not a hex: send it to the nearest
+    // hex (round 5: "two dead clicks before the first hex editor opened").
+    // Hexes, tokens and the neighbour strip handle their own clicks.
+    const onGap = (e: MouseEvent): { x: number; y: number } | null => {
+      const t = e.target instanceof HTMLElement ? e.target : null;
+      if (!t || t.closest(".duckmage-hex, .duckmage-token, .duckmage-region-shadow-hex")) return null;
+      const hexEl = this.hexElAt(t, e.clientX, e.clientY);
+      return hexEl ? { x: Number(hexEl.dataset.x), y: Number(hexEl.dataset.y) } : null;
+    };
+    this.registerDomEvent(clipEl, "click", (e: MouseEvent) => {
+      const hex = onGap(e);
+      if (hex) void this.onHexClick(hex.x, hex.y, e);
+    });
+    this.registerDomEvent(clipEl, "contextmenu", (e: MouseEvent) => {
+      if (this.drawingMode !== null) return; // the tool menu (capture) owns it
+      const hex = onGap(e);
+      if (hex) this.onHexContextMenu(e, hex.x, hex.y);
+    });
 
     // Double-clicking off the hex grid (but inside the viewport) exits terrain/icon mode
     this.registerDomEvent(contentEl, "dblclick", (e: MouseEvent) => {
@@ -3499,6 +3516,37 @@ export class HexMapView extends ItemView {
     this.viewportEl
       ?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`)
       ?.addClass("is-selected");
+  }
+
+  /**
+   * The hex at a pointer position: the hex element under it, else (a press
+   * in the gap between hexes or on a hex's clipped corner, which hits the
+   * column/row box) the nearest hex within reach. Reads only.
+   */
+  private hexElAt(target: EventTarget | null, clientX: number, clientY: number): HTMLElement | null {
+    const el = target instanceof HTMLElement ? target : null;
+    if (!el) return null;
+    const direct = el.closest<HTMLElement>(".duckmage-hex[data-x]");
+    if (direct) return direct;
+    const grid = el.closest<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return null;
+    const lane = el.closest<HTMLElement>(".duckmage-hex-col, .duckmage-hex-row");
+    let pool: HTMLElement[];
+    if (lane) {
+      pool = [lane.previousElementSibling, lane, lane.nextElementSibling].flatMap((l) =>
+        l instanceof HTMLElement ? Array.from(l.querySelectorAll<HTMLElement>(".duckmage-hex[data-x]")) : [],
+      );
+    } else if (el === grid) {
+      pool = Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-hex[data-x]"));
+    } else {
+      return null;
+    }
+    const boxes = pool.map((h) => {
+      const r = h.getBoundingClientRect();
+      return { x: Number(h.dataset.x), y: Number(h.dataset.y), left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    });
+    const hit = nearestHex(clientX, clientY, boxes);
+    return hit ? pool.find((h) => Number(h.dataset.x) === hit.x && Number(h.dataset.y) === hit.y) ?? null : null;
   }
 
   /** Centre the view on a hex. `keepHexWidth` (on-screen px) keeps that hex
