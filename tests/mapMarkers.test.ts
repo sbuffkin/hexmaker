@@ -224,8 +224,8 @@ import { layoutHexName } from "../src/hex-map/hexNameLayer";
 import { pngBadgeCircles as pngBadges, pngPathWidth } from "../src/export/handoutLabels";
 
 describe("badge size (round 7 R8)", () => {
-	it("defaults to M from one constant; S is the round 6 size", () => {
-		expect(DEFAULT_BADGE_SIZE).toBe("m");
+	it("defaults to S from one constant (MK1)", () => {
+		expect(DEFAULT_BADGE_SIZE).toBe("s");
 		expect(badgeSize(undefined)).toBe(DEFAULT_BADGE_SIZE);
 		expect(badgeSize("junk")).toBe(DEFAULT_BADGE_SIZE);
 		expect(badgeSize("s")).toBe("s");
