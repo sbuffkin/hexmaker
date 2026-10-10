@@ -580,6 +580,16 @@ export class HexEditorModal extends HexmakerModal {
       });
     }
 
+    // The strip shows two rows; scroll the current terrain into view so the
+    // highlight is visible on open, not hidden further down the palette.
+    const current = grid.querySelector<HTMLElement>(".duckmage-terrain-option.is-selected");
+    if (current) {
+      window.requestAnimationFrame(() => {
+        const offset = current.getBoundingClientRect().top - grid.getBoundingClientRect().top;
+        grid.scrollTop += offset - 4;
+      });
+    }
+
     // Keep terrain in the overrides map (see terrainOverrides above) so
     // renderGrid doesn't lose it during the brief window when Obsidian
     // clears the metadata cache on file modify.
