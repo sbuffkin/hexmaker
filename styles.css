@@ -7047,3 +7047,40 @@ button.duckmage-wfc-library-tab.is-active {
 .modal.duckmage-editor-modal-drag.duckmage-more-features-modal {
     min-height: 0;
 }
+
+/* Map list as a tree (N4): submaps under their parent, neighbouring
+   regions grouped; collapsible, with a search box on long lists. */
+.duckmage-map-tree-search {
+    width: 100%;
+    margin-bottom: 6px;
+}
+.duckmage-map-tree-node {
+    list-style: none;
+}
+.duckmage-map-tree-children {
+    padding-left: 14px;
+    border-left: 1px solid var(--background-modifier-border);
+    margin-left: 14px;
+}
+.duckmage-map-tree-toggle {
+    width: 1em;
+    flex-shrink: 0;
+    text-align: center;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-map-tree-world {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-map-tree-world-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Sideways crumbs (X3): neighbouring regions after the map button. */
+.duckmage-map-side-crumbs {
+    max-width: 30vw;
+}

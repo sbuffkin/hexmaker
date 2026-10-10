@@ -97,9 +97,10 @@ An interactive hex grid rendered as an Obsidian panel.
 ### Maps
 Organise your world into multiple named hex maps, each stored as a subfolder under your hex folder. The active map name is shown in the top-left of the toolbar as a dropdown button.
 
-- **Switch** — click the map name button to open the maps panel, then click any map in the list to make it active.
-- **Create** — enter a name, choose a grid size and terrain palette, then click Create.
-- **Rename** — update the name field and click Rename; all hex notes in the folder are moved automatically.
+- **Switch** — click the map name button to open the maps panel, then click any map in the list to make it active. The list is a tree: submaps sit under the map they came from, and neighbouring regions are grouped together. Click ▸ / ▾ to fold a branch; with more than 10 maps a search box finds a map by name.
+- **Create** — enter a name, choose a grid size and terrain palette, then click Create. The map keeps the name as you typed it ("Barony of Saltmere"); its folder and map note use a lower-case, dashed version (`barony-of-saltmere`).
+- **Name** — change the name shown everywhere. Nothing moves on disk. The name is stored as `display-name:` in the map note.
+- **Folder name** — rename the folder itself; its hex notes and map note move with it and links to the map are updated.
 - **Delete** — removes the map and moves all its hex notes to the trash.
 - **Terrain theme** — assign a terrain type to a map. The swatch appears next to the map name in the switch list and sets the colour of the submap center dot when this map is linked as a submap from a parent map.
 - **Back** (`← Back` button) — returns to the previously active map after following a submap link.
@@ -113,6 +114,8 @@ Maps can be generated instead of painted hex by hex. When you create a map (**Ma
 - **Learned generators** — made in the **Terrain generator** view (command palette: **Hexmap World Creator: Open terrain generator**) by learning from maps you've already painted, or by blending several.
 
 **Neighbouring maps.** In **Maps → New map**, **Place next to** makes the new map a region beside an existing one (same size and palette, lined up hex for hex). **Guided setup…** keeps the name and neighbour you picked. There, the generators marked *Continues … edge* (Overland and learned generators) carry the neighbour's terrain on across the shared border, and the preview shows the neighbour's edge faded around the new map. Region detail is only offered for submaps, since it zooms into a parent hex.
+
+**Shared coordinates.** Neighbouring regions number their hexes on one grid, so a hex number is unique across the world: the map east of a 20-column map that starts at 0 starts at column 20. The placement note shows the range ("Hexes 20, 0 to 39, 13"). Maps joined before this, or two existing maps linked in **Properties → Neighbouring regions**, keep their own numbers; nothing is renamed. Next to the map button, the neighbouring regions show as crumbs ("thornwood ▾  Cole's Ford →"); click one to go there.
 
 Generators only change hexes when a map is created or regenerated; you can always repaint by hand afterwards.
 

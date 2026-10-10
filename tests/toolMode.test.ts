@@ -98,8 +98,8 @@ describe("Map navigation buttons say where they go (fresh-eyes T4)", () => {
 		const nav = method("refreshMapNav");
 		expect(nav).toMatch(/backBtn\.setAttr\("aria-label", label\)/);
 		expect(nav).toMatch(/upBtn\.setAttr\("aria-label", label\)/);
-		expect(nav).toMatch(/previous map: \$\{prev\}/);
-		expect(nav).toMatch(/parent map: \$\{parent\.map\}/);
+		expect(nav).toMatch(/previous map: \$\{this\.plugin\.mapLabel\(prev\)\}/);
+		expect(nav).toMatch(/parent map: \$\{this\.plugin\.mapLabel\(parent\.map\)\}/);
 	});
 });
 

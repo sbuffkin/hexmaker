@@ -736,7 +736,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// palette such as Space - Sector on first use).
 			onProgress("Creating the map…");
 			const result = await plugin.createNewMap(
-				name,
+				ctx.mapName,
 				ctx.mapCols,
 				ctx.mapRows,
 				ctx.paletteName,
@@ -794,7 +794,7 @@ function makeDoneStep(): WizardStep {
 			const world = normalizeFolder(ctx.worldFolder) || "world";
 			const name = slugify(ctx.mapName) || ctx.mapName;
 			summary.createEl("li", { text: `World folder: ${world}` });
-			summary.createEl("li", { text: `Map: "${name}" — ${ctx.mapCols} × ${ctx.mapRows}, ${ctx.generatedWith ? `terrain generated with ${ctx.generatedWith}` : "blank, ready to paint"}` });
+			summary.createEl("li", { text: `Map: "${ctx.mapName.trim() || name}" — ${ctx.mapCols} × ${ctx.mapRows}, ${ctx.generatedWith ? `terrain generated with ${ctx.generatedWith}` : "blank, ready to paint"}` });
 			summary.createEl("li", { text: `Map note: _${name}.md in the map folder holds the terrain and paths; a hex gets its own note when you first add something to it` });
 			summary.createEl("li", { text: `Hex orientation: ${ctx.hexOrientation === "flat" ? "Flat-top" : "Pointy-top"}` });
 			summary.createEl("li", { text: `Terrain palette: ${ctx.paletteName}` });

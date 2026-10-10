@@ -49,7 +49,7 @@ export function renderMapExportForm(
 
   const hint = el.createEl("p", { cls: "duckmage-export-tab-hint" });
   const setHint = () =>
-    hint.setText(`Export the map "${mapName}". Files go to the export folder and open in a new tab.`);
+    hint.setText(`Export the map "${plugin.mapLabel(mapName)}". Files go to the export folder and open in a new tab.`);
   setHint();
 
   const optsForm = el.createDiv({ cls: "duckmage-export-tab-options" });
@@ -60,7 +60,7 @@ export function renderMapExportForm(
     const id = `duckmage-export-field-${nextFieldId++}`;
     mapRow.createEl("label", { text: "Map", cls: "duckmage-export-tab-label", attr: { for: id } });
     const mapSelect = mapRow.createEl("select", { cls: "duckmage-export-tab-select", attr: { id } });
-    for (const m of plugin.settings.maps) mapSelect.createEl("option", { value: m.name, text: m.name });
+    for (const m of plugin.settings.maps) mapSelect.createEl("option", { value: m.name, text: plugin.mapLabel(m.name) });
     mapSelect.value = mapName;
     mapSelect.addEventListener("change", () => {
       // A name still equal to the old map's follows the new map.

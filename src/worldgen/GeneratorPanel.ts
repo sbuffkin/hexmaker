@@ -33,7 +33,7 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { makeScrubbable, wheelValue } from "./scrub";
 import { rebalance, toPercents } from "./regionWeights";
 import { suggestImpassable } from "./impassableHint";
-import { SIDES, type Side } from "./world";
+import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { hasFeature } from "../featureLevel";
@@ -568,7 +568,7 @@ export class GeneratorPanel {
     connectRow.createSpan({ text: "Connect to", cls: "duckmage-map-origin-label" });
     const anchorSelect = connectRow.createEl("select");
     anchorSelect.createEl("option", { value: "", text: "Nothing (a separate map)" });
-    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
+    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: this.plugin.mapLabel(m.name) });
     const sideSelect = connectRow.createEl("select");
     for (const sd of SIDES) sideSelect.createEl("option", { value: sd, text: `${sd} of it` });
     anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
@@ -588,8 +588,8 @@ export class GeneratorPanel {
       if (!spec.ok) connectNote.setText(`⚠ ${spec.reason}`);
       else {
         connected = { slot: spec.slot, aSlot: spec.aSlot, anchor: GeneratorPanel.connect.anchor, side: GeneratorPanel.connect.side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
-        const borders = occupiedSides(this.plugin, connected).map((sd) => `${sd}: ${regionNameAt(this.plugin, connected!, sd)}`);
-        connectNote.setText(`Size locked to ${spec.cols}×${spec.rows} and palette to ${spec.paletteName}, so it lines up. Borders ${borders.join("; ")}.`);
+        const borders = occupiedSides(this.plugin, connected).map((sd) => `${sd}: ${this.plugin.mapLabel(regionNameAt(this.plugin, connected!, sd))}`);
+        connectNote.setText(`Size locked to ${spec.cols}×${spec.rows} and palette to ${spec.paletteName}, so it lines up. Borders ${borders.join("; ")}. ${hexRangeText(spec.offset, spec.cols, spec.rows)}.`);
         colsInput.value = String(spec.cols);
         rowsInput.value = String(spec.rows);
         colsInput.disabled = rowsInput.disabled = true;

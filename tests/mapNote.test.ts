@@ -106,6 +106,25 @@ describe("map notes", () => {
 		expect(hexRowsToWrite(hexes).map(([k]) => k)).toEqual(["0_0", "1_0", "2_0"]);
 	});
 
+	it("display name: round-trips as display-name and heads the note", () => {
+		for (const displayName of ["Barony of Saltmere", "Cole's Ford: the crossing", "1984", "Thornwood #2"]) {
+			const data: MapNoteData = { settings: { paletteName: "Default", displayName }, hexes: new Map(), paths: [] };
+			const note = buildMapNote("barony-of-saltmere", data);
+			expect(note).toContain("display-name: ");
+			expect(note).toContain(`# ${displayName}`);
+			expect(parseMapNote(note)!.settings.displayName).toBe(displayName);
+			// An update (e.g. a rename) rewrites the key in place, once.
+			const renamed = updateMapNote(note, "barony-of-saltmere", { ...data, settings: { ...data.settings, displayName: "New" } });
+			expect(parseMapNote(renamed)!.settings.displayName).toBe("New");
+			expect(renamed.match(/display-name:/g)).toHaveLength(1);
+		}
+		// Maps from before display names: no key, the slug heads the note.
+		const old = buildMapNote("thornwood", { settings: { paletteName: "Default" }, hexes: new Map(), paths: [] });
+		expect(old).not.toContain("display-name");
+		expect(old).toContain("# thornwood");
+		expect(parseMapNote(old)!.settings.displayName).toBeUndefined();
+	});
+
 	it("strings that look like YAML specials survive", () => {
 		const data: MapNoteData = { settings: { paletteName: "true", terrainType: "123", createdWith: "1.5" }, hexes: new Map(), paths: [] };
 		const back = parseMapNote(buildMapNote("m", data))!;

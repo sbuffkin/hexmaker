@@ -21,11 +21,12 @@ export class RegionNavigateModal extends HexmakerModal {
   onOpen(): void {
     this.makeDraggable();
     const { map: name, x, y } = this.target;
-    this.titleEl.setText(`Go to ${name}?`);
+    const label = this.plugin.mapLabel(name);
+    this.titleEl.setText(`Go to ${label}?`);
     const map = this.plugin.getMap(name);
     const { contentEl } = this;
     contentEl.addClass("duckmage-region-nav");
-    contentEl.createEl("p", { text: `Hex ${x}, ${y} is in the neighbouring region "${name}".`, cls: "duckmage-map-origin-desc" });
+    contentEl.createEl("p", { text: `Hex ${x}, ${y} is in the neighbouring region "${label}".`, cls: "duckmage-map-origin-desc" });
     if (map) {
       const canvas = contentEl.createEl("canvas", { cls: "duckmage-region-nav-preview" });
       drawPreview(
@@ -44,7 +45,7 @@ export class RegionNavigateModal extends HexmakerModal {
       );
     }
     const row = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const go = row.createEl("button", { text: `Go to ${name}`, cls: "mod-cta" });
+    const go = row.createEl("button", { text: `Go to ${label}`, cls: "mod-cta" });
     go.addEventListener("click", () => {
       this.close();
       this.onGo();

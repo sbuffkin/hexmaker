@@ -22,7 +22,7 @@ export function renderNewMapFields(
 
   const nameInput = row.createEl("input", {
     type: "text",
-    placeholder: "map-name",
+    placeholder: "Map name",
   });
 
   const colsInput = row.createEl("input", {

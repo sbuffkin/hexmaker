@@ -173,7 +173,7 @@ describe("3. Maps → New map: procedural generators in the dropdown", () => {
 
 describe("4. Setup wizard: the 'Saved as' hint doesn't shift the form", () => {
 	it("says the slug only when it differs from what was typed", () => {
-		expect(slugHint("Ashby Vale")).toBe('Saved as "ashby-vale" (map names are lower-case, with dashes).');
+		expect(slugHint("Ashby Vale")).toBe('Folder: "ashby-vale" (the map keeps the name you typed).');
 		expect(slugHint("ashby-vale")).toBe("");
 		expect(slugHint("")).toBe("");
 	});

@@ -281,7 +281,7 @@ export class HexTableView extends ItemView {
     this.mapSelectEl = regionSelect;
     regionSelect.createEl("option", { value: "all", text: "All maps" });
     for (const r of this.plugin.settings.maps) {
-      regionSelect.createEl("option", { value: r.name, text: r.name });
+      regionSelect.createEl("option", { value: r.name, text: this.plugin.mapLabel(r.name) });
     }
     // Default to active map view's map
     interface WithActiveMapName {

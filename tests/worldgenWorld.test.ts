@@ -3,6 +3,7 @@ import expect from "expect";
 import { hexNeighbors, mulberry32 } from "../packages/hex-wfc/src";
 import {
   canPlace,
+  continuedOffset,
   isShifted,
   link,
   neighbour,
@@ -10,6 +11,7 @@ import {
   resolveHex,
   shadowDepth,
   shadowHexes,
+  sharesCoordinates,
   staggerToMatch,
   toWorld,
   SIDES,
@@ -171,16 +173,47 @@ describe("linking regions", () => {
     expect(r.changes.get("c")).toEqual({ id: "w1", cx: 1, cy: 1 });
   });
 
-  it("new neighbours copy the size and offset, with the stagger that lines up", () => {
+  it("new neighbours copy the size, carry on the numbering, and keep the stagger", () => {
     const a = region("a", 5, 4, { gridOffset: { x: -7, y: -9 } });
     const spec = newNeighbourSpec([a], a, "east", rules, () => "w");
-    expect(spec).toMatchObject({ ok: true, cols: 5, rows: 4, offset: { x: -7, y: -9 }, slot: { id: "w", cx: 1, cy: 0 } });
-    // a's world column 5 is its local column -2 (unshifted under "odd"); the
-    // new map's local column -7 must be unshifted too, so it staggers "even".
+    // a covers columns -7..-3; the map east of it starts at -2.
+    expect(spec).toMatchObject({ ok: true, cols: 5, rows: 4, offset: { x: -2, y: -9 }, slot: { id: "w", cx: 1, cy: 0 } });
+    // One numbering means one stagger: column -2 is unshifted in both.
     if (spec.ok) {
-      expect(isShifted(spec.stagger, -7)).toBe(isShifted("odd", -2));
-      expect(spec.stagger).toBe("even");
+      expect(isShifted(spec.stagger, -2)).toBe(isShifted("odd", -2));
+      expect(spec.stagger).toBe("odd");
     }
+  });
+
+  it("shared coordinates: every side carries on the anchor's numbers", () => {
+    const a = region("a", 20, 14, { gridOffset: { x: 0, y: 0 }, world: { id: "w", cx: 0, cy: 0 } });
+    const want: Record<Side, { x: number; y: number }> = {
+      east: { x: 20, y: 0 }, west: { x: -20, y: 0 }, south: { x: 0, y: 14 }, north: { x: 0, y: -14 },
+    };
+    for (const side of SIDES) {
+      const spec = newNeighbourSpec([a], a, side, rules);
+      expect(spec.ok && spec.offset).toEqual(want[side]);
+    }
+    // A hex number names one place across the world: the hex just east of
+    // a's edge is the new map's own 20_5, not a second 0_5.
+    const spec = newNeighbourSpec([a], a, "east", rules);
+    if (!spec.ok) throw new Error(spec.reason);
+    const b = region("b", 20, 14, { gridOffset: spec.offset, world: spec.slot, staggerOffset: spec.stagger });
+    expect(resolveHex([a, b], a, 20, 5)).toMatchObject({ map: b, x: 20, y: 5 });
+    expect(sharesCoordinates([a, b])).toBe(true);
+  });
+
+  it("continues the anchor's numbers even when the anchor doesn't start at 0", () => {
+    const a = region("a", 10, 8, { gridOffset: { x: 3, y: -2 }, world: { id: "w", cx: 2, cy: 1 } });
+    expect(continuedOffset(a, 3, 1)).toEqual({ x: 13, y: -2 });
+    expect(continuedOffset(a, 2, 0)).toEqual({ x: 3, y: -10 });
+  });
+
+  it("older worlds joined with their own numbering are reported, not renumbered", () => {
+    const a = region("a", 10, 8, { world: { id: "w", cx: 0, cy: 0 } });
+    const b = region("b", 10, 8, { world: { id: "w", cx: 1, cy: 0 } }); // both start at 0,0
+    expect(sharesCoordinates([a, b])).toBe(false);
+    expect(b.gridOffset).toEqual({ x: 0, y: 0 });
   });
 });
 

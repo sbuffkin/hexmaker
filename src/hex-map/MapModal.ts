@@ -29,7 +29,7 @@ import {
 import { buildRegionContext } from "../worldgen/regionContext";
 import { OVERLAND_ID, seaSideFromNeighbours } from "../worldgen/procedural/planetSurface";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
-import { SIDES, link, type Side } from "../worldgen/world";
+import { SIDES, hexRangeText, link, type Side } from "../worldgen/world";
 import {
   detachRegion,
   gridRules,
@@ -47,6 +47,7 @@ import { fillPaletteSelect } from "../palettes/paletteOptions";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, renderAdvancedHints, withFeature } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
+import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 
 /** A neighbour shadow as terrain by hex key (the faded seam in previews). */
 function shadowTerrain(shadow: Map<string, { terrain?: string }>): Map<string, string> {
@@ -137,16 +138,112 @@ export class MapModal extends HexmakerModal {
 
   // ── Maps tab ──────────────────────────────────────────────────────────────
 
+  /**
+   * The map list as a tree (N4): submaps under their parent, neighbouring
+   * regions grouped by world. Groups collapse; the open map is highlighted
+   * and its branch kept open; a search box appears once the list is long.
+   */
   private renderMapsTab(el: HTMLElement): void {
-    const list = el.createEl("ul", { cls: "duckmage-region-list" });
+    const maps = this.plugin.settings.maps;
+    const tree = buildMapTree(maps, (n) => this.plugin.parentOf(n)?.map);
+    const long = maps.length > MapModal.SEARCH_FROM;
+    let query = MapModal.lastQuery;
+    if (long) {
+      const search = el.createEl("input", {
+        type: "search",
+        cls: "duckmage-map-tree-search",
+        attr: { placeholder: "Find a map…", "aria-label": "Find a map" },
+      });
+      search.value = query;
+      search.addEventListener("input", () => {
+        query = MapModal.lastQuery = search.value;
+        draw();
+      });
+      window.setTimeout(() => search.focus(), 0);
+    }
+    const list = el.createEl("ul", { cls: "duckmage-region-list duckmage-map-tree" });
+    const draw = () => {
+      list.empty();
+      const shown = filterMapTree(tree, long ? query : "");
+      if (!shown.length) list.createEl("li", { cls: "duckmage-map-origin-desc", text: "No map matches." });
+      for (const node of shown) this.renderTreeNode(list, node, !!query.trim() && long);
+    };
+    draw();
+    // Deleting lives in Properties (with a confirm), away from the names
+    // you click to switch maps (fresh-eyes r4: a ✕ beside every name).
+    el.createEl("p", {
+      cls: "duckmage-map-origin-desc duckmage-map-list-hint",
+      text: "Click a name to open that map. Rename or delete the open map in its properties tab.",
+    });
+  }
 
-    for (const map of this.plugin.settings.maps) {
+  /** Show a search box above the map list once it has more maps than this. */
+  private static readonly SEARCH_FROM = 10;
+  /** Collapsed/expanded by the user this session, by node key. */
+  private static expanded = new Map<string, boolean>();
+  private static lastQuery = "";
+
+  private renderTreeNode(parentEl: HTMLElement, node: MapTreeNode, filtering: boolean): void {
+    const active = this.view.activeMapName;
+    const li = parentEl.createEl("li", { cls: "duckmage-map-tree-node" });
+    const key = nodeKey(node);
+    const hasKids = node.children.length > 0;
+    // Default: open on the open map's branch, and everywhere in a short list.
+    const defaultOpen = treeContains(node, active) || this.plugin.settings.maps.length <= 12;
+    const open = filtering || (MapModal.expanded.get(key) ?? defaultOpen);
+    const toggleTo = (to: boolean) => {
+      MapModal.expanded.set(key, to);
+      this.rerenderMapsTab();
+    };
+
+    if (node.kind === "world") {
+      const row = li.createDiv({ cls: "duckmage-region-item duckmage-map-tree-world" });
+      this.renderTreeToggle(row, open, () => toggleTo(!open), true);
+      row.createSpan({ cls: "duckmage-map-tree-world-label", text: `Neighbours: ${node.label}` });
+      row.setAttr("title", "Neighbouring regions: one world, side by side");
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".duckmage-map-tree-toggle")) return;
+        toggleTo(!open);
+      });
+    } else {
+      this.renderMapRow(li, node, open, hasKids, () => toggleTo(!open));
+    }
+    if (hasKids && open) {
+      const ul = li.createEl("ul", { cls: "duckmage-region-list duckmage-map-tree-children" });
+      for (const c of node.children) this.renderTreeNode(ul, c, filtering);
+    }
+  }
+
+  private renderTreeToggle(row: HTMLElement, open: boolean, onToggle: () => void, show: boolean): void {
+    const t = row.createSpan({ cls: "duckmage-map-tree-toggle", text: show ? (open ? "▾" : "▸") : "" });
+    if (!show) return;
+    t.setAttr("role", "button");
+    t.setAttr("aria-label", open ? "Collapse" : "Expand");
+    t.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onToggle();
+    });
+  }
+
+  private rerenderMapsTab(): void {
+    const tabEl = this.contentEl.querySelector<HTMLElement>(".duckmage-map-tree")?.parentElement;
+    if (!tabEl) return this.render();
+    tabEl.empty();
+    this.renderMapsTab(tabEl);
+  }
+
+  private renderMapRow(li: HTMLElement, node: Extract<MapTreeNode, { kind: "map" }>, open: boolean, hasKids: boolean, onToggle: () => void): void {
+    const map = this.plugin.getMap(node.name);
+    if (!map) return;
+    {
       const isActive = map.name === this.view.activeMapName;
 
-      const li = list.createEl("li", {
+      const row = li.createDiv({
         cls: "duckmage-region-item duckmage-map-list-item" + (isActive ? " is-active" : ""),
       });
-      li.addEventListener("contextmenu", (e: MouseEvent) => {
+      if (isActive) row.setAttr("aria-current", "true");
+      this.renderTreeToggle(row, open, onToggle, hasKids);
+      row.addEventListener("contextmenu", (e: MouseEvent) => {
         e.preventDefault();
         const at = { x: e.clientX, y: e.clientY };
         // A region that already has a generator opens it; learning another
@@ -175,25 +272,21 @@ export class MapModal extends HexmakerModal {
       const terrainEntry = map.terrainType
         ? this.plugin.getMapPalette(map.name).find((t) => t.name === map.terrainType)
         : undefined;
-      const swatch = li.createSpan({ cls: "duckmage-map-terrain-swatch" });
+      const swatch = row.createSpan({ cls: "duckmage-map-terrain-swatch" });
       if (terrainEntry?.color) {
         swatch.style.backgroundColor = terrainEntry.color;
         swatch.addClass("duckmage-map-terrain-swatch--set");
       }
 
-      const nameSpan = li.createSpan({ text: map.name, cls: "duckmage-map-list-name" });
+      const nameSpan = row.createSpan({ text: node.label, cls: "duckmage-map-list-name" });
+      // The slug is the folder; worth seeing when it differs from the name.
+      if (node.label !== map.name) nameSpan.setAttr("title", `Folder: ${map.name}`);
       nameSpan.addEventListener("click", () => {
         this.view.switchMapFromModal(map.name);
         this.close();
       });
-      li.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
+      row.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
     }
-    // Deleting lives in Properties (with a confirm), away from the names
-    // you click to switch maps (fresh-eyes r4: a ✕ beside every name).
-    el.createEl("p", {
-      cls: "duckmage-map-origin-desc duckmage-map-list-hint",
-      text: "Click a name to open that map. Rename or delete the open map in its properties tab.",
-    });
   }
 
   // ── Properties tab ────────────────────────────────────────────────────────
@@ -201,14 +294,39 @@ export class MapModal extends HexmakerModal {
   private renderPropertiesTab(el: HTMLElement): void {
     const currentMap = this.plugin.getMap(this.view.activeMapName);
 
-    // Rename
-    el.createEl("h4", { text: "Rename" });
+    // Name (display only: nothing moves) and folder name (the slug; moves
+    // the folder and map note, and updates every reference).
+    el.createEl("h4", { text: "Name" });
+    const nameRow = el.createDiv({ cls: "duckmage-region-row" });
+    const nameInput = nameRow.createEl("input", {
+      type: "text",
+      value: this.plugin.mapLabel(this.view.activeMapName),
+      attr: { "aria-label": "Map name" },
+    });
+    const nameBtn = nameRow.createEl("button", { text: "Save name", cls: "mod-cta" });
+    const saveName = () => {
+      const typed = nameInput.value.trim();
+      if (!typed || typed === this.plugin.mapLabel(this.view.activeMapName)) return;
+      void this.plugin.setMapDisplayName(this.view.activeMapName, typed).then(() => {
+        new Notice(`Renamed to "${this.plugin.mapLabel(this.view.activeMapName)}".`);
+        this.onChanged();
+        this.render();
+      });
+    };
+    nameBtn.addEventListener("click", saveName);
+    nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") saveName();
+    });
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Shown everywhere. Its folder stays put." });
+
+    el.createEl("h4", { text: "Folder name" });
     const renameRow = el.createDiv({ cls: "duckmage-region-row" });
     const renameInput = renameRow.createEl("input", {
       type: "text",
       value: this.view.activeMapName,
+      attr: { "aria-label": "Folder name" },
     });
-    const renameBtn = renameRow.createEl("button", { text: "Rename", cls: "mod-cta" });
+    const renameBtn = renameRow.createEl("button", { text: "Rename folder" });
     renameBtn.addEventListener("click", () =>
       void this.renameMap(renameInput.value.trim(), renameBtn, renameInput),
     );
@@ -363,10 +481,10 @@ export class MapModal extends HexmakerModal {
     const box = el.createDiv({ cls: "duckmage-map-delete-block" });
     if (this.confirmingDelete !== name) {
       box.createEl("p", {
-        text: `Moves "${name}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
+        text: `Moves "${this.plugin.mapLabel(name)}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
         cls: "duckmage-map-origin-desc",
       });
-      box.createEl("button", { text: `Delete "${name}"…` }).addEventListener("click", () => {
+      box.createEl("button", { text: `Delete "${this.plugin.mapLabel(name)}"…` }).addEventListener("click", () => {
         this.confirmingDelete = name;
         this.render();
       });
@@ -375,7 +493,7 @@ export class MapModal extends HexmakerModal {
     box.addClass("duckmage-map-item-confirming");
     box.createSpan({
       cls: "duckmage-map-delete-warning",
-      text: `Delete "${name}"? This will trash all its hex notes.`,
+      text: `Delete "${this.plugin.mapLabel(name)}"? This will trash all its hex notes.`,
     });
     box.createEl("button", { text: "Delete", cls: "mod-warning duckmage-map-confirm-btn" })
       .addEventListener("click", () => void this.deleteMap(name));
@@ -411,11 +529,11 @@ export class MapModal extends HexmakerModal {
       const select = row.createEl("select");
       select.createEl("option", { value: "", text: "None" });
       const now = current[side];
-      if (now) select.createEl("option", { value: now.name, text: now.name });
+      if (now) select.createEl("option", { value: now.name, text: this.plugin.mapLabel(now.name) });
       for (const other of this.plugin.settings.maps) {
         if (other.name === map.name || other.name === now?.name) continue;
         if (link(this.plugin.settings.maps, map.name, side, other.name, rules, () => "check").ok)
-          select.createEl("option", { value: other.name, text: other.name });
+          select.createEl("option", { value: other.name, text: this.plugin.mapLabel(other.name) });
       }
       select.value = now?.name ?? "";
       select.addEventListener("change", () => {
@@ -430,7 +548,7 @@ export class MapModal extends HexmakerModal {
         })();
       });
       if (!now) {
-        const add = row.createEl("button", { text: "New region here…", attr: { title: `Make a new map ${side} of ${map.name}` } });
+        const add = row.createEl("button", { text: "New region here…", attr: { title: `Make a new map ${side} of ${this.plugin.mapLabel(map.name)}` } });
         add.addEventListener("click", () => {
           this.newMapPlacement = { anchor: map.name, side };
           this.activeTab = "New map";
@@ -541,7 +659,7 @@ export class MapModal extends HexmakerModal {
     const nameRow = el.createDiv({ cls: "duckmage-region-row" });
     const nameInput = nameRow.createEl("input", {
       type: "text",
-      placeholder: "map-name",
+      placeholder: "Map name",
       cls: "duckmage-map-new-name-input",
       attr: { id: "duckmage-new-map-name" },
     });
@@ -560,7 +678,7 @@ export class MapModal extends HexmakerModal {
     const placeRow = placeBox.createDiv({ cls: "duckmage-region-row" });
     const anchorSelect = placeRow.createEl("select", { attr: { id: "duckmage-new-map-anchor", "aria-label": "Neighbouring map" } });
     anchorSelect.createEl("option", { value: "", text: "Nowhere (a separate map)" });
-    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
+    for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: this.plugin.mapLabel(m.name) });
     const sideSelect = placeRow.createEl("select", { attr: { "aria-label": "Side of the neighbouring map" } });
     for (const s of SIDES) sideSelect.createEl("option", { value: s, text: `${s} of it` });
     const placeNote = placeBox.createEl("p", { cls: "duckmage-map-origin-desc" });
@@ -760,8 +878,8 @@ export class MapModal extends HexmakerModal {
           staggerVal = spec.stagger;
           staggerBtn.setText(staggerVal === "odd" ? "Odd" : "Even");
           staggerBtn.toggleClass("is-even", staggerVal === "even");
-          const borders = occupiedSides(this.plugin, placement).map((s) => `${s}: ${regionNameAt(this.plugin, placement!, s)}`);
-          placeNote.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.`);
+          const borders = occupiedSides(this.plugin, placement).map((s) => `${s}: ${this.plugin.mapLabel(regionNameAt(this.plugin, placement!, s))}`);
+          placeNote.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}. ${hexRangeText(spec.offset, spec.cols, spec.rows)}, carrying on its neighbour's numbers.`);
         }
       } else placeNote.setText("");
       // Re-list: next to a map, the ones that continue its edge come first.
@@ -990,7 +1108,7 @@ export class MapModal extends HexmakerModal {
         await this.app.fileManager.renameFile(oldFolder, newPath);
       } catch (e) {
         new Notice(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
-        btn.setText("Rename");
+        btn.setText("Rename folder");
         btn.disabled = false;
         input.disabled = false;
         return;

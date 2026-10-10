@@ -50,6 +50,7 @@ export interface MapNoteData {
 
 /** MapData field ↔ frontmatter key for the fields given their own line. */
 const SCALAR_KEYS: [keyof MapSettings, string][] = [
+  ["displayName", "display-name"],
   ["paletteName", "palette"],
   ["staggerOffset", "stagger"],
   ["baseTerrain", "base-terrain"],
@@ -308,7 +309,7 @@ export function buildMapNote(name: string, data: MapNoteData): string {
     "---",
     ...frontmatterLines(data.settings),
     "---",
-    `# ${name}`,
+    `# ${data.settings.displayName || name}`,
     "",
     "Hexmaker map. Each hex's terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.",
     "",

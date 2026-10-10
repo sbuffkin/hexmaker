@@ -83,7 +83,7 @@ export class SubmapPickerModal extends HexmakerModal {
               "duckmage-map-terrain-swatch-icon",
             );
           }
-          item.createSpan({ text: m.name });
+          item.createSpan({ text: this.plugin.mapLabel(m.name) });
           item.addEventListener("click", () => {
             selectedMap = m.name;
             listEl.querySelectorAll<HTMLElement>(".duckmage-rt-list-item").forEach((el) =>
@@ -131,7 +131,7 @@ export class SubmapPickerModal extends HexmakerModal {
     nameRow.createSpan({ text: "Name", cls: "duckmage-submap-create-label" });
     const nameInput = nameRow.createEl("input", {
       type: "text",
-      placeholder: "map-name",
+      placeholder: "Map name",
       cls: "duckmage-submap-create-name",
     });
     if (this.origin) {

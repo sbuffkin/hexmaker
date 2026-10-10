@@ -15,11 +15,11 @@ export const TERRAIN_TABLES_SUMMARY =
 	"An empty description table and encounter table for each terrain, ready for you to fill in (linked to a hex when you paint its terrain)";
 
 /**
- * The hint under the wizard's map name: the name it will be saved under
- * when that differs from what was typed, else "" (the line keeps its
+ * The hint under the wizard's map name: the folder it will be saved in
+ * when that differs from what was typed (the name shows as typed), else "" (the line keeps its
  * space either way; see .duckmage-wizard-slug-note).
  */
 export function slugHint(typed: string): string {
 	const slug = slugify(typed);
-	return slug && slug !== typed ? `Saved as "${slug}" (map names are lower-case, with dashes).` : "";
+	return slug && slug !== typed ? `Folder: "${slug}" (the map keeps the name you typed).` : "";
 }

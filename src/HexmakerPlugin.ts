@@ -52,6 +52,7 @@ import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
+import { displayNameFor, mapLabel } from "./maps/mapTree";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -1479,8 +1480,11 @@ export default class HexmakerPlugin extends Plugin {
       } catch { /* already exists */ }
     }
 
+    // The slug names the folder; the name as typed is what the UI shows.
+    const displayName = displayNameFor(rawName, name);
     this.settings.maps.push({
       name,
+      ...(displayName ? { displayName } : {}),
       paletteName,
       gridSize: { cols, rows },
       gridOffset: { x: initialX, y: initialY },
@@ -1500,7 +1504,7 @@ export default class HexmakerPlugin extends Plugin {
     this.mapStore.setMany(name, cells);
     onProgress?.(cols * rows, cols * rows);
     await this.mapStore.flush();
-    if (!extra.quiet) new Notice(`Hexmaker: created map "${name}".`);
+    if (!extra.quiet) new Notice(`Hexmaker: created map "${displayName ?? name}".`);
 
     return { name };
   }
@@ -1587,6 +1591,22 @@ export default class HexmakerPlugin extends Plugin {
 
   getMap(name: string): MapData | undefined {
     return this.settings.maps.find((r) => r.name === name);
+  }
+
+  /** A map's name for the UI: its display name, else its slug (or `name` itself if unknown). */
+  mapLabel(name: string): string {
+    return mapLabel(this.getMap(name), name);
+  }
+
+  /**
+   * Rename a map for display only: the folder, map note and every
+   * reference keep the slug. Blank (or the slug itself) clears it.
+   */
+  async setMapDisplayName(name: string, typed: string): Promise<void> {
+    const map = this.getMap(name);
+    if (!map) return;
+    map.displayName = displayNameFor(typed, name);
+    await this.saveSettings();
   }
 
   getPaletteByName(name: string): TerrainPalette | undefined {

@@ -8,7 +8,7 @@ import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHints } from "../advancedHints";
-import type { Side as WorldSide } from "./world";
+import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
@@ -256,7 +256,7 @@ export class NewMapSetupModal extends HexmakerModal {
       const nextRow = this.row(form, "Next to");
       const anchorSel = this.labelled(nextRow, nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } }));
       anchorSel.createEl("option", { value: "", text: "— none (stand-alone) —" });
-      for (const m of this.plugin.settings.maps) anchorSel.createEl("option", { value: m.name, text: m.name });
+      for (const m of this.plugin.settings.maps) anchorSel.createEl("option", { value: m.name, text: this.plugin.mapLabel(m.name) });
       const sideSel = nextRow.createEl("select", { attr: { "aria-label": "Side of the neighbouring map" } });
       for (const s of ["east", "west", "north", "south"] as const) sideSel.createEl("option", { value: s, text: `${s} of it` });
       const note = nextRow.createDiv({ cls: "setting-item-description" });
@@ -291,8 +291,8 @@ export class NewMapSetupModal extends HexmakerModal {
             this.shadow = new Map();
             for (const [k, c] of neighbourShadow(this.plugin, this.placement, 2)) if (c.terrain) this.shadow.set(k, c.terrain);
             const roads = this.context.paths?.length ?? 0;
-            const borders = occupiedSides(this.plugin, this.placement).map((s) => `${s}: ${regionNameAt(this.plugin, this.placement!, s)}`);
-            note.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.` +
+            const borders = occupiedSides(this.plugin, this.placement).map((s) => `${s}: ${this.plugin.mapLabel(regionNameAt(this.plugin, this.placement!, s))}`);
+            note.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}. ${hexRangeText(spec.offset, spec.cols, spec.rows)}.` +
               (roads ? ` ${roads} path${roads === 1 ? "" : "s"} continue across.` : ""));
           }
         }

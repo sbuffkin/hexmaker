@@ -22,6 +22,7 @@ A hex can drill down into its own map: a star system inside a sector, a dungeon 
 | **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
 | **← back** button / **Alt+←** | Return to the previously viewed map |
 | Breadcrumb (top left) | Jump to any map above this one |
+| Crumbs after the map button ("Cole's Ford →") | Jump to a neighbouring region |
 
 "Go up to parent map" and "Go back to previous map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
 
@@ -83,3 +84,5 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 **Simple** has everything you need to run a hexcrawl: paint maps, write hex notes, roll on encounter tables, export. **Advanced** adds terrain generators, workflows (chained table rolls), custom palettes and neighbouring regions (maps joined into one world).
 
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
+
+Neighbouring regions share one set of hex numbers: a new region carries on from the map it was placed next to, so each hex number names one place in the world. Maps you join later keep their own numbers.

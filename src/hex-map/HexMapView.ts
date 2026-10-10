@@ -28,6 +28,7 @@ import {
 } from "../constants";
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
+import { neighbourCrumbs } from "../maps/mapTree";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
@@ -314,6 +315,8 @@ export class HexMapView extends ItemView {
   private backBtn: HTMLButtonElement | null = null;
   private upBtn: HTMLButtonElement | null = null;
   private crumbsEl: HTMLElement | null = null;
+  /** Sideways crumbs: the neighbouring regions of the open map. */
+  private sideCrumbsEl: HTMLElement | null = null;
   /** False until the first map's viewport is placed (restored or fitted). */
   private viewportReady = false;
   private tokenEntries: TokenEntry[] = [];
@@ -330,7 +333,7 @@ export class HexMapView extends ItemView {
     return VIEW_TYPE_HEX_MAP;
   }
   getDisplayText(): string {
-    return `Hex map — ${this.activeMapName}`;
+    return `Hex map — ${this.plugin.mapLabel(this.activeMapName)}`;
   }
 
   private getActiveMap(): MapData {
@@ -351,7 +354,7 @@ export class HexMapView extends ItemView {
   }
 
   private updateMapBtnLabel(): void {
-    this.mapBtn?.setText(`${this.activeMapName} ▾`);
+    this.mapBtn?.setText(`${this.plugin.mapLabel(this.activeMapName)} ▾`);
   }
 
   private refreshViewHeader(): void {
@@ -550,7 +553,7 @@ export class HexMapView extends ItemView {
     if (this.backBtn) {
       if (prev) {
         this.backBtn.show();
-        const label = `Back to the previous map: ${prev} (Alt+←)`;
+        const label = `Back to the previous map: ${this.plugin.mapLabel(prev)} (Alt+←)`;
         this.backBtn.title = label;
         this.backBtn.setAttr("aria-label", label);
       } else {
@@ -562,7 +565,7 @@ export class HexMapView extends ItemView {
     if (this.upBtn) {
       if (parent) {
         this.upBtn.show();
-        const label = `Up to the parent map: ${parent.map}, hex ${hexKeyCoords(parent.hex)} (Alt+↑)`;
+        const label = `Up to the parent map: ${this.plugin.mapLabel(parent.map)}, hex ${hexKeyCoords(parent.hex)} (Alt+↑)`;
         this.upBtn.title = label;
         this.upBtn.setAttr("aria-label", label);
       } else {
@@ -570,20 +573,39 @@ export class HexMapView extends ItemView {
       }
     }
 
+    this.refreshSideCrumbs();
     const crumbs = this.crumbsEl;
     if (!crumbs) return;
     crumbs.empty();
     const ancestors = mapAncestors(this.activeMapName, (m) => this.plugin.parentOf(m)?.map);
     for (const name of ancestors) {
+      const label = this.plugin.mapLabel(name);
       const crumb = crumbs.createEl("button", {
         cls: "duckmage-map-crumb",
-        text: name,
-        attr: { title: `Go to ${name}` },
+        text: label,
+        attr: { title: `Go to ${label}` },
       });
       crumb.addEventListener("click", () => this.navigateToMap(name));
       crumbs.createSpan({ cls: "duckmage-map-crumb-sep", text: "›" });
     }
     crumbs.toggle(ancestors.length > 0);
+  }
+
+  /** Sideways crumbs (X3): the regions next to the open map, one click away. */
+  private refreshSideCrumbs(): void {
+    const el = this.sideCrumbsEl;
+    if (!el) return;
+    el.empty();
+    const side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), this.plugin.settings.maps);
+    for (const c of side) {
+      const crumb = el.createEl("button", {
+        cls: "duckmage-map-crumb duckmage-map-side-crumb",
+        text: c.text,
+        attr: { title: `Neighbouring region to the ${c.side}: ${this.plugin.mapLabel(c.name)}`, "data-side": c.side },
+      });
+      crumb.addEventListener("click", () => this.navigateToMap(c.name));
+    }
+    el.toggle(side.length > 0);
   }
 
   public switchMapFromModal(name: string): void {
@@ -1100,6 +1122,9 @@ export class HexMapView extends ItemView {
       title: "Manage maps",
     });
     this.updateMapBtnLabel();
+    // Neighbouring regions sit right after the map button: "map ▾  ← west  east →".
+    this.sideCrumbsEl = mapNavGroup.createDiv({ cls: "duckmage-map-crumbs duckmage-map-side-crumbs" });
+    this.sideCrumbsEl.hide();
     this.mapBtn.addEventListener("click", () =>
       new MapModal(this.app, this.plugin, this, () => {
         this.exitTerrainMode();
@@ -1108,6 +1133,7 @@ export class HexMapView extends ItemView {
         this.redoStack = [];
         this.updateUndoButton();
         this.updateMapBtnLabel();
+        this.refreshMapNav();
         this.refreshViewHeader();
         this.renderGrid();
       }).open(),

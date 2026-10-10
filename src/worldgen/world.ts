@@ -177,7 +177,12 @@ export function link(maps: RegionLike[], aName: string, side: Side, bName: strin
 
 /**
  * Where a new region on `side` of `a` goes: its slot, and the offset and
- * stagger it should be made with (same offset as `a`; stagger to match).
+ * stagger it should be made with.
+ *
+ * Shared coordinates: the offset carries on from `a`'s numbering, so a
+ * region east of a 20-column map starting at 0 starts at column 20, and hex
+ * numbers stay unique across the world (see continuedOffset). Only new maps
+ * get this; existing maps keep the numbers their hexes are stored under.
  */
 export function newNeighbourSpec(
   maps: RegionLike[],
@@ -192,8 +197,38 @@ export function newNeighbourSpec(
   const taken = mapAt(maps, aSlot.id, slot.cx, slot.cy);
   if (taken && a.world) return { ok: false, reason: `"${taken.name}" is already ${side} of "${a.name}"` };
   const placed = { ...a, world: aSlot };
-  const stagger = staggerToMatch(placed, staggerOf(a, rules), slot.cx, slot.cy, a.gridOffset, rules);
-  return { ok: true, slot, aSlot, cols: a.gridSize.cols, rows: a.gridSize.rows, offset: { ...a.gridOffset }, stagger, paletteName: a.paletteName };
+  const offset = continuedOffset(placed, slot.cx, slot.cy);
+  const stagger = staggerToMatch(placed, staggerOf(a, rules), slot.cx, slot.cy, offset, rules);
+  return { ok: true, slot, aSlot, cols: a.gridSize.cols, rows: a.gridSize.rows, offset, stagger, paletteName: a.paletteName };
+}
+
+/**
+ * The offset a map in slot (cx, cy) needs to carry on `ref`'s hex numbering
+ * (ref must have a slot): its first hex gets the number ref would give that
+ * spot if ref's grid went on past its edge.
+ */
+export function continuedOffset(ref: RegionLike, cx: number, cy: number): { x: number; y: number } {
+  if (!ref.world) return { ...ref.gridOffset };
+  return {
+    x: ref.gridOffset.x + (cx - ref.world.cx) * ref.gridSize.cols,
+    y: ref.gridOffset.y + (cy - ref.world.cy) * ref.gridSize.rows,
+  };
+}
+
+/**
+ * Whether every map in a world numbers its hexes on one shared grid (each
+ * carries on its neighbours' numbers). Worlds made before shared
+ * coordinates, or joined from separate maps, may not: their hexes keep the
+ * numbers they were made with.
+ */
+export function sharesCoordinates(members: RegionLike[]): boolean {
+  const ref = members.find((m) => m.world);
+  if (!ref?.world) return true;
+  return members.every((m) => {
+    if (!m.world) return true;
+    const want = continuedOffset(ref, m.world.cx, m.world.cy);
+    return m.gridOffset.x === want.x && m.gridOffset.y === want.y;
+  });
 }
 
 /** Depth of the neighbour "shadow" shown past each edge: 1 for small maps, 2 medium, 3 large. */
@@ -218,4 +253,9 @@ export function shadowHexes<T extends RegionLike>(maps: T[], m: T, depth: number
       if (r) out.set(`${x}_${y}`, r);
     }
   return out;
+}
+
+/** "Hexes 20, 0 to 39, 13": the hex numbers a map covers (for placement notes). */
+export function hexRangeText(offset: { x: number; y: number }, cols: number, rows: number): string {
+  return `Hexes ${offset.x}, ${offset.y} to ${offset.x + cols - 1}, ${offset.y + rows - 1}`;
 }

@@ -55,7 +55,11 @@ export interface RegionBiome {
 }
 
 export interface MapData {
+	/** The map's slug: its folder and map note name, and its id everywhere. */
 	name: string;
+	/** The name as typed ("Barony of Saltmere"), shown in the UI. Unset =
+	 *  the slug (maps made before display names). Changing it moves nothing. */
+	displayName?: string;
 	/** Plugin version that created the map (see src/compat.ts). */
 	createdWith?: string;
 	paletteName: string;
