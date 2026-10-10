@@ -195,10 +195,11 @@ describe("HexEditorModal section start-collapsed settings", () => {
 			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive },
 		) as any;
 		const states = new Map<string, boolean>();
-		modal.makeCollapsible = (_c: unknown, label: string, startCollapsed: boolean) => {
-			states.set(label, startCollapsed);
-			return { body: {}, header: {} };
+		modal.makeCollapsible = (_c: unknown, label: string, flag: string) => {
+			states.set(label, (plugin.settings as any)[flag] ?? false);
+			return { body: { addClass: () => {} }, header: { createSpan: () => ({}) } };
 		};
+		modal.renderTerrainHeader = () => {};
 		modal.renderTerrainSection = () => {};
 		modal.renderTextSection = () => {};
 		modal.renderDropdownSection = () => {};
@@ -272,5 +273,68 @@ describe("HexEditorModal navigation reload", () => {
 		(modal as any).y = 1;
 		await modal.loadData();
 		expect((modal as any).directIcon).toBe("oasis.png");
+	});
+});
+
+// ── Fresh-eyes #38 (E1, E5) ─────────────────────────────────────────────────
+
+describe("HexEditorModal reads terrain from the map note (E1)", () => {
+	it("loads terrain and icon from the map store even when the hex note doesn't exist", async () => {
+		const { setHexDataSource } = await import("../src/frontmatter");
+		setHexDataSource({
+			isReady: () => true,
+			resolve: (p: string) => (p === "hex/3_3.md" ? { map: "m", key: "3_3" } : null),
+			get: (_m: string, k: string) => (k === "3_3" ? { terrain: "hill", icon: "tower.png", gmIcons: ["skull.png"] } : undefined),
+			set: () => {},
+		} as any);
+		try {
+			const plugin = makePlugin(() => "hex/3_3.md");
+			const modal = new HexEditorModal(makeApp({}), plugin, 3, 3, "m", () => {}) as any;
+			await modal.loadData();
+			expect(modal.hexExists).toBe(false);
+			expect(modal.directTerrain).toBe("hill");
+			expect(modal.directIcon).toBe("tower.png");
+			expect(modal.directGmIcons).toEqual(["skull.png"]);
+		} finally {
+			setHexDataSource(null);
+		}
+	});
+});
+
+describe("HexEditorModal remembers collapsed groups (E5)", () => {
+	/** Just enough of an HTMLElement for makeCollapsible. */
+	function fakeEl(): any {
+		let shown = true;
+		const listeners: Record<string, () => void> = {};
+		return {
+			textContent: "",
+			createDiv: () => fakeEl(),
+			createSpan: () => fakeEl(),
+			createEl: () => fakeEl(),
+			hide: () => { shown = false; },
+			show: () => { shown = true; },
+			isShown: () => shown,
+			addEventListener: (t: string, fn: () => void) => { listeners[t] = fn; },
+			fire: (t: string) => listeners[t]?.(),
+		};
+	}
+
+	it("collapsing a group saves its flag, so the next hex opens the same way", () => {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		const saveSettings = mock.fn(async () => {});
+		(plugin as any).saveSettings = saveSettings;
+		const modal = new HexEditorModal(makeApp({}), plugin, 1, 1, "default", () => {}) as any;
+		const { body, header } = modal.makeCollapsible(fakeEl(), "Terrain", "hexEditorTerrainCollapsed");
+		expect(body.isShown()).toBe(true);
+		header.fire("click");
+		expect(body.isShown()).toBe(false);
+		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(true);
+		expect(saveSettings.mock.callCount()).toBe(1);
+
+		const next = new HexEditorModal(makeApp({}), plugin, 2, 2, "default", () => {}) as any;
+		const reopened = next.makeCollapsible(fakeEl(), "Terrain", "hexEditorTerrainCollapsed");
+		expect(reopened.body.isShown()).toBe(false);
+		reopened.header.fire("click");
+		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(false);
 	});
 });

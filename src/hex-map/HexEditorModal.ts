@@ -10,6 +10,7 @@ import {
 } from "../utils";
 import {
   getTerrainFromFile,
+  getIconOverrideFromFile,
   setTerrainInFile,
   setIconOverrideInFile,
   setGmIconsInFile,
@@ -33,6 +34,16 @@ import { neighbourSpec } from "../worldgen/neighbours";
 import { WalkRegionModal } from "../worldgen/WalkRegionModal";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
+
+/** What each link field links, for its placeholder ("Search or create a town…"). */
+const LINK_FIELD_NOUN: Record<LinkSection, string> = {
+  "Encounters Table": "an encounter table",
+  Towns: "a town",
+  Dungeons: "a dungeon",
+  Features: "a feature",
+  Quests: "a quest",
+  Factions: "a faction",
+};
 
 /** Which side of the map an off-map hex lies past (east/west first at corners). */
 function offMapSide(map: MapData, x: number, y: number): Side {
@@ -81,6 +92,13 @@ export class HexEditorModal extends HexmakerModal {
     this.directGmIcons = [];
 
     const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+    // Terrain, icon and GM icons live in the map note (the map store), not in
+    // the hex note — and a hex can have them before its note exists. Reading
+    // only hex frontmatter left the current terrain never highlighted (E1).
+    this.directTerrain = getTerrainFromFile(this.app, path);
+    this.directIcon = getIconOverrideFromFile(this.app, path);
+    this.directGmIcons = getGmIconsFromFile(this.app, path);
+    this.directGmIcon = this.directGmIcons[0] ?? null;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return;
     this.hexExists = true;
@@ -88,22 +106,16 @@ export class HexEditorModal extends HexmakerModal {
     // Single read — reused for both frontmatter and section parsing
     const rawContent = await this.app.vault.read(file);
 
+    // Fallback for notes the store doesn't serve yet (startup, or a note
+    // written moments ago that isn't indexed): read the raw frontmatter.
     const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
       const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
-      if (tm) this.directTerrain = tm[1].trim();
+      if (tm && this.directTerrain === null) this.directTerrain = tm[1].trim();
       const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
-      if (im) this.directIcon = im[1].trim();
+      if (im && this.directIcon === null) this.directIcon = im[1].trim();
       const gm = fmMatch[1].match(/^\s*gm-icon:\s*(.+)$/m);
-      if (gm) this.directGmIcon = gm[1].trim();
-    }
-    // Authoritative multi-icon read via the helper (handles the new
-    // `gm-icons` array AND the legacy `gm-icon` singular). Done after
-    // the regex-based directGmIcon read so the modal stays compatible
-    // with existing single-icon notes.
-    this.directGmIcons = getGmIconsFromFile(this.app, path);
-    if (this.directGmIcon === null && this.directGmIcons.length > 0) {
-      this.directGmIcon = this.directGmIcons[0];
+      if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
     ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
@@ -188,42 +200,27 @@ export class HexEditorModal extends HexmakerModal {
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
-      s.hexEditorTerrainCollapsed ?? false,
+      "hexEditorTerrainCollapsed",
     );
-    const paletteEntry = directTerrain
-      ? this.plugin
-          .getMapPalette(this.mapName)
-          .find((p) => p.name === directTerrain)
-      : undefined;
-    const iconToShow = directIcon ?? paletteEntry?.icon;
-    if (paletteEntry || iconToShow) {
-      const preview = terrainHeader.createSpan({
-        cls: "duckmage-terrain-header-preview",
-      });
-      const swatch = preview.createSpan({
-        cls: "duckmage-terrain-header-swatch",
-      });
-      if (paletteEntry)
-        swatch.setCssProps({ "--duckmage-bg": paletteEntry.color });
-      if (iconToShow) {
-        const img = swatch.createEl("img");
-        img.src = getIconUrl(this.plugin, iconToShow);
-      }
-      if (paletteEntry) {
-        preview.createSpan({
-          text: paletteEntry.name,
-          cls: "duckmage-terrain-header-name",
-        });
-      }
-    }
-    this.renderTerrainSection(terrainBody, path, directTerrain, directIcon, this.directGmIcons);
+    const headerPreview = terrainHeader.createSpan({
+      cls: "duckmage-terrain-header-preview",
+    });
+    this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
+    this.renderTerrainSection(
+      terrainBody,
+      path,
+      directTerrain,
+      directIcon,
+      this.directGmIcons,
+      (terrain) => this.renderTerrainHeader(headerPreview, terrain, this.directIcon),
+    );
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(
       bodyEl,
       "Notes",
-      s.hexEditorNotesCollapsed ?? false,
+      "hexEditorNotesCollapsed",
     );
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
@@ -238,11 +235,15 @@ export class HexEditorModal extends HexmakerModal {
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
+    // The group of link fields. Not called "Features": that's one of the
+    // fields, and a group heading with a field's name read as that field's
+    // label (E5). The settings flag keeps its old name.
     const { body: featuresBody } = this.makeCollapsible(
       bodyEl,
-      "Features",
-      s.hexEditorFeaturesCollapsed ?? false,
+      "Linked notes",
+      "hexEditorFeaturesCollapsed",
     );
+    featuresBody.addClass("duckmage-editor-link-group");
     this.renderDropdownSection(
       featuresBody,
       path,
@@ -433,11 +434,48 @@ export class HexEditorModal extends HexmakerModal {
     }
   }
 
+  /** Terrain header summary: swatch + current terrain name ("(base)" when
+   *  the hex only shows the map's base terrain). Re-rendered on each pick. */
+  private renderTerrainHeader(
+    preview: HTMLElement,
+    terrain: string | null,
+    icon: string | null,
+  ): void {
+    preview.empty();
+    const palette = this.plugin.getMapPalette(this.mapName);
+    const base = this.plugin.getMap(this.mapName)?.baseTerrain;
+    const name = terrain ?? base ?? null;
+    const entry = name ? palette.find((p) => p.name === name) : undefined;
+    const iconToShow = icon ?? entry?.icon;
+    if (!entry && !iconToShow) {
+      preview.createSpan({ text: "none", cls: "duckmage-terrain-header-name" });
+      return;
+    }
+    const swatch = preview.createSpan({ cls: "duckmage-terrain-header-swatch" });
+    if (entry) swatch.setCssProps({ "--duckmage-bg": entry.color });
+    if (iconToShow) {
+      const img = swatch.createEl("img");
+      img.src = getIconUrl(this.plugin, iconToShow);
+    }
+    if (entry) {
+      preview.createSpan({
+        text: terrain === null ? `${entry.name} (base)` : entry.name,
+        cls: "duckmage-terrain-header-name",
+      });
+    }
+  }
+
+  /**
+   * Collapsible group whose open/closed state is remembered in the given
+   * settings flag (so collapsing Terrain once keeps it collapsed on every
+   * hex, E5). The same flags are exposed in the settings tab.
+   */
   private makeCollapsible(
     container: HTMLElement,
     label: string,
-    startCollapsed: boolean,
+    flag: "hexEditorTerrainCollapsed" | "hexEditorNotesCollapsed" | "hexEditorFeaturesCollapsed",
   ): { body: HTMLElement; header: HTMLElement } {
+    const startCollapsed = this.plugin.settings[flag] ?? false;
     const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
     const header = wrapper.createDiv({
       cls: "duckmage-editor-collapsible-header",
@@ -460,6 +498,8 @@ export class HexEditorModal extends HexmakerModal {
         body.hide();
       }
       arrow.textContent = collapsed ? "▼" : "▶";
+      this.plugin.settings[flag] = !collapsed;
+      void this.plugin.saveSettings();
     });
     return { body, header };
   }
@@ -470,6 +510,7 @@ export class HexEditorModal extends HexmakerModal {
     currentTerrain: string | null,
     currentIcon: string | null,
     currentGmIcons: string[],
+    onTerrainChange: (terrain: string | null) => void,
   ): void {
     const palette = this.plugin.getMapPalette(this.mapName);
 
@@ -477,31 +518,44 @@ export class HexEditorModal extends HexmakerModal {
 
     const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
 
-    // Clear terrain — always first in the grid
-    if (currentTerrain) {
-      const clearBtn = grid.createDiv({
-        cls: "duckmage-terrain-option duckmage-terrain-option-clear",
-      });
-      clearBtn.createDiv({
-        cls: "duckmage-terrain-preview duckmage-terrain-preview-clear",
-      });
-      clearBtn.createSpan({
-        text: "Clear",
-        cls: "duckmage-terrain-option-name",
-      });
-      clearBtn.addEventListener("click", () => {
-        void (async () => {
-          await setTerrainInFile(this.app, path, null);
-          void this.plugin.syncHexEncounterTableLink(path, null);
-          this.onChanged(new Map([[path, null]]));
-          this.close();
-        })();
-      });
-    }
+    // Picking a terrain keeps the editor open (E1): the map repaints via
+    // onChanged, and the selection/header update in place here.
+    let selectedTerrain = currentTerrain;
+    const terrainOverrides = (): Map<string, string | null> | undefined =>
+      selectedTerrain ? new Map([[path, selectedTerrain]]) : undefined;
+    const applyTerrain = async (terrain: string | null): Promise<void> => {
+      if (terrain !== null) await this.ensureHexNote();
+      await setTerrainInFile(this.app, path, terrain);
+      void this.plugin.syncHexEncounterTableLink(path, terrain);
+      selectedTerrain = terrain;
+      this.directTerrain = terrain;
+      grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) =>
+        el.toggleClass("is-selected", el.dataset["terrain"] === terrain),
+      );
+      clearBtn.toggle(terrain !== null);
+      onTerrainChange(terrain);
+      this.onChanged(new Map([[path, terrain]]));
+    };
+
+    // Clear terrain — always first in the grid (hidden while there's none)
+    const clearBtn = grid.createDiv({
+      cls: "duckmage-terrain-option duckmage-terrain-option-clear",
+      attr: { title: "Clear this hex's terrain" },
+    });
+    clearBtn.createDiv({
+      cls: "duckmage-terrain-preview duckmage-terrain-preview-clear",
+    });
+    clearBtn.createSpan({
+      text: "Clear",
+      cls: "duckmage-terrain-option-name",
+    });
+    clearBtn.toggle(currentTerrain !== null);
+    clearBtn.addEventListener("click", () => void applyTerrain(null));
 
     for (const entry of palette) {
       const btn = grid.createDiv({
         cls: `duckmage-terrain-option${entry.name === currentTerrain ? " is-selected" : ""}`,
+        attr: { title: entry.name, "data-terrain": entry.name },
       });
 
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
@@ -520,20 +574,14 @@ export class HexEditorModal extends HexmakerModal {
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
 
       btn.addEventListener("click", () => {
-        void (async () => {
-          await this.ensureHexNote();
-          await setTerrainInFile(this.app, path, entry.name);
-          void this.plugin.syncHexEncounterTableLink(path, entry.name);
-          this.onChanged(new Map([[path, entry.name]]));
-          this.close();
-        })();
+        if (entry.name === selectedTerrain) return;
+        void applyTerrain(entry.name);
       });
     }
 
-    // Keep terrain in the overrides map so renderGrid doesn't lose it during
-    // the brief window when Obsidian clears the metadata cache on file modify.
-    const terrainOverrides: Map<string, string | null> | undefined =
-      currentTerrain ? new Map([[path, currentTerrain]]) : undefined;
+    // Keep terrain in the overrides map (see terrainOverrides above) so
+    // renderGrid doesn't lose it during the brief window when Obsidian
+    // clears the metadata cache on file modify.
 
     // Icon override palette
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
@@ -548,7 +596,9 @@ export class HexEditorModal extends HexmakerModal {
       async (picked) => {
         await this.ensureHexNote();
         await setIconOverrideInFile(this.app, path, picked);
-        this.onChanged(terrainOverrides, new Map([[path, picked]]));
+        this.directIcon = picked;
+        onTerrainChange(selectedTerrain); // header shows the icon override
+        this.onChanged(terrainOverrides(), new Map([[path, picked]]));
       },
     );
 
@@ -742,8 +792,11 @@ export class HexEditorModal extends HexmakerModal {
     sourceFolder: string,
     initialLinks: string[],
   ): void {
+    // Each link field is its own boxed card, and its input names what it
+    // links, so a field can't be read as belonging to the label above or
+    // below it (a tester linked a dungeon as a Quest, E5).
     const sectionEl = container.createDiv({
-      cls: "duckmage-editor-link-section",
+      cls: "duckmage-editor-link-section duckmage-editor-link-card",
     });
     sectionEl.createEl("h4", {
       text: section,
@@ -755,8 +808,9 @@ export class HexEditorModal extends HexmakerModal {
     const input = comboWrap.createEl("input", {
       type: "text",
       cls: "duckmage-link-combo-input",
+      attr: { "aria-label": `Link ${section.toLowerCase()}` },
     });
-    input.placeholder = `Search or create…`;
+    input.placeholder = `Search or create ${LINK_FIELD_NOUN[section]}…`;
 
     const arrowBtn = comboWrap.createEl("button", {
       text: "▾",

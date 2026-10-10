@@ -6456,3 +6456,21 @@ button.duckmage-wfc-library-tab.is-active {
     width: 100%;
     min-width: 0;
 }
+
+/* ── Fresh-eyes fixes: hex editor (#38), path tool & navigation (#39) ───── */
+
+/* Hex editor: the link fields sit in a "Linked notes" group, each in its own
+   boxed card so a label can't be read as belonging to the next field (E5). */
+.duckmage-editor-link-group {
+    padding-left: 0.6em;
+    border-left: 2px solid var(--background-modifier-border);
+}
+.duckmage-editor-link-card {
+    padding: 0.45em 0.6em 0.5em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary-alt);
+}
+.duckmage-editor-link-card .duckmage-link-section-title {
+    color: var(--text-normal);
+}
