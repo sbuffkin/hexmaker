@@ -199,6 +199,30 @@ describe("orbits", () => {
 		}
 	});
 
+	it("places moons as the moon terrain, each next to a planet (G9)", () => {
+		const g = grid(13, 13);
+		const roles = orbitRoles(SPACE_SYSTEM_TERRAINS)!;
+		expect(roles.moon).toBe("moon");
+		const planets = new Set(roles.bodies.filter((b) => !roles.belts.includes(b)));
+		let moons = 0;
+		let rockyMoons = 0;
+		for (let seed = 1; seed <= 40; seed++) {
+			const r = orbits(SPACE_SYSTEM_TERRAINS, g, seed, { bodies: "crowded" });
+			for (const [k, t] of r.cells) {
+				if (t !== "moon") continue;
+				moons++;
+				const h = k.split("_").map(Number) as [number, number];
+				const beside = [...r.cells].filter(([k2, t2]) => planets.has(t2)
+					&& distance(h, k2.split("_").map(Number) as [number, number], g) === 1).map(([, t2]) => t2);
+				expect(beside.length).toBeGreaterThan(0);
+				if (beside.every((b) => !roles.giants.includes(b))) rockyMoons++;
+			}
+		}
+		expect(moons).toBeGreaterThan(20);
+		// Not just giants: rocky worlds get moons too.
+		expect(rockyMoons).toBeGreaterThan(0);
+	});
+
 	it("warns on maps too small for orbits", () => {
 		const r = orbits(SPACE_SYSTEM_TERRAINS, grid(3, 3), 1);
 		expect(r.warnings.join(" ")).toMatch(/too small/);

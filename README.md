@@ -110,7 +110,8 @@ Maps can be generated instead of painted hex by hex. When you create a map (**Ma
 
 - **Overland** — a region from noise: seas, coasts, plains, forests, hills, mountains. Set water %, climate, and which side the sea is on.
 - **Region detail** (submaps) — zooms into the parent hex: its terrain fills the map and each neighbouring hex shapes the matching edge.
-- **Star scatter**, **Orbits**, **Planet surface** (space maps) — a star sector, a star system around its star, and a planet's surface.
+- **Star scatter**, **Orbits**, **Planet surface** (space maps) — a star sector, a star system around its star, and a planet's surface. Orbits places moons (the *moon* terrain) beside their planets.
+- **Biomes and presets** (Advanced) — Grassland, Temperate forest, Taiga, Tundra, Alpine, Badlands, Savanna, Jungle, Swamp, Karst, River delta, Coastal fjord, Archipelago, Deep forest, Valley and Volcanic. They place terrain by terrain *type*, so they work with Limited, Expanded, or your own palette (as long as its terrains have types). On Limited, terrain kinds it lacks fold into the nearest one (marsh becomes grass, peaks become mountain). Streams and trails are drawn as your River and Road path types if you have no stream or trail type.
 - **Learned generators** — made in the **Terrain generator** view (command palette: **Hexmap World Creator: Open terrain generator**) by learning from maps you've already painted, or by blending several.
 
 **Neighbouring maps.** In **Maps → New map**, **Place next to** makes the new map a region beside an existing one (same size and palette, lined up hex for hex). **Guided setup…** keeps the name and neighbour you picked. There, the generators marked *Continues … edge* (Overland and learned generators) carry the neighbour's terrain on across the shared border, and the preview shows the neighbour's edge faded around the new map. Region detail is only offered for submaps, since it zooms into a parent hex.
@@ -148,7 +149,7 @@ Chain multiple table rolls together into a filled template note.
 - **Roll a workflow** — each step shows a dropdown and a Roll button. The template fills in live as you roll. Save the result as a new vault note.
 
 ### Terrain tables & hex linking
-Each terrain type has two auto-generated table files: `{terrain} - description.md` and `{terrain} - encounters.md`, stored under `{tablesFolder}/terrain/`.
+Each terrain type has two auto-generated table files: `{terrain} - description.md` and `{terrain} - encounters.md`, stored under `{tablesFolder}/terrain/`. With only the Space map type on, tables are made for the space palettes' terrains only, not the fantasy ones.
 
 > ⚠️ **Configure all folder settings before clicking Generate.** The Generate button (Settings → Hexmap World Creator → Generate world data) creates the terrain table files and links each hex note's terrain encounters table into its Encounters Table section. It is safe to run multiple times.
 
@@ -276,7 +277,7 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Hex orientation** | `flat` (default) or `pointy` top hex style. |
 | **Path types** | Named path types used by the Path drawing tool. Each type has a name, colour, width, line style, and routing mode. Manage them from the Path button on the hex map toolbar. |
 | **Palettes folder** | Folder holding one note per terrain palette (default `{world folder}/palettes`). |
-| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note — copy a palette note into another vault's palettes folder to share it. **Add palette** offers built-in presets: *Limited* and *Expanded* (fantasy overland), plus *Space - Sector* (star charts, one hex per parsec; adds Jump route and Trade route path types) and *Space - System* (stars, planets, belts, stations) for sci-fi games such as Traveller. New-map palette menus list uninstalled presets too. |
+| **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map, or as a table in the palette's note — copy a palette note into another vault's palettes folder to share it. **Add palette** offers built-in presets: *Expanded* (the default fantasy overland palette: coasts, wetlands, forest and mountain kinds; matches the generators) and *Limited* (fewer, simpler terrains; quicker to paint), plus *Space - Sector* (star charts, one hex per parsec; adds Jump route and Trade route path types) and *Space - System* (stars, planets, belts, stations) for sci-fi games such as Traveller. New-map palette menus list uninstalled presets too. |
 | **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
 ---

@@ -235,8 +235,12 @@ class FakeVault {
 function makeHarness(settingsPatch: Partial<HexmakerPluginSettings> = {}) {
 	const vault = new FakeVault();
 	const trashed: string[] = [];
+	const defaults = JSON.parse(JSON.stringify(DEFAULT_SETTINGS)) as HexmakerPluginSettings;
 	const settings: HexmakerPluginSettings = {
-		...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+		...defaults,
+		// These tests were written with Limited first (an install from
+		// before Expanded became the default, G7b); keep that order.
+		terrainPalettes: [...defaults.terrainPalettes].sort((a, b) => (a.name === "Limited" ? -1 : b.name === "Limited" ? 1 : 0)),
 		worldFolder: "world",
 		...settingsPatch,
 	};

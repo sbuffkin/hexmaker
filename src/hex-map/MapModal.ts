@@ -44,7 +44,7 @@ import {
   type NewRegion,
 } from "../worldgen/neighbours";
 import { randomSeed } from "../../packages/hex-wfc/src";
-import { fillPaletteSelect } from "../palettes/paletteOptions";
+import { attachPaletteHint, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, renderAdvancedHints, withFeature } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
@@ -728,6 +728,7 @@ export class MapModal extends HexmakerModal {
     const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select", attr: { id: "duckmage-new-map-palette" } });
     fillPaletteSelect(this.plugin, paletteSelect);
+    attachPaletteHint(el, paletteSelect);
     // Everything New map hides in Simple, as one line rather than a stack.
     renderAdvancedHints(el, this.plugin, [
       { feature: "generators", text: "Fill a new map with generated terrain instead of painting it all by hand." },
@@ -875,6 +876,7 @@ export class MapModal extends HexmakerModal {
           colsInput.value = String(spec.cols);
           rowsInput.value = String(spec.rows);
           paletteSelect.value = spec.paletteName;
+          refreshPaletteHint(paletteSelect);
           originXInput.value = String(spec.offset.x);
           originYInput.value = String(spec.offset.y);
           staggerVal = spec.stagger;

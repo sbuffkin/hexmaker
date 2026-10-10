@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
 import {
 	OVERLAND_OPTIONS,
@@ -16,7 +16,7 @@ import {
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey } from "../src/worldgen/registry";
-import { defaultPaletteFor } from "../src/palettes/paletteOptions";
+import { defaultPaletteFor, paletteHint } from "../src/palettes/paletteOptions";
 import { isUnusedPlaceholderMap } from "../src/setupPlaceholder";
 import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
@@ -299,10 +299,23 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 	const pal = (name: string, terrains: TerrainColor[]) => ({ name, terrains });
 	const fresh = [pal("Limited", LIMITED_TERRAIN_PALETTE), pal("Expanded", DEFAULT_TERRAIN_PALETTE)];
 
-	it("world users get their first overland palette", () => {
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: fresh })).toBe("Limited");
-		expect(defaultPaletteFor({ mapKinds: ["world", "space"], terrainPalettes: fresh })).toBe("Limited");
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS), ...fresh] })).toBe("Limited");
+	it("world users get Expanded when installed (G7b), else their first overland palette", () => {
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: fresh })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world", "space"], terrainPalettes: fresh })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS), ...fresh] })).toBe("Expanded");
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Mine", LIMITED_TERRAIN_PALETTE), pal("Limited", LIMITED_TERRAIN_PALETTE)] })).toBe("Mine");
+	});
+
+	it("a fresh install starts on Expanded", () => {
+		expect(DEFAULT_SETTINGS.terrainPalettes[0].name).toBe("Expanded");
+		expect(DEFAULT_SETTINGS.maps[0].paletteName).toBe("Expanded");
+		expect(defaultPaletteFor(DEFAULT_SETTINGS)).toBe("Expanded");
+	});
+
+	it("says what Limited and Expanded are for", () => {
+		expect(paletteHint("Limited")).toMatch(/fewer, simpler terrains; quicker to paint/);
+		expect(paletteHint("Expanded")).toMatch(/coasts/);
+		expect(paletteHint("Space - Sector")).toBe("");
 	});
 
 	it("space-only users get a space palette, Space - Sector first", () => {
@@ -314,8 +327,8 @@ describe("defaultPaletteFor (new-map palette by map type)", () => {
 		})).toBe("Space - Sector");
 	});
 
-	it("world users with no overland palette installed get the Limited preset", () => {
-		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS)] })).toBe("Limited");
+	it("world users with no overland palette installed get the Expanded preset", () => {
+		expect(defaultPaletteFor({ mapKinds: ["world"], terrainPalettes: [pal("Space - Sector", SPACE_SECTOR_TERRAINS)] })).toBe("Expanded");
 	});
 });
 

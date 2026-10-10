@@ -26,7 +26,7 @@ import {
 import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { isIconHiddenByKind, isSpacePalette, resolveMapKinds } from "./mapKinds";
+import { enabledKinds, isIconHiddenByKind, isSpacePalette, resolveMapKinds, terrainsForTables } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
@@ -909,8 +909,14 @@ export default class HexmakerPlugin extends Plugin {
       );
   }
 
-  /** Create missing description/encounters table files for every terrain type in the palette. */
-  async ensureTerrainTables(): Promise<void> {
+  /**
+   * Create missing description/encounters table files for every terrain
+   * (`terrains`, default: those of the enabled map types — a Space-only
+   * vault gets none for the fantasy palettes; see terrainsForTables).
+   */
+  async ensureTerrainTables(
+    terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)),
+  ): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
 
     // Generic section tables (landmark, hidden, secret) at the root of the tables folder
@@ -985,7 +991,7 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     // Create any still-missing table files
-    for (const entry of this.getAllTerrains()) {
+    for (const entry of terrains) {
       for (const tableType of ["description", "encounters"] as const) {
         const path = `${subfolder}/${tableType}/${entry.name}.md`;
         if (!this.app.vault.getAbstractFileByPath(path)) {

@@ -11,7 +11,7 @@ import { renderAdvancedHints } from "../advancedHints";
 import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
-import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
+import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
 import { isSpacePalette } from "../mapKinds";
 import { defaultSubmapName } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
@@ -202,6 +202,7 @@ export class NewMapSetupModal extends HexmakerModal {
         ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : defaultPaletteFor(this.plugin.settings)),
     );
     this.rememberBox(palRow, "palette");
+    attachPaletteHint(palRow, paletteSelect);
 
     // ── Size ──
     const sizeRow = this.row(form, "Size");
@@ -288,6 +289,7 @@ export class NewMapSetupModal extends HexmakerModal {
             colsInput.value = String(spec.cols);
             rowsInput.value = String(spec.rows);
             paletteSelect.value = spec.paletteName;
+            refreshPaletteHint(paletteSelect);
             this.context = buildRegionContext(this.plugin, this.placement);
             // The neighbours' edge, drawn faded around the preview (the seam).
             this.shadow = new Map();

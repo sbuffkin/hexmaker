@@ -22,8 +22,9 @@ import {
 /**
  * Star-system "orbits": a star at the centre, then one body per orbit ring
  * (hex distance from the star), typed by zone — hot inner rocks, a
- * habitable middle, cold giants outside. Belts fill part of a ring; giants
- * may get a moon; the mainworld may get a station or starport alongside;
+ * habitable middle, cold giants outside. Belts fill part of a ring; planets
+ * may get moons (the palette's moon terrain) on the hexes beside them —
+ * giants more often, and up to two; the mainworld may get a station or starport alongside;
  * a comet and a jump point sit out past the last orbit.
  *
  * Works on any palette with a background (type void, or "void" / "empty
@@ -270,24 +271,34 @@ export function orbits(
     const body = d === mainRing ? mainBody! : weightedPick(rand, roles.bodies, roles.zoneWeights[zone], 0.5)!;
     const hexesOnRing = ring(d);
     if (hexesOnRing.length === 0) continue;
+    // A moon from the orbit inside may sit on this ring: leave it be.
+    const isFree = (h: [number, number]) => cells.get(cellKey(h[0], h[1])) === roles.background;
     if (roles.belts.includes(body)) {
       // Belts sweep an arc of the ring rather than sitting on one hex.
       const start = Math.floor(rand() * hexesOnRing.length);
       const span = Math.max(2, Math.floor(hexesOnRing.length * (0.3 + rand() * 0.4)));
       const sorted = sortAround(hexesOnRing, center, grid);
-      for (let i = 0; i < span; i++) set(sorted[(start + i) % sorted.length], body);
+      for (let i = 0; i < span; i++) {
+        const h = sorted[(start + i) % sorted.length];
+        if (isFree(h)) set(h, body);
+      }
       if (d === mainRing) mainworld = sorted[start];
       continue;
     }
-    const pos = hexesOnRing[Math.floor(rand() * hexesOnRing.length)];
+    const open = hexesOnRing.filter(isFree);
+    const choices = open.length ? open : hexesOnRing;
+    const pos = choices[Math.floor(rand() * choices.length)];
     set(pos, body);
     if (d === mainRing) mainworld = pos;
     else if (zone === "habitable" && !mainworld && mainRing < 0) mainworld = pos;
-    // Giants get a moon on a free neighbouring hex.
-    if (roles.moon && roles.giants.includes(body) && rand() < 0.7) {
-      const free = hexes.filter((h) => distance(h, pos, grid) === 1
-        && cells.get(cellKey(h[0], h[1])) === roles.background);
-      if (free.length) set(free[Math.floor(rand() * free.length)], roles.moon);
+    // Moons sit on free hexes next to their planet: giants often have one
+    // or two, rocky worlds sometimes one.
+    if (roles.moon) {
+      const giant = roles.giants.includes(body);
+      let moons = rand() < (giant ? 0.7 : 0.3) ? 1 : 0;
+      if (giant && moons && rand() < 0.35) moons++;
+      const free = hexes.filter((h) => distance(h, pos, grid) === 1 && isFree(h));
+      for (; moons > 0 && free.length; moons--) set(free.splice(Math.floor(rand() * free.length), 1)[0], roles.moon);
     }
   }
 

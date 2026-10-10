@@ -4,8 +4,8 @@ import type { HexMapView } from "./hex-map/HexMapView";
 import type { TerrainColor } from "./types";
 import { normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
-import { defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
-import { MAP_KINDS, enabledKinds, isSpacePalette, type MapKind } from "./mapKinds";
+import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
+import { MAP_KINDS, enabledKinds, isSpacePalette, terrainsForTables, type MapKind } from "./mapKinds";
 import { FEATURE_LEVEL_CHOICES, type FeatureLevel } from "./featureLevel";
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
@@ -569,6 +569,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			paletteRow.createEl("label", { text: "Terrain palette", cls: "duckmage-wizard-label" });
 			const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-wizard-select" });
 			fillPaletteSelect(plugin, paletteSelect, ctx.paletteName);
+			attachPaletteHint(paletteRow, paletteSelect);
 			paletteSelect.addEventListener("change", () => {
 				ctx.paletteName = paletteSelect.value;
 				renderGenerators();
@@ -769,8 +770,11 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// We skip backfillTerrainLinks here: there are no hex notes yet
 			// (they're created on use), and syncHexEncounterTableLink wires up
 			// the link when a hex note is created or its terrain painted.
+			// Space only (ctx.mapKinds): tables for the space terrains, none
+			// for the fantasy palettes that ship installed. Folder and link
+			// section names stay generic either way (G4).
 			onProgress("Generating terrain tables…");
-			await plugin.ensureTerrainTables();
+			await plugin.ensureTerrainTables(terrainsForTables(plugin.settings.terrainPalettes, ctx.mapKinds));
 			onProgress("Adding roller links…");
 			await plugin.ensureAllRollerLinks();
 			onProgress("");
