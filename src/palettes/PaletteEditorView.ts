@@ -151,7 +151,7 @@ export class PaletteEditorView extends ItemView {
     const head = table.createEl("thead").createEl("tr");
     for (const h of ["", "Color", "Name", "Type", "Category", "Icon", "Icon tint", "Impassable", ""]) {
       const th = head.createEl("th", { text: h });
-      if (h === "Impassable") th.title = "Auto-routed paths (path tool) go around impassable terrain. By default every terrain of a water type (deep water, water, shallows) is impassable, in any palette; set the Type column to change a terrain's default, or tick / untick it here.";
+      if (h === "Impassable") th.title = "Auto-routed paths (path tool) go around impassable terrain. By default every terrain of a water type (deep water, water, shallows) is impassable, in any palette; change a terrain's type to change its default, or tick / untick it here.";
     }
     const body = table.createEl("tbody");
     const categories = [...new Set(pal.terrains.map((t) => t.category).filter((c): c is string => !!c))].sort();
