@@ -17,6 +17,7 @@ import {
   PLANET_SURFACE_OPTIONS,
   REGION_DETAIL_ID,
   REGION_DETAIL_OPTIONS,
+  overlandDescription,
   planetSurface,
   planetSurfaceFits,
 } from "./procedural/planetSurface";
@@ -62,6 +63,10 @@ export interface TerrainGeneratorKind {
   id: string;
   label: string;
   description: string;
+  /** Card text for a given palette, when it depends on what the palette
+   *  has (Overland: no "coast" on a palette without a coast terrain).
+   *  Falls back to `description`; see describeKind. */
+  describe?(terrains: TerrainColor[]): string;
   source: "blank" | "built-in" | "learned";
   /** Map type that owns the generator (hidden when that type is off; see
    *  visibleKinds). Learned ones take it from their `map-kind` frontmatter. */
@@ -83,6 +88,11 @@ export interface TerrainGeneratorKind {
 }
 
 export const BLANK_ID = "blank";
+
+/** A generator card's text for this palette. */
+export function describeKind(kind: TerrainGeneratorKind, terrains: TerrainColor[]): string {
+  return kind.describe?.(terrains) ?? kind.description;
+}
 
 /**
  * The terrain a fresh map shows where nothing has been painted: the space
@@ -166,7 +176,8 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       // Planet surface's noise generator under a world name, so world-only
       // users get a procedural map without seeing space options.
       mapKind: "world",
-      description: "A region from noise: coast, plains, forests, hills, mountains, deserts. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.",
+      description: "A region from noise: sea, land and high ground from whatever terrains your palette has. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.",
+      describe: overlandDescription,
       source: "built-in",
       continuesNeighbours: true,
       options: OVERLAND_OPTIONS,

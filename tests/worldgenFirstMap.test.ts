@@ -5,6 +5,8 @@ import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/pr
 import {
 	OVERLAND_OPTIONS,
 	maxLakeSize,
+	mountainQuantile,
+	overlandDescription,
 	planetRoles,
 	sideSeaMask,
 	planetSurface,
@@ -375,5 +377,61 @@ describe("isUnusedPlaceholderMap (the shipped 'default' map)", () => {
 		expect(isUnusedPlaceholderMap(map, { ...unused, referenced: true })).toBe(false);
 		expect(isUnusedPlaceholderMap({ ...map, pathChains: [{}] }, unused)).toBe(false);
 		expect(isUnusedPlaceholderMap({ ...map, world: { id: "w", cx: 0, cy: 0 } }, unused)).toBe(false);
+	});
+});
+
+describe("Overland relief (fresh-eyes r4: Normal is not a mountain range)", () => {
+	const HIGH = new Set(["mountains", "peaks"]);
+	for (const [label, pal] of [["Limited", LIMITED_TERRAIN_PALETTE], ["Expanded", DEFAULT_TERRAIN_PALETTE]] as const) {
+		const types = typeOf(pal);
+		const high = (t: string | undefined) => !!t && HIGH.has(types.get(t) ?? "");
+		const hill = (t: string | undefined) => !!t && types.get(t) === "hills";
+		const all = () => true;
+		const run = (relief: string, water: string) => (s: number) => overland(s, { relief, water, sea: "west" }, pal);
+
+		it(`${label}: Normal keeps mountains to a minority (≤ 8% of the map) at every water level and seed`, () => {
+			for (const water of ["10", "30", "50"]) {
+				for (const seed of SEEDS) {
+					const cells = run("normal", water)(seed);
+					const n = [...cells.values()].filter(high).length;
+					expect(n / cells.size).toBeLessThanOrEqual(0.08);
+				}
+			}
+		});
+
+		it(`${label}: Normal has more hills than mountains; Rugged stays the mountainous choice; Flat the least`, () => {
+			const normal = share(run("normal", "30"), all, high);
+			expect(share(run("normal", "30"), all, hill)).toBeGreaterThan(normal * 1.5);
+			expect(share(run("rugged", "30"), all, high)).toBeGreaterThan(normal * 2);
+			expect(share(run("flat", "30"), all, high)).toBeLessThan(normal);
+			expect(normal).toBeGreaterThan(0.02); // still some mountains
+		});
+	}
+
+	it("a whole planet (Planet surface) keeps its old Normal", () => {
+		expect(mountainQuantile("normal", "planet")).toBe(0.87);
+		expect(mountainQuantile("normal", "overland")).toBeGreaterThan(0.9);
+		expect(mountainQuantile("rugged", "overland")).toBe(mountainQuantile("rugged", "planet"));
+	});
+});
+
+describe("Overland description follows the palette (fresh-eyes r4)", () => {
+	it("Limited has no coast terrain, so the card doesn't promise a coast", () => {
+		const text = overlandDescription(LIMITED_TERRAIN_PALETTE);
+		expect(text).not.toMatch(/coast/i);
+		expect(text).toMatch(/sea/);
+		expect(text).toMatch(/hills and mountains|hills, mountains/);
+	});
+
+	it("Expanded has a beach / coast terrain, so it says coast", () => {
+		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/coast/);
+	});
+
+	it("only names terrain kinds the palette has", () => {
+		const tiny: TerrainColor[] = [
+			{ name: "ocean", color: "#00f", type: "water" },
+			{ name: "grass", color: "#0f0", type: "grassland" },
+		];
+		expect(overlandDescription(tiny)).toMatch(/^A region from noise: sea and plains\. /);
 	});
 });

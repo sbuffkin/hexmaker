@@ -357,6 +357,45 @@ function makeNoise(rand: () => number): (x: number, y: number) => number {
   };
 }
 
+/**
+ * Land elevation quantile where mountains start (1 − share of land that is
+ * mountain). Overland's Normal keeps mountains a minority feature, about
+ * 7% of the land (fresh-eyes r4: a "farmland and hills" barony came out
+ * with a mountain range at 13%); Rugged is the mountainous choice. A whole
+ * planet keeps its old Normal.
+ */
+export function mountainQuantile(relief: string, flavor: "planet" | "overland"): number {
+  if (relief === "flat") return 0.97;
+  if (relief === "rugged") return 0.72;
+  return flavor === "overland" ? 0.93 : 0.87;
+}
+
+/**
+ * Overland's generator card text for a palette: only the kinds of terrain
+ * this palette can actually give (the Limited palette has no coast terrain,
+ * so it doesn't promise one).
+ */
+export function overlandDescription(terrains: TerrainColor[]): string {
+  const r = planetRoles(terrains);
+  const tail = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.";
+  if (!r) return `A region from noise. ${tail}`;
+  const parts = [
+    r.sea && "sea",
+    r.beach && "coast",
+    r.plains && "plains",
+    r.forest && "forests",
+    r.swamp && "swamps",
+    r.hills && "hills",
+    r.mountain && "mountains",
+  ].filter((p): p is string => !!p);
+  const extras = [
+    (r.desert ?? r.badlands) && "deserts when arid",
+    r.snow && "snow when frozen",
+  ].filter((p): p is string => !!p);
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts.join("");
+  return `A region from noise: ${list}${extras.length ? ` (${extras.join(", ")})` : ""}. ${tail}`;
+}
+
 /** Value at quantile q (0..1) of a list. */
 function quantile(values: number[], q: number): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -526,7 +565,7 @@ export function planetSurface(
     lv = {
       sea: seaLevel,
       hill: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7),
-      mountain: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.97 : relief === "rugged" ? 0.72 : 0.87),
+      mountain: quantile(landElev.length ? landElev : [1], mountainQuantile(relief, flavor)),
       peak: quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97),
       // Overland: only the far offshore water is deep (no trench band along the edge).
       deep: quantile(seaElev.length ? seaElev : [0], overland ? 0.12 : 0.35),

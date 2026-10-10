@@ -20,6 +20,7 @@ import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
   BLANK_ID,
   defaultGeneratorFor,
+  describeKind,
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
@@ -373,7 +374,7 @@ export class NewMapSetupModal extends HexmakerModal {
           attr: { role: "radio", "aria-checked": on ? "true" : "false" },
         });
         card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-        card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+        card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains) });
         if (where.neighbour && k.id !== BLANK_ID) {
           card.createDiv({
             cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,

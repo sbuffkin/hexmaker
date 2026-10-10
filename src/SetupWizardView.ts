@@ -11,6 +11,7 @@ import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { pathColors } from "./worldgen/generators";
 import {
 	BLANK_ID,
+	describeKind,
 	firstMapGenerator,
 	generationKey,
 	kindsForPalette,
@@ -582,7 +583,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				for (const k of fitting) {
 					const card = genList.createEl("button", { cls: `duckmage-setup-gen${k.id === ctx.generatorId ? " is-active" : ""}` });
 					card.createDiv({ cls: "duckmage-setup-gen-title", text: k.label + (k.source === "learned" ? " (learned)" : "") });
-					card.createDiv({ cls: "duckmage-setup-gen-desc", text: k.description });
+					card.createDiv({ cls: "duckmage-setup-gen-desc", text: describeKind(k, terrains()) });
 					card.addEventListener("click", () => {
 						ctx.generatorId = k.id;
 						ctx.generatorOptions = {};
