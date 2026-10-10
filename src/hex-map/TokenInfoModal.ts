@@ -2,6 +2,7 @@ import { App, Component, MarkdownRenderer, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import { openNoteFocused } from "../openNote";
 import type { TokenEntry } from "../types";
+import { hexKeyCoords } from "./hexHover";
 
 export class TokenInfoModal extends HexmakerModal {
   private renderComp: Component | undefined;
@@ -65,7 +66,7 @@ export class TokenInfoModal extends HexmakerModal {
 
     // Location
     body.createEl("p", {
-      text: `Hex ${this.token.hex}`,
+      text: `Hex ${hexKeyCoords(this.token.hex)}`,
       cls: "duckmage-token-info-loc",
     });
 

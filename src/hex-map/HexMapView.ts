@@ -35,7 +35,7 @@ import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
-import { hexHoverLabel } from "./hexHover";
+import { hexHoverLabel, hexKeyCoords } from "./hexHover";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -561,7 +561,7 @@ export class HexMapView extends ItemView {
     if (this.upBtn) {
       if (parent) {
         this.upBtn.show();
-        const label = `Up to the parent map: ${parent.map}, hex ${parent.hex.replace("_", ", ")} (Alt+↑)`;
+        const label = `Up to the parent map: ${parent.map}, hex ${hexKeyCoords(parent.hex)} (Alt+↑)`;
         this.upBtn.title = label;
         this.upBtn.setAttr("aria-label", label);
       } else {
@@ -3508,7 +3508,7 @@ export class HexMapView extends ItemView {
       `[data-x="${x}"][data-y="${y}"]`,
     );
     if (!hexEl) {
-      new Notice(`Hex ${x},${y} is not in the current grid.`);
+      new Notice(`Hex ${x}, ${y} is not in the current grid.`);
       return;
     }
 
@@ -4467,7 +4467,7 @@ export class HexMapView extends ItemView {
     // Idempotent — only add if not already present
     const existing = await getLinksInSection(this.app, hexPath, "Encounters Table");
     if (existing.includes(target)) {
-      new Notice(`Already linked on ${x},${y}`);
+      new Notice(`Already linked on hex ${x}, ${y}`);
       return;
     }
 

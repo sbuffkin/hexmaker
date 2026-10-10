@@ -777,7 +777,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-jump-btn",
     });
     const coordsSpan = coordsTd.createSpan({
-      text: `${x},${y}`,
+      text: `${x}, ${y}`,
       cls: "duckmage-hex-table-coords",
     });
     coordsSpan.addEventListener("click", () => {
@@ -990,7 +990,7 @@ export class HexTableView extends ItemView {
                 // Multiple: show a nav list
                 new MultiLinkNavModal(
                   this.app,
-                  `${x},${y} — ${section}`,
+                  `${x}, ${y} — ${section}`,
                   linkList,
                   path,
                 ).open();
@@ -1003,7 +1003,7 @@ export class HexTableView extends ItemView {
             const current = td.dataset.fullContent ?? "";
             new HexCellModal(
               this.app,
-              `${x},${y} — ${col.label}`,
+              `${x}, ${y} — ${col.label}`,
               current,
               true,
             ).open();
@@ -1026,7 +1026,7 @@ export class HexTableView extends ItemView {
           const current = td.dataset.fullContent ?? "";
           new HexCellModal(
             this.app,
-            `${x},${y} — ${col.label}`,
+            `${x}, ${y} — ${col.label}`,
             current,
             false,
             path,

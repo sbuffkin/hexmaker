@@ -14,3 +14,13 @@ export function hexHoverLabel(
   if (baseTerrain) return `${baseTerrain} (map base) · ${where}`;
   return `Hex ${x}, ${y}`;
 }
+
+/**
+ * A hex key ("x_y", as used in file names and data) written for people:
+ * "x, y", like every title, tooltip and notice (round 5: a token card said
+ * "Hex 3_4" while the editor said "Hex 3, 5"). Non-keys pass through.
+ */
+export function hexKeyCoords(key: string): string {
+  const m = /^(-?\d+)_(-?\d+)$/.exec(key.trim());
+  return m ? `${m[1]}, ${m[2]}` : key;
+}
