@@ -329,6 +329,10 @@ export const DEFAULT_PATH_TYPES: PathType[] = [
   { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false },
 ];
 
+/** How a path is drawn when its type isn't in the map's palette (renamed or
+ *  deleted there): plain grey, so it stays visible and can be fixed. */
+export const UNKNOWN_PATH_TYPE: PathType = { name: "", color: "#9ca3af", width: 3, lineStyle: "dashed", routing: "through" };
+
 export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   mySetting: "default",
   worldFolder: "world",

@@ -58,5 +58,15 @@ export function migrateMapData(raw: unknown, defaultPalette = LEGACY_PALETTE_NAM
   if (!r.gridSize || typeof r.gridSize !== "object") r.gridSize = { cols: 0, rows: 0 };
   if (!r.gridOffset) r.gridOffset = { x: 0, y: 0 };
   if (!Array.isArray(r.pathChains)) r.pathChains = [];
+  // Before path types (≤ 1.2): roads and rivers as two lists of hex chains.
+  // Their conversion was lost in 5e475da; bring such maps' paths across.
+  for (const [key, typeName] of [["roadChains", "Road"], ["riverChains", "River"]] as const) {
+    const old = r[key];
+    if (!Array.isArray(old)) continue;
+    for (const c of old) {
+      if (Array.isArray(c) && c.length) r.pathChains.push({ typeName, hexes: c.map(String) });
+    }
+    delete r[key];
+  }
   return r as MapData;
 }

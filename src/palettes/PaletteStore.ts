@@ -1,6 +1,6 @@
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { TerrainPalette } from "../types";
+import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
 import {
   buildPaletteNote,
@@ -15,6 +15,8 @@ import {
   updatePaletteNote,
 } from "./paletteNote";
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { DEFAULT_PATH_TYPES } from "../constants";
 import { inferTerrainType } from "../terrainTypes";
 
 /**
@@ -54,12 +56,38 @@ function applyNoteMeta(pal: TerrainPalette, content: string): boolean {
     else delete pal.submapDefaults;
     changed = true;
   }
+  // Path types: a note without the table keeps the ones we have (a slip
+  // that breaks the table header mustn't wipe them; sync writes it back).
+  const paths = parsePathTypes(content);
+  if (paths && pathTypesKey(pal.pathTypes) !== pathTypesKey(paths.types)) {
+    if (pal.pathTypes) pal.pathTypes.splice(0, pal.pathTypes.length, ...paths.types);
+    else pal.pathTypes = paths.types;
+    changed = true;
+  }
   return changed;
 }
 
 /** A fresh note for a palette, metadata included. */
 function newNote(pal: TerrainPalette): string {
-  return setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette), pal.submapDefaults);
+  const note = setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette), pal.submapDefaults);
+  return pal.pathTypes ? setPathTypes(note, pal.pathTypes) : note;
+}
+
+/**
+ * Give every palette without path types a copy of the old plugin-wide list
+ * (settings.pathTypes, else Road and River). Before path types moved into
+ * palettes every map could draw every type, so copying them all keeps every
+ * map's paths drawable. Returns how many palettes were filled.
+ */
+export function fillPalettePathTypes(palettes: TerrainPalette[], legacy: PathType[] | undefined): number {
+  const source = legacy && legacy.length ? legacy : DEFAULT_PATH_TYPES;
+  let n = 0;
+  for (const pal of palettes) {
+    if (pal.pathTypes) continue;
+    pal.pathTypes = clonePathTypes(source);
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -90,6 +118,9 @@ export class PaletteStore {
   private attachedFolder = "";
   private reattachTimer: number | undefined;
   private queue: Promise<void> = Promise.resolve();
+  /** Palette notes whose terrain table doesn't parse: never rewritten until
+   *  fixed by hand (a sync would otherwise replace the half-edited note). */
+  private broken = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -223,6 +254,10 @@ export class PaletteStore {
     }
 
     if (await this.loadAll()) dirty = true;
+    // Path types moved from settings into palettes: every palette without
+    // them gets the full old list, and the notes get their table below.
+    const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
+    if (filled) dirty = true;
     // One-time: give existing palettes terrain types (from same-named
     // preset terrains, else inferred from the name). Later blanks are the
     // user's choice and stay blank.
@@ -236,7 +271,7 @@ export class PaletteStore {
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded) await this.syncNow();
+    if (seeded || filled) await this.syncNow();
     if (dirty) await this.persist();
   }
 
@@ -289,7 +324,8 @@ export class PaletteStore {
   reload(): Promise<void> {
     if (!this.ready) return this.queue;
     return this.enqueue(async () => {
-      if (await this.loadAll()) await this.persist();
+      const loaded = await this.loadAll();
+      if (fillPalettePathTypes(this.plugin.settings.terrainPalettes, this.plugin.settings.pathTypes) || loaded) await this.persist();
     });
   }
 
@@ -353,7 +389,14 @@ export class PaletteStore {
         if (file instanceof TFile) {
           const current = await vault.read(file);
           const parsed = parsePaletteNote(current);
-          const next = setSubmapDefaults(
+          if (!parsed) {
+            // The user's table doesn't parse (mid-edit or a slip): leave the
+            // note alone and say so once; it's picked up again when fixed.
+            this.markBroken(target);
+            this.bind(pal, target, current);
+            continue;
+          }
+          const withMeta = setSubmapDefaults(
             setChildPalette(
               parsed && terrainsEqual(parsed, pal.terrains)
                 ? current
@@ -362,6 +405,7 @@ export class PaletteStore {
             ),
             pal.submapDefaults,
           );
+          const next = pal.pathTypes ? setPathTypes(withMeta, pal.pathTypes) : withMeta;
           if (next !== current) {
             this.lastContent.set(target, next);
             await vault.modify(file, next);
@@ -387,6 +431,16 @@ export class PaletteStore {
     }
   }
 
+  private markBroken(path: string): void {
+    if (this.broken.has(path)) return;
+    this.broken.add(path);
+    new Notice(
+      `Hexmaker: can't read the terrain table in ${path}. It needs a header row with Terrain and Color columns, then a --- row. ` +
+        "The note won't be changed until it reads again; the palette keeps its last working terrains.",
+      0,
+    );
+  }
+
   /** The note backing a palette, if it has been written. */
   noteFor(name: string): TFile | undefined {
     const pal = this.plugin.getPaletteByName(name);
@@ -407,7 +461,16 @@ export class PaletteStore {
       const content = await this.plugin.app.vault.read(file);
       if (this.lastContent.get(file.path) === content) return; // our own write
       const terrains = parsePaletteNote(content);
-      if (!terrains) return; // mid-edit / table removed: keep the last good copy
+      if (!terrains) {
+        // Mid-edit or a slip: keep the last good copy, and don't write over it.
+        this.markBroken(file.path);
+        return;
+      }
+      if (this.broken.delete(file.path)) new Notice(`Hexmaker: palette "${file.basename}" reads fine again.`);
+      const skipped = parsePathTypes(content)?.skipped ?? [];
+      if (skipped.length) {
+        new Notice(`Hexmaker: ${skipped.length} path type row${skipped.length === 1 ? "" : "s"} in "${file.basename}" ${skipped.length === 1 ? "has" : "have"} no name (or repeat${skipped.length === 1 ? "s" : ""} one), so ${skipped.length === 1 ? "it was" : "they were"} skipped: ${skipped.join("  ")}`, 10000);
+      }
       this.lastContent.set(file.path, content);
       let pal = this.paletteBoundTo(file.path)
         ?? this.plugin.settings.terrainPalettes.find((p) => p.name.toLowerCase() === file.basename.toLowerCase());
@@ -423,6 +486,7 @@ export class PaletteStore {
         changed = true;
       }
       if (applyNoteMeta(pal, content)) changed = true;
+      if (fillPalettePathTypes([pal], this.plugin.settings.pathTypes)) changed = true;
       this.bind(pal, file.path, content);
       if (changed) await this.persist();
     });

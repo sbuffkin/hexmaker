@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { MapStore, HEX_DATA_KEYS } from "../src/maps/MapStore";
+import { MapStore, HEX_DATA_KEYS, withoutNotePaths } from "../src/maps/MapStore";
 import { parseMapNote } from "../src/maps/mapNote";
 import { MemVault } from "./helpers/memVault";
 import type { MapData } from "../src/types";
@@ -294,5 +294,41 @@ describe("map store: a broken map note", () => {
 		store.onModify(p.app.vault.getAbstractFileByPath(path) as never);
 		await store.flush();
 		expect(store.get("coast", "3_4")?.terrain).toBe("forest");
+	});
+});
+
+describe("map store: paths live only in the map note", () => {
+	it("data.json leaves out the paths of maps whose note holds them", async () => {
+		const v = new MemVault();
+		const m = maps();
+		const { store } = await boot(v, m);
+		const settings = { maps: m, other: 1 };
+		const disk = withoutNotePaths(settings, (n) => store.holdsPaths(n));
+		expect(disk.maps.every((x) => !("pathChains" in x))).toBe(true);
+		expect(disk.other).toBe(1);
+		// In memory nothing changed.
+		expect(m[0].pathChains).toHaveLength(1);
+		// Their notes have them.
+		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toEqual(m[0].pathChains);
+	});
+
+	it("a map whose note can't be read keeps its paths in data.json", async () => {
+		const v = new MemVault({ "world/hexes/coast/_coast.md": "---\nbroken: [\n---\n" });
+		const { store } = await boot(v);
+		expect(store.holdsPaths("coast")).toBe(false);
+		expect(store.holdsPaths("coast-3-4")).toBe(true);
+	});
+
+	it("a data.json synced in from another device doesn't overwrite the notes' paths", async () => {
+		const v = new MemVault();
+		const m = maps();
+		const { store, p } = await boot(v, m);
+		// Sync replaces data.json: fresh map objects without paths.
+		const fresh = maps().map((x) => ({ ...x, pathChains: [] }));
+		p.settings.maps.splice(0, p.settings.maps.length, ...fresh);
+		await store.reloadFromNotes();
+		expect(fresh[0].pathChains).toEqual([{ typeName: "Road", hexes: ["1_2", "3_4"] }]);
+		await store.sync();
+		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toHaveLength(1);
 	});
 });

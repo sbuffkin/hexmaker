@@ -1,5 +1,6 @@
 import type { SubmapDefault, TerrainColor } from "../types";
 import { impassableCell, parseImpassableCell } from "../impassable";
+import { normalizeTerrainType } from "../terrainTypes";
 
 // Plain-text palette notes.
 //
@@ -78,6 +79,7 @@ const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 interface TableSpan {
   start: number; // index of the header line
   end: number; // index one past the last body row
+  headers: string[];
   columns: (Column | null)[];
 }
 
@@ -86,13 +88,33 @@ function findPaletteTable(lines: string[]): TableSpan | null {
   for (let i = 0; i < lines.length - 1; i++) {
     if (!lines[i].trim().startsWith("|")) continue;
     if (!SEPARATOR_ROW.test(lines[i + 1])) continue;
-    const columns = splitRow(lines[i]).map(columnFor);
+    const headers = splitRow(lines[i]);
+    const columns = headers.map(columnFor);
     if (!columns.includes("name") || !columns.includes("color")) continue;
+    // A path-types table (Width / Style / Routing) is not the terrain table.
+    if (headers.some((h) => /^(width|style|line style|routing)$/i.test(h.trim()))) continue;
     let end = i + 2;
     while (end < lines.length && lines[end].trim().startsWith("|")) end++;
-    return { start: i, end, columns };
+    return { start: i, end, headers, columns };
   }
   return null;
+}
+
+/** Columns the plugin doesn't know (the user's own), with each row's cells by terrain name. */
+function extraColumns(lines: string[], span: TableSpan): { headers: string[]; rows: Map<string, Record<string, string>> } {
+  const headers = span.headers.filter((h, i) => span.columns[i] === null && h !== "");
+  const rows = new Map<string, Record<string, string>>();
+  if (!headers.length) return { headers, rows };
+  const nameAt = span.columns.indexOf("name");
+  for (let i = span.start + 2; i < span.end; i++) {
+    const cells = splitRow(lines[i]);
+    const name = cells[nameAt]?.trim().toLowerCase();
+    if (!name) continue;
+    const own: Record<string, string> = {};
+    span.headers.forEach((h, idx) => { if (span.columns[idx] === null && h && cells[idx]) own[h] = cells[idx]; });
+    rows.set(name, own);
+  }
+  return { headers, rows };
 }
 
 /**
@@ -116,7 +138,9 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
     if (row.icon) entry.icon = row.icon;
     if (row.iconColor) entry.iconColor = row.iconColor;
     if (row.category) entry.category = row.category;
-    if (row.type) entry.type = row.type;
+    // A type typed by hand in any case, or as its label, reads as its id;
+    // anything else is kept as typed (and shows as untyped).
+    if (row.type) entry.type = normalizeTerrainType(row.type) ?? row.type;
     const impassable = parseImpassableCell(row.impassable);
     if (impassable !== undefined) entry.impassable = impassable;
     terrains.push(entry);
@@ -130,9 +154,13 @@ function escapeCell(value: string | undefined): string {
 
 /** Serialize terrains as the canonical markdown table (plus an Impassable
  *  column when any terrain overrides its type's default). */
-export function serializePaletteTable(terrains: TerrainColor[]): string {
+export function serializePaletteTable(
+  terrains: TerrainColor[],
+  extra?: { headers: string[]; rows: Map<string, Record<string, string>> },
+): string {
   const withImpassable = terrains.some((t) => t.impassable !== undefined);
-  const headers: string[] = withImpassable ? [...HEADERS, "Impassable"] : [...HEADERS];
+  const own = extra?.headers ?? [];
+  const headers: string[] = [...(withImpassable ? [...HEADERS, "Impassable"] : HEADERS), ...own];
   const lines = [
     `| ${headers.join(" | ")} |`,
     `| ${headers.map(() => "---").join(" | ")} |`,
@@ -140,6 +168,8 @@ export function serializePaletteTable(terrains: TerrainColor[]): string {
   for (const t of terrains) {
     const values = [t.name, t.color, t.icon, t.iconColor, t.category, t.type];
     if (withImpassable) values.push(impassableCell(t));
+    const mine = extra?.rows.get(t.name.toLowerCase()) ?? {};
+    for (const h of own) values.push(mine[h]);
     const cells = values.map(escapeCell);
     lines.push(`| ${cells.join(" | ")} |`);
   }
@@ -336,17 +366,18 @@ export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string
 
 /**
  * Rewrite only the terrain table inside an existing note, keeping any
- * frontmatter and prose the user added. Falls back to a fresh note when the
- * existing content has no palette table.
+ * frontmatter, prose and columns the user added. A note with no terrain
+ * table gets one added at the end; only an empty note is built from scratch.
  */
 export function updatePaletteNote(content: string, terrains: TerrainColor[]): string {
   const normalized = content.replace(/\r\n?/g, "\n");
+  if (!normalized.trim()) return buildPaletteNote(terrains);
   const lines = normalized.split("\n");
   const span = findPaletteTable(lines);
-  if (!span) return buildPaletteNote(terrains);
+  if (!span) return `${normalized.replace(/\n*$/, "")}\n\n${serializePaletteTable(terrains)}\n`;
   return [
     ...lines.slice(0, span.start),
-    serializePaletteTable(terrains),
+    serializePaletteTable(terrains, extraColumns(lines, span)),
     ...lines.slice(span.end),
   ].join("\n");
 }

@@ -15,6 +15,7 @@ import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
 import {
   DEFAULT_PALETTE_NAME,
+  DEFAULT_PATH_TYPES,
   DEFAULT_SETTINGS,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
@@ -33,10 +34,10 @@ import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
   getPreset,
-  mergePathTypes,
   presetToPalette,
   uniquePaletteName,
 } from "./palettes/presets";
+import { clonePathTypes } from "./palettes/pathTypeTable";
 import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack } from "./utils";
 import { STARTER_RUMORS, STARTER_WEATHER, starterTablePath } from "./regionTables";
 import { setIconPackDefault } from "./HexmakerModal";
@@ -45,6 +46,7 @@ import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
   HexmakerPluginSettings,
   MapData,
+  PathType,
   SubmapDefault,
   TerrainColor,
   TerrainPalette,
@@ -52,7 +54,7 @@ import type {
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
-import { MapStore } from "./maps/MapStore";
+import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
@@ -524,6 +526,9 @@ export default class HexmakerPlugin extends Plugin {
     delete data["defaultRegion"];
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
+    // Own copy: the default is a shared constant, and editors push into lists.
+    // (Kept only as the fallback palettes are filled from; see getPathTypes.)
+    this.settings.pathTypes = clonePathTypes(this.settings.pathTypes ?? DEFAULT_PATH_TYPES);
 
     // Deep-clone the maps array so mutations to settings.maps never alias DEFAULT_SETTINGS.maps.
     // Object.assign does a shallow copy, so on first run (data===null) settings.maps IS
@@ -589,6 +594,16 @@ export default class HexmakerPlugin extends Plugin {
     if (firstLevel || firstExpanded || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
+  /**
+   * Settings go to data.json without the paths of maps whose note holds them
+   * (MapStore.holdsPaths): each map's roads and rivers live only in its map
+   * note, which a person can read and edit. Maps not yet in a note keep them.
+   */
+  async saveData(data: unknown): Promise<void> {
+    if (data !== this.settings || !this.mapStore?.isReady()) return super.saveData(data);
+    return super.saveData(withoutNotePaths(this.settings, (name) => this.mapStore.holdsPaths(name)));
+  }
+
   async saveSettings() {
     this.settings.savedWith = pluginVersion(this);
     await this.saveData(this.settings);
@@ -610,6 +625,9 @@ export default class HexmakerPlugin extends Plugin {
   // the synced state without a manual Obsidian restart.
   async onExternalSettingsChange(): Promise<void> {
     await this.loadSettings();
+    // Map notes hold paths and map settings; the new data.json doesn't win.
+    // Queued before any sync, so nothing writes the bare copy over a note.
+    void this.mapStore.reloadFromNotes();
     // data.json carries a cached copy of the palettes; the notes win.
     await this.paletteStore.reload();
     this.loadAvailableIcons();
@@ -1825,8 +1843,37 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /**
+   * Path types maps on this palette can draw, in picker order: the palette's
+   * own list (the live array, so editors can change it in place), a preset's
+   * when it isn't installed, else the old plugin-wide list or Road and River.
+   */
+  getPathTypes(paletteName: string | undefined): PathType[] {
+    const pal = paletteName ? this.getPaletteByName(paletteName) : this.settings.terrainPalettes[0];
+    const fallback = this.settings.pathTypes?.length ? this.settings.pathTypes : DEFAULT_PATH_TYPES;
+    if (pal) return (pal.pathTypes ??= clonePathTypes(fallback));
+    return (paletteName ? getPreset(paletteName)?.pathTypes : undefined) ?? fallback;
+  }
+
+  /** The palette a map actually uses: its own when installed, else the first. */
+  mapPaletteName(mapName: string | undefined): string {
+    const map = mapName ? this.getMap(mapName) : undefined;
+    if (map?.paletteName && this.getPaletteByName(map.paletteName)) return map.paletteName;
+    return this.settings.terrainPalettes[0]?.name ?? "";
+  }
+
+  /** Path types for a map: its palette's (see getPathTypes). */
+  getMapPathTypes(mapName: string | undefined): PathType[] {
+    return this.getPathTypes(this.mapPaletteName(mapName));
+  }
+
+  /** Maps whose palette is `paletteName` (see mapPaletteName). */
+  mapsOnPalette(paletteName: string): MapData[] {
+    return this.settings.maps.filter((m) => this.mapPaletteName(m.name) === paletteName);
+  }
+
+  /**
    * Add a copy of a built-in preset as a new palette (a unique name is chosen
-   * if the preset's name is taken) and merge the preset's path types. Saves;
+   * if the preset's name is taken), with the preset's path types. Saves;
    * the palette note is written by the sync that follows. Returns the new
    * palette's name.
    */
@@ -1839,7 +1886,6 @@ export default class HexmakerPlugin extends Plugin {
     );
     const palette = presetToPalette(preset, name);
     this.settings.terrainPalettes.push(palette);
-    const added = mergePathTypes(this.settings.pathTypes, preset.pathTypes);
     await this.saveSettings();
     // Give the new terrains their description/encounters tables when the
     // vault uses terrain tables, so a submap's hexes get an encounters
@@ -1849,10 +1895,7 @@ export default class HexmakerPlugin extends Plugin {
     if (this.app.vault.getAbstractFileByPath(tables ? `${tables}/terrain` : "terrain")) {
       await this.ensureTerrainTables(palette.terrains);
     }
-    new Notice(
-      `Added palette "${name}"` +
-        (added.length ? ` and path types ${added.join(", ")}.` : "."),
-    );
+    new Notice(`Added palette "${name}".`);
     return name;
   }
 

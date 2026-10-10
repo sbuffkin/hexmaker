@@ -52,6 +52,7 @@ import { usedTerrainEntries } from "../hex-map/terrainLegend";
 import { hexNameTone } from "../hex-map/hexNameLayer";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
 import { getIconUrl, normalizeFolder } from "../utils";
+import { UNKNOWN_PATH_TYPE } from "../constants";
 import { drawPatternTile } from "../overlayPatterns";
 import { coordHaloColor, pngCoordFontFamily, pngCoordFontPx, pngCoordY } from "../coordStyle";
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -498,11 +499,17 @@ export async function renderMapToPngBlob(
   // parallel lanes so a road and a river on the same hexes render side by side
   // (issue #30), matching HexMapView's on-screen behaviour.
   if (showPaths) {
-    const renderables = plugin.settings.pathTypes.flatMap((pt) =>
+    const types = plugin.getMapPathTypes(map.name);
+    const renderables = types.flatMap((pt) =>
       map.pathChains
         .filter((c) => c.typeName === pt.name)
         .map((chain) => ({ chain, pt })),
     );
+    // Paths whose type isn't in the palette still print, plain grey (as on screen).
+    const known = new Set(types.map((t) => t.name));
+    for (const chain of map.pathChains) {
+      if (!known.has(chain.typeName)) renderables.push({ chain, pt: { ...UNKNOWN_PATH_TYPE, name: chain.typeName } });
+    }
     const laneOffset = computeLaneOffsets(
       renderables.map((r) => ({
         hexes: r.chain.hexes,

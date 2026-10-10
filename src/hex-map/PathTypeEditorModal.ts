@@ -18,6 +18,8 @@ export class PathTypeEditorModal extends HexmakerModal {
 	constructor(
 		app: App,
 		private plugin: HexmakerPlugin,
+		/** The palette this type belongs to; only maps on it are touched. */
+		private paletteName: string,
 		private entry: PathType,
 		private onSave: () => void,
 		private onDelete: () => void,
@@ -138,7 +140,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 		deleteBtn.addEventListener("click", () => {
 			if (confirmDiv) { confirmDiv.remove(); confirmDiv = null; return; }
 
-			const chainCount = this.plugin.settings.maps.reduce(
+			const chainCount = this.plugin.mapsOnPalette(this.paletteName).reduce(
 				(sum, r) => sum + r.pathChains.filter(c => c.typeName === this.originalName).length,
 				0,
 			);
@@ -186,7 +188,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 
 		// If name changed, update all pathChain typeName refs
 		if (nameChanged) {
-			for (const region of this.plugin.settings.maps) {
+			for (const region of this.plugin.mapsOnPalette(this.paletteName)) {
 				for (const chain of region.pathChains) {
 					if (chain.typeName === this.originalName) chain.typeName = this.pendingName;
 				}
@@ -201,12 +203,13 @@ export class PathTypeEditorModal extends HexmakerModal {
 		if (this.savedOrDeleted) return;
 		this.savedOrDeleted = true;
 
-		// Remove from pathTypes
-		const idx = this.plugin.settings.pathTypes.indexOf(this.entry);
-		if (idx !== -1) this.plugin.settings.pathTypes.splice(idx, 1);
+		// Remove from the palette's path types
+		const list = this.plugin.getPathTypes(this.paletteName);
+		const idx = list.indexOf(this.entry);
+		if (idx !== -1) list.splice(idx, 1);
 
-		// Remove all matching chains
-		for (const region of this.plugin.settings.maps) {
+		// Remove matching chains on maps that use this palette
+		for (const region of this.plugin.mapsOnPalette(this.paletteName)) {
 			region.pathChains = region.pathChains.filter(c => c.typeName !== this.originalName);
 		}
 

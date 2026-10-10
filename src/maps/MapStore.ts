@@ -182,6 +182,30 @@ export class MapStore {
     return this.plugin.settings.maps.filter((m) => !seen.has(m.name) && !!seen.add(m.name));
   }
 
+  /**
+   * This map's note is loaded and readable, so it holds the map's paths and
+   * data.json needn't (see HexmakerPlugin.saveData).
+   */
+  holdsPaths(name: string): boolean {
+    return this.ready && this.lastKey.has(name) && !this.broken.has(name);
+  }
+
+  /**
+   * data.json was replaced from outside (Obsidian Sync from another device):
+   * its map entries are fresh objects without paths, so put every readable
+   * note's settings and paths back on them before anything syncs. The notes
+   * win, as on startup.
+   */
+  reloadFromNotes(): Promise<void> {
+    if (!this.ready) return this.queue;
+    return this.enqueue(async () => {
+      for (const map of this.uniqueMaps()) {
+        if (!this.broken.has(map.name)) await this.loadMap(map);
+      }
+      this.plugin.refreshHexMap();
+    });
+  }
+
   /** Settings changed (saveSettings): write notes whose data differs. */
   sync(): Promise<void> {
     if (!this.ready) return this.queue;
@@ -453,6 +477,19 @@ export class MapStore {
       return false;
     }
   }
+}
+
+/**
+ * Settings as written to data.json: maps whose note holds their paths
+ * (`holds`) go without `pathChains`. Everything else is shared, not copied.
+ */
+export function withoutNotePaths<S extends { maps: MapData[] }>(settings: S, holds: (name: string) => boolean): S {
+  const maps = settings.maps.map((m) => {
+    if (!holds(m.name)) return m;
+    const { pathChains: _paths, ...rest } = m;
+    return rest as MapData;
+  });
+  return { ...settings, maps };
 }
 
 /** The fields of `a` that `like` has, for comparing partial hex data. */

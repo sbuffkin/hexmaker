@@ -15,10 +15,10 @@ import {
 	PALETTE_PRESETS,
 	SPACE_PATH_TYPES,
 	SPACE_SECTOR_PALETTE_NAME,
-	mergePathTypes,
 	presetToPalette,
 	uniquePaletteName,
 } from "../src/palettes/presets";
+import { parsePathTypes } from "../src/palettes/pathTypeTable";
 import { PaletteStore } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { iconLabel, iconPack } from "../src/utils";
@@ -91,9 +91,10 @@ describe("palette notes", () => {
 		expect(parsePaletteNote(updated)).toEqual([{ name: "nebula", color: "#3b2a5c" }]);
 	});
 
-	it("builds a fresh note when updating content that has no table", () => {
+	it("adds a table to a note that has none, keeping its text", () => {
 		const updated = updatePaletteNote("random text", SAMPLE);
 		expect(parsePaletteNote(updated)).toEqual(SAMPLE);
+		expect(updated).toContain("random text");
 	});
 
 	it("makes palette names safe file names", () => {
@@ -149,12 +150,13 @@ describe("palette presets", () => {
 		expect(uniquePaletteName("X", ["X", "X 2"])).toBe("X 3");
 	});
 
-	it("mergePathTypes adds only missing path types", () => {
-		const existing: PathType[] = [{ name: "jump route", color: "#000", width: 1, lineStyle: "solid", routing: "through" }];
-		const added = mergePathTypes(existing, SPACE_PATH_TYPES);
-		expect(added).toEqual(["Trade route"]);
-		expect(existing.map((p) => p.name)).toEqual(["jump route", "Trade route"]);
-		expect(mergePathTypes(existing, SPACE_PATH_TYPES)).toEqual([]);
+	it("an installed preset carries its own path types (a copy), others get Road and River", () => {
+		const sector = presetToPalette(PALETTE_PRESETS.find((p) => p.name === SPACE_SECTOR_PALETTE_NAME)!);
+		expect(sector.pathTypes!.map((p) => p.name)).toEqual(SPACE_PATH_TYPES.map((p) => p.name));
+		sector.pathTypes![0].color = "#000000";
+		expect(SPACE_PATH_TYPES[0].color).not.toBe("#000000");
+		const plain = presetToPalette(PALETTE_PRESETS.find((p) => !p.pathTypes)!);
+		expect(plain.pathTypes!.map((p) => p.name)).toEqual(["Road", "River"]);
 	});
 });
 
@@ -465,5 +467,95 @@ describe("PaletteStore", () => {
 		const c = makeHarness({ palettesFolder: "rpg/pal" });
 		await c.store.init();
 		expect([...c.vault.files.keys()].every((p) => p.startsWith("rpg/pal/"))).toBe(true);
+	});
+});
+
+describe("PaletteStore: path types live in palettes", () => {
+	it("first load gives every palette ALL the old plugin-wide path types, written as a table in its note", async () => {
+		const custom = { name: "Trail", color: "#8b5a2b", width: 2, lineStyle: "dashed" as const, routing: "through" as const };
+		const h = makeHarness({ pathTypes: [...DEFAULT_SETTINGS.pathTypes, custom] });
+		await h.store.init();
+		for (const pal of h.settings.terrainPalettes) {
+			expect(pal.pathTypes!.map((x) => x.name)).toEqual(["Road", "River", "Trail"]);
+			const note = h.vault.files.get(`world/palettes/${pal.name}.md`)!;
+			expect(parsePathTypes(note)!.types.map((x) => x.name)).toEqual(["Road", "River", "Trail"]);
+		}
+		// Each palette has its own copy.
+		h.settings.terrainPalettes[0].pathTypes![0].color = "#000000";
+		expect(h.settings.terrainPalettes[1].pathTypes![0].color).not.toBe("#000000");
+	});
+
+	it("a hand edit to the Path types table reaches the palette", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, h.vault.files.get(p)!.replace("| River | #3b82f6 | 3 |", "| Stream | #3b82f6 | 2 |"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.pathTypes!.map((x) => x.name)).toEqual(["Road", "Stream"]);
+		expect(pal.pathTypes![1].width).toBe(2);
+	});
+
+	it("a slip that removes the Path types table keeps the types and writes the table back", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		h.vault.files.set(p, h.vault.files.get(p)!.replace("| Path | Color |", "| Pathh Colr |"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		expect(pal.pathTypes!.map((x) => x.name)).toEqual(["Road", "River"]);
+		pal.terrains[0].color = "#000002"; // any in-app edit triggers a rewrite
+		await h.store.sync();
+		expect(parsePathTypes(h.vault.files.get(p)!)!.types.map((x) => x.name)).toEqual(["Road", "River"]);
+	});
+});
+
+describe("PaletteStore: hand edits are never overwritten", () => {
+	it("a terrain table that stops parsing is left alone until it's fixed", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		const broken = h.vault.files.get(p)!.replace("| Terrain | Color |", "| Terrain | Colour hex |") + "\nMy notes.";
+		h.vault.files.set(p, broken);
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		// An unrelated in-app change syncs every palette: this note must not be rebuilt.
+		h.settings.terrainPalettes.find((x) => x.name === "Limited")!.terrains[0].color = "#000003";
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toBe(broken);
+		// Fixed by hand: read again, and in-app edits write again.
+		h.vault.files.set(p, broken.replace("Colour hex", "Color"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		h.settings.terrainPalettes.find((x) => x.name === "Limited")!.terrains[0].color = "#000004";
+		await h.store.sync();
+		expect(h.vault.files.get(p)).toContain("#000004");
+		expect(h.vault.files.get(p)).toContain("My notes.");
+	});
+
+	it("columns the user adds to the terrain table survive a rewrite", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const p = "world/palettes/Limited.md";
+		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
+		// Add a "Notes" column by hand, with a note on the first terrain.
+		const lines = h.vault.files.get(p)!.split("\n");
+		const head = lines.findIndex((l) => l.startsWith("| Terrain |"));
+		lines[head] += " Notes |";
+		lines[head + 1] += " --- |";
+		lines[head + 2] += " windy |";
+		for (let i = head + 3; lines[i]?.startsWith("|"); i++) lines[i] += "  |";
+		h.vault.files.set(p, lines.join("\n"));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		pal.terrains[0].color = "#000005";
+		await h.store.sync();
+		const out = h.vault.files.get(p)!.split("\n");
+		expect(out.find((l) => l.startsWith("| Terrain |"))).toContain("| Notes |");
+		const row = out.find((l) => l.startsWith(`| ${pal.terrains[0].name} |`))!;
+		expect(row).toContain("#000005");
+		expect(row.endsWith("| windy |")).toBe(true);
 	});
 });

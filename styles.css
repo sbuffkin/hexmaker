@@ -7647,3 +7647,34 @@ button.duckmage-terrain-legend-chip {
     width: 70px;
     margin-right: 6px;
 }
+
+/* Palette editor: the palette's path types (src/palettes/PaletteEditorView.ts). */
+.duckmage-pe-path-types {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0.4em 0 0.6em;
+}
+
+.duckmage-pe-path-type {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+}
+
+.duckmage-pe-path-type:hover,
+.duckmage-pe-path-type:focus-visible {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-pe-path-type-name {
+    font-weight: 600;
+}
+
+.duckmage-pe-path-type-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}

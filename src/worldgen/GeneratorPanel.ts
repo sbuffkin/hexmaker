@@ -780,7 +780,7 @@ export class GeneratorPanel {
       lastDraw = (highlight?: string) => {
         // Draw at the side column's device-pixel width so it stays sharp when stretched.
         const dpr = activeWindow.devicePixelRatio || 1;
-        drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin),
+        drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin, GeneratorPanel.paletteName),
           Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight, { shadow });
       };
       lastDraw(hoveredRoute);
@@ -923,7 +923,7 @@ export class GeneratorPanel {
             new Notice(result.error);
             return;
           }
-          const { chains, missing } = toPathChains(this.plugin, r.paths, model);
+          const { chains, missing } = toPathChains(this.plugin, r.paths, model, this.plugin.mapPaletteName(result.name));
           const created = this.plugin.getMap(result.name);
           if (created && chains.length) {
             created.pathChains = [...created.pathChains, ...chains];
@@ -1159,8 +1159,8 @@ export class GeneratorPanel {
         table.toggleClass("is-off", !v);
       });
       table.toggleClass("is-off", !pathsEnabled(model));
-      const mapTypes = (this.plugin.settings.pathTypes ?? []).map((t) => t.name);
-      const typeColors = pathColors(this.plugin);
+      const mapTypes = this.plugin.getPathTypes(GeneratorPanel.paletteName).map((t) => t.name);
+      const typeColors = pathColors(this.plugin, GeneratorPanel.paletteName);
 
       // One collapsible group per path type, most common type first.
       const byType = new Map<string, PathFeature[]>();

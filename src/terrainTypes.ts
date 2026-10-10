@@ -96,6 +96,22 @@ export function effectiveTerrainType(t: { type?: string; name?: string; category
   return t.name ? inferTerrainType(t.name, t.category) : undefined;
 }
 
+/**
+ * A terrain type as typed by a person in a palette note: an id in any case
+ * ("Deep-Water"), a label ("Deep water", "Snow / ice", "snow"), or the id
+ * with spaces ("deep water"). Returns the id, or undefined if none matches.
+ */
+export function normalizeTerrainType(raw: string | undefined): string | undefined {
+  const v = (raw ?? "").trim().toLowerCase();
+  if (!v) return undefined;
+  const dashed = v.replace(/[\s_]+/g, "-");
+  for (const t of TERRAIN_TYPES) {
+    const label = t.label.toLowerCase();
+    if (t.id === v || t.id === dashed || label === v || label.split(/\s*\/\s*/).includes(v)) return t.id;
+  }
+  return undefined;
+}
+
 export function isTerrainType(id: string | undefined): boolean {
   return !!id && BY_ID.has(id);
 }

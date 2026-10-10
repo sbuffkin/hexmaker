@@ -464,21 +464,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
         items: [
           {
             name: "",
-            desc: "Path types define the available drawing tools (roads, rivers, etc.). Edit them from the path tool on the hex map.",
+            desc: "Roads, rivers and other path types belong to palettes. Edit them in the table in each palette note, or with the edit button in a map's path picker.",
             searchable: false,
           },
-          ...this.plugin.settings.pathTypes.map(
-            (pt): LocalSettingDefinition => ({
-              name: pt.name,
-              desc: `${pt.width}px, ${pt.lineStyle}, ${pt.routing}`,
-              render: (setting: Setting) => {
-                const swatch = setting.controlEl.createSpan({
-                  cls: "duckmage-path-type-swatch",
-                });
-                swatch.style.backgroundColor = pt.color;
-              },
-            }),
-          ),
         ],
       },
       folderText(
@@ -1221,18 +1209,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Path types").setHeading();
     containerEl.createEl("p", {
-      text: "Path types define the available drawing tools (roads, rivers, etc.). Edit them from the path tool on the hex map.",
+      text: "Roads, rivers and other path types belong to palettes. Edit them in the table in each palette note, or with the edit button in a map's path picker.",
       cls: "setting-item-description",
     });
-    const pathList = containerEl.createDiv({ cls: "duckmage-path-type-list" });
-    for (const pt of this.plugin.settings.pathTypes) {
-      const row = pathList.createDiv({ cls: "duckmage-path-type-row" });
-      const swatch = row.createSpan({ cls: "duckmage-path-type-swatch" });
-      swatch.style.backgroundColor = pt.color;
-      row.createSpan({
-        text: `${pt.name}  (${pt.width}px, ${pt.lineStyle}, ${pt.routing})`,
-      });
-    }
 
     new Setting(containerEl)
       .setName("World notes folder")

@@ -354,7 +354,7 @@ export async function createWalkRegion(
   if ("error" in made) return made;
   const map = plugin.getMap(made.name);
   if (map) {
-    const { chains } = toPathChains(plugin, r.paths, plan.model);
+    const { chains } = toPathChains(plugin, r.paths, plan.model, plugin.mapPaletteName(made.name));
     if (chains.length) map.pathChains = [...map.pathChains, ...chains];
     map.biome = { ...plan.biome };
   }
