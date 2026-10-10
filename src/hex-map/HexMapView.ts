@@ -217,6 +217,8 @@ export class HexMapView extends ItemView {
   private modeBarTextEl: HTMLElement | null = null;
   /** Time of the last right-click while a tool was active (double-right-click exits). */
   private lastToolContextMenuAt = 0;
+  /** The open (or last) right-click tool menu, so Esc can close it first. */
+  private painterMenu: PainterContextMenu | null = null;
   private pathToolbarBtn: HTMLButtonElement | null = null;
   private pathBtnSwatch: HTMLElement | null = null;
   private terrainToolbarBtn: HTMLButtonElement | null = null;
@@ -634,6 +636,12 @@ export class HexMapView extends ItemView {
 
     // Esc leaves the active tool (modals and menus handle their own Esc first).
     this.scope.register([], "Escape", () => {
+      // An open tool menu takes the first Esc (Obsidian's keymap sees the
+      // key before the menu's own listener would).
+      if (this.painterMenu?.isOpen()) {
+        this.painterMenu.close();
+        return false;
+      }
       if (this.drawingMode === null) return true;
       this.exitCurrentMode();
       return false;
@@ -899,7 +907,7 @@ export class HexMapView extends ItemView {
         const isDouble = now - this.lastToolContextMenuAt < 400;
         this.lastToolContextMenuAt = isDouble ? 0 : now;
         if (isDouble) {
-          activeDocument.querySelectorAll(".duckmage-painter-ctx-menu").forEach((m) => m.remove());
+          this.painterMenu?.close();
           this.exitCurrentMode();
           return;
         }
@@ -1594,7 +1602,9 @@ export class HexMapView extends ItemView {
     }
     // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
 
-    new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra).open(clientX, clientY);
+    this.painterMenu?.close();
+    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra);
+    this.painterMenu.open(clientX, clientY);
   }
 
   /**

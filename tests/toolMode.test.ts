@@ -121,3 +121,9 @@ describe("Path chain upkeep (fresh-eyes T7/T2 follow-up)", () => {
 		expect(method("onHexPathDeleteClick")).toMatch(/const stepBack = pos === chain\.hexes\.length && chain\.hexes\.length > 0;/);
 	});
 });
+
+describe("Esc with the tool menu open (fresh-eyes T3 follow-up)", () => {
+	it("closes the menu first and keeps the tool", () => {
+		expect(viewSrc).toMatch(/"Escape", \(\) => \{[\s\S]{0,300}this\.painterMenu\?\.isOpen\(\)[\s\S]{0,80}this\.painterMenu\.close\(\);\s*return false;/);
+	});
+});
