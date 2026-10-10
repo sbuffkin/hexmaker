@@ -3,6 +3,7 @@ import expect from "expect";
 import { BASE_TERRAIN_HELP, BASE_TERRAIN_NONE_LABEL } from "../src/worldgen/NewMapSetupModal";
 import { TERRAIN_TABLES_SUMMARY } from "../src/wizardText";
 import { emptyTableMessage } from "../src/random-tables/randomTable";
+import { makeTableTemplate } from "../src/utils";
 
 /** Fresh-eyes round 4 (setup, new map, maps modal): wording that must stay true. */
 
@@ -28,7 +29,11 @@ describe("Wizard finish summary: terrain tables", () => {
 	});
 
 	it("rolling one of those tables still explains it has no entries yet (E6)", () => {
-		const setupTable = "---\ndice: 20\n---\n\n| Result | Weight |\n|--------|--------|\n|  | 1 |\n";
+		// Both what setup writes now (| d20 | Result | Weight |) and what older versions wrote.
+		const setupTable = makeTableTemplate(20);
+		expect(setupTable).toContain("| d20 | Result | Weight |");
 		expect(emptyTableMessage(setupTable)).toMatch(/no entries yet/);
+		const oldSetupTable = "---\ndice: 20\n---\n\n| Result | Weight |\n|--------|--------|\n|  | 1 |\n";
+		expect(emptyTableMessage(oldSetupTable)).toMatch(/no entries yet/);
 	});
 });

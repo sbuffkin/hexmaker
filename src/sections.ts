@@ -1,6 +1,80 @@
 import { App, TFile } from "obsidian";
-import { escapeRegex } from "./textUtils";
 import { splitGuidance } from "./hexGuidance";
+
+/**
+ * Other names people give the plugin's sections. A note's own heading is
+ * matched to a section by these, in any case, at any heading level from ##
+ * to ###### (# is the note's title), with a trailing colon or "and" for "&"
+ * allowed, so a hand-written "## Encounters" or "#### Rumours:" is the
+ * section the plugin shows and writes to, not a duplicate it appends.
+ */
+const SECTION_ALIASES: Record<string, string[]> = {
+	"encounters table": ["encounters", "encounter table", "encounter", "random encounters"],
+	"hooks & rumors": ["hooks & rumours", "rumors", "rumours", "hooks", "rumors & hooks", "rumours & hooks"],
+	"description": ["desc"],
+	"landmark": ["landmarks"],
+	"towns": ["town", "settlements", "settlement"],
+	"dungeons": ["dungeon"],
+	"features": ["feature"],
+	"quests": ["quest"],
+	"factions": ["faction"],
+};
+
+const normalizeHeading = (s: string): string =>
+	s.trim().replace(/[:：]+$/, "").replace(/\s+and\s+/gi, " & ").replace(/\s+/g, " ").toLowerCase();
+
+const ALIAS_TO_SECTION = new Map<string, string>();
+for (const [section, aliases] of Object.entries(SECTION_ALIASES)) for (const a of aliases) ALIAS_TO_SECTION.set(a, section);
+
+/** The section a heading names: one of the plugin's (by alias) or the heading itself, lowercased. */
+export function canonicalSection(heading: string): string {
+	const h = normalizeHeading(heading);
+	return ALIAS_TO_SECTION.get(h) ?? h;
+}
+
+const HEADING = /^(#{2,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
+
+interface HeadingMatch {
+	/** Offset of the heading line. */
+	index: number;
+	/** Offset just past the heading text (where the section body starts). */
+	end: number;
+	/** The heading as written. */
+	text: string;
+}
+
+/** Every section heading in the note (## to ######), in order. */
+export function sectionHeadings(content: string): HeadingMatch[] {
+	const out: HeadingMatch[] = [];
+	const re = new RegExp(HEADING.source, "gm");
+	let m: RegExpExecArray | null;
+	while ((m = re.exec(content)) !== null) out.push({ index: m.index, end: m.index + m[0].length, text: m[2] });
+	return out;
+}
+
+/**
+ * The heading naming `section` (see canonicalSection), or null. A heading
+ * with the section's own name wins over an alias: a note with both an old
+ * template's "### encounters" and the plugin's "### Encounters Table" reads
+ * and writes the latter (the former shows as a section of its own).
+ */
+export function findSectionHeading(content: string, section: string): HeadingMatch | null {
+	const want = canonicalSection(section);
+	const asWritten = normalizeHeading(section);
+	const matches = sectionHeadings(content).filter((h) => canonicalSection(h.text) === want);
+	// The heading exactly as asked for (an aliased section shown under its own
+	// name), then the section's own name, then the first alias.
+	return matches.find((h) => normalizeHeading(h.text) === asWritten)
+		?? matches.find((h) => normalizeHeading(h.text) === want)
+		?? matches[0]
+		?? null;
+}
+
+/** Where a section's body ends: the next heading of any level, a --- rule, or the end. */
+function sectionEndAfter(content: string, afterHeading: number): number {
+	const next = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
+	return next ? afterHeading + next.index : content.length;
+}
 
 /** Insert a wiki-link under the named ### section, creating the section if absent. */
 export async function addLinkToSection(app: App, filePath: string, section: string, linkText: string): Promise<void> {
@@ -14,12 +88,11 @@ export async function addLinkToSection(app: App, filePath: string, section: stri
  * heading is appended if missing). Unchanged if the link is already there.
  */
 export function insertLinkInSection(content: string, section: string, linkText: string): string {
-	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-	const match = headingRegex.exec(content);
+	const match = findSectionHeading(content, section);
 	if (!match) {
 		return separateRulesFromText(content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`);
 	}
-	const afterHeading = match.index + match[0].length;
+	const afterHeading = match.end;
 	const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
 	const sectionContent = content.slice(afterHeading, sectionEnd);
@@ -72,10 +145,9 @@ export async function removeLinkFromSection(app: App, filePath: string, section:
 	const file = app.vault.getAbstractFileByPath(filePath);
 	if (!(file instanceof TFile)) return;
 	await app.vault.process(file, (content) => {
-		const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-		const match = headingRegex.exec(content);
+		const match = findSectionHeading(content, section);
 		if (!match) return content;
-		const afterHeading = match.index + match[0].length;
+		const afterHeading = match.end;
 		const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 		const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
 		const escapedTarget = linkTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -92,11 +164,10 @@ export async function getLinksInSection(app: App, filePath: string, section: str
 	if (!(file instanceof TFile)) return [];
 	const content = await app.vault.read(file);
 
-	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-	const match = headingRegex.exec(content);
+	const match = findSectionHeading(content, section);
 	if (!match) return [];
 
-	const afterHeading = match.index + match[0].length;
+	const afterHeading = match.end;
 	const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
 	const sectionContent = content.slice(afterHeading, sectionEnd);
@@ -116,11 +187,10 @@ export async function getSectionContent(app: App, filePath: string, section: str
 	if (!(file instanceof TFile)) return "";
 	const content = await app.vault.read(file);
 
-	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-	const match = headingRegex.exec(content);
+	const match = findSectionHeading(content, section);
 	if (!match) return "";
 
-	const afterHeading = match.index + match[0].length;
+	const afterHeading = match.end;
 	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
 	// The template's guidance prompt under the heading isn't section text.
@@ -132,36 +202,40 @@ export async function getAllSectionData(
 	app: App,
 	filePath: string,
 	preloadedContent?: string,
-): Promise<{ text: Map<string, string>; links: Map<string, string[]> }> {
+): Promise<{ text: Map<string, string>; links: Map<string, string[]>; headings: Map<string, string> }> {
 	const text  = new Map<string, string>();
 	const links = new Map<string, string[]>();
+	/** Section key → the heading as written in the note (for sections shown under their own name). */
+	const headings = new Map<string, string>();
 	const file = app.vault.getAbstractFileByPath(filePath);
-	if (!(file instanceof TFile)) return { text, links };
+	if (!(file instanceof TFile)) return { text, links, headings };
 	const content = preloadedContent ?? await app.vault.read(file);
 
-	// Find every ### heading and capture the body up to the next boundary
-	const headingRegex = /^###\s+(.+?)\s*$/gm;
-	const boundaryRegex = /\n(?:#{1,6} |-{3,})/m;
 	const linkRegex = /\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/g;
-	let m: RegExpExecArray | null;
-	while ((m = headingRegex.exec(content)) !== null) {
-		const name = m[1].toLowerCase();
-		const afterHeading = m.index + m[0].length;
-		const nextBoundary = boundaryRegex.exec(content.slice(afterHeading));
-		const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
-		const body = content.slice(afterHeading, sectionEnd);
-
-		// Collect wiki-links
+	const all = sectionHeadings(content);
+	// Per section, the heading the plugin reads and writes (findSectionHeading's
+	// choice); other headings that alias it are kept under their own names.
+	const primary = new Map<string, HeadingMatch>();
+	for (const h of all) {
+		const key = canonicalSection(h.text);
+		const cur = primary.get(key);
+		if (!cur || (normalizeHeading(cur.text) !== key && normalizeHeading(h.text) === key)) primary.set(key, h);
+	}
+	for (const h of all) {
+		const canon = canonicalSection(h.text);
+		const name = primary.get(canon) === h ? canon : normalizeHeading(h.text);
+		if (headings.has(name)) continue;
+		const body = content.slice(h.end, sectionEndAfter(content, h.end));
 		const sectionLinks: string[] = [];
 		let lm: RegExpExecArray | null;
 		const lr = new RegExp(linkRegex.source, "g");
 		while ((lm = lr.exec(body)) !== null) sectionLinks.push(lm[1]);
-
+		headings.set(name, h.text);
 		links.set(name, sectionLinks);
 		// The template's guidance prompt under the heading isn't section text.
 		text.set(name, splitGuidance(body).text.trim());
 	}
-	return { text, links };
+	return { text, links, headings };
 }
 
 /**
@@ -211,10 +285,9 @@ export async function setSectionContent(app: App, filePath: string, section: str
 
 /** Text of a named ### section in `content` (guidance prompt left out). */
 export function sectionText(content: string, section: string): string {
-	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-	const match = headingRegex.exec(content);
+	const match = findSectionHeading(content, section);
 	if (!match) return "";
-	const afterHeading = match.index + match[0].length;
+	const afterHeading = match.end;
 	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
 	return splitGuidance(content.slice(afterHeading, sectionEnd)).text.trim();
@@ -222,14 +295,13 @@ export function sectionText(content: string, section: string): string {
 
 /** Note text with the body of "### section" replaced (heading appended if missing). */
 export function replaceSectionText(content: string, section: string, newText: string): string {
-	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
-	const match = headingRegex.exec(content);
+	const match = findSectionHeading(content, section);
 	if (!match) {
 		return newText.trim()
 			? content.trimEnd() + `\n\n### ${section}\n${newText.trim()}\n`
 			: content;
 	}
-	const afterHeading = match.index + match[0].length;
+	const afterHeading = match.end;
 	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
 	// Keep the template's guidance prompt on top of the section.

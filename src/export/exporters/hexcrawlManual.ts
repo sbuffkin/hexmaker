@@ -17,7 +17,7 @@ import { renderMapToPngBlob } from "../mapPngRenderer";
 import { getAllSectionData } from "../../sections";
 import { getHexNameFromFile, getHexRegionFromFile, getTerrainFromFile } from "../../frontmatter";
 import { getIconUrl, normalizeFolder } from "../../utils";
-import { parseRandomTable, getDieRanges } from "../../random-tables/randomTable";
+import { parseRandomTable, resolveTable, rowOdds, dieLabel } from "../../random-tables/randomTable";
 import DEFAULT_HEX_TEMPLATE from "../../defaultHexTemplate.md";
 import {
   blobToDataUri,
@@ -269,11 +269,11 @@ export async function collectManualData(
     if (!(file instanceof TFile)) continue;
     const table = parseRandomTable(await app.vault.cachedRead(file));
     if (!table.entries.length || table.entries.every((e) => /^example result\b/i.test(e.result.trim()))) continue;
-    const total = table.entries.reduce((n, e) => n + e.weight, 0) || 1;
-    const ranges = table.dice > 0 ? getDieRanges(table) : table.entries.map((e) => `${Math.round((e.weight / total) * 100)}%`);
+    // The ranges stored in the note (what is rolled); % odds with no die.
+    const ranges = table.dice > 0 ? resolveTable(table).labels : rowOdds(table);
     tables.push({
       name: file.basename,
-      die: table.dice > 0 ? `d${table.dice}` : "",
+      die: dieLabel(table.dice),
       rows: table.entries.map((e, i) => ({ roll: ranges[i] ?? "", result: escapeHtml(tableResultText(e.result)) })),
       usedBy,
     });

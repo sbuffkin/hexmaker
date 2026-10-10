@@ -3744,6 +3744,40 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     margin-top: 4px;
 }
+.duckmage-table-editor-warning,
+.duckmage-rt-banner {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
+.duckmage-rt-banner-list {
+    margin: 0 0 4px;
+    padding-left: 18px;
+}
+.duckmage-rt-banner-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.duckmage-roll-face {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2px;
+}
+.duckmage-table-editor-range {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
 .duckmage-table-editor-footer {
     display: flex;
     justify-content: flex-end;
@@ -7886,4 +7920,35 @@ button.duckmage-terrain-legend-chip {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
     margin-bottom: 8px;
+}
+
+/* Hex editor: a "Terrain:" / "Region:" line in the note that disagrees with
+   the map (src/hexBodyFields.ts), with buttons to apply it either way. */
+.duckmage-editor-body-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.8em;
+    margin: 0 0 0.6em;
+    padding: 0.4em 0.6em;
+    border-left: 3px solid var(--color-orange);
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-small);
+}
+
+.duckmage-editor-body-field-actions {
+    display: flex;
+    gap: 0.4em;
+}
+
+.duckmage-editor-body-field-actions button {
+    font-size: var(--font-ui-smaller);
+}
+
+/* Hex editor: sections of the note the editor has no field for. */
+.duckmage-editor-other-sections > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin: 0.4em 0;
 }

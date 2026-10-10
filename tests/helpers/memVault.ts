@@ -93,6 +93,12 @@ export class MemVault {
 				read: async (f: TFile) => v.files.get(f.path) ?? "",
 				cachedRead: async (f: TFile) => v.files.get(f.path) ?? "",
 				modify: async (f: TFile, c: string) => { v.writes.push(f.path); v.put(f.path, c); },
+				process: async (f: TFile, fn: (c: string) => string) => {
+					const c = v.files.get(f.path) ?? "";
+					const next = fn(c);
+					if (next !== c) { v.writes.push(f.path); v.put(f.path, next); }
+					return next;
+				},
 				create: async (p: string, c: string) => {
 					if (v.files.has(p)) throw new Error("exists " + p);
 					v.writes.push(p);

@@ -1,7 +1,7 @@
 import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
-import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, toggleHiddenBadge } from "./linkBadges";
+import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
 
@@ -382,7 +382,7 @@ export class OverlayPanel extends HexSidePanel {
 
   private applyBadgeClasses(map: MapData): void {
     const show = map.showLinkBadges ?? true;
-    const hidden = new Set(map.hiddenLinkBadges ?? []);
+    const hidden = new Set(hiddenBadges(map));
     if (this.badgesCb) this.badgesCb.checked = show;
     const size = badgeSize(map.linkBadgeSize);
     for (const [s, b] of this.badgeSizeBtns) {

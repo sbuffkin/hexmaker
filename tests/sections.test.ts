@@ -11,8 +11,13 @@ import {
 	setSectionContent,
 	addBacklinkToFile,
 	separateRulesFromText,
+	canonicalSection,
+	insertLinkInSection,
+	replaceSectionText,
+	sectionText,
 } from "../src/sections";
 import { isGuidanceLine } from "../src/hexGuidance";
+import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../src/types";
 import { readFileSync } from "node:fs";
 
 /** Build a minimal mock App backed by an in-memory string. */
@@ -458,10 +463,29 @@ describe("the built-in hex template (src/defaultHexTemplate.md)", () => {
 			expect(above === undefined || above === "---" || /^#/.test(above)).toBe(true);
 		});
 		for (const h of ["description", "landmark", "hidden", "secret", "weather", "hooks & rumors"]) {
-			const at = lines.indexOf(`### ${h}`);
+			const at = lines.findIndex((l) => l.toLowerCase() === `### ${h}`);
 			expect(at).toBeGreaterThan(-1);
 			expect(isGuidanceLine(lines[at + 1])).toBe(true);
 		}
+	});
+
+	it("has every section the hex editor shows, in the editor's order, and nothing else", () => {
+		const headings = lines.filter((l) => /^###\s/.test(l)).map((l) => canonicalSection(l.replace(/^###\s+/, "")));
+		expect(headings).toEqual([
+			...TEXT_SECTIONS.map((s) => s.key),
+			...ROLLED_TEXT_SECTIONS.map((s) => s.key),
+			"encounters table", "towns", "dungeons", "quests", "factions", "features",
+		]);
+		expect(new Set(headings)).toEqual(new Set([
+			...TEXT_SECTIONS.map((s) => s.key as string),
+			...ROLLED_TEXT_SECTIONS.map((s) => s.key as string),
+			...LINK_SECTIONS.map((s) => s.toLowerCase()),
+		]));
+	});
+
+	it("carries the Map data callout and no Terrain / Region lines to fill in by hand", () => {
+		expect(template).toContain("> [!hexmaker] Map data");
+		expect(template).not.toMatch(/\*\*(Terrain|Region):\*\*/);
 	});
 
 	it("a fresh note from it has every text section empty", async () => {
@@ -541,5 +565,63 @@ describe("hex back-links are path-qualified (round 6 S2)", () => {
 		const at = src.indexOf("async createNewMap(");
 		const body = src.slice(at, src.indexOf("await this.saveSettings();", at));
 		expect(body).toContain("showGmLayer: false");
+	});
+});
+
+describe("sections as people write them", () => {
+	it("names a heading's section in any case, with aliases, a colon or 'and'", () => {
+		expect(canonicalSection("Encounters")).toBe("encounters table");
+		expect(canonicalSection("encounter table:")).toBe("encounters table");
+		expect(canonicalSection("Hooks and Rumours")).toBe("hooks & rumors");
+		expect(canonicalSection("  DESCRIPTION ")).toBe("description");
+		expect(canonicalSection("My own notes")).toBe("my own notes");
+	});
+
+	it("reads a section under any heading level from ## down, and its aliases", async () => {
+		const note = "# Hex 1, 2\n\n## Description\nA ruined tower.\n\n#### encounters\n- [[tables/wolves]]\n\n### Rumours:\nThe miller lies.\n";
+		const { app } = makeApp("h.md", note);
+		const data = await getAllSectionData(app as never, "h.md");
+		expect(data.text.get("description")).toBe("A ruined tower.");
+		expect(data.links.get("encounters table")).toEqual(["tables/wolves"]);
+		expect(data.text.get("hooks & rumors")).toBe("The miller lies.");
+		// The heading as written is kept, for sections shown under their own name.
+		expect(data.headings.get("hooks & rumors")).toBe("Rumours:");
+		// The title (#) is not a section.
+		expect(data.text.has("hex 1, 2")).toBe(false);
+	});
+
+	it("writes into the existing heading instead of appending a duplicate", () => {
+		const note = "## Encounters\n- [[tables/wolves]]\n\n## Description\nOld.\n";
+		const withLink = insertLinkInSection(note, "Encounters Table", "[[tables/bears]]");
+		expect(withLink).not.toContain("### Encounters Table");
+		expect(withLink).toContain("[[tables/bears]]");
+		const edited = replaceSectionText(note, "description", "New.");
+		expect(edited).toContain("## Description\nNew.");
+		expect(edited.match(/Description/g)).toHaveLength(1);
+		expect(sectionText(edited, "Description")).toBe("New.");
+	});
+
+	it("with an old 'encounters' and the plugin's 'Encounters Table', the latter is the section", async () => {
+		const note = "### encounters\n- **Table:** *(terrain table)*\n\n### Encounters Table\n\n[[tables/desert rocky]]\n";
+		const { app } = makeApp("h.md", note);
+		const data = await getAllSectionData(app as never, "h.md");
+		expect(data.links.get("encounters table")).toEqual(["tables/desert rocky"]);
+		// The old one is still there, under its own name.
+		expect(data.text.get("encounters")).toBe("- **Table:** *(terrain table)*");
+		// Writing each goes to its own heading.
+		const a = insertLinkInSection(note, "Encounters Table", "[[tables/wolves]]");
+		expect(a).toContain("### Encounters Table\n\n[[tables/desert rocky]]\n\n[[tables/wolves]]");
+		const b = replaceSectionText(note, "encounters", "Bandits at dusk.");
+		expect(sectionText(b, "encounters")).toBe("Bandits at dusk.");
+		expect(b).toContain("### Encounters Table\n\n[[tables/desert rocky]]");
+	});
+
+	it("keeps sections it doesn't know, readable by their own heading", async () => {
+		const note = "### description\nA.\n\n### Travel times\nTwo days to [[Brindle]].\n";
+		const { app } = makeApp("h.md", note);
+		const data = await getAllSectionData(app as never, "h.md");
+		expect(data.text.get("travel times")).toBe("Two days to [[Brindle]].");
+		expect(data.headings.get("travel times")).toBe("Travel times");
+		expect(sectionText(replaceSectionText(note, "Travel times", "Three days."), "travel times")).toBe("Three days.");
 	});
 });

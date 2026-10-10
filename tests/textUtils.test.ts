@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { escapeRegex, splitTableRow, escapeTableCell, fillPlaceholders, placeholderPattern } from "../src/textUtils";
 import { fillTemplate } from "../src/export/exporters/workflow";
-import { parseRandomTable } from "../src/random-tables/randomTable";
+import { parseRandomTable, writeRollTable } from "../src/random-tables/randomTable";
 import { parseWorkflow, buildWorkflowContent, type Workflow } from "../src/random-tables/workflow";
 
 describe("escapeRegex", () => {
@@ -87,6 +87,14 @@ describe("tables with pipes (regressions)", () => {
 			{ result: "fish | chips", weight: 2 },
 			{ result: "Goblin Camp", weight: 1, isLink: true },
 		]);
+	});
+
+	it("adding roll ranges keeps escaped pipes and aliases byte for byte", () => {
+		const content = ["---", "dice: 6", "---", "", "| Result | Weight |", "|---|---|", "| fish \\| chips | 2 |", "| [[Goblin Camp\\|the camp]] | 1 |", ""].join("\n");
+		const t = parseRandomTable(content);
+		const out = writeRollTable(content, { dice: 6, rows: t.entries.map((entry, source) => ({ entry, source })), ranges: "keep" });
+		expect(out).toContain("| 1–4 | fish \\| chips | 2 |\n| 5–6 | [[Goblin Camp\\|the camp]] | 1 |");
+		expect(parseRandomTable(out).entries.map((e) => e.result)).toEqual(["fish | chips", "Goblin Camp"]);
 	});
 
 	it("workflow labels with pipes survive save and load", () => {
