@@ -19,6 +19,8 @@ import {
   learnModel,
   mergeModels,
   modelToMarkdown,
+  refreshShareColumn,
+  missingTerrains,
   parseModelMarkdown,
   isModelMarkdown,
   restrictModel,
@@ -80,6 +82,19 @@ export function generatorFitsPalette(model: HexWfcModel, paletteTerrains: string
   const names = new Set(paletteTerrains);
   const placeable = model.terrains.filter((t) => t.weight > 0);
   return placeable.length > 0 && placeable.every((t) => names.has(t.name));
+}
+
+/**
+ * What a palette lacks for this generator, as one sentence naming the
+ * terrains and where the generator uses them (G2), or "" when nothing is
+ * missing. Generating leaves those out, so the message says so.
+ */
+export function paletteGapMessage(model: HexWfcModel, paletteTerrains: string[], paletteName?: string): string {
+  const missing = missingTerrains(model, paletteTerrains);
+  if (!missing.length) return "";
+  const list = missing.map((m) => `${m.name} (${m.where.join(", ")})`).join("; ");
+  const where = paletteName ? `palette ${paletteName}` : "this palette";
+  return `Not in ${where}: ${list}. Generating leaves ${missing.length === 1 ? "it" : "them"} out.`;
 }
 
 export function mapStagger(plugin: HexmakerPlugin, mapName: string): "odd" | "even" {
@@ -360,6 +375,20 @@ export async function saveGeneratorSettings(
     }
     fm[VERSION_KEY] = pluginVersion(plugin);
   });
+  // A mix, counts or near change moves the derived Share column.
+  await refreshGeneratorShares(plugin, file);
+}
+
+/**
+ * Bring a generator note's derived Share column up to date (G1): after a
+ * settings change, and when the generator is shown (so hand edits to the
+ * frontmatter or weights show up). Reads first and writes only on a change.
+ */
+export async function refreshGeneratorShares(plugin: HexmakerPlugin, file: TFile): Promise<boolean> {
+  const text = await plugin.app.vault.read(file);
+  if (refreshShareColumn(text) === text) return false;
+  await plugin.app.vault.process(file, refreshShareColumn);
+  return true;
 }
 
 export interface GridSpec {
@@ -402,6 +431,7 @@ export function generateTerrain(
   seed: number,
   fixed?: Map<string, string>,
 ): SolveResult {
+  const gap = paletteGapMessage(model, paletteTerrains);
   let fitted = restrictModel(model, paletteTerrains);
   const unknown = new Set([...(fixed?.values() ?? [])].filter((t) => !fitted.terrains.some((e) => e.name === t)));
   if (unknown.size) {
@@ -415,7 +445,7 @@ export function generateTerrain(
       ],
     };
   }
-  return solve(fitted, {
+  const res = solve(fitted, {
     cols: grid.cols,
     rows: grid.rows,
     offset: grid.offset,
@@ -425,6 +455,9 @@ export function generateTerrain(
     fixed,
     ...(defaultImpassable(model) ? { impassable: defaultImpassable(model) } : {}),
   });
+  // Terrains the palette lacks were left out: say which (G2), not silently.
+  if (gap && res.ok) res.warnings.unshift(gap);
+  return res;
 }
 
 /**

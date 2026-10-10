@@ -2,6 +2,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { getTerrainFromFile } from "../frontmatter";
 import { hexCenter, hexNeighbors } from "../../packages/hex-wfc/src";
 import { sideOf, type ContextTerrain, type GenerationContext } from "./procedural/common";
+import { behaviourOf } from "./procedural/contextPaths";
 
 /**
  * Generation context for a submap of hex (x, y) on `mapName`: that hex's
@@ -43,14 +44,14 @@ export function buildSubmapContext(
   // Paths through this hex: where each comes in and goes out, so the
   // submap can carry the road / river across instead of losing it.
   const key = `${x}_${y}`;
-  const routingOf = new Map(plugin.getPathTypes(map.paletteName).map((p) => [p.name, p.routing]));
+  const typeOf = new Map(plugin.getPathTypes(map.paletteName).map((p) => [p.name, p]));
   for (const chain of map.pathChains ?? []) {
     chain.hexes.forEach((h, i) => {
       if (h !== key) return;
       const from = sideTo(chain.hexes[i - 1]);
       const to = sideTo(chain.hexes[i + 1]);
       if (!from && !to) return;
-      context.paths!.push({ type: chain.typeName, routing: routingOf.get(chain.typeName), from, to });
+      context.paths!.push({ type: chain.typeName, ...behaviourOf(typeOf.get(chain.typeName)), from, to });
     });
   }
   for (const [nx, ny] of hexNeighbors(x, y, orientation, stagger)) {

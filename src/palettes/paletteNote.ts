@@ -1,28 +1,35 @@
 import type { SubmapDefault, TerrainColor } from "../types";
-import { impassableCell, parseImpassableCell } from "../impassable";
-import { normalizeTerrainType } from "../terrainTypes";
+import { impassableNoteCell, parseImpassableCell } from "../impassable";
+import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
 
 // Plain-text palette notes.
 //
 // A palette is a markdown note whose basename is the palette name and whose
 // body holds one terrain per table row:
 //
-//   | Terrain | Color | Icon | Icon color | Category | Type |
-//   | --- | --- | --- | --- | --- | --- |
-//   | ocean | #29507f |  |  | sea | water |
+//   | Terrain | Color | Icon | Icon color | Category | Type | Impassable |
+//   | --- | --- | --- | --- | --- | --- | --- |
+//   | ocean | #29507f |  |  | sea | water | (yes) |
+//   | crags | #777777 |  |  |  | (mountains) | yes |
 //
 // Columns are matched by header name (case-insensitive, any order), so a
-// hand-edited or shared note only needs the Terrain and Color columns. An
-// optional Impassable column (yes / no) overrides the terrain type's default
-// for the path tool's auto-route (water types are impassable); it's only
-// written when some terrain overrides its default. Text
-// outside the table is the user's and is preserved when the plugin rewrites
-// the table after an in-app edit.
+// hand-edited or shared note only needs the Terrain and Color columns. The
+// Impassable column (yes / no) overrides the terrain type's default for the
+// path tool's auto-route (water types are impassable).
+//
+// Values in parentheses are derived, not chosen: the Type the plugin infers
+// from a terrain's name and the Impassable default of its type. They're
+// written so the note shows what the plugin uses, and read back as unset;
+// a hand edit that drops the parentheses makes the value the user's own.
+// Older builds read them as unset too ("(yes)" isn't a yes/no, "(mountains)"
+// isn't a type, so the name is used as before). Text outside the table is the
+// user's and is preserved when the plugin rewrites the table after an in-app
+// edit.
 
 /** Frontmatter key written into every palette note (informational only). */
 export const PALETTE_NOTE_MARKER = "hexmaker-palette";
 
-const HEADERS = ["Terrain", "Color", "Icon", "Icon color", "Category", "Type"] as const;
+const HEADERS = ["Terrain", "Color", "Icon", "Icon color", "Category", "Type", "Impassable"] as const;
 
 type Column = "name" | "color" | "icon" | "iconColor" | "category" | "type" | "impassable";
 
@@ -139,8 +146,10 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
     if (row.iconColor) entry.iconColor = row.iconColor;
     if (row.category) entry.category = row.category;
     // A type typed by hand in any case, or as its label, reads as its id;
-    // anything else is kept as typed (and shows as untyped).
-    if (row.type) entry.type = normalizeTerrainType(row.type) ?? row.type;
+    // a derived "(mountains)" is unset; anything else is kept as typed (and
+    // shows as untyped).
+    const type = parseTerrainTypeCell(row.type);
+    if (type) entry.type = type;
     const impassable = parseImpassableCell(row.impassable);
     if (impassable !== undefined) entry.impassable = impassable;
     terrains.push(entry);
@@ -152,22 +161,22 @@ function escapeCell(value: string | undefined): string {
   return (value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
 }
 
-/** Serialize terrains as the canonical markdown table (plus an Impassable
- *  column when any terrain overrides its type's default). */
+/**
+ * Serialize terrains as the canonical markdown table. Unset Type and
+ * Impassable cells show the derived value in parentheses.
+ */
 export function serializePaletteTable(
   terrains: TerrainColor[],
   extra?: { headers: string[]; rows: Map<string, Record<string, string>> },
 ): string {
-  const withImpassable = terrains.some((t) => t.impassable !== undefined);
   const own = extra?.headers ?? [];
-  const headers: string[] = [...(withImpassable ? [...HEADERS, "Impassable"] : HEADERS), ...own];
+  const headers: string[] = [...HEADERS, ...own];
   const lines = [
     `| ${headers.join(" | ")} |`,
     `| ${headers.map(() => "---").join(" | ")} |`,
   ];
   for (const t of terrains) {
-    const values = [t.name, t.color, t.icon, t.iconColor, t.category, t.type];
-    if (withImpassable) values.push(impassableCell(t));
+    const values = [t.name, t.color, t.icon, t.iconColor, t.category, terrainTypeCell(t), impassableNoteCell(t)];
     const mine = extra?.rows.get(t.name.toLowerCase()) ?? {};
     for (const h of own) values.push(mine[h]);
     const cells = values.map(escapeCell);
@@ -380,6 +389,48 @@ export function updatePaletteNote(content: string, terrains: TerrainColor[]): st
     serializePaletteTable(terrains, extraColumns(lines, span)),
     ...lines.slice(span.end),
   ].join("\n");
+}
+
+/**
+ * True when the note's derived cells (blank or parenthesised Type and
+ * Impassable values) don't show what the plugin works out now, or the
+ * Impassable column is missing: e.g. a note from an older build, or a hand
+ * edit that changed a terrain's type. Cells a person filled in are theirs
+ * and never count as stale.
+ */
+export function paletteDerivedStale(content: string): boolean {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const span = findPaletteTable(lines);
+  if (!span) return false;
+  const typeAt = span.columns.indexOf("type");
+  const impassableAt = span.columns.indexOf("impassable");
+  if (impassableAt < 0 || typeAt < 0) return true;
+  const terrains = parsePaletteNote(content) ?? [];
+  const nameAt = span.columns.indexOf("name");
+  let k = 0;
+  for (let i = span.start + 2; i < span.end; i++) {
+    const cells = splitRow(lines[i]);
+    if (!cells[nameAt]) continue;
+    const t = terrains[k++];
+    if (!t) break;
+    const derivedOk = (raw: string | undefined, expected: string) => {
+      const v = (raw ?? "").trim();
+      return (v !== "" && !isDerivedCell(v)) || v === expected;
+    };
+    if (!derivedOk(cells[typeAt], terrainTypeCell(t))) return true;
+    if (!derivedOk(cells[impassableAt], impassableNoteCell(t))) return true;
+  }
+  return false;
+}
+
+/**
+ * The note with its derived cells brought up to date (the table rewritten
+ * from what it says), or unchanged when they already are.
+ */
+export function refreshPaletteDerived(content: string): string {
+  if (!paletteDerivedStale(content)) return content;
+  const terrains = parsePaletteNote(content);
+  return terrains ? updatePaletteNote(content, terrains) : content;
 }
 
 /** Structural equality used to skip no-op rewrites. */
