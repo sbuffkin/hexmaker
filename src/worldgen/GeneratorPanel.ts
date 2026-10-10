@@ -368,9 +368,11 @@ export class GeneratorPanel {
     const combo = combinedSourcesOf(model);
     const isBlend = combo.kind === "blend";
     const sources = combo.names;
+    // Region sources are map slugs: show their display names.
+    const sourceLabel = (n: string) => (isBlend ? n : this.plugin.mapLabel(n));
     const sourceRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     sourceRow.createSpan({ text: isBlend ? "Blend of" : "From", cls: "duckmage-map-origin-label" });
-    sourceRow.createSpan({ text: sources.length ? sources.join(" + ") : "No map recorded", cls: "duckmage-wfc-source" });
+    sourceRow.createSpan({ text: sources.length ? sources.map(sourceLabel).join(" + ") : "No map recorded", cls: "duckmage-wfc-source" });
     const relearnBtn = sourceRow.createEl("button", {
       text: isBlend ? "Re-blend" : "Re-learn",
       attr: { title: isBlend ? "Blend again from these generators' current files, keeping the settings below" : "Learn again from these maps, keeping the settings below" },
@@ -385,7 +387,7 @@ export class GeneratorPanel {
           return;
         }
         if (!saved) GeneratorPanel.draft = r.model;
-        new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.join(" + ")}.`);
+        new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.map(sourceLabel).join(" + ")}.`);
         this.host.rerender();
       });
     });
@@ -410,16 +412,16 @@ export class GeneratorPanel {
       };
       const rows = sources.map((name, i) => {
         const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
-        row.createSpan({ text: name, cls: "duckmage-wfc-influence-name", attr: { title: name } });
-        const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${name} influence` } });
+        row.createSpan({ text: sourceLabel(name), cls: "duckmage-wfc-influence-name", attr: { title: sourceLabel(name) } });
+        const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${sourceLabel(name)} influence` } });
         const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
         // Compass: which side of the map this source leans toward.
-        const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${name} direction` } });
+        const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${sourceLabel(name)} direction` } });
         const points = COMPASS.map((d) => {
           const b = compass.createEl("button", {
             text: arrows[d],
             cls: "duckmage-wfc-compass-point",
-            attr: { title: d === "C" ? `${name}: everywhere (no direction)` : `${name}: lean ${names[d]}`, "aria-label": names[d] },
+            attr: { title: d === "C" ? `${sourceLabel(name)}: everywhere (no direction)` : `${sourceLabel(name)}: lean ${names[d]}`, "aria-label": names[d] },
           });
           b.addEventListener("click", () => {
             if (dirs[i] === d) return;

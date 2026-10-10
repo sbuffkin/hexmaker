@@ -36,7 +36,7 @@ export class SubmapPickerModal extends HexmakerModal {
     if (this.current) {
       const curRow = contentEl.createDiv({ cls: "duckmage-submap-current-row" });
       curRow.createSpan({ text: "Current: ", cls: "duckmage-submap-current-label" });
-      curRow.createSpan({ text: this.current, cls: "duckmage-submap-current-value" });
+      curRow.createSpan({ text: this.plugin.mapLabel(this.current), cls: "duckmage-submap-current-value" });
     }
 
     // ── Link existing map ─────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export class SubmapPickerModal extends HexmakerModal {
       const renderMapList = (query: string) => {
         listEl.empty();
         const q = query.trim().toLowerCase();
-        const matches = maps.filter((m) => !q || m.name.toLowerCase().includes(q));
+        const matches = maps.filter((m) => !q || m.name.toLowerCase().includes(q) || this.plugin.mapLabel(m.name).toLowerCase().includes(q));
         if (matches.length === 0) {
           listEl.createDiv({ cls: "duckmage-picker-list-empty", text: "No matching maps" });
           return;

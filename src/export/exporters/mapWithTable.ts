@@ -28,6 +28,7 @@ import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { mapLabel } from "../../maps/mapTree";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
   /** Filename stem (no extension). Defaults to mapName. */
@@ -122,7 +123,7 @@ export async function exportMapAsPdf(
     // 5. Render to HTML and PDF
     const rendered = await renderMarkdownToHtml({
       app: plugin.app,
-      title: mapName,
+      title: mapLabel(map, mapName),
       sourcePath: `${mapName}.export.md`,
       markdown: md,
     });

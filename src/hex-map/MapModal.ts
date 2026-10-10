@@ -263,7 +263,7 @@ export class MapModal extends HexmakerModal {
           }
           menu.addItem((item) =>
             item
-              .setTitle(existing ? `Learn a new generator from ${map.name}` : `Create generator from ${map.name}`)
+              .setTitle(existing ? `Learn a new generator from ${this.plugin.mapLabel(map.name)}` : `Create generator from ${this.plugin.mapLabel(map.name)}`)
               .setIcon(existing ? "plus" : "wand-sparkles")
               .onClick(() => void this.createGeneratorFrom(map.name)),
           );
@@ -1062,7 +1062,7 @@ export class MapModal extends HexmakerModal {
       new Notice(result.error);
       return;
     }
-    new Notice(`Created generator "${result.model.name}" from ${mapName}.`);
+    new Notice(`Created generator "${result.model.name}" from ${this.plugin.mapLabel(mapName)}.`);
     this.close();
     await this.plugin.openTerrainGenerator({
       mapName,

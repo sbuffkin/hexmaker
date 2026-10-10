@@ -2391,7 +2391,7 @@ export class HexMapView extends ItemView {
     // Submap link button label
     if (this.submapLinkBtnLabel) {
       if (this.drawingMode === "submapLink") {
-        this.submapLinkBtnLabel.setText(erasing ? "Erase submap" : (this.paintSubmapName ? "Link: " + this.paintSubmapName : "Link submap"));
+        this.submapLinkBtnLabel.setText(erasing ? "Erase submap" : (this.paintSubmapName ? "Link: " + this.plugin.mapLabel(this.paintSubmapName) : "Link submap"));
       } else {
         this.submapLinkBtnLabel.setText("Link submap");
       }
@@ -3843,7 +3843,7 @@ export class HexMapView extends ItemView {
         hexEl.addClass("duckmage-hex-has-submap");
         const badge = hexEl.createSpan({
           cls: "duckmage-hex-submap-badge",
-          attr: { title: `Enter submap: ${submapName} (Ctrl+click hex)`, "aria-label": `Enter submap ${submapName}` },
+          attr: { title: `Enter submap: ${this.plugin.mapLabel(submapName)} (Ctrl+click hex)`, "aria-label": `Enter submap ${this.plugin.mapLabel(submapName)}` },
         });
         badge.addEventListener("click", (e) => {
           if (this.drawingMode) return;
@@ -4014,7 +4014,7 @@ export class HexMapView extends ItemView {
       // Not a .duckmage-hex: painting, overlays and labels all look for those.
       const el = layer.createDiv({
         cls: "duckmage-region-shadow-hex",
-        attr: { title: `${s.map}: hex ${s.x}, ${s.y}`, "data-region": s.map },
+        attr: { title: `${this.plugin.mapLabel(s.map)}: hex ${s.x}, ${s.y}`, "data-region": s.map },
       });
       el.setCssProps({
         "--duckmage-shadow-x": `${(at.x - A.w / 2) / em}em`,
@@ -4155,7 +4155,7 @@ export class HexMapView extends ItemView {
     if (submap) {
       menu.addItem((item) =>
         item
-          .setTitle(`Enter submap: ${submap}`)
+          .setTitle(`Enter submap: ${this.plugin.mapLabel(submap)}`)
           .setIcon("log-in")
           .onClick(() => this.navigateToMap(submap)),
       );

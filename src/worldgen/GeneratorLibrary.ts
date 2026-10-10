@@ -191,7 +191,7 @@ export class GeneratorLibrary {
     this.header(table, ["Map", "Size", "Palette", "Generators"], rows.map((r) => r.name), checked, redraw);
     for (const r of rows) {
       const row = this.row(table, r.name, checked, redraw);
-      this.cells(row, [r.name, r.size, r.palette, r.generators ? String(r.generators) : "–"]);
+      this.cells(row, [this.plugin.mapLabel(r.name), r.size, r.palette, r.generators ? String(r.generators) : "–"]);
       // The whole row ticks the region.
       row.addEventListener("click", (e) => {
         if ((e.target as HTMLElement).closest("input")) return;

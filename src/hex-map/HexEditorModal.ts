@@ -571,7 +571,7 @@ export class HexEditorModal extends HexmakerModal {
       // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
       const cy = isFlat ? 24 : 20;
       centre.setCssProps({ left: "24px", top: `${cy}px` });
-      centre.title = `Submap: ${submap}`;
+      centre.title = `Submap: ${this.plugin.mapLabel(submap)}`;
       // Color the dot with the linked map's terrain type color (if configured)
       const submapData = this.plugin.getMap(submap);
       if (submapData?.terrainType) {

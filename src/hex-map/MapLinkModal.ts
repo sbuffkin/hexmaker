@@ -67,19 +67,19 @@ export class MapLinkModal extends HexmakerModal {
     const populateDropdown = (query: string) => {
       dropdown.empty();
       const q = query.trim().toLowerCase();
-      const matches = maps.filter((m) => !q || m.name.toLowerCase().includes(q));
+      const matches = maps.filter((m) => !q || m.name.toLowerCase().includes(q) || this.plugin.mapLabel(m.name).toLowerCase().includes(q));
       if (matches.length === 0) {
         dropdown.createDiv({ cls: "duckmage-link-combo-empty", text: "No matching maps" });
         return;
       }
       for (const m of matches) {
         const item = dropdown.createDiv({ cls: "duckmage-link-combo-item" });
-        item.textContent = m.name;
+        item.textContent = this.plugin.mapLabel(m.name);
         item.addEventListener("mousedown", (e) => {
           e.preventDefault();
           selectedMap = m.name;
-          mapInput.value = m.name;
-          if (!linkTextInput.value.trim()) linkTextInput.value = m.name;
+          mapInput.value = this.plugin.mapLabel(m.name);
+          if (!linkTextInput.value.trim()) linkTextInput.value = this.plugin.mapLabel(m.name);
           closeDropdown();
         });
       }
@@ -128,8 +128,14 @@ export class MapLinkModal extends HexmakerModal {
     const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     btnRow.createEl("button", { text: "Insert", cls: "mod-cta" })
       .addEventListener("click", () => {
-        const map  = mapInput.value.trim() || selectedMap;
-        const text = linkTextInput.value.trim() || map;
+        const typed = mapInput.value.trim();
+        // The box shows display names; link the slug.
+        const lc = typed.toLowerCase();
+        const map = !typed ? selectedMap
+          : maps.find((m) => m.name === selectedMap && this.plugin.mapLabel(m.name) === typed)?.name
+            ?? maps.find((m) => m.name.toLowerCase() === lc || this.plugin.mapLabel(m.name).toLowerCase() === lc)?.name
+            ?? typed;
+        const text = linkTextInput.value.trim() || this.plugin.mapLabel(map);
         this.close();
         this.onInsert(map, text);
       });
