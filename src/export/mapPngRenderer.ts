@@ -36,6 +36,7 @@ import {
 } from "../frontmatter";
 import { getIconUrl, normalizeFolder } from "../utils";
 import { drawPatternTile } from "../overlayPatterns";
+import { coordHaloColor, pngCoordFontFamily, pngCoordFontPx, pngCoordY } from "../coordStyle";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor, MapData } from "../types";
 
@@ -48,7 +49,7 @@ export interface MapPngRenderOptions {
   background?: string;
   /** Hex border colour. Default near-black. */
   borderColor?: string;
-  /** Coordinate label colour. Default light grey. */
+  /** Coordinate label colour. Default: the coordinate colour setting. */
   coordColor?: string;
   /** Draw coordinate labels in each hex. Default true. */
   showCoords?: boolean;
@@ -58,7 +59,8 @@ export interface MapPngRenderOptions {
    * for hex numbers on printed maps.
    */
   coordLabel?: (x: number, y: number) => string;
-  /** Outline drawn behind labels so they read on any terrain colour. */
+  /** Outline drawn behind labels so they read on any terrain colour.
+   *  Default: dark behind light text, light behind dark (coordHaloColor). */
   coordHalo?: string;
   /** Draw terrain icons. Default true. */
   showIcons?: boolean;
@@ -108,7 +110,13 @@ export async function renderMapToPngBlob(
   const showRegionOverlay = opts.showRegionOverlay ?? false;
   const background = opts.background ?? "#1a1a1a";
   const borderColor = opts.borderColor ?? "#222";
-  const coordColor = opts.coordColor ?? "#bbb";
+  // Labels follow the coordinate settings, with a contrast halo, so they
+  // read on light terrain (round 4: tiny grey labels on pale hexes).
+  const coordColor = opts.coordColor ?? plugin.settings.coordFontColor ?? "#ffffff";
+  const coordHalo = opts.coordHalo ?? coordHaloColor(coordColor);
+  const coordPx = pngCoordFontPx(R, plugin.settings.coordFontSize);
+  const coordFamily = pngCoordFontFamily(plugin.settings.coordFontFamily);
+  const coordPlacement = plugin.settings.coordPlacement;
 
   const orientation = plugin.settings.hexOrientation;
   const isFlat = orientation === "flat";
@@ -361,16 +369,15 @@ export async function renderMapToPngBlob(
       const [hxStr, hyStr] = hex.key.split("_");
       const custom = opts.coordLabel;
       const text = custom ? custom(Number(hxStr), Number(hyStr)) : `${hxStr},${hyStr}`;
-      const y = custom ? hex.cy - R * 0.52 : hex.cy + R * 0.75;
-      ctx.font = `${custom ? "600 " : ""}${Math.round(R * (custom ? 0.24 : 0.22))}px sans-serif`;
+      const y = custom ? hex.cy - R * 0.52 : pngCoordY(coordPlacement, hex.cy, R);
+      const px = custom ? Math.round(R * 0.24) : coordPx;
+      ctx.font = custom ? `600 ${px}px sans-serif` : `700 ${px}px ${coordFamily}`;
       ctx.textAlign = "center";
-      ctx.textBaseline = custom ? "middle" : "alphabetic";
-      if (opts.coordHalo) {
-        ctx.lineJoin = "round";
-        ctx.lineWidth = Math.max(2, R * 0.08);
-        ctx.strokeStyle = opts.coordHalo;
-        ctx.strokeText(text, hex.cx, y);
-      }
+      ctx.textBaseline = "middle";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = Math.max(3, px * 0.3);
+      ctx.strokeStyle = coordHalo;
+      ctx.strokeText(text, hex.cx, y);
       ctx.fillStyle = coordColor;
       ctx.fillText(text, hex.cx, y);
     }

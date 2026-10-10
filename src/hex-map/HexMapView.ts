@@ -30,6 +30,7 @@ import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
+import { coordHaloColor } from "../coordStyle";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -3464,6 +3465,8 @@ export class HexMapView extends ItemView {
       "--duckmage-coord-font-size": `${coordFontSize}em`,
       "--duckmage-coord-font-family": coordFontFamily,
       "--duckmage-coord-color": coordFontColor,
+      // Halo opposite to the text colour: labels read on light terrain too.
+      "--duckmage-coord-halo": coordHaloColor(coordFontColor),
     });
 
     const region = this.getActiveMap();
