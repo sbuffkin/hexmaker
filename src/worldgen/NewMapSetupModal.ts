@@ -16,6 +16,7 @@ import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { pathColors } from "./generators";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
+import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
   BLANK_ID,
   defaultGeneratorFor,
@@ -188,14 +189,28 @@ export class NewMapSetupModal extends HexmakerModal {
       presetBtns.push(b);
     }
     syncPresetBtns();
-    const onSize = () => {
-      this.cols = Math.max(1, Math.min(200, Number(colsInput.value) || 1));
-      this.rows = Math.max(1, Math.min(200, Number(rowsInput.value) || 1));
+    // The preview follows the size while typing (debounced); blur / Enter
+    // commits the clamped value at once.
+    let sizeTimer: number | undefined;
+    const onSize = (committed: boolean) => {
+      const cols = sizeFromInput(colsInput.value, { min: 1, max: 200, fallback: 1, committed });
+      const rows = sizeFromInput(rowsInput.value, { min: 1, max: 200, fallback: 1, committed });
+      if (cols === undefined && rows === undefined) return;
+      this.cols = cols ?? this.cols;
+      this.rows = rows ?? this.rows;
       syncPresetBtns();
       refresh();
     };
-    colsInput.addEventListener("change", onSize);
-    rowsInput.addEventListener("change", onSize);
+    for (const input of [colsInput, rowsInput]) {
+      input.addEventListener("input", () => {
+        window.clearTimeout(sizeTimer);
+        sizeTimer = window.setTimeout(() => onSize(false), LIVE_PREVIEW_DELAY_MS);
+      });
+      input.addEventListener("change", () => {
+        window.clearTimeout(sizeTimer);
+        onSize(true);
+      });
+    }
     this.rememberBox(sizeRow, "size");
 
     // ── Next to (new top-level maps): join a world of neighbouring regions.

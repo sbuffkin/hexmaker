@@ -22,6 +22,7 @@ import {
 } from "./worldgen/registry";
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
+import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -450,18 +451,32 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			};
 			updateCount();
 
-			colsInput.addEventListener("change", () => {
-				ctx.mapCols = Math.max(2, Math.min(200, Number(colsInput.value) || 20));
+			// The preview follows the size while typing (debounced), not only
+			// once the field loses focus; a half-typed value waits. Blur / Enter
+			// commits (clamped) at once.
+			let sizeTimer: number | undefined;
+			const applySize = (committed: boolean) => {
+				const cols = sizeFromInput(colsInput.value, { min: 2, max: 200, fallback: 20, committed });
+				const rows = sizeFromInput(rowsInput.value, { min: 2, max: 200, fallback: 16, committed });
+				if (committed) { colsInput.value = String(cols); rowsInput.value = String(rows); }
+				const next = { cols: cols ?? ctx.mapCols, rows: rows ?? ctx.mapRows };
+				if (next.cols === ctx.mapCols && next.rows === ctx.mapRows) return;
+				ctx.mapCols = next.cols;
+				ctx.mapRows = next.rows;
 				updateCount();
 				refresh();
 				cb.onUpdate();
-			});
-			rowsInput.addEventListener("change", () => {
-				ctx.mapRows = Math.max(2, Math.min(200, Number(rowsInput.value) || 16));
-				updateCount();
-				refresh();
-				cb.onUpdate();
-			});
+			};
+			for (const input of [colsInput, rowsInput]) {
+				input.addEventListener("input", () => {
+					window.clearTimeout(sizeTimer);
+					sizeTimer = window.setTimeout(() => applySize(false), LIVE_PREVIEW_DELAY_MS);
+				});
+				input.addEventListener("change", () => {
+					window.clearTimeout(sizeTimer);
+					applySize(true);
+				});
+			}
 
 			// Hex orientation
 			const orientRow = container.createDiv({ cls: "duckmage-wizard-field" });
