@@ -6585,3 +6585,27 @@ button.duckmage-wfc-library-tab.is-active {
     text-align: center;
     max-width: 240px;
 }
+
+/* New map / submap setup: neighbour seam, labelled defaults. */
+.duckmage-setup-gen-seam {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-faint);
+}
+.duckmage-setup-gen-seam.is-continues {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+.duckmage-setup-gen-seam.is-continues::before {
+    content: "↔ ";
+}
+.duckmage-setup-seam-note {
+    max-width: 320px;
+}
+.duckmage-setup-control > .duckmage-setup-default {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}
+.duckmage-setup-defaults-note {
+    margin-bottom: 0.4em;
+}

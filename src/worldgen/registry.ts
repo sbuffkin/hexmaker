@@ -66,8 +66,12 @@ export interface TerrainGeneratorKind {
   /** Map type that owns the generator (hidden when that type is off; see
    *  visibleKinds). Learned ones take it from their `map-kind` frontmatter. */
   mapKind?: MapKind;
-  /** Only meaningful inside a bigger map (offered for submaps only). */
+  /** Only meaningful inside a parent hex (offered for submaps only). */
   needsContext?: boolean;
+  /** Carries terrain on across the border of a neighbouring region it's
+   *  placed next to (Overland via context edgeCells, learned generators
+   *  via generateConnected). */
+  continuesNeighbours?: boolean;
   options: ProcOption[];
   /** Can this generator produce terrain for a palette with these terrains? */
   fits(terrains: TerrainColor[]): boolean;
@@ -162,12 +166,15 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       // Planet surface's noise generator under a world name, so world-only
       // users get a procedural map without seeing space options.
       mapKind: "world",
-      description: "A region from noise: coast, plains, forests, hills, mountains, deserts. One climate across the map; set water %, climate and which side the sea is on.",
+      description: "A region from noise: coast, plains, forests, hills, mountains, deserts. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.",
       source: "built-in",
+      continuesNeighbours: true,
       options: OVERLAND_OPTIONS,
       fits: planetSurfaceFits,
       generate: (req) => {
-        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, undefined, "overland");
+        // Only a neighbouring region's border (edgeCells) is used, not a parent hex.
+        const edge = req.context?.edgeCells?.size ? { edgeCells: req.context.edgeCells } : undefined;
+        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, edge, "overland");
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toChains,
@@ -203,6 +210,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       mapKind: generatorMapKind(g.model.meta),
       options: [],
       generatorPath: g.file.path,
+      continuesNeighbours: true,
       fits: (terrains) => generatorFitsPalette(g.model, terrains.map((t) => t.name)),
       generate: (req) => {
         const names = req.terrains.map((t) => t.name);
@@ -263,13 +271,47 @@ export function generationKey(req: {
   return JSON.stringify([req.generatorId, opts, req.seed, req.cols, req.rows, req.orientation, req.stagger, req.palette, req.extra ?? ""]);
 }
 
-/** Generators usable with a palette, Blank first. Context-only ones need `hasContext`. */
+/**
+ * Generators usable with a palette, Blank first. Parent-hex-only ones
+ * (Region detail: "zoom into the parent hex") need `hasParentHex` — a
+ * submap. A map placed next to a neighbour has context too, but no parent
+ * hex, so they're not offered there.
+ */
 export function kindsForPalette(
   kinds: TerrainGeneratorKind[],
   terrains: TerrainColor[],
-  hasContext = false,
+  hasParentHex = false,
 ): TerrainGeneratorKind[] {
-  return kinds.filter((k) => k.fits(terrains) && (hasContext || !k.needsContext));
+  return kinds.filter((k) => k.fits(terrains) && (hasParentHex || !k.needsContext));
+}
+
+/**
+ * Order generators for a map placed next to a neighbour: Blank, then those
+ * that carry on from its edge (built-in first), then the rest. Stable.
+ */
+export function neighbourFirst<K extends Pick<TerrainGeneratorKind, "id" | "source" | "continuesNeighbours">>(kinds: K[]): K[] {
+  const rank = (k: K) => (k.id === BLANK_ID ? 0 : k.continuesNeighbours ? (k.source === "built-in" ? 1 : 2) : 3);
+  return kinds.map((k, i) => ({ k, i })).sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i).map(({ k }) => k);
+}
+
+/**
+ * The generator a new map / submap starts on, from those offered: a submap
+ * zooms into its parent hex (Region detail); a map next to a neighbour
+ * carries on from its edge; otherwise the first built-in one; else Blank.
+ */
+export function defaultGeneratorFor(
+  fitting: Pick<TerrainGeneratorKind, "id" | "source" | "needsContext" | "continuesNeighbours">[],
+  where: { parentHex?: boolean; neighbour?: boolean },
+): string {
+  if (where.parentHex) {
+    const zoom = fitting.find((k) => k.needsContext);
+    if (zoom) return zoom.id;
+  }
+  if (where.neighbour) {
+    const cont = neighbourFirst(fitting.filter((k) => k.id !== BLANK_ID && k.continuesNeighbours))[0];
+    if (cont) return cont.id;
+  }
+  return fitting.find((k) => k.source === "built-in")?.id ?? BLANK_ID;
 }
 
 /**

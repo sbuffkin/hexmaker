@@ -652,39 +652,48 @@ export class MapModal extends HexmakerModal {
     // Guided setup: the same modal used for new submaps — palette, size,
     // any generator (incl. Star scatter / Orbits), base terrain, preview.
     const guided = el.createDiv({ cls: "duckmage-region-row duckmage-map-guided-row" });
-    guided.createEl("button", { text: "Guided setup…" }).addEventListener("click", () => {
+    // Guided setup takes what's already filled in here (name, neighbour),
+    // so switching to it never starts over.
+    const openGuided = () => {
+      const anchor = anchorSelect.value;
       new NewMapSetupModal(this.app, this.plugin, ({ name }) => {
         this.view.switchMapFromModal(name);
         this.onChanged();
+      }, undefined, {
+        name: nameInput.value.trim() || undefined,
+        anchor: anchor || undefined,
+        side: anchor ? (sideSelect.value as Side) : undefined,
       }).open();
       this.close();
-    });
+    };
+    guided.createEl("button", { text: "Guided setup…" }).addEventListener("click", openGuided);
     guided.createSpan({
       cls: "setting-item-description",
-      text: "Pick a size and a generator with a live preview, or fill in the form below.",
+      text: "Pick a size and a generator (Overland and more) with a live preview, or fill in the form below. What you fill in here carries over.",
     });
 
     // Name
-    el.createEl("label", { text: "Name", cls: "duckmage-map-field-label" });
+    el.createEl("label", { text: "Name", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-name" } });
     const nameRow = el.createDiv({ cls: "duckmage-region-row" });
     const nameInput = nameRow.createEl("input", {
       type: "text",
       placeholder: "map-name",
       cls: "duckmage-map-new-name-input",
+      attr: { id: "duckmage-new-map-name" },
     });
 
     // Place next to an existing map: it becomes a neighbouring region on the
     // same grid, so size, palette, stagger and coordinates follow from it.
-    el.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label" });
+    el.createEl("label", { text: "Place next to", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-anchor" } });
     el.createEl("p", {
       text: "Make this map a neighbouring region of another: it's the same size and palette, and lines up with it hex for hex.",
       cls: "duckmage-map-origin-desc",
     });
     const placeRow = el.createDiv({ cls: "duckmage-region-row" });
-    const anchorSelect = placeRow.createEl("select");
+    const anchorSelect = placeRow.createEl("select", { attr: { id: "duckmage-new-map-anchor", "aria-label": "Neighbouring map" } });
     anchorSelect.createEl("option", { value: "", text: "Nowhere (a separate map)" });
     for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: m.name });
-    const sideSelect = placeRow.createEl("select");
+    const sideSelect = placeRow.createEl("select", { attr: { "aria-label": "Side of the neighbouring map" } });
     for (const s of SIDES) sideSelect.createEl("option", { value: s, text: `${s} of it` });
     const placeNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
     if (this.newMapPlacement) {
@@ -733,13 +742,23 @@ export class MapModal extends HexmakerModal {
 
     // Generator (optional). Only generators whose terrains all exist in the
     // chosen palette are offered.
-    el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label" });
+    el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-generator" } });
     el.createEl("p", {
-      text: "Fill the new map with generated terrain, or leave it blank. Make generators and change their settings in the terrain generator.",
+      text: "Fill the new map with terrain from a learned generator (next to a map, it continues that map's edge), or leave it blank. Make generators and change their settings in the terrain generator.",
       cls: "duckmage-map-origin-desc",
     });
     const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
-    const generatorSelect = generatorRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
+    const generatorSelect = generatorRow.createEl("select", {
+      cls: "duckmage-map-new-palette-select",
+      attr: { id: "duckmage-new-map-generator" },
+    });
+    // Built-in generators (Overland, Star scatter…) live in Guided setup;
+    // say so here instead of leaving a dropdown that only offers Blank.
+    const moreGen = generatorRow.createEl("button", {
+      text: "Overland and more…",
+      attr: { title: "Open the guided setup with this name and neighbour: built-in generators with a live preview" },
+    });
+    moreGen.addEventListener("click", openGuided);
     let generators: GeneratorFile[] = [];
     const fillGenerators = () => {
       const current = generatorSelect.value;

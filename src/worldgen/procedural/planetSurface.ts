@@ -439,7 +439,9 @@ export function planetSurface(
   seed: number,
   options: Record<string, string> = {},
   /** When given, generate a *region* of the bigger map (Region detail):
-   *  the parent hex's terrain fills it and neighbours shape its edges. */
+   *  the parent hex's terrain fills it and neighbours shape its edges.
+   *  Overland reads only `edgeCells` (a neighbouring region's border) and
+   *  carries that terrain on across the seam. */
   context?: GenerationContext,
   /** "planet": a whole world (warm equator, polar caps). "overland": a
    *  region of one (single climate, sea on a chosen side; OVERLAND_OPTIONS). */
@@ -469,7 +471,10 @@ export function planetSurface(
   let elev: number[], moistArr: number[], tempArr: number[], lv: Levels;
   /** Overland with a sea side: which hexes are water (else elevation decides). */
   let seaMask: boolean[] | undefined;
-  if (context) {
+  // Overland next to an existing region: its border hexes pull this map's
+  // edge toward them, so terrain carries on across the seam.
+  const pulls = flavor === "overland" && context?.edgeCells?.size ? edgePulls(grid, hexes, context.edgeCells) : undefined;
+  if (context && flavor !== "overland") {
     ({ elev, moist: moistArr, temp: tempArr } = regionField(grid, hexes, centers, noiseE, noiseM, context, options));
     lv = { sea: 0.33, deep: 0.08, shelf: 0.27, hill: 0.64, mountain: 0.79, peak: 0.92 };
   } else {
@@ -487,11 +492,23 @@ export function planetSurface(
       // The sea hugs its side: one body touching that edge (plus small
       // lakes), from a steeper-tilted field so the coast is ragged but
       // the sea doesn't streak across the map (sideSeaMask).
-      const field = noiseE.map((n, i) => n + SEA_MASK_TILT * inlandAt(i));
+      let field = noiseE.map((n, i) => n + SEA_MASK_TILT * inlandAt(i));
+      if (pulls) {
+        // Water across the seam stays water; land across it keeps the sea off.
+        const lo = Math.min(...field) - 0.01, hi = Math.max(...field) + 0.01;
+        field = field.map((f, i) => {
+          const p = pulls[i];
+          return p ? f + (p.wet * lo + (1 - p.wet) * hi - f) * p.alpha : f;
+        });
+      }
+      const pullIndex = new Map(hexes.map(([x, y], i) => [cellKey(x, y), i]));
       const onEdge = (x: number, y: number) => {
         const w = x === grid.offset.x, e = x === grid.offset.x + grid.cols - 1;
         const nn = y === grid.offset.y, s = y === grid.offset.y + grid.rows - 1;
-        return sea === "west" ? w : sea === "east" ? e : sea === "north" ? nn : sea === "south" ? s : w || e || nn || s;
+        const side = sea === "west" ? w : sea === "east" ? e : sea === "north" ? nn : sea === "south" ? s : w || e || nn || s;
+        // A neighbour's sea right across the seam is open sea too.
+        const p = pulls?.[pullIndex.get(cellKey(x, y)) ?? -1];
+        return side || (!!p && p.near === 1 && p.wet > 0.5);
       };
       seaMask = sideSeaMask(hexes, field, water * hexes.length, onEdge,
         (x, y) => hexNeighbors(x, y, grid.orientation, grid.stagger));
@@ -516,17 +533,43 @@ export function planetSurface(
       shelf: quantile(seaElev.length ? seaElev : [0], 0.8),
       low: lowLevel,
     };
-    // Temperature: warm equator, cold poles (rows), shifted by climate.
     const climateShift: Record<string, number> = { temperate: 0, lush: 0.12, arid: 0.15, frozen: -0.55, volcanic: 0.3 };
     const moistShift: Record<string, number> = { temperate: 0, lush: 0.25, arid: -0.35, frozen: -0.1, volcanic: -0.2 };
     const tShift = climateShift[climate] ?? 0;
     const mShift = moistShift[climate] ?? 0;
+    let moistBase = noiseM.map((m) => m + mShift);
+    if (pulls) {
+      // Pull elevation (in this map's own levels) and moisture toward the
+      // neighbour's border terrain: hills next to its hills, forest next to
+      // its forest. Sea cells come from the mask above when there is one.
+      const levels = lv;
+      const low = Number.isFinite(levels.sea) ? levels.sea : lowLevel;
+      const classElev = [
+        low - 0.05,
+        low + 0.01,
+        (low + levels.hill) / 2,
+        (levels.hill + levels.mountain) / 2,
+        (levels.mountain + levels.peak) / 2,
+        levels.peak + 0.02,
+      ];
+      elev = elev.map((e, i) => {
+        const p = pulls[i];
+        if (!p) return e;
+        const target = p.classWeights.reduce((a, w, k) => a + w * classElev[k], 0);
+        return e + (target - e) * p.alpha;
+      });
+      moistBase = moistBase.map((m, i) => {
+        const p = pulls[i];
+        return p ? m + (p.moist - m) * p.alpha : m;
+      });
+    }
+    // Temperature: warm equator, cold poles (rows), shifted by climate.
     tempArr = centers.map((c, i) => {
       // Overland is one region: a single mid-latitude climate, no poles.
       const lat = overland ? 0.4 : maxY > minY ? Math.abs((c[1] - minY) / (maxY - minY) - 0.5) * 2 : 0; // 0 equator .. 1 pole
       return 1 - lat * 0.9 + tShift - Math.max(0, elev[i] - lowLevel) * 0.6;
     });
-    moistArr = noiseM.map((m) => m + mShift);
+    moistArr = moistBase;
   }
   const seaLevel = lv.sea, deepAt = lv.deep, shelfAt = lv.shelf;
   const hillAt = lv.hill, mountainAt = lv.mountain, peakAt = lv.peak;
@@ -614,6 +657,76 @@ export function planetSurface(
   }
 
   return { cells, paths: [], warnings: [] };
+}
+
+/** How a neighbouring region's border pulls one hex of an Overland map. */
+interface EdgePull {
+  /** Steps to the nearest border hex across the seam (1 = on the edge). */
+  near: number;
+  /** How far toward the neighbour's terrain (0..1). */
+  alpha: number;
+  /** Share of the nearby border that is water. */
+  wet: number;
+  /** Weight per elevation class: water, low, mid, hills, mountains, peaks. */
+  classWeights: number[];
+  /** Target moisture (TYPE_TARGETS scale). */
+  moist: number;
+}
+
+/** How far into the map a neighbour's border reaches, and how hard (by steps). */
+const EDGE_REACH = 3;
+const EDGE_ALPHA = [0, 0.85, 0.55, 0.25];
+
+function elevClass(type: string): number {
+  switch (type) {
+    case "water": case "deep-water": case "shallows": return 0;
+    case "coast": case "wetland": return 1;
+    case "hills": return 3;
+    case "mountains": case "volcanic": return 4;
+    case "peaks": return 5;
+    default: return 2;
+  }
+}
+
+/**
+ * Per hex, the pull of a neighbouring region's border hexes (context
+ * `edgeCells`, just outside the grid) within EDGE_REACH steps; undefined
+ * where none reach. Border hexes of unknown type are ignored.
+ */
+export function edgePulls(
+  grid: ProcGrid,
+  hexes: [number, number][],
+  edgeCells: Map<string, ContextTerrain>,
+): (EdgePull | undefined)[] {
+  const cells = [...edgeCells]
+    .map(([k, c]) => {
+      const type = isTerrainType(c.type) ? c.type : c.terrain ? inferTerrainType(c.terrain) : undefined;
+      return { at: k.split("_").map(Number) as [number, number], type };
+    })
+    .filter((c): c is { at: [number, number]; type: NonNullable<typeof c.type> } => !!c.type && !!TYPE_TARGETS[c.type]);
+  return hexes.map((h) => {
+    let near = Infinity, wsum = 0, wet = 0, moist = 0;
+    const classWeights = [0, 0, 0, 0, 0, 0];
+    for (const c of cells) {
+      const d = distance(h, c.at, grid);
+      if (d < 1 || d > EDGE_REACH) continue;
+      near = Math.min(near, d);
+      const w = EDGE_REACH + 1 - d;
+      wsum += w;
+      const cls = elevClass(c.type);
+      classWeights[cls] += w;
+      if (cls === 0) wet += w;
+      moist += w * TYPE_TARGETS[c.type][1];
+    }
+    if (!wsum) return undefined;
+    return {
+      near,
+      alpha: EDGE_ALPHA[near] ?? 0,
+      wet: wet / wsum,
+      classWeights: classWeights.map((w) => w / wsum),
+      moist: moist / wsum,
+    };
+  });
 }
 
 /**
