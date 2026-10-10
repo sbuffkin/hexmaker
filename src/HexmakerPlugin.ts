@@ -71,6 +71,7 @@ import {
 } from "./maps/submaps";
 import type { RegionSettings } from "./types";
 import { setMapData, type HexMapDataView } from "./hexMapData";
+import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
@@ -84,7 +85,7 @@ import {
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
-import { DEFAULT_TOWN_TEMPLATE, fillNoteTemplate, hexTemplatePathFor, noteTemplateFor, templatesFolderFor, townTemplatePathFor } from "./noteTemplates";
+import { DEFAULT_TOWN_TEMPLATE, fillNoteTemplate, hexTemplatePathFor, LOCATION_SECTIONS, noteTemplateFor, templatesFolderFor, townTemplatePathFor, withLocationLine } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -150,6 +151,13 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("rename", (f, oldPath) => {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
         this.paletteStore.onRename(f, oldPath);
+        if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
+      }),
+    );
+    // A region or faction note's Map data callout is refreshed when it's opened (R1).
+    this.registerEvent(
+      this.app.workspace.on("file-open", (file) => {
+        if (file && this.regionOrFactionKind(file)) void this.refreshRegionMapData(file);
       }),
     );
     // Palette notes edited by hand (or by sync) flow back into the palettes.
@@ -296,6 +304,25 @@ export default class HexmakerPlugin extends Plugin {
             `Every hex note of "${this.mapLabel(mapName)}" gets a Map data box under its title showing its terrain, region and name from the map, kept up to date when you open the hex. Nothing else in the notes changes.`,
             "Add map data",
             () => void this.addMapDataToHexNotes(mapName).then((n) => new Notice(`Map data added or updated in ${n} hex note${n === 1 ? "" : "s"}.`)),
+          ).open();
+        }
+        return true;
+      },
+    });
+    // Map data callouts in region and faction notes (R1): which maps use
+    // them, with hex counts. Adds the callout where it's missing.
+    this.addCommand({
+      id: "update-region-faction-map-data",
+      name: "Update map data in region and faction notes",
+      checkCallback: (checking) => {
+        if (!this.regionAndFactionNotes().length) return false;
+        if (!checking) {
+          new ConfirmModal(
+            this.app,
+            "Update map data in region and faction notes",
+            "Every region and faction note gets a Map data box under its title listing the maps that use it (with hex counts) and, for regions, the encounter table. It is kept up to date when you open the note. Nothing else in the notes changes.",
+            "Update map data",
+            () => void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} note${n === 1 ? "" : "s"}.`)),
           ).open();
         }
         return true;
@@ -1115,8 +1142,11 @@ export default class HexmakerPlugin extends Plugin {
               path,
               makeTableTemplate(
                 this.settings.defaultTableDice,
+                // No `terrain:` key (T2): nothing read it; the table's
+                // path ({tables}/terrain/{type}/{terrain}.md) is what links
+                // it to its terrain. Older tables keep theirs (renames
+                // still update it).
                 {
-                  terrain: entry.name,
                   "table-type": tableType,
                   "roll-filter": false,
                   "encounter-filter": false,
@@ -1637,6 +1667,132 @@ export default class HexmakerPlugin extends Plugin {
     return n;
   }
 
+  // ── Region and faction notes (R1, R2) ────────────────────────────────────
+
+  /** "region" / "faction" for a note in the regions / factions folder ("_" notes aren't). */
+  regionOrFactionKind(file: TFile): "region" | "faction" | null {
+    if (file.extension !== "md" || file.basename.startsWith("_")) return null;
+    const inFolder = (setting: string) => {
+      const folder = normalizeFolder(setting ?? "");
+      return !!folder && file.path.startsWith(folder + "/");
+    };
+    if (inFolder(this.settings.regionsFolder)) return "region";
+    if (inFolder(this.settings.factionsFolder)) return "faction";
+    return null;
+  }
+
+  /** Every region and faction note. */
+  regionAndFactionNotes(): TFile[] {
+    return this.app.vault.getMarkdownFiles().filter((f) => this.regionOrFactionKind(f) !== null);
+  }
+
+  /** The maps that use a region or faction note, for its Map data callout. */
+  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView {
+    const maps = this.settings.maps.map((m) => ({ name: m.name, label: this.mapLabel(m.name) }));
+    if (kind === "region") {
+      const folder = normalizeFolder(this.settings.tablesFolder);
+      const table = this.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${file.basename}.md`);
+      return {
+        kind,
+        maps: regionUse(file.basename, maps, (m) => this.mapStore.all(m).values()),
+        encounterTable: table instanceof TFile ? this.app.metadataCache.fileToLinktext(table, file.path) : undefined,
+      };
+    }
+    // Factions: hex notes that link the faction note, per map.
+    const counts = new Map<string, number>();
+    for (const [source, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
+      if (!targets[file.path]) continue;
+      const loc = this.mapStore.resolve(source);
+      if (loc) counts.set(loc.map, (counts.get(loc.map) ?? 0) + 1);
+    }
+    return {
+      kind,
+      maps: maps
+        .filter((m, i) => counts.get(m.name) && maps.findIndex((o) => o.name === m.name) === i)
+        .map((m) => ({ map: m.name, label: m.label, hexes: counts.get(m.name) ?? 0 })),
+    };
+  }
+
+  /**
+   * Bring a region or faction note's Map data callout up to date (or add
+   * one when `insert`). Only writes when something changed. Returns
+   * whether it wrote.
+   */
+  async refreshRegionMapData(file: TFile, insert = false): Promise<boolean> {
+    const kind = this.regionOrFactionKind(file);
+    if (!kind || !this.mapStore.isReady()) return false;
+    const current = await this.app.vault.read(file);
+    if (!insert && !hasRegionMapData(current)) return false;
+    const view = this.regionMapDataView(file, kind);
+    // Read first: most notes need nothing, and a no-op process() still writes.
+    if (setRegionMapData(current, view, insert) === current) return false;
+    let wrote = false;
+    await this.app.vault.process(file, (content) => {
+      const next = setRegionMapData(content, view, insert);
+      wrote = next !== content;
+      return next;
+    });
+    return wrote;
+  }
+
+  /** Add or update the Map data callout in every region and faction note. Returns how many changed. */
+  async updateRegionFactionMapData(): Promise<number> {
+    await this.mapStore.flush();
+    let n = 0;
+    for (const f of this.regionAndFactionNotes()) {
+      if (await this.refreshRegionMapData(f, true)) n++;
+    }
+    return n;
+  }
+
+  /**
+   * A region note was renamed: hexes whose Region named it follow, through
+   * the map store (the map notes are rewritten from it). Returns how many
+   * hexes changed.
+   */
+  renameRegionInMaps(oldName: string, newName: string): number {
+    return renameRegionInStore(this.mapStore, this.settings.maps.map((m) => m.name), oldName, newName);
+  }
+
+  /**
+   * A note in the regions folder was renamed (R2): its hexes keep their
+   * region, and its encounter table follows the name (unless the new name
+   * already has one).
+   */
+  private async onRegionNoteRenamed(file: TFile, oldPath: string): Promise<void> {
+    const folder = normalizeFolder(this.settings.regionsFolder ?? "");
+    if (!folder || !oldPath.startsWith(folder + "/") || !/\.md$/i.test(oldPath)) return;
+    const oldName = oldPath.slice(oldPath.lastIndexOf("/") + 1).replace(/\.md$/i, "");
+    const newName = file.basename;
+    if (oldName === newName || oldName.startsWith("_") || !this.mapStore.isReady()) return;
+    const n = this.renameRegionInMaps(oldName, newName);
+    const tables = normalizeFolder(this.settings.tablesFolder);
+    const sub = tables ? `${tables}/regions` : "regions";
+    const table = this.app.vault.getAbstractFileByPath(`${sub}/${oldName}.md`);
+    if (table instanceof TFile && !this.app.vault.getAbstractFileByPath(`${sub}/${newName}.md`)) {
+      try {
+        await this.app.fileManager.renameFile(table, `${sub}/${newName}.md`);
+      } catch { /* the hexes still keep their region */ }
+    }
+    if (n) new Notice(`Region renamed: ${n} hex${n === 1 ? "" : "es"} now in "${newName}".`);
+  }
+
+  /** A map was renamed: tokens placed on it (`token-map`) follow. Returns how many notes changed. */
+  async updateTokenMapReferences(oldName: string, newName: string): Promise<number> {
+    let n = 0;
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (file.basename.startsWith("_")) continue;
+      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!fm || renamedTokenMap(fm["token-map"], oldName, newName) === null) continue;
+      await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
+        const next = renamedTokenMap(front["token-map"], oldName, newName);
+        if (next !== null) front["token-map"] = next;
+      });
+      n++;
+    }
+    return n;
+  }
+
   private async loadHexTemplate(): Promise<string> {
     const templatePath = normalizeFolder(this.settings.templatePath ?? "");
     if (templatePath) {
@@ -1693,9 +1849,12 @@ export default class HexmakerPlugin extends Plugin {
    * get the town template, written to the templates folder on first use;
    * encounter tables get a table). `title` fills {{title}}.
    */
-  async newLinkedNoteContent(section: string, title: string): Promise<string> {
+  async newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> {
     if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
-    if (noteTemplateFor(section) !== "town") return "";
+    // Made from a hex: a place says where it is (R3).
+    const located = (content: string) =>
+      fromHex && LOCATION_SECTIONS.includes(section) ? this.withHexLocation(content, fromHex) : content;
+    if (noteTemplateFor(section) !== "town") return located("");
     const path = townTemplatePathFor(this.settings);
     await this.ensureTemplateFile(path, DEFAULT_TOWN_TEMPLATE);
     const file = this.app.vault.getAbstractFileByPath(path);
@@ -1705,7 +1864,15 @@ export default class HexmakerPlugin extends Plugin {
         template = await this.app.vault.read(file);
       } catch { /* use the default */ }
     }
-    return fillNoteTemplate(template, title);
+    return located(fillNoteTemplate(template, title));
+  }
+
+  /** `content` with a `Location: [[hex|<map> x, y]]` line under its title (R3). */
+  withHexLocation(content: string, hexPath: string): string {
+    const loc = this.mapStore.resolve(hexPath);
+    const [x, y] = loc ? loc.key.split("_") : [];
+    const label = loc ? this.hexCoordAlias(loc.map, x, y) : this.hexLinkAlias(hexPath);
+    return withLocationLine(content, hexPath, label);
   }
 
   /**

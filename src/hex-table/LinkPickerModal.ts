@@ -4,6 +4,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import { normalizeFolder } from "../utils";
 import { addLinkToSection, addBacklinkToFile } from "../sections";
 import type { LinkSection } from "../types";
+import { LOCATION_SECTIONS } from "../noteTemplates";
 
 export class LinkPickerModal extends HexmakerModal {
   constructor(
@@ -89,7 +90,10 @@ export class LinkPickerModal extends HexmakerModal {
           await this.app.vault.createFolder(folder);
         }
         // Towns start from the town template (PA3) unless the caller gave one.
-        const content = this.createTemplate || (await this.plugin.newLinkedNoteContent(this.section, name));
+        // Places made from a hex say where they are (a Location line, R3).
+        const content = this.createTemplate
+          ? (LOCATION_SECTIONS.includes(this.section) ? this.plugin.withHexLocation(this.createTemplate, this.hexPath) : this.createTemplate)
+          : await this.plugin.newLinkedNoteContent(this.section, name, this.hexPath);
         file = await this.app.vault.create(newPath, content);
       } catch (err) {
         new Notice(`Could not create ${newPath}: ${String(err)}`);
