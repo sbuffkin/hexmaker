@@ -7678,3 +7678,34 @@ button.duckmage-terrain-legend-chip {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
 }
+
+/* Hex editor: a "Terrain:" / "Region:" line in the note that disagrees with
+   the map (src/hexBodyFields.ts), with buttons to apply it either way. */
+.duckmage-editor-body-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.8em;
+    margin: 0 0 0.6em;
+    padding: 0.4em 0.6em;
+    border-left: 3px solid var(--color-orange);
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    font-size: var(--font-ui-small);
+}
+
+.duckmage-editor-body-field-actions {
+    display: flex;
+    gap: 0.4em;
+}
+
+.duckmage-editor-body-field-actions button {
+    font-size: var(--font-ui-smaller);
+}
+
+/* Hex editor: sections of the note the editor has no field for. */
+.duckmage-editor-other-sections > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin: 0.4em 0;
+}

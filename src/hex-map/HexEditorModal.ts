@@ -16,8 +16,12 @@ import {
   getGmIconsFromFile,
   getSubmapFromFile,
   getHexNameFromFile,
+  getHexRegionFromFile,
+  setHexRegionInFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
+import { BODY_FIELDS, readBodyField, sameName, setBodyField, type BodyField } from "../hexBodyFields";
+import { hasMapData } from "../hexMapData";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -27,7 +31,7 @@ import {
   addBacklinkToFile,
   joinSectionText,
 } from "../sections";
-import { ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
+import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
 import type { LinkSection, HexEditorOptions, TerrainColor } from "../types";
 import { RandomTableModal, type RollHexTarget } from "../random-tables/RandomTableModal";
 import { WorkflowWizardModal } from "../random-tables/WorkflowWizardModal";
@@ -82,6 +86,10 @@ export class HexEditorModal extends HexmakerModal {
   private hexExists = false;
   private allText = new Map<string, string>();
   private allLinks = new Map<string, string[]>();
+  /** Section key → its heading as written in the note (see getAllSectionData). */
+  private allHeadings = new Map<string, string>();
+  /** "**Terrain:**" / "**Region:**" values written in the note's body (see hexBodyFields). */
+  private bodyFields = new Map<BodyField, string>();
   private directTerrain: string | null = null;
   private directIcon: string | null = null;
   private directGmIcon: string | null = null;
@@ -128,6 +136,8 @@ export class HexEditorModal extends HexmakerModal {
     this.hexExists = false;
     this.allText = new Map();
     this.allLinks = new Map();
+    this.allHeadings = new Map();
+    this.bodyFields = new Map();
     this.directTerrain = null;
     this.directIcon = null;
     this.directGmIcon = null;
@@ -160,7 +170,13 @@ export class HexEditorModal extends HexmakerModal {
       if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
-    ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
+    for (const f of BODY_FIELDS) {
+      const v = readBodyField(rawContent, f);
+      if (v !== undefined) this.bodyFields.set(f, v);
+    }
+    // The note's Map data callout shows what the map has now.
+    if (hasMapData(rawContent)) void this.plugin.refreshHexMapData(this.mapName, this.x, this.y);
+    ({ text: this.allText, links: this.allLinks, headings: this.allHeadings } = await getAllSectionData(
       this.app,
       path,
       rawContent,
@@ -284,6 +300,7 @@ export class HexEditorModal extends HexmakerModal {
       "Notes",
       "hexEditorNotesCollapsed",
     );
+    this.renderBodyFieldNotices(notesBody, path);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -314,6 +331,21 @@ export class HexEditorModal extends HexmakerModal {
     rolled.createEl("summary", { text: ROLLED_TEXT_SECTIONS.map((s) => s.label).join(" · ") });
     for (const { key, label } of ROLLED_TEXT_SECTIONS) {
       this.renderTextSection(rolled, path, key, label, allText.get(key) ?? "");
+    }
+    // Sections in this note the editor has no field for (the user's own, or
+    // an older template's): shown and editable under their own headings, so
+    // nothing in the note is out of sight here.
+    const known = new Set<string>([
+      ...TEXT_SECTIONS.map((s) => s.key as string),
+      ...ROLLED_TEXT_SECTIONS.map((s) => s.key as string),
+      ...LINK_SECTIONS.map((s) => s.toLowerCase()),
+    ]);
+    const others = [...this.allHeadings].filter(([key]) => !known.has(key));
+    if (others.length) {
+      const more = notesBody.createEl("details", { cls: "duckmage-editor-other-sections" });
+      more.open = others.some(([key]) => !!(allText.get(key) ?? "").trim());
+      more.createEl("summary", { text: `More in this note (${others.length})` });
+      for (const [key, heading] of others) this.renderTextSection(more, path, heading, heading.replace(/[:：]+$/, ""), allText.get(key) ?? "");
     }
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
@@ -389,6 +421,8 @@ export class HexEditorModal extends HexmakerModal {
 
   onClose() {
     this.flushTextSaves();
+    // Terrain, region or name may have changed here: refresh the note's Map data.
+    void this.plugin.refreshHexMapData(this.mapName, this.x, this.y);
     this.saves.dispose();
     this.notesStatusEl = null;
     this.stopKeepInViewport?.();
@@ -1353,6 +1387,60 @@ export class HexEditorModal extends HexmakerModal {
     }
   }
 
+  /**
+   * A "**Terrain:**" or "**Region:**" line in the note that disagrees with
+   * the map (an older template's hand-filled lines): say so, and offer to
+   * apply it to the map or to update the line. The line is never removed.
+   */
+  private renderBodyFieldNotices(container: HTMLElement, path: string): void {
+    const mapValue: Record<BodyField, string | null> = {
+      Terrain: this.directTerrain,
+      Region: getHexRegionFromFile(this.app, path),
+    };
+    for (const field of BODY_FIELDS) {
+      const written = this.bodyFields.get(field);
+      if (written === undefined || sameName(written, mapValue[field])) continue;
+      const row = container.createDiv({ cls: "duckmage-editor-body-field" });
+      const onMap = mapValue[field];
+      row.createSpan({
+        text: `This note's text says ${field}: ${written}, but the map has ${onMap ? onMap : "none"}.`,
+      });
+      const actions = row.createDiv({ cls: "duckmage-editor-body-field-actions" });
+      // Terrain must be one the map's palette has (matched case-insensitively).
+      const terrain = field === "Terrain"
+        ? this.plugin.getMapPalette(this.mapName).find((t) => sameName(t.name, written))?.name
+        : undefined;
+      if (field === "Region" || terrain) {
+        actions.createEl("button", { text: `Use "${terrain ?? written}" on the map` }).addEventListener("click", () => {
+          void this.saves.track((async () => {
+            if (field === "Terrain") {
+              await this.ensureHexNote();
+              await setTerrainInFile(this.app, path, terrain!);
+              await this.plugin.syncHexEncounterTableLink(path, terrain!);
+              this.onChanged(new Map([[path, terrain!]]));
+            } else {
+              await setHexRegionInFile(this.app, path, written);
+              this.onChanged();
+            }
+            await this.loadData();
+            this.onOpen();
+          })());
+        });
+      }
+      if (onMap) {
+        actions.createEl("button", { text: `Change the note to "${onMap}"` }).addEventListener("click", () => {
+          const file = this.app.vault.getAbstractFileByPath(path);
+          if (!(file instanceof TFile)) return;
+          void this.saves.track((async () => {
+            await this.app.vault.process(file, (c) => setBodyField(c, field, onMap));
+            await this.loadData();
+            this.onOpen();
+          })());
+        });
+      }
+    }
+  }
+
   private renderTextSection(
     container: HTMLElement,
     path: string,
@@ -1361,7 +1449,7 @@ export class HexEditorModal extends HexmakerModal {
     initialContent: string,
   ): void {
     const sectionEl = container.createDiv({
-      cls: `duckmage-editor-text-section duckmage-editor-text-section-${section}`,
+      cls: `duckmage-editor-text-section duckmage-editor-text-section-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     });
     const labelRow = sectionEl.createDiv({
       cls: "duckmage-text-section-label-row",

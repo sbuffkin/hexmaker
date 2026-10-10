@@ -56,6 +56,8 @@ import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { withMapLink } from "./maps/mapNote";
+import { setMapData, type HexMapDataView } from "./hexMapData";
+import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
 import {
@@ -248,6 +250,28 @@ export default class HexmakerPlugin extends Plugin {
       },
     });
     // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
+    // Map data callouts (src/hexMapData.ts) in the open map's hex notes: an
+    // opt-in for notes made before the template had one.
+    this.addCommand({
+      id: "add-map-data-to-hex-notes",
+      name: "Add map data to this map's hex notes",
+      checkCallback: (checking) => {
+        const open = this.app.workspace.getActiveViewOfType(HexMapView)
+          ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
+        const mapName = open?.activeMapName;
+        if (!mapName || !this.getMap(mapName)) return false;
+        if (!checking) {
+          new ConfirmModal(
+            this.app,
+            "Add map data to hex notes",
+            `Every hex note of "${this.mapLabel(mapName)}" gets a Map data box under its title showing its terrain, region and name from the map, kept up to date when you open the hex. Nothing else in the notes changes.`,
+            "Add map data",
+            () => void this.addMapDataToHexNotes(mapName).then((n) => new Notice(`Map data added or updated in ${n} hex note${n === 1 ? "" : "s"}.`)),
+          ).open();
+        }
+        return true;
+      },
+    });
     // Export, for the map open in the hex map view (else the default map).
     this.addCommand({
       id: "export-current-map",
@@ -1499,6 +1523,8 @@ export default class HexmakerPlugin extends Plugin {
     // carrying (possibly stale) terrain/region fields.
     content = withMapLink(content, mapName);
     if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
+    // The template's Map data callout shows what the map has for this hex.
+    content = setMapData(content, this.hexMapDataView(mapName, x, y));
     // The hex's terrain (just set, or painted before it had a note) gets
     // its encounter-table link now rather than patched in later.
     const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
@@ -1550,6 +1576,47 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /** Read the hex template once (used by bulk generation to avoid N redundant reads). */
+  /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
+  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
+    const h = this.mapStore.get(mapName, `${x}_${y}`) ?? {};
+    return { map: mapName, mapLabel: this.mapLabel(mapName), x, y, terrain: h.terrain, region: h.region, name: h.name };
+  }
+
+  /**
+   * Bring a hex note's Map data callout up to date with the map (or add one
+   * when `insert`). Only writes when something changed; a note without a
+   * callout is left alone unless `insert`. Returns whether it wrote.
+   */
+  async refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> {
+    const file = this.app.vault.getAbstractFileByPath(this.hexPath(x, y, mapName));
+    if (!(file instanceof TFile)) return false;
+    const view = this.hexMapDataView(mapName, x, y);
+    // Read first: most notes need nothing, and a no-op process() still writes.
+    const current = await this.app.vault.read(file);
+    if (setMapData(current, view, insert) === current) return false;
+    let wrote = false;
+    await this.app.vault.process(file, (content) => {
+      const next = setMapData(content, view, insert);
+      wrote = next !== content;
+      return next;
+    });
+    return wrote;
+  }
+
+  /** Add (or update) the Map data callout in every hex note of a map. Returns how many notes changed. */
+  async addMapDataToHexNotes(mapName: string): Promise<number> {
+    const hexBase = normalizeFolder(this.settings.hexFolder);
+    const folder = this.app.vault.getAbstractFileByPath(hexBase ? `${hexBase}/${mapName}` : mapName);
+    if (!(folder instanceof TFolder)) return 0;
+    let n = 0;
+    for (const f of folder.children) {
+      if (!(f instanceof TFile)) continue;
+      const m = /^(-?\d+)_(-?\d+)\.md$/.exec(f.name);
+      if (m && await this.refreshHexMapData(mapName, Number(m[1]), Number(m[2]), true)) n++;
+    }
+    return n;
+  }
+
   private async loadHexTemplate(): Promise<string> {
     const templatePath = normalizeFolder(this.settings.templatePath ?? "");
     if (templatePath) {

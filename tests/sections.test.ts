@@ -17,6 +17,7 @@ import {
 	sectionText,
 } from "../src/sections";
 import { isGuidanceLine } from "../src/hexGuidance";
+import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../src/types";
 import { readFileSync } from "node:fs";
 
 /** Build a minimal mock App backed by an in-memory string. */
@@ -462,10 +463,29 @@ describe("the built-in hex template (src/defaultHexTemplate.md)", () => {
 			expect(above === undefined || above === "---" || /^#/.test(above)).toBe(true);
 		});
 		for (const h of ["description", "landmark", "hidden", "secret", "weather", "hooks & rumors"]) {
-			const at = lines.indexOf(`### ${h}`);
+			const at = lines.findIndex((l) => l.toLowerCase() === `### ${h}`);
 			expect(at).toBeGreaterThan(-1);
 			expect(isGuidanceLine(lines[at + 1])).toBe(true);
 		}
+	});
+
+	it("has every section the hex editor shows, in the editor's order, and nothing else", () => {
+		const headings = lines.filter((l) => /^###\s/.test(l)).map((l) => canonicalSection(l.replace(/^###\s+/, "")));
+		expect(headings).toEqual([
+			...TEXT_SECTIONS.map((s) => s.key),
+			...ROLLED_TEXT_SECTIONS.map((s) => s.key),
+			"encounters table", "towns", "dungeons", "quests", "factions", "features",
+		]);
+		expect(new Set(headings)).toEqual(new Set([
+			...TEXT_SECTIONS.map((s) => s.key as string),
+			...ROLLED_TEXT_SECTIONS.map((s) => s.key as string),
+			...LINK_SECTIONS.map((s) => s.toLowerCase()),
+		]));
+	});
+
+	it("carries the Map data callout and no Terrain / Region lines to fill in by hand", () => {
+		expect(template).toContain("> [!hexmaker] Map data");
+		expect(template).not.toMatch(/\*\*(Terrain|Region):\*\*/);
 	});
 
 	it("a fresh note from it has every text section empty", async () => {

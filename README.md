@@ -261,6 +261,7 @@ Every command, as it appears in the command palette:
 | **Hexmap World Creator: Open palette editor** | Opens the terrain palette editor. |
 | **Hexmap World Creator: Go up to parent map** | From a submap, back to the map it belongs to. |
 | **Hexmap World Creator: Go back to previous map** | Returns to the map you were on before. |
+| **Hexmap World Creator: Add map data to this map's hex notes** | Adds a Map data box (terrain, region, name, from the map) under the title of every hex note of the open map, kept up to date when you open a hex. New hex notes from the built-in template already have one. |
 | **Hexmap World Creator: Export current map…** | Opens the map export form (PNG, PDF, hexcrawl manual). |
 | **Hexmap World Creator: Export current note to PDF** | Exports the open note as a PDF. |
 | **Hexmap World Creator: Export current note to Markdown** | Exports the open note as Markdown. |
