@@ -7,7 +7,6 @@ import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
 import type { Side as WorldSide } from "./world";
-import { routeContextPaths } from "./procedural/contextPaths";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { defaultPaletteFor, fillPaletteSelect } from "../palettes/paletteOptions";
@@ -25,7 +24,9 @@ import {
   kindsForPalette,
   listGeneratorKinds,
   neighbourFirst,
+  optionsWithDefaults,
   regionDetailDescription,
+  runGenerator,
   submapStartKind,
   suggestBaseTerrain,
   visibleKinds,
@@ -603,18 +604,9 @@ export class NewMapSetupModal extends HexmakerModal {
    * isn't a lane in the system).
    */
   private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[]): GenerateOutcome {
-    const grid = this.grid();
-    const outcome = kind.generate({ terrains, grid, seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement });
-    const carry = this.context?.paths ?? [];
-    if (!outcome.ok || carry.length === 0 || isSpacePalette(terrains)) return outcome;
-    const routed = routeContextPaths(
-      outcome.cells,
-      terrains,
-      { ...grid, orientation: this.plugin.settings.hexOrientation },
-      carry,
-      this.seed,
-    );
-    return { ...outcome, paths: [...outcome.paths, ...routed] };
+    return runGenerator(this.plugin.settings.hexOrientation, kind, {
+      terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement,
+    });
   }
 
   /** A labelled form row; returns its control cell (see labelled). */
@@ -639,9 +631,7 @@ export class NewMapSetupModal extends HexmakerModal {
   }
 
   private resolvedOptions(kind: TerrainGeneratorKind): Record<string, string> {
-    const out: Record<string, string> = {};
-    for (const o of kind.options) out[o.key] = this.options[o.key] ?? o.default;
-    return out;
+    return optionsWithDefaults(kind, this.options);
   }
 
   private grid() {

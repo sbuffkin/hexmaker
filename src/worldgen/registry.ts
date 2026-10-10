@@ -21,7 +21,8 @@ import {
   planetSurface,
   planetSurfaceFits,
 } from "./procedural/planetSurface";
-import { generatorMapKind, isGeneratorShown, type MapKind } from "../mapKinds";
+import { generatorMapKind, isGeneratorShown, isSpacePalette, type MapKind } from "../mapKinds";
+import { routeContextPaths } from "./procedural/contextPaths";
 import { generateConnected, type NewRegion } from "./neighbours";
 
 /**
@@ -297,6 +298,32 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
 }
 
 /**
+ * Run a generator with its context, then continue the context's paths
+ * (a parent hex's roads / rivers, a neighbour's crossing roads) across the
+ * result. Space palettes skip the carry-over (a jump route through a sector
+ * hex isn't a lane in the system). Shared by the setup modal and the Maps →
+ * New map tab so both make the same map from the same choices.
+ */
+export function runGenerator(
+  orientation: "flat" | "pointy",
+  kind: TerrainGeneratorKind,
+  req: GenerateRequest,
+): GenerateOutcome {
+  const outcome = kind.generate(req);
+  const carry = req.context?.paths ?? [];
+  if (!outcome.ok || carry.length === 0 || isSpacePalette(req.terrains)) return outcome;
+  const routed = routeContextPaths(outcome.cells, req.terrains, { ...req.grid, orientation }, carry, req.seed);
+  return { ...outcome, paths: [...outcome.paths, ...routed] };
+}
+
+/** A generator's options at their defaults, overridden by `chosen`. */
+export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">, chosen: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const o of kind.options) out[o.key] = chosen[o.key] ?? o.default;
+  return out;
+}
+
+/**
  * Generators to offer: those whose map type is on, space ones on a space
  * map (`spaceContext`), and the current/saved choice (`selectedId`).
  */
@@ -307,6 +334,24 @@ export function visibleKinds(
   selectedId?: string,
 ): TerrainGeneratorKind[] {
   return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
+}
+
+/**
+ * Generators for the Maps → New map tab's dropdown, Blank aside: built-in
+ * and learned ones whose map type is on (space ones on a space palette, the
+ * current choice always) that fit the palette and need no parent hex. Next
+ * to a neighbour, the ones that continue its edge come first.
+ */
+export function newMapGeneratorChoices(
+  kinds: TerrainGeneratorKind[],
+  settings: { mapKinds?: string[] },
+  terrains: TerrainColor[],
+  currentId: string | undefined,
+  neighbour: boolean,
+): TerrainGeneratorKind[] {
+  const shown = visibleKinds(kinds, settings, isSpacePalette(terrains), currentId);
+  const fitting = kindsForPalette(shown, terrains, false).filter((k) => k.id !== BLANK_ID);
+  return neighbour ? neighbourFirst(fitting) : fitting;
 }
 
 /**

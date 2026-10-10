@@ -6927,3 +6927,10 @@ button.duckmage-wfc-library-tab.is-active {
     margin-left: 0;
     white-space: normal;
 }
+
+/* ── Fresh-eyes r5 (setup, new map, export) ── */
+
+/* Maps → New map: the chosen generator's description under the dropdown. */
+.duckmage-map-generator-desc {
+    margin-top: 0.25em;
+}

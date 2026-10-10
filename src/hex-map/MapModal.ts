@@ -8,22 +8,33 @@ import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
-  generatorFitsPalette,
   saveGeneratorFromMap,
   generatorsForRegion,
-  generateTerrain,
   paletteColors,
   pathColors,
-  toPathChains,
   type GeneratorFile,
+  type GridSpec,
 } from "../worldgen/generators";
+import {
+  BLANK_ID,
+  describeKind,
+  listGeneratorKinds,
+  newMapGeneratorChoices,
+  optionsWithDefaults,
+  runGenerator,
+  type GeneratedPath,
+  type GenerateOutcome,
+  type TerrainGeneratorKind,
+} from "../worldgen/registry";
+import { buildRegionContext } from "../worldgen/regionContext";
+import { OVERLAND_ID, seaSideFromNeighbours } from "../worldgen/procedural/planetSurface";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "../worldgen/preview";
 import { SIDES, link, type Side } from "../worldgen/world";
 import {
   detachRegion,
-  generateConnected,
   gridRules,
   linkRegions,
+  neighbourShadow,
   regionNeighbours,
   neighbourSpec,
   occupiedSides,
@@ -33,8 +44,14 @@ import {
 } from "../worldgen/neighbours";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { fillPaletteSelect } from "../palettes/paletteOptions";
-import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
+
+/** A neighbour shadow as terrain by hex key (the faded seam in previews). */
+function shadowTerrain(shadow: Map<string, { terrain?: string }>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [k, c] of shadow) if (c.terrain) out.set(k, c.terrain);
+  return out;
+}
 
 const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
 
@@ -505,7 +522,7 @@ export class MapModal extends HexmakerModal {
     guided.createEl("button", { text: "Guided setup…" }).addEventListener("click", openGuided);
     guided.createSpan({
       cls: "setting-item-description",
-      text: "Pick a size and a generator (Overland and more) with a live preview, or fill in the form below. What you fill in here carries over.",
+      text: "A bigger live preview and each generator's options (sea side, climate…), or fill in the form below. What you fill in here carries over.",
     });
 
     // Name
@@ -578,11 +595,13 @@ export class MapModal extends HexmakerModal {
     const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select", attr: { id: "duckmage-new-map-palette" } });
     fillPaletteSelect(this.plugin, paletteSelect);
 
-    // Generator (optional). Only generators whose terrains all exist in the
-    // chosen palette are offered.
+    // Generator (optional): Blank, the built-in procedural ones (Overland,
+    // Star scatter… as the map types on allow) and learned ones — whichever
+    // fit the chosen palette (fresh-eyes r5: Overland used to hide behind a
+    // button). Guided setup adds each generator's options and a big preview.
     el.createEl("label", { text: "Generator", cls: "duckmage-map-field-label", attr: { for: "duckmage-new-map-generator" } });
     el.createEl("p", {
-      text: "Fill the new map with terrain from a learned generator (next to a map, it continues that map's edge), or leave it blank. Make generators and change their settings in the terrain generator.",
+      text: "Fill the new map with generated terrain, or leave it blank. Built-in generators use their default options here; Guided setup lets you set them (sea side, climate…). Next to a map, generators marked ↔ continue its edge.",
       cls: "duckmage-map-origin-desc",
     });
     const generatorRow = el.createDiv({ cls: "duckmage-region-row" });
@@ -590,36 +609,34 @@ export class MapModal extends HexmakerModal {
       cls: "duckmage-map-new-palette-select",
       attr: { id: "duckmage-new-map-generator" },
     });
-    // Built-in generators (Overland, Star scatter…) live in Guided setup;
-    // say so here instead of leaving a dropdown that only offers Blank.
-    const moreGen = generatorRow.createEl("button", {
-      text: "Overland and more…",
-      attr: { title: "Open the guided setup with this name and neighbour: built-in generators with a live preview" },
-    });
-    moreGen.addEventListener("click", openGuided);
-    let generators: GeneratorFile[] = [];
+    const generatorDesc = el.createEl("p", { cls: "duckmage-map-origin-desc duckmage-map-generator-desc" });
+    let kinds: TerrainGeneratorKind[] = [];
+    // Set by applyPlacement (declared further down; read lazily).
+    let placement: NewRegion | null = null;
     const fillGenerators = () => {
       const current = generatorSelect.value;
       generatorSelect.empty();
-      generatorSelect.createEl("option", { value: "", text: "Blank" });
       const terrains = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value);
-      const names = terrains.map((t) => t.name);
-      // Planet generators (map-kind: planet) only for space users or on a space palette.
-      const spaceContext = isSpacePalette(terrains);
-      for (const g of generators) {
-        const shown = isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
-          spaceContext,
-          selected: g.file.path === current,
-        });
-        if (shown && generatorFitsPalette(g.model, names))
-          generatorSelect.createEl("option", { value: g.file.path, text: g.model.name });
+      const offered = newMapGeneratorChoices(kinds, this.plugin.settings, terrains, current, !!placement);
+      generatorSelect.createEl("option", { value: "", text: "Blank" });
+      for (const k of offered) {
+        const seam = placement && k.continuesNeighbours ? " ↔" : "";
+        generatorSelect.createEl("option", { value: k.id, text: `${k.label}${k.source === "learned" ? " (learned)" : ""}${seam}` });
       }
-      generatorSelect.value = Array.from(generatorSelect.options).some((o) => o.value === current) ? current : "";
+      generatorSelect.value = offered.some((k) => k.id === current) ? current : "";
+      syncGeneratorDesc();
     };
-    fillGenerators();
+    const syncGeneratorDesc = () => {
+      const k = selectedGenerator();
+      generatorDesc.setText(k ? describeKind(k, this.plugin.getPaletteOrPresetTerrains(paletteSelect.value)) : "");
+      generatorDesc.toggle(!!k);
+    };
+    generatorSelect.createEl("option", { value: "", text: "Blank" });
+    generatorDesc.hide();
+    generatorSelect.addEventListener("change", syncGeneratorDesc);
     paletteSelect.addEventListener("change", fillGenerators);
-    void listGenerators(this.plugin).then((list) => {
-      generators = list;
+    void listGeneratorKinds(this.plugin).then((list) => {
+      kinds = list;
       fillGenerators();
     });
 
@@ -703,7 +720,6 @@ export class MapModal extends HexmakerModal {
     });
 
     // Placement: lock what has to match the map it goes next to.
-    let placement: NewRegion | null = null;
     const presetBtns = Array.from(presetsRow.querySelectorAll("button"));
     const applyPlacement = () => {
       placement = null;
@@ -725,9 +741,10 @@ export class MapModal extends HexmakerModal {
           staggerBtn.toggleClass("is-even", staggerVal === "even");
           const borders = occupiedSides(this.plugin, placement).map((s) => `${s}: ${regionNameAt(this.plugin, placement!, s)}`);
           placeNote.setText(`${spec.cols}×${spec.rows}, palette ${spec.paletteName}. Borders ${borders.join("; ")}.`);
-          fillGenerators();
         }
       } else placeNote.setText("");
+      // Re-list: next to a map, the ones that continue its edge come first.
+      fillGenerators();
       for (const input of [colsInput, rowsInput, paletteSelect, originXInput, originYInput]) input.disabled = locked;
       for (const b of presetBtns) b.disabled = locked;
       staggerBtn.disabled = locked;
@@ -742,24 +759,23 @@ export class MapModal extends HexmakerModal {
       schedulePreview();
     });
 
-    const selectedGenerator = () => generators.find((g) => g.file.path === generatorSelect.value) ?? null;
+    const selectedGenerator = () =>
+      (generatorSelect.value ? kinds.find((k) => k.id === generatorSelect.value && k.id !== BLANK_ID) : undefined) ?? null;
     const runPreview = () => {
-      const g = selectedGenerator();
-      if (!g) return;
+      const k = selectedGenerator();
+      if (!k) return;
       const grid = {
         cols: Math.max(1, Number(colsInput.value) || 20),
         rows: Math.max(1, Number(rowsInput.value) || 16),
         offset: { x: Number(originXInput.value) || 0, y: Number(originYInput.value) || 0 },
         stagger: staggerVal,
       };
-      const palette = this.plugin.getPaletteOrPresetTerrains(paletteSelect.value).map((t) => t.name);
-      const seed = Number(seedInput.value) >>> 0;
-      const r = placement ? generateConnected(this.plugin, g.model, palette, placement, seed) : generateTerrain(this.plugin, g.model, palette, grid, seed);
+      const r = this.runNewMapGenerator(k, paletteSelect.value, grid, Number(seedInput.value) >>> 0, placement);
       if (!r.ok) {
         previewStatus.setText(`This generator couldn't fill the map: ${r.message}`);
         return;
       }
-      const shadow = placement && "shadow" in r ? (r.shadow as Map<string, string>) : undefined;
+      const shadow = placement ? shadowTerrain(neighbourShadow(this.plugin, placement)) : undefined;
       drawPreview(previewCanvas, r.cells, grid, this.plugin.settings.hexOrientation, paletteColors(this.plugin, paletteSelect.value), r.featureCells, r.paths, pathColors(this.plugin), 420, 14, undefined, { shadow });
       previewStatus.setText(r.warnings.length ? `⚠ ${r.warnings.length}` : "");
       previewStatus.setAttr("title", r.warnings.join("\n"));
@@ -815,6 +831,35 @@ export class MapModal extends HexmakerModal {
     createBtn.addEventListener("click", doCreate);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
       if (e.key === "Enter") doCreate();
+    });
+  }
+
+  /**
+   * Run a New map tab generator at its default options. Next to a map: the
+   * neighbour's edge and crossing roads as context (Overland's sea starts
+   * where the neighbour's coast says), learned ones solve against its edge.
+   */
+  private runNewMapGenerator(
+    kind: TerrainGeneratorKind,
+    paletteName: string,
+    grid: GridSpec,
+    seed: number,
+    placement: NewRegion | null,
+  ): GenerateOutcome {
+    const terrains = this.plugin.getPaletteOrPresetTerrains(paletteName);
+    const context = placement ? buildRegionContext(this.plugin, placement) : undefined;
+    const chosen: Record<string, string> = {};
+    if (kind.id === OVERLAND_ID && placement) {
+      const sea = seaSideFromNeighbours(grid, context?.edgeCells);
+      if (sea) chosen.sea = sea.side;
+    }
+    return runGenerator(this.plugin.settings.hexOrientation, kind, {
+      terrains,
+      grid: placement ? { ...grid, offset: { ...placement.offset }, stagger: placement.stagger } : grid,
+      seed,
+      options: optionsWithDefaults(kind, chosen),
+      context,
+      region: placement ?? undefined,
     });
   }
 
@@ -954,7 +999,7 @@ export class MapModal extends HexmakerModal {
     inputs: (HTMLInputElement | HTMLSelectElement)[],
     bgImagePath: string | null,
     bgImageFile: File | null,
-    generator: GeneratorFile | null,
+    generator: TerrainGeneratorKind | null,
     seed: number,
     placement: NewRegion | null = null,
   ): Promise<void> {
@@ -979,17 +1024,14 @@ export class MapModal extends HexmakerModal {
       }
     }
     let terrainAt: Map<string, string> | undefined;
-    let generatedPaths: { type: string; route?: string; hexes: string[] }[] = [];
+    let generatedPaths: GeneratedPath[] = [];
     if (generator) {
-      const palette = this.plugin.getPaletteOrPresetTerrains(paletteName).map((t) => t.name);
-      const solved = placement
-        ? generateConnected(this.plugin, generator.model, palette, placement, seed)
-        : generateTerrain(
-          this.plugin, generator.model, palette,
-          { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed,
-        );
+      const solved = this.runNewMapGenerator(
+        generator, paletteName,
+        { cols, rows, offset: { x: initialX, y: initialY }, stagger: staggerOffset }, seed, placement,
+      );
       if (!solved.ok) {
-        new Notice(`Generator "${generator.model.name}" couldn't fill this map: ${solved.message}`);
+        new Notice(`Generator "${generator.label}" couldn't fill this map: ${solved.message}`);
         reset();
         return;
       }
@@ -1027,9 +1069,9 @@ export class MapModal extends HexmakerModal {
       }
     }
 
-    if (generatedPaths.length) {
+    if (generatedPaths.length && generator) {
       const newMap = this.plugin.getMap(result.name);
-      const { chains, missing } = toPathChains(this.plugin, generatedPaths, generator?.model);
+      const { chains, missing } = generator.toChains(generatedPaths);
       if (newMap && chains.length) {
         newMap.pathChains = [...newMap.pathChains, ...chains];
         await this.plugin.saveSettings();
