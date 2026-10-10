@@ -38,6 +38,41 @@ export interface PathChain {
 	extra?: Record<string, string>;
 }
 
+/** A hex key "x_y" (offset coordinates), as everywhere else. */
+export type HexKey = string;
+
+/**
+ * One branch of a path: an ordered list of anchors. Between consecutive
+ * anchors the hexes are the deterministic route (src/paths/router.ts).
+ * branches[0] of a path is its main line; a later branch whose first anchor
+ * lies on the path is a fork from there (derived, never stored).
+ */
+export interface PathBranch {
+	/** Branch column: "main", "to Saltmere"... Optional, user-owned text. */
+	label?: string;
+	/** In order. One anchor = a path that's still being started. */
+	anchors: HexKey[];
+	/** Path-routes columns this build doesn't know (header → value), kept as-is. */
+	extra?: Record<string, string>;
+}
+
+/**
+ * A named path of one type, stored as anchors + branches (the anchored model
+ * that replaces every-hex PathChains). PathChain stays as the *resolved* shape.
+ */
+export interface MapPath {
+	/** Unique within the map (compared case-insensitively). Links the Paths and Path routes tables. */
+	name: string;
+	/** References PathType.name in the map's palette. Unknown types draw grey. */
+	typeName: string;
+	/** Free text, user-owned. */
+	notes?: string;
+	/** branches[0] is the main line. Never empty once written. */
+	branches: PathBranch[];
+	/** Paths-table columns this build doesn't know, kept as-is. */
+	extra?: Record<string, string>;
+}
+
 /**
  * Per-map background image. Drawn under the hex grid, sharing the viewport's
  * pan/zoom transform. `offsetX`/`offsetY` translate the image relative to the
