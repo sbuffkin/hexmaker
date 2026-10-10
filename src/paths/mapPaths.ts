@@ -7,14 +7,12 @@ import type { MapData, MapPath } from "../types";
 import { legacyChainsToPaths } from "./legacy";
 
 /**
- * ┌──────────────────────────────────────────────────────────────────────┐
- * │ PHASE-3 ADAPTER. Until the map note stores `MapData.paths` (format   │
- * │ with `## Path routes`, built on feat/path-mapnote), a map's paths    │
- * │ are its legacy `pathChains`, each chain one path with every hex as   │
- * │ an anchor (lossless: it resolves to exactly the old chain). Phase 3  │
- * │ replaces ONLY this function's body with `return map.paths ?? [];`.   │
- * └──────────────────────────────────────────────────────────────────────┘
+ * A map's stored paths: `MapData.paths`, which MapStore loads from the map
+ * note (format 5) and keeps in step with edits made through `pathChains`.
+ * A map the store holds no paths for (its note can't be read, so its paths
+ * are still only data.json's chains) falls back to those chains, each one
+ * path with every hex as an anchor (lossless: it resolves to the old chain).
  */
-export function storedMapPaths(map: Partial<Pick<MapData, "pathChains">>): MapPath[] {
-  return legacyChainsToPaths(map.pathChains ?? []);
+export function storedMapPaths(map: Partial<Pick<MapData, "pathChains" | "paths">>): MapPath[] {
+  return map.paths ?? legacyChainsToPaths(map.pathChains ?? []);
 }

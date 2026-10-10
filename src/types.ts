@@ -165,6 +165,18 @@ export interface MapData {
 	rumorsTable?: string;
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };
+	/**
+	 * The map's paths, as stored (anchors + branches; map note format 5).
+	 * The model: MapStore keeps it, and pathChains in step with it.
+	 */
+	paths?: MapPath[];
+	/**
+	 * COMPATIBILITY VIEW of `paths` for code not yet switched to them: one
+	 * chain per resolved branch (every hex). MapStore keeps it in step both
+	 * ways: it's rebuilt when `paths` change (load, hand edit, migration), and
+	 * edits made to it (the path tool, generators, type renames) are folded
+	 * back into `paths` on the next save (see src/paths/chainView.ts).
+	 */
 	pathChains: PathChain[];
 	showCoords?: boolean;        // undefined = true (backwards-compatible)
 	showTerrainIcons?: boolean;  // undefined = true

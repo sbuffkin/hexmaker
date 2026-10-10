@@ -1,10 +1,11 @@
 import { Notice, TAbstractFile, TFile, TFolder, parseYaml } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { MapData } from "../types";
+import type { HexKey, MapData, MapPath, PathChain, PathType, TerrainColor } from "../types";
 import { normalizeFolder } from "../utils";
 import {
   buildMapNote,
   MAP_NOTE_FORMAT,
+  PATHS_FORMAT,
   READABLE_KEYS_FORMAT,
   mapNoteKey,
   parseMapNote,
@@ -17,10 +18,33 @@ import {
   type MapNoteData,
   type MapNoteProblem,
   type MapNoteReadOptions,
+  type PathRouteStats,
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 import { regionMirrorFixes } from "./submaps";
 import { writeJsonBackup } from "../backup";
+import { impassableNames } from "../impassable";
+import type { RouteContext } from "../paths/router";
+import { RouteCache, type SegmentRouter } from "../paths/routeCache";
+import { resolvePaths, styleOf, type ResolvedBranch, type StyleFor } from "../paths/resolve";
+import { anchorsFor, compactLegacy, dedupeSteps, reproduces, routeFnFor, type CompactReport } from "../paths/fromHexes";
+import { pinChanged, segmentFn } from "../paths/edit";
+import { legacyChainsToPaths } from "../paths/legacy";
+import { pathNameKey, uniquePathName } from "../paths/names";
+import { mapRouteContext, pathTypeStyleFor } from "../paths/mapContext";
+import { buildView, emptyView, reconcile, type PathView } from "../paths/chainView";
+
+/** A map's routing context changed (terrain, palette impassability, size, stagger). */
+export interface RouteContextChange {
+  map: string;
+  before: RouteContext;
+  after: RouteContext;
+  /** Routes under `before` (cached). */
+  previous: SegmentRouter;
+  /** Routes under `after` (cached). */
+  current: SegmentRouter;
+  styleFor: StyleFor;
+}
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
@@ -78,11 +102,33 @@ export class MapStore {
   private reviewTimer: number | undefined;
   /** Last reported unreadable rows per map (so a notice isn't repeated). */
   private reported = new Map<string, string>();
+  /** Per map: which handed-out pathChains object is which branch (see chainView.ts). */
+  private views = new Map<string, PathView>();
+  /** Per map: segment routes under its current routing context (and the previous one, for pinning). */
+  private routeCaches = new Map<string, RouteCache>();
+  /** Maps still being moved out of hex-note frontmatter (their terrain isn't in memory yet). */
+  private migrating = new Set<string>();
+  /** Per map: what converting its old every-hex paths did, saved next to its backup. */
+  private pathReports = new Map<string, CompactReport>();
+  /** Old every-hex paths converted this session, per map (for the startup notice). */
+  private converted: { map: string; report: CompactReport }[] = [];
+  private contextListeners = new Set<(e: RouteContextChange) => boolean | void>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
-  isReady(): boolean {
-    return this.ready;
+  /**
+   * No map: the store has loaded every map note. With a map: that map's
+   * terrain and palette are loaded too, so its paths can be resolved
+   * (routing earlier would route around an incomplete set of impassable
+   * hexes and the line would jump when the rest arrived). The palette store
+   * loads before this one (HexmakerPlugin: paletteStore.init().then(mapStore.init)).
+   */
+  isReady(map?: string): boolean {
+    if (!this.ready) return false;
+    if (map === undefined) return true;
+    const ps = (this.plugin as { paletteStore?: { isReady?: () => boolean } }).paletteStore;
+    if (ps?.isReady && !ps.isReady()) return false;
+    return !!this.plugin.getMap(map) && !this.broken.has(map) && !this.migrating.has(map);
   }
 
   // ── paths ────────────────────────────────────────────────────────────
@@ -142,6 +188,7 @@ export class MapStore {
       else (h as Record<string, unknown>)[k] = v;
     }
     if (Object.keys(h).length) t.set(key, h); else t.delete(key);
+    if ("terrain" in patch) this.terrainChanged(map);
     this.markDirty(map);
     this.emit(map);
   }
@@ -154,13 +201,185 @@ export class MapStore {
       for (const k of Object.keys(h) as (keyof HexData)[]) if (h[k] === undefined || h[k] === "") delete h[k];
       if (Object.keys(h).length) t.set(key, h); else t.delete(key);
     }
+    this.terrainChanged(map);
     this.markDirty(map);
     this.emit(map);
+  }
+
+  /** Terrain changed: if that moves the map's routing context, routes are pinned (see routeCache). */
+  private terrainChanged(name: string): void {
+    const map = this.plugin.getMap(name);
+    if (map && map.paths?.length && this.routeCaches.has(name) && this.isReady(name)) this.routeCache(map);
   }
 
   onChange(fn: (map: string) => void): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  // ── paths (anchored model) ───────────────────────────────────────────
+
+  /**
+   * A map's routing context changed (terrain painted impassable or back, a
+   * palette's impassable flags, the grid's size or stagger). A listener that
+   * returns true has dealt with it (phase 7: pin with a notice and "Reroute
+   * instead"); otherwise the store keeps every route where it was by adding
+   * anchors (Decision 3), silently.
+   */
+  onRouteContextChange(fn: (e: RouteContextChange) => boolean | void): () => void {
+    this.contextListeners.add(fn);
+    return () => this.contextListeners.delete(fn);
+  }
+
+  /** The map's routing inputs now (see paths/mapContext.ts). */
+  routeContext(map: MapData): RouteContext {
+    const p = this.plugin as Partial<Pick<HexmakerPlugin, "getMapPalette">> & { settings: { hexOrientation?: "flat" | "pointy"; staggerOffset?: "odd" | "even" } };
+    let palette: TerrainColor[] = [];
+    try { palette = p.getMapPalette?.call(this.plugin, map.name) ?? []; } catch { /* no palette yet */ }
+    return mapRouteContext({
+      orientation: p.settings.hexOrientation ?? "flat",
+      stagger: map.staggerOffset ?? p.settings.staggerOffset ?? "odd",
+      gridSize: map.gridSize,
+      gridOffset: map.gridOffset,
+      baseTerrain: map.baseTerrain,
+      terrainOf: this.all(map.name),
+      impassable: impassableNames(palette),
+    });
+  }
+
+  /** The routing style of each of the map's path types (their explicit fields only). */
+  pathStyleFor(map: MapData): StyleFor {
+    const p = this.plugin as Partial<Pick<HexmakerPlugin, "getMapPathTypes">>;
+    let types: PathType[] = [];
+    try { types = p.getMapPathTypes?.call(this.plugin, map.name) ?? []; } catch { /* none */ }
+    return pathTypeStyleFor(types);
+  }
+
+  /** The map's segment cache, switched to its current context (pinning first if that changed). */
+  routeCache(map: MapData): RouteCache {
+    let cache = this.routeCaches.get(map.name);
+    if (!cache) { cache = new RouteCache(); this.routeCaches.set(map.name, cache); }
+    const before = cache.context;
+    const after = this.routeContext(map);
+    if (!cache.setContext(after) || !before) return cache;
+    const previous = cache.previous()!;
+    const styleFor = this.pathStyleFor(map);
+    let handled = false;
+    for (const fn of this.contextListeners) {
+      try { if (fn({ map: map.name, before, after, previous, current: cache, styleFor }) === true) handled = true; }
+      catch (e) { console.error("Hexmaker: route context listener failed", e); }
+    }
+    if (!handled && map.paths?.length) {
+      const { paths, pinned } = pinChanged(map.paths, segmentFn(previous, styleFor), segmentFn(cache, styleFor), after);
+      if (pinned.length) {
+        map.paths = paths;
+        if (!this.broken.has(map.name)) this.markDirty(map.name);
+      }
+    }
+    cache.dropPrevious();
+    return cache;
+  }
+
+  /** The map's paths resolved to hexes, or null until its terrain and palette are loaded. */
+  resolved(name: string): ResolvedBranch[] | null {
+    const map = this.plugin.getMap(name);
+    if (!map || !this.isReady(name)) return null;
+    this.syncPaths(map);
+    return resolvePaths(map.paths ?? [], this.routeCache(map).context!, this.pathStyleFor(map), this.routeCache(map));
+  }
+
+  /** The map's paths (the stored model), with edits made through pathChains folded in. */
+  paths(name: string): readonly MapPath[] {
+    const map = this.plugin.getMap(name);
+    if (!map) return [];
+    this.syncPaths(map);
+    return map.paths ?? [];
+  }
+
+  /** Replace a map's paths (new tools): pathChains is rebuilt to match, the note written. */
+  setPaths(name: string, paths: MapPath[]): void {
+    const map = this.plugin.getMap(name);
+    if (!map) return;
+    map.paths = paths;
+    this.rebuildView(map);
+    this.markDirty(name);
+    this.emit(name);
+  }
+
+  /** Anchors that route back to exactly `hexes` (dense when nothing shorter does). */
+  private anchorsOf(map: MapData, typeName: string, hexes: HexKey[]): HexKey[] {
+    if (!this.isReady(map.name)) return dedupeSteps(hexes);
+    const cache = this.routeCache(map);
+    const route = routeFnFor(cache, styleOf(this.pathStyleFor(map), typeName));
+    const a = anchorsFor(hexes, route, cache.context!);
+    return reproduces(a, hexes, route) ? a : dedupeSteps(hexes);
+  }
+
+  /** pathChains rebuilt from the paths (one chain per resolved branch). */
+  private rebuildView(map: MapData): void {
+    const old = this.views.get(map.name);
+    // Needs the map's terrain in memory (the palette store loads first).
+    if (this.broken.has(map.name) || this.migrating.has(map.name)) {
+      this.views.set(map.name, emptyView());
+      return;
+    }
+    const cache = this.routeCache(map);
+    const resolved = resolvePaths(map.paths ?? [], cache.context!, this.pathStyleFor(map), cache);
+    const { chains, view } = buildView(resolved, old?.removed);
+    map.pathChains = chains;
+    this.views.set(map.name, view);
+  }
+
+  /**
+   * Fold edits made through the compatibility view (map.pathChains: the
+   * path tool, generators, type renames) into map.paths.
+   */
+  private syncPaths(map: MapData): void {
+    if (!this.ready || this.broken.has(map.name) || this.migrating.has(map.name)) return;
+    if (!map.pathChains) map.pathChains = [];
+    const view = this.views.get(map.name) ?? emptyView();
+    const r = reconcile(map.paths ?? [], map.pathChains, view, (t, h) => this.anchorsOf(map, t, h));
+    this.views.set(map.name, r.view);
+    if (r.changed || !map.paths) map.paths = r.paths;
+  }
+
+  /**
+   * Convert old every-hex paths (data.json chains, or a format 2–4 note's
+   * `Type | Hexes` rows): merge same-type chains that touch end to end,
+   * drop one-hex leftovers with no notes or extra columns (they stay in the
+   * backup and the report), and give each branch the fewest anchors that
+   * route back to exactly its hexes. `others` (already anchored) are kept
+   * first, unchanged.
+   */
+  private convertLegacy(map: MapData, legacy: MapPath[], others: MapPath[]): void {
+    const cache = this.routeCache(map);
+    const { paths, report } = compactLegacy(legacy, cache.context!, { dropSingles: true, styleFor: this.pathStyleFor(map), cache });
+    const taken = others.map((p) => p.name);
+    const named = paths.map((p) => {
+      const name = uniquePathName(p.name, taken);
+      taken.push(name);
+      return name === p.name ? p : { ...p, name };
+    });
+    map.paths = [...others, ...named];
+    this.pathReports.set(map.name, report);
+    this.converted.push({ map: map.name, report });
+  }
+
+  /** Save a map's path-conversion report next to its backup (once). */
+  private async savePathReport(map: string): Promise<void> {
+    const report = this.pathReports.get(map);
+    this.pathReports.delete(map);
+    if (!report || !report.pathsIn) return;
+    const adapter = this.plugin.app.vault.adapter;
+    try {
+      const dir = this.backupDir();
+      if (!(await adapter.exists(dir))) await adapter.mkdir(dir);
+      let path = `${dir}/${map}-paths-report.md`;
+      for (let n = 2; await adapter.exists(path); n++) path = `${dir}/${map}-paths-report-${n}.md`;
+      await adapter.write(path, pathReportText(map, report));
+    } catch (e) {
+      console.error(`Hexmap World Creator: couldn't save the path report for ${map}`, e);
+    }
   }
 
   private emit(map: string): void {
@@ -224,7 +443,7 @@ export class MapStore {
       for (const map of this.uniqueMaps()) {
         if (this.broken.has(map.name)) continue;
         const r = await this.loadMap(map);
-        if (typeof r === "object") this.markBroken(map.name, this.notePath(map.name), r.unreadable);
+        if (typeof r === "object") this.markBroken(map.name, this.notePath(map.name), r.unreadable, r.newer);
       }
       this.plugin.refreshHexMap();
     });
@@ -256,12 +475,15 @@ export class MapStore {
     } catch (e) {
       console.error("Hexmaker: couldn't read the palette for a map note's summary", e);
     }
+    const resolved = this.isReady(map.name) && map.paths?.length ? this.resolved(map.name) : null;
+    if (resolved) ctx.pathRoutes = pathRouteStats(map.paths ?? [], resolved);
     return ctx;
   }
 
   dataFor(map: MapData): MapNoteData {
-    const { name: _n, pathChains, savedViewport: _v, ...settings } = map;
-    return { settings: settings, hexes: this.table(map.name), paths: pathChains ?? [] };
+    this.syncPaths(map);
+    const { name: _n, pathChains: _c, paths, savedViewport: _v, ...settings } = map;
+    return { settings: settings, hexes: this.table(map.name), paths: paths ?? [] };
   }
 
   private async writeNote(map: MapData): Promise<void> {
@@ -275,7 +497,7 @@ export class MapStore {
       // we last read it (onModify not run yet). Never write over that.
       const r = readMapNote(current, this.readOpts(path));
       if (!r || !r.ok) {
-        this.markBroken(map.name, path, r ? r.reason : NO_FRONTMATTER);
+        this.markBroken(map.name, path, r ? r.reason : NO_FRONTMATTER, r && !r.ok ? r.newer : undefined);
         return;
       }
       const seen = this.lastContent.get(path);
@@ -291,6 +513,7 @@ export class MapStore {
         }
         this.backedUp.add(path);
       }
+      await this.savePathReport(map.name);
       const data = this.dataFor(map);
       const ctx = this.contextFor(map);
       const next = updateMapNote(current, map.name, data, ctx);
@@ -335,11 +558,28 @@ export class MapStore {
       const m = map as unknown as Record<string, unknown>;
       for (const f of RESETTABLE_FIELDS) if (!(f in data.settings) && !unreadable.has(f)) delete m[f];
     }
-    map.pathChains = data.paths;
     this.hexes.set(map.name, this.matchCase(map, data.hexes));
+    this.applyPaths(map, data);
     this.lastKey.set(map.name, mapNoteKey(this.dataFor(map)));
     // Loaded or hand-edited: taken as written. Derived parts catch up on the next write.
     this.lastDerived.set(map.name, JSON.stringify(this.contextFor(map)));
+  }
+
+  /**
+   * The note's paths onto the map: old every-hex rows in an older note are
+   * converted (merged, compacted; see convertLegacy), the routing context is
+   * brought up to date (a hand edit that painted water under a road keeps
+   * the road), and pathChains is rebuilt to match.
+   */
+  private applyPaths(map: MapData, data: MapNoteData): void {
+    const legacy = new Set(data.legacyPaths ?? []);
+    if (legacy.size && (data.format ?? 1) < PATHS_FORMAT) {
+      this.convertLegacy(map, data.paths.filter((p) => legacy.has(p.name)), data.paths.filter((p) => !legacy.has(p.name)));
+    } else {
+      map.paths = data.paths;
+      this.routeCache(map);
+    }
+    this.rebuildView(map);
   }
 
   /**
@@ -390,17 +630,23 @@ export class MapStore {
       if (k in ts) m[k] = ts[k];
       else if ((theirs.format ?? 1) >= READABLE_KEYS_FORMAT && RESETTABLE_FIELDS.includes(k)) delete m[k];
     }
-    if (!same(base.paths, theirs.paths)) map.pathChains = theirs.paths;
+    this.syncPaths(map);
+    const merged = mergePaths(base.paths, theirs.paths, map.paths ?? []);
+    if (!same(merged, map.paths ?? [])) {
+      map.paths = merged;
+      this.routeCache(map);
+      this.rebuildView(map);
+    }
   }
 
   /** "loaded", "missing" (no note: migrate), or why it can't be read (leave it alone). */
-  private async loadMap(map: MapData): Promise<"loaded" | "missing" | { unreadable: string }> {
+  private async loadMap(map: MapData): Promise<"loaded" | "missing" | { unreadable: string; newer?: number }> {
     const file = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map.name));
     if (!(file instanceof TFile)) return "missing";
     const content = await this.plugin.app.vault.read(file);
     const r = readMapNote(content, this.readOpts(file.path));
     this.lastContent.set(file.path, content);
-    if (!r || !r.ok) return { unreadable: r ? r.reason : NO_FRONTMATTER };
+    if (!r || !r.ok) return { unreadable: r ? r.reason : NO_FRONTMATTER, newer: r && !r.ok ? r.newer : undefined };
     this.apply(map, r.data);
     if ((r.data.format ?? 1) < MAP_NOTE_FORMAT) this.dirty.add(map.name);
     else if (r.data.problems?.length) this.toReview.add(map.name);
@@ -412,11 +658,13 @@ export class MapStore {
    * writing over it (a rebuild would lose the user's text), and say so once
    * with a notice that stays until it reads again.
    */
-  private markBroken(map: string, path: string, reason: string): void {
+  private markBroken(map: string, path: string, reason: string, newer?: number): void {
     if (this.broken.has(map)) return;
     this.broken.add(map);
     this.brokenNotices.set(map, new Notice(
-      `Hexmap World Creator: can't read the map note ${path}: ${reason}. Changes to this map aren't saved until it's fixed; fix it in the note and the map reloads from it.`,
+      newer
+        ? `Hexmap World Creator: the map note ${path} is in map-note format ${newer}, from a newer version of the plugin. Update Hexmap World Creator to use this map; until then changes to it aren't saved.`
+        : `Hexmap World Creator: can't read the map note ${path}: ${reason}. Changes to this map aren't saved until it's fixed; fix it in the note and the map reloads from it.`,
       0,
     ));
   }
@@ -442,7 +690,7 @@ export class MapStore {
       if (!r || !r.ok) {
         // Broken mid-session (a lost `---`, a renamed table header…): the
         // next paint must not rebuild the note over the user's text.
-        this.markBroken(map.name, file.path, r ? r.reason : NO_FRONTMATTER);
+        this.markBroken(map.name, file.path, r ? r.reason : NO_FRONTMATTER, r && !r.ok ? r.newer : undefined);
         return;
       }
       this.markReadable(map.name);
@@ -525,6 +773,9 @@ export class MapStore {
     const t = this.hexes.get(oldName);
     if (t) { this.hexes.delete(oldName); this.hexes.set(newName, t); }
     if (this.broken.delete(oldName)) this.broken.add(newName);
+    for (const m of [this.views, this.routeCaches] as Map<string, unknown>[]) {
+      if (m.has(oldName)) { m.set(newName, m.get(oldName)); m.delete(oldName); }
+    }
     const { vault, fileManager } = this.plugin.app;
     const moved = vault.getAbstractFileByPath(`${this.mapFolder(newName)}/_${oldName}.md`);
     if (moved instanceof TFile) await fileManager.renameFile(moved, this.notePath(newName));
@@ -552,6 +803,8 @@ export class MapStore {
 
   forgetMap(name: string): void {
     this.hexes.delete(name);
+    this.views.delete(name);
+    this.routeCaches.delete(name);
     this.lastKey.delete(name);
     this.lastDerived.delete(name);
     this.dirty.delete(name);
@@ -580,9 +833,10 @@ export class MapStore {
           // notes are already cleaned, so that would write an empty map.
           // Keep the note, hold edits in memory only, and say so.
           unreadable.push(map);
-          this.markBroken(map.name, this.notePath(map.name), r.unreadable);
+          this.markBroken(map.name, this.notePath(map.name), r.unreadable, r.newer);
         }
       }
+      for (const m of toMigrate) this.migrating.add(m.name);
       this.ready = true;
       if (toMigrate.length) await this.migrate(toMigrate);
       // Hex notes still carrying map data after a load (an interrupted
@@ -598,8 +852,27 @@ export class MapStore {
         if (map) await this.writeNote(map);
       }
       await this.review();
+      this.reportConversions();
       this.plugin.refreshHexMap();
     });
+  }
+
+  /** One notice for the old every-hex paths converted this session. */
+  private reportConversions(): void {
+    const done = this.converted.filter((c) => c.report.pathsIn > 0);
+    this.converted = [];
+    if (!done.length) return;
+    const sum = (f: (r: CompactReport) => number) => done.reduce((n, c) => n + f(c.report), 0);
+    const chains = sum((r) => r.pathsIn), paths = sum((r) => r.pathsOut), singles = sum((r) => r.singlesDropped.length);
+    const merged = sum((r) => r.merged.length), inexact = sum((r) => r.inexact.length);
+    new Notice(
+      `Hexmap World Creator: paths on ${done.length} map${done.length === 1 ? "" : "s"} moved to the new format: ${chains} old path${chains === 1 ? "" : "s"} became ${paths}` +
+        (merged ? ` (${merged} joined from touching pieces)` : "") +
+        (singles ? `; ${singles} one-hex leftover${singles === 1 ? " was" : "s were"} dropped` : "") +
+        (inexact ? `; ${inexact} kept every hex as written` : "") +
+        `. The old notes and a report per map are in ${this.backupDir()}.`,
+      15000,
+    );
   }
 
   private hexFiles(map: string): TFile[] {
@@ -631,6 +904,11 @@ export class MapStore {
         if (Object.keys(h).length) hexes.set(file.basename, h);
       }
       this.hexes.set(map.name, hexes);
+      this.migrating.delete(map.name);
+      // data.json's every-hex paths become named, anchored paths (backed up below).
+      const oldChains: PathChain[] = (map.pathChains ?? []).map((c) => ({ ...c, hexes: [...c.hexes] }));
+      if (!map.paths) this.convertLegacy(map, legacyChainsToPaths(oldChains), []);
+      this.rebuildView(map);
       // Write, then read back and compare before touching any hex note.
       await this.writeNote(map);
       const written = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map.name));
@@ -642,7 +920,8 @@ export class MapStore {
       }
       try {
         if (!(await adapter.exists(backupDir))) await adapter.mkdir(backupDir);
-        await adapter.write(`${backupDir}/${map.name}.json`, JSON.stringify({ map: map.name, hexes: [...hexes] }, null, 1));
+        await adapter.write(`${backupDir}/${map.name}.json`, JSON.stringify({ map: map.name, hexes: [...hexes], pathChains: oldChains }, null, 1));
+        await this.savePathReport(map.name);
       } catch (e) {
         console.error("Hexmaker: map-note backup failed", e);
         failed.push(map.name);
@@ -735,7 +1014,7 @@ function problemSignature(problems: MapNoteProblem[] | undefined): string {
 export function withoutNotePaths<S extends { maps: MapData[] }>(settings: S, holds: (name: string) => boolean): S {
   const maps = settings.maps.map((m) => {
     if (!holds(m.name)) return m;
-    const { pathChains: _paths, ...rest } = m;
+    const { pathChains: _chains, paths: _paths, ...rest } = m;
     return rest as MapData;
   });
   return { ...settings, maps };
@@ -746,4 +1025,71 @@ function pick(a: HexData, like: HexData): HexData {
   const out: HexData = {};
   for (const k of Object.keys(like) as (keyof HexData)[]) (out as Record<string, unknown>)[k] = a[k];
   return out;
+}
+
+/**
+ * Three-way merge of a map's paths by name (ignoring case and spacing):
+ * `base` is what the note held when we last read or wrote it, `theirs` what
+ * it holds now (hand edits, sync), `ours` the paths in memory (edits not yet
+ * written). A path they changed, added or removed takes their version;
+ * every other path keeps ours. Their order first, then paths only we added.
+ */
+export function mergePaths(base: readonly MapPath[], theirs: readonly MapPath[], ours: readonly MapPath[]): MapPath[] {
+  const key = (p: MapPath) => pathNameKey(p.name);
+  const b = new Map(base.map((p) => [key(p), p]));
+  const o = new Map(ours.map((p) => [key(p), p]));
+  const t = new Map(theirs.map((p) => [key(p), p]));
+  const same = (x: MapPath | undefined, y: MapPath | undefined) => JSON.stringify(x) === JSON.stringify(y);
+  const out: MapPath[] = [];
+  for (const p of theirs) {
+    const k = key(p);
+    if (!same(b.get(k), p)) out.push(p); // changed or added by hand
+    else if (o.has(k)) out.push(o.get(k)!); // ours (maybe edited); removed by us = gone
+  }
+  for (const p of ours) {
+    const k = key(p);
+    if (!t.has(k) && !b.has(k)) out.push(p); // added by us
+  }
+  return out;
+}
+
+/** Per path (by pathNameKey): the hexes it covers and the segments drawn straight. */
+export function pathRouteStats(paths: readonly MapPath[], resolved: readonly ResolvedBranch[]): Record<string, PathRouteStats> {
+  const out: Record<string, PathRouteStats> = {};
+  const byName = new Map(paths.map((p) => [p.name, p]));
+  const hexes = new Map<string, Set<string>>();
+  for (const r of resolved) {
+    const k = pathNameKey(r.path);
+    let set = hexes.get(k);
+    if (!set) { set = new Set(); hexes.set(k, set); }
+    for (const h of r.hexes) set.add(h);
+    const st = (out[k] ??= { hexes: 0 });
+    const anchors = byName.get(r.path)?.branches[r.branch]?.anchors ?? [];
+    for (const i of r.fallbackSegments) (st.fallbacks ??= []).push([anchors[i], anchors[i + 1]]);
+  }
+  for (const [k, set] of hexes) out[k].hexes = set.size;
+  return out;
+}
+
+/** A map's path-conversion report, as a note next to its backup. */
+export function pathReportText(map: string, r: CompactReport): string {
+  const lines = [
+    `# Paths of ${map}: converted to named paths with anchors`,
+    "",
+    `- Old paths (every hex listed): ${r.pathsIn}`,
+    `- New paths: ${r.pathsOut} (${r.branches} branches, ${r.anchors} anchors)`,
+    `- Joined from pieces that touched end to end: ${r.merged.length}`,
+    `- One-hex leftovers dropped (no notes): ${r.singlesDropped.length}`,
+    `- Duplicate strokes dropped (every step already drawn): ${r.duplicates.length}`,
+    `- Kept with every hex as an anchor (couldn't be shortened exactly): ${r.inexact.length}`,
+    "",
+    "Every new path draws exactly the steps of the old ones it came from. The old paths are in the backup next to this report.",
+    "Below, old paths are named by their type and their place among the old paths of that type (Road, Road 2, Road 3…); the new paths are named the same way, so a name here may now be a different path.",
+  ];
+  if (r.merged.length) lines.push("", "## Joined", "", ...r.merged.map((m) => `- ${m.name}: ${m.from.join(", ")}`));
+  if (r.duplicates.length) lines.push("", "## Duplicate strokes", "", ...r.duplicates.map((d) => `- ${d.name} (already drawn by ${d.into})`));
+  if (r.singlesDropped.length) lines.push("", "## One-hex leftovers dropped", "", ...r.singlesDropped.map((d) => `- ${d.name} (${d.typeName}) at ${d.hex.replace("_", ", ")}`));
+  if (r.inexact.length) lines.push("", "## Kept as written", "", ...r.inexact.map((n) => `- ${n}`));
+  if (r.combinedText.length) lines.push("", "## Notes combined from joined pieces", "", ...r.combinedText.map((n) => `- ${n}`));
+  return lines.join("\n") + "\n";
 }

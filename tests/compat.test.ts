@@ -92,7 +92,7 @@ describe("compat examples", () => {
           expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
           expect(d.hexes.get("4_5")).toEqual({ terrain: "shallows" });
           expect(d.paths.map((p) => p.typeName)).toEqual(["Road", "River"]);
-          expect(d.paths[1].hexes[0]).toBe("4_0");
+          expect(d.paths[1].branches[0].anchors[0]).toBe("4_0");
         });
 
         it("map note rewritten by this build keeps its values and the user's text", () => {
@@ -153,21 +153,44 @@ describe("map note formats", () => {
     expect(d.settings).toMatchObject({ displayName: "Compat Example", baseTerrain: "grass", parent: { map: "compat-world", hex: "3_4" }, originX: 2 });
     expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", regionMap: "compat-example-region", locations: ["compat-example-3-4", "compat-example-inn"], locked: true });
     expect(d.hexes.get("6_2")).toEqual({ terrain: "grass", extra: { Notes: "a newer build's column" } });
+    // Old every-hex rows read as paths with every hex an anchor, named after their type.
     expect(d.paths).toEqual([
-      { typeName: "Road", hexes: Array.from({ length: 14 }, (_, x) => `${x}_8`) },
-      { typeName: "River", hexes: ["4_0", "4_1", "4_2", "4_3", "4_4", "4_5"] },
+      { name: "Road", typeName: "Road", branches: [{ anchors: Array.from({ length: 14 }, (_, x) => `${x}_8`) }] },
+      { name: "River", typeName: "River", branches: [{ anchors: ["4_0", "4_1", "4_2", "4_3", "4_4", "4_5"] }] },
     ]);
+    expect(d.legacyPaths).toEqual(["Road", "River"]);
   });
 
-  it("format 3 converts once: the derived Summary and Route column are added, nothing else changes", () => {
+  it("format 4 reads every setting, hex and path (derived Route and Warning ignored, Notes kept)", () => {
+    const d = parseMapNote(read(formatsDir, "format-4.md"));
+    if (!d) throw new Error("format 4 note didn't parse");
+    expect(d.format).toBe(4);
+    expect(d.problems).toEqual([]);
+    expect(d.settings).toMatchObject({ displayName: "Compat Example", baseTerrain: "grass", parent: { map: "compat-world", hex: "3_4" }, originX: 2 });
+    expect(d.hexes.get("3_4")).toEqual({ name: "Glass Wastes", terrain: "hills", icon: "bw-castle.png", gmIcons: ["skull.png", "trap.png"], region: "Basin", regionMap: "compat-example-region", locations: ["compat-example-3-4", "compat-example-inn"], locked: true });
+    expect(d.paths.map((p) => [p.name, p.typeName, p.branches.map((b) => b.anchors.join(" ")), p.notes ?? ""])).toEqual([
+      ["Road", "Road", ["0_8 1_8 2_8 3_8 4_8 5_8 6_8 7_8 8_8 9_8 10_8 11_8 12_8 13_8"], "Paved as far as Saltmere."],
+      ["River", "River", ["4_0 4_1 4_2 4_3 4_4 4_5"], ""],
+      ["Road 2", "Road", ["9_8 9_9 9_10 9_11"], ""],
+      ["Old Track", "Old Track", ["2_2 3_2 4_2 5_1 6_1"], ""],
+      ["Road 3", "Road", ["12_2"], ""],
+    ]);
+    expect(d.legacyPaths).toEqual(["Road", "River", "Road 2", "Old Track", "Road 3"]);
+  });
+
+  it("format 3 converts once: the derived Summary is added, paths move to Paths + Path routes, nothing else changes", () => {
     const text = read(formatsDir, "format-3.md").replace("\n## Hexes", "\nMy notes.\n\n## Hexes");
     const d = parseMapNote(text)!;
     const out = updateMapNote(text, "compat-example", d);
     expect(out).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
     expect(out).toContain("My notes.\n\n## Summary\n");
-    expect(out).toContain("| Type | Route | Hexes |");
-    expect(out).toContain("| River | 4, 0 → 4, 5 (6 hexes) | 4_0 4_1 4_2 4_3 4_4 4_5 |");
+    expect(out).toContain("| Path | Type | Route | Notes |");
+    expect(out).toContain("| River | River | 4, 0 → 4, 5 |  |");
+    expect(out).toContain("## Path routes\n\n| Path | Branch | Anchors |");
+    expect(out).toContain("| River | main | 4, 0 → 4, 1 → 4, 2 → 4, 3 → 4, 4 → 4, 5 |");
+    expect(out).not.toContain("| Type | Hexes |");
     expect(out).toContain("The plugin fills in *Route*");
+    expect(out).toContain("edit *Path* in both tables");
     // The Hexes table is untouched.
     const hexTable = (s: string) => s.slice(s.indexOf("| Hex |"), s.indexOf("## Paths"));
     expect(hexTable(out)).toBe(hexTable(text));

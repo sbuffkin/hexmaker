@@ -42,7 +42,7 @@ function plugin(vault: MemVault, maps: MapData[]) {
 }
 
 const maps = (): MapData[] => [
-	{ name: "coast", gridSize: { cols: 6, rows: 6 }, gridOffset: { x: 0, y: 0 }, pathChains: [{ typeName: "Road", hexes: ["1_2", "3_4"] }] } as MapData,
+	{ name: "coast", gridSize: { cols: 6, rows: 6 }, gridOffset: { x: 0, y: 0 }, pathChains: [{ typeName: "Road", hexes: ["1_2", "2_2", "3_2"] }] } as MapData,
 	{ name: "coast-3-4", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, parent: { map: "coast", hex: "3_4" } } as MapData,
 ];
 
@@ -69,7 +69,9 @@ describe("map store: migration from hex-note frontmatter", () => {
 
 		const note = parseMapNote(vault.files.get("world/hexes/coast/_coast.md")!)!;
 		expect(note.hexes.get("3_4")?.locations).toEqual(["coast-3-4"]);
-		expect(note.paths).toEqual([{ typeName: "Road", hexes: ["1_2", "3_4"] }]);
+		// data.json's every-hex chain became a named, anchored path that draws the same hexes.
+		expect(note.paths.map((p) => [p.name, p.typeName])).toEqual([["Road", "Road"]]);
+		expect(store.resolved("coast")!.map((r) => r.hexes)).toEqual([["1_2", "2_2", "3_2"]]);
 		expect(note.settings.gridSize).toEqual({ cols: 6, rows: 6 });
 	});
 
@@ -94,7 +96,7 @@ describe("map store: migration from hex-note frontmatter", () => {
 	it("writes a JSON backup per map before cleaning", async () => {
 		await boot(vault);
 		const backups = [...vault.files.keys()].filter((p) => p.includes("/backups/map-notes-"));
-		expect(backups.map((p) => p.split("/").pop()).sort()).toEqual(["coast-3-4.json", "coast.json"]);
+		expect(backups.map((p) => p.split("/").pop()).sort()).toEqual(["coast-3-4.json", "coast-paths-report.md", "coast.json"]);
 		const b = JSON.parse(vault.files.get(backups.find((p) => p.endsWith("/coast.json"))!)!);
 		expect(new Map(b.hexes).get("3_4")).toMatchObject({ terrain: "forest", locked: true });
 	});
@@ -268,7 +270,7 @@ describe("map store: odd settings", () => {
 		expect(store.get("asdf", "2_2")).toEqual({ terrain: "hills", icon: "tower.png" });
 		const note = parseMapNote(v.files.get("world/hexes/asdf/_asdf.md")!)!;
 		expect(note.hexes.size).toBe(2);
-		expect(note.paths).toEqual([{ typeName: "Road", hexes: ["1_1", "2_2"] }]);
+		expect(note.paths).toEqual([{ name: "Road", typeName: "Road", branches: [{ anchors: ["1_1", "2_2"] }] }]);
 		// and a restart keeps it
 		const again = await boot(v, m);
 		expect(again.store.get("asdf", "2_2")?.icon).toBe("tower.png");
@@ -360,7 +362,7 @@ describe("map store: a note broken by hand mid-session (#42)", () => {
 		const { store } = await boot(v, oneMap());
 		store.set("m", "1_1", { terrain: "grass" });
 		await store.flush();
-		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 4", "hexmaker-mpa: 4");
+		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 5", "hexmaker-mpa: 5");
 		v.files.set(NOTE, broken); // onModify hasn't run yet
 		store.set("m", "2_2", { terrain: "lava" });
 		await store.flush();
@@ -404,7 +406,7 @@ describe("map store: older map notes are converted once, after a backup (#42)", 
 		expect(backups.map((k) => k.split("/").pop())).toEqual(["m-map-note.md"]);
 		expect(v.files.get(backups[0])).toBe(old);
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 4");
+		expect(now).toContain("hexmaker-map: 5");
 		expect(now).toContain('parent: "[[_world]]"\nparent-hex: 3, 4');
 		expect(now).toContain('background-image: "[[art/bg.png]]"');
 		expect(now).toContain("hexmaker-origin-x: 0");
@@ -511,7 +513,7 @@ describe("map store: paths live only in the map note", () => {
 		// In memory nothing changed.
 		expect(m[0].pathChains).toHaveLength(1);
 		// Their notes have them.
-		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toEqual(m[0].pathChains);
+		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toEqual(m[0].paths);
 	});
 
 	it("a map whose note can't be read keeps its paths in data.json", async () => {
@@ -529,7 +531,7 @@ describe("map store: paths live only in the map note", () => {
 		const fresh = maps().map((x) => ({ ...x, pathChains: [] }));
 		p.settings.maps.splice(0, p.settings.maps.length, ...fresh);
 		await store.reloadFromNotes();
-		expect(fresh[0].pathChains).toEqual([{ typeName: "Road", hexes: ["1_2", "3_4"] }]);
+		expect(fresh[0].pathChains).toEqual([{ typeName: "Road", hexes: ["1_2", "2_2", "3_2"] }]);
 		await store.sync();
 		expect(parseMapNote(v.files.get("world/hexes/coast/_coast.md")!)!.paths).toHaveLength(1);
 	});
@@ -558,7 +560,7 @@ describe("map store: format 2 notes and region mirrors (overworld phase 1)", () 
 		const { store } = await boot(v, world());
 		expect(store.get("m", "1_1")).toEqual({ terrain: "forest", region: "Basin", locations: ["town"] });
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 4");
+		expect(now).toContain("hexmaker-map: 5");
 		expect(now).toContain("Our notes.");
 		expect(now).toContain("| 1_1 | forest | [[Basin]] | [[_town]] |");
 		expect(now).not.toContain("Submap");
@@ -601,7 +603,8 @@ describe("map store: derived Summary and Route (#46)", () => {
 		const note = v.files.get(NOTE)!;
 		expect(note).toContain("- **Palette:** [[world/palettes/Default]]");
 		expect(note).toContain("| lava (⚠ not in the palette) | 1 |");
-		expect(note).toContain("| Trail | 1, 1 → 2, 1 (2 hexes) | ⚠ not a path type in the palette | 1_1 2_1 |");
+		expect(note).toContain("| Trail | Trail | 1, 1 → 2, 1 · 2 hexes · ⚠ type not in palette |  |");
+		expect(note).toContain("| Trail | main | 1, 1 → 2, 1 |");
 		// Restart: the note is current, so it isn't written.
 		v.writes.length = 0;
 		const again = new MapStore(withPalette(v, oneMap(), ["grass"]) as never);
