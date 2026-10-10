@@ -4,6 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathAutoRoute, PathType, PathLineStyle, PathRouting } from "../types";
 import { buildPathPreviewSvg } from "./PathPickerModal";
 import { pathAvoidsImpassable, pathMeanders } from "../impassable";
+import { countPathsOfType, removePathTypeFromChains, renamePathTypeInChains } from "../paths/typeRefs";
 
 /** One line on what auto-route does with a type (the preview can't show it). */
 export function pathBehaviourSummary(pt: Pick<PathType, "avoidImpassable" | "autoRoute">): string {
@@ -170,14 +171,14 @@ export class PathTypeEditorModal extends HexmakerModal {
 		deleteBtn.addEventListener("click", () => {
 			if (confirmDiv) { confirmDiv.remove(); confirmDiv = null; return; }
 
-			const chainCount = this.plugin.mapsOnPalette(this.paletteName).reduce(
-				(sum, r) => sum + r.pathChains.filter(c => c.typeName === this.originalName).length,
+			const pathCount = this.plugin.mapsOnPalette(this.paletteName).reduce(
+				(sum, r) => sum + countPathsOfType(this.plugin.paths.storedPaths(r), this.originalName),
 				0,
 			);
 			confirmDiv = contentEl.createDiv({ cls: "duckmage-terrain-editor-confirm" });
-			if (chainCount > 0) {
+			if (pathCount > 0) {
 				confirmDiv.createEl("p", {
-					text: `This type is used in ${chainCount} chain(s). Deleting it will remove those chains. Continue?`,
+					text: `This type is used by ${pathCount} path(s). Deleting it will remove those paths. Continue?`,
 					cls: "duckmage-terrain-editor-confirm-msg",
 				});
 			} else {
@@ -217,12 +218,12 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.entry.avoidImpassable = this.pendingAvoid;
 		this.entry.autoRoute  = this.pendingAutoRoute;
 
-		// If name changed, update all pathChain typeName refs
+		// If name changed, point every path of this type at the new name.
+		// PHASE-3: while maps store pathChains (src/paths/mapPaths.ts) this edits
+		// the chains; then renamePathTypeInPaths(map.paths, …).
 		if (nameChanged) {
 			for (const region of this.plugin.mapsOnPalette(this.paletteName)) {
-				for (const chain of region.pathChains) {
-					if (chain.typeName === this.originalName) chain.typeName = this.pendingName;
-				}
+				renamePathTypeInChains(region.pathChains, this.originalName, this.pendingName);
 			}
 		}
 
@@ -239,9 +240,10 @@ export class PathTypeEditorModal extends HexmakerModal {
 		const idx = list.indexOf(this.entry);
 		if (idx !== -1) list.splice(idx, 1);
 
-		// Remove matching chains on maps that use this palette
+		// Remove the paths of this type on maps that use this palette.
+		// PHASE-3: then removePathTypeFromPaths(map.paths, …).
 		for (const region of this.plugin.mapsOnPalette(this.paletteName)) {
-			region.pathChains = region.pathChains.filter(c => c.typeName !== this.originalName);
+			region.pathChains = removePathTypeFromChains(region.pathChains, this.originalName);
 		}
 
 		await this.plugin.saveSettings();

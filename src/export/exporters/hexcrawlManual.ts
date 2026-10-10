@@ -45,6 +45,8 @@ export interface ManualExportOptions {
   hexRadius?: number;
   showIcons?: boolean;
   showPaths?: boolean;
+  /** Paths bolder than on screen (see MapPngRenderOptions.boldPaths). Default true. */
+  boldPaths?: boolean;
   showFactionOverlay?: boolean;
   showRegionOverlay?: boolean;
   /** Hex names on the maps. Default true. */
@@ -219,6 +221,7 @@ export async function collectManualData(
     hexRadius: opts.hexRadius ?? 60,
     showIcons: opts.showIcons ?? true,
     showPaths: opts.showPaths ?? true,
+    boldPaths: opts.boldPaths ?? true,
     showFactionOverlay: opts.showFactionOverlay ?? false,
     showRegionOverlay: opts.showRegionOverlay ?? false,
     showHexNames: opts.showHexNames ?? true,
@@ -293,7 +296,8 @@ export async function collectManualData(
   }
   const pathTypes = new Map(plugin.getMapPathTypes(map.name).map((t) => [t.name, t]));
   const pathCounts = new Map<string, number>();
-  for (const c of map.pathChains ?? []) pathCounts.set(c.typeName, (pathCounts.get(c.typeName) ?? 0) + c.hexes.length);
+  // Routed hexes per type (the paths service; empty until the map is loaded).
+  for (const c of plugin.paths.resolvedPathChains(map.name)) pathCounts.set(c.typeName, (pathCounts.get(c.typeName) ?? 0) + c.hexes.length);
   const paths = [...pathCounts].map(([name, count]) => {
     const t = pathTypes.get(name);
     return {

@@ -78,11 +78,13 @@ describe("ghostRunPoints", () => {
 
 describe("HexMapView draws them in the strip", () => {
 	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
-	it("from the neighbours' own path chains, read-only, on the strip layer", () => {
+	// Path anchors phase 4: the neighbours' chains are their RESOLVED paths
+	// (routed with each neighbour's own terrain and palette by the paths service).
+	it("from the neighbours' resolved path chains, read-only, on the strip layer", () => {
 		const m = /private renderNeighbourShadow[\s\S]*?\n {2}\}\n/.exec(view);
 		expect(m).not.toBeNull();
 		const body = m![0];
-		expect(body).toMatch(/ghostPathRuns\(shadow, \(m\) => this\.plugin\.getMap\(m\)\?\.pathChains\)/);
+		expect(body).toMatch(/ghostPathRuns\(shadow, \(m\) => this\.plugin\.paths\.resolvedPathChains\(m\)\)/);
 		expect(body).toMatch(/svg\.classList\.add\("duckmage-region-shadow-paths"\)/);
 		expect(body).toMatch(/layer\.appendChild\(svg\)/);
 		// Reads (place/offsetWidth) before the first write (createDiv).

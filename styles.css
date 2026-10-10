@@ -356,8 +356,20 @@
     cursor: grabbing;
 }
 
-/* SVG overlay for paths, coordinate labels and elevated icons */
+/* SVG overlay for paths: one user unit = 1em of the grid (lattice
+   polylines placed in em), so zoom bakes resize it without a rebuild. */
 .duckmage-path-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* Elevated override icons and GM icons, over the paths (px, rebuilt on
+   zoom bakes). Same z-index as the paths; later in the DOM, so on top. */
+.duckmage-path-icons-svg {
     position: absolute;
     top: 0;
     left: 0;

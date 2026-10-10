@@ -8,6 +8,7 @@ import type { CoordPlacement } from "../coordStyle";
 import { MIN_NAME_SCREEN_PX } from "../hex-map/hexNameFont";
 import type { TokenSize } from "../types";
 import { BADGE_LAYOUT, DEFAULT_BADGE_SIZE, type BadgeSize } from "../hex-map/linkBadges";
+import { SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
 
 /**
  * Y of a hex name's baseline centre. Coordinates default to the bottom, so
@@ -26,10 +27,8 @@ export function pngHexNameY(
     : cy - hexRadius * 0.55;
 }
 
-/** The map's hex radius on screen at zoom 1, px (2.2em at 16px). */
-const SCREEN_HEX_RADIUS = 35.2;
-/** How much bolder than on screen paths are drawn in the PNG. */
-const PNG_PATH_BOLD = 1.4;
+/** How much bolder than on screen paths are drawn in the PNG ("Bolder paths"). */
+export const PNG_PATH_BOLD = 1.4;
 
 /**
  * Stroke width of a path in the PNG (round 7 U18: paths were too thin in

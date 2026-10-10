@@ -108,6 +108,11 @@ export function renderMapExportForm(
   const showCoords = inlineCheck(layerRow, "Coordinates", ticks.showCoords);
   const showIcons = inlineCheck(layerRow, "Icons", ticks.showIcons);
   const showPaths = inlineCheck(layerRow, "Paths", ticks.showPaths);
+  const boldPaths = inlineCheck(layerRow, "Bolder paths", prefs.boldPaths ?? true,
+    "Draw roads and rivers thicker than on the map so they read in print. Off: the same thickness as on the map.");
+  const syncBold = () => { boldPaths.disabled = !showPaths.checked; };
+  showPaths.addEventListener("change", syncBold);
+  syncBold();
   const showHexNames = inlineCheck(layerRow, "Hex names", ticks.showHexNames);
   const showTokens = inlineCheck(layerRow, "Tokens", ticks.showTokens, "Tokens and their names. Hidden tokens are never drawn.");
   const showLinkBadges = inlineCheck(layerRow, "Link badges", ticks.showLinkBadges,
@@ -161,12 +166,13 @@ export function renderMapExportForm(
       [mapName]: {
         ...(fileName && fileName !== mapName ? { fileName } : {}),
         hexRadius: clampInt(parseInt(sizeSelect.value, 10), 10, 200, 50),
+        ...(boldPaths.checked ? {} : { boldPaths: false }),
         layers,
       },
     };
     void plugin.saveData(plugin.settings);
   };
-  for (const input of [nameInput, sizeSelect, ...Object.values(layerChecks)]) {
+  for (const input of [nameInput, sizeSelect, boldPaths, ...Object.values(layerChecks)]) {
     input.addEventListener("change", remember);
   }
 
@@ -219,6 +225,7 @@ export function renderMapExportForm(
     showCoords: showCoords.checked,
     showIcons: showIcons.checked,
     showPaths: showPaths.checked,
+    boldPaths: boldPaths.checked,
     showFactionOverlay: showFactionOverlay.checked,
     showRegionOverlay: showRegionOverlay.checked,
     showHexNames: showHexNames.checked,
@@ -249,6 +256,7 @@ export function renderMapExportForm(
       player: playerEdition.checked,
       showIcons: o.showIcons,
       showPaths: o.showPaths,
+      boldPaths: o.boldPaths,
       showFactionOverlay: o.showFactionOverlay,
       showRegionOverlay: o.showRegionOverlay,
       showHexNames: o.showHexNames,

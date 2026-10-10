@@ -36,7 +36,7 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
     const map = plugin.getMap(cell.map);
     if (!map) continue;
     const there = `${cell.x}_${cell.y}`;
-    for (const chain of map.pathChains ?? []) {
+    for (const chain of plugin.paths.resolvedPathChains(cell.map)) {
       if (!chain.hexes.includes(there)) continue;
       const [sx, sy] = key.split("_").map(Number);
       const inside = hexNeighbors(sx, sy, orientation, region.stagger).find(([nx, ny]) => inGrid(nx, ny));

@@ -45,7 +45,7 @@ export function buildSubmapContext(
   // submap can carry the road / river across instead of losing it.
   const key = `${x}_${y}`;
   const typeOf = new Map(plugin.getPathTypes(map.paletteName).map((p) => [p.name, p]));
-  for (const chain of map.pathChains ?? []) {
+  for (const chain of plugin.paths.resolvedPathChains(mapName)) {
     chain.hexes.forEach((h, i) => {
       if (h !== key) return;
       const from = sideTo(chain.hexes[i - 1]);
