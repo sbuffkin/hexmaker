@@ -126,6 +126,11 @@ describe("NM3: hex names keep a readable size on screen", () => {
 		expect(rule).toMatch(/white-space:\s*pre/);
 	});
 
+	it("a bigger name size raises the readable floor (L / XL still read bigger zoomed out)", () => {
+		const layer = read("src", "hex-map", "hexNameLayer.ts");
+		expect(layer).toMatch(/readableFloorEm\(gridFont, zoom\) \* Math\.max\(1, font\.scale\)/);
+	});
+
 	it("redraws names when the zoom settles (the floor depends on it)", () => {
 		const src = read("src", "hex-map", "HexMapView.ts");
 		expect(src).toMatch(/if \(this\.zoom !== this\.namesZoom\)/);

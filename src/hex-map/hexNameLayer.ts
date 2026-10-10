@@ -254,7 +254,9 @@ export function renderHexNameLayer(
   if (!placements.length) return;
   const family = nameFontFamily(font.family, style.fontFamily);
   const measure = canvasMeasure(family, font.bold ? 700 : 400, font.italic);
-  const floorEm = readableFloorEm(gridFont, zoom);
+  // A bigger name size raises the floor too, so L / XL still read bigger
+  // when the map is zoomed out (never below the readable minimum).
+  const floorEm = readableFloorEm(gridFont, zoom) * Math.max(1, font.scale);
 
   // ── writes ──
   const layer = gridContainer.createDiv({ cls: HEX_NAMES_LAYER_CLASS });
