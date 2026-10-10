@@ -62,6 +62,7 @@ type ModalTab = "Maps" | "Properties" | "New map" | "Export";
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
   private stopKeepInViewport?: () => void;
+  private stopFeatureChange?: () => void;
   private activeTab: ModalTab = "Maps";
   /** Set by "New region here" in Properties: prefills the New map tab's placement. */
   private newMapPlacement: { anchor: string; side: Side } | null = null;
@@ -82,6 +83,8 @@ export class MapModal extends HexmakerModal {
     // moves up as a tab grows (fresh-eyes r4: Export ran off the bottom).
     this.modalEl.addClass("duckmage-map-modal");
     this.stopKeepInViewport = this.keepInViewport();
+    // A hint here can turn a feature on: show what it brings straight away.
+    this.stopFeatureChange = this.plugin.onFeatureChange(() => this.render());
     this.render();
   }
 
@@ -1126,6 +1129,7 @@ export class MapModal extends HexmakerModal {
 
   onClose(): void {
     this.stopKeepInViewport?.();
+    this.stopFeatureChange?.();
     this.contentEl.empty();
   }
 }

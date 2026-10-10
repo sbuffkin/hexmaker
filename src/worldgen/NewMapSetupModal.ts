@@ -96,6 +96,7 @@ export class NewMapSetupModal extends HexmakerModal {
   /** "Use for new submaps of <terrain> hexes" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
   private stopKeepInViewport?: () => void;
+  private stopFeatureChange?: () => void;
   /** The neighbours' terrain just past the new map's edges (faded in the preview). */
   private shadow: Map<string, string> | undefined;
   /** Set once the user clicks a generator card: placement then stops re-picking one. */
@@ -150,12 +151,15 @@ export class NewMapSetupModal extends HexmakerModal {
     void listGeneratorKinds(this.plugin).then((kinds) => {
       this.kinds = kinds;
       this.render();
+      // A hint here can turn a feature on: show what it brings straight away.
+      this.stopFeatureChange = this.plugin.onFeatureChange(() => this.render());
     });
     this.contentEl.createDiv({ cls: "duckmage-setup-loading", text: "Loading generators…" });
   }
 
   onClose(): void {
     this.stopKeepInViewport?.();
+    this.stopFeatureChange?.();
     this.contentEl.empty();
   }
 

@@ -682,12 +682,25 @@ export default class HexmakerPlugin extends Plugin {
     this.onFeaturesChanged();
   }
 
+  /** Open modals that show or hide features (see onFeatureChange). */
+  private featureListeners = new Set<() => void>();
+
   /**
-   * Feature level or an Advanced feature changed: re-render open pages that
-   * show or hide features (modals read the setting when they open).
+   * Re-render when the feature level or an Advanced feature changes, e.g. a
+   * modal whose hint turned one on. Returns the unsubscribe; call it on close.
+   */
+  onFeatureChange(fn: () => void): () => void {
+    this.featureListeners.add(fn);
+    return () => this.featureListeners.delete(fn);
+  }
+
+  /**
+   * Feature level or an Advanced feature changed: re-render open pages and
+   * modals that show or hide features.
    */
   onFeaturesChanged(): void {
     this.onMapKindsChanged();
+    for (const fn of [...this.featureListeners]) fn();
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES)) {
       if (leaf.view instanceof RandomTableView) leaf.view.refreshFeatures();
     }

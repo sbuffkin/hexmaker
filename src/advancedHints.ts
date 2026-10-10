@@ -87,6 +87,7 @@ export class MoreFeaturesModal extends HexmakerModal {
 
   onOpen(): void {
     this.makeDraggable();
+    this.modalEl.addClass("duckmage-more-features-modal");
     this.titleEl.setText("More options");
     this.render();
   }

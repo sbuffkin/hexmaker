@@ -7042,3 +7042,8 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-map-generator-desc {
     margin-top: 0.25em;
 }
+
+/* The More options box is short: no draggable-modal minimum height. */
+.modal.duckmage-editor-modal-drag.duckmage-more-features-modal {
+    min-height: 0;
+}
