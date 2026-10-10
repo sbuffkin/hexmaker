@@ -1,9 +1,23 @@
 # Icon credits
 
-The `bw-*` terrain icons ship with the plugin. The `space-*` icons are third-party,
-used under the licences below. Files were renamed, and the Kenney sprites were
-recoloured from white to black so they read in untinted previews.
-Rebuild with `node dev/build-space-icons.mjs <unzipped kenney_simple-space folder>`.
+All bundled icons are third-party, used under the licences below. The `space-*`
+files were renamed, and the Kenney sprites were recoloured from white to black so
+they read in untinted previews.
+Rebuild the space set with `node dev/build-space-icons.mjs <unzipped kenney_simple-space folder>`.
+
+## Black & White Classic (Inkwell Ideas) — public domain
+
+The 37 `bw-*.png` terrain icons are Inkwell Ideas' "Black & White Classic" set for
+Hexographer/Worldographer, unmodified (from
+[worldographer.com/releases/bw-icons.zip](https://worldographer.com/releases/bw-icons.zip)).
+Inkwell Ideas: they "were created for Hexographer & Worldographer by Inkwell Ideas, Inc."
+and "are hereby released to the public domain and/or all rights to the icons are
+released where that is not possible. A credit is appreciated but not required."
+Sources: [worldographer.com/extra-icon-sets](https://worldographer.com/extra-icon-sets/)
+([archived](http://web.archive.org/web/20260425205533/https://worldographer.com/extra-icon-sets/)),
+[hexographer.com Black & White Classic](https://www.hexographer.com/extra-icon-sets/black-white-classic/)
+([archived](http://web.archive.org/web/20260521081315/http://www.hexographer.com/extra-icon-sets/black-white-classic/)).
+Thank you, Inkwell Ideas.
 
 ## game-icons.net — CC BY 3.0
 
