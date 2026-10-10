@@ -17,16 +17,54 @@ export function insertLinkInSection(content: string, section: string, linkText: 
 	const headingRegex = new RegExp(`^###\\s+${escapeRegex(section)}\\s*$`, "mi");
 	const match = headingRegex.exec(content);
 	if (!match) {
-		return content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`;
+		return separateRulesFromText(content.trimEnd() + `\n\n### ${section}\n\n${linkText}\n`);
 	}
 	const afterHeading = match.index + match[0].length;
 	const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
 	const sectionContent = content.slice(afterHeading, sectionEnd);
-	if (sectionContent.includes(linkText)) return content;
+	if (sectionContent.includes(linkText)) return separateRulesFromText(content);
 	const trimmedSection = sectionContent.trimEnd();
 	const insertAt = afterHeading + trimmedSection.length;
-	return content.slice(0, insertAt) + "\n\n" + linkText + content.slice(insertAt);
+	// One blank line above the link (the heading match can swallow a newline
+	// of an empty section); the template's `---` usually follows the link,
+	// so keep a blank line before it too.
+	const before = content.slice(0, insertAt).replace(/[\r\n]+$/, "");
+	return separateRulesFromText(before + "\n\n" + linkText + content.slice(insertAt));
+}
+
+/**
+ * Text directly above a `---` rule renders as a big setext heading in
+ * Markdown (fresh-eyes round 5: a Dungeons link written just above the hex
+ * template's rule showed as a heading). Puts a blank line between a text
+ * line and a following rule. Frontmatter and fenced code are left alone.
+ * Every section writer runs this, so older notes heal on their next write.
+ */
+export function separateRulesFromText(content: string): string {
+	const eol = content.includes("\r\n") ? "\r\n" : "\n";
+	const lines = content.split(/\r?\n/);
+	const isRule = (l: string) => /^ {0,3}-{3,}\s*$/.test(l);
+	let start = 0;
+	if (lines.length > 1 && lines[0].trim() === "---") {
+		const close = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+		if (close > 0) start = close + 1;
+	}
+	const out = lines.slice(0, start);
+	let inFence = false;
+	let changed = false;
+	for (let i = start; i < lines.length; i++) {
+		const line = lines[i];
+		if (/^ {0,3}(```|~~~)/.test(line)) inFence = !inFence;
+		else if (!inFence && i > start && isRule(line)) {
+			const prev = lines[i - 1];
+			if (prev.trim() !== "" && !/^ {0,3}#{1,6}(\s|$)/.test(prev) && !isRule(prev)) {
+				out.push("");
+				changed = true;
+			}
+		}
+		out.push(line);
+	}
+	return changed ? out.join(eol) : content;
 }
 
 /** Remove a wiki-link from under the named ### section. Removes the whole line containing it. */
@@ -44,7 +82,7 @@ export async function removeLinkFromSection(app: App, filePath: string, section:
 		const lineRegex = new RegExp(`\\n[^\\n]*\\[\\[${escapedTarget}(?:\\|[^\\]]+)?\\]\\][^\\n]*`, "g");
 		const sectionBody = content.slice(afterHeading, sectionEnd);
 		const newBody = sectionBody.replace(lineRegex, "");
-		return content.slice(0, afterHeading) + newBody + content.slice(sectionEnd);
+		return separateRulesFromText(content.slice(0, afterHeading) + newBody + content.slice(sectionEnd));
 	});
 }
 
@@ -169,6 +207,6 @@ export async function setSectionContent(app: App, filePath: string, section: str
 		const replacement = newText.trim()
 			? `\n${guide}${guide ? "\n" : ""}${newText.trim()}\n`
 			: `\n${guide}`;
-		return content.slice(0, afterHeading) + replacement + content.slice(sectionEnd);
+		return separateRulesFromText(content.slice(0, afterHeading) + replacement + content.slice(sectionEnd));
 	});
 }
