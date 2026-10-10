@@ -211,6 +211,38 @@ describe("unknown table columns (forward compatibility)", () => {
 		expect(note).toContain("| Type | Hexes |\n");
 	});
 
+	it("keeps the column order (and header spelling) the user gave both tables", () => {
+		const reordered = [
+			"---", "hexmaker-map: 1", "---", "# m", "",
+			"## Hexes", "",
+			"| Terrain | Locations | Hex | Name | Locked | Submap | Region | GM icons | Icon |",
+			"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+			"| forest | saltmere | 1_1 | Fen |  |  |  |  |  |",
+			"| hills |  | 2_1 |  | yes |  |  |  |  |",
+			"", "## Paths", "",
+			"| Name | Hexes | Type |",
+			"| --- | --- | --- |",
+			"| King's Way | 1_1 2_1 | Road |",
+			"",
+		].join("\n");
+		const d = parseMapNote(reordered)!;
+		expect(updateMapNote(reordered, "m", d)).toBe(reordered);
+		// an edit rewrites values in place, order unchanged
+		d.hexes.set("2_1", { ...d.hexes.get("2_1")!, terrain: "swamp" });
+		const out = updateMapNote(reordered, "m", d);
+		expect(out).toBe(reordered.replace("| hills |  | 2_1 |", "| swamp |  | 2_1 |"));
+	});
+
+	it("appends known columns a hand-made table lacks at the end", () => {
+		const old = "---\nhexmaker-map: 1\n---\n| Terrain | Hex | Notes |\n|---|---|---|\n| ocean | 0_0 | deep |\n";
+		const d = parseMapNote(old)!;
+		d.hexes.set("0_0", { ...d.hexes.get("0_0")!, name: "Sea" });
+		const out = updateMapNote(old, "m", d);
+		const header = out.split("\n").find((l) => l.includes("| Hex |"))!;
+		expect(header).toBe("| Terrain | Hex | Notes | Name | Icon | GM icons | Region | Submap | Locked |");
+		expect(parseMapNote(out)!.hexes.get("0_0")).toEqual({ name: "Sea", terrain: "ocean", extra: { Notes: "deep" } });
+	});
+
 	it("unknown values change the comparison key", () => {
 		const d = parseMapNote(newer)!;
 		const before = mapNoteKey(d);

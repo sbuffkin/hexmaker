@@ -298,23 +298,70 @@ function tableHead(headers: string[]): string[] {
   return [`| ${headers.map(esc).join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`];
 }
 
-function hexTable(hexes: Map<string, HexData>, baseTerrain?: string): string {
+/**
+ * Headers to write, in order: the existing table's columns as the user
+ * arranged and spelled them (repeats dropped), then any known column it
+ * lacks (canonical order), then unknown columns that only the data has.
+ */
+function columnOrder(known: string[], existing: string[] | undefined, extras: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (h: string) => {
+    const k = h.toLowerCase();
+    if (!k || seen.has(k)) return;
+    seen.add(k);
+    out.push(h);
+  };
+  for (const h of existing ?? []) add(h);
+  for (const h of known) add(h);
+  for (const h of extras) add(h);
+  return out;
+}
+
+/** An unknown column's value, matching its header case-insensitively. */
+function extraValue(extra: Record<string, string> | undefined, header: string): string | undefined {
+  if (!extra) return undefined;
+  if (header in extra) return extra[header];
+  const k = header.toLowerCase();
+  for (const [h, v] of Object.entries(extra)) if (h.toLowerCase() === k) return v;
+  return undefined;
+}
+
+const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = {
+  hex: (k) => k,
+  name: (_k, h) => h.name,
+  terrain: (_k, h) => h.terrain,
+  icon: (_k, h) => h.icon,
+  "gm icons": (_k, h) => h.gmIcons?.join(", "),
+  region: (_k, h) => h.region,
+  submap: (_k, h) => h.submap,
+  locked: (_k, h) => (h.locked ? "yes" : ""),
+};
+
+function hexTable(hexes: Map<string, HexData>, baseTerrain?: string, existing?: string[]): string {
   const rows = hexRowsToWrite(hexes, baseTerrain);
-  const extras = extraHeaders(rows.map(([, h]) => h));
-  const lines = tableHead([...HEX_HEADERS, ...extras]);
+  const headers = columnOrder(HEX_HEADERS, existing, extraHeaders(rows.map(([, h]) => h)));
+  const lines = tableHead(headers);
   for (const [k, h] of rows) {
-    const cells = [k, h.name, h.terrain, h.icon, h.gmIcons?.join(", "), h.region, h.submap, h.locked ? "yes" : ""];
-    for (const x of extras) cells.push(h.extra?.[x]);
+    const cells = headers.map((c) => {
+      const known = HEX_CELL[c.toLowerCase()];
+      return known ? known(k, h) : extraValue(h.extra, c);
+    });
     lines.push(`| ${cells.map(esc).join(" | ")} |`);
   }
   return lines.join("\n");
 }
 
-function pathTable(paths: PathChain[]): string {
-  const extras = extraHeaders(paths);
-  const lines = tableHead([...PATH_HEADERS, ...extras]);
+function pathTable(paths: PathChain[], existing?: string[]): string {
+  const headers = columnOrder(PATH_HEADERS, existing, extraHeaders(paths));
+  const lines = tableHead(headers);
   for (const p of paths) {
-    const cells = [esc(p.typeName), p.hexes.join(" "), ...extras.map((x) => esc(p.extra?.[x]))];
+    const cells = headers.map((c) => {
+      const k = c.toLowerCase();
+      if (k === "type") return esc(p.typeName);
+      if (k === "hexes") return p.hexes.join(" ");
+      return esc(extraValue(p.extra, c));
+    });
     lines.push(`| ${cells.join(" | ")} |`);
   }
   return lines.join("\n");
@@ -412,13 +459,14 @@ export function updateMapNote(content: string, name: string, data: MapNoteData):
     return !m || !OWNED.has(m[1]);
   });
   let lines = text.slice(fm[0].length).split("\n");
-  const replace = (need: string[], table: string, heading: string) => {
+  // Tables are rewritten in the column order the user gave them.
+  const replace = (need: string[], table: (existing?: string[]) => string, heading: string) => {
     const t = findTable(lines, need);
-    if (t) lines = [...lines.slice(0, t.start), ...table.split("\n"), ...lines.slice(t.end)];
-    else lines = [...lines, "", heading, "", ...table.split("\n")];
+    if (t) lines = [...lines.slice(0, t.start), ...table(t.headers).split("\n"), ...lines.slice(t.end)];
+    else lines = [...lines, "", heading, "", ...table().split("\n")];
   };
-  replace(["hex", "terrain"], hexTable(data.hexes, data.settings.baseTerrain), "## Hexes");
-  replace(["type", "hexes"], pathTable(data.paths), "## Paths");
+  replace(["hex", "terrain"], (ex) => hexTable(data.hexes, data.settings.baseTerrain, ex), "## Hexes");
+  replace(["type", "hexes"], (ex) => pathTable(data.paths, ex), "## Paths");
   return ["---", ...frontmatterLines(data.settings), ...userFm.filter((l) => l.trim()), "---", ...lines].join("\n");
 }
 
