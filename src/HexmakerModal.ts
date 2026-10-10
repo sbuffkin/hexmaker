@@ -1,8 +1,21 @@
 import { App, Modal } from "obsidian";
 import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "./utils";
+import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
-let lastIconPack: IconPack | "all" = "all";
+let lastIconPack: IconPack | "all" | undefined;
+
+/** The tab a filter opens on until the user picks one (see setIconPackDefault). */
+let iconPackDefault: () => IconPack | "all" = () => "all";
+
+/**
+ * Where icon filters start before the user picks a tab this session. The
+ * plugin passes a getter over its settings (defaultIconPack), so a change
+ * of map types applies to the next picker opened.
+ */
+export function setIconPackDefault(fn: () => IconPack | "all"): void {
+	iconPackDefault = fn;
+}
 
 /** Base class for all Hexmaker modals. Provides shared behaviour. */
 export class HexmakerModal extends Modal {
@@ -37,7 +50,14 @@ export class HexmakerModal extends Modal {
 		const tiles = (): HTMLElement[] =>
 			Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-icon-option[data-icon]"));
 
-		let pack: IconPack | "all" = lastIconPack;
+		// Full names on hover: tile captions are cut short ("ship a…"), and
+		// look-alike icons can only be told apart by name (fresh-eyes round 4).
+		for (const tile of tiles()) {
+			const icon = tile.dataset["icon"];
+			if (icon && !tile.title) tile.title = iconLabel(icon);
+		}
+
+		let pack: IconPack | "all" = lastIconPack ?? iconPackDefault();
 		const apply = () => {
 			const query = search.value.trim().toLowerCase();
 			let shown = 0;
@@ -94,6 +114,81 @@ export class HexmakerModal extends Modal {
 			renderTabs();
 			apply();
 		};
+	}
+
+	/** When the modal's own scroll pane last scrolled (see chainWheelToModal). */
+	private lastOuterScroll = -Infinity;
+	private outerScrollWatched = false;
+
+	/**
+	 * Stop a nested scroll area (an icon or terrain grid inside a long,
+	 * scrolling modal) from trapping the mouse wheel. The modal scrolls
+	 * first; the area only takes the wheel once the modal is at its end, the
+	 * user has clicked into the area, or a gesture that started on the area
+	 * is still going (see wheelTarget for the full rule).
+	 */
+	protected chainWheelToModal(inner: HTMLElement): void {
+		inner.dataset["wheelChain"] = "1";
+		if (!this.outerScrollWatched) {
+			this.outerScrollWatched = true;
+			// `scroll` doesn't bubble: capture it on the modal and ignore the
+			// chained areas' own scrolling.
+			this.modalEl.addEventListener(
+				"scroll",
+				(e) => {
+					const t = e.target as HTMLElement | null;
+					if (t && !t.dataset?.["wheelChain"]) this.lastOuterScroll = performance.now();
+				},
+				{ capture: true, passive: true },
+			);
+		}
+		// When the wheel last scrolled this area (programmatic scrolls, like
+		// bringing the current terrain into view, don't count).
+		let lastInnerWheel = -Infinity;
+		// Clicked into the area and still over it: the user is browsing it.
+		let engaged = false;
+		inner.addEventListener("pointerdown", () => { engaged = true; });
+		inner.addEventListener("pointerleave", () => { engaged = false; });
+		inner.addEventListener(
+			"wheel",
+			(e: WheelEvent) => {
+				if (e.ctrlKey || e.deltaY === 0) return;
+				const pane = this.scrollParentOf(inner);
+				const now = performance.now();
+				const box = (el: HTMLElement) => ({ scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight });
+				const target = pane
+					? wheelTarget({
+						inner: box(inner),
+						outer: box(pane),
+						deltaY: e.deltaY,
+						msSinceOuterScroll: now - this.lastOuterScroll,
+						msSinceInnerScroll: now - lastInnerWheel,
+						innerEngaged: engaged,
+					})
+					: "inner";
+				if (target === "inner") {
+					// Let the browser scroll the area natively.
+					lastInnerWheel = now;
+					return;
+				}
+				e.preventDefault();
+				if (target === "outer" && pane) pane.scrollTop += wheelDeltaPx(e.deltaY, e.deltaMode, pane.clientHeight);
+			},
+			{ passive: false },
+		);
+	}
+
+	/** Nearest ancestor of `el` (inside this modal) that scrolls vertically. */
+	private scrollParentOf(el: HTMLElement): HTMLElement | null {
+		const win = el.ownerDocument.defaultView ?? window;
+		for (let p = el.parentElement; p; p = p.parentElement) {
+			if (p.scrollHeight > p.clientHeight + 1) {
+				const oy = win.getComputedStyle(p).overflowY;
+				if (oy === "auto" || oy === "scroll") return p;
+			}
+			if (p === this.modalEl) break;
+		}
+		return null;
 	}
 
 	/** Make this modal draggable by its title-bar area. Safe to call multiple times. */

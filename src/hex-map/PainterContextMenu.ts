@@ -82,6 +82,10 @@ export class PainterContextMenu {
     this.cleanupFns.push(() => window.clearTimeout(timeoutId));
   }
 
+  isOpen(): boolean {
+    return this.el !== null;
+  }
+
   close(): void {
     this.el?.remove();
     this.el = null;

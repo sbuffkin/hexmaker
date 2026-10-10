@@ -130,7 +130,7 @@ export class TerrainPickerModal extends HexmakerModal {
     });
 
     for (const entry of this.palette) {
-      const btn = grid.createDiv({ cls: "duckmage-terrain-option" });
+      const btn = grid.createDiv({ cls: "duckmage-terrain-option", attr: { title: entry.name } });
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
       preview.setCssProps({ '--duckmage-bg': entry.color });
       if (entry.icon) {
@@ -161,6 +161,7 @@ export class TerrainPickerModal extends HexmakerModal {
         const entry = palette[i];
         const tile = grid.createDiv({
           cls: "duckmage-terrain-option duckmage-terrain-option-editable",
+          attr: { title: `${entry.name} (click to edit, drag to reorder)` },
         });
         tile.draggable = true;
 

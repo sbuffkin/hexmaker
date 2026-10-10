@@ -65,8 +65,8 @@ export interface MapData {
 	 *  hex notes when missing (maps linked before this existed). */
 	parent?: { map: string; hex: string };
 	/** Terrain shown on hexes with no terrain of their own (e.g. "void").
-	 *  Maps created with a base terrain create hex notes on use only — an
-	 *  absent note renders as this terrain. */
+	 *  Display only: hex notes are created on use for every map, with or
+	 *  without a base terrain. */
 	baseTerrain?: string;
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };
@@ -170,8 +170,12 @@ export interface HexmakerPluginSettings {
 	regionsFolder: string;
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;
+	/** The user expanded the hex editor's Terrain section (it then stays open). Unset = it opens collapsed on hexes that have a terrain. */
+	hexEditorTerrainExpanded?: boolean;
 	hexEditorFeaturesCollapsed: boolean;
 	hexEditorNotesCollapsed: boolean;
+	/** Hex editor "Icons" group collapsed. Unset = open. */
+	hexEditorIconsCollapsed?: boolean;
 	rollTableExcludedFolders: string[];
 	encounterTableExcludedFolders: string[];
 	defaultMap: string;

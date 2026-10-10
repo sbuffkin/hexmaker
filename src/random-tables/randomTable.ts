@@ -134,6 +134,18 @@ export function parseMarkdownListItems(content: string): string[] {
   return results;
 }
 
+/**
+ * What to tell the user when a table has nothing to roll (parseRandomTable
+ * found no entries). Setup creates terrain tables with an empty row, so the
+ * usual case is "not filled in yet", not a broken format (fresh-eyes E6: the
+ * old "Check the table format." read as if the user had broken something).
+ */
+export function emptyTableMessage(content: string): string {
+  return /^[ \t]*\|/m.test(content)
+    ? "This table has no entries yet. Add some results to roll on it."
+    : "This note has no table to roll on yet. Add some entries to start one.";
+}
+
 /** Weighted random selection. Returns a random entry. */
 export function rollOnTable(table: RandomTable): RandomTableEntry | null {
   if (table.entries.length === 0) return null;

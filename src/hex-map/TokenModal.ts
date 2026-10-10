@@ -3,6 +3,8 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TokenShape, TokenSize } from "../types";
 import { normalizeFolder, getIconUrl, iconLabel } from "../utils";
+import { generatorsFolder } from "../worldgen/generators";
+import { DEFAULT_TOKEN_FILL, isTokenNoteCandidate } from "./tokenDefaults";
 
 export interface TokenModalResult {
   icon: string | undefined;
@@ -42,7 +44,7 @@ export class TokenModal extends HexmakerModal {
     this.pendingIcon        = initialData.icon;
     this.pendingShape       = initialData.shape ?? "circle";
     this.pendingSize        = initialData.size  ?? "md";
-    this.pendingColor       = initialData.color ?? "#4a90e2";
+    this.pendingColor       = initialData.color ?? DEFAULT_TOKEN_FILL;
     this.pendingBorder      = initialData.border;
     this.pendingDescription = initialData.description;
     this.hasBorder          = !!initialData.border;
@@ -87,7 +89,7 @@ export class TokenModal extends HexmakerModal {
     if (!isEdit) {
       let noteInputEl: HTMLInputElement | undefined;
 
-      new Setting(contentEl)
+      const noteSetting = new Setting(contentEl)
         .setName("Note")
         .setDesc("Search for an existing note, or type a name to create one.")
         .addText((text) => {
@@ -98,29 +100,84 @@ export class TokenModal extends HexmakerModal {
             .onChange((v) => {
               this.pendingNoteTitle = v.trim();
               this.pendingNoteFile = undefined;
-              this.refreshNoteResults(resultsEl, v.trim(), noteInputEl!);
+              this.refreshNoteResults(resultsEl, v.trim(), noteInputEl!, onPicked);
+              resultsEl.show();
+              refreshNoteStatus();
               refreshPreview();
             });
         });
+
+      // What "Create token" will do with the Note field: link the picked or
+      // exactly-named note, or create a new one. A tester's half-typed
+      // "Hermit" silently became a new note instead of "Hermit's hut".
+      const noteStatusEl = contentEl.createDiv({ cls: "duckmage-token-note-status" });
+      const refreshNoteStatus = () => {
+        const title = this.pendingNoteTitle;
+        const target = this.pendingNoteFile ?? (title ? this.findCandidateByName(title) : undefined);
+        noteStatusEl.empty();
+        noteStatusEl.toggleClass("is-new", !target && !!title);
+        if (target) {
+          noteStatusEl.setText(`Links to ${target.path}`);
+        } else if (title) {
+          noteStatusEl.setText(`Creates a new note: ${this.newNotePath(title)}`);
+        }
+      };
 
       // Inline results list — rendered in flow below the setting so it stays
       // within the modal's scroll container (never clips outside).
       const resultsEl = contentEl.createDiv({ cls: "duckmage-note-picker-results" });
       resultsEl.hide();
+      const onPicked = () => {
+        resultsEl.hide();
+        refreshNoteStatus();
+        refreshPreview();
+      };
 
       if (noteInputEl) {
         const el = noteInputEl;
+        el.setAttr("aria-label", "Note");
+        noteSetting.nameEl.addClass("duckmage-token-field-label");
+        noteSetting.nameEl.addEventListener("click", () => el.focus());
 
         el.addEventListener("focus", () => {
-          this.refreshNoteResults(resultsEl, el.value.trim(), el);
+          this.refreshNoteResults(resultsEl, el.value.trim(), el, onPicked);
           resultsEl.show();
         });
 
-        el.addEventListener("blur", () => {
-          // Delay hide so a mousedown on a result fires before the list vanishes.
-          window.setTimeout(() => resultsEl.hide(), 150);
+        // The list used to hide 150ms after the input lost focus, which
+        // could pull it out from under a click on a suggestion (the click
+        // then hit the "Icon" label and the partial name made a new note).
+        // Now it stays until a pick, Escape, or a press elsewhere.
+        el.addEventListener("keydown", (e: KeyboardEvent) => {
+          if (!resultsEl.isShown()) return;
+          const rows = Array.from(resultsEl.querySelectorAll<HTMLElement>(".duckmage-note-picker-item"));
+          const at = rows.findIndex((r) => r.hasClass("is-active"));
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            if (rows.length === 0) return;
+            const next = e.key === "ArrowDown" ? Math.min(rows.length - 1, at + 1) : Math.max(0, at - 1);
+            rows.forEach((r, i) => r.toggleClass("is-active", i === next));
+            rows[next].scrollIntoView({ block: "nearest" });
+          } else if (e.key === "Enter" && at >= 0) {
+            e.preventDefault();
+            rows[at].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            e.stopPropagation();
+            resultsEl.hide();
+          }
+        });
+        // Close the list on click, not pointerdown: closing it on press
+        // shifted everything below up under the pointer, so the release
+        // landed elsewhere and the first click on an icon was lost
+        // (fresh-eyes round 4).
+        this.modalEl.addEventListener("click", (e: MouseEvent) => {
+          const t = e.target as Node | null;
+          if (t && (el.contains(t) || resultsEl.contains(t))) return;
+          resultsEl.hide();
         });
       }
+      refreshNoteStatus();
     } else {
       contentEl.createEl("p", {
         text: this.initialTitle,
@@ -133,6 +190,7 @@ export class TokenModal extends HexmakerModal {
     const visibleIcons = this.plugin.availableIcons.filter((i) => !hidden.has(i));
     contentEl.createEl("p", { text: "Icon", cls: "duckmage-icon-inline-label" });
     const iconGrid = contentEl.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(iconGrid);
 
     const makeIconTile = (icon: string | null) => {
       const label = icon
@@ -150,6 +208,7 @@ export class TokenModal extends HexmakerModal {
         img.alt = label;
       }
       tile.createSpan({ text: label, cls: "duckmage-icon-option-name" });
+      tile.title = label;
       tile.dataset["icon"] = icon ?? "";
       tile.addEventListener("click", () => {
         this.pendingIcon = icon ?? undefined;
@@ -169,7 +228,8 @@ export class TokenModal extends HexmakerModal {
       .addDropdown((dd) => {
         dd.addOption("circle", "Circle");
         dd.addOption("square", "Square");
-        dd.setValue(this.pendingShape === "hexagon" ? "circle" : this.pendingShape);
+        dd.addOption("hexagon", "Hexagon");
+        dd.setValue(this.pendingShape);
         dd.onChange((v) => { this.pendingShape = v as TokenShape; refreshPreview(); });
       });
 
@@ -241,8 +301,11 @@ export class TokenModal extends HexmakerModal {
         }
       });
 
-    // Description
-    new Setting(contentEl)
+    // Description. A Setting's name is a div, not a <label>: name the box
+    // for screen readers and make clicking the name focus it (a tester's
+    // click on "Description" went nowhere).
+    let descInput: HTMLTextAreaElement | undefined;
+    const descSetting = new Setting(contentEl)
       .setName("Description")
       .setDesc("Saved to the note's frontmatter.")
       .addTextArea((ta) => {
@@ -250,7 +313,11 @@ export class TokenModal extends HexmakerModal {
           .onChange((v) => { this.pendingDescription = v.trim() || undefined; });
         ta.inputEl.rows = 3;
         ta.inputEl.addClass("duckmage-token-desc-textarea");
+        ta.inputEl.setAttr("aria-label", "Description");
+        descInput = ta.inputEl;
       });
+    descSetting.nameEl.addClass("duckmage-token-field-label");
+    descSetting.nameEl.addEventListener("click", () => descInput?.focus());
 
     // Buttons
     const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
@@ -299,9 +366,12 @@ export class TokenModal extends HexmakerModal {
       .addEventListener("click", () => this.close());
   }
 
-  private getNoteMatches(query: string): TFile[] {
+  /** Notes a token can link: world notes, not tables/workflows/generators/
+   *  palettes/hex and map notes/exports/icons or `_` notes (round-3 testers
+   *  got a list full of terrain tables). */
+  private tokenNoteCandidates(): TFile[] {
     const s = this.plugin.settings;
-    const folders = [
+    const include = [
       s.worldFolder,
       s.townsFolder,
       s.dungeonsFolder,
@@ -309,26 +379,47 @@ export class TokenModal extends HexmakerModal {
       s.questsFolder,
       s.factionsFolder,
       s.regionsFolder,
-    ]
-      .map(normalizeFolder)
-      .filter(Boolean);
-
-    const q = query.toLowerCase();
+    ].map(normalizeFolder);
+    const exclude = [
+      s.tablesFolder,
+      s.workflowsFolder,
+      s.hexFolder,
+      s.exportFolder,
+      s.iconsFolder,
+      this.plugin.paletteStore.folder(),
+      generatorsFolder(this.plugin),
+    ].map((f) => normalizeFolder(f ?? ""));
     return this.app.vault
       .getMarkdownFiles()
-      .filter((f) => {
-        if (f.basename.startsWith("_")) return false;
-        if (folders.length > 0 && !folders.some((folder) => f.path.startsWith(folder + "/"))) return false;
-        return !q || f.path.toLowerCase().contains(q);
-      })
-      .sort((a, b) => a.basename.localeCompare(b.basename))
+      .filter((f) => isTokenNoteCandidate(f.path, f.basename, include, exclude));
+  }
+
+  private getNoteMatches(query: string): TFile[] {
+    const q = query.toLowerCase();
+    const starts = (f: TFile) => (f.basename.toLowerCase().startsWith(q) ? 0 : 1);
+    return this.tokenNoteCandidates()
+      .filter((f) => !q || f.path.toLowerCase().contains(q))
+      .sort((a, b) => starts(a) - starts(b) || a.basename.localeCompare(b.basename))
       .slice(0, 50);
+  }
+
+  /** The candidate note whose name is exactly `title` (case-insensitive). */
+  private findCandidateByName(title: string): TFile | undefined {
+    const t = title.toLowerCase();
+    return this.tokenNoteCandidates().find((f) => f.basename.toLowerCase() === t || f.path.toLowerCase() === t);
+  }
+
+  /** Where a token note typed as `title` is created. */
+  private newNotePath(title: string): string {
+    const world = normalizeFolder(this.plugin.settings.worldFolder) || "world";
+    return `${world}/tokens/${title}.md`;
   }
 
   private refreshNoteResults(
     container: HTMLElement,
     query: string,
     inputEl: HTMLInputElement,
+    onPicked: () => void,
   ): void {
     container.empty();
     const files = this.getNoteMatches(query);
@@ -345,7 +436,7 @@ export class TokenModal extends HexmakerModal {
         this.pendingNoteTitle = file.basename;
         this.pendingNoteFile  = file;
         inputEl.value         = file.basename;
-        container.hide();
+        onPicked();
       });
     }
   }
@@ -375,15 +466,15 @@ export class TokenModal extends HexmakerModal {
     const byPath = this.app.vault.getAbstractFileByPath(title);
     if (byPath instanceof TFile) return byPath.path;
 
-    // 2. Basename match (case-insensitive)
-    const match = this.app.vault.getMarkdownFiles()
-      .find((f) => f.basename.toLowerCase() === title.toLowerCase());
+    // 2. Name match among the picker's candidates (case-insensitive) — the
+    //    same rule as the "Links to …" line, so a table named like the
+    //    token isn't silently linked.
+    const match = this.findCandidateByName(title);
     if (match) return match.path;
 
     // 3. Create new note in worldFolder/tokens/
-    const world = normalizeFolder(this.plugin.settings.worldFolder) || "world";
-    const folder = `${world}/tokens`;
-    const path   = `${folder}/${title}.md`;
+    const path   = this.newNotePath(title);
+    const folder = path.slice(0, path.lastIndexOf("/"));
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try { await this.app.vault.createFolder(folder); } catch { /* race */ }
     }

@@ -157,6 +157,21 @@ describe("generator registry visibility", () => {
 		expect(shown).toContain("wfc:world/generators/planet-ocean.md");
 	});
 
+	it("Simple shows the starter generators and Space ones, not learned or preset ones", async () => {
+		const plugin = pluginWith(learned, ["world", "space"]);
+		(plugin.settings as { featureLevel?: string }).featureLevel = "simple";
+		const all = await listGeneratorKinds(plugin);
+		const world = ids(visibleKinds(all, plugin.settings, false));
+		for (const id of [BLANK_ID, OVERLAND_ID, REGION_DETAIL_ID]) expect(world).toContain(id);
+		expect(world).not.toContain("wfc:world/generators/my-coast.md");
+		const space = ids(visibleKinds(all, plugin.settings, true));
+		expect(space).toContain(STAR_SCATTER_ID);
+		expect(space).toContain("wfc:world/generators/planet-ocean.md");
+		// Turning on just the generators feature brings the rest back.
+		(plugin.settings as { advancedFeatures?: string[] }).advancedFeatures = ["generators"];
+		expect(ids(visibleKinds(all, plugin.settings, false))).toContain("wfc:world/generators/my-coast.md");
+	});
+
 	it("keeps a saved choice visible", async () => {
 		const plugin = pluginWith(learned, ["world"]);
 		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, false, PLANET_SURFACE_ID));

@@ -6517,3 +6517,528 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-more-features-on {
     color: var(--text-success);
 }
+
+/* ── Fresh-eyes fixes: hex editor (#38), path tool & navigation (#39) ───── */
+
+/* Hex editor: the link fields sit in a "Linked notes" group, each in its own
+   boxed card so a label can't be read as belonging to the next field (E5). */
+.duckmage-editor-link-group {
+    padding-left: 0.6em;
+    border-left: 2px solid var(--background-modifier-border);
+}
+.duckmage-editor-link-card {
+    padding: 0.45em 0.6em 0.5em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary-alt);
+}
+.duckmage-editor-link-card .duckmage-link-section-title {
+    color: var(--text-normal);
+}
+
+/* Terrain swatches show the full name on up to two lines instead of
+   "forested ..." (E4); a tile's title holds the name if it's longer still. */
+.duckmage-terrain-picker .duckmage-terrain-option {
+    width: 72px;
+    min-width: 0;
+}
+.duckmage-terrain-picker .duckmage-terrain-option-name {
+    max-width: 100%;
+    min-height: 2.3em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+/* Two rows of the taller tiles in the hex editor's terrain strip. */
+.duckmage-hex-editor .duckmage-terrain-picker {
+    max-height: 164px;
+}
+
+/* Random tables with nothing to roll yet: message + a way to fill them (E6). */
+.duckmage-rt-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5em;
+    margin: 0.5em 0;
+}
+
+/* While a drawing tool is active, clicks on a token fall through to the hex
+   under it (a token used to swallow path/paint clicks on its hex, T2). */
+.duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-token {
+    pointer-events: none;
+}
+
+/* Mode bar: which drawing tool is on and how to stop it (T3). Sits above
+   the bottom expand button, centred over the map. */
+.duckmage-mode-bar {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    max-width: calc(100% - 2em);
+    padding: 0.3em 0.4em 0.3em 0.8em;
+    border-radius: 999px;
+    border: 1px solid var(--interactive-accent);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    font-size: var(--font-ui-small);
+    white-space: nowrap;
+}
+.duckmage-mode-bar-text {
+    font-weight: 600;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.duckmage-mode-bar-hint {
+    color: var(--text-muted);
+}
+.duckmage-mode-bar-stop {
+    padding: 0 0.5em;
+    height: 1.7em;
+    border-radius: 999px;
+    box-shadow: none;
+}
+.duckmage-rt-roll-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Hex editor autosave cue ("Saving…" → "✓ Saved"), fresh-eyes round 3. */
+.duckmage-editor-save-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-left: 0.5em;
+    white-space: nowrap;
+}
+.duckmage-editor-save-status[data-state="saved"] {
+    color: var(--text-success);
+}
+.duckmage-editor-save-status[data-state="error"] {
+    color: var(--text-error);
+}
+
+/* Token form: what the Note field will do, and clickable field names
+   (fresh-eyes round 3). */
+.duckmage-token-note-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin: -0.4em 0 0.5em;
+}
+.duckmage-token-note-status.is-new {
+    color: var(--text-accent);
+}
+.duckmage-note-picker-item.is-active {
+    background: var(--background-modifier-hover);
+}
+.duckmage-token-field-label {
+    cursor: pointer;
+}
+
+/* Picker tiles: only the selected tile wears the accent ring. Hover used the
+   same purple border, so the tile under the pointer read as a second
+   selection (fresh-eyes round 3: "— terrain…" and "forest hea…" both
+   looked selected). */
+.duckmage-icon-option:hover:not(.is-selected),
+.duckmage-terrain-option:hover:not(.is-selected) {
+    border-color: var(--background-modifier-border-hover);
+}
+.duckmage-icon-option.is-selected,
+.duckmage-terrain-option.is-selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* Submap marker: bigger, and a white ring with a dark outline so it reads
+   on light and dark terrain alike ("tiny and greyish", round 3). Pointy-top
+   hexes come to a point at the top, so the marker sits a little lower. */
+.duckmage-hex-submap-badge {
+    top: 0.5em;
+    width: 0.95em;
+    height: 0.95em;
+    border: 0.17em solid #fff;
+    background: rgba(0, 0, 0, 0.45);
+    box-shadow:
+        0 0 0 0.06em rgba(0, 0, 0, 0.8),
+        0 0.05em 0.25em rgba(0, 0, 0, 0.5);
+}
+.duckmage-grid-flat .duckmage-hex-submap-badge {
+    top: 0.3em;
+}
+.duckmage-hex-submap-badge:hover {
+    background: var(--interactive-accent);
+    transform: scale(1.2);
+}
+
+/* Token form: nothing in the scrolling column may shrink. The note
+   suggestion list (max-height + overflow) was flex-shrunk to a ~4px
+   sliver, so a click aimed at a suggestion landed on the "Icon" label
+   below it: the real cause of round 3's "list closes under the click". */
+.duckmage-token-modal .modal-content > * {
+    flex-shrink: 0;
+}
+
+/* ── Fresh-eyes r3 (setup, new map, export) — fix/fresh-eyes-r3-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Setup wizard: the chosen orientation card is ticked and filled; hover
+   only lightens a card so it never reads as chosen. */
+.duckmage-wizard-orient-btn:hover:not(.is-active) {
+    border-color: var(--background-modifier-border-hover);
+    background: var(--background-modifier-hover);
+}
+.duckmage-wizard-orient-btn.is-active {
+    border-color: var(--interactive-accent);
+    background: hsla(var(--interactive-accent-hsl), 0.18);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+.duckmage-wizard-orient-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+.duckmage-wizard-orient-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+.duckmage-wizard-orient-mark {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--interactive-accent);
+}
+.duckmage-wizard-preview-exact {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    text-align: center;
+    max-width: 240px;
+}
+
+/* New map / submap setup: neighbour seam, labelled defaults. */
+.duckmage-setup-gen-seam {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-faint);
+}
+.duckmage-setup-gen-seam.is-continues {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+.duckmage-setup-gen-seam.is-continues::before {
+    content: "↔ ";
+}
+.duckmage-setup-seam-note {
+    max-width: 320px;
+}
+.duckmage-setup-control > .duckmage-setup-default {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}
+.duckmage-setup-defaults-note {
+    margin-bottom: 0.4em;
+}
+
+/* Map export form (Maps → Export and "Export current map…"). */
+.duckmage-export-tab-row {
+    flex-wrap: wrap;
+}
+.duckmage-export-tab-row-hint {
+    flex-basis: 100%;
+    padding-left: 1.9em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-export-included {
+    margin: 0.5em 0;
+    padding: 0.5em 0.75em;
+    border-left: 3px solid var(--interactive-accent);
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-export-included-title {
+    font-weight: 600;
+    margin-bottom: 0.2em;
+}
+.duckmage-export-included ul {
+    margin: 0;
+    padding-left: 1.2em;
+}
+
+/* ── Fresh-eyes r4 (map view, editor, tokens) ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Hex editor autosave status, persistent. It starts under the Notes
+   heading and moves beside the label of the box being typed in, so it's
+   in view while typing (round 4: the title-row cue alone went unseen). */
+.duckmage-editor-notes-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin: 0 0 0.6em;
+    padding: 0.1em 0.6em;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.duckmage-text-section-label-row .duckmage-editor-notes-status {
+    margin: 0 0.4em 0 auto;
+}
+.duckmage-editor-notes-status[data-state="pending"] {
+    font-style: italic;
+}
+.duckmage-editor-notes-status[data-state="saving"] {
+    color: var(--text-accent);
+    border-color: var(--interactive-accent);
+}
+.duckmage-editor-notes-status[data-state="saved"] {
+    color: var(--text-success);
+    border-color: var(--color-green);
+    background: rgba(var(--color-green-rgb), 0.15);
+    font-weight: 600;
+}
+.duckmage-editor-notes-status[data-state="settled"] {
+    color: var(--text-success);
+}
+.duckmage-editor-notes-status[data-state="error"] {
+    color: var(--text-error);
+    border-color: var(--color-red);
+    background: rgba(var(--color-red-rgb), 0.12);
+    font-weight: 600;
+}
+.duckmage-editor-save-status.is-quiet {
+    display: none;
+}
+.duckmage-editor-save-status[data-state="settled"] {
+    color: var(--text-success);
+}
+
+/* Tool mode bar: in the toolbar band (second row, right of undo/redo)
+   instead of floating over the bottom row of hexes, where a click on a
+   bottom-row hex hit the bar. HexMapView keeps hexes out of this band
+   (safeArea.ts). Filled with the accent colour and pulsed when a tool
+   starts, so it's noticed (round 4: one tester never saw it). */
+.duckmage-hex-map-controls .duckmage-mode-bar {
+    top: 42px;
+    bottom: auto;
+    left: 84px;
+    transform: none;
+    max-width: calc(100% - 300px);
+    min-height: 26px;
+    box-sizing: border-box;
+    padding: 0.15em 0.3em 0.15em 0.8em;
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    box-shadow: var(--shadow-s);
+    z-index: 11;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-text {
+    color: var(--text-on-accent);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-hint {
+    color: var(--text-on-accent);
+    opacity: 0.85;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-stop {
+    height: 1.6em;
+    color: var(--text-normal);
+    background: var(--background-primary);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+    animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
+}
+@keyframes duckmage-mode-bar-pulse {
+    0% {
+        box-shadow: 0 0 0 0 hsla(var(--interactive-accent-hsl), 0.7);
+    }
+    100% {
+        box-shadow: 0 0 0 10px hsla(var(--interactive-accent-hsl), 0);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+        animation: none;
+    }
+}
+
+/* Coordinate labels: a halo in the colour opposite to the text
+   (--duckmage-coord-halo, set by HexMapView from the coordinate colour
+   setting) so they read on white ice and pale hills, not just dark hexes.
+   Eight 1px offsets make a solid outline; the blur softens its edge. */
+.duckmage-coord-label-html {
+    text-shadow:
+        -1px -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px 0 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        -1px 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        -1px 0 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 0 3px var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85));
+}
+
+/* Token form icon picker: roomy, with full names. It was a 220px box
+   with names cut to "ship a…", so look-alike ships couldn't be told
+   apart. Taller (still drag-resizable), fixed-width tiles whose names
+   wrap instead of truncating; hovering a tile shows its name too. */
+.duckmage-token-modal .duckmage-icon-picker-inline {
+    height: min(360px, 45vh);
+    min-height: 160px;
+    align-content: flex-start;
+    align-items: flex-start;
+}
+.duckmage-token-modal .duckmage-icon-option {
+    width: 76px;
+    min-width: 76px;
+}
+.duckmage-token-modal .duckmage-icon-option-name {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+}
+
+/* Neighbouring maps' roads and rivers in the ghost strip (read-only), so
+   a path can be continued to meet them; a dot marks where one ends. The
+   SVG covers the grid (one user unit = 1em) and overflows into the strip. */
+.duckmage-region-shadow-paths {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0.75;
+}
+.duckmage-region-shadow-path-end {
+    stroke: var(--background-primary);
+    stroke-width: 0.06;
+}
+
+/* ── Fresh-eyes r4 (setup, new map, maps modal) — fix/fresh-eyes-r4-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Maps modal: never taller than the window. The tab bar stays put, the
+   tab content scrolls, and the Export buttons stay pinned at the bottom
+   (it ran off-screen at a 900px window). MapModal also keeps the modal
+   on screen as a tab grows (HexmakerModal.keepInViewport). */
+.modal.duckmage-map-modal.duckmage-editor-modal-drag {
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.duckmage-map-modal > .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.duckmage-map-modal .duckmage-map-modal-tabs {
+    flex: none;
+}
+.duckmage-map-modal .duckmage-map-modal-tab-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.duckmage-map-modal .duckmage-export-tab-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: 0.2em;
+    background: var(--modal-background, var(--background-primary));
+}
+
+/* Maps list: a hint instead of a delete ✕ per name; delete is in Properties. */
+.duckmage-map-list-hint {
+    margin-top: 0.6em;
+}
+.duckmage-map-delete-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-map-delete-block > p {
+    flex: 1 1 100%;
+    margin: 0;
+}
+
+/* New map setup: where Overland's Sea default came from (the neighbour). */
+.duckmage-setup-control > .duckmage-setup-sea-hint {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}
+
+/* ── Fresh-eyes r5 (map view, editor, tokens) ─────────────────────────────── */
+
+/* A modal or menu just closed over the map: no hover highlight on the hex
+   under the unmoved pointer until it really moves (a stray highlight was
+   left on a hex after Create token). The selection still shows. */
+.duckmage-hex-map-viewport.duckmage-hover-paused .duckmage-hex:not(.is-selected):hover::after {
+    content: none;
+}
+
+/* Hex editor Terrain: the swatch grid grows with the modal (no nested two-row
+   scroll box); long palettes get a filter. Collapsed, the header reads
+   "Terrain [swatch] forest > change". */
+.duckmage-hex-editor .duckmage-terrain-picker.duckmage-terrain-picker-grow {
+    max-height: none;
+    overflow-y: visible;
+}
+.duckmage-terrain-filter {
+    width: 100%;
+    margin-bottom: 0.5em;
+}
+.duckmage-terrain-filter-empty {
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 0.75em;
+}
+.duckmage-terrain-change-hint {
+    margin-left: 0.5em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+}
+
+/* ── Fresh-eyes r5 (setup, new map, export) ── */
+
+/* Wizard: the "Saved as …" line always holds one line of space, so the
+   form doesn't jump under the cursor when it appears while typing. */
+.duckmage-wizard-slug-note {
+    min-height: calc(1em * var(--line-height-normal, 1.5));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Export: the overlay suffix ("-region") right after the File name box. */
+.duckmage-export-name-suffix {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    white-space: nowrap;
+}
+
+/* Maps → New map: the chosen generator's description under the dropdown. */
+.duckmage-map-generator-desc {
+    margin-top: 0.25em;
+}

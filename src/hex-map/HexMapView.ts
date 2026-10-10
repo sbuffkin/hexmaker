@@ -28,6 +28,15 @@ import {
 } from "../constants";
 import { MapModal } from "./MapModal";
 import { mapAncestors } from "./submapNav";
+import { pathClickOutcome, toolModeLabel } from "./toolMode";
+import { openNoteFocused } from "../openNote";
+import { coordHaloColor } from "../coordStyle";
+import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
+import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
+import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
+import { pickTokenFill } from "./tokenDefaults";
+import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
+import { nearestHex } from "./hitTest";
 import { PathPickerModal } from "./PathPickerModal";
 import type { MapData, PathChain, TokenEntry } from "../types";
 import {
@@ -211,6 +220,16 @@ export class HexMapView extends ItemView {
     | "placeToken"
     | null = null;
   private isErasingMode = false;
+  /** On-map "which tool is on" bar (fresh-eyes T3); text set in updateModeBar. */
+  private modeBarEl: HTMLElement | null = null;
+  private modeBarTextEl: HTMLElement | null = null;
+  /** Toolbar rows (and the mode bar) along the top of the map: hexes are
+   *  kept out from under them (see safeArea.ts). */
+  private topBandEls: HTMLElement[] = [];
+  /** Time of the last right-click while a tool was active (double-right-click exits). */
+  private lastToolContextMenuAt = 0;
+  /** The open (or last) right-click tool menu, so Esc can close it first. */
+  private painterMenu: PainterContextMenu | null = null;
   private pathToolbarBtn: HTMLButtonElement | null = null;
   private pathBtnSwatch: HTMLElement | null = null;
   private terrainToolbarBtn: HTMLButtonElement | null = null;
@@ -478,7 +497,16 @@ export class HexMapView extends ItemView {
   }
 
   canNavigateBack(): boolean {
-    return this.mapHistory.some((m) => m !== this.activeMapName && this.plugin.getMap(m));
+    return this.previousMapName() !== undefined;
+  }
+
+  /** The map Back would go to (skips maps deleted since and the current one). */
+  private previousMapName(): string | undefined {
+    for (let i = this.mapHistory.length - 1; i >= 0; i--) {
+      const m = this.mapHistory[i];
+      if (m !== this.activeMapName && this.plugin.getMap(m)) return m;
+    }
+    return undefined;
   }
 
   canNavigateUp(): boolean {
@@ -489,20 +517,54 @@ export class HexMapView extends ItemView {
   private flashHex(x: number, y: number): void {
     const hexEl = this.viewportEl?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`);
     if (!hexEl) return;
+    this.revealHexEl(hexEl);
     const blip = hexEl.createSpan({ cls: "duckmage-hex-blip" });
     blip.addEventListener("animationend", () => blip.remove(), { once: true });
   }
 
+  /** Pan just enough that a hex is fully visible, clear of the toolbar
+   *  rows and an open side panel (round 4: the tools panel hid the hex a
+   *  tester came back to from a submap). */
+  private revealHexEl(hexEl: HTMLElement): void {
+    if (!mayAutoPan(this.drawingMode)) return;
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return;
+    const h = hexEl.getBoundingClientRect();
+    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
+    const dx = revealDelta(h.left - clip.left, h.right - clip.left, ins.left, clip.width - ins.right);
+    const dy = revealDelta(h.top - clip.top, h.bottom - clip.top, ins.top, clip.height - ins.bottom);
+    if (dx === 0 && dy === 0) return;
+    this.panX += dx;
+    this.panY += dy;
+    this.applyTransform();
+  }
+
   /** Breadcrumb (ancestors), Up and Back buttons for the active map. */
   private refreshMapNav(): void {
-    if (this.canNavigateBack()) this.backBtn?.show();
-    else this.backBtn?.hide();
+    // Both buttons name the map they go to (fresh-eyes T4: "↑ up" vs
+    // "← back" wasn't self-explanatory): Parent = the map this one is a
+    // submap of; Previous = the map viewed before this one (like a browser).
+    const prev = this.previousMapName();
+    if (this.backBtn) {
+      if (prev) {
+        this.backBtn.show();
+        const label = `Back to the previous map: ${prev} (Alt+←)`;
+        this.backBtn.title = label;
+        this.backBtn.setAttr("aria-label", label);
+      } else {
+        this.backBtn.hide();
+      }
+    }
 
     const parent = this.plugin.parentOf(this.activeMapName);
     if (this.upBtn) {
       if (parent) {
         this.upBtn.show();
-        this.upBtn.title = `Up to ${parent.map} (hex ${parent.hex.replace("_", ", ")})`;
+        const label = `Up to the parent map: ${parent.map}, hex ${hexKeyCoords(parent.hex)} (Alt+↑)`;
+        this.upBtn.title = label;
+        this.upBtn.setAttr("aria-label", label);
       } else {
         this.upBtn.hide();
       }
@@ -584,6 +646,38 @@ export class HexMapView extends ItemView {
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
     this.applyTransform();
 
+    // Mode bar: paint/draw tools are sticky, so say which one is on and how
+    // to stop it (fresh-eyes T3). Hidden while no tool is active.
+    this.modeBarEl = controlsEl.createDiv({
+      cls: "duckmage-mode-bar",
+      attr: { role: "status", "aria-live": "polite" },
+    });
+    this.modeBarTextEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-text" });
+    this.modeBarEl.createSpan({
+      cls: "duckmage-mode-bar-hint",
+      text: "Right-click: options · Esc: stop",
+    });
+    const modeBarStop = this.modeBarEl.createEl("button", {
+      cls: "duckmage-mode-bar-stop",
+      text: "✕",
+      attr: { title: "Stop this tool", "aria-label": "Stop this tool" },
+    });
+    modeBarStop.addEventListener("click", () => this.exitCurrentMode());
+    this.modeBarEl.hide();
+
+    // Esc leaves the active tool (modals and menus handle their own Esc first).
+    this.scope.register([], "Escape", () => {
+      // An open tool menu takes the first Esc (Obsidian's keymap sees the
+      // key before the menu's own listener would).
+      if (this.painterMenu?.isOpen()) {
+        this.painterMenu.close();
+        return false;
+      }
+      if (this.drawingMode === null) return true;
+      this.exitCurrentMode();
+      return false;
+    });
+
     this.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
     this.factionTooltipEl.hide();
 
@@ -591,33 +685,69 @@ export class HexMapView extends ItemView {
       this.updateBrushHighlight(null, null);
     });
 
+    // A modal or menu closing over the map leaves the hex under the unmoved
+    // pointer lit as if hovered (round 5: a stray highlight after Create
+    // token). Pause the hover highlight until the pointer really moves.
+    const doc = contentEl.ownerDocument;
+    let lastPointer = { x: -1, y: -1 };
+    let hoverPausedAt: { x: number; y: number } | null = null;
+    this.registerDomEvent(doc, "mousemove", (e: MouseEvent) => {
+      lastPointer = { x: e.clientX, y: e.clientY };
+      if (!pointerMovedFrom(hoverPausedAt, e.clientX, e.clientY)) return;
+      hoverPausedAt = null;
+      this.viewportEl?.removeClass("duckmage-hover-paused");
+    });
+    const overlayWatch = new MutationObserver((records) => {
+      if (!records.some((r) => overlayClosed(Array.from(r.removedNodes)))) return;
+      hoverPausedAt = { ...lastPointer };
+      this.viewportEl?.addClass("duckmage-hover-paused");
+    });
+    overlayWatch.observe(doc.body, { childList: true });
+    this.register(() => overlayWatch.disconnect());
+
+    // Hover info: a hex's terrain + coords as its tooltip / accessible name.
+    // One delegated listener, filled in on first hover of each hex — no
+    // per-hex listeners or per-render work on big maps, and always the
+    // current terrain (painting doesn't re-render the grid).
+    this.registerDomEvent(clipEl, "mouseover", (e: MouseEvent) => {
+      const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
+      if (!hexEl) return;
+      const x = Number(hexEl.dataset.x);
+      const y = Number(hexEl.dataset.y);
+      const own = getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.activeMapName));
+      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null);
+      if (hexEl.title !== label) {
+        hexEl.title = label;
+        hexEl.setAttr("aria-label", label);
+      }
+    });
+
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
-    // Delta-aware + rAF-batched. Mouse notch (deltaY=100) → ~1.33× per event.
-    // Trackpads (deltaY≈2-10) → tiny per-event factors that look smooth
-    // because many events fire per frame and the rAF tick applies them as
-    // one update. NO easing tail — the visual lands exactly at the
-    // cumulative wheel delta and stops the frame after the last event.
-    const ZOOM_SENSITIVITY = 0.0028;
+    // Delta-aware + rAF-batched (see wheelZoom.ts). Mouse notch (deltaY=100)
+    // → ~1.16× per event. Trackpads (deltaY≈2-10) → tiny per-event factors
+    // that look smooth because many events fire per frame and the rAF tick
+    // applies them as one update. NO easing tail — the visual lands exactly
+    // at the cumulative wheel delta and stops the frame after the last event.
     this.registerDomEvent(
       contentEl,
       "wheel",
       (e: WheelEvent) => {
+        // Over the toolbar panels/menus the wheel scrolls them; with a modal
+        // open it belongs to the modal (fresh-eyes round 3: "scroll-to-zoom
+        // when I meant to scroll the modal").
+        const overMap = e.target instanceof Node && clipEl.contains(e.target);
+        const modalOpen = !!contentEl.ownerDocument.body.querySelector(":scope > .modal-container");
+        if (!wheelZoomsMap(overMap, modalOpen)) {
+          if (modalOpen) e.preventDefault();
+          return;
+        }
         // Calibration mode: image/grid wheel handlers own plain-wheel scaling
         // (they stopPropagation), so this only fires for Ctrl/Cmd+wheel
         // (which the layer handlers explicitly let through) or wheels outside
         // both layers. Treat both as a viewport zoom.
         e.preventDefault();
         const rect = contentEl.getBoundingClientRect();
-        // Normalize deltaY across deltaMode (LINE: ~33px/line, PAGE: ~400px).
-        const PX_PER_LINE = 33;
-        const PX_PER_PAGE = 400;
-        const dyPx =
-          e.deltaMode === WheelEvent.DOM_DELTA_LINE
-            ? e.deltaY * PX_PER_LINE
-            : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? e.deltaY * PX_PER_PAGE
-            : e.deltaY;
-        this.pendingZoomLog += -dyPx * ZOOM_SENSITIVITY;
+        this.pendingZoomLog += wheelZoomLog(e.deltaY, e.deltaMode);
         this.pendingZoomPivot = {
           cx: e.clientX - rect.left,
           cy: e.clientY - rect.top,
@@ -685,10 +815,9 @@ export class HexMapView extends ItemView {
           this.currentFactionStroke = new Map();
         else if (this.drawingMode === "regionLink")
           this.currentRegionStroke = new Map();
-        // Paint the hex under the cursor immediately
-        const hexEl = (e.target as HTMLElement).closest<HTMLElement>(
-          ".duckmage-hex",
-        );
+        // Paint the hex under the cursor immediately (or the nearest one
+        // when the press landed in the gap between hexes).
+        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
@@ -744,11 +873,8 @@ export class HexMapView extends ItemView {
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
       if (isTerrainPainting) {
-        const el = dragDoc?.elementFromPoint(
-          e.clientX,
-          e.clientY,
-        ) as HTMLElement | null;
-        const hexEl = el?.closest<HTMLElement>(".duckmage-hex");
+        const el = dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null;
+        const hexEl = this.hexElAt(el, e.clientX, e.clientY);
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
@@ -839,7 +965,16 @@ export class HexMapView extends ItemView {
         if (this.drawingMode === null) return;
         e.preventDefault();
         e.stopPropagation();
-        const hexEl = (e.target as HTMLElement).closest<HTMLElement>(".duckmage-hex");
+        // Double-right-click anywhere exits the tool (as the help says).
+        const now = performance.now();
+        const isDouble = now - this.lastToolContextMenuAt < 400;
+        this.lastToolContextMenuAt = isDouble ? 0 : now;
+        if (isDouble) {
+          this.painterMenu?.close();
+          this.exitCurrentMode();
+          return;
+        }
+        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
         const hexX = hexEl ? Number(hexEl.dataset.x) : null;
         const hexY = hexEl ? Number(hexEl.dataset.y) : null;
         if (
@@ -852,10 +987,41 @@ export class HexMapView extends ItemView {
           this.removeOneGmIconFromHex(hexEl, hexX, hexY, this.paintIconName);
           return;
         }
+        // Path tool: right-click a hex of the path type being drawn removes
+        // it from its chain, as the help says (fresh-eyes T2). Anywhere else
+        // still opens the tool menu.
+        if (
+          this.drawingMode === "path" &&
+          hexX !== null && hexY !== null &&
+          this.pathChainWithHex(`${hexX}_${hexY}`, this.activePathTypeName)
+        ) {
+          void this.onHexPathDeleteClick(hexX, hexY, this.activePathTypeName);
+          return;
+        }
         this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY);
       },
       { capture: true },
     );
+
+    // A click or right-click in the gap between hexes (or on a hex's clipped
+    // corner) lands on the column box, not a hex: send it to the nearest
+    // hex (round 5: "two dead clicks before the first hex editor opened").
+    // Hexes, tokens and the neighbour strip handle their own clicks.
+    const onGap = (e: MouseEvent): { x: number; y: number } | null => {
+      const t = e.target instanceof HTMLElement ? e.target : null;
+      if (!t || t.closest(".duckmage-hex, .duckmage-token, .duckmage-region-shadow-hex")) return null;
+      const hexEl = this.hexElAt(t, e.clientX, e.clientY);
+      return hexEl ? { x: Number(hexEl.dataset.x), y: Number(hexEl.dataset.y) } : null;
+    };
+    this.registerDomEvent(clipEl, "click", (e: MouseEvent) => {
+      const hex = onGap(e);
+      if (hex) void this.onHexClick(hex.x, hex.y, e);
+    });
+    this.registerDomEvent(clipEl, "contextmenu", (e: MouseEvent) => {
+      if (this.drawingMode !== null) return; // the tool menu (capture) owns it
+      const hex = onGap(e);
+      if (hex) this.onHexContextMenu(e, hex.x, hex.y);
+    });
 
     // Double-clicking off the hex grid (but inside the viewport) exits terrain/icon mode
     this.registerDomEvent(contentEl, "dblclick", (e: MouseEvent) => {
@@ -949,15 +1115,14 @@ export class HexMapView extends ItemView {
 
     this.upBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-map-up-btn",
-      text: "↑ up",
+      text: "↑ parent map",
     });
     this.upBtn.hide();
     this.upBtn.addEventListener("click", () => this.navigateUp());
 
     this.backBtn = mapNavGroup.createEl("button", {
       cls: "duckmage-map-back-btn",
-      text: "← back",
-      title: "Back to previous map",
+      text: "← previous map",
     });
     this.backBtn.hide();
     this.backBtn.addEventListener("click", () => this.navigateBack());
@@ -982,6 +1147,8 @@ export class HexMapView extends ItemView {
     this.redoBtn.addEventListener("click", () => {
       void this.redo();
     });
+    this.topBandEls = [tableBtn, rtBtn, mapNavGroup, this.undoBtn, this.redoBtn];
+    if (this.modeBarEl) this.topBandEls.push(this.modeBarEl);
 
     const helpBtn = controlsEl.createEl("button", {
       cls: "duckmage-help-btn",
@@ -1007,6 +1174,10 @@ export class HexMapView extends ItemView {
     );
     toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
     this.overlayPanel.onBeforeOpen = () => toolsPanel.close();
+    // An open panel covers the map's right side: move a covered map edge
+    // out from under it (round 4: the panel hid edge hexes).
+    toolsPanel.onAfterOpen = () => this.uncoverGrid();
+    this.overlayPanel.onAfterOpen = () => this.uncoverGrid();
 
     // Saving indicator — appears while background writes are in flight
     this.savingIndicatorEl = controlsEl.createSpan({
@@ -1511,7 +1682,7 @@ export class HexMapView extends ItemView {
       switchLabel = "Switch region";
       extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "path") {
-      onSwitch = () => this.handlePathButton(true);
+      onSwitch = () => this.handlePathButton();
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
     } else if (mode === "placeToken") {
@@ -1520,7 +1691,9 @@ export class HexMapView extends ItemView {
     }
     // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
 
-    new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra).open(clientX, clientY);
+    this.painterMenu?.close();
+    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra);
+    this.painterMenu.open(clientX, clientY);
   }
 
   /**
@@ -1790,7 +1963,7 @@ export class HexMapView extends ItemView {
       this.plugin,
       undefined,
       "",
-      {},
+      { color: this.nextTokenFill() },
       (notePath, data) => {
         this.leaveOtherToolFor("placeToken");
         this.pendingTokenNotePath  = notePath;
@@ -1899,7 +2072,7 @@ export class HexMapView extends ItemView {
       this.plugin,
       undefined,
       "",
-      {},
+      { color: this.nextTokenFill() },
       (notePath, data) => {
         void applyTokenFrontmatter(this.app, notePath, {
           icon: data.icon,
@@ -2204,7 +2377,39 @@ export class HexMapView extends ItemView {
     // Terrain / icon erase visual feedback
     this.terrainToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "terrain");
     this.iconToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "icon");
+
+    this.updateModeBar();
   }
+
+  /** Show which tool is on (and how to stop it) on the map itself. */
+  private updateModeBar(): void {
+    if (!this.modeBarEl || !this.modeBarTextEl) return;
+    const label = toolModeLabel({
+      mode: this.drawingMode,
+      erasing: this.isErasingMode,
+      terrainName: this.paintTerrainName,
+      terrainPick: this.terrainPickMode,
+      iconName: this.paintIconName,
+      iconGmOnly: this.paintIconGmOnly,
+      pathTypeName: this.activePathTypeName,
+      tablePath: this.paintTablePath,
+      submapName: this.paintSubmapName,
+      factionPath: this.paintFactionPath,
+      regionPath: this.paintRegionPath,
+    });
+    const changed = this.modeBarTextEl.getText() !== (label ?? "");
+    this.modeBarTextEl.setText(label ?? "");
+    this.modeBarEl.toggle(label !== null);
+    if (label === null || !changed) return;
+    // A tool just started or changed: pulse the bar so it's noticed
+    // (round 4: a tester never saw it). The map does NOT move here: a tool
+    // is on now, and a slide under the cursor sends the next click to the
+    // wrong hex (round 5, see mayAutoPan).
+    const bar = this.modeBarEl;
+    bar.removeClass("is-new");
+    window.requestAnimationFrame(() => bar.addClass("is-new"));
+  }
+
   private applyTransform(): void {
     if (this.viewportEl) {
       this.viewportEl.setCssProps({
@@ -3107,10 +3312,80 @@ export class HexMapView extends ItemView {
     const gridW = gridEl.offsetWidth;
     const gridH = gridEl.offsetHeight;
     if (clipW === 0 || clipH === 0 || gridW === 0 || gridH === 0) return;
-    const raw = Math.min(clipW / gridW, clipH / gridH) * 0.92;
-    this.zoom  = Math.min(5, Math.max(0.2, raw));
-    this.panX  = (clipW - gridW * this.zoom) / 2;
-    this.panY  = (clipH - gridH * this.zoom) / 2;
+    // Fit the map's content (edge hexes plus the neighbour strip) into the
+    // part of the view the toolbar rows and an open side panel don't cover,
+    // so no hex starts out hidden under them. Content is measured on screen
+    // and mapped back to unzoomed viewport units (screen = clip + pan + v·zoom).
+    const clipRect = clipEl.getBoundingClientRect();
+    const content = this.measureContentBox();
+    const z0 = Math.max(0.01, this.zoom);
+    const vx = content ? (content.left - clipRect.left - this.panX) / z0 : 0;
+    const vy = content ? (content.top - clipRect.top - this.panY) / z0 : 0;
+    const vw = content ? (content.right - content.left) / z0 : gridW;
+    const vh = content ? (content.bottom - content.top) / z0 : gridH;
+    const fit = fitToSafeArea(clipW, clipH, vw, vh, this.measureOverlayInsets());
+    this.zoom = fit.zoom;
+    this.panX = fit.panX - vx * fit.zoom;
+    this.panY = fit.panY - vy * fit.zoom;
+    this.applyTransform();
+  }
+
+  /** Screen box of the map's content: the grid's edge hexes (a flat-top
+   *  grid's last column pokes out of the grid element) and the neighbour
+   *  strip. Reads only. */
+  private measureContentBox(): Box | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return null;
+    const map = this.getActiveMap();
+    const { x: ox, y: oy } = map.gridOffset;
+    const { cols, rows } = map.gridSize;
+    const edge = [`[data-x="${ox}"]`, `[data-x="${ox + cols - 1}"]`, `[data-y="${oy}"]`, `[data-y="${oy + rows - 1}"]`]
+      .map((s) => `.duckmage-hex${s}`)
+      .join(", ");
+    const els = [
+      grid,
+      ...Array.from(grid.querySelectorAll<HTMLElement>(edge)),
+      ...Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-region-shadow-hex")),
+    ];
+    return unionBoxes(els.map((el) => el.getBoundingClientRect()));
+  }
+
+  /**
+   * How far the toolbar rows (with the mode bar) and an open side panel
+   * reach into the map view, in px from the clip's edges. Reads only.
+   */
+  private measureOverlayInsets(): Insets {
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return NO_INSETS;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return NO_INSETS;
+    const box = (el: HTMLElement): Box => el.getBoundingClientRect();
+    const top = this.topBandEls.filter((el) => el.isConnected).map(box);
+    const right = [this.toolsPanel, this.overlayPanel]
+      .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
+      .map((p) => box(p.element));
+    return overlayInsets(clip, top, right);
+  }
+
+  /**
+   * Pan so a map edge that sits on screen under the toolbar rows, the mode
+   * bar or an open side panel comes out from under it (round 4: the tools
+   * panel hid edge hexes; the mode bar covered the bottom row).
+   */
+  private uncoverGrid(): void {
+    if (!mayAutoPan(this.drawingMode)) return;
+    const clipEl = this.viewportEl?.parentElement;
+    if (!clipEl) return;
+    const clip = clipEl.getBoundingClientRect();
+    if (clip.width === 0 || clip.height === 0) return;
+    const g = this.measureContentBox();
+    if (!g) return;
+    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
+    const dx = uncoverEdgeDelta(g.left - clip.left, g.right - clip.left, ins.left, clip.width - ins.right, 0, clip.width);
+    const dy = uncoverEdgeDelta(g.top - clip.top, g.bottom - clip.top, ins.top, clip.height - ins.bottom, 0, clip.height);
+    if (dx === 0 && dy === 0) return;
+    this.panX += dx;
+    this.panY += dy;
     this.applyTransform();
   }
 
@@ -3263,12 +3538,45 @@ export class HexMapView extends ItemView {
       ?.addClass("is-selected");
   }
 
-  centerOnHex(x: number, y: number): void {
+  /**
+   * The hex at a pointer position: the hex element under it, else (a press
+   * in the gap between hexes or on a hex's clipped corner, which hits the
+   * column/row box) the nearest hex within reach. Reads only.
+   */
+  private hexElAt(target: EventTarget | null, clientX: number, clientY: number): HTMLElement | null {
+    const el = target instanceof HTMLElement ? target : null;
+    if (!el) return null;
+    const direct = el.closest<HTMLElement>(".duckmage-hex[data-x]");
+    if (direct) return direct;
+    const grid = el.closest<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return null;
+    const lane = el.closest<HTMLElement>(".duckmage-hex-col, .duckmage-hex-row");
+    let pool: HTMLElement[];
+    if (lane) {
+      pool = [lane.previousElementSibling, lane, lane.nextElementSibling].flatMap((l) =>
+        l instanceof HTMLElement ? Array.from(l.querySelectorAll<HTMLElement>(".duckmage-hex[data-x]")) : [],
+      );
+    } else if (el === grid) {
+      pool = Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-hex[data-x]"));
+    } else {
+      return null;
+    }
+    const boxes = pool.map((h) => {
+      const r = h.getBoundingClientRect();
+      return { x: Number(h.dataset.x), y: Number(h.dataset.y), left: r.left, top: r.top, right: r.right, bottom: r.bottom };
+    });
+    const hit = nearestHex(clientX, clientY, boxes);
+    return hit ? pool.find((h) => Number(h.dataset.x) === hit.x && Number(h.dataset.y) === hit.y) ?? null : null;
+  }
+
+  /** Centre the view on a hex. `keepHexWidth` (on-screen px) keeps that hex
+   *  size instead of zooming to the default 1.5× (crossing regions). */
+  centerOnHex(x: number, y: number, keepHexWidth?: number): void {
     const hexEl = this.viewportEl?.querySelector<HTMLElement>(
       `[data-x="${x}"][data-y="${y}"]`,
     );
     if (!hexEl) {
-      new Notice(`Hex ${x},${y} is not in the current grid.`);
+      new Notice(`Hex ${x}, ${y} is not in the current grid.`);
       return;
     }
 
@@ -3286,10 +3594,14 @@ export class HexMapView extends ItemView {
     const hexViewX = (hexScreenX - clipRect.left - this.panX) / this.zoom;
     const hexViewY = (hexScreenY - clipRect.top - this.panY) / this.zoom;
 
-    const targetZoom = 1.5;
+    const targetZoom = keepHexWidth ? zoomForHexWidth(keepHexWidth, hexRect.width, this.zoom) : 1.5;
+    // Centre in the part of the view no toolbar or open panel covers.
+    const ins = usableInsets(clipRect.width, clipRect.height, this.measureOverlayInsets());
+    const midX = ins.left + (clipRect.width - ins.left - ins.right) / 2;
+    const midY = ins.top + (clipRect.height - ins.top - ins.bottom) / 2;
     this.zoom = targetZoom;
-    this.panX = clipRect.width / 2 - hexViewX * targetZoom;
-    this.panY = clipRect.height / 2 - hexViewY * targetZoom;
+    this.panX = midX - hexViewX * targetZoom;
+    this.panY = midY - hexViewY * targetZoom;
     this.applyTransform();
     this.scheduleZoomBake();
   }
@@ -3337,6 +3649,8 @@ export class HexMapView extends ItemView {
       "--duckmage-coord-font-size": `${coordFontSize}em`,
       "--duckmage-coord-font-family": coordFontFamily,
       "--duckmage-coord-color": coordFontColor,
+      // Halo opposite to the text colour: labels read on light terrain too.
+      "--duckmage-coord-halo": coordHaloColor(coordFontColor),
     });
 
     const region = this.getActiveMap();
@@ -3619,6 +3933,25 @@ export class HexMapView extends ItemView {
       const [x, y] = key.split("_").map(Number);
       return { s, at: place(x, y), color: colorOf(s.map, s.terrain) };
     });
+    // The neighbours' roads and rivers across the strip (read-only), so a
+    // path here can be drawn to meet them (round 4: testers lined roads up
+    // by eye). In em, like the strip's hexes; a dot marks where one ends.
+    const typeByName = new Map(this.plugin.settings.pathTypes.map((t) => [t.name, t]));
+    const centreEm = (key: string) => {
+      const [x, y] = key.split("_").map(Number);
+      const p = place(x, y);
+      return { cx: p.x / em, cy: p.y / em };
+    };
+    const ghostPaths = ghostPathRuns(shadow, (m) => this.plugin.getMap(m)?.pathChains).flatMap((run) => {
+      const pt = typeByName.get(run.typeName);
+      if (!pt) return [];
+      const pts = ghostRunPoints(run, centreEm);
+      const ends = [run.stubStart ? null : pts[0], run.stubEnd ? null : pts[pts.length - 1]]
+        .filter((p): p is { cx: number; cy: number } => p !== null);
+      return [{ run, pt, pts, ends }];
+    });
+    const gridWEm = gridContainer.offsetWidth / em;
+    const gridHEm = gridContainer.offsetHeight / em;
 
     // ── Writes ──
     const layer = gridContainer.createDiv({ cls: "duckmage-region-shadow-layer" });
@@ -3639,14 +3972,51 @@ export class HexMapView extends ItemView {
         new RegionNavigateModal(this.app, this.plugin, { map: s.map, x: s.x, y: s.y }, () => this.goToRegionHex(s.map, s.x, s.y)).open();
       });
     }
+
+    if (ghostPaths.length > 0 && gridWEm > 0 && gridHEm > 0) {
+      const svgNS = "http://www.w3.org/2000/svg";
+      const svg = activeDocument.createElementNS(svgNS, "svg");
+      svg.classList.add("duckmage-region-shadow-paths");
+      // One user unit = 1em of the grid, so it scales with zoom like the strip.
+      svg.setAttribute("viewBox", `0 0 ${gridWEm} ${gridHEm}`);
+      svg.setAttribute("preserveAspectRatio", "none");
+      const dashFor: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
+      for (const { run, pt, pts, ends } of ghostPaths) {
+        const path = activeDocument.createElementNS(svgNS, "path");
+        path.setAttribute("d", smoothPath(pts));
+        path.setAttribute("stroke", pt.color);
+        path.setAttribute("stroke-width", String(pt.width / em));
+        path.setAttribute("stroke-linecap", "round");
+        path.setAttribute("stroke-linejoin", "round");
+        path.setAttribute("fill", "none");
+        const dash = dashFor[pt.lineStyle];
+        if (dash) path.setAttribute("stroke-dasharray", dash.map((d) => d / em).join(" "));
+        path.setAttribute("data-region", run.map);
+        svg.appendChild(path);
+        for (const end of ends) {
+          const dot = activeDocument.createElementNS(svgNS, "circle");
+          dot.setAttribute("class", "duckmage-region-shadow-path-end");
+          dot.setAttribute("cx", String(end.cx));
+          dot.setAttribute("cy", String(end.cy));
+          dot.setAttribute("r", String(Math.max(3, pt.width * 0.9) / em));
+          dot.setAttribute("fill", pt.color);
+          svg.appendChild(dot);
+        }
+      }
+      layer.appendChild(svg);
+    }
   }
 
   /** Switch to a neighbouring region and land on one of its hexes. */
   private goToRegionHex(mapName: string, x: number, y: number, openEditor = false): void {
+    // Walking across keeps the hex size on screen (round 5: the zoom jumped
+    // to a fixed 1.5× on arrival); the arrival hex is centred in the
+    // uncovered part of the view.
+    const hexWidth = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex")?.getBoundingClientRect().width;
     this.navigateToMap(mapName);
     window.setTimeout(() => {
       this.setSelectedHex(x, y);
-      this.centerOnHex(x, y);
+      this.centerOnHex(x, y, hexWidth);
       if (openEditor) this.openHexEditorModal(x, y);
     }, 80);
   }
@@ -3694,10 +4064,13 @@ export class HexMapView extends ItemView {
     if (this.drawingMode !== null) return;
 
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
-    const hexExists = this.app.vault.getAbstractFileByPath(hexPath) instanceof TFile;
-    const terrain = hexExists ? getTerrainFromFile(this.app, hexPath) : null;
-    const iconOverride = hexExists ? getIconOverrideFromFile(this.app, hexPath) : null;
-    const submap = hexExists ? getSubmapFromFile(this.app, hexPath) : undefined;
+    // Terrain, icon and submap live in the map note, and a hex can have them
+    // before its hex note exists (a generated map, a submap made from this
+    // menu) — gating these on the note hid "Enter submap" and "Clear
+    // terrain" on such hexes (fresh-eyes N3).
+    const terrain = getTerrainFromFile(this.app, hexPath);
+    const iconOverride = getIconOverrideFromFile(this.app, hexPath);
+    const submap = getSubmapFromFile(this.app, hexPath);
 
     const menu = new Menu();
 
@@ -3720,15 +4093,15 @@ export class HexMapView extends ItemView {
             existing instanceof TFile
               ? existing
               : await this.plugin.createHexNote(x, y, this.activeMapName);
-          if (file) await this.app.workspace.getLeaf().openFile(file);
+          if (file) await openNoteFocused(this.app, file);
         }),
     );
 
     if (submap) {
       menu.addItem((item) =>
         item
-          .setTitle(`Open submap: ${submap}`)
-          .setIcon("map")
+          .setTitle(`Enter submap: ${submap}`)
+          .setIcon("log-in")
           .onClick(() => this.navigateToMap(submap)),
       );
     }
@@ -4162,7 +4535,7 @@ export class HexMapView extends ItemView {
     // Idempotent — only add if not already present
     const existing = await getLinksInSection(this.app, hexPath, "Encounters Table");
     if (existing.includes(target)) {
-      new Notice(`Already linked on ${x},${y}`);
+      new Notice(`Already linked on hex ${x}, ${y}`);
       return;
     }
 
@@ -4764,22 +5137,21 @@ export class HexMapView extends ItemView {
     }
   }
 
-  private handlePathButton(keep = false): void {
-    if (!keep && this.drawingMode === "path") {
-      this.exitPathMode();
-      this.drawingMode = null;
-      this.updateToolbarButtonStates();
-      this.updatePathOverlay();
-      return;
-    }
+  /**
+   * Open the path-type picker. Clicking the Path button while drawing reopens
+   * it (like Terrain) instead of silently turning the tool off (fresh-eyes
+   * T7); leave the tool with right-click → Exit tool, Esc, or the mode bar.
+   */
+  private handlePathButton(): void {
     new PathPickerModal(
       this.app,
       this.plugin,
       this.activePathTypeName,
       (typeName) => {
         this.leaveOtherToolFor("path");
-        // A new type starts a new chain rather than continuing the old one.
-        this.exitPathMode();
+        // A new type starts a new chain rather than continuing the old one;
+        // re-picking the type being drawn keeps the chain going.
+        if (this.drawingMode !== "path" || typeName !== this.activePathTypeName) this.exitPathMode();
         this.activePathTypeName = typeName;
         this.drawingMode = "path";
         this.isErasingMode = false;
@@ -4823,16 +5195,36 @@ export class HexMapView extends ItemView {
     );
     const before = this.cloneChains(region.pathChains);
 
-    // ── If adjacent to active end, extend that chain ─────────────────────
+    let neighbourKeys: string[] = [];
     if (this.activePathEnd !== null) {
       const [ax, ay] = this.activePathEnd.split("_").map(Number);
-      const isAdjacent = hexNeighbors(
+      neighbourKeys = hexNeighbors(
         ax,
         ay,
         this.plugin.settings.hexOrientation,
         this.getActiveStagger(),
-      ).some(([nx, ny]) => nx === x && ny === y);
-      if (isAdjacent) {
+      ).map(([nx, ny]) => `${nx}_${ny}`);
+    }
+    const outcome = pathClickOutcome(this.activePathEnd, key, neighbourKeys);
+    // Clicking the end again would stack a second one-hex chain on it.
+    if (outcome === "same") return;
+    if (outcome === "restart") {
+      // Paths don't auto-route between distant hexes; say so instead of
+      // silently leaving a lone dot (fresh-eyes T7).
+      new Notice("Paths go hex by hex: click a hex next to the end of the path. Started a new path here.");
+      // A one-hex chain is never drawn (a line needs two hexes), so the
+      // abandoned start would linger invisibly in the map data: drop it.
+      const abandoned = this.activePathChain;
+      if (abandoned && abandoned.hexes.length === 1) {
+        const i = region.pathChains.indexOf(abandoned);
+        if (i !== -1) region.pathChains.splice(i, 1);
+        this.activePathChain = null;
+      }
+    }
+
+    // ── If adjacent to active end, extend that chain ─────────────────────
+    if (this.activePathEnd !== null) {
+      if (outcome === "extend") {
         let target: PathChain | undefined;
         if (
           this.activePathChain !== null &&
@@ -4874,13 +5266,23 @@ export class HexMapView extends ItemView {
     this.updatePathOverlay();
   }
 
-  private async onHexPathDeleteClick(x: number, y: number): Promise<void> {
+  /** First path chain (of `typeName`, or any type when null) through hex `key`. */
+  private pathChainWithHex(key: string, typeName: string | null): PathChain | undefined {
+    return this.getActiveMap().pathChains.find(
+      (c) => (typeName === null || c.typeName === typeName) && c.hexes.includes(key),
+    );
+  }
+
+  /** Remove hex (x, y) from the first chain through it — only chains of
+   *  `typeName` when given (right-click while drawing that type). */
+  private async onHexPathDeleteClick(x: number, y: number, typeName: string | null = null): Promise<void> {
     const key = `${x}_${y}`;
     const region = this.getActiveMap();
     const chains = region.pathChains;
     const before = this.cloneChains(region.pathChains);
 
     for (let ci = 0; ci < chains.length; ci++) {
+      if (typeName !== null && chains[ci].typeName !== typeName) continue;
       const pos = chains[ci].hexes.indexOf(key);
       if (pos === -1) continue;
 
@@ -4912,8 +5314,11 @@ export class HexMapView extends ItemView {
       }
 
       if (this.activePathEnd === key) {
-        this.activePathEnd = null;
-        this.activePathChain = null;
+        // Removing the end of the path being drawn steps it back one hex,
+        // so drawing carries on from there.
+        const stepBack = pos === chain.hexes.length && chain.hexes.length > 0;
+        this.activePathEnd = stepBack ? chain.hexes[chain.hexes.length - 1] : null;
+        this.activePathChain = stepBack ? chain : null;
       }
 
       this.pushPathUndo(
@@ -6023,6 +6428,13 @@ export class HexMapView extends ItemView {
 
   // ── Token layer ───────────────────────────────────────────────────────────
 
+  /** Default fill for a new token: the palette colour least used on this
+   *  map, so new tokens don't all come out the same blue. */
+  private nextTokenFill(): string {
+    this.loadTokensForMap();
+    return pickTokenFill(this.tokenEntries.map((t) => t.color));
+  }
+
   private loadTokensForMap(): void {
     this.tokenEntries = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
@@ -6120,21 +6532,17 @@ export class HexMapView extends ItemView {
           this.showTokenContextMenu(e, snapToken);
         });
 
-        // Single mousedown handler — startTokenDrag calls onClickInstead if no drag occurs.
+        // Single mousedown handler — startTokenDrag calls onClickInstead if
+        // no drag occurs. A plain click opens the token's hex, like clicking
+        // the hex itself: the token sits on the hex centre and used to eat
+        // the click target (round 5). Its info card is in the right-click
+        // menu. (With a tool on, tokens let clicks through to the hex: CSS.)
         tokenEl.addEventListener("mousedown", (e) => {
           if (e.button !== 0 || this.drawingMode !== null) return;
           e.stopPropagation();
           this.startTokenDrag(snapToken, tokenEl, e, centerMap, () => {
-            new TokenInfoModal(
-              this.app,
-              snapToken,
-              (x, y) => this.centerOnHex(x, y),
-              () => {
-                void removeTokenFrontmatter(this.app, snapToken.filePath)
-                  .then(() => this.updateTokenLayer());
-              },
-              () => this.openTokenEditor(snapToken),
-            ).open();
+            const [hx, hy] = snapToken.hex.split("_").map(Number);
+            if (Number.isFinite(hx) && Number.isFinite(hy)) void this.onHexClick(hx, hy, e);
           });
         });
       }
@@ -6257,8 +6665,28 @@ export class HexMapView extends ItemView {
     ).open();
   }
 
+  private openTokenInfo(token: TokenEntry): void {
+    new TokenInfoModal(
+      this.app,
+      token,
+      (x, y) => this.centerOnHex(x, y),
+      () => {
+        void removeTokenFrontmatter(this.app, token.filePath)
+          .then(() => this.updateTokenLayer());
+      },
+      () => this.openTokenEditor(token),
+    ).open();
+  }
+
   private showTokenContextMenu(evt: MouseEvent, token: TokenEntry): void {
     const menu = new Menu();
+
+    menu.addItem((item) =>
+      item
+        .setTitle("Token info")
+        .setIcon("info")
+        .onClick(() => this.openTokenInfo(token)),
+    );
 
     menu.addItem((item) =>
       item
@@ -6274,7 +6702,7 @@ export class HexMapView extends ItemView {
         .onClick(() => {
           const file = this.app.vault.getAbstractFileByPath(token.filePath);
           if (file instanceof TFile) {
-            void this.app.workspace.getLeaf("tab").openFile(file);
+            void openNoteFocused(this.app, file);
           }
         }),
     );

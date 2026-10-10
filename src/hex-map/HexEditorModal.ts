@@ -10,6 +10,7 @@ import {
 } from "../utils";
 import {
   getTerrainFromFile,
+  getIconOverrideFromFile,
   setTerrainInFile,
   setIconOverrideInFile,
   setGmIconsInFile,
@@ -19,6 +20,7 @@ import {
 import {
   addLinkToSection,
   removeLinkFromSection,
+  getLinksInSection,
   getAllSectionData,
   setSectionContent,
   addBacklinkToFile,
@@ -35,6 +37,25 @@ import { hasFeature } from "../featureLevel";
 import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
+import { displayedEncounterLinks } from "../encounterLinks";
+import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
+import { openNoteFocused } from "../openNote";
+import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
+
+/** What each link field links, for its placeholder ("Search or create a town…"). */
+const LINK_FIELD_NOUN: Record<LinkSection, string> = {
+  "Encounters Table": "an encounter table",
+  Towns: "a town",
+  Dungeons: "a dungeon",
+  Features: "a feature",
+  Quests: "a quest",
+  Factions: "a faction",
+};
+
+/** Typing pause after which a text section autosaves. */
+const TEXT_AUTOSAVE_MS = 800;
+/** Unique ids for label for= ↔ textarea pairs. */
+let textFieldSeq = 0;
 
 /** Which side of the map an off-map hex lies past (east/west first at corners). */
 function offMapSide(map: MapData, x: number, y: number): Side {
@@ -55,6 +76,23 @@ export class HexEditorModal extends HexmakerModal {
    *  read sites; `directGmIcon` is the first entry of this list. */
   private directGmIcons: string[] = [];
   private dataPreloaded = false;
+  /** Stops keepInViewport's observer (set on first open). */
+  private stopKeepInViewport: (() => void) | null = null;
+  /** Autosave status in the title row (fresh-eyes round 3). */
+  private saveStatusEl: HTMLElement | null = null;
+  /** The same status, persistent, beside the text box being edited (it
+   *  starts under the Notes heading). Round 4: the title-row cue alone was
+   *  missed by 2 of 3 testers. */
+  private notesStatusEl: HTMLElement | null = null;
+  private saves = new SaveTracker(
+    (state) => this.renderSaveStatus(state),
+    (fn, ms) => window.setTimeout(fn, ms),
+    (id) => window.clearTimeout(id),
+  );
+  /** Replaces the Encounters Table field's list (set by renderBody). */
+  private setEncounterLinks: ((links: string[]) => void) | null = null;
+  /** Text sections with typed-but-unsaved changes: flush on close/navigate. */
+  private pendingTextSaves = new Set<() => void>();
 
   constructor(
     app: App,
@@ -83,6 +121,13 @@ export class HexEditorModal extends HexmakerModal {
     this.directGmIcons = [];
 
     const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+    // Terrain, icon and GM icons live in the map note (the map store), not in
+    // the hex note — and a hex can have them before its note exists. Reading
+    // only hex frontmatter left the current terrain never highlighted (E1).
+    this.directTerrain = getTerrainFromFile(this.app, path);
+    this.directIcon = getIconOverrideFromFile(this.app, path);
+    this.directGmIcons = getGmIconsFromFile(this.app, path);
+    this.directGmIcon = this.directGmIcons[0] ?? null;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return;
     this.hexExists = true;
@@ -90,22 +135,16 @@ export class HexEditorModal extends HexmakerModal {
     // Single read — reused for both frontmatter and section parsing
     const rawContent = await this.app.vault.read(file);
 
+    // Fallback for notes the store doesn't serve yet (startup, or a note
+    // written moments ago that isn't indexed): read the raw frontmatter.
     const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
       const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
-      if (tm) this.directTerrain = tm[1].trim();
+      if (tm && this.directTerrain === null) this.directTerrain = tm[1].trim();
       const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
-      if (im) this.directIcon = im[1].trim();
+      if (im && this.directIcon === null) this.directIcon = im[1].trim();
       const gm = fmMatch[1].match(/^\s*gm-icon:\s*(.+)$/m);
-      if (gm) this.directGmIcon = gm[1].trim();
-    }
-    // Authoritative multi-icon read via the helper (handles the new
-    // `gm-icons` array AND the legacy `gm-icon` singular). Done after
-    // the regex-based directGmIcon read so the modal stays compatible
-    // with existing single-icon notes.
-    this.directGmIcons = getGmIconsFromFile(this.app, path);
-    if (this.directGmIcon === null && this.directGmIcons.length > 0) {
-      this.directGmIcon = this.directGmIcons[0];
+      if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
     ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
@@ -117,6 +156,8 @@ export class HexEditorModal extends HexmakerModal {
 
   onOpen() {
     const { contentEl } = this;
+    // Re-render on navigation: save what was typed into the previous hex.
+    this.flushTextSaves();
     contentEl.empty();
     contentEl.addClass("duckmage-hex-editor");
 
@@ -151,7 +192,7 @@ export class HexEditorModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        void this.app.workspace.getLeaf("tab").openFile(fileNow);
+        void openNoteFocused(this.app, fileNow);
         this.close();
       });
       const exportLink = titleLeft.createEl("a", {
@@ -163,9 +204,18 @@ export class HexEditorModal extends HexmakerModal {
         new HexExportModal(this.app, this.plugin, fileNow).open();
       });
     }
+    this.saveStatusEl = titleLeft.createSpan({
+      cls: "duckmage-editor-save-status",
+      attr: { "aria-live": "polite" },
+    });
+    this.renderSaveStatus(this.saves.current);
     this.renderNeighborWidget(titleRow, this.x, this.y);
 
     this.makeDraggable();
+    // The body renders after an async read, so the modal opens short and
+    // then grows: keep its bottom on screen (it ran off the window, and a
+    // click on the hidden half closed the editor — fresh-eyes round 3).
+    this.stopKeepInViewport ??= this.keepInViewport();
 
     // ── Body — populated after the single async read ──────────────────────
     const bodyEl = contentEl.createDiv({ cls: "duckmage-editor-body" });
@@ -187,46 +237,39 @@ export class HexEditorModal extends HexmakerModal {
     const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
     const s = this.plugin.settings;
 
+    // A hex that already has a terrain opens with Terrain collapsed to a
+    // one-line summary unless the user expanded it last time (round 5: the
+    // 50-swatch grid reopened expanded on every hex).
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
-      s.hexEditorTerrainCollapsed ?? false,
+      "hexEditorTerrainCollapsed",
+      terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false, s.hexEditorTerrainExpanded),
     );
-    const paletteEntry = directTerrain
-      ? this.plugin
-          .getMapPalette(this.mapName)
-          .find((p) => p.name === directTerrain)
-      : undefined;
-    const iconToShow = directIcon ?? paletteEntry?.icon;
-    if (paletteEntry || iconToShow) {
-      const preview = terrainHeader.createSpan({
-        cls: "duckmage-terrain-header-preview",
-      });
-      const swatch = preview.createSpan({
-        cls: "duckmage-terrain-header-swatch",
-      });
-      if (paletteEntry)
-        swatch.setCssProps({ "--duckmage-bg": paletteEntry.color });
-      if (iconToShow) {
-        const img = swatch.createEl("img");
-        img.src = getIconUrl(this.plugin, iconToShow);
-      }
-      if (paletteEntry) {
-        preview.createSpan({
-          text: paletteEntry.name,
-          cls: "duckmage-terrain-header-name",
-        });
-      }
-    }
-    this.renderTerrainSection(terrainBody, path, directTerrain, directIcon, this.directGmIcons);
+    const headerPreview = terrainHeader.createSpan({
+      cls: "duckmage-terrain-header-preview",
+    });
+    this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
+    const changeHint = terrainHeader.createSpan({ cls: "duckmage-terrain-change-hint", text: "▸ change" });
+    const syncChangeHint = () => changeHint.toggle(!terrainBody.isShown());
+    syncChangeHint();
+    terrainHeader.addEventListener("click", syncChangeHint);
+    const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
+    this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(
       bodyEl,
       "Notes",
-      s.hexEditorNotesCollapsed ?? false,
+      "hexEditorNotesCollapsed",
     );
+    // Persistent autosave status; renderTextSection moves it beside the box
+    // that has focus so it's in view while typing.
+    this.notesStatusEl = notesBody.createDiv({
+      cls: "duckmage-editor-notes-status",
+    });
+    this.renderSaveStatus(this.saves.current);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -240,18 +283,22 @@ export class HexEditorModal extends HexmakerModal {
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
+    // The group of link fields. Not called "Features": that's one of the
+    // fields, and a group heading with a field's name read as that field's
+    // label (E5). The settings flag keeps its old name.
     const { body: featuresBody } = this.makeCollapsible(
       bodyEl,
-      "Features",
-      s.hexEditorFeaturesCollapsed ?? false,
+      "Linked notes",
+      "hexEditorFeaturesCollapsed",
     );
-    this.renderDropdownSection(
+    featuresBody.addClass("duckmage-editor-link-group");
+    this.setEncounterLinks = this.renderDropdownSection(
       featuresBody,
       path,
       "Encounters Table",
-      hexExists,
+      true,
       s.tablesFolder,
-      allLinks.get("encounters table") ?? [],
+      this.encounterLinksFor(path, hexExists, allLinks.get("encounters table") ?? []),
     );
     this.renderDropdownSection(
       featuresBody,
@@ -293,11 +340,43 @@ export class HexEditorModal extends HexmakerModal {
       s.featuresFolder,
       allLinks.get("features") ?? [],
     );
+
+    // Icon pickers last: they are long grids, and above Notes they pushed
+    // Description below the fold (fresh-eyes round 3).
+    bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
+    const { body: iconsBody } = this.makeCollapsible(
+      bodyEl,
+      "Icons",
+      "hexEditorIconsCollapsed",
+    );
+    this.renderIconSections(iconsBody, path, directIcon, this.directGmIcons, refreshHeader);
   }
 
   onClose() {
+    this.flushTextSaves();
+    this.saves.dispose();
+    this.saveStatusEl = null;
+    this.notesStatusEl = null;
+    this.stopKeepInViewport?.();
+    this.stopKeepInViewport = null;
     this.options.onModalClose?.();
     this.contentEl.empty();
+  }
+
+  private flushTextSaves(): void {
+    for (const save of [...this.pendingTextSaves]) save();
+    this.pendingTextSaves.clear();
+  }
+
+  private renderSaveStatus(state: SaveState): void {
+    for (const el of [this.saveStatusEl, this.notesStatusEl]) {
+      if (!el) continue;
+      el.setText(SAVE_STATUS_TEXT[state]);
+      el.dataset["state"] = state;
+    }
+    // The title row only speaks up once something happened; the Notes
+    // status always shows ("Changes save automatically" up front).
+    this.saveStatusEl?.toggleClass("is-quiet", state === "idle");
   }
 
   private isOnMap(nx: number, ny: number): boolean {
@@ -441,11 +520,53 @@ export class HexEditorModal extends HexmakerModal {
     }
   }
 
+  /** Terrain header summary: swatch + current terrain name ("(base)" when
+   *  the hex only shows the map's base terrain). Re-rendered on each pick. */
+  private renderTerrainHeader(
+    preview: HTMLElement,
+    terrain: string | null,
+    icon: string | null,
+  ): void {
+    preview.empty();
+    const palette = this.plugin.getMapPalette(this.mapName);
+    const base = this.plugin.getMap(this.mapName)?.baseTerrain;
+    const name = terrain ?? base ?? null;
+    const entry = name ? palette.find((p) => p.name === name) : undefined;
+    const iconToShow = icon ?? entry?.icon;
+    if (!entry && !iconToShow) {
+      preview.createSpan({ text: "none", cls: "duckmage-terrain-header-name" });
+      return;
+    }
+    const swatch = preview.createSpan({ cls: "duckmage-terrain-header-swatch" });
+    if (entry) swatch.setCssProps({ "--duckmage-bg": entry.color });
+    if (iconToShow) {
+      const img = swatch.createEl("img");
+      img.src = getIconUrl(this.plugin, iconToShow);
+    }
+    if (entry) {
+      preview.createSpan({
+        text: terrain === null ? `${entry.name} (base)` : entry.name,
+        cls: "duckmage-terrain-header-name",
+      });
+    }
+  }
+
+  /**
+   * Collapsible group whose open/closed state is remembered in the given
+   * settings flag (so collapsing Terrain once keeps it collapsed on every
+   * hex, E5). The same flags are exposed in the settings tab.
+   */
   private makeCollapsible(
     container: HTMLElement,
     label: string,
-    startCollapsed: boolean,
+    flag:
+      | "hexEditorTerrainCollapsed"
+      | "hexEditorNotesCollapsed"
+      | "hexEditorFeaturesCollapsed"
+      | "hexEditorIconsCollapsed",
+    startCollapsedOverride?: boolean,
   ): { body: HTMLElement; header: HTMLElement } {
+    const startCollapsed = startCollapsedOverride ?? this.plugin.settings[flag] ?? false;
     const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
     const header = wrapper.createDiv({
       cls: "duckmage-editor-collapsible-header",
@@ -468,6 +589,11 @@ export class HexEditorModal extends HexmakerModal {
         body.hide();
       }
       arrow.textContent = collapsed ? "▼" : "▶";
+      this.plugin.settings[flag] = !collapsed;
+      // Expanding Terrain is remembered too: it then opens expanded even
+      // on hexes that have a terrain (see terrainStartsCollapsed).
+      if (flag === "hexEditorTerrainCollapsed") this.plugin.settings.hexEditorTerrainExpanded = collapsed;
+      void this.plugin.saveSettings();
     });
     return { body, header };
   }
@@ -476,40 +602,65 @@ export class HexEditorModal extends HexmakerModal {
     container: HTMLElement,
     path: string,
     currentTerrain: string | null,
-    currentIcon: string | null,
-    currentGmIcons: string[],
+    onTerrainChange: () => void,
   ): void {
     const palette = this.plugin.getMapPalette(this.mapName);
 
     const section = container.createDiv({ cls: "duckmage-editor-section" });
 
-    const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
+    // Long palettes get a filter; the grid grows with the modal instead of
+    // scrolling in its own small box (round 5: only the first two rows of a
+    // 50-terrain palette were practically reachable).
+    const filter = palette.length > TERRAIN_FILTER_MIN
+      ? section.createEl("input", {
+          type: "search",
+          cls: "duckmage-terrain-filter",
+          attr: { placeholder: "Filter terrains…", "aria-label": "Filter terrains" },
+        })
+      : null;
+    const grid = section.createDiv({ cls: "duckmage-terrain-picker duckmage-terrain-picker-grow" });
+    const noMatch = section.createDiv({ cls: "duckmage-terrain-filter-empty", text: "No terrains match." });
+    noMatch.hide();
 
-    // Clear terrain — always first in the grid
-    if (currentTerrain) {
-      const clearBtn = grid.createDiv({
-        cls: "duckmage-terrain-option duckmage-terrain-option-clear",
-      });
-      clearBtn.createDiv({
-        cls: "duckmage-terrain-preview duckmage-terrain-preview-clear",
-      });
-      clearBtn.createSpan({
-        text: "Clear",
-        cls: "duckmage-terrain-option-name",
-      });
-      clearBtn.addEventListener("click", () => {
-        void (async () => {
-          await setTerrainInFile(this.app, path, null);
-          void this.plugin.syncHexEncounterTableLink(path, null);
-          this.onChanged(new Map([[path, null]]));
-          this.close();
-        })();
-      });
-    }
+    // Picking a terrain keeps the editor open (E1): the map repaints via
+    // onChanged, and the selection/header update in place here.
+    let selectedTerrain = currentTerrain;
+    const applyTerrain = async (terrain: string | null): Promise<void> => {
+      if (terrain !== null) await this.ensureHexNote();
+      await setTerrainInFile(this.app, path, terrain);
+      // The terrain's encounters table follows the terrain: show the swap.
+      void this.plugin
+        .syncHexEncounterTableLink(path, terrain)
+        .then(() => this.reloadEncounterLinks(path));
+      selectedTerrain = terrain;
+      this.directTerrain = terrain;
+      grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) =>
+        el.toggleClass("is-selected", el.dataset["terrain"] === terrain),
+      );
+      clearBtn.toggle(terrain !== null);
+      onTerrainChange();
+      this.onChanged(new Map([[path, terrain]]));
+    };
+
+    // Clear terrain — always first in the grid (hidden while there's none)
+    const clearBtn = grid.createDiv({
+      cls: "duckmage-terrain-option duckmage-terrain-option-clear",
+      attr: { title: "Clear this hex's terrain" },
+    });
+    clearBtn.createDiv({
+      cls: "duckmage-terrain-preview duckmage-terrain-preview-clear",
+    });
+    clearBtn.createSpan({
+      text: "Clear",
+      cls: "duckmage-terrain-option-name",
+    });
+    clearBtn.toggle(currentTerrain !== null);
+    clearBtn.addEventListener("click", () => void this.saves.track(applyTerrain(null)));
 
     for (const entry of palette) {
       const btn = grid.createDiv({
         cls: `duckmage-terrain-option${entry.name === currentTerrain ? " is-selected" : ""}`,
+        attr: { title: entry.name, "data-terrain": entry.name },
       });
 
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
@@ -528,20 +679,40 @@ export class HexEditorModal extends HexmakerModal {
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
 
       btn.addEventListener("click", () => {
-        void (async () => {
-          await this.ensureHexNote();
-          await setTerrainInFile(this.app, path, entry.name);
-          void this.plugin.syncHexEncounterTableLink(path, entry.name);
-          this.onChanged(new Map([[path, entry.name]]));
-          this.close();
-        })();
+        if (entry.name === selectedTerrain) return;
+        void this.saves.track(applyTerrain(entry.name));
       });
     }
 
+    if (filter) {
+      filter.addEventListener("input", () => {
+        const query = filter.value;
+        let shown = 0;
+        grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) => {
+          const match = terrainMatches(el.dataset["terrain"] ?? "", query);
+          el.toggle(match);
+          if (match) shown++;
+        });
+        // "Clear" only alongside the full list (and only when there's a terrain).
+        clearBtn.toggle(query.trim() === "" && selectedTerrain !== null);
+        noMatch.toggle(shown === 0);
+      });
+    }
+  }
+
+  /** Icon override + (GM layer) game master icon pickers. */
+  private renderIconSections(
+    container: HTMLElement,
+    path: string,
+    currentIcon: string | null,
+    currentGmIcons: string[],
+    onIconChange: () => void,
+  ): void {
+    const section = container.createDiv({ cls: "duckmage-editor-section" });
     // Keep terrain in the overrides map so renderGrid doesn't lose it during
     // the brief window when Obsidian clears the metadata cache on file modify.
-    const terrainOverrides: Map<string, string | null> | undefined =
-      currentTerrain ? new Map([[path, currentTerrain]]) : undefined;
+    const terrainOverrides = (): Map<string, string | null> | undefined =>
+      this.directTerrain ? new Map([[path, this.directTerrain]]) : undefined;
 
     // Icon override palette
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
@@ -556,7 +727,9 @@ export class HexEditorModal extends HexmakerModal {
       async (picked) => {
         await this.ensureHexNote();
         await setIconOverrideInFile(this.app, path, picked);
-        this.onChanged(terrainOverrides, new Map([[path, picked]]));
+        this.directIcon = picked;
+        onIconChange(); // header shows the icon override
+        this.onChanged(terrainOverrides(), new Map([[path, picked]]));
       },
     );
 
@@ -586,6 +759,7 @@ export class HexEditorModal extends HexmakerModal {
     // Working copy of the list (with duplicates) the user is editing.
     const list: string[] = [...initialList];
     const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(grid);
 
     const countOf = (icon: string): number => list.filter((i) => i === icon).length;
 
@@ -655,7 +829,7 @@ export class HexEditorModal extends HexmakerModal {
               t.removeClass("is-selected");
             }
           });
-          await persist();
+          await this.saves.track(persist());
         })();
       });
 
@@ -667,7 +841,7 @@ export class HexEditorModal extends HexmakerModal {
         if (idx === -1) return;
         list.splice(idx, 1);
         refreshBadge();
-        void persist();
+        void this.saves.track(persist());
       });
 
       return tile;
@@ -687,6 +861,7 @@ export class HexEditorModal extends HexmakerModal {
   ): void {
     let selected = current;
     const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
+    this.chainWheelToModal(grid);
 
     const makeTile = (icon: string | null) => {
       const label = icon
@@ -710,7 +885,7 @@ export class HexEditorModal extends HexmakerModal {
           grid.querySelectorAll(".duckmage-icon-option").forEach((el) =>
             el.toggleClass("is-selected", (el as HTMLElement).dataset["icon"] === (icon ?? "")),
           );
-          await onPick(icon);
+          await this.saves.track(onPick(icon));
         })();
       });
       tile.dataset["icon"] = icon ?? "";
@@ -749,9 +924,12 @@ export class HexEditorModal extends HexmakerModal {
     hexExists: boolean,
     sourceFolder: string,
     initialLinks: string[],
-  ): void {
+  ): (links: string[]) => void {
+    // Each link field is its own boxed card, and its input names what it
+    // links, so a field can't be read as belonging to the label above or
+    // below it (a tester linked a dungeon as a Quest, E5).
     const sectionEl = container.createDiv({
-      cls: "duckmage-editor-link-section",
+      cls: "duckmage-editor-link-section duckmage-editor-link-card",
     });
     sectionEl.createEl("h4", {
       text: section,
@@ -763,8 +941,9 @@ export class HexEditorModal extends HexmakerModal {
     const input = comboWrap.createEl("input", {
       type: "text",
       cls: "duckmage-link-combo-input",
+      attr: { "aria-label": `Link ${section.toLowerCase()}` },
     });
-    input.placeholder = `Search or create…`;
+    input.placeholder = `Search or create ${LINK_FIELD_NOUN[section]}…`;
 
     const arrowBtn = comboWrap.createEl("button", {
       text: "▾",
@@ -824,8 +1003,14 @@ export class HexEditorModal extends HexmakerModal {
     const onRemove = (link: string) => {
       currentLinks = currentLinks.filter((l) => l !== link);
       refresh();
-      void removeLinkFromSection(this.app, path, section, link).then(() =>
-        this.onChanged(),
+      void this.saves.track(
+        (async () => {
+          // A noteless hex shows its terrain's table (which the new note
+          // gets): make the note so removing it sticks.
+          await this.ensureHexNote();
+          await removeLinkFromSection(this.app, path, section, link);
+          this.onChanged();
+        })(),
       );
     };
 
@@ -907,7 +1092,11 @@ export class HexEditorModal extends HexmakerModal {
       anchor = null;
     };
 
-    const selectFile = async (file: TFile) => {
+    // Tracked so the title row shows "Saving…" → "✓ Saved".
+    const selectFile = (file: TFile) => this.saves.track(selectFileNow(file));
+    const createAndLink = (name: string) => this.saves.track(createAndLinkNow(name));
+
+    const selectFileNow = async (file: TFile) => {
       closeDropdown();
       input.value = "";
       const hexFile = await this.ensureHexNote();
@@ -918,12 +1107,12 @@ export class HexEditorModal extends HexmakerModal {
       const linkPath = this.app.metadataCache.fileToLinktext(file, path);
       currentLinks = [...currentLinks, linkPath];
       refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
       void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
     };
 
-    const createAndLink = async (name: string) => {
+    const createAndLinkNow = async (name: string) => {
       closeDropdown();
       input.value = "";
       const folder = normalizeFolder(sourceFolder);
@@ -954,7 +1143,7 @@ export class HexEditorModal extends HexmakerModal {
       const linkPath = this.app.metadataCache.fileToLinktext(file, path);
       currentLinks = [...currentLinks, linkPath];
       refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
       void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
     };
@@ -997,6 +1186,28 @@ export class HexEditorModal extends HexmakerModal {
         openDropdown();
       }
     });
+
+    return (links: string[]) => {
+      currentLinks = [...links];
+      refresh();
+    };
+  }
+
+  /** Encounter tables to show: the note's links, or for a hex with no note
+   *  yet the terrain table its note will get (displayedEncounterLinks). */
+  private encounterLinksFor(path: string, noteExists: boolean, noteLinks: string[]): string[] {
+    return displayedEncounterLinks(
+      noteExists,
+      noteLinks,
+      this.plugin.terrainEncounterLinkFor(this.mapName, this.x, this.y, path),
+    );
+  }
+
+  /** Re-read the Encounters Table field after a terrain change. */
+  private async reloadEncounterLinks(path: string): Promise<void> {
+    const exists = this.app.vault.getAbstractFileByPath(path) instanceof TFile;
+    const links = exists ? await getLinksInSection(this.app, path, "Encounters Table") : [];
+    this.setEncounterLinks?.(this.encounterLinksFor(path, exists, links));
   }
 
   private renderLinkList(
@@ -1026,7 +1237,7 @@ export class HexEditorModal extends HexmakerModal {
             if (onItemClick) {
               void onItemClick(link, file);
             } else {
-              void this.app.workspace.getLeaf("tab").openFile(file);
+              void openNoteFocused(this.app, file);
               this.close();
             }
           });
@@ -1063,9 +1274,11 @@ export class HexEditorModal extends HexmakerModal {
     const labelRow = sectionEl.createDiv({
       cls: "duckmage-text-section-label-row",
     });
-    labelRow.createEl("label", {
+    // label for= → clicking the label focuses the box.
+    const labelEl = labelRow.createEl("label", {
       text: label,
       cls: "duckmage-text-section-label",
+      attr: { for: `duckmage-hex-text-${section}-${++textFieldSeq}` },
     });
 
     // 📖 button: terrain description table (description section) or section-specific table
@@ -1102,6 +1315,7 @@ export class HexEditorModal extends HexmakerModal {
 
     const textarea = sectionEl.createEl("textarea", {
       cls: "duckmage-text-section-textarea",
+      attr: { id: labelEl.htmlFor },
     });
 
     if (previewTablePath) {
@@ -1122,11 +1336,7 @@ export class HexEditorModal extends HexmakerModal {
             if (textarea.value && !textarea.value.endsWith("\n"))
               textarea.value += "\n";
             textarea.value += result;
-            void (async () => {
-              const file = await this.ensureHexNote();
-              if (!file) return;
-              await setSectionContent(this.app, path, section, textarea.value);
-            })();
+            save();
             this.onChanged();
           },
           capturedPath,
@@ -1137,19 +1347,52 @@ export class HexEditorModal extends HexmakerModal {
     textarea.placeholder = `${label}…`;
     textarea.value = initialContent;
 
-    textarea.addEventListener("blur", () => {
-      void (async () => {
-        const file = await this.ensureHexNote();
-        if (!file) return;
-        await setSectionContent(this.app, path, section, textarea.value);
-      })();
+    // Autosave: a moment after typing stops, on blur, and on close or
+    // navigation (flushTextSaves). The hex is captured now, so a save that
+    // lands after navigating still goes to this hex. Unchanged text isn't
+    // written (just focusing a box no longer creates the hex note).
+    const hx = this.x;
+    const hy = this.y;
+    let lastSaved = initialContent;
+    let timer: number | null = null;
+    const save = (): void => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = null;
+      this.pendingTextSaves.delete(save);
+      const value = textarea.value;
+      if (value === lastSaved) {
+        this.saves.settle();
+        return;
+      }
+      lastSaved = value;
+      void this.saves.track(
+        (async () => {
+          const file = await this.ensureHexNote(hx, hy);
+          if (!file) throw new Error(`Could not create the note for hex ${hx}, ${hy}`);
+          await setSectionContent(this.app, path, section, value);
+        })(),
+      );
+    };
+    textarea.addEventListener("input", () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(save, TEXT_AUTOSAVE_MS);
+      this.pendingTextSaves.add(save);
+      this.saves.markPending();
+    });
+    textarea.addEventListener("blur", save);
+    // Keep the autosave status beside the box being typed in.
+    textarea.addEventListener("focus", () => {
+      const status = this.notesStatusEl;
+      if (status && status.parentElement !== labelRow) labelEl.after(status);
     });
   }
 
-  private async ensureHexNote(): Promise<TFile | null> {
-    const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+  private async ensureHexNote(x = this.x, y = this.y): Promise<TFile | null> {
+    const path = this.plugin.hexPath(x, y, this.mapName);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) return existing;
-    return this.plugin.createHexNote(this.x, this.y, this.mapName);
+    // (x, y), not this.x/this.y: a save that lands after navigating to a
+    // neighbour must create the note of the hex it was typed into.
+    return this.plugin.createHexNote(x, y, this.mapName);
   }
 }

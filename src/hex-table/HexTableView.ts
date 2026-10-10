@@ -7,6 +7,7 @@ import {
 } from "../constants";
 import type { TerrainColor } from "../types";
 import { getAllSectionData } from "../sections";
+import { displayedEncounterLinks } from "../encounterLinks";
 import { getTerrainFromFile } from "../frontmatter";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { TerrainFilterModal } from "./TerrainFilterModal";
@@ -776,7 +777,7 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-jump-btn",
     });
     const coordsSpan = coordsTd.createSpan({
-      text: `${x},${y}`,
+      text: `${x}, ${y}`,
       cls: "duckmage-hex-table-coords",
     });
     coordsSpan.addEventListener("click", () => {
@@ -874,7 +875,16 @@ export class HexTableView extends ItemView {
     for (const col of COLUMNS) {
       const td = tr.createEl("td");
       if (col.isLink) {
-        const linkList = links.get(col.key) ?? [];
+        // Encounter tables: same rule as the hex editor, so a hex without a
+        // note shows its terrain's table in both (displayedEncounterLinks).
+        const linkList =
+          col.key === "encounters table"
+            ? displayedEncounterLinks(
+                this.app.vault.getAbstractFileByPath(path) instanceof TFile,
+                links.get(col.key) ?? [],
+                this.plugin.terrainEncounterLinkFor(region, x, y, path),
+              )
+            : (links.get(col.key) ?? []);
         if (linkList.length > 0) {
           const full = linkList.join(", ");
           td.dataset.fullContent = full;
@@ -980,7 +990,7 @@ export class HexTableView extends ItemView {
                 // Multiple: show a nav list
                 new MultiLinkNavModal(
                   this.app,
-                  `${x},${y} — ${section}`,
+                  `${x}, ${y} — ${section}`,
                   linkList,
                   path,
                 ).open();
@@ -993,7 +1003,7 @@ export class HexTableView extends ItemView {
             const current = td.dataset.fullContent ?? "";
             new HexCellModal(
               this.app,
-              `${x},${y} — ${col.label}`,
+              `${x}, ${y} — ${col.label}`,
               current,
               true,
             ).open();
@@ -1016,7 +1026,7 @@ export class HexTableView extends ItemView {
           const current = td.dataset.fullContent ?? "";
           new HexCellModal(
             this.app,
-            `${x},${y} — ${col.label}`,
+            `${x}, ${y} — ${col.label}`,
             current,
             false,
             path,

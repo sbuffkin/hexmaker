@@ -7,6 +7,7 @@ import {
   getDieRanges,
   setDiceInFrontmatter,
   extractPostTableContent,
+  emptyTableMessage,
 } from "../src/random-tables/randomTable";
 
 // ── parseRandomTable ──────────────────────────────────────────────────────────
@@ -339,3 +340,24 @@ describe("extractPostTableContent", () => {
     expect(extractPostTableContent("No table here.")).toBe("");
   });
 });
+
+// ── emptyTableMessage (fresh-eyes E6) ─────────────────────────────────────────
+
+describe("emptyTableMessage", () => {
+  it("calls a setup-made table with only an empty row 'no entries yet', not a format error", () => {
+    const content = makeTableTemplateLike();
+    expect(parseRandomTable(content).entries).toHaveLength(0);
+    const msg = emptyTableMessage(content);
+    expect(msg).toMatch(/no entries yet/);
+    expect(msg).not.toMatch(/format/i);
+  });
+
+  it("says there's no table yet when the note has no table at all", () => {
+    expect(emptyTableMessage("---\ndice: 6\n---\nJust some notes.\n")).toMatch(/no table to roll on yet/);
+  });
+});
+
+/** Same shape as utils.makeTableTemplate (what setup writes for terrain tables). */
+function makeTableTemplateLike(): string {
+  return "---\ndice: 20\n---\n\n| Result | Weight |\n|--------|--------|\n|  | 1 |\n";
+}

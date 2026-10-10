@@ -81,6 +81,17 @@ export const ICON_PACK_LABELS: Record<IconPack, string> = {
 	custom: "Custom",
 };
 
+/**
+ * The icon tab a picker opens on before the user picks one this session:
+ * Space for space-only setups (map types = just Space), so a sci-fi user
+ * doesn't scroll past cactus and evergreen icons (fresh-eyes r5); All
+ * otherwise. Unset map types mean all types, so All.
+ */
+export function defaultIconPack(settings: { mapKinds?: string[] }): IconPack | "all" {
+	const kinds = settings.mapKinds;
+	return Array.isArray(kinds) && kinds.includes("space") && !kinds.includes("world") ? "space" : "all";
+}
+
 /** Which picker tab an icon belongs to: the user's icons folder wins over bundled names. */
 export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
 	if (vaultIcons.has(icon)) return "custom";

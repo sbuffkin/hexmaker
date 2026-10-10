@@ -4,6 +4,7 @@ import {
   exportSingleNoteAsMarkdown,
 } from "./export/exporters/singleNote";
 import { HexExportModal } from "./hex-map/HexExportModal";
+import { MapExportModal } from "./export/MapExportModal";
 import { WorkflowExportModal } from "./random-tables/WorkflowExportModal";
 import { HexMapView } from "./hex-map/HexMapView";
 import { HexTableView } from "./hex-table/HexTableView";
@@ -35,7 +36,8 @@ import {
   presetToPalette,
   uniquePaletteName,
 } from "./palettes/presets";
-import { normalizeFolder, makeTableTemplate, slugify } from "./utils";
+import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack } from "./utils";
+import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
@@ -68,6 +70,8 @@ export default class HexmakerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    // Icon pickers open on the Space tab for space-only setups.
+    setIconPackDefault(() => defaultIconPack(this.settings));
     setHexDataSource(this.mapStore);
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
@@ -231,6 +235,21 @@ export default class HexmakerPlugin extends Plugin {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
         if (!file || !this.isWorkflowFile(file)) return false;
         if (!checking) new WorkflowExportModal(this.app, this, file).open();
+        return true;
+      },
+    });
+    // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
+    // Export, for the map open in the hex map view (else the default map).
+    this.addCommand({
+      id: "export-current-map",
+      name: "Export current map…",
+      checkCallback: (checking) => {
+        const open = this.app.workspace.getActiveViewOfType(HexMapView)
+          ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
+        const mapName = [open?.activeMapName, this.settings.defaultMap, this.settings.maps[0]?.name]
+          .find((n): n is string => !!n && !!this.getMap(n));
+        if (!mapName) return false;
+        if (!checking) new MapExportModal(this.app, this, mapName).open();
         return true;
       },
     });
@@ -868,9 +887,12 @@ export default class HexmakerPlugin extends Plugin {
       });
       if (added) count++;
     }
-    new Notice(
-      `Hexmaker: added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
-    );
+    // Nothing to report when every table already had its link (the setup
+    // wizard runs this right after creating tables that include one).
+    if (count > 0)
+      new Notice(
+        `Hexmaker: added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
+      );
   }
 
   /** Create missing description/encounters table files for every terrain type in the palette. */
@@ -1033,6 +1055,18 @@ export default class HexmakerPlugin extends Plugin {
     const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
     const file = this.app.vault.getAbstractFileByPath(`${subfolder}/encounters/${terrain}.md`);
     return file instanceof TFile ? file : null;
+  }
+
+  /**
+   * Link text (relative to `sourcePath`) of the encounters table for the
+   * hex's own terrain in the map note, or null. createHexNote links exactly
+   * this, and views show it for hexes that have no note yet
+   * (see displayedEncounterLinks).
+   */
+  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null {
+    const terrain = this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
+    const table = terrain ? this.terrainEncounterTable(terrain) : null;
+    return table ? this.app.metadataCache.fileToLinktext(table, sourcePath) : null;
   }
 
   async syncHexEncounterTableLink(
@@ -1327,13 +1361,9 @@ export default class HexmakerPlugin extends Plugin {
     if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
     // The hex's terrain (just set, or painted before it had a note) gets
     // its encounter-table link now rather than patched in later.
-    terrain ??= this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
-    if (terrain) {
-      const table = this.terrainEncounterTable(terrain);
-      if (table) {
-        const linkText = `[[${this.app.metadataCache.fileToLinktext(table, path)}]]`;
-        content = insertLinkInSection(content, "Encounters Table", linkText);
-      }
+    const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
+    if (encounterLink) {
+      content = insertLinkInSection(content, "Encounters Table", `[[${encounterLink}]]`);
     }
 
     const hexBase = normalizeFolder(this.settings.hexFolder);
@@ -1413,9 +1443,8 @@ export default class HexmakerPlugin extends Plugin {
     /** Optional generated terrain per hex, keyed "x_y". */
     terrainAt?: Map<string, string>,
     extra: {
-      /** Terrain shown on unpainted hexes. When set, hex notes are created
-       *  on use: only hexes that get a terrain other than the base get a
-       *  note now; the rest appear when clicked, painted, or linked. */
+      /** Terrain shown on unpainted hexes. Cells equal to it aren't
+       *  written to the map note. Hex notes are created on use either way. */
       baseTerrain?: string;
       parent?: { map: string; hex: string };
       /** Silence the "generated N notes" notice (caller reports instead). */

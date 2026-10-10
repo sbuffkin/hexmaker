@@ -10,7 +10,10 @@ import {
 	getAllSectionData,
 	setSectionContent,
 	addBacklinkToFile,
+	separateRulesFromText,
 } from "../src/sections";
+import { isGuidanceLine } from "../src/hexGuidance";
+import { readFileSync } from "node:fs";
 
 /** Build a minimal mock App backed by an in-memory string. */
 function makeApp(filePath: string, initialContent: string) {
@@ -392,5 +395,116 @@ describe("addBacklinkToFile", () => {
 		await addBacklinkToFile(app, "notes/town.md", "hex/1_1.md");
 		// process should never have been called
 		assert.strictEqual(app.vault.process.mock.callCount(), 0, "process should not have been called");
+	});
+});
+
+// ── Template guidance under each heading (fresh-eyes r4) ─────────────────────
+
+describe("guidance prompts under a section heading", () => {
+	const HINT = "*What the party sees and feels. Terrain, atmosphere, any obvious features.*";
+	const note = (body: string) => `### description\n${HINT}\n${body}\n---\n### landmark\n`;
+
+	it("isn't read as the section's text (editor, hex table, exports)", async () => {
+		const { app } = makeApp("hex.md", note("\n"));
+		const { text } = await getAllSectionData(app, "hex.md");
+		expect(text.get("description")).toBe("");
+		expect(await getSectionContent(app, "hex.md", "description")).toBe("");
+	});
+
+	it("text written under the guidance reads back without it", async () => {
+		const { app } = makeApp("hex.md", note("\nMisty moor.\n"));
+		const { text } = await getAllSectionData(app, "hex.md");
+		expect(text.get("description")).toBe("Misty moor.");
+		expect(await getSectionContent(app, "hex.md", "description")).toBe("Misty moor.");
+	});
+
+	it("writing a section keeps the guidance on top and replaces only the text", async () => {
+		const { app, getContent } = makeApp("hex.md", note("\n"));
+		await setSectionContent(app, "hex.md", "description", "Misty moor.");
+		expect(getContent()).toBe(`### description\n${HINT}\n\nMisty moor.\n\n---\n### landmark\n`);
+		await setSectionContent(app, "hex.md", "description", "Bleak fen.");
+		expect(getContent()).toContain(`${HINT}\n\nBleak fen.\n`);
+		expect(getContent()).not.toContain("Misty moor.");
+		await setSectionContent(app, "hex.md", "description", "");
+		expect(getContent()).toBe(`### description\n${HINT}\n\n---\n### landmark\n`);
+		expect(await getSectionContent(app, "hex.md", "description")).toBe("");
+	});
+
+	it("plain (un-italicised) guidance and other text are told apart", async () => {
+		const plain = "### description\nWhat the party sees and feels. Terrain, atmosphere, any obvious features.\nReal text.\n";
+		const { app } = makeApp("hex.md", plain);
+		expect((await getAllSectionData(app, "hex.md")).text.get("description")).toBe("Real text.");
+		// Text that merely mentions a prompt mid-section stays.
+		const later = "### description\nReal text.\n*Revealed only through specific actions, NPCs, or investigation.*\n";
+		const b = makeApp("hex.md", later);
+		expect((await getAllSectionData(b.app, "hex.md")).text.get("description")).toContain("Revealed only");
+	});
+
+	it("notes from the old template (prompt above the heading) read as before", async () => {
+		const old = "---\nWhat the party sees and feels. Terrain, atmosphere, any obvious features.\n\n### description\nMisty moor.\n\n---\n";
+		const { app } = makeApp("hex.md", old);
+		expect((await getAllSectionData(app, "hex.md")).text.get("description")).toBe("Misty moor.");
+	});
+});
+
+describe("the built-in hex template (src/defaultHexTemplate.md)", () => {
+	const template = readFileSync("src/defaultHexTemplate.md", "utf8").replace(/\r\n/g, "\n");
+	const lines = template.split("\n");
+
+	it("puts each prompt under its heading, never above one", () => {
+		lines.forEach((line, i) => {
+			if (!/^###\s/.test(line)) return;
+			const above = lines.slice(0, i).reverse().find((l) => l.trim() !== "");
+			expect(above === undefined || above === "---" || /^#/.test(above)).toBe(true);
+		});
+		for (const h of ["description", "landmark", "hidden", "secret", "weather", "hooks & rumors"]) {
+			const at = lines.indexOf(`### ${h}`);
+			expect(at).toBeGreaterThan(-1);
+			expect(isGuidanceLine(lines[at + 1])).toBe(true);
+		}
+	});
+
+	it("a fresh note from it has every text section empty", async () => {
+		const { app } = makeApp("hex.md", template.replace("{{x}}", "1").replace("{{y}}", "2"));
+		const { text } = await getAllSectionData(app, "hex.md");
+		for (const h of ["description", "landmark", "hidden", "secret", "weather", "hooks & rumors"]) {
+			expect(text.get(h)).toBe("");
+		}
+	});
+});
+
+// ── `---` rules never turn a link into a setext heading (fresh-eyes r5) ───────
+
+describe("links above a --- rule stay links", () => {
+	const template = readFileSync("src/defaultHexTemplate.md", "utf8").replace(/\r\n/g, "\n");
+
+	it("adding a link to an empty template section leaves a blank line before the rule", async () => {
+		const { app, getContent } = makeApp("hex.md", template);
+		await addLinkToSection(app, "hex.md", "Dungeons", "[[The Drowned Abbey]]");
+		expect(getContent()).toContain("### Dungeons\n\n[[The Drowned Abbey]]\n\n---");
+		expect(getContent()).not.toMatch(/\]\]\n---/);
+	});
+
+	it("heals an older note's link that sits right above a rule on the next write", async () => {
+		const old = "---\nterrain: forest\n---\n\n### Towns\n\n---\n### Dungeons\n\n[[The Drowned Abbey]]\n---\n### Features\n";
+		const { app, getContent } = makeApp("hex.md", old);
+		await addLinkToSection(app, "hex.md", "Towns", "[[Ashby]]");
+		expect(getContent()).toContain("[[The Drowned Abbey]]\n\n---\n### Features");
+		expect(getContent()).toContain("### Towns\n\n[[Ashby]]\n\n---");
+		// Frontmatter delimiters are untouched.
+		expect(getContent().startsWith("---\nterrain: forest\n---\n")).toBe(true);
+		// Writing text and removing links heal too.
+		const again = makeApp("hex.md", old);
+		await setSectionContent(again.app, "hex.md", "Towns", "A crossroads.");
+		expect(again.getContent()).toContain("[[The Drowned Abbey]]\n\n---");
+		const third = makeApp("hex.md", old);
+		await removeLinkFromSection(third.app, "hex.md", "Towns", "Nope");
+		expect(third.getContent()).toContain("[[The Drowned Abbey]]\n\n---");
+	});
+
+	it("leaves rules after headings, blank lines and code fences alone", () => {
+		const fine = "### Towns\n---\n\ntext\n\n---\n```\nx\n---\n```\n";
+		expect(separateRulesFromText(fine)).toBe(fine);
+		expect(separateRulesFromText("a\r\n---\r\n")).toBe("a\r\n\r\n---\r\n");
 	});
 });

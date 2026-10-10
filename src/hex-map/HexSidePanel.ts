@@ -10,6 +10,8 @@ export abstract class HexSidePanel {
   private _isOpen = false;
   /** Called just before this panel opens — used for mutual exclusion. */
   public onBeforeOpen?: () => void;
+  /** Called once the panel is shown (the map moves hexes out from under it). */
+  public onAfterOpen?: () => void;
 
   constructor(
     container: HTMLElement,
@@ -44,6 +46,7 @@ export abstract class HexSidePanel {
     this._isOpen = true;
     this.panelEl.show();
     this.toggleBtn.addClass("is-active");
+    this.onAfterOpen?.();
   }
 
   close(): void {
@@ -54,6 +57,11 @@ export abstract class HexSidePanel {
 
   get isOpen(): boolean {
     return this._isOpen;
+  }
+
+  /** The panel box (to keep hexes out from under it while it's open). */
+  get element(): HTMLElement {
+    return this.panelEl;
   }
 }
 
