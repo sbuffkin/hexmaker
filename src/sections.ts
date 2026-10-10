@@ -165,10 +165,24 @@ export async function getAllSectionData(
 }
 
 /**
- * Append a backlink to hexFilePath at the end of targetFilePath, unless
- * a link to the hex file already exists anywhere in the target note.
+ * A back-link to a hex note that can't be mistaken for another map's hex:
+ * the full path, shown as `alias` (round 6 S2: a town note got a bare
+ * "[[7_7]]", the same on every map). "|", "[" and "]" are dropped from the
+ * alias so the link stays well-formed.
  */
-export async function addBacklinkToFile(app: App, targetFilePath: string, hexFilePath: string): Promise<void> {
+export function hexBacklinkText(hexFilePath: string, alias: string): string {
+	const target = hexFilePath.replace(/\.md$/i, "");
+	const shown = alias.replace(/[|[\]]/g, "").replace(/\s+/g, " ").trim();
+	return shown ? `[[${target}|${shown}]]` : `[[${target}]]`;
+}
+
+/**
+ * Append a backlink to hexFilePath at the end of targetFilePath, unless
+ * a link to the hex file already exists anywhere in the target note. With
+ * `alias`, the link is path-qualified and reads as the alias (see
+ * hexBacklinkText); without, it's Obsidian's shortest link.
+ */
+export async function addBacklinkToFile(app: App, targetFilePath: string, hexFilePath: string, alias?: string): Promise<void> {
 	const hexFile    = app.vault.getAbstractFileByPath(hexFilePath);
 	const targetFile = app.vault.getAbstractFileByPath(targetFilePath);
 	if (!(hexFile instanceof TFile) || !(targetFile instanceof TFile)) return;
@@ -180,7 +194,9 @@ export async function addBacklinkToFile(app: App, targetFilePath: string, hexFil
 	);
 	if (alreadyLinked) return;
 
-	const linkText = `[[${app.metadataCache.fileToLinktext(hexFile, targetFilePath)}]]`;
+	const linkText = alias !== undefined
+		? hexBacklinkText(hexFile.path, alias)
+		: `[[${app.metadataCache.fileToLinktext(hexFile, targetFilePath)}]]`;
 	await app.vault.process(targetFile, (content) =>
 		content.trimEnd() + (content.trim() ? "\n\n" : "") + linkText + "\n",
 	);

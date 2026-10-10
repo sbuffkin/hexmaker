@@ -170,3 +170,102 @@ describe("X1: handout options", () => {
 		expect(handout).toContain("Lone Oak");
 	});
 });
+
+// ── Round 6: readable names (S4, U5), token names (S8), PNG labels (S5) ────
+import { hexNameFit, hexNameTone, NAME_FONT_EM, NAME_LONG_FONT_EM } from "../src/hex-map/hexNameLayer";
+import { clampLabelTop, clampLabelX, pngBadgeCircles, wrapHexName } from "../src/export/handoutLabels";
+import { readFileSync as readCss } from "node:fs";
+
+describe("hex name labels read on any terrain (round 6 S4)", () => {
+	it("puts dark text on light terrain and light text on dark terrain", () => {
+		expect(hexNameTone("#ffffff")).toBe("dark"); // snow
+		expect(hexNameTone("#e0e8a0")).toBe("dark"); // pale hills
+		expect(hexNameTone("#2a4d7a")).toBe("light"); // ocean
+		expect(hexNameTone("#5f9e5f")).toBe("light"); // grass
+	});
+
+	it("keeps the theme colours with no or an unknown fill", () => {
+		expect(hexNameTone(undefined)).toBeNull();
+		expect(hexNameTone("var(--x)")).toBeNull();
+	});
+
+	it("has CSS for both tones", () => {
+		const css = readCss("styles.css", "utf8");
+		expect(css).toMatch(/\.duckmage-hex-name-label\.is-on-light\s*\{/);
+		expect(css).toMatch(/\.duckmage-hex-name-label\.is-on-dark\s*\{/);
+	});
+});
+
+describe("hex names stay inside their hex (round 6 U5)", () => {
+	const flatHexEm = 4.4; // 2 × the 2.2em hex radius
+
+	it("keeps a short name on one line at the normal size", () => {
+		const fit = hexNameFit("Hut", flatHexEm);
+		expect(fit.long).toBe(false);
+		expect(fit.maxWidthEm).toBeCloseTo((flatHexEm * 0.92) / NAME_FONT_EM, 2);
+	});
+
+	it("shrinks and wraps a name wider than the hex", () => {
+		const fit = hexNameFit("Hermit's Hut", flatHexEm);
+		expect(fit.long).toBe(true);
+		expect(fit.maxWidthEm).toBeCloseTo((flatHexEm * 0.92) / NAME_LONG_FONT_EM, 2);
+	});
+
+	it("clamps labels to two lines in CSS", () => {
+		const css = readCss("styles.css", "utf8");
+		const at = css.indexOf(".duckmage-hex-name-label {");
+		const rule = css.slice(at, css.indexOf("}", at));
+		expect(rule).toMatch(/-webkit-line-clamp:\s*2/);
+		expect(rule).toMatch(/max-width:\s*var\(--duckmage-name-max-w/);
+		expect(rule).not.toMatch(/white-space:\s*nowrap/);
+	});
+
+	it("wraps PNG names at the most balanced space", () => {
+		const measure = (s: string) => s.length * 10;
+		expect(wrapHexName("Hut", 100, measure)).toEqual(["Hut"]);
+		expect(wrapHexName("Frostfang Watchtower of the Old Kings", 100, measure))
+			.toEqual(["Frostfang Watchtower", "of the Old Kings"]);
+		expect(wrapHexName("Supercalifragilistic", 100, measure)).toEqual(["Supercalifragilistic"]);
+	});
+});
+
+describe("token names are readable on the map (round 6 S8)", () => {
+	it("are at least 0.9em and 11px", () => {
+		const css = readCss("styles.css", "utf8");
+		const at = css.indexOf(".duckmage-token-name {");
+		const rule = css.slice(at, css.indexOf("}", at));
+		expect(rule).toMatch(/font-size:\s*max\(0\.9em, 11px\)/);
+	});
+});
+
+describe("PNG labels stay inside the image (round 6 S5)", () => {
+	it("shifts a label at the right edge inward", () => {
+		// "CSV Meridian Resolve", 200px wide, centred 30px from the right edge.
+		expect(clampLabelX(970, 200, 1000, 4)).toBe(896);
+		expect(clampLabelX(20, 200, 1000, 4)).toBe(104);
+		expect(clampLabelX(500, 200, 1000, 4)).toBe(500);
+		expect(clampLabelX(50, 2000, 1000, 4)).toBe(500);
+	});
+
+	it("lifts a label that would run off the bottom", () => {
+		expect(clampLabelTop(990, 24, 1000, 4)).toBe(972);
+		expect(clampLabelTop(-5, 24, 1000, 4)).toBe(4);
+	});
+});
+
+describe("link badges in the PNG (round 6 R6)", () => {
+	it("stacks up to three in one column at the hex's right side", () => {
+		const c = pngBadgeCircles(100, 100, 44, true, 2); // em = 20px
+		expect(c).toHaveLength(2);
+		expect(c[0].r).toBeCloseTo(8);
+		// Right edge at cx + 1.95em, centred on the middle row.
+		expect(c[0].x + c[0].r).toBeCloseTo(139);
+		expect((c[0].y + c[1].y) / 2).toBeCloseTo(100);
+	});
+
+	it("uses two columns for four or five kinds", () => {
+		const c = pngBadgeCircles(0, 0, 22, false, 5);
+		expect(new Set(c.map((p) => p.x.toFixed(2))).size).toBe(2);
+		expect(new Set(c.map((p) => p.y.toFixed(2))).size).toBe(3);
+	});
+});

@@ -198,8 +198,8 @@ Toggled from the **layers** panel on the right edge of the map.
 - **Region overlay** — paint a geographic region colour on any hex. Regions render as filled blobs with a scaled label centred on the blob. Region data is stored in the map note (see [Map notes](#map-notes)).
 - Both overlays can be shown simultaneously and toggled independently.
 - Additional toggles: **Show terrain icons**, **Show icon overrides**, **Show paths**, **Show tokens**, **GM layer**.
-- **Labels** group: **Coordinates**, **Hex names** and **Token names** (all on by default). With token names off, a token's name still shows while you hover it.
-- **Show link badges** (on by default) — a small badge at a hex's corner for each kind of link in its note: towns, dungeons, features, quests, factions. Your hex icon stays as it is. The ▸ next to the toggle picks which kinds show. Saved per map.
+- **Labels** group: **Coordinates**, **Hex names** and **Token names** (all on by default). With token names off, a token's name still shows while you hover it. Hex names stay inside their hex: a long name wraps onto two smaller lines (an ellipsis cuts a very long one; the hover shows it whole), and its colour follows the terrain (dark text on light terrain such as snow, light text on dark terrain).
+- **Show link badges** (on by default) — a small badge at a hex's right side for each kind of link in its note: towns, dungeons, features, quests, factions. Badges sit above hex names and coordinates, so a name never hides them. Hovering the hex names the linked notes ("Gullmouth · beach · hex 6, 6 · Town: Gullmouth"). Your hex icon stays as it is. The ▸ next to the toggle picks which kinds show. Saved per map.
 - **Show legend** (on by default) — a terrain legend in the map's bottom-right corner listing only the terrains used on this map. **S / M / L** sets its size; **×** hides it. The new-map and generator previews show the same legend. Size and visibility are remembered.
 
 ### GM layer
@@ -208,7 +208,7 @@ Toggle from the overlay panel. When active:
 - Hexes with Hidden or Secret content are visually highlighted.
 - The hex editor automatically expands the Hidden and Secret sections when opened.
 
-GM layer state is stored per map and persists across sessions.
+GM layer state is stored per map and persists across sessions. New maps start with it off; maps made before this keep it on until you turn it off.
 
 ### Tokens
 Place movable tokens on the map — useful for tracking party position, NPCs, or any note-backed marker. Each token's name shows under it (turn this off with **Labels → Token names** in the layers panel; the name still shows on hover).
@@ -243,7 +243,7 @@ Export a map for printing or for your players.
 
 - **Where:** the command **Hexmap World Creator: Export current map…** (any map; it starts on the one open in the hex map view), or the map-name button in the hex map toolbar → **Export** tab. Both show the same form.
 - **Formats:** **Export PNG** (an image of the map), **Export PDF with reference table** (the map, then a table per section listing each hex's linked notes and the start of its Description), and **Export hexcrawl manual (PDF)** (a printable gazetteer with legend, encounter tables and keyed hexes).
-- **Options:** file name; **On the map**: coordinates, icons, paths, hex names, tokens (with their names), faction overlay, region overlay; output size. Hex names and tokens are on by default. **PDF table columns** picks which columns the reference table prints (name, terrain, towns, dungeons, features, quests, factions, encounters, description), so you can cut a handout down to what players should see. **Hexcrawl manual** holds the player-version switch and lets you leave out the legend, encounter tables, factions and regions, or index. The form lists the exact file names it will write; files go to the export folder and open in a new tab.
+- **Options:** file name; **On the map**: coordinates, icons, paths, hex names, tokens (with their names), link badges, legend (the terrains used and the badge kinds, beside the map), faction overlay, region overlay; output size. The ticks start from what the map view shows (the overlays start off), and the form remembers your last file name, ticks and size for each map. Labels near the edge are kept inside the image. **PDF table columns** picks which columns the reference table prints (name, terrain, towns, dungeons, features, quests, factions, encounters, description), so you can cut a handout down to what players should see. **Hexcrawl manual** holds the player-version switch and lets you leave out the legend, encounter tables, factions and regions, or index. The form lists the exact file names it will write; files go to the export folder and open in a tab. Exporting again under the same name replaces the file (the notice says "Replaced …") and refreshes the tab already showing it.
 - **What players see:** the PNG never includes GM-layer icons, hidden tokens or any note text (Description, Landmark, Hidden, Secret), so it is safe as a handout. The faction and region overlays show their names when ticked; leave them off if those are secret. The PDF's table has no Hidden or Secret text. The hexcrawl manual is the full GM book unless you tick **player version**, which leaves out Hidden and Secret.
 - A single note or hex can also be exported: **Hexmap World Creator: Export current note to PDF**, **… to Markdown**, **Export current hex (structured PDF / Markdown)**, or the **Export** link in the hex editor.
 

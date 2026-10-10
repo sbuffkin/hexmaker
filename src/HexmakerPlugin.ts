@@ -1554,6 +1554,10 @@ export default class HexmakerPlugin extends Plugin {
       pathChains: [],
       staggerOffset,
       createdWith: pluginVersion(this),
+      // The GM layer starts off on a new map (round 6 S7: it was on for a
+      // tester who never turned it on). Maps without the key keep the old
+      // "on" default, so existing maps don't change.
+      showGmLayer: false,
       ...(extra.baseTerrain ? { baseTerrain: extra.baseTerrain } : {}),
       ...(extra.parent ? { parent: extra.parent } : {}),
     });
@@ -1659,6 +1663,21 @@ export default class HexmakerPlugin extends Plugin {
   /** A map's name for the UI: its display name, else its slug (or `name` itself if unknown). */
   mapLabel(name: string): string {
     return mapLabel(this.getMap(name), name);
+  }
+
+  /**
+   * How a back-link to a hex note reads: the hex's name, else
+   * "<map> x, y" (round 6 S2). Paths outside the hex folder fall back to
+   * the note's name.
+   */
+  hexLinkAlias(hexPath: string): string {
+    const folder = normalizeFolder(this.settings.hexFolder);
+    const rel = folder && hexPath.startsWith(folder + "/") ? hexPath.slice(folder.length + 1) : hexPath;
+    const m = /^(.+)\/(-?\d+)_(-?\d+)\.md$/.exec(rel);
+    if (!m) return rel.replace(/^.*\//, "").replace(/\.md$/i, "");
+    const [, map, x, y] = m;
+    const name = this.mapStore.get(map, `${x}_${y}`)?.name?.trim();
+    return name || `${this.mapLabel(map)} ${x}, ${y}`;
   }
 
   /**

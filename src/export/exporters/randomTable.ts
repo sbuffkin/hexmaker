@@ -27,6 +27,7 @@ import {
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { openExported } from "../exportFolder";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
 export interface LinkedNote {
@@ -238,8 +239,5 @@ async function writeTextToVault(
 }
 
 async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
+  await openExported(app, path);
 }

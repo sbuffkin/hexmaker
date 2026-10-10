@@ -1176,7 +1176,7 @@ export class HexEditorModal extends HexmakerModal {
       currentLinks = [...currentLinks, linkPath];
       refresh();
       await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path);
+      void addBacklinkToFile(this.app, file.path, path, this.plugin.hexLinkAlias(path));
       this.onChanged();
     };
 
@@ -1212,7 +1212,7 @@ export class HexEditorModal extends HexmakerModal {
       currentLinks = [...currentLinks, linkPath];
       refresh();
       await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path);
+      void addBacklinkToFile(this.app, file.path, path, this.plugin.hexLinkAlias(path));
       this.onChanged();
     };
 

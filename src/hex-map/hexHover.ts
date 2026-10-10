@@ -9,6 +9,7 @@ export function hexHoverLabel(
   ownTerrain: string | null,
   baseTerrain: string | null,
   name: string | null = null,
+  linked = "",
 ): string {
   const where = `hex ${x}, ${y}`;
   const label = ownTerrain
@@ -17,7 +18,9 @@ export function hexHoverLabel(
       ? `${baseTerrain} (map base) · ${where}`
       : `Hex ${x}, ${y}`;
   // A named hex leads with its name (N1).
-  return name ? `${name} · ${label}` : label;
+  const full = name ? `${name} · ${label}` : label;
+  // Then what it links: "· Town: Gullmouth" (round 6 S3).
+  return linked ? `${full} · ${linked}` : full;
 }
 
 /**

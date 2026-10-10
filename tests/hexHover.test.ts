@@ -13,6 +13,12 @@ describe("hexHoverLabel", () => {
 		expect(hexHoverLabel(3, 4, null, "void")).toBe("void (map base) · hex 3, 4");
 	});
 
+	it("ends with the notes the hex links (round 6 S3)", () => {
+		expect(hexHoverLabel(6, 6, "beach", null, "Gullmouth", "Town: Gullmouth"))
+			.toBe("Gullmouth · beach · hex 6, 6 · Town: Gullmouth");
+		expect(hexHoverLabel(6, 6, "beach", null, null, "")).toBe("beach · hex 6, 6");
+	});
+
 	it("falls back to the coordinates", () => {
 		expect(hexHoverLabel(0, 0, null, null)).toBe("Hex 0, 0");
 	});

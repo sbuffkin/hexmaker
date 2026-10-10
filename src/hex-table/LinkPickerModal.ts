@@ -73,7 +73,7 @@ export class LinkPickerModal extends HexmakerModal {
     await this.ensureHexNote();
     const linkText = `[[${this.app.metadataCache.fileToLinktext(file, this.hexPath)}]]`;
     await addLinkToSection(this.app, this.hexPath, this.section, linkText);
-    await addBacklinkToFile(this.app, file.path, this.hexPath);
+    await addBacklinkToFile(this.app, file.path, this.hexPath, this.plugin.hexLinkAlias(this.hexPath));
     this.onLinked();
     this.close();
   }

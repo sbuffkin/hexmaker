@@ -33,6 +33,7 @@ import {
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
+import { openExported } from "../exportFolder";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -337,10 +338,7 @@ async function writeTextToVault(
 }
 
 async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
+  await openExported(app, path);
 }
 
 // `normalizeFolder` is imported even though we don't use it yet — keeping the

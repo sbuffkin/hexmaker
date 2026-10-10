@@ -5,7 +5,15 @@ import { exportMapAsPng } from "./mapPngRenderer";
 import { exportMapAsPdf, HANDOUT_COLUMNS } from "./exporters/mapWithTable";
 import { MANUAL_PARTS } from "./manual/manualModel";
 import { exportMapAsManual } from "./exporters/hexcrawlManual";
-import { mapExportFileNames, mapExportStem, mapExportSuffix } from "./exportNames";
+import {
+  EXPORT_LAYER_KEYS,
+  exportLayerDefaults,
+  mapExportFileNames,
+  mapExportStem,
+  mapExportSuffix,
+  type ExportLayerKey,
+  type MapExportPrefs,
+} from "./exportNames";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -55,12 +63,14 @@ export function renderMapExportForm(
 ): void {
   el.empty();
   el.addClass("duckmage-export-tab");
-  let mapName = initialMap;
+  const mapName = initialMap;
+  // Start from this map's last choices, else from what the map view shows (S9).
+  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const prefs: MapExportPrefs = plugin.settings.mapExportPrefs?.[mapName] ?? {};
+  const ticks = exportLayerDefaults({ ...map, showLegend: plugin.settings.showTerrainLegend }, prefs);
 
   const hint = el.createEl("p", { cls: "duckmage-export-tab-hint" });
-  const setHint = () =>
-    hint.setText(`Export the map "${plugin.mapLabel(mapName)}". Files go to the export folder and open in a new tab.`);
-  setHint();
+  hint.setText(`Export the map "${plugin.mapLabel(mapName)}". Files go to the export folder and open in a tab; exporting again under the same name replaces the file.`);
 
   const optsForm = el.createDiv({ cls: "duckmage-export-tab-options" });
 
@@ -72,14 +82,8 @@ export function renderMapExportForm(
     const mapSelect = mapRow.createEl("select", { cls: "duckmage-export-tab-select", attr: { id } });
     for (const m of plugin.settings.maps) mapSelect.createEl("option", { value: m.name, text: plugin.mapLabel(m.name) });
     mapSelect.value = mapName;
-    mapSelect.addEventListener("change", () => {
-      // A name still equal to the old map's follows the new map.
-      if (nameInput.value.trim() === mapName) nameInput.value = mapSelect.value;
-      mapName = mapSelect.value;
-      nameInput.placeholder = mapName;
-      setHint();
-      updatePreview();
-    });
+    // Another map: the form again, with that map's choices.
+    mapSelect.addEventListener("change", () => renderMapExportForm(el, plugin, mapSelect.value, form));
   }
 
   // File name: defaults to the map name; overlay suffixes are added (see
@@ -92,7 +96,7 @@ export function renderMapExportForm(
     cls: "duckmage-export-tab-text",
     attr: { placeholder: mapName, id: nameId },
   });
-  nameInput.value = mapName;
+  nameInput.value = prefs.fileName?.trim() || mapName;
   // The overlay suffix the files get, right after the box, so what's typed
   // plus this reads as the "Writes:" names (fresh-eyes r5).
   const suffixEl = nameRow.createSpan({ cls: "duckmage-export-name-suffix" });
@@ -101,15 +105,22 @@ export function renderMapExportForm(
   const layers = optsForm.createDiv({ cls: "duckmage-export-group" });
   layers.createDiv({ cls: "duckmage-export-group-title", text: "On the map" });
   const layerRow = layers.createDiv({ cls: "duckmage-export-inline" });
-  const showCoords = inlineCheck(layerRow, "Coordinates", true);
-  const showIcons = inlineCheck(layerRow, "Icons", true);
-  const showPaths = inlineCheck(layerRow, "Paths", true);
-  const showHexNames = inlineCheck(layerRow, "Hex names", true);
-  const showTokens = inlineCheck(layerRow, "Tokens", true, "Tokens and their names. Hidden tokens are never drawn.");
-  const showFactionOverlay = inlineCheck(layerRow, "Faction overlay", false,
+  const showCoords = inlineCheck(layerRow, "Coordinates", ticks.showCoords);
+  const showIcons = inlineCheck(layerRow, "Icons", ticks.showIcons);
+  const showPaths = inlineCheck(layerRow, "Paths", ticks.showPaths);
+  const showHexNames = inlineCheck(layerRow, "Hex names", ticks.showHexNames);
+  const showTokens = inlineCheck(layerRow, "Tokens", ticks.showTokens, "Tokens and their names. Hidden tokens are never drawn.");
+  const showLinkBadges = inlineCheck(layerRow, "Link badges", ticks.showLinkBadges,
+    "A badge at the corner of each hex that links a town, dungeon, feature, quest or faction.");
+  const showLegend = inlineCheck(layerRow, "Legend", ticks.showLegend,
+    "A key beside the map: the terrains used and the badge kinds.");
+  const showFactionOverlay = inlineCheck(layerRow, "Faction overlay", ticks.showFactionOverlay,
     "Tints hexes by faction and lists the faction names: leave off if players shouldn't know them.");
-  const showRegionOverlay = inlineCheck(layerRow, "Region overlay", false,
+  const showRegionOverlay = inlineCheck(layerRow, "Region overlay", ticks.showRegionOverlay,
     "Tints hexes by region and labels each region by name.");
+  const layerChecks: Record<ExportLayerKey, HTMLInputElement> = {
+    showCoords, showIcons, showPaths, showHexNames, showTokens, showLinkBadges, showLegend, showFactionOverlay, showRegionOverlay,
+  };
 
   // What goes into the PDF's reference table.
   const columnsBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
@@ -136,7 +147,27 @@ export function renderMapExportForm(
     { label: "Huge (120px hexes — max detail)", radius: 120 },
   ]) {
     const opt = sizeSelect.createEl("option", { text: preset.label, value: String(preset.radius) });
-    if (preset.radius === 50) opt.selected = true;
+    if (preset.radius === (prefs.hexRadius ?? 50)) opt.selected = true;
+  }
+
+  // Remember this map's choices for next time (S9). data.json only: saving
+  // through saveSettings would also sync map notes and mark views stale.
+  const remember = () => {
+    const layers: Partial<Record<ExportLayerKey, boolean>> = {};
+    for (const k of EXPORT_LAYER_KEYS) layers[k] = layerChecks[k].checked;
+    const fileName = nameInput.value.trim();
+    plugin.settings.mapExportPrefs = {
+      ...plugin.settings.mapExportPrefs,
+      [mapName]: {
+        ...(fileName && fileName !== mapName ? { fileName } : {}),
+        hexRadius: clampInt(parseInt(sizeSelect.value, 10), 10, 200, 50),
+        layers,
+      },
+    };
+    void plugin.saveData(plugin.settings);
+  };
+  for (const input of [nameInput, sizeSelect, ...Object.values(layerChecks)]) {
+    input.addEventListener("change", remember);
   }
 
   // What players would see: the map images never carry GM content.
@@ -192,15 +223,19 @@ export function renderMapExportForm(
     showRegionOverlay: showRegionOverlay.checked,
     showHexNames: showHexNames.checked,
     showTokens: showTokens.checked,
+    showLinkBadges: showLinkBadges.checked,
+    showLegend: showLegend.checked,
     columns: columnChecks.filter((c) => c.cb.checked).map((c) => c.key),
   });
 
   const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });
   actions.createEl("button", { cls: "mod-cta", text: "Export PNG" }).addEventListener("click", () => {
+    remember();
     void exportMapAsPng(plugin, mapName, collectOpts());
     form.onExport?.();
   });
   actions.createEl("button", { cls: "mod-cta", text: "Export PDF with reference table" }).addEventListener("click", () => {
+    remember();
     void exportMapAsPdf(plugin, mapName, collectOpts());
     form.onExport?.();
   });
@@ -208,6 +243,7 @@ export function renderMapExportForm(
   // section, index. Uses its own print styling and hex numbering.
   actions.createEl("button", { cls: "mod-cta", text: "Export hexcrawl manual (PDF)" }).addEventListener("click", () => {
     const o = collectOpts();
+    remember();
     void exportMapAsManual(plugin, mapName, {
       outputName: names().manual.replace(/\.pdf$/, ""),
       player: playerEdition.checked,

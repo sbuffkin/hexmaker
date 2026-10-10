@@ -60,7 +60,7 @@ import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
-import { hexKeyFromBasename, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
+import { hexKeyFromBasename, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
 import { legendSize, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
@@ -746,7 +746,10 @@ export class HexMapView extends ItemView {
       const y = Number(hexEl.dataset.y);
       const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
       const own = getTerrainFromFile(this.app, hexPath);
-      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath));
+      // The notes it links (towns, dungeons…), from the metadata cache (S3).
+      const note = this.app.vault.getAbstractFileByPath(hexPath);
+      const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note))) : "";
+      const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked);
       if (hexEl.title !== label) {
         hexEl.title = label;
         hexEl.setAttr("aria-label", label);
@@ -5966,10 +5969,27 @@ export class HexMapView extends ItemView {
   /** (Re)draw the hex-name layer; with `onlyIfChanged`, skip when no name changed. */
   private drawHexNames(gridContainer: HTMLElement, onlyIfChanged = false): void {
     const names = this.hexNames();
-    const sig = [...names].map(([k, n]) => `${k}=${n}`).sort().join("\n");
+    const fills = this.hexNameFills(names);
+    // The fill is in the signature: repainting a named hex can flip its name's tone.
+    const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}`).sort().join("\n");
     if (onlyIfChanged && sig === this.drawnHexNames) return;
     this.drawnHexNames = sig;
-    renderHexNameLayer(gridContainer, names);
+    renderHexNameLayer(gridContainer, names, fills);
+  }
+
+  /** Terrain colour under each named hex (map data + palette; no DOM reads). */
+  private hexNameFills(names: ReadonlyMap<string, string>): Map<string, string> {
+    const out = new Map<string, string>();
+    if (!names.size) return out;
+    const byName = new Map<string, string>();
+    for (const t of this.plugin.getMapPalette(this.activeMapName)) if (!byName.has(t.name)) byName.set(t.name, t.color);
+    const base = this.getActiveMap().baseTerrain;
+    for (const key of names.keys()) {
+      const terrain = this.plugin.mapStore.get(this.activeMapName, key)?.terrain ?? base;
+      const color = terrain ? byName.get(terrain) : undefined;
+      if (color) out.set(key, color);
+    }
+    return out;
   }
 
   private scheduleTerrainLegend(): void {
