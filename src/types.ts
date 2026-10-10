@@ -65,8 +65,8 @@ export interface MapData {
 	 *  hex notes when missing (maps linked before this existed). */
 	parent?: { map: string; hex: string };
 	/** Terrain shown on hexes with no terrain of their own (e.g. "void").
-	 *  Maps created with a base terrain create hex notes on use only — an
-	 *  absent note renders as this terrain. */
+	 *  Display only: hex notes are created on use for every map, with or
+	 *  without a base terrain. */
 	baseTerrain?: string;
 	gridSize: { cols: number; rows: number };
 	gridOffset: { x: number; y: number };

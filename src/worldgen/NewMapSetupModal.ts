@@ -36,6 +36,16 @@ export const SUBMAP_SIZE_PRESETS: SizePreset[] = [
   { label: "Large", cols: 19, rows: 19 },
 ];
 
+/**
+ * Base terrain wording. With map notes a hex note is only ever created
+ * when a hex first gets content, whatever the base terrain; the base only
+ * decides what an unpainted hex shows (fresh-eyes r4: the old "None
+ * (create every hex note)" was outdated and alarming).
+ */
+export const BASE_TERRAIN_NONE_LABEL = "None (unpainted hexes stay blank)";
+export const BASE_TERRAIN_HELP =
+  "What hexes you haven't painted show: this terrain, or nothing with None. Painting a hex overrides it. Either way a hex only gets its own note when you first add something to it.";
+
 export interface NewMapSetupResult {
   name: string;
 }
@@ -295,7 +305,7 @@ export class NewMapSetupModal extends HexmakerModal {
     this.rememberBox(baseRow, "base", "base terrain");
     baseRow.createDiv({
       cls: "setting-item-description",
-      text: "Shown on unpainted hexes. With a base terrain, hex notes are created as you use hexes instead of all up front.",
+      text: BASE_TERRAIN_HELP,
     });
 
     // ── Preview ──
@@ -403,7 +413,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const renderBase = () => {
       const terrains = this.terrains(paletteSelect.value);
       baseSelect.empty();
-      baseSelect.createEl("option", { value: "", text: "None (create every hex note)" });
+      baseSelect.createEl("option", { value: "", text: BASE_TERRAIN_NONE_LABEL });
       for (const t of terrains) baseSelect.createEl("option", { value: t.name, text: t.name });
       const savedBase = this.saved?.baseTerrain;
       this.baseTerrain = savedBase !== undefined && (savedBase === "" || terrains.some((t) => t.name === savedBase))
