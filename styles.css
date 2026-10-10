@@ -6549,3 +6549,17 @@ button.duckmage-wfc-library-tab.is-active {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* Hex editor autosave cue ("Saving…" → "✓ Saved"), fresh-eyes round 3. */
+.duckmage-editor-save-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-left: 0.5em;
+    white-space: nowrap;
+}
+.duckmage-editor-save-status[data-state="saved"] {
+    color: var(--text-success);
+}
+.duckmage-editor-save-status[data-state="error"] {
+    color: var(--text-error);
+}

@@ -34,6 +34,7 @@ import { neighbourSpec } from "../worldgen/neighbours";
 import { WalkRegionModal } from "../worldgen/WalkRegionModal";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
+import { SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "./saveStatus";
 
 /** What each link field links, for its placeholder ("Search or create a town…"). */
 const LINK_FIELD_NOUN: Record<LinkSection, string> = {
@@ -44,6 +45,11 @@ const LINK_FIELD_NOUN: Record<LinkSection, string> = {
   Quests: "a quest",
   Factions: "a faction",
 };
+
+/** Typing pause after which a text section autosaves. */
+const TEXT_AUTOSAVE_MS = 800;
+/** Unique ids for label for= ↔ textarea pairs. */
+let textFieldSeq = 0;
 
 /** Which side of the map an off-map hex lies past (east/west first at corners). */
 function offMapSide(map: MapData, x: number, y: number): Side {
@@ -66,6 +72,15 @@ export class HexEditorModal extends HexmakerModal {
   private dataPreloaded = false;
   /** Stops keepInViewport's observer (set on first open). */
   private stopKeepInViewport: (() => void) | null = null;
+  /** "Saving…" / "✓ Saved" cue in the title row (fresh-eyes round 3). */
+  private saveStatusEl: HTMLElement | null = null;
+  private saves = new SaveTracker(
+    (state) => this.renderSaveStatus(state),
+    (fn, ms) => window.setTimeout(fn, ms),
+    (id) => window.clearTimeout(id),
+  );
+  /** Text sections with typed-but-unsaved changes: flush on close/navigate. */
+  private pendingTextSaves = new Set<() => void>();
 
   constructor(
     app: App,
@@ -129,6 +144,8 @@ export class HexEditorModal extends HexmakerModal {
 
   onOpen() {
     const { contentEl } = this;
+    // Re-render on navigation: save what was typed into the previous hex.
+    this.flushTextSaves();
     contentEl.empty();
     contentEl.addClass("duckmage-hex-editor");
 
@@ -175,6 +192,10 @@ export class HexEditorModal extends HexmakerModal {
         new HexExportModal(this.app, this.plugin, fileNow).open();
       });
     }
+    this.saveStatusEl = titleLeft.createSpan({
+      cls: "duckmage-editor-save-status",
+      attr: { "aria-live": "polite" },
+    });
     this.renderNeighborWidget(titleRow, this.x, this.y);
 
     this.makeDraggable();
@@ -305,10 +326,25 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   onClose() {
+    this.flushTextSaves();
+    this.saves.dispose();
+    this.saveStatusEl = null;
     this.stopKeepInViewport?.();
     this.stopKeepInViewport = null;
     this.options.onModalClose?.();
     this.contentEl.empty();
+  }
+
+  private flushTextSaves(): void {
+    for (const save of [...this.pendingTextSaves]) save();
+    this.pendingTextSaves.clear();
+  }
+
+  private renderSaveStatus(state: SaveState): void {
+    const el = this.saveStatusEl;
+    if (!el) return;
+    el.setText(SAVE_STATUS_TEXT[state]);
+    el.dataset["state"] = state;
   }
 
   private isOnMap(nx: number, ny: number): boolean {
@@ -563,7 +599,7 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-terrain-option-name",
     });
     clearBtn.toggle(currentTerrain !== null);
-    clearBtn.addEventListener("click", () => void applyTerrain(null));
+    clearBtn.addEventListener("click", () => void this.saves.track(applyTerrain(null)));
 
     for (const entry of palette) {
       const btn = grid.createDiv({
@@ -588,7 +624,7 @@ export class HexEditorModal extends HexmakerModal {
 
       btn.addEventListener("click", () => {
         if (entry.name === selectedTerrain) return;
-        void applyTerrain(entry.name);
+        void this.saves.track(applyTerrain(entry.name));
       });
     }
 
@@ -733,7 +769,7 @@ export class HexEditorModal extends HexmakerModal {
               t.removeClass("is-selected");
             }
           });
-          await persist();
+          await this.saves.track(persist());
         })();
       });
 
@@ -745,7 +781,7 @@ export class HexEditorModal extends HexmakerModal {
         if (idx === -1) return;
         list.splice(idx, 1);
         refreshBadge();
-        void persist();
+        void this.saves.track(persist());
       });
 
       return tile;
@@ -789,7 +825,7 @@ export class HexEditorModal extends HexmakerModal {
           grid.querySelectorAll(".duckmage-icon-option").forEach((el) =>
             el.toggleClass("is-selected", (el as HTMLElement).dataset["icon"] === (icon ?? "")),
           );
-          await onPick(icon);
+          await this.saves.track(onPick(icon));
         })();
       });
       tile.dataset["icon"] = icon ?? "";
@@ -907,8 +943,8 @@ export class HexEditorModal extends HexmakerModal {
     const onRemove = (link: string) => {
       currentLinks = currentLinks.filter((l) => l !== link);
       refresh();
-      void removeLinkFromSection(this.app, path, section, link).then(() =>
-        this.onChanged(),
+      void this.saves.track(
+        removeLinkFromSection(this.app, path, section, link).then(() => this.onChanged()),
       );
     };
 
@@ -990,7 +1026,11 @@ export class HexEditorModal extends HexmakerModal {
       anchor = null;
     };
 
-    const selectFile = async (file: TFile) => {
+    // Tracked so the title row shows "Saving…" → "✓ Saved".
+    const selectFile = (file: TFile) => this.saves.track(selectFileNow(file));
+    const createAndLink = (name: string) => this.saves.track(createAndLinkNow(name));
+
+    const selectFileNow = async (file: TFile) => {
       closeDropdown();
       input.value = "";
       const hexFile = await this.ensureHexNote();
@@ -1001,12 +1041,12 @@ export class HexEditorModal extends HexmakerModal {
       const linkPath = this.app.metadataCache.fileToLinktext(file, path);
       currentLinks = [...currentLinks, linkPath];
       refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
       void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
     };
 
-    const createAndLink = async (name: string) => {
+    const createAndLinkNow = async (name: string) => {
       closeDropdown();
       input.value = "";
       const folder = normalizeFolder(sourceFolder);
@@ -1037,7 +1077,7 @@ export class HexEditorModal extends HexmakerModal {
       const linkPath = this.app.metadataCache.fileToLinktext(file, path);
       currentLinks = [...currentLinks, linkPath];
       refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
+      await addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
       void addBacklinkToFile(this.app, file.path, path);
       this.onChanged();
     };
@@ -1146,9 +1186,11 @@ export class HexEditorModal extends HexmakerModal {
     const labelRow = sectionEl.createDiv({
       cls: "duckmage-text-section-label-row",
     });
-    labelRow.createEl("label", {
+    // label for= → clicking the label focuses the box.
+    const labelEl = labelRow.createEl("label", {
       text: label,
       cls: "duckmage-text-section-label",
+      attr: { for: `duckmage-hex-text-${section}-${++textFieldSeq}` },
     });
 
     // 📖 button: terrain description table (description section) or section-specific table
@@ -1185,6 +1227,7 @@ export class HexEditorModal extends HexmakerModal {
 
     const textarea = sectionEl.createEl("textarea", {
       cls: "duckmage-text-section-textarea",
+      attr: { id: labelEl.htmlFor },
     });
 
     if (previewTablePath) {
@@ -1205,11 +1248,7 @@ export class HexEditorModal extends HexmakerModal {
             if (textarea.value && !textarea.value.endsWith("\n"))
               textarea.value += "\n";
             textarea.value += result;
-            void (async () => {
-              const file = await this.ensureHexNote();
-              if (!file) return;
-              await setSectionContent(this.app, path, section, textarea.value);
-            })();
+            save();
             this.onChanged();
           },
           capturedPath,
@@ -1220,17 +1259,39 @@ export class HexEditorModal extends HexmakerModal {
     textarea.placeholder = `${label}…`;
     textarea.value = initialContent;
 
-    textarea.addEventListener("blur", () => {
-      void (async () => {
-        const file = await this.ensureHexNote();
-        if (!file) return;
-        await setSectionContent(this.app, path, section, textarea.value);
-      })();
+    // Autosave: a moment after typing stops, on blur, and on close or
+    // navigation (flushTextSaves). The hex is captured now, so a save that
+    // lands after navigating still goes to this hex. Unchanged text isn't
+    // written (just focusing a box no longer creates the hex note).
+    const hx = this.x;
+    const hy = this.y;
+    let lastSaved = initialContent;
+    let timer: number | null = null;
+    const save = (): void => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = null;
+      this.pendingTextSaves.delete(save);
+      const value = textarea.value;
+      if (value === lastSaved) return;
+      lastSaved = value;
+      void this.saves.track(
+        (async () => {
+          const file = await this.ensureHexNote(hx, hy);
+          if (!file) throw new Error(`Could not create the note for hex ${hx}, ${hy}`);
+          await setSectionContent(this.app, path, section, value);
+        })(),
+      );
+    };
+    textarea.addEventListener("input", () => {
+      if (timer !== null) window.clearTimeout(timer);
+      timer = window.setTimeout(save, TEXT_AUTOSAVE_MS);
+      this.pendingTextSaves.add(save);
     });
+    textarea.addEventListener("blur", save);
   }
 
-  private async ensureHexNote(): Promise<TFile | null> {
-    const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+  private async ensureHexNote(x = this.x, y = this.y): Promise<TFile | null> {
+    const path = this.plugin.hexPath(x, y, this.mapName);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) return existing;
     return this.plugin.createHexNote(this.x, this.y, this.mapName);
