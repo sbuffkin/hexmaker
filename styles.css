@@ -6545,3 +6545,7 @@ button.duckmage-wfc-library-tab.is-active {
     border-radius: 999px;
     box-shadow: none;
 }
+.duckmage-rt-roll-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
