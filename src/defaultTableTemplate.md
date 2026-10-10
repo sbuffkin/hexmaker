@@ -2,6 +2,6 @@
 dice: 20
 ---
 
-| Result | Weight |
-|--------|--------|
-| Example result | 1 |
+| d20 | Result | Weight |
+|-----|--------|--------|
+| 1–20 | Example result | 1 |

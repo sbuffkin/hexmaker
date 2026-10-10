@@ -5,7 +5,7 @@
  *   # Table name
  *   *d100*
  *   description
- *   | # | Result | Weight | Odds |
+ *   | d20 | Result | Weight |   (| # | Result | … | with no die)
  *   ...
  *
  * Two output paths share the same generated markdown:
@@ -22,7 +22,8 @@ import {
   type RandomTable,
   type RandomTableEntry,
   parseRandomTable,
-  getDieRanges,
+  rangeCellTexts,
+  dieLabel,
 } from "../../random-tables/randomTable";
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
@@ -187,12 +188,15 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
     lines.push("");
   }
 
-  const ranges = table.dice > 0 ? getDieRanges(table) : null;
-  const hasWeights = table.entries.some((e) => e.weight !== 1);
+  // The ranges the table rolls (as stored in the note, blanks filled), so
+  // the export reads back as the same table (round trip).
+  const ranges = table.dice > 0 ? rangeCellTexts(table.dice, table.entries, "keep") : null;
+  // With a die the Weight column is always kept: ranges alone don't carry it.
+  const hasWeights = !!ranges || table.entries.some((e) => e.weight !== 1);
 
-  // Columns: # (row index) OR Roll (die range), Result, Weight (if any non-1).
+  // Columns: dN (die range) OR # (row index), Result, Weight.
   // Odds are intentionally omitted — readers can eyeball the ranges/weights.
-  const headerCells = ranges ? ["Roll", "Result"] : ["#", "Result"];
+  const headerCells = ranges ? [dieLabel(table.dice), "Result"] : ["#", "Result"];
   if (hasWeights) headerCells.push("Weight");
 
   lines.push(`| ${headerCells.join(" | ")} |`);
@@ -200,7 +204,7 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
 
   table.entries.forEach((entry, i) => {
     const firstCol = ranges ? ranges[i] : String(i + 1);
-    const cells = [firstCol, escapeTableCell(entry.result)];
+    const cells = [firstCol, escapeTableCell(entry.isLink ? `[[${entry.result}]]` : entry.result)];
     if (hasWeights) cells.push(String(entry.weight));
     lines.push(`| ${cells.join(" | ")} |`);
   });

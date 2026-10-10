@@ -11,6 +11,9 @@ import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
+import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
+import { maybePromptTableRanges, openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
+import { processTableNote, TableStore } from "./random-tables/TableStore";
 import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
 import {
@@ -94,6 +97,8 @@ export default class HexmakerPlugin extends Plugin {
       // migrate per-hex data out of hex notes on the first run.
       void this.paletteStore.init().then(() => this.mapStore.init());
       void this.autoRegisterMapsFromVault();
+      // Hand edits to table notes (ranges, die, weights) are imported.
+      TableStore.register(this);
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
       } else if (shouldNudge(this.settings, this.settings.maps.length)) {
@@ -101,6 +106,9 @@ export default class HexmakerPlugin extends Plugin {
         this.settings.advancedNudgeAt = new Date().toISOString().slice(0, 10);
         void this.saveSettings();
         new AdvancedNudgeModal(this.app, this).open();
+      } else {
+        // Once after updating: offer roll ranges for older tables (asks first).
+        void maybePromptTableRanges(this);
       }
     });
 
@@ -208,6 +216,16 @@ export default class HexmakerPlugin extends Plugin {
         void this.app.workspace
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
+    });
+    this.addCommand({
+      id: "add-roll-ranges",
+      name: "Add roll ranges to tables",
+      callback: () => void openTableRangesModal(this),
+    });
+    this.addCommand({
+      id: "check-tables",
+      name: "Check tables",
+      callback: () => void runTableCheck(this),
     });
     this.addCommand({
       id: "export-current-note-pdf",
@@ -931,26 +949,25 @@ export default class HexmakerPlugin extends Plugin {
     return "```duckmage-roller\n```";
   }
 
-  /** Add a roller link to a table file if it doesn't already have one. */
-  async ensureRollerLink(filePath: string): Promise<void> {
+  /**
+   * Give a table note the roller block, replacing an old
+   * obsidian://duckmage-roll link. Never touches "_" notes or notes with no
+   * roll table. Returns true when the note changed.
+   */
+  async ensureRollerLink(filePath: string): Promise<boolean> {
     const file = this.app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof TFile)) return;
-    const link = this.buildRollerLink();
-    await this.app.vault.process(file, (content) => {
-      if (content.includes("obsidian://duckmage-roll") || content.includes("```duckmage-roller")) return content;
-      const fmMatch = content.match(/^---\n[\s\S]*?\n---\n/);
-      const insertAt = fmMatch ? fmMatch[0].length : 0;
-      return (
-        content.slice(0, insertAt) +
-        "\n" +
-        link +
-        "\n\n" +
-        content.slice(insertAt)
-      );
+    if (!(file instanceof TFile) || file.basename.startsWith("_")) return false;
+    let changed = false;
+    await processTableNote(this.app, file, (content) => {
+      if (!locateRollTable(content)?.recognized) return content;
+      const next = withRollerBlock(content);
+      changed = next !== content;
+      return next;
     });
+    return changed;
   }
 
-  /** Add roller blocks to all existing table files in the tables folder that don't have one. */
+  /** Add roller blocks to the table notes in the tables folder that lack one. */
   async ensureAllRollerLinks(): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
     const prefix = folder ? folder + "/" : "";
@@ -960,22 +977,7 @@ export default class HexmakerPlugin extends Plugin {
 
     let count = 0;
     for (const file of files) {
-      let added = false;
-      const link = this.buildRollerLink();
-      await this.app.vault.process(file, (content) => {
-        if (content.includes("obsidian://duckmage-roll") || content.includes("```duckmage-roller")) return content;
-        added = true;
-        const fmMatch = content.match(/^---\n[\s\S]*?\n---\n/);
-        const insertAt = fmMatch ? fmMatch[0].length : 0;
-        return (
-          content.slice(0, insertAt) +
-          "\n" +
-          link +
-          "\n\n" +
-          content.slice(insertAt)
-        );
-      });
-      if (added) count++;
+      if (await this.ensureRollerLink(file.path)) count++;
     }
     // Nothing to report when every table already had its link (the setup
     // wizard runs this right after creating tables that include one).

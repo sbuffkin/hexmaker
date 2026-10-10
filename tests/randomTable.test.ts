@@ -6,7 +6,7 @@ import {
   getOddsLabel,
   getDieRanges,
   setDiceInFrontmatter,
-  extractPostTableContent,
+  parseRandomTableWithReport,
   emptyTableMessage,
 } from "../src/random-tables/randomTable";
 
@@ -52,11 +52,13 @@ describe("parseRandomTable", () => {
     expect(result.entries[0].weight).toBe(1);
   });
 
-  it("clamps invalid weight (0 or NaN) to 1", () => {
-    const content = `| Result | Weight |\n|--------|--------|\n| Bad | 0 |\n| NaN | abc |`;
-    const result = parseRandomTable(content);
-    expect(result.entries[0].weight).toBe(1);
-    expect(result.entries[1].weight).toBe(1);
+  it("keeps weight 0; an unreadable weight counts as 1 and is reported", () => {
+    const content = `| Result | Weight |\n|--------|--------|\n| Never | 0 |\n| NaN | abc |`;
+    const { table, issues } = parseRandomTableWithReport(content);
+    expect(table.entries[0].weight).toBe(0);
+    expect(table.entries[1].weight).toBe(1);
+    expect(table.entries[1].result).toBe("NaN");
+    expect(issues.map((i) => i.code)).toContain("weight-unreadable");
   });
 
   it("skips separator rows", () => {
@@ -318,26 +320,6 @@ describe("setDiceInFrontmatter", () => {
     const result = setDiceInFrontmatter(content, 8);
     expect(result).toContain("| Result | Weight |");
     expect(result).toContain("| A | 1 |");
-  });
-});
-
-// ── extractPostTableContent ───────────────────────────────────────────────────
-
-describe("extractPostTableContent", () => {
-  it("returns empty string when nothing follows the table", () => {
-    const content = `---\ndice: 6\n---\n\n| Result | Weight |\n|--------|--------|\n| a | 1 |\n`;
-    expect(extractPostTableContent(content)).toBe("");
-  });
-
-  it("returns content after the last table row", () => {
-    const content = `| Result | Weight |\n|--------|--------|\n| a | 1 |\n\n## Notes\n\nSome extra text.\n`;
-    expect(extractPostTableContent(content)).toBe(
-      "## Notes\n\nSome extra text.\n",
-    );
-  });
-
-  it("returns empty string when no table present", () => {
-    expect(extractPostTableContent("No table here.")).toBe("");
   });
 });
 

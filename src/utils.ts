@@ -1,6 +1,7 @@
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
+import { rangeCellTexts } from "./random-tables/randomTable";
 
 let labelSeq = 0;
 
@@ -54,14 +55,23 @@ export function makeTableTemplate(
 	/** Starter rows (result, weight); default is one empty row. */
 	entries?: readonly (readonly [string, number])[],
 ): string {
+	// With a die, every row shows its roll range (`| d20 | Result | Weight |`),
+	// so the note can be rolled by hand (issue #45).
+	const ranges = dice > 0 && entries?.length
+		? rangeCellTexts(dice, entries.map(([result, weight]) => ({ result, weight })), "regenerate")
+		: [];
+	const cell = (r: string) => r.replace(/\|/g, "\\|");
 	const rows = entries?.length
-		? entries.map(([r, w]) => `| ${r.replace(/\|/g, "\\|")} | ${w} |`).join("\n")
-		: "|  | 1 |";
+		? entries.map(([r, w], i) => (dice > 0 ? `| ${ranges[i]} | ${cell(r)} | ${w} |` : `| ${cell(r)} | ${w} |`)).join("\n")
+		: dice > 0 ? "|  |  | 1 |" : "|  | 1 |";
+	const head = dice > 0
+		? `| d${dice} | Result | Weight |\n|-----|--------|--------|`
+		: "| Result | Weight |\n|--------|--------|";
 	const extra = extraFrontmatter
 		? Object.entries(extraFrontmatter).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n"
 		: "";
 	const preambleBlock = preamble ? `\n${preamble}\n` : "";
-	return `---\ndice: ${dice}\n${extra}---\n${preambleBlock}\n| Result | Weight |\n|--------|--------|\n${rows}\n`;
+	return `---\ndice: ${dice}\n${extra}---\n${preambleBlock}\n${head}\n${rows}\n`;
 }
 
 /**

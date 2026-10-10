@@ -2,7 +2,7 @@ import { App, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, rollOnTable, getDieRanges, emptyTableMessage } from "./randomTable";
+import { parseRandomTable, rollTable, rollLabel, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 
@@ -246,9 +246,11 @@ export class RandomTableModal extends HexmakerModal {
   private buildResultBox(contentEl: HTMLElement): {
     el: HTMLElement;
     textarea: HTMLTextAreaElement;
+    face: HTMLElement;
   } {
     const resultBox = contentEl.createDiv({ cls: "duckmage-roll-result" });
     resultBox.hide();
+    const face = resultBox.createDiv({ cls: "duckmage-roll-face" });
     const resultTextarea = resultBox.createEl("textarea", {
       cls: "duckmage-roll-result-textarea",
     });
@@ -285,18 +287,21 @@ export class RandomTableModal extends HexmakerModal {
       window.setTimeout(() => copyBtn.setText("Copy"), 1200);
     });
 
-    return { el: resultBox, textarea: resultTextarea };
+    return { el: resultBox, textarea: resultTextarea, face };
   }
 
   private async renderOddsTable(
     tableContainer: HTMLElement,
-    resultBox: { el: HTMLElement; textarea: HTMLTextAreaElement },
+    resultBox: { el: HTMLElement; textarea: HTMLTextAreaElement; face: HTMLElement },
     rollBtn: HTMLButtonElement,
     file: TFile,
   ): Promise<void> {
     const content = await this.app.vault.read(file);
     const table = parseRandomTable(content);
-    const ranges = table.dice > 0 ? getDieRanges(table) : null;
+    const resolved = resolveTable(table);
+    // Ranges as stored in the note (blanks filled): the ones that are rolled.
+    const ranges = table.dice > 0 ? resolved.labels : null;
+    const odds = rowOdds(table, resolved);
 
     if (table.entries.length === 0) {
       const empty = tableContainer.createDiv({ cls: "duckmage-rt-empty-state" });
@@ -328,21 +333,19 @@ export class RandomTableModal extends HexmakerModal {
     });
     const thead = tableEl.createEl("thead");
     const headerRow = thead.createEl("tr");
-    if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
+    if (ranges) headerRow.createEl("th", { text: dieLabel(table.dice) });
     headerRow.createEl("th", { text: "Result" });
     headerRow.createEl("th", { text: "Odds" });
     headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
 
     const tbody = tableEl.createEl("tbody");
-    const total = table.entries.reduce((s, e) => s + e.weight, 0);
     table.entries.forEach((entry, i) => {
       const tr = tbody.createEl("tr");
       tr.dataset.index = String(i);
       if (ranges)
         tr.createEl("td", { text: ranges[i], cls: "duckmage-rt-range-cell" });
       tr.createEl("td", { text: entry.result });
-      const pct = `${Math.round((entry.weight / total) * 100)}%`;
-      tr.createEl("td", { text: pct, cls: "duckmage-rt-odds-cell" });
+      tr.createEl("td", { text: odds[i], cls: "duckmage-rt-odds-cell" });
       const copyTd = tr.createEl("td", { cls: "duckmage-rt-entry-copy-cell" });
       const copyBtn = copyTd.createEl("button", {
         text: "⎘",
@@ -359,16 +362,16 @@ export class RandomTableModal extends HexmakerModal {
 
     rollBtn.disabled = false;
     rollBtn.onclick = () => {
-      const rolled = rollOnTable(table);
-      if (!rolled) return;
+      const outcome = rollTable(table);
+      if (!outcome) return;
       tbody.querySelectorAll("tr").forEach((tr) => {
-        tr.toggleClass(
-          "is-rolled",
-          tr.textContent?.includes(rolled.result) || false,
-        );
+        tr.toggleClass("is-rolled", tr.dataset.index === String(outcome.index));
       });
       resultBox.el.show();
-      resultBox.textarea.value = rolled.result;
+      const face = rollLabel(table, outcome);
+      resultBox.face.setText(face);
+      resultBox.face.toggle(!!face);
+      resultBox.textarea.value = outcome.entry.result;
     };
   }
 

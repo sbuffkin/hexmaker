@@ -1,11 +1,25 @@
 import { App, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
-import { parseRandomTable, extractPostTableContent, parseMarkdownListItems } from "./randomTable";
-import type { RandomTableEntry } from "./randomTable";
+import {
+  parseRandomTableWithReport,
+  parseMarkdownListItems,
+  writeRollTable,
+  rangeCellTexts,
+  resolveTable,
+  dieLabel,
+  type RandomTableEntry,
+  type TableWrite,
+} from "./randomTable";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { processTableNote } from "./TableStore";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { escapeRegex, escapeTableCell } from "../textUtils";
+import { escapeRegex } from "../textUtils";
+
+/** How the editor writes the die column: ranges are redone when weights or rows change. */
+export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
+  return rowsOrWeightsChanged ? "regenerate" : "keep";
+}
 
 /**
  * Modal editor for a random table file.
@@ -33,23 +47,33 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     const rawContent =
       this.initialContent ?? (await this.app.vault.read(this.file));
-    const table = parseRandomTable(rawContent);
+    const report = parseRandomTableWithReport(rawContent);
+    const table = report.table;
     const frontmatter = this.extractFrontmatter(rawContent);
-    const preamble = this.extractPreamble(rawContent, frontmatter);
 
     // Working copy so edits don't mutate until Save
     const entries: RandomTableEntry[] = table.entries.map((e) => ({ ...e }));
+    // Which parsed row each entry came from (survives drag-reorder), so the
+    // writer keeps that row's raw text: extra columns, aliases, spacing.
+    const entrySource = new WeakMap<RandomTableEntry, number>();
+    entries.forEach((e, i) => entrySource.set(e, i));
 
-    // If linked to a folder, silently drop entries whose note no longer exists
+    // Linked-folder rows whose note is missing are kept and reported, not
+    // deleted: the note may have been renamed or moved elsewhere.
+    const missingAtOpen = new Set<string>();
     if (table.linkedFolder) {
       const lf = normalizeFolder(table.linkedFolder);
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (
-          !this.app.vault.getAbstractFileByPath(`${lf}/${entries[i].result}.md`)
-        ) {
-          entries.splice(i, 1);
-        }
+      for (const e of entries) {
+        if (!this.app.vault.getAbstractFileByPath(`${lf}/${e.result}.md`)) missingAtOpen.add(e.result);
       }
+    }
+    if (missingAtOpen.size) {
+      const warn = contentEl.createDiv({ cls: "duckmage-table-editor-warning" });
+      const names = [...missingAtOpen];
+      warn.setText(
+        `${names.length === 1 ? "This row has" : "These rows have"} no note in ${table.linkedFolder}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""}. ` +
+          `${names.length === 1 ? "It's" : "They're"} kept; delete ${names.length === 1 ? "it" : "them"} here if the note is gone for good.`,
+      );
     }
 
     // Track each entry's original result by object identity (survives drag-reorder)
@@ -161,10 +185,10 @@ export class RandomTableEditorModal extends HexmakerModal {
     const subOneToAllBtn = entriesHeadingRow.createEl("button", {
       text: "-1",
       cls: "duckmage-table-editor-add-one-btn",
-      attr: { title: "Add 1 to every entry's weight" },
+      attr: { title: "Subtract 1 from every entry's weight (stops at 0)" },
     });
     subOneToAllBtn.addEventListener("click", () => {
-      for (const e of entries) e.weight -= 1;
+      for (const e of entries) e.weight = Math.max(0, e.weight - 1);
       renderRows();
     });
     const addOneToAllBtn = entriesHeadingRow.createEl("button", {
@@ -216,8 +240,23 @@ export class RandomTableEditorModal extends HexmakerModal {
       el.setCssProps({ height: `${el.scrollHeight}px` });
     };
 
+    // Rows added, removed, reordered or reweighted: the ranges are redone.
+    const rowsOrWeightsChanged = (): boolean =>
+      entries.length !== table.entries.length ||
+      entries.some((e, i) => entrySource.get(e) !== i || e.weight !== table.entries[i].weight);
+    // Each row's roll range, as it will be written.
+    let rangeEls: HTMLElement[] = [];
+    const onWeightsChanged = (): void => {
+      if (table.dice <= 0) return;
+      const labels = rowsOrWeightsChanged()
+        ? rangeCellTexts(table.dice, entries, "regenerate")
+        : resolveTable({ dice: table.dice, entries }).labels;
+      rangeEls.forEach((el, i) => el.setText(labels[i] || "—"));
+    };
+
     const renderRows = () => {
       rowsEl.empty();
+      rangeEls = [];
       if (entries.length === 0) {
         rowsEl.createSpan({
           text: "No entries yet.",
@@ -235,6 +274,11 @@ export class RandomTableEditorModal extends HexmakerModal {
           text: "⠿",
         });
         handle.title = "Drag to reorder";
+        if (table.dice > 0) {
+          const rangeEl = row.createSpan({ cls: "duckmage-table-editor-range" });
+          rangeEl.title = `Roll range on the ${dieLabel(table.dice)} (from the weights)`;
+          rangeEls.push(rangeEl);
+        }
 
         const resultInput = row.createEl("textarea", {
           cls: "duckmage-table-editor-result",
@@ -263,19 +307,12 @@ export class RandomTableEditorModal extends HexmakerModal {
           cls: "duckmage-table-editor-weight",
         });
         weightInput.value = String(entry.weight);
-        //weightInput.min = "1";
+        weightInput.min = "0";
+        weightInput.title = "Weight (0 = never rolled)";
         weightInput.addEventListener("input", () => {
-          entries[i].weight = Math.max(1, parseInt(weightInput.value, 10) || 1);
+          entries[i].weight = readWeight(weightInput.value);
+          onWeightsChanged();
         });
-        // weightInput.addEventListener("keydown", (e: KeyboardEvent) => {
-        //   if (e.key === "ArrowDown" && entries[i].weight <= 1) {
-        //     e.preventDefault();
-        //     for (let j = 0; j < entries.length; j++) {
-        //       if (j !== i) entries[j].weight += 1;
-        //     }
-        //     renderRows();
-        //   }
-        // });
 
         const delBtn = row.createEl("button", {
           text: "×",
@@ -321,6 +358,7 @@ export class RandomTableEditorModal extends HexmakerModal {
           renderRows();
         });
       }
+      onWeightsChanged();
     };
     renderRows();
 
@@ -344,7 +382,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       cls: "duckmage-table-editor-weight",
     });
     newWeight.value = "1";
-    newWeight.min = "1";
+    newWeight.min = "0";
 
     const addBtn = addRow.createEl("button", {
       text: "Add",
@@ -497,11 +535,11 @@ export class RandomTableEditorModal extends HexmakerModal {
         errorEl.hide();
         // Store the vault-relative path without extension (canonical link form)
         const resolvedPath = found.path.replace(/\.md$/i, "");
-        const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
+        const weight = readWeight(newWeight.value);
         entries.push({ result: resolvedPath, weight, isLink: true });
       } else {
         errorEl.hide();
-        const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
+        const weight = readWeight(newWeight.value);
         entries.push({ result: raw, weight });
       }
 
@@ -510,10 +548,10 @@ export class RandomTableEditorModal extends HexmakerModal {
       renderRows();
       newResult.focus();
     };
-    // Expose so onClose always saves all changes (flushes pending "add row" text first)
+    // Expose so onClose saves all changes (flushes pending "add row" text
+    // first). Nothing is written unless something actually changed.
     this.flushAndSave = async () => {
       doAdd(); // flush pending "add row" text if any (no-op if empty)
-      const suffix = extractPostTableContent(rawContent) || undefined;
       let updatedFm = this.setFrontmatterBool(
         frontmatter,
         "roll-filter",
@@ -525,11 +563,13 @@ export class RandomTableEditorModal extends HexmakerModal {
         encFilterCb.checked ? false : undefined,
       );
       const linkedFolder = normalizeFolder(folderInput.value.trim());
-      updatedFm = this.setFrontmatterString(
-        updatedFm,
-        "linkedFolder",
-        linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
-      );
+      if (linkedFolder !== normalizeFolder(table.linkedFolder ?? "")) {
+        updatedFm = this.setFrontmatterString(
+          updatedFm,
+          "linkedFolder",
+          linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
+        );
+      }
       if (linkedFolder) {
         await this.renameUpdatedEntries(
           entries,
@@ -537,31 +577,47 @@ export class RandomTableEditorModal extends HexmakerModal {
           linkedFolder,
         );
         await this.retireDeletedEntries(originalResults, entries, linkedFolder);
-        await this.syncLinkedFolder(entries, linkedFolder);
+        await this.syncLinkedFolder(entries, linkedFolder, missingAtOpen);
       }
-      // Rebuild preamble: preserve or insert roller block, replace user description
-      const rollerLinkMatch =
-        preamble.match(/```duckmage-roller[\s\S]*?```/) ??
-        preamble.match(/\[.*?\]\(obsidian:\/\/duckmage-roll[^)]*\)/);
-      // Always include a roller — upgrade old URI links to the code block form
-      const rollerLink =
-        rollerLinkMatch?.index !== undefined &&
-        /```duckmage-roller/.test(rollerLinkMatch[0])
-          ? rollerLinkMatch[0]
-          : "```duckmage-roller\n```";
+
+      // ── Table: only its own lines are rewritten, and only if it changed.
+      const orig = table.entries;
+      const reweighted = rowsOrWeightsChanged();
+      const textChanged = entries.some((e) => {
+        const src = entrySource.get(e);
+        return src === undefined || orig[src].result !== e.result || !!orig[src].isLink !== !!e.isLink;
+      });
+      let next = rawContent;
+      if (reweighted || textChanged) {
+        next = writeRollTable(rawContent, {
+          dice: table.dice,
+          rows: entries.map((entry) => ({ entry, source: entrySource.get(entry) })),
+          ranges: editorRangeMode(reweighted),
+          linkCells: !!linkedFolder,
+          dropPlaceholders: true,
+        });
+      }
+
+      // ── Description: only the text between frontmatter and table, only if edited.
       const newDescription = descInput.value.trim();
-      const newPreamble = [rollerLink, newDescription]
-        .filter(Boolean)
-        .join("\n\n");
-      const newContent = this.buildContent(
-        updatedFm,
-        newPreamble,
-        entries,
-        linkedFolder || undefined,
-        suffix,
-      );
+      if (newDescription !== (table.description ?? "")) {
+        const eol = rawContent.includes("\r\n") ? "\r\n" : "\n";
+        const fmEnd = frontmatter ? frontmatter.length : 0;
+        const tableStart = report.block ? report.block.start : fmEnd;
+        const preamble = rawContent.slice(fmEnd, tableStart);
+        // Keep the roller block; an old roller link becomes the block.
+        const roller =
+          /```duckmage-roller[\s\S]*?```/.exec(preamble)?.[0] ?? "```duckmage-roller" + eol + "```";
+        const parts = [roller, newDescription.replace(/\r?\n/g, eol)].filter(Boolean);
+        const newPreamble = (frontmatter ? eol + eol : "") + parts.join(eol + eol) + (report.block ? eol + eol : eol);
+        // The table write above leaves everything before the table as it was.
+        next = next.slice(0, fmEnd) + newPreamble + next.slice(tableStart);
+      }
+
+      if (updatedFm !== frontmatter) next = updatedFm + next.slice(frontmatter.length);
+      if (next === rawContent) return;
       try {
-        await this.app.vault.process(this.file, () => newContent);
+        await processTableNote(this.app, this.file, () => next);
         this.onSaved?.();
       } catch {
         /* best-effort */
@@ -591,6 +647,7 @@ export class RandomTableEditorModal extends HexmakerModal {
   private async syncLinkedFolder(
     entries: RandomTableEntry[],
     folderPath: string,
+    missingAtOpen: Set<string>,
   ): Promise<void> {
     // Ensure folder exists
     if (!this.app.vault.getAbstractFileByPath(folderPath)) {
@@ -610,6 +667,8 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     // For each entry: create note if missing
     for (const entry of entries) {
+      // A row whose note was missing when the editor opened is reported, not recreated.
+      if (missingAtOpen.has(entry.result)) continue;
       const notePath = `${folderPath}/${entry.result}.md`;
       const noteFile = this.app.vault.getAbstractFileByPath(notePath);
       if (!noteFile) {
@@ -703,19 +762,19 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: boolean | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:[^\\r\\n]*`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (value === undefined) {
       if (!hasKey) return frontmatter;
       // Remove the line (and any trailing newline)
-      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*(?:\\r?\\n)?`, "m"), "");
     }
     const line = `${key}: ${value}`;
     if (hasKey) {
       return frontmatter.replace(lineRegex, () => line);
     }
     // Insert before closing ---
-    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
+    return frontmatter.replace(/(\r?\n)---$/, (_m, eol: string) => `${eol}${line}${eol}---`);
   }
 
   /** Set, remove, or update a string key in a frontmatter block string. */
@@ -724,50 +783,25 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: string | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:[^\\r\\n]*`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (!value) {
       if (!hasKey) return frontmatter;
-      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*(?:\\r?\\n)?`, "m"), "");
     }
     const line = `${key}: ${value}`;
     if (hasKey) return frontmatter.replace(lineRegex, () => line);
-    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
+    return frontmatter.replace(/(\r?\n)---$/, (_m, eol: string) => `${eol}${line}${eol}---`);
   }
 
   private extractFrontmatter(content: string): string {
-    const match = content.match(/^---\n[\s\S]*?\n---/);
+    const match = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?=\r?\n|$)/.exec(content);
     return match ? match[0] : "";
   }
+}
 
-  private extractPreamble(content: string, frontmatter: string): string {
-    const afterFm = frontmatter ? content.slice(frontmatter.length) : content;
-    // Find first markdown table row (line starting with |)
-    const tableMatch = afterFm.match(/^[ \t]*\|/m);
-    if (!tableMatch || tableMatch.index === undefined) return "";
-    return afterFm.slice(0, tableMatch.index).trim();
-  }
-
-  private buildContent(
-    frontmatter: string,
-    preamble: string,
-    entries: RandomTableEntry[],
-    linkedFolder?: string,
-    suffix?: string,
-  ): string {
-    const rows = entries
-      .map((e) => {
-        const cell = linkedFolder || e.isLink ? `[[${e.result}]]` : e.result;
-        return `| ${escapeTableCell(cell)} | ${e.weight} |`;
-      })
-      .join("\n");
-    const tableBlock = `| Result | Weight |\n|--------|--------|\n${rows}`;
-    const parts: string[] = [];
-    if (frontmatter) parts.push(frontmatter);
-    if (preamble) parts.push(preamble);
-    parts.push(tableBlock);
-    let result = parts.join("\n\n") + "\n";
-    if (suffix) result += "\n" + suffix;
-    return result;
-  }
+/** A typed weight: a whole number ≥ 0; anything else counts as 1. */
+function readWeight(value: string): number {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 1;
 }

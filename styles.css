@@ -3744,6 +3744,40 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     margin-top: 4px;
 }
+.duckmage-table-editor-warning,
+.duckmage-rt-banner {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
+.duckmage-rt-banner-list {
+    margin: 0 0 4px;
+    padding-left: 18px;
+}
+.duckmage-rt-banner-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.duckmage-roll-face {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2px;
+}
+.duckmage-table-editor-range {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+}
 .duckmage-table-editor-footer {
     display: flex;
     justify-content: flex-end;
