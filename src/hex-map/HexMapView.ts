@@ -32,7 +32,7 @@ import { pathClickOutcome, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints } from "./ghostPaths";
-import { fitToSafeArea, overlayInsets, revealDelta, uncoverEdgeDelta, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
+import { fitToSafeArea, overlayInsets, revealDelta, uncoverEdgeDelta, unionBoxes, usableInsets, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { pickTokenFill } from "./tokenDefaults";
 import { hexHoverLabel } from "./hexHover";
@@ -3276,13 +3276,42 @@ export class HexMapView extends ItemView {
     const gridW = gridEl.offsetWidth;
     const gridH = gridEl.offsetHeight;
     if (clipW === 0 || clipH === 0 || gridW === 0 || gridH === 0) return;
-    // Fit into the part of the view the toolbar rows and an open side
-    // panel don't cover, so no hex starts out hidden under them.
-    const fit = fitToSafeArea(clipW, clipH, gridW, gridH, this.measureOverlayInsets());
+    // Fit the map's content (edge hexes plus the neighbour strip) into the
+    // part of the view the toolbar rows and an open side panel don't cover,
+    // so no hex starts out hidden under them. Content is measured on screen
+    // and mapped back to unzoomed viewport units (screen = clip + pan + v·zoom).
+    const clipRect = clipEl.getBoundingClientRect();
+    const content = this.measureContentBox();
+    const z0 = Math.max(0.01, this.zoom);
+    const vx = content ? (content.left - clipRect.left - this.panX) / z0 : 0;
+    const vy = content ? (content.top - clipRect.top - this.panY) / z0 : 0;
+    const vw = content ? (content.right - content.left) / z0 : gridW;
+    const vh = content ? (content.bottom - content.top) / z0 : gridH;
+    const fit = fitToSafeArea(clipW, clipH, vw, vh, this.measureOverlayInsets());
     this.zoom = fit.zoom;
-    this.panX = fit.panX;
-    this.panY = fit.panY;
+    this.panX = fit.panX - vx * fit.zoom;
+    this.panY = fit.panY - vy * fit.zoom;
     this.applyTransform();
+  }
+
+  /** Screen box of the map's content: the grid's edge hexes (a flat-top
+   *  grid's last column pokes out of the grid element) and the neighbour
+   *  strip. Reads only. */
+  private measureContentBox(): Box | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return null;
+    const map = this.getActiveMap();
+    const { x: ox, y: oy } = map.gridOffset;
+    const { cols, rows } = map.gridSize;
+    const edge = [`[data-x="${ox}"]`, `[data-x="${ox + cols - 1}"]`, `[data-y="${oy}"]`, `[data-y="${oy + rows - 1}"]`]
+      .map((s) => `.duckmage-hex${s}`)
+      .join(", ");
+    const els = [
+      grid,
+      ...Array.from(grid.querySelectorAll<HTMLElement>(edge)),
+      ...Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-region-shadow-hex")),
+    ];
+    return unionBoxes(els.map((el) => el.getBoundingClientRect()));
   }
 
   /**
@@ -3309,11 +3338,11 @@ export class HexMapView extends ItemView {
    */
   private uncoverGrid(): void {
     const clipEl = this.viewportEl?.parentElement;
-    const gridEl = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    if (!clipEl || !gridEl) return;
+    if (!clipEl) return;
     const clip = clipEl.getBoundingClientRect();
     if (clip.width === 0 || clip.height === 0) return;
-    const g = gridEl.getBoundingClientRect();
+    const g = this.measureContentBox();
+    if (!g) return;
     const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
     const dx = uncoverEdgeDelta(g.left - clip.left, g.right - clip.left, ins.left, clip.width - ins.right, 0, clip.width);
     const dy = uncoverEdgeDelta(g.top - clip.top, g.bottom - clip.top, ins.top, clip.height - ins.bottom, 0, clip.height);

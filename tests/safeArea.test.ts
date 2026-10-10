@@ -9,6 +9,7 @@ import {
 	overlayInsets,
 	revealDelta,
 	uncoverEdgeDelta,
+	unionBoxes,
 	usableInsets,
 } from "../src/hex-map/safeArea";
 
@@ -102,11 +103,28 @@ describe("uncoverEdgeDelta (a panel or the mode bar opens over the map)", () => 
 	});
 });
 
+describe("unionBoxes (the map's content box)", () => {
+	it("covers the grid, its overhanging edge hexes and the neighbour strip", () => {
+		const grid = { left: 539, top: 198, right: 1230, bottom: 886 };
+		const lastCol = { left: 1175, top: 200, right: 1245, bottom: 260 };
+		const strip = { left: 541, top: 135, right: 1245, bottom: 195 };
+		expect(unionBoxes([grid, lastCol, strip])).toEqual({ left: 539, top: 135, right: 1245, bottom: 886 });
+	});
+	it("ignores empty boxes and returns null for none", () => {
+		const empty = { left: 0, top: 0, right: 0, bottom: 0 };
+		expect(unionBoxes([empty])).toBeNull();
+		expect(unionBoxes([empty, { left: 1, top: 2, right: 3, bottom: 4 }])).toEqual({ left: 1, top: 2, right: 3, bottom: 4 });
+	});
+});
+
 describe("the map keeps hexes clear of its overlays", () => {
 	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
 
 	it("fitting, centring, flashing and opening a panel all respect the overlays", () => {
-		expect(view).toMatch(/fitToSafeArea\(clipW, clipH, gridW, gridH, this\.measureOverlayInsets\(\)\)/);
+		expect(view).toMatch(/fitToSafeArea\(clipW, clipH, vw, vh, this\.measureOverlayInsets\(\)\)/);
+		// The content box (edge hexes + neighbour strip), not the grid element.
+		expect(view).toMatch(/private uncoverGrid[\s\S]{0,400}const g = this\.measureContentBox\(\);/);
+		expect(view).toMatch(/private measureContentBox[\s\S]{0,900}duckmage-region-shadow-hex/);
 		expect(view).toMatch(/private flashHex[\s\S]{0,250}this\.revealHexEl\(hexEl\);/);
 		expect(view).toMatch(/toolsPanel\.onAfterOpen = \(\) => this\.uncoverGrid\(\);/);
 		expect(view).toMatch(/centerOnHex[\s\S]{0,1400}this\.measureOverlayInsets\(\)/);

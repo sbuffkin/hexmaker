@@ -109,3 +109,22 @@ export function uncoverEdgeDelta(
   if (end <= viewEnd && end > safeEnd) return safeEnd - end;
   return 0;
 }
+
+/** The smallest box around all non-empty boxes, or null if there are none.
+ *  The map's content box: its edge hexes (a flat-top grid's last column
+ *  pokes out of the grid element by a quarter hex) plus the neighbour strip. */
+export function unionBoxes(boxes: readonly Box[]): Box | null {
+  let out: Box | null = null;
+  for (const b of boxes) {
+    if (!(b.right > b.left && b.bottom > b.top)) continue;
+    out = out
+      ? {
+          left: Math.min(out.left, b.left),
+          top: Math.min(out.top, b.top),
+          right: Math.max(out.right, b.right),
+          bottom: Math.max(out.bottom, b.bottom),
+        }
+      : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
+  }
+  return out;
+}
