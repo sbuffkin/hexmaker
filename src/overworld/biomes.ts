@@ -14,6 +14,7 @@
 import type { HexWfcModel, TerrainEntry } from "../../packages/hex-wfc/src/model";
 import { mapTerrainsByType } from "../worldgen/builtinGenerators";
 import type { TerrainColor } from "../types";
+import { typesInGroup } from "../terrainTypes";
 
 export type BiomeId = string;
 export const OPEN_SEA = "open-sea";
@@ -41,10 +42,11 @@ export interface BiomeInfo {
 }
 
 /**
- * Terrain types that are water, for islands (landShare / minIslands): every
- * other type is land, except settlements. Types only, never names.
+ * Terrain types that are water, for islands (landShare / minIslands): the
+ * terrain types data's water group, so a new water type counts without a
+ * code change. Every other type is land, except settlements. Never names.
  */
-export const WATER_TYPES: readonly string[] = ["water", "deep-water", "shallows"];
+export const WATER_TYPES: readonly string[] = typesInGroup("water");
 /**
  * Rings round a placed island, inner first: a ring is painted only when the
  * biome's generator has that type on the palette.
