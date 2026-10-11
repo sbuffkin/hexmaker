@@ -901,6 +901,8 @@ function regionField(
 }
 
 const SEA_TYPES = new Set(["water", "deep-water", "shallows"]);
+/** Fewest hexes a land neighbour's terrain gets along its side (when its land reaches that far). */
+const MIN_SIDE_STAMP = 3;
 
 /**
  * Region detail's card promises e.g. "evergreen heavy on the north-east and
@@ -946,6 +948,20 @@ function stampNeighbourTerrains(
       cells.set(k, name);
       stamped++;
     });
+    // Few or none of its kind turned up (a swamp beside a forest hex: the
+    // blend rarely makes wetland): the hexes that side reaches hardest
+    // still take its terrain, a ragged strip along that edge (round 6 U6:
+    // the swamp to the south-west showed as one corner hex at most).
+    if (stamped < MIN_SIDE_STAMP) {
+      hexes.forEach(([x, y], i) => {
+        const o = owner[i];
+        if (!o || o.s !== s || isSea[i] || o.w < 0.45 + (noise[i] - 0.5) * 0.3) return;
+        const k = cellKey(x, y);
+        if (cells.get(k) === name) return;
+        cells.set(k, name);
+        stamped++;
+      });
+    }
     if (stamped > 0) continue;
     let best = -1;
     hexes.forEach((_, i) => {

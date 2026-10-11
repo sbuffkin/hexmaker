@@ -39,6 +39,7 @@ function makePlugin(hexPathFn: (x: number, y: number) => string) {
 		},
 		availableIcons: [],
 		terrainEncounterLinkFor: () => null,
+		syncHexMapData: mock.fn(async () => ({ wrote: false, applied: [], notApplied: [], unreadable: [] })),
 	} as unknown as import("../src/HexmakerPlugin").default;
 }
 

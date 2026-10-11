@@ -8789,3 +8789,34 @@ textarea.duckmage-edit-region-notes-input {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+/* S11: a moon tied to its planet (a faint dashed tether). */
+.duckmage-moon-link {
+    stroke: #d7deff;
+    opacity: 0.55;
+}
+/* E4: a palette picker shows the picked palette's terrains (named on hover). */
+.duckmage-palette-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-palette-preview-count {
+    flex: none;
+    line-height: 14px;
+}
+.duckmage-palette-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 280px;
+}
+.duckmage-palette-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--duckmage-swatch, #888888);
+    border: 1px solid var(--background-modifier-border);
+}
