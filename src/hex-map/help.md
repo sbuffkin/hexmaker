@@ -63,10 +63,18 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 
 ## Drawing tools
 
-### Road / River
-Paint a connected chain of road or river hexes. Left-click hexes to extend the chain; right-click a hex already in the chain to remove it. Each chain is drawn as a colored line connecting adjacent hexes.
+### Paths
+Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker; click one there to select it.
 
-**Auto-route** (in the path picker, or the bar at the top while drawing): click a start hex, then an end hex, and the path finds its own way around impassable terrain, keeping close to the straight line. In the picker, choose how to draw first, then the path type; you can switch either way later from the bar. Mark terrains impassable in the palette editor (every water-type terrain, in any palette, is impassable by default). Each path type chooses whether it avoids them (roads do, rivers don't); tick **Cross impassable** in the bar to go through once. Rivers wind gently; roads keep straight. Starting on the end of a path of the same type continues it; starting anywhere else makes a new path.
+- **Draw:** click a hex to start, then keep clicking. Each click adds a point and the path finds its way there from the end, around impassable terrain, so you can click far away. In hex-by-hex mode, click neighbouring hexes; a click further away is routed too, and the bar says so. Click the end again, press **Esc** or **Done** to finish.
+- **Select:** click a path. Its points show as handles; the bigger ones are its ends.
+- **Continue or fork:** with a path selected, click an end to carry on from it, or click anywhere else on it to start a fork there. A path and its forks are one path in the map note.
+- **Reshape:** drag any part of the selected path. Grabbing a point moves it; grabbing the line adds a point there. The new route shows as you drag; let go to keep it, or drop it back where it was to cancel.
+- **New path:** **Alt-click**, or **New path** in the bar, starts a new path even on top of another one (a crossroads of two roads).
+- **Delete:** right-click a handle, or hover one and press **Backspace**. Backspace while drawing removes the last point. Right-click a path for **Split here**, **Delete this fork**, **Delete path**, **Rename…**, **Change type…** and **Reverse**. In erase mode (the picker's ✕), click a path to split it there.
+- **Esc** steps out one level: finish the branch, then deselect, then leave the tool. **Ctrl/Cmd+Z** undoes each change.
+
+Mark terrains impassable in the palette editor (every water-type terrain is impassable by default). Each path type chooses whether it goes around them (roads do, rivers don't) and whether it winds. Tick **Cross impassable** in the bar to let the next legs go through. If painting terrain, changing the palette, resizing the map or changing a type's routing would move an existing path, it keeps its route (points are added to hold it) and a notice offers **Reroute instead**; undoing the paint stroke undoes that too.
 
 ### Terrain
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.

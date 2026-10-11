@@ -1,6 +1,7 @@
 /**
- * Pure helpers for the map's drawing tools (path clicks, the on-map mode
- * indicator). Kept free of Obsidian imports so they're unit-testable.
+ * Pure helpers for the map's drawing tools (the on-map mode indicator).
+ * Kept free of Obsidian imports so they're unit-testable. What a path-tool
+ * click does is pathClickOutcome in pathTool.ts.
  */
 
 export type DrawingMode =
@@ -14,25 +15,6 @@ export type DrawingMode =
   | "swap"
   | "placeToken";
 
-/**
- * What a left-click on hex `key` does while drawing a path:
- * - "start": no path in progress, so start one here;
- * - "extend": `key` neighbours the end of the path in progress;
- * - "same": `key` IS the end of the path (ignore — don't stack a dot);
- * - "restart": `key` isn't next to the end, so a new path starts there.
- *   Paths go hex by hex, so the caller should say so (fresh-eyes T7: two
- *   distant clicks silently gave a single dot).
- */
-export function pathClickOutcome(
-  activeEnd: string | null,
-  key: string,
-  neighbourKeysOfEnd: readonly string[],
-): "start" | "extend" | "same" | "restart" {
-  if (activeEnd === null) return "start";
-  if (key === activeEnd) return "same";
-  return neighbourKeysOfEnd.includes(key) ? "extend" : "restart";
-}
-
 export interface ToolModeState {
   mode: DrawingMode | null;
   erasing: boolean;
@@ -43,10 +25,17 @@ export interface ToolModeState {
   iconName?: string | null;
   iconGmOnly?: boolean;
   pathTypeName?: string | null;
-  /** Path tool in auto-route mode (click a start, then an end). */
+  /** Path tool in auto-route mode (far clicks are routed). */
   pathAuto?: boolean;
-  /** Auto-route: a start (or the end of the last route) is set. */
-  pathHasStart?: boolean;
+  /** A branch is being drawn (clicks add anchors). */
+  pathDrawing?: boolean;
+  /** The selected path's name, and "Road, 2 forks". */
+  pathSelected?: string | null;
+  pathSummary?: string | null;
+  /** "New path" pressed: the next click starts one. */
+  pathNew?: boolean;
+  /** A short note about the last click. */
+  pathNote?: string | null;
   tablePath?: string | null;
   submapName?: string | null;
   factionPath?: string | null;
@@ -78,14 +67,22 @@ export function toolModeLabel(s: ToolModeState): string | null {
       if (erasing || !s.iconName) return `Erasing ${what}s`;
       return `Painting ${what}: ${baseName(s.iconName)}`;
     }
-    case "path":
-      if (erasing) return "Erasing paths: click a path hex to remove it";
-      if (s.pathAuto) {
-        return s.pathHasStart
-          ? `Auto-routing ${s.pathTypeName ?? "path"}: click where it goes`
-          : `Auto-routing ${s.pathTypeName ?? "path"}: click the start hex`;
+    case "path": {
+      if (erasing) return "Erasing paths: click a path to split it there";
+      const type = s.pathTypeName ?? "Path";
+      const how = s.pathAuto ? "auto-routes" : "hex by hex";
+      const note = s.pathNote ? ` · ${s.pathNote}` : "";
+      if (s.pathNew) return `New ${type}: click where it starts`;
+      if (s.pathDrawing) {
+        const name = s.pathSelected ?? `New ${type}`;
+        return `${name}: click to add (${how}) · Esc to finish${note}`;
       }
-      return `Drawing ${s.pathTypeName ?? "path"}: click neighbouring hexes`;
+      if (s.pathSelected) {
+        const what = s.pathSummary && s.pathSummary !== s.pathSelected ? ` (${s.pathSummary})` : "";
+        return `${s.pathSelected}${what}: drag the line to reshape · click an end to continue · click the line to fork${note}`;
+      }
+      return `${type}: click to start a path · click a path to edit it${note}`;
+    }
     case "tableLink":
       return erasing ? "Unlinking tables" : `Linking table: ${baseName(s.tablePath) || "…"}`;
     case "submapLink":
