@@ -34,7 +34,7 @@ import {
   splitBranchAt,
 } from "../paths/edit";
 import { anchorsFor, routeFnFor } from "../paths/fromHexes";
-import { canEditPaths, type PathEditAction } from "../paths/editGate";
+import { canEditPaths, PATH_EDIT_LOCKED_HINT, type PathEditAction } from "../paths/editGate";
 import { pathRouteText } from "../maps/mapNote";
 import { pathRouteStats } from "../maps/MapStore";
 import { impassableNames, noRouteMessage } from "../impassable";
@@ -480,7 +480,7 @@ export class PathTool {
   private commit(next: MapPath[], action: PathEditAction = "draw"): boolean {
     const map = this.map;
     if (!canEditPaths(map, action)) {
-      new Notice("Paths can't be changed on this map right now.");
+      new Notice(PATH_EDIT_LOCKED_HINT);
       return false;
     }
     const before = clonePaths(this.paths());
@@ -500,7 +500,7 @@ export class PathTool {
   /** Undo / redo of a path step: restore a snapshot (through the gate). */
   applySnapshot(mapName: string, paths: MapPath[]): void {
     if (!canEditPaths(mapName, "history")) {
-      new Notice("Paths can't be changed on this map right now.");
+      new Notice(PATH_EDIT_LOCKED_HINT);
       return;
     }
     this.plugin.pathPins.sync(mapName);

@@ -35,6 +35,7 @@ import { SetupWizardView } from "./SetupWizardView";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
+import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, newTerrains, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type SectionWordsFn } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
@@ -133,6 +134,7 @@ export default class HexmakerPlugin extends Plugin {
     // Icon pickers open on the Space tab for space-only setups.
     setIconPackDefault(() => defaultIconPack(this.settings));
     setHexDataSource(this.mapStore);
+    setPathEditMapLookup((name) => this.getMap(name));
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
     // Defer until vault metadata cache is ready; calling before layout-ready
