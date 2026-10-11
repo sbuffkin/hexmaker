@@ -43,6 +43,8 @@ import {
   isCompass,
   type Compass,
 } from "../../packages/hex-wfc/src";
+import { generatorMetaLinks, generatorMetaNames, type GeneratorRefNotes } from "./generatorRefs";
+import { pathLink } from "../noteFormats";
 
 /** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
 export const LOCK_KEY = "locked";
@@ -56,6 +58,36 @@ export interface GeneratorFile {
 export function generatorsFolder(plugin: HexmakerPlugin): string {
   const world = normalizeFolder(plugin.settings.worldFolder);
   return world ? `${world}/generators` : "generators";
+}
+
+/** Where the palettes, maps and generators a generator names have notes (for writing links; see generatorRefs.ts). */
+export function generatorRefNotes(plugin: HexmakerPlugin): GeneratorRefNotes {
+  // Tolerant of a partial plugin (tests, early startup): no store, no link.
+  const p = plugin as Partial<Pick<HexmakerPlugin, "paletteStore" | "mapStore" | "getMap">> & Pick<HexmakerPlugin, "app" | "settings">;
+  const isFile = (path: string | undefined) => !!path && p.app.vault.getAbstractFileByPath(path) instanceof TFile;
+  return {
+    palette: (name) => {
+      const path = p.paletteStore?.notePathOf?.(name);
+      return isFile(path) ? path : undefined;
+    },
+    map: (name) => !!p.getMap?.call(plugin, name) && isFile(p.mapStore?.notePath?.(name)),
+    generator: (name) => {
+      const folder = generatorsFolder(plugin) + "/";
+      return p.app.vault.getMarkdownFiles?.().find((f) => f.basename === name && f.path.startsWith(folder))?.path;
+    },
+  };
+}
+
+/** A generator note's text, with the notes it names written as links. */
+export function generatorText(plugin: HexmakerPlugin, model: HexWfcModel): string {
+  return modelToMarkdown({ ...model, meta: generatorMetaLinks(model.meta, generatorRefNotes(plugin)) });
+}
+
+/** Read a generator note: its references (links or plain names) come back as plain names. */
+export function parseGeneratorText(text: string, fallbackName?: string): ReturnType<typeof parseModelMarkdown> {
+  const r = parseModelMarkdown(text, fallbackName);
+  r.model.meta = generatorMetaNames(r.model.meta);
+  return r;
 }
 
 /** Where generator saves (presets with their generated map) are kept. */
@@ -75,7 +107,7 @@ export async function listGenerators(plugin: HexmakerPlugin): Promise<GeneratorF
     const text = await plugin.app.vault.cachedRead(file);
     if (!isModelMarkdown(text)) continue;
     try {
-      const { model, warnings } = parseModelMarkdown(text, file.basename);
+      const { model, warnings } = parseGeneratorText(text, file.basename);
       out.push({ file, model, warnings });
     } catch {
       /* not a generator after all */
@@ -391,7 +423,7 @@ export async function saveGeneratorFromMaps(
     path = `${folder}/${name}-${n}.md`;
     model.name = `${name}-${n}`;
   }
-  const file = await plugin.app.vault.create(path, modelToMarkdown(model));
+  const file = await plugin.app.vault.create(path, generatorText(plugin, model));
   return { file, model };
 }
 
@@ -420,10 +452,11 @@ export async function deleteGenerators(plugin: HexmakerPlugin, files: TFile[]): 
  * frontmatter changes, so the tables and any notes the user wrote are kept.
  * A value of `undefined` removes the setting (back to the default).
  */
-/** Set the palette a generator belongs to (its `palette` frontmatter). */
+/** Set the palette a generator belongs to (its `palette` frontmatter: a link to the palette's note when it has one). */
 export async function setGeneratorPalette(plugin: HexmakerPlugin, file: TFile, palette: string): Promise<void> {
+  const link = pathLink(generatorRefNotes(plugin).palette?.(palette));
   await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-    fm.palette = palette;
+    fm.palette = link ?? palette;
   });
 }
 
@@ -655,7 +688,7 @@ export async function relearnGenerator(
   if ("error" in learned) return learned;
   const { model } = learned;
   keepSettings(model, g.model, dirs);
-  await plugin.app.vault.modify(g.file, modelToMarkdown(model));
+  await plugin.app.vault.modify(g.file, generatorText(plugin, model));
   return { model };
 }
 
@@ -738,7 +771,7 @@ export async function saveGeneratorModel(plugin: HexmakerPlugin, model: HexWfcMo
     path = `${folder}/${name}-${n}.md`;
     saved.name = `${name}-${n}`;
   }
-  const file = await plugin.app.vault.create(path, modelToMarkdown(saved));
+  const file = await plugin.app.vault.create(path, generatorText(plugin, saved));
   return { file, model: saved };
 }
 
@@ -775,6 +808,6 @@ export async function reblendGenerator(
   directions?: Compass[],
 ): Promise<{ model: HexWfcModel } | { error: string }> {
   const r = await remakeBlend(plugin, g.model, influence, directions);
-  if ("model" in r) await plugin.app.vault.modify(g.file, modelToMarkdown(r.model));
+  if ("model" in r) await plugin.app.vault.modify(g.file, generatorText(plugin, r.model));
   return r;
 }

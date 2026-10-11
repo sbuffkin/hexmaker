@@ -7,9 +7,9 @@ import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { slugify } from "../utils";
 import { VERSION_KEY } from "../compat";
-import { generatorsFolder, savesFolder, listGenerators, saveGeneratorSettings, type GeneratorFile } from "./generators";
+import { generatorsFolder, savesFolder, listGenerators, parseGeneratorText, saveGeneratorSettings, type GeneratorFile } from "./generators";
 import { parseSave, retargetSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "./saveFormat";
-import { parseModelMarkdown, SETTING_KEYS, type GeneratorSettings } from "../../packages/hex-wfc/src";
+import { SETTING_KEYS, type GeneratorSettings } from "../../packages/hex-wfc/src";
 
 /** A save as listed (frontmatter only; the file is parsed on load). */
 export interface SaveEntry {
@@ -77,8 +77,13 @@ export async function applySave(
   save: GeneratorSave,
 ): Promise<{ file: TFile; recreated: boolean } | { error: string }> {
   const generators = await listGenerators(plugin);
+  // generator-path is a link (or an older plain path); a short link resolves the way Obsidian does.
+  const linked = save.generatorPath
+    ? plugin.app.metadataCache.getFirstLinkpathDest(save.generatorPath.replace(/\.md$/i, ""), "")?.path
+    : undefined;
   let g: GeneratorFile | undefined =
-    generators.find((x) => x.file.path === save.generatorPath) ?? generators.find((x) => x.model.name === save.generatorName);
+    generators.find((x) => x.file.path === save.generatorPath || x.file.path === linked)
+    ?? generators.find((x) => x.model.name === save.generatorName);
   let recreated = false;
   if (!g) {
     if (!save.generatorMarkdown) return { error: `Generator "${save.generatorName}" no longer exists and the save has no copy of it.` };
@@ -88,7 +93,7 @@ export async function applySave(
     let path = `${folder}/${base}.md`;
     for (let n = 2; plugin.app.vault.getAbstractFileByPath(path); n++) path = `${folder}/${base}-${n}.md`;
     const file = await plugin.app.vault.create(path, save.generatorMarkdown);
-    const { model, warnings } = parseModelMarkdown(save.generatorMarkdown, file.basename);
+    const { model, warnings } = parseGeneratorText(save.generatorMarkdown, file.basename);
     g = { file, model, warnings };
     recreated = true;
   }

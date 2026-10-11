@@ -3,6 +3,7 @@ import { impassableNoteCell, parseImpassableCell } from "../impassable";
 import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
 import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
 import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
+import { pathLink, refBasename } from "../noteFormats";
 
 // Plain-text palette notes.
 //
@@ -203,18 +204,29 @@ export function readChildPalette(content: string): string | undefined {
   if (!m) return undefined;
   const raw = m[1].trim();
   const unquoted = /^(["']).*\1$/.test(raw) ? raw.slice(1, -1) : raw;
-  return unquoted.trim() || undefined;
+  // A link to the palette's note (`[[world/palettes/Space - System]]`) or its name.
+  return refBasename(unquoted) || undefined;
 }
 
 /**
- * Set or clear `child-palette:` in the note's frontmatter. Returns the
- * content untouched when it already holds that value (so a CRLF note isn't
+ * The `child-palette:` value to write: a link to the palette's note when
+ * it has one (`note`, its vault path), else the name as typed.
+ */
+export function childPaletteValue(value: string, note?: string): string {
+  const link = pathLink(note);
+  return link && refBasename(link) === value ? link : value;
+}
+
+/**
+ * Set or clear `child-palette:` in the note's frontmatter (a link when
+ * `note`, the child palette's note path, is given). Returns the content
+ * untouched when it already holds that value (so a CRLF note isn't
  * rewritten just to normalise line endings).
  */
-export function setChildPalette(content: string, value: string | undefined): string {
+export function setChildPalette(content: string, value: string | undefined, note?: string): string {
   if (readChildPalette(content) === (value || undefined)) return content;
   const text = content.replace(/\r\n?/g, "\n");
-  const line = value ? `child-palette: ${JSON.stringify(value)}\n` : "";
+  const line = value ? `child-palette: ${JSON.stringify(childPaletteValue(value, note))}\n` : "";
   const fm = FRONTMATTER.exec(text);
   if (!fm) return value ? `---\n${line}---\n${text}` : text;
   let body = fm[1] + "\n";
@@ -390,11 +402,11 @@ export function setSubmapDefaults(content: string, defaults: Record<string, Subm
 }
 
 /** A complete new palette note. */
-export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string, kind?: MapKind): string {
+export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string, kind?: MapKind, childNote?: string): string {
   return [
     "---",
     `${PALETTE_NOTE_MARKER}: 1`,
-    ...(childPalette ? [`child-palette: ${JSON.stringify(childPalette)}`] : []),
+    ...(childPalette ? [`child-palette: ${JSON.stringify(childPaletteValue(childPalette, childNote))}`] : []),
     ...(kind ? [`map-kind: ${kind}`] : []),
     "---",
     "",

@@ -31,6 +31,25 @@
 
 import { VERSION_KEY } from "../compat";
 import type { GeneratorSettings } from "../../packages/hex-wfc/src";
+import { noteRefTarget, pathLink } from "../noteFormats";
+
+/**
+ * `generator-path` as read: a link (`[[world/generators/bay-area]]`, the
+ * form written now, so renaming the generator through Obsidian updates it)
+ * or a plain path (older saves) → a vault path ending in ".md". A short
+ * link (`[[bay-area]]`, what Obsidian may write after a rename) comes back
+ * as `bay-area.md`: the caller resolves it like a link (saves.ts).
+ */
+export function generatorPathOf(value: string | undefined): string {
+  const { target } = noteRefTarget(value ?? "");
+  if (!target) return "";
+  return /\.md$/i.test(target) ? target : `${target}.md`;
+}
+
+/** `generator-path` as written: a link to the generator's note (plain when it can't be one). */
+export function generatorPathValue(path: string): string {
+  return (path && pathLink(path)) || path;
+}
 
 export const SAVE_FORMAT = 1;
 export const SAVE_MARKER = "hexmaker-save";
@@ -147,13 +166,18 @@ export function retargetSave(text: string, from: { name: string; path: string },
       return raw;
     }
   };
-  const path = value("generator-path"), name = value("generator");
-  if (!(path ? path === from.path : name === from.name)) return text;
+  // A link may already point at the new path: Obsidian updates links when
+  // the file is renamed (a short link `[[name]]` matches by name).
+  const path = generatorPathOf(value("generator-path")), name = value("generator");
+  const base = (p: string) => p.slice(p.lastIndexOf("/") + 1);
+  const pointsAt = (p: string) => path === p || (!path.includes("/") && path === base(p));
+  if (!(path ? pointsAt(from.path) || pointsAt(to.path) : name === from.name)) return text;
   const set = (h: string, key: string, v: string) =>
     new RegExp(`^${key}:[^\\r\\n]*$`, "m").test(h)
       ? h.replace(new RegExp(`^${key}:[^\\r\\n]*$`, "m"), () => `${key}: ${yaml(v)}`)
       : h;
-  return set(set(head, "generator", to.name), "generator-path", to.path) + rest;
+  const next = set(set(head, "generator", to.name), "generator-path", generatorPathValue(to.path)) + rest;
+  return next;
 }
 
 export function serializeSave(s: GeneratorSave): string {
@@ -162,7 +186,7 @@ export function serializeSave(s: GeneratorSave): string {
     `${VERSION_KEY}: ${yaml(s.version)}`,
     `name: ${yaml(s.name)}`,
     `generator: ${yaml(s.generatorName)}`,
-    `generator-path: ${yaml(s.generatorPath)}`,
+    `generator-path: ${yaml(generatorPathValue(s.generatorPath))}`,
     `palette: ${yaml(s.palette)}`,
     `seed: ${s.seed}`,
     `size: ${s.cols}x${s.rows}`,
@@ -272,7 +296,7 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
       format,
       created: fm.created ?? "",
       generatorName: fm.generator ?? "",
-      generatorPath: fm["generator-path"] ?? "",
+      generatorPath: generatorPathOf(fm["generator-path"]),
       palette: fm.palette ?? "",
       seed: Number(fm.seed) >>> 0,
       cols,

@@ -273,6 +273,17 @@ function yamlValue(v: string): string {
   return /^[A-Za-z0-9_][A-Za-z0-9 _./()-]*$/.test(v) && !v.endsWith(" ") ? v : JSON.stringify(v);
 }
 
+/** A meta value that is a list of strings in JSON form (`["a", "b"]`): written as a YAML flow list. */
+function isFlowList(v: string): boolean {
+  if (!v.startsWith("[") || v.startsWith("[[")) return false;
+  try {
+    const x = JSON.parse(v) as unknown;
+    return Array.isArray(x) && x.every((i) => typeof i === "string");
+  } catch {
+    return false;
+  }
+}
+
 function parseYamlValue(raw: string): string {
   const v = raw.trim();
   if (v.startsWith('"')) {
@@ -347,7 +358,7 @@ export function modelToMarkdown(model: HexWfcModel): string {
   }
   for (const [k, v] of Object.entries(model.meta)) {
     if (reserved.has(k)) continue;
-    fm.push(`${k}: ${yamlValue(v)}`);
+    fm.push(`${k}: ${isFlowList(v) ? v : yamlValue(v)}`);
   }
   const withLayout = model.terrains.filter((t) => layoutSize(t.layout));
   const layout5 = withLayout.some((t) => layoutSize(t.layout) === 5);
@@ -515,6 +526,12 @@ export function parseModelMarkdown(text: string, fallbackName = "Untitled"): Par
         const decoded = decodeSetting(field, value);
         if ("error" in decoded) warnings.push(`Setting "${key}: ${value}" ${decoded.error}, ignored`);
         else settings[field] = decoded.value;
+      } else if (value === "" && /^\s+-(\s|$)/.test(lines[i + 1] ?? "")) {
+        // A block list (Obsidian's Properties panel writes lists this way):
+        // kept as a flow list, `["a", "b"]`, like one written inline.
+        const items: string[] = [];
+        while (/^\s+-(\s|$)/.test(lines[i + 1] ?? "")) items.push(parseYamlValue(lines[++i].replace(/^\s+-/, "")));
+        meta[key] = `[${items.map((x) => JSON.stringify(x)).join(", ")}]`;
       } else meta[key] = value;
     }
     i++;

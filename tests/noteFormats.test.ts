@@ -231,9 +231,9 @@ describe("one-time note-format rewrite", () => {
 		const { vault, host, saves, memory } = vaultHost(before);
 		const results = await runNoteFormatUpgrades(host);
 		expect(results.map((r) => [r.id, r.changed.length, r.error])).toEqual([
-			["hex-map-key", 1, undefined], ["hex-body-lines", 1, undefined], ["note-links", 3, undefined],
+			["hex-map-key", 1, undefined], ["hex-body-lines", 1, undefined], ["note-links", 3, undefined], ["ref-links", 0, undefined],
 		]);
-		expect(host.settings.noteFormatUpgrades).toEqual(["hex-map-key", "hex-body-lines", "note-links"]);
+		expect(host.settings.noteFormatUpgrades).toEqual(["hex-map-key", "hex-body-lines", "note-links", "ref-links"]);
 		expect(saves()).toBe(1);
 
 		const hex = vault.files.get(`${HEX}/the-coast/0_1.md`)!;
@@ -275,7 +275,7 @@ describe("one-time note-format rewrite", () => {
 		const snapshot = new Map(vault.files);
 		const writes = vault.writes.length;
 		const binaries = vault.binaries.size;
-		for (const id of ["hex-map-key", "hex-body-lines", "note-links"] as const) {
+		for (const id of ["hex-map-key", "hex-body-lines", "note-links", "ref-links"] as const) {
 			const r = await runUpgrade(host, id);
 			expect(r.changed).toEqual([]);
 			expect(r.backup).toBeUndefined();
@@ -306,8 +306,9 @@ describe("one-time note-format rewrite", () => {
 		expect(results.every((r) => r.changed.length === 0)).toBe(true);
 		expect(results.filter((r) => r.error).map((r) => r.id)).toEqual(["hex-map-key", "hex-body-lines", "note-links"]);
 		expect(new Map(vault.files)).toEqual(new Map(Object.entries(before)));
-		expect(host.settings.noteFormatUpgrades).toBeUndefined();
-		expect(saves()).toBe(0);
+		// Only the upgrade with nothing to change here (no palettes) is recorded.
+		expect(host.settings.noteFormatUpgrades).toEqual(["ref-links"]);
+		expect(saves()).toBe(1);
 	});
 
 	it("leaves a map that isn't loaded for later, and keeps ids it doesn't know", async () => {
@@ -318,6 +319,6 @@ describe("one-time note-format rewrite", () => {
 		expect(r.changed).toEqual([]);
 		expect(r.skipped.map((s) => s.path)).toEqual([`${HEX}/the-coast/0_1.md`]);
 		expect(vault.files.get(`${HEX}/the-coast/0_1.md`)).toContain("**Terrain:** mountain");
-		expect(host.settings.noteFormatUpgrades).toEqual(["from-a-newer-build", "hex-map-key", "note-links", "hex-body-lines"]);
+		expect(host.settings.noteFormatUpgrades).toEqual(["from-a-newer-build", "hex-map-key", "note-links", "hex-body-lines", "ref-links"]);
 	});
 });
