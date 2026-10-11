@@ -3,6 +3,9 @@
  * indicator). Kept free of Obsidian imports so they're unit-testable.
  */
 
+/** The drawing-panel tool that paints region notes (the region overlay). Not "Regions": that's the overworld view. */
+export const REGION_AREAS_TOOL = "Region areas";
+
 export type DrawingMode =
   | "path"
   | "terrain"
@@ -93,7 +96,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
     case "factionLink":
       return erasing ? "Erasing factions" : `Painting faction: ${baseName(s.factionPath) || "…"}`;
     case "regionLink":
-      return erasing ? "Erasing regions" : `Painting region: ${baseName(s.regionPath) || "…"}`;
+      return erasing ? "Erasing region areas" : `Painting region area: ${baseName(s.regionPath) || "…"}`;
     case "swap":
       return "Swapping hexes: click two hexes";
     case "placeToken":

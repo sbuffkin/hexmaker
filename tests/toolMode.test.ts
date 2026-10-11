@@ -105,7 +105,7 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths/);
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true })).toBe("Auto-routing Road: click the start hex");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathHasStart: true })).toBe("Auto-routing Road: click where it goes");
-		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region: Kerrigan");
+		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region area: Kerrigan");
 		expect(toolModeLabel({ mode: "factionLink", erasing: true })).toBe("Erasing factions");
 		expect(toolModeLabel({ mode: "tableLink", erasing: false, tablePath: "world/tables/ocean.md" })).toBe("Linking table: ocean");
 		expect(toolModeLabel({ mode: "submapLink", erasing: false, submapName: "deep" })).toBe("Linking submap: deep");

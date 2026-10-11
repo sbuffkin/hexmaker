@@ -17,7 +17,7 @@ import { regionMapAt } from "../maps/submaps";
 import { biomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
-import { canReshape, RESHAPE_LOCKED_HINT } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, canAdd, canReshape, PLACE_LOCKED_HINT, RESHAPE_LOCKED_HINT } from "../workMode";
 import {
   defaultRegionName,
   dominantTerrain,
@@ -166,6 +166,7 @@ export interface CreateRegionOptions extends RegionGenOptions {
  */
 export async function createRegion(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: CreateRegionOptions): Promise<{ name: string } | { error: string }> {
   const parent = plugin.getMap(parentName);
+  if (!canAdd(parent)) return { error: ADD_REGION_LOCKED_HINT };
   if (!parent?.regions) return { error: "Set up this map's regions first." };
   if (!meshes(parent.regions)) return { error: "Hex-flower regions don't join up yet: make this one from the new-map form." };
   const hex = `${px}_${py}`;
@@ -234,6 +235,7 @@ export async function generateMissingRegions(
   parentName: string,
   hooks: { onProgress?: (done: number, total: number, name: string) => void; cancelled?: () => boolean } = {},
 ): Promise<{ made: string[]; errors: string[] }> {
+  if (!canAdd(plugin.getMap(parentName))) return { made: [], errors: [ADD_REGION_LOCKED_HINT] };
   const ow = overworldOf(plugin, parentName);
   if (!ow) return { made: [], errors: ["This map has no rectangle region settings."] };
   const order = regionOrder(missingRegionHexes(plugin, parentName), ow.layout.orientation, ow.layout.parentStagger);
@@ -257,15 +259,21 @@ export function regionBlockKeys(layout: RegionLayout, px: number, py: number): s
 // ── reshaping: set a biome, regenerate, reroll ───────────────────────────
 
 /**
- * Whether reshaping hex (px, py)'s region (swapping its biome, rerolling,
- * regenerating, applying region settings) may go ahead. Making a region
- * for the first time is allowed in Build and God; changing one that's
- * already there needs the map in God mode (src/workMode.ts). No confirm:
- * the mode is the safety catch.
+ * Why setting hex (px, py)'s biome (first placement, or swapping it,
+ * rerolling, regenerating, applying region settings) is locked right now,
+ * or undefined when it may go ahead. A first placement (no region yet)
+ * needs Build or God; changing a region that's already there needs God
+ * (src/workMode.ts). No confirm: the mode is the safety catch.
  */
+export function reshapeLock(plugin: HexmakerPlugin, parentName: string, px: number, py: number): string | undefined {
+  const map = plugin.getMap(parentName);
+  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return canAdd(map) ? undefined : PLACE_LOCKED_HINT;
+  return canReshape(map) ? undefined : RESHAPE_LOCKED_HINT;
+}
+
+/** reshapeLock as a yes/no. */
 export function reshapeGate(plugin: HexmakerPlugin, parentName: string, px: number, py: number): "allowed" | "locked" {
-  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return "allowed";
-  return canReshape(plugin.getMap(parentName)) ? "allowed" : "locked";
+  return reshapeLock(plugin, parentName, px, py) === undefined ? "allowed" : "locked";
 }
 
 /**
@@ -294,8 +302,8 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
 /**
  * Set an overworld hex's biome: paint it with the biome's terrain on the
  * overworld's palette (the terrain IS the biome signal), then make its
- * region (first placement) or regenerate it (God mode only; see
- * reshapeGate). Returns the region's name, or an error.
+ * region (first placement: Build or God) or regenerate it (God only; see
+ * reshapeLock). Returns the region's name, or an error.
  */
 export async function setBiomeAt(
   plugin: HexmakerPlugin,
@@ -310,7 +318,8 @@ export async function setBiomeAt(
   const terrain = representativeTerrain(biome, plugin.getMapPalette(parentName));
   if (!terrain) return { error: "This map's palette has no terrain for that biome." };
   const hex = `${px}_${py}`;
-  if (reshapeGate(plugin, parentName, px, py) === "locked") return { error: RESHAPE_LOCKED_HINT };
+  const lock = reshapeLock(plugin, parentName, px, py);
+  if (lock) return { error: lock };
   if (plugin.mapStore.get(parentName, hex)?.terrain !== terrain) {
     plugin.mapStore.set(parentName, hex, { terrain });
     await plugin.mapStore.flush();

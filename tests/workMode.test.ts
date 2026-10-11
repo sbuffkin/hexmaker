@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { canReshape, parseWorkMode, workModeOf } from "../src/workMode";
-import { reshapeGate, setBiomeAt, regenerateRegion } from "../src/overworld/regionsVault";
+import { canAdd, canReshape, parseWorkMode, workModeOf } from "../src/workMode";
+import { createRegion, generateMissingRegions, reshapeGate, reshapeLock, setBiomeAt, regenerateRegion } from "../src/overworld/regionsVault";
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import type { MapData } from "../src/types";
@@ -24,6 +24,13 @@ describe("work modes (Play / Build / God)", () => {
 		expect(canReshape({ workMode: "build" })).toBe(false);
 		expect(canReshape({ workMode: "play" })).toBe(false);
 		expect(canReshape({})).toBe(false);
+	});
+
+	it("Build and God may add; Play may not", () => {
+		expect(canAdd({ workMode: "god" })).toBe(true);
+		expect(canAdd({ workMode: "build" })).toBe(true);
+		expect(canAdd({})).toBe(true);
+		expect(canAdd({ workMode: "play" })).toBe(false);
 	});
 
 	it("is stored in the map note as a plain `mode:` key and read back", () => {
@@ -56,11 +63,30 @@ describe("reshape gate on an overworld", () => {
 		return { plugin, writes };
 	}
 
-	it("first placement on an empty hex is allowed in every mode", () => {
-		for (const mode of [undefined, "play", "build", "god"]) {
+	it("first placement on an empty hex is allowed in Build and God, not Play", () => {
+		for (const mode of [undefined, "build", "god"]) {
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			expect(reshapeGate(fakePlugin(mode).plugin as any, "ow", 0, 0)).toBe("allowed");
 		}
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		expect(reshapeGate(fakePlugin("play").plugin as any, "ow", 0, 0)).toBe("locked");
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		expect(reshapeLock(fakePlugin("play").plugin as any, "ow", 0, 0)).toBe("Switch to Build to place a biome.");
+	});
+
+	it("in Play, placing a first biome or making regions changes nothing", async () => {
+		const { plugin, writes } = fakePlugin("play");
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const p = plugin as any;
+		expect(await setBiomeAt(p, "ow", 0, 0, "taiga")).toEqual({ error: "Switch to Build to place a biome." });
+		expect(await createRegion(p, "ow", 0, 0, { fill: "match" })).toEqual({ error: "Switch to Build to make a region." });
+		expect(await generateMissingRegions(p, "ow")).toEqual({ made: [], errors: ["Switch to Build to make a region."] });
+		expect(writes).toEqual([]);
+	});
+
+	it("in Play, a placed biome still says to switch to God", () => {
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		expect(reshapeLock(fakePlugin("play").plugin as any, "ow", 1, 1)).toBe("Switch to God to change a placed biome.");
 	});
 
 	it("a hex that already has a region can only change in God", () => {
