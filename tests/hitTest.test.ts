@@ -41,7 +41,7 @@ describe("a token doesn't shrink its hex's click target (fresh-eyes round 5)", (
 	});
 
 	it("the info card moved to the token's right-click menu", () => {
-		expect(view).toMatch(/private showTokenContextMenu[\s\S]{0,200}"Token info"[\s\S]{0,80}this\.openTokenInfo\(token\)/);
+		expect(view).toMatch(/private showTokenContextMenu[\s\S]{0,320}"Token info"[\s\S]{0,80}this\.openTokenInfo\(token\)/);
 	});
 
 	it("with a tool on, clicks go through tokens to the hex", () => {

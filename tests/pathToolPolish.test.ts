@@ -63,25 +63,25 @@ describe("right-click menu: path items first, a separator, then the tool's (#48)
   const noop = () => {};
   const acts: PathMenuActions = { split: noop, deleteBranch: noop, deletePath: noop, rename: noop, changeType: noop, reverse: noop };
 
-  it("path items in order: Split here, Delete this fork, Delete path, Rename…, Change type…, Reverse", () => {
+  it("path items in order: Rename…, Delete path, Change type…, Delete this fork, then Split here and Reverse (Advanced)", () => {
     const forked: MapPath = { name: "King's Road", typeName: "Road", branches: [{ anchors: ["0_0", "4_0"] }, { anchors: ["2_0", "2_4"] }] };
     expect(pathMenuItems(forked, 1, acts).map((i) => i.label)).toEqual([
-      "Split here", "Delete this fork", "Delete path: King's Road", "Rename…", "Change type…", "Reverse",
+      "Rename…", "Delete path: King's Road", "Change type…", "Delete this fork", "Split here", "Reverse",
     ]);
-    expect(pathMenuItems(forked, 0, acts)[1].label).toBe("Delete main line");
+    expect(pathMenuItems(forked, 0, acts)[3].label).toBe("Delete main line");
     const single: MapPath = { name: "Road", typeName: "Road", branches: [{ anchors: ["0_0", "4_0"] }] };
-    expect(pathMenuItems(single, 0, acts).map((i) => i.label)).toEqual(["Split here", "Delete path: Road", "Rename…", "Change type…", "Reverse"]);
+    expect(pathMenuItems(single, 0, acts).map((i) => i.label)).toEqual(["Rename…", "Delete path: Road", "Change type…", "Split here", "Reverse"]);
   });
 
   it("the tool's items follow a separator; with no path under the pointer there's no separator", () => {
     const lead = [{ label: "Split here", onClick: noop }, { label: "Reverse", onClick: noop }];
-    const extra = [{ label: "Erase mode", onClick: noop }, { label: "New path", onClick: noop }];
+    const extra = [{ label: "Erase mode", onClick: noop }];
     const rows = painterMenuEntries(lead, noop, "Switch path type", noop, extra);
     expect(rows.map((r) => ("separator" in r ? "---" : r.label))).toEqual([
-      "Split here", "Reverse", "---", "Switch path type", "Exit tool", "Erase mode", "New path",
+      "Split here", "Reverse", "---", "Switch path type", "Exit tool", "Erase mode",
     ]);
     const plain = painterMenuEntries([], null, "Switch", noop, extra);
-    expect(plain.map((r) => ("separator" in r ? "---" : r.label))).toEqual(["Exit tool", "Erase mode", "New path"]);
+    expect(plain.map((r) => ("separator" in r ? "---" : r.label))).toEqual(["Exit tool", "Erase mode"]);
   });
 });
 

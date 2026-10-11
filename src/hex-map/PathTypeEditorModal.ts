@@ -49,6 +49,8 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.pendingCarveWidth = entry.carveWidth === 1 ? 1 : 0;
 	}
 
+	protected surfaceId = "PathType";
+
 	onOpen(): void {
 		this.makeDraggable();
 		const { contentEl } = this;
@@ -160,7 +162,8 @@ export class PathTypeEditorModal extends HexmakerModal {
 					}),
 			);
 
-		new Setting(contentEl)
+		// Carving is Advanced, its width Debug (placement: PathType.carves / carveWidth).
+		const carves = new Setting(contentEl)
 			.setName("Carves terrain")
 			.setDesc("When you confirm an overworld path of this type into its regions, the hexes it crosses there become this: a terrain's name, or a terrain type such as water (the palette's first water terrain). Leave empty to keep the terrain. Locked hexes are never changed.")
 			.addText(text =>
@@ -169,8 +172,9 @@ export class PathTypeEditorModal extends HexmakerModal {
 					.setValue(this.pendingCarves)
 					.onChange(value => { this.pendingCarves = value.trim(); }),
 			);
+		this.place("PathType.carves", carves.settingEl);
 
-		new Setting(contentEl)
+		const carveWidth = new Setting(contentEl)
 			.setName("Carve width")
 			.setDesc("0: only the path's hexes. 1: those and the hexes beside them.")
 			.addDropdown(dd =>
@@ -180,6 +184,7 @@ export class PathTypeEditorModal extends HexmakerModal {
 					.setValue(String(this.pendingCarveWidth))
 					.onChange(value => { this.pendingCarveWidth = value === "1" ? 1 : 0; }),
 			);
+		this.place("PathType.carveWidth", carveWidth.settingEl);
 
 		// Save button
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-editor-actions" });

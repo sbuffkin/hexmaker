@@ -30,6 +30,8 @@ export class TerrainFilterModal extends HexmakerModal {
     });
   }
 
+  protected surfaceId = "TerrainFilter";
+
   onOpen(): void {
     this.makeDraggable();
     this.titleEl.setText("Filter by terrain");
@@ -38,16 +40,22 @@ export class TerrainFilterModal extends HexmakerModal {
 
     const { groups: typeGroups, untyped } = groupPaletteByType(this.palette);
 
-    contentEl.createEl("p", {
-      text:
-        "Left-click to include  ·  right-click to exclude  ·  " +
-        (typeGroups.length > 0
+    // Type rows (match every terrain of a type) are Advanced (placement:
+    // TerrainFilter.typeRow): there, the list shows each type as a plain
+    // heading and the type rows sit in the Advanced dropdown.
+    const hint = contentEl.createEl("p", { cls: "duckmage-terrain-filter-hint" });
+    const list = contentEl.createDiv({ cls: "duckmage-terrain-filter-list" });
+    const typeHost = typeGroups.length ? this.disclosure.target("TerrainFilter.typeRow", list) : list;
+    const typeRowsInList = typeHost === list;
+    hint.setText(
+      "Left-click to include  ·  right-click to exclude  ·  " +
+        (typeGroups.length > 0 && typeRowsInList
           ? "a type row matches every terrain of that type"
           : "click a category heading to toggle all"),
-      cls: "duckmage-terrain-filter-hint",
-    });
-
-    const list = contentEl.createDiv({ cls: "duckmage-terrain-filter-list" });
+    );
+    if (typeHost && !typeRowsInList) {
+      typeHost.createDiv({ cls: "duckmage-terrain-filter-section-label", text: "By type: each matches every terrain of that type" });
+    }
 
     // Every include/exclude row (terrains and types), so bulk actions can refresh them
     const refreshers: (() => void)[] = [];
@@ -64,8 +72,9 @@ export class TerrainFilterModal extends HexmakerModal {
       label: string,
       cls: string,
       color?: string,
+      parent: HTMLElement = list,
     ): (() => void) => {
-      const lbl = list.createEl("label", { cls });
+      const lbl = parent.createEl("label", { cls });
       const cb = lbl.createEl("input");
       cb.type = "checkbox";
       if (color !== undefined) {
@@ -157,13 +166,18 @@ export class TerrainFilterModal extends HexmakerModal {
 
     // Typed terrains: one type row (filters by type) + its terrains indented
     for (const group of typeGroups) {
-      addToggleRow(
-        group.typeId,
-        this.sets.types,
-        this.sets.excludeTypes,
-        group.label,
-        "duckmage-terrain-filter-row duckmage-terrain-filter-type-row",
-      );
+      if (!typeRowsInList) list.createDiv({ cls: "duckmage-terrain-filter-section-label", text: group.label });
+      if (typeHost) {
+        addToggleRow(
+          group.typeId,
+          this.sets.types,
+          this.sets.excludeTypes,
+          group.label,
+          "duckmage-terrain-filter-row duckmage-terrain-filter-type-row",
+          undefined,
+          typeHost,
+        );
+      }
       for (const entry of group.entries) {
         addTerrainRow(entry.name, entry.name, entry.color, true);
       }
@@ -202,6 +216,7 @@ export class TerrainFilterModal extends HexmakerModal {
       }
     }
 
+    // Buttons last, below the Advanced dropdown.
     const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });
     const clearBtn = btnRow.createEl("button", { text: "Clear all" });
     clearBtn.addEventListener("click", () => {

@@ -125,6 +125,8 @@ export class PathPickerModal extends HexmakerModal {
     paint();
   }
 
+  protected surfaceId = "PathPicker";
+
   onOpen(): void {
     this.makeDraggable();
     this.render();
@@ -214,7 +216,11 @@ export class PathPickerModal extends HexmakerModal {
     if (pathTypes.length === 0) {
       grid.createEl("p", { text: "No path types defined. Switch to edit mode to add one.", cls: "duckmage-tpe-empty" });
     }
-    this.renderPathsOnMap(section, pathTypes);
+    // "Paths on this map" is Advanced (placement: PathPicker.pathsOnMap).
+    const onMap = section.createDiv({ cls: "duckmage-path-on-map" });
+    this.renderPathsOnMap(onMap, pathTypes);
+    if (onMap.childElementCount) this.place("PathPicker.pathsOnMap", onMap);
+    else onMap.remove();
   }
 
   /** "Paths on this map": each path (type colour, name, its ends, forks and size); click to select it on the map. */

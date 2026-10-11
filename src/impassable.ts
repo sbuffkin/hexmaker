@@ -118,5 +118,5 @@ export function parseImpassableCell(raw: string | undefined): boolean | undefine
  */
 export function noRouteMessage(blockedNames: readonly string[]): string {
   if (!blockedNames.length) return "No route between those hexes inside the map.";
-  return `No route around ${blockedNames.join(", ")}. Tick "Cross impassable" to go through, or change which terrains are impassable in the palette.`;
+  return `No route around ${blockedNames.join(", ")}. Turn on "Cross impassable" (Advanced ▸ in the bar) to go through, or change which terrains are impassable in the palette.`;
 }

@@ -2,7 +2,11 @@ import { App, Notice, TFile } from "obsidian";
 import { canDo } from "../modeGate";
 import { lockedHint, workModeOf, type ModeAction } from "../workMode";
 import { newMapItemTitle } from "../maps/submaps";
-import { ModeMenu } from "./modeMenu";
+import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
+import { addGodOffer } from "./godOffer";
+import { hexLinkLabel, hexMarkdownLink } from "../hexLink";
+import { isShown } from "../ui/placement";
+import { isDebugMode } from "../ui/debugMode";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
@@ -75,6 +79,8 @@ function offMapSide(map: MapData, x: number, y: number): Side {
 }
 
 export class HexEditorModal extends HexmakerModal {
+  /** Placement surface (src/ui/placement.ts): the editor's Advanced dropdown. */
+  protected surfaceId = "HexEditor";
   private hexExists = false;
   private allText = new Map<string, string>();
   private allLinks = new Map<string, string[]>();
@@ -407,9 +413,16 @@ export class HexEditorModal extends HexmakerModal {
     else this.renderModeLocked(iconsBody, "paint-icon");
   }
 
+  /** Menus here: debug mode, and the God offer on God-only items. */
+  private modeMenuOptions(): ModeMenuOptions {
+    return { store: this.app, onGod: () => { this.plugin.setMapWorkMode(this.mapName, "god"); this.onOpen(); } };
+  }
+
   /** One line where a section the work mode locks would be. */
   private renderModeLocked(container: HTMLElement, action: ModeAction): void {
-    container.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint(action) });
+    const line = container.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint(action) });
+    // A God-only section offers the switch right here (godOffer.ts).
+    addGodOffer(line, this.plugin, this.mapName, lockedHint(action), () => this.onOpen());
   }
 
   onClose() {
@@ -633,27 +646,30 @@ export class HexEditorModal extends HexmakerModal {
       }
     }
 
-    // Centre dot: enters the hex's region, or its only location. With
-    // several locations the Maps strip below the name lists them all.
-    const maps = getHexMapsFromFile(this.app, this.plugin.hexPath(this.x, this.y, this.mapName));
-    const target = maps.regionMap ?? (maps.locations.length === 1 ? maps.locations[0] : undefined);
-    if (target && this.plugin.getMap(target)) {
-      const centre = widget.createDiv({ cls: "duckmage-neighbor-centre duckmage-neighbor-centre--linked" });
-      // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
-      const cy = isFlat ? 24 : 20;
-      centre.setCssProps({ left: "24px", top: `${cy}px` });
-      centre.title = `${maps.regionMap ? "Region" : "Location"}: ${this.plugin.mapLabel(target)}`;
-      // Color the dot with the linked map's terrain type color (if configured)
-      const targetData = this.plugin.getMap(target);
-      if (targetData?.terrainType) {
-        const terrainEntry = this.plugin.getMapPalette(target).find((t) => t.name === targetData.terrainType);
-        if (terrainEntry?.color) centre.setCssProps({ "--duckmage-bg": terrainEntry.color });
-      }
-      centre.addEventListener("click", () => {
-        this.close();
-        this.options.onSwitchMap?.(target);
-      });
-    }
+    // Centre dot: this hex. A click copies a link to it that a note can
+    // use: it opens the map centred on this hex (src/hexLink.ts). Entering
+    // the hex's region or locations is the Maps strip's job.
+    const centre = widget.createEl("button", {
+      cls: "duckmage-neighbor-centre duckmage-neighbor-centre--linked duckmage-neighbor-centre--copy",
+      attr: { title: "Copy link to this hex (opens the map centred here)", "aria-label": "Copy link to this hex" },
+    });
+    // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
+    centre.setCssProps({ left: "24px", top: `${isFlat ? 24 : 20}px` });
+    const own = getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.mapName));
+    const ownColor = own ? paletteMap.get(own)?.color : undefined;
+    if (ownColor) centre.setCssProps({ "--duckmage-bg": ownColor });
+    centre.addEventListener("click", () => this.copyHexLink());
+  }
+
+  /** "Copy link to this hex": a Markdown link that opens the map centred on it (src/hexLink.ts). */
+  private copyHexLink(): void {
+    const { x, y, mapName } = this;
+    const name = this.plugin.mapStore.get(mapName, `${x}_${y}`)?.name;
+    const link = hexMarkdownLink(this.app.vault.getName(), { map: mapName, hex: { x, y } }, hexLinkLabel(this.plugin.mapLabel(mapName), x, y, name));
+    void navigator.clipboard.writeText(link).then(
+      () => new Notice(`Copied a link to hex ${x}, ${y}. Paste it in a note: it opens the map centred here.`),
+      () => new Notice("Couldn't copy the link."),
+    );
   }
 
   /**
@@ -690,7 +706,7 @@ export class HexEditorModal extends HexmakerModal {
     const add = strip.createEl("button", { cls: "duckmage-maps-chip-add", text: "+", attr: { "aria-label": "Add a map to this hex", title: "New map from this hex, link one, or manage locations" } });
     add.addEventListener("click", (e) => {
       const { x, y } = this;
-      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)));
+      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)), this.modeMenuOptions());
       menu.add("editor.new-map", newMapItemTitle({ regionMap, locations: locs }), "plus", () => { this.close(); this.options.onNewChildMap?.(x, y); });
       if (this.options.onLinkExistingMap) {
         menu.add("editor.link-map", "Link existing map…", "link", () => { this.close(); this.options.onLinkExistingMap?.(x, y); });
@@ -1635,7 +1651,15 @@ export class HexEditorModal extends HexmakerModal {
         exists,
       );
     const rollBtn = el.createEl("button", { text: "🎲", cls: "duckmage-section-desc-table-btn" });
-    const srcBtn = el.createEl("button", { text: "⋯", cls: "duckmage-section-desc-table-btn", attr: { "aria-label": `Choose the ${spec.noun} table` } });
+    // Choosing the table (⋯) is Advanced (placement: HexEditor.weatherSource /
+    // hooksSource): in the editor's Advanced dropdown it gets a label.
+    const srcWrap = el.createSpan({ cls: "duckmage-section-table-source" });
+    const srcBtn = srcWrap.createEl("button", { text: "⋯", cls: "duckmage-section-desc-table-btn", attr: { "aria-label": `Choose the ${spec.noun} table` } });
+    const placeId = section === "weather" ? "HexEditor.weatherSource" : "HexEditor.hooksSource";
+    if (this.place(placeId, srcWrap) && srcWrap.parentElement !== el) {
+      srcWrap.addClass("is-advanced");
+      srcWrap.prepend(createSpan({ text: section === "weather" ? "Weather table" : "Hooks & Rumors table" }));
+    }
     const refresh = () => {
       const picked = pick();
       rollBtn.title = picked
@@ -1682,10 +1706,13 @@ export class HexEditorModal extends HexmakerModal {
       new RandomTableModal(this.app, this.plugin, undefined, picked.path, this.rollTarget(section)).open();
     });
     srcBtn.addEventListener("click", (e) => {
-      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)));
+      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)), this.modeMenuOptions());
       const mapTable = mapSectionTable(this.plugin.getMap(this.mapName), section);
-      menu.add("editor.map-table", mapTable ? `Change the map's ${spec.noun} table…` : `Set the map's ${spec.noun} table…`, null, setMapTable);
-      menu.add("editor.hex-table", `Use a different table for this hex…`, null, () => chooseTable((f) => setHexTable(f)));
+      // Both items are Advanced, like the ⋯ that opens this menu; a later
+      // retag to hidden or Debug takes them out (placement map).
+      const shown = (id: string) => isShown(id, isDebugMode(this.app));
+      if (shown("HexEditor.rolledSetMapTable")) menu.add("editor.map-table", mapTable ? `Change the map's ${spec.noun} table…` : `Set the map's ${spec.noun} table…`, null, setMapTable);
+      if (shown("HexEditor.rolledSetHexTable")) menu.add("editor.hex-table", `Use a different table for this hex…`, null, () => chooseTable((f) => setHexTable(f)));
       if (this.hexSectionTable(path, section)) {
         menu.add("editor.hex-table", "Use the map's table on this hex", null, () => setHexTable(null));
       }

@@ -62,6 +62,44 @@ export const PLACEMENT: Readonly<Record<string, Layer>> = {
   "GenPage.spacing": "debug",
   "GenPage.randomness": "debug",
   "GenPage.mixStrength": "debug",
+
+  // ── Hex map view (menus and toolbars: Advanced ▸ / Debug ▸ submenus,
+  // src/hex-map/placedMenu.ts; panels: an Advanced dropdown) ──
+  "WorkModeMenu.god": "advanced",
+  "ModeBar.crossImpassable": "advanced",
+  "DrawingPanel.linkTable": "advanced",
+  "DrawingPanel.linkSubmap": "advanced",
+  "DrawingPanel.regionAreas": "advanced",
+  "MapView.tableLinkToolPicker": "advanced",
+  "PathMenu.splitHere": "advanced",
+  "PathMenu.reverse": "advanced",
+  "LayersMenu.regionOverlay": "advanced",
+  // Dropped (the code is gone; listed so the inventory stays complete).
+  "PainterMenu.newPath": "hidden",
+  "MapView.dblRightClickExit": "hidden",
+  "MapView.dblClickOffGridExit": "hidden",
+
+  // ── Hex editor: a section's table source is Advanced ──
+  "HexEditor.weatherSource": "advanced",
+  "HexEditor.hooksSource": "advanced",
+  "HexEditor.rolledSetMapTable": "advanced",
+  "HexEditor.rolledSetHexTable": "advanced",
+
+  // ── Hex table ──
+  "HexTable.refresh": "debug",
+  "HexTable.xMin": "advanced",
+  "HexTable.xMax": "advanced",
+  "HexTable.yMin": "advanced",
+  "HexTable.yMax": "advanced",
+  "TerrainFilter.typeRow": "advanced",
+
+  // ── Map pickers and editors ──
+  "Token.description": "advanced",
+  "PathPicker.pathsOnMap": "advanced",
+  "PathType.carves": "advanced",
+  "PathType.carveWidth": "debug",
+  "TerrainPicker.refreshEncounterLinks": "debug",
+  "Locations.openButton": "hidden",
 };
 
 /** The layer of control `id` (unlisted = `main`). */

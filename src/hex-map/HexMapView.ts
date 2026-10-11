@@ -38,7 +38,10 @@ import { pathListSummary } from "./pathTool";
 import { flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
 import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
-import { ModeMenu } from "./modeMenu";
+import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
+import { lockedNotice } from "./godOffer";
+import { Disclosure } from "../ui/disclosure";
+import { isDebugMode } from "../ui/debugMode";
 import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
@@ -105,7 +108,7 @@ import {
   removeTokenFrontmatter,
   setTokenHex,
 } from "../frontmatter";
-import { PainterContextMenu } from "./PainterContextMenu";
+import { PainterContextMenu, type PainterContextMenuOption } from "./PainterContextMenu";
 
 import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
@@ -241,8 +244,6 @@ export class HexMapView extends ItemView {
   /** Toolbar rows (and the mode bar) along the top of the map: hexes are
    *  kept out from under them (see safeArea.ts). */
   private topBandEls: HTMLElement[] = [];
-  /** Time of the last right-click while a tool was active (double-right-click exits). */
-  private lastToolContextMenuAt = 0;
   /** The open (or last) right-click tool menu, so Esc can close it first. */
   private painterMenu: PainterContextMenu | null = null;
   private pathToolbarBtn: HTMLButtonElement | null = null;
@@ -539,6 +540,33 @@ export class HexMapView extends ItemView {
     this.switchToMap(name);
     // Each map keeps its own undo queues (WM6): show the new map's.
     this.updateUndoButton();
+  }
+
+  /**
+   * Open map `name` centred on hex (x, y), the hex flashed and selected: a
+   * hex link (src/hexLink.ts, copied from the hex editor's centre dot).
+   * Waits for the grid to be drawn and sized (a freshly opened view).
+   */
+  goToHex(name: string, x: number, y: number, opts: { recordHistory?: boolean } = {}): void {
+    if (!this.plugin.getMap(name)) {
+      new Notice(`Map "${name}" no longer exists.`);
+      return;
+    }
+    if (name !== this.activeMapName) this.navigateToMap(name, opts);
+    let tries = 0;
+    const attempt = () => {
+      if (this.activeMapName !== name) return;
+      const clip = this.viewportEl?.parentElement;
+      const hexEl = this.viewportEl?.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+      if ((!hexEl || !clip || clip.clientWidth === 0) && ++tries < 25) {
+        window.setTimeout(attempt, 80);
+        return;
+      }
+      this.setSelectedHex(x, y);
+      this.centerOnHex(x, y);
+      this.flashHex(x, y);
+    };
+    window.setTimeout(attempt, 80);
   }
 
   /** Back to the previously viewed map (skips maps deleted since). */
@@ -867,9 +895,11 @@ export class HexMapView extends ItemView {
     const map = this.plugin.getMap(this.activeMapName);
     if (!map) return;
     const cur = workModeOf(map);
-    const menu = new ModeMenu(cur);
+    // Play and Build first; God is in Advanced ▸ (placement: WorkModeMenu.god)
+    // and offered where an action needs it (godOffer.ts).
+    const menu = new ModeMenu(cur, { store: this.app });
     for (const m of WORK_MODES) {
-      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`, null, () => this.setWorkMode(m), { checked: m === cur });
+      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`, null, () => this.setWorkMode(m), { checked: m === cur, place: `WorkModeMenu.${m}` });
     }
     menu.showAtMouseEvent(e);
   }
@@ -936,9 +966,13 @@ export class HexMapView extends ItemView {
       this.toolsLockedEl.setText(hint ?? "");
       this.toolsLockedEl.toggle(!!hint);
     }
+    // Shrinking is God's: in Build the − stays clickable and its click
+    // offers to switch (modeAllows → lockedNotice), it isn't just greyed out.
     for (const b of this.contentEl.querySelectorAll<HTMLButtonElement>(".duckmage-shrink-btn")) {
-      b.disabled = !allows(mode, "shrink-map");
-      b.setAttr("title", allows(mode, "shrink-map") ? "Remove this edge" : lockedHint("shrink-map"));
+      const ok = allows(mode, "shrink-map");
+      b.toggleClass("is-locked", !ok);
+      b.setAttr("aria-disabled", String(!ok));
+      b.setAttr("title", ok ? "Remove this edge" : lockedHint("shrink-map"));
     }
   }
 
@@ -948,7 +982,8 @@ export class HexMapView extends ItemView {
    */
   private modeAllows(action: ModeAction): boolean {
     if (canDo(this.activeMapName, action)) return true;
-    new Notice(lockedHint(action));
+    // A God-only action: the Notice offers to switch the map to God.
+    lockedNotice(this.plugin, this.activeMapName, lockedHint(action));
     return false;
   }
 
@@ -1509,15 +1544,6 @@ export class HexMapView extends ItemView {
         if (this.drawingMode === null) return;
         e.preventDefault();
         e.stopPropagation();
-        // Double-right-click anywhere exits the tool (as the help says).
-        const now = performance.now();
-        const isDouble = now - this.lastToolContextMenuAt < 400;
-        this.lastToolContextMenuAt = isDouble ? 0 : now;
-        if (isDouble) {
-          this.painterMenu?.close();
-          this.exitCurrentMode();
-          return;
-        }
         const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
         const hexX = hexEl ? Number(hexEl.dataset.x) : null;
         const hexY = hexEl ? Number(hexEl.dataset.y) : null;
@@ -1534,7 +1560,7 @@ export class HexMapView extends ItemView {
         // Path tool: right-click an anchor of a path of the tool's type
         // deletes it; on such a path (or Shift on an anchor), the menu adds
         // that path's actions; on another type's path, "Switch to <type>".
-        let pathItems: { label: string; onClick: () => void }[] = [];
+        let pathItems: PainterContextMenuOption[] = [];
         if (this.drawingMode === "path" && !this.isErasingMode) {
           const r = this.pathTool.contextMenu(e);
           if (r && "handled" in r) return;
@@ -1563,19 +1589,6 @@ export class HexMapView extends ItemView {
       if (this.drawingMode !== null) return; // the tool menu (capture) owns it
       const hex = onGap(e);
       if (hex) this.onHexContextMenu(e, hex.x, hex.y);
-    });
-
-    // Double-clicking off the hex grid (but inside the viewport) exits terrain/icon mode
-    this.registerDomEvent(contentEl, "dblclick", (e: MouseEvent) => {
-      if (this.drawingMode !== "terrain" && this.drawingMode !== "icon") return;
-      const inViewport = (e.target as HTMLElement).closest(
-        ".duckmage-hex-map-viewport",
-      );
-      const onHex = (e.target as HTMLElement).closest(".duckmage-hex");
-      if (inViewport && !onHex) {
-        if (this.drawingMode === "terrain") this.exitTerrainMode();
-        else this.exitIconMode();
-      }
     });
 
     // Expand buttons and view buttons — always visible (not collapsible)
@@ -2132,14 +2145,15 @@ export class HexMapView extends ItemView {
     return !!cache?.links && cache.links.length > 0;
   }
 
+  /**
+   * The drawing tools panel. The common jobs come first (paint terrain,
+   * icons, paths, tokens), then factions and Center hex; the link tools
+   * (Link table, Link submap, Region areas) sit in the panel's Advanced
+   * dropdown (placement: DrawingPanel.*). The Link table tool's table picker
+   * (MapView.tableLinkToolPicker) is only reached from it, so it goes with it.
+   */
   private buildDrawingToolbarContent(toolbar: HTMLElement): void {
-    const centerHexBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-center-hex-btn",
-      text: "Center hex",
-    });
-    centerHexBtn.addEventListener("click", () => {
-      new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
-    });
+    const disclosure = new Disclosure(this.app, "DrawingPanel", () => toolbar);
 
     this.terrainToolbarBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
@@ -2183,25 +2197,11 @@ export class HexMapView extends ItemView {
       this.handlePathButton(),
     );
 
-    this.tableLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
+    this.tokenBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-draw-btn-token",
+      text: "Token",
     });
-    this.tableLinkBtnLabel = this.tableLinkBtn.createSpan({
-      text: "Link table",
-    });
-    this.tableLinkBtn.addEventListener("click", () =>
-      this.handleTableLinkButton(),
-    );
-
-    this.submapLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
-    });
-    this.submapLinkBtnLabel = this.submapLinkBtn.createSpan({
-      text: "Link submap",
-    });
-    this.submapLinkBtn.addEventListener("click", () =>
-      this.handleSubmapLinkButton(),
-    );
+    this.tokenBtn.addEventListener("click", () => this.handleTokenButton());
 
     this.factionLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
@@ -2213,6 +2213,40 @@ export class HexMapView extends ItemView {
       this.handleFactionLinkButton(),
     );
 
+    const centerHexBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-center-hex-btn",
+      text: "Center hex",
+    });
+    centerHexBtn.addEventListener("click", () => {
+      new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
+    });
+
+    // Tools the map's mode locks are hidden; this line says how to get them.
+    this.toolsLockedEl = toolbar.createDiv({ cls: "duckmage-tools-locked" });
+    this.toolsLockedEl.hide();
+
+    this.tableLinkBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
+    });
+    this.tableLinkBtnLabel = this.tableLinkBtn.createSpan({
+      text: "Link table",
+    });
+    this.tableLinkBtn.addEventListener("click", () =>
+      this.handleTableLinkButton(),
+    );
+    disclosure.place("DrawingPanel.linkTable", this.tableLinkBtn);
+
+    this.submapLinkBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
+    });
+    this.submapLinkBtnLabel = this.submapLinkBtn.createSpan({
+      text: "Link submap",
+    });
+    this.submapLinkBtn.addEventListener("click", () =>
+      this.handleSubmapLinkButton(),
+    );
+    disclosure.place("DrawingPanel.linkSubmap", this.submapLinkBtn);
+
     this.regionLinkBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
@@ -2222,16 +2256,8 @@ export class HexMapView extends ItemView {
     this.regionLinkBtn.addEventListener("click", () =>
       this.handleRegionLinkButton(),
     );
+    disclosure.place("DrawingPanel.regionAreas", this.regionLinkBtn);
 
-    this.tokenBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-token",
-      text: "Token",
-    });
-    this.tokenBtn.addEventListener("click", () => this.handleTokenButton());
-
-    // Tools the map's mode locks are hidden; this line says how to get them.
-    this.toolsLockedEl = toolbar.createDiv({ cls: "duckmage-tools-locked" });
-    this.toolsLockedEl.hide();
     this.applyWorkModeUi();
   }
 
@@ -2240,7 +2266,7 @@ export class HexMapView extends ItemView {
     clientY: number,
     hexX: number | null,
     hexY: number | null,
-    pathItems: { label: string; onClick: () => void }[] = [],
+    pathItems: PainterContextMenuOption[] = [],
   ): void {
     const mode = this.drawingMode;
     let onSwitch: (() => void) | null = null;
@@ -2281,7 +2307,7 @@ export class HexMapView extends ItemView {
       onSwitch = () => this.handlePathButton();
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
-      if (!erasing) extra.push({ label: "New path", onClick: () => this.pathTool.startNewPath() });
+      // No "New path" here (PainterMenu.newPath, dropped): the mode bar has it.
     } else if (mode === "placeToken") {
       onSwitch = () => this.handleTokenButton(true);
       switchLabel = "Switch token";
@@ -2293,7 +2319,8 @@ export class HexMapView extends ItemView {
 
     this.painterMenu?.close();
     // The path under the pointer comes first, above a separator (#48).
-    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra, mode === "path" ? pathItems : []);
+    // Its Advanced items (Split here, Reverse) are in an "Advanced ▸" row at its end.
+    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra, mode === "path" ? pathItems : [], isDebugMode(this.app));
     this.painterMenu.open(clientX, clientY);
   }
 
@@ -2458,7 +2485,8 @@ export class HexMapView extends ItemView {
       this.pushUndo({ kind: "cells", edits: r.edits }, map);
       this.updateUndoButton();
     }
-    for (const h of r.hints) new Notice(h);
+    // A placed biome is God's to change: that hint offers the switch.
+    for (const h of r.hints) lockedNotice(this.plugin, map, h);
     if (r.errors.length) new Notice(r.errors[0]);
     if ((r.changed || r.made.length) && this.activeMapName === map) this.renderGrid();
   }
@@ -4858,6 +4886,11 @@ export class HexMapView extends ItemView {
     modal.open();
   }
 
+  /** Options for the map view's menus: debug mode, and the God offer on God-only items. */
+  private modeMenuOptions(): ModeMenuOptions {
+    return { store: this.app, onGod: () => this.setWorkMode("god") };
+  }
+
   private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
     evt.preventDefault();
     // When any tool is active, the global capture-phase contextmenu handler
@@ -4865,8 +4898,9 @@ export class HexMapView extends ItemView {
     // only fires when drawingMode === null.
     if (this.drawingMode !== null) return;
 
-    // Items the map's work mode locks are left out, with one hint line.
-    const menu = new ModeMenu(this.currentWorkMode());
+    // Items the map's work mode locks are left out, with one hint line
+    // (for God-only items, an offer to switch: Swap hex).
+    const menu = new ModeMenu(this.currentWorkMode(), this.modeMenuOptions());
     // Overworlds are the big-picture view (#49): region-level items only,
     // no hex editor.
     if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) this.addOverworldMenuItems(menu, evt, x, y);
@@ -4914,10 +4948,7 @@ export class HexMapView extends ItemView {
     if (arrive) menu.add("hex.arrive", "Go there", "footprints", () => void this.arriveAt(x, y));
     if (arrive || hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
 
-    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
-
-    menu.addSeparator();
-
+    // The common jobs next: the hex's note, a token, centring.
     menu.add("hex.open-note", inTokenMenu ? "Open hex note" : "Open note", "file-text", () => {
       void (async () => {
         const existing = this.app.vault.getAbstractFileByPath(hexPath);
@@ -4928,6 +4959,10 @@ export class HexMapView extends ItemView {
         if (file) await openNoteFocused(this.app, file);
       })();
     });
+    menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
+    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
+
+    menu.addSeparator();
 
     // "Add another map…" once the hex has one (C11): a hex can hold several
     // locations, but the menu doesn't invite re-making the same map.
@@ -4960,8 +4995,6 @@ export class HexMapView extends ItemView {
       if (this.drawingMode !== "swap") this.handleSwapButton();
       void this.onHexSwapClick(x, y);
     });
-
-    menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
 
     // ── Contextual delete options ──────────────────────────────────────────
     if (terrain || iconOverride) {
@@ -5079,7 +5112,7 @@ export class HexMapView extends ItemView {
         // Arrival on: going there makes the region from its biome (GM4).
         await this.arriveAt(px, py);
       } else if (act.kind === "place") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
-      else if (act.kind === "hint") new Notice(act.hint);
+      else if (act.kind === "hint") lockedNotice(this.plugin, this.activeMapName, act.hint);
       return;
     }
 
@@ -8146,9 +8179,9 @@ export class HexMapView extends ItemView {
   }
 
   private showTokenContextMenu(evt: MouseEvent, token: TokenEntry): void {
-    const menu = new ModeMenu(this.currentWorkMode());
-    menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
+    const menu = new ModeMenu(this.currentWorkMode(), this.modeMenuOptions());
     menu.add("token.edit", "Edit token", "pencil", () => this.openTokenEditor(token));
+    menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
     menu.add("token.open-note", "Open note", "file-text", () => {
       const file = this.app.vault.getAbstractFileByPath(token.filePath);
       if (file instanceof TFile) void openNoteFocused(this.app, file);

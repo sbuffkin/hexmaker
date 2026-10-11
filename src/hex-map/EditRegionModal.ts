@@ -31,6 +31,7 @@ import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, reshapeUnd
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "../overworld/overworldPaths";
 import { canDo } from "../modeGate";
+import { addGodOffer } from "./godOffer";
 import { createIconEl, getIconUrl } from "../utils";
 
 export interface EditRegionHost extends BiomeHost {
@@ -189,7 +190,11 @@ export class EditRegionModal extends HexmakerModal {
       const swatch = row.createSpan({ cls: "duckmage-biome-swatch" });
       if (shown) swatch.setCssProps({ "--duckmage-biome-color": shown.color });
       row.createSpan({ text: shown?.label ?? (current ? biomeInfo(current)?.label ?? current : terrain ?? "None") });
-      if (plan.hint) biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: plan.hint });
+      if (plan.hint) {
+        const hint = biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: plan.hint });
+        // Changing a placed biome is God's: offer the switch right here (godOffer.ts).
+        addGodOffer(hint, plugin, this.overworld, plan.hint, () => this.render());
+      }
       editGenerator(biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" }));
     }
 
