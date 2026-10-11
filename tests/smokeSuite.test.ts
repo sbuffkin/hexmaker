@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 // The smoke suite's pure helpers (dev/smoke; the suite itself needs Windows Obsidian).
 import { canon, jsonDiff, oneTimeOnly } from "../dev/smoke/lib/compare.mjs";
-import { bodyFieldLines, comparableBody, diff, hexDataFromFm, hexNoteMapLink, paletteTerrains, verifyPaletteUpgrade } from "../dev/smoke/lib/disk.mjs";
+import { bodyFieldLines, comparableBody, diff, hexDataFromFm, hexNoteMapLink, noteFormatBackups, paletteTerrains, tableRangeBackups, verifyPaletteUpgrade } from "../dev/smoke/lib/disk.mjs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { gzipSync } from "node:zlib";
 import { JOB_MEM_BYTES, pickJobs, stopUntilGone } from "../dev/smoke/lib/concurrency.mjs";
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
@@ -155,4 +158,23 @@ describe("smoke suite: concurrency and stopping", () => {
 		const lib = read("dev", "smoke", "lib", "obsidian.mjs");
 		expect(lib).toMatch(/stopUntilGone\(/);
 	});
+});
+
+describe("smoke suite: silent table-range upgrade (DJ-Q6) is an allowed, backed-up rewrite", () => {
+  it("reads the table-ranges backups, and only those", () => {
+    const vault = mkdtempSync(path.join(tmpdir(), "smoke-tr-"));
+    const dir = path.join(vault, ".obsidian", "plugins", "p", "backups", "table-ranges-2026-10-11");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "tables.json.gz"), gzipSync(JSON.stringify({ kind: "table-ranges", notes: { "tables/beach.md": "| Result | Weight |" } })));
+    const tr = tableRangeBackups(vault, "p");
+    expect(Object.keys(tr)).toEqual(["tables/beach.md"]);
+    expect(tr["tables/beach.md"]).toMatch(/^[0-9a-f]+$/);
+    expect(noteFormatBackups(vault, "p")).toEqual({});
+  });
+
+  it("C4 allows a changed table only when its backed-up original matches", () => {
+    const src = read("dev", "smoke", "run.mjs");
+    expect(src).toContain("trBackups[p] === snap0[p]?.h");
+    expect(src).toContain("ranged.includes(p)");
+  });
 });
