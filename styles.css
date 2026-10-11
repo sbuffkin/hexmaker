@@ -8578,7 +8578,12 @@ textarea.duckmage-edit-region-notes-input {
     flex: 1 1 auto;
     min-width: 3em;
 }
-.duckmage-biome-islands {
+.duckmage-biome-islands,
+.duckmage-biome-climate {
     display: grid;
     gap: 4px;
+}
+.duckmage-biome-climate input[type="text"] {
+    flex: 1 1 auto;
+    min-width: 6em;
 }

@@ -5,6 +5,7 @@ import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constan
 import {
 	MOISTURE_WORDS,
 	TEMPERATURE_WORDS,
+	climateKeyValues,
 	formatClimateRange,
 	isPlaceable,
 	parseClimateRange,
@@ -16,6 +17,7 @@ import { BIOMES, biomeInfo, setBiomeSource } from "../src/overworld/biomes";
 import { placementPool, worldBiomes, type WorldBiomesOptions } from "../src/overworld/worldBiomes";
 import { lowland, worldBiomes as legacyWorldBiomes } from "./fixtures/worldBiomesLegacy";
 import { climatesToAdd } from "../src/overworld/BiomeStore";
+import { climateFromForm, fieldsFromForm, formFromFields, formProblem, formTypes } from "../src/overworld/biomeForm";
 
 const hexWorld = (R: number): [number, number][] => {
 	const out: [number, number][] = [];
@@ -139,6 +141,31 @@ describe("biome climate: reading and writing", () => {
 			expect(!!biomeInfo(b.id)?.rare).toBe(!!b.rare);
 			expect(biomeInfo(b.id)?.temp).toBe(b.temp);
 		}
+	});
+});
+
+describe("biome form: climate section", () => {
+	it("round-trips every shipped climate through the form", () => {
+		for (const p of BIOME_PRESETS) {
+			const s = formFromFields(p, formTypes(DEFAULT_TERRAIN_PALETTE, p));
+			const back = fieldsFromForm(s, p.id).climate;
+			expect(climateKeyValues(back)).toEqual(climateKeyValues(p.climate));
+		}
+	});
+
+	it("blank climate fields mean no climate; bad ones block saving", () => {
+		const s = formFromFields(undefined, formTypes(DEFAULT_TERRAIN_PALETTE));
+		s.label = "Ash";
+		s.mix.set("badlands", 3);
+		expect(fieldsFromForm(s).climate).toBeUndefined();
+		s.climate.temperature = "toasty";
+		expect(formProblem(s, [])).toMatch(/^Climate: /);
+		s.climate.temperature = "warm–hot";
+		s.climate.elevation = "low";
+		s.climate.chancePercent = 50;
+		expect(formProblem(s, [])).toBeUndefined();
+		expect(fieldsFromForm(s).climate).toEqual({ temperature: { lo: 0.6, hi: 1 }, elevation: "low", chance: 0.5 });
+		expect(climateFromForm(s.climate).problems).toEqual([]);
 	});
 });
 

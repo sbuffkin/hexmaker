@@ -18,7 +18,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { canAdd } from "../workMode";
 import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "../overworld/biomeNote";
-import { fieldsFromForm, formFromFields, formProblem, formTypes, generatorName, previewRegion, routeNote, type BiomeFormState } from "../overworld/biomeForm";
+import { fieldsFromForm, formFromFields, formProblem, formTypes, generatorName, previewRegion, routeNote, type BiomeFormState, type ClimateFormState } from "../overworld/biomeForm";
 import { overworldOf, regionPalette } from "../overworld/regionsVault";
 import { cellsBox, composeAffine, drawRegionCells, type RegionCell } from "../overworld/overworldRender";
 import { regionCells } from "../overworld/layout";
@@ -224,6 +224,37 @@ export class BiomeFormModal extends HexmakerModal {
     isl.addEventListener("change", () => { state.minIslands = isl.value.trim() === "" ? undefined : Math.max(0, Math.round(Number(isl.value) || 0)); this.schedule(); });
     isles.createEl("p", { cls: "setting-item-description", text: "For archipelagos: how much of a region is land, and the fewest islands it gets." });
 
+    // Climate (optional): where World biomes may place it.
+    const cl = state.climate;
+    const clBox = form.createEl("details", { cls: "duckmage-biome-climate" });
+    clBox.open = !!(cl.temperature || cl.moisture || cl.elevation || cl.coastal);
+    clBox.createEl("summary", { text: "Climate (optional, for generated overworlds)" });
+    const clGrid = clBox.createDiv({ cls: "duckmage-biome-mix-grid" });
+    const text = (label: string, value: string, placeholder: string, set: (v: string) => void) => {
+      const input = field(label, clGrid).createEl("input", { type: "text", attr: { "aria-label": label, placeholder } });
+      input.value = value;
+      input.addEventListener("input", () => { set(input.value); this.check(); });
+    };
+    text("Temperature", cl.temperature, "Any (e.g. cold–mild)", (v) => { cl.temperature = v; });
+    text("Moisture", cl.moisture, "Any (e.g. wet, 0.2–0.5)", (v) => { cl.moisture = v; });
+    const elev = field("Height", clGrid).createEl("select", { attr: { "aria-label": "Height" } });
+    for (const [v, t] of [["", "Not set (low)"], ["low", "Low"], ["mid", "Mid (hills)"], ["high", "High (peaks)"], ["sea", "Sea"], ["mouth", "River mouth"]] as const) elev.createEl("option", { value: v, text: t });
+    elev.value = cl.elevation;
+    elev.addEventListener("change", () => { cl.elevation = elev.value as ClimateFormState["elevation"]; this.check(); });
+    const chance = field("Chance %", clGrid).createEl("input", { type: "number", attr: { min: "0", max: "100", step: "5", placeholder: "100", "aria-label": "Chance" } });
+    chance.value = cl.chancePercent !== undefined ? String(cl.chancePercent) : "";
+    chance.addEventListener("change", () => { cl.chancePercent = chance.value.trim() === "" ? undefined : Math.min(100, Math.max(0, Number(chance.value) || 0)); this.check(); });
+    const tick = (label: string, on: boolean, set: (v: boolean) => void) => {
+      const row = clGrid.createEl("label", { cls: "duckmage-region-gen-row" });
+      const box = row.createEl("input", { type: "checkbox" });
+      box.checked = on;
+      row.createSpan({ text: label });
+      box.addEventListener("change", () => { set(box.checked); this.check(); });
+    };
+    tick("Coast only", cl.coastal, (v) => { cl.coastal = v; });
+    tick("Rare", cl.rare, (v) => { cl.rare = v; });
+    clBox.createEl("p", { cls: "setting-item-description", text: "When set, World biomes can place this biome where the climate fits, like a built-in one. Left blank, it's only placed by hand. Temperature: cold, cool, mild, warm, hot; moisture: dry, moderate, wet; or numbers from 0 to 1." });
+
     // Transitions.
     const trBox = form.createEl("details", { cls: "duckmage-biome-transitions" });
     trBox.open = state.transitions.length > 0;
@@ -339,7 +370,7 @@ export class BiomeFormModal extends HexmakerModal {
     const fields = fieldsFromForm(this.state, existing?.id);
     if (existing) {
       // Unset optional fields are written as removed.
-      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, ...fields };
+      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, climate: undefined, ...fields };
       delete full.id;
       if (!(await plugin.biomeStore.update(existing.id, full))) return;
     } else {

@@ -9,6 +9,7 @@
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import type { TerrainColor } from "../types";
 import { biomeSlug, type BiomeBlend, type BiomeNoteFields, type BiomeTransition } from "./biomeNote";
+import { climateKeyValues, readClimate, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
 import { profileFromMix, type BiomeId } from "./biomes";
 import { planRegion, paletteTypeOf, type RegionPlan } from "./regionWorld";
 import type { RegionLayout } from "./layout";
@@ -57,6 +58,45 @@ export interface BiomeFormState {
   landPercent?: number;
   minIslands?: number;
   transitions: BiomeTransition[];
+  /** Climate for generated overworlds, as typed (blank = not set). */
+  climate: ClimateFormState;
+}
+
+/** The form's climate fields: text as typed for the ranges, so any spelling the note accepts works. */
+export interface ClimateFormState {
+  temperature: string;
+  moisture: string;
+  elevation: ClimateElevation | "";
+  coastal: boolean;
+  /** 0..100, or undefined (every fitting hex). */
+  chancePercent?: number;
+  rare: boolean;
+}
+
+/** The form's climate fields filled from a biome's climate. */
+export function climateFormFrom(c: BiomeClimate | undefined): ClimateFormState {
+  const values = new Map(climateKeyValues(c));
+  return {
+    temperature: values.get("temperature") ?? "",
+    moisture: values.get("moisture") ?? "",
+    elevation: c?.elevation ?? "",
+    coastal: !!c?.coastal,
+    chancePercent: c?.chance !== undefined ? Math.round(c.chance * 100) : undefined,
+    rare: !!c?.rare,
+  };
+}
+
+/** The climate the form says, and what in it couldn't be read. */
+export function climateFromForm(s: ClimateFormState): { climate?: BiomeClimate; problems: string[] } {
+  const fm = new Map<string, string>();
+  if (s.temperature.trim()) fm.set("temperature", s.temperature);
+  if (s.moisture.trim()) fm.set("moisture", s.moisture);
+  if (s.elevation) fm.set("elevation", s.elevation);
+  if (s.coastal) fm.set("coastal", "yes");
+  if (s.chancePercent !== undefined) fm.set("chance", `${Math.min(100, Math.max(0, s.chancePercent))}%`);
+  if (s.rare) fm.set("rare", "yes");
+  const r = readClimate(fm);
+  return { climate: r.climate, problems: r.problems.map((p) => p.text) };
 }
 
 /** The types a form offers: the palette's (in order, settlements left out), then any others the biome already uses. */
@@ -80,6 +120,7 @@ export function formFromFields(fields: BiomeNoteFields | undefined, types: strin
     landPercent: fields?.landShare !== undefined ? Math.round(fields.landShare * 100) : undefined,
     minIslands: fields?.minIslands,
     transitions: (fields?.transitions ?? []).map((t) => ({ ...t })),
+    climate: climateFormFrom(fields?.climate),
   };
 }
 
@@ -97,6 +138,8 @@ export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields 
   if (s.blend) f.blend = s.blend;
   if (s.landPercent !== undefined) f.landShare = Math.min(100, Math.max(0, s.landPercent)) / 100;
   if (s.minIslands !== undefined) f.minIslands = Math.max(0, Math.round(s.minIslands));
+  const climate = s.climate ? climateFromForm(s.climate).climate : undefined;
+  if (climate) f.climate = climate;
   return f;
 }
 
@@ -108,6 +151,8 @@ export function formProblem(s: BiomeFormState, others: { id: string; label: stri
   if (!k) return "Use some letters or numbers in the name.";
   if (others.some((o) => o.id === k || biomeSlug(o.label) === k)) return `There's already a biome called ${label}.`;
   if (![...s.mix.values()].some((w) => w > 0)) return "Give at least one terrain type a weight.";
+  const climate = s.climate ? climateFromForm(s.climate).problems : [];
+  if (climate.length) return `Climate: ${climate[0]}.`;
   return undefined;
 }
 
