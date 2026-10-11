@@ -1,0 +1,423 @@
+/**
+ * Biome notes (#50): one plain note per overworld biome, at
+ * `<worldFolder>/biomes/<name>.md`, built-in and user-made alike.
+ *
+ *   ---
+ *   hexmaker-biome: 1
+ *   id: tundra
+ *   label: Tundra
+ *   colour: "#d8e4ea"
+ *   blend: normal
+ *   land-share: 90%
+ *   min-islands: 3
+ *   generator: "[[My tundra]]"
+ *   ---
+ *
+ *   # Tundra
+ *
+ *   > [!info] Biome
+ *   > … (short help)
+ *
+ *   ## Mix
+ *
+ *   | Type | Weight |
+ *   | --- | ---: |
+ *   | snow | 40 |
+ *
+ *   ## Transitions
+ *
+ *   | Next to | Put between |
+ *   | --- | --- |
+ *   | Temperate forest | Taiga |
+ *
+ * - *Mix* is by terrain TYPE (the palette's Type column), never by terrain
+ *   name: a region of this biome gets each type in proportion to its weight
+ *   (any scale), spread over the palette's terrains of that type.
+ * - *Transitions*: biomes this one shouldn't touch on an overworld, and the
+ *   biome put between them. Biomes are named by label, id or note name.
+ * - `blend`: narrow, normal or wide (how far the biome mixes into its
+ *   neighbours' regions). `land-share` (0–100%, or 0–1) and `min-islands`
+ *   are for watery biomes. All optional.
+ * - `generator`: a generator note this biome's regions come from (once
+ *   generator regions land); without one it mixes with the blend field.
+ *
+ * Reading is forgiving: columns by header name in any order, `colour` or
+ * `color`, weights like `40` or `40%`. Rows that can't be read are reported
+ * (`problems`) and left in the note as written. Writing touches only the
+ * plugin's own frontmatter keys and the two tables; every other line (the
+ * user's prose, extra frontmatter keys) stays; a table is only rewritten
+ * when what it says changed.
+ *
+ * Pure: no Obsidian imports.
+ */
+
+/** Frontmatter key written into every biome note (the format version). */
+export const BIOME_NOTE_MARKER = "hexmaker-biome";
+export const BIOME_NOTE_FORMAT = 1;
+
+export type BiomeBlend = "narrow" | "normal" | "wide";
+export const BIOME_BLENDS: readonly BiomeBlend[] = ["narrow", "normal", "wide"];
+
+export interface BiomeMixRow {
+  /** Terrain type id (TERRAIN_TYPES), e.g. "forest". */
+  type: string;
+  /** Relative weight, > 0, any scale. */
+  weight: number;
+}
+
+export interface BiomeTransition {
+  /** The biome this one shouldn't touch (as written: label, id or note name). */
+  next: string;
+  /** The biome put between them. */
+  between: string;
+}
+
+/** What a biome note says. Shared with the generator page (other session). */
+export interface BiomeNoteFields {
+  /** Stable id: references (region maps, transitions) use it, so a renamed note keeps them. */
+  id: string;
+  label: string;
+  /** Swatch colour (CSS colour, hex lower-cased). */
+  color?: string;
+  /** Terrain-type mix (by type only). */
+  mix: BiomeMixRow[];
+  transitions: BiomeTransition[];
+  /** Inter-region blend width; unset = the overworld's setting. */
+  blend?: BiomeBlend;
+  /** Share of land, 0..1 (watery biomes). */
+  landShare?: number;
+  /** Fewest islands a region of this biome gets. */
+  minIslands?: number;
+  /** Link target of a generator note (no brackets), e.g. "world/generators/My tundra". */
+  generator?: string;
+}
+
+export interface BiomeNoteProblem {
+  /** "settings" (frontmatter), "Mix" or "Transitions". */
+  where: string;
+  text: string;
+}
+
+export interface ParsedBiomeNote {
+  fields: BiomeNoteFields;
+  problems: BiomeNoteProblem[];
+}
+
+/** Lower-case id from a name: "Temperate forest" → "temperate-forest". */
+export function biomeSlug(name: string): string {
+  return name.trim().toLowerCase().replace(/[\s_]+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+}
+
+const UNSAFE_NAME_CHARS = /[\\/:*?"<>|#^[\]]/g;
+
+/** A label as a legal note basename. */
+export function biomeFileName(label: string): string {
+  return label.replace(UNSAFE_NAME_CHARS, "-").replace(/\s+/g, " ").trim().replace(/^\.+/, "") || "Biome";
+}
+
+export const BIOME_HELP = [
+  "> [!info] Biome",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `generator` links a generator note. Delete a row to drop it.",
+];
+
+// ── reading ──────────────────────────────────────────────────────────────
+
+function splitRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  const cells: string[] = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
+    else if (s[i] === "|") { cells.push(cur.trim()); cur = ""; }
+    else cur += s[i];
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
+
+interface Span { start: number; end: number; headers: string[] }
+
+const norm = (h: string) => h.trim().toLowerCase().replace(/\s+/g, " ");
+
+/** First table whose headers satisfy `want`. */
+function findTable(lines: string[], want: (headers: string[]) => boolean): Span | null {
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (!lines[i].trim().startsWith("|") || !SEPARATOR_ROW.test(lines[i + 1])) continue;
+    const headers = splitRow(lines[i]).map(norm);
+    if (!want(headers)) continue;
+    let end = i + 2;
+    while (end < lines.length && lines[end].trim().startsWith("|")) end++;
+    return { start: i, end, headers };
+  }
+  return null;
+}
+
+const isMix = (h: string[]) => h.includes("type") && (h.includes("weight") || h.includes("share"));
+const isTransitions = (h: string[]) => (h.includes("next to") || h.includes("biome")) && (h.includes("put between") || h.includes("between") || h.includes("transition"));
+
+/** The frontmatter span (line indices: the opening and closing `---`), or null. */
+function frontmatterSpan(lines: string[]): { open: number; close: number } | null {
+  if (lines[0]?.trim() !== "---") return null;
+  const close = lines.findIndex((l, i) => i > 0 && l.trim() === "---");
+  return close > 0 ? { open: 0, close } : null;
+}
+
+const unquote = (v: string) => {
+  const t = v.trim();
+  if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) return t.slice(1, -1).replace(/\\"/g, '"');
+  return t;
+};
+
+/** Plain `key: value` frontmatter (no nesting needed here). Keys lower-cased. */
+function readFrontmatter(lines: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  const fm = frontmatterSpan(lines);
+  if (!fm) return out;
+  for (const l of lines.slice(fm.open + 1, fm.close)) {
+    const m = /^([A-Za-z][\w-]*)\s*:\s*(.*)$/.exec(l);
+    if (m) out.set(m[1].toLowerCase(), unquote(m[2].replace(/\s+#.*$/, "")));
+  }
+  return out;
+}
+
+/** "40", "40%", "0.4" → a number, or NaN. */
+const num = (raw: string) => Number(raw.trim().replace(/%$/, "").trim());
+
+/** "60%" → 0.6, "0.6" → 0.6, "60" → 0.6. NaN when unreadable. */
+export function parseShare(raw: string): number {
+  const t = raw.trim();
+  if (!t) return NaN;
+  const pct = t.endsWith("%");
+  const n = num(t);
+  if (!Number.isFinite(n)) return NaN;
+  const v = pct || n > 1 ? n / 100 : n;
+  return v >= 0 && v <= 1 ? v : NaN;
+}
+
+const HEX = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i;
+function readColour(raw: string): string {
+  const v = raw.trim().replace(/^`+|`+$/g, "").trim();
+  if (HEX.test(v)) return (v.startsWith("#") ? v : `#${v}`).toLowerCase();
+  return v;
+}
+
+/** `[[Target|Alias]]` / `[[Target]]` / plain text → "Target". */
+export function linkTarget(raw: string): string {
+  const m = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/.exec(raw);
+  return (m ? m[1] : raw).trim();
+}
+
+/**
+ * Read a biome note. `basename` (the note's name) gives the label and id
+ * when the frontmatter has none. Never throws; unreadable bits go to `problems`.
+ */
+export function parseBiomeNote(content: string, basename: string): ParsedBiomeNote {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const fm = readFrontmatter(lines);
+  const problems: BiomeNoteProblem[] = [];
+  const label = fm.get("label")?.trim() || basename.trim();
+  const fields: BiomeNoteFields = {
+    id: biomeSlug(fm.get("id") ?? "") || biomeSlug(basename) || biomeSlug(label) || "biome",
+    label,
+    mix: [],
+    transitions: [],
+  };
+  const colour = fm.get("colour") ?? fm.get("color");
+  if (colour) fields.color = readColour(colour);
+  const blend = fm.get("blend")?.trim().toLowerCase();
+  if (blend) {
+    if ((BIOME_BLENDS as readonly string[]).includes(blend)) fields.blend = blend as BiomeBlend;
+    else problems.push({ where: "settings", text: `blend should be narrow, normal or wide, not "${blend}"` });
+  }
+  const land = fm.get("land-share");
+  if (land) {
+    const v = parseShare(land);
+    if (Number.isFinite(v)) fields.landShare = v;
+    else problems.push({ where: "settings", text: `land-share should be a share like 60%, not "${land}"` });
+  }
+  const isl = fm.get("min-islands");
+  if (isl) {
+    const v = num(isl);
+    if (Number.isInteger(v) && v >= 0) fields.minIslands = v;
+    else problems.push({ where: "settings", text: `min-islands should be a whole number, not "${isl}"` });
+  }
+  const gen = fm.get("generator");
+  if (gen && linkTarget(gen)) fields.generator = linkTarget(gen);
+
+  const mix = findTable(lines, isMix);
+  if (mix) {
+    const ti = mix.headers.indexOf("type");
+    const wi = mix.headers.includes("weight") ? mix.headers.indexOf("weight") : mix.headers.indexOf("share");
+    for (let i = mix.start + 2; i < mix.end; i++) {
+      const cells = splitRow(lines[i]);
+      if (cells.every((c) => c === "")) continue;
+      const type = (cells[ti] ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+      const w = num(cells[wi] ?? "");
+      if (!type) { problems.push({ where: "Mix", text: `row ${i + 1}: no type` }); continue; }
+      if (!Number.isFinite(w) || w < 0) { problems.push({ where: "Mix", text: `row ${i + 1}: weight "${cells[wi] ?? ""}" isn't a number` }); continue; }
+      if (w === 0) continue;
+      const hit = fields.mix.find((r) => r.type === type);
+      if (hit) hit.weight += w;
+      else fields.mix.push({ type, weight: w });
+    }
+  }
+  const tr = findTable(lines, isTransitions);
+  if (tr) {
+    const ni = tr.headers.includes("next to") ? tr.headers.indexOf("next to") : tr.headers.indexOf("biome");
+    const bi = ["put between", "between", "transition"].map((h) => tr.headers.indexOf(h)).find((x) => x >= 0)!;
+    for (let i = tr.start + 2; i < tr.end; i++) {
+      const cells = splitRow(lines[i]);
+      if (cells.every((c) => c === "")) continue;
+      const next = linkTarget(cells[ni] ?? ""), between = linkTarget(cells[bi] ?? "");
+      if (!next || !between) { problems.push({ where: "Transitions", text: `row ${i + 1}: needs both a biome and the one put between` }); continue; }
+      fields.transitions.push({ next, between });
+    }
+  }
+  return { fields, problems };
+}
+
+// ── writing ──────────────────────────────────────────────────────────────
+
+const esc = (s: string) => s.replace(/\|/g, "\\|");
+const fmt = (n: number) => String(Math.round(n * 1000) / 1000);
+const quote = (s: string) => (/^[\w .,()'-]*$/.test(s) && !/^\s|\s$/.test(s) && !/^(yes|no|true|false|null|~|-?\d[\d.]*)$/i.test(s) ? s : `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`);
+
+/** "0.6" → "60%". */
+export const shareText = (v: number) => `${fmt(v * 100)}%`;
+
+function mixTable(rows: BiomeMixRow[]): string[] {
+  return ["| Type | Weight |", "| --- | ---: |", ...rows.map((r) => `| ${esc(r.type)} | ${fmt(r.weight)} |`)];
+}
+
+function transitionsTable(rows: BiomeTransition[]): string[] {
+  return ["| Next to | Put between |", "| --- | --- |", ...rows.map((r) => `| ${esc(r.next)} | ${esc(r.between)} |`)];
+}
+
+/** Our frontmatter keys, in writing order, with their values (undefined = remove). */
+function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
+  return [
+    [BIOME_NOTE_MARKER, String(BIOME_NOTE_FORMAT)],
+    ["id", f.id],
+    ["label", quote(f.label)],
+    ["colour", f.color ? `"${f.color}"` : undefined],
+    ["blend", f.blend],
+    ["land-share", f.landShare !== undefined ? shareText(f.landShare) : undefined],
+    ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
+    ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
+  ];
+}
+
+const OWN_ALIASES: Record<string, string> = { color: "colour" };
+
+/** A fresh biome note. */
+export function buildBiomeNote(f: BiomeNoteFields): string {
+  const fm = ownKeys(f).filter(([, v]) => v !== undefined).map(([k, v]) => `${k}: ${v}`);
+  return [
+    "---", ...fm, "---", "",
+    `# ${f.label}`, "",
+    ...BIOME_HELP, "",
+    "## Mix", "",
+    ...mixTable(f.mix), "",
+    "## Transitions", "",
+    ...transitionsTable(f.transitions), "",
+  ].join("\n");
+}
+
+/**
+ * The note with `f` written into it: our frontmatter keys set (others kept,
+ * in place), the Mix and Transitions tables replaced (or added under their
+ * own heading at the end). Everything else stays as it was; line endings
+ * are kept. The same string when nothing changed.
+ */
+export function updateBiomeNote(content: string, f: BiomeNoteFields): string {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  let lines = content.replace(/\r\n?/g, "\n").split("\n");
+  // Frontmatter.
+  const keys = ownKeys(f);
+  let fm = frontmatterSpan(lines);
+  if (!fm) {
+    lines = ["---", "---", ...lines];
+    fm = { open: 0, close: 1 };
+  }
+  const body = lines.slice(fm.open + 1, fm.close);
+  const seen = new Set<string>();
+  const nextBody: string[] = [];
+  for (const l of body) {
+    const m = /^([A-Za-z][\w-]*)\s*:/.exec(l);
+    const key = m ? (OWN_ALIASES[m[1].toLowerCase()] ?? m[1].toLowerCase()) : undefined;
+    const own = key ? keys.find(([k]) => k === key) : undefined;
+    if (!own) { nextBody.push(l); continue; }
+    if (seen.has(key!)) continue; // a duplicate key: one is enough
+    seen.add(key!);
+    if (own[1] === undefined) continue;
+    const want = `${m![1]}: ${own[1]}`;
+    // Keep the user's spelling when it already reads as the same value.
+    const cur = readFrontmatter(["---", l, "---"]).get(m![1].toLowerCase()) ?? "";
+    nextBody.push(sameValue(key!, cur, own[1]) ? l : want);
+  }
+  for (const [k, v] of keys) if (!seen.has(k) && v !== undefined) nextBody.push(`${k}: ${v}`);
+  lines.splice(fm.open + 1, fm.close - fm.open - 1, ...nextBody);
+  // Tables.
+  lines = putTable(lines, isMix, mixTable(f.mix), "## Mix");
+  lines = putTable(lines, isTransitions, transitionsTable(f.transitions), "## Transitions");
+  const out = lines.join(eol);
+  return out === content.replace(/\r\n?/g, "\n").split("\n").join(eol) ? content : out;
+}
+
+function sameValue(key: string, cur: string, want: string): boolean {
+  const w = unquote(want);
+  if (key === "land-share") return parseShare(cur) === parseShare(w);
+  if (key === "colour") return readColour(cur) === readColour(w);
+  if (key === "generator") return linkTarget(cur) === linkTarget(w);
+  if (key === "id") return biomeSlug(cur) === biomeSlug(w);
+  return cur.trim() === w.trim();
+}
+
+function putTable(lines: string[], want: (h: string[]) => boolean, table: string[], heading: string): string[] {
+  const span = findTable(lines, want);
+  if (span) {
+    const cur = lines.slice(span.start, span.end);
+    // Rows the plugin reads the same are left alone (spacing, alignment, extra columns).
+    if (sameTable(cur, table)) return lines;
+    return [...lines.slice(0, span.start), ...table, ...lines.slice(span.end)];
+  }
+  const out = [...lines];
+  while (out.length && out[out.length - 1].trim() === "") out.pop();
+  out.push("", heading, "", ...table, "");
+  return out;
+}
+
+function sameTable(cur: string[], next: string[]): boolean {
+  const rows = (ls: string[]) => ls.slice(2).filter((l) => splitRow(l).some((c) => c !== "")).map((l) => splitRow(l).join("|").toLowerCase());
+  const a = rows(cur), b = rows(next);
+  return a.length === b.length && a.every((r, i) => r === b[i]) && splitRow(cur[0]).map(norm).join("|") === splitRow(next[0]).map(norm).join("|");
+}
+
+/** Mix as shares summing to 1 (types with weight 0 dropped). */
+export function mixShares(mix: BiomeMixRow[]): Map<string, number> {
+  const total = mix.reduce((s, r) => s + Math.max(0, r.weight), 0);
+  const out = new Map<string, number>();
+  if (total <= 0) return out;
+  for (const r of mix) if (r.weight > 0) out.set(r.type, (out.get(r.type) ?? 0) + r.weight / total);
+  return out;
+}
+
+/**
+ * The biome store as the rest of the plugin sees it (`plugin.biomeStore`).
+ * `name` is a biome's id, label or note name (case-insensitive).
+ */
+export interface BiomeStoreApi {
+  get(name: string): BiomeNoteFields | undefined;
+  /** Every biome, in note-name order. */
+  list(): BiomeNoteFields[];
+  /** Write a change to a biome's note (user prose kept). False when there's no such biome or its note doesn't read. */
+  update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>): Promise<boolean>;
+  /** Rewrite a shipped biome's note from its preset data (the old note is backed up). False for user biomes. */
+  restoreDefault(name: string): Promise<boolean>;
+  /** Whether a biome has shipped preset data (Restore default applies). */
+  hasDefault(name: string): boolean;
+}
