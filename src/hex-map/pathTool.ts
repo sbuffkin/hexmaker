@@ -255,7 +255,7 @@ export function pathContextOutcome(hit: PathHit | null, shift: boolean): PathCon
 
 /** The mode-bar hint over another type's path. */
 export function inertHint(p: Pick<MapPath, "name" | "typeName">): string {
-  return `${p.name} is a ${p.typeName}: switch to ${p.typeName} to edit it`;
+  return `switch to ${p.typeName} to edit ${p.name}`;
 }
 
 /**

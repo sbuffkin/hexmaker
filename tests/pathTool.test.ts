@@ -215,7 +215,7 @@ describe("pathContextOutcome: right-click", () => {
   });
 
   it("the hover hint over an inert path names its type", () => {
-    expect(inertHint(GLASS)).toBe("Glass River is a River: switch to River to edit it");
+    expect(inertHint(GLASS)).toBe("switch to River to edit Glass River");
   });
 });
 
