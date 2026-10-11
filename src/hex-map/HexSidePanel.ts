@@ -2,6 +2,7 @@ import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
+import { Disclosure } from "../ui/disclosure";
 import { NAME_FAMILIES, NAME_SIZES, nameStyleId, resolveNameFont, type HexNameSize, type ResolvedNameFont } from "./hexNameFont";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
@@ -273,6 +274,10 @@ export class OverlayPanel extends HexSidePanel {
       regionCb.checked = !regionCb.checked;
       applyRegion();
     });
+    // The region overlay is Advanced (placement: LayersMenu.regionOverlay):
+    // in a collapsed dropdown at the end of the menu, so it doesn't grow.
+    const disclosure = new Disclosure(this.plugin.app, "LayersMenu", () => panel);
+    disclosure.place("LayersMenu.regionOverlay", regionRow);
 
     // GM layer — default on (unlike the opt-in overlays above)
     const gmRow = panel.createDiv({ cls: "duckmage-overlay-row" });
@@ -316,7 +321,7 @@ export class OverlayPanel extends HexSidePanel {
       legendCb.checked = !legendCb.checked;
       applyLegend();
     });
-
+    disclosure.toEnd();
   }
 
   /**

@@ -142,6 +142,30 @@ export function lockedHint(action: ModeAction): string {
 }
 
 /**
+ * God is in the mode switch's Advanced ▸ submenu (owner, 2026-10-11), so
+ * it's offered where it's needed instead: a hint that says God unlocks
+ * the action gets a "Switch to God for this map" button or menu item right
+ * there. Never offered for an action Build already allows, and never
+ * anywhere else (no nags).
+ */
+export const GOD_OFFER = "Switch to God for this map";
+
+/** Is God the only mode that allows `action`? */
+export function needsGod(action: ModeAction): boolean {
+  return modeFor(action) === "god";
+}
+
+/**
+ * The actionable form of a locked hint that names God ("Switch to God to
+ * swap hexes." → "Switch to God for this map to swap hexes"); null for
+ * every other hint (Build, or none).
+ */
+export function godOfferText(hint: string | null | undefined): string | null {
+  if (!hint || !/\bSwitch to God\b/.test(hint)) return null;
+  return hint.replace(/\bSwitch to God\b/, GOD_OFFER).replace(/\.$/, "");
+}
+
+/**
  * One line for several locked actions (a menu that hid them): the lowest
  * mode that unlocks any of them, with the verb when there's just one.
  */

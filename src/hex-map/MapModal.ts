@@ -26,6 +26,7 @@ import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
 import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
 import { canReshape, lockedHint } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
+import { addGodOffer } from "./godOffer";
 import { meshes } from "../overworld/regionWorld";
 import { missingRegionHexes } from "../overworld/regionsVault";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
@@ -192,7 +193,8 @@ export class MapModal extends HexmakerModal {
       // The first pass again, over the whole map (God only; locked hexes kept).
       const genRow = el.createDiv({ cls: "duckmage-region-row" });
       const gen = genRow.createEl("button", { text: "Generate overworld…" });
-      genRow.createSpan({ cls: "duckmage-map-origin-desc", text: canReshape(map) ? "Lay out biomes from a pool again and remake the regions. Locked hexes stay." : REGENERATE_LOCKED_HINT });
+      const genDesc = genRow.createSpan({ cls: "duckmage-map-origin-desc", text: canReshape(map) ? "Lay out biomes from a pool again and remake the regions. Locked hexes stay." : REGENERATE_LOCKED_HINT });
+      if (!canReshape(map)) addGodOffer(genDesc, this.plugin, map.name, REGENERATE_LOCKED_HINT, () => this.render());
       gen.addEventListener("click", () => {
         this.close();
         new NewOverworldModal(this.app, this.plugin, () => this.onChanged(), map.name).open();
@@ -644,7 +646,8 @@ export class MapModal extends HexmakerModal {
   private renderDeleteBlock(el: HTMLElement, name: string): void {
     el.createEl("h4", { text: "Delete map" });
     if (!canDo(name, "delete-map")) {
-      el.createEl("p", { text: lockedHint("delete-map"), cls: "duckmage-map-origin-desc" });
+      const p = el.createEl("p", { text: lockedHint("delete-map"), cls: "duckmage-map-origin-desc" });
+      addGodOffer(p, this.plugin, name, lockedHint("delete-map"), () => this.render());
       return;
     }
     if (this.plugin.settings.maps.length <= 1) {

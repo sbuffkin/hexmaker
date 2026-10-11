@@ -25,6 +25,7 @@ import { newWorldId } from "../worldgen/world";
 import { isSpacePalette } from "../mapKinds";
 import { ecotoneHexes } from "../overworld/regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
+import { addGodOffer } from "./godOffer";
 import { ALL_BIOMES_POOL, type BiomePoolRow } from "../overworld/biomePool";
 import {
   REGENERATE_LOCKED_HINT,
@@ -355,6 +356,14 @@ export class NewOverworldModal extends HexmakerModal {
       create.setAttr("title", REGENERATE_LOCKED_HINT);
       status.setText(REGENERATE_LOCKED_HINT);
       status.addClass("duckmage-locked-hint");
+      // Regenerating is God's: offer the switch right here (godOffer.ts).
+      addGodOffer(status, this.plugin, regen.name, REGENERATE_LOCKED_HINT, () => {
+        create.disabled = false;
+        create.removeClass("is-locked");
+        create.removeAttribute("title");
+        status.setText("");
+        status.removeClass("duckmage-locked-hint");
+      });
     }
     create.addEventListener("click", () => {
       create.disabled = true;

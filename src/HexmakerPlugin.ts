@@ -74,7 +74,8 @@ import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
-import { workModeOf, type ModeAction } from "./workMode";
+import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
+import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
 import { contentFolder } from "./notePickers";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
@@ -556,11 +557,7 @@ export default class HexmakerPlugin extends Plugin {
               .setSection("insert")
               .onClick(() => {
                 new MapLinkModal(this.app, this, (mapName, linkText) => {
-                  const vault = encodeURIComponent(this.app.vault.getName());
-                  const map   = encodeURIComponent(mapName);
-                  editor.replaceSelection(
-                    `[${linkText}](obsidian://duckmage-openmap?vault=${vault}&map=${map})`,
-                  );
+                  editor.replaceSelection(`[${linkText}](${mapLinkUri(this.app.vault.getName(), { map: mapName })})`);
                 }).open();
               }),
           );
@@ -610,23 +607,27 @@ export default class HexmakerPlugin extends Plugin {
       }
     });
 
-    this.registerObsidianProtocolHandler("duckmage-openmap", (params) => {
-      const mapName = params["map"];
-      if (!mapName) return;
+    // A map link (`map=`), or a hex link (`map=&x=&y=`: the map centred on
+    // that hex, e.g. copied from the hex editor's centre dot). src/hexLink.ts.
+    this.registerObsidianProtocolHandler(OPEN_MAP_ACTION, (params) => {
+      const target = parseMapLinkParams(params);
+      if (!target) return;
+      const go = (view: HexMapView, record: boolean) => {
+        if (target.hex) view.goToHex(target.map, target.hex.x, target.hex.y, { recordHistory: record });
+        else view.navigateToMap(target.map, { recordHistory: record });
+      };
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
         // Revealing loads a deferred (restored, never shown) tab first.
         void this.app.workspace.revealLeaf(leaves[0]).then(() => {
-          if (leaves[0].view instanceof HexMapView) leaves[0].view.navigateToMap(mapName);
+          if (leaves[0].view instanceof HexMapView) go(leaves[0].view, true);
         });
       } else {
         void this.app.workspace.getLeaf("tab")
           .setViewState({ type: VIEW_TYPE_HEX_MAP })
           .then(() => {
-            const newLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-            if (newLeaves.length > 0) {
-              (newLeaves[0].view as HexMapView).navigateToMap(mapName, { recordHistory: false });
-            }
+            const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view;
+            if (view instanceof HexMapView) go(view, false);
           });
       }
     });
@@ -781,6 +782,26 @@ export default class HexmakerPlugin extends Plugin {
     await this.app.workspace.revealLeaf(leaf);
     // Revealing loads a deferred tab, so this is the map view by now.
     if (leaf.view instanceof HexMapView) leaf.view.switchMapFromModal(name);
+  }
+
+  /**
+   * Switch a map's work mode (saved as `mode:` in its map note). An open map
+   * view showing it switches through its own setWorkMode (puts a locked tool
+   * down, refreshes its bars); otherwise the map is just saved.
+   */
+  setMapWorkMode(mapName: string, mode: WorkMode): void {
+    const map = this.getMap(mapName);
+    if (!map) return;
+    let viaView = false;
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)) {
+      if (leaf.view instanceof HexMapView && leaf.view.activeMapName === mapName) {
+        leaf.view.setWorkMode(mode);
+        viaView = true;
+      }
+    }
+    if (viaView || workModeOf(map) === mode) return;
+    map.workMode = mode;
+    void this.saveSettings();
   }
 
   openSetupWizard(): void {

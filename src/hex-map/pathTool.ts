@@ -48,6 +48,8 @@ import { impassableNames, noRouteMessage } from "../impassable";
 import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";
 import { PathNameModal } from "./PathNameModal";
+import { addSubmenuButtons, placedRows } from "./placedMenu";
+import { isDebugMode } from "../ui/debugMode";
 
 // ── Pure: hit-testing ────────────────────────────────────────────────────────
 
@@ -288,18 +290,22 @@ export interface PathMenuActions {
 }
 
 /**
- * The path's items in the right-click menu, in order (#48): Split here,
- * Delete this fork (or main line; only with forks), Delete path, Rename…,
- * Change type…, Reverse. The menu lists them above the tool's own items.
+ * The path's items in the right-click menu, in order (#48; placement
+ * 2026-10-11): Rename…, Delete path, Change type…, Delete this fork (or
+ * main line; only with forks), then Split here and Reverse, which the
+ * placement map puts in the menu's "Advanced ▸" submenu. The menu lists
+ * them above the tool's own items.
  */
-export function pathMenuItems(p: MapPath, branch: number, act: PathMenuActions): { label: string; onClick: () => void }[] {
-  const items = [{ label: "Split here", onClick: act.split }];
-  if (p.branches.length > 1) items.push({ label: branch === 0 ? "Delete main line" : "Delete this fork", onClick: act.deleteBranch });
+export function pathMenuItems(p: MapPath, branch: number, act: PathMenuActions): { label: string; onClick: () => void; id: string }[] {
+  const items = [
+    { id: "PathMenu.rename", label: "Rename…", onClick: act.rename },
+    { id: "PathMenu.deletePath", label: `Delete path: ${p.name}`, onClick: act.deletePath },
+    { id: "PathMenu.changeType", label: "Change type…", onClick: act.changeType },
+  ];
+  if (p.branches.length > 1) items.push({ id: "PathMenu.deleteBranch", label: branch === 0 ? "Delete main line" : "Delete this fork", onClick: act.deleteBranch });
   items.push(
-    { label: `Delete path: ${p.name}`, onClick: act.deletePath },
-    { label: "Rename…", onClick: act.rename },
-    { label: "Change type…", onClick: act.changeType },
-    { label: "Reverse", onClick: act.reverse },
+    { id: "PathMenu.splitHere", label: "Split here", onClick: act.split },
+    { id: "PathMenu.reverse", label: "Reverse", onClick: act.reverse },
   );
   return items;
 }
@@ -1060,7 +1066,7 @@ export class PathTool {
    * returns its menu items; on another type's path, a "Switch to <type>"
    * item; elsewhere null (the usual tool menu).
    */
-  contextMenu(e: { clientX: number; clientY: number; shiftKey?: boolean }): { handled: true } | { items: { label: string; onClick: () => void }[] } | null {
+  contextMenu(e: { clientX: number; clientY: number; shiftKey?: boolean }): { handled: true } | { items: { label: string; onClick: () => void; id?: string }[] } | null {
     if (!this.plugin.paths.isReady(this.map)) return null;
     const hit = this.hitAt(e);
     const outcome = pathContextOutcome(hit, !!e.shiftKey);
@@ -1420,6 +1426,15 @@ export class PathTool {
 
   /** Draw-mode switch, Cross impassable, the selected path's name (rename), New path, Done. */
   renderBarControls(el: HTMLElement): void {
+    // Cross impassable is Advanced (placement: ModeBar.crossImpassable): an
+    // "Advanced ▸" button at the end of the bar opens it as a checked item.
+    const cross = placedRows([{
+      id: "ModeBar.crossImpassable",
+      label: "Cross impassable",
+      checked: this.crossImpassable,
+      onClick: () => { this.crossImpassable = !this.crossImpassable; this.host.refreshBar(); },
+    }], isDebugMode(this.plugin.app));
+    let advanced = false;
     const auto = el.createEl("button", {
       cls: "duckmage-mode-bar-route-toggle",
       text: "Auto-route",
@@ -1445,7 +1460,7 @@ export class PathTool {
             attr: { title: "Nothing in this map's palette is impassable, so routes go straight through anything. Mark terrains (e.g. water) impassable in the palette editor or the terrain editor." },
           });
         }
-      } else {
+      } else if (cross.shown.length) {
         const label = el.createEl("label", {
           cls: "duckmage-mode-bar-route-cross",
           attr: { title: `Let new legs go through ${blocked.join(", ")} (anchors are added so the line stays put)` },
@@ -1454,7 +1469,7 @@ export class PathTool {
         box.checked = this.crossImpassable;
         box.addEventListener("change", () => { this.crossImpassable = box.checked; });
         label.createSpan({ text: "Cross impassable" });
-      }
+      } else advanced = true;
     }
 
     const p = this.pathNamed(this.selected);
@@ -1481,5 +1496,6 @@ export class PathTool {
       });
       done.addEventListener("click", () => this.done());
     }
+    if (advanced) addSubmenuButtons(el, cross, "duckmage-mode-bar-route-toggle duckmage-mode-bar-advanced");
   }
 }

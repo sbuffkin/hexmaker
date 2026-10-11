@@ -31,6 +31,28 @@ export class Notice {
 	setMessage(_msg: string) { return this; }
 	hide() { this.rec.hidden = true; }
 }
+/** A built menu item (title, icon, disabled, checked, click), for tests to read. */
+export class MenuItem {
+	title = ""; icon: string | null = null; disabled = false; checked: boolean | null = null; click: (() => void) | null = null;
+	setTitle(t: string) { this.title = String(t); return this; }
+	setIcon(i: string | null) { this.icon = i; return this; }
+	setDisabled(d: boolean) { this.disabled = d; return this; }
+	setChecked(c: boolean | null) { this.checked = c; return this; }
+	onClick(cb: () => void) { this.click = cb; return this; }
+	setSection(_s: string) { return this; }
+	setWarning(_w: boolean) { return this; }
+	setIsLabel(_l: boolean) { return this; }
+}
+export class Menu {
+	/** Every menu shown, for tests to check (clear it yourself). */
+	static shown: Menu[] = [];
+	items: (MenuItem | "separator")[] = [];
+	addItem(cb: (item: MenuItem) => unknown) { const i = new MenuItem(); cb(i); this.items.push(i); return this; }
+	addSeparator() { this.items.push("separator"); return this; }
+	showAtMouseEvent(_e: unknown) { Menu.shown.push(this); return this; }
+	showAtPosition(_p: unknown) { Menu.shown.push(this); return this; }
+	hide() { return this; }
+}
 export class Plugin { constructor(_app: App, _manifest: any) {} }
 export class PluginSettingTab { app: App; containerEl: any = {}; constructor(app: App, _plugin: unknown) { this.app = app; } display(): void {} hide(): void {} }
 export class Setting { constructor(_el: unknown) {} }

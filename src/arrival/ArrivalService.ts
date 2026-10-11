@@ -49,6 +49,7 @@ import {
 } from "../worldgen/registry";
 import { attrsForTerrain } from "../worldgen/tableSources";
 import { canRerollPlace, REROLL_PLACE_LOCKED_HINT, workModeOf, type ModeAction } from "../workMode";
+import { lockedNotice } from "../hex-map/godOffer";
 import {
   arrivalLines,
   arrivalSeed,
@@ -307,7 +308,8 @@ export class ArrivalService {
     const { plugin } = this;
     const map = plugin.getMap(mapName);
     if (!map?.arrival || !map.parent || !plugin.getMap(map.parent.map)) return false;
-    if (!canRerollPlace(map)) { new Notice(REROLL_PLACE_LOCKED_HINT); return false; }
+    // Locked (God only): the Notice offers to switch the map to God.
+    if (!canRerollPlace(map)) { lockedNotice(plugin, mapName, REROLL_PLACE_LOCKED_HINT); return false; }
     if (map.submapKind === "region") return this.rerollRegion(mapName);
     const { map: parentName, hex } = map.parent;
     const [x, y] = hex.split("_").map(Number);

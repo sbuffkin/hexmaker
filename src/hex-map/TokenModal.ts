@@ -53,6 +53,8 @@ export class TokenModal extends HexmakerModal {
     this.hasBorder          = !!initialData.border;
   }
 
+  protected surfaceId = "Token";
+
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
@@ -331,6 +333,8 @@ export class TokenModal extends HexmakerModal {
       });
     descSetting.nameEl.addClass("duckmage-token-field-label");
     descSetting.nameEl.addEventListener("click", () => descInput?.focus());
+    // Advanced (placement: Token.description): in the dropdown above the buttons.
+    this.place("Token.description", descSetting.settingEl);
 
     // Buttons
     const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
