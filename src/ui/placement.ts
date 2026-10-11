@@ -39,11 +39,11 @@ export const PLACEMENT: Readonly<Record<string, Layer>> = {
   "Settings.workflowsFolder": "advanced",
   "Settings.templatesFolder": "advanced",
   "Settings.palettesFolder": "advanced",
-  "Settings.biomesFolder": "advanced",
-  "Settings.biomePoolsFolder": "advanced",
-  "Settings.worldTypesFolder": "advanced",
-  "Settings.generateFolders": "debug",
-  "Settings.generateWorldData": "debug",
+  "Settings.biomesFolder": "debug",
+  "Settings.biomePoolsFolder": "debug",
+  "Settings.worldTypesFolder": "debug",
+  "Settings.generateFolders": "advanced",
+  "Settings.generateWorldData": "advanced",
 
   // ── Generator page: recipe extras are Advanced ──
   "GenPage.symmetry": "advanced",

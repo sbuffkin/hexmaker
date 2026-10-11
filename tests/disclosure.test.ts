@@ -34,7 +34,8 @@ describe("placement map", () => {
     expect(layerOf("Settings.hexGap")).toBe("main");
     expect(layerOf("Nowhere.atAll")).toBe("main");
     expect(layerOf("Settings.hexFolder")).toBe("advanced");
-    expect(layerOf("Settings.generateWorldData")).toBe("debug");
+    expect(layerOf("Settings.generateWorldData")).toBe("advanced");
+    expect(layerOf("Settings.biomesFolder")).toBe("debug");
     expect(layerOf("GenPage.clumping")).toBe("debug");
     expect(layerOf("GenPage.symmetry")).toBe("advanced");
     // Not a prototype key or a bad value.
@@ -54,9 +55,11 @@ describe("placement map", () => {
     expect(layerOf("Settings.hexFolder", {})).toBe("main");
   });
 
-  it("the proof placements: folders Advanced, maintenance and engine tuning Debug", () => {
+  it("the proof placements: folders and setup tools Advanced, storage plumbing and engine tuning Debug", () => {
     expect(idsOn("advanced").filter((id) => id.startsWith("Settings."))).toContain("Settings.worldFolder");
-    expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData", "GenPage.scatter", "GenPage.mixStrength"]));
+    // The setup tools are in the README's manual setup, so Advanced, not Debug.
+    expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData"]));
+    expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder", "GenPage.scatter", "GenPage.mixStrength"]));
     // Customisation is not "advanced" (rule 5): the custom icons folder stays main.
     expect(layerOf("Settings.iconsFolder")).toBe("main");
   });
@@ -200,7 +203,7 @@ describe("settings definitions (Obsidian 1.13+)", () => {
     expect(all).not.toContain("Feature level");
   });
 
-  it("put folders in Advanced (collapsed) and maintenance in Debug (debug mode only)", () => {
+  it("put folders and setup tools in Advanced (collapsed) and storage plumbing in Debug (debug mode only)", () => {
     const store = new FakeStore();
     let defs = tabWith(store).getSettingDefinitions() as Item[];
     const advanced = defs.find((d) => d.items?.[0]?.name === "Advanced")!;
@@ -216,7 +219,8 @@ describe("settings definitions (Obsidian 1.13+)", () => {
     // Debug: only while debug mode is on (and Advanced is open).
     defs = tabWith(store).getSettingDefinitions() as Item[];
     const debug = defs.find((d) => d.heading === "Debug")!;
-    expect(names(debug.items!)).toEqual(expect.arrayContaining(["Generate terrain tables & hex links", "Set up folders"]));
+    expect(names(debug.items!)).toEqual(expect.arrayContaining(["Biomes folder", "Biome pools folder", "World types folder"]));
+    expect(names(advanced.items!)).toEqual(expect.arrayContaining(["Generate terrain tables & hex links", "Set up folders"]));
     expect(shown(debug.visible)).toBe(false);
     setDebugMode(store, true);
     expect(shown(debug.visible)).toBe(true);
