@@ -122,6 +122,7 @@ export class WorldTypesModal extends HexmakerModal {
   private previewEl!: HTMLElement;
   private saveBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
+  private tabButtons = new Map<WorldTypesTab, HTMLButtonElement>();
   private preview: { map: WorldTypeMap | ""; zone: OrbitZone | ""; star: string; temperature: string; n: number } = { map: "", zone: "", star: "", temperature: "", n: 200 };
 
   /** `mapName`: the map it was opened for (work mode, preview's map kind). `tab`: the tab to open on. */
@@ -273,6 +274,7 @@ export class WorldTypesModal extends HexmakerModal {
     }
 
     const tabs = contentEl.createDiv({ cls: "duckmage-world-types-tabs", attr: { role: "tablist" } });
+    this.tabButtons.clear();
     for (const t of TAB_ORDER) {
       const b = tabs.createEl("button", {
         text: `${TABS[t].label} (${this.cells[t].length})`,
@@ -280,6 +282,7 @@ export class WorldTypesModal extends HexmakerModal {
         attr: { role: "tab", "aria-selected": String(t === this.tab) },
       });
       b.toggleClass("is-active", t === this.tab);
+      this.tabButtons.set(t, b);
       b.addEventListener("click", () => {
         if (t === this.tab) return;
         this.tab = t;
@@ -341,6 +344,7 @@ export class WorldTypesModal extends HexmakerModal {
 
   private changed(): void {
     this.dirty = true;
+    for (const [t, b] of this.tabButtons) b.setText(`${TABS[t].label} (${this.cells[t].length})`);
     this.updateStatus();
     this.renderPreview();
   }
