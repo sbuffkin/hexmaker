@@ -80,7 +80,6 @@ import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
 import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
-import { contentFolder } from "./notePickers";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
 import type { RoleId } from "./worldgen/tableRoles";
