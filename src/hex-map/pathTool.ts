@@ -35,6 +35,8 @@ import {
 } from "../paths/edit";
 import { anchorsFor, routeFnFor } from "../paths/fromHexes";
 import { canEditPaths, type PathEditAction } from "../paths/editGate";
+import { pathRouteText } from "../maps/mapNote";
+import { pathRouteStats } from "../maps/MapStore";
 import { impassableNames, noRouteMessage } from "../impassable";
 import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";
@@ -201,6 +203,46 @@ export function pathSummary(p: MapPath): string {
   return forks ? `${p.typeName}, ${forks} fork${forks === 1 ? "" : "s"}` : p.typeName;
 }
 
+/** What the path items of the right-click menu do. */
+export interface PathMenuActions {
+  split: () => void;
+  deleteBranch: () => void;
+  deletePath: () => void;
+  rename: () => void;
+  changeType: () => void;
+  reverse: () => void;
+}
+
+/**
+ * The path's items in the right-click menu, in order (#48): Split here,
+ * Delete this fork (or main line; only with forks), Delete path, Rename…,
+ * Change type…, Reverse. The menu lists them above the tool's own items.
+ */
+export function pathMenuItems(p: MapPath, branch: number, act: PathMenuActions): { label: string; onClick: () => void }[] {
+  const items = [{ label: "Split here", onClick: act.split }];
+  if (p.branches.length > 1) items.push({ label: branch === 0 ? "Delete main line" : "Delete this fork", onClick: act.deleteBranch });
+  items.push(
+    { label: `Delete path: ${p.name}`, onClick: act.deletePath },
+    { label: "Rename…", onClick: act.rename },
+    { label: "Change type…", onClick: act.changeType },
+    { label: "Reverse", onClick: act.reverse },
+  );
+  return items;
+}
+
+/**
+ * "3, 4 → 9, 2 · 2 forks · 18 hexes": a path's ends, forks and size
+ * (distinct routed hexes over every branch, from the resolved routes), so
+ * paths with similar names (Road 2 … Road 6) can be told apart in "Paths
+ * on this map" (#48). It's the map note's own Route cell (pathRouteText,
+ * pathRouteStats), so the list and the note say the same thing, warnings
+ * included. Before the routes are resolved the size is left out.
+ */
+export function pathListSummary(p: MapPath, resolved: readonly ResolvedBranch[], pathTypes?: string[]): string {
+  const own = resolved.filter((r) => r.path === p.name);
+  return pathRouteText(p, { pathRoutes: pathRouteStats([p], own), pathTypes });
+}
+
 // ── The controller ───────────────────────────────────────────────────────────
 
 /** What the tool needs from the map view. */
@@ -242,6 +284,60 @@ interface Drag {
   cleanup: () => void;
 }
 
+/** The branch end a draw adds to: a path (by name), its branch, which end. */
+interface DrawTarget {
+  name: string;
+  branch: number;
+  end: "head" | "tail";
+}
+
+/** Hex-by-hex press-and-drag: every hex the pointer enters becomes an anchor; one commit on release. */
+interface DrawDrag {
+  /** What a click at the press would have done (start, append, finish or continue). */
+  outcome: PathClick;
+  pressHex: HexKey;
+  lastHex: HexKey;
+  startX: number;
+  startY: number;
+  started: boolean;
+  /** The paths as drawn so far (shown as the preview; committed on release). */
+  work: MapPath[] | null;
+  target: DrawTarget | null;
+  /** The branch's anchor count before the drag: only anchors past it can be stepped back over. */
+  baseLen: number;
+  /** Some entered hex couldn't be reached (impassable, off the map) and was skipped. */
+  blocked: boolean;
+  frame: number | null;
+  cleanup: () => void;
+}
+
+/**
+ * One anchor added to a branch end (pure): `leg` is what legAnchors gives
+ * from the end to `key` (tail) or from `key` to the end (head), the new
+ * anchor included last (tail) / the end included last (head).
+ */
+export function extendBranch(p: MapPath, branch: number, end: "head" | "tail", key: HexKey, leg: readonly HexKey[]): MapPath {
+  if (end === "tail") return leg.reduce((q, k) => appendAnchor(q, branch, k), p);
+  const q = clonePath(p);
+  q.branches[branch].anchors = [key, ...leg.slice(0, -1), ...p.branches[branch].anchors];
+  return q;
+}
+
+/**
+ * Drag-drawing stepped back into the hex before the end: drop the end
+ * anchor (pure). Only anchors the drag added (past `baseLen`) go; null
+ * when `key` isn't that hex or the end wasn't added by this drag.
+ */
+export function stepBack(p: MapPath, branch: number, end: "head" | "tail", key: HexKey, baseLen: number): MapPath | null {
+  const a = p.branches[branch]?.anchors;
+  if (!a || a.length <= baseLen || a.length < 2) return null;
+  const prev = end === "tail" ? a[a.length - 2] : a[1];
+  if (prev !== key) return null;
+  const q = clonePath(p);
+  q.branches[branch].anchors = end === "tail" ? a.slice(0, -1) : a.slice(1);
+  return q;
+}
+
 /** Decorations the path layer draws for the tool. */
 export interface PathToolOverlay {
   /** The selected path (drawn highlighted). */
@@ -268,6 +364,7 @@ export class PathTool {
   hint: string | null = null;
   private hover: { branch: number; anchor: number } | null = null;
   private drag: Drag | null = null;
+  private drawDrag: DrawDrag | null = null;
   private suppressClick = false;
   private strokeMemo: { resolved: readonly ResolvedBranch[]; strokes: PathStroke[] } | null = null;
 
@@ -319,6 +416,12 @@ export class PathTool {
 
   /** The hex clicks add to, if any. */
   activeHex(): HexKey | null {
+    const t = this.drawDrag?.target;
+    const work = this.drawDrag?.work;
+    if (work && t) {
+      const a = work.find((p) => p.name === t.name)?.branches[t.branch]?.anchors;
+      if (a?.length) return t.end === "head" ? a[0] : a[a.length - 1];
+    }
     if (this.pending) return this.pending.hex;
     const p = this.pathNamed(this.selected);
     if (!p || !this.active) return null;
@@ -432,6 +535,7 @@ export class PathTool {
   /** Leave the tool (or switch map): forget everything but the picked type and switches. */
   reset(): void {
     this.cancelDrag();
+    this.cancelDrawDrag();
     this.selected = null;
     this.active = null;
     this.pending = null;
@@ -503,6 +607,10 @@ export class PathTool {
   escape(): boolean {
     if (this.drag) {
       this.cancelDrag();
+      return true;
+    }
+    if (this.drawDrag) {
+      this.cancelDrawDrag();
       return true;
     }
     if (this.isDrawing() || this.forceNew || this.selected !== null) {
@@ -579,15 +687,16 @@ export class PathTool {
    * impassable terrain is pinned with whatever anchors make the normal
    * router reproduce it. Null (with a notice) when there's no route.
    */
-  private legAnchors(from: HexKey, to: HexKey, typeName: string): HexKey[] | null {
+  private legAnchors(from: HexKey, to: HexKey, typeName: string, quiet = false): HexKey[] | null {
     const router: RouteCache | null = this.plugin.paths.router(this.map);
     if (!router) return null;
+    const say = (msg: string) => { if (!quiet) new Notice(msg); };
     const style = this.plugin.paths.styleOf(this.map, typeName);
     const seg = router.route(from, to, style);
     if (this.crossImpassable && style.avoid) {
       const through = router.route(from, to, { ...style, avoid: false });
       if (through.fallback) {
-        new Notice("Both ends must be on the map.");
+        say("Both ends must be on the map.");
         return null;
       }
       const same = !seg.fallback && seg.hexes.length === through.hexes.length && seg.hexes.every((k, i) => k === through.hexes[i]);
@@ -595,11 +704,11 @@ export class PathTool {
       return anchorsFor(through.hexes, routeFnFor(router, style), router.context ?? undefined).slice(1);
     }
     if (seg.fallback === "out-of-bounds") {
-      new Notice("Both ends must be on the map.");
+      say("Both ends must be on the map.");
       return null;
     }
     if (seg.fallback === "no-route") {
-      new Notice(noRouteMessage(style.avoid ? impassableNames(this.plugin.getMapPalette(this.map)) : []));
+      say(noRouteMessage(style.avoid ? impassableNames(this.plugin.getMapPalette(this.map)) : []));
       return null;
     }
     return [to];
@@ -615,61 +724,59 @@ export class PathTool {
     if (!near) this.hint = "not next to the end, so the gap was routed";
   }
 
-  /** Add an anchor at `key` from the active end (creating a started path or fork). */
-  private append(key: HexKey): void {
+  /**
+   * Where the next anchor goes, as paths + a branch end: a started path or
+   * fork is created here (with its one anchor) in a copy of the map's
+   * paths; an active end is used as it is. Null when nothing is being drawn.
+   */
+  private drawTarget(): { paths: MapPath[]; target: DrawTarget } | null {
     const pending = this.pending;
     if (pending?.kind === "new") {
       const type = this.typeName;
-      if (!type) return;
-      const leg = this.legAnchors(pending.hex, key, type);
-      if (!leg) return;
+      if (!type) return null;
       const p = newPath(type, pending.hex, this.paths().map((q) => q.name));
-      p.branches[0].anchors.push(...leg);
-      this.noteGap(pending.hex, key);
-      if (this.commit([...clonePaths(this.paths()), p])) {
-        this.pending = null;
-        this.selected = p.name;
-        this.active = { branch: 0, end: "tail" };
-      }
-      return;
+      return { paths: [...clonePaths(this.paths()), p], target: { name: p.name, branch: 0, end: "tail" } };
     }
     if (pending?.kind === "fork") {
       const base = this.pathNamed(pending.path);
-      if (!base) {
-        this.pending = null;
-        return;
-      }
-      const leg = this.legAnchors(pending.hex, key, base.typeName);
-      if (!leg) return;
+      if (!base) return null;
       const { path, branch } = forkAt(base, pending.hex);
-      path.branches[branch].anchors.push(...leg);
-      this.noteGap(pending.hex, key);
-      if (this.commit(this.replacePath(base.name, path))) {
-        this.pending = null;
-        this.selected = path.name;
-        this.active = { branch, end: "tail" };
-      }
-      return;
+      return { paths: this.replacePath(base.name, path), target: { name: path.name, branch, end: "tail" } };
     }
     const p = this.pathNamed(this.selected);
-    const act = this.active;
-    if (!p || !act) return;
-    const anchors = p.branches[act.branch].anchors;
-    if (act.end === "tail") {
-      const from = anchors[anchors.length - 1];
-      const leg = this.legAnchors(from, key, p.typeName);
-      if (!leg) return;
-      this.noteGap(from, key);
-      this.commit(this.replacePath(p.name, leg.reduce((q, k) => appendAnchor(q, act.branch, k), p)));
-    } else {
-      // The branch runs head → tail, so the new leg is routed key → head.
-      const from = anchors[0];
-      const leg = this.legAnchors(key, from, p.typeName);
-      if (!leg) return;
-      this.noteGap(from, key);
-      const q = clonePath(p);
-      q.branches[act.branch].anchors = [key, ...leg.slice(0, -1), ...anchors];
-      this.commit(this.replacePath(p.name, q));
+    if (!p || !this.active || !p.branches[this.active.branch]) return null;
+    return { paths: clonePaths(this.paths()), target: { name: p.name, ...this.active } };
+  }
+
+  /** `paths` with an anchor added at `key` on the target's end (routed from it); null when it can't be reached. */
+  private extendTo(paths: readonly MapPath[], t: DrawTarget, key: HexKey, quiet = false): MapPath[] | null {
+    const p = paths.find((q) => q.name === t.name);
+    const anchors = p?.branches[t.branch]?.anchors;
+    if (!p || !anchors?.length) return null;
+    const endHex = t.end === "tail" ? anchors[anchors.length - 1] : anchors[0];
+    if (endHex === key) return null;
+    // The branch runs head → tail, so a head leg is routed key → head.
+    const leg = t.end === "tail" ? this.legAnchors(endHex, key, p.typeName, quiet) : this.legAnchors(key, endHex, p.typeName, quiet);
+    if (!leg) return null;
+    const next = extendBranch(p, t.branch, t.end, key, leg);
+    return paths.map((q) => (q === p ? next : q));
+  }
+
+  /** Add an anchor at `key` from the active end (creating a started path or fork). */
+  private append(key: HexKey): void {
+    const d = this.drawTarget();
+    if (!d) {
+      if (this.pending?.kind === "fork") this.pending = null;
+      return;
+    }
+    const from = this.activeHex();
+    const next = this.extendTo(d.paths, d.target, key);
+    if (!next) return;
+    if (from) this.noteGap(from, key);
+    if (this.commit(next)) {
+      this.pending = null;
+      this.selected = d.target.name;
+      this.active = { branch: d.target.branch, end: d.target.end };
     }
   }
 
@@ -807,24 +914,23 @@ export class PathTool {
     const p = this.pathNamed(hit.path);
     if (!p) return null;
     const { path, branch, hexIdx } = hit;
-    const items: { label: string; onClick: () => void }[] = [
-      { label: "Split here", onClick: () => this.split(path, branch, hexIdx) },
-    ];
-    if (p.branches.length > 1) items.push({ label: branch === 0 ? "Delete main line" : "Delete this fork", onClick: () => this.deleteBranch(path, branch) });
-    items.push(
-      { label: `Delete path: ${p.name}`, onClick: () => this.deletePath(path) },
-      { label: "Rename…", onClick: () => this.rename(path) },
-      { label: "Change type…", onClick: () => this.changeType(path) },
-      { label: "Reverse", onClick: () => this.reverse(path, branch) },
-    );
-    return { items };
+    return {
+      items: pathMenuItems(p, branch, {
+        split: () => this.split(path, branch, hexIdx),
+        deleteBranch: () => this.deleteBranch(path, branch),
+        deletePath: () => this.deletePath(path),
+        rename: () => this.rename(path),
+        changeType: () => this.changeType(path),
+        reverse: () => this.reverse(path, branch),
+      }),
+    };
   }
 
   // ── pointer: hover and drag ──
 
   /** Pointer moved (no button): hover an anchor handle, show "grab" over the selected path. */
   pointerMove(e: { clientX: number; clientY: number }): void {
-    if (this.drag || this.selected === null || this.isDrawing()) {
+    if (this.drag || this.drawDrag || this.selected === null || this.isDrawing()) {
       if (this.hover) { this.hover = null; this.host.redraw(); }
       this.host.setGrabCursor(false);
       return;
@@ -839,12 +945,21 @@ export class PathTool {
   }
 
   /**
-   * Left button down: on the selected path (not while drawing, erasing or
-   * with Alt), get ready to drag. Returns true when it took the press.
+   * Left button down. Hex by hex: where a click would draw (start a path,
+   * add to the active end, or continue from an end handle), get ready to
+   * drag-draw. Otherwise, on the selected path (not while drawing, erasing
+   * or with Alt), get ready to drag it into a new shape. Returns true when
+   * it took the press (and stops the browser's own image drag, so a press
+   * on a hex icon works too).
    */
   pointerDown(e: MouseEvent, erasing: boolean): boolean {
-    if (e.button !== 0 || erasing || e.altKey || this.forceNew || this.isDrawing() || this.selected === null) return false;
+    if (e.button !== 0 || erasing) return false;
     if (!this.plugin.paths.isReady(this.map)) return false;
+    if (!this.autoRoute && this.beginDrawDrag(e)) {
+      e.preventDefault();
+      return true;
+    }
+    if (e.altKey || this.forceNew || this.isDrawing() || this.selected === null) return false;
     const hit = this.hitAt(e);
     if (!hit || hit.path !== this.selected) return false;
     const rb = this.branchRoute(hit.path, hit.branch);
@@ -873,7 +988,168 @@ export class PathTool {
         doc.removeEventListener("mouseup", onUp);
       },
     };
+    e.preventDefault();
     return true;
+  }
+
+  // ── hex-by-hex press-and-drag drawing ──
+
+  /** Hex by hex: a press where a click would draw gets ready to drag-draw (nothing changes until the pointer leaves the hex). */
+  private beginDrawDrag(e: MouseEvent): boolean {
+    const key = this.host.hexAtPoint(e.clientX, e.clientY);
+    if (!key) return false;
+    const forceNew = this.forceNew || e.altKey;
+    const activeHex = this.activeHex();
+    const hit = !forceNew && activeHex === null ? this.hitAt(e) : null;
+    const outcome = pathClickOutcome({ erasing: false, forceNew, activeHex, selected: this.selected }, key, hit);
+    if (outcome.kind !== "start" && outcome.kind !== "append" && outcome.kind !== "finish" && outcome.kind !== "continue") return false;
+    if (outcome.kind === "start" && !(this.typeName ?? this.currentType())) return false;
+    if (!canEditPaths(this.map, "draw")) return false;
+    const doc = this.host.ownerDocument();
+    const onMove = (ev: MouseEvent) => this.drawDragMove(ev);
+    const onUp = () => this.drawDragEnd();
+    doc.addEventListener("mousemove", onMove);
+    doc.addEventListener("mouseup", onUp);
+    this.drawDrag = {
+      outcome,
+      pressHex: key,
+      lastHex: key,
+      startX: e.clientX,
+      startY: e.clientY,
+      started: false,
+      work: null,
+      target: null,
+      baseLen: 0,
+      blocked: false,
+      frame: null,
+      cleanup: () => {
+        doc.removeEventListener("mousemove", onMove);
+        doc.removeEventListener("mouseup", onUp);
+      },
+    };
+    return true;
+  }
+
+  /**
+   * The pointer left the pressed hex: do what the press would have done
+   * as a click (start the path, continue from the end, add the pressed
+   * hex), in a working copy. False when there's nothing to draw from.
+   */
+  private startDrawDrag(d: DrawDrag): boolean {
+    const o = d.outcome;
+    if (o.kind === "start") {
+      if (!this.typeName) this.typeName = this.currentType();
+      if (!this.typeName) return false;
+      this.forceNew = false;
+      this.selected = null;
+      this.active = null;
+      this.pending = { kind: "new", hex: d.pressHex };
+    } else if (o.kind === "continue") {
+      this.selected = o.path;
+      this.active = { branch: o.branch, end: o.end };
+      this.pending = null;
+    }
+    this.hint = null;
+    const t = this.drawTarget();
+    if (!t) return false;
+    const len = (paths: readonly MapPath[]) => paths.find((p) => p.name === t.target.name)?.branches[t.target.branch]?.anchors.length ?? 0;
+    d.baseLen = this.pending?.kind === "new" ? 0 : len(t.paths);
+    d.target = t.target;
+    d.work = t.paths;
+    // A press away from the active end adds that hex first, as a click would.
+    if (o.kind === "append") {
+      const next = this.extendTo(d.work, d.target, d.pressHex, true);
+      if (next) d.work = next;
+      else d.blocked = true;
+    }
+    return true;
+  }
+
+  /** One hex entered: it becomes an anchor (or, stepping back into the hex before the end, the end goes). */
+  private drawStep(d: DrawDrag, key: HexKey): void {
+    const t = d.target;
+    if (!t || !d.work) return;
+    const p = d.work.find((q) => q.name === t.name);
+    if (!p) return;
+    const back = stepBack(p, t.branch, t.end, key, d.baseLen);
+    if (back) {
+      d.work = d.work.map((q) => (q === p ? back : q));
+      return;
+    }
+    const next = this.extendTo(d.work, t, key, true);
+    if (next) d.work = next;
+    else d.blocked = true;
+  }
+
+  private drawDragMove(e: MouseEvent): void {
+    const d = this.drawDrag;
+    if (!d) return;
+    if (!d.started && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= 4) return;
+    const hex = this.host.hexAtPoint(e.clientX, e.clientY);
+    if (!hex || hex === d.lastHex) return;
+    if (!d.started) {
+      d.started = true;
+      if (!this.startDrawDrag(d)) {
+        this.cancelDrawDrag();
+        return;
+      }
+      // The bar says "drawing" from the first hex, not only after release.
+      this.host.refreshBar();
+    }
+    d.lastHex = hex;
+    // Every hex is taken now (none skipped); the preview redraws once per frame.
+    this.drawStep(d, hex);
+    if (d.frame === null) {
+      d.frame = window.requestAnimationFrame(() => {
+        d.frame = null;
+        if (this.drawDrag === d) this.showDrawPreview(d);
+      });
+    }
+  }
+
+  private showDrawPreview(d: DrawDrag): void {
+    this.plugin.paths.setPreview(this.map, d.work);
+    this.strokeMemo = null;
+    this.host.redraw();
+  }
+
+  /** Release: the whole drag is one commit (one undo step). */
+  private drawDragEnd(): void {
+    const d = this.drawDrag;
+    if (!d) return;
+    d.cleanup();
+    if (d.frame !== null) window.cancelAnimationFrame(d.frame);
+    this.drawDrag = null;
+    if (!d.started) return; // a click: the click handler takes it
+    this.suppressClick = true;
+    window.setTimeout(() => { this.suppressClick = false; }, 0);
+    this.plugin.paths.setPreview(this.map, null);
+    this.strokeMemo = null;
+    const t = d.target;
+    if (t && d.work && this.commit(d.work)) {
+      this.pending = null;
+      this.selected = t.name;
+      this.active = { branch: t.branch, end: t.end };
+    }
+    this.hint = d.blocked ? "some hexes couldn't be reached and were skipped" : null;
+    this.host.redraw();
+    this.host.refreshBar();
+  }
+
+  private cancelDrawDrag(): void {
+    const d = this.drawDrag;
+    if (!d) return;
+    d.cleanup();
+    if (d.frame !== null) window.cancelAnimationFrame(d.frame);
+    this.drawDrag = null;
+    if (d.started) {
+      this.suppressClick = true;
+      window.setTimeout(() => { this.suppressClick = false; }, 0);
+    }
+    this.plugin.paths.setPreview(this.map, null);
+    this.strokeMemo = null;
+    this.host.redraw();
+    this.host.refreshBar();
   }
 
   private dragMove(e: MouseEvent): void {
@@ -942,7 +1218,7 @@ export class PathTool {
 
   /** Is a drag under way (its click must not count)? */
   isDragging(): boolean {
-    return !!this.drag?.started;
+    return !!this.drag?.started || !!this.drawDrag?.started;
   }
 
   // ── mode bar controls ──

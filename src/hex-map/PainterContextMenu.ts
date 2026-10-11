@@ -3,6 +3,29 @@ export interface PainterContextMenuOption {
   onClick: () => void;
 }
 
+/** A menu row: an option, or a separator line. */
+export type PainterContextMenuEntry = PainterContextMenuOption | { separator: true };
+
+/**
+ * The rows of a painter menu, top to bottom (pure): the `leading` items
+ * (what's under the pointer, e.g. the path tool's path items) first, then
+ * a separator, then the tool's own items: Switch (when there's a picker),
+ * Exit tool, and the tool's extras. No separator without leading items.
+ */
+export function painterMenuEntries(
+  leading: readonly PainterContextMenuOption[],
+  onSwitch: (() => void) | null,
+  switchLabel: string,
+  onExit: () => void,
+  extra: readonly PainterContextMenuOption[],
+): PainterContextMenuEntry[] {
+  const tool: PainterContextMenuOption[] = [];
+  if (onSwitch) tool.push({ label: switchLabel, onClick: onSwitch });
+  tool.push({ label: "Exit tool", onClick: onExit });
+  tool.push(...extra);
+  return leading.length ? [...leading, { separator: true }, ...tool] : tool;
+}
+
 /**
  * Lightweight right-click context menu for painter-type tools.
  * Shows "Switch" (if a picker exists for the tool) and "Exit tool" by default.
@@ -17,6 +40,8 @@ export class PainterContextMenu {
     private readonly onExit: () => void,
     private readonly switchLabel = "Switch",
     private readonly extra: PainterContextMenuOption[] = [],
+    /** Items about what's under the pointer, listed first (above a separator). */
+    private readonly leading: PainterContextMenuOption[] = [],
   ) {}
 
   open(x: number, y: number): void {
@@ -26,12 +51,11 @@ export class PainterContextMenu {
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
 
-    const opts: PainterContextMenuOption[] = [];
-    if (this.onSwitch) opts.push({ label: this.switchLabel, onClick: this.onSwitch });
-    opts.push({ label: "Exit tool", onClick: this.onExit });
-    opts.push(...this.extra);
-
-    for (const opt of opts) {
+    for (const opt of painterMenuEntries(this.leading, this.onSwitch, this.switchLabel, this.onExit, this.extra)) {
+      if ("separator" in opt) {
+        menu.createDiv({ cls: "duckmage-painter-ctx-separator" });
+        continue;
+      }
       const item = menu.createDiv({
         cls: "duckmage-painter-ctx-item",
         text: opt.label,

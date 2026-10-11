@@ -117,7 +117,7 @@ export class PathPickerModal extends HexmakerModal {
         (ar.value
           ? "Click a start, then click far away: the path finds its own way there. Keep clicking to add more." +
             (ar.noImpassable ? " This palette has no impassable terrain yet: mark the terrains paths can't cross (e.g. water) in the palette editor." : "")
-          : "Click neighbouring hexes one by one (a click further away is routed for you).") +
+          : "Click neighbouring hexes one by one, or press and drag across them (a click further away is routed for you).") +
           " Click a path to select it, then drag its line to reshape it.",
       );
       hint.createSpan({ text: " You can switch this while drawing, from the bar at the top." });
@@ -217,7 +217,7 @@ export class PathPickerModal extends HexmakerModal {
     this.renderPathsOnMap(section, pathTypes);
   }
 
-  /** "Paths on this map": each path (type colour, name, what it is); click to select it on the map. */
+  /** "Paths on this map": each path (type colour, name, its ends, forks and size); click to select it on the map. */
   private renderPathsOnMap(container: HTMLElement, types: PathType[]): void {
     const pm = this.pathsOnMap;
     if (!pm) return;
@@ -228,7 +228,7 @@ export class PathPickerModal extends HexmakerModal {
     }
     const list = container.createDiv({ cls: "duckmage-path-list" });
     for (const p of pm.list) {
-      const row = list.createEl("button", { cls: "duckmage-path-list-row", attr: { title: `Select ${p.name} on the map` } });
+      const row = list.createEl("button", { cls: "duckmage-path-list-row", attr: { title: `Select ${p.name} (${p.typeName}) on the map` } });
       row.toggleClass("is-selected", p.name === pm.selected);
       const swatch = row.createSpan({ cls: "duckmage-path-list-swatch" });
       const color = types.find((t) => t.name === p.typeName)?.color;

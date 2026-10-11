@@ -66,7 +66,8 @@ describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
 		const handler = viewSrc.slice(start, viewSrc.indexOf("{ capture: true }", start));
 		expect(handler).toMatch(/this\.drawingMode === "path"[\s\S]*this\.pathTool\.contextMenu\(e\)[\s\S]*"handled" in r\) return;[\s\S]*showPainterContextMenu\(e\.clientX, e\.clientY, hexX, hexY, pathItems\)/);
 		const menu = toolMethod("contextMenu");
-		for (const label of ["Split here", "Delete path: ", "Rename…", "Change type…", "Reverse"]) expect(menu).toContain(label);
+		expect(menu).toMatch(/pathMenuItems\(p, branch, \{/);
+		// The labels and their order: tests/pathToolPolish.test.ts (#48).
 		expect(menu).toMatch(/hit\.anchor !== null\) \{\s*this\.deleteAnchor\(/);
 	});
 
@@ -144,7 +145,10 @@ describe("Path tool upkeep (anchored paths)", () => {
 		const click = toolMethod("click");
 		expect(click).toMatch(/this\.pending = \{ kind: "new", hex: key \}/);
 		expect(click).not.toMatch(/commit\(/);
-		expect(toolMethod("append")).toMatch(/p\.branches\[0\]\.anchors\.push\(\.\.\.leg\)[\s\S]*this\.commit\(/);
+		// The started path is made (in a copy) only when the next anchor is added, then committed with it.
+		expect(toolMethod("append")).toMatch(/this\.drawTarget\(\)[\s\S]*this\.extendTo\([\s\S]*this\.commit\(/);
+		expect(toolMethod("drawTarget")).toMatch(/newPath\(type, pending\.hex/);
+		expect(toolMethod("drawTarget")).not.toMatch(/commit\(/);
 	});
 
 	it("Esc steps out one level (drag → branch → selection) before leaving the tool; Backspace deletes an anchor", () => {
