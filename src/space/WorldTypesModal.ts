@@ -9,6 +9,13 @@
  * anything typed here reads back the same from the note. Rows the note
  * has that can't be read are listed, never touched.
  *
+ * Changes save automatically, like the hex editor (SP2): a moment after
+ * typing stops, and when the dialog closes. Only rows that read are
+ * written; a row that doesn't is marked incomplete and stays here until
+ * it's fixed or removed (it's dropped on close). Hand edits to the note
+ * while the dialog is open are taken in, never overwritten
+ * (worldTypesDraft.ts has the rules).
+ *
  * Opened from the space generators' options (New map / submap setup) and
  * the "Edit world types…" command. Editing follows the map's work mode:
  * Build and God (canAdd), not Play.
@@ -24,29 +31,20 @@ import {
   ORBIT_ZONES,
   STAR_COLUMNS,
   WORLD_TYPE_COLUMNS,
-  featureCells,
   formatChance,
-  readFeatureCells,
-  readStarCells,
-  readWorldTypeCells,
   rollSectorFeatures,
   rollStars,
   rollWorldTypes,
   sectorFeatureOdds,
-  starCells,
   starOdds,
-  worldTypeCells,
   worldTypeOdds,
   type OrbitZone,
-  type SectorFeatureRow,
-  type StarTypeRow,
   type WorldTypeColumn,
   type WorldTypeContext,
-  type WorldTypeExtras,
   type WorldTypeMap,
-  type WorldTypeRow,
-  type WorldTypeTable,
 } from "./worldTypes";
+import { TAB_ORDER, WorldTypesDraft, type WorldTypesTab } from "./worldTypesDraft";
+import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "../hex-map/saveStatus";
 
 /** Why world types can't be edited from this map now, or undefined. */
 export function worldTypesEditLock(plugin: HexmakerPlugin, mapName: string | undefined): string | undefined {
@@ -85,21 +83,25 @@ const SETUP_COLUMNS: WorldTypeColumn[] = ["Size", "Generator", "Options", "Palet
 
 const col = (c: WorldTypeColumn) => WORLD_TYPE_COLUMNS.indexOf(c);
 
-export type WorldTypesTab = "worlds" | "stars" | "features";
+export type { WorldTypesTab };
 
-/** One tab's table: its columns and how its cells read. */
+/** One tab's table: its columns. */
 interface TabSpec {
   label: string;
   columns: readonly string[];
-  read: (cells: readonly string[]) => { problem?: string };
 }
 
 const TABS: Record<WorldTypesTab, TabSpec> = {
-  worlds: { label: "Worlds", columns: WORLD_TYPE_COLUMNS, read: readWorldTypeCells },
-  stars: { label: "Stars", columns: STAR_COLUMNS, read: readStarCells },
-  features: { label: "Sector features", columns: FEATURE_COLUMNS, read: readFeatureCells },
+  worlds: { label: "Worlds", columns: WORLD_TYPE_COLUMNS },
+  stars: { label: "Stars", columns: STAR_COLUMNS },
+  features: { label: "Sector features", columns: FEATURE_COLUMNS },
 };
-const TAB_ORDER: WorldTypesTab[] = ["worlds", "stars", "features"];
+
+/** Tooltip on the save status. */
+const SAVE_TITLE = "Saves a moment after you stop typing, and when you close the dialog. Rows marked incomplete aren't saved.";
+
+/** "1 incomplete row" / "2 incomplete rows". */
+const incompleteRows = (n: number) => `${n} incomplete row${n === 1 ? "" : "s"}`;
 
 /** Terrain types offered as suggestions for each name column. */
 const SUGGEST_TYPES: Record<string, string[]> = {
@@ -112,16 +114,27 @@ const SUGGEST_TYPES: Record<string, string[]> = {
 export class WorldTypesModal extends HexmakerModal {
   private tableName: string;
   private tab: WorldTypesTab;
-  /** The rows being edited, as note cells, per tab. */
-  private cells: Record<WorldTypesTab, string[][]> = { worlds: [], stars: [], features: [] };
-  /** Whether the note has a Stars / Sector features table (so an empty one isn't added on save). */
-  private has = { stars: false, features: false };
-  private dirty = false;
+  /** The rows being edited and when they need saving (set once the store is ready). */
+  private draft: WorldTypesDraft | undefined;
   private off: (() => void) | undefined;
   private rowsEl!: HTMLElement;
   private previewEl!: HTMLElement;
-  private saveBtn!: HTMLButtonElement;
-  private statusEl!: HTMLElement;
+  private problemsEl: HTMLElement | undefined;
+  private statusEl: HTMLElement | undefined;
+  private incompleteEl: HTMLElement | undefined;
+  /** The table names the picker shows (re-drawn when they change). */
+  private listed = "";
+  private saves = new SaveTracker(
+    (state) => this.renderSaveStatus(state),
+    (fn, ms) => window.setTimeout(fn, ms),
+    (id) => window.clearTimeout(id),
+  );
+  private debounce = new DebouncedSave(
+    () => this.saveNow(),
+    AUTOSAVE_MS,
+    (fn, ms) => window.setTimeout(fn, ms),
+    (id) => window.clearTimeout(id),
+  );
   private tabButtons = new Map<WorldTypesTab, HTMLButtonElement>();
   private preview: { map: WorldTypeMap | ""; zone: OrbitZone | ""; star: string; temperature: string; n: number } = { map: "", zone: "", star: "", temperature: "", n: 200 };
 
@@ -140,20 +153,18 @@ export class WorldTypesModal extends HexmakerModal {
     void this.plugin.worldTypeStore.ensureDefault().then(() => {
       const store = this.plugin.worldTypeStore;
       if (!store.get(this.tableName)) this.tableName = store.list()[0]?.name ?? this.tableName;
-      this.loadRows();
+      this.draft = new WorldTypesDraft(store, this.tableName);
       this.render();
-      // Hand edits to the note show up here (unless there are unsaved changes here).
-      this.off = store.onChange(() => {
-        if (this.dirty) return;
-        this.loadRows();
-        this.render();
-      });
+      // Hand edits to the note show up here (worldTypesDraft.ts: sync).
+      this.off = store.onChange(() => this.storeChanged());
     });
   }
 
   onClose(): void {
     this.off?.();
-    if (this.dirty && !this.lock() && !this.firstProblem()) void this.save();
+    this.saveNow();
+    this.noteDropped();
+    this.saves.dispose();
     this.contentEl.empty();
   }
 
@@ -161,62 +172,58 @@ export class WorldTypesModal extends HexmakerModal {
     return worldTypesEditLock(this.plugin, this.mapName);
   }
 
-  private loadRows(): void {
-    const t = this.plugin.worldTypeStore.get(this.tableName);
-    this.cells = {
-      worlds: (t?.rows ?? []).map((r) => worldTypeCells(r)),
-      stars: (t?.stars ?? []).map((r) => starCells(r)),
-      features: (t?.features ?? []).map((r) => featureCells(r)),
-    };
-    this.has = { stars: !!t?.stars, features: !!t?.features };
-    this.dirty = false;
+  /** The rows being edited, as note cells, per tab. */
+  private get cells(): Record<WorldTypesTab, string[][]> {
+    return this.draft?.cells ?? { worlds: [], stars: [], features: [] };
   }
 
-  private rows(): WorldTypeRow[] {
-    return this.cells.worlds.map((c) => readWorldTypeCells(c).row).filter((r): r is WorldTypeRow => !!r);
-  }
-
-  private stars(): StarTypeRow[] {
-    return this.cells.stars.map((c) => readStarCells(c).row).filter((r): r is StarTypeRow => !!r);
-  }
-
-  private features(): SectorFeatureRow[] {
-    return this.cells.features.map((c) => readFeatureCells(c).row).filter((r): r is SectorFeatureRow => !!r);
-  }
-
-  /** The table as edited here (readable rows only). */
-  private table(): WorldTypeTable {
-    return { name: this.tableName, rows: this.rows(), stars: this.stars(), features: this.features() };
-  }
-
-  /** The Stars / Sector features rows to save: only when the note has that table or rows were added here. */
-  private extras(): WorldTypeExtras {
-    const out: WorldTypeExtras = {};
-    if (this.has.stars || this.cells.stars.length) out.stars = this.stars();
-    if (this.has.features || this.cells.features.length) out.features = this.features();
-    return out;
-  }
-
-  private firstProblem(): string | undefined {
-    for (const tab of TAB_ORDER) {
-      const rows = this.cells[tab];
-      for (let i = 0; i < rows.length; i++) {
-        const { problem } = TABS[tab].read(rows[i]);
-        if (problem) return `${TABS[tab].label} row ${i + 1}: ${problem}.`;
-      }
+  /** Save now if anything that reads changed (incomplete rows never are). */
+  private saveNow(): void {
+    this.debounce.cancel();
+    const draft = this.draft;
+    if (!draft || this.lock() || !draft.hasChanges()) {
+      this.saves.settle();
+      return;
     }
-    return undefined;
+    void this.saves.track(draft.save().then((ok) => {
+      if (!ok) throw new Error(`world types table "${draft.name}" not found`);
+    }));
   }
 
-  private async save(): Promise<void> {
-    const problem = this.firstProblem();
-    if (problem) { new Notice(problem); return; }
-    const extras = this.extras();
-    if (await this.plugin.worldTypeStore.update(this.tableName, this.rows(), extras)) {
-      this.dirty = false;
-      if (extras.stars) this.has.stars = true;
-      if (extras.features) this.has.features = true;
+  /** Incomplete rows are about to be dropped (close, another table): say so. */
+  private noteDropped(): void {
+    const n = this.draft?.incompleteCount() ?? 0;
+    if (n && !this.lock()) new Notice(`World types: ${incompleteRows(n)} weren't saved.`);
+  }
+
+  /** Show another table (saving this one's changes first). */
+  private switchTable(name: string): void {
+    this.saveNow();
+    this.noteDropped();
+    this.tableName = name;
+    this.draft?.load(name);
+    this.render();
+  }
+
+  /** The store changed: a hand edit, our own save coming back, or another table. */
+  private storeChanged(): void {
+    const draft = this.draft;
+    if (!draft) return;
+    const { changed, replaced } = draft.sync();
+    if (replaced.length) {
+      const tabs = replaced.map((t) => TABS[t].label).join(" and ");
+      new Notice(`The world types note was edited, so ${tabs} now show${replaced.length === 1 ? "s" : ""} the note's rows.`, 8000);
     }
+    if (changed || this.tableNames() !== this.listed) {
+      this.render();
+    } else {
+      this.renderProblems();
+      this.updateStatus();
+    }
+  }
+
+  private tableNames(): string {
+    return this.plugin.worldTypeStore.list().map((t) => t.name).join("\n");
   }
 
   // ── rendering ──────────────────────────────────────────────────────────
@@ -232,12 +239,8 @@ export class WorldTypesModal extends HexmakerModal {
     const sel = head.createEl("select", { attr: { "aria-label": "Table" } });
     for (const t of store.list()) sel.createEl("option", { value: t.name, text: t.name });
     sel.value = this.tableName;
-    sel.addEventListener("change", () => {
-      if (this.dirty) void this.save();
-      this.tableName = sel.value;
-      this.loadRows();
-      this.render();
-    });
+    this.listed = this.tableNames();
+    sel.addEventListener("change", () => this.switchTable(sel.value));
     const newBtn = head.createEl("button", { text: "New table…" });
     if (lock) lockButton(newBtn, lock);
     newBtn.addEventListener("click", () => this.newTable(head));
@@ -251,9 +254,11 @@ export class WorldTypesModal extends HexmakerModal {
       if (lock) lockButton(restore, lock);
       restore.addEventListener("click", () => {
         if (this.lock()) return;
+        this.debounce.cancel();
         void store.restoreDefault(this.tableName).then((ok) => {
           if (!ok) return;
-          this.loadRows();
+          this.draft?.load(this.tableName);
+          this.saves.settle();
           this.render();
           new Notice("World types restored (the old note was backed up).");
         });
@@ -265,13 +270,8 @@ export class WorldTypesModal extends HexmakerModal {
       text: `What the space generators place and how often. Each table is a note in ${store.folder()}.`,
     });
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
-    const problems = store.problemsOf(this.tableName);
-    if (problems.length) {
-      contentEl.createEl("p", {
-        cls: "duckmage-world-types-problems",
-        text: `The note has ${problems.length} problem${problems.length === 1 ? "" : "s"} (rows that can't be read are kept as written): ${problems.map((p) => p.text).join("; ")}`,
-      });
-    }
+    this.problemsEl = contentEl.createDiv();
+    this.renderProblems();
 
     const tabs = contentEl.createDiv({ cls: "duckmage-world-types-tabs", attr: { role: "tablist" } });
     this.tabButtons.clear();
@@ -307,10 +307,16 @@ export class WorldTypesModal extends HexmakerModal {
       // cursor in its first field (F9: it appeared off-screen).
       this.renderRows({ row: this.cells[this.tab].length - 1, target: "first" });
     });
-    this.statusEl = buttons.createSpan({ cls: "duckmage-world-types-status" });
-    this.saveBtn = buttons.createEl("button", { text: "Save", cls: "mod-cta" });
-    if (lock) lockButton(this.saveBtn, lock);
-    this.saveBtn.addEventListener("click", () => void this.save().then(() => this.updateStatus()));
+    // Rows that can't be read yet, and the autosave status (as in the hex editor).
+    this.incompleteEl = buttons.createSpan({ cls: "duckmage-world-types-incomplete" });
+    this.statusEl = undefined;
+    if (!lock) {
+      this.statusEl = buttons.createSpan({
+        cls: "duckmage-editor-notes-status duckmage-world-types-status",
+        attr: { "aria-live": "polite", title: SAVE_TITLE },
+      });
+      this.renderSaveStatus(this.saves.current);
+    }
 
     contentEl.createEl("h4", { text: "Preview" });
     this.previewEl = contentEl.createDiv({ cls: "duckmage-world-types-preview" });
@@ -326,6 +332,19 @@ export class WorldTypesModal extends HexmakerModal {
     }
   }
 
+  /** What the note has that can't be read (kept as written, not shown as rows). */
+  private renderProblems(): void {
+    const el = this.problemsEl;
+    if (!el) return;
+    el.empty();
+    const problems = this.plugin.worldTypeStore.problemsOf(this.tableName);
+    if (!problems.length) return;
+    el.createEl("p", {
+      cls: "duckmage-world-types-problems",
+      text: `The note has ${problems.length} problem${problems.length === 1 ? "" : "s"} (rows that can't be read are kept as written): ${problems.map((p) => p.text).join("; ")}`,
+    });
+  }
+
   private newTable(head: HTMLElement): void {
     if (this.lock()) return;
     const box = head.createDiv({ cls: "duckmage-world-types-new" });
@@ -333,30 +352,47 @@ export class WorldTypesModal extends HexmakerModal {
     const ok = box.createEl("button", { text: "Create", cls: "mod-cta" });
     input.focus();
     const go = () => {
-      void this.plugin.worldTypeStore.create(input.value, this.rows(), { stars: this.stars(), features: this.features() }).then((res) => {
+      const draft = this.draft;
+      if (!draft) return;
+      this.saveNow();
+      void this.plugin.worldTypeStore.create(input.value, draft.readable("worlds"), { stars: draft.readable("stars"), features: draft.readable("features") }).then((res) => {
         if ("error" in res) { new Notice(res.error); return; }
-        this.tableName = res.name;
-        this.loadRows();
-        this.render();
+        this.switchTable(res.name);
       });
     };
     ok.addEventListener("click", go);
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
   }
 
+  /** Rows were edited: save a moment later if anything that reads changed. */
   private changed(): void {
-    this.dirty = true;
     for (const [t, b] of this.tabButtons) b.setText(`${TABS[t].label} (${this.cells[t].length})`);
     this.updateStatus();
     this.renderPreview();
+    if (this.lock()) return;
+    if (this.draft?.hasChanges()) {
+      this.debounce.schedule();
+      this.saves.markPending();
+    } else {
+      // Nothing to write (only incomplete rows, or the edit was undone).
+      this.debounce.cancel();
+      this.saves.settle();
+    }
   }
 
+  /** How many rows can't be saved yet. */
   private updateStatus(): void {
-    if (!this.statusEl) return;
-    const problem = this.firstProblem();
-    this.statusEl.setText(problem ?? (this.dirty ? "Unsaved changes" : ""));
-    this.statusEl.toggleClass("is-error", !!problem);
-    if (!this.lock()) this.saveBtn.disabled = !!problem || !this.dirty;
+    const el = this.incompleteEl;
+    if (!el) return;
+    const n = this.draft?.incompleteCount() ?? 0;
+    el.setText(n ? `${incompleteRows(n)} not saved until finished.` : "");
+  }
+
+  private renderSaveStatus(state: SaveState): void {
+    const el = this.statusEl;
+    if (!el) return;
+    el.setText(SAVE_STATUS_TEXT[state]);
+    el.dataset["state"] = state;
   }
 
   /** Terrain names (all palettes) of these types (any type when undefined), for suggestions. */
@@ -400,9 +436,6 @@ export class WorldTypesModal extends HexmakerModal {
     if (!rows.length) el.createDiv({ cls: "setting-item-description", text: "No rows yet." });
     rows.forEach((cells, i) => {
       const row = el.createDiv({ cls: "duckmage-world-types-row" });
-      const problem = spec.read(cells).problem;
-      row.toggleClass("is-invalid", !!problem);
-      if (problem) row.setAttr("title", problem);
       const line = (cls: string, columns: readonly string[]) => {
         const l = row.createDiv({ cls });
         for (const c of columns) this.cellInput(l, cells, spec, c, lists[c], !!lock, row);
@@ -429,6 +462,7 @@ export class WorldTypesModal extends HexmakerModal {
       btn("↑", "Move up", () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; }, i === 0, () => ({ row: i - 1, target: "up" }));
       btn("↓", "Move down", () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; }, i === rows.length - 1, () => ({ row: i + 1, target: "down" }));
       btn("✕", "Remove row", () => { rows.splice(i, 1); }, false, () => ({ row: i, target: "list" }), true);
+      this.markRow(row, cells);
     });
 
     // A delete keeps the list's height until the pointer leaves it.
@@ -461,21 +495,28 @@ export class WorldTypesModal extends HexmakerModal {
       if (cells[i] && !["sector", "system"].includes(cells[i])) sel.createEl("option", { value: cells[i], text: cells[i] });
       sel.value = cells[i] ?? "";
       sel.disabled = locked;
-      sel.addEventListener("change", () => { cells[i] = sel.value; this.cellChanged(cells, spec, row); });
+      sel.addEventListener("change", () => { cells[i] = sel.value; this.cellChanged(cells, row); });
       return;
     }
     const input = wrap.createEl("input", { type: "text", value: cells[i] ?? "", attr: { placeholder: PLACEHOLDERS[c] ?? "", "aria-label": c } });
     if (list) input.setAttr("list", list);
     input.disabled = locked;
-    input.addEventListener("input", () => { cells[i] = input.value; this.cellChanged(cells, spec, row); });
+    input.addEventListener("input", () => { cells[i] = input.value; this.cellChanged(cells, row); });
   }
 
-  private cellChanged(cells: string[], spec: TabSpec, row: HTMLElement): void {
-    const problem = spec.read(cells).problem;
-    row.toggleClass("is-invalid", !!problem);
-    if (problem) row.setAttr("title", problem);
-    else row.removeAttribute("title");
+  private cellChanged(cells: string[], row: HTMLElement): void {
+    this.markRow(row, cells);
     this.changed();
+  }
+
+  /** Mark a row that can't be read as incomplete, saying what's missing. */
+  private markRow(row: HTMLElement, cells: readonly string[]): void {
+    const problem = this.draft?.problem(this.tab, cells);
+    row.toggleClass("is-invalid", !!problem);
+    let hint = row.querySelector<HTMLElement>(".duckmage-world-types-row-hint");
+    if (!problem) { hint?.remove(); return; }
+    hint ??= row.createDiv({ cls: "duckmage-world-types-row-hint" });
+    hint.setText(`Incomplete, not saved: ${problem}.`);
   }
 
   // ── preview ────────────────────────────────────────────────────────────
@@ -505,7 +546,7 @@ export class WorldTypesModal extends HexmakerModal {
     if (!rollChoices.some(([v]) => Number(v) === p.n)) p.n = Number(rollChoices[1][0]);
     select("Rolls", rollChoices, String(p.n), (v) => { p.n = Number(v); });
 
-    const table = this.table();
+    const table = this.draft?.table() ?? { name: this.tableName, rows: [] };
     const list = () => el.createDiv({ cls: "duckmage-world-types-dist" });
     const bar = (parent: HTMLElement, name: string, n: number, odds: string) => {
       const r = parent.createDiv({ cls: "duckmage-world-types-dist-row" });

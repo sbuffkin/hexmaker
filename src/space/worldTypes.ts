@@ -985,9 +985,15 @@ export function buildWorldTypes(name: string, rows: readonly WorldTypeRow[], ext
 }
 
 /** Rows compared as their cells (the name in any case). */
-function sameRows<R>(a: readonly R[], b: readonly R[], cellsOf: (r: R) => string[]): boolean {
+export function sameRows<R>(a: readonly R[], b: readonly R[], cellsOf: (r: R) => string[]): boolean {
   const key = (r: R) => JSON.stringify(cellsOf(r).map((c, i) => (i === 0 ? c.toLowerCase() : c)));
   return a.length === b.length && a.every((r, i) => key(r) === key(b[i]));
+}
+
+/** Two tables' rows match (none and none match too). */
+export function sameOptional<R>(a: readonly R[] | undefined, b: readonly R[] | undefined, cellsOf: (r: R) => string[]): boolean {
+  if (!a || !b) return !a && !b;
+  return sameRows(a, b, cellsOf);
 }
 
 /** `table` in place of the span, or appended at the end after `head` (a heading and help). */

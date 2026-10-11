@@ -8683,13 +8683,22 @@ textarea.duckmage-edit-region-notes-input {
     gap: 6px;
 }
 .duckmage-world-types-problems,
-.duckmage-world-types-status.is-error {
+.duckmage-world-types-row-hint {
     color: var(--text-error);
 }
-.duckmage-world-types-status {
+/* Rows not saved until finished (SP2); pushes the save status right. */
+.duckmage-world-types-incomplete {
     flex: 1 1 auto;
     font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
+    color: var(--text-error);
+}
+/* The autosave status pill (the hex editor's), in the buttons row. */
+.duckmage-editor-notes-status.duckmage-world-types-status {
+    margin: 0;
+}
+.duckmage-world-types-row-hint {
+    font-size: var(--font-ui-smaller);
+    margin-top: 2px;
 }
 .duckmage-world-types-rows {
     /* Most of the dialog's height (F9: a short inner list hid new rows). */

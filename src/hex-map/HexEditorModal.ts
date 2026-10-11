@@ -61,12 +61,12 @@ import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
-import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
+import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
 /** Typing pause after which a text section autosaves. */
-const TEXT_AUTOSAVE_MS = 800;
+const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
 /** Unique ids for label for= ↔ textarea pairs. */
 let textFieldSeq = 0;
 
