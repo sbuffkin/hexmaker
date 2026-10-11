@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 // The smoke suite's pure helpers (dev/smoke; the suite itself needs Windows Obsidian).
 import { canon, jsonDiff, oneTimeOnly } from "../dev/smoke/lib/compare.mjs";
-import { diff, hexDataFromFm, paletteTerrains, verifyPaletteUpgrade } from "../dev/smoke/lib/disk.mjs";
+import { bodyFieldLines, comparableBody, diff, hexDataFromFm, hexNoteMapLink, paletteTerrains, verifyPaletteUpgrade } from "../dev/smoke/lib/disk.mjs";
 import { JOB_MEM_BYTES, pickJobs, stopUntilGone } from "../dev/smoke/lib/concurrency.mjs";
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
@@ -59,6 +59,17 @@ describe("smoke suite: legacy hex data and palette upgrades", () => {
     expect(paletteTerrains(NEW).get("grass")).toBe("#69a168|bw-grassland.png||lowlands|grassland");
     expect(paletteTerrains(NEW).has("Road")).toBe(false);
     expect(verifyPaletteUpgrade(OLD, NEW)).toEqual([]);
+  });
+
+  it("NF1/NF2: a hex note's map link under either key; bodies compare without the moved lines", () => {
+    expect(hexNoteMapLink({ map: "[[_coast]]" })).toBe("[[_coast]]");
+    expect(hexNoteMapLink({ map: "Sword Coast", "hexmaker-map": "[[_coast]]" })).toBe("[[_coast]]");
+    expect(hexNoteMapLink({ "hexmaker-map": 5 })).toBe(null);
+    const before = "# Hex 0, 1\n\n**Region:** [[Dustbowl]]\n**Terrain:** mountain\n**Terrain:** *(fill)*\n\n### Description\nCold.\n";
+    expect(bodyFieldLines(before)).toEqual([["region", "[[Dustbowl]]"], ["terrain", "mountain"]]);
+    const after = "# Hex 0, 1\n\n> [!hexmaker] Map data\n> Terrain: dunes\n> Old region: [[Dustbowl]]\n> Old terrain: mountain\n\n**Terrain:** *(fill)*\n\n### Description\nCold.\n";
+    expect(comparableBody(after)).toBe(comparableBody(before));
+    expect(comparableBody(after.replace("Cold.", "Warm."))).not.toBe(comparableBody(before));
   });
 
   it("a rewrite that loses or changes a terrain is caught", () => {

@@ -8038,30 +8038,6 @@ button.duckmage-terrain-legend-chip {
     margin-bottom: 8px;
 }
 
-/* Hex editor: a "Terrain:" / "Region:" line in the note that disagrees with
-   the map (src/hexBodyFields.ts), with buttons to apply it either way. */
-.duckmage-editor-body-field {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4em 0.8em;
-    margin: 0 0 0.6em;
-    padding: 0.4em 0.6em;
-    border-left: 3px solid var(--color-orange);
-    background: var(--background-secondary);
-    border-radius: var(--radius-s);
-    font-size: var(--font-ui-small);
-}
-
-.duckmage-editor-body-field-actions {
-    display: flex;
-    gap: 0.4em;
-}
-
-.duckmage-editor-body-field-actions button {
-    font-size: var(--font-ui-smaller);
-}
-
 /* Hex editor: sections of the note the editor has no field for. */
 .duckmage-editor-other-sections > summary {
     cursor: pointer;
@@ -8683,13 +8659,22 @@ textarea.duckmage-edit-region-notes-input {
     gap: 6px;
 }
 .duckmage-world-types-problems,
-.duckmage-world-types-status.is-error {
+.duckmage-world-types-row-hint {
     color: var(--text-error);
 }
-.duckmage-world-types-status {
+/* Rows not saved until finished (SP2); pushes the save status right. */
+.duckmage-world-types-incomplete {
     flex: 1 1 auto;
     font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
+    color: var(--text-error);
+}
+/* The autosave status pill (the hex editor's), in the buttons row. */
+.duckmage-editor-notes-status.duckmage-world-types-status {
+    margin: 0;
+}
+.duckmage-world-types-row-hint {
+    font-size: var(--font-ui-smaller);
+    margin-top: 2px;
 }
 .duckmage-world-types-rows {
     /* Most of the dialog's height (F9: a short inner list hid new rows). */

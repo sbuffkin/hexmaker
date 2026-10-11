@@ -2,6 +2,7 @@ import type { SubmapDefault, TerrainColor } from "../types";
 import { impassableNoteCell, parseImpassableCell } from "../impassable";
 import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
 import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
+import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
 
 // Plain-text palette notes.
 //
@@ -221,6 +222,34 @@ export function setChildPalette(content: string, value: string | undefined): str
   return `---\n${body}---${fm[2]}${text.slice(fm[0].length)}`;
 }
 
+const MAP_KIND_LINE = /^map-kind:[^\n]*(\n|$)/m;
+
+/**
+ * The `map-kind:` frontmatter value: the map type the palette is for
+ * ("world", "space"; see TerrainPalette.kind). Any other value reads as
+ * unset (the type is then worked out from the terrain types).
+ */
+export function readPaletteKind(content: string): MapKind | undefined {
+  const fm = FRONTMATTER.exec(content.replace(/\r\n?/g, "\n"));
+  if (!fm) return undefined;
+  const m = /^map-kind:\s*(.*)$/m.exec(fm[1]);
+  if (!m) return undefined;
+  const raw = m[1].trim().replace(/^["']|["']$/g, "").trim().toLowerCase();
+  return (ALL_MAP_KINDS as string[]).includes(raw) ? (raw as MapKind) : undefined;
+}
+
+/** Set or clear `map-kind:` in the note's frontmatter (untouched when it already says so). */
+export function setPaletteKind(content: string, value: MapKind | undefined): string {
+  if (readPaletteKind(content) === value) return content;
+  const text = content.replace(/\r\n?/g, "\n");
+  const line = value ? `map-kind: ${value}\n` : "";
+  const fm = FRONTMATTER.exec(text);
+  if (!fm) return value ? `---\n${line}---\n${text}` : text;
+  let body = fm[1] + "\n";
+  body = MAP_KIND_LINE.test(body) ? body.replace(MAP_KIND_LINE, line) : body + line;
+  return `---\n${body}---${fm[2]}${text.slice(fm[0].length)}`;
+}
+
 // ── Submap defaults table ────────────────────────────────────────────────
 //
 //   ## Submap defaults
@@ -361,11 +390,12 @@ export function setSubmapDefaults(content: string, defaults: Record<string, Subm
 }
 
 /** A complete new palette note. */
-export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string): string {
+export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string, kind?: MapKind): string {
   return [
     "---",
     `${PALETTE_NOTE_MARKER}: 1`,
     ...(childPalette ? [`child-palette: ${JSON.stringify(childPalette)}`] : []),
+    ...(kind ? [`map-kind: ${kind}`] : []),
     "---",
     "",
     "Hexmap World Creator terrain palette. The note name is the palette name. Each table row is one terrain:",

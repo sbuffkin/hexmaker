@@ -28,6 +28,9 @@ export const SAVE_STATUS_TEXT: Record<SaveState, string> = {
 /** Tooltip on the status: what "automatically" means. */
 export const SAVE_STATUS_TITLE = "Saves a moment after you stop typing, and when you close the editor. There is no Save button.";
 
+/** Typing pause after which an edit autosaves (hex editor, World types). */
+export const AUTOSAVE_MS = 800;
+
 /** How long the fresh "saved" colour stays before settling. */
 export const SAVED_SHOWN_MS = 2500;
 

@@ -20,11 +20,8 @@ import {
   getGmIconsFromFile,
   getHexMapsFromFile,
   getHexNameFromFile,
-  getHexRegionFromFile,
-  setHexRegionInFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
-import { BODY_FIELDS, readBodyField, sameName, setBodyField, type BodyField } from "../hexBodyFields";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -61,12 +58,13 @@ import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
-import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
+import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
+import { contentFolder } from "../notePickers";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
 /** Typing pause after which a text section autosaves. */
-const TEXT_AUTOSAVE_MS = 800;
+const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
 /** Unique ids for label for= ↔ textarea pairs. */
 let textFieldSeq = 0;
 
@@ -84,8 +82,6 @@ export class HexEditorModal extends HexmakerModal {
   private allLinks = new Map<string, string[]>();
   /** Section key → its heading as written in the note (see getAllSectionData). */
   private allHeadings = new Map<string, string>();
-  /** "**Terrain:**" / "**Region:**" values written in the note's body (see hexBodyFields). */
-  private bodyFields = new Map<BodyField, string>();
   private directTerrain: string | null = null;
   private directIcon: string | null = null;
   private directGmIcon: string | null = null;
@@ -133,7 +129,6 @@ export class HexEditorModal extends HexmakerModal {
     this.allText = new Map();
     this.allLinks = new Map();
     this.allHeadings = new Map();
-    this.bodyFields = new Map();
     this.directTerrain = null;
     this.directIcon = null;
     this.directGmIcon = null;
@@ -169,10 +164,6 @@ export class HexEditorModal extends HexmakerModal {
       if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
-    for (const f of BODY_FIELDS) {
-      const v = readBodyField(rawContent, f);
-      if (v !== undefined) this.bodyFields.set(f, v);
-    }
     ({ text: this.allText, links: this.allLinks, headings: this.allHeadings } = await getAllSectionData(
       this.app,
       path,
@@ -301,7 +292,6 @@ export class HexEditorModal extends HexmakerModal {
       "Notes",
       "hexEditorNotesCollapsed",
     );
-    this.renderBodyFieldNotices(notesBody, path);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -365,7 +355,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Encounters Table",
       true,
-      s.tablesFolder,
+      contentFolder(s, "tablesFolder"),
       this.encounterLinksFor(path, hexExists, allLinks.get("encounters table") ?? []),
     );
     this.renderDropdownSection(
@@ -373,7 +363,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Towns",
       hexExists,
-      s.townsFolder,
+      contentFolder(s, "townsFolder"),
       allLinks.get("towns") ?? [],
     );
     this.renderDropdownSection(
@@ -381,7 +371,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Dungeons",
       hexExists,
-      s.dungeonsFolder,
+      contentFolder(s, "dungeonsFolder"),
       allLinks.get("dungeons") ?? [],
     );
     this.renderDropdownSection(
@@ -389,7 +379,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Quests",
       hexExists,
-      s.questsFolder,
+      contentFolder(s, "questsFolder"),
       allLinks.get("quests") ?? [],
     );
     this.renderDropdownSection(
@@ -397,7 +387,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Factions",
       hexExists,
-      s.factionsFolder,
+      contentFolder(s, "factionsFolder"),
       allLinks.get("factions") ?? [],
     );
     this.renderDropdownSection(
@@ -405,7 +395,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Features",
       hexExists,
-      s.featuresFolder,
+      contentFolder(s, "featuresFolder"),
       allLinks.get("features") ?? [],
     );
 
@@ -1467,60 +1457,6 @@ export class HexEditorModal extends HexmakerModal {
     }
   }
 
-  /**
-   * A "**Terrain:**" or "**Region:**" line in the note that disagrees with
-   * the map (an older template's hand-filled lines): say so, and offer to
-   * apply it to the map or to update the line. The line is never removed.
-   */
-  private renderBodyFieldNotices(container: HTMLElement, path: string): void {
-    const mapValue: Record<BodyField, string | null> = {
-      Terrain: this.directTerrain,
-      Region: getHexRegionFromFile(this.app, path),
-    };
-    for (const field of BODY_FIELDS) {
-      const written = this.bodyFields.get(field);
-      if (written === undefined || sameName(written, mapValue[field])) continue;
-      const row = container.createDiv({ cls: "duckmage-editor-body-field" });
-      const onMap = mapValue[field];
-      row.createSpan({
-        text: `This note's text says ${field}: ${written}, but the map has ${onMap ? onMap : "none"}.`,
-      });
-      const actions = row.createDiv({ cls: "duckmage-editor-body-field-actions" });
-      // Terrain must be one the map's palette has (matched case-insensitively).
-      const terrain = field === "Terrain"
-        ? this.plugin.getMapPalette(this.mapName).find((t) => sameName(t.name, written))?.name
-        : undefined;
-      if ((field === "Region" || terrain) && canDo(this.mapName, field === "Region" ? "paint-region-area" : "paint-terrain")) {
-        actions.createEl("button", { text: `Use "${terrain ?? written}" on the map` }).addEventListener("click", () => {
-          void this.saves.track((async () => {
-            if (field === "Terrain") {
-              await this.ensureHexNote();
-              await this.plugin.undoableEdit(this.mapName, () => setTerrainInFile(this.app, path, terrain!));
-              await this.plugin.syncHexEncounterTableLink(path, terrain!);
-              this.onChanged(new Map([[path, terrain!]]));
-            } else {
-              await this.plugin.undoableEdit(this.mapName, () => setHexRegionInFile(this.app, path, written));
-              this.onChanged();
-            }
-            await this.loadData();
-            this.onOpen();
-          })());
-        });
-      }
-      if (onMap) {
-        actions.createEl("button", { text: `Change the note to "${onMap}"` }).addEventListener("click", () => {
-          const file = this.app.vault.getAbstractFileByPath(path);
-          if (!(file instanceof TFile)) return;
-          void this.saves.track((async () => {
-            await this.app.vault.process(file, (c) => setBodyField(c, field, onMap));
-            await this.loadData();
-            this.onOpen();
-          })());
-        });
-      }
-    }
-  }
-
   private renderTextSection(
     container: HTMLElement,
     path: string,
@@ -1657,12 +1593,12 @@ export class HexEditorModal extends HexmakerModal {
 
   /** "Run workflow" (PA2): pick a workflow note, then run it for this hex. */
   private pickWorkflow(): void {
-    const folder = normalizeFolder(this.plugin.settings.workflowsFolder ?? "");
+    // Workflows only: a blank setting is the workflows folder's usual place, never the world folder.
     const picker = new FileLinkSuggestModal(
       this.app,
       this.plugin,
       (file) => new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget("description")).open(),
-      folder || undefined,
+      contentFolder(this.plugin.settings, "workflowsFolder"),
       ["md"],
     );
     picker.setPlaceholder("Pick a workflow to run…");
@@ -1720,7 +1656,7 @@ export class HexEditorModal extends HexmakerModal {
     refresh();
 
     const chooseTable = (onChoose: (file: TFile) => void) =>
-      new FileLinkSuggestModal(this.app, this.plugin, onChoose, "", ["md"]).open();
+      new FileLinkSuggestModal(this.app, this.plugin, onChoose, contentFolder(this.plugin.settings, "tablesFolder"), ["md"]).open();
     const setMapTable = () =>
       chooseTable((file) => {
         const map = this.plugin.getMap(this.mapName);

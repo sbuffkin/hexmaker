@@ -5,9 +5,9 @@
  */
 import { Notice, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { mapDataLines, mapDataSyncMessage, planCalloutImport, setMapData, shownValues } from "../hexMapData";
+import { mapDataLines, mapDataSyncMessage, moveBodyFieldsIntoMapData, oldFieldLine, planCalloutImport, setMapData, shownValues } from "../hexMapData";
 import { lockedHint } from "../workMode";
-import { sameName } from "../hexBodyFields";
+import { sameName, takeBodyFields } from "../hexBodyFields";
 
 /** What syncHexMapData needs from the plugin. */
 export type CalloutSyncHost = Pick<HexmakerPlugin,
@@ -21,13 +21,15 @@ export interface CalloutSyncResult {
   notApplied: string[];
   /** Callout lines that couldn't be read. */
   unreadable: string[];
+  /** Old "**Terrain:**" / "**Region:**" body lines moved into the callout ("Old terrain: forest"). */
+  moved: string[];
 }
 
 /** See HexmakerPlugin.syncHexMapData. */
 export async function syncHexMapData(
   host: CalloutSyncHost, mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {},
 ): Promise<CalloutSyncResult> {
-  const out = { wrote: false, applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
+  const out = { wrote: false, applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[], moved: [] as string[] };
   const path = host.hexPath(x, y, mapName);
   const file = host.app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return out;
@@ -36,8 +38,11 @@ export async function syncHexMapData(
   const current = await host.app.vault.read(file);
   const now = () => shownValues(mapDataLines(host.hexMapDataView(mapName, x, y)));
   const plan = planCalloutImport(current, host.calloutMemory.get(path), now());
+  // Old "**Terrain:**" / "**Region:**" body lines move into the callout (NF2),
+  // which is added for them when the note has none.
+  const hasOldLines = takeBodyFields(current).taken.length > 0;
   // No callout and none to add: nothing to do.
-  if (!plan && !opts.insert) return out;
+  if (!plan && !opts.insert && !hasOldLines) return out;
   if (plan) {
     out.notApplied.push(...plan.notApplied);
     out.unreadable.push(...plan.unreadable);
@@ -67,16 +72,21 @@ export async function syncHexMapData(
   }
   const view = host.hexMapDataView(mapName, x, y);
   const notes = [...out.notApplied.map((s) => `Not applied: ${s}`), ...out.unreadable.map((s) => `Not read: ${s}`)];
+  const rewrite = (content: string) => {
+    const m = moveBodyFieldsIntoMapData(content, view);
+    return { next: setMapData(m.content, view, opts.insert, notes), moved: m.moved.map(oldFieldLine) };
+  };
   const latest = await host.app.vault.read(file);
-  if (setMapData(latest, view, opts.insert, notes) !== latest) {
+  if (rewrite(latest).next !== latest) {
     await host.app.vault.process(file, (content) => {
-      const next = setMapData(content, view, opts.insert, notes);
-      out.wrote = next !== content;
-      return next;
+      const r = rewrite(content);
+      out.wrote = r.next !== content;
+      out.moved = r.moved;
+      return r.next;
     });
   }
   // Remember what the callout shows now, so the next edit is told from a stale copy.
-  if (plan || opts.insert) host.calloutMemory.set(path, now());
+  if (plan || opts.insert || out.moved.length) host.calloutMemory.set(path, now());
   if (!opts.quiet) {
     const msg = mapDataSyncMessage(`${host.mapLabel(mapName)} ${x}, ${y}`, out);
     if (msg) new Notice(msg, 8000);

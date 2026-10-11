@@ -82,7 +82,9 @@ describe("map store: migration from hex-note frontmatter", () => {
 		for (const p of ["world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md", "world/hexes/coast/0_0.md"]) {
 			const fm = vault.frontmatter(p)!;
 			for (const k of HEX_DATA_KEYS) expect(fm).not.toHaveProperty(k);
-			expect(fm["hexmaker-map"]).toBe("[[_coast]]");
+			// NF1: the link goes under map: (hexmaker-map: in older notes).
+			expect(fm.map).toBe("[[_coast]]");
+			expect(fm).not.toHaveProperty("hexmaker-map");
 			expect(vault.body(p)).toBe(before.get(p));
 		}
 		// User frontmatter survives
@@ -293,7 +295,7 @@ describe("map store: a broken map note", () => {
 		await store.flush();
 		expect(v.files.get(path)).toBe(broken);
 		// hex notes were not touched either
-		expect(v.frontmatter("world/hexes/coast/3_4.md")!["hexmaker-map"]).toBe("[[_coast]]");
+		expect(v.frontmatter("world/hexes/coast/3_4.md")!.map).toBe("[[_coast]]");
 		// the user fixes it
 		v.files.set(path, good);
 		store.onModify(p.app.vault.getAbstractFileByPath(path) as never);

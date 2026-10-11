@@ -29,7 +29,11 @@ import {
   copyFeatureRows,
   copyStarRows,
   copyWorldTypeRows,
+  featureCells,
   parseWorldTypes,
+  sameOptional,
+  starCells,
+  worldTypeCells,
   updateWorldTypes,
   upgradeWorldTypes,
   type SectorFeatureRow,
@@ -176,8 +180,13 @@ export class WorldTypeStore {
   /**
    * Set a table's rows, and its Stars / Sector features rows when given
    * (rows the note has that can't be read are kept as written).
+   *
+   * `base`: the table as the caller last saw it. A table (Worlds, Stars,
+   * Sector features) the note no longer has as in `base` was hand-edited
+   * meanwhile, so it is left as the note has it (the caller hears of it
+   * through onChange).
    */
-  async update(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): Promise<boolean> {
+  async update(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}, base?: WorldTypeTable): Promise<boolean> {
     await this.queue; // hand edits read first
     const e = this.find(name);
     if (!e) return false;
@@ -185,7 +194,15 @@ export class WorldTypeStore {
     if (!(f instanceof TFile)) return false;
     await this.enqueue(async () => {
       const content = await this.plugin.app.vault.read(f);
-      const next = updateWorldTypes(content, rows, extras);
+      let put = rows;
+      const more: WorldTypeExtras = { ...extras };
+      if (base) {
+        const now = parseWorldTypes(content);
+        if (!sameOptional(now.rows, base.rows, worldTypeCells)) put = now.rows;
+        if (!sameOptional(now.stars, base.stars, starCells)) delete more.stars;
+        if (!sameOptional(now.features, base.features, featureCells)) delete more.features;
+      }
+      const next = updateWorldTypes(content, put, more);
       if (next !== content) await this.plugin.app.vault.modify(f, next);
       this.take(f.path, next);
       this.publish();

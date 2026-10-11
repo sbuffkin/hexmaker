@@ -11,6 +11,7 @@ import { getAllSectionData } from "../sections";
 import { displayedEncounterLinks } from "../encounterLinks";
 import { getTerrainFromFile, getHexNameFromFile } from "../frontmatter";
 import { normalizeFolder, makeTableTemplate } from "../utils";
+import { contentFolder } from "../notePickers";
 import { TerrainFilterModal } from "./TerrainFilterModal";
 import { HexCellModal } from "./HexCellModal";
 import { MultiLinkNavModal } from "./MultiLinkNavModal";
@@ -932,11 +933,11 @@ export class HexTableView extends ItemView {
           col.key === "encounters table"
         ) {
           const sourceFolder =
-            col.key === "towns"
-              ? this.plugin.settings.townsFolder
+            contentFolder(this.plugin.settings, col.key === "towns"
+              ? "townsFolder"
               : col.key === "dungeons"
-                ? this.plugin.settings.dungeonsFolder
-                : this.plugin.settings.tablesFolder;
+                ? "dungeonsFolder"
+                : "tablesFolder");
           const section =
             col.key === "towns"
               ? "Towns"
