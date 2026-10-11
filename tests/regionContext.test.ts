@@ -169,3 +169,17 @@ describe("Region detail keeps its card's promise (fresh-eyes round 7)", () => {
 		expect(ever).toBeLessThan(forest / 2);
 	});
 });
+
+describe("Region detail carries a corner neighbour in (round 6 U6)", () => {
+	it("a swamp to the south-west of a forest hex shows as a patch in that corner, not one hex at most", () => {
+		const ty = (n: string) => DEFAULT_TERRAIN_PALETTE.find((t) => t.name === n)?.type;
+		const c = (n: string) => ({ terrain: n, type: ty(n) });
+		const ctx: GenerationContext = { parent: c("mixed forest heavy"), sides: { N: c("grass"), NE: c("mixed forest"), NW: c("mixed forest"), SE: c("mixed forest hills"), SW: c("swamp") } };
+		const g: ProcGrid = { cols: 13, rows: 13, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
+		for (let seed = 1; seed <= 10; seed++) {
+			const swampy = [...planetSurface(DEFAULT_TERRAIN_PALETTE, g, seed, {}, ctx).cells]
+				.filter(([k, t]) => t === "swamp" && Number(k.split("_")[0]) <= 3 && Number(k.split("_")[1]) >= 9);
+			expect(swampy.length).toBeGreaterThanOrEqual(3);
+		}
+	});
+});
