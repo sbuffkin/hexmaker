@@ -67,7 +67,7 @@ import {
   type LatticeAffine,
   type LatticeGrid,
 } from "../paths/pathGeometry";
-import { moonPlanetLinks, tether } from "./moonLinks";
+import { MOON_TETHER_STYLE, moonTethers } from "./moonLinks";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
@@ -6425,10 +6425,12 @@ export class HexMapView extends ItemView {
     if (calib) {
       const terrain = new Map<string, string>();
       for (const [k, h] of this.plugin.mapStore.all(region.name)) if (h.terrain) terrain.set(k, h.terrain);
-      const links = moonPlanetLinks(terrain, this.plugin.getMapPalette(region.name), calib.lattice.orientation, calib.lattice.stagger);
-      for (const [moon, planet] of links) {
-        const [a, b] = em(tether(latticeCenter(moon, calib.lattice), latticeCenter(planet, calib.lattice)));
-        moonLines.push({ d: `M${fmt(a.cx)} ${fmt(a.cy)}L${fmt(b.cx)} ${fmt(b.cy)}`, width: fmt(0.07 * scale), dash: `${fmt(0.1 * scale)} ${fmt(0.08 * scale)}` });
+      // The same segments the PNG export draws (moonTethers).
+      const width = fmt(MOON_TETHER_STYLE.width * scale);
+      const dash = MOON_TETHER_STYLE.dash.map((d) => fmt(d * scale)).join(" ");
+      for (const seg of moonTethers(terrain, this.plugin.getMapPalette(region.name), calib.lattice)) {
+        const [a, b] = em(seg);
+        moonLines.push({ d: `M${fmt(a.cx)} ${fmt(a.cy)}L${fmt(b.cx)} ${fmt(b.cy)}`, width, dash });
       }
     }
     // The path tool: the selected path highlighted, its anchor handles

@@ -9,6 +9,7 @@
 import type { TerrainColor } from "../types";
 import { effectiveTerrainType } from "../terrainTypes";
 import { hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
+import { latticeCenter, type LatticeGrid, type Pt } from "../paths/pathGeometry";
 
 export const MOON_TYPES: readonly string[] = ["moon"];
 export const PLANET_TYPES: readonly string[] = ["world", "gas-giant"];
@@ -41,4 +42,33 @@ export function moonPlanetLinks(
 export function tether(a: { cx: number; cy: number }, b: { cx: number; cy: number }, t = 0.3): [{ cx: number; cy: number }, { cx: number; cy: number }] {
   const at = (f: number) => ({ cx: a.cx + (b.cx - a.cx) * f, cy: a.cy + (b.cy - a.cy) * f });
   return [at(t), at(1 - t)];
+}
+
+/**
+ * How a tether looks, in lattice units (× the hex radius when drawn). The
+ * map view sets width and dash from here; its colour and opacity live in
+ * styles.css (`.duckmage-moon-link`, kept equal by tests/moonLinks.test.ts).
+ * The PNG export draws all four from here, so it matches the screen.
+ */
+export const MOON_TETHER_STYLE = {
+  color: "#d7deff",
+  opacity: 0.55,
+  width: 0.07,
+  dash: [0.1, 0.08] as readonly number[],
+} as const;
+
+/**
+ * Every moon tether on a map, in lattice units: the segment the map view and
+ * the PNG export both draw. `include` drops ties whose ends are not both
+ * drawn (an export of part of the map).
+ */
+export function moonTethers(
+  terrainAt: ReadonlyMap<string, string>,
+  palette: readonly TerrainColor[],
+  grid: LatticeGrid,
+  include: (hexKey: string) => boolean = () => true,
+): [Pt, Pt][] {
+  return moonPlanetLinks(terrainAt, palette, grid.orientation, grid.stagger)
+    .filter(([moon, planet]) => include(moon) && include(planet))
+    .map(([moon, planet]) => tether(latticeCenter(moon, grid), latticeCenter(planet, grid)));
 }
