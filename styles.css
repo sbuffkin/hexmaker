@@ -5761,7 +5761,7 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 /* Inline numeric readout shown beside a settings slider. */
 .duckmage-slider-value {
     display: inline-block;
-    min-width: 2.5em;
+    min-width: 3em;
     margin-right: 8px;
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -8972,4 +8972,83 @@ textarea.duckmage-edit-region-notes-input {
 }
 .duckmage-world-types-rows:focus {
     outline: none;
+}
+
+/* Toolbar row vs the top +/- buttons (deep maps' breadcrumb crowded them):
+   the row stops short of the centred +/- (is-centred) and its crumbs
+   shrink, each with an ellipsis (full name in the tooltip).
+   HexMapView.fitTopBar folds the middle crumbs into "…" when they don't
+   fit whole; when the row's own buttons don't fit there, the row takes
+   the width up to the side-panel buttons and the top +/- move to the
+   second row (right side, clear of the mode bar). */
+.duckmage-map-nav-group {
+    max-width: calc(100% - 92px - 112px);
+}
+.duckmage-map-nav-group.is-centred {
+    max-width: calc(50% - 92px - 40px);
+}
+.duckmage-map-nav-group > .duckmage-map-crumbs {
+    flex: 0 1 auto;
+    min-width: 7em;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs {
+    min-width: 0;
+}
+.duckmage-map-nav-group > .duckmage-region-btn {
+    flex: 0 1 auto;
+    min-width: 3em;
+}
+.duckmage-map-nav-group > :not(.duckmage-map-crumbs):not(.duckmage-region-btn) {
+    flex-shrink: 0;
+}
+.duckmage-map-crumbs > .duckmage-map-crumb,
+.duckmage-map-crumbs > .duckmage-map-crumb-from {
+    flex: 0 1 auto;
+    min-width: 2.5em;
+}
+.duckmage-map-crumbs > .duckmage-map-crumb-sep {
+    flex-shrink: 0;
+}
+/* Obsidian buttons centre their text (inline-flex), which cuts a long
+   name at both ends with no ellipsis: block, so the end gets the "…". */
+.duckmage-map-crumbs > .duckmage-map-crumb:not(.duckmage-map-crumb-more),
+.duckmage-map-nav-group > .duckmage-region-btn {
+    display: block;
+    line-height: 24px;
+    text-align: left;
+}
+.duckmage-map-crumbs .duckmage-map-crumb-more {
+    display: none;
+}
+.duckmage-map-crumbs.is-folded .duckmage-map-crumb-more {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    min-width: 0;
+}
+.duckmage-map-crumbs.is-folded .duckmage-map-crumb-mid {
+    display: none;
+}
+.duckmage-top-crowded > .duckmage-expand-group-top {
+    top: 44px;
+    left: auto;
+    right: 112px;
+    transform: none;
+}
+
+/* Table pickers: the terrain and region tables the map made, grouped
+   after the user's own tables (collapsed). */
+.duckmage-rt-map-made {
+    margin-top: 6px;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 4px;
+}
+.duckmage-rt-map-made > .duckmage-rt-folder-header .duckmage-rt-folder-name {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.duckmage-link-picker-map-made > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin: 6px 0;
 }

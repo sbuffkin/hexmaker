@@ -17,6 +17,8 @@ import {
 } from "./workflow";
 import { newTemplatePath, resolveWorkflowTemplate, stepDieLabels } from "./workflowFiles";
 import { noteLink } from "../noteFormats";
+import { groupTableFiles } from "./tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "./resolve";
 import { escapeRegex, placeholderPattern } from "../textUtils";
 
 /** Convert a table basename to a default label: spaces → underscores. */
@@ -77,6 +79,22 @@ export class WorkflowEditorModal extends HexmakerModal {
       .filter((f) => !tablesFolder || f.path.startsWith(tablesFolder + "/"))
       .filter((f) => !f.basename.startsWith("_"))
       .sort((a, b) => a.path.localeCompare(b.path));
+    // The user's tables first; the terrain and region tables the map made
+    // in a "Made by the map" group at the end of each table dropdown.
+    const tableGroups = groupTableFiles(this.app, tableFiles);
+    const addTableOptions = (select: HTMLSelectElement, selected?: string) => {
+      const add = (parent: HTMLElement, tf: TFile) => {
+        const val = tf.path.slice(0, -3);
+        const text = tablesFolder ? tf.path.slice(tablesFolder.length + 1, -3) : val;
+        const opt = parent.createEl("option", { value: val, text });
+        if (val === selected) opt.selected = true;
+      };
+      for (const tf of tableGroups.own) add(select, tf);
+      if (tableGroups.mapMade.length) {
+        const group = select.createEl("optgroup", { attr: { label: MAP_MADE_GROUP_LABEL } });
+        for (const tf of tableGroups.mapMade) add(group, tf);
+      }
+    };
 
     // ── Name row ─────────────────────────────────────────────────────
     const nameRow = contentEl.createDiv({
@@ -382,17 +400,7 @@ export class WorkflowEditorModal extends HexmakerModal {
             value: "",
             text: "— select table —",
           });
-          for (const tf of tableFiles) {
-            const val = tf.path.slice(0, -3);
-            const optLabel = tablesFolder
-              ? tf.path.slice(tablesFolder.length + 1, -3)
-              : val;
-            const opt = tableSelect.createEl("option", {
-              value: val,
-              text: optLabel,
-            });
-            if (val === step.tablePath) opt.selected = true;
-          }
+          addTableOptions(tableSelect, step.tablePath);
           if (
             step.tablePath &&
             !tableFiles.some((tf) => tf.path.slice(0, -3) === step.tablePath)
@@ -546,13 +554,7 @@ export class WorkflowEditorModal extends HexmakerModal {
           value: "",
           text: "— select table —",
         });
-        for (const tf of tableFiles) {
-          const val = tf.path.slice(0, -3);
-          const optLabel = tablesFolder
-            ? tf.path.slice(tablesFolder.length + 1, -3)
-            : val;
-          addTableSelect.createEl("option", { value: val, text: optLabel });
-        }
+        addTableOptions(addTableSelect);
         addTableSelect.addEventListener("change", () => {
           if (!addLabelInput.value.trim() && addTableSelect!.value) {
             const basename =

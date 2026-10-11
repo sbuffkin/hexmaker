@@ -5,6 +5,8 @@ import { normalizeFolder } from "../utils";
 import { parseRandomTable, rollTable, rollLabel, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
+import { groupTableFiles } from "./tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "./resolve";
 
 /**
  * "Add to this hex" target for a roll made from a hex (P2): which sections
@@ -117,8 +119,14 @@ export class RandomTableModal extends HexmakerModal {
       cls: "duckmage-roll-modal-select",
     });
     select.createEl("option", { value: "", text: "— choose a table —" });
-    for (const file of files) {
+    // The user's tables first; any the map made (when not filtered out) grouped after them.
+    const { own, mapMade } = groupTableFiles(this.app, files);
+    for (const file of own) {
       select.createEl("option", { value: file.path, text: file.basename });
+    }
+    if (mapMade.length) {
+      const group = select.createEl("optgroup", { attr: { label: MAP_MADE_GROUP_LABEL } });
+      for (const file of mapMade) group.createEl("option", { value: file.path, text: file.basename });
     }
 
     // "Open in roller" link — hidden until a table is selected

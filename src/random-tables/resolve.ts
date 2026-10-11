@@ -342,19 +342,58 @@ export function chainLabel(r: Resolved, nameOf: (key: string) => string = (k) =>
 
 // ── row types (the seam for pickers, plan §2.5) ─────────────────────────────
 
+/** Who made a table, when it isn't the user: "map" for the tables made for every terrain and region. */
+export type TableMaker = "map";
+
+/**
+ * The `table-type:` values of the tables the map makes for itself: two per
+ * terrain (`{tables}/terrain/description|encounters/<terrain>.md`) and one
+ * per region (encounters, with `region:`). The starter tables (landmark,
+ * weather…) have other types and count as the user's.
+ */
+export const MAP_MADE_TABLE_TYPES: readonly string[] = ["description", "encounters"];
+
+/**
+ * Who made a table, read from its frontmatter (never its name or folder):
+ * "map" when `table-type:` is one of MAP_MADE_TABLE_TYPES, else undefined
+ * (the user's). Deleting the `table-type:` line makes a table the user's.
+ */
+export function tableMadeBy(fm: Record<string, unknown> | null | undefined): TableMaker | undefined {
+  const t = fm?.["table-type"];
+  return typeof t === "string" && MAP_MADE_TABLE_TYPES.includes(lc(t)) ? "map" : undefined;
+}
+
 /** What a picker wants: tables whose rows are one of these, optionally of a terrain type. */
 export interface TableWant {
   rows?: readonly RowType[];
   terrainType?: string;
+  /**
+   * Tables the map made (tableMadeBy): "group" puts them in their own
+   * section after the user's tables ("Made by the map", collapsed where it
+   * can be), "hide" leaves them out. Unset: listed with the rest.
+   */
+  mapMade?: "group" | "hide";
 }
+
+/** Heading of the section the map's own tables are grouped under. */
+export const MAP_MADE_GROUP_LABEL = "Made by the map";
 
 /**
  * How well a table fits a picker's want: "exact" (its `rows:` is wanted
  * and, for terrain rows, its terrain-type fits), "any" (`rows: any`, which
  * fits everything but sorts after exact matches) or "no" (with why, so a
- * picker can list it disabled rather than hide it).
+ * picker can list it disabled rather than hide it). `group: "map"` when the
+ * picker groups the map's own tables apart and this is one.
  */
-export function tableFitsWant(table: Pick<RandomTable, "rows" | "terrainTypes">, want: TableWant): { fit: "exact" | "any" | "no"; why?: string } {
+export function tableFitsWant(
+  table: Pick<RandomTable, "rows" | "terrainTypes"> & { madeBy?: TableMaker },
+  want: TableWant,
+): { fit: "exact" | "any" | "no"; why?: string; group?: "map" } {
+  if (table.madeBy === "map" && want.mapMade) {
+    if (want.mapMade === "hide") return { fit: "no", why: "the map made it for its terrains and regions" };
+    const r = tableFitsWant({ rows: table.rows, terrainTypes: table.terrainTypes }, want);
+    return { ...r, group: "map" };
+  }
   if (!want.rows?.length) return { fit: table.rows ? "exact" : "any" };
   if (!table.rows) return { fit: "any" };
   if (!want.rows.includes(table.rows)) return { fit: "no", why: `its rows are ${table.rows}, not ${want.rows.join(" or ")}` };

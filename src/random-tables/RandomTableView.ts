@@ -38,6 +38,8 @@ import {
 } from "./randomTable";
 import { planTableMigration } from "./tableMigration";
 import { processTableNote } from "./TableStore";
+import { groupTableFiles } from "./tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "./resolve";
 import { parseWorkflow, generateDefaultTemplate } from "./workflow";
 import { resolveWorkflowTemplate } from "./workflowFiles";
 import { Frontmatter } from "../frontmatter";
@@ -47,6 +49,9 @@ import {
   exportRandomTableAsPdf,
   exportRandomTableAsMarkdown,
 } from "../export/exporters/randomTable";
+
+/** Collapse key (and key prefix) of the tree's "Made by the map" section. */
+const MAP_MADE_KEY = "map-made:";
 
 export const DIE_OPTIONS = [
   { label: "— no die —", value: 0 },
@@ -705,23 +710,54 @@ export class RandomTableView extends ItemView {
       return;
     }
 
-    const tree = buildTree(files, prefix, vaultFolderPaths);
+    // The user's own tables first; the terrain and region tables the map
+    // made go under one collapsed "Made by the map" section at the end.
+    const { own, mapMade } = groupTableFiles(this.app, files);
+    // A folder holding only the map's tables isn't listed among the user's.
+    const under = (f: TFile, folderPath: string) => f.path.startsWith(folderPath + "/");
+    const ownFolders = vaultFolderPaths.filter((p) => own.some((f) => under(f, p)) || !mapMade.some((f) => under(f, p)));
+    const tree = buildTree(own, prefix, ownFolders);
+    const mapTree = buildTree(mapMade, prefix);
 
     // Collapse all folders on first load
     if (!this.treeInitialized) {
       this.treeInitialized = true;
-      const collectFolders = (nodes: TreeNode[]) => {
+      const collectFolders = (nodes: TreeNode[], keyPrefix = "") => {
         for (const n of nodes)
           if (n.type === "folder") {
-            this.collapsedFolders.add(n.path);
-            collectFolders(n.children);
+            this.collapsedFolders.add(keyPrefix + n.path);
+            collectFolders(n.children, keyPrefix);
           }
       };
       collectFolders(tree);
+      collectFolders(mapTree, MAP_MADE_KEY);
+      this.collapsedFolders.add(MAP_MADE_KEY);
     }
 
     // When filtering, render flat (expand all) so matches aren't hidden inside collapsed folders
-    this.renderTreeNodes(this.listEl, tree, this.filterQuery !== "");
+    const forceExpanded = this.filterQuery !== "";
+    this.renderTreeNodes(this.listEl, tree, forceExpanded);
+    if (mapMade.length) this.renderMapMadeSection(this.listEl, mapTree, mapMade.length, forceExpanded);
+  }
+
+  /** The "Made by the map" section: one collapsible folder holding the map's own tables. */
+  private renderMapMadeSection(container: HTMLElement, nodes: TreeNode[], count: number, forceExpanded: boolean): void {
+    const section = container.createDiv({ cls: "duckmage-rt-folder duckmage-rt-map-made" });
+    const header = section.createDiv({ cls: "duckmage-rt-folder-header" });
+    const collapsed = !forceExpanded && this.collapsedFolders.has(MAP_MADE_KEY);
+    const arrow = header.createSpan({ cls: "duckmage-rt-folder-arrow", text: collapsed ? "▶" : "▼" });
+    header.createSpan({ cls: "duckmage-rt-folder-name", text: `${MAP_MADE_GROUP_LABEL} (${count})` });
+    header.title = "Description and encounter tables made for each terrain, and encounter tables made for each region. Delete a table's table-type line to make it your own.";
+    const children = section.createDiv({ cls: "duckmage-rt-folder-children" });
+    if (collapsed) children.hide();
+    this.renderTreeNodes(children, nodes, forceExpanded, MAP_MADE_KEY);
+    header.addEventListener("click", () => {
+      const nowCollapsed = !this.collapsedFolders.has(MAP_MADE_KEY);
+      if (nowCollapsed) this.collapsedFolders.add(MAP_MADE_KEY);
+      else this.collapsedFolders.delete(MAP_MADE_KEY);
+      children.toggle(!nowCollapsed);
+      arrow.setText(nowCollapsed ? "▶" : "▼");
+    });
   }
 
   private rebuildWorkflowMap(allFiles?: TFile[]): void {
@@ -1070,9 +1106,11 @@ export class RandomTableView extends ItemView {
     container: HTMLElement,
     nodes: TreeNode[],
     forceExpanded: boolean,
+    keyPrefix = "",
   ): void {
     renderFolderTree(container, nodes, {
       collapsedFolders: this.collapsedFolders,
+      keyPrefix,
       activeFile: this.activeFile,
       forceExpanded,
       onFileClick: (file) => void this.loadTable(file),

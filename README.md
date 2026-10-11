@@ -183,7 +183,7 @@ Open via **Command palette → "Hexmap World Creator: Open random tables"** or t
 
 A two-panel view for managing and rolling on random tables.
 
-- **Left panel** — shows all `.md` files in the configured Tables folder as a collapsible folder tree. Click a folder header to expand or collapse it. Click a table to load it. The filter input at the top narrows results and temporarily expands all folders. **+ New** creates a file from the default template.
+- **Left panel** — shows all `.md` files in the configured Tables folder as a collapsible folder tree. Click a folder header to expand or collapse it. Click a table to load it. The filter input at the top narrows results and temporarily expands all folders. **+ New** creates a file from the default template. Your own tables come first; the description and encounter tables the map makes for every terrain, and the encounter table for every region, sit in one collapsed **Made by the map** section at the end (so do the workflow step and roll dropdowns, and the hex table's Encounters picker). They're told apart by their `table-type: description` / `encounters` line: delete it and the table counts as yours.
 - **Right panel** — shows the table's entries with their roll ranges and odds. **Roll** rolls the die, highlights the row and shows the face (e.g. `d20 → 14`) and the result. The result is editable before use. Roll history shows the last 5 results.
 - **Change die** dropdown — updates the `dice:` frontmatter and redoes the roll column for the new die.
 - **Problems** — if the ranges and weights disagree, or a range can't be read, a banner says so, with one-click fixes (**Keep ranges → set weights**, **Keep weights → redo ranges**).
@@ -413,8 +413,13 @@ Older notes say `hexmaker-map: "[[_Overworld]]"` (map notes use `hexmaker-map:` 
 | Token notes: the map a token is on | `token-map: coast` | `token-map: "[[_coast]]"` |
 | Second tokens for a note: the note they stand for | `token-link: world/npcs/Ana.md` | `token-link: "[[world/npcs/Ana]]"` |
 | Workflows: their template | `template-file: world/workflows/templates/npc.md` | `template-file: "[[world/workflows/templates/npc]]"` |
+| Map notes: the palette (and region palette) | `palette: Default` | `palette: "[[world/palettes/Default]]"` |
+| Palette notes: the palette for submaps | `child-palette: Space - System` | `child-palette: "[[world/palettes/Space - System]]"` |
+| Generators: palette, source region(s), blended generators | `palette: Default`, `source-maps: coast + north`, `blend-of: valley + forest` | `palette: "[[world/palettes/Default]]"`, `source-maps: ["[[_coast]]", "[[_north]]"]`, `blend-of: ["[[world/generators/valley]]", "[[world/generators/forest]]"]` |
+| Generator saves: their generator | `generator-path: world/generators/valley.md` | `generator-path: "[[world/generators/valley]]"` |
+| World types tables: the Palette column | `Space - Planet` | `[[world/palettes/Space - Planet]]` |
 
-Before changing anything, the full text of every note it changes is saved in the plugin folder's `backups/note-formats-<date>/` (one gzipped file per change). Each change runs once per vault (recorded in `data.json`); a vault with nothing to change has no note written. The old forms are still read, so notes from another device on an older version keep working. Notes skipped on purpose (a `map:` key of your own, a link to a note that doesn't exist) are listed in a notice.
+Before changing anything, the full text of every note it changes is saved in the plugin folder's `backups/note-formats-<date>/` (one gzipped file per change). Each change runs once per vault (recorded in `data.json`); a vault with nothing to change has no note written. The old forms are still read, so notes from another device on an older version keep working. Notes skipped on purpose (a `map:` key of your own, a link to a note that doesn't exist) are listed in a notice. A palette, map or generator name that names no note (a palette that isn't installed, a shipped generator) stays as you wrote it. New notes and saves are written with links, so renaming a palette, map or generator note in Obsidian updates everything that names it.
 
 **Sections** (used by the editor and table view):
 

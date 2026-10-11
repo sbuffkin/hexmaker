@@ -189,7 +189,11 @@ Pickers that link notes (to hexes, tokens, sections) never offer template notes 
 
 On **space maps** (a palette with space terrain types, or a map under one), the hex editor, hex table, badge legend and exports call the link sections **Settlements**, **Sites**, **Points of Interest** and **Missions** instead of Towns, Dungeons, Features and Quests. Only the labels change: notes keep their usual headings, so links keep working.
 
-Every new terrain (from the terrain tool, the palette editor, a new palette or a palette note) gets its description and encounter tables right away, empty. Renaming a terrain renames its tables.
+Every new terrain (from the terrain tool, the palette editor, a new palette or a palette note) gets its description and encounter tables right away, empty. Renaming a terrain renames its tables. Table pickers (the Random Tables list, workflow steps, the roll dropdown) list your own tables first and these, with the region encounter tables, under a collapsed **Made by the map** heading.
+
+**Links between plugin notes.** A map note's palette, a palette's child palette, a generator's palette, source regions and blended generators, a save's generator and a world types row's Palette are links to those notes (`palette: "[[world/palettes/Default]]"`), so renaming one in Obsidian updates them. Plain names still read. Older notes were converted once, after a backup.
+
+**Deep maps.** When the breadcrumb doesn't fit beside the top **+** / **−** buttons, its middle maps fold into **…** (hover to see them, click to go one level up from the last one shown).
 
 **Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes and `town.md` for new towns made from the hex editor. Edit them there and new notes follow.
 
