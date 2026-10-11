@@ -104,7 +104,8 @@ const buildHash = hash.digest("hex").slice(0, 16);
 const manifest = JSON.parse(fs.readFileSync(path.join(buildDir, "manifest.json"), "utf8"));
 const pluginId = manifest.id;
 const mainJs = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
-const expectedCommands = [...new Set([...mainJs.matchAll(/addCommand\(\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
+// Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
+const expectedCommands = [...new Set([...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
 log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands`);
 
 // ── 2. the matrix ─────────────────────────────────────────────────────────

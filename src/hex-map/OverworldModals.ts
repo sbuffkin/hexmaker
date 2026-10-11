@@ -154,6 +154,8 @@ export class NewOverworldModal extends HexmakerModal {
   onOpen(): void {
     this.makeDraggable();
     const regen = this.regenerate ? this.plugin.getMap(this.regenerate) : undefined;
+    // The overworld keeps its seed (`seed:` in its map note): start from it.
+    if (typeof regen?.seed === "number") this.seed = regen.seed;
     this.titleEl.setText(regen ? `Generate overworld: ${this.plugin.mapLabel(regen.name)}` : "New overworld");
     this.modalEl.addClass("duckmage-new-overworld-modal");
     const world = this.plugin.settings.terrainPalettes.filter((p) => !isSpacePalette(p.terrains));
@@ -492,6 +494,8 @@ export class NewOverworldModal extends HexmakerModal {
     if (this.result.river.length > 1) map.biomeRiver = formatBiomeRiver(this.result.river);
     if (this.poolPath) map.biomePool = this.poolPath;
     map.biomeGaps = unclimatedText(this.unclimated);
+    // Saved with the map (`seed:`), so its layout can be made again.
+    map.seed = this.seed;
     await this.plugin.saveSettings();
     // Every hex's biome goes in the Biome column (BC1); blank hexes get no terrain.
     await writeOverworldBiomes(this.plugin, res.name, this.result);
@@ -511,6 +515,9 @@ export class NewOverworldModal extends HexmakerModal {
     const name = this.regenerate!;
     status.setText("Regenerating…");
     const t0 = performance.now();
+    // regenerateOverworld saves the map, with the seed it used.
+    const target = this.plugin.getMap(name);
+    if (target) target.seed = this.seed;
     const res = await regenerateOverworld(this.plugin, name, {
       seed: this.seed, climate: this.climate, water: this.water / 100, land: this.land, north: this.north,
       pool: this.poolBiomes(), poolPath: this.poolPath, regions: this.makeAll, unclimated: this.unclimated,

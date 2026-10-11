@@ -64,6 +64,7 @@ describe("templates folder (PA3)", () => {
 	it("the Templates folder setting is in both settings paths", () => {
 		const tab = readFileSync("src/HexmakerSettingTab.ts", "utf8");
 		expect(tab).toMatch(/folderText\(\s*"Templates folder",\s*"templatesFolder"/);
-		expect(tab).toContain('.setName("Templates folder")');
+		// The pre-1.13 page draws the same definitions (display → renderDefinitions).
+		expect(tab).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");
 	});
 });

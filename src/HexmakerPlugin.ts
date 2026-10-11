@@ -1,4 +1,4 @@
-import { Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
+import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -48,6 +48,7 @@ import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapK
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { mapAncestors } from "./hex-map/submapNav";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
+import { addPlacedMenuItems, placeCommand } from "./ui/commandPlacement";
 import {
   getPreset,
   presetToPalette,
@@ -293,12 +294,18 @@ export default class HexmakerPlugin extends Plugin {
     this.addRibbonIcon("map", "Open hex map", () =>
       this.openHexMap(),
     );
-    this.addCommand({
+    // Commands are placed by id like every other control (src/ui/placement.ts):
+    // Debug ones are offered only in debug mode (src/ui/commandPlacement.ts).
+    const addPlaced = (id: string, cmd: Command) => {
+      const placed = placeCommand(id, cmd, () => isDebugMode(this.app));
+      if (placed) this.addCommand(placed);
+    };
+    addPlaced("Plugin.cmd.openHexMap", {
       id: "open-hex-map",
       name: "Open hex map",
       callback: () => this.openHexMap(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openHexTable", {
       id: "open-hex-table",
       name: "Open hex table",
       callback: () =>
@@ -306,17 +313,17 @@ export default class HexmakerPlugin extends Plugin {
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_HEX_TABLE }),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openTerrainGenerator", {
       id: "open-terrain-generator",
       name: "Open terrain generator",
       callback: () => void this.openTerrainGenerator(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openPaletteEditor", {
       id: "open-palette-editor",
       name: "Open palette editor",
       callback: () => void this.openPaletteEditor(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.editWorldTypes", {
       id: "edit-world-types",
       name: "Edit world types…",
       checkCallback: (checking) => {
@@ -337,12 +344,12 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.newOverworld", {
       id: "new-overworld",
       name: "New overworld…",
       callback: () => this.openNewOverworld(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoUp", {
       id: "map-go-up",
       name: "Go up to parent map",
       checkCallback: (checking) => {
@@ -352,7 +359,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoBack", {
       id: "map-go-back",
       name: "Go back to previous map",
       checkCallback: (checking) => {
@@ -362,7 +369,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoForward", {
       id: "map-go-forward",
       name: "Go forward to the next map",
       checkCallback: (checking) => {
@@ -372,7 +379,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openRandomTables", {
       id: "open-random-tables",
       name: "Open random tables",
       callback: () =>
@@ -380,17 +387,17 @@ export default class HexmakerPlugin extends Plugin {
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.addRollRanges", {
       id: "add-roll-ranges",
       name: "Add roll ranges to tables",
       callback: () => void openTableRangesModal(this),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.checkTables", {
       id: "check-tables",
       name: "Check tables",
       callback: () => void runTableCheck(this),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportNotePdf", {
       id: "export-current-note-pdf",
       name: "Export current note to PDF",
       checkCallback: (checking) => {
@@ -400,7 +407,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportNoteMarkdown", {
       id: "export-current-note-markdown",
       name: "Export current note to Markdown",
       checkCallback: (checking) => {
@@ -410,7 +417,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentHex", {
       id: "export-current-hex",
       name: "Export current hex (structured PDF / Markdown)",
       checkCallback: (checking) => {
@@ -420,7 +427,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentWorkflow", {
       id: "export-current-workflow",
       name: "Export current workflow with rolled samples",
       checkCallback: (checking) => {
@@ -433,7 +440,7 @@ export default class HexmakerPlugin extends Plugin {
     // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
     // Map data callouts (src/hexMapData.ts) in the open map's hex notes: an
     // opt-in for notes made before the template had one.
-    this.addCommand({
+    addPlaced("Plugin.cmd.addMapDataToHexNotes", {
       id: "add-map-data-to-hex-notes",
       name: "Add map data to this map's hex notes",
       checkCallback: (checking) => {
@@ -455,7 +462,7 @@ export default class HexmakerPlugin extends Plugin {
     });
     // Map data callouts in region and faction notes (R1): which maps use
     // them, with hex counts. Adds the callout where it's missing.
-    this.addCommand({
+    addPlaced("Plugin.cmd.updateRegionFactionMapData", {
       id: "update-region-faction-map-data",
       name: "Update map data in region and faction notes",
       checkCallback: (checking) => {
@@ -473,7 +480,7 @@ export default class HexmakerPlugin extends Plugin {
       },
     });
     // Export, for the map open in the hex map view (else the default map).
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentMap", {
       id: "export-current-map",
       name: "Export current map…",
       checkCallback: (checking) => {
@@ -486,24 +493,15 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    // File-menu items: right-click any markdown file → Export to PDF / Markdown
+    // File-menu items: right-click any markdown file → Export to PDF /
+    // Markdown. Placed by id: Advanced ones go in one "Export note" submenu.
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
-        menu.addItem((item) =>
-          item
-            .setTitle("Export to PDF")
-            .setIcon("file-down")
-            .setSection("action")
-            .onClick(() => void exportSingleNoteAsPdf(this, file)),
-        );
-        menu.addItem((item) =>
-          item
-            .setTitle("Export to Markdown")
-            .setIcon("file-text")
-            .setSection("action")
-            .onClick(() => void exportSingleNoteAsMarkdown(this, file)),
-        );
+        addPlacedMenuItems(menu, "Export note", "file-down", [
+          { id: "Plugin.fileMenuExportPdf", title: "Export to PDF", short: "PDF", icon: "file-down", run: () => void exportSingleNoteAsPdf(this, file) },
+          { id: "Plugin.fileMenuExportMarkdown", title: "Export to Markdown", short: "Markdown", icon: "file-text", run: () => void exportSingleNoteAsMarkdown(this, file) },
+        ], isDebugMode(this.app));
       }),
     );
     this.addSettingTab(new HexmakerSettingTab(this.app, this));

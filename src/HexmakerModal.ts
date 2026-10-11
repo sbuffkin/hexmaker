@@ -1,7 +1,7 @@
 import { App, Modal } from "obsidian";
 import { iconLabel, iconPack, iconPackTabs, placeIconKind, PLACE_ICON_KINDS, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
-import { Disclosure } from "./ui/disclosure";
+import { Disclosure, type SectionName } from "./ui/disclosure";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" | undefined;
@@ -43,10 +43,11 @@ export class HexmakerModal extends Modal {
 
 	/**
 	 * The collapsed "Advanced" dropdown at the current end of the modal
-	 * (made on first use), or the "Debug" subsection inside it: null while
+	 * (made on first use), one of its sub-sections (`"advanced/<Sub-section>"`),
+	 * or the "Debug" subsection inside it: null while
 	 * debug mode is off.
 	 */
-	protected section(layer: "advanced" | "debug"): HTMLElement | null {
+	protected section(layer: SectionName): HTMLElement | null {
 		return this.disclosure.section(layer);
 	}
 

@@ -64,6 +64,7 @@ import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTr
 import { openNoteFocused } from "../openNote";
 import { contentFolder } from "../notePickers";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
+import { withRepairHint } from "../ui/repairHint";
 
 /** Typing pause after which a text section autosaves. */
 const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
@@ -1433,6 +1434,8 @@ export class HexEditorModal extends HexmakerModal {
           link,
           sourcePath,
         );
+        // A link to a note that isn't there: say how to make missing tables.
+        if (!(file instanceof TFile)) label.setAttr("title", withRepairHint(`[[${link}]]: no such note.`));
         if (file instanceof TFile) {
           label.addClass("duckmage-link-item-clickable");
           label.addEventListener("click", () => {
