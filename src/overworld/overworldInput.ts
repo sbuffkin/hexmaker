@@ -7,8 +7,9 @@
  *   and both views;
  * - left click on an empty one places a biome (Build, God) or says how to
  *   unlock it (Play);
- * - changing a placed region is a right-click item, "Edit region…", that
- *   is enabled in God only and otherwise shown disabled with its hint.
+ * - a region's right-click item "Edit region…" opens one modal with its
+ *   name, biome, facts and notes (#49), in every mode; only God may
+ *   change the biome there. The overworld offers no hex editor.
  *
  * The terrain brush (owner: "the terrain brush doesn't work on the
  * overworld map, I would like it to paint + update the submaps as you draw
@@ -22,8 +23,8 @@ import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { canAdd, canReshape, PLACE_LOCKED_HINT } from "../workMode";
 import { parentOf, type RegionLayout } from "./layout";
 
-/** The hint on "Edit region…" outside God. */
-export const EDIT_REGION_LOCKED_HINT = "Switch to God to change a placed region.";
+/** The line under a region's biome in "Edit region…" outside God (shown read-only there). */
+export const BIOME_LOCKED_HINT = "Switch to God to change it.";
 
 /** The hint when the terrain brush is used on an overworld in Play. */
 export const PAINT_LOCKED_HINT = "Switch to Build to paint the regions.";
@@ -45,7 +46,7 @@ export function overworldLeftClick(map: Mode, hasRegion: boolean): OverworldLeft
 }
 
 export interface OverworldMenuItem {
-  id: "enter-region" | "edit-region" | "set-biome";
+  id: "enter-region" | "edit-region" | "set-biome" | "center" | "locations";
   title: string;
   enabled: boolean;
   /** Why it's disabled (shown with it). */
@@ -53,20 +54,59 @@ export interface OverworldMenuItem {
 }
 
 /**
- * The overworld items of a hex's right-click menu. "Enter region" is listed
- * by the menu's own region item, so `enter-region` is only here to keep the
- * rule in one place (the caller can skip it when it already has one).
+ * A hex's right-click menu on an overworld (both views). The overworld is
+ * the big-picture view (owner, #49): no hex editor and no per-hex items
+ * (notes, tables, swaps, terrain clears), only region-level ones. A hex
+ * with a region: Enter region, and Edit region… in every mode (the modal
+ * shows what the mode may change). An empty hex: Set biome… (Build and
+ * God; shown disabled with its hint in Play). Then Center on this hex,
+ * and the hex's Locations when it has any.
  */
-export function overworldMenu(map: Mode, hasRegion: boolean): OverworldMenuItem[] {
+export function overworldMenu(map: Mode, hasRegion: boolean, locations = 0): OverworldMenuItem[] {
+  const out: OverworldMenuItem[] = [];
   if (hasRegion) {
-    const god = canReshape(map);
-    return [
-      { id: "enter-region", title: "Enter region", enabled: true },
-      { id: "edit-region", title: "Edit region…", enabled: god, ...(god ? {} : { hint: EDIT_REGION_LOCKED_HINT }) },
-    ];
+    out.push({ id: "enter-region", title: "Enter region", enabled: true });
+    out.push({ id: "edit-region", title: "Edit region…", enabled: true });
+  } else {
+    const add = canAdd(map);
+    out.push({ id: "set-biome", title: "Set biome…", enabled: add, ...(add ? {} : { hint: PLACE_LOCKED_HINT }) });
   }
-  const add = canAdd(map);
-  return [{ id: "set-biome", title: "Set biome…", enabled: add, ...(add ? {} : { hint: PLACE_LOCKED_HINT }) }];
+  out.push({ id: "center", title: "Center on this hex", enabled: true });
+  if (locations > 0) out.push({ id: "locations", title: `Locations (${locations})…`, enabled: true });
+  return out;
+}
+
+/**
+ * What "Edit region…" offers in this mode. God: the biome as a picker,
+ * with Reroll and Settings… (generator options, live preview). Build and
+ * Play: the biome shown read-only with one line saying how to change it,
+ * never a wall of disabled buttons. Name and notes are editable in every
+ * mode (note text is never locked, WM2).
+ */
+export interface EditRegionPlan {
+  biome: "pick" | "show";
+  reroll: boolean;
+  settings: boolean;
+  /** Shown under a read-only biome. */
+  hint?: string;
+}
+
+export function editRegionPlan(map: Mode): EditRegionPlan {
+  return canReshape(map)
+    ? { biome: "pick", reroll: true, settings: true }
+    : { biome: "show", reroll: false, settings: false, hint: BIOME_LOCKED_HINT };
+}
+
+/**
+ * The terrain counts as one short line, most first: "forest 30, hills 12,
+ * lake 4 and 2 more". Hexes with no terrain are listed last as "blank".
+ */
+export function terrainCountsText(counts: ReadonlyMap<string, number>, blank = 0, max = 4): string {
+  const rows = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  if (blank) rows.push(["blank", blank]);
+  if (!rows.length) return "none yet";
+  const shown = rows.slice(0, max).map(([t, n]) => `${t} ${n}`).join(", ");
+  return rows.length > max ? `${shown} and ${rows.length - max} more` : shown;
 }
 
 /** The child cells a brush of `size` (1, 3 or 7) covers around (x, y), same shape as the map's brush. */

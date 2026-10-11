@@ -456,6 +456,34 @@ export class MapStore {
     return this.queue;
   }
 
+  /** A map note's text as it is now (null: no note yet). */
+  async readNoteText(map: string): Promise<string | null> {
+    const file = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map));
+    return file instanceof TFile ? this.plugin.app.vault.read(file) : null;
+  }
+
+  /**
+   * Edit a map note's free text (outside its tables, e.g. the Notes
+   * section), in the write queue so no map write lands between the read and
+   * the write. Returns false when the map has no note yet. The tables are
+   * untouched, so when we already knew the note's text the edit counts as
+   * our own write (no reload).
+   */
+  editNoteText(map: string, edit: (content: string) => string): Promise<boolean> {
+    let done = false;
+    return this.enqueue(async () => {
+      const { vault } = this.plugin.app;
+      const file = vault.getAbstractFileByPath(this.notePath(map));
+      if (!(file instanceof TFile)) return;
+      done = true;
+      const current = await vault.read(file);
+      const next = edit(current);
+      if (next === current) return;
+      if (this.lastContent.get(file.path) === current) this.lastContent.set(file.path, next);
+      await vault.modify(file, next);
+    }).then(() => done);
+  }
+
   /** Write every dirty map's note now (and report unreadable rows still waiting). */
   flush(): Promise<void> {
     window.clearTimeout(this.writeTimer);
