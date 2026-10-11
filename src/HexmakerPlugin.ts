@@ -32,6 +32,7 @@ import {
   VIEW_TYPE_PALETTE_EDITOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
+import { BiomeStore } from "./overworld/BiomeStore";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
@@ -98,6 +99,8 @@ export default class HexmakerPlugin extends Plugin {
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
   paletteStore = new PaletteStore(this);
+  /** Overworld biome notes (#50). */
+  biomeStore = new BiomeStore(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
   /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
@@ -143,6 +146,7 @@ export default class HexmakerPlugin extends Plugin {
       this.loadAvailableIcons();
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
+      void this.biomeStore.init();
       void this.paletteStore.init().then(() => this.mapStore.init()).then(() => this.ensureTablesForNewTerrains());
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
@@ -184,18 +188,21 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("create", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onModify(f);
+        this.biomeStore.onModify(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onDelete(f);
+        this.biomeStore.onDelete(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("rename", (f, oldPath) => {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
         this.paletteStore.onRename(f, oldPath);
+        this.biomeStore.onRename(f, oldPath);
         if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
       }),
     );
@@ -209,6 +216,7 @@ export default class HexmakerPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("modify", (f) => {
         this.paletteStore.onModify(f);
+        this.biomeStore.onModify(f);
         this.mapStore.onModify(f);
       }),
     );

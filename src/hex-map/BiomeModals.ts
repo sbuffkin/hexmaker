@@ -16,13 +16,16 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
-import { BIOMES, biomeForTerrain, representableBiomes, representativeTerrain, type BiomeId } from "../overworld/biomes";
+import { allBiomeIds, biomeInfo, representableBiomes, representativeTerrain, type BiomeId } from "../overworld/biomes";
 import { REGION_WARP, type BlendWidth } from "../overworld/blendField";
 import { regionCells } from "../overworld/layout";
 import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "../overworld/overworldRender";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
+import { BiomeLibraryModal, openBiomeGenerator } from "./BiomeLibraryModal";
 import {
   createRegion,
+  hexBiomeAt,
+  regionBiomeStatus,
   overworldOf,
   planRegionAt,
   regenerateRegion,
@@ -65,10 +68,10 @@ export function paintableBiomes(plugin: HexmakerPlugin, parentName: string): { i
   const palette = plugin.getMapPalette(parentName);
   const shown = representableBiomes(palette);
   const out: { id: BiomeId; label: string; terrain: string; color: string }[] = [];
-  for (const b of BIOMES) {
-    if (!shown.has(b.id)) continue;
-    const terrain = representativeTerrain(b.id, palette)!;
-    out.push({ id: b.id, label: b.label, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888" });
+  for (const id of allBiomeIds()) {
+    if (!shown.has(id)) continue;
+    const terrain = representativeTerrain(id, palette)!;
+    out.push({ id, label: biomeInfo(id)?.label ?? id, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888" });
   }
   return out;
 }
@@ -83,8 +86,7 @@ export class BiomePickerModal extends HexmakerModal {
     this.modalEl.addClass("duckmage-biome-modal");
     const { plugin } = this.host;
     const hex = `${this.px}_${this.py}`;
-    const terrain = plugin.mapStore.get(this.parentName, hex)?.terrain;
-    const current = terrain ? biomeForTerrain(terrain, plugin.getMapPalette(this.parentName)) : undefined;
+    const current = hexBiomeAt(plugin, this.parentName, hex);
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
     this.titleEl.setText(`Hex ${this.px}, ${this.py}`);
     const { contentEl } = this;
@@ -126,6 +128,10 @@ export class BiomePickerModal extends HexmakerModal {
       this.close();
       new RegionGenModal(this.host, this.parentName, this.px, this.py).open();
     });
+    row.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
+      this.close();
+      new BiomeLibraryModal(this.app, plugin, this.parentName).open();
+    });
   }
 
   private async apply(biome: BiomeId): Promise<void> {
@@ -160,10 +166,8 @@ export class RegionGenModal extends HexmakerModal {
     if (!ow) { this.close(); return; }
     const hex = `${this.px}_${this.py}`;
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
-    const palette = plugin.getMapPalette(this.parentName);
-    const terrain = plugin.mapStore.get(this.parentName, hex)?.terrain;
     this.opts = {
-      biome: terrain ? biomeForTerrain(terrain, palette) : undefined,
+      biome: hexBiomeAt(plugin, this.parentName, hex),
       blend: ow.settings.blend ?? "normal",
       warp: REGION_WARP,
       seed: region?.regionSeed ?? newSeed(),
@@ -181,6 +185,14 @@ export class RegionGenModal extends HexmakerModal {
     for (const b of paintableBiomes(plugin, this.parentName)) biomeSel.createEl("option", { text: b.label, value: b.id });
     if (this.opts.biome) biomeSel.value = this.opts.biome;
     biomeSel.addEventListener("change", () => { this.opts.biome = biomeSel.value; this.redraw(); });
+    const status = region ? regionBiomeStatus(plugin, region.name) : undefined;
+    if (status && "unknown" in status) form.createEl("p", { cls: "duckmage-locked-hint", text: `Unknown biome: ${status.unknown} (its note is gone). The region keeps its terrain; pick a biome to remake it.` });
+    const genRow = field("Biome generator");
+    genRow.createEl("button", { text: "Edit generator…" }).addEventListener("click", () => {
+      if (!this.opts.biome) return;
+      this.close();
+      void openBiomeGenerator(plugin, this.opts.biome);
+    });
 
     const blendSel = field("Blend with neighbours").createEl("select", { attr: { "aria-label": "Blend" } });
     for (const w of ["narrow", "normal", "wide"] as BlendWidth[]) blendSel.createEl("option", { text: w, value: w });

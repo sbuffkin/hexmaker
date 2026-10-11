@@ -14,7 +14,7 @@ import { slugify } from "../utils";
 import { newWorldId } from "../worldgen/world";
 import { BUILTIN_GENERATORS, builtinModel } from "../worldgen/builtinGenerators";
 import { regionMapAt } from "../maps/submaps";
-import { biomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
+import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeProfiles, biomeSourceVersion, noteBiomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape, PLACE_LOCKED_HINT, RESHAPE_LOCKED_HINT } from "../workMode";
@@ -60,13 +60,20 @@ export function regionHome(plugin: HexmakerPlugin, regionName: string): { overwo
 
 const profileCache = new WeakMap<TerrainColor[], { key: string; profiles: Map<BiomeId, BiomeProfile> }>();
 
-/** Biome profiles fitted to a palette (cached until its terrains change). */
+/**
+ * Biome profiles fitted to a palette (cached until its terrains or the
+ * biome notes change): each biome note's type mix (#50). A biome with no
+ * note (the notes haven't loaded, or its note was deleted while the
+ * overworld's terrain still reads as it) falls back to the shipped
+ * generator's mix, so a region is never left without one.
+ */
 export function profilesForPalette(palette: TerrainColor[]): Map<BiomeId, BiomeProfile> {
-  const key = palette.map((t) => `${t.name}:${t.type ?? ""}`).join("|");
+  const key = `${biomeSourceVersion()}#` + palette.map((t) => `${t.name}:${t.type ?? ""}`).join("|");
   const hit = profileCache.get(palette);
   if (hit && hit.key === key) return hit.profiles;
   const models = new Map(BUILTIN_GENERATORS.map((g) => [g.slug, builtinModel(g.slug)]));
   const profiles = biomeProfiles(models, palette);
+  for (const [id, p] of noteBiomeProfiles(palette)) profiles.set(id, p);
   profileCache.set(palette, { key, profiles });
   return profiles;
 }
@@ -80,6 +87,43 @@ export function overworldTerrain(plugin: HexmakerPlugin, map: MapData): Map<stri
     if (t) out.set(`${x}_${y}`, t);
   }
   return out;
+}
+
+/**
+ * Overworld hexes whose region was made from a biome note's biome (#50):
+ * hex → biome id. These win over the hex's terrain (a user's biome paints
+ * a terrain that reads back as a built-in one). A region whose biome no
+ * longer exists isn't listed (its hex goes by its terrain again).
+ */
+export function placedBiomes(plugin: HexmakerPlugin, overworldName: string): Map<string, BiomeId> {
+  const out = new Map<string, BiomeId>();
+  for (const m of plugin.settings.maps) {
+    if (m.submapKind !== "region" || m.parent?.map !== overworldName) continue;
+    const id = biomeByRef(m.biome?.generator);
+    if (id) out.set(m.parent.hex, id);
+  }
+  return out;
+}
+
+/** One overworld hex's biome: its placed biome, else read from its terrain. */
+export function hexBiomeAt(plugin: HexmakerPlugin, overworldName: string, hex: string): BiomeId | undefined {
+  const region = regionMapAt(plugin.settings.maps, overworldName, hex);
+  const placed = region ? biomeByRef(region.biome?.generator) : undefined;
+  if (placed) return placed;
+  const terrain = plugin.mapStore.get(overworldName, hex)?.terrain;
+  return terrain ? biomeForTerrain(terrain, plugin.getMapPalette(overworldName)) : undefined;
+}
+
+/**
+ * What a region says it was made from: its biome's id, or `unknown` (the
+ * name it recorded) when that biome's note is gone. Undefined when it
+ * recorded none, or a shipped generator (`builtin:…`).
+ */
+export function regionBiomeStatus(plugin: HexmakerPlugin, regionName: string): { id: BiomeId } | { unknown: string } | undefined {
+  const ref = plugin.getMap(regionName)?.biome?.generator;
+  if (!ref || ref.startsWith("builtin:")) return undefined;
+  const id = biomeByRef(ref);
+  return id ? { id } : { unknown: ref };
 }
 
 /** Fill the shared-grid fields once (world id, stagger) and save, before the first region. */
@@ -115,6 +159,8 @@ export interface RegionGenOptions {
   warp?: number;
   /** Preview only: treat the region's own overworld hex as this terrain (nothing is written). */
   hexTerrain?: string;
+  /** The region's own biome (a hex set to a user's biome, which its terrain can't tell); default read from the overworld. */
+  biome?: BiomeId;
 }
 
 /**
@@ -129,7 +175,10 @@ export function planRegionAt(plugin: HexmakerPlugin, parentName: string, px: num
   const owPalette = plugin.getMapPalette(ow.map.name);
   const terrain = overworldTerrain(plugin, ow.map);
   if (opts.hexTerrain) terrain.set(`${px}_${py}`, opts.hexTerrain);
-  const biomes = overworldBiomes(terrain, owPalette, ow.layout.orientation, ow.layout.parentStagger);
+  const placed = placedBiomes(plugin, parentName);
+  if (opts.biome) placed.set(`${px}_${py}`, opts.biome);
+  const biomes = overworldBiomes(terrain, owPalette, ow.layout.orientation, ow.layout.parentStagger, placed);
+  const ownBiome = biomes.get(`${px}_${py}`);
   const ws = worldSeed(ow.settings.worldId ?? ow.map.name);
   const pinned = pinnedAround(plugin, parentName, ow.layout, px, py);
   const own = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
@@ -143,7 +192,7 @@ export function planRegionAt(plugin: HexmakerPlugin, parentName: string, px: num
     typeOf: paletteTypeOf(palette),
     worldSeed: ws,
     seed: opts.seed ?? own?.regionSeed ?? ws,
-    blend: opts.blend ?? ow.settings.blend,
+    blend: opts.blend ?? (ownBiome ? biomeNoteOf(ownBiome)?.blend : undefined) ?? ow.settings.blend,
     warp: opts.warp,
   });
 }
@@ -327,10 +376,10 @@ export async function setBiomeAt(
   }
   const existing = regionMapAt(plugin.settings.maps, parentName, hex);
   if (existing) {
-    await regenerateRegion(plugin, existing.name, opts);
+    await regenerateRegion(plugin, existing.name, { ...opts, biome });
     return { name: existing.name };
   }
-  return createRegion(plugin, parentName, px, py, { ...opts, fill: "match" });
+  return createRegion(plugin, parentName, px, py, { ...opts, biome, fill: "match" });
 }
 
 // ── walking into new land ────────────────────────────────────────────────

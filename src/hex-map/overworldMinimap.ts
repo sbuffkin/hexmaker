@@ -13,8 +13,9 @@ import { regionMapAt } from "../maps/submaps";
 import { biomeInfo } from "../overworld/biomes";
 import { drawMiniOverworld, miniHexAt, miniLayout, type MiniHex } from "../overworld/overworldRender";
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
-import { overworldOf, overworldTerrain, regionHome } from "../overworld/regionsVault";
+import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "../overworld/regionsVault";
 import { OverworldLayer } from "./overworldLayer";
+import { BiomeLibraryModal } from "./BiomeLibraryModal";
 
 const W = 220, H = 180;
 
@@ -65,7 +66,13 @@ export class OverworldMinimap {
           this.host.redraw();
         });
       }
-      if (view === "biomes") return;
+      if (view === "biomes") {
+        // The Biomes tab: the biome notes, and adding your own (#50).
+        sw.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
+          new BiomeLibraryModal(this.plugin.app, this.plugin, map.name).open();
+        });
+        return;
+      }
     }
     const head = box.createDiv({ cls: "duckmage-ow-minimap-head" });
     head.createSpan({ cls: "duckmage-ow-minimap-title", text: this.plugin.mapLabel(t.overworld.name) });
@@ -85,7 +92,7 @@ export class OverworldMinimap {
     const palette = this.plugin.getMapPalette(t.overworld.name);
     const colour = new Map(palette.map((p) => [p.name, p.color]));
     const terrain = overworldTerrain(this.plugin, t.overworld);
-    const biomes = overworldBiomes(terrain, palette, ow.layout.orientation, ow.layout.parentStagger);
+    const biomes = overworldBiomes(terrain, palette, ow.layout.orientation, ow.layout.parentStagger, placedBiomes(this.plugin, t.overworld.name));
     const eco = ecotoneHexes(biomes, ow.layout.orientation, ow.layout.parentStagger);
     const hexes: MiniHex[] = [];
     for (const [k, terr] of terrain) {

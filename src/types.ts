@@ -341,6 +341,10 @@ export interface HexmakerPluginSettings {
 	setupDismissed: boolean;
 	/** Vault folder holding palette notes. Empty = "{worldFolder}/palettes". */
 	palettesFolder: string;
+	/** Vault folder holding biome notes (#50). Empty = "{worldFolder}/biomes". */
+	biomesFolder?: string;
+	/** Shipped biomes already written into biome notes (ids): each is written once, so a deleted one stays deleted. */
+	biomesSeeded?: string[];
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
 	/**

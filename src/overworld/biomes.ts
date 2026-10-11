@@ -12,7 +12,8 @@
  */
 
 import type { HexWfcModel, TerrainEntry } from "../../packages/hex-wfc/src/model";
-import { mapTerrainsByType } from "../worldgen/builtinGenerators";
+import { mapTerrainsByType, TYPE_FALLBACKS } from "../worldgen/builtinGenerators";
+import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields } from "./biomeNote";
 import type { TerrainColor } from "../types";
 
 export type BiomeId = string;
@@ -53,8 +54,8 @@ export const BIOMES: BiomeInfo[] = [
 ];
 
 const BY_ID = new Map(BIOMES.map((b) => [b.id, b]));
-export const biomeInfo = (id: BiomeId): BiomeInfo | undefined => BY_ID.get(id);
-export const isSeaBiome = (id: BiomeId): boolean => BY_ID.get(id)?.zone === "sea";
+export const biomeInfo = (id: BiomeId): BiomeInfo | undefined => noteBiomeInfo(id) ?? BY_ID.get(id);
+export const isSeaBiome = (id: BiomeId): boolean => biomeInfo(id)?.zone === "sea";
 
 /** How badly (T, M) suits a biome: 0 = its ideal climate. */
 export function climateMisfit(id: BiomeId, temp: number, moist: number): number {
@@ -153,6 +154,7 @@ export function biomeForTerrain(terrain: string, palette: TerrainColor[]): Biome
  * the biome's preferred type first.
  */
 export function representativeTerrain(biome: BiomeId, palette: TerrainColor[]): string | undefined {
+  if (!BY_ID.has(biome)) return noteBiomeTerrain(biome, palette);
   const map = biomesOf(palette);
   const cands = palette.filter((t) => map.get(t.name) === biome);
   if (!cands.length) return undefined;
@@ -165,7 +167,7 @@ export function representativeTerrain(biome: BiomeId, palette: TerrainColor[]): 
 
 /** Biomes a palette can show (each has a terrain that reads back as it). */
 export function representableBiomes(palette: TerrainColor[]): Set<BiomeId> {
-  return new Set(BIOMES.map((b) => b.id).filter((id) => representativeTerrain(id, palette) !== undefined));
+  return new Set(allBiomeIds().filter((id) => representativeTerrain(id, palette) !== undefined));
 }
 
 /** Nearest biomes in character, best first: used to swap a biome for variety or when a palette can't show it. */
@@ -223,7 +225,7 @@ export const ECOTONES: [BiomeId, BiomeId, BiomeId][] = [
 
 /** The ecotone between two biomes, or undefined when they may touch. */
 export function ecotoneBetween(a: BiomeId, b: BiomeId): BiomeId | undefined {
-  for (const [x, y, e] of ECOTONES) if ((x === a && y === b) || (x === b && y === a)) return e;
+  for (const [x, y, e] of source ? source.ecotones : ECOTONES) if ((x === a && y === b) || (x === b && y === a)) return e;
   return undefined;
 }
 
@@ -297,6 +299,132 @@ export function biomeProfiles(models: Map<string, HexWfcModel | undefined>, pale
     const terrains = b.id === OPEN_SEA ? OPEN_SEA_TERRAINS : b.slug ? models.get(b.slug)?.terrains : undefined;
     if (!terrains) continue;
     const p = profileFromWeights(b.id, terrains, palette);
+    if (p.types.size) out.set(b.id, p);
+  }
+  return out;
+}
+
+// ── biomes from notes (#50): the data-loading seam ───────────────────────
+//
+// BiomeStore loads the biome notes (<worldFolder>/biomes, the built-ins
+// seeded into notes once) and hands them here. With a source set: labels,
+// transitions (ecotones) and the biome list come from the notes, and
+// biomes that aren't in the table above (the user's own) are looked up in
+// it. Without one (tests, before the notes load) everything reads the
+// table above, as before.
+
+interface BiomeSource {
+  biomes: Map<BiomeId, BiomeNoteFields>;
+  infos: Map<BiomeId, BiomeInfo>;
+  ecotones: [BiomeId, BiomeId, BiomeId][];
+  /** id, label or note name (slugged) → id. */
+  names: Map<string, BiomeId>;
+}
+
+let source: BiomeSource | undefined;
+let sourceVersion = 0;
+
+/** Bumped on every setBiomeSource (for cache keys). */
+export const biomeSourceVersion = (): number => sourceVersion;
+
+/** Load (or, with undefined, drop) the biomes read from notes. */
+export function setBiomeSource(list: readonly BiomeNoteFields[] | undefined): void {
+  sourceVersion++;
+  if (!list) { source = undefined; return; }
+  const biomes = new Map<BiomeId, BiomeNoteFields>();
+  const names = new Map<string, BiomeId>();
+  for (const b of list) if (!biomes.has(b.id)) biomes.set(b.id, b);
+  for (const b of biomes.values()) names.set(b.id, b.id);
+  for (const b of biomes.values()) { const k = biomeSlug(b.label); if (k && !names.has(k)) names.set(k, b.id); }
+  const infos = new Map<BiomeId, BiomeInfo>();
+  for (const b of biomes.values()) {
+    const base = BY_ID.get(b.id);
+    infos.set(b.id, base ? { ...base, label: b.label }
+      : { id: b.id, label: b.label, temp: 0.5, moist: 0.5, zone: b.landShare !== undefined && b.landShare < 0.5 ? "sea" : "low" });
+  }
+  const ecotones: [BiomeId, BiomeId, BiomeId][] = [];
+  const resolve = (n: string) => names.get(biomeSlug(n));
+  for (const b of biomes.values()) {
+    for (const t of b.transitions) {
+      const next = resolve(t.next), between = resolve(t.between);
+      if (next && between && next !== b.id) ecotones.push([b.id, next, between]);
+    }
+  }
+  source = { biomes, infos, ecotones, names };
+}
+
+/** Whether biomes come from notes now. */
+export const biomeSourceActive = (): boolean => !!source;
+
+/** Every biome id: the notes' (with a source), else the table's. */
+export function allBiomeIds(): BiomeId[] {
+  return source ? [...source.biomes.keys()] : BIOMES.map((b) => b.id);
+}
+
+/** A biome's note fields (with a source). */
+export const biomeNoteOf = (id: BiomeId): BiomeNoteFields | undefined => source?.biomes.get(id);
+
+/** The biome a reference names (its id, label or note name), when it's a known biome note. */
+export function biomeByRef(ref: string | undefined): BiomeId | undefined {
+  return ref && source ? source.names.get(biomeSlug(ref)) : undefined;
+}
+
+function noteBiomeInfo(id: BiomeId): BiomeInfo | undefined {
+  return source?.infos.get(id);
+}
+
+/** A note biome's terrain types, heaviest first, then each one's fallbacks. */
+function typesToTry(mix: BiomeMixRow[]): string[] {
+  const own = [...mix].sort((a, b) => b.weight - a.weight).map((r) => r.type);
+  return [...own, ...own.flatMap((t) => TYPE_FALLBACKS[t] ?? [])];
+}
+
+/** The palette terrain painted for a note-only biome: the first terrain of its heaviest type the palette has. */
+function noteBiomeTerrain(biome: BiomeId, palette: TerrainColor[]): string | undefined {
+  const n = source?.biomes.get(biome);
+  if (!n) return undefined;
+  for (const ty of typesToTry(n.mix)) {
+    if (ty === "settlement") continue;
+    const hit = palette.find((t) => typeOf(t) === ty);
+    if (hit) return hit.name;
+  }
+  return undefined;
+}
+
+/**
+ * Profile from a type mix (a biome note's): each type's share, spread
+ * evenly over the palette's terrains of that type. A type the palette
+ * doesn't have goes to its first fallback type it does (TYPE_FALLBACKS),
+ * else is dropped. Settlements never count.
+ */
+export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: TerrainColor[]): BiomeProfile {
+  const byType = new Map<string, string[]>();
+  for (const t of palette) {
+    const ty = typeOf(t);
+    if (!ty || ty === "settlement") continue;
+    byType.set(ty, [...(byType.get(ty) ?? []), t.name]);
+  }
+  const types = new Map<string, number>();
+  for (const [ty, share] of mixShares(mix)) {
+    const to = [ty, ...(TYPE_FALLBACKS[ty] ?? [])].find((x) => byType.has(x));
+    if (to) types.set(to, (types.get(to) ?? 0) + share);
+  }
+  const total = [...types.values()].reduce((s, v) => s + v, 0);
+  const names = new Map<string, Map<string, number>>();
+  for (const [ty, v] of types) {
+    types.set(ty, v / total);
+    const list = byType.get(ty)!;
+    names.set(ty, new Map(list.map((n) => [n, 1 / list.length])));
+  }
+  return { id, types, names };
+}
+
+/** Profiles of every note biome with a mix the palette can show. */
+export function noteBiomeProfiles(palette: TerrainColor[]): Map<BiomeId, BiomeProfile> {
+  const out = new Map<BiomeId, BiomeProfile>();
+  if (!source) return out;
+  for (const b of source.biomes.values()) {
+    const p = profileFromMix(b.id, b.mix, palette);
     if (p.types.size) out.set(b.id, p);
   }
   return out;

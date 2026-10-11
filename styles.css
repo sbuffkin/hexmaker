@@ -8462,3 +8462,38 @@ button.duckmage-terrain-legend-chip {
     align-self: center;
     padding-right: 4px;
 }
+
+/* Biomes list and the Add / Edit biome form (#50). */
+.duckmage-biome-list {
+    display: grid;
+    gap: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: 0.6em;
+}
+.duckmage-biome-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.duckmage-biome-row-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.duckmage-biome-row-note {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-biome-mix,
+.duckmage-biome-transitions {
+    display: grid;
+    gap: 4px;
+}
+.duckmage-biome-mix .duckmage-region-gen-row.is-missing .duckmage-region-gen-label {
+    font-style: italic;
+}
+.duckmage-biome-weight {
+    width: 5em;
+}

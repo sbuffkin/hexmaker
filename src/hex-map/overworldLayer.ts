@@ -40,7 +40,7 @@ import {
   type RegionCell,
 } from "../overworld/overworldRender";
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
-import { overworldOf, overworldTerrain } from "../overworld/regionsVault";
+import { overworldOf, overworldTerrain, placedBiomes } from "../overworld/regionsVault";
 import { FrameThrottle } from "../overworld/overworldInput";
 
 interface Geometry {
@@ -308,7 +308,7 @@ export class OverworldLayer {
       const [gx, gy] = applyAffine(geom.p2g, ...hexCenter(x, y, geom.layout.orientation, geom.layout.parentStagger));
       return [(gx - minX) * k, (gy - minY) * k];
     };
-    const biomes = overworldBiomes(overworldTerrain(this.plugin, map), this.plugin.getMapPalette(map.name), geom.layout.orientation, geom.layout.parentStagger);
+    const biomes = overworldBiomes(overworldTerrain(this.plugin, map), this.plugin.getMapPalette(map.name), geom.layout.orientation, geom.layout.parentStagger, placedBiomes(this.plugin, map.name));
     const ecotones = ecotoneHexes(biomes, geom.layout.orientation, geom.layout.parentStagger);
     for (const k2 of ecotones) {
       const [x, y] = k2.split("_").map(Number);

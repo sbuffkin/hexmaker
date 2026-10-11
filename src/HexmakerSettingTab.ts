@@ -13,6 +13,9 @@ const NAME_SIZE_TEXT: Record<HexNameSize, string> = { small: "Small", medium: "M
 const PALETTES_FOLDER_DESC =
   "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
 
+const BIOMES_FOLDER_DESC =
+  "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
+
 // ---------------------------------------------------------------------------
 // Obsidian 1.13 declarative settings API — local structural types.
 //
@@ -121,6 +124,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "workflowsFolder",
   "templatesFolder",
   "palettesFolder",
+  "biomesFolder",
 ]);
 
 /** Settings keys whose change should re-render open hex map views. */
@@ -656,6 +660,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "World/palettes",
         PALETTES_FOLDER_DESC,
       ),
+      folderText(
+        "Biomes folder",
+        "biomesFolder",
+        "World/biomes",
+        BIOMES_FOLDER_DESC,
+      ),
       {
         type: "group",
         heading: "Map types",
@@ -780,6 +790,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
     return this.plugin.saveSettings().then(() => {
       if (MAP_REFRESH_KEYS.has(key)) this.plugin.refreshHexMap();
+      if (key === "biomesFolder") void this.plugin.biomeStore.reload();
       if (key === "iconsFolder") this.plugin.loadAvailableIcons();
     });
   }
@@ -1550,6 +1561,20 @@ export class HexmakerSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.palettesFolder = normalizeFolder(value ?? "");
             await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Biomes folder")
+      .setDesc(BIOMES_FOLDER_DESC)
+      .addText((text) =>
+        text
+          .setPlaceholder("World/biomes")
+          .setValue(this.plugin.settings.biomesFolder ?? "")
+          .onChange(async (value) => {
+            this.plugin.settings.biomesFolder = normalizeFolder(value ?? "");
+            await this.plugin.saveSettings();
+            void this.plugin.biomeStore.reload();
           }),
       );
 
