@@ -151,6 +151,23 @@ describe("shipped biome presets", () => {
 		}
 	});
 
+	it("carry the islands settings of the built-in table, and the notes drive them", () => {
+		for (const b of BIOMES) {
+			const p = BIOME_PRESETS.find((x) => x.id === b.id)!;
+			expect([p.landShare, p.minIslands]).toEqual([b.landShare, b.minIslands]);
+		}
+		setBiomeSource(BIOME_PRESETS.map((b) => (b.id === "archipelago" ? { ...b, landShare: 0.5, minIslands: undefined } : b)));
+		try {
+			expect(biomeInfo("archipelago")?.landShare).toBe(0.5);
+			expect(biomeInfo("archipelago")?.minIslands).toBeUndefined();
+			const prof = noteBiomeProfiles(DEFAULT_TERRAIN_PALETTE).get("archipelago")!;
+			expect(prof.landShare).toBe(0.5);
+			expect(noteBiomeProfiles(DEFAULT_TERRAIN_PALETTE).get("open-sea")!.landShare).toBeUndefined();
+		} finally {
+			setBiomeSource(undefined);
+		}
+	});
+
 	it("as notes, every built-in still has a terrain on Expanded", () => {
 		const before = representableBiomes(DEFAULT_TERRAIN_PALETTE);
 		setBiomeSource(BIOME_PRESETS);

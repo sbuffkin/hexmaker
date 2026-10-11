@@ -365,8 +365,14 @@ export function setBiomeSource(list: readonly BiomeNoteFields[] | undefined): vo
   const infos = new Map<BiomeId, BiomeInfo>();
   for (const b of biomes.values()) {
     const base = BY_ID.get(b.id);
-    infos.set(b.id, base ? { ...base, label: b.label }
-      : { id: b.id, label: b.label, temp: 0.5, moist: 0.5, zone: b.landShare !== undefined && b.landShare < 0.5 ? "sea" : "low" });
+    const info: BiomeInfo = base ? { ...base, label: b.label }
+      : { id: b.id, label: b.label, temp: 0.5, moist: 0.5, zone: b.landShare !== undefined && b.landShare < 0.5 ? "sea" : "low" };
+    // The note says the islands (land-share / min-islands); unset there = unset.
+    delete info.landShare;
+    delete info.minIslands;
+    if (b.landShare !== undefined) info.landShare = b.landShare;
+    if (b.minIslands !== undefined) info.minIslands = b.minIslands;
+    infos.set(b.id, info);
   }
   const ecotones: [BiomeId, BiomeId, BiomeId][] = [];
   const resolve = (n: string) => names.get(biomeSlug(n));
@@ -451,6 +457,8 @@ export function noteBiomeProfiles(palette: TerrainColor[]): Map<BiomeId, BiomePr
   if (!source) return out;
   for (const b of source.biomes.values()) {
     const p = profileFromMix(b.id, b.mix, palette);
+    if (b.landShare !== undefined) p.landShare = b.landShare;
+    if (b.minIslands !== undefined) p.minIslands = b.minIslands;
     if (p.types.size) out.set(b.id, p);
   }
   return out;
