@@ -1,5 +1,6 @@
 import { mulberry32 } from "../../../packages/hex-wfc/src";
 import { orbitsFits } from "./orbits";
+import { roleOdds, rollRole, type TableSource } from "../tableRoles";
 import type { TerrainColor } from "../../types";
 import {
   cellKey,
@@ -7,7 +8,6 @@ import {
   gridKeys,
   ofType,
   typeIndex,
-  weightedPick,
   type ProcGrid,
   type ProcOption,
   type ProcPath,
@@ -16,10 +16,12 @@ import {
 
 /**
  * Sector "star scatter": the classic subsector roll. Each hex holds a star
- * system with some probability (standard = 50%, the 4+ on 1d6 rule), typed
- * by its mainworld. A few nebula / dust patches thin out the systems inside
- * them, rare features (black hole, anomaly, deep-space station) are
- * sprinkled in, and nearby systems can be joined by jump routes.
+ * system with some probability (standard = 50%, the 4+ on 1d6 rule). What
+ * each system hex is (its mainworld, or a special hex like a station) is
+ * rolled on the Sector hexes role (tableRoles.ts): the World types table
+ * when one is given, else equal odds over the palette's world terrains.
+ * A few nebula / dust patches thin out the systems inside them, and nearby
+ * systems can be joined by jump routes.
  *
  * Works on any palette with a background terrain (type void) and at least
  * one world (type world / gas-giant / asteroids, or a star-system terrain).
@@ -63,34 +65,12 @@ export const STAR_SCATTER_OPTIONS: ProcOption[] = [
 
 const DENSITY: Record<string, number> = { sparse: 1 / 3, standard: 1 / 2, dense: 2 / 3, cluster: 5 / 6 };
 
-/** Rough mainworld mix for a habitable-ish sector. Unlisted world terrains weigh 1. */
-const WORLD_WEIGHTS: Record<string, number> = {
-  "garden world": 3,
-  "desert world": 3,
-  "barren world": 3.5,
-  "ocean world": 2,
-  "ice world": 2,
-  "asteroid belt": 1.5,
-  "molten world": 1,
-  "gas giant": 1,
-};
-
-const FEATURE_WEIGHTS: Record<string, number> = {
-  "deep-space station": 3,
-  anomaly: 2,
-  "black hole": 1,
-};
-
 export interface StarScatterRoles {
   background: string;
   worlds: string[];
   clouds: string[];
   features: string[];
 }
-
-/** Weights for typed terrains whose names aren't in the tables above. */
-const WORLD_TYPE_WEIGHTS: Record<string, number> = { world: 2.5, "gas-giant": 1, asteroids: 1.5 };
-const FEATURE_TYPE_WEIGHTS: Record<string, number> = { station: 3, starport: 3, "jump-point": 3, anomaly: 1.5 };
 
 /** Feature types that host a system (and so a jump route). */
 const HOSTS_SYSTEM = new Set(["station", "starport", "jump-point"]);
@@ -115,22 +95,6 @@ export function starScatterRoles(terrains: TerrainColor[]): StarScatterRoles | u
   return { background, worlds, clouds, features };
 }
 
-/** Name weights, else the terrain's type weight; unknowns fall through to the default. */
-function weightsFor(
-  names: string[],
-  types: Map<string, string>,
-  byName: Record<string, number>,
-  byType: Record<string, number>,
-): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const n of names) {
-    const k = n.toLowerCase();
-    const w = byName[k] ?? byType[types.get(k) ?? ""];
-    if (w !== undefined) out[k] = w;
-  }
-  return out;
-}
-
 export function starScatterFits(terrains: TerrainColor[]): boolean {
   return starScatterRoles(terrains) !== undefined;
 }
@@ -141,6 +105,8 @@ export function starScatter(
   seed: number,
   options: Record<string, string> = {},
   jumpRouteType?: string,
+  /** The role tables (World types); none = equal odds over the palette's worlds, said in the warnings. */
+  tables?: TableSource,
 ): ProcResult {
   const roles = starScatterRoles(terrains);
   if (!roles) {
@@ -148,10 +114,10 @@ export function starScatter(
   }
   const rand = mulberry32(seed);
   const types = typeIndex(terrains);
-  const worldWeights = weightsFor(roles.worlds, types, WORLD_WEIGHTS, WORLD_TYPE_WEIGHTS);
-  const featureWeights = weightsFor(roles.features, types, FEATURE_WEIGHTS, FEATURE_TYPE_WEIGHTS);
+  const warnings: string[] = [...roleOdds(tables, "sector-hexes", {}, roles.worlds).notes];
   // Stations host a system (and so a route); black holes and anomalies don't.
   const hostsSystem = (t: string) => HOSTS_SYSTEM.has(types.get(t.toLowerCase()) ?? "");
+  const isFeature = (t: string) => roles.features.some((f) => f.toLowerCase() === t.toLowerCase());
   const density = DENSITY[options.density ?? "standard"] ?? 0.5;
   const hexes = gridKeys(grid);
   const cells = new Map<string, string>();
@@ -183,18 +149,17 @@ export function starScatter(
     const k = cellKey(x, y);
     const odds = inCloud.has(k) ? density / 2 : density;
     if (rand() >= odds) continue;
-    const roll = rand();
-    const feature = roles.features.length > 0 && roll < 0.04
-      ? weightedPick(rand, roles.features, featureWeights)
-      : undefined;
-    cells.set(k, feature ?? weightedPick(rand, roles.worlds, worldWeights)!);
-    if (!feature || hostsSystem(feature)) systems.push([x, y]);
+    const pick = rollRole(tables, "sector-hexes", { rand }, roles.worlds);
+    // A (nothing) row: empty space after all.
+    if (!pick || pick.nothing) continue;
+    cells.set(k, pick.terrain);
+    // A world hosts a system (and so a route); of the rest, only station-like types do.
+    if (!isFeature(pick.terrain) || hostsSystem(pick.terrain)) systems.push([x, y]);
   }
 
   // Jump routes: each system links to its nearest neighbour within range.
   const paths: ProcPath[] = [];
   const range = options.routes === "none" ? 0 : Number(options.routes ?? 2) || 0;
-  const warnings: string[] = [];
   if (range > 0 && systems.length > 1) {
     if (!jumpRouteType) {
       warnings.push("No path type for routes, so none were drawn. Pick one under Path type for routes (or add a path type to the palette).");

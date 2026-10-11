@@ -126,8 +126,8 @@ describe("Default space reproduces the old built-in odds", () => {
 		const back = parseWorldTypes(text);
 		expect(back.problems).toEqual([]);
 		expect(back.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
-		expect(text).toContain("hexmaker-world-types: 2");
-		expect(text).toContain("| ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush, relief=normal | Expanded | ocean |  |");
+		expect(text).toContain("hexmaker-world-types: 3");
+		expect(text).toContain("| ocean planet | 3 | system | habitable |  |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush, relief=normal | Expanded | ocean |  |");
 	});
 });
 
@@ -140,7 +140,7 @@ describe("world types note", () => {
 
 	it("round-trips every column and keeps prose", () => {
 		const text = buildWorldTypes("Mine", rows).replace("# Mine", "# Mine\n\nMy own words.");
-		expect(parseWorldTypes(text)).toEqual({ rows, problems: [], unreadable: [], stars: [], features: [], unreadableStars: [], unreadableFeatures: [], format: 2 });
+		expect(parseWorldTypes(text)).toEqual({ rows, problems: [], unreadable: [], stars: [], features: [], unreadableStars: [], unreadableFeatures: [], format: 3 });
 		expect(updateWorldTypes(text, rows)).toBe(text);
 		const next = updateWorldTypes(text, rows.slice(1));
 		expect(next).toContain("My own words.");
@@ -173,8 +173,8 @@ describe("world types note", () => {
 		const next = updateWorldTypes(text, [{ world: "A", weight: 2 }, { world: "C" }]);
 		expect(next).toContain("| B | lots |");
 		expect(parseWorldTypes(next).rows.map((r) => r.world)).toEqual(["A", "C"]);
-		for (const bad of [["X", "", "galaxy"], ["X", "", "", "nowhere"], ["X", "", "", "", "", "", "big"], ["X", "", "", "", "", "boiling"], ["X", "", "", "", "", "", "", "", "water"]]) {
-			const cells = [...bad, ...Array(12 - bad.length).fill("")];
+		for (const bad of [["X", "", "galaxy"], ["X", "", "", "nowhere"], ["X", "", "", "", "", "", "", "big"], ["X", "", "", "", "", "boiling"], ["X", "", "", "", "", "", "", "", "", "water"]]) {
+			const cells = [...bad, ...Array(13 - bad.length).fill("")];
 			expect(readWorldTypeCells(cells).problem).toBeTruthy();
 		}
 		expect(parseWorldTypes("no table").problems[0].text).toMatch(/no table/);
@@ -271,7 +271,7 @@ describe("WorldTypeStore", () => {
 		const plugin = storePlugin(v);
 		const store = new WorldTypeStore(plugin as never);
 		await store.init();
-		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 2");
+		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 3");
 		expect(store.get(DEFAULT_WORLD_TYPES)!.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
 		expect(plugin.settings.worldTypesSeeded).toBe(true);
 		v.files.delete(NOTE);

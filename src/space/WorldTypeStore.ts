@@ -10,7 +10,10 @@
  * - Hand edits are read back live (vault events); rows that can't be read
  *   are reported once per edit, never used, and kept as written.
  * - A note from before stars and sector features were rows (format 1)
- *   is given the shipped Stars and Sector features tables once, when read.
+ *   is given the shipped Stars and Sector features tables once, when read;
+ *   one from before the Mainworld column (format 1 or 2) the shipped
+ *   rows' mainworlds (backed up first).
+ * - source(): a table as the space generators' role tables (SP1).
  * - Every change is told to onChange listeners.
  */
 
@@ -37,6 +40,8 @@ import {
   type WorldTypeTable,
 } from "./worldTypes";
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
+import { chosenWorldTypes, defaultWorldTypesName, worldTypesSource } from "./worldTypesSource";
+import type { TableSource } from "../worldgen/tableRoles";
 
 interface Entry {
   path: string;
@@ -145,6 +150,23 @@ export class WorldTypeStore {
   /** What couldn't be read in a table's note. */
   problemsOf(name: string): WorldTypeProblem[] {
     return this.find(name)?.problems ?? [];
+  }
+
+  /** What the generators' "Default" World types means now (Default space, else the first table). */
+  defaultName(): string | undefined {
+    return defaultWorldTypesName(this.list().map((t) => t.name), DEFAULT_WORLD_TYPES);
+  }
+
+  /**
+   * The space generators' role tables from the World types option's value
+   * (SP1), for a palette. `source` undefined: no table (None, or none at
+   * all), so equal odds; `missing`: the picked table isn't there.
+   */
+  sourceFor(value: string | undefined, palette: readonly (string | { name: string })[]): { source?: TableSource; missing?: string } {
+    const name = chosenWorldTypes(value, this.list().map((t) => t.name), this.defaultName());
+    if (!name) return {};
+    const t = this.get(name);
+    return t ? { source: worldTypesSource(t, palette) } : { missing: name };
   }
 
   hasDefault(name: string): boolean {
@@ -285,9 +307,10 @@ export class WorldTypeStore {
   private async load(f: TFile): Promise<boolean> {
     let content = await this.plugin.app.vault.read(f);
     if (this.lastContent.get(f.path) === content && this.entries.has(f.path)) return false;
-    const upgraded = upgradeWorldTypes(content, DEFAULT_WORLD_TYPE_EXTRAS);
+    const upgraded = upgradeWorldTypes(content, { ...DEFAULT_WORLD_TYPE_EXTRAS, rows: DEFAULT_WORLD_TYPE_ROWS });
     if (upgraded !== content) {
       try {
+        await this.backup("upgrade", { [f.path]: content });
         await this.plugin.app.vault.modify(f, upgraded);
         content = upgraded;
       } catch (e) {

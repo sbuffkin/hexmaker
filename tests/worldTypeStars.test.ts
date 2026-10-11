@@ -239,7 +239,7 @@ describe("Stars and Sector features in the note", () => {
 		const text = buildWorldTypes(DEFAULT_WORLD_TYPES, DEFAULT_WORLD_TYPE_ROWS, DEFAULT_WORLD_TYPE_EXTRAS);
 		const p = parseWorldTypes(text);
 		expect(p.problems).toEqual([]);
-		expect(p.format).toBe(2);
+		expect(p.format).toBe(3);
 		expect(p.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
 		expect(p.stars).toEqual(DEFAULT_STAR_ROWS);
 		expect(p.features).toEqual(DEFAULT_SECTOR_FEATURE_ROWS);
@@ -317,19 +317,19 @@ describe("Stars and Sector features in the note", () => {
 		expect(updateWorldTypes(text, [{ world: "B" }])).toContain("| Gate | 2% |");
 	});
 
-	it("a format 1 note is given the shipped stars and features once, and marked format 2", () => {
+	it("a format 1 note is given the shipped stars and features once, and marked with the current format", () => {
 		const v2 = buildWorldTypes(DEFAULT_WORLD_TYPES, DEFAULT_WORLD_TYPE_ROWS);
-		const v1 = v2.slice(0, v2.indexOf("## Stars")).replace("hexmaker-world-types: 2", "hexmaker-world-types: 1").trimEnd() + "\n\nMy own words.\n";
+		const v1 = v2.slice(0, v2.indexOf("## Stars")).replace("hexmaker-world-types: 3", "hexmaker-world-types: 1").trimEnd() + "\n\nMy own words.\n";
 		const up = upgradeWorldTypes(v1, DEFAULT_WORLD_TYPE_EXTRAS);
 		const p = parseWorldTypes(up);
-		expect(p.format).toBe(2);
+		expect(p.format).toBe(3);
 		expect(p.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
 		expect(p.stars).toEqual(DEFAULT_STAR_ROWS);
 		expect(p.features).toEqual(DEFAULT_SECTOR_FEATURE_ROWS);
 		expect(up).toContain("My own words.");
-		expect(up.startsWith(v1.slice(0, v1.indexOf("My own words.")).replace("world-types: 1", "world-types: 2"))).toBe(true);
+		expect(up.startsWith(v1.slice(0, v1.indexOf("My own words.")).replace("world-types: 1", "world-types: 3"))).toBe(true);
 		expect(upgradeWorldTypes(up, DEFAULT_WORLD_TYPE_EXTRAS)).toBe(up);
-		// A format 2 note whose Stars table was deleted stays without it.
+		// A current note whose Stars table was deleted stays without it.
 		const deleted = up.slice(0, up.indexOf("## Stars")) + up.slice(up.indexOf("## Sector features"));
 		expect(upgradeWorldTypes(deleted, DEFAULT_WORLD_TYPE_EXTRAS)).toBe(deleted);
 		// A format 1 note that already has a Stars table keeps its own.
@@ -376,11 +376,11 @@ describe("WorldTypeStore: stars and sector features", () => {
 
 	it("upgrades a format 1 note when it reads it", async () => {
 		const v2 = buildWorldTypes(DEFAULT_WORLD_TYPES, DEFAULT_WORLD_TYPE_ROWS);
-		const v1 = v2.slice(0, v2.indexOf("## Stars")).replace("hexmaker-world-types: 2", "hexmaker-world-types: 1");
+		const v1 = v2.slice(0, v2.indexOf("## Stars")).replace("hexmaker-world-types: 3", "hexmaker-world-types: 1");
 		const v = new MemVault({ [NOTE]: v1 });
 		const store = new WorldTypeStore(storePlugin(v, { worldTypesSeeded: true }) as never);
 		await store.init();
-		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 2");
+		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 3");
 		expect(v.files.get(NOTE)).toContain("## Sector features");
 		expect(store.get(DEFAULT_WORLD_TYPES)!.stars).toEqual(DEFAULT_STAR_ROWS);
 		expect(store.get(DEFAULT_WORLD_TYPES)!.features).toEqual(DEFAULT_SECTOR_FEATURE_ROWS);

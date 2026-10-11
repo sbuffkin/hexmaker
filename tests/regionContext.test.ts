@@ -6,6 +6,10 @@ import { planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { mainworldFor, orbits } from "../src/worldgen/procedural/orbits";
 import { sideOf, type GenerationContext, type ProcGrid } from "../src/worldgen/procedural/common";
 import { regionDetailDescription } from "../src/worldgen/registry";
+import { worldTypesSource } from "../src/space/worldTypesSource";
+import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
+
+const DEFAULT_SPACE = { name: "Default space", rows: [...DEFAULT_WORLD_TYPE_ROWS], ...DEFAULT_WORLD_TYPE_EXTRAS };
 
 const grid: ProcGrid = { cols: 16, rows: 12, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
 const typeOf = new Map(DEFAULT_TERRAIN_PALETTE.map((t) => [t.name, t.type]));
@@ -113,20 +117,27 @@ describe("Region detail (planet surface with context)", () => {
 describe("Orbits mainworld from the sector hex", () => {
 	const bodies = SPACE_SYSTEM_TERRAINS.filter((t) => ["world", "gas-giant", "asteroids"].includes(t.type ?? "")).map((t) => t.name);
 
-	it("maps sector terrain names to bodies", () => {
-		expect(mainworldFor("ocean world", bodies)).toBe("ocean planet");
-		expect(mainworldFor("garden world", bodies)).toBe("terrestrial planet");
-		expect(mainworldFor("gas giant", bodies)).toBe("gas giant");
-		expect(mainworldFor("ice world", bodies)).toBe("ice planet");
-		expect(mainworldFor("asteroid belt", bodies)).toBe("asteroid belt");
-		expect(mainworldFor("nebula", bodies)).toBeUndefined();
-		expect(mainworldFor(undefined, bodies)).toBeUndefined();
+	it("reads the sector row's Mainworld (data, not name rules)", () => {
+		const src = worldTypesSource(DEFAULT_SPACE, SPACE_SYSTEM_TERRAINS);
+		expect(mainworldFor("ocean world", bodies, src)).toBe("ocean planet");
+		expect(mainworldFor("garden world", bodies, src)).toBe("terrestrial planet");
+		expect(mainworldFor("gas giant", bodies, src)).toBe("gas giant");
+		expect(mainworldFor("ice world", bodies, src)).toBe("ice planet");
+		expect(mainworldFor("asteroid belt", bodies, src)).toBe("asteroid belt");
+		expect(mainworldFor("nebula", bodies, src)).toBeUndefined();
+		expect(mainworldFor(undefined, bodies, src)).toBeUndefined();
+	});
+
+	it("without a table nothing is guessed from names: only a sector terrain that is itself a body", () => {
+		expect(mainworldFor("ocean world", bodies)).toBeUndefined();
+		expect(mainworldFor("garden world", bodies)).toBeUndefined();
+		expect(mainworldFor("Gas Giant", bodies)).toBe("gas giant");
 	});
 
 	it("the system always contains the hinted mainworld, even with few planets", () => {
 		const g: ProcGrid = { cols: 13, rows: 13, offset: { x: 0, y: 0 }, stagger: "odd", orientation: "flat" };
 		for (let seed = 1; seed <= 20; seed++) {
-			const r = orbits(SPACE_SYSTEM_TERRAINS, g, seed, { bodies: "few" }, undefined, { parent: { terrain: "ocean world", type: "world" } });
+			const r = orbits(SPACE_SYSTEM_TERRAINS, g, seed, { bodies: "few" }, undefined, { parent: { terrain: "ocean world", type: "world" } }, worldTypesSource(DEFAULT_SPACE, SPACE_SYSTEM_TERRAINS));
 			expect([...r.cells.values()]).toContain("ocean planet");
 		}
 	});

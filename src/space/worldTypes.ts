@@ -80,8 +80,8 @@ import {
 } from "../overworld/biomeClimate";
 
 export const WORLD_TYPES_MARKER = "hexmaker-world-types";
-/** 2: the note also has the Stars and Sector features tables. */
-export const WORLD_TYPES_FORMAT = 2;
+/** 2: the note also has the Stars and Sector features tables. 3: a Mainworld column. */
+export const WORLD_TYPES_FORMAT = 3;
 /** The shipped table's name (and note name). */
 export const DEFAULT_WORLD_TYPES = "Default space";
 
@@ -126,6 +126,12 @@ export interface WorldTypeRow {
   stars?: string[];
   /** Only at this temperature (0 cold … 1 hot). Unset: any. */
   temperature?: ClimateRange;
+  /**
+   * A sector world's mainworld: the body Orbits makes that system's
+   * mainworld ("ocean world" → "ocean planet"). Unset: the world itself,
+   * when the system palette has it.
+   */
+  mainworld?: string;
   /** The world's submap size. Unset: no preference. */
   size?: WorldSizeRange;
   /** The world's submap generator. Unset: no preference. */
@@ -658,11 +664,11 @@ const readList = (raw: string) => {
 
 export const WORLD_TYPES_HELP = [
   "> [!info] World types",
-  "> Which worlds the space generators place and how often, and what each world's own map is made with. **World** is a terrain of the palette. **Weight** (1 if blank) is its odds against the other rows that fit; 0 never rolls it. Limits, all optional: **Map** sector (Star scatter's systems) or system (Orbits), **Orbit** inner, habitable, outer or rings like 2–4, **Stars** a list of star terrains, **Temperature** cold, cool, mild, warm, hot or 0.2–0.5. For the world's map: **Size** like 20×14 or 16–24 × 10–14, **Generator** a generator note link or id, **Options** like water=85, climate=lush, **Palette** and **Base** terrain. The same world can have several rows. Add, edit or delete rows freely.",
+  "> Which worlds the space generators place and how often, and what each world's own map is made with. **World** is a terrain of the palette. **Weight** (1 if blank) is its odds against the other rows that fit; 0 never rolls it. Limits, all optional: **Map** sector (Star scatter's systems) or system (Orbits), **Orbit** inner, habitable, outer or rings like 2–4, **Stars** a list of star terrains, **Temperature** cold, cool, mild, warm, hot or 0.2–0.5. For the world's map: **Mainworld** (sector worlds) the body that is that system's mainworld, **Size** like 20×14 or 16–24 × 10–14, **Generator** a generator note link or id, **Options** like water=85, climate=lush, **Palette** and **Base** terrain. The same world can have several rows. Add, edit or delete rows freely.",
 ];
 
 /** The note table's columns, in order (the editor keeps each row as these cells). */
-export const WORLD_TYPE_COLUMNS = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature", "Size", "Generator", "Options", "Palette", "Base", "Notes"] as const;
+export const WORLD_TYPE_COLUMNS = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature", "Mainworld", "Size", "Generator", "Options", "Palette", "Base", "Notes"] as const;
 export type WorldTypeColumn = (typeof WORLD_TYPE_COLUMNS)[number];
 type Column = WorldTypeColumn;
 const COLUMNS = WORLD_TYPE_COLUMNS;
@@ -673,6 +679,7 @@ const HEADER_ALIASES: Record<string, Column> = {
   orbit: "Orbit", zone: "Orbit", orbits: "Orbit", "orbit zone": "Orbit",
   stars: "Stars", star: "Stars", "star types": "Stars",
   temperature: "Temperature", temp: "Temperature",
+  mainworld: "Mainworld", "main world": "Mainworld", mainworlds: "Mainworld",
   size: "Size",
   generator: "Generator", preset: "Generator",
   options: "Options",
@@ -852,6 +859,8 @@ function readRow(cells: string[], cols: (Column | undefined)[]): { row?: WorldTy
     if (r.problem) return { problem: `temperature ${r.problem}` };
     if (r.range) row.temperature = r.range;
   }
+  const mw = nameCell(cell("Mainworld"));
+  if (mw) row.mainworld = mw;
   const s = cell("Size");
   if (s) {
     const size = readSize(s);
@@ -927,6 +936,7 @@ export function worldTypeCells(r: WorldTypeRow): string[] {
     formatOrbit(r),
     (r.stars ?? []).join(", "),
     r.temperature ? formatClimateRange(r.temperature, TEMPERATURE_WORDS) : "",
+    r.mainworld ?? "",
     r.size ? formatSize(r.size) : "",
     formatGenerator(r.generator),
     formatOptions(r.options),
@@ -1030,17 +1040,35 @@ export function updateWorldTypes(content: string, rows: readonly WorldTypeRow[],
 }
 
 /**
- * A format 1 note (written before stars and sector features were rows)
- * given the shipped Stars and Sector features tables it doesn't have, and
- * marked format 2, so it keeps placing what the generators always did.
- * Anything else (format 2, or a note without the marker) comes back as is.
+ * Sector rows without a Mainworld get the shipped row's (same world, any
+ * case), so a note written before the column keeps the old pairing
+ * ("ocean world" opens on an "ocean planet"). Rows the shipped table
+ * doesn't have, or that say something already, are left as they are.
  */
-export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeExtras>): string {
+export function withShippedMainworlds(rows: readonly WorldTypeRow[], shipped: readonly WorldTypeRow[]): WorldTypeRow[] {
+  return copyWorldTypeRows(rows).map((r) => {
+    if (r.mainworld || r.map === "system") return r;
+    const s = shipped.find((d) => d.map !== "system" && d.mainworld && lc(d.world) === lc(r.world));
+    return s?.mainworld ? { ...r, mainworld: s.mainworld } : r;
+  });
+}
+
+/**
+ * An older note brought up to date, so it keeps placing what the
+ * generators always did: a format 1 note (written before stars and sector
+ * features were rows) is given the shipped Stars and Sector features
+ * tables; a format 1 or 2 note (before the Mainworld column) is given the
+ * shipped rows' mainworlds. It is marked with the current format. Anything
+ * else (current, or a note without the marker) comes back as is.
+ */
+export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeExtras> & { rows?: readonly WorldTypeRow[] }): string {
   const p = parseWorldTypes(content);
   if (p.format === undefined || p.format >= WORLD_TYPES_FORMAT) return content;
-  const next = updateWorldTypes(content, p.rows, {
-    stars: p.stars ? undefined : defaults.stars,
-    features: p.features ? undefined : defaults.features,
+  const old = p.format < 2;
+  const rows = defaults.rows ? withShippedMainworlds(p.rows, defaults.rows) : p.rows;
+  const next = updateWorldTypes(content, rows, {
+    stars: old && !p.stars ? defaults.stars : undefined,
+    features: old && !p.features ? defaults.features : undefined,
   });
   const eol = next.includes("\r\n") ? "\r\n" : "\n";
   const marked = withFormat(next.replace(/\r\n?/g, "\n").split("\n")).join(eol);

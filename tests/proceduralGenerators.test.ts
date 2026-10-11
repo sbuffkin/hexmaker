@@ -18,6 +18,7 @@ import {
 	type ProcGrid,
 } from "../src/worldgen/procedural/common";
 import { mulberry32 } from "../packages/hex-wfc/src";
+import { ZONE_ROLES, roleOdds } from "../src/worldgen/tableRoles";
 import { suggestBaseTerrain } from "../src/worldgen/registry";
 import type { TerrainColor } from "../src/types";
 
@@ -348,13 +349,14 @@ describe("terrain types", () => {
 			expect(r.station).toBe("Outpost");
 		});
 
-		it("weights custom bodies by zone: hints, then type", () => {
-			const w = orbitRoles(custom)!.zoneWeights;
-			expect(w.habitable["hearthworld"]).toBeGreaterThan(w.inner["hearthworld"]);
-			expect(w.outer["frostbite"]).toBeGreaterThan(w.habitable["frostbite"]);
-			expect(w.outer["big blue"]).toBeGreaterThan(w.inner["big blue"]);
-			// No hint: plain world-type weights.
-			expect(w.habitable["luna"]).toBe(3);
+		it("no name rules: without a table every body has the same odds in every zone, and the warnings say so", () => {
+			const roles = orbitRoles(custom)!;
+			for (const zone of ["inner", "habitable", "outer"] as const) {
+				const o = roleOdds(undefined, ZONE_ROLES[zone], { zone }, roles.bodies);
+				expect(o.odds.map((x) => x.odds)).toEqual(roles.bodies.map(() => 1 / roles.bodies.length));
+				expect(o.from).toBe("equal odds");
+			}
+			expect(orbits(custom, grid(13, 13), 1, {}).warnings.join(" ")).toMatch(/no table, so equal odds/);
 		});
 
 		it("puts the typed star at the centre, sweeps asteroid-type belts, uses only palette terrains", () => {

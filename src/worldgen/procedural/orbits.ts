@@ -6,14 +6,14 @@ import {
   distance,
   gridKeys,
   ofType,
-  typeIndex,
-  weightedPick,
   type GenerationContext,
   type ProcGrid,
   type ProcOption,
   type ProcPath,
   type ProcResult,
 } from "./common";
+import { ZONE_ROLES, roleOdds, rollRole, type TableSource } from "../tableRoles";
+import { ORBIT_ZONES, orbitZone } from "../../space/worldTypes";
 
 /**
  * Star-system "orbits": a star at the centre, then one body per orbit ring
@@ -28,6 +28,12 @@ import {
  * role has its own type too — moon, comet, station, starport, jump point,
  * jump limit — so it is the Type column, never a terrain's name, that
  * decides what goes where.
+ *
+ * Which star, and which body on each orbit, are rolled on the Star and
+ * Inner / Habitable / Outer orbits roles (tableRoles.ts): the World types
+ * table when one is given, else equal odds over the palette's stars and
+ * bodies. The sector hex's row says which body is the mainworld (its
+ * Mainworld column). No terrain name is special.
  */
 
 export const ORBITS_ID = "procedural:orbits";
@@ -36,14 +42,8 @@ export const ORBITS_OPTIONS: ProcOption[] = [
   {
     key: "star",
     label: "Star",
-    choices: [
-      { value: "random", label: "Random" },
-      { value: "yellow star", label: "Yellow star" },
-      { value: "red dwarf", label: "Red dwarf" },
-      { value: "blue giant", label: "Blue giant" },
-      { value: "white dwarf", label: "White dwarf" },
-      { value: "brown dwarf", label: "Brown dwarf" },
-    ],
+    // The palette's own stars are added per palette (orbitsOptions).
+    choices: [{ value: "random", label: "Random" }],
     default: "random",
   },
   {
@@ -61,7 +61,7 @@ export const ORBITS_OPTIONS: ProcOption[] = [
 /**
  * Orbits' options for a palette: the Star choice lists that palette's own
  * stars (star-typed terrains), so it only offers what it can place. With
- * no palette given, the shipped star list.
+ * no palette given, only Random.
  */
 export function orbitsOptions(terrains?: TerrainColor[]): ProcOption[] {
   if (!terrains) return ORBITS_OPTIONS;
@@ -71,46 +71,6 @@ export function orbitsOptions(terrains?: TerrainColor[]): ProcOption[] {
     choices: [{ value: "random", label: "Random" }, ...stars.map((s) => ({ value: s.toLowerCase(), label: s.charAt(0).toUpperCase() + s.slice(1) }))],
   });
 }
-
-/** Galactic mix: red dwarfs dominate. */
-const STAR_WEIGHTS: Record<string, number> = {
-  "red dwarf": 6,
-  "yellow star": 3,
-  "brown dwarf": 1.5,
-  "white dwarf": 1,
-  "blue giant": 0.5,
-};
-
-const ZONE_WEIGHTS: Record<Zone, Record<string, number>> = {
-  inner: { "molten planet": 4, "rocky planet": 4, "desert planet": 2, "asteroid belt": 0.5 },
-  habitable: { "terrestrial planet": 4, "ocean planet": 3, "desert planet": 3, "rocky planet": 2, "asteroid belt": 1 },
-  outer: { "gas giant": 4, "ice giant": 3, "ice planet": 3, "asteroid belt": 1.5, "rocky planet": 1 },
-};
-
-const BODY_NAMES = [
-  "terrestrial planet", "ocean planet", "desert planet", "ice planet", "rocky planet",
-  "molten planet", "gas giant", "ice giant", "asteroid belt",
-];
-
-type Zone = "inner" | "habitable" | "outer";
-
-/**
- * Zone weights for bodies the tables above don't name, by name hint (the
- * type vocabulary is coarse: "world" covers lava rocks and ocean planets
- * alike), else by type.
- */
-const ZONE_HINTS: { re: RegExp; w: Record<Zone, number> }[] = [
-  { re: /molten|lava|magma|volcan|inferno|ember|cinder|scorch/i, w: { inner: 4, habitable: 0.5, outer: 0.2 } },
-  { re: /\bice|frozen|frost|snow|glacier|\bcold/i, w: { inner: 0.2, habitable: 0.5, outer: 3 } },
-  { re: /ocean|water|garden|terra|earth|jungle|green|eden|haven/i, w: { inner: 0.5, habitable: 4, outer: 0.3 } },
-  { re: /desert|arid|dune|dust|sand/i, w: { inner: 2, habitable: 3, outer: 0.5 } },
-  { re: /\brock|barren|stone/i, w: { inner: 4, habitable: 2, outer: 1 } },
-];
-const ZONE_TYPE_WEIGHTS: Record<string, Record<Zone, number>> = {
-  world: { inner: 2, habitable: 3, outer: 1 },
-  "gas-giant": { inner: 0.3, habitable: 0.5, outer: 4 },
-  asteroids: { inner: 0.5, habitable: 1, outer: 1.5 },
-};
 
 export interface OrbitRoles {
   background: string;
@@ -127,8 +87,6 @@ export interface OrbitRoles {
   belts: string[];
   /** Bodies that may get two moons (gas-giant type). */
   giants: string[];
-  /** Per-zone body weights (lower-case names) for weightedPick. */
-  zoneWeights: Record<Zone, Record<string, number>>;
 }
 
 /**
@@ -143,7 +101,6 @@ export function orbitRoles(terrains: TerrainColor[]): OrbitRoles | undefined {
   const stars = ofType(terrains, ["star"]);
   const bodies = ofType(terrains, ["world", "gas-giant", "asteroids"]);
   if (!background || stars.length === 0 || bodies.length === 0) return undefined;
-  const types = typeIndex(terrains);
   const first = (type: string) => ofType(terrains, [type])[0];
   const belts = ofType(terrains, ["asteroids"]);
   return {
@@ -159,34 +116,7 @@ export function orbitRoles(terrains: TerrainColor[]): OrbitRoles | undefined {
     belt: belts[0],
     belts,
     giants: ofType(terrains, ["gas-giant"]),
-    zoneWeights: {
-      inner: zoneWeights(bodies, types, "inner"),
-      habitable: zoneWeights(bodies, types, "habitable"),
-      outer: zoneWeights(bodies, types, "outer"),
-    },
   };
-}
-
-/**
- * Weights for one zone. The shipped body names keep their table weights
- * (0.5 when the zone doesn't list them); other names go by hint, then type.
- */
-function zoneWeights(bodies: string[], types: Map<string, string>, zone: Zone): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const b of bodies) {
-    const k = b.toLowerCase();
-    if (BODY_NAMES.includes(k)) {
-      out[k] = ZONE_WEIGHTS[zone][k] ?? 0.5;
-      continue;
-    }
-    const type = types.get(k);
-    // Giants go by type first: "ice giant" belongs outside, not with ice planets.
-    const w = (type === "gas-giant" ? ZONE_TYPE_WEIGHTS[type] : undefined)
-      ?? ZONE_HINTS.find((h) => h.re.test(b))?.w
-      ?? ZONE_TYPE_WEIGHTS[type ?? ""];
-    if (w) out[k] = w[zone];
-  }
-  return out;
 }
 
 export function orbitsFits(terrains: TerrainColor[]): boolean {
@@ -200,8 +130,10 @@ export function orbits(
   options: Record<string, string> = {},
   /** Path type to draw occupied orbits with (e.g. "Orbit"); none = no rings. */
   orbitPathType?: string,
-  /** The sector hex this system sits in: its terrain picks the mainworld. */
+  /** The sector hex this system sits in: its row's Mainworld picks the mainworld. */
   context?: GenerationContext,
+  /** The role tables (World types); none = equal odds over the palette's stars and bodies, said in the warnings. */
+  tables?: TableSource,
 ): ProcResult {
   const roles = orbitRoles(terrains);
   if (!roles) {
@@ -234,7 +166,7 @@ export function orbits(
   const wanted = options.star && options.star !== "random"
     ? roles.stars.find((s) => s.toLowerCase() === options.star)
     : undefined;
-  const star = wanted ?? weightedPick(rand, roles.stars, STAR_WEIGHTS)!;
+  const star = wanted ?? rollRole(tables, "star", { rand }, roles.stars)?.terrain ?? roles.stars[0];
   set(center, star);
   // The 100-diameter limit hugs the star: mark the first ring.
   if (roles.jumpLimit && fullRing >= 3) for (const h of ring(1)) set(h, roles.jumpLimit);
@@ -244,26 +176,34 @@ export function orbits(
   const last = Math.max(first, fullRing);
   const skip = options.bodies === "few" ? 0.45 : options.bodies === "crowded" ? 0.05 : 0.2;
   const warnings: string[] = [];
+  // Rows that can't be placed, and roles with no table, are said (never dropped silently).
+  const notes = new Set<string>();
+  if (!wanted) for (const n of roleOdds(tables, "star", {}, roles.stars).notes) notes.add(n);
+  for (const z of ORBIT_ZONES) for (const n of roleOdds(tables, ZONE_ROLES[z], { zone: z, star }, roles.bodies).notes) notes.add(n);
+  warnings.push(...notes);
   if (fullRing < 2) warnings.push("Map is too small for orbits — try Medium or Large.");
   let mainworld: [number, number] | undefined;
   const paths: ProcPath[] = [];
-  // The sector says what the mainworld is ("ocean world" → an ocean planet
-  // in the habitable zone); that orbit is never skipped.
-  const mainBody = mainworldFor(context?.parent?.terrain, roles.bodies);
+  // The sector hex's row says what the mainworld is (its Mainworld: "ocean
+  // world" → an ocean planet), placed in the habitable zone; that orbit is
+  // never skipped.
+  const mainBody = mainworldFor(context?.parent?.terrain, roles.bodies, tables);
   const mainRing = mainBody ? first + Math.round(0.45 * (last - first)) : -1;
   /** Planets placed (not belts), for the moon guarantee below. */
   const planets: { pos: [number, number]; body: string }[] = [];
   let moonCount = 0;
   for (let d = first; d <= last; d++) {
     if (d !== mainRing && rand() < skip) continue;
+    const zone = orbitZone(d, first, last);
+    const pick = d === mainRing ? { terrain: mainBody! } : rollRole(tables, ZONE_ROLES[zone], { rand, zone, ring: d, star }, roles.bodies);
+    // A (nothing) row: an empty orbit.
+    if (!pick?.terrain) continue;
+    const body = pick.terrain;
     // Draw the orbit itself: the ring, in order around the star, closed.
     if (orbitPathType) {
       const around = sortAround(ring(d), center, grid).map((h) => cellKey(h[0], h[1]));
       if (around.length > 2) paths.push({ type: orbitPathType, hexes: [...around, around[0]] });
     }
-    const t = (d - first) / Math.max(1, last - first);
-    const zone = t < 0.3 ? "inner" : t < 0.6 ? "habitable" : "outer";
-    const body = d === mainRing ? mainBody! : weightedPick(rand, roles.bodies, roles.zoneWeights[zone], 0.5)!;
     const hexesOnRing = ring(d);
     if (hexesOnRing.length === 0) continue;
     // A moon from the orbit inside may sit on this ring: leave it be.
@@ -349,33 +289,14 @@ function sortAround(hexes: [number, number][], center: [number, number], grid: P
   return [...hexes].sort((a, b) => angle(a) - angle(b));
 }
 
-/** Parent-terrain words → body-name words, most specific first. */
-const MAINWORLD_HINTS: [string, string][] = [
-  ["gas giant", "gas giant"],
-  ["ice giant", "ice giant"],
-  ["asteroid", "belt"],
-  ["ocean", "ocean"],
-  ["water", "ocean"],
-  ["garden", "terrestrial"],
-  ["terrestrial", "terrestrial"],
-  ["earth", "terrestrial"],
-  ["desert", "desert"],
-  ["ice", "ice"],
-  ["frozen", "ice"],
-  ["molten", "molten"],
-  ["lava", "molten"],
-  ["barren", "rocky"],
-  ["rocky", "rocky"],
-];
-
-/** The body that should be the system's mainworld, given the sector hex's terrain name. */
-export function mainworldFor(parentTerrain: string | undefined, bodies: string[]): string | undefined {
-  if (!parentTerrain) return undefined;
-  const p = parentTerrain.toLowerCase();
-  for (const [from, to] of MAINWORLD_HINTS) {
-    if (!p.includes(from)) continue;
-    const hit = bodies.find((b) => b.toLowerCase().includes(to));
-    if (hit) return hit;
-  }
-  return undefined;
+/**
+ * The body that should be the system's mainworld: the Mainworld of the
+ * sector hex's row in the tables ("ocean world" → "ocean planet"), else
+ * the sector terrain itself; only when it is one of the palette's bodies.
+ * Data, not names: nothing here knows what an ocean is.
+ */
+export function mainworldFor(parentTerrain: string | undefined, bodies: string[], tables?: TableSource): string | undefined {
+  if (!parentTerrain?.trim()) return undefined;
+  const want = tables?.rowAttrs("sector-hexes", parentTerrain)?.Mainworld?.trim() || parentTerrain.trim();
+  return bodies.find((b) => b.toLowerCase() === want.toLowerCase());
 }

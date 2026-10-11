@@ -26,6 +26,10 @@ import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import type { ProcGrid } from "../src/worldgen/procedural/common";
 import { hexNeighbors } from "../packages/hex-wfc/src";
 import type { PathType, TerrainColor } from "../src/types";
+import { worldTypesSource } from "../src/space/worldTypesSource";
+import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
+
+const DEFAULT_SPACE = { name: "Default space", rows: [...DEFAULT_WORLD_TYPE_ROWS], ...DEFAULT_WORLD_TYPE_EXTRAS };
 
 /** Fresh-eyes 2026-10-09 (#36): first-run wizard, Overland, Frozen, palette defaults. */
 
@@ -561,6 +565,12 @@ describe("Star scatter and Orbits: the path type is an option from the palette",
 	const fakePlugin = {
 		settings: { worldFolder: "world", hexOrientation: "flat", staggerOffset: "odd", terrainPalettes: [] },
 		app: { vault: { getMarkdownFiles: () => [] } },
+		// The shipped World types table, as a vault would have it (SP1).
+		worldTypeStore: {
+			list: () => [DEFAULT_SPACE],
+			defaultName: () => DEFAULT_SPACE.name,
+			sourceFor: (_v: string | undefined, palette: TerrainColor[]) => ({ source: worldTypesSource(DEFAULT_SPACE, palette) }),
+		},
 	};
 	const kindsP = listGeneratorKinds(fakePlugin as never);
 	const kindOf = async (id: string) => (await kindsP).find((k) => k.id === id)!;

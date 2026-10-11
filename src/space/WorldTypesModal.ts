@@ -3,7 +3,11 @@
  * the space generators place, how often, and what each world's own map is
  * made with — plus its Stars (Orbits' random star) and Sector features
  * (Star scatter's special hexes), one tab each. Each tab has a small
- * preview that rolls its table and shows what comes up.
+ * preview that rolls its table and shows what comes up: for a palette,
+ * through the same role tables and rolls as Star scatter and Orbits
+ * (worldTypesSource.ts, tableRoles.ts), so its odds are the generators'
+ * odds (F3). Rows the generators can't place (not terrains of the
+ * palette) are listed under it, never dropped silently.
  *
  * Rows are edited as their note cells (the same reading as the note), so
  * anything typed here reads back the same from the note. Rows the note
@@ -29,24 +33,23 @@ import {
   readFeatureCells,
   readStarCells,
   readWorldTypeCells,
-  rollSectorFeatures,
-  rollStars,
-  rollWorldTypes,
-  sectorFeatureOdds,
   starCells,
-  starOdds,
   worldTypeCells,
-  worldTypeOdds,
   type OrbitZone,
   type SectorFeatureRow,
   type StarTypeRow,
   type WorldTypeColumn,
-  type WorldTypeContext,
   type WorldTypeExtras,
   type WorldTypeMap,
   type WorldTypeRow,
   type WorldTypeTable,
 } from "./worldTypes";
+import { worldTypesSource } from "./worldTypesSource";
+import { ZONE_ROLES, roleOdds, rollRole, type RoleId } from "../worldgen/tableRoles";
+import { starScatterOffered, starScatterRoles } from "../worldgen/procedural/starScatter";
+import { orbitRoles, orbitsFits } from "../worldgen/procedural/orbits";
+import { mulberry32 } from "../../packages/hex-wfc/src/rng";
+import type { TerrainColor } from "../types";
 
 /** Why world types can't be edited from this map now, or undefined. */
 export function worldTypesEditLock(plugin: HexmakerPlugin, mapName: string | undefined): string | undefined {
@@ -74,6 +77,7 @@ const PLACEHOLDERS: Record<string, string> = {
   Palette: "same",
   Base: "none",
   Notes: "",
+  Mainworld: "same",
   Star: "red dwarf",
   Feature: "black hole",
   Chance: "1 in 50",
@@ -81,7 +85,7 @@ const PLACEHOLDERS: Record<string, string> = {
 
 /** Columns shown on a row's first line (what is picked, and where); the rest are its map setup. */
 const PICK_COLUMNS: WorldTypeColumn[] = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature"];
-const SETUP_COLUMNS: WorldTypeColumn[] = ["Size", "Generator", "Options", "Palette", "Base", "Notes"];
+const SETUP_COLUMNS: WorldTypeColumn[] = ["Mainworld", "Size", "Generator", "Options", "Palette", "Base", "Notes"];
 
 const col = (c: WorldTypeColumn) => WORLD_TYPE_COLUMNS.indexOf(c);
 
@@ -123,7 +127,7 @@ export class WorldTypesModal extends HexmakerModal {
   private saveBtn!: HTMLButtonElement;
   private statusEl!: HTMLElement;
   private tabButtons = new Map<WorldTypesTab, HTMLButtonElement>();
-  private preview: { map: WorldTypeMap | ""; zone: OrbitZone | ""; star: string; temperature: string; n: number } = { map: "", zone: "", star: "", temperature: "", n: 200 };
+  private preview: { map: WorldTypeMap; zone: OrbitZone; star: string; palette: string; n: number } = { map: "sector", zone: "habitable", star: "", palette: "", n: 200 };
 
   /** `mapName`: the map it was opened for (work mode, preview's map kind). `tab`: the tab to open on. */
   constructor(app: App, private plugin: HexmakerPlugin, private mapName?: string, table?: string, previewMap?: WorldTypeMap, tab: WorldTypesTab = "worlds") {
@@ -480,6 +484,21 @@ export class WorldTypesModal extends HexmakerModal {
 
   // ── preview ────────────────────────────────────────────────────────────
 
+  /**
+   * The palette the preview rolls for: the one picked, else the map's own,
+   * else the first palette the previewed generator fits (by terrain types).
+   */
+  private previewPalette(): { name: string; terrains: TerrainColor[] } | undefined {
+    const palettes = this.plugin.settings.terrainPalettes;
+    const fits = this.preview.map === "system" ? orbitsFits : starScatterOffered;
+    const mapPalette = this.mapName ? this.plugin.getMap(this.mapName)?.paletteName : undefined;
+    const p = palettes.find((x) => x.name === this.preview.palette)
+      ?? palettes.find((x) => x.name === mapPalette && fits(x.terrains))
+      ?? palettes.find((x) => fits(x.terrains))
+      ?? palettes[0];
+    return p ? { name: p.name, terrains: p.terrains } : undefined;
+  }
+
   private renderPreview(): void {
     const el = this.previewEl;
     if (!el) return;
@@ -494,18 +513,41 @@ export class WorldTypesModal extends HexmakerModal {
       s.addEventListener("change", () => { set(s.value); this.renderPreview(); });
     };
     if (this.tab === "worlds") {
-      select("Map", [["", "Any"], ["sector", "Sector"], ["system", "System"]], p.map, (v) => { p.map = v as WorldTypeMap | ""; });
-      select("Orbit", [["", "Any"], ...ORBIT_ZONES.map((z): [string, string] => [z, z[0].toUpperCase() + z.slice(1)])], p.zone, (v) => { p.zone = v as OrbitZone | ""; });
-      select("Star", [["", "Any"], ...this.suggestions(["star"]).map((s): [string, string] => [s, s])], p.star, (v) => { p.star = v; });
-      select("Temperature", [["", "Any"], ["0.1", "Cold"], ["0.3", "Cool"], ["0.5", "Mild"], ["0.7", "Warm"], ["0.9", "Hot"]], p.temperature, (v) => { p.temperature = v; });
+      select("Map", [["sector", "Sector (Star scatter)"], ["system", "System (Orbits)"]], p.map, (v) => { p.map = v as WorldTypeMap; p.palette = ""; });
+      if (p.map === "system") {
+        select("Orbit", ORBIT_ZONES.map((z): [string, string] => [z, z[0].toUpperCase() + z.slice(1)]), p.zone, (v) => { p.zone = v as OrbitZone; });
+        select("Star", [["", "Any"], ...this.suggestions(["star"]).map((s): [string, string] => [s, s])], p.star, (v) => { p.star = v; });
+      }
+    } else {
+      p.map = this.tab === "stars" ? "system" : "sector";
     }
+    const palette = this.previewPalette();
+    if (!palette) {
+      el.createDiv({ cls: "setting-item-description", text: "No palettes yet." });
+      return;
+    }
+    select("Palette", this.plugin.settings.terrainPalettes.map((x): [string, string] => [x.name, x.name]), palette.name, (v) => { p.palette = v; });
     const rollChoices: [string, string][] = this.tab === "features"
       ? [["100", "100 systems"], ["1000", "1000 systems"], ["10000", "10000 systems"]]
       : [["100", "100"], ["200", "200"], ["1000", "1000"]];
     if (!rollChoices.some(([v]) => Number(v) === p.n)) p.n = Number(rollChoices[1][0]);
     select("Rolls", rollChoices, String(p.n), (v) => { p.n = Number(v); });
 
-    const table = this.table();
+    // The generators' own roles, fallback and rolls (worldgen/tableRoles.ts).
+    const source = worldTypesSource(this.table(), palette.terrains);
+    const role: RoleId = this.tab === "stars" ? "star" : p.map === "system" ? ZONE_ROLES[p.zone] : "sector-hexes";
+    const fallback = role === "sector-hexes"
+      ? starScatterRoles(palette.terrains)?.worlds ?? []
+      : role === "star" ? orbitRoles(palette.terrains)?.stars ?? [] : orbitRoles(palette.terrains)?.bodies ?? [];
+    const ctx = role === "star" || role === "sector-hexes" ? {} : { zone: p.zone, ...(p.star ? { star: p.star } : {}) };
+    const { odds, notes } = roleOdds(source, role, ctx, fallback);
+    const rolled = new Map<string, number>();
+    for (let i = 0; i < p.n; i++) {
+      const pick = rollRole(source, role, { ...ctx, rand: mulberry32(i + 1) }, fallback);
+      const k = pick ? pick.terrain.toLowerCase() : "";
+      rolled.set(k, (rolled.get(k) ?? 0) + 1);
+    }
+
     const list = () => el.createDiv({ cls: "duckmage-world-types-dist" });
     const bar = (parent: HTMLElement, name: string, n: number, odds: string) => {
       const r = parent.createDiv({ cls: "duckmage-world-types-dist-row" });
@@ -516,49 +558,30 @@ export class WorldTypesModal extends HexmakerModal {
       r.createSpan({ cls: "duckmage-world-types-dist-odds", text: odds });
     };
     const pct = (x: number) => `${Math.round(x * 1000) / 10}%`;
+    const showNotes = () => {
+      // Never silently: rows the generator can't place, and equal-odds fallbacks.
+      if (notes.length) el.createEl("p", { cls: "duckmage-world-types-problems", text: notes.join(" ") });
+    };
 
-    if (this.tab === "stars") {
-      const odds = starOdds(table);
-      if (!odds.length) {
-        el.createDiv({ cls: "setting-item-description", text: "No star rows: Orbits picks the star itself." });
-        return;
-      }
-      const rolled = new Map(rollStars(table, {}, p.n).map((r) => [r.star.toLowerCase(), r.count]));
-      const l = list();
-      for (const o of odds) bar(l, o.star, rolled.get(o.star.toLowerCase()) ?? 0, `odds ${pct(o.odds)}`);
-      return;
-    }
-
-    if (this.tab === "features") {
-      const { features, total } = sectorFeatureOdds(table);
-      if (!features.length) {
-        el.createDiv({ cls: "setting-item-description", text: "No feature rows: every star system hex stays a system." });
-        return;
-      }
-      const rolled = new Map(rollSectorFeatures(table, {}, p.n).map((r) => [r.feature.toLowerCase(), r.count]));
-      const l = list();
-      let special = 0;
-      for (const f of features) {
-        const n = rolled.get(f.feature.toLowerCase()) ?? 0;
-        special += n;
-        bar(l, f.feature, n, `${formatChance(f.chance)} (${pct(f.chance)})`);
-      }
-      bar(l, "an ordinary system", p.n - special, pct(1 - total));
-      return;
-    }
-
-    const ctx: Omit<WorldTypeContext, "seed" | "rand"> = {};
-    if (p.map) ctx.map = p.map;
-    if (p.zone) ctx.zone = p.zone;
-    if (p.star) ctx.starType = p.star;
-    if (p.temperature) ctx.temperature = Number(p.temperature);
-    const odds = worldTypeOdds(table, ctx);
     if (!odds.length) {
-      el.createDiv({ cls: "setting-item-description", text: "No row fits: nothing would be placed here." });
+      el.createDiv({ cls: "setting-item-description", text: `Nothing on ${palette.name} fits: nothing would be placed here.` });
+      showNotes();
       return;
     }
-    const rolled = new Map(rollWorldTypes(table, ctx, p.n).map((r) => [r.world.toLowerCase(), r.count]));
     const l = list();
-    for (const o of odds) bar(l, o.world, rolled.get(o.world.toLowerCase()) ?? 0, `odds ${pct(o.odds)}`);
+    if (this.tab === "features") {
+      const featureNames = new Set(this.features().map((f) => f.feature.trim().toLowerCase()));
+      let systems = 0;
+      let systemOdds = 0;
+      for (const o of odds) {
+        const k = o.terrain.toLowerCase();
+        if (featureNames.has(k)) bar(l, o.terrain, rolled.get(k) ?? 0, `${formatChance(o.odds)} (${pct(o.odds)})`);
+        else { systems += rolled.get(k) ?? 0; systemOdds += o.odds; }
+      }
+      bar(l, "an ordinary system", systems, pct(systemOdds));
+    } else {
+      for (const o of odds) bar(l, o.terrain || "(nothing)", rolled.get(o.terrain.toLowerCase()) ?? 0, `odds ${pct(o.odds)}`);
+    }
+    showNotes();
   }
 }

@@ -36,6 +36,7 @@ import { generatorMapKind, isGeneratorShown, isSpacePalette, type MapKind } from
 import { routeContextPaths } from "./procedural/contextPaths";
 import { hasFeature, type FeatureSettings } from "../featureLevel";
 import { generateConnected, type NewRegion } from "./neighbours";
+import { WORLD_TYPES_KEY, worldTypesOption } from "../space/worldTypesSource";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
 
@@ -186,6 +187,14 @@ export function suggestBaseTerrain(terrains: TerrainColor[]): string | undefined
   return ofType(terrains, ["void"])[0];
 }
 
+/** The World types option with the vault's tables (Star scatter and Orbits roll on the chosen one, SP1). */
+function worldTypesChoice(plugin: HexmakerPlugin): ProcOption {
+  const store = plugin.worldTypeStore;
+  return worldTypesOption(store.list().map((t) => t.name), store.defaultName());
+}
+
+const missingWorldTypes = (name: string) => `No World types table called "${name}", so equal odds.`;
+
 function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
   return { ...grid, orientation: plugin.settings.hexOrientation };
 }
@@ -210,14 +219,16 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       mapKind: "space",
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
-      options: [...STAR_SCATTER_OPTIONS, staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
-      optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
+      options: [...STAR_SCATTER_OPTIONS, worldTypesOption([]), staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
+      optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, worldTypesChoice(plugin), pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
       fits: starScatterOffered,
       generate: (req) => {
         const routeType = chosenPathType(req.options[ROUTE_TYPE_KEY], "routes", req.pathTypes);
         // None picked on purpose: no routes, and nothing to warn about.
         const options = !routeType && req.options[ROUTE_TYPE_KEY] === NO_PATHS ? { ...req.options, routes: "none" } : req.options;
-        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType);
+        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains);
+        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType, wt.source);
+        if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toPaths,
@@ -228,12 +239,14 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       mapKind: "space",
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
-      options: [...ORBITS_OPTIONS, staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
-      optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
+      options: [...ORBITS_OPTIONS, worldTypesOption([]), staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
+      optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), worldTypesChoice(plugin), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
       fits: orbitsFits,
       generate: (req) => {
         const orbitType = chosenPathType(req.options[ORBIT_TYPE_KEY], "orbits", req.pathTypes);
-        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context);
+        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains);
+        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context, wt.source);
+        if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
         // No type and not None on purpose: say why there are no rings.
         if (!orbitType && req.options[ORBIT_TYPE_KEY] !== NO_PATHS && r.cells.size)
           r.warnings.push("No path type for orbits, so the rings weren't drawn. Pick one under Path type for orbits (or add a path type to the palette).");

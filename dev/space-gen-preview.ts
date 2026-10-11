@@ -6,12 +6,14 @@
  */
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/palettes/presets";
 import { starScatter, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/starScatter";
-import { orbits, ORBITS_OPTIONS } from "../src/worldgen/procedural/orbits";
+import { orbits, orbitsOptions } from "../src/worldgen/procedural/orbits";
 import type { GenerationContext, ProcGrid, ProcOption, Side } from "../src/worldgen/procedural/common";
 import { planetSurface, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
 import { DEFAULT_TERRAIN_PALETTE, DEFAULT_PATH_TYPES } from "../src/constants";
 import { routeContextPaths } from "../src/worldgen/procedural/contextPaths";
 import { drawPreview } from "../src/worldgen/preview";
+import { worldTypesSource } from "../src/space/worldTypesSource";
+import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
 
 type Gen = "sector" | "system" | "region";
 /** Region detail: the parent hex and its N/E/S/W neighbours (terrain names from Expanded). */
@@ -46,7 +48,7 @@ const pathColors = new Map([...SPACE_PATH_TYPES, ...SYSTEM_PATH_TYPES, ...DEFAUL
 function controls(): void {
   const box = document.getElementById("controls")!;
   box.replaceChildren();
-  const opts: ProcOption[] = state.gen === "sector" ? STAR_SCATTER_OPTIONS : state.gen === "system" ? ORBITS_OPTIONS : REGION_DETAIL_OPTIONS;
+  const opts: ProcOption[] = state.gen === "sector" ? STAR_SCATTER_OPTIONS : state.gen === "system" ? orbitsOptions(SPACE_SYSTEM_TERRAINS) : REGION_DETAIL_OPTIONS;
   if (state.gen === "region") {
     const names = ["", ...DEFAULT_TERRAIN_PALETTE.map((t) => t.name)];
     const pick = (label: string, value: string, set: (v: string) => void) => {
@@ -96,6 +98,9 @@ function withPaths<T extends { cells: Map<string, string>; paths: { type: string
   return { ...r, paths: [...r.paths, ...routeContextPaths(r.cells, DEFAULT_TERRAIN_PALETTE, grid, carry, seed)] };
 }
 
+/** The shipped World types table: the generators roll on it like in a vault (SP1). */
+const DEFAULT_SPACE = { name: "Default space", rows: [...DEFAULT_WORLD_TYPE_ROWS], ...DEFAULT_WORLD_TYPE_EXTRAS };
+
 function render(): void {
   const grid: ProcGrid = {
     cols: state.cols, rows: state.rows, offset: { x: 0, y: 0 }, stagger: "odd", orientation: state.orientation,
@@ -106,9 +111,9 @@ function render(): void {
   for (let i = 0; i < 6; i++) {
     const seed = state.seed + i;
     const r = state.gen === "sector"
-      ? starScatter(SPACE_SECTOR_TERRAINS, grid, seed, state.options, "Jump route")
+      ? starScatter(SPACE_SECTOR_TERRAINS, grid, seed, state.options, "Jump route", worldTypesSource(DEFAULT_SPACE, SPACE_SECTOR_TERRAINS))
       : state.gen === "system"
-        ? orbits(SPACE_SYSTEM_TERRAINS, grid, seed, state.options, "Orbit")
+        ? orbits(SPACE_SYSTEM_TERRAINS, grid, seed, state.options, "Orbit", undefined, worldTypesSource(DEFAULT_SPACE, SPACE_SYSTEM_TERRAINS))
         : withPaths(planetSurface(DEFAULT_TERRAIN_PALETTE, grid, seed, state.options, regionContext()), grid, seed);
     const fig = document.createElement("figure");
     const canvas = document.createElement("canvas");

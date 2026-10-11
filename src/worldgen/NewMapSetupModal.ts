@@ -22,6 +22,7 @@ import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { WorldTypesModal } from "../space/WorldTypesModal";
+import { WORLD_TYPES_KEY } from "../space/worldTypesSource";
 import { STAR_SCATTER_ID } from "./procedural/starScatter";
 import { ORBITS_ID } from "./procedural/orbits";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
@@ -611,8 +612,10 @@ export class NewMapSetupModal extends HexmakerModal {
         this.options.sea = seaHint.side;
         this.seaFromNeighbour = true;
       }
+      let worldTypesRow: HTMLElement | undefined;
       for (const opt of kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []) {
         const r = this.row(optsBox, opt.label);
+        if (opt.key === WORLD_TYPES_KEY) worldTypesRow = r;
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
@@ -630,9 +633,10 @@ export class NewMapSetupModal extends HexmakerModal {
           refresh();
         });
       }
-      // Space generators: the worlds they place come from a world types table.
+      // Space generators: the worlds they place come from a world types table
+      // (the World types option picks it; this edits it).
       if (kind && (kind.id === STAR_SCATTER_ID || kind.id === ORBITS_ID) && hasFeature(this.plugin.settings, "generators")) {
-        const r = this.row(optsBox, "World types");
+        const r = worldTypesRow ?? this.row(optsBox, "World types");
         const btn = r.createEl("button", { text: "Edit world types…" });
         btn.addEventListener("click", () => {
           new WorldTypesModal(this.app, this.plugin, this.origin?.map, undefined, kind.id === ORBITS_ID ? "system" : "sector").open();

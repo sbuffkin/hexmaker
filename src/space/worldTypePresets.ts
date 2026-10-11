@@ -8,7 +8,9 @@
  * in (their name tables for the shipped Space palettes) and the shipped
  * palettes' submap defaults:
  *  - sector rows: Star scatter's mainworld weights (garden 3, ocean 2, …),
- *    each opening as a 13×13 Orbits system on Space - System;
+ *    each opening as a 13×13 Orbits system on Space - System, with the
+ *    body Orbits makes its mainworld (the pairing Orbits used to guess
+ *    from the names, now written down as data);
  *  - system rows: Orbits' zone weights per body (a body a zone didn't list
  *    weighed 0.5 there), the rocky ones opening as 20×14 Planet surface
  *    maps tuned to the planet;
@@ -28,10 +30,11 @@ import type { OrbitZone, SectorFeatureRow, StarTypeRow, WorldTypeRow } from "./w
 const SYSTEM_PALETTE = "Space - System";
 const SURFACE_PALETTE = "Expanded";
 
-const system = (world: string, weight: number): WorldTypeRow => ({
+const system = (world: string, weight: number, mainworld: string): WorldTypeRow => ({
   world,
   weight,
   map: "sector",
+  mainworld,
   size: { cols: { lo: 13, hi: 13 }, rows: { lo: 13, hi: 13 } },
   generator: { id: "procedural:orbits" },
   palette: SYSTEM_PALETTE,
@@ -63,14 +66,14 @@ function body(world: string, w: Record<OrbitZone, number>, setup: Surface = {}):
 
 export const DEFAULT_WORLD_TYPE_ROWS: readonly WorldTypeRow[] = [
   // Sector: a hex's star system, typed by its mainworld (Star scatter).
-  system("garden world", 3),
-  system("ocean world", 2),
-  system("desert world", 3),
-  system("ice world", 2),
-  system("barren world", 3.5),
-  system("molten world", 1),
-  system("asteroid belt", 1.5),
-  system("gas giant", 1),
+  system("garden world", 3, "terrestrial planet"),
+  system("ocean world", 2, "ocean planet"),
+  system("desert world", 3, "desert planet"),
+  system("ice world", 2, "ice planet"),
+  system("barren world", 3.5, "rocky planet"),
+  system("molten world", 1, "molten planet"),
+  system("asteroid belt", 1.5, "asteroid belt"),
+  system("gas giant", 1, "gas giant"),
   // System: one body per orbit, by zone (Orbits).
   ...body("terrestrial planet", { inner: 0.5, habitable: 4, outer: 0.5 }, surface("65", "temperate", "ocean")),
   ...body("ocean planet", { inner: 0.5, habitable: 3, outer: 0.5 }, surface("85", "lush", "ocean")),
