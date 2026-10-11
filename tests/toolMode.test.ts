@@ -134,13 +134,20 @@ describe("Map navigation buttons say where they go (fresh-eyes T4, owner playtes
 
 describe("Hex right-click menu offers Enter submap (fresh-eyes N3)", () => {
 	it("reads the hex's region and locations from the map note, not only when a hex note exists", () => {
-		const menu = method("onHexContextMenu");
-		expect(menu).toMatch(/submapMenuPlan\(this\.plugin\.mapStore\.get\(this\.activeMapName/);
+		// The hex's items are built by addHexMenuItems (also used under a token's items, F8).
+		expect(method("onHexContextMenu")).toContain("this.addHexMenuItems(menu, x, y)");
+		const menu = method("addHexMenuItems");
+		expect(menu).toMatch(/const hexMaps = this\.plugin\.mapStore\.get\(this\.activeMapName/);
+		expect(menu).toContain("submapMenuPlan(hexMaps)");
 		expect(menu).not.toMatch(/hexExists \?/);
 		expect(menu).toContain("Enter region: ${this.plugin.mapLabel(region)}");
 		expect(menu).toContain("Open: ${this.plugin.mapLabel(loc)}");
 		expect(menu).toContain("Locations (${childPlan.listCount})…");
-		expect(menu).toContain('"New map from this hex…"');
+		// "New map from this hex…" / "Add another map…" (C11).
+		expect(menu).toContain('"hex.new-map", newMapItemTitle(hexMaps)');
+		// The hex's maps come before everything else (C11).
+		expect(menu.indexOf('"hex.enter-region"')).toBeLessThan(menu.indexOf('"hex.center"'));
+		expect(menu.indexOf('"hex.open-location"')).toBeLessThan(menu.indexOf('"hex.center"'));
 	});
 });
 

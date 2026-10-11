@@ -1,6 +1,7 @@
 import { App, Notice, TFile } from "obsidian";
 import { canDo } from "../modeGate";
 import { lockedHint, workModeOf, type ModeAction } from "../workMode";
+import { newMapItemTitle } from "../maps/submaps";
 import { ModeMenu } from "./modeMenu";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -710,7 +711,7 @@ export class HexEditorModal extends HexmakerModal {
     add.addEventListener("click", (e) => {
       const { x, y } = this;
       const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)));
-      menu.add("editor.new-map", "New map from this hex…", "plus", () => { this.close(); this.options.onNewChildMap?.(x, y); });
+      menu.add("editor.new-map", newMapItemTitle({ regionMap, locations: locs }), "plus", () => { this.close(); this.options.onNewChildMap?.(x, y); });
       if (this.options.onLinkExistingMap) {
         menu.add("editor.link-map", "Link existing map…", "link", () => { this.close(); this.options.onLinkExistingMap?.(x, y); });
       }

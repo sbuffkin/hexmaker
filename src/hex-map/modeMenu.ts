@@ -42,6 +42,11 @@ export class ModeMenu {
     this.menu.addSeparator();
   }
 
+  /** A greyed heading line for the items that follow (not an action). */
+  addLabel(text: string): void {
+    this.menu.addItem((item) => item.setTitle(text).setIcon("hexagon").setDisabled(true));
+  }
+
   /** The one-line hint for what was left out (null when nothing was). */
   hint(): string | null {
     return lockedSummary(this.locked);

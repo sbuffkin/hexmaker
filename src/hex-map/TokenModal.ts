@@ -113,6 +113,11 @@ export class TokenModal extends HexmakerModal {
       // exactly-named note, or create a new one. A tester's half-typed
       // "Hermit" silently became a new note instead of "Hermit's hut".
       const noteStatusEl = contentEl.createDiv({ cls: "duckmage-token-note-status" });
+      // The suggestions drop down over what's below (anchored under the
+      // status line, which keeps showing) instead of pushing it: opening or
+      // closing the list used to move the icon grid ~150px, so the next icon
+      // click hit another icon (fresh-eyes F15).
+      const resultsAnchor = contentEl.createDiv({ cls: "duckmage-note-picker-anchor" });
       const refreshNoteStatus = () => {
         const title = this.pendingNoteTitle;
         const target = this.pendingNoteFile ?? (title ? this.findCandidateByName(title) : undefined);
@@ -125,9 +130,9 @@ export class TokenModal extends HexmakerModal {
         }
       };
 
-      // Inline results list — rendered in flow below the setting so it stays
-      // within the modal's scroll container (never clips outside).
-      const resultsEl = contentEl.createDiv({ cls: "duckmage-note-picker-results" });
+      // Results list: inside the modal's scroll container (never clips
+      // outside), but out of flow so it never shifts the form.
+      const resultsEl = resultsAnchor.createDiv({ cls: "duckmage-note-picker-results is-dropdown" });
       resultsEl.hide();
       const onPicked = () => {
         resultsEl.hide();

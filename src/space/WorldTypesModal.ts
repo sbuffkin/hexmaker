@@ -303,7 +303,9 @@ export class WorldTypesModal extends HexmakerModal {
       if (this.tab === "worlds" && this.preview.map) blank[col("Map")] = this.preview.map;
       this.cells[this.tab].push(blank);
       this.changed();
-      this.renderRows();
+      // The new row is at the bottom of the list: show it and put the
+      // cursor in its first field (F9: it appeared off-screen).
+      this.renderRows({ row: this.cells[this.tab].length - 1, target: "first" });
     });
     this.statusEl = buttons.createSpan({ cls: "duckmage-world-types-status" });
     this.saveBtn = buttons.createEl("button", { text: "Save", cls: "mod-cta" });
@@ -374,9 +376,20 @@ export class WorldTypesModal extends HexmakerModal {
     return full;
   }
 
-  private renderRows(): void {
+  /**
+   * Draw the rows. Re-drawing keeps the list's scroll position; `focus`
+   * says where the cursor goes after: a row's first field (a new row,
+   * scrolled into view), its move button (moving again), or the list
+   * itself (after a delete, so typing never lands in the row that slid into
+   * the deleted one's place, F9). `keepHeight` keeps the list as tall as
+   * before (a delete) until the pointer leaves it, so rows above the
+   * deleted one don't shift under the pointer.
+   */
+  private renderRows(focus?: { row: number; target: "first" | "up" | "down" | "list" }, keepHeight?: number): void {
     const el = this.rowsEl;
+    const scrollTop = el.scrollTop;
     el.empty();
+    el.setAttr("tabindex", "-1");
     const lock = this.lock();
     const lists: Record<string, string> = {};
     for (const [c, types] of Object.entries(SUGGEST_TYPES)) lists[c] = this.datalist(c.toLowerCase(), this.suggestions(types));
@@ -400,21 +413,41 @@ export class WorldTypesModal extends HexmakerModal {
         : line("duckmage-world-types-line", spec.columns);
       if (this.tab === "worlds") line("duckmage-world-types-line is-setup", SETUP_COLUMNS);
       const tools = top.createDiv({ cls: "duckmage-world-types-tools" });
-      const btn = (text: string, label: string, fn: () => void, disabled: boolean) => {
+      const btn = (text: string, label: string, fn: () => void, disabled: boolean, after: () => { row: number; target: "up" | "down" | "list" }, keep = false) => {
         const b = tools.createEl("button", { text, attr: { "aria-label": label, title: label } });
+        b.setAttr("data-tool", text === "↑" ? "up" : text === "↓" ? "down" : "remove");
         if (lock) lockButton(b, lock);
         else b.disabled = disabled;
         b.addEventListener("click", () => {
           if (this.lock()) return;
+          const height = keep ? el.scrollHeight : undefined;
           fn();
           this.changed();
-          this.renderRows();
+          this.renderRows(after(), height);
         });
       };
-      btn("↑", "Move up", () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; }, i === 0);
-      btn("↓", "Move down", () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; }, i === rows.length - 1);
-      btn("✕", "Remove row", () => { rows.splice(i, 1); }, false);
+      btn("↑", "Move up", () => { [rows[i - 1], rows[i]] = [rows[i], rows[i - 1]]; }, i === 0, () => ({ row: i - 1, target: "up" }));
+      btn("↓", "Move down", () => { [rows[i + 1], rows[i]] = [rows[i], rows[i + 1]]; }, i === rows.length - 1, () => ({ row: i + 1, target: "down" }));
+      btn("✕", "Remove row", () => { rows.splice(i, 1); }, false, () => ({ row: i, target: "list" }), true);
     });
+
+    // A delete keeps the list's height until the pointer leaves it.
+    const gap = keepHeight !== undefined ? keepHeight - el.scrollHeight : 0;
+    if (gap > 0) {
+      const spacer = el.createDiv({ cls: "duckmage-world-types-spacer" });
+      spacer.setCssProps({ "--duckmage-wt-spacer": `${gap}px` });
+      el.addEventListener("mouseleave", () => spacer.remove(), { once: true });
+    }
+    el.scrollTop = scrollTop;
+
+    if (!focus) return;
+    const rowEl = el.querySelectorAll<HTMLElement>(".duckmage-world-types-row")[focus.row];
+    if (focus.target === "list" || !rowEl) { el.focus({ preventScroll: true }); return; }
+    const target = focus.target === "first"
+      ? rowEl.querySelector<HTMLElement>("input, select")
+      : rowEl.querySelector<HTMLElement>(`button[data-tool="${focus.target}"]:not(:disabled)`);
+    rowEl.scrollIntoView({ block: "nearest" });
+    (target ?? el).focus({ preventScroll: true });
   }
 
   private cellInput(parent: HTMLElement, cells: string[], spec: TabSpec, c: string, list: string | undefined, locked: boolean, row: HTMLElement): void {

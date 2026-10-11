@@ -220,14 +220,16 @@ export class NewMapSetupModal extends HexmakerModal {
     // ── Name ──
     const nameRow = this.row(form, "Name");
     const nameInput = this.labelled(nameRow, nameRow.createEl("input", { type: "text", cls: "duckmage-setup-name" }));
-    // Submaps start on a readable name: the hex's name, else "<parent> x, y"
-    // (NAV2). The first click selects it all, so typing replaces it.
+    // Submaps start on a short readable name: the hex's name, else its
+    // terrain and coordinates, unique among the maps (NAV2, F14). The first
+    // click selects it all, so typing replaces it.
     nameInput.value = this.origin
       ? defaultSubmapLabel(
           this.plugin.mapStore.get(this.origin.map, `${this.origin.x}_${this.origin.y}`)?.name,
           this.plugin.mapLabel(this.origin.map),
           this.origin.x,
           this.origin.y,
+          { terrain: this.originTerrain, taken: this.plugin.settings.maps.map((m) => this.plugin.mapLabel(m.name)) },
         )
       : (this.prefill?.name ?? "");
     nameInput.placeholder = "Map name";
@@ -888,7 +890,9 @@ export class NewMapSetupModal extends HexmakerModal {
         addGeneratedPaths(this.plugin, result.name, paths);
         await this.plugin.saveSettings();
       }
-      if (missing.length) new Notice(`Skipped paths with no matching path type: ${missing.join(", ")}`);
+      // Expected and harmless (an Orbit path crossing a planet hex has no
+      // path type on the planet's palette): skip quietly (fresh-eyes F12).
+      if (missing.length) console.warn(`[hexmaker] ${result.name}: skipped generated paths with no matching path type: ${missing.join(", ")}`);
     }
     let backgroundImage: string | undefined;
     let bgPath = this.origin ? null : this.bgPath;

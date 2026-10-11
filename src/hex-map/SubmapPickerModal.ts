@@ -138,9 +138,14 @@ export class SubmapPickerModal extends HexmakerModal {
       cls: "duckmage-submap-create-name",
     });
     if (this.origin) {
-      // A readable default (NAV2): the hex's name, else "<parent> x, y".
+      // A short readable default (NAV2, F14): the hex's name, else its
+      // terrain and coordinates, unique among the maps.
       const { map, x, y } = this.origin;
-      nameInput.value = defaultSubmapLabel(this.plugin.mapStore.get(map, `${x}_${y}`)?.name, this.plugin.mapLabel(map), x, y);
+      const hex = this.plugin.mapStore.get(map, `${x}_${y}`);
+      nameInput.value = defaultSubmapLabel(hex?.name, this.plugin.mapLabel(map), x, y, {
+        terrain: hex?.terrain ?? this.plugin.getMap(map)?.baseTerrain,
+        taken: this.plugin.settings.maps.map((m) => this.plugin.mapLabel(m.name)),
+      });
       selectAllOnFocus(nameInput);
     }
 

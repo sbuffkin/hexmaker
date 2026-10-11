@@ -2521,7 +2521,7 @@ export default class HexmakerPlugin extends Plugin {
    * the palette note is written by the sync that follows. Returns the new
    * palette's name.
    */
-  async installPalettePreset(presetName: string, asName?: string): Promise<string | undefined> {
+  async installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> {
     const preset = getPreset(presetName);
     if (!preset) return undefined;
     const name = uniquePaletteName(
@@ -2536,7 +2536,8 @@ export default class HexmakerPlugin extends Plugin {
     // table like the parent's (round 7: a system map installed "Space -
     // System" and its "ice planet" hex showed Encounters Table "None").
     await this.ensureTablesForNewTerrains();
-    new Notice(`Added palette "${name}".`);
+    // Installed on first use by a new map: expected, so no notice (F12).
+    if (!opts.quiet) new Notice(`Added palette "${name}".`);
     return name;
   }
 
@@ -2731,7 +2732,8 @@ export default class HexmakerPlugin extends Plugin {
   /** Install `name` from the presets if no palette by that name exists yet. */
   async ensurePaletteInstalled(name: string): Promise<void> {
     if (this.getPaletteByName(name) || !getPreset(name)) return;
-    await this.installPalettePreset(name);
+    // A new map installing its palette is expected: no notice (F12).
+    await this.installPalettePreset(name, undefined, { quiet: true });
   }
 
   getMapPalette(mapName: string): TerrainColor[] {

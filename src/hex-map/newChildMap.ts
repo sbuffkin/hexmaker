@@ -17,6 +17,21 @@ export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }
   location: { title: "Location", desc: "A separate place in this hex, like a town or dungeon, with its own size." },
 };
 
+/**
+ * The same cards on a space map (its palette, or an ancestor's, has space
+ * terrain types; never keyed on terrain names), saying which to pick for
+ * a star system or planet (F10).
+ */
+export const SPACE_CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
+  region: { title: "Region", desc: "This stretch of space up close, at the same scale as the regions next to it. Not for a single star system or planet." },
+  location: { title: "Location", desc: "A star system, planet or station in this hex, with its own map and size. Pick this for a system or a planet." },
+};
+
+/** The card text for a map: space wording on space maps (F10). */
+export function childKindText(space: boolean): Record<SubmapKind, { title: string; desc: string }> {
+  return space ? SPACE_CHILD_KIND_TEXT : CHILD_KIND_TEXT;
+}
+
 export interface NewChildMapHost {
   app: App;
   plugin: HexmakerPlugin;
@@ -91,9 +106,23 @@ export class ChildKindModal extends HexmakerModal {
     const { plugin } = this.host;
     const existing = regionMapAt(plugin.settings.maps, this.parentMap, `${this.x}_${this.y}`);
     const regionsOn = hasFeature(plugin.settings, "regions");
+    const text = childKindText(plugin.isSpaceMap(this.parentMap));
+
+    // The hex's maps first (C11): opening what's there is the usual pick;
+    // making another location stays possible below.
+    const locations = (plugin.mapStore.get(this.parentMap, `${this.x}_${this.y}`)?.locations ?? [])
+      .filter((l) => l !== existing?.name && !!plugin.getMap(l));
+    if (locations.length && this.host.onEnter) {
+      contentEl.createDiv({ cls: "setting-item-description", text: "This hex already has:" });
+      for (const name of locations) {
+        const open = contentEl.createEl("button", { cls: "duckmage-child-kind-enter is-existing", text: `Open ${plugin.mapLabel(name)}` });
+        open.addEventListener("click", () => { this.close(); this.host.onEnter?.(name); });
+      }
+      contentEl.createDiv({ cls: "setting-item-description", text: "Or make another:" });
+    }
 
     const card = (kind: SubmapKind, disabledWhy?: string) => {
-      const t = CHILD_KIND_TEXT[kind];
+      const t = text[kind];
       const btn = contentEl.createEl("button", { cls: "duckmage-child-kind-card" });
       btn.createDiv({ cls: "duckmage-child-kind-title", text: t.title });
       btn.createDiv({ cls: "duckmage-child-kind-desc", text: t.desc });

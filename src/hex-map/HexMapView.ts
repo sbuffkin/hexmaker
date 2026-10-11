@@ -80,7 +80,7 @@ import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { LocationsModal } from "./LocationsModal";
 import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
-import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
+import { hexChildMaps, newMapItemTitle, parentHexTerrain, regionMapAt, submapMenuPlan } from "../maps/submaps";
 import { OverworldLayer } from "./overworldLayer";
 import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
@@ -694,6 +694,17 @@ export class HexMapView extends ItemView {
       });
       crumb.addEventListener("click", () => this.navigateToMap(name));
       crumbs.createSpan({ cls: "duckmage-map-crumb-sep", text: "›" });
+    }
+    // What the hex this map was made from is ("from: barren world"), read
+    // from the parent's map data (F11: a sector's world type was nowhere
+    // in the system map made from it).
+    const from = parentHexTerrain(this.plugin, this.activeMapName);
+    if (from) {
+      crumbs.createSpan({
+        cls: "duckmage-map-crumb-from",
+        text: `from: ${from.terrain}`,
+        attr: { title: `Made from ${from.label}, a ${from.terrain} hex` },
+      });
     }
     crumbs.toggle(ancestors.length > 0);
   }
@@ -4750,13 +4761,21 @@ export class HexMapView extends ItemView {
     // only fires when drawingMode === null.
     if (this.drawingMode !== null) return;
 
+    // Items the map's work mode locks are left out, with one hint line.
+    const menu = new ModeMenu(this.currentWorkMode());
     // Overworlds are the big-picture view (#49): region-level items only,
     // no hex editor.
-    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
-      this.showOverworldMenu(evt, x, y);
-      return;
-    }
+    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) this.addOverworldMenuItems(menu, evt, x, y);
+    else this.addHexMenuItems(menu, x, y);
+    menu.showAtMouseEvent(evt);
+  }
 
+  /**
+   * A hex's right-click items (also under a token's own items, F8: the
+   * token covers the hex centre). `inTokenMenu` names the hex's note so it
+   * isn't taken for the token's.
+   */
+  private addHexMenuItems(menu: ModeMenu, x: number, y: number, inTokenMenu = false): void {
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
     // Terrain, icon and submap live in the map note, and a hex can have them
     // before its hex note exists (a generated map, a submap made from this
@@ -4764,31 +4783,16 @@ export class HexMapView extends ItemView {
     // terrain" on such hexes (fresh-eyes N3).
     const terrain = getTerrainFromFile(this.app, hexPath);
     const iconOverride = getIconOverrideFromFile(this.app, hexPath);
-    const childPlan = submapMenuPlan(this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
-      ?? { locations: getHexMapsFromFile(this.app, hexPath).locations });
+    const hexMaps = this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
+      ?? { locations: getHexMapsFromFile(this.app, hexPath).locations };
+    const childPlan = submapMenuPlan(hexMaps);
 
-    // Items the map's work mode locks are left out, with one hint line.
-    const menu = new ModeMenu(this.currentWorkMode());
-
-    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
-
-    menu.addSeparator();
-
-    menu.add("hex.open-note", "Open note", "file-text", () => {
-      void (async () => {
-        const existing = this.app.vault.getAbstractFileByPath(hexPath);
-        const file =
-          existing instanceof TFile
-            ? existing
-            : await this.plugin.createHexNote(x, y, this.activeMapName);
-        if (file) await openNoteFocused(this.app, file);
-      })();
-    });
-
-    // Maps from this hex (K7): its region, then up to two locations by
-    // name, or one "Locations (n)…" item that opens the list.
+    // Maps from this hex (K7) come first, so entering what's there is the
+    // obvious pick (C11): its region, then up to two locations by name, or
+    // one "Locations (n)…" item that opens the list.
     const region = childPlan.region;
-    if (region && this.plugin.getMap(region)) {
+    const hasRegion = !!region && !!this.plugin.getMap(region);
+    if (region && hasRegion) {
       menu.add("hex.enter-region", `Enter region: ${this.plugin.mapLabel(region)}`, "log-in", () => this.navigateToMap(region));
     }
     for (const loc of childPlan.open) {
@@ -4800,7 +4804,26 @@ export class HexMapView extends ItemView {
     if (childPlan.listCount) {
       menu.add("hex.locations", `Locations (${childPlan.listCount})…`, "list", () => this.openLocationsList(x, y));
     }
-    menu.add("hex.new-map", "New map from this hex…", "plus", () => this.openNewSubmapSetup(x, y));
+    if (hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
+
+    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
+
+    menu.addSeparator();
+
+    menu.add("hex.open-note", inTokenMenu ? "Open hex note" : "Open note", "file-text", () => {
+      void (async () => {
+        const existing = this.app.vault.getAbstractFileByPath(hexPath);
+        const file =
+          existing instanceof TFile
+            ? existing
+            : await this.plugin.createHexNote(x, y, this.activeMapName);
+        if (file) await openNoteFocused(this.app, file);
+      })();
+    });
+
+    // "Add another map…" once the hex has one (C11): a hex can hold several
+    // locations, but the menu doesn't invite re-making the same map.
+    menu.add("hex.new-map", newMapItemTitle(hexMaps), "plus", () => this.openNewSubmapSetup(x, y));
     menu.add("hex.link-map", "Link existing map…", "link", () => this.openLinkExistingMap(x, y));
     if (childPlan.open.length) {
       // Unlinking and reordering live in the list.
@@ -4846,16 +4869,14 @@ export class HexMapView extends ItemView {
         });
       }
     }
-
-    menu.showAtMouseEvent(evt);
   }
 
   /**
-   * An overworld hex's right-click menu (overworldMenu): Enter region and
+   * An overworld hex's right-click items (overworldMenu): Enter region and
    * Edit region… on a region, Set biome… on an empty hex, Center, and the
    * hex's Locations. In the Regions view the brick under the pointer counts.
    */
-  private showOverworldMenu(evt: MouseEvent, x: number, y: number): void {
+  private addOverworldMenuItems(menu: ModeMenu, evt: MouseEvent, x: number, y: number): void {
     const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
     const cell = OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "regions" && grid
       ? this.overworldLayer.cellAt(grid, evt.clientX, evt.clientY) : null;
@@ -4863,7 +4884,6 @@ export class HexMapView extends ItemView {
     const key = `${px}_${py}`;
     const region = regionMapAt(this.plugin.settings.maps, this.activeMapName, key)?.name;
     const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
-    const menu = new ModeMenu(this.currentWorkMode());
     const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", "set-biome": "trees", center: "crosshair", locations: "list" };
     for (const it of overworldMenu(this.getActiveMap(), !!region, locations)) {
       const id = `ow.${it.id}` as const;
@@ -4880,7 +4900,6 @@ export class HexMapView extends ItemView {
     }
     // Mark the party (or anything) on the overworld: tokens sit on its hexes.
     menu.add("ow.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(px, py));
-    menu.showAtMouseEvent(evt);
   }
 
   /** "Edit region…" for the region on hex (px, py) of `overworld` (default the open map; from inside a region, its overworld). */
@@ -8015,6 +8034,16 @@ export class HexMapView extends ItemView {
     });
     menu.addSeparator();
     menu.add("token.remove", "Remove token", "trash", () => this.removeToken(token));
+    // The token covers its hex's centre, so the hex's own items follow
+    // (F8: right-clicking "where the ship is" only gave the token's menu).
+    const [hx, hy] = token.hex.split("_").map(Number);
+    if (token.map === this.activeMapName && Number.isFinite(hx) && Number.isFinite(hy)) {
+      menu.addSeparator();
+      const hexName = this.plugin.mapStore.get(this.activeMapName, `${hx}_${hy}`)?.name?.trim();
+      menu.addLabel(hexName ? `This hex: ${hexName}` : `This hex: ${hx}, ${hy}`);
+      if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) this.addOverworldMenuItems(menu, evt, hx, hy);
+      else this.addHexMenuItems(menu, hx, hy, true);
+    }
     menu.showAtMouseEvent(evt);
   }
 }

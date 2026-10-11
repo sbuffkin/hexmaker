@@ -5,7 +5,7 @@
 | **Middle-mouse drag** (or click + drag on empty space) | Pan the map |
 | **Scroll wheel** | Zoom in / out |
 | **Left-click** a hex | Open the hex editor (terrain, notes, links) |
-| **Right-click** a hex | Context menu: center on hex, open note, enter its region or locations, new map from this hex, link a map, link table, swap hex, create token here, clear terrain |
+| **Right-click** a hex | Context menu: its region and locations first, then center on hex, open note, new map from this hex (**Add another map…** once it has one), link a map, link table, swap hex, create token here, clear terrain. On a token: the token's items, then the hex's |
 | **Double-right-click** anywhere | Exit the active tool and return to normal mode |
 
 ---
@@ -21,7 +21,7 @@ Hexes with locations show a small ring at the top, with a count once there are t
 
 | Action | Result |
 |--------|--------|
-| **Right-click → New map from this hex…** | Pick **Region** or **Location**, then set the map up and go straight into it. A location is named after the hex, or the map name and the hex's coordinates; click the name to type your own |
+| **Right-click → New map from this hex…** | Pick **Region** or **Location** (on space maps, a star system or planet is a Location), then set the map up and go straight into it. Maps the hex already has are listed first. A location is named after the hex, or its terrain and coordinates ("Barren world 12, 5"); click the name to type your own |
 | **Right-click → Enter region / Open: …** | Go into the hex's region, or one of its (up to two) locations |
 | **Right-click → Locations (3)…** | From three locations on: a list to search, open, unlink and drag into order. Also **Manage locations…** |
 | **Right-click → Link existing map…** | Add a map you already have as one of the hex's locations |
@@ -31,7 +31,7 @@ Hexes with locations show a small ring at the top, with a count once there are t
 | **←** / **Alt+←** | Back to the map you were on before |
 | **↑** / **Alt+↑** | Up to the parent map; the hex you came from flashes |
 | **→** / **Alt+→** | Forward again after going back |
-| Breadcrumb (top left) | Jump to any map above this one |
+| Breadcrumb (top left) | Jump to any map above this one; it ends with what this map's hex is on the parent ("from: barren world") |
 | Small hex flower after the arrows (a region of an overworld) | The six regions around this one, each in its direction. Hover a petal for its name, click to go there. An empty petal's **+** makes the region there (pick or roll its biome) |
 | **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name. **+** on an empty side makes new land there. Inside a submap they go to its parent's neighbours |
 
@@ -110,7 +110,7 @@ Swap the contents of two hex positions by renaming their files.
 Selecting the source hex again cancels the selection. Selecting a different hex while a destination is already highlighted changes the destination.
 
 ### Token
-Create a note-backed token (icon, shape, size, colors, description) and place it on the map. The **Token** button opens the token editor, then left-click a hex to place it. Alternatively, **right-click a hex → "Create token here"** creates the token directly on that hex with no placement step. Right-click a placed token to edit, open its note, or remove it.
+Create a note-backed token (icon, shape, size, colors, description) and place it on the map. The **Token** button opens the token editor, then left-click a hex to place it. Alternatively, **right-click a hex → "Create token here"** creates the token directly on that hex with no placement step. Right-click a placed token to edit, open its note, or remove it; the hex it sits on has its items below the token's.
 
 ---
 
@@ -127,7 +127,7 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 The layers button (top right) turns these on and off.
 
 - **Link badges**: a coloured icon badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). **S / M / L** beside the toggle sets their size for this map. Hover the hex to see what it links. Click ▸ to pick which kinds show.
-- **Legend**: the terrains used on this map and the badge kinds shown, at the bottom left (hover a cut-short name for the full one). **S / M / L** sets its size, **–** folds it to a small **Legend** button, **×** hides it.
+- **Legend**: the terrains used on this map and the badge kinds shown, at the bottom left, by full name (only very long names are cut; hover one for the full name). **S / M / L** sets its size, **–** folds it to a small **Legend** button, **×** hides it.
 
 Opening the layers panel or the drawing tools never moves the map.
 

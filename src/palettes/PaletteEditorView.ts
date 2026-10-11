@@ -74,6 +74,17 @@ export class PaletteEditorView extends ItemView {
     return all.find((p) => p.name === PaletteEditorView.paletteName) ?? all[0];
   }
 
+  /**
+   * The tab and pane header name the palette shown (F16: they kept the
+   * first palette's name after switching). Same pattern as the map view.
+   */
+  private refreshHeader(): void {
+    const titleEl = this.containerEl.querySelector<HTMLElement>(".view-header-title");
+    if (titleEl) titleEl.setText(this.getDisplayText());
+    interface WithUpdateHeader { updateHeader?(): void; }
+    (this.leaf as unknown as WithUpdateHeader).updateHeader?.();
+  }
+
   /** Coalesce rapid edits into one save (the palette note follows). */
   private save(): void {
     window.clearTimeout(this.saveTimer);
@@ -93,6 +104,7 @@ export class PaletteEditorView extends ItemView {
     contentEl.addClass("duckmage-palette-editor");
     const pal = this.palette();
     if (pal) PaletteEditorView.paletteName = pal.name;
+    this.refreshHeader();
 
     // ── Toolbar ──
     const bar = contentEl.createDiv({ cls: "duckmage-pe-toolbar" });

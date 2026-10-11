@@ -345,18 +345,20 @@ describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
 import { MAP_LEGEND_NAME_MAX, shortLegendName, shortLegendNames } from "../src/hex-map/terrainLegend";
 
 describe("map legend (MK2)", () => {
-	it("shortens long names but keeps them readable and apart", () => {
-		expect(MAP_LEGEND_NAME_MAX).toBeGreaterThanOrEqual(6);
-		expect(MAP_LEGEND_NAME_MAX).toBeLessThanOrEqual(8);
+	// F13 (fresh-eyes 2026-10-11): initials ("g. world") were unreadable;
+	// names show whole unless really long, and keep their start when cut.
+	it("shows common names whole and cuts only long ones, keeping the start", () => {
+		expect(MAP_LEGEND_NAME_MAX).toBeGreaterThanOrEqual(14);
+		expect(MAP_LEGEND_NAME_MAX).toBeLessThanOrEqual(18);
+		for (const n of ["garden world", "ocean world", "desert world", "barren world", "mixed forest hills", "terrestrial planet", "gas giant"]) {
+			expect(shortLegendName(n, MAP_LEGEND_NAME_MAX)).toBe(n);
+		}
 		expect(shortLegendName("forest", 8)).toBe("forest");
-		expect(shortLegendName("mountains", 9)).toBe("mountains");
-		// One long word: cut with an ellipsis.
 		expect(shortLegendName("brokenlands", 8)).toBe("brokenl…");
-		// Several words: initials, then the last word.
-		expect(shortLegendName("mixed forest", 8)).toBe("m. forest");
-		expect(shortLegendName("mixed forest hills", 8)).toBe("m.f. hills");
-		expect(shortLegendName("evergreen hills", 8)).toBe("e. hills");
-		expect([...shortLegendName("mixed forest mountains", 8)].length).toBeLessThanOrEqual(11);
+		expect(shortLegendName("terrestrial planet", 16)).toBe("terrestrial pla…");
+		expect(shortLegendName("  mixed   forest ", 16)).toBe("mixed forest");
+		// Never initials.
+		expect(shortLegendName("mixed forest mountains", 16)).not.toMatch(/^\w\./);
 	});
 
 	it("a legend never shows two rows with the same short name", () => {
@@ -364,8 +366,8 @@ describe("map legend (MK2)", () => {
 		const short = shortLegendNames(names, MAP_LEGEND_NAME_MAX);
 		const shown = names.map((n) => short.get(n));
 		expect(new Set(shown).size).toBe(names.length);
-		expect(short.get("mixed forest mountain")).toBe("m.f. mountain");
-		expect(short.get("mixed forest mountains")).toBe("m.f. mountains");
+		expect(short.get("mixed forest mountain")).toBe("mixed forest mountain");
+		expect(short.get("mixed forest mountains")).toBe("mixed forest mountains");
 	});
 
 	it("sits at the view's bottom-left (not over the status bar corner)", () => {

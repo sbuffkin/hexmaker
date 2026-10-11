@@ -8692,7 +8692,11 @@ textarea.duckmage-edit-region-notes-input {
     color: var(--text-muted);
 }
 .duckmage-world-types-rows {
-    max-height: 40vh;
+    /* Most of the dialog's height (F9: a short inner list hid new rows). */
+    max-height: 55vh;
+    /* The dialog body is a flex column: without this the list was squeezed
+       to a few rows to fit the preview, which scrolls with the dialog. */
+    flex-shrink: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -8940,4 +8944,47 @@ textarea.duckmage-edit-region-notes-input {
 }
 .duckmage-ow-gaps .duckmage-region-gen-label {
     font-weight: var(--font-semibold);
+}
+
+/* Token form: note suggestions drop down over the form instead of pushing
+   it, so the icon grid never moves under the pointer (fresh-eyes F15). */
+.duckmage-note-picker-anchor {
+    position: relative;
+    height: 0;
+}
+.duckmage-note-picker-results.is-dropdown {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    margin: 0;
+    box-shadow: var(--shadow-s);
+}
+
+/* Breadcrumb: what the hex this map was made from is (fresh-eyes F11). */
+.duckmage-map-crumb-from {
+    font-size: 0.78em;
+    padding: 0 6px 0 2px;
+    color: var(--text-faint);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 14em;
+}
+/* "New map from this hex": the hex's existing maps, listed first (C11). */
+.duckmage-child-kind-enter.is-existing {
+    display: block;
+    margin: 4px 0 6px;
+}
+
+/* World types: a deleted row's space is kept until the pointer leaves
+   the list, so rows don't slide under it (fresh-eyes F9). */
+.duckmage-world-types-spacer {
+    flex: none;
+    height: var(--duckmage-wt-spacer, 0px);
+}
+.duckmage-world-types-rows:focus {
+    outline: none;
 }

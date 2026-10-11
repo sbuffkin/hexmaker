@@ -63,8 +63,13 @@ export interface LegendOptions {
   maxName?: number;
 }
 
-/** Longest name shown in the map's legend before it's cut (MK2). */
-export const MAP_LEGEND_NAME_MAX = 8;
+/**
+ * Longest name shown in the map's legend before it's cut. MK2 asked for
+ * short names; fresh-eyes F13 found initials ("g. world", "o. world")
+ * unreadable, so names now show whole up to this length and only longer
+ * ones are cut, keeping their start. The full name is on hover.
+ */
+export const MAP_LEGEND_NAME_MAX = 18;
 
 /** Cut to `max` characters with "…" (trailing spaces dropped). */
 function cut(text: string, max: number): string {
@@ -74,44 +79,29 @@ function cut(text: string, max: number): string {
 }
 
 /**
- * A legend name shortened to about `max` characters, or unchanged when it
- * fits. Several words keep the last one and shrink the rest to initials
- * ("mixed forest hills" → "m.f. hills", a few characters of slack), so
- * kinds of forest stay apart; one long word is cut ("brokenlands" →
- * "brokenl…").
+ * A legend name cut to `max` characters, or unchanged when it fits. The
+ * start is kept ("mixed forest mountains" → "mixed forest moun…"): the first
+ * word is usually what tells kinds apart ("garden world", "ocean world"),
+ * so it never shrinks to an initial.
  */
 export function shortLegendName(name: string, max: number): string {
-  const text = name.replace(/\s+/g, " ").trim();
-  if (max < 2 || [...text].length <= max) return text;
-  const words = text.split(" ");
-  if (words.length > 1) {
-    const last = words[words.length - 1];
-    const initials = words.slice(0, -1).map((w) => `${[...w][0]}.`).join("");
-    const room = max + 3 - initials.length - 1;
-    if (room >= 3) return `${initials} ${cut(last, room)}`;
-  }
-  return cut(text, max);
+  return cut(tidy(name), max);
+}
+
+/** Runs of whitespace as one space, trimmed. */
+function tidy(name: string): string {
+  return name.replace(/\s+/g, " ").trim();
 }
 
 /**
  * Short names for a whole legend: shortLegendName, except where two short
- * forms would clash (the legend must tell them apart): those keep their
- * last word whole ("m.f. mountain" / "m.f. mountains"), else the full name.
+ * forms would clash (the legend must tell them apart): those show in full.
  */
 export function shortLegendNames(names: readonly string[], max: number): Map<string, string> {
   const short = new Map(names.map((n) => [n, shortLegendName(n, max)]));
-  const clashing = () => {
-    const count = new Map<string, number>();
-    for (const s of short.values()) count.set(s, (count.get(s) ?? 0) + 1);
-    return [...short].filter(([n, s]) => s !== n && (count.get(s) ?? 0) > 1).map(([n]) => n);
-  };
-  for (const n of clashing()) {
-    const words = n.replace(/\s+/g, " ").trim().split(" ");
-    if (words.length > 1) {
-      short.set(n, `${words.slice(0, -1).map((w) => `${[...w][0]}.`).join("")} ${words[words.length - 1]}`);
-    }
-  }
-  for (const n of clashing()) short.set(n, n);
+  const count = new Map<string, number>();
+  for (const s of short.values()) count.set(s, (count.get(s) ?? 0) + 1);
+  for (const [n, s] of short) if (s !== n && (count.get(s) ?? 0) > 1) short.set(n, tidy(n));
   return short;
 }
 

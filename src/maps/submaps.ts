@@ -20,7 +20,7 @@ export function submapKindOf(map: Pick<MapData, "parent" | "submapKind"> | undef
 }
 
 /** Every map a hex opens into: its region first, then its locations. */
-export function hexChildMaps(h: HexData | undefined): string[] {
+export function hexChildMaps(h: Pick<HexData, "regionMap" | "locations"> | undefined): string[] {
   if (!h) return [];
   const out = h.regionMap ? [h.regionMap] : [];
   for (const l of h.locations ?? []) if (!out.includes(l)) out.push(l);
@@ -245,4 +245,40 @@ export function regionMirrorFixes(
     }
   }
   return fixes;
+}
+
+// ── where a submap came from ─────────────────────────────────────────────
+
+/** What parentHexTerrain needs (the plugin satisfies it). */
+export interface ParentHexHost {
+  parentOf(mapName: string): { map: string; hex: string } | undefined;
+  getMap(mapName: string): Pick<MapData, "baseTerrain"> | undefined;
+  mapLabel(mapName: string): string;
+  mapStore: { get(mapName: string, key: string): Pick<HexData, "terrain" | "name"> | undefined };
+}
+
+/**
+ * The terrain of the hex `mapName` was made from (its own, else the parent
+ * map's base terrain), with a label for that hex ("The Drift 2, 7", or its
+ * name). From the parent's map data, never its hex note (F11). Undefined
+ * for a top-level map or a hex with no terrain.
+ */
+export function parentHexTerrain(host: ParentHexHost, mapName: string): { terrain: string; label: string } | undefined {
+  const parent = host.parentOf(mapName);
+  if (!parent) return undefined;
+  const hex = host.mapStore.get(parent.map, parent.hex);
+  const terrain = (hex?.terrain ?? host.getMap(parent.map)?.baseTerrain ?? "").trim();
+  if (!terrain) return undefined;
+  const [x, y] = parent.hex.split("_");
+  const label = hex?.name?.trim() || `${host.mapLabel(parent.map)} ${x}, ${y}`;
+  return { terrain, label };
+}
+
+/**
+ * The right-click item for making a map from a hex: "New map from this
+ * hex…" on a hex with none, "Add another map…" once it has one (C11: the
+ * existing map is the item to pick; making another stays possible).
+ */
+export function newMapItemTitle(h: Pick<HexData, "regionMap" | "locations"> | undefined): string {
+  return hexChildMaps(h).length ? "Add another map…" : "New map from this hex…";
 }
