@@ -79,12 +79,12 @@ import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
 import { OverworldLayer } from "./overworldLayer";
 import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
-import { inOverworldGrid, regionHome, walkLock } from "../overworld/regionsVault";
+import { inOverworldGrid, overworldOf, regionHome, regionPalette, walkLock } from "../overworld/regionsVault";
+import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets } from "../overworld/overworldInput";
 import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
 import type { Side } from "../worldgen/world";
 import { withFeature } from "../advancedHints";
 import { overworldRefreshFor } from "../overworld/overworldChanges";
-import { parentOf as parentOfCell } from "../overworld/layout";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { neighbourShadow, neighbourSpec } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
@@ -374,6 +374,15 @@ export class HexMapView extends ItemView {
   private currentFactionStroke: Map<string, FactionUndoEntry> | null = null;
   private currentRegionStroke: Map<string, RegionUndoEntry> | null = null;
   private currentSubStroke: Map<string, SubHexUndoEntry> | null = null;
+  /** The "no region here" hint was shown this stroke (once is enough). */
+  private subStrokeMissHinted = false;
+  /**
+   * A region map's terrain as this view last drew it, so a brush stroke on
+   * its overworld (in another view) repaints just the hexes it changed, live.
+   * Empty for other maps.
+   */
+  private shownTerrain = new Map<string, string | null>();
+  private terrainSync = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
   /** Overworlds (OW1): every region's hexes stitched on one canvas, and the minimap. */
   private overworldLayer!: OverworldLayer;
   private minimap!: OverworldMinimap;
@@ -1130,7 +1139,19 @@ export class HexMapView extends ItemView {
       }
       if (e.button !== 0) return;
       // Overworld full view: the terrain tool paints the regions' own hexes.
+      if (this.drawingMode === "terrain" && OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "biomes") {
+        // The brush paints the regions, so it works in the Regions view.
+        this.showOverworldRegions();
+        hasDragged = true;
+        return;
+      }
       if (this.drawingMode === "terrain" && this.overworldLayer.showsRegions(this.getActiveMap())) {
+        if (!canAdd(this.getActiveMap())) {
+          new Notice(PAINT_LOCKED_HINT);
+          hasDragged = true;
+          return;
+        }
+        this.subStrokeMissHinted = false;
         isTerrainPainting = true;
         lastPaintedKey = null;
         this.currentTerrainStroke = new Map();
@@ -1611,6 +1632,8 @@ export class HexMapView extends ItemView {
       this.plugin.mapStore.onChange((map) => {
         this.onOverworldDataChange(map);
         if (map !== this.activeMapName) return;
+        // Painted from its overworld in another view: repaint those hexes now.
+        if (this.shownTerrain.size && !this.currentTerrainStroke) this.terrainSync.request(() => this.syncShownTerrain());
         this.scheduleTerrainLegend();
         // A name set without a redraw (hex table, code, map note edit) shows up.
         this.scheduleHexNames();
@@ -2125,11 +2148,14 @@ export class HexMapView extends ItemView {
     // Show crosshair on the viewport while the picker is open
     this.viewportEl?.addClass("duckmage-terrain-picking");
 
+    // On an overworld the brush paints its regions' hexes, so it offers
+    // the regions' palette, and picking a terrain shows the Regions view.
+    const owInfo = overworldOf(this.plugin, this.activeMapName);
     // Always open the picker — even if already active, so user can switch terrain
     new TerrainPickerModal(
       this.app,
       this.plugin,
-      this.plugin.getMapPalette(this.activeMapName),
+      owInfo ? regionPalette(this.plugin, owInfo.map) : this.plugin.getMapPalette(this.activeMapName),
       (terrainName: string | null) => {
         this.viewportEl?.removeClass("duckmage-terrain-picking");
         this.leaveOtherToolFor("terrain");
@@ -2139,6 +2165,7 @@ export class HexMapView extends ItemView {
         this.paintTerrainName = terrainName;
         this.paintIconName = null;
         this.updateToolbarButtonStates();
+        this.showOverworldRegions();
       },
       () => {
         // Eyedropper: enter terrain mode in pick-from-map state
@@ -2149,6 +2176,7 @@ export class HexMapView extends ItemView {
         this.terrainPickMode = true;
         this.paintTerrainName = null;
         this.updateToolbarButtonStates();
+        this.showOverworldRegions();
       },
       () => {
         // Dismissed without selecting
@@ -4066,7 +4094,7 @@ export class HexMapView extends ItemView {
           const cell = this.overworldLayer.cellAt(gridContainer, e.clientX, e.clientY);
           const tip = !cell ? ""
             : cell.region ? `${this.plugin.mapLabel(cell.region)}: click to go there`
-            : `No region yet (hex ${cell.parentHex.replace("_", ", ")}): click to set its biome`;
+            : `No region yet (hex ${cell.parentHex.replace("_", ", ")})` + (canAdd(this.getActiveMap()) ? ": click to set its biome" : "");
           if (gridContainer.title !== tip) gridContainer.title = tip;
         });
       });
@@ -4307,6 +4335,7 @@ export class HexMapView extends ItemView {
 
   /** The layers placed from measured hex geometry (see renderGrid). */
   private renderMeasuredLayers(gridContainer: HTMLElement, region: MapData): void {
+    this.snapshotShownTerrain(region);
     this.renderNeighbourShadow(gridContainer, region);
     this.overworldLayer.render(gridContainer, region);
     this.minimap.render(this.contentEl, region);
@@ -4553,12 +4582,19 @@ export class HexMapView extends ItemView {
     const menu = new Menu();
 
     if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
-      menu.addItem((item) =>
-        item
-          .setTitle("Set biome…")
-          .setIcon("trees")
-          .onClick(() => new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open()),
-      );
+      // Placing a biome (empty hex) or changing a placed region (God):
+      // locked items are shown disabled with their hint, and open nothing.
+      const hasRegion = !!regionMapAt(this.plugin.settings.maps, this.activeMapName, `${x}_${y}`);
+      for (const it of overworldMenu(this.getActiveMap(), hasRegion)) {
+        if (it.id === "enter-region") continue; // the "Enter region: <name>" item below
+        menu.addItem((item) => {
+          item
+            .setTitle(it.enabled ? it.title : `${it.title} (${it.hint})`)
+            .setIcon(it.id === "edit-region" ? "settings-2" : "trees")
+            .setDisabled(!it.enabled);
+          if (it.enabled) item.onClick(() => new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open());
+        });
+      }
       menu.addItem((item) =>
         item
           .setTitle("Edit hex…")
@@ -4744,11 +4780,15 @@ export class HexMapView extends ItemView {
     if (ow && !e?.ctrlKey && !e?.metaKey) {
       const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
       const cell = ow === "regions" && e && grid ? this.overworldLayer.cellAt(grid, e.clientX, e.clientY) : null;
-      if (cell?.region) {
-        this.enterRegionAt(cell.region, cell.x, cell.y);
-        return;
-      }
-      new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open();
+      // The brick under the pointer in the Regions view, else the hex clicked.
+      const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
+      const region = cell ? cell.region : regionMapAt(this.plugin.settings.maps, this.activeMapName, `${x}_${y}`)?.name;
+      const act = overworldLeftClick(this.getActiveMap(), !!region);
+      if (act.kind === "enter" && region) {
+        if (cell) this.enterRegionAt(region, cell.x, cell.y);
+        else this.navigateToMap(region);
+      } else if (act.kind === "place") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
+      else if (act.kind === "hint") new Notice(act.hint);
       return;
     }
 
@@ -5264,7 +5304,7 @@ export class HexMapView extends ItemView {
   private subHexKeyAt(clientX: number, clientY: number): string | null {
     const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
     const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
-    return cell?.region ? `${cell.region}|${cell.x}_${cell.y}` : null;
+    return cell ? `${cell.x}_${cell.y}` : null;
   }
 
   /**
@@ -5275,35 +5315,72 @@ export class HexMapView extends ItemView {
   private paintSubHexAt(clientX: number, clientY: number): string | null {
     const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
     const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
-    if (!cell?.region) return null;
-    const home = regionHome(this.plugin, cell.region);
-    if (!home) return null;
+    if (!cell) return null;
+    const ow = this.activeMapName;
+    const owInfo = overworldOf(this.plugin, ow);
+    if (!owInfo) return null;
+    const layout = owInfo.layout;
     if (this.terrainPickMode && !this.isErasingMode) {
+      if (!cell.region) return null;
       this.terrainPickMode = false;
       this.paintTerrainName = this.plugin.mapStore.get(cell.region, `${cell.x}_${cell.y}`)?.terrain ?? null;
       this.updateToolbarButtonStates();
       return null;
     }
     const terrain = this.isErasingMode ? null : this.paintTerrainName;
-    const brush: [number, number][] = [[cell.x, cell.y]];
-    if (this.paintBrushSize > 1) {
-      const nb = hexNeighbors(cell.x, cell.y, home.layout.orientation, home.layout.childStagger);
-      brush.push(...(this.paintBrushSize === 3 ? [nb[2], nb[3]] : nb));
+    // Each brushed cell goes into the region map that holds it (across
+    // seams), written now so the layer, the minimap and any open view of
+    // that region update during the stroke. Painted cells are locked.
+    const { targets, missed } = paintTargets(
+      layout,
+      brushCells(layout, cell.x, cell.y, this.paintBrushSize),
+      (hex) => regionMapAt(this.plugin.settings.maps, ow, hex)?.name,
+    );
+    if (!targets.length && missed && !this.subStrokeMissHinted) {
+      this.subStrokeMissHinted = true;
+      new Notice(PAINT_NO_REGION_HINT);
     }
-    const ow = home.overworld.name;
-    for (const [x, y] of brush) {
-      const ph = parentOfCell(home.layout, x, y).join("_");
-      const region = regionMapAt(this.plugin.settings.maps, ow, ph);
-      if (!region) continue;
-      const key = `${x}_${y}`;
-      const cur = this.plugin.mapStore.get(region.name, key);
-      const id = `${region.name}|${key}`;
+    for (const { map, key } of targets) {
+      const cur = this.plugin.mapStore.get(map, key);
+      const id = `${map}|${key}`;
       const prev = this.currentSubStroke?.get(id);
       if (prev) prev.newTerrain = terrain;
-      else this.currentSubStroke?.set(id, { map: region.name, key, oldTerrain: cur?.terrain ?? null, oldLocked: !!cur?.locked, newTerrain: terrain });
-      this.plugin.mapStore.set(region.name, key, { terrain, locked: terrain ? true : null });
+      else this.currentSubStroke?.set(id, { map, key, oldTerrain: cur?.terrain ?? null, oldLocked: !!cur?.locked, newTerrain: terrain });
+      if (cur?.terrain === terrain && !!cur?.locked === !!terrain) continue;
+      this.plugin.mapStore.set(map, key, { terrain, locked: terrain ? true : null });
     }
-    return `${cell.region}|${cell.x}_${cell.y}`;
+    return `${cell.x}_${cell.y}`;
+  }
+
+  /** Remember a region map's terrain as drawn (see shownTerrain). */
+  private snapshotShownTerrain(map: MapData): void {
+    this.shownTerrain.clear();
+    if (map.submapKind !== "region") return;
+    const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
+    for (let y = oy; y < oy + rows; y++) {
+      for (let x = ox; x < ox + cols; x++) this.shownTerrain.set(`${x}_${y}`, this.plugin.mapStore.get(map.name, `${x}_${y}`)?.terrain ?? null);
+    }
+  }
+
+  /** Repaint the hexes whose terrain changed since they were drawn (see shownTerrain). */
+  private syncShownTerrain(): void {
+    const map = this.activeMapName;
+    const changes = terrainDiff(this.shownTerrain, (k) => this.plugin.mapStore.get(map, k)?.terrain);
+    for (const [key, terrain] of changes) {
+      this.shownTerrain.set(key, terrain);
+      const [x, y] = key.split("_");
+      const el = this.viewportEl?.querySelector<HTMLElement>(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`);
+      if (el) this.applyTerrainToHexEl(el, terrain);
+    }
+  }
+
+  /** Show an overworld's Regions view (the terrain brush paints there). */
+  private showOverworldRegions(): void {
+    const map = this.getActiveMap();
+    if (OverworldLayer.viewOf(this.plugin, map) !== "biomes") return;
+    map.overworldView = "regions";
+    void this.plugin.saveSettings();
+    this.renderGrid();
   }
 
   /** Enter a region from the overworld, centred on (and flashing) the hex that was clicked. */

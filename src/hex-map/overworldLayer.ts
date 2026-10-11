@@ -41,6 +41,7 @@ import {
 } from "../overworld/overworldRender";
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
 import { overworldOf, overworldTerrain } from "../overworld/regionsVault";
+import { FrameThrottle } from "../overworld/overworldInput";
 
 interface Geometry {
   map: string;
@@ -85,7 +86,8 @@ export class OverworldLayer {
   readonly cache = new RegionBitmapCache<RegionBitmap>();
   private geom: Geometry | null = null;
   private canvas: HTMLCanvasElement | null = null;
-  private redrawTimer: number | null = null;
+  /** Redraws coalesce to one per animation frame, and keep coming during a brush stroke. */
+  private redraws = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
   /** Timings of the last draw (ms) and how many region bitmaps it built. */
   lastStats = { ms: 0, builds: 0, regions: 0, cells: 0 };
 
@@ -108,8 +110,6 @@ export class OverworldLayer {
     this.canvas?.remove();
     this.canvas = null;
     this.geom = null;
-    if (this.redrawTimer !== null) window.clearTimeout(this.redrawTimer);
-    this.redrawTimer = null;
   }
 
   /** Draw the layer for `map` into `grid` (call after the hexes are laid out). */
@@ -152,14 +152,16 @@ export class OverworldLayer {
     this.cache.invalidate(regionName);
   }
 
-  /** The overworld itself changed (biomes view): redraw. */
+  /**
+   * Something on the layer changed (a region painted, the overworld's
+   * biomes): redraw on the next animation frame. Only invalidated region
+   * bitmaps are rebuilt; the rest are copied from the cache.
+   */
   scheduleRedraw(): void {
     if (!this.canvas) return;
-    if (this.redrawTimer !== null) window.clearTimeout(this.redrawTimer);
-    this.redrawTimer = window.setTimeout(() => {
-      this.redrawTimer = null;
+    this.redraws.request(() => {
       if (this.canvas?.isConnected) this.draw();
-    }, 120);
+    });
   }
 
   /**
