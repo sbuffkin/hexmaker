@@ -11,6 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFile, execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
+import { stopUntilGone } from "./concurrency.mjs";
 
 export const TOOLS_DIR = process.env.UX_TOOLS_DIR
   ?? process.env.UX_SANDBOX_DIR
@@ -45,7 +46,13 @@ export async function createSandbox({ pluginDir, seed, pluginData, name }) {
 }
 
 export const launchSandbox = (runDir) => sandbox(["launch", "--run", runDir, "--width", "1400", "--height", "900"], { timeout: 240_000 });
-export const stopSandbox = (runDir) => sandbox(["stop", "--run", runDir], { timeout: 60_000 });
+/** One stop (sandbox.mjs waits ~5 s for the processes to go). */
+export const stopSandboxOnce = (runDir) => sandbox(["stop", "--run", runDir], { timeout: 180_000 });
+/**
+ * Stop a run and keep at it (up to ~30 s more) while its processes are
+ * still there: on a busy machine an Electron can take a while to exit.
+ */
+export const stopSandbox = (runDir) => stopUntilGone(() => stopSandboxOnce(runDir), { attempts: 7, waitMs: 5000 });
 
 /**
  * Every Obsidian.exe process: { pid, main, cmd }. `main` = the browser

@@ -4,7 +4,7 @@
  * LOCALLY before merging into feat/region-notes and before any live-vault
  * deploy; CI keeps the Obsidian-free tests).
  *
- *   node dev/smoke/run.mjs [--jobs 4] [--only fresh,v155] [--build <dir>] [--no-build] [--keep] [--list]
+ *   node dev/smoke/run.mjs [--jobs N] [--only fresh,v155] [--build <dir>] [--no-build] [--keep] [--list]
  *
  * Windows node (Obsidian is a Windows app). From WSL use `npm run smoke`,
  * which hands over to node.exe (dev/smoke/cli.mjs).
@@ -16,9 +16,13 @@
  * 2. Per vault setup (setups.mjs): builds the fixture, `sandbox.mjs create`
  *    (own vault + Electron profile), optionally a prep launch that builds
  *    maps through the plugin API, then a check launch running C1–C8, then a
- *    restart launch for C5. At most --jobs sandboxes at once (max 4).
- * 3. Stops every sandbox it started and checks no other Obsidian was
- *    touched (main-process count and pids before == after).
+ *    restart launch for C5. At most --jobs sandboxes at once (max 4);
+ *    without --jobs, as many as free memory and CPU allow
+ *    (lib/concurrency.mjs: fewer when the machine is busy).
+ * 3. Stops every sandbox it started (retrying while its processes linger)
+ *    and checks none of ITS processes are left. Other Obsidian processes
+ *    (the owner's, other sessions' runs) may start or stop meanwhile; they
+ *    are only reported, never counted against the run.
  * 4. Writes dev/smoke/last-run.json, and dev/smoke/last-pass.json when
  *    every setup passed: { commit, dirty, buildHash, setups, results }.
  *
@@ -34,6 +38,7 @@ import { fileURLToPath } from "node:url";
 import {
   common, createSandbox, launchSandbox, stopSandbox, connectPage, obsidianProcesses, pluginErrors, shot, sleep,
 } from "./lib/obsidian.mjs";
+import { machineLoad, pickJobs } from "./lib/concurrency.mjs";
 import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHashes, verifyPaletteUpgrade } from "./lib/disk.mjs";
 import * as P from "./lib/page.mjs";
 import { canon, jsonDiff, oneTimeOnly } from "./lib/compare.mjs";
@@ -48,7 +53,8 @@ const argv = process.argv.slice(2);
 const flag = (k) => argv.includes(`--${k}`);
 const val = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
 if (flag("help") || flag("h")) {
-  console.log("usage: node dev/smoke/run.mjs [--jobs 4] [--only a,b] [--build <dir>] [--no-build] [--keep] [--list]");
+  console.log("usage: node dev/smoke/run.mjs [--jobs N] [--only a,b] [--build <dir>] [--no-build] [--keep] [--list]");
+  console.log("  --jobs N  sandboxes at once (1-4); default: picked from free memory and CPU load");
   process.exit(0);
 }
 if (flag("list")) {
@@ -59,7 +65,8 @@ if (process.platform !== "win32") {
   console.error("dev/smoke/run.mjs drives Windows Obsidian: run it with Windows node, or `npm run smoke` from WSL.");
   process.exit(2);
 }
-const jobs = Math.max(1, Math.min(4, Number(val("jobs", "4")) || 4));
+const jobsPick = pickJobs({ requested: val("jobs", null), ...(await machineLoad()) });
+const jobs = jobsPick.jobs;
 const only = val("only", null)?.split(",").map((s) => s.trim()).filter(Boolean) ?? null;
 if (only) {
   const unknown = only.filter((o) => !SETUPS.some((s) => s.id === o));
@@ -390,7 +397,7 @@ async function pool(items, n, fn) {
 }
 
 const t0 = Date.now();
-log(`${selected.length} setups, ${jobs} at a time: ${selected.map((s) => s.id).join(", ")}`);
+log(`${selected.length} setups, ${jobs} at a time (${jobsPick.reason}): ${selected.map((s) => s.id).join(", ")}`);
 let results;
 const onSignal = async () => {
   log("interrupted: stopping sandboxes");
@@ -407,7 +414,10 @@ try {
 
 if (latestBefore !== null) fs.writeFileSync(latestFile, latestBefore);
 
-// ── 3. other Obsidian processes untouched ────────────────────────────────
+// ── 3. none of this suite's Obsidian processes left ──────────────────────
+// Only processes of runs this suite created count. Other Obsidian processes
+// (the owner's, another session's smoke run) can start or stop at any time
+// while the suite runs; they are reported, never compared.
 await sleep(1000);
 const procsAfter = obsidianProcesses();
 const mineProfiles = started.map((s) => s.profile.toLowerCase());
@@ -415,15 +425,12 @@ const isMine = (p) => mineProfiles.some((m) => p.cmd.toLowerCase().includes(m));
 const otherBefore = procsBefore.filter((p) => p.main && !isMine(p));
 const otherAfter = procsAfter.filter((p) => p.main && !isMine(p));
 const leftMine = procsAfter.filter(isMine);
-const vanished = otherBefore.filter((p) => !procsAfter.some((q) => q.pid === p.pid));
 const safety = {
+  // Information only (see above).
   otherObsidianBefore: otherBefore.length,
   otherObsidianAfter: otherAfter.length,
-  otherPidsBefore: otherBefore.map((p) => p.pid),
-  otherPidsAfter: otherAfter.map((p) => p.pid),
-  vanished: vanished.map((p) => p.pid),
   sandboxProcessesLeft: leftMine.length,
-  ok: otherBefore.length === otherAfter.length && vanished.length === 0 && leftMine.length === 0,
+  ok: leftMine.length === 0,
 };
 
 // ── 4. record ────────────────────────────────────────────────────────────
@@ -439,6 +446,7 @@ const record = {
   version: manifest.version,
   seconds: Math.round((Date.now() - t0) / 1000),
   jobs,
+  jobsReason: jobsPick.reason,
   setups: results.map((r) => r.id),
   safety,
   results: Object.fromEntries(results.map((r) => [r.id, { ok: r.ok, ...(r.skipped ? { skipped: r.skipped } : {}), title: r.title, seconds: r.seconds, runDir: r.ok && !keep ? null : r.runDir, checks: r.checks }])),
@@ -460,7 +468,7 @@ for (const r of results) {
   console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.id.padEnd(15)} ${String(r.seconds).padStart(4)} s  ${r.checks.length} checks${gaps.length ? `, ${gaps.length} known gap(s)` : ""}`);
   for (const f of fails) console.log(`      ✗ ${f.check}: ${f.detail.split("\n")[0].slice(0, 400)}`);
 }
-console.log(`other Obsidian: ${safety.otherObsidianBefore} before, ${safety.otherObsidianAfter} after${safety.vanished.length ? `; VANISHED ${safety.vanished}` : ""}; sandbox processes left: ${safety.sandboxProcessesLeft}`);
+console.log(`sandbox processes left: ${safety.sandboxProcessesLeft} (other Obsidian, not counted: ${safety.otherObsidianBefore} before, ${safety.otherObsidianAfter} after)`);
 const skipped = results.filter((r) => r.skipped).length;
 console.log(`${allOk ? "SMOKE PASSED" : "SMOKE FAILED"}${skipped ? ` (${skipped} setup(s) SKIPPED)` : ""} (${record.seconds} s, build ${buildHash}, commit ${record.commit?.slice(0, 7)}${record.dirty ? " +dirty" : ""}) → ${path.join(HERE, allOk ? "last-pass.json" : "last-run.json")}`);
 process.exit(allOk ? 0 : 1);
