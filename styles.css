@@ -8463,6 +8463,73 @@ button.duckmage-terrain-legend-chip {
     padding-right: 4px;
 }
 
+/* "Edit region…" (#49): compact, never taller than the window, body scrolls. */
+.modal.duckmage-edit-region-modal.duckmage-editor-modal-drag {
+    width: min(480px, 94vw);
+    min-width: 0;
+    min-height: 0;
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+}
+.duckmage-edit-region-modal > .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.duckmage-edit-region-modal h4 {
+    margin: 0.6em 0 0.3em;
+}
+.duckmage-edit-region-modal input.duckmage-edit-region-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+.duckmage-edit-region-modal .duckmage-map-origin-desc {
+    margin: 0.3em 0;
+}
+.duckmage-edit-region-modal .duckmage-token-modal-buttons {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+.duckmage-edit-region-biome-show {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-edit-region-dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 10px;
+    margin: 0;
+    font-size: 0.9em;
+}
+.duckmage-edit-region-dl dt {
+    color: var(--text-muted);
+}
+.duckmage-edit-region-dl dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.duckmage-edit-region-neighbour + .duckmage-edit-region-neighbour::before {
+    content: ", ";
+    color: var(--text-normal);
+}
+.duckmage-edit-region-notes-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.duckmage-edit-region-notes-status {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+textarea.duckmage-edit-region-notes-input {
+    width: 100%;
+    min-height: 4.5em;
+    resize: vertical;
 /* Biomes list and the Add / Edit biome form (#50). */
 .duckmage-biome-list {
     display: grid;

@@ -1617,6 +1617,30 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 const coord = (n: number) => (n < 0 ? `−${-n}` : String(n));
 
 /**
+ * Hexes per terrain (the Summary's legend; also shown by "Edit region…"):
+ * every cell of the grid when it has a size (unlisted ones count as the
+ * base terrain, or as `blank`), else just the listed rows.
+ */
+export function terrainCounts(
+  hexes: ReadonlyMap<string, Pick<HexData, "terrain">>,
+  s: { baseTerrain?: string; gridSize?: { cols: number; rows: number }; gridOffset?: { x: number; y: number } },
+): { counts: Map<string, number>; blank: number } {
+  const counts = new Map<string, number>();
+  let blank = 0;
+  const base = s.baseTerrain;
+  const count = (t: string | undefined) => { if (t) counts.set(t, (counts.get(t) ?? 0) + 1); else blank++; };
+  const g = s.gridSize, o = s.gridOffset ?? { x: 0, y: 0 };
+  if (g && g.cols > 0 && g.rows > 0) {
+    for (let y = o.y; y < o.y + g.rows; y++) {
+      for (let x = o.x; x < o.x + g.cols; x++) count(hexes.get(`${x}_${y}`)?.terrain || base);
+    }
+  } else {
+    for (const h of hexes.values()) if (h.terrain) count(h.terrain);
+  }
+  return { counts, blank };
+}
+
+/**
  * The Summary section: derived from the note's data and the palette,
  * written on every write, never read. No headings inside (see summaryRange).
  */
@@ -1632,20 +1656,12 @@ export function summaryLines(data: MapNoteData, ctx: MapNoteContext = {}): strin
     bullets.push(`- **Palette:** ${note && linkSafe(note) && linkSafe(pal) ? (note.split("/").pop() === pal ? `[[${note}]]` : `[[${note}|${pal}]]`) : pal}`);
   }
 
-  // Terrain per hex: the grid's cells when it has a size, else the listed rows.
-  const counts = new Map<string, number>();
-  let blank = 0;
   const base = s.baseTerrain;
-  const count = (t: string | undefined) => { if (t) counts.set(t, (counts.get(t) ?? 0) + 1); else blank++; };
   const g = s.gridSize, o = s.gridOffset ?? { x: 0, y: 0 };
   if (g && g.cols > 0 && g.rows > 0) {
     bullets.push(`- **Hexes:** ${coord(o.x)}…${coord(o.x + g.cols - 1)} × ${coord(o.y)}…${coord(o.y + g.rows - 1)} (${g.cols}×${g.rows})`);
-    for (let y = o.y; y < o.y + g.rows; y++) {
-      for (let x = o.x; x < o.x + g.cols; x++) count(data.hexes.get(`${x}_${y}`)?.terrain || base);
-    }
-  } else {
-    for (const h of data.hexes.values()) if (h.terrain) count(h.terrain);
   }
+  const { counts, blank } = terrainCounts(data.hexes, s);
   bullets.push(base
     ? `- **Base terrain:** ${base} (hexes not listed in the table)${unknown(base) ? " ⚠ not in the palette" : ""}`
     : "- **Base terrain:** none (hexes not listed have no terrain)");

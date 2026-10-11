@@ -79,6 +79,7 @@ import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
 import { OverworldLayer } from "./overworldLayer";
 import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
+import { EditRegionModal } from "./EditRegionModal";
 import { inOverworldGrid, overworldOf, regionHome, regionPalette, walkLock } from "../overworld/regionsVault";
 import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets } from "../overworld/overworldInput";
 import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
@@ -4569,6 +4570,13 @@ export class HexMapView extends ItemView {
     // only fires when drawingMode === null.
     if (this.drawingMode !== null) return;
 
+    // Overworlds are the big-picture view (#49): region-level items only,
+    // no hex editor.
+    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
+      this.showOverworldMenu(evt, x, y);
+      return;
+    }
+
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
     // Terrain, icon and submap live in the map note, and a hex can have them
     // before its hex note exists (a generated map, a submap made from this
@@ -4580,28 +4588,6 @@ export class HexMapView extends ItemView {
       ?? { locations: getHexMapsFromFile(this.app, hexPath).locations });
 
     const menu = new Menu();
-
-    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
-      // Placing a biome (empty hex) or changing a placed region (God):
-      // locked items are shown disabled with their hint, and open nothing.
-      const hasRegion = !!regionMapAt(this.plugin.settings.maps, this.activeMapName, `${x}_${y}`);
-      for (const it of overworldMenu(this.getActiveMap(), hasRegion)) {
-        if (it.id === "enter-region") continue; // the "Enter region: <name>" item below
-        menu.addItem((item) => {
-          item
-            .setTitle(it.enabled ? it.title : `${it.title} (${it.hint})`)
-            .setIcon(it.id === "edit-region" ? "settings-2" : "trees")
-            .setDisabled(!it.enabled);
-          if (it.enabled) item.onClick(() => new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open());
-        });
-      }
-      menu.addItem((item) =>
-        item
-          .setTitle("Edit hex…")
-          .setIcon("pencil")
-          .onClick(() => this.openHexEditorModal(x, y)),
-      );
-    }
 
     menu.addItem((item) =>
       item
@@ -4744,6 +4730,47 @@ export class HexMapView extends ItemView {
     menu.showAtMouseEvent(evt);
   }
 
+  /**
+   * An overworld hex's right-click menu (overworldMenu): Enter region and
+   * Edit region… on a region, Set biome… on an empty hex, Center, and the
+   * hex's Locations. In the Regions view the brick under the pointer counts.
+   */
+  private showOverworldMenu(evt: MouseEvent, x: number, y: number): void {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const cell = OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "regions" && grid
+      ? this.overworldLayer.cellAt(grid, evt.clientX, evt.clientY) : null;
+    const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
+    const key = `${px}_${py}`;
+    const region = regionMapAt(this.plugin.settings.maps, this.activeMapName, key)?.name;
+    const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
+    const menu = new Menu();
+    const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", "set-biome": "trees", center: "crosshair", locations: "list" };
+    for (const it of overworldMenu(this.getActiveMap(), !!region, locations)) {
+      menu.addItem((item) => {
+        item
+          .setTitle(it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`)
+          .setIcon(icons[it.id] ?? "dot")
+          .setDisabled(!it.enabled);
+        if (!it.enabled) return;
+        item.onClick(() => {
+          if (it.id === "enter-region" && region) {
+            if (cell) this.enterRegionAt(region, cell.x, cell.y);
+            else this.navigateToMap(region);
+          } else if (it.id === "edit-region") this.openEditRegion(px, py);
+          else if (it.id === "set-biome") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
+          else if (it.id === "center") this.centerOnHex(px, py);
+          else if (it.id === "locations") this.openLocationsList(px, py);
+        });
+      });
+    }
+    menu.showAtMouseEvent(evt);
+  }
+
+  /** "Edit region…" for the region on overworld hex (px, py). */
+  openEditRegion(px: number, py: number): void {
+    new EditRegionModal({ ...this.biomeHost(), openLocations: (hx, hy) => this.openLocationsList(hx, hy) }, this.activeMapName, px, py).open();
+  }
+
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {
     if (this.drawingMode === "path") {
       this.pathTool.click(x, y, e, this.isErasingMode);
@@ -4810,6 +4837,8 @@ export class HexMapView extends ItemView {
       }
     }
 
+    // No hex editor on an overworld (#49): it's the big-picture view.
+    if (ow) return;
     this.openHexEditorModal(x, y);
   }
 

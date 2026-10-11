@@ -55,7 +55,7 @@ export class OverworldMinimap {
       sw.createSpan({ cls: "duckmage-ow-view-label", text: "View:" });
       for (const [id, label, tip] of [
         ["regions", "Regions", "Every region's hexes, stitched together (blank bricks where there's none yet). Click to enter a region; the terrain tool paints its hexes."],
-        ["biomes", "Biomes", "One biome per hex. Click a hex to enter its region, or to set the biome of one with none yet. Right-click → Edit region… changes a placed one (God mode)."],
+        ["biomes", "Biomes", "One biome per hex. Click a hex to enter its region, or to set the biome of one with none yet. Right-click a region → Edit region… for its name, biome and notes."],
       ] as const) {
         const on = view === id;
         const b = sw.createEl("button", { text: label, cls: on ? "is-active" : "", attr: { title: on ? `${tip} (showing now)` : tip, "aria-pressed": on ? "true" : "false" } });
