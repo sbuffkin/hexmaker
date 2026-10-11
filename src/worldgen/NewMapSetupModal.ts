@@ -415,8 +415,8 @@ export class NewMapSetupModal extends HexmakerModal {
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
     this.rememberBox(genRow, "generator", "NewMap.rememberGenerator", "generator and its options");
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
-    /** The chosen generator's Advanced options (inside the Advanced dropdown). */
-    let advOpts: HTMLElement | undefined;
+    /** The chosen generator's options placed off the main form, one box per section (Advanced, Debug). */
+    const optBoxes = new Map<HTMLElement, HTMLElement>();
 
     // ── Base terrain ──
     const baseRow = this.row(form, "Base terrain");
@@ -607,17 +607,20 @@ export class NewMapSetupModal extends HexmakerModal {
         this.seaFromNeighbour = true;
       }
       let worldTypesRow: HTMLElement | undefined;
-      // Advanced options go first in the Advanced dropdown, in their own box.
-      advOpts?.remove();
-      advOpts = undefined;
+      // Options off the main form go in their own box: first in Advanced,
+      // after the title in Debug.
+      for (const b of optBoxes.values()) b.remove();
+      optBoxes.clear();
       const optionHost = (id: string | undefined): HTMLElement | null => {
         const at = id ? disclosure.target(id, optsBox) : optsBox;
         if (!at || at === optsBox) return at;
-        if (!advOpts?.isConnected) {
-          advOpts = at.createDiv({ cls: "duckmage-setup-options" });
-          at.prepend(advOpts);
+        let box = optBoxes.get(at);
+        if (!box?.isConnected) {
+          box = at.createDiv({ cls: "duckmage-setup-options" });
+          if (!at.hasClass("duckmage-disclosure-debug")) at.prepend(box);
+          optBoxes.set(at, box);
         }
-        return advOpts;
+        return box;
       };
       for (const opt of kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []) {
         const host = optionHost(newMapOptionId(kind?.id ?? "", opt.key));
