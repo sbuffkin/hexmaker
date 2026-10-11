@@ -7,7 +7,7 @@
  */
 
 import type { HexmakerModule } from "../types";
-import { SPACE_TERRAIN_GROUPS, SPACE_TERRAIN_TYPES } from "./terrainTypes";
+import { SPACE_TERRAIN_GROUPS, SPACE_TERRAIN_TYPES, refinedSpaceType } from "./terrainTypes";
 import { SPACE_PRESETS } from "./presets";
 import { BUNDLED_SPACE_ICONS } from "./spaceIcons";
 import { SPACE_TABLE_ROLES } from "./tableRoles";
@@ -43,6 +43,7 @@ export const spaceModule: HexmakerModule = {
   },
   terrainTypes: SPACE_TERRAIN_TYPES,
   terrainGroups: SPACE_TERRAIN_GROUPS,
+  refineTerrainType: refinedSpaceType,
   iconPack: { id: "space", label: "Space", prefix: "space-", icons: BUNDLED_SPACE_ICONS },
   palettes: SPACE_PRESETS,
   tableRoles: SPACE_TABLE_ROLES,

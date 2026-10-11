@@ -14,7 +14,8 @@ import {
   resolveMapKinds,
   terrainsForTables,
 } from "../src/mapKinds";
-import { TERRAIN_GROUPS, TERRAIN_TYPES, inferTerrainType, normalizeTerrainType, refinedSpaceType } from "../src/terrainTypes";
+import { TERRAIN_GROUPS, TERRAIN_TYPES, inferTerrainType, normalizeTerrainType } from "../src/terrainTypes";
+import { refinedSpaceType } from "../src/modules/space/terrainTypes";
 import { PALETTE_PRESETS, getPreset } from "../src/palettes/presets";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
 import { ICON_PACK_LABELS, defaultIconPack, iconLabel, iconPack, iconPackTabs, sortIcons } from "../src/utils";

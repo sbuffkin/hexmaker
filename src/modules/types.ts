@@ -24,6 +24,7 @@ import type { GeneratedPath, TerrainGeneratorKind } from "../worldgen/registry";
 import type { GridSpec } from "../worldgen/generators";
 import type { ProcGrid } from "../worldgen/procedural/common";
 import type { MapPath } from "../types";
+import type { TAbstractFile } from "obsidian";
 
 /** A map type id ("world", "space"). Stable, never reused. */
 export type KindId = string;
@@ -163,6 +164,12 @@ export interface HexmakerModule {
   palettes?: readonly PalettePreset[];
   /** Table roles of the engines this module's generators run. */
   tableRoles?: readonly EngineRoleDef[];
+  /**
+   * One-time upgrade of terrains typed before this module's finer types
+   * existed (run once per vault by the palette data upgrade): the refined
+   * type, or undefined to leave the terrain as is.
+   */
+  refineTerrainType?: (t: { name: string; type?: string }) => string | undefined;
   /** Keys a random table's When column may use. */
   tableConditions?: readonly TableConditionDef[];
   /** Engines this module's generators run (the recipe `engine:` vocabulary). */
@@ -193,6 +200,62 @@ export interface GeneratorContribution extends TerrainGeneratorKind {
 }
 
 /**
+ * A module's store of notes (Space: the World types tables). The plugin
+ * starts it at layout ready and hands it the vault's file events.
+ */
+export interface ModuleStore {
+  /** Stable id ("world-types"). */
+  readonly id: string;
+  /** Read the notes (and write any the module seeds). */
+  init(): Promise<void>;
+  /** Re-read everything (its folder setting changed). */
+  reload?(): Promise<void>;
+  /** The folder its notes live in (left out of template-note rules and format upgrades). */
+  folder?(): string;
+  onCreate?(f: TAbstractFile): void;
+  onModify?(f: TAbstractFile): void;
+  onDelete?(f: TAbstractFile): void;
+  onRename?(f: TAbstractFile, oldPath: string): void;
+}
+
+/** A command a module adds (registered only when the module is compiled in). */
+export interface CommandContribution {
+  /** Command id (the palette shows "<plugin name>: <name>"). */
+  id: string;
+  name: string;
+  /** Only while the module's map type is on (Settings → Map types). */
+  onlyWhenOn?: boolean;
+  /** Can it run now? Default yes. */
+  available?(plugin: HexmakerPlugin): boolean;
+  run(plugin: HexmakerPlugin): void | Promise<void>;
+}
+
+/**
+ * A folder setting a module adds, shown in both settings paths (the
+ * declarative definitions and the display() fallback). Its `id` is the
+ * placement id (src/ui/placement.ts) that decides where it shows.
+ */
+export interface FolderSettingContribution {
+  id: string;
+  /** The settings key (an owned key: written only once set). */
+  key: string;
+  name: string;
+  placeholder: string;
+  desc: string;
+  /** After the value is saved (re-read the module's notes). */
+  changed?(plugin: HexmakerPlugin): void;
+}
+
+/**
+ * The "ref-links" note format upgrade for a module's notes: which folder
+ * they live in, and the rewrite of one (undefined: not one of its notes).
+ */
+export interface RefLinker {
+  folder(): string;
+  rewrite(text: string, links: { paletteNote(name: string): string | undefined }): string | undefined;
+}
+
+/**
  * The runtime half of a module (see the top of this file): host-bound
  * pieces, read only by the plugin and its services (src/modules/runtime.ts).
  */
@@ -201,4 +264,11 @@ export interface ModuleRuntime {
   id: string;
   /** Built-in generators (Star scatter, Overland…). */
   generators?(plugin: HexmakerPlugin, helpers: GeneratorHelpers): GeneratorContribution[];
+  /** Note stores, made once with the plugin. */
+  stores?(plugin: HexmakerPlugin): ModuleStore[];
+  commands?: readonly CommandContribution[];
+  folderSettings?: readonly FolderSettingContribution[];
+  refLinkers?(plugin: HexmakerPlugin): RefLinker[];
+  /** The module's map type was just turned on (setup or Settings): install its shipped content once. */
+  onEnabled?(plugin: HexmakerPlugin): Promise<void>;
 }

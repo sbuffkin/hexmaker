@@ -1,4 +1,5 @@
 import { describe, it } from "node:test";
+import { spaceRuntime } from "../src/modules/space/runtime";
 import expect from "expect";
 import { gunzipSync } from "node:zlib";
 import {
@@ -229,7 +230,7 @@ function host(files: Record<string, string>) {
 			notePath: (m: string) => `hexes/${m}/_${m}.md`,
 		},
 		paletteStore: { notePathOf: (n: string) => (installed.has(n) ? `world/palettes/${n}.md` : undefined), folder: () => "world/palettes" },
-		worldTypeStore: { folder: () => "world/world-types" },
+		moduleRefLinks: spaceRuntime.refLinkers!({ worldTypeStore: { folder: () => "world/world-types" } } as never),
 		hexMapDataView: (map, x, y) => ({ map, mapLabel: map, x, y }),
 		saveSettings: async () => { saves++; },
 	};

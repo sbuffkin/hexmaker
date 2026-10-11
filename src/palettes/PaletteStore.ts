@@ -24,7 +24,7 @@ import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
 import { ADDED_PRESET_PATH_FIELDS, ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
-import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
+import { inferTerrainType, refinedTerrainType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 
 /**
@@ -50,7 +50,7 @@ export function seedTerrainTypes(palettes: TerrainPalette[]): number {
  * One-time upgrade of data that used to be worked out from names at run
  * time, so from now on only what the palette note says counts:
  *  - space terrains typed before the space roles had their own types get
- *    them (a "moon" typed world becomes a moon; see refinedSpaceType);
+ *    them (a "moon" typed world becomes a moon; see refinedTerrainType);
  *  - an installed palette named like a built-in preset gets that preset's
  *    child palette and Submap defaults rows it doesn't have yet (they used
  *    to be borrowed from the preset by name on every lookup).
@@ -61,7 +61,7 @@ export function upgradePaletteData(palettes: TerrainPalette[]): number {
   for (const pal of palettes) {
     let changed = false;
     for (const t of pal.terrains) {
-      const refined = refinedSpaceType(t);
+      const refined = refinedTerrainType(t);
       if (refined) { t.type = refined; changed = true; }
     }
     const preset = getPreset(pal.name);

@@ -8,7 +8,16 @@
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "./types";
+import type {
+  CommandContribution,
+  FolderSettingContribution,
+  GeneratorContribution,
+  GeneratorHelpers,
+  ModuleRuntime,
+  ModuleStore,
+  RefLinker,
+} from "./types";
+import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
@@ -20,4 +29,35 @@ export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpe
   return MODULE_RUNTIMES
     .flatMap((m) => m.generators?.(plugin, helpers) ?? [])
     .sort((a, b) => a.order - b.order);
+}
+
+/** Every module's note stores, made once with the plugin (in module order). */
+export function createModuleStores(plugin: HexmakerPlugin): ModuleStore[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.stores?.(plugin) ?? []);
+}
+
+/** Every module's commands, each with the map type it waits on (onlyWhenOn). */
+export function moduleCommands(): { command: CommandContribution; kind?: string }[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.commands ?? []).map((command) => ({
+    command,
+    ...(command.onlyWhenOn ? { kind: registry.module(m.id)?.kind?.id } : {}),
+  })));
+}
+
+/** Every module's folder settings, in module order. */
+export function moduleFolderSettings(): FolderSettingContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.folderSettings ?? [])]);
+}
+
+/** Every module's "ref-links" rewriters for its own notes. */
+export function moduleRefLinkers(plugin: HexmakerPlugin): RefLinker[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.refLinkers?.(plugin) ?? []);
+}
+
+/** Run the onEnabled hook of each module whose map type is in `kinds` (just turned on), in module order. */
+export async function runOnEnabled(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void> {
+  for (const m of MODULE_RUNTIMES) {
+    const kind = registry.module(m.id)?.kind?.id;
+    if (kind && kinds.includes(kind)) await m.onEnabled?.(plugin);
+  }
 }

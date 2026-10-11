@@ -100,6 +100,6 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
   }
   if (plugin.worldTypeStore.list().some((t) => !plugin.worldTypeStore.isConverted(t.name))) {
     const btn = el.createEl("button", { text: "Convert world types to tables…", attr: { title: "Write each world types table as random tables under the tables folder (backed up first; the old notes are kept)" } });
-    btn.addEventListener("click", () => void plugin.convertWorldTypes().then(rerender));
+    btn.addEventListener("click", () => void plugin.runModuleCommand("convert-world-types").then(rerender));
   }
 }

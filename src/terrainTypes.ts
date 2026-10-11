@@ -182,25 +182,14 @@ export function inferTerrainType(name: string, category?: string, kind?: MapKind
 }
 
 /**
- * One-time upgrade for palettes typed before the space roles got their own
- * types (moon, comet, debris, starport, jump point, jump limit, star
- * system). Back then Orbits and Star scatter told those apart by name
- * inside a coarser type; this turns the same name rule into the terrain's
- * Type once, so from then on the Type column alone decides (and can be
- * changed). Returns the refined type, or undefined to leave it as is.
+ * One-time upgrade of a terrain typed before its module's finer types
+ * existed (Space: a "moon" typed world becomes a moon): the first module
+ * refinement that answers. Undefined: leave it as is.
  */
-export function refinedSpaceType(t: { name: string; type?: string }): string | undefined {
-  const n = t.name;
-  switch (t.type) {
-    case "world": return /\bmoons?\b|satellite/i.test(n) ? "moon" : undefined;
-    case "asteroids":
-      if (/comet/i.test(n)) return "comet";
-      return /debris|wreck/i.test(n) ? "debris" : undefined;
-    case "station":
-      if (/jump|gate/i.test(n)) return "jump-point";
-      return /port/i.test(n) ? "starport" : undefined;
-    case "void": return /limit/i.test(n) ? "jump-limit" : undefined;
-    case "star": return /system/i.test(n) ? "star-system" : undefined;
-    default: return undefined;
+export function refinedTerrainType(t: { name: string; type?: string }): string | undefined {
+  for (const refine of registry.terrainTypeRefinements()) {
+    const r = refine(t);
+    if (r) return r;
   }
+  return undefined;
 }

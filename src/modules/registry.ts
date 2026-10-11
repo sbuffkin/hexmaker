@@ -90,6 +90,11 @@ export class ModuleRegistry {
     return this.modules.flatMap((m) => (m.kind && m.tableRoles?.length ? [m.kind.id] : []));
   }
 
+  /** Each module's one-time terrain type refinement, in registry order. */
+  terrainTypeRefinements(): ((t: { name: string; type?: string }) => string | undefined)[] {
+    return this.modules.flatMap((m) => (m.refineTerrainType ? [m.refineTerrainType] : []));
+  }
+
   terrainGroups(): TerrainGroupDef[] {
     return this.modules.flatMap((m) => [...(m.terrainGroups ?? [])]);
   }

@@ -37,8 +37,9 @@ import { biomePoolsFolder, fillBiomeColumns } from "./overworld/overworldGen";
 import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
-import { WorldTypeStore } from "./space/WorldTypeStore";
-import { WorldTypesModal } from "./space/WorldTypesModal";
+import type { WorldTypeStore } from "./space/WorldTypeStore";
+import { createModuleStores, moduleCommands, moduleRefLinkers, runOnEnabled } from "./modules/runtime";
+import type { ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
@@ -75,7 +76,6 @@ import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction } from "./workMode";
-import { contentFolder } from "./notePickers";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
 import type { RoleId } from "./worldgen/tableRoles";
@@ -123,8 +123,20 @@ export default class HexmakerPlugin extends Plugin {
   paletteStore = new PaletteStore(this);
   /** Overworld biome notes (#50). */
   biomeStore = new BiomeStore(this);
-  /** World types tables for the space generators (src/space). */
-  worldTypeStore = new WorldTypeStore(this);
+  /** Each module's note stores (src/modules/runtime.ts), made once with the plugin. */
+  readonly moduleStores: ModuleStore[] = createModuleStores(this);
+  /** A module's store by id. */
+  moduleStore(id: string): ModuleStore | undefined {
+    return this.moduleStores.find((s) => s.id === id);
+  }
+  /** World types tables for the space generators (the Space module's store). */
+  get worldTypeStore(): WorldTypeStore {
+    return this.moduleStore("world-types") as WorldTypeStore;
+  }
+  /** Each module's "ref-links" rewriters for its own notes (note format upgrade NF3). */
+  get moduleRefLinks(): RefLinker[] {
+    return moduleRefLinkers(this);
+  }
   /** The tables folder's notes in memory, for rolls the generators make (src/random-tables/TableNotes.ts). */
   tableNotes!: TableNotes;
   /** Places made on arrival: roll, make, reroll, lock (src/arrival). */
@@ -186,14 +198,14 @@ export default class HexmakerPlugin extends Plugin {
       // migrate per-hex data out of hex notes on the first run.
       const biomesReady = this.biomeStore.init();
       void this.tableNotes.init();
-      const worldTypesReady = this.worldTypeStore.init();
+      const moduleStoresReady = Promise.all(this.moduleStores.map((st) => st.init()));
       const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
       // BC1, once per vault: every overworld hex's biome in its Biome column.
       void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
-      // generator and world types notes in the new note formats (backed up first).
-      void Promise.all([storesReady, worldTypesReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
+      // generator and modules' notes (world types) in the new note formats (backed up first).
+      void Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -231,7 +243,7 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onModify(f);
         this.biomeStore.onModify(f);
-        this.worldTypeStore.onModify(f);
+        for (const st of this.moduleStores) st.onCreate?.(f);
         this.mapStore.onCreate(f);
       }),
     );
@@ -241,7 +253,7 @@ export default class HexmakerPlugin extends Plugin {
         this.mapStore.onDelete(f);
         this.paletteStore.onDelete(f);
         this.biomeStore.onDelete(f);
-        this.worldTypeStore.onDelete(f);
+        for (const st of this.moduleStores) st.onDelete?.(f);
         this.calloutMemory.forget(f.path);
       }),
     );
@@ -250,7 +262,7 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
         this.paletteStore.onRename(f, oldPath);
         this.biomeStore.onRename(f, oldPath);
-        this.worldTypeStore.onRename(f, oldPath);
+        for (const st of this.moduleStores) st.onRename?.(f, oldPath);
         this.calloutMemory.rename(oldPath, f.path);
         if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
       }),
@@ -267,7 +279,7 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("modify", (f) => {
         this.paletteStore.onModify(f);
         this.biomeStore.onModify(f);
-        this.worldTypeStore.onModify(f);
+        for (const st of this.moduleStores) st.onModify?.(f);
         this.mapStore.onModify(f);
       }),
     );
@@ -315,27 +327,19 @@ export default class HexmakerPlugin extends Plugin {
       name: "Open palette editor",
       callback: () => void this.openPaletteEditor(),
     });
-    this.addCommand({
-      id: "edit-world-types",
-      name: "Edit world types…",
-      checkCallback: (checking) => {
-        if (!enabledKinds(this.settings).has("space")) return false;
-        if (!checking) {
-          const open = this.app.workspace.getActiveViewOfType(HexMapView);
-          new WorldTypesModal(this.app, this, open?.activeMapName).open();
-        }
-        return true;
-      },
-    });
-    this.addCommand({
-      id: "convert-world-types",
-      name: "Convert world types to tables",
-      checkCallback: (checking) => {
-        if (!this.worldTypeStore.list().some((t) => !this.worldTypeStore.isConverted(t.name))) return false;
-        if (!checking) void this.convertWorldTypes();
-        return true;
-      },
-    });
+    // Each module's commands (Space: Edit world types…, Convert world types to tables).
+    for (const { command, kind } of moduleCommands()) {
+      this.addCommand({
+        id: command.id,
+        name: command.name,
+        checkCallback: (checking) => {
+          if (kind !== undefined && !enabledKinds(this.settings).has(kind)) return false;
+          if (command.available && !command.available(this)) return false;
+          if (!checking) void command.run(this);
+          return true;
+        },
+      });
+    }
     this.addCommand({
       id: "new-overworld",
       name: "New overworld…",
@@ -1154,7 +1158,7 @@ export default class HexmakerPlugin extends Plugin {
       this.paletteStore.folder(),
       this.biomeStore.folder(),
       biomePoolsFolder(this),
-      this.worldTypeStore.folder(),
+      ...this.moduleStores.flatMap((st) => (st.folder ? [st.folder()] : [])),
       generatorsFolder(this),
     ]);
   }
@@ -2542,7 +2546,7 @@ export default class HexmakerPlugin extends Plugin {
     await this.saveSettings();
     if (plan.newKinds.length) {
       await this.biomeStore.seedShipped(true);
-      if (plan.newKinds.includes("space")) await this.worldTypeStore.ensureDefault();
+      await runOnEnabled(this, plan.newKinds);
     }
     this.onMapKindsChanged();
   }
@@ -2737,12 +2741,19 @@ export default class HexmakerPlugin extends Plugin {
     return effectiveArrivalMode(mapName, (m) => this.getMap(m)?.arrivalMode, (m) => this.parentOf(m)?.map);
   }
 
-  /** "Convert world types to tables": every World types note not yet converted (backed up first). */
-  async convertWorldTypes(): Promise<void> {
-    const r = await this.worldTypeStore.convertAll();
-    if (!r.converted.length) { new Notice("All world types tables are converted already."); return; }
-    const kept = r.kept.length ? ` Kept ${r.kept.length} table${r.kept.length === 1 ? "" : "s"} that already existed.` : "";
-    new Notice(`Converted ${r.converted.join(", ")} to tables in ${contentFolder(this.settings, "tablesFolder")}/space (${r.written.length} notes).${kept} The old notes were backed up and kept.`, 10000);
+  /** The map shown in the active hex map view, if one is active. */
+  activeMapName(): string | undefined {
+    return this.app.workspace.getActiveViewOfType(HexMapView)?.activeMapName;
+  }
+
+  /**
+   * Run a module's command by id (when it's available now): a module's
+   * action reached from a core surface without importing the module.
+   */
+  async runModuleCommand(id: string): Promise<void> {
+    const hit = moduleCommands().find((c) => c.command.id === id);
+    if (!hit || (hit.command.available && !hit.command.available(this))) return;
+    await hit.command.run(this);
   }
 
   /** Maps whose parent scan came up empty this session (cleared on any link change). */

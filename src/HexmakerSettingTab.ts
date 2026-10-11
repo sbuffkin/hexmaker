@@ -6,6 +6,7 @@ import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
+import { moduleFolderSettings } from "./modules/runtime";
 import { Disclosure, disclosureOpen, setDisclosureOpen } from "./ui/disclosure";
 import { partition } from "./ui/placement";
 import {
@@ -35,9 +36,6 @@ const PALETTES_FOLDER_DESC =
 
 const BIOMES_FOLDER_DESC =
   "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
-
-const WORLD_TYPES_FOLDER_DESC =
-  "Vault-relative folder for world types notes (which worlds the space generators place, and how each world's map is made). Defaults to a world-types folder inside the world folder.";
 
 const BIOME_POOLS_FOLDER_DESC =
   "Vault-relative folder for biome pool notes (each lists the biomes a generated overworld may use). Defaults to a biome-pools folder inside the world folder.";
@@ -155,7 +153,8 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "palettesFolder",
   "biomesFolder",
   "biomePoolsFolder",
-  "worldTypesFolder",
+  // Each module's folder settings (Space: World types folder).
+  ...moduleFolderSettings().map((d) => d.key),
 ]);
 
 /** Settings keys whose change should re-render open hex map views. */
@@ -688,12 +687,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "World/biome-pools",
         BIOME_POOLS_FOLDER_DESC,
       )),
-      T("Settings.worldTypesFolder", folderText(
-        "World types folder",
-        "worldTypesFolder",
-        "World/world-types",
-        WORLD_TYPES_FOLDER_DESC,
-      )),
+      // Each module's folder settings (Space: World types folder).
+      ...moduleFolderSettings().map((d) => T(d.id, folderText(d.name, d.key, d.placeholder, d.desc))),
       T("Settings.mapKinds", {
         type: "group",
         heading: "Map types",
@@ -837,7 +832,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     return this.plugin.saveSettings().then(() => {
       if (MAP_REFRESH_KEYS.has(key)) this.plugin.refreshHexMap();
       if (key === "biomesFolder") void this.plugin.biomeStore.reload();
-      if (key === "worldTypesFolder") void this.plugin.worldTypeStore.reload();
+      moduleFolderSettings().find((d) => d.key === key)?.changed?.(this.plugin);
       if (key === "iconsFolder") this.plugin.loadAvailableIcons();
     });
   }
@@ -1695,19 +1690,23 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(at("Settings.worldTypesFolder"))
-      .setName("World types folder")
-      .setDesc(WORLD_TYPES_FOLDER_DESC)
-      .addText((text) =>
-        text
-          .setPlaceholder("World/world-types")
-          .setValue(this.plugin.settings.worldTypesFolder ?? "")
-          .onChange(async (value) => {
-            this.plugin.settings.worldTypesFolder = normalizeFolder(value ?? "");
-            await this.plugin.saveSettings();
-            void this.plugin.worldTypeStore.reload();
-          }),
-      );
+    // Each module's folder settings (Space: World types folder).
+    for (const d of moduleFolderSettings()) {
+      const settings = this.plugin.settings as unknown as Record<string, unknown>;
+      new Setting(at(d.id))
+        .setName(d.name)
+        .setDesc(d.desc)
+        .addText((text) =>
+          text
+            .setPlaceholder(d.placeholder)
+            .setValue(typeof settings[d.key] === "string" ? settings[d.key] as string : "")
+            .onChange(async (value) => {
+              settings[d.key] = normalizeFolder(value ?? "");
+              await this.plugin.saveSettings();
+              d.changed?.(this.plugin);
+            }),
+        );
+    }
 
     new Setting(containerEl).setName("Map types").setHeading();
     for (const k of MAP_KINDS) {

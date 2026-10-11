@@ -1,6 +1,5 @@
 {
   "imports": {
-    "src/HexmakerPlugin.ts -> space": 2,
     "src/HexmakerPlugin.ts -> world-maps": 5,
     "src/arrival/ArrivalService.ts -> world-maps": 2,
     "src/hex-map/BiomeLibraryModal.ts -> world-maps": 5,
@@ -15,7 +14,6 @@
     "src/hex-map/overworldLayer.ts -> world-maps": 6,
     "src/hex-map/overworldMinimap.ts -> world-maps": 4,
     "src/maps/mapNav.ts -> world-maps": 1,
-    "src/noteFormatUpgrade.ts -> space": 1,
     "src/worldgen/BiomePanel.ts -> world-maps": 6,
     "src/worldgen/NewMapSetupModal.ts -> space": 2,
     "src/worldgen/WalkRegionModal.ts -> world-maps": 3,
@@ -23,7 +21,5 @@
     "src/worldgen/procedural/orbits.ts -> space": 1,
     "src/worldgen/regionGenerator.ts -> world-maps": 4
   },
-  "decisions": {
-    "src/HexmakerPlugin.ts -> space": 2
-  }
+  "decisions": {}
 }

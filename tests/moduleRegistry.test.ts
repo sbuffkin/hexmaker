@@ -217,3 +217,46 @@ describe("generators, engines and table roles through modules (P3)", () => {
     expect(formatWhen(parseWhen("orbit: outer; distance: 2-3; temp: cold"))).toBe("zone: outer; ring: 2–3; temperature: 0–0.2");
   });
 });
+
+describe("stores, settings, commands and one-time upgrades through modules (P4)", () => {
+  it("Space brings the World types store, folder setting, two commands and its seeding", async () => {
+    const { MODULE_RUNTIMES, moduleCommands, moduleFolderSettings } = await import("../src/modules/runtime");
+    const space = MODULE_RUNTIMES.find((r) => r.id === "space")!;
+    expect(moduleCommands().map((c) => [c.command.id, c.kind ?? null])).toEqual([
+      ["edit-world-types", "space"], // only while Space is on
+      ["convert-world-types", null], // whenever there's something to convert
+    ]);
+    expect(moduleFolderSettings().map((d) => [d.id, d.key])).toEqual([["Settings.worldTypesFolder", "worldTypesFolder"]]);
+    expect(typeof space.stores).toBe("function");
+    expect(typeof space.onEnabled).toBe("function");
+    // Every command and setting key a module adds is one it says it owns.
+    for (const r of MODULE_RUNTIMES) {
+      const owns = registry.module(r.id)!.owns;
+      for (const c of r.commands ?? []) expect(owns.commands).toContain(c.id);
+      for (const d of r.folderSettings ?? []) expect(owns.settingsKeys).toContain(d.key);
+    }
+  });
+
+  it("a module's folder setting has a place in the placement map", async () => {
+    const { PLACEMENT } = await import("../src/ui/placement");
+    const { moduleFolderSettings } = await import("../src/modules/runtime");
+    for (const d of moduleFolderSettings()) expect(PLACEMENT[d.id]).toBeDefined();
+  });
+
+  it("onEnabled runs only for the map types just turned on, in module order", async () => {
+    const { runOnEnabled } = await import("../src/modules/runtime");
+    const calls: string[] = [];
+    const plugin = { worldTypeStore: { ensureDefault: async () => { calls.push("world types"); } } } as never;
+    await runOnEnabled(plugin, ["world"]);
+    expect(calls).toEqual([]);
+    await runOnEnabled(plugin, ["world", "space"]);
+    expect(calls).toEqual(["world types"]);
+  });
+
+  it("the one-time terrain type refinement comes from the modules", async () => {
+    const { refinedTerrainType } = await import("../src/terrainTypes");
+    expect(refinedTerrainType({ name: "moon", type: "world" })).toBe("moon");
+    expect(refinedTerrainType({ name: "moon", type: "desert" })).toBeUndefined();
+    expect(registry.terrainTypeRefinements()).toHaveLength(1);
+  });
+});

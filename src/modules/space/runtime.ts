@@ -1,7 +1,9 @@
 /**
  * The Space module's runtime: its built-in generators (Star scatter and
  * Orbits roll on the World types tables; Planet surface runs the core's
- * noise engine, CM5).
+ * noise engine, CM5), the World types store, its folder setting, its two
+ * commands, the "ref-links" upgrade of World types notes, and the shipped
+ * World types table when Space is turned on.
  */
 
 import type HexmakerPlugin from "../../HexmakerPlugin";
@@ -21,6 +23,12 @@ import {
 import { WORLD_TYPES_KEY, worldTypesOption } from "../../space/worldTypesSource";
 import { OnceTracker, type FiredEvent } from "../../arrival/eventsLedger";
 import { withOnce } from "../../worldgen/tableRoles";
+import { Notice } from "obsidian";
+import { WorldTypesModal } from "../../space/WorldTypesModal";
+import { WorldTypeStore } from "../../space/WorldTypeStore";
+import { linkWorldTypePalettes, WORLD_TYPES_MARKER } from "../../space/worldTypes";
+import { contentFolder } from "../../notePickers";
+import { normalizeFolder } from "../../utils";
 
 /** The World types option with the vault's tables (Star scatter and Orbits roll on the chosen one, SP1). */
 function worldTypesChoice(plugin: HexmakerPlugin): ProcOption {
@@ -101,7 +109,53 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
   ];
 }
 
+/** "Convert world types to tables": every World types note not yet converted (backed up first). */
+export async function convertWorldTypes(plugin: HexmakerPlugin): Promise<void> {
+  const r = await plugin.worldTypeStore.convertAll();
+  if (!r.converted.length) { new Notice("All world types tables are converted already."); return; }
+  const kept = r.kept.length ? ` Kept ${r.kept.length} table${r.kept.length === 1 ? "" : "s"} that already existed.` : "";
+  new Notice(`Converted ${r.converted.join(", ")} to tables in ${contentFolder(plugin.settings, "tablesFolder")}/space (${r.written.length} notes).${kept} The old notes were backed up and kept.`, 10000);
+}
+
+const WORLD_TYPES_FOLDER_DESC =
+  "Vault-relative folder for world types notes (which worlds the space generators place, and how each world's map is made). Defaults to a world-types folder inside the world folder.";
+
+/** World types notes start with this frontmatter key. */
+const WORLD_TYPES_NOTE = new RegExp(`^${WORLD_TYPES_MARKER}\\s*:`, "m");
+
 export const spaceRuntime: ModuleRuntime = {
   id: "space",
   generators,
+  stores: (plugin) => [new WorldTypeStore(plugin)],
+  folderSettings: [{
+    id: "Settings.worldTypesFolder",
+    key: "worldTypesFolder",
+    name: "World types folder",
+    placeholder: "World/world-types",
+    desc: WORLD_TYPES_FOLDER_DESC,
+    changed: (plugin) => void plugin.worldTypeStore.reload(),
+  }],
+  commands: [
+    {
+      id: "edit-world-types",
+      name: "Edit world types…",
+      onlyWhenOn: true,
+      run: (plugin) => {
+        new WorldTypesModal(plugin.app, plugin, plugin.activeMapName()).open();
+      },
+    },
+    {
+      id: "convert-world-types",
+      name: "Convert world types to tables",
+      available: (plugin) => plugin.worldTypeStore.list().some((t) => !plugin.worldTypeStore.isConverted(t.name)),
+      run: (plugin) => convertWorldTypes(plugin),
+    },
+  ],
+  // World types tables' Palette column becomes links (NF3 "ref-links").
+  refLinkers: (plugin) => [{
+    folder: () => normalizeFolder(plugin.worldTypeStore.folder()),
+    rewrite: (text, links) => (WORLD_TYPES_NOTE.test(text) ? linkWorldTypePalettes(text, links) : undefined),
+  }],
+  // Space turned on (setup or Settings): the shipped "Default space" table, once.
+  onEnabled: (plugin) => plugin.worldTypeStore.ensureDefault(),
 };
