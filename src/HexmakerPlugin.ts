@@ -910,7 +910,7 @@ export default class HexmakerPlugin extends Plugin {
     // together (its watcher sees a write it hasn't recorded yet). Reloading
     // our own data would at best do nothing and at worst roll back changes
     // made since that save, so ignore anything we wrote ourselves.
-    const disk = await this.loadData();
+    const disk = (await this.loadData()) as unknown;
     if (this.isOwnWrite(disk)) {
       this.onDisk = JSON.stringify(disk);
       return;
