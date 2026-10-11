@@ -10,6 +10,7 @@ import {
   type OverlayStyle,
 } from "../frontmatter";
 import { addOverlayPatternControls, renderHexPreview } from "./overlayPatternControls";
+import { REGION_AREAS_TOOL } from "./toolMode";
 
 // ── Region editor sub-modal ───────────────────────────────────────────────────
 
@@ -146,7 +147,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
   }
 
   onOpen(): void {
-    this.titleEl.setText("Regions");
+    this.titleEl.setText(REGION_AREAS_TOOL);
     this.makeDraggable();
     this.buildPalette();
   }

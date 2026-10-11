@@ -2,13 +2,16 @@
  * Work modes, per map (owner round 4, WM1–WM4): Play · Build · God.
  *
  * Stored readably in the map note (`mode: build`); a map opens in the mode
- * saved with it, default Build. This first pass enforces ONE rule:
- * canReshape() — changing what's already placed on an overworld (swapping a
- * placed biome, Reroll, regenerating, applying region settings to an
- * existing region) needs God. Placing a biome on an empty hex is allowed in
- * Build and God. Note text is never locked, and settings and palettes
- * aren't either (WM2, WM4). The rest of the modes plan (per-mode undo,
- * other locks) is still to come.
+ * saved with it, default Build. This first pass enforces two rules:
+ * - canReshape(): changing what's already placed on an overworld (swapping
+ *   a placed biome, Reroll, regenerating, applying region settings to an
+ *   existing region) needs God.
+ * - canAdd(): placing a biome on an empty overworld hex (which makes its
+ *   region), or making regions at all, needs Build or God; Play only looks
+ *   and moves.
+ * Note text is never locked, and settings and palettes aren't either (WM2,
+ * WM4). The rest of the modes plan (per-mode undo, other locks) is still
+ * to come.
  *
  * Pure: no Obsidian imports.
  */
@@ -28,6 +31,12 @@ export const WORK_MODE_TEXT: Record<WorkMode, { label: string; desc: string }> =
 /** The hint on a locked reshape action. */
 export const RESHAPE_LOCKED_HINT = "Switch to God to change a placed biome.";
 
+/** The hint on a locked first placement (Play mode). */
+export const PLACE_LOCKED_HINT = "Switch to Build to place a biome.";
+
+/** The hint when making a region is locked (Play mode). */
+export const ADD_REGION_LOCKED_HINT = "Switch to Build to make a region.";
+
 /** A map note's `mode:` value, read forgivingly ("God mode", "BUILD", "player"); unknown → undefined. */
 export function parseWorkMode(raw: unknown): WorkMode | undefined {
   if (typeof raw !== "string") return undefined;
@@ -46,4 +55,9 @@ export function workModeOf(map: { workMode?: string } | undefined): WorkMode {
 /** May what's already placed on this map be changed (biome swap, reroll, regenerate)? */
 export function canReshape(map: { workMode?: string } | undefined): boolean {
   return workModeOf(map) === "god";
+}
+
+/** May new things be added to this map (a first biome, a new region)? Build and God; not Play. */
+export function canAdd(map: { workMode?: string } | undefined): boolean {
+  return workModeOf(map) !== "play";
 }

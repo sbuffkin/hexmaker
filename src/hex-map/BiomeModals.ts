@@ -3,10 +3,10 @@
  * hex's BIOME, one hex at a time, and its region is made or remade from it.
  *
  * - BiomePickerModal: click an overworld hex (biomes view) → pick a biome.
- *   On a hex with no region yet that makes the region (Build and God). On
- *   a hex whose region exists it remakes it: God mode only (reshapeGate,
- *   src/workMode.ts), with no confirm; in Build/Play those buttons are
- *   disabled and say how to unlock them. Reroll and Settings… live here too.
+ *   On a hex with no region yet that makes the region (Build and God; in
+ *   Play the picker is greyed). On a hex whose region exists it remakes
+ *   it: God mode only (reshapeLock, src/workMode.ts), with no confirm.
+ *   Locked buttons are disabled and say how to unlock them. Reroll and Settings… live here too.
  * - RegionGenModal: a small generator editor for one region (biome, blend,
  *   variation, seed) with a live preview drawn like the overworld preview
  *   page; Apply makes or remakes the region.
@@ -26,11 +26,10 @@ import {
   overworldOf,
   planRegionAt,
   regenerateRegion,
-  reshapeGate,
+  reshapeLock,
   setBiomeAt,
   type RegionGenOptions,
 } from "../overworld/regionsVault";
-import { RESHAPE_LOCKED_HINT } from "../workMode";
 
 export interface BiomeHost {
   app: App;
@@ -43,17 +42,22 @@ export interface BiomeHost {
   made?(name: string): void;
 }
 
-/** Whether hex (px, py)'s region may be remade now (no region yet, or the map is in God mode). */
+/** Why hex (px, py)'s biome can't be set or its region remade now, or undefined when it can. */
+export function biomeLock(host: BiomeHost, parentName: string, px: number, py: number): string | undefined {
+  return reshapeLock(host.plugin, parentName, px, py);
+}
+
+/** Whether hex (px, py)'s biome may be set now (first placement in Build/God, a change in God). */
 export function mayReshape(host: BiomeHost, parentName: string, px: number, py: number): boolean {
-  return reshapeGate(host.plugin, parentName, px, py) === "allowed";
+  return biomeLock(host, parentName, px, py) === undefined;
 }
 
 /** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
-function lockButton(btn: HTMLButtonElement): void {
+function lockButton(btn: HTMLButtonElement, hint: string): void {
   btn.disabled = true;
   btn.addClass("is-locked");
-  btn.setAttr("title", RESHAPE_LOCKED_HINT);
-  btn.setAttr("aria-label", `${btn.getText()} (${RESHAPE_LOCKED_HINT})`);
+  btn.setAttr("title", hint);
+  btn.setAttr("aria-label", `${btn.getText()} (${hint})`);
 }
 
 /** The biomes this overworld's palette can paint, with the terrain each paints. */
@@ -84,20 +88,22 @@ export class BiomePickerModal extends HexmakerModal {
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
     this.titleEl.setText(`Hex ${this.px}, ${this.py}`);
     const { contentEl } = this;
-    const locked = !mayReshape(this.host, this.parentName, this.px, this.py);
+    const lock = biomeLock(this.host, this.parentName, this.px, this.py);
     contentEl.createEl("p", {
       cls: "setting-item-description",
-      text: !region ? "No region yet. Pick a biome and its region is made, blending with its neighbours."
-        : locked ? `Region: ${plugin.mapLabel(region.name)}.`
+      text: !region ? (lock ? "No region yet." : "No region yet. Pick a biome and its region is made, blending with its neighbours.")
+        : lock ? `Region: ${plugin.mapLabel(region.name)}.`
         : `Region: ${plugin.mapLabel(region.name)}. Picking another biome remakes it (hand-painted hexes stay).`,
     });
-    if (locked) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: RESHAPE_LOCKED_HINT });
+    if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
     const grid = contentEl.createDiv({ cls: "duckmage-biome-grid" });
     for (const b of paintableBiomes(plugin, this.parentName)) {
       const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: `Paints ${b.terrain}` } });
       btn.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color });
       btn.createSpan({ text: b.label });
-      if (locked && b.id !== current) lockButton(btn);
+      // With a region, its current biome stays clickable (a no-op); with
+      // none yet, every biome would make one, so all are locked.
+      if (lock && (b.id !== current || !region)) lockButton(btn, lock);
       btn.addEventListener("click", () => {
         if (b.id === current && region) return;
         if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
@@ -109,7 +115,7 @@ export class BiomePickerModal extends HexmakerModal {
     if (region) {
       row.createEl("button", { text: "Enter region" }).addEventListener("click", () => { this.close(); this.host.enter(region.name); });
       const reroll = row.createEl("button", { text: "Reroll" });
-      if (locked) lockButton(reroll);
+      if (lock) lockButton(reroll, lock);
       reroll.addEventListener("click", () => {
         if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
         this.close();
@@ -206,9 +212,10 @@ export class RegionGenModal extends HexmakerModal {
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     const apply = row.createEl("button", { text: region ? "Apply" : "Make region", cls: "mod-cta" });
-    if (!mayReshape(this.host, this.parentName, this.px, this.py)) {
-      lockButton(apply);
-      row.createSpan({ cls: "duckmage-locked-hint", text: RESHAPE_LOCKED_HINT });
+    const lock = biomeLock(this.host, this.parentName, this.px, this.py);
+    if (lock) {
+      lockButton(apply, lock);
+      row.createSpan({ cls: "duckmage-locked-hint", text: lock });
     }
     apply.addEventListener("click", () => {
       if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;

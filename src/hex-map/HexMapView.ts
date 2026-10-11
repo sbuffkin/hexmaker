@@ -31,7 +31,7 @@ import { mapAncestors } from "./submapNav";
 import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
 import { flowerPetals, MapHistory, navArrows, PAD_SIDES } from "../maps/mapNav";
 import { WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
-import { pathClickOutcome, toolModeLabel } from "./toolMode";
+import { pathClickOutcome, REGION_AREAS_TOOL, toolModeLabel } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
@@ -1936,7 +1936,7 @@ export class HexMapView extends ItemView {
       cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
     });
     this.regionLinkBtnLabel = this.regionLinkBtn.createSpan({
-      text: "Regions",
+      text: REGION_AREAS_TOOL,
     });
     this.regionLinkBtn.addEventListener("click", () =>
       this.handleRegionLinkButton(),
@@ -2678,7 +2678,7 @@ export class HexMapView extends ItemView {
         const name = this.paintRegionPath.split("/").pop()?.replace(/.md$/, "") ?? "Region";
         this.regionLinkBtnLabel.setText(erasing ? "Erase: " + name : "Paint: " + name);
       } else {
-        this.regionLinkBtnLabel.setText("Regions");
+        this.regionLinkBtnLabel.setText(REGION_AREAS_TOOL);
       }
     }
     this.regionLinkBtn?.toggleClass("is-erase", erasing && this.drawingMode === "regionLink");
@@ -4113,17 +4113,19 @@ export class HexMapView extends ItemView {
       // Submap marker: shows which hexes drill down (a system in a sector,
       // a dungeon in a region). Clicking it enters the submap when no tool
       // is active; with a tool active the click falls through to the hex.
-      // A Region map: a thin inner hex outline. Locations: the badge, with
-      // a count from two on; its tooltip lists them.
+      // A Region map: a thin inner hex outline, except on an overworld
+      // (either view), where every hex has a region and the outline says
+      // nothing. Locations: the badge, with a count from two on; its
+      // tooltip lists them.
       const legacySubmap: unknown = fromStore ? undefined : fm?.["duckmage-submap"];
       const regionMap = stored?.regionMap && this.plugin.getMap(stored.regionMap) ? stored.regionMap : undefined;
       const locations = (fromStore ? stored?.locations ?? [] : typeof legacySubmap === "string" && legacySubmap ? [legacySubmap] : [])
         .filter((m) => m !== regionMap && !!this.plugin.getMap(m));
       if (regionMap) {
         hexEl.addClass("duckmage-hex-has-region-map");
-        hexEl.createSpan({
+        if (!owView) hexEl.createSpan({
           cls: "duckmage-hex-region-outline",
-          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (${owView ? "click to set its biome, Ctrl+click to enter" : "Ctrl+click hex to enter"})` },
+          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (Ctrl+click hex to enter)` },
         });
       }
       if (locations.length) {

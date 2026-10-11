@@ -22,6 +22,7 @@ import { RECT_SIDES } from "../maps/submaps";
 import { newWorldId } from "../worldgen/world";
 import { isSpacePalette } from "../mapKinds";
 import { ecotoneHexes } from "../overworld/regionWorld";
+import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 
 export class GenerateRegionsModal extends HexmakerModal {
   private stop = false;
@@ -43,6 +44,13 @@ export class GenerateRegionsModal extends HexmakerModal {
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     const cancel = row.createEl("button", { text: "Cancel" });
     const go = row.createEl("button", { text: "Make them", cls: "mod-cta" });
+    if (!canAdd(this.plugin.getMap(this.mapName))) {
+      go.disabled = true;
+      go.addClass("is-locked");
+      go.setAttr("title", ADD_REGION_LOCKED_HINT);
+      status.setText(ADD_REGION_LOCKED_HINT);
+      status.addClass("duckmage-locked-hint");
+    }
     cancel.addEventListener("click", () => {
       if (this.running) { this.stop = true; cancel.setText("Stopping…"); } else this.close();
     });
