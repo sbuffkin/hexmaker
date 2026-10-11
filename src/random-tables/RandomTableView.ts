@@ -24,6 +24,7 @@ import {
   rollLabel,
   resolveTable,
   rowOdds,
+  rowInfoOf,
   dieLabel,
   dieFaces,
   setDiceInFrontmatter,
@@ -665,7 +666,7 @@ export class RandomTableView extends ItemView {
     for (const file of files) {
       const fm: Frontmatter | undefined =
         this.app.metadataCache.getFileCache(file)?.frontmatter;
-      const lf = fm?.["linkedFolder"];
+      const lf: unknown = fm?.["linkedFolder"] ?? fm?.["linked-folder"];
       if (lf && typeof lf === "string") {
         const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
         const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
@@ -1640,6 +1641,9 @@ export class RandomTableView extends ItemView {
       if (ranges) headerRow.createEl("th", { text: dieLabel(table.dice) });
       headerRow.createEl("th", { text: "Result" });
       headerRow.createEl("th", { text: "Odds" });
+      // Row attributes and shared columns (Roll, Shown as, Once, When), read-only.
+      const attrCols = [...new Set((table.rowInfo ?? []).flatMap((r) => Object.keys(r.attrs ?? {})))];
+      for (const c of attrCols) headerRow.createEl("th", { text: c, cls: "duckmage-rt-attr-col" });
       headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
 
       const tbody = tableEl.createEl("tbody");
@@ -1683,6 +1687,8 @@ export class RandomTableView extends ItemView {
         }
 
         tr.createEl("td", { text: odds[i], cls: "duckmage-rt-odds-cell" });
+        const attrs = rowInfoOf(table, i).attrs ?? {};
+        for (const c of attrCols) tr.createEl("td", { text: attrs[c] ?? "", cls: "duckmage-rt-attr-cell" });
         const copyTd = tr.createEl("td", {
           cls: "duckmage-rt-entry-copy-cell",
         });

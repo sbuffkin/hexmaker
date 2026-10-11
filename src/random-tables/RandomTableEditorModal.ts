@@ -7,6 +7,7 @@ import {
   rangeCellTexts,
   resolveTable,
   dieLabel,
+  readTableWeight,
   type RandomTableEntry,
   type TableWrite,
 } from "./randomTable";
@@ -308,6 +309,7 @@ export class RandomTableEditorModal extends HexmakerModal {
         });
         weightInput.value = String(entry.weight);
         weightInput.min = "0";
+        weightInput.step = "any";
         weightInput.title = "Weight (0 = never rolled)";
         weightInput.addEventListener("input", () => {
           entries[i].weight = readWeight(weightInput.value);
@@ -383,6 +385,7 @@ export class RandomTableEditorModal extends HexmakerModal {
     });
     newWeight.value = "1";
     newWeight.min = "0";
+    newWeight.step = "any";
 
     const addBtn = addRow.createEl("button", {
       text: "Add",
@@ -800,8 +803,8 @@ export class RandomTableEditorModal extends HexmakerModal {
   }
 }
 
-/** A typed weight: a whole number ≥ 0; anything else counts as 1. */
+/** A typed weight: a number ≥ 0 (decimals too, T10); anything else counts as 1. */
 function readWeight(value: string): number {
-  const n = parseInt(value, 10);
-  return Number.isFinite(n) && n >= 0 ? n : 1;
+  const n = readTableWeight(value);
+  return Number.isFinite(n) ? n : 1;
 }

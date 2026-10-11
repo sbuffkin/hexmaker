@@ -169,7 +169,7 @@ describe("Check tables report", () => {
     expect(check.problems.map((p) => p.path)).toEqual(["tables/bad.md", "tables/beach.md", "tables/cool words.md"]);
     const text = formatTableReport(new Date("2026-10-10T12:00:00Z"), check);
     expect(text).toContain("### [[tables/bad|bad]]");
-    expect(text).toContain("isn't a whole number");
+    expect(text).toContain("isn't a number");
     const p = await writeTableReport(app(v), SCOPE, text);
     expect(p).toBe("tables/_table-check.md");
     expect(v.files.get(p)).toBe(text);

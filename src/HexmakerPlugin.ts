@@ -618,10 +618,8 @@ export default class HexmakerPlugin extends Plugin {
           );
 
         for (const tableFile of tableFiles) {
-          const lf: unknown =
-            this.app.metadataCache.getFileCache(tableFile)?.frontmatter?.[
-              "linkedFolder"
-            ];
+          const fm = this.app.metadataCache.getFileCache(tableFile)?.frontmatter;
+          const lf: unknown = fm?.["linkedFolder"] ?? fm?.["linked-folder"];
           if (!lf || typeof lf !== "string") continue;
           const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
           const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
@@ -631,7 +629,7 @@ export default class HexmakerPlugin extends Plugin {
           const updatedLf = newFolder + lfNorm.slice(oldFolder.length);
           await this.app.vault.process(tableFile, (content) =>
             content.replace(
-              /^(linkedFolder:\s*).*$/m,
+              /^((?:linkedFolder|linked-folder):\s*).*$/m,
               `$1"[[${updatedLf}]]"`,
             ),
           );
