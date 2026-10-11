@@ -29,6 +29,8 @@ import { openMakeGenerator } from "./MakeGeneratorModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
 import { mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
+import { confirmOverworldPath, overworldPathsAt } from "../overworld/overworldPaths";
+import { canDo } from "../modeGate";
 import { createIconEl, getIconUrl } from "../utils";
 
 export interface EditRegionHost extends BiomeHost {
@@ -239,6 +241,23 @@ export class EditRegionModal extends HexmakerModal {
       this.host.openLocations(this.px, this.py);
     });
 
+    // Overworld paths through this hex: drafts can be confirmed into the regions from here.
+    const through = overworldPathsAt(plugin, this.overworld, `${this.px}_${this.py}`);
+    if (through.length) {
+      const ul = fact("Paths").createEl("ul", { cls: "duckmage-edit-region-paths" });
+      const mayConfirm = canDo(this.overworld, "edit-path");
+      for (const p of through) {
+        const li = ul.createEl("li");
+        li.createSpan({ text: p.name });
+        li.createSpan({ cls: "duckmage-edit-region-path-state", text: p.applied ? "in the regions" : "draft" });
+        if (!mayConfirm) continue;
+        li.createEl("button", {
+          text: p.applied ? "Update regions" : "Confirm into regions",
+          attr: { title: "Put this path into every region it crosses, joined at the seams (one undo step)" },
+        }).addEventListener("click", () => void this.confirmPath(p.name));
+      }
+    }
+
     // ── notes (never locked) ──────────────────────────────────────────────
     const notesSec = contentEl.createDiv({ cls: "duckmage-editor-section duckmage-edit-region-notes" });
     const notesHead = notesSec.createDiv({ cls: "duckmage-edit-region-notes-head" });
@@ -280,6 +299,15 @@ export class EditRegionModal extends HexmakerModal {
     const res = await reshapeUndoable(this.host.plugin, this.overworld, this.px, this.py, () => setBiomeAt(this.host.plugin, this.overworld, this.px, this.py, biome));
     notice.hide();
     if ("error" in res) new Notice(res.error);
+    this.host.changed();
+    await this.saveNotes();
+    this.render();
+  }
+
+  private async confirmPath(pathName: string): Promise<void> {
+    const res = await confirmOverworldPath(this.host.plugin, this.overworld, pathName);
+    if ("error" in res) new Notice(res.error);
+    else new Notice(`${pathName}: in ${res.regions.length === 1 ? "1 region" : `${res.regions.length} regions`}.`);
     this.host.changed();
     await this.saveNotes();
     this.render();

@@ -34,14 +34,21 @@ export const PATH_TYPES_INTRO =
   "through the middles of the edges between hexes) or edge (straight along the hex borders). Avoid impassable " +
   "is yes or no: whether auto-route goes around impassable terrain (no also lets generated submaps run it " +
   "through water, like a river). Auto-route is direct (keeps to the straight line) or winding (wanders). " +
+  "Carves is what an overworld path of this type turns the hexes it crosses into when you confirm it into " +
+  "its regions: a terrain's name, a terrain type (water), or none. Carve width is 0 (the path's hexes) or 1 " +
+  "(and the hexes beside them). " +
   "To have no path types, delete the rows but keep the header line.";
 
 const HEADERS = ["Path", "Color", "Width", "Style", "Routing", "Avoid impassable", "Auto-route"] as const;
+/** Written when a type carves, or the table already has them (kept compact otherwise). */
+const CARVE_HEADERS = ["Carves", "Carve width"] as const;
 
-type Column = "name" | "color" | "width" | "style" | "routing" | "avoid" | "autoRoute";
+type Column = "name" | "color" | "width" | "style" | "routing" | "avoid" | "autoRoute" | "carves" | "carveWidth";
 
 function columnFor(header: string): Column | null {
   const h = header.trim().toLowerCase().replace(/\s+/g, " ");
+  if (/^carves? ?(width|wide|size)$/.test(h)) return "carveWidth";
+  if (/^carves?( terrain| into| to)?$/.test(h)) return "carves";
   if (["path", "paths", "path type", "name", "type"].includes(h)) return "name";
   if (h === "color" || h === "colour") return "color";
   if (h === "width" || h === "thickness" || h === "size") return "width";
@@ -135,6 +142,19 @@ function parseAutoRoute(raw: string | undefined): PathAutoRoute | undefined {
   return undefined;
 }
 
+/** A Carves cell: blank, none, no or - → nothing; anything else as typed. */
+function parseCarves(raw: string | undefined): string | undefined {
+  const v = (raw ?? "").trim();
+  if (!v || /^(none|no|nothing|-+|off)$/i.test(v)) return undefined;
+  return v;
+}
+
+/** A Carve width cell: 1 (or wide) → 1, else 0. */
+function parseCarveWidth(raw: string | undefined): number {
+  const v = (raw ?? "").trim().toLowerCase();
+  return /^(1|wide|one)/.test(v) || Number.parseFloat(v) >= 1 ? 1 : 0;
+}
+
 function parseWidth(raw: string | undefined): number {
   const n = Number.parseFloat((raw ?? "").replace(/px$/i, ""));
   if (!Number.isFinite(n)) return 3;
@@ -206,6 +226,9 @@ export function parsePathTypes(content: string, opts: ParsePathTypesOptions = {}
       avoidImpassable,
       autoRoute: auto ?? (opts.legacy ? legacyAutoRoute(name, avoidImpassable) : "direct"),
     };
+    const carves = parseCarves(row.carves);
+    if (carves) t.carves = carves;
+    if (parseCarveWidth(row.carveWidth) === 1) t.carveWidth = 1;
     types.push(t);
     if (Object.keys(own).length) extra.set(name, own);
   }
@@ -220,14 +243,18 @@ function escapeCell(value: string | undefined): string {
 export function serializePathTypes(
   types: PathType[],
   extra?: { headers: string[]; rows: Map<string, Record<string, string>> },
+  opts: { carveColumns?: boolean } = {},
 ): string {
   const extraHeaders = extra?.headers ?? [];
-  const headers = [...HEADERS, ...extraHeaders];
+  const carving = !!opts.carveColumns || types.some((t) => !!t.carves?.trim() || t.carveWidth === 1);
+  const headers = [...HEADERS, ...(carving ? CARVE_HEADERS : []), ...extraHeaders];
   const lines = [`| ${headers.join(" | ")} |`, `| ${headers.map(() => "---").join(" | ")} |`];
   for (const t of types) {
     const own = extra?.rows.get(t.name) ?? {};
     const avoid = t.avoidImpassable === false ? "no" : "yes";
-    const cells = [t.name, colorCell(t.color), String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...extraHeaders.map((h) => own[h])];
+    const carves = t.carves?.trim() || "none";
+    const carveCells = carving ? [carves, String(t.carveWidth === 1 ? 1 : 0)] : [];
+    const cells = [t.name, colorCell(t.color), String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...carveCells, ...extraHeaders.map((h) => own[h])];
     lines.push(`| ${cells.map(escapeCell).join(" | ")} |`);
   }
   return lines.join("\n");
@@ -235,7 +262,7 @@ export function serializePathTypes(
 
 /** Order-sensitive comparison key (order is the picker's order). */
 export function pathTypesKey(types: PathType[] | undefined): string {
-  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null, t.autoRoute ?? null]));
+  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null, t.autoRoute ?? null, t.carves?.trim() || null, t.carveWidth === 1 ? 1 : 0]));
 }
 
 /**
@@ -252,7 +279,8 @@ export function setPathTypes(content: string, types: PathType[]): string {
   const lines = text.split("\n");
   const span = findPathTypesTable(lines);
   if (span) {
-    const table = serializePathTypes(types, parsed ? { headers: parsed.extraHeaders, rows: parsed.extra } : undefined);
+    const carveColumns = span.columns.includes("carves") || span.columns.includes("carveWidth");
+    const table = serializePathTypes(types, parsed ? { headers: parsed.extraHeaders, rows: parsed.extra } : undefined, { carveColumns });
     // Whatever we couldn't read stays in the note under the table (as an
     // indented block, so it isn't read as a table), so nothing typed is lost.
     const unread = parsed ? parsed.skipped : lines.slice(span.start, span.end).map((l) => l.trim());

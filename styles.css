@@ -7471,6 +7471,28 @@ button.duckmage-terrain-legend-chip {
     opacity: 0.85;
     cursor: help;
 }
+/* Overworld paths: a draft (not confirmed into its regions) is drawn faded. */
+.duckmage-svg-path-line.duckmage-svg-path-draft {
+    opacity: 0.5;
+}
+.duckmage-hex-map-controls .duckmage-path-confirm-btn {
+    opacity: 1;
+    font-weight: 600;
+}
+.duckmage-edit-region-paths {
+    margin: 0;
+    padding-left: 1.2em;
+}
+.duckmage-edit-region-paths li {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin: 2px 0;
+}
+.duckmage-edit-region-path-state {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
 
 /* Path picker: Hex by hex / Auto-route switch. */
 .duckmage-path-draw-mode {

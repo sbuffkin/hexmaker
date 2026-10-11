@@ -41,6 +41,7 @@ import {
   type RegionPlan,
 } from "./regionWorld";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
+import { applyConfirmedPaths } from "./overworldPaths";
 
 export function gridRulesOf(plugin: HexmakerPlugin): GridRules {
   return { orientation: plugin.settings.hexOrientation, stagger: plugin.settings.staggerOffset ?? "odd" };
@@ -352,6 +353,8 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   if (plan?.paths?.length) addGeneratedPaths(plugin, res.name, plan.paths);
   if (plan?.note) new Notice(`${plugin.mapLabel(res.name)}: ${plan.note}`);
   await plugin.linkRegion(parentName, px, py, res.name);
+  // Confirmed overworld paths that cross this hex: routed through the new terrain, then carved.
+  applyConfirmedPaths(plugin, res.name);
   await fillBlankParent(plugin, parentName, px, py, res.name);
   return res;
 }
@@ -462,6 +465,8 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
   plugin.mapStore.setMany(regionName, cells);
   // A generator's paths replace the ones of the same types it drew before.
   if (plan.paths?.length) addGeneratedPaths(plugin, regionName, plan.paths, new Set(plan.paths.map((p) => p.typeName)));
+  // Confirmed overworld paths go back in, over the new terrain.
+  applyConfirmedPaths(plugin, regionName);
   if (plan.note) new Notice(`${plugin.mapLabel(regionName)}: ${plan.note}`);
   if (plan.biome) region.biome = plan.biome;
   if (opts.seed !== undefined) region.regionSeed = opts.seed;

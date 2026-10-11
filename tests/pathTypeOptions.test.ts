@@ -43,7 +43,7 @@ describe("path type options (PA5)", () => {
 		const trackway = blank("Trackway");
 		Object.assign(trackway, { color: "#a16207", width: 4 });
 		const flow = blank("Flow");
-		Object.assign(flow, { color: "#3b82f6", width: 3, routing: "meander", avoidImpassable: false, autoRoute: "winding" });
+		Object.assign(flow, { color: "#3b82f6", width: 3, routing: "meander", avoidImpassable: false, autoRoute: "winding", carves: "water" });
 		scratch.push(trackway, flow);
 		const [road, river] = DEFAULT_PATH_TYPES;
 		const look = (t: PathType) => ({ ...t, name: "" });
@@ -91,6 +91,7 @@ describe("path type migration from the old name rules (PA5)", () => {
 		const river = { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false } as PathType;
 		fillLegacyPathType(road);
 		fillLegacyPathType(river);
-		expect([road, river]).toEqual(DEFAULT_PATH_TYPES);
+		// The look and routing; carving (an option added later) is never given by name.
+		expect([road, river]).toEqual(DEFAULT_PATH_TYPES.map(({ carves: _c, carveWidth: _w, ...t }) => t));
 	});
 });

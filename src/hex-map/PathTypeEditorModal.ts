@@ -22,6 +22,8 @@ export class PathTypeEditorModal extends HexmakerModal {
 	private pendingRouting: PathRouting;
 	private pendingAvoid: boolean;
 	private pendingAutoRoute: PathAutoRoute;
+	private pendingCarves: string;
+	private pendingCarveWidth: number;
 	private readonly originalName: string;
 	private savedOrDeleted = false;
 
@@ -43,6 +45,8 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.pendingRouting    = entry.routing;
 		this.pendingAvoid      = pathAvoidsImpassable(entry);
 		this.pendingAutoRoute  = pathMeanders(entry) ? "winding" : "direct";
+		this.pendingCarves     = entry.carves ?? "";
+		this.pendingCarveWidth = entry.carveWidth === 1 ? 1 : 0;
 	}
 
 	onOpen(): void {
@@ -156,6 +160,27 @@ export class PathTypeEditorModal extends HexmakerModal {
 					}),
 			);
 
+		new Setting(contentEl)
+			.setName("Carves terrain")
+			.setDesc("When you confirm an overworld path of this type into its regions, the hexes it crosses there become this: a terrain's name, or a terrain type such as water (the palette's first water terrain). Leave empty to keep the terrain. Locked hexes are never changed.")
+			.addText(text =>
+				text
+					.setPlaceholder("None")
+					.setValue(this.pendingCarves)
+					.onChange(value => { this.pendingCarves = value.trim(); }),
+			);
+
+		new Setting(contentEl)
+			.setName("Carve width")
+			.setDesc("0: only the path's hexes. 1: those and the hexes beside them.")
+			.addDropdown(dd =>
+				dd
+					.addOption("0", "0")
+					.addOption("1", "1")
+					.setValue(String(this.pendingCarveWidth))
+					.onChange(value => { this.pendingCarveWidth = value === "1" ? 1 : 0; }),
+			);
+
 		// Save button
 		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-editor-actions" });
 		btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => {
@@ -217,6 +242,9 @@ export class PathTypeEditorModal extends HexmakerModal {
 		this.entry.routing    = this.pendingRouting;
 		this.entry.avoidImpassable = this.pendingAvoid;
 		this.entry.autoRoute  = this.pendingAutoRoute;
+		if (this.pendingCarves) this.entry.carves = this.pendingCarves;
+		else delete this.entry.carves;
+		this.entry.carveWidth = this.pendingCarveWidth;
 
 		// If name changed, point every path of this type at the new name.
 		// PHASE-3: while maps store pathChains (src/paths/mapPaths.ts) this edits

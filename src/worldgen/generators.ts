@@ -20,6 +20,7 @@ import type { MapPath, PathType, TerrainColor } from "../types";
 import { generatedToMapPaths } from "../paths/fromGenerated";
 import { pathTypeStyleFor } from "../paths/mapContext";
 import type { RouteContext } from "../paths/router";
+import { ownerOf } from "../overworld/pathProjection";
 import type { StyleFor } from "../paths/resolve";
 import {
   learnModel,
@@ -213,7 +214,8 @@ export function toPathsOn(
  */
 export function addGeneratedPaths(plugin: HexmakerPlugin, mapName: string, paths: MapPath[], replaceTypes?: ReadonlySet<string>): void {
   const current = plugin.mapStore.paths(mapName);
-  const kept = replaceTypes ? current.filter((p) => !replaceTypes.has(p.typeName)) : [...current];
+  // Paths put there from the overworld (an "Overworld path" cell) are the overworld's, never the generator's.
+  const kept = replaceTypes ? current.filter((p) => !replaceTypes.has(p.typeName) || !!ownerOf(p)) : [...current];
   if (!paths.length && kept.length === current.length) return;
   plugin.mapStore.setPaths(mapName, [...kept, ...paths]);
 }
