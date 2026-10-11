@@ -51,6 +51,8 @@
  * Pure: no Obsidian imports.
  */
 
+import { climateKeyValues, readClimate, sameClimateValue, type BiomeClimate } from "./biomeClimate";
+
 /** Frontmatter key written into every biome note (the format version). */
 export const BIOME_NOTE_MARKER = "hexmaker-biome";
 export const BIOME_NOTE_FORMAT = 1;
@@ -90,6 +92,8 @@ export interface BiomeNoteFields {
   minIslands?: number;
   /** Link target of a generator note (no brackets), e.g. "world/generators/My tundra". */
   generator?: string;
+  /** Where World biomes may place it (biomeClimate.ts); unset = only by hand. */
+  climate?: BiomeClimate;
 }
 
 export interface BiomeNoteProblem {
@@ -117,7 +121,7 @@ export function biomeFileName(label: string): string {
 
 export const BIOME_HELP = [
   "> [!info] Biome",
-  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `generator` links a generator note. Delete a row to drop it.",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -247,6 +251,9 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
   }
   const gen = fm.get("generator");
   if (gen && linkTarget(gen)) fields.generator = linkTarget(gen);
+  const climate = readClimate(fm);
+  if (climate.climate) fields.climate = climate.climate;
+  for (const p of climate.problems) problems.push({ where: "settings", text: p.text });
 
   const mix = findTable(lines, isMix);
   if (mix) {
@@ -308,6 +315,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     ["land-share", f.landShare !== undefined ? shareText(f.landShare) : undefined],
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
     ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
+    ...climateKeyValues(f.climate),
   ];
 }
 
@@ -368,12 +376,15 @@ export function updateBiomeNote(content: string, f: BiomeNoteFields): string {
   return out === content.replace(/\r\n?/g, "\n").split("\n").join(eol) ? content : out;
 }
 
+const CLIMATE_KEY_SET = new Set(climateKeyValues(undefined).map(([k]) => k));
+
 function sameValue(key: string, cur: string, want: string): boolean {
   const w = unquote(want);
   if (key === "land-share") return parseShare(cur) === parseShare(w);
   if (key === "colour") return readColour(cur) === readColour(w);
   if (key === "generator") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
+  if (CLIMATE_KEY_SET.has(key)) return sameClimateValue(key, cur, w);
   return cur.trim() === w.trim();
 }
 

@@ -345,6 +345,8 @@ export interface HexmakerPluginSettings {
 	biomesFolder?: string;
 	/** Shipped biomes already written into biome notes (ids): each is written once, so a deleted one stays deleted. */
 	biomesSeeded?: string[];
+	/** Shipped biomes whose notes got their climate added (ids): once each, so a climate cleared by hand stays cleared. */
+	biomeClimatesSeeded?: string[];
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
 	/**

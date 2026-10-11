@@ -23,6 +23,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { writeJsonBackup } from "../backup";
 import {
+  BIOME_NOTE_MARKER,
   biomeFileName,
   biomeSlug,
   buildBiomeNote,
@@ -61,6 +62,28 @@ export function presetsToSeed(
   return { write, done };
 }
 
+/**
+ * Shipped biomes whose notes (written before biome climates) get their
+ * preset climate added: not done before, the note has the preset's id and
+ * no climate of its own. Once per biome, so clearing a climate by hand
+ * sticks (that biome is then only placed by hand).
+ */
+export function climatesToAdd(
+  done: readonly string[],
+  notes: readonly BiomeNoteFields[],
+  presets: readonly BiomeNoteFields[] = BIOME_PRESETS,
+): { add: BiomeNoteFields[]; done: string[] } {
+  const add: BiomeNoteFields[] = [];
+  const now: string[] = [];
+  for (const p of presets) {
+    if (!p.climate || done.includes(p.id)) continue;
+    now.push(p.id);
+    const note = notes.find((n) => n.id === p.id);
+    if (note && !note.climate) add.push({ ...note, climate: biomePreset(p.id)?.climate });
+  }
+  return { add, done: now };
+}
+
 export class BiomeStore implements BiomeStoreApi {
   private entries = new Map<string, Entry>();
   private lastContent = new Map<string, string>();
@@ -92,6 +115,7 @@ export class BiomeStore implements BiomeStoreApi {
     await this.enqueue(async () => {
       for (const f of this.files()) await this.load(f);
       await this.seed();
+      await this.seedClimates();
       this.ready = true;
       this.publish();
     });
@@ -336,6 +360,31 @@ export class BiomeStore implements BiomeStoreApi {
       }
     }
     s.biomesSeeded = [...seeded, ...plan.done];
+    await this.plugin.saveSettings();
+  }
+
+  /** Add the shipped climates to built-in notes written before climates existed (climatesToAdd). */
+  private async seedClimates(): Promise<void> {
+    const s = this.plugin.settings;
+    const done = s.biomeClimatesSeeded ?? [];
+    const plan = climatesToAdd(done, this.active().map((e) => e.fields));
+    if (!plan.done.length) return;
+    for (const fields of plan.add) {
+      const e = this.active().find((x) => x.fields.id === fields.id);
+      const f = e ? this.plugin.app.vault.getAbstractFileByPath(e.path) : null;
+      if (!(f instanceof TFile)) continue;
+      try {
+        const content = await this.plugin.app.vault.read(f);
+        // Only notes the plugin wrote (they carry its marker key); a note the user wrote by hand is theirs.
+        if (!new RegExp(`^${BIOME_NOTE_MARKER}\\s*:`, "m").test(content.split(/\r?\n---/)[0] ?? "")) continue;
+        const next = updateBiomeNote(content, fields);
+        if (next !== content) await this.plugin.app.vault.modify(f, next);
+        this.take(f.path, f.basename, next);
+      } catch (err) {
+        console.error("Hexmaker: couldn't add a climate to biome note", f.path, err);
+      }
+    }
+    s.biomeClimatesSeeded = [...done, ...plan.done];
     await this.plugin.saveSettings();
   }
 

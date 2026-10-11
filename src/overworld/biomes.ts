@@ -16,6 +16,7 @@ import { mapTerrainsByType, TYPE_FALLBACKS } from "../worldgen/builtinGenerators
 import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields } from "./biomeNote";
 import type { TerrainColor } from "../types";
 import { typesInGroup } from "../terrainTypes";
+import { climateCentre, isPlaceable, type BiomeClimate, type ClimateElevation, type ClimateRange } from "./biomeClimate";
 
 export type BiomeId = string;
 export const OPEN_SEA = "open-sea";
@@ -353,6 +354,23 @@ let sourceVersion = 0;
 /** Bumped on every setBiomeSource (for cache keys). */
 export const biomeSourceVersion = (): number => sourceVersion;
 
+/** The overworld zone a climate's elevation stands for (unset: lowland). */
+export function zoneOfElevation(e: ClimateElevation | undefined): BiomeInfo["zone"] {
+  return e === "sea" ? "sea" : e === "high" ? "peak" : e === "mid" ? "high" : "low";
+}
+
+/**
+ * A biome's ideal climate (T, M) for the generator's repairs: the shipped
+ * table's tuned value when the climate box still holds it, else the box's
+ * middle. Data only: a user's biome always gets its box's middle.
+ */
+export function climateIdeal(id: BiomeId, c: BiomeClimate): [number, number] {
+  const base = BY_ID.get(id);
+  const holds = (r: ClimateRange | undefined, v: number) => !r || (v >= r.lo - 1e-9 && v <= r.hi + 1e-9);
+  if (base && holds(c.temperature, base.temp) && holds(c.moisture, base.moist)) return [base.temp, base.moist];
+  return climateCentre(c);
+}
+
 /** Load (or, with undefined, drop) the biomes read from notes. */
 export function setBiomeSource(list: readonly BiomeNoteFields[] | undefined): void {
   sourceVersion++;
@@ -372,6 +390,14 @@ export function setBiomeSource(list: readonly BiomeNoteFields[] | undefined): vo
     delete info.minIslands;
     if (b.landShare !== undefined) info.landShare = b.landShare;
     if (b.minIslands !== undefined) info.minIslands = b.minIslands;
+    // The note's climate (when set) says its zone, rarity and ideal climate.
+    if (isPlaceable(b.climate)) {
+      const c = b.climate!;
+      info.zone = zoneOfElevation(c.elevation);
+      if (c.rare) info.rare = true;
+      else delete info.rare;
+      [info.temp, info.moist] = climateIdeal(b.id, c);
+    }
     infos.set(b.id, info);
   }
   const ecotones: [BiomeId, BiomeId, BiomeId][] = [];

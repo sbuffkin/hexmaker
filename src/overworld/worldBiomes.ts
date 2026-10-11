@@ -6,6 +6,12 @@
  * biomes, a mountain chain, few rare biomes, and transition biomes
  * (ecotones) between neighbours that shouldn't touch.
  *
+ * Which biome a hex gets is data, never a name: each biome's climate
+ * (temperature, moisture, elevation, coastal, chance, rare; biomeClimate.ts)
+ * from its note, the shipped ones' from biomePresets.ts. Biomes without a
+ * climate are only placed by hand (or, in a biome pool, where nothing else
+ * fits).
+ *
  * Each hex is painted with its biome's representative terrain on the given
  * palette, so the terrain is the biome signal regions read back (§4.1).
  * Biomes the palette can't show fall back to the nearest one it can, so a
@@ -20,19 +26,24 @@ import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import type { TerrainColor } from "../types";
 import { fbm } from "./noise";
 import {
-  BIOMES,
-  OPEN_SEA,
   SIMILAR,
+  allBiomeIds,
   biomeInfo,
-  climateMisfit,
+  biomeNoteOf,
+  biomeSourceActive,
+  climateIdeal,
   compatible,
   ecotoneBetween,
-  isSeaBiome,
   representableBiomes,
   representativeTerrain,
   resolveBiome,
+  zoneOfElevation,
   type BiomeId,
+  type BiomeInfo,
 } from "./biomes";
+import { climateArea, inClimateRange, isPlaceable, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
+import type { BiomeNoteFields } from "./biomeNote";
+import { BIOME_PRESETS } from "./biomePresets";
 
 export type Climate = "cold" | "temperate" | "warm" | "varied";
 export type LandShape = "one" | "two" | "islands";
@@ -47,6 +58,11 @@ export interface WorldBiomesOptions {
   north?: NorthIs;
   /** Trace a river from the highest hex down to the sea (default true). */
   river?: boolean;
+  /**
+   * A biome pool: only these are placed (placementPool). Unset: every
+   * biome with a climate.
+   */
+  biomes?: readonly BiomeNoteFields[];
 }
 
 export interface WorldBiomesResult {
@@ -173,27 +189,66 @@ export function worldBiomes(
     moisture.set(k, Math.min(1, Math.max(0, m)));
   }
 
-  // 4. Biome per hex.
-  const shown = representableBiomes(palette);
-  const ok = (b: BiomeId) => resolveBiome(b, shown) ?? b;
+  // 4. Biome per hex, from the candidates' climates (biomeClimate.ts): the
+  //    hex's band (high, mid, low; sea), then the band's biomes that fit its
+  //    temperature and moisture, rarest and narrowest first, one roll.
+  const pool = placementPool(opts.biomes);
+  const { cands, byId } = pool;
+  const isRare = (b: BiomeId) => byId.get(b)?.rare ?? !!biomeInfo(b)?.rare;
+  const zoneOf = (b: BiomeId) => byId.get(b)?.zone ?? biomeInfo(b)?.zone;
+  const misfit = (b: BiomeId, t: number, m: number) => {
+    const c = byId.get(b);
+    return c ? Math.hypot(c.ideal[0] - t, c.ideal[1] - m) : 1;
+  };
+  const allowed = new Set<BiomeId>([...cands.map((c) => c.id), ...pool.fallback.map((f) => f.id)]);
+  const shown = new Set([...representableBiomes(palette)].filter((b) => allowed.has(b)));
+  /** A biome the palette can show: itself, else the nearest similar one in the pool; undefined when neither. */
+  const ok = (b: BiomeId): BiomeId | undefined => resolveBiome(b, shown) ?? (allowed.has(b) ? b : undefined);
+  const band = (e: ClimateElevation) => pool.tryOrder.filter((c) => c.elevation === e);
+  const bands = { high: band("high"), mid: band("mid"), low: band("low"), sea: band("sea"), mouth: band("mouth") };
+  /** The band's first biome (rarest, narrowest) that fits and takes the roll. */
+  const pickFrom = (list: PlacementCandidate[], t: number, m: number, coast: boolean): BiomeId | undefined => {
+    const fit = list.filter((c) => inClimateRange(c.temperature, t) && inClimateRange(c.moisture, m) && (!c.coastal || coast));
+    if (!fit.length) return undefined;
+    const roll = fit.some((c) => c.chance < 1) ? rng() : 0;
+    return fit.find((c) => roll < c.chance)?.id;
+  };
+  /** Nearest-climate biome of a list (no roll). */
+  const nearest = (list: { id: BiomeId }[], t: number, m: number): BiomeId | undefined => {
+    let best: BiomeId | undefined, score = Infinity;
+    for (const c of list) {
+      const s = misfit(c.id, t, m);
+      if (s < score) { score = s; best = c.id; }
+    }
+    return best;
+  };
+  /** A hex no climate biome fits: the pool's biomes without a climate, else the nearest climate biome. */
+  const fallbackFor = (seaHex: boolean, t: number, m: number): BiomeId | undefined => {
+    const own = pool.fallback.filter((f) => f.sea === seaHex);
+    if (own.length) return own.length === 1 ? own[0].id : own[Math.floor(rng() * own.length)].id;
+    const same = cands.filter((c) => (c.zone === "sea") === seaHex && c.elevation !== "mouth");
+    return nearest(same.length ? same : cands, t, m) ?? pool.fallback[0]?.id;
+  };
   const biomes = new Map<string, BiomeId>();
   const bigLand = landKeys.length >= 8;
   for (const k of keys) {
     const t = temperature.get(k)!, m = moisture.get(k)!;
-    let b: BiomeId;
+    let b: BiomeId | undefined;
     if (sea.has(k)) {
-      b = toLand.get(k) === 1 && rng() < 0.3 ? "archipelago" : OPEN_SEA;
+      b = pickFrom(bands.sea, t, m, toLand.get(k) === 1) ?? fallbackFor(true, t, m);
     } else {
       const r = rank.get(k)!;
-      if (bigLand && r > 0.86) b = rng() < 0.12 ? "volcanic" : "alpine";
-      else if (r > 0.66 && rng() < 0.55) b = t > 0.62 && m > 0.6 ? "karst" : "valley";
-      else if (toSea.get(k) === 1 && t < 0.3 && rng() < 0.5) b = "coastal-fjord";
-      else b = lowland(t, m);
+      const coast = toSea.get(k) === 1;
+      if (bigLand && r > HIGH_RANK) b = pickFrom(bands.high, t, m, coast);
+      if (!b && r > MID_RANK) b = pickFrom(bands.mid, t, m, coast);
+      if (!b) b = pickFrom(bands.low, t, m, coast) ?? fallbackFor(false, t, m);
     }
-    biomes.set(k, ok(b));
+    if (b) biomes.set(k, ok(b) ?? b);
   }
+  // Nothing in the pool can be placed: no biomes.
+  if (biomes.size < N) return { ...empty, elevation, temperature, moisture, sea };
 
-  // River: highest land hex downhill to the sea; a wet mouth may be a delta.
+  // River: highest land hex downhill to the sea; its mouth may take a "mouth" biome.
   const river: string[] = [];
   if ((opts.river ?? true) && landKeys.length >= 4 && sea.size) {
     let cur = [...landKeys].sort((a, b) => rank.get(b)! - rank.get(a)!)[0];
@@ -209,7 +264,11 @@ export function worldBiomes(
       cur = next;
     }
     const mouth = river.filter((k) => !sea.has(k)).pop();
-    if (mouth && moisture.get(mouth)! > 0.55 && biomeInfo(biomes.get(mouth)!)?.zone === "low") biomes.set(mouth, ok("river-delta"));
+    if (mouth && zoneOf(biomes.get(mouth)!) === "low") {
+      const b = pickFrom(bands.mouth, temperature.get(mouth)!, moisture.get(mouth)!, toSea.get(mouth) === 1);
+      const resolved = b ? ok(b) : undefined;
+      if (resolved) biomes.set(mouth, resolved);
+    }
   }
 
   // 5. Repairs.
@@ -219,7 +278,12 @@ export function worldBiomes(
     ks.reduce((s, k) => s + moisture.get(k)!, 0) / ks.length,
   ];
   const rareCap = Math.max(1, Math.floor(N / 20));
-  const rareCount = () => [...biomes.values()].filter((b) => biomeInfo(b)?.rare).length;
+  const rareCount = () => [...biomes.values()].filter((b) => isRare(b)).length;
+  /** A common land biome for a hex when a rare one has to go and no similar one will do. */
+  const commonNear = (k: string): BiomeId | undefined => nearest(
+    cands.filter((c) => !c.rare && c.zone !== "sea" && c.elevation !== "mouth" && shown.has(c.id)),
+    temperature.get(k)!, moisture.get(k)!,
+  );
 
   /** Best replacement biome for a group of hexes now holding `from`. */
   const alternative = (group: string[], from: BiomeId, avoid: Set<BiomeId> = new Set()): BiomeId | undefined => {
@@ -227,17 +291,17 @@ export function worldBiomes(
     const inGroup = new Set(group);
     const around = new Set<BiomeId>();
     for (const k of group) for (const n of nbrs.get(k)!) if (!inGroup.has(n) && isLand(n)) around.add(biomes.get(n)!);
-    const fromZone = biomeInfo(from)?.zone;
+    const fromZone = zoneOf(from);
     const similar = SIMILAR[from] ?? [];
     let best: BiomeId | undefined;
     let bestScore = Infinity;
-    for (const info of BIOMES) {
-      const b = info.id;
-      if (b === from || avoid.has(b) || !shown.has(b) || info.zone === "sea") continue;
-      if (info.zone === "peak" && fromZone !== "peak") continue;
-      if (info.rare && rareCount() >= rareCap) continue;
+    for (const c of cands) {
+      const b = c.id;
+      if (b === from || avoid.has(b) || !shown.has(b) || c.zone === "sea") continue;
+      if (c.zone === "peak" && fromZone !== "peak") continue;
+      if (c.rare && rareCount() >= rareCap) continue;
       if ([...around].some((a) => !compatible(a, b))) continue;
-      const score = climateMisfit(b, t, m) + (similar.includes(b) ? 0 : 0.35) + (around.has(b) ? 0.5 : 0) + rng() * 0.05;
+      const score = misfit(b, t, m) + (similar.includes(b) ? 0 : 0.35) + (around.has(b) ? 0.5 : 0) + rng() * 0.05;
       if (score < bestScore) { bestScore = score; best = b; }
     }
     return best;
@@ -285,17 +349,19 @@ export function worldBiomes(
   for (const k of landKeys) {
     const counts = new Map<BiomeId, number>();
     for (const n of nbrs.get(k)!) if (isLand(n)) counts.set(biomes.get(n)!, (counts.get(biomes.get(n)!) ?? 0) + 1);
-    for (const [b, c] of counts) if (c >= 4 && b !== biomes.get(k) && !biomeInfo(b)?.rare) biomes.set(k, b);
+    for (const [b, c] of counts) if (c >= 4 && b !== biomes.get(k) && !isRare(b)) biomes.set(k, b);
   }
 
-  // b. A mountain chain from the ridge when there's room and none exists.
-  if (bigLand && shown.has("alpine") && ![...biomes.values()].includes("alpine")) {
+  // b. A mountain chain from the ridge when there's room and none exists:
+  //    the commonest "high" biome (the highest chance).
+  const chainBiome = [...bands.high].sort((a, b) => b.chance - a.chance || a.order - b.order)[0]?.id;
+  if (bigLand && chainBiome !== undefined && shown.has(chainBiome) && ![...biomes.values()].includes(chainBiome)) {
     let cur = [...landKeys].sort((a, b) => rank.get(b)! - rank.get(a)!)[0];
     const chain = new Set<string>();
     const len = 2 + Math.floor(rng() * 2);
     while (cur && chain.size < len) {
       chain.add(cur);
-      biomes.set(cur, "alpine");
+      biomes.set(cur, chainBiome);
       cur = nbrs.get(cur)!.filter((n) => isLand(n) && !chain.has(n)).sort((a, b) => rank.get(b)! - rank.get(a)!)[0];
     }
   }
@@ -303,11 +369,14 @@ export function worldBiomes(
   // c. Rare biomes: at most one per ~20 hexes.
   for (const k of keys) {
     const b = biomes.get(k)!;
-    if (!biomeInfo(b)?.rare) continue;
+    if (!isRare(b)) continue;
     const before = rareCount();
     if (before <= rareCap) continue;
     biomes.set(k, "__");
-    if (!recolour([k], b)) biomes.set(k, ok(SIMILAR[b]?.find((s) => !biomeInfo(s)?.rare) ?? "grassland"));
+    if (!recolour([k], b)) {
+      const sim = SIMILAR[b]?.find((s) => !isRare(s));
+      biomes.set(k, (sim !== undefined ? ok(sim) : undefined) ?? commonNear(k) ?? b);
+    }
   }
 
   const splitAndSpread = () => {
@@ -355,13 +424,17 @@ export function worldBiomes(
         const eco = ecotoneBetween(a, b);
         if (!eco) continue;
         let target = ok(eco);
-        // Rare transitions (karst) count toward the rare cap too: past it,
-        // the nearest common biome stands in.
-        if (biomeInfo(target)?.rare && rareCount() > rareCap) {
-          target = ok(SIMILAR[target]?.find((s) => !biomeInfo(s)?.rare && shown.has(s)) ?? "grassland");
+        if (target === undefined) continue; // the transition biome isn't in the pool
+        // Rare transitions count toward the rare cap too: past it, the
+        // nearest common biome stands in.
+        if (isRare(target) && rareCount() > rareCap) {
+          const sim = SIMILAR[target]?.find((s) => !isRare(s) && shown.has(s));
+          const common = (sim !== undefined ? ok(sim) : undefined) ?? commonNear(k);
+          if (common === undefined) continue;
+          target = common;
         }
-        const fitK = climateMisfit(a, temperature.get(k)!, moisture.get(k)!);
-        const fitN = climateMisfit(b, temperature.get(n)!, moisture.get(n)!);
+        const fitK = misfit(a, temperature.get(k)!, moisture.get(k)!);
+        const fitN = misfit(b, temperature.get(n)!, moisture.get(n)!);
         const which = fitK >= fitN ? k : n;
         if (biomes.get(which) === target) continue;
         biomes.set(which, target);
@@ -373,8 +446,13 @@ export function worldBiomes(
   }
   splitAndSpread();
 
-  // Seas stay sea biomes whatever the repairs did nearby.
-  for (const k of sea) if (!isSeaBiome(biomes.get(k)!)) biomes.set(k, ok(OPEN_SEA));
+  // Seas stay sea biomes whatever the repairs did nearby: the commonest sea biome.
+  const seaDefault = [...bands.sea].sort((a, b) => b.chance - a.chance || a.order - b.order)[0]?.id;
+  for (const k of sea) {
+    if (zoneOf(biomes.get(k)!) === "sea") continue;
+    const b = seaDefault !== undefined ? ok(seaDefault) : fallbackFor(true, temperature.get(k)!, moisture.get(k)!);
+    if (b !== undefined) biomes.set(k, b);
+  }
 
   const terrain = new Map<string, string>();
   for (const k of keys) {
@@ -382,6 +460,75 @@ export function worldBiomes(
     if (t) terrain.set(k, t);
   }
   return { biomes, terrain, elevation, temperature, moisture, sea, river, ecotones };
+}
+
+// ── the biomes it may place ──────────────────────────────────────────────
+
+/** Land height ranks above which a hex is "high" (on land of 8+ hexes) and "mid". */
+export const HIGH_RANK = 0.86;
+export const MID_RANK = 0.66;
+
+export interface PlacementCandidate extends BiomeClimate {
+  id: BiomeId;
+  elevation: ClimateElevation;
+  chance: number;
+  rare: boolean;
+  zone: BiomeInfo["zone"];
+  /** Ideal (temperature, moisture) for the repairs (biomes.climateIdeal). */
+  ideal: [number, number];
+  /** The shipped biomes in their preset order first, then the user's by id. */
+  order: number;
+}
+
+export interface PlacementPool {
+  /** Biomes with a climate, in `order` (the repairs walk them in it). */
+  cands: PlacementCandidate[];
+  /** The same, in the order a band tries them: rarest, then narrowest, then `order`. */
+  tryOrder: PlacementCandidate[];
+  byId: Map<BiomeId, PlacementCandidate>;
+  /** A pool's biomes without a climate: placed only where no climate biome fits. */
+  fallback: { id: BiomeId; sea: boolean }[];
+}
+
+/**
+ * The biomes World biomes may place. With `list` (a biome pool) only those,
+ * and the pool's biomes without a climate fill hexes no climate biome fits.
+ * Without one: every biome note with a climate (the shipped presets before
+ * the notes load); biomes without a climate are never placed.
+ */
+export function placementPool(list?: readonly BiomeNoteFields[]): PlacementPool {
+  const notes: readonly BiomeNoteFields[] = list
+    ?? (biomeSourceActive() ? allBiomeIds().map((id) => biomeNoteOf(id)).filter((b): b is BiomeNoteFields => !!b) : BIOME_PRESETS);
+  const presetOrder = new Map(BIOME_PRESETS.map((p, i) => [p.id, i]));
+  const users = [...new Set(notes.filter((b) => !presetOrder.has(b.id)).map((b) => b.id))].sort();
+  const orderOf = (id: BiomeId) => presetOrder.get(id) ?? BIOME_PRESETS.length + users.indexOf(id);
+  const seen = new Set<BiomeId>();
+  const cands: PlacementCandidate[] = [];
+  const fallback: { id: BiomeId; sea: boolean }[] = [];
+  for (const b of notes) {
+    if (seen.has(b.id)) continue;
+    seen.add(b.id);
+    const c = b.climate;
+    if (!c || !isPlaceable(c)) {
+      if (list) fallback.push({ id: b.id, sea: biomeInfo(b.id)?.zone === "sea" || (b.landShare !== undefined && b.landShare < 0.5) });
+      continue;
+    }
+    const elevation = c.elevation ?? "low";
+    cands.push({
+      ...c,
+      id: b.id,
+      elevation,
+      chance: c.chance ?? 1,
+      rare: !!c.rare,
+      zone: zoneOfElevation(elevation),
+      ideal: climateIdeal(b.id, c),
+      order: orderOf(b.id),
+    });
+  }
+  cands.sort((a, b) => a.order - b.order);
+  fallback.sort((a, b) => orderOf(a.id) - orderOf(b.id));
+  const tryOrder = [...cands].sort((a, b) => a.chance - b.chance || climateArea(a) - climateArea(b) || a.order - b.order);
+  return { cands, tryOrder, byId: new Map(cands.map((c) => [c.id, c])), fallback };
 }
 
 // ── as a generator (registry: "World biomes") ───────────────────────────
@@ -418,12 +565,4 @@ export function worldBiomesFromOptions(
     land: pick(options.land, ["one", "two", "islands"] as const, "one"),
     north: pick(options.north, ["colder", "warmer", "none"] as const, "colder"),
   });
-}
-
-/** Lowland biome for a climate (Whittaker-style). */
-export function lowland(t: number, m: number): BiomeId {
-  if (t < 0.18) return "tundra";
-  if (t < 0.36) return m > 0.45 ? "taiga" : "tundra";
-  if (t < 0.66) return m < 0.3 ? "grassland" : m < 0.62 ? "temperate-forest" : m < 0.8 ? "deep-forest" : "swamp";
-  return m < 0.2 ? "badlands" : m < 0.5 ? "savanna" : m < 0.85 ? "jungle" : "swamp";
 }

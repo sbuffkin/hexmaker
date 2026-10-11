@@ -13,7 +13,8 @@ import {
 	representativeTerrain,
 	resolveBiome,
 } from "../src/overworld/biomes";
-import { MAX_PATCH, MAX_SHARE, lowland, worldBiomes, type WorldBiomesOptions } from "../src/overworld/worldBiomes";
+import { MAX_PATCH, MAX_SHARE, worldBiomes, type WorldBiomesOptions } from "../src/overworld/worldBiomes";
+import { lowland } from "./fixtures/worldBiomesLegacy";
 import { BUILTIN_GENERATORS } from "../src/worldgen/builtinGenerators";
 
 const EXP = DEFAULT_TERRAIN_PALETTE;
