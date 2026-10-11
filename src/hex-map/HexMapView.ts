@@ -824,8 +824,13 @@ export class HexMapView extends ItemView {
       const palette = this.plugin.getMapPalette(home.overworld.name);
       const flower = el.createDiv({ cls: "duckmage-region-flower", attr: { role: "group", "aria-label": "Neighbouring regions" } });
       const R = 12; // px from the middle to a petal's centre
-      const here = flower.createSpan({ cls: "duckmage-region-flower-petal is-here", attr: { title: `Here: ${this.plugin.mapLabel(this.activeMapName)}` } });
+      // The centre petal is this region: click it for Edit region….
+      const here = flower.createEl("button", {
+        cls: "duckmage-region-flower-petal is-here",
+        attr: { title: `Here: ${this.plugin.mapLabel(this.activeMapName)}. Click to edit this region.`, "aria-label": "Edit region" },
+      });
       here.setCssProps({ "--duckmage-petal-x": "0px", "--duckmage-petal-y": "0px" });
+      here.addEventListener("click", () => this.openEditRegion(home.px, home.py, home.overworld.name));
       const lock = walkLock(this.plugin, this.activeMapName, home.overworld.name);
       for (const p of petals) {
         const key = `${p.hex[0]}_${p.hex[1]}`;
@@ -4763,12 +4768,22 @@ export class HexMapView extends ItemView {
         });
       });
     }
+    // Mark the party (or anything) on the overworld: tokens sit on its hexes.
+    menu.addItem((item) =>
+      item.setTitle("Create token here").setIcon("circle-user").onClick(() => this.createTokenAtHex(px, py)),
+    );
     menu.showAtMouseEvent(evt);
   }
 
-  /** "Edit region…" for the region on overworld hex (px, py). */
-  openEditRegion(px: number, py: number): void {
-    new EditRegionModal({ ...this.biomeHost(), openLocations: (hx, hy) => this.openLocationsList(hx, hy) }, this.activeMapName, px, py).open();
+  /** "Edit region…" for the region on hex (px, py) of `overworld` (default the open map; from inside a region, its overworld). */
+  openEditRegion(px: number, py: number, overworld = this.activeMapName): void {
+    const openLocations = (hx: number, hy: number) => {
+      if (overworld === this.activeMapName) { this.openLocationsList(hx, hy); return; }
+      // The list belongs to the overworld hex: go there first.
+      this.navigateToMap(overworld);
+      window.setTimeout(() => this.openLocationsList(hx, hy), 50);
+    };
+    new EditRegionModal({ ...this.biomeHost(), openLocations }, overworld, px, py).open();
   }
 
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {

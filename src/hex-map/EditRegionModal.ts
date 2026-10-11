@@ -22,8 +22,9 @@ import { regionMapAt, regionSettingsLabel } from "../maps/submaps";
 import { terrainCounts } from "../maps/mapNote";
 import { readNotesSection, writeNotesSection } from "../maps/mapNoteNotes";
 import { flowerPetals } from "../maps/mapNav";
-import { biomeForTerrain, biomeInfo, type BiomeId } from "../overworld/biomes";
-import { overworldOf, regenerateRegion, setBiomeAt } from "../overworld/regionsVault";
+import { biomeInfo, type BiomeId } from "../overworld/biomes";
+import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "../overworld/regionsVault";
+import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
 import { mayReshape, paintableBiomes, RegionGenModal, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
@@ -118,9 +119,20 @@ export class EditRegionModal extends HexmakerModal {
     // ── biome ─────────────────────────────────────────────────────────────
     const terrain = plugin.mapStore.get(this.overworld, `${this.px}_${this.py}`)?.terrain;
     const palette = plugin.getMapPalette(this.overworld);
-    const current = terrain ? biomeForTerrain(terrain, palette) : undefined;
+    const current = hexBiomeAt(plugin, this.overworld, `${this.px}_${this.py}`);
     const biomeSec = contentEl.createDiv({ cls: "duckmage-editor-section duckmage-edit-region-biome" });
     biomeSec.createEl("h4", { text: "Biome" });
+    const status = regionBiomeStatus(plugin, name);
+    if (status && "unknown" in status) {
+      biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: `Unknown biome: ${status.unknown} (its note is gone). The region keeps its terrain.` });
+    }
+    const editGenerator = (row: HTMLElement) => {
+      if (!current) return;
+      row.createEl("button", { text: "Edit generator…", attr: { title: "Tune how this biome's regions are made" } }).addEventListener("click", () => {
+        this.close();
+        void openBiomeGenerator(plugin, current);
+      });
+    };
     const biomes = paintableBiomes(plugin, this.overworld);
     if (plan.biome === "pick") {
       const grid = biomeSec.createDiv({ cls: "duckmage-terrain-picker duckmage-edit-region-biomes" });
@@ -161,6 +173,7 @@ export class EditRegionModal extends HexmakerModal {
           new RegionGenModal(this.host, this.overworld, this.px, this.py).open();
         });
       }
+      editGenerator(row);
     } else {
       const shown = biomes.find((b) => b.id === current);
       const row = biomeSec.createDiv({ cls: "duckmage-edit-region-biome-show" });
@@ -168,6 +181,7 @@ export class EditRegionModal extends HexmakerModal {
       if (shown) swatch.setCssProps({ "--duckmage-biome-color": shown.color });
       row.createSpan({ text: shown?.label ?? (current ? biomeInfo(current)?.label ?? current : terrain ?? "None") });
       if (plan.hint) biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: plan.hint });
+      editGenerator(biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" }));
     }
 
     // ── facts ─────────────────────────────────────────────────────────────

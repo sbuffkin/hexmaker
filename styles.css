@@ -8356,7 +8356,7 @@ button.duckmage-terrain-legend-chip {
 .duckmage-region-flower-petal.is-here {
     background: var(--interactive-accent);
     border-color: var(--interactive-accent);
-    cursor: default;
+    cursor: pointer;
 }
 .duckmage-region-flower-petal.is-empty {
     background: transparent;
@@ -8530,6 +8530,8 @@ textarea.duckmage-edit-region-notes-input {
     width: 100%;
     min-height: 4.5em;
     resize: vertical;
+}
+
 /* Biomes list and the Add / Edit biome form (#50). */
 .duckmage-biome-list {
     display: grid;
