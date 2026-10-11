@@ -16,6 +16,9 @@ const PALETTES_FOLDER_DESC =
 const BIOMES_FOLDER_DESC =
   "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
 
+const WORLD_TYPES_FOLDER_DESC =
+  "Vault-relative folder for world types notes (which worlds the space generators place, and how each world's map is made). Defaults to a world-types folder inside the world folder.";
+
 const BIOME_POOLS_FOLDER_DESC =
   "Vault-relative folder for biome pool notes (each lists the biomes a generated overworld may use). Defaults to a biome-pools folder inside the world folder.";
 
@@ -129,6 +132,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "palettesFolder",
   "biomesFolder",
   "biomePoolsFolder",
+  "worldTypesFolder",
 ]);
 
 /** Settings keys whose change should re-render open hex map views. */
@@ -676,6 +680,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "World/biome-pools",
         BIOME_POOLS_FOLDER_DESC,
       ),
+      folderText(
+        "World types folder",
+        "worldTypesFolder",
+        "World/world-types",
+        WORLD_TYPES_FOLDER_DESC,
+      ),
       {
         type: "group",
         heading: "Map types",
@@ -801,6 +811,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     return this.plugin.saveSettings().then(() => {
       if (MAP_REFRESH_KEYS.has(key)) this.plugin.refreshHexMap();
       if (key === "biomesFolder") void this.plugin.biomeStore.reload();
+      if (key === "worldTypesFolder") void this.plugin.worldTypeStore.reload();
       if (key === "iconsFolder") this.plugin.loadAvailableIcons();
     });
   }
@@ -1598,6 +1609,20 @@ export class HexmakerSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.biomePoolsFolder = normalizeFolder(value ?? "");
             await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("World types folder")
+      .setDesc(WORLD_TYPES_FOLDER_DESC)
+      .addText((text) =>
+        text
+          .setPlaceholder("World/world-types")
+          .setValue(this.plugin.settings.worldTypesFolder ?? "")
+          .onChange(async (value) => {
+            this.plugin.settings.worldTypesFolder = normalizeFolder(value ?? "");
+            await this.plugin.saveSettings();
+            void this.plugin.worldTypeStore.reload();
           }),
       );
 

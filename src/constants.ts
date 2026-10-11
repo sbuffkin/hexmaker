@@ -402,6 +402,7 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   palettesFolder: "",
   biomesFolder: "",
   biomePoolsFolder: "",
+  worldTypesFolder: "",
   palettesMigrated: false,
   // Space is opt-in (setup wizard / settings → Map types). Upgrades without
   // the setting get space too if they already have space palettes

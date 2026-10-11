@@ -152,6 +152,8 @@ Neighbouring regions share one set of hex numbers: a new region carries on from 
 
 A road or river that ends on the edge of a region, next to where the neighbour's road of the same type ends, is drawn on to the shared edge on both maps, so the two join up.
 
+**World types** (space; Advanced: Terrain generators). Which worlds Star scatter and Orbits place, how often, and how each world's own map is made, is a table note in `{world folder}/world-types` (**Default space** ships with the usual odds; **Restore default** puts them back). Each row: a **World** (a terrain of the palette), a **Weight**, optional limits (**Map** sector or system, **Orbit** inner / habitable / outer or rings like `2–4`, **Stars**, **Temperature**) and, for the world's map, **Size** (`20×14` or `16–24 × 10–14`), **Generator**, **Options**, **Palette** and **Base**. **Edit world types…** (in the Star scatter and Orbits options, or the command) edits the rows and previews how often each world comes up. Needs Build or God.
+
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 
 **New map…** (in Maps) is one form: generator cards with a live preview, Next to (Advanced), and **More** for starting coordinates, stagger and a background image (pick one from the vault, or drop one from your computer). A new map starts on Overland; pick Blank to paint by hand.

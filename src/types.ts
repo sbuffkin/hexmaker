@@ -353,6 +353,10 @@ export interface HexmakerPluginSettings {
 	biomePoolsFolder?: string;
 	/** True once the shipped "All biomes" pool note was written (once, so a deleted one stays deleted). */
 	biomePoolSeeded?: boolean;
+	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
+	worldTypesFolder?: string;
+	/** True once the shipped "Default space" world types note was written (once, so a deleted one stays deleted). */
+	worldTypesSeeded?: boolean;
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
 	/**

@@ -8647,3 +8647,105 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-wfc-used-by {
     font-style: italic;
 }
+/* World types table editor (space generators). */
+.duckmage-world-types-modal {
+    width: min(64em, 95vw);
+}
+.duckmage-world-types-head,
+.duckmage-world-types-new,
+.duckmage-world-types-preview-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-world-types-problems,
+.duckmage-world-types-status.is-error {
+    color: var(--text-error);
+}
+.duckmage-world-types-status {
+    flex: 1 1 auto;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-world-types-rows {
+    max-height: 40vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0;
+}
+.duckmage-world-types-row {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+.duckmage-world-types-row.is-invalid {
+    border-color: var(--text-error);
+}
+.duckmage-world-types-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 4px 6px;
+}
+.duckmage-world-types-line.is-setup {
+    opacity: 0.85;
+}
+.duckmage-world-types-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.duckmage-world-types-cell-label {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-world-types-cell input {
+    width: 8em;
+}
+.duckmage-world-types-cell.is-world input {
+    width: 11em;
+}
+.duckmage-world-types-cell.is-weight input {
+    width: 4em;
+}
+.duckmage-world-types-cell.is-generator input,
+.duckmage-world-types-cell.is-options input {
+    width: 13em;
+}
+.duckmage-world-types-tools {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.duckmage-world-types-dist {
+    display: grid;
+    grid-template-columns: minmax(8em, max-content) minmax(6em, 1fr) max-content max-content;
+    gap: 2px 8px;
+    align-items: center;
+    max-height: 14em;
+    overflow-y: auto;
+    margin-top: 4px;
+}
+.duckmage-world-types-dist-row {
+    display: contents;
+}
+.duckmage-world-types-dist-bar {
+    height: 0.7em;
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.duckmage-world-types-dist-fill {
+    display: block;
+    height: 100%;
+    width: var(--duckmage-dist, 0%);
+    background: var(--interactive-accent);
+}
+.duckmage-world-types-dist-num,
+.duckmage-world-types-dist-odds {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}

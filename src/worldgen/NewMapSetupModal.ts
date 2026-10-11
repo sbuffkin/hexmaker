@@ -21,6 +21,9 @@ import { addGeneratedPaths, pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { WorldTypesModal } from "../space/WorldTypesModal";
+import { STAR_SCATTER_ID } from "./procedural/starScatter";
+import { ORBITS_ID } from "./procedural/orbits";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
@@ -623,6 +626,14 @@ export class NewMapSetupModal extends HexmakerModal {
             hint?.remove();
           }
           refresh();
+        });
+      }
+      // Space generators: the worlds they place come from a world types table.
+      if (kind && (kind.id === STAR_SCATTER_ID || kind.id === ORBITS_ID) && hasFeature(this.plugin.settings, "generators")) {
+        const r = this.row(optsBox, "World types");
+        const btn = r.createEl("button", { text: "Edit world types…" });
+        btn.addEventListener("click", () => {
+          new WorldTypesModal(this.app, this.plugin, this.origin?.map, undefined, kind.id === ORBITS_ID ? "system" : "sector").open();
         });
       }
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));

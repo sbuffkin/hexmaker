@@ -426,8 +426,11 @@ export const WORLD_TYPES_HELP = [
   "> Which worlds the space generators place and how often, and what each world's own map is made with. **World** is a terrain of the palette. **Weight** (1 if blank) is its odds against the other rows that fit; 0 never rolls it. Limits, all optional: **Map** sector (Star scatter's systems) or system (Orbits), **Orbit** inner, habitable, outer or rings like 2–4, **Stars** a list of star terrains, **Temperature** cold, cool, mild, warm, hot or 0.2–0.5. For the world's map: **Size** like 20×14 or 16–24 × 10–14, **Generator** a generator note link or id, **Options** like water=85, climate=lush, **Palette** and **Base** terrain. The same world can have several rows. Add, edit or delete rows freely.",
 ];
 
-const COLUMNS = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature", "Size", "Generator", "Options", "Palette", "Base", "Notes"] as const;
-type Column = (typeof COLUMNS)[number];
+/** The note table's columns, in order (the editor keeps each row as these cells). */
+export const WORLD_TYPE_COLUMNS = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature", "Size", "Generator", "Options", "Palette", "Base", "Notes"] as const;
+export type WorldTypeColumn = (typeof WORLD_TYPE_COLUMNS)[number];
+type Column = WorldTypeColumn;
+const COLUMNS = WORLD_TYPE_COLUMNS;
 const HEADER_ALIASES: Record<string, Column> = {
   world: "World", worlds: "World", "world type": "World", type: "World", body: "World", terrain: "World",
   weight: "Weight", odds: "Weight", chance: "Weight",
@@ -626,4 +629,33 @@ export function copyWorldTypeRows(rows: readonly WorldTypeRow[]): WorldTypeRow[]
     if (r.options) c.options = { ...r.options };
     return c;
   });
+}
+
+/**
+ * Cells in WORLD_TYPE_COLUMNS order → a row, or what's wrong (the
+ * editor's check; the same reading as the note's).
+ */
+export function readWorldTypeCells(cells: readonly string[]): { row?: WorldTypeRow; problem?: string } {
+  return readRow([...cells], [...COLUMNS]);
+}
+
+/** Each fitting world's exact odds (0..1) for a context, most likely first. */
+export function worldTypeOdds(table: WorldTypeTable, ctx: Omit<WorldTypeContext, "seed"> & { seed?: number }): { world: string; odds: number }[] {
+  const w = worldTypeWeights(table, ctx);
+  const total = Object.values(w).reduce((a, b) => a + b, 0);
+  if (total <= 0) return [];
+  const names = new Map(matchingWorldTypes(table, ctx).map((r) => [lc(r.world), r.world.trim()]));
+  return Object.entries(w)
+    .map(([k, v]) => ({ world: names.get(k) ?? k, odds: v / total }))
+    .sort((a, b) => b.odds - a.odds || a.world.localeCompare(b.world));
+}
+
+/** Roll `n` worlds (seeds `seed`, `seed + 1`, …) and count them, most rolled first. */
+export function rollWorldTypes(table: WorldTypeTable, ctx: Omit<WorldTypeContext, "seed" | "rand">, n: number, seed = 1): { world: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    const p = pickWorldType(table, { ...ctx, seed: seed + i });
+    if (p) counts.set(p.terrain, (counts.get(p.terrain) ?? 0) + 1);
+  }
+  return [...counts].map(([world, count]) => ({ world, count })).sort((a, b) => b.count - a.count || a.world.localeCompare(b.world));
 }

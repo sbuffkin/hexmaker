@@ -33,6 +33,8 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { BiomeStore } from "./overworld/BiomeStore";
+import { WorldTypeStore } from "./space/WorldTypeStore";
+import { WorldTypesModal } from "./space/WorldTypesModal";
 import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
@@ -101,6 +103,8 @@ export default class HexmakerPlugin extends Plugin {
   paletteStore = new PaletteStore(this);
   /** Overworld biome notes (#50). */
   biomeStore = new BiomeStore(this);
+  /** World types tables for the space generators (src/space). */
+  worldTypeStore = new WorldTypeStore(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
   /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
@@ -147,6 +151,7 @@ export default class HexmakerPlugin extends Plugin {
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
       void this.biomeStore.init();
+      void this.worldTypeStore.init();
       void this.paletteStore.init().then(() => this.mapStore.init()).then(() => this.ensureTablesForNewTerrains());
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
@@ -189,6 +194,7 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onModify(f);
         this.biomeStore.onModify(f);
+        this.worldTypeStore.onModify(f);
       }),
     );
     this.registerEvent(
@@ -196,6 +202,7 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onDelete(f);
         this.biomeStore.onDelete(f);
+        this.worldTypeStore.onDelete(f);
       }),
     );
     this.registerEvent(
@@ -203,6 +210,7 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
         this.paletteStore.onRename(f, oldPath);
         this.biomeStore.onRename(f, oldPath);
+        this.worldTypeStore.onRename(f, oldPath);
         if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
       }),
     );
@@ -217,6 +225,7 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("modify", (f) => {
         this.paletteStore.onModify(f);
         this.biomeStore.onModify(f);
+        this.worldTypeStore.onModify(f);
         this.mapStore.onModify(f);
       }),
     );
@@ -263,6 +272,18 @@ export default class HexmakerPlugin extends Plugin {
       id: "open-palette-editor",
       name: "Open palette editor",
       callback: () => void this.openPaletteEditor(),
+    });
+    this.addCommand({
+      id: "edit-world-types",
+      name: "Edit world types…",
+      checkCallback: (checking) => {
+        if (!hasFeature(this.settings, "generators") || !enabledKinds(this.settings).has("space")) return false;
+        if (!checking) {
+          const open = this.app.workspace.getActiveViewOfType(HexMapView);
+          new WorldTypesModal(this.app, this, open?.activeMapName).open();
+        }
+        return true;
+      },
     });
     this.addCommand({
       id: "new-overworld",
