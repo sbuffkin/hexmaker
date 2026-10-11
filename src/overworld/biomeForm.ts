@@ -119,11 +119,14 @@ export function previewRegion(layout: RegionLayout, palette: TerrainColor[], fie
   const id: BiomeId = fields.id;
   const biomes = new Map<string, BiomeId>([["0_0", id]]);
   for (const [x, y] of hexNeighbors(0, 0, layout.orientation, layout.parentStagger)) biomes.set(`${x}_${y}`, id);
+  const profile = profileFromMix(id, fields.mix, palette);
+  if (fields.landShare !== undefined) profile.landShare = fields.landShare;
+  if (fields.minIslands !== undefined) profile.minIslands = fields.minIslands;
   return planRegion({
     layout,
     parent: [0, 0],
     biomes,
-    profiles: new Map([[id, profileFromMix(id, fields.mix, palette)]]),
+    profiles: new Map([[id, profile]]),
     typeOf: paletteTypeOf(palette),
     worldSeed: seed,
     seed,

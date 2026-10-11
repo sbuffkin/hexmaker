@@ -181,9 +181,10 @@ export class BiomeFormModal extends HexmakerModal {
     const mixBox = form.createEl("details", { cls: "duckmage-biome-mix" });
     mixBox.open = true;
     mixBox.createEl("summary", { text: "Terrain types (weights)" });
+    const mixGrid = mixBox.createDiv({ cls: "duckmage-biome-mix-grid" });
     const typesPresent = new Set(this.palette().map((t) => t.type));
     for (const [type, w] of state.mix) {
-      const row = field(type, mixBox);
+      const row = field(type, mixGrid);
       if (!typesPresent.has(type)) row.addClass("is-missing");
       const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${type} weight` } });
       const num = row.createEl("input", { type: "number", cls: "duckmage-biome-weight", attr: { min: "0", step: "1", "aria-label": `${type} weight value` } });
@@ -202,7 +203,10 @@ export class BiomeFormModal extends HexmakerModal {
     blend.value = state.blend;
     blend.addEventListener("change", () => { state.blend = blend.value as BiomeBlend | ""; this.schedule(); });
 
-    const landRow = field("Land share");
+    const isles = form.createEl("details", { cls: "duckmage-biome-islands" });
+    isles.open = state.landPercent !== undefined || state.minIslands !== undefined;
+    isles.createEl("summary", { text: "Islands (watery biomes)" });
+    const landRow = field("Land share", isles);
     const landOn = landRow.createEl("input", { type: "checkbox", attr: { "aria-label": "Set a land share" } });
     const land = landRow.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5", "aria-label": "Land share" } });
     const landVal = landRow.createSpan();
@@ -213,12 +217,12 @@ export class BiomeFormModal extends HexmakerModal {
       landVal.setText(state.landPercent !== undefined ? `${state.landPercent}%` : "Not set");
     };
     showLand();
-    landOn.addEventListener("change", () => { state.landPercent = landOn.checked ? Number(land.value) : undefined; showLand(); });
-    land.addEventListener("input", () => { state.landPercent = Number(land.value); showLand(); });
-    const isl = field("Fewest islands").createEl("input", { type: "number", attr: { min: "0", step: "1", placeholder: "Not set", "aria-label": "Fewest islands" } });
+    landOn.addEventListener("change", () => { state.landPercent = landOn.checked ? Number(land.value) : undefined; showLand(); this.schedule(); });
+    land.addEventListener("input", () => { state.landPercent = Number(land.value); showLand(); this.schedule(); });
+    const isl = field("Fewest islands", isles).createEl("input", { type: "number", attr: { min: "0", step: "1", placeholder: "Not set", "aria-label": "Fewest islands" } });
     isl.value = state.minIslands !== undefined ? String(state.minIslands) : "";
-    isl.addEventListener("change", () => { state.minIslands = isl.value.trim() === "" ? undefined : Math.max(0, Math.round(Number(isl.value) || 0)); });
-    form.createEl("p", { cls: "setting-item-description", text: "Land share and fewest islands are for watery biomes (archipelagos)." });
+    isl.addEventListener("change", () => { state.minIslands = isl.value.trim() === "" ? undefined : Math.max(0, Math.round(Number(isl.value) || 0)); this.schedule(); });
+    isles.createEl("p", { cls: "setting-item-description", text: "For archipelagos: how much of a region is land, and the fewest islands it gets." });
 
     // Transitions.
     const trBox = form.createEl("details", { cls: "duckmage-biome-transitions" });

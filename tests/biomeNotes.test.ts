@@ -423,4 +423,11 @@ describe("biome form model", () => {
 		expect(plan.cells.size).toBeGreaterThan(0);
 		expect(new Set(plan.cells.values())).toEqual(new Set(["sea"]));
 	});
+
+	it("the preview makes islands from the form's land share", () => {
+		const fields = { ...GLASS, mix: [{ type: "water", weight: 9 }, { type: "grassland", weight: 1 }], landShare: 0.4, minIslands: 2 };
+		const plan = previewRegion(LAYOUT, PAL, fields, 7);
+		const land = [...plan.cells.values()].filter((t) => t !== "sea").length;
+		expect(land / plan.cells.size).toBeGreaterThan(0.2);
+	});
 });

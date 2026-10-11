@@ -8564,5 +8564,21 @@ textarea.duckmage-edit-region-notes-input {
     font-style: italic;
 }
 .duckmage-biome-weight {
-    width: 5em;
+    width: 4em;
+}
+.duckmage-biome-mix-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16em, 1fr));
+    gap: 2px 12px;
+}
+.duckmage-biome-mix-grid .duckmage-region-gen-label {
+    min-width: 6.5em;
+}
+.duckmage-biome-mix-grid input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 3em;
+}
+.duckmage-biome-islands {
+    display: grid;
+    gap: 4px;
 }
