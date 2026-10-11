@@ -48,6 +48,8 @@ import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
+import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
+import { registry } from "./modules";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import {
   getPreset,
@@ -2739,6 +2741,36 @@ export default class HexmakerPlugin extends Plugin {
   /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */
   arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } {
     return effectiveArrivalMode(mapName, (m) => this.getMap(m)?.arrivalMode, (m) => this.parentOf(m)?.map);
+  }
+
+  /**
+   * Turn a map type (its module) on: what Settings → Map types does, from
+   * elsewhere (CM6's offer). Installs its shipped content the first time.
+   */
+  async enableMapKind(kind: MapKind): Promise<void> {
+    const kinds = enabledKinds(this.settings);
+    if (kinds.has(kind)) return;
+    kinds.add(kind);
+    this.settings.mapKinds = registry.kindIds().filter((id) => kinds.has(id));
+    await this.saveSettings();
+    await this.applyKindContent();
+    this.refreshHexMap();
+  }
+
+  /**
+   * CM6: `mapName` was opened on purpose (maps picker, region menu) and its
+   * module is off: offer to turn it on. Never called from "New …" flows.
+   * The map is open either way; "Not now" holds for the session.
+   */
+  offerModuleFor(mapName: string): void {
+    const offer = moduleOfferFor(mapName, (m) => this.kindFor(m), this.settings);
+    if (!offer) return;
+    const text = moduleOfferText(this.mapLabel(mapName), offer);
+    new ConfirmModal(this.app, text.heading, text.message, text.confirm, () => void this.enableMapKind(offer.kind), {
+      cancelText: "Not now",
+      onCancel: () => declineModuleOffer(offer.kind),
+      offer: true,
+    }).open();
   }
 
   /** The map shown in the active hex map view, if one is active. */

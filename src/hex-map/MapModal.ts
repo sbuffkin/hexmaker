@@ -207,7 +207,7 @@ export class MapModal extends HexmakerModal {
       const a = li.createEl("a", { text: this.plugin.mapLabel(r.name), cls: "duckmage-map-list-name" });
       li.createSpan({ cls: "duckmage-region-palette-badge", text: `hex ${hx}, ${hy}` });
       a.addEventListener("click", () => {
-        this.view.switchMapFromModal(r.name);
+        this.view.switchMapFromModal(r.name, { offerModule: true });
         this.close();
       });
     }
@@ -386,7 +386,7 @@ export class MapModal extends HexmakerModal {
       // The slug is the folder; worth seeing when it differs from the name.
       if (node.label !== map.name) nameSpan.setAttr("title", `Folder: ${map.name}`);
       nameSpan.addEventListener("click", () => {
-        this.view.switchMapFromModal(map.name);
+        this.view.switchMapFromModal(map.name, { offerModule: true });
         this.close();
       });
       if (missing) {

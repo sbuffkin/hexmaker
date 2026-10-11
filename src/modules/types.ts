@@ -43,6 +43,8 @@ export interface SectionWords {
 export interface KindInfo {
   id: KindId;
   label: string;
+  /** A short name for sentences ("Space"); else `label`. */
+  shortLabel?: string;
   description: string;
   /**
    * Display names for link sections on maps of this type (G4b), keyed by

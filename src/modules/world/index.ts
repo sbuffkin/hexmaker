@@ -15,6 +15,7 @@ export const worldModule: HexmakerModule = {
   kind: {
     id: "world",
     label: "World / fantasy overland",
+    shortLabel: "World",
     description: "Continents, regions and local areas: forests, mountains, coasts. Includes the Limited and Expanded palettes, the Region detail generator and the Places icon pack (towns, castles, ruins…).",
     // A palette with no other type's terrains, declaring none, is a world palette.
     fallback: true,
