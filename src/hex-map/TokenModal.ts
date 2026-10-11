@@ -334,7 +334,8 @@ export class TokenModal extends HexmakerModal {
     descSetting.nameEl.addClass("duckmage-token-field-label");
     descSetting.nameEl.addEventListener("click", () => descInput?.focus());
     // Advanced (placement: Token.description): in the dropdown above the buttons.
-    this.place("Token.description", descSetting.settingEl);
+    // "Advanced · 1 set" while it has text.
+    this.place("Token.description", descSetting.settingEl, () => !!descInput?.value.trim());
 
     // Buttons
     const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });

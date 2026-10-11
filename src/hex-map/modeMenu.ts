@@ -10,12 +10,12 @@
  *
  * Placement (src/ui/placement.ts): an item given a placement id that's
  * Advanced goes into an "Advanced ▸" submenu at the end, Debug into a
- * "Debug ▸" one (debug mode only), hidden is left out (placedMenu.ts).
+ * "Debug ▸" one (debug mode only), hidden is left out (src/ui/placedMenu.ts).
  */
 import { Menu } from "obsidian";
 import { allows, godOfferText, lockedSummary, MENU_ACTIONS, type MenuActionId, type ModeAction, type WorkMode } from "../workMode";
 import { isDebugMode, type LocalStore } from "../ui/debugMode";
-import { addSubmenus, placedRows, type PlacedRow } from "./placedMenu";
+import { PlacedMenu } from "../ui/placedMenu";
 
 export interface ModeMenuOptions {
   /** Local storage, for debug mode (no store: Debug items are left out). */
@@ -27,11 +27,13 @@ export interface ModeMenuOptions {
 export class ModeMenu {
   readonly menu = new Menu();
   private locked: ModeAction[] = [];
-  /** Items with a placement id that isn't main: sorted into submenus at the end. */
-  private placed: PlacedRow[] = [];
+  /** Placed items: Advanced and Debug ones are sorted into submenus at the end. */
+  private placed: PlacedMenu;
   private at = { x: 0, y: 0 };
 
-  constructor(private mode: WorkMode, private opts: ModeMenuOptions = {}) {}
+  constructor(private mode: WorkMode, private opts: ModeMenuOptions = {}) {
+    this.placed = new PlacedMenu(this.menu, opts.store ? isDebugMode(opts.store) : false);
+  }
 
   /** Is the item allowed in this mode? */
   allows(id: MenuActionId): boolean {
@@ -49,29 +51,16 @@ export class ModeMenu {
       this.locked.push(action);
       return;
     }
-    if (opts.place) {
-      const split = placedRows([{ id: opts.place, label: title, onClick, icon, checked: opts.checked }], true);
-      if (!split.shown.length) {
-        // Advanced or Debug: listed in its submenu at the end (hidden: nowhere).
-        this.placed.push(...split.advanced, ...split.debug);
-        return;
-      }
-    }
-    this.menu.addItem((item) => {
-      item.setTitle(title).setDisabled(!!opts.disabled);
-      if (icon) item.setIcon(icon);
-      if (opts.checked !== undefined) item.setChecked(opts.checked);
-      if (!opts.disabled) item.onClick(onClick);
-    });
+    this.placed.add(opts.place, { label: title, icon, onClick, checked: opts.checked, disabled: opts.disabled });
   }
 
   addSeparator(): void {
-    this.menu.addSeparator();
+    this.placed.addSeparator();
   }
 
   /** A greyed heading line for the items that follow (not an action). */
   addLabel(text: string): void {
-    this.menu.addItem((item) => item.setTitle(text).setIcon("hexagon").setDisabled(true));
+    this.placed.addItem((item) => item.setTitle(text).setIcon("hexagon").setDisabled(true));
   }
 
   /** The one-line hint for what was left out (null when nothing was). */
@@ -85,10 +74,7 @@ export class ModeMenu {
   }
 
   private finish(): void {
-    const debug = this.opts.store ? isDebugMode(this.opts.store) : false;
-    const split = placedRows(this.placed, debug);
-    addSubmenus(this.menu, split, () => this.at);
-    this.placed = [];
+    this.placed.finish(() => this.at);
     const hint = this.hint();
     if (!hint) return;
     this.menu.addSeparator();

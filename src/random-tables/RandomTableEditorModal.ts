@@ -508,10 +508,11 @@ export class RandomTableEditorModal extends HexmakerModal {
     this.place("TableEditor.minusOneAll", subOneToAllBtn);
     this.place("TableEditor.plusOneAll", addOneToAllBtn);
     this.place("TableEditor.import", importBtn);
-    this.place("TableEditor.linkedFolder", folderRow);
+    // Set ones count in the header ("Advanced · 1 set").
+    this.place("TableEditor.linkedFolder", folderRow, () => folderInput.value.trim() !== "");
     if (!isSystemTable) {
-      this.place("TableEditor.excludeRollPicker", rollFilterRow);
-      this.place("TableEditor.excludeEncounters", encFilterRow);
+      this.place("TableEditor.excludeRollPicker", rollFilterRow, () => rollFilterCb.checked);
+      this.place("TableEditor.excludeEncounters", encFilterRow, () => encFilterCb.checked);
     }
     this.disclosure.toEnd();
 

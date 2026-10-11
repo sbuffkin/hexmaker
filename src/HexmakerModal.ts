@@ -1,7 +1,7 @@
 import { App, Modal } from "obsidian";
 import { iconLabel, iconPack, iconPackTabs, placeIconKind, PLACE_ICON_KINDS, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
-import { Disclosure, type SectionName } from "./ui/disclosure";
+import { Disclosure, type IsSet, type SectionName } from "./ui/disclosure";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" | undefined;
@@ -54,10 +54,11 @@ export class HexmakerModal extends Modal {
 	/**
 	 * Put a built control where the placement map (src/ui/placement.ts)
 	 * says: left in place, moved into Advanced or Debug, or removed. Returns
-	 * whether it is shown.
+	 * whether it is shown. `isSet` says when it holds a non-default or
+	 * active value, counted in the Advanced header ("Advanced · 1 set").
 	 */
-	protected place(id: string, el: HTMLElement): boolean {
-		return this.disclosure.place(id, el);
+	protected place(id: string, el: HTMLElement, isSet?: IsSet): boolean {
+		return this.disclosure.place(id, el, isSet);
 	}
 
 	/**

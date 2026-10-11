@@ -136,6 +136,8 @@ export class OverlayPanel extends HexSidePanel {
   private checkboxes = new Map<OverlayKey, HTMLInputElement>();
   private factionOverlayCb: HTMLInputElement | null = null;
   private regionOverlayCb: HTMLInputElement | null = null;
+  /** The layers menu's Advanced dropdown (its header counts what's on in it). */
+  private layersDisclosure: Disclosure | null = null;
   private gmLayerCb: HTMLInputElement | null = null;
   private tokensCb: HTMLInputElement | null = null;
   private badgesCb: HTMLInputElement | null = null;
@@ -277,7 +279,9 @@ export class OverlayPanel extends HexSidePanel {
     // The region overlay is Advanced (placement: LayersMenu.regionOverlay):
     // in a collapsed dropdown at the end of the menu, so it doesn't grow.
     const disclosure = new Disclosure(this.plugin.app, "LayersMenu", () => panel);
-    disclosure.place("LayersMenu.regionOverlay", regionRow);
+    this.layersDisclosure = disclosure;
+    // "Advanced · 1 set" while the overlay is on.
+    disclosure.place("LayersMenu.regionOverlay", regionRow, () => regionCb.checked);
 
     // GM layer — default on (unlike the opt-in overlays above)
     const gmRow = panel.createDiv({ cls: "duckmage-overlay-row" });
@@ -532,6 +536,7 @@ export class OverlayPanel extends HexSidePanel {
       const show = map.showRegionOverlay ?? false;
       this.regionOverlayCb.checked = show;
       this.onRegionOverlayChange(show);
+      this.layersDisclosure?.refreshSet();
     }
     // GM layer — undefined → true (on by default)
     if (this.gmLayerCb) {

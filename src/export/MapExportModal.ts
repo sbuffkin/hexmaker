@@ -130,6 +130,8 @@ export function renderMapExportForm(
   const regionRow = regionHost === layerRow ? layerRow : (regionHost ?? createDiv()).createDiv({ cls: "duckmage-export-inline" });
   const showRegionOverlay = inlineCheck(regionRow, "Region overlay", regionHost ? ticks.showRegionOverlay : false,
     "Tints hexes by region and labels each region by name.");
+  // "Advanced · 1 set" while it's ticked.
+  if (regionHost && regionHost !== layerRow) disclosure.track("MapExport.showRegionOverlay", () => showRegionOverlay.checked);
   const layerChecks: Record<ExportLayerKey, HTMLInputElement> = {
     showCoords, showIcons, showPaths, showHexNames, showTokens, showLinkBadges, showLegend, showFactionOverlay, showRegionOverlay,
   };

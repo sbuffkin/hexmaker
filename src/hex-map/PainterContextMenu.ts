@@ -1,4 +1,4 @@
-import { placedRows, submenuRows } from "./placedMenu";
+import { placedRows, submenuRows } from "../ui/placedMenu";
 
 export interface PainterContextMenuOption {
   label: string;
@@ -33,7 +33,8 @@ export function painterMenuEntries(
   if (onSwitch) tool.push({ label: switchLabel, onClick: onSwitch });
   tool.push({ label: "Exit tool", onClick: onExit });
   tool.push(...extra);
-  const split = placedRows(leading, debugMode);
+  // The tool's own items are always there, so Advanced stays a submenu.
+  const split = placedRows(leading, debugMode, tool.length);
   const lead = [...split.shown, ...submenuRows(split, openSubmenu)];
   return lead.length ? [...lead, { separator: true }, ...tool] : tool;
 }

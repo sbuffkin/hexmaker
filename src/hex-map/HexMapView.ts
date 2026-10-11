@@ -1,5 +1,6 @@
 import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { COPY_HEX_LINK_TITLE, copyHexLink } from "./copyHexLink";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
@@ -4950,6 +4951,7 @@ export class HexMapView extends ItemView {
     });
     menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
+    menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
 
     menu.addSeparator();
 
@@ -5028,6 +5030,7 @@ export class HexMapView extends ItemView {
         else if (it.id === "locations") this.openLocationsList(px, py);
       }, { disabled: !it.enabled });
     }
+    menu.add("ow.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, px, py));
     // Mark the party (or anything) on the overworld: tokens sit on its hexes.
     menu.add("ow.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(px, py));
   }

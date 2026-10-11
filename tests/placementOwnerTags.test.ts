@@ -6,12 +6,14 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLACEMENT, layerOf, parsePlacement, partitionSections, subSectionOf, type Layer, type Placement } from "../src/ui/placement";
 import { Disclosure, DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen, subSectionKey } from "../src/ui/disclosure";
 import { setDebugMode, type LocalStore } from "../src/ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../src/ui/commandPlacement";
+import { eventPos } from "../src/ui/placedMenu";
+import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "obsidian";
 import { GENERATE_WORLD_DATA_NAME, REPAIR_HINT, withRepairHint } from "../src/ui/repairHint";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
@@ -435,19 +437,17 @@ describe("commands and menus follow their placement", () => {
     expect(placeCommand("Plugin.cmd.exportNotePdf", e, () => false)).toBe(e);
   });
 
-  type Item = { title?: string; sub?: FakeMenu; onClick?: () => void };
+  type Item = { title?: string; onClick?: (evt?: unknown) => void };
   class FakeMenu {
     items: Item[] = [];
-    constructor(private submenus: boolean) {}
     addItem(cb: (i: unknown) => unknown): this {
       const it: Item = {};
       const api: Record<string, unknown> = {
         setTitle: (t: string) => ((it.title = t), api),
         setIcon: () => api,
         setSection: () => api,
-        onClick: (f: () => void) => ((it.onClick = f), api),
+        onClick: (f: (evt?: unknown) => void) => ((it.onClick = f), api),
       };
-      if (this.submenus) api.setSubmenu = () => (it.sub = new FakeMenu(true));
       this.items.push(it);
       cb(api);
       return this;
@@ -458,23 +458,38 @@ describe("commands and menus follow their placement", () => {
     { id: "Plugin.fileMenuExportMarkdown", title: "Export to Markdown", short: "Markdown", icon: "file-text", run: () => void log.push("md") },
   ];
 
-  it("Advanced file-menu items go in one submenu", () => {
+  it("Advanced file-menu items go behind one item that opens them as a second menu where it was clicked", () => {
     const log: string[] = [];
-    const menu = new FakeMenu(true);
+    const menu = new FakeMenu();
     addPlacedMenuItems(menu as never, "Export note", "file-down", items(log), false);
-    expect(menu.items.map((i) => i.title)).toEqual(["Export note"]);
-    expect(menu.items[0].sub!.items.map((i) => i.title)).toEqual(["PDF", "Markdown"]);
-    menu.items[0].sub!.items[1].onClick!();
+    expect(menu.items.map((i) => i.title)).toEqual(["Export note ▸"]);
+    ObsidianMenu.shown = [];
+    menu.items[0].onClick!({ clientX: 40, clientY: 50 });
+    const sub = ObsidianMenu.shown[ObsidianMenu.shown.length - 1];
+    const subItems = sub.items.filter((i): i is ObsidianMenuItem => i !== "separator");
+    expect(subItems.map((i) => i.title)).toEqual(["PDF", "Markdown"]);
+    subItems[1].click?.();
     expect(log).toEqual(["md"]);
   });
 
-  it("without submenus (older Obsidian) they stay at the top level, nothing lost", () => {
-    const log: string[] = [];
-    const menu = new FakeMenu(false);
-    addPlacedMenuItems(menu as never, "Export note", "file-down", items(log), false);
-    expect(menu.items.map((i) => i.title)).toEqual(["Export to PDF", "Export to Markdown"]);
-    menu.items[0].onClick!();
-    expect(log).toEqual(["pdf"]);
+  it("where a submenu opens: the pointer, else the focused element, else the window", () => {
+    const win = { innerWidth: 800, innerHeight: 600 };
+    expect(eventPos({ clientX: 10, clientY: 20 } as MouseEvent, win)).toEqual({ x: 10, y: 20 });
+    const target = { getBoundingClientRect: () => ({ left: 5, bottom: 9, width: 50, height: 20 }) };
+    expect(eventPos({ target } as unknown as KeyboardEvent, win)).toEqual({ x: 5, y: 9 });
+    expect(eventPos(undefined, win)).toEqual({ x: 400, y: 200 });
+  });
+
+  it("no menu code uses the undocumented MenuItem.setSubmenu", () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((n) => {
+        const p = join(dir, n);
+        return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : [];
+      });
+    for (const f of walk("src")) {
+      const code = readFileSync(f, "utf8").split("\n").filter((l) => !/^\s*(\*|\/\/)/.test(l)).join("\n");
+      expect([f, /setSubmenu/.test(code)]).toEqual([f, false]);
+    }
   });
 });
 

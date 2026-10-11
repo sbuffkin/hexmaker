@@ -4,7 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { Menu, MenuItem } from "obsidian";
 import { layerOf, type Layer } from "../src/ui/placement";
-import { ADVANCED_SUBMENU, DEBUG_SUBMENU, placedRows, submenuRows } from "../src/hex-map/placedMenu";
+import { ADVANCED_SUBMENU, DEBUG_SUBMENU, placedRows, submenuRows } from "../src/ui/placedMenu";
 import { painterMenuEntries } from "../src/hex-map/PainterContextMenu";
 import { pathMenuItems } from "../src/hex-map/pathTool";
 import { ModeMenu } from "../src/hex-map/modeMenu";
@@ -123,11 +123,31 @@ describe("menus and toolbars: Advanced ▸ and Debug ▸ submenus", () => {
     for (const m of WORK_MODES) menu.add("mode.switch", m, null, noop, { checked: m === "build", place: `WorkModeMenu.${m}` });
     menu.showAtPosition({ x: 0, y: 0 });
     const titles = (menu.menu as unknown as Menu).items.map((i) => (i === "separator" ? "---" : i.title));
-    expect(titles).toEqual(["play", "build", ADVANCED_SUBMENU]);
-    const adv = (menu.menu as unknown as Menu).items[2] as MenuItem;
+    expect(titles).toEqual(["play", "build", "---", ADVANCED_SUBMENU]);
+    const adv = (menu.menu as unknown as Menu).items[3] as MenuItem;
     adv.click?.();
     const sub = Menu.shown[Menu.shown.length - 1];
     expect(sub.items.map((i) => (i === "separator" ? "---" : i.title))).toEqual(["god"]);
+  });
+
+  it("the mode switch in God: Advanced says one is set (God is on)", () => {
+    const menu = new ModeMenu("god");
+    for (const m of WORK_MODES) menu.add("mode.switch", m, null, noop, { checked: m === "god", place: `WorkModeMenu.${m}` });
+    menu.showAtPosition({ x: 0, y: 0 });
+    const items = (menu.menu as unknown as Menu).items;
+    expect((items[items.length - 1] as MenuItem).title).toBe("Advanced · 1 set ▸");
+  });
+
+  it("the path tool's Cross impassable stays an Advanced ▸ button (the bar has other buttons) and says when it's on", () => {
+    const row = { id: "ModeBar.crossImpassable", label: "Cross impassable", onClick: noop };
+    expect(placedRows([{ ...row, checked: false }], false, 1).advanced).toHaveLength(1);
+    expect(submenuRows(placedRows([{ ...row, checked: true }], false, 1), noop)[0].label).toBe("Advanced · 1 set ▸");
+  });
+
+  it("the hex and overworld right-click menus copy a link to the hex, right after Center on this hex", () => {
+    const view = read("src/hex-map/HexMapView.ts");
+    expect(view).toMatch(/menu\.add\("hex\.center", [^\n]*\n\s*menu\.add\("hex\.copy-link", COPY_HEX_LINK_TITLE, "link-2", \(\) => copyHexLink\(this\.plugin, this\.activeMapName, x, y\)\)/);
+    expect(view).toMatch(/menu\.add\("ow\.copy-link", COPY_HEX_LINK_TITLE/);
   });
 });
 
@@ -223,7 +243,8 @@ describe("hex links round-trip", () => {
   it("the hex editor's centre dot copies it, and the handler centres the map", () => {
     const editor = read("src/hex-map/HexEditorModal.ts");
     expect(editor).toMatch(/centre\.addEventListener\("click", \(\) => this\.copyHexLink\(\)\)/);
-    expect(editor).toMatch(/hexMarkdownLink\(/);
+    expect(editor).toMatch(/copyHexLink\(this\.plugin, this\.mapName, this\.x, this\.y\)/);
+    expect(read("src/hex-map/copyHexLink.ts")).toMatch(/hexMarkdownLink\(/);
     const plugin = read("src/HexmakerPlugin.ts");
     expect(plugin).toMatch(/registerObsidianProtocolHandler\(OPEN_MAP_ACTION/);
     expect(plugin).toMatch(/view\.goToHex\(target\.map, target\.hex\.x, target\.hex\.y/);

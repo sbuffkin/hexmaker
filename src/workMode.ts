@@ -227,6 +227,7 @@ export const COMMAND_ACTIONS: Record<string, ModeAction> = {
 export const MENU_ACTIONS = {
   // hex right-click menu
   "hex.center": "navigate",
+  "hex.copy-link": "navigate",
   "hex.open-note": "open-note",
   "hex.enter-region": "navigate",
   "hex.open-location": "navigate",
@@ -246,6 +247,7 @@ export const MENU_ACTIONS = {
   "ow.edit-region": "open-editor",
   "ow.set-biome": "place-biome",
   "ow.center": "navigate",
+  "ow.copy-link": "navigate",
   "ow.locations": "navigate",
   "ow.create-token": "token",
   // token menu

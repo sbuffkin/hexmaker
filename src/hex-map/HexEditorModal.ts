@@ -4,7 +4,7 @@ import { lockedHint, workModeOf, type ModeAction } from "../workMode";
 import { newMapItemTitle } from "../maps/submaps";
 import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
 import { addGodOffer } from "./godOffer";
-import { hexLinkLabel, hexMarkdownLink } from "../hexLink";
+import { copyHexLink } from "./copyHexLink";
 import { isShown } from "../ui/placement";
 import { isDebugMode } from "../ui/debugMode";
 import { HexmakerModal } from "../HexmakerModal";
@@ -664,13 +664,7 @@ export class HexEditorModal extends HexmakerModal {
 
   /** "Copy link to this hex": a Markdown link that opens the map centred on it (src/hexLink.ts). */
   private copyHexLink(): void {
-    const { x, y, mapName } = this;
-    const name = this.plugin.mapStore.get(mapName, `${x}_${y}`)?.name;
-    const link = hexMarkdownLink(this.app.vault.getName(), { map: mapName, hex: { x, y } }, hexLinkLabel(this.plugin.mapLabel(mapName), x, y, name));
-    void navigator.clipboard.writeText(link).then(
-      () => new Notice(`Copied a link to hex ${x}, ${y}. Paste it in a note: it opens the map centred here.`),
-      () => new Notice("Couldn't copy the link."),
-    );
+    copyHexLink(this.plugin, this.mapName, this.x, this.y);
   }
 
   /**
@@ -1659,7 +1653,8 @@ export class HexEditorModal extends HexmakerModal {
     const srcWrap = el.createSpan({ cls: "duckmage-section-table-source" });
     const srcBtn = srcWrap.createEl("button", { text: "⋯", cls: "duckmage-section-desc-table-btn", attr: { "aria-label": `Choose the ${spec.noun} table` } });
     const placeId = section === "weather" ? "HexEditor.weatherSource" : "HexEditor.hooksSource";
-    if (this.place(placeId, srcWrap) && srcWrap.parentElement !== el) {
+    // "Advanced · 1 set" while this hex uses its own table.
+    if (this.place(placeId, srcWrap, () => !!this.hexSectionTable(path, section)) && srcWrap.parentElement !== el) {
       srcWrap.addClass("is-advanced");
       srcWrap.prepend(createSpan({ text: section === "weather" ? "Weather table" : "Hooks & Rumors table" }));
     }
@@ -1669,6 +1664,7 @@ export class HexEditorModal extends HexmakerModal {
         ? `Roll ${spec.noun} on ${picked.path.split("/").pop()?.replace(/\.md$/, "")} (${tableSourceLabel(picked.source)})`
         : `No ${spec.noun} table yet: click to pick one for this map`;
       srcBtn.title = `Choose the ${spec.noun} table (map or this hex)`;
+      this.disclosure.refreshSet();
     };
     refresh();
 

@@ -49,7 +49,7 @@ import {
 } from "../export/exporters/randomTable";
 import { Disclosure } from "../ui/disclosure";
 import { isDebugMode } from "../ui/debugMode";
-import { MenuLayers } from "../ui/menuLayers";
+import { PlacedMenu } from "../ui/placedMenu";
 import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touchesList, type ListFolders } from "./listRefresh";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
@@ -1192,16 +1192,16 @@ export class RandomTableView extends ItemView {
 
   private showFolderContextMenu(e: MouseEvent, folderPath: string): void {
     const menu = new Menu();
-    const layers = new MenuLayers(menu, isDebugMode(this.app));
+    // Both items are Advanced; with nothing else in the menu they're shown directly.
+    const layers = new PlacedMenu(menu, isDebugMode(this.app));
 
     const rollExcluded =
       this.plugin.settings.rollTableExcludedFolders.includes(folderPath);
-    layers.add("RTView.folderMenuRollPicker", (item) => {
-      item.setTitle(
-        rollExcluded ? "Include in roll picker" : "Exclude from roll picker",
-      );
-      item.setIcon("dice");
-      item.onClick(async () => {
+    layers.add("RTView.folderMenuRollPicker", {
+      label: rollExcluded ? "Include in roll picker" : "Exclude from roll picker",
+      icon: "dice",
+      isSet: rollExcluded,
+      onClick: () => void (async () => {
         const arr = this.plugin.settings.rollTableExcludedFolders;
         if (rollExcluded) {
           this.plugin.settings.rollTableExcludedFolders = arr.filter(
@@ -1215,19 +1215,16 @@ export class RandomTableView extends ItemView {
           `Roll picker: "${folderPath}" ${rollExcluded ? "included" : "excluded"}.`,
         );
         this.loadList();
-      });
+      })(),
     });
 
     const encExcluded =
       this.plugin.settings.encounterTableExcludedFolders.includes(folderPath);
-    layers.add("RTView.folderMenuEncounters", (item) => {
-      item.setTitle(
-        encExcluded
-          ? "Include in encounters table"
-          : "Exclude from encounters table",
-      );
-      item.setIcon("sword");
-      item.onClick(async () => {
+    layers.add("RTView.folderMenuEncounters", {
+      label: encExcluded ? "Include in encounters table" : "Exclude from encounters table",
+      icon: "sword",
+      isSet: encExcluded,
+      onClick: () => void (async () => {
         const arr = this.plugin.settings.encounterTableExcludedFolders;
         if (encExcluded) {
           this.plugin.settings.encounterTableExcludedFolders = arr.filter(
@@ -1241,10 +1238,10 @@ export class RandomTableView extends ItemView {
           `Encounters table: "${folderPath}" ${encExcluded ? "included" : "excluded"}.`,
         );
         this.loadList();
-      });
+      })(),
     });
 
-    layers.finish(false);
+    layers.finish(() => ({ x: e.clientX, y: e.clientY }));
     menu.showAtMouseEvent(e);
   }
 
@@ -1255,9 +1252,9 @@ export class RandomTableView extends ItemView {
     const encExcluded = fm?.["encounter-filter"] === false;
     const isDefaultTable = fm?.["table-type"] != null;
     const menu = new Menu();
-    const layers = new MenuLayers(menu, isDebugMode(this.app));
+    const layers = new PlacedMenu(menu, isDebugMode(this.app));
 
-    menu.addItem((item) => {
+    layers.addItem((item) => {
       item.setTitle("Open in new tab");
       item.setIcon("external-link");
       item.onClick(() => {
@@ -1270,12 +1267,11 @@ export class RandomTableView extends ItemView {
         void this.app.workspace.revealLeaf(leaf);
       });
     });
-    layers.add("RTView.fileMenuRollPicker", (item) => {
-      item.setTitle(
-        rollExcluded ? "Include in roll picker" : "Exclude from roll picker",
-      );
-      item.setIcon("dice");
-      item.onClick(async () => {
+    layers.add("RTView.fileMenuRollPicker", {
+      label: rollExcluded ? "Include in roll picker" : "Exclude from roll picker",
+      icon: "dice",
+      isSet: rollExcluded,
+      onClick: () => void (async () => {
         await this.app.fileManager.processFrontMatter(
           file,
           (fmData: Frontmatter) => {
@@ -1287,17 +1283,14 @@ export class RandomTableView extends ItemView {
           `Roll picker: "${file.basename}" ${rollExcluded ? "included" : "excluded"}.`,
         );
         this.loadList();
-      });
+      })(),
     });
 
-    layers.add("RTView.fileMenuEncounters", (item) => {
-      item.setTitle(
-        encExcluded
-          ? "Include in encounters table"
-          : "Exclude from encounters table",
-      );
-      item.setIcon("sword");
-      item.onClick(async () => {
+    layers.add("RTView.fileMenuEncounters", {
+      label: encExcluded ? "Include in encounters table" : "Exclude from encounters table",
+      icon: "sword",
+      isSet: encExcluded,
+      onClick: () => void (async () => {
         await this.app.fileManager.processFrontMatter(
           file,
           (fmData: Frontmatter) => {
@@ -1309,13 +1302,13 @@ export class RandomTableView extends ItemView {
           `Encounters table: "${file.basename}" ${encExcluded ? "included" : "excluded"}.`,
         );
         this.loadList();
-      });
+      })(),
     });
 
     if (!isDefaultTable) {
-      menu.addSeparator();
+      layers.addSeparator();
 
-      menu.addItem((item) => {
+      layers.addItem((item) => {
         item.setTitle("Delete table");
         item.setIcon("trash");
         item.onClick(() => {
@@ -1332,7 +1325,7 @@ export class RandomTableView extends ItemView {
     }
 
     // Roll picker / encounters filters: the Advanced ▸ submenu.
-    layers.finish();
+    layers.finish(() => ({ x: e.clientX, y: e.clientY }));
     menu.showAtMouseEvent(e);
   }
 

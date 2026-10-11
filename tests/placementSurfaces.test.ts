@@ -10,7 +10,8 @@ import expect from "expect";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLACEMENT, layerOf, type Layer } from "../src/ui/placement";
-import { MenuLayers, type MenuLike } from "../src/ui/menuLayers";
+import { PlacedMenu, type MenuLike } from "../src/ui/placedMenu";
+import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "obsidian";
 import { groupAgrees } from "../src/ui/placeGroup";
 import { NEW_MAP_OPTION_IDS, newMapOptionId } from "../src/worldgen/newMapOptionIds";
 import { ORBITS_ID, ORBITS_OPTIONS } from "../src/worldgen/procedural/orbits";
@@ -33,6 +34,12 @@ const SURFACES = [
   "Export",
 ];
 const TIER: Record<string, Layer | "drop"> = { keep: "main", simple: "main", advanced: "advanced", overkill: "debug", drop: "drop" };
+/**
+ * Owner calls that override a worksheet tag. The Maps modal's background
+ * image row stays together on the main page (2026-10-11: customisation
+ * stays simple), so its "Pick image…" isn't Advanced.
+ */
+const OVERRIDES: Record<string, Layer> = { "MapProps.backgroundImagePicker": "main" };
 
 const resolved = (JSON.parse(readFileSync(join("dev", "ui-inventory", "inputs-tags-resolved.json"), "utf8")) as Resolved[])
   .filter((x) => SURFACES.includes(x.group));
@@ -59,11 +66,11 @@ describe("worksheet placement: maps, new maps, regions, world types, palettes, t
   });
 
   for (const item of resolved.filter((x) => x.choice !== "drop")) {
-    const want = TIER[item.choice];
+    const want = OVERRIDES[item.id] ?? TIER[item.choice];
     it(`${item.id} (${item.choice}) is ${want}`, () => {
       expect(layerOf(item.id)).toBe(want);
-      // keep is the default: no entry. simple is listed as main.
-      if (item.choice === "keep") expect(Object.prototype.hasOwnProperty.call(PLACEMENT, item.id)).toBe(false);
+      // keep is the default (and so is an override to main): no entry. simple is listed as main.
+      if (item.choice === "keep" || OVERRIDES[item.id] === "main") expect(Object.prototype.hasOwnProperty.call(PLACEMENT, item.id)).toBe(false);
       else expect(PLACEMENT[item.id]).toBe(want);
       // Anything off the main layer is asked for by id in the code (place / target / add).
       if (want !== "main") expect(SRC.includes(`"${item.id}"`)).toBe(true);
@@ -142,75 +149,108 @@ describe("New map form: generator options by inventory id", () => {
   });
 });
 
-/** A menu that records what was added where. */
+/** A menu that records its items' titles (clicks run their callbacks). */
 class FakeMenu implements MenuLike {
   items: string[] = [];
-  submenus = new Map<string, FakeMenu>();
-  constructor(private withSubmenus = true) {}
+  clicks: (() => void)[] = [];
   addSeparator(): this {
     this.items.push("---");
+    this.clicks.push(() => {});
     return this;
   }
   addItem(cb: (item: never) => unknown): this {
     let title = "";
-    let label = false;
+    let click: () => void = () => {};
     const item = {
       setTitle: (t: string) => { title = t; return item; },
       setIcon: () => item,
-      onClick: () => item,
-      setIsLabel: (v: boolean) => { label = v; return item; },
-      ...(this.withSubmenus ? { setSubmenu: () => { const m = new FakeMenu(); this.submenus.set(title, m); return m; } } : {}),
+      setDisabled: () => item,
+      setChecked: () => item,
+      onClick: (f: () => void) => { click = f; return item; },
     };
     cb(item as never);
-    this.items.push(label ? `[${title}]` : title);
+    this.items.push(title);
+    this.clicks.push(click);
     return this;
   }
 }
 
-describe("menus: Advanced ▸ and Debug ▸ submenus", () => {
+describe("menus: Advanced ▸ and Debug ▸ submenus (src/ui/placedMenu.ts)", () => {
   const map: Record<string, Layer> = { "M.a": "advanced", "M.b": "advanced", "M.d": "debug", "M.h": "hidden" };
-  const fill = (layers: MenuLayers) => {
-    layers.add("M.main", (i) => i.setTitle("Open"));
-    layers.add("M.a", (i) => i.setTitle("Exclude A"));
-    layers.add("M.d", (i) => i.setTitle("Raw"));
-    layers.add("M.h", (i) => i.setTitle("Gone"));
-    layers.add("M.b", (i) => i.setTitle("Exclude B"));
+  const noop = () => {};
+  const fill = (pm: PlacedMenu) => {
+    pm.add("M.main", { label: "Open", onClick: noop });
+    pm.add("M.a", { label: "Exclude A", onClick: noop });
+    pm.add("M.d", { label: "Raw", onClick: noop });
+    pm.add("M.h", { label: "Gone", onClick: noop });
+    pm.add("M.b", { label: "Exclude B", onClick: noop, isSet: true });
   };
+  const lastShown = () => ObsidianMenu.shown[ObsidianMenu.shown.length - 1].items.map((i) => (i === "separator" ? "---" : i.title));
 
-  it("main items stay; Advanced ones go in an Advanced submenu at the end; Debug inside it in debug mode", () => {
+  it("main items stay; Advanced ones open from an Advanced ▸ row at the end, with Debug ▸ last inside it in debug mode", () => {
+    ObsidianMenu.shown = [];
     const menu = new FakeMenu();
-    const layers = new MenuLayers(menu, true, map);
-    fill(layers);
-    layers.finish();
-    expect(menu.items).toEqual(["Open", "---", "Advanced"]);
-    const adv = menu.submenus.get("Advanced")!;
-    expect(adv.items).toEqual(["Exclude A", "Exclude B", "Debug"]);
-    expect(adv.submenus.get("Debug")!.items).toEqual(["Raw"]);
+    const pm = new PlacedMenu(menu, true, map);
+    fill(pm);
+    pm.finish(() => ({ x: 1, y: 2 }));
+    // One of the two is set: the row says so.
+    expect(menu.items).toEqual(["Open", "---", "Advanced · 1 set ▸"]);
+    menu.clicks[2]();
+    expect(lastShown()).toEqual(["Exclude A", "Exclude B", "Debug ▸"]);
+    ObsidianMenu.shown[ObsidianMenu.shown.length - 1].items.filter((i): i is ObsidianMenuItem => i !== "separator")[2].click?.();
+    expect(lastShown()).toEqual(["Raw"]);
   });
 
-  it("no Debug submenu while debug mode is off, and nothing hidden is added", () => {
+  it("no Debug ▸ while debug mode is off, and nothing hidden is added", () => {
+    ObsidianMenu.shown = [];
     const menu = new FakeMenu();
-    const layers = new MenuLayers(menu, false, map);
-    fill(layers);
-    layers.finish();
-    expect(menu.submenus.get("Advanced")!.items).toEqual(["Exclude A", "Exclude B"]);
-    expect(JSON.stringify(menu)).not.toMatch(/Gone|Raw/);
+    const pm = new PlacedMenu(menu, false, map);
+    fill(pm);
+    pm.finish(() => ({ x: 0, y: 0 }));
+    menu.clicks[2]();
+    expect(lastShown()).toEqual(["Exclude A", "Exclude B"]);
+    expect(JSON.stringify(ObsidianMenu.shown.map((m) => m.items)) + menu.items.join()).not.toMatch(/Gone|Raw/);
   });
 
   it("nothing advanced: no separator, no submenu", () => {
     const menu = new FakeMenu();
-    const layers = new MenuLayers(menu, true, {});
-    layers.add("M.main", (i) => i.setTitle("Open"));
-    layers.finish();
+    const pm = new PlacedMenu(menu, true, {});
+    pm.add("M.main", { label: "Open", onClick: noop });
+    pm.finish(() => ({ x: 0, y: 0 }));
     expect(menu.items).toEqual(["Open"]);
   });
 
-  it("without submenus (old Obsidian) the title is a label and the items follow inline", () => {
-    const menu = new FakeMenu(false);
-    const layers = new MenuLayers(menu, false, map);
-    fill(layers);
-    layers.finish();
-    expect(menu.items).toEqual(["Open", "---", "[Advanced]", "Exclude A", "Exclude B"]);
+  it("a menu with no main items shows its Advanced items directly, never a lone Advanced ▸", () => {
+    const menu = new FakeMenu();
+    const pm = new PlacedMenu(menu, false, map);
+    pm.add("M.a", { label: "Exclude A", onClick: noop });
+    pm.add("M.b", { label: "Exclude B", onClick: noop });
+    pm.finish(() => ({ x: 0, y: 0 }));
+    expect(menu.items).toEqual(["Exclude A", "Exclude B"]);
+  });
+
+  it("…and Debug ▸ still only in debug mode, after them", () => {
+    const off = new FakeMenu();
+    const a = new PlacedMenu(off, false, map);
+    a.add("M.a", { label: "Exclude A", onClick: noop });
+    a.add("M.d", { label: "Raw", onClick: noop });
+    a.finish(() => ({ x: 0, y: 0 }));
+    expect(off.items).toEqual(["Exclude A"]);
+    const on = new FakeMenu();
+    const b = new PlacedMenu(on, true, map);
+    b.add("M.a", { label: "Exclude A", onClick: noop });
+    b.add("M.d", { label: "Raw", onClick: noop });
+    b.finish(() => ({ x: 0, y: 0 }));
+    expect(on.items).toEqual(["Exclude A", "---", "Debug ▸"]);
+  });
+
+  it("items added with addItem count as main", () => {
+    const menu = new FakeMenu();
+    const pm = new PlacedMenu(menu, false, map);
+    pm.addItem((i) => i.setTitle("Open in new tab"));
+    pm.add("M.a", { label: "Exclude A", onClick: noop });
+    pm.finish(() => ({ x: 0, y: 0 }));
+    expect(menu.items).toEqual(["Open in new tab", "---", "Advanced ▸"]);
   });
 
   it("the map list's and the tables view's context menus use it", () => {
@@ -219,6 +259,9 @@ describe("menus: Advanced ▸ and Debug ▸ submenus", () => {
     for (const id of ["folderMenuRollPicker", "folderMenuEncounters", "fileMenuRollPicker", "fileMenuEncounters"]) {
       expect(rt).toMatch(new RegExp(`layers\\.add\\("RTView\\.${id}"`));
     }
+    // An excluded table or folder counts as set.
+    expect(rt).toMatch(/isSet: rollExcluded/);
+    expect(rt).toMatch(/isSet: encExcluded/);
   });
 });
 

@@ -91,6 +91,8 @@ export class HexTableView extends ItemView {
 
   // Filter UI elements (created once in onOpen)
   private filterXMinInput: HTMLInputElement | null = null;
+  /** The toolbar's Advanced dropdown (its header counts the range bounds in effect). */
+  private toolbarDisclosure: Disclosure | null = null;
   private filterXMaxInput: HTMLInputElement | null = null;
   private filterYMinInput: HTMLInputElement | null = null;
   private filterYMaxInput: HTMLInputElement | null = null;
@@ -146,6 +148,7 @@ export class HexTableView extends ItemView {
     // its Advanced dropdown, and Refresh (the table updates live) in Debug
     // (placement: HexTable.*).
     const disclosure = new Disclosure(this.app, "HexTable", () => toolbar);
+    this.toolbarDisclosure = disclosure;
     const refreshBtn = toolbar.createEl("button", {
       text: "Refresh",
       cls: "duckmage-filter-btn",
@@ -162,7 +165,8 @@ export class HexTableView extends ItemView {
         set(input.value !== "" ? Number(input.value) : null);
         this.applyFilters();
       });
-      disclosure.place(id, wrap);
+      // "Advanced · 1 set" while a bound is filled: the filter is in effect.
+      disclosure.place(id, wrap, () => input.value !== "");
       return input;
     };
     this.filterXMinInput = rangeInput("HexTable.xMin", "X min", (v) => { this.filterXMin = v; });
@@ -645,6 +649,7 @@ export class HexTableView extends ItemView {
     if (this.filterXMaxInput) this.filterXMaxInput.value = "";
     if (this.filterYMinInput) this.filterYMinInput.value = "";
     if (this.filterYMaxInput) this.filterYMaxInput.value = "";
+    this.toolbarDisclosure?.refreshSet();
     if (this.townCb) this.townCb.checked = false;
     if (this.dungeonCb) this.dungeonCb.checked = false;
     if (this.featureCb) this.featureCb.checked = false;

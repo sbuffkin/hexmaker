@@ -48,7 +48,7 @@ import { impassableNames, noRouteMessage } from "../impassable";
 import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";
 import { PathNameModal } from "./PathNameModal";
-import { addSubmenuButtons, placedRows } from "./placedMenu";
+import { addSubmenuButtons, placedRows } from "../ui/placedMenu";
 import { isDebugMode } from "../ui/debugMode";
 
 // ── Pure: hit-testing ────────────────────────────────────────────────────────
@@ -1433,7 +1433,7 @@ export class PathTool {
       label: "Cross impassable",
       checked: this.crossImpassable,
       onClick: () => { this.crossImpassable = !this.crossImpassable; this.host.refreshBar(); },
-    }], isDebugMode(this.plugin.app));
+    }], isDebugMode(this.plugin.app), 1);
     let advanced = false;
     const auto = el.createEl("button", {
       cls: "duckmage-mode-bar-route-toggle",

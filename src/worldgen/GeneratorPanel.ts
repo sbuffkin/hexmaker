@@ -46,6 +46,7 @@ import { GeneratorLibrary } from "./GeneratorLibrary";
 import { BiomePanel } from "./BiomePanel";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
 import { Disclosure } from "../ui/disclosure";
+import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
 import { ConfirmModal } from "./ConfirmModal";
@@ -285,7 +286,10 @@ export class GeneratorPanel {
     // Paths (single routes) and Seed. The placement map (src/ui/placement.ts)
     // says which, by GenPage.<control> id; nothing here needs debug mode.
     const disclosure = new Disclosure(this.plugin.app, "GenPage", () => main);
-    const place = (id: string, control: HTMLElement) => disclosure.place(id, control);
+    // Engine controls off their default count in the headers
+    // ("Engine tuning · 2 set"); s() is defined below and read later.
+    const place = (id: string, control: HTMLElement) =>
+      disclosure.place(id, control, ENGINE_TUNING_IDS.includes(id) ? () => engineTuningIsSet(id, s()) : undefined);
     /** A section whose controls all moved to Advanced or Debug goes. */
     const dropIfEmpty = (body: HTMLElement) => {
       if (!body.childElementCount) body.parentElement?.remove();

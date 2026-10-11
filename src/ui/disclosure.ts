@@ -16,6 +16,13 @@
  *   `place(id, el)` moves a built control into its layer; `target(id, here)`
  *   gives the parent to build it in (null: don't build it).
  *
+ * - "Advanced · 2 set": a control placed in Advanced can report whether it
+ *   holds a non-default or active value (`place(id, el, isSet)`,
+ *   `target(id, here, isSet)` or `track(id, isSet)`). The dropdown's header
+ *   counts them all, and each sub-section's (and Debug's) header counts its
+ *   own, so nothing is quietly in effect unseen. Headers update on any
+ *   input, change or click inside the dropdown, and on `refreshSet()`.
+ *
  * If the host is emptied and rebuilt (a re-render), the next call makes a
  * fresh dropdown in it.
  */
@@ -44,15 +51,54 @@ export function subSectionKey(surface: string, sub: string): string {
   return `${surface}/${sub}`;
 }
 
+/** A header with its count: "Advanced", or "Advanced · 2 set" when two of its controls are on. */
+export function setLabel(title: string, set: number): string {
+  return set > 0 ? `${title} · ${set} set` : title;
+}
+
+/** Whether a control holds a non-default or active value. */
+export type IsSet = () => boolean;
+
+/** A control that reports isSet, and where it sits (a sub-section's name, "debug", or plain Advanced). */
+export interface SetReporter {
+  where: string | null;
+  isSet: IsSet;
+}
+
+/**
+ * How many reporters are set: in all of Advanced, and per sub-section or
+ * Debug. A reporter that throws counts as not set.
+ */
+export function countSet(reporters: readonly SetReporter[]): { total: number; by: Map<string, number> } {
+  const by = new Map<string, number>();
+  let total = 0;
+  for (const r of reporters) {
+    let on = false;
+    try {
+      on = r.isSet();
+    } catch {
+      on = false;
+    }
+    if (!on) continue;
+    total++;
+    if (r.where !== null) by.set(r.where, (by.get(r.where) ?? 0) + 1);
+  }
+  return { total, by };
+}
+
 /** Where a section call puts things: plain Advanced, a sub-section of it, or Debug. */
 export type SectionName = "advanced" | "debug" | `advanced/${string}`;
 
 export class Disclosure {
   private details: HTMLDetailsElement | null = null;
+  private summary: HTMLElement | null = null;
   private items: HTMLElement | null = null;
   private subsEl: HTMLElement | null = null;
   private subs = new Map<string, HTMLElement>();
+  private subSummaries = new Map<string, HTMLElement>();
   private debug: HTMLElement | null = null;
+  private debugTitle: HTMLElement | null = null;
+  private reporters: SetReporter[] = [];
 
   /**
    * @param store   local storage (the App)
@@ -84,7 +130,7 @@ export class Disclosure {
     }
     if (!this.debug?.isConnected) {
       this.debug = this.details!.createDiv({ cls: "duckmage-disclosure-debug" });
-      this.debug.createDiv({ cls: "duckmage-disclosure-debug-title", text: "Debug" });
+      this.debugTitle = this.debug.createDiv({ cls: "duckmage-disclosure-debug-title", text: "Debug" });
     }
     return this.debug;
   }
@@ -94,11 +140,13 @@ export class Disclosure {
    * the Advanced container (or its sub-section) or Debug's, or null when it
    * isn't shown (hidden, or Debug while debug mode is off).
    */
-  target(id: string, here: HTMLElement): HTMLElement | null {
+  target(id: string, here: HTMLElement, isSet?: IsSet): HTMLElement | null {
     const { layer, sub } = this.lookup(id);
     if (layer === "main" || layer === "more") return here;
     if (layer === "hidden") return null;
-    return this.section(layer === "advanced" && sub ? `advanced/${sub}` : layer);
+    const to = this.section(layer === "advanced" && sub ? `advanced/${sub}` : layer);
+    if (to && isSet) this.addReporter(layer === "debug" ? "debug" : (sub ?? null), isSet);
+    return to;
   }
 
   /**
@@ -106,10 +154,10 @@ export class Disclosure {
    * main and more, moved into Advanced (or its sub-section) or Debug, or
    * removed when it isn't shown. Returns whether it is shown.
    */
-  place(id: string, el: HTMLElement): boolean {
+  place(id: string, el: HTMLElement, isSet?: IsSet): boolean {
     const { layer } = this.lookup(id);
     if (layer === "main" || layer === "more") return true;
-    const to = this.target(id, el);
+    const to = this.target(id, el, isSet);
     if (!to) {
       el.remove();
       return false;
@@ -117,6 +165,31 @@ export class Disclosure {
     // Plain advanced controls, then sub-sections, then Debug: each has its own container.
     to.appendChild(el);
     return true;
+  }
+
+  /**
+   * Count control `id` in its header while `isSet()` (when it is in
+   * Advanced or Debug and shown). For a control placed or built some other way.
+   */
+  track(id: string, isSet: IsSet): void {
+    const { layer, sub } = this.lookup(id);
+    if (layer !== "advanced" && layer !== "debug") return;
+    if (!this.section(layer === "advanced" && sub ? `advanced/${sub}` : layer)) return;
+    this.addReporter(layer === "debug" ? "debug" : (sub ?? null), isSet);
+  }
+
+  /** Re-count the set controls and update the headers. */
+  refreshSet(): void {
+    if (!this.reporters.length || !this.summary) return;
+    const { total, by } = countSet(this.reporters);
+    this.summary.setText(setLabel("Advanced", total));
+    for (const [name, el] of this.subSummaries) el.setText(setLabel(name, by.get(name) ?? 0));
+    this.debugTitle?.setText(setLabel("Debug", by.get("debug") ?? 0));
+  }
+
+  private addReporter(where: string | null, isSet: IsSet): void {
+    this.reporters.push({ where, isSet });
+    this.refreshSet();
   }
 
   /** Move the dropdown (if there is one) to the end of the host, e.g. below content built after it. */
@@ -138,7 +211,7 @@ export class Disclosure {
     const have = this.subs.get(name);
     if (have?.isConnected) return have;
     const sub = this.subsEl!.createEl("details", { cls: "duckmage-disclosure-sub" });
-    sub.createEl("summary", { cls: "duckmage-disclosure-sub-summary", text: name });
+    this.subSummaries.set(name, sub.createEl("summary", { cls: "duckmage-disclosure-sub-summary", text: name }));
     const key = subSectionKey(this.surface, name);
     sub.open = disclosureOpen(this.store, key);
     sub.addEventListener("toggle", () => setDisclosureOpen(this.store, key, sub.open));
@@ -149,13 +222,18 @@ export class Disclosure {
 
   private build(): void {
     const details = this.host().createEl("details", { cls: "duckmage-disclosure" });
-    details.createEl("summary", { cls: "duckmage-disclosure-summary", text: "Advanced" });
+    this.summary = details.createEl("summary", { cls: "duckmage-disclosure-summary", text: "Advanced" });
     details.open = disclosureOpen(this.store, this.surface);
     details.addEventListener("toggle", () => setDisclosureOpen(this.store, this.surface, details.open));
+    // A control inside changed: re-count the set ones.
+    for (const type of ["input", "change", "click"]) details.addEventListener(type, () => this.refreshSet());
     this.details = details;
     this.items = details.createDiv({ cls: "duckmage-disclosure-body" });
     this.subsEl = details.createDiv({ cls: "duckmage-disclosure-subs" });
     this.subs.clear();
+    this.subSummaries.clear();
     this.debug = null;
+    this.debugTitle = null;
+    this.reporters = [];
   }
 }

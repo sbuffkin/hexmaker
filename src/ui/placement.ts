@@ -86,7 +86,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "Settings.paletteRowOpenNote": "advanced/Palettes",
 
   // ── Hex map view (menus and toolbars: Advanced ▸ / Debug ▸ submenus,
-  // src/hex-map/placedMenu.ts; panels: an Advanced dropdown) ──
+  // src/ui/placedMenu.ts; panels: an Advanced dropdown) ──
   "WorkModeMenu.god": "advanced",
   "ModeBar.crossImpassable": "advanced",
   "DrawingPanel.linkTable": "advanced",
@@ -193,8 +193,10 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapModal.propsWeatherClear": "advanced",
   "MapModal.propsRumoursTable": "advanced",
   "MapModal.propsRumoursClear": "advanced",
-  // Maps modal › Background image
-  "MapProps.backgroundImagePicker": "advanced",
+  // Maps modal › Background image: the whole row (pick, drop, clear,
+  // opacity, calibrate) stays together on the main page (owner,
+  // 2026-10-11: customisation stays simple), so MapProps.backgroundImagePicker
+  // has no entry.
   // New maps & map links › New map form
   "NewMap.rememberPalette": "advanced",
   "NewMap.rememberSize": "advanced",
