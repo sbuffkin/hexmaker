@@ -13,6 +13,7 @@ import type { MapData, PathChain, PathType, TerrainColor } from "../src/types";
 import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { dropAddedAnchors, pinNoticeText, RoutePins } from "../src/paths/routePins";
 import { PathsService } from "../src/paths/PathsService";
+import { PathTool } from "../src/hex-map/pathTool";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
@@ -144,5 +145,81 @@ describe("keep the route when terrain changes under it (phase 7)", () => {
     expect(dropAddedAnchors(pinned, before).branches.map((b) => b.anchors)).toEqual([["0_0", "5_0"], ["2_0", "2_4"]]);
     const edited = { ...before, branches: [{ anchors: ["0_0", "9_9"] }, { anchors: ["2_0", "2_4"] }] };
     expect(dropAddedAnchors(edited, before)).toBe(edited);
+  });
+});
+
+/**
+ * The path tool against the real store, pins and path service. The tool
+ * doesn't settle the routing context itself: MapStore does, on paint and in
+ * setPaths, so a path drawn right after a change is routed under the map as
+ * it is now and never pinned to the old one. Clicks carry no pointer event,
+ * so nothing resolves the map between the change and the draw.
+ */
+describe("drawing with the path tool right after the routing context changed", () => {
+  beforeEach(() => { Notice.shown = []; });
+
+  function toolFor(env: Awaited<ReturnType<typeof boot>>) {
+    const plugin = {
+      app: {},
+      mapStore: env.store,
+      paths: env.svc,
+      saveSettings: async () => {},
+      getMapPalette: () => env.state.palette,
+    };
+    const tool = new PathTool({
+      plugin: plugin as never,
+      mapName: () => "m",
+      pointerLattice: () => null,
+      hexAtPoint: () => null,
+      ownerDocument: () => ({ addEventListener: () => {}, removeEventListener: () => {} }) as unknown as Document,
+      pushUndo: () => {},
+      redraw: () => {},
+      refreshBar: () => {},
+      setGrabCursor: () => {},
+    });
+    tool.typeName = "Road";
+    const draw = (...hexes: string[]) => {
+      for (const h of hexes) {
+        const [x, y] = h.split("_").map(Number);
+        tool.click(x, y, undefined, false);
+      }
+      tool.done();
+    };
+    return { tool, draw };
+  }
+
+  it("water painted on a map with no paths: the new road goes round it, nothing is pinned", async () => {
+    const env = await boot([]);
+    env.svc.resolvedPathChains("m"); // the map view drew the map
+    env.store.set("m", "3_5", { terrain: "shallows" }); // water: impassable for roads
+    const { draw } = toolFor(env);
+    draw("0_5", "6_5");
+    expect(env.maps[0].paths).toEqual([{ name: "Road", typeName: "Road", branches: [{ anchors: ["0_5", "6_5"] }] }]);
+    const hexes = env.svc.resolvedPathChains("m")[0].hexes;
+    expect(hexes).not.toContain("3_5");
+    expect(hexes[0]).toBe("0_5");
+    expect(hexes[hexes.length - 1]).toBe("6_5");
+    expect(env.pins.flushNotice()).toEqual([]);
+  });
+
+  it("a palette change nobody has drawn yet: the old road is kept (pinned), the new one is routed under the new palette", async () => {
+    const OLD = ["0_8", "1_8", "2_8", "3_8", "4_8", "5_8", "6_8"];
+    const env = await boot([{ typeName: "Road", hexes: OLD }]);
+    env.store.set("m", "3_5", { terrain: "forest" });
+    env.store.set("m", "3_8", { terrain: "forest" });
+    expect(env.svc.resolvedPathChains("m")[0].hexes).toEqual(OLD); // drawn, forest passable
+    env.state.palette.find((t) => t.name === "forest")!.impassable = true; // not seen by anyone yet
+    const { draw } = toolFor(env);
+    draw("0_5", "6_5");
+    const paths = env.maps[0].paths!;
+    expect(paths).toHaveLength(2);
+    const added = paths.find((p) => p.branches[0].anchors[0] === "0_5")!;
+    expect(added.branches[0].anchors).toEqual(["0_5", "6_5"]); // not pinned
+    const chains = env.svc.resolvedPathChains("m");
+    expect(chains.find((c) => c.hexes[0] === "0_8")!.hexes).toEqual(OLD); // kept where it was
+    expect(chains.find((c) => c.hexes[0] === "0_5")!.hexes).not.toContain("3_5");
+    const recs = env.pins.flushNotice();
+    expect(recs).toHaveLength(1);
+    expect(recs[0].added.map((a) => a.path)).toEqual([paths.find((p) => p !== added)!.name]);
   });
 });

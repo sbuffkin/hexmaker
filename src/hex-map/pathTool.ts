@@ -485,9 +485,8 @@ export class PathTool {
     }
     const before = clonePaths(this.paths());
     if (JSON.stringify(before) === JSON.stringify(next)) return false;
-    // Settle any pending routing change against the paths as they were, so
-    // the new ones are never pinned to an out-of-date route.
-    this.plugin.pathPins.sync(map);
+    // setPaths settles any pending routing-context change against the paths
+    // as they were, so the new ones are never pinned to an out-of-date route.
     this.plugin.mapStore.setPaths(map, next);
     void this.plugin.saveSettings();
     if (action !== "history") this.host.pushUndo(map, before, clonePaths(next));
@@ -503,7 +502,6 @@ export class PathTool {
       new Notice(PATH_EDIT_LOCKED_HINT);
       return;
     }
-    this.plugin.pathPins.sync(mapName);
     this.plugin.mapStore.setPaths(mapName, clonePaths(paths));
     void this.plugin.saveSettings();
     this.pending = null;

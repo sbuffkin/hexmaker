@@ -161,7 +161,6 @@ function rig() {
     app: {},
     mapStore: { paths: () => map.paths ?? [], setPaths: (_n: string, ps: MapPath[]) => { map.paths = ps; } },
     paths: svc,
-    pathPins: { sync: () => {} },
     saveSettings: async () => {},
     getMapPalette: () => [],
   };
