@@ -8,15 +8,8 @@ import {
 	setSubmapDefaults,
 	submapDefaultsKey,
 } from "../src/palettes/paletteNote";
-import {
-	PALETTE_PRESETS,
-	SPACE_SECTOR_PALETTE_NAME,
-	SPACE_SYSTEM_PALETTE_NAME,
-	SPACE_PLANET_PALETTE_NAME,
-	SPACE_SYSTEM_TERRAINS,
-	SPACE_SECTOR_TERRAINS,
-	presetToPalette,
-} from "../src/palettes/presets";
+import { PALETTE_PRESETS, presetToPalette } from "../src/palettes/presets";
+import { SPACE_SECTOR_PALETTE_NAME, SPACE_SYSTEM_PALETTE_NAME, SPACE_PLANET_PALETTE_NAME, SPACE_SYSTEM_TERRAINS, SPACE_SECTOR_TERRAINS } from "../src/modules/space/presets";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { enabledKinds, isIconHiddenByKind, isKindEnabled } from "../src/mapKinds";
 import { planetSurface, planetSurfaceFits, planetRoles } from "../src/worldgen/procedural/planetSurface";

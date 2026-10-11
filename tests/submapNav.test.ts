@@ -7,7 +7,8 @@ import {
 	readChildPalette,
 	setChildPalette,
 } from "../src/palettes/paletteNote";
-import { PALETTE_PRESETS, SPACE_SECTOR_PALETTE_NAME, SPACE_SYSTEM_PALETTE_NAME, presetToPalette } from "../src/palettes/presets";
+import { PALETTE_PRESETS, presetToPalette } from "../src/palettes/presets";
+import { SPACE_SECTOR_PALETTE_NAME, SPACE_SYSTEM_PALETTE_NAME } from "../src/modules/space/presets";
 
 describe("mapAncestors", () => {
 	const parents: Record<string, string | undefined> = {

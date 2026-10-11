@@ -1,9 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import {
-	SPACE_SECTOR_TERRAINS,
-	SPACE_SYSTEM_TERRAINS,
-} from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { starScatter, starScatterFits, starScatterRoles } from "../src/worldgen/procedural/starScatter";
 import { orbits, orbitsFits, orbitRoles, orbitsOptions } from "../src/worldgen/procedural/orbits";
@@ -509,7 +506,7 @@ describe("terrain types", () => {
 describe("Star scatter offering (owner decision 2026-10-09: sectors only)", () => {
 	it("is offered on the sector palette but not on the system palette", async () => {
 		const { starScatterOffered } = await import("../src/worldgen/procedural/starScatter");
-		const { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } = await import("../src/palettes/presets");
+		const { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } = await import("../src/modules/space/presets");
 		expect(starScatterOffered(SPACE_SECTOR_TERRAINS)).toBe(true);
 		expect(starScatterOffered(SPACE_SYSTEM_TERRAINS)).toBe(false);
 	});

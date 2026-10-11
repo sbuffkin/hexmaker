@@ -4,7 +4,7 @@
  * Build: npx esbuild dev/space-gen-preview.ts --bundle --format=iife --outfile=dev/space-gen-preview.js
  * Serve: npm run sandbox → /dev/space-gen-preview.html
  */
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/modules/space/presets";
 import { starScatter, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/starScatter";
 import { orbits, orbitsOptions } from "../src/worldgen/procedural/orbits";
 import type { GenerationContext, ProcGrid, ProcOption, Side } from "../src/worldgen/procedural/common";

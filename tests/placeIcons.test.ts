@@ -13,7 +13,7 @@ import {
 	sortIcons,
 } from "../src/utils";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
-import { BUNDLED_PLACE_ICONS } from "../src/bundledPlaceIcons";
+import { BUNDLED_PLACE_ICONS } from "../src/modules/world/placeIcons";
 import { isIconHiddenByKind } from "../src/mapKinds";
 
 const root = process.cwd();

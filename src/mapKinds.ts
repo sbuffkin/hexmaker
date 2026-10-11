@@ -6,19 +6,13 @@
  */
 
 import { terrainTypeInfo } from "./terrainTypes";
+import { registry } from "./modules";
+import type { KindId, SectionWords } from "./modules/types";
 
-export type MapKind = "world" | "space";
+export type { SectionWords } from "./modules/types";
 
-/**
- * What a link section is called on screen: the plural (headings, columns,
- * legend), one item ("Town: Gullmouth") and the noun for "Search or create
- * a town…".
- */
-export interface SectionWords {
-  label: string;
-  one: string;
-  noun: string;
-}
+/** A map type id: one per module that is a map type (src/modules). */
+export type MapKind = KindId;
 
 export interface MapKindInfo {
   id: MapKind;
@@ -35,26 +29,17 @@ export interface MapKindInfo {
   sectionWords?: Partial<Record<string, SectionWords>>;
 }
 
-export const MAP_KINDS: MapKindInfo[] = [
-  {
-    id: "world",
-    label: "World / fantasy overland",
-    description: "Continents, regions and local areas: forests, mountains, coasts. Includes the Limited and Expanded palettes, the Region detail generator and the Places icon pack (towns, castles, ruins…).",
-    iconPrefix: "place-",
-  },
-  {
-    id: "space",
-    label: "Space",
-    description: "Sector charts, star systems and planets: Space - Sector, Space - System and Space - Planet palettes, Star scatter, Orbits and Planet surface generators, planet generators, the space icon pack. Pick Space alone and nothing fantasy is installed.",
-    iconPrefix: "space-",
-    sectionWords: {
-      Towns: { label: "Settlements", one: "Settlement", noun: "a settlement" },
-      Dungeons: { label: "Sites", one: "Site", noun: "a site" },
-      Features: { label: "Points of Interest", one: "Point of interest", noun: "a point of interest" },
-      Quests: { label: "Missions", one: "Mission", noun: "a mission" },
-    },
-  },
-];
+/** The map types, in module order (src/modules/index.ts). */
+export const MAP_KINDS: MapKindInfo[] = registry.kinds().map((k) => {
+  const pack = registry.iconPacks().find((p) => p.kind === k.id);
+  return {
+    id: k.id,
+    label: k.label,
+    description: k.description,
+    ...(pack ? { iconPrefix: pack.prefix } : {}),
+    ...(k.sectionWords ? { sectionWords: k.sectionWords } : {}),
+  };
+});
 
 /** The usual words for each link section (any map without its own). */
 export const DEFAULT_SECTION_WORDS: Record<string, SectionWords> = {
@@ -97,7 +82,7 @@ export function sectionKindFor(
 ): MapKindInfo | undefined {
   for (const [i, terrains] of chain.entries()) {
     const used = new Set(terrains.map((t) => terrainTypeInfo(t.type)?.kind).filter(Boolean));
-    if (declared[i]) used.add(declared[i] as MapKind);
+    if (declared[i]) used.add(declared[i]);
     const hit = kinds.find((k) => k.sectionWords && used.has(k.id));
     if (hit) return hit;
   }
@@ -109,7 +94,7 @@ export const ALL_MAP_KINDS: MapKind[] = MAP_KINDS.map((k) => k.id);
 /** Kinds enabled in settings; unset (older data.json) = all. */
 export function enabledKinds(settings: { mapKinds?: string[] }): Set<MapKind> {
   const list = Array.isArray(settings.mapKinds) ? settings.mapKinds : ALL_MAP_KINDS;
-  return new Set(list.filter((k): k is MapKind => (ALL_MAP_KINDS as string[]).includes(k)));
+  return new Set(list.filter((k): k is MapKind => (ALL_MAP_KINDS).includes(k)));
 }
 
 export function isKindEnabled(settings: { mapKinds?: string[] }, kind: MapKind | undefined): boolean {
@@ -124,14 +109,11 @@ export function isIconHiddenByKind(settings: { mapKinds?: string[] }, icon: stri
 
 /**
  * Map type of a learned generator, from its note's `map-kind` frontmatter:
- * "planet" / "space" → space, "world" → world, anything else → none
- * (always shown).
+ * a map type's id or one of its aliases (Space: "planet"), any case;
+ * anything else → none (always shown).
  */
 export function generatorMapKind(meta: Record<string, string | undefined> | undefined): MapKind | undefined {
-  const raw = meta?.["map-kind"]?.trim().toLowerCase();
-  if (raw === "planet" || raw === "space") return "space";
-  if (raw === "world") return "world";
-  return undefined;
+  return registry.kindId(meta?.["map-kind"]);
 }
 
 /** A space palette: at least one terrain has a space terrain type ("void", "star"…). */
@@ -146,7 +128,7 @@ export function isSpacePalette(terrains: readonly { type?: string }[] | undefine
  */
 export function paletteKind(p: { kind?: string; terrains?: readonly { type?: string }[] } | undefined): MapKind {
   const declared = p?.kind;
-  if (declared && (ALL_MAP_KINDS as string[]).includes(declared)) return declared as MapKind;
+  if (declared && (ALL_MAP_KINDS).includes(declared)) return declared;
   return isSpacePalette(p?.terrains) ? "space" : "world";
 }
 

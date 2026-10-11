@@ -149,7 +149,7 @@ async function collect(): Promise<Record<string, unknown>> {
     orbits: defaultPathTypeFor("orbits", [{ name: "Orbit" }]) ?? null,
     none: defaultPathTypeFor("routes", [{ name: "Road" }]) ?? null,
   };
-  out.childKindText = { space: childKindText(true), other: childKindText(false) };
+  out.childKindText = { space: childKindText("space"), other: childKindText(undefined) };
   out.moonLinks = moonPlanetLinks(
     new Map([["1_1", "moon"], ["2_1", "terrestrial planet"], ["1_2", "gas giant"], ["3_3", "moon"]]),
     getPreset("Space - System")!.terrains, "flat", "odd");

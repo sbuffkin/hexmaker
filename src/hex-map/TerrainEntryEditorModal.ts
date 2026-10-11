@@ -105,7 +105,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 				dropdown.addOption("", "— no icon —");
 				// Grouped by pack so a long icon list stays scannable.
 				const groups = new Map<IconPack, HTMLOptGroupElement>();
-				for (const pack of Object.keys(ICON_PACK_LABELS) as IconPack[]) {
+				for (const pack of Object.keys(ICON_PACK_LABELS)) {
 					groups.set(pack, dropdown.selectEl.createEl("optgroup", { attr: { label: ICON_PACK_LABELS[pack] } }));
 				}
 				for (const icon of this.plugin.availableIcons) {

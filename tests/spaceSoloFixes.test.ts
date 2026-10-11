@@ -5,7 +5,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { defaultSubmapLabel } from "../src/hex-map/submapNav";
 import { newMapItemTitle, parentHexTerrain, type ParentHexHost } from "../src/maps/submaps";
-import { CHILD_KIND_TEXT, SPACE_CHILD_KIND_TEXT, childKindText } from "../src/hex-map/newChildMap";
+import { CHILD_KIND_TEXT, childKindText } from "../src/hex-map/newChildMap";
+import { registry } from "../src/modules";
+
+const SPACE_CHILD_KIND_TEXT = registry.kindInfo("space")!.childKindText!;
 import { allows, MENU_ACTIONS } from "../src/workMode";
 
 const src = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
@@ -73,8 +76,9 @@ describe("C11: a hex that has a map offers it first, not a re-make", () => {
 
 describe("F10: Region vs Location says which fits on a space map", () => {
 	it("space cards name star systems and planets as Locations", () => {
-		expect(childKindText(false)).toBe(CHILD_KIND_TEXT);
-		expect(childKindText(true)).toBe(SPACE_CHILD_KIND_TEXT);
+		expect(childKindText(undefined)).toBe(CHILD_KIND_TEXT);
+		expect(childKindText("world")).toBe(CHILD_KIND_TEXT);
+		expect(childKindText("space")).toBe(SPACE_CHILD_KIND_TEXT);
 		expect(SPACE_CHILD_KIND_TEXT.location.desc).toMatch(/star system/i);
 		expect(SPACE_CHILD_KIND_TEXT.location.desc).toMatch(/planet/i);
 		expect(SPACE_CHILD_KIND_TEXT.region.desc).toMatch(/not for a single star system or planet/i);
@@ -82,7 +86,7 @@ describe("F10: Region vs Location says which fits on a space map", () => {
 
 	it("keys off the map's palette (space terrain types), not terrain names", () => {
 		const dialog = src("src", "hex-map", "newChildMap.ts");
-		expect(dialog).toContain("childKindText(plugin.isSpaceMap(this.parentMap))");
+		expect(dialog).toContain("childKindText(plugin.isSpaceMap(this.parentMap) ? \"space\" : undefined)");
 	});
 });
 

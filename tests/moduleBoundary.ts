@@ -111,7 +111,7 @@ export function scanBoundary(): BoundaryCounts {
   const decisions: Record<string, number> = {};
   for (const abs of walk(join(root, "src"))) {
     const file = rel(abs);
-    if (ownerOf(file) !== undefined) continue;
+    if (ownerOf(file) !== undefined || MODULE_ENTRY_POINTS.has(file)) continue;
     const text = readFileSync(abs, "utf8");
     const body = code(text);
     for (const spec of valueImports(body)) {

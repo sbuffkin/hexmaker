@@ -3,7 +3,7 @@ import expect from "expect";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import {
 	BUILTIN_GENERATORS,
 	builtinPathType,

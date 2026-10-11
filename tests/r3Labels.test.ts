@@ -32,7 +32,7 @@ import { hexTableLines, type HexRow } from "../src/export/exporters/mapWithTable
 import { buildManualHtml } from "../src/export/manual/manualHtml";
 import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 
 const read = (...p: string[]) => readFileSync(p.join("/"), "utf8").replace(/\r\n/g, "\n");
 

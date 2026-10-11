@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { ENGINE_ROLES, ZONE_ROLES, engineRole, roleOdds, rolesOf, type RoleId } from "../src/worldgen/tableRoles";
 import { STAR_SCATTER_ID, starScatterRoles } from "../src/worldgen/procedural/starScatter";
 import { ORBITS_ID, orbitRoles } from "../src/worldgen/procedural/orbits";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import {
 	WORLD_TYPES_DEFAULT,
 	WORLD_TYPES_NONE,

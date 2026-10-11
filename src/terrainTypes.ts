@@ -1,4 +1,5 @@
 import type { MapKind } from "./mapKinds";
+import { registry } from "./modules";
 
 /**
  * Terrain types: a fixed vocabulary every palette terrain can be tagged
@@ -11,21 +12,22 @@ import type { MapKind } from "./mapKinds";
 /**
  * Type groups: broad families of terrain types. Defaults that should hold
  * for any palette (custom ones too) hang off a group rather than terrain
- * names, e.g. the whole water group is impassable to roads (PA4).
+ * names, e.g. the whole water group is impassable to roads (PA4). Water
+ * and land are the core's; modules add their own (Space: space).
  */
-export type TerrainGroup = "water" | "land" | "space";
+export type TerrainGroup = string;
 
 export const TERRAIN_GROUPS: { id: TerrainGroup; label: string }[] = [
   { id: "water", label: "Water" },
   { id: "land", label: "Land" },
-  { id: "space", label: "Space" },
+  ...registry.terrainGroups(),
 ];
 
 export interface TerrainTypeInfo {
   id: string;
   label: string;
   kind: MapKind;
-  /** Type group (water types, land types, space types). */
+  /** Type group (water types, land types, a module's types). */
   group: TerrainGroup;
   /** Lower-case words that suggest this type in a terrain's name. */
   keywords: string[];
@@ -33,13 +35,18 @@ export interface TerrainTypeInfo {
 
 type TypeDef = Omit<TerrainTypeInfo, "group"> & { group?: TerrainGroup };
 
-const TYPE_DEFS: TypeDef[] = [
-  // World — water
+/**
+ * The core's types: land and water (shared schema, CM5: Space - Planet
+ * uses them too). Tagged with the World map type, which is what a palette
+ * of only these counts as.
+ */
+const CORE_TYPE_DEFS: TypeDef[] = [
+  // Water
   { id: "deep-water", label: "Deep water", kind: "world", group: "water", keywords: ["trench", "abyss", "deep"] },
   { id: "water", label: "Water", kind: "world", group: "water", keywords: ["ocean", "sea", "water", "lake", "river"] },
   { id: "shallows", label: "Shallows", kind: "world", group: "water", keywords: ["shallow", "reef", "shoal"] },
   { id: "coast", label: "Coast", kind: "world", keywords: ["beach", "coast", "shore", "salt flat", "sand"] },
-  // World — land
+  // Land
   { id: "grassland", label: "Grassland", kind: "world", keywords: ["grass", "plain", "meadow", "steppe", "prairie", "savanna", "field", "farm"] },
   { id: "forest", label: "Forest", kind: "world", keywords: ["forest", "wood", "evergreen", "pine", "taiga", "grove"] },
   { id: "jungle", label: "Jungle", kind: "world", keywords: ["jungle", "rainforest"] },
@@ -52,32 +59,13 @@ const TYPE_DEFS: TypeDef[] = [
   { id: "badlands", label: "Badlands", kind: "world", keywords: ["badland", "brokenland", "waste", "canyon", "mesa"] },
   { id: "volcanic", label: "Volcanic", kind: "world", keywords: ["volcan", "lava", "ash", "magma"] },
   { id: "settlement", label: "Settlement", kind: "world", keywords: ["urban", "city", "town", "village", "ruin"] },
-  // Space. The generators place by type (Orbits puts moons beside planets
-  // and a jump point past the last orbit), so each of those roles has its
-  // own type instead of being told apart by name.
-  { id: "void", label: "Void / empty space", kind: "space", keywords: ["void", "empty space", "deep space"] },
-  { id: "jump-limit", label: "Jump limit (ring)", kind: "space", keywords: ["jump limit"] },
-  { id: "nebula", label: "Nebula / cloud", kind: "space", keywords: ["nebula", "dust", "cloud"] },
-  { id: "rift", label: "Rift", kind: "space", keywords: ["rift"] },
-  { id: "star", label: "Star", kind: "space", keywords: ["star", "sun", "dwarf", "giant star"] },
-  { id: "star-system", label: "Star system (sector marker)", kind: "space", keywords: ["star system"] },
-  { id: "world", label: "World / planet", kind: "space", keywords: ["world", "planet"] },
-  { id: "moon", label: "Moon", kind: "space", keywords: ["moon", "satellite"] },
-  { id: "gas-giant", label: "Gas giant", kind: "space", keywords: ["gas giant", "ice giant"] },
-  { id: "asteroids", label: "Asteroid belt", kind: "space", keywords: ["asteroid", "belt", "meteor"] },
-  { id: "comet", label: "Comet", kind: "space", keywords: ["comet"] },
-  { id: "debris", label: "Debris field", kind: "space", keywords: ["debris", "wreck"] },
-  { id: "station", label: "Station", kind: "space", keywords: ["station", "outpost"] },
-  { id: "starport", label: "Starport", kind: "space", keywords: ["starport", "spaceport", "port"] },
-  { id: "jump-point", label: "Jump point / gate", kind: "space", keywords: ["jump point", "gate"] },
-  { id: "anomaly", label: "Anomaly / hazard", kind: "space", keywords: ["anomaly", "black hole", "radiation", "hazard"] },
 ];
 
-/** Every type; ones without an explicit group are land (world) or space. */
-export const TERRAIN_TYPES: TerrainTypeInfo[] = TYPE_DEFS.map((t) => ({
-  ...t,
-  group: t.group ?? (t.kind === "space" ? "space" : "land"),
-}));
+/** Every type: the core's (land unless said otherwise), then each module's. */
+export const TERRAIN_TYPES: TerrainTypeInfo[] = [
+  ...CORE_TYPE_DEFS.map((t) => ({ ...t, group: t.group ?? "land" })),
+  ...registry.terrainTypes().map((t) => ({ ...t, keywords: [...t.keywords] })),
+];
 
 const BY_ID = new Map(TERRAIN_TYPES.map((t) => [t.id, t]));
 

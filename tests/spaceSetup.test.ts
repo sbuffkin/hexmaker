@@ -2,13 +2,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { biomeSeedingOn, inferKindContent, planKindContent, resolveKindContent } from "../src/kindContent";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import {
-	PALETTE_PRESETS,
-	SPACE_PLANET_PALETTE_NAME,
-	SPACE_PLANET_TERRAINS,
-	presetToPalette,
-	getPreset,
-} from "../src/palettes/presets";
+import { PALETTE_PRESETS, presetToPalette, getPreset } from "../src/palettes/presets";
+import { SPACE_PLANET_PALETTE_NAME, SPACE_PLANET_TERRAINS } from "../src/modules/space/presets";
 import { buildPaletteNote, parsePaletteNote, readPaletteKind, setPaletteKind } from "../src/palettes/paletteNote";
 import { isSpacePalette, paletteKind, terrainsForTables } from "../src/mapKinds";
 import { isTerrainType } from "../src/terrainTypes";

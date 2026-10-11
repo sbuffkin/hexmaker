@@ -57,7 +57,7 @@ export interface KindContentPlan {
 export function planKindContent(input: KindContentInput): KindContentPlan {
   const presets = input.presets ?? PALETTE_PRESETS;
   const on = new Set(input.kinds);
-  const done = new Set((input.done ?? []).filter((k): k is MapKind => (ALL_MAP_KINDS as string[]).includes(k)));
+  const done = new Set((input.done ?? []).filter((k): k is MapKind => (ALL_MAP_KINDS).includes(k)));
   const newKinds = ALL_MAP_KINDS.filter((k) => on.has(k) && !done.has(k));
 
   const lower = (n: string) => n.toLowerCase();

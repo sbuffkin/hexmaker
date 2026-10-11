@@ -24,7 +24,8 @@ import {
 } from "../src/space/worldTypes";
 import { DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
 import { WorldTypeStore } from "../src/space/WorldTypeStore";
-import { PALETTE_PRESETS, SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { PALETTE_PRESETS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import type { TerrainColor } from "../src/types";
 
 const table = (rows: WorldTypeRow[], name = "T"): WorldTypeTable => ({ name, rows });

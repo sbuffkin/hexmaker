@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { SPACE_SECTOR_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS } from "../src/modules/space/presets";
 import { starScatter, starScatterRoles } from "../src/worldgen/procedural/starScatter";
 import { roleOdds } from "../src/worldgen/tableRoles";
 import { worldTypesSource } from "../src/space/worldTypesSource";
