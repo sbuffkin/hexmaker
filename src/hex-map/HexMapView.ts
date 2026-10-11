@@ -372,6 +372,7 @@ export class HexMapView extends ItemView {
       redraw: () => this.updatePathOverlay(),
       refreshBar: () => this.updateModeBar(),
       setGrabCursor: (on) => this.viewportEl?.toggleClass("duckmage-path-grab", on),
+      typeChanged: () => this.updateToolbarButtonStates(),
     });
     this.overworldLayer = new OverworldLayer(plugin);
     this.minimap = new OverworldMinimap(plugin, this);
@@ -1194,7 +1195,7 @@ export class HexMapView extends ItemView {
         beginDrag();
         return; // skip pan setup
       }
-      // The path tool takes a press on the selected path (drag to reshape).
+      // The path tool takes a press on a point or line of its type (drag to reshape).
       if (this.drawingMode === "path" && this.pathTool.pointerDown(e, this.isErasingMode)) return;
       // Any other active tool (road, river, tableLink, swap):
       // let the click event handle it — don't set up drag/pan so hasDragged
@@ -1215,7 +1216,7 @@ export class HexMapView extends ItemView {
     // document (issue #32). Stroke-time highlight is owned by onDragMove.
     this.registerDomEvent(contentEl, "mousemove", (e: MouseEvent) => {
       if (isTerrainPainting) return;
-      if (this.drawingMode === "path" && e.buttons === 0) this.pathTool.pointerMove(e);
+      if (this.drawingMode === "path" && e.buttons === 0) this.pathTool.pointerMove(e, this.isErasingMode);
       if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
         const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(
           ".duckmage-hex",
@@ -1358,8 +1359,9 @@ export class HexMapView extends ItemView {
           this.removeOneGmIconFromHex(hexEl, hexX, hexY, this.paintIconName);
           return;
         }
-        // Path tool: right-click an anchor handle of the selected path
-        // deletes it; on a path, the menu adds that path's actions.
+        // Path tool: right-click an anchor of a path of the tool's type
+        // deletes it; on such a path (or Shift on an anchor), the menu adds
+        // that path's actions; on another type's path, "Switch to <type>".
         let pathItems: { label: string; onClick: () => void }[] = [];
         if (this.drawingMode === "path" && !this.isErasingMode) {
           const r = this.pathTool.contextMenu(e);

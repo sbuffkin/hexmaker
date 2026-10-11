@@ -64,14 +64,18 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 ## Drawing tools
 
 ### Paths
-Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker, with its ends, forks and size; click one there to select it.
+Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker, with its ends, forks and size; click one there to select it (the tool switches to its type).
 
-- **Draw:** click a hex to start, then keep clicking. Each click adds a point and the path finds its way there from the end, around impassable terrain, so you can click far away. In hex-by-hex mode, click neighbouring hexes (a click further away is routed too, and the bar says so), or press and drag: every hex you pass becomes a point, and going back a hex takes the last one away. The whole drag is one undo step. Click the end again, press **Esc** or **Done** to finish.
-- **Select:** click a path. Its points show as handles; the bigger ones are its ends.
-- **Continue or fork:** with a path selected, click an end to carry on from it, or click anywhere else on it to start a fork there. A path and its forks are one path in the map note.
-- **Reshape:** drag any part of the selected path (in hex-by-hex mode, dragging from an end carries the path on instead). Grabbing a point moves it; grabbing the line adds a point there. The new route shows as you drag; let go to keep it, or drop it back where it was to cancel.
-- **New path:** **Alt-click**, or **New path** in the bar, starts a new path even on top of another one (a crossroads of two roads).
-- **Delete:** right-click a handle, or hover one and press **Backspace**. Backspace while drawing removes the last point. Right-click a path: its own items come first (**Split here**, **Delete this fork**, **Delete path**, **Rename…**, **Change type…**, **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path to split it there.
+There's no separate edit mode. While the tool is on a type (say Road), every Road on the map shows its points as handles (the bigger ones are ends), and you can work on any of them straight away. Paths of other types are left alone: clicking on a river starts a new road there, and hovering one says which type to switch to. Right-click it for **Switch to River**.
+
+- **Draw:** click empty ground to start, then keep clicking. Each click adds a point and the path finds its way there from the end, around impassable terrain, so you can click far away. In hex-by-hex mode, click neighbouring hexes (a click further away is routed too, and the bar says so), or press and drag: every hex you pass becomes a point, and going back a hex takes the last one away. The whole drag is one undo step. Click the end again, press **Esc** or **Done** to finish.
+- **Move a point:** drag it. The new route shows as you drag; let go to keep it (one undo step), or drop it back where it was to cancel. This works while drawing too.
+- **Reshape the line:** drag the line itself: a new point is added where you grabbed it, and moves with the pointer.
+- **Delete a point:** right-click it, or hover it and press **Backspace**. A branch left with one point goes, and so does a path; the map says so and undo brings it back. Backspace while drawing removes the last point.
+- **Continue:** click an end to carry on from it.
+- **Select and fork:** click a path's line to select it (it's highlighted and its name shows in the bar; click the name to rename it). Click the selected path's line again to start a fork there. A path and its forks are one path in the map note.
+- **New path:** click empty ground. **Alt-click**, or **New path** in the bar, starts a new path even on top of a path of the same type (a crossroads of two roads).
+- **Path menu:** right-click a path's line, or **Shift**+right-click a point: its own items come first (**Split here**, **Delete this fork**, **Delete path**, **Rename…**, **Change type…**, **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path of the tool's type to split it there.
 - **Esc** steps out one level: finish the branch, then deselect, then leave the tool. **Ctrl/Cmd+Z** undoes each change.
 
 Mark terrains impassable in the palette editor (every water-type terrain is impassable by default). Each path type chooses whether it goes around them (roads do, rivers don't) and whether it winds. Tick **Cross impassable** in the bar to let the next legs go through. If painting terrain, changing the palette, resizing the map or changing a type's routing would move an existing path, it keeps its route (points are added to hold it) and a notice offers **Reroute instead**; undoing the paint stroke undoes that too.

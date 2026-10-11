@@ -234,13 +234,14 @@ describe("auto-routed rivers wind (round 7 U17)", () => {
 describe("a new path never joins or reshapes another (round 7 R11, anchored paths)", () => {
 	// The region tester's map: road keep (12_8) → Gullmouth (7_5), then a
 	// second road from the keep to the east edge. With anchored paths a
-	// click on a path selects it; Alt-click or "New path" starts a new one.
+	// click on a path of the tool's type selects it (an end
+	// continues it); another type's path is ground; Alt-click or "New path" starts a new one.
 	const ctx = { orientation: "flat" as const, stagger: "odd" as const, bounds: bounds(20, 16), blocked: new Set<string>() };
 	const first = (): MapPath[] => [
 		{ name: "Road", typeName: "Road", branches: [{ anchors: ["12_8", "7_5"] }] },
 		{ name: "River", typeName: "River", branches: [{ anchors: ["11_13", "9_13"] }] },
 	];
-	const onRoad = (hexIdx: number, o: Partial<PathHit> = {}): PathHit => ({ path: "Road", branch: 0, hexIdx, anchor: null, end: null, ...o });
+	const onRoad = (hexIdx: number, o: Partial<PathHit> = {}): PathHit => ({ path: "Road", branch: 0, hexIdx, hex: "", anchor: null, end: null, editable: true, ...o });
 	const idle = { erasing: false, forceNew: false, activeHex: null, selected: null };
 
 	it("clicking the first road's first hex selects that road; it doesn't start a road joined to it", () => {

@@ -71,20 +71,23 @@ export function toolModeLabel(s: ToolModeState): string | null {
       return `Painting ${what}: ${baseName(s.iconName)}`;
     }
     case "path": {
-      if (erasing) return "Erasing paths: click a path to split it there";
+      // Paths of the tool's type are always live: these are exactly what
+      // pathClickOutcome / pathPressOutcome / pathContextOutcome do.
       const type = s.pathTypeName ?? "Path";
-      const how = s.pathAuto ? "auto-routes" : "hex by hex";
       const note = s.pathNote ? ` · ${s.pathNote}` : "";
+      if (erasing) return `Erasing paths: click a ${s.pathTypeName ?? "path"} to split it there${note}`;
+      const how = s.pathAuto ? "auto-routes" : "hex by hex";
+      const edit = "drag a point or the line to reshape · right-click a point to delete it";
       if (s.pathNew) return `New ${type}: click where it starts`;
       if (s.pathDrawing) {
         const name = s.pathSelected ?? `New ${type}`;
-        return `${name}: click to add (${how}) · Esc to finish${note}`;
+        return `${name}: click to add (${how}) · drag a point to move it · Esc to finish${note}`;
       }
       if (s.pathSelected) {
         const what = s.pathSummary && s.pathSummary !== s.pathSelected ? ` (${s.pathSummary})` : "";
-        return `${s.pathSelected}${what}: drag the line to reshape · click an end to continue · click the line to fork${note}`;
+        return `${s.pathSelected}${what}: ${edit} · click an end to continue · click the line to fork · click empty ground for a new ${type}${note}`;
       }
-      return `${type}: click to start a path · click a path to edit it${note}`;
+      return `${type}: click empty ground to start · ${edit} · click an end to continue${note}`;
     }
     case "tableLink":
       return erasing ? "Unlinking tables" : `Linking table: ${baseName(s.tablePath) || "…"}`;
