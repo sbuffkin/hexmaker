@@ -1,4 +1,5 @@
 import type { MapExportPrefs } from "./export/exportNames";
+import type { MapKind } from "./mapKinds";
 export type TokenShape = "circle" | "square" | "hexagon";
 export type TokenSize  = "sm" | "md" | "lg";
 
@@ -274,6 +275,11 @@ export interface TerrainPalette {
 	 *  picker order. Stored as the "Path types" table in the palette note.
 	 *  Every palette has them once the palette store has loaded. */
 	pathTypes?: PathType[];
+	/** Map type the palette is for: `map-kind` in its note's frontmatter.
+	 *  Unset = worked out from its terrain types (paletteKind in
+	 *  mapKinds.ts). The shipped palettes set it, so a land palette made for
+	 *  planet surfaces (Space - Planet) counts as space content. */
+	kind?: MapKind;
 }
 
 /** Saved choices for new submaps of one terrain. Every field is optional. */
@@ -395,6 +401,15 @@ export interface HexmakerPluginSettings {
 	paletteColorsCode?: boolean;
 	/** Enabled map types (see src/mapKinds.ts). Unset = all. */
 	mapKinds: string[];
+	/**
+	 * Map types whose shipped content (palettes, biome notes, world types)
+	 * is installed (src/kindContent.ts). A type's content goes in once, when
+	 * it is first on (setup wizard, or Map types in settings), so a deleted
+	 * palette or biome note stays deleted. null = a fresh install whose
+	 * setup hasn't picked its map types yet: no biome notes or world types
+	 * are written until it does (saved as null so a restart still knows).
+	 */
+	kindContent?: string[] | null;
 	/** Simple or Advanced (see src/featureLevel.ts). */
 	featureLevel: "simple" | "advanced";
 	/** Advanced features turned on one by one while in Simple. */

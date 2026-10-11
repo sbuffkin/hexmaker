@@ -45,7 +45,7 @@ import { GeneratorLibrary } from "./GeneratorLibrary";
 import { BiomePanel } from "./BiomePanel";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint } from "../advancedHints";
-import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
+import { generatorMapKind, isGeneratorShown } from "../mapKinds";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
 import { ConfirmModal } from "./ConfirmModal";
@@ -230,7 +230,7 @@ export class GeneratorPanel {
     void listGenerators(this.plugin).then((found) => {
       // Planet generators (map-kind: planet) are hidden while the Space map
       // type is off, unless this palette/map is in space or one is loaded.
-      const spaceContext = isSpacePalette(this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains)
+      const spaceContext = this.plugin.getPaletteOrPresetKind(GeneratorPanel.paletteName) === "space"
         || (!!this.mapName && this.plugin.isSpaceMap(this.mapName));
       generators = found.filter((g) => isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
         spaceContext,

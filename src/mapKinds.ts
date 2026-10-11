@@ -45,7 +45,7 @@ export const MAP_KINDS: MapKindInfo[] = [
   {
     id: "space",
     label: "Space",
-    description: "Sector charts, star systems and planets: Space - Sector / Space - System palettes, Star scatter, Orbits and Planet surface generators, planet generators, the space icon pack.",
+    description: "Sector charts, star systems and planets: Space - Sector, Space - System and Space - Planet palettes, Star scatter, Orbits and Planet surface generators, planet generators, the space icon pack. Pick Space alone and nothing fantasy is installed.",
     iconPrefix: "space-",
     sectionWords: {
       Towns: { label: "Settlements", one: "Settlement", noun: "a settlement" },
@@ -92,9 +92,12 @@ export function sectionWordsFor(kind?: MapKindInfo): SectionWordsFn {
 export function sectionKindFor(
   chain: readonly (readonly { type?: string }[])[],
   kinds: readonly MapKindInfo[] = MAP_KINDS,
+  /** Each palette's declared map type (TerrainPalette.kind), same order as `chain`. */
+  declared: readonly (string | undefined)[] = [],
 ): MapKindInfo | undefined {
-  for (const terrains of chain) {
+  for (const [i, terrains] of chain.entries()) {
     const used = new Set(terrains.map((t) => terrainTypeInfo(t.type)?.kind).filter(Boolean));
+    if (declared[i]) used.add(declared[i] as MapKind);
     const hit = kinds.find((k) => k.sectionWords && used.has(k.id));
     if (hit) return hit;
   }
@@ -137,13 +140,24 @@ export function isSpacePalette(terrains: readonly { type?: string }[] | undefine
 }
 
 /**
+ * The map type a palette belongs to: its declared `kind` (the shipped
+ * palettes say; a palette note's `map-kind`), else space when any terrain
+ * has a space type, else world. Data on the palette decides, never its name.
+ */
+export function paletteKind(p: { kind?: string; terrains?: readonly { type?: string }[] } | undefined): MapKind {
+  const declared = p?.kind;
+  if (declared && (ALL_MAP_KINDS as string[]).includes(declared)) return declared as MapKind;
+  return isSpacePalette(p?.terrains) ? "space" : "world";
+}
+
+/**
  * Terrains that get description / encounter tables: every palette's, but
  * with World off (a Space-only setup), only the space palettes' — no
  * tables for the fantasy palettes that ship installed (G4). Deduplicated
  * by name, in palette order.
  */
 export function terrainsForTables<T extends { name: string; type?: string }>(
-  palettes: readonly { name?: string; terrains: readonly T[] }[],
+  palettes: readonly { name?: string; kind?: string; terrains: readonly T[] }[],
   kinds: Iterable<string>,
   /** Palettes a map uses: their terrains always get tables (HG5). */
   inUse: Iterable<string> = [],
@@ -153,7 +167,7 @@ export function terrainsForTables<T extends { name: string; type?: string }>(
   const seen = new Set<string>();
   const out: T[] = [];
   for (const p of palettes) {
-    if (spaceOnly && !isSpacePalette(p.terrains) && !(p.name !== undefined && used.has(p.name))) continue;
+    if (spaceOnly && paletteKind(p) !== "space" && !(p.name !== undefined && used.has(p.name))) continue;
     for (const t of p.terrains) {
       if (seen.has(t.name)) continue;
       seen.add(t.name);
@@ -205,8 +219,8 @@ export function isGeneratorShown(
  */
 export function resolveMapKinds(
   saved: unknown,
-  palettes: readonly { terrains: readonly { type?: string }[] }[],
+  palettes: readonly { kind?: string; terrains: readonly { type?: string }[] }[],
 ): MapKind[] {
   if (Array.isArray(saved)) return saved.filter((k): k is MapKind => (ALL_MAP_KINDS as unknown[]).includes(k));
-  return palettes.some((p) => isSpacePalette(p.terrains)) ? ["world", "space"] : ["world"];
+  return palettes.some((p) => paletteKind(p) === "space") ? ["world", "space"] : ["world"];
 }

@@ -124,9 +124,15 @@ function recipeSpace(id) {
     p.settings.setupComplete = true;
     window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
     p.settings.mapKinds = ["space"];
-    p.onMapKindsChanged?.();
-    const sector = await p.installPalettePreset("Space - Sector");
-    const system = await p.installPalettePreset("Space - System");
+    // As the wizard does (SP3): install what the picked map types ship, drop
+    // the fresh install's untouched fantasy palettes.
+    p.settings.setupComplete = false;
+    if (p.applyKindContent) await p.applyKindContent({ fromSetup: true });
+    else p.onMapKindsChanged?.();
+    p.settings.setupComplete = true;
+    const has = (n) => p.settings.terrainPalettes.some((x) => x.name === n);
+    const sector = has("Space - Sector") ? "Space - Sector" : await p.installPalettePreset("Space - Sector");
+    const system = has("Space - System") ? "Space - System" : await p.installPalettePreset("Space - System");
     const made = [];
     const mk = async (name, cols, rows, pal, parent) => {
       const r = await p.createNewMap(name, cols, rows, pal, 0, 0, undefined, undefined, undefined, { quiet: true, ...(parent ? { parent } : {}) });
@@ -139,12 +145,15 @@ function recipeSpace(id) {
     p.mapStore.setMany(s, [["2_2", { terrain: pal[1] ?? pal[0] }], ["3_3", { terrain: pal[2] ?? pal[0] }], ["5_4", { terrain: pal[0] }]]);
     const sys = await mk("Vega System", 9, 9, system, { map: s, hex: "2_2" });
     await p.linkSubmap(s, 2, 2, sys);
-    const planetPal = p.childPaletteFor(sys);
+    // Planets open on Space - Planet (the system's submap defaults), else the old child palette.
+    const planetPal = p.getPaletteByName(system)?.submapDefaults?.["terrestrial planet"]?.palette ?? p.childPaletteFor(sys);
     const planet = await mk("Vega IV", 8, 6, planetPal, { map: sys, hex: "4_4" });
     await p.linkSubmap(sys, 4, 4, planet);
     await p.saveSettings();
     await p.mapStore.flush();
-    return { made, palettes: p.settings.terrainPalettes.map((x) => x.name), planetPal };
+    const biomeFolder = p.biomeStore?.folder?.();
+    const biomeNotes = biomeFolder ? window.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(biomeFolder + "/")).length : 0;
+    return { made, palettes: p.settings.terrainPalettes.map((x) => x.name), planetPal, defaultPalette: p.settings.defaultPalette, biomeNotes };
   })();
 }
 
@@ -361,6 +370,23 @@ async function spaceExtra(ctx) {
   out.push({ check: "F4-space-maps", ok: spaceMaps.length >= 2, detail: `space maps: ${spaceMaps.join(", ")}` });
   const chain = st.maps.filter((m) => m.parent).map((m) => `${m.parent} → ${m.name}`);
   out.push({ check: "F4-chain", ok: chain.length >= 2, detail: chain.join("; ") });
+  // SP3: a space-only setup has nothing fantasy.
+  const fantasy = st.palettes.filter((n) => n === "Expanded" || n === "Limited");
+  out.push({ check: "F4-no-fantasy-palettes", ok: fantasy.length === 0, detail: `palettes: ${st.palettes.join(", ")}` });
+  // After a restart: startup wrote no biome notes; planets sit on Space - Planet.
+  const r = await ctx.ev((id) => {
+    const p = window.app.plugins.plugins[id];
+    const folder = p.biomeStore?.folder?.();
+    return {
+      biomeNotes: folder ? window.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + "/")).length : 0,
+      defaultPalette: p.settings.defaultPalette,
+      planet: p.getMap("vega-iv")?.paletteName ?? p.getMap("Vega IV")?.paletteName,
+      kindContent: p.settings.kindContent,
+    };
+  }, ctx.pluginId);
+  out.push({ check: "F4-no-biome-notes", ok: r.biomeNotes === 0, detail: `biome notes: ${r.biomeNotes}` });
+  out.push({ check: "F4-default-palette", ok: r.defaultPalette === "Space - Sector", detail: `Palette for new maps: ${r.defaultPalette}; kindContent ${JSON.stringify(r.kindContent)}` });
+  out.push({ check: "F4-planet-palette", ok: r.planet === "Space - Planet", detail: `planet palette: ${r.planet}` });
   return out;
 }
 

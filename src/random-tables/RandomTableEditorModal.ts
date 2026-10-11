@@ -11,6 +11,7 @@ import {
   type TableWrite,
 } from "./randomTable";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { IMPORT_LIST_EXTENSIONS } from "../notePickers";
 import { processTableNote } from "./TableStore";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
@@ -226,6 +227,8 @@ export class RandomTableEditorModal extends HexmakerModal {
           })();
         },
         "",
+        // Text it can read as entries (list items or lines), not images or PDFs.
+        IMPORT_LIST_EXTENSIONS,
       ).open();
     });
 

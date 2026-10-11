@@ -275,14 +275,14 @@ function makeWelcomeStep(): WizardStep {
 		async onNext(ctx, plugin) {
 			plugin.settings.mapKinds = [...ctx.mapKinds];
 			plugin.settings.featureLevel = ctx.featureLevel;
-			// Start the first map on a palette of a chosen map type: Space
-			// only → a sector chart (Space - Sector, installed on create).
-			const palIsSpace = isSpacePalette(plugin.getPaletteOrPresetTerrains(ctx.paletteName));
-			if (palIsSpace ? !ctx.mapKinds.includes("space") : !ctx.mapKinds.includes("world")) {
+			// What the setup installs follows the map types picked (SP3):
+			// space only → space palettes, no biome notes or fantasy
+			// palettes, "Palette for new maps" on Space - Sector.
+			await plugin.applyKindContent({ fromSetup: true });
+			// Start the first map on a palette of a chosen map type.
+			if (!ctx.mapKinds.includes(plugin.getPaletteOrPresetKind(ctx.paletteName))) {
 				ctx.paletteName = defaultPaletteFor(plugin.settings);
 			}
-			await plugin.saveSettings();
-			plugin.onMapKindsChanged();
 		},
 	};
 }
@@ -978,7 +978,9 @@ export class SetupWizardView extends ItemView {
 		});
 		dontShowBtn.addEventListener("click", () => {
 			this.plugin.settings.setupDismissed = true;
-			void this.plugin.saveSettings().then(() => this.leaf.detach());
+			// The map types it has now get their content (once).
+			const done = this.plugin.settings.kindContent ? this.plugin.saveSettings() : this.plugin.applyKindContent();
+			void done.then(() => this.leaf.detach());
 		});
 	}
 

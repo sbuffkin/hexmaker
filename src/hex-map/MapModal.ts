@@ -6,6 +6,7 @@ import type { HexMapView } from "./HexMapView";
 import { IMAGE_EXTENSIONS, attachImageDropZone, mapBgImportFolder, normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
 import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
+import { contentFolder } from "../notePickers";
 import {
   listGenerators,
   generatorsForRegion,
@@ -628,7 +629,7 @@ export class MapModal extends HexmakerModal {
             map[spec.mapField] = file.path;
             void this.plugin.saveSettings().then(() => this.render());
           },
-          "",
+          contentFolder(this.plugin.settings, "tablesFolder"),
           ["md"],
         ).open();
       });

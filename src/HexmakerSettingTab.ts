@@ -851,7 +851,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
     this.plugin.settings.mapKinds = MAP_KINDS.map((k) => k.id).filter((id) => kinds.has(id));
     await this.plugin.saveSettings();
-    this.plugin.onMapKindsChanged();
+    // A type turned on for the first time gets its content now (SP3).
+    await this.plugin.applyKindContent();
   }
 
   /** Choices for "Palette for new maps": first palette, then every palette (the saved one kept even if gone). */

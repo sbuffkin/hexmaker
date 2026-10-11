@@ -60,6 +60,7 @@ import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
+import { contentFolder } from "../notePickers";
 import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
 
 /** Typing pause after which a text section autosaves. */
@@ -354,7 +355,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Encounters Table",
       true,
-      s.tablesFolder,
+      contentFolder(s, "tablesFolder"),
       this.encounterLinksFor(path, hexExists, allLinks.get("encounters table") ?? []),
     );
     this.renderDropdownSection(
@@ -362,7 +363,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Towns",
       hexExists,
-      s.townsFolder,
+      contentFolder(s, "townsFolder"),
       allLinks.get("towns") ?? [],
     );
     this.renderDropdownSection(
@@ -370,7 +371,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Dungeons",
       hexExists,
-      s.dungeonsFolder,
+      contentFolder(s, "dungeonsFolder"),
       allLinks.get("dungeons") ?? [],
     );
     this.renderDropdownSection(
@@ -378,7 +379,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Quests",
       hexExists,
-      s.questsFolder,
+      contentFolder(s, "questsFolder"),
       allLinks.get("quests") ?? [],
     );
     this.renderDropdownSection(
@@ -386,7 +387,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Factions",
       hexExists,
-      s.factionsFolder,
+      contentFolder(s, "factionsFolder"),
       allLinks.get("factions") ?? [],
     );
     this.renderDropdownSection(
@@ -394,7 +395,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Features",
       hexExists,
-      s.featuresFolder,
+      contentFolder(s, "featuresFolder"),
       allLinks.get("features") ?? [],
     );
 
@@ -1592,12 +1593,12 @@ export class HexEditorModal extends HexmakerModal {
 
   /** "Run workflow" (PA2): pick a workflow note, then run it for this hex. */
   private pickWorkflow(): void {
-    const folder = normalizeFolder(this.plugin.settings.workflowsFolder ?? "");
+    // Workflows only: a blank setting is the workflows folder's usual place, never the world folder.
     const picker = new FileLinkSuggestModal(
       this.app,
       this.plugin,
       (file) => new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget("description")).open(),
-      folder || undefined,
+      contentFolder(this.plugin.settings, "workflowsFolder"),
       ["md"],
     );
     picker.setPlaceholder("Pick a workflow to run…");
@@ -1655,7 +1656,7 @@ export class HexEditorModal extends HexmakerModal {
     refresh();
 
     const chooseTable = (onChoose: (file: TFile) => void) =>
-      new FileLinkSuggestModal(this.app, this.plugin, onChoose, "", ["md"]).open();
+      new FileLinkSuggestModal(this.app, this.plugin, onChoose, contentFolder(this.plugin.settings, "tablesFolder"), ["md"]).open();
     const setMapTable = () =>
       chooseTable((file) => {
         const map = this.plugin.getMap(this.mapName);

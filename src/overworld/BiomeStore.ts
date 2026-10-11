@@ -7,6 +7,9 @@
  *
  * - init(): reads every note, then writes each shipped biome (biomePresets)
  *   that hasn't been seeded yet and has no note: once, never over a note.
+ *   Only biomes whose map type is on, once the setup has picked the types
+ *   (shippedContentOn): a space-only setup gets no biome notes, and turning
+ *   World on later writes them then (seedShipped).
  * - Hand edits are read back live (vault events); unreadable rows are
  *   reported once per edit and left as written.
  * - A biome's `id` (frontmatter) is what references use, so renaming the
@@ -35,6 +38,7 @@ import {
 } from "./biomeNote";
 import { BIOME_PRESETS, biomePreset } from "./biomePresets";
 import { setBiomeSource } from "./biomes";
+import { shippedContentOn } from "../kindContent";
 
 interface Entry {
   path: string;
@@ -117,6 +121,14 @@ export class BiomeStore implements BiomeStoreApi {
       await this.seed();
       await this.seedClimates();
       this.ready = true;
+      this.publish();
+    });
+  }
+
+  /** Write the shipped biomes of map types that are on now (a type was just turned on). */
+  async seedShipped(): Promise<void> {
+    await this.enqueue(async () => {
+      await this.seed();
       this.publish();
     });
   }
@@ -338,7 +350,9 @@ export class BiomeStore implements BiomeStoreApi {
     const seeded = s.biomesSeeded ?? [];
     const ids = new Set([...this.entries.values()].map((e) => e.fields.id));
     const folder = this.folder();
-    const plan = presetsToSeed(seeded, ids, (name) => !!this.plugin.app.vault.getAbstractFileByPath(`${folder}/${name}.md`));
+    const presets = BIOME_PRESETS.filter((p) => shippedContentOn(s, p.kind));
+    if (!presets.length) return;
+    const plan = presetsToSeed(seeded, ids, (name) => !!this.plugin.app.vault.getAbstractFileByPath(`${folder}/${name}.md`), presets);
     if (!plan.done.length) return;
     if (plan.write.length) {
       await this.ensureFolder(folder);

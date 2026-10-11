@@ -4,7 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TokenShape, TokenSize } from "../types";
 import { normalizeFolder, getIconUrl, iconLabel } from "../utils";
 import { noteLink } from "../noteFormats";
-import { generatorsFolder } from "../worldgen/generators";
+import { pickerFolders } from "../notePickers";
 import { DEFAULT_TOKEN_FILL, isTokenNoteCandidate } from "./tokenDefaults";
 
 export interface TokenModalResult {
@@ -379,32 +379,16 @@ export class TokenModal extends HexmakerModal {
       .addEventListener("click", () => this.close());
   }
 
-  /** Notes a token can link: world notes, not tables/workflows/generators/
-   *  palettes/hex and map notes/exports/icons or `_` notes (round-3 testers
-   *  got a list full of terrain tables). */
+  /** Notes a token can stand for: characters and ships (the tokens folder),
+   *  factions, places and quests. An allow-list of content folders
+   *  (notePickers.ts), so tables, biomes, palettes, world types, generators
+   *  and hex notes never show (round-3 testers got terrain tables; SP3:
+   *  biome notes flooded it). */
   private tokenNoteCandidates(): TFile[] {
-    const s = this.plugin.settings;
-    const include = [
-      s.worldFolder,
-      s.townsFolder,
-      s.dungeonsFolder,
-      s.featuresFolder,
-      s.questsFolder,
-      s.factionsFolder,
-      s.regionsFolder,
-    ].map(normalizeFolder);
-    const exclude = [
-      s.tablesFolder,
-      s.workflowsFolder,
-      s.hexFolder,
-      s.exportFolder,
-      s.iconsFolder,
-      this.plugin.paletteStore.folder(),
-      generatorsFolder(this.plugin),
-    ].map((f) => normalizeFolder(f ?? ""));
+    const include = pickerFolders(this.plugin.settings, "token");
     return this.app.vault
       .getMarkdownFiles()
-      .filter((f) => isTokenNoteCandidate(f.path, f.basename, include, exclude))
+      .filter((f) => isTokenNoteCandidate(f.path, f.basename, include, []))
       .filter((f) => this.plugin.isLinkableNote(f));
   }
 

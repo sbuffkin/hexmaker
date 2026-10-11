@@ -21,6 +21,9 @@ const trimSlashes = (p: string): string => p.trim().replace(/^\/+|\/+$/g, "");
 export function templateNoteRules(
   settings: { templatePath?: string; workflowsFolder?: string; templatesFolder?: string; worldFolder?: string },
   extraFolders: (string | undefined)[] = [],
+  /** Folders of the plugin's own data notes (palettes, biomes, biome pools,
+   *  world types, generators): never listed in a picker either (SP3). */
+  dataFolders: (string | undefined)[] = [],
 ): TemplateNoteRules {
   const paths: string[] = [];
   const hexTemplate = trimSlashes(settings.templatePath ?? "");
@@ -30,7 +33,7 @@ export function templateNoteRules(
   folders.push(wf ? `${wf}/templates` : "templates");
   // The plugin's own templates folder (PA3: hex and town templates).
   folders.push(templatesFolderFor(settings));
-  for (const f of extraFolders) {
+  for (const f of [...extraFolders, ...dataFolders]) {
     const t = trimSlashes(f ?? "");
     if (t) folders.push(t);
   }

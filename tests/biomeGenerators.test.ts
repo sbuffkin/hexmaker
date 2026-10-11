@@ -167,7 +167,7 @@ function storePlugin(vault: MemVault) {
 	return {
 		app: vault.app(),
 		manifest: { dir: ".obsidian/plugins/hexmaker" },
-		settings: { worldFolder: "world", biomesFolder: "" } as Record<string, unknown>,
+		settings: { worldFolder: "world", biomesFolder: "", kindContent: ["world"], mapKinds: ["world"] } as Record<string, unknown>,
 		saveSettings: async () => {},
 	};
 }

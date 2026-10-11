@@ -26,7 +26,7 @@
 import type { OrbitZone, SectorFeatureRow, StarTypeRow, WorldTypeRow } from "./worldTypes";
 
 const SYSTEM_PALETTE = "Space - System";
-const SURFACE_PALETTE = "Expanded";
+const SURFACE_PALETTE = "Space - Planet";
 
 const system = (world: string, weight: number): WorldTypeRow => ({
   world,
@@ -74,14 +74,14 @@ export const DEFAULT_WORLD_TYPE_ROWS: readonly WorldTypeRow[] = [
   // System: one body per orbit, by zone (Orbits).
   ...body("terrestrial planet", { inner: 0.5, habitable: 4, outer: 0.5 }, surface("65", "temperate", "ocean")),
   ...body("ocean planet", { inner: 0.5, habitable: 3, outer: 0.5 }, surface("85", "lush", "ocean")),
-  ...body("desert planet", { inner: 2, habitable: 3, outer: 0.5 }, surface("10", "arid", "desert")),
+  ...body("desert planet", { inner: 2, habitable: 3, outer: 0.5 }, surface("10", "arid", "dunes")),
   ...body("ice planet", { inner: 0.5, habitable: 0.5, outer: 3 }, surface("30", "frozen", "ocean")),
-  ...body("rocky planet", { inner: 4, habitable: 2, outer: 1 }, surface("10", "arid", "desert", "rugged")),
-  ...body("molten planet", { inner: 4, habitable: 0.5, outer: 0.5 }, surface("10", "volcanic", "desert", "rugged")),
+  ...body("rocky planet", { inner: 4, habitable: 2, outer: 1 }, surface("10", "arid", "regolith", "rugged")),
+  ...body("molten planet", { inner: 4, habitable: 0.5, outer: 0.5 }, surface("10", "volcanic", "regolith", "rugged")),
   ...body("gas giant", { inner: 0.5, habitable: 0.5, outer: 4 }),
   ...body("ice giant", { inner: 0.5, habitable: 0.5, outer: 3 }),
   ...body("asteroid belt", { inner: 0.5, habitable: 1, outer: 1.5 }),
-  { world: "moon", weight: 0, map: "system", ...surface("10", "frozen", "desert", "rugged"), notes: "placed beside planets, never rolled" },
+  { world: "moon", weight: 0, map: "system", ...surface("10", "frozen", "regolith", "rugged"), notes: "placed beside planets, never rolled" },
 ];
 
 /** Orbits' random star (its old built-in weights). */
