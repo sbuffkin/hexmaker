@@ -44,9 +44,9 @@ import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
+import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
-import { mapAncestors } from "./hex-map/submapNav";
+import { isSpaceMapIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import {
   getPreset,
@@ -2836,11 +2836,7 @@ export default class HexmakerPlugin extends Plugin {
    * offered there even when the Space map type is off.
    */
   isSpaceMap(mapName: string): boolean {
-    const chain = [...mapAncestors(mapName, (m) => this.parentOf(m)?.map), mapName];
-    return chain.some((m) => {
-      const paletteName = this.getMap(m)?.paletteName;
-      return !!paletteName && this.getPaletteOrPresetKind(paletteName) === "space";
-    });
+    return isSpaceMapIn(this, mapName);
   }
 
   /**
@@ -2849,13 +2845,7 @@ export default class HexmakerPlugin extends Plugin {
    * its parents. Headings in notes don't change. No map = the usual words.
    */
   sectionWordsFor(mapName: string | undefined): SectionWordsFn {
-    if (!mapName || !this.getMap(mapName)) return sectionWordsFor(undefined);
-    const chain = [mapName, ...mapAncestors(mapName, (m) => this.parentOf(m)?.map).reverse()];
-    const palettes = chain.map((m) => this.getMap(m)?.paletteName);
-    const terrains = palettes.map((n) => (n ? this.getPaletteOrPresetTerrains(n) : []));
-    // A palette's declared type counts too (a planet map on Space - Planet).
-    const declared = palettes.map((n) => (n ? this.getPaletteByName(n)?.kind ?? getPreset(n)?.kind : undefined));
-    return sectionWordsFor(sectionKindFor(terrains, undefined, declared));
+    return sectionWordsIn(this, mapName);
   }
 
   getAllTerrains(): TerrainColor[] {
