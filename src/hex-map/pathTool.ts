@@ -6,6 +6,13 @@
  * (mapStore.setPaths). Every edit goes through `commit`, which asks the
  * path edit gate (src/paths/editGate.ts) first.
  *
+ * There is no separate edit mode: with the tool on type T, every path of
+ * type T shows live anchor handles (drag a point to move it, drag the line
+ * to add one, right-click a point to delete it, click an end to continue);
+ * paths of other types are inert (a click there is ground; hovering says
+ * "switch to <type> to edit it"). The tables are pathClickOutcome,
+ * pathPressOutcome and pathContextOutcome.
+ *
  * Hit-testing is pure math in lattice units: the pointer is turned into
  * lattice coordinates by the view (one read of the grid's box per event,
  * never per hex) and compared with the same polylines the map draws.
@@ -17,14 +24,12 @@ import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapPath } from "../types";
 import { latticeCenter, type LatticeGrid, type PathStroke, type Pt } from "../paths/pathGeometry";
-import type { ResolvedBranch } from "../paths/resolve";
 import type { RouteCache } from "../paths/routeCache";
 import {
   appendAnchor,
   clonePath,
   clonePaths,
   deleteAnchor,
-  deleteBranch,
   forkAt,
   insertAnchorAt,
   moveAnchor,
@@ -34,6 +39,8 @@ import {
   splitBranchAt,
 } from "../paths/edit";
 import { anchorsFor, routeFnFor } from "../paths/fromHexes";
+import { keepForksAttached, splitOffOrphans } from "../paths/forks";
+import { routeBranch, type ResolvedBranch } from "../paths/resolve";
 import { canEditPaths, PATH_EDIT_LOCKED_HINT, type PathEditAction } from "../paths/editGate";
 import { pathRouteText } from "../maps/mapNote";
 import { pathRouteStats } from "../maps/MapStore";
@@ -93,19 +100,26 @@ export function anchorEnd(rb: Pick<ResolvedBranch, "anchorIdx" | "forkFrom">, an
 export interface PathHit {
   path: string;
   branch: number;
-  /** The branch's routed hex nearest the pointer. */
+  /** The branch's routed hex nearest the pointer (the anchor's own hex when `anchor` is set). */
   hexIdx: number;
-  /** The anchor whose handle is under the pointer (selected path only), else null. */
+  /** That routed hex. */
+  hex: HexKey;
+  /** The anchor whose handle is under the pointer (editable paths only), else null. */
   anchor: number | null;
   /** When `anchor` is a branch end. */
   end: "head" | "tail" | null;
+  /** The path is of the tool's type (it can be reshaped); false: another type's, inert. */
+  editable: boolean;
 }
 
 /**
- * What's under lattice point `p`: an anchor handle of the selected path
- * first (the nearest within its radius), else the nearest path line within
- * half its stroke plus LINE_SLACK (the selected path wins where lines
- * overlap). Null when nothing is.
+ * What's under lattice point `p`. Anchor handles of every editable path
+ * (`editable(name)`; all paths when null) come first, the nearest within
+ * its radius; else the nearest path line within half its stroke plus
+ * LINE_SLACK. Where lines overlap, an editable path beats an inert one and
+ * the selected path beats the rest. Inert paths are still reported (for
+ * the "switch to … to edit it" hint) with `editable: false`. Null when
+ * nothing is under the pointer.
  */
 export function hitTestPaths(
   p: Pt,
@@ -113,44 +127,50 @@ export function hitTestPaths(
   resolved: readonly ResolvedBranch[],
   grid: LatticeGrid,
   selected: string | null,
+  editable: ((path: string) => boolean) | null = null,
 ): PathHit | null {
-  if (selected !== null) {
-    let best: PathHit | null = null;
-    let bestD = Infinity;
-    for (const rb of resolved) {
-      if (rb.path !== selected) continue;
-      rb.anchorIdx.forEach((hexIdx, a) => {
-        const end = anchorEnd(rb, a);
-        const c = latticeCenter(rb.hexes[hexIdx], grid);
-        const d = Math.hypot(p.cx - c.cx, p.cy - c.cy);
-        if (d <= (end ? END_HANDLE_R : HANDLE_R) && d < bestD - 1e-9) {
-          bestD = d;
-          best = { path: rb.path, branch: rb.branch, hexIdx, anchor: a, end };
-        }
-      });
-    }
-    if (best) return best;
+  const canEdit = (path: string) => editable === null || editable(path);
+  let best: PathHit | null = null;
+  let bestD = Infinity;
+  let bestSel = false;
+  for (const rb of resolved) {
+    if (!canEdit(rb.path)) continue;
+    const sel = rb.path === selected;
+    rb.anchorIdx.forEach((hexIdx, a) => {
+      const end = anchorEnd(rb, a);
+      const c = latticeCenter(rb.hexes[hexIdx], grid);
+      const d = Math.hypot(p.cx - c.cx, p.cy - c.cy);
+      if (d > (end ? END_HANDLE_R : HANDLE_R)) return;
+      // Stacked handles (paths sharing a hex): the selected path's first, then the nearest.
+      if ((sel && !bestSel) || (sel === bestSel && d < bestD - 1e-9)) {
+        bestD = d;
+        bestSel = sel;
+        best = { path: rb.path, branch: rb.branch, hexIdx, hex: rb.hexes[hexIdx], anchor: a, end, editable: true };
+      }
+    });
   }
+  if (best) return best;
   let pick: PathStroke | null = null;
   let pickD = Infinity;
-  let pickSel = false;
+  let pickRank = -1;
   for (const s of strokes) {
     const d = distToPolyline(p, s.pts);
     if (d > s.width / 2 + LINE_SLACK) continue;
-    const sel = s.path === selected;
-    if ((sel && !pickSel) || (sel === pickSel && d < pickD - 1e-9)) {
+    const rank = (canEdit(s.path) ? 2 : 0) + (s.path === selected ? 1 : 0);
+    if (rank > pickRank || (rank === pickRank && d < pickD - 1e-9)) {
       pick = s;
       pickD = d;
-      pickSel = sel;
+      pickRank = rank;
     }
   }
   if (!pick) return null;
   const rb = resolved.find((r) => r.path === pick.path && r.branch === pick.branch);
   if (!rb) return null;
-  return { path: rb.path, branch: rb.branch, hexIdx: nearestHexIdx(p, rb.hexes, grid), anchor: null, end: null };
+  const hexIdx = nearestHexIdx(p, rb.hexes, grid);
+  return { path: rb.path, branch: rb.branch, hexIdx, hex: rb.hexes[hexIdx], anchor: null, end: null, editable: canEdit(rb.path) };
 }
 
-// ── Pure: what a click does ──────────────────────────────────────────────────
+// ── Pure: what a click, a press and a right-click do ─────────────────────────
 
 export type PathClick =
   | { kind: "none" }
@@ -161,8 +181,7 @@ export type PathClick =
   /** The active end clicked again: finish the branch (the path stays selected). */
   | { kind: "finish" }
   | { kind: "select"; path: string }
-  | { kind: "deselect" }
-  /** Continue the selected path from this end. */
+  /** Continue a path from this end. */
   | { kind: "continue"; path: string; branch: number; end: "head" | "tail" }
   /** Start a fork of the selected path at this hex of it. */
   | { kind: "fork"; path: string; branch: number; hexIdx: number }
@@ -179,22 +198,77 @@ export interface PathClickState {
 }
 
 /**
- * The click table (replaces the old hex-by-hex pathClickOutcome):
- * erase splits; Alt / New path starts a new path; while drawing, every
- * click adds an anchor (the active end again finishes); on the selected
- * path an end continues it and anywhere else forks; another path is
- * selected; empty map deselects, or starts a path when nothing is selected.
+ * The click table. Paths of the tool's type are always live (there's no
+ * separate edit mode); other types' paths are inert, so a click on one is
+ * a click on the ground.
+ * - Erase: split the tool's-type path under the pointer.
+ * - Alt / New path: start a new path, whatever is under the pointer.
+ * - Drawing: every click adds an anchor; the active end again finishes.
+ * - An end of a tool's-type path: continue it from there.
+ * - Elsewhere on such a path: select it; on the selected one, fork there.
+ * - Empty ground (or another type's path): start a new path.
  */
 export function pathClickOutcome(s: PathClickState, key: HexKey, hit: PathHit | null): PathClick {
-  if (s.erasing) return hit ? { kind: "split", path: hit.path, branch: hit.branch, hexIdx: hit.hexIdx } : { kind: "none" };
+  const live = hit?.editable ? hit : null;
+  if (s.erasing) return live ? { kind: "split", path: live.path, branch: live.branch, hexIdx: live.hexIdx } : { kind: "none" };
   if (s.forceNew) return { kind: "start" };
   if (s.activeHex !== null) return key === s.activeHex ? { kind: "finish" } : { kind: "append" };
-  if (hit && hit.path === s.selected) {
-    if (hit.end) return { kind: "continue", path: hit.path, branch: hit.branch, end: hit.end };
-    return { kind: "fork", path: hit.path, branch: hit.branch, hexIdx: hit.hexIdx };
+  if (live) {
+    if (live.end) return { kind: "continue", path: live.path, branch: live.branch, end: live.end };
+    if (live.path === s.selected) return { kind: "fork", path: live.path, branch: live.branch, hexIdx: live.hexIdx };
+    return { kind: "select", path: live.path };
   }
-  if (hit) return { kind: "select", path: hit.path };
-  return s.selected !== null ? { kind: "deselect" } : { kind: "start" };
+  return { kind: "start" };
+}
+
+/**
+ * What a left press does before it's known to be a click or a drag:
+ * "move" an anchor (any anchor of a tool's-type path, also while drawing,
+ * except the active end: dragging from that draws on), "insert" an anchor
+ * into a tool's-type line and move it (not while drawing: then the line is
+ * ground), else "draw" (hex-by-hex press-and-drag drawing, or a plain
+ * click). Alt / New path always draw. A press that doesn't move is a click.
+ */
+export function pathPressOutcome(s: { forceNew: boolean; activeHex: HexKey | null }, hit: PathHit | null): "move" | "insert" | "draw" {
+  if (s.forceNew || !hit?.editable) return "draw";
+  if (hit.anchor !== null) return hit.hex === s.activeHex ? "draw" : "move";
+  return s.activeHex === null ? "insert" : "draw";
+}
+
+export type PathContext =
+  /** Right-click on an anchor of a tool's-type path: delete it. */
+  | { kind: "delete-anchor"; path: string; branch: number; anchor: number }
+  /** On a tool's-type line (or Shift+right-click on an anchor): the path's menu. */
+  | { kind: "menu"; path: string; branch: number; hexIdx: number }
+  /** On another type's path: offer to switch to its type. */
+  | { kind: "switch"; path: string }
+  /** Nothing under the pointer: the tool's own menu. */
+  | { kind: "none" };
+
+/** What a right-click does in the path tool (Shift held: the menu, even on an anchor). */
+export function pathContextOutcome(hit: PathHit | null, shift: boolean): PathContext {
+  if (!hit) return { kind: "none" };
+  if (!hit.editable) return { kind: "switch", path: hit.path };
+  if (hit.anchor !== null && !shift) return { kind: "delete-anchor", path: hit.path, branch: hit.branch, anchor: hit.anchor };
+  return { kind: "menu", path: hit.path, branch: hit.branch, hexIdx: hit.hexIdx };
+}
+
+/** The mode-bar hint over another type's path. */
+export function inertHint(p: Pick<MapPath, "name" | "typeName">): string {
+  return `switch to ${p.typeName} to edit ${p.name}`;
+}
+
+/**
+ * The notice when deleting an anchor took a whole branch or path with it
+ * (fewer than two anchors left), else null. Undo brings it back.
+ */
+export function anchorDeleteNotice(before: MapPath, after: MapPath | null, branch: number): string | null {
+  if (!after) return `Deleted ${before.name}: it had one point left. Undo brings it back.`;
+  if (after.branches.length < before.branches.length) {
+    const what = branch === 0 ? "the main line" : "a fork";
+    return `Deleted ${what} of ${before.name}: it had one point left. Undo brings it back.`;
+  }
+  return null;
 }
 
 /** "Road, 2 forks" for the mode bar. */
@@ -261,8 +335,10 @@ export interface PathToolHost {
   redraw(): void;
   /** Refresh the mode bar. */
   refreshBar(): void;
-  /** Show (or clear) the "grab" cursor over the selected path. */
+  /** Show (or clear) the "grab" cursor over a point or line that can be dragged. */
   setGrabCursor(on: boolean): void;
+  /** The tool's path type changed (the toolbar swatch follows it). */
+  typeChanged(): void;
 }
 
 /** A path or fork started by one click: it's created when the second anchor comes. */
@@ -362,7 +438,10 @@ export class PathTool {
   private forceNew = false;
   /** A short note for the mode bar about the last click. */
   hint: string | null = null;
-  private hover: { branch: number; anchor: number } | null = null;
+  /** The mode-bar hint while the pointer is over another type's path. */
+  private hoverHint: string | null = null;
+  /** The anchor handle under the pointer (Backspace deletes it). */
+  private hover: { path: string; branch: number; anchor: number } | null = null;
   private drag: Drag | null = null;
   private drawDrag: DrawDrag | null = null;
   private suppressClick = false;
@@ -407,11 +486,22 @@ export class PathTool {
     return this.strokeMemo.strokes;
   }
 
+  /**
+   * Which paths the tool edits: those of its type (all of them before a
+   * type is picked). Other types' paths are inert while the tool is on.
+   */
+  private editableNames(): ReadonlySet<string> | null {
+    const type = this.typeName;
+    if (type === null) return null;
+    return new Set(this.paths().filter((p) => p.typeName === type).map((p) => p.name));
+  }
+
   private hitAt(e: { clientX: number; clientY: number }): PathHit | null {
     const p = this.host.pointerLattice(e);
     const grid = this.grid();
     if (!p || !grid) return null;
-    return hitTestPaths(p, this.strokes(), this.resolved(), grid, this.selected);
+    const names = this.editableNames();
+    return hitTestPaths(p, this.strokes(), this.resolved(), grid, this.selected, names ? (n) => names.has(n) : null);
   }
 
   /** The hex clicks add to, if any. */
@@ -449,24 +539,25 @@ export class PathTool {
       selected: p?.name ?? null,
       summary: p ? pathSummary(p) : null,
       drawing: this.isDrawing(),
-      note: this.hint,
+      note: [this.hint, this.hoverHint].filter(Boolean).join(" · ") || null,
       forceNew: this.forceNew,
     };
   }
 
+  /** Handles on every anchor of every path of the tool's type: they're always live. */
   overlay(): PathToolOverlay {
     const handles: PathToolOverlay["handles"] = [];
-    if (this.selected !== null) {
-      for (const rb of this.resolved()) {
-        if (rb.path !== this.selected) continue;
-        rb.anchorIdx.forEach((hexIdx, a) => {
-          handles.push({
-            hex: rb.hexes[hexIdx],
-            end: anchorEnd(rb, a) !== null,
-            hover: this.hover?.branch === rb.branch && this.hover.anchor === a,
-          });
+    const names = this.editableNames();
+    const h = this.hover;
+    for (const rb of this.resolved()) {
+      if (names && !names.has(rb.path)) continue;
+      rb.anchorIdx.forEach((hexIdx, a) => {
+        handles.push({
+          hex: rb.hexes[hexIdx],
+          end: anchorEnd(rb, a) !== null,
+          hover: h?.path === rb.path && h.branch === rb.branch && h.anchor === a,
         });
-      }
+      });
     }
     return { selected: this.selected, handles, active: this.activeHex() };
   }
@@ -539,17 +630,37 @@ export class PathTool {
     this.pending = null;
     this.forceNew = false;
     this.hint = null;
+    this.hoverHint = null;
     this.hover = null;
     this.host.setGrabCursor(false);
   }
 
-  /** Pick the type for new paths. A new type ends the branch being drawn. */
+  /**
+   * Pick the tool's type: new paths take it, and its paths are the ones
+   * that can be reshaped. A new type ends the branch being drawn and drops
+   * a selection of another type.
+   */
   setType(typeName: string): void {
     if (typeName !== this.typeName) {
       this.pending = null;
       this.active = null;
+      this.hover = null;
+      this.hoverHint = null;
+      if (this.pathNamed(this.selected)?.typeName !== typeName) this.selected = null;
     }
     this.typeName = typeName;
+  }
+
+  /** "Switch to River" (right-click on another type's path): take its type, select it. */
+  private switchTo(path: string): void {
+    const p = this.pathNamed(path);
+    if (!p) return;
+    this.setType(p.typeName);
+    this.selected = p.name;
+    this.hint = null;
+    this.host.typeChanged();
+    this.host.redraw();
+    this.host.refreshBar();
   }
 
   setAutoRoute(on: boolean): void {
@@ -562,8 +673,10 @@ export class PathTool {
   selectPath(name: string): void {
     const p = this.pathNamed(name);
     if (!p) return;
-    // Picked from the list before any type: new paths take this one.
-    if (!this.typeName) this.typeName = p.typeName;
+    // The tool takes the path's type, so the path can be reshaped.
+    const retyped = p.typeName !== this.typeName;
+    this.setType(p.typeName);
+    if (retyped) this.host.typeChanged();
     this.selected = p.name;
     this.active = null;
     this.pending = null;
@@ -658,9 +771,6 @@ export class PathTool {
       case "select":
         this.selected = outcome.path;
         this.active = null;
-        break;
-      case "deselect":
-        this.selected = null;
         break;
       case "continue":
         this.selected = outcome.path;
@@ -799,7 +909,7 @@ export class PathTool {
   deleteBranch(path: string, branch: number): void {
     const p = this.pathNamed(path);
     if (!p) return;
-    this.afterPathEdit(p.name, deleteBranch(p, branch));
+    this.removeBranch(p, branch, () => { this.active = null; });
   }
 
   deletePath(path: string): void {
@@ -807,12 +917,66 @@ export class PathTool {
     this.afterPathEdit(path, null);
   }
 
+  /** The routes of a path's branches as they are now (its anchors where not resolved). */
+  private routesOf(p: MapPath): HexKey[][] {
+    return p.branches.map((b, i) => this.branchRoute(p.name, i)?.hexes ?? [...b.anchors]);
+  }
+
+  /** A branch's route for `anchors` (the type's routing), or null before the map is ready. */
+  private routeOf(typeName: string, anchors: readonly HexKey[]): HexKey[] | null {
+    const router = this.plugin.paths.router(this.map);
+    if (!router) return null;
+    return routeBranch(anchors, this.plugin.paths.styleOf(this.map, typeName), router).hexes;
+  }
+
+  /**
+   * After branch `branch` of `p` was re-routed (from `oldRoute`): forks and
+   * joins that were on it follow it (keepForksAttached), so they stay attached.
+   */
+  private attachForks(p: MapPath, branch: number, oldRoute: readonly HexKey[], moved?: { from: HexKey; to: HexKey }): MapPath {
+    const grid = this.grid();
+    const anchors = p.branches[branch]?.anchors;
+    if (!grid || !anchors || p.branches.length < 2) return p;
+    const route = this.routeOf(p.typeName, anchors);
+    return route ? keepForksAttached(p, branch, oldRoute, route, grid, moved) : p;
+  }
+
+  /**
+   * Remove a branch; forks that hung off it become paths of their own
+   * (splitOffOrphans), all in one undo step, with a notice naming them.
+   */
+  private removeBranch(p: MapPath, branch: number, adjust?: (next: MapPath | null) => void): void {
+    const taken = this.paths().map((q) => q.name);
+    const { path: rest, split } = splitOffOrphans(p, branch, this.routesOf(p), taken);
+    this.afterPathEdit(p.name, rest, (q) => {
+      adjust?.(q);
+      if (split.length) {
+        const names = split.map((s) => s.name).join(", ");
+        new Notice(split.length === 1 ? `Its fork is now a path of its own: ${names}.` : `Its forks are now paths of their own: ${names}.`);
+      }
+    }, split);
+  }
+
   deleteAnchor(path: string, branch: number, anchor: number): void {
     const p = this.pathNamed(path);
     if (!p) return;
     const next = deleteAnchor(p, branch, anchor);
-    // The active end steps back with its anchor; a branch that went takes it along.
-    this.afterPathEdit(p.name, next, (q) => {
+    // A branch (or the path) with one point left goes too: say so.
+    const say = (q: MapPath | null) => {
+      const note = anchorDeleteNotice(p, q, branch);
+      if (note) new Notice(note);
+    };
+    if (!next || next.branches.length < p.branches.length) {
+      // The branch went: the active end goes with it; its forks split off.
+      this.removeBranch(p, branch, (q) => {
+        this.active = null;
+        say(q);
+      });
+      return;
+    }
+    // Forks that left the deleted point re-attach to the nearest point of the new route.
+    const fixed = this.attachForks(next, branch, this.routesOf(p)[branch]);
+    this.afterPathEdit(p.name, fixed, (q) => {
       if (!q || q.branches.length < p.branches.length) this.active = null;
     });
   }
@@ -849,9 +1013,9 @@ export class PathTool {
     }).open();
   }
 
-  /** Commit one path's replacement (null removes it), keeping the tool state valid. */
-  private afterPathEdit(name: string, next: MapPath | null, adjust?: (next: MapPath | null) => void): void {
-    if (!this.commit(this.replacePath(name, next))) return;
+  /** Commit one path's replacement (null removes it; extra: paths split off it), keeping the tool state valid. */
+  private afterPathEdit(name: string, next: MapPath | null, adjust?: (next: MapPath | null) => void, extra: MapPath[] = []): void {
+    if (!this.commit([...this.replacePath(name, next), ...extra])) return;
     adjust?.(next);
     if (!next && this.selected === name) {
       this.selected = null;
@@ -872,13 +1036,13 @@ export class PathTool {
       this.host.refreshBar();
       return true;
     }
-    const p = this.pathNamed(this.selected);
-    if (!p) return false;
     if (this.hover) {
-      const { branch, anchor } = this.hover;
-      this.deleteAnchor(p.name, branch, anchor);
+      const { path, branch, anchor } = this.hover;
+      this.deleteAnchor(path, branch, anchor);
       return true;
     }
+    const p = this.pathNamed(this.selected);
+    if (!p) return false;
     if (this.active) {
       const a = p.branches[this.active.branch].anchors;
       this.deleteAnchor(p.name, this.active.branch, this.active.end === "head" ? 0 : a.length - 1);
@@ -890,17 +1054,25 @@ export class PathTool {
   // ── right-click ──
 
   /**
-   * Right-click in the path tool: on an anchor handle of the selected path
-   * it deletes that anchor ("handled"); on a path it selects it and returns
-   * the path's menu items; elsewhere null (the usual tool menu).
+   * Right-click in the path tool (pathContextOutcome): on an anchor of a
+   * path of the tool's type it deletes that anchor ("handled"); on such a
+   * line, or Shift+right-click on an anchor, it selects the path and
+   * returns its menu items; on another type's path, a "Switch to <type>"
+   * item; elsewhere null (the usual tool menu).
    */
-  contextMenu(e: { clientX: number; clientY: number }): { handled: true } | { items: { label: string; onClick: () => void }[] } | null {
+  contextMenu(e: { clientX: number; clientY: number; shiftKey?: boolean }): { handled: true } | { items: { label: string; onClick: () => void }[] } | null {
     if (!this.plugin.paths.isReady(this.map)) return null;
     const hit = this.hitAt(e);
-    if (!hit) return null;
-    if (hit.path === this.selected && hit.anchor !== null) {
-      this.deleteAnchor(hit.path, hit.branch, hit.anchor);
+    const outcome = pathContextOutcome(hit, !!e.shiftKey);
+    if (outcome.kind === "none" || !hit) return null;
+    if (outcome.kind === "delete-anchor") {
+      this.deleteAnchor(outcome.path, outcome.branch, outcome.anchor);
       return { handled: true };
+    }
+    if (outcome.kind === "switch") {
+      const other = this.pathNamed(outcome.path);
+      if (!other) return null;
+      return { items: [{ label: `Switch to ${other.typeName} to edit ${other.name}`, onClick: () => this.switchTo(other.name) }] };
     }
     if (this.selected !== hit.path) {
       this.selected = hit.path;
@@ -926,40 +1098,54 @@ export class PathTool {
 
   // ── pointer: hover and drag ──
 
-  /** Pointer moved (no button): hover an anchor handle, show "grab" over the selected path. */
-  pointerMove(e: { clientX: number; clientY: number }): void {
-    if (this.drag || this.drawDrag || this.selected === null || this.isDrawing()) {
-      if (this.hover) { this.hover = null; this.host.redraw(); }
-      this.host.setGrabCursor(false);
-      return;
-    }
-    const hit = this.hitAt(e);
-    const over = hit && hit.path === this.selected ? hit : null;
-    const hover = over && over.anchor !== null ? { branch: over.branch, anchor: over.anchor } : null;
-    const changed = (hover?.branch ?? -1) !== (this.hover?.branch ?? -1) || (hover?.anchor ?? -1) !== (this.hover?.anchor ?? -1);
+  /**
+   * Pointer moved (no button): light up the anchor handle under it, show
+   * "grab" where a press would drag (an anchor, or a line of the tool's
+   * type when not drawing), and over another type's path say how to edit it.
+   */
+  pointerMove(e: { clientX: number; clientY: number; altKey?: boolean }, erasing = false): void {
+    const quiet = !!this.drag || !!this.drawDrag || !this.plugin.paths.isReady(this.map);
+    const hit = quiet ? null : this.hitAt(e);
+    // Erasing: nothing is dragged (a click splits), but the hint still shows.
+    const press = erasing ? "draw" : pathPressOutcome({ forceNew: this.forceNew || !!e.altKey, activeHex: this.activeHex() }, hit);
+    const hover = hit && press === "move" && hit.anchor !== null ? { path: hit.path, branch: hit.branch, anchor: hit.anchor } : null;
+    const h = this.hover;
+    const changed = hover?.path !== h?.path || hover?.branch !== h?.branch || hover?.anchor !== h?.anchor;
     this.hover = hover;
-    this.host.setGrabCursor(!!over);
+    this.host.setGrabCursor(press === "move" || press === "insert");
+    const other = hit && !hit.editable ? this.pathNamed(hit.path) : undefined;
+    const hint = other ? inertHint(other) : null;
+    const hintChanged = hint !== this.hoverHint;
+    this.hoverHint = hint;
     if (changed) this.host.redraw();
+    if (hintChanged) this.host.refreshBar();
   }
 
   /**
-   * Left button down. Hex by hex: where a click would draw (start a path,
-   * add to the active end, or continue from an end handle), get ready to
-   * drag-draw. Otherwise, on the selected path (not while drawing, erasing
-   * or with Alt), get ready to drag it into a new shape. Returns true when
-   * it took the press (and stops the browser's own image drag, so a press
-   * on a hex icon works too).
+   * Left button down (pathPressOutcome). On an anchor of a path of the
+   * tool's type, or on such a line when not drawing, get ready to drag it
+   * into a new shape (the line gets a new anchor where it was grabbed).
+   * Otherwise, hex by hex, where a click would draw (start a path, add to
+   * the active end, continue from an end), get ready to drag-draw. A press
+   * that doesn't move is left to the click. Returns true when it took the
+   * press (and stops the browser's own image drag, so a press on a hex
+   * icon works too).
    */
   pointerDown(e: MouseEvent, erasing: boolean): boolean {
     if (e.button !== 0 || erasing) return false;
     if (!this.plugin.paths.isReady(this.map)) return false;
-    if (!this.autoRoute && this.beginDrawDrag(e)) {
-      e.preventDefault();
-      return true;
+    const forceNew = this.forceNew || e.altKey;
+    const hit = forceNew ? null : this.hitAt(e);
+    const press = pathPressOutcome({ forceNew, activeHex: this.activeHex() }, hit);
+    if (press === "draw" || !hit) {
+      if (!this.autoRoute && this.beginDrawDrag(e, hit)) {
+        e.preventDefault();
+        return true;
+      }
+      return false;
     }
-    if (e.altKey || this.forceNew || this.isDrawing() || this.selected === null) return false;
-    const hit = this.hitAt(e);
-    if (!hit || hit.path !== this.selected) return false;
+    // Locked map (Play): no drag preview; the click says why.
+    if (!canEditPaths(this.map, "draw")) return false;
     const rb = this.branchRoute(hit.path, hit.branch);
     if (!rb) return false;
     const startHex = rb.hexes[hit.anchor !== null ? rb.anchorIdx[hit.anchor] : hit.hexIdx];
@@ -993,12 +1179,12 @@ export class PathTool {
   // ── hex-by-hex press-and-drag drawing ──
 
   /** Hex by hex: a press where a click would draw gets ready to drag-draw (nothing changes until the pointer leaves the hex). */
-  private beginDrawDrag(e: MouseEvent): boolean {
+  private beginDrawDrag(e: MouseEvent, pressHit: PathHit | null): boolean {
     const key = this.host.hexAtPoint(e.clientX, e.clientY);
     if (!key) return false;
     const forceNew = this.forceNew || e.altKey;
     const activeHex = this.activeHex();
-    const hit = !forceNew && activeHex === null ? this.hitAt(e) : null;
+    const hit = !forceNew && activeHex === null ? pressHit : null;
     const outcome = pathClickOutcome({ erasing: false, forceNew, activeHex, selected: this.selected }, key, hit);
     if (outcome.kind !== "start" && outcome.kind !== "append" && outcome.kind !== "finish" && outcome.kind !== "continue") return false;
     if (outcome.kind === "start" && !(this.typeName ?? this.currentType())) return false;
@@ -1154,7 +1340,16 @@ export class PathTool {
     const d = this.drag;
     if (!d) return;
     if (!d.started && Math.hypot(e.clientX - d.startX, e.clientY - d.startY) <= 4) return;
-    d.started = true;
+    if (!d.started) {
+      d.started = true;
+      // The dragged path is highlighted (a branch being drawn keeps its own selection).
+      if (!this.isDrawing() && this.selected !== d.path) {
+        this.selected = d.path;
+        this.active = null;
+        this.host.refreshBar();
+      }
+      this.hover = null;
+    }
     const hex = this.host.hexAtPoint(e.clientX, e.clientY);
     if (!hex || hex === d.lastHex) return;
     d.lastHex = hex;
@@ -1178,7 +1373,9 @@ export class PathTool {
       p = ins.path;
       anchor = ins.anchor;
     }
-    const moved = moveAnchor(p, d.branch, anchor, d.lastHex);
+    const from = p.branches[d.branch].anchors[anchor];
+    // Forks leaving the dragged point move with it; others on the old route stay on the new one.
+    const moved = this.attachForks(moveAnchor(p, d.branch, anchor, d.lastHex), d.branch, d.route.hexes, { from, to: d.lastHex });
     d.preview = d.before.map((q) => (q.name === d.path ? moved : q));
     this.plugin.paths.setPreview(this.map, d.preview);
     this.strokeMemo = null;

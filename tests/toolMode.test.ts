@@ -68,7 +68,9 @@ describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
 		const menu = toolMethod("contextMenu");
 		expect(menu).toMatch(/pathMenuItems\(p, branch, \{/);
 		// The labels and their order: tests/pathToolPolish.test.ts (#48).
-		expect(menu).toMatch(/hit\.anchor !== null\) \{\s*this\.deleteAnchor\(/);
+		expect(menu).toMatch(/outcome\.kind === "delete-anchor"\) \{\s*this\.deleteAnchor\(/);
+		// Shift+right-click reaches the menu (the click table: tests/pathTool.test.ts).
+		expect(menu).toMatch(/pathContextOutcome\(hit, !!e\.shiftKey\)/);
 	});
 
 	it("tokens let clicks through while a drawing tool is active", () => {
@@ -93,11 +95,13 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "terrain", erasing: false, terrainPick: true })).toMatch(/^Picking terrain/);
 		expect(toolModeLabel({ mode: "icon", erasing: false, iconName: "bw-castle.svg" })).toBe("Painting icon: bw-castle");
 		expect(toolModeLabel({ mode: "icon", erasing: false, iconName: "x.png", iconGmOnly: true })).toBe("Painting GM icon: x");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road" })).toBe("Road: click to start a path · click a path to edit it");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road" })).toBe("Road: click empty ground to start · drag a point or the line to reshape · right-click a point to delete it · click an end to continue");
 		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths: click a path to split it/);
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathDrawing: true, pathSelected: "King's Road" })).toBe("King's Road: click to add (auto-routes) · Esc to finish");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · Esc to finish · not next to the end, so the gap was routed");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathSelected: "King's Road", pathSummary: "Road, 2 forks" })).toBe("King's Road (Road, 2 forks): drag the line to reshape · click an end to continue · click the line to fork");
+		expect(toolModeLabel({ mode: "path", erasing: true, pathTypeName: "Road" })).toBe("Erasing paths: click a Road to split it there");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNote: "switch to River to edit Glass River" })).toMatch(/ · switch to River to edit Glass River$/);
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathDrawing: true, pathSelected: "King's Road" })).toBe("King's Road: click to add (auto-routes) · drag a point to move it · Esc to finish");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · drag a point to move it · Esc to finish · not next to the end, so the gap was routed");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathSelected: "King's Road", pathSummary: "Road, 2 forks" })).toBe("King's Road (Road, 2 forks): drag to reshape · right-click a point to delete it · click an end to continue, the line to fork");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNew: true })).toBe("New Road: click where it starts");
 		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region area: Kerrigan");
 		expect(toolModeLabel({ mode: "factionLink", erasing: true })).toBe("Erasing factions");
