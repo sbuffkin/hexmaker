@@ -623,7 +623,7 @@ export function placeShore(input: ShoreInput): void {
     }
     const type = pick(odds, rng())!;
     const names = namesWithinType(phi, profiles, type, input.sharpness);
-    return pick(names.size ? names : profile.names.get(type) ?? new Map(), rng());
+    return pick(names.size ? names : profile.names.get(type) ?? new Map<string, number>(), rng());
   };
   for (const k of ownList) {
     const land = isLandCell.get(k)!;

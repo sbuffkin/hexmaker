@@ -16,8 +16,11 @@ import { getFrontMatter, getTerrainFromFile, setTerrainInFile } from "../frontma
 import { normalizeFolder, slugify } from "../utils";
 import { VERSION_KEY, pluginVersion } from "../compat";
 import { isImpassable } from "../impassable";
-import type { MapPath, TerrainColor } from "../types";
+import type { MapPath, PathType, TerrainColor } from "../types";
 import { generatedToMapPaths } from "../paths/fromGenerated";
+import { pathTypeStyleFor } from "../paths/mapContext";
+import type { RouteContext } from "../paths/router";
+import type { StyleFor } from "../paths/resolve";
 import {
   learnModel,
   mergeModels,
@@ -165,15 +168,40 @@ export function toMapPaths(
   taken?: Iterable<string>,
 ): { paths: MapPath[]; missing: string[] } {
   const map = plugin.getMap(mapName);
-  const known = new Set(plugin.getMapPathTypes(mapName).map((t) => t.name));
-  const typed = paths.map((p) => ({ typeName: drawnPathType(model, p), hexes: [...p.hexes] }));
-  const missing = [...new Set(typed.map((p) => p.typeName).filter((t) => !known.has(t)))];
-  if (!map) return { paths: [], missing };
+  const pathTypes = plugin.getMapPathTypes(mapName);
+  if (!map) return { paths: [], missing: missingPathTypes(paths, model, pathTypes) };
   const store = plugin.mapStore;
+  return toPathsOn(paths, model, {
+    pathTypes,
+    route: store.routeContext(map),
+    styleFor: store.pathStyleFor(map),
+    taken: taken ?? store.paths(mapName).map((p) => p.name),
+  });
+}
+
+/** Path types generated paths are drawn as that `pathTypes` doesn't have. */
+function missingPathTypes(paths: readonly { type: string; route?: string }[], model: HexWfcModel | undefined, pathTypes: readonly PathType[]): string[] {
+  const known = new Set(pathTypes.map((t) => t.name));
+  return [...new Set(paths.map((p) => drawnPathType(model, p)).filter((t) => !known.has(t)))];
+}
+
+/**
+ * toMapPaths against any routing context: a map that doesn't exist yet
+ * (an overworld region being generated) passes its own bounds and terrain
+ * (paths/mapContext.ts mapRouteContext) and its palette's path types.
+ */
+export function toPathsOn(
+  paths: readonly { type: string; route?: string; hexes: readonly string[] }[],
+  model: HexWfcModel | undefined,
+  target: { pathTypes: readonly PathType[]; route: RouteContext; styleFor?: StyleFor; taken?: Iterable<string> },
+): { paths: MapPath[]; missing: string[] } {
+  const known = new Set(target.pathTypes.map((t) => t.name));
+  const typed = paths.map((p) => ({ typeName: drawnPathType(model, p), hexes: [...p.hexes] }));
+  const missing = missingPathTypes(paths, model, target.pathTypes);
   const { paths: out } = generatedToMapPaths(
     typed.filter((p) => known.has(p.typeName)),
-    store.routeContext(map),
-    { styleFor: store.pathStyleFor(map), taken: taken ?? store.paths(mapName).map((p) => p.name) },
+    target.route,
+    { styleFor: target.styleFor ?? pathTypeStyleFor(target.pathTypes), taken: target.taken ?? [] },
   );
   return { paths: out, missing };
 }

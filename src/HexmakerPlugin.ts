@@ -637,9 +637,11 @@ export default class HexmakerPlugin extends Plugin {
 
   /**
    * Open the terrain generator page (or bring it forward), optionally with a
-   * region and generator selected.
+   * region and generator selected, or a biome (#50): a blend-field biome
+   * opens as "Biome (blend field)", a generator-backed one opens its
+   * generator (the page says which biomes use it).
    */
-  async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string } = {}): Promise<void> {
+  async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string } = {}): Promise<void> {
     // An Advanced feature: in Simple, offer to turn it on first.
     if (!hasFeature(this.settings, "generators")) {
       new EnableFeatureModal(this.app, this, "generators", () => void this.openTerrainGenerator(select)).open();
@@ -647,7 +649,18 @@ export default class HexmakerPlugin extends Plugin {
     }
     if (select.mapName) GeneratorPanel.mapName = select.mapName;
     if (select.paletteName) GeneratorPanel.paletteName = select.paletteName;
-    if (select.generatorPath) GeneratorPanel.selectedPath = select.generatorPath;
+    if (select.generatorPath) {
+      GeneratorPanel.selectedPath = select.generatorPath;
+      GeneratorPanel.biome = "";
+    }
+    if (select.biome) {
+      const b = this.biomeStore.get(select.biome);
+      const file = b?.generator ? this.app.vault.getAbstractFileByPath(`${b.generator}.md`) ?? this.app.vault.getAbstractFileByPath(b.generator) ?? this.app.metadataCache.getFirstLinkpathDest(b.generator, "") : null;
+      if (b && file) {
+        GeneratorPanel.selectedPath = file.path;
+        GeneratorPanel.biome = "";
+      } else if (b && !b.generator) GeneratorPanel.biome = b.id;
+    }
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)[0];
     if (existing) {
       await this.app.workspace.revealLeaf(existing);

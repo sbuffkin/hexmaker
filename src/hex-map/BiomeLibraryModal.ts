@@ -30,11 +30,8 @@ export function biomeEditLock(plugin: HexmakerPlugin, overworldName: string): st
   return canAdd(plugin.getMap(overworldName)) ? undefined : "Switch to Build to add or edit biomes.";
 }
 
-/**
- * Whether the generator page can open a biome (`openTerrainGenerator({ biome })`).
- * TODO(#50): set true once the generator page takes biomes (other session).
- */
-const GENERATOR_PAGE_TAKES_BIOMES = false;
+/** Whether the generator page can open a biome (`openTerrainGenerator({ biome })`). */
+const GENERATOR_PAGE_TAKES_BIOMES = true;
 
 /**
  * "Edit generator…" for a biome, in one place: a biome with a generator
@@ -49,7 +46,7 @@ export async function openBiomeGenerator(plugin: HexmakerPlugin, biome: string):
     if (file) { await plugin.openTerrainGenerator({ generatorPath: file.path }); return; }
     new Notice(`Generator ${generatorName(b.generator)} wasn't found; opening the biome's note.`);
   } else if (GENERATOR_PAGE_TAKES_BIOMES) {
-    await (plugin.openTerrainGenerator as (s: { biome: string }) => Promise<void>)({ biome: b.id });
+    await plugin.openTerrainGenerator({ biome: b.id });
     return;
   }
   const path = plugin.biomeStore.pathOf(b.id);
@@ -165,7 +162,7 @@ export class BiomeFormModal extends HexmakerModal {
     if (state.generator && ![...gen.options].some((o) => o.value === state.generator)) gen.createEl("option", { text: generatorName(state.generator), value: state.generator });
     gen.value = state.generator;
     const genNote = form.createEl("p", { cls: "setting-item-description" });
-    const showGenNote = () => genNote.setText(routeNote({ generator: state.generator || undefined }) ?? "Blend mixes the terrain types below, and blends into the biomes next to it. A temporary stand-in until generator regions land.");
+    const showGenNote = () => genNote.setText(routeNote({ generator: state.generator || undefined }) ?? "Blend mixes the terrain types below, and blends into the biomes next to it.");
     showGenNote();
     gen.addEventListener("change", () => { state.generator = gen.value; showGenNote(); });
 

@@ -7,7 +7,7 @@ import { createWalkRegion, planWalk, previewWalk, regionBiome, type WalkPlan } f
 import { drawPreview } from "./preview";
 import type { Side } from "./world";
 import { biomeForTerrain, biomeInfo, representativeTerrain } from "../overworld/biomes";
-import { regionHome, inOverworldGrid, planRegionAt, walkIntoHex, walkLock } from "../overworld/regionsVault";
+import { regionHome, inOverworldGrid, planRegionAt, planRegionWithGenerator, walkIntoHex, walkLock } from "../overworld/regionsVault";
 import { defaultRegionName, rollBiome } from "../overworld/regionWorld";
 import { drawRegionPlan, lockButton, paintableBiomes } from "../hex-map/BiomeModals";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
@@ -131,8 +131,15 @@ export class WalkRegionModal extends HexmakerModal {
 
     const labelOf = (id: string) => biomeInfo(id)?.label ?? id;
     let rolled = "";
+    let token = 0;
     const refresh = () => {
-      const plan = planRegionAt(plugin, walk.overworld, px, py, { seed: this.seed, hexTerrain: representativeTerrain(biome, owPalette) });
+      const mine = ++token;
+      const opts = { seed: this.seed, hexTerrain: representativeTerrain(biome, owPalette), biome };
+      void planRegionWithGenerator(plugin, walk.overworld, px, py, opts)
+        .catch(() => planRegionAt(plugin, walk.overworld, px, py, opts))
+        .then((plan) => { if (mine === token) show(plan); });
+    };
+    const show = (plan: ReturnType<typeof planRegionAt>) => {
       drawRegionPlan(canvas, plugin, walk.overworld, px, py, plan);
       // The biomes it blends from: the field's, plus the one walked from.
       const fromIds = new Set((plan?.biome?.from ?? []).filter((b) => b !== biome));

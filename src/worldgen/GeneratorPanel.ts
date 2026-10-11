@@ -42,6 +42,7 @@ import { isImpassable } from "../impassable";
 import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
+import { BiomePanel } from "./BiomePanel";
 import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint } from "../advancedHints";
 import { generatorMapKind, isGeneratorShown, isSpacePalette } from "../mapKinds";
@@ -74,6 +75,17 @@ import {
   type HexWfcModel,
 } from "../../packages/hex-wfc/src";
 import type { TFile } from "obsidian";
+
+/** Labels of the biomes whose `generator:` link resolves to the generator note at `path`. */
+export function biomesUsing(plugin: HexmakerPlugin, path: string): string[] {
+  const out: string[] = [];
+  for (const b of plugin.biomeStore?.list() ?? []) {
+    if (!b.generator) continue;
+    const hit = plugin.app.vault.getAbstractFileByPath(b.generator) ?? plugin.app.vault.getAbstractFileByPath(`${b.generator}.md`) ?? plugin.app.metadataCache.getFirstLinkpathDest(b.generator, "");
+    if (hit?.path === path) out.push(b.label);
+  }
+  return out;
+}
 
 export interface GeneratorPanelHost {
   /** Re-render the whole page (e.g. after learning a new generator). */
@@ -119,6 +131,8 @@ export class GeneratorPanel {
    * the generators folder.
    */
   static draft: HexWfcModel | null = null;
+  /** A blend-field biome shown instead of a generator (its id; "" = none). See BiomePanel. */
+  static biome = "";
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -182,6 +196,19 @@ export class GeneratorPanel {
     const show = () => {
       body.empty();
       side.empty();
+      BiomePanel.dispose();
+      const biome = GeneratorPanel.biome ? this.plugin.biomeStore.get(GeneratorPanel.biome) : undefined;
+      if (biome && !biome.generator) {
+        const panel = new BiomePanel(this.plugin, {
+          rerender: () => this.host.rerender(),
+          section: (e, t) => this.section(e, t),
+          back: () => { GeneratorPanel.biome = ""; BiomePanel.dispose(); show(); },
+        }, biome.id, () => GeneratorPanel.paletteName);
+        panel.onPalette = (name) => { GeneratorPanel.paletteName = name; show(); };
+        panel.render(body, side);
+        return;
+      }
+      GeneratorPanel.biome = "";
       const g = current();
       if (g) this.renderGenerator(body, side, g);
       else {
@@ -191,6 +218,7 @@ export class GeneratorPanel {
       }
     };
     const choose = (g: GeneratorFile) => {
+      GeneratorPanel.biome = "";
       GeneratorPanel.selectedPath = g.file.path;
       const source = sourceMapsOf(g.model)[0];
       if (source && this.plugin.getMap(source)) GeneratorPanel.mapName = source;
@@ -224,6 +252,7 @@ export class GeneratorPanel {
         selectedPath: () => GeneratorPanel.selectedPath,
         load: choose,
         loadDraft: (draft) => {
+          GeneratorPanel.biome = "";
           GeneratorPanel.draft = draft;
           GeneratorPanel.selectedPath = DRAFT_PATH;
           show();
@@ -264,6 +293,14 @@ export class GeneratorPanel {
       cls: "duckmage-map-origin-desc",
     });
     summary.setAttr("title", [...detail, ...g.warnings].join("\n"));
+    // Biomes whose regions this generator makes (their note links it).
+    const usedBy = file ? biomesUsing(this.plugin, file.path) : [];
+    if (usedBy.length) {
+      el.createEl("p", {
+        cls: "duckmage-map-origin-desc duckmage-wfc-used-by",
+        text: `Used by biome${usedBy.length === 1 ? "" : "s"} ${usedBy.join(", ")}: ${usedBy.length === 1 ? "its" : "their"} overworld regions are made by this generator.`,
+      });
+    }
 
     // Current settings, kept in sync with the file.
     const s = () => generatorSettings(model, this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? []);
@@ -1373,7 +1410,7 @@ export class GeneratorPanel {
    * A titled group of controls; click the title to fold it away. Folded
    * sections stay folded across re-renders. Returns the section's body.
    */
-  private section(el: HTMLElement, text: string): HTMLElement {
+  section(el: HTMLElement, text: string): HTMLElement {
     const box = el.createDiv({ cls: "duckmage-wfc-group" });
     const title = box.createEl("h5", { cls: "duckmage-wfc-heading is-collapsible", attr: { role: "button", tabindex: "0" } });
     setIcon(title.createSpan({ cls: "duckmage-wfc-fold" }), "chevron-down");

@@ -155,41 +155,72 @@ export function generateConnected(
   const shadowInfo = neighbourShadow(plugin, region);
   const shadow = new Map<string, string>();
   for (const [k, v] of shadowInfo) if (v.terrain) shadow.set(k, v.terrain);
-  const { cols, rows, offset } = region;
-  const inside = (key: string) => {
+  return { ...solveWithRing(plugin, model, paletteTerrains, { cols: region.cols, rows: region.rows, offset: region.offset, stagger: region.stagger }, shadow, seed), shadow };
+}
+
+/**
+ * Solve `grid` so it carries on from `around` (hex key → terrain): the grid
+ * is solved with a one-hex ring around it, every `around` cell inside that
+ * ring (or the grid itself) pinned, then cropped to the grid (and to
+ * `inside`, when given). Pins that clash with the generator's rules are
+ * dropped one at a time (up to 40); if it still can't fit, the grid is
+ * generated on its own, keeping only the pins inside it, with a warning.
+ * Shared by generateConnected (a neighbour's edge) and generateBiomeRegion
+ * (an overworld region's painted neighbours).
+ */
+export function solveWithRing(
+  plugin: HexmakerPlugin,
+  model: HexWfcModel,
+  paletteTerrains: string[],
+  grid: GridSpec,
+  around: ReadonlyMap<string, string>,
+  seed: number,
+  inside?: (key: string) => boolean,
+): SolveResult {
+  const { cols, rows, offset } = grid;
+  const inGrid = (key: string) => {
     const [x, y] = key.split("_").map(Number);
     return x >= offset.x && x < offset.x + cols && y >= offset.y && y < offset.y + rows;
   };
-  // The ring one hex out, where a neighbour is.
+  const keep = inside ? (key: string) => inGrid(key) && inside(key) : inGrid;
+  // The ring one hex out (and the grid itself), where a pin is.
   const fixed = new Map<string, string>();
-  for (const [k, t] of shadow) {
+  for (const [k, t] of around) {
     const [x, y] = k.split("_").map(Number);
     if (x >= offset.x - 1 && x <= offset.x + cols && y >= offset.y - 1 && y <= offset.y + rows) fixed.set(k, t);
   }
-  if (!fixed.size) {
-    const grid: GridSpec = { cols, rows, offset, stagger: region.stagger };
-    return { ...generateTerrain(plugin, model, paletteTerrains, grid, seed), shadow };
-  }
-  const grid: GridSpec = { cols: cols + 2, rows: rows + 2, offset: { x: offset.x - 1, y: offset.y - 1 }, stagger: region.stagger };
+  const crop = (r: SolveResult): SolveResult => {
+    if (!r.ok || !inside) return r;
+    return {
+      ...r,
+      cells: new Map([...r.cells].filter(([k]) => keep(k))),
+      featureCells: new Set([...r.featureCells].filter(keep)),
+      paths: r.paths.map((p) => ({ ...p, hexes: cropPath(p.hexes, keep) })).filter((p) => p.hexes.length >= 2),
+    };
+  };
+  if (!fixed.size) return crop(generateTerrain(plugin, model, paletteTerrains, grid, seed));
+  const ringGrid: GridSpec = { cols: cols + 2, rows: rows + 2, offset: { x: offset.x - 1, y: offset.y - 1 }, stagger: grid.stagger };
   let dropped = 0;
-  let r = generateTerrain(plugin, model, paletteTerrains, grid, seed, fixed);
+  let r = generateTerrain(plugin, model, paletteTerrains, ringGrid, seed, fixed);
   while (!r.ok && r.at && fixed.size && dropped < 40) {
     const key = `${r.at.x}_${r.at.y}`;
     if (!fixed.delete(key)) break;
     dropped++;
-    r = generateTerrain(plugin, model, paletteTerrains, grid, seed, fixed);
+    r = generateTerrain(plugin, model, paletteTerrains, ringGrid, seed, fixed);
   }
   if (!r.ok) {
-    const alone = generateTerrain(plugin, model, paletteTerrains, { cols, rows, offset, stagger: region.stagger }, seed);
+    const own = new Map([...around].filter(([k]) => inGrid(k)));
+    let alone = generateTerrain(plugin, model, paletteTerrains, grid, seed, own.size ? own : undefined);
+    if (!alone.ok && own.size) alone = generateTerrain(plugin, model, paletteTerrains, grid, seed);
     if (alone.ok) alone.warnings.unshift("Couldn't fit this map to its neighbours' edges, so it was generated on its own");
-    return { ...alone, shadow };
+    return crop(alone);
   }
-  const cells = new Map([...r.cells].filter(([k]) => inside(k)));
-  const featureCells = new Set([...r.featureCells].filter(inside));
-  const paths = r.paths.map((p) => ({ ...p, hexes: cropPath(p.hexes, inside) })).filter((p) => p.hexes.length >= 2);
+  const cells = new Map([...r.cells].filter(([k]) => keep(k)));
+  const featureCells = new Set([...r.featureCells].filter(keep));
+  const paths = r.paths.map((p) => ({ ...p, hexes: cropPath(p.hexes, keep) })).filter((p) => p.hexes.length >= 2);
   const warnings = [...r.warnings];
   if (dropped) warnings.push(`${dropped} edge hex${dropped === 1 ? "" : "es"} couldn't be matched to the neighbouring map's terrain`);
-  return { ...r, cells, featureCells, paths, warnings, shadow };
+  return { ...r, cells, featureCells, paths, warnings };
 }
 
 /** Name of the map on `side` of a region that's about to be made. */
