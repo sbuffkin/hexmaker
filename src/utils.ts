@@ -1,7 +1,7 @@
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
-import { BUNDLED_PLACE_ICONS, PLACE_KINDS } from "./bundledPlaceIcons";
+import { registry } from "./modules";
 import { rangeCellTexts } from "./random-tables/randomTable";
 
 let labelSeq = 0;
@@ -124,39 +124,41 @@ export function getIconUrl(plugin: HexmakerPlugin, iconFilename: string): string
 	return plugin.app.vault.adapter.getResourcePath(`${plugin.manifest.dir}/icons/${iconFilename}`);
 }
 
-/** Icon groups shown as tabs in icon pickers. */
-export type IconPack = "terrain" | "places" | "space" | "custom";
+/**
+ * Icon groups shown as tabs in icon pickers: Terrain (the core's bw-
+ * icons), each module's pack (World: Places, Space: Space), then Custom.
+ */
+export type IconPack = string;
 
 /** Pack labels, in tab order. */
 export const ICON_PACK_LABELS: Record<IconPack, string> = {
 	terrain: "Terrain",
-	places: "Places",
-	space: "Space",
+	...Object.fromEntries(registry.iconPacks().map((p) => [p.id, p.label])),
 	custom: "Custom",
 };
 
-const PLACE_KIND_OF = new Map(BUNDLED_PLACE_ICONS.map(([file, , kind]) => [file, kind]));
+/** The Places pack (World module): its sub-groups and pack order, when it's there. */
+const PLACES = registry.iconPacks().find((p) => p.id === "places");
 
 /** Sub-groups of the Places pack (Settlements, Castles…), in display order: [id, label]. */
-export const PLACE_ICON_KINDS: readonly (readonly [string, string])[] = PLACE_KINDS;
+export const PLACE_ICON_KINDS: readonly (readonly [string, string])[] = PLACES?.subgroups ?? [];
 
 /** The Places sub-group a bundled place icon belongs to (undefined for other icons). */
 export function placeIconKind(icon: string): string | undefined {
-	return PLACE_KIND_OF.get(icon);
+	return PLACES?.subgroupOf?.get(icon);
 }
 
-const PLACE_INDEX = new Map(BUNDLED_PLACE_ICONS.map(([file], i) => [file, i]));
+/** Packs that keep their own order: icon → its sort key (prefix + index). */
+const PACK_ORDER = new Map(registry.iconPacks().filter((p) => p.keepOrder)
+	.flatMap((p) => p.icons.map(([file], i): [string, string] => [file, `${p.prefix}${String(i).padStart(4, "0")}`])));
 
 /**
  * Default icon order (before the user's saved order): by name, except the
- * bundled place icons keep their pack order so settlements, castles, towers…
+ * packs that keep their order (Places) so settlements, castles, towers…
  * sit together.
  */
 export function sortIcons(icons: string[]): string[] {
-	const key = (icon: string): string => {
-		const i = PLACE_INDEX.get(icon);
-		return i === undefined ? icon : `place-${String(i).padStart(4, "0")}`;
-	};
+	const key = (icon: string): string => PACK_ORDER.get(icon) ?? icon;
 	return icons
 		.map((icon) => [key(icon), icon] as const)
 		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -165,24 +167,27 @@ export function sortIcons(icons: string[]): string[] {
 
 /**
  * The icon tab a picker opens on before the user picks one this session:
- * Space for space-only setups (map types = just Space), so a sci-fi user
- * doesn't scroll past cactus and evergreen icons (fresh-eyes r5); All
- * otherwise. Unset map types mean all types, so All.
+ * when only one map type is on and it asks for it (Space), that type's
+ * pack, so a sci-fi user doesn't scroll past cactus and evergreen icons
+ * (fresh-eyes r5); All otherwise. Unset map types mean all types, so All.
  */
-export function defaultIconPack(settings: { mapKinds?: string[] }): IconPack | "all" {
+export function defaultIconPack(settings: { mapKinds?: string[] }): IconPack {
 	const kinds = settings.mapKinds;
-	return Array.isArray(kinds) && kinds.includes("space") && !kinds.includes("world") ? "space" : "all";
+	if (!Array.isArray(kinds)) return "all";
+	const on = registry.kinds().filter((k) => kinds.includes(k.id));
+	const only = on.length === 1 && on[0].iconPackFirst ? on[0].id : undefined;
+	return registry.iconPacks().find((p) => only !== undefined && p.kind === only)?.id ?? "all";
 }
 
 /**
  * The tabs an icon picker shows, with counts: All, every pack that has
  * icons, and Custom always (empty until the user adds their own).
  */
-export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack | "all", string, number][] {
+export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack, string, number][] {
 	const total = [...counts.values()].reduce((a, b) => a + b, 0);
 	return [
 		["all", "All", total],
-		...(Object.keys(ICON_PACK_LABELS) as IconPack[])
+		...(Object.keys(ICON_PACK_LABELS))
 			.filter((p) => p === "custom" || (counts.get(p) ?? 0) > 0)
 			.map((p): [IconPack, string, number] => [p, ICON_PACK_LABELS[p], counts.get(p) ?? 0]),
 	];
@@ -191,16 +196,19 @@ export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack |
 /** Which picker tab an icon belongs to: the user's icons folder wins over bundled names. */
 export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
 	if (vaultIcons.has(icon)) return "custom";
-	if (icon.startsWith("space-")) return "space";
-	if (icon.startsWith("place-")) return "places";
+	const pack = registry.iconPackOf(icon);
+	if (pack) return pack.id;
 	if (icon.startsWith("bw-")) return "terrain";
 	return "custom";
 }
 
+/** The bundled prefixes: the core's bw- and each pack's (letters and dashes). */
+const PACK_PREFIXES = ["bw-", ...registry.iconPacks().map((p) => p.prefix)];
+
 /** Human label for an icon file name: drops the pack prefix and extension. */
 export function iconLabel(icon: string): string {
-	return icon
-		.replace(/^(bw|space|place)-/, "")
+	const prefix = PACK_PREFIXES.find((p) => icon.startsWith(p));
+	return (prefix ? icon.slice(prefix.length) : icon)
 		.replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
 		.replace(/-/g, " ");
 }

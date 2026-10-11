@@ -524,9 +524,11 @@ export class HexMapView extends ItemView {
    * The one way to change maps from the UI (map list, breadcrumb, submap
    * badge, Ctrl+click, context menu, hex editor, Up/Back targets). Exits the
    * active tool and clears undo — undo entries hold bare x/y and would apply
-   * to the wrong map — and records history for Back.
+   * to the wrong map — and records history for Back. `offerModule`: the map
+   * was picked on purpose (maps picker, region menu), so offer to turn its
+   * module on when it's off (CM6). Never set from "New …" flows.
    */
-  navigateToMap(name: string, opts: { recordHistory?: boolean } = {}): void {
+  navigateToMap(name: string, opts: { recordHistory?: boolean; offerModule?: boolean } = {}): void {
     if (!this.plugin.getMap(name)) {
       new Notice(`Map "${name}" no longer exists.`);
       return;
@@ -541,6 +543,7 @@ export class HexMapView extends ItemView {
     this.switchToMap(name);
     // Each map keeps its own undo queues (WM6): show the new map's.
     this.updateUndoButton();
+    if (opts.offerModule) this.plugin.offerModuleFor(name);
   }
 
   /**
@@ -1088,8 +1091,9 @@ export class HexMapView extends ItemView {
     }).open();
   }
 
-  public switchMapFromModal(name: string): void {
-    this.navigateToMap(name);
+  /** Change maps from a dialog. `offerModule`: picked on purpose (see navigateToMap). */
+  public switchMapFromModal(name: string, opts: { offerModule?: boolean } = {}): void {
+    this.navigateToMap(name, opts);
   }
 
   onOpen(): Promise<void> {
@@ -4866,7 +4870,7 @@ export class HexMapView extends ItemView {
             this.selectedHex = null;
           }
         },
-        onSwitchMap: (name: string) => this.navigateToMap(name),
+        onSwitchMap: (name: string) => this.navigateToMap(name, { offerModule: true }),
         onNewChildMap: (hx: number, hy: number) => this.openNewSubmapSetup(hx, hy),
         onLinkExistingMap: (hx: number, hy: number) => this.openLinkExistingMap(hx, hy),
         onManageLocations: (hx: number, hy: number) => this.openLocationsList(hx, hy),
@@ -4921,11 +4925,11 @@ export class HexMapView extends ItemView {
     const region = childPlan.region;
     const hasRegion = !!region && !!this.plugin.getMap(region);
     if (region && hasRegion) {
-      menu.add("hex.enter-region", `Enter region: ${this.plugin.mapLabel(region)}`, "log-in", () => this.navigateToMap(region));
+      menu.add("hex.enter-region", `Enter region: ${this.plugin.mapLabel(region)}`, "log-in", () => this.navigateToMap(region, { offerModule: true }));
     }
     for (const loc of childPlan.open) {
       menu.add("hex.open-location", `Open: ${this.plugin.mapLabel(loc)}`, "map-pin", () => {
-        if (this.plugin.getMap(loc)) this.navigateToMap(loc);
+        if (this.plugin.getMap(loc)) this.navigateToMap(loc, { offerModule: true });
         else this.openLocationsList(x, y);
       });
     }

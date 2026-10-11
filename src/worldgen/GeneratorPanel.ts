@@ -230,10 +230,12 @@ export class GeneratorPanel {
     void listGenerators(this.plugin).then((found) => {
       // Planet generators (map-kind: planet) are hidden while the Space map
       // type is off, unless this palette/map is in space or one is loaded.
-      const spaceContext = this.plugin.getPaletteOrPresetKind(GeneratorPanel.paletteName) === "space"
-        || (!!this.mapName && this.plugin.isSpaceMap(this.mapName));
+      const context = new Set([
+        this.plugin.getPaletteOrPresetKind(GeneratorPanel.paletteName),
+        ...(this.mapName ? this.plugin.contextKinds(this.mapName) : []),
+      ]);
       generators = found.filter((g) => isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
-        spaceContext,
+        context,
         selected: g.file.path === GeneratorPanel.selectedPath,
       }));
       const hiddenBySpace = found.length - generators.length;

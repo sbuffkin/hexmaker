@@ -11,7 +11,7 @@ import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect, refreshPaletteHint } from "../palettes/paletteOptions";
-import { enabledKinds, isSpacePalette } from "../mapKinds";
+import { enabledKinds, kindOfTerrains } from "../mapKinds";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { randomSeed } from "../../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
@@ -521,9 +521,12 @@ export class NewMapSetupModal extends HexmakerModal {
       // Space generators only for space users or maps in space (a space
       // palette here, or a planet submap of a star system); a saved
       // submap default stays visible either way.
-      const spaceContext = isSpacePalette(terrains) || this.plugin.getPaletteOrPresetKind(paletteSelect.value) === "space"
-        || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
-      const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator ?? this.rowStart?.generator);
+      const context = new Set([
+        kindOfTerrains(terrains),
+        this.plugin.getPaletteOrPresetKind(paletteSelect.value),
+        ...(this.origin ? this.plugin.contextKinds(this.origin.map) : []),
+      ]);
+      const shown = visibleKinds(this.kinds, this.plugin.settings, context, this.saved?.generator ?? this.rowStart?.generator);
       // "Zoom into the parent hex" generators only for submaps (a neighbour
       // has context but no parent hex); next to a neighbour, the ones that
       // carry on from its edge come first.

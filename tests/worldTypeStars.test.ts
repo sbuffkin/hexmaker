@@ -34,7 +34,7 @@ import {
 	DEFAULT_WORLD_TYPE_ROWS,
 } from "../src/space/worldTypePresets";
 import { WorldTypeStore } from "../src/space/WorldTypeStore";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import type { TerrainColor } from "../src/types";
 
 const DEFAULT: WorldTypeTable = {

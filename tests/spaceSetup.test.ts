@@ -2,15 +2,10 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { biomeSeedingOn, inferKindContent, planKindContent, resolveKindContent } from "../src/kindContent";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import {
-	PALETTE_PRESETS,
-	SPACE_PLANET_PALETTE_NAME,
-	SPACE_PLANET_TERRAINS,
-	presetToPalette,
-	getPreset,
-} from "../src/palettes/presets";
+import { PALETTE_PRESETS, presetToPalette, getPreset } from "../src/palettes/presets";
+import { SPACE_PLANET_PALETTE_NAME, SPACE_PLANET_TERRAINS } from "../src/modules/space/presets";
 import { buildPaletteNote, parsePaletteNote, readPaletteKind, setPaletteKind } from "../src/palettes/paletteNote";
-import { isSpacePalette, paletteKind, terrainsForTables } from "../src/mapKinds";
+import { inferredKind, paletteKind, terrainsForTables } from "../src/mapKinds";
 import { isTerrainType } from "../src/terrainTypes";
 import { planetRoles, planetSurface, planetSurfaceFits } from "../src/worldgen/procedural/planetSurface";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
@@ -125,7 +120,7 @@ describe("Space - Planet palette", () => {
 
 	it("is a space preset made of typed land terrains", () => {
 		expect(preset.kind).toBe("space");
-		expect(isSpacePalette(preset.terrains)).toBe(false);
+		expect(inferredKind(preset.terrains)).toBeUndefined();
 		expect(paletteKind(presetToPalette(preset))).toBe("space");
 		for (const t of preset.terrains) expect({ t: t.name, typed: isTerrainType(t.type) }).toEqual({ t: t.name, typed: true });
 	});

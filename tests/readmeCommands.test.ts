@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 
 /**
  * Fresh-eyes round 3: the README named commands that don't exist
@@ -14,13 +14,20 @@ const plugin = read("../src/HexmakerPlugin.ts");
 const pluginName = (JSON.parse(read("../manifest.json")) as { name: string }).name;
 
 // Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
-const registered = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
+const core = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
+// Modules add theirs as command contributions (src/modules/<id>/runtime.ts).
+const moduleRuntimes = readdirSync(new URL("../src/modules", import.meta.url), { withFileTypes: true })
+	.filter((d) => d.isDirectory() && existsSync(new URL(`../src/modules/${d.name}/runtime.ts`, import.meta.url)))
+	.map((d) => read(`../src/modules/${d.name}/runtime.ts`));
+const fromModules = moduleRuntimes.flatMap((t) => [...t.matchAll(/\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]));
+const registered = [...core, ...fromModules];
 const prefix = `${pluginName}: `;
 const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\\*|"|\\s\\|)`, "g"))].map((m) => m[1].trim());
 
 describe("README command names", () => {
-	it("finds the registered commands", () => {
+	it("finds the registered commands, the modules' too", () => {
+		expect(fromModules).toEqual(["Edit world types…", "Convert world types to tables"]);
 		expect(registered.length).toBeGreaterThan(5);
 		expect(registered).toContain("Export current map…");
 	});

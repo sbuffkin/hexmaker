@@ -4,20 +4,20 @@ import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 import { Disclosure, type IsSet, type SectionName } from "./ui/disclosure";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
-let lastIconPack: IconPack | "all" | undefined;
+let lastIconPack: IconPack | undefined;
 
 /** Last Places sub-group picked (Settlements, Castles…); "" = all places. */
 let lastPlaceKind = "";
 
 /** The tab a filter opens on until the user picks one (see setIconPackDefault). */
-let iconPackDefault: () => IconPack | "all" = () => "all";
+let iconPackDefault: () => IconPack = () => "all";
 
 /**
  * Where icon filters start before the user picks a tab this session. The
  * plugin passes a getter over its settings (defaultIconPack), so a change
  * of map types applies to the next picker opened.
  */
-export function setIconPackDefault(fn: () => IconPack | "all"): void {
+export function setIconPackDefault(fn: () => IconPack): void {
 	iconPackDefault = fn;
 }
 
@@ -101,7 +101,7 @@ export class HexmakerModal extends Modal {
 			if (icon && !tile.title) tile.title = iconLabel(icon);
 		}
 
-		let pack: IconPack | "all" = lastIconPack ?? iconPackDefault();
+		let pack: IconPack = lastIconPack ?? iconPackDefault();
 		let opening = true;
 		const apply = () => {
 			const query = search.value.trim().toLowerCase();

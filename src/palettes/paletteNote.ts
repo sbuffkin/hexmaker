@@ -247,7 +247,7 @@ export function readPaletteKind(content: string): MapKind | undefined {
   const m = /^map-kind:\s*(.*)$/m.exec(fm[1]);
   if (!m) return undefined;
   const raw = m[1].trim().replace(/^["']|["']$/g, "").trim().toLowerCase();
-  return (ALL_MAP_KINDS as string[]).includes(raw) ? (raw as MapKind) : undefined;
+  return (ALL_MAP_KINDS).includes(raw) ? (raw) : undefined;
 }
 
 /** Set or clear `map-kind:` in the note's frontmatter (untouched when it already says so). */

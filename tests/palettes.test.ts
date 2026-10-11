@@ -11,13 +11,8 @@ import {
 	terrainsEqual,
 	updatePaletteNote,
 } from "../src/palettes/paletteNote";
-import {
-	PALETTE_PRESETS,
-	SPACE_PATH_TYPES,
-	SPACE_SECTOR_PALETTE_NAME,
-	presetToPalette,
-	uniquePaletteName,
-} from "../src/palettes/presets";
+import { PALETTE_PRESETS, presetToPalette, uniquePaletteName } from "../src/palettes/presets";
+import { SPACE_PATH_TYPES, SPACE_SECTOR_PALETTE_NAME } from "../src/modules/space/presets";
 import { parsePathTypes, setPathTypes } from "../src/palettes/pathTypeTable";
 import { PaletteStore, missingDefaults, palettesOnLoad } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";

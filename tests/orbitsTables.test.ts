@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { mainworldFor, orbitRoles, orbits } from "../src/worldgen/procedural/orbits";
 import { centerHex, distance, type ProcGrid } from "../src/worldgen/procedural/common";
 import { roleOdds } from "../src/worldgen/tableRoles";

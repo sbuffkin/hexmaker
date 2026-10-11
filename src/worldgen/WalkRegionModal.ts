@@ -12,6 +12,7 @@ import { defaultRegionName, rollBiome } from "../overworld/regionWorld";
 import { drawRegionPlan, lockButton, paintableBiomes } from "../hex-map/BiomeModals";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 import { slugify } from "../utils";
+import { isContextOnlyTag } from "../mapKinds";
 
 /** Walking from a region of an overworld into the empty overworld hex (px, py), which lies `bearing` of it. */
 export interface OverworldWalk {
@@ -206,11 +207,13 @@ export class WalkRegionModal extends HexmakerModal {
     if (!from) return;
     const palette = this.plugin.getPaletteByName(from.paletteName)?.terrains.map((t) => t.name) ?? [];
     const here = regionBiome(this.plugin, this.fromMap, generators);
-    // Biomes that fit this map's palette; planet generators only on a planet.
-    const onPlanet = generators.find((g) => g.model.name === here?.name)?.model.meta["map-kind"] === "planet";
-    const biomes = generators.filter(
-      (g) => generatorFitsPalette(g.model, palette) && (onPlanet || g.model.meta["map-kind"] !== "planet"),
-    );
+    // Biomes that fit this map's palette; generators tagged for one place
+    // only (Space: map-kind planet) only from a map made by one of them.
+    const hereTag = generators.find((g) => g.model.name === here?.name)?.model.meta["map-kind"];
+    const biomes = generators.filter((g) => {
+      const tag = g.model.meta["map-kind"];
+      return generatorFitsPalette(g.model, palette) && (!isContextOnlyTag(tag) || tag === hereTag);
+    });
     if (!biomes.length) {
       contentEl.createEl("p", { text: "No generator fits this map's palette, so there's nothing to make the new land from. Learn or add one on the terrain generator page.", cls: "duckmage-map-origin-desc" });
       return;

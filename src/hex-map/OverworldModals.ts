@@ -22,7 +22,7 @@ import { parseUnclimated, UNCLIMATED_CHOICES, unclimatedText, type Climate, type
 import { pickBlankHexes } from "../overworld/overworldPass";
 import { RECT_SIDES } from "../maps/submaps";
 import { newWorldId } from "../worldgen/world";
-import { isSpacePalette } from "../mapKinds";
+import { inferredKind } from "../mapKinds";
 import { ecotoneHexes } from "../overworld/regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
 import { addGodOffer } from "./godOffer";
@@ -158,7 +158,8 @@ export class NewOverworldModal extends HexmakerModal {
     if (typeof regen?.seed === "number") this.seed = regen.seed;
     this.titleEl.setText(regen ? `Generate overworld: ${this.plugin.mapLabel(regen.name)}` : "New overworld");
     this.modalEl.addClass("duckmage-new-overworld-modal");
-    const world = this.plugin.settings.terrainPalettes.filter((p) => !isSpacePalette(p.terrains));
+    // Palettes of only shared (land and water) types: no other map type's terrains.
+    const world = this.plugin.settings.terrainPalettes.filter((p) => !inferredKind(p.terrains));
     this.palette = regen?.paletteName ?? world[0]?.name ?? this.plugin.settings.terrainPalettes[0]?.name ?? "";
     const { contentEl } = this;
     contentEl.createEl("p", {

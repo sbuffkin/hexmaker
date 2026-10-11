@@ -10,7 +10,7 @@ import { notesLookup } from "../src/random-tables/resolve";
 import { roleOdds, rollRole } from "../src/worldgen/tableRoles";
 import { worldTypesSource } from "../src/space/worldTypesSource";
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
-import { SPACE_SECTOR_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS } from "../src/modules/space/presets";
 import { tableNoteMarkdown } from "../src/space/spaceTables";
 import { parseRandomTable } from "../src/random-tables/randomTable";
 import { mulberry32 } from "../packages/hex-wfc/src/rng";

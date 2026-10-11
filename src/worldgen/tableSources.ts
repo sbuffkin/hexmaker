@@ -89,7 +89,7 @@ export function layeredSource(
   // A role whose table is gone (deleted, renamed) falls through to the base.
   const own: Partial<Record<RoleId, string>> = {};
   for (const [role, link] of Object.entries(overrides) as [RoleId, string][]) if (link && lookup.table(link)) own[role] = link;
-  const missing = (Object.keys(overrides) as RoleId[]).filter((r) => !own[r]);
+  const missing = (Object.keys(overrides)).filter((r) => !own[r]);
   if (!Object.keys(own).length && !missing.length) return base;
   return {
     label: base ? `${base.label} (with this map's tables)` : "This map's tables",

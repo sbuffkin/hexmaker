@@ -16,7 +16,7 @@
  */
 
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
-import { generatorRefId, readGenerator, readOptions, readSize } from "../space/worldTypes";
+import { generatorRefId, readGenerator, readOptions, readSize } from "../worldgen/cellReaders";
 import type { SubmapDefault } from "../types";
 
 // ── the setting ──────────────────────────────────────────────────────────

@@ -1,9 +1,11 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { TERRAIN_TYPES, inferTerrainType, isTerrainType, refinedSpaceType, terrainTypeInfo } from "../src/terrainTypes";
+import { TERRAIN_TYPES, inferTerrainType, isTerrainType, terrainTypeInfo } from "../src/terrainTypes";
+import { refinedSpaceType } from "../src/modules/space/terrainTypes";
 import { buildPaletteNote, parsePaletteNote, updatePaletteNote } from "../src/palettes/paletteNote";
 import { seedTerrainTypes, upgradePaletteData } from "../src/palettes/PaletteStore";
-import { presetToPalette, getPreset, SPACE_SECTOR_PALETTE_NAME, SPACE_SYSTEM_PALETTE_NAME } from "../src/palettes/presets";
+import { presetToPalette, getPreset } from "../src/palettes/presets";
+import { SPACE_SECTOR_PALETTE_NAME, SPACE_SYSTEM_PALETTE_NAME } from "../src/modules/space/presets";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { PALETTE_PRESETS } from "../src/palettes/presets";
 import type { TerrainPalette } from "../src/types";

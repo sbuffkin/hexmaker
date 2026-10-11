@@ -9,10 +9,12 @@
  */
 
 import type { PathType } from "../types";
-import { PALETTE_PRESETS, type PalettePreset, type PresetPathRoles } from "../palettes/presets";
+import { PALETTE_PRESETS, type PalettePreset } from "../palettes/presets";
+import { registry } from "../modules";
 import type { ProcOption } from "./procedural/common";
 
-export type GeneratorPathRole = keyof PresetPathRoles;
+/** A generator path role id ("routes", "orbits"), from a module's pathRoles. */
+export type GeneratorPathRole = string;
 
 /** Option value: draw no paths. */
 export const NO_PATHS = "none";
@@ -23,10 +25,8 @@ export const PRESET_PATH_TYPE = "default";
 export const ROUTE_TYPE_KEY = "routeType";
 export const ORBIT_TYPE_KEY = "orbitType";
 
-const LABELS: Record<GeneratorPathRole, string> = {
-  routes: "Path type for routes",
-  orbits: "Path type for orbits",
-};
+/** Each role's option label, from the modules (Space: routes, orbits). */
+const label = (role: GeneratorPathRole): string => registry.pathRoles()[role] ?? `Path type for ${role}`;
 
 /**
  * The role's default on a palette with these path types: the type a preset
@@ -61,7 +61,7 @@ export function pathTypeOption(
   if (!list.length) {
     return {
       key,
-      label: LABELS[role],
+      label: label(role),
       choices: [{ value: NO_PATHS, label: "None (this palette has no path types)" }],
       default: NO_PATHS,
     };
@@ -74,7 +74,7 @@ export function pathTypeOption(
     choices.push({ value: t.name, label: t.name });
   }
   choices.push({ value: NO_PATHS, label: "None (no paths)" });
-  return { key, label: LABELS[role], choices, default: defaultPathTypeFor(role, list, presets) ?? NO_PATHS };
+  return { key, label: label(role), choices, default: defaultPathTypeFor(role, list, presets) ?? NO_PATHS };
 }
 
 /**
@@ -84,7 +84,7 @@ export function pathTypeOption(
 export function staticPathTypeOption(key: string, role: GeneratorPathRole): ProcOption {
   return {
     key,
-    label: LABELS[role],
+    label: label(role),
     choices: [{ value: PRESET_PATH_TYPE, label: "Palette default" }, { value: NO_PATHS, label: "None (no paths)" }],
     default: PRESET_PATH_TYPE,
   };

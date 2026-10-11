@@ -52,6 +52,10 @@ import {
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
 import { chosenWorldTypes, defaultWorldTypesName, worldTypesSource } from "./worldTypesSource";
 import type { TableSource } from "../worldgen/tableRoles";
+import type { ModuleStore } from "../modules/types";
+
+/** The World types store's id among the modules' stores. */
+export const WORLD_TYPES_STORE = "world-types";
 import { layeredSource, notesTableSource } from "../worldgen/tableSources";
 import { convertWorldTypes, isConverted, markConverted, readRoleTables } from "./spaceTables";
 import { contentFolder } from "../notePickers";
@@ -92,7 +96,9 @@ export function worldTypesFolder(settings: StoreSettings): string {
   return world ? `${world}/world-types` : "world-types";
 }
 
-export class WorldTypeStore {
+export class WorldTypeStore implements ModuleStore {
+  /** Its id among the modules' stores (HexmakerPlugin.moduleStore). */
+  readonly id = WORLD_TYPES_STORE;
   private entries = new Map<string, Entry>();
   private lastContent = new Map<string, string>();
   private reported = new Map<string, string>();
@@ -202,7 +208,7 @@ export class WorldTypeStore {
     }
     // The map's own Tables (and its ancestors') win over the setup's.
     const own = mapName ? this.plugin.roleTablesFor(mapName) : {};
-    const overrides = Object.fromEntries(Object.entries(own).map(([r, p]) => [r, p.link]));
+    const overrides = Object.fromEntries(Object.entries(own).flatMap(([r, p]) => (p ? [[r, p.link]] : [])));
     const source = layeredSource(base, overrides, notes, terrains);
     return { ...(source ? { source } : {}), ...(missing ? { missing } : {}) };
   }
@@ -350,6 +356,11 @@ export class WorldTypeStore {
   }
 
   // ── vault events ───────────────────────────────────────────────────────
+
+  /** A new note is read like an edited one. */
+  onCreate(f: TAbstractFile): void {
+    this.onModify(f);
+  }
 
   onModify(f: TAbstractFile): void {
     if (!this.isTableFile(f)) return;

@@ -183,11 +183,11 @@ export class ArrivalService {
   private async plan(mapName: string, x: number, y: number, terrain: string | undefined, attrs: Record<string, string> | undefined, seed: number) {
     const { plugin } = this;
     const kinds = await listGeneratorKinds(plugin);
-    const space = plugin.isSpaceMap(mapName);
+    const context = plugin.contextKinds(mapName);
     const fittingFor = (palette: string) => {
       const terrains = plugin.getPaletteOrPresetTerrains(palette);
-      const spaceHere = space || plugin.getPaletteOrPresetKind(palette) === "space";
-      return { terrains, fitting: kindsForPalette(visibleKinds(kinds, plugin.settings, spaceHere), terrains, true) };
+      const here = new Set([...context, plugin.getPaletteOrPresetKind(palette)]);
+      return { terrains, fitting: kindsForPalette(visibleKinds(kinds, plugin.settings, here), terrains, true) };
     };
     const setup = placeSetup(attrs, plugin.submapDefaultFor(mapName, terrain), {
       palette: plugin.childPaletteFor(mapName),
@@ -326,7 +326,7 @@ export class ArrivalService {
     const setup: PlaceSetup = { ...planned.setup, palette: map.paletteName, cols: map.gridSize.cols, rows: map.gridSize.rows };
     if (map.baseTerrain) setup.baseTerrain = map.baseTerrain;
     const terrains = plugin.getPaletteOrPresetTerrains(map.paletteName);
-    const fitting = kindsForPalette(visibleKinds(kinds, plugin.settings, plugin.isSpaceMap(parentName)), terrains, true);
+    const fitting = kindsForPalette(visibleKinds(kinds, plugin.settings, plugin.contextKinds(parentName)), terrains, true);
     const { kind } = this.kindFor(kinds, setup, { terrains, fitting }, terrain);
     const outcome = runGenerator(plugin.settings.hexOrientation, kind, {
       terrains,

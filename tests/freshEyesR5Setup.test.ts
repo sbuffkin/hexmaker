@@ -3,7 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SECTOR_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS } from "../src/modules/space/presets";
 import {
 	BLANK_ID,
 	REGION_DETAIL_DESCRIPTION,
@@ -70,7 +70,7 @@ describe("1. New submap: starts on the generator that fits the parent hex", () =
 
 	it("with the real generators on a world palette, that's Region detail", async () => {
 		const plugin = pluginWith(["world"]);
-		const shown = visibleKinds(await listGeneratorKinds(plugin), plugin.settings, false);
+		const shown = visibleKinds(await listGeneratorKinds(plugin), plugin.settings, new Set());
 		const fitting = kindsForPalette(shown, LIMITED_TERRAIN_PALETTE, true);
 		expect(submapStartKind(fitting, BLANK_ID, { parentTerrain: "forest" })).toBe(REGION_DETAIL_ID);
 	});
@@ -219,7 +219,7 @@ describe("6. Icon pickers open on the Space tab for space-only setups", () => {
 	});
 
 	it("a tab picked this session still wins; the plugin wires the default", () => {
-		expect(read("src", "HexmakerModal.ts")).toMatch(/let pack: IconPack \| "all" = lastIconPack \?\? iconPackDefault\(\);/);
+		expect(read("src", "HexmakerModal.ts")).toMatch(/let pack: IconPack = lastIconPack \?\? iconPackDefault\(\);/);
 		expect(read("src", "HexmakerPlugin.ts")).toMatch(/setIconPackDefault\(\(\) => defaultIconPack\(this\.settings\)\);/);
 	});
 });

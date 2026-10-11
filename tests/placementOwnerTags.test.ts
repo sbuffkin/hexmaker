@@ -409,7 +409,9 @@ describe("commands and menus follow their placement", () => {
   const plugin = read("src", "HexmakerPlugin.ts");
 
   it("every tagged command is registered through addPlaced with its id", () => {
-    for (const r of ROWS.filter((x) => x.id.startsWith("Plugin.cmd."))) expect([r.id, plugin.includes(`addPlaced("${r.id}"`)]).toEqual([r.id, true]);
+    // Modules' commands are placed through their placementId (src/modules/<id>/runtime.ts).
+    const modules = ["world", "world-maps", "space"].map((m) => { try { return read("src", "modules", m, "runtime.ts"); } catch { return ""; } }).join("\n");
+    for (const r of ROWS.filter((x) => x.id.startsWith("Plugin.cmd."))) expect([r.id, plugin.includes(`addPlaced("${r.id}"`) || modules.includes(`placementId: "${r.id}"`)]).toEqual([r.id, true]);
     for (const id of ["Plugin.fileMenuExportPdf", "Plugin.fileMenuExportMarkdown"]) expect(plugin).toContain(`id: "${id}"`);
   });
 

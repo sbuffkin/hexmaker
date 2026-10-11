@@ -8,6 +8,7 @@ import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { meshes } from "../overworld/regionWorld";
 import { RegionGenModal } from "./BiomeModals";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
+import { registry } from "../modules";
 
 /** The two kinds of map a hex opens into, with the small line under each (K1). */
 export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
@@ -16,18 +17,12 @@ export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }
 };
 
 /**
- * The same cards on a space map (its palette, or an ancestor's, has space
- * terrain types; never keyed on terrain names), saying which to pick for
- * a star system or planet (F10).
+ * The card text for a map of map type `kind`: that type's own wording
+ * when it has one (Space: which to pick for a star system or planet, F10),
+ * else the usual.
  */
-export const SPACE_CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
-  region: { title: "Region", desc: "This stretch of space up close, at the same scale as the regions next to it. Not for a single star system or planet." },
-  location: { title: "Location", desc: "A star system, planet or station in this hex, with its own map and size. Pick this for a system or a planet." },
-};
-
-/** The card text for a map: space wording on space maps (F10). */
-export function childKindText(space: boolean): Record<SubmapKind, { title: string; desc: string }> {
-  return space ? SPACE_CHILD_KIND_TEXT : CHILD_KIND_TEXT;
+export function childKindText(kind: string | undefined): Record<SubmapKind, { title: string; desc: string }> {
+  return registry.kindInfo(kind)?.childKindText ?? CHILD_KIND_TEXT;
 }
 
 export interface NewChildMapHost {
@@ -111,7 +106,7 @@ export class ChildKindModal extends HexmakerModal {
     contentEl.empty();
     const { plugin } = this.host;
     const existing = regionMapAt(plugin.settings.maps, this.parentMap, `${this.x}_${this.y}`);
-    const text = childKindText(plugin.isSpaceMap(this.parentMap));
+    const text = childKindText(plugin.kindFor(this.parentMap));
 
     // The hex's maps first (C11): opening what's there is the usual pick;
     // making another location stays possible below.

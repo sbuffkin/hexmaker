@@ -247,6 +247,36 @@ Parsed/serialized by `workflow.ts`. Template files live at `{workflowsFolder}/te
 
 ---
 
+## Modules (`src/modules/`)
+
+Map types and whole features are **modules** (owner calls CM1–CM8, plan `plan-code-modules-and-legacy`): code that builds on the core and stays loosely coupled to it. The core never branches on a module by name; it asks the registry.
+
+| Module | Slice | What it brings |
+|---|---|---|
+| `world` | F (released) | The World map type (fallback type: a palette that says nothing else is World), the Places icon pack, the Expanded and Limited presets, Region detail and Overland (on the core's noise engine), first-map generator Overland |
+| `world-maps` | W | No map type (works with any): World biomes generator, the `temperature` When key. Its overworld/biome code still lives in `src/overworld/` and is reached directly (moves behind the module in P7) |
+| `space` | S | The Space map type (section words, Region/Location card text, `planet` alias, generators offered in context, no path carry-over, `void` background), 16 space terrain types + the Space group, the space icon pack, Space - Sector/System/Planet presets, Star scatter/Orbits/Planet surface, their table roles and engines, `routes`/`orbits` path roles, `zone`/`ring`/`star` When keys, the World types store, folder setting and commands, the one-time terrain type refinement |
+
+**Two halves per module**, so the import graph has no cycles:
+- **Data** — `src/modules/<id>/index.ts` → `HexmakerModule` (`types.ts`): map type info (`KindInfo`), terrain types and groups, icon pack, palette presets, table roles, When keys, engines, path roles, `owns` (settings keys, map-note keys, commands). Imports types and pure data only. `src/modules/index.ts` lists them in order (`MODULES`) and builds `registry` (`ModuleRegistry`, `registry.ts`). Any core file may import `registry`.
+- **Runtime** — `src/modules/<id>/runtime.ts` → `ModuleRuntime`: what needs the plugin — built-in generators (with a list `order`), note stores (`ModuleStore`: init + the vault events), folder settings (rendered by both settings paths), commands (`onlyWhenOn` waits on the module's map type), ref-link rewriters for the NF3 note-format upgrade, `onEnabled` (install shipped content when its map type is turned on). `src/modules/runtime.ts` lists them; it is only read inside functions, never at import time.
+
+**What the core derives from the registry:** `MAP_KINDS`, `TERRAIN_TYPES` / `TERRAIN_GROUPS` (core land and water types first: they are shared schema, CM5), `PALETTE_PRESETS`, `BUNDLED_ICONS` and the icon-pack tabs, `ENGINE_ROLES`, the generator list (`listGeneratorKinds` = Blank + module generators + shipped/learned), When keys (`tableConditions.ts` keeps `type` and `terrain`), path role labels, the setup wizard and Settings → Map types lists, `plugin.worldTypeStore` (a getter over `plugin.moduleStores`).
+
+**One map-type rule (CM3)** — `mapKinds.ts`:
+- `inferredKind(terrains)`: the map type a module's own terrain types say; land and water types say nothing.
+- `paletteKind(p)`: declared `kind` (palette note `map-kind`), else inferred, else the fallback (World).
+- `kindForChain(chain)` / `plugin.kindFor(map)`: walking from the map up its parents, the nearest palette that says a type (declared, else by its own types). Section words, Region/Location cards and the CM6 offer use it.
+- `contextKindsOf(chain)` / `plugin.contextKinds(map)`: every palette's type along the chain. Generators of a type with `offerInContext` (Space) show on such maps even when the type is off; `visibleKinds` / `isGeneratorShown` take this set.
+
+**A module that's off (CM6):** its maps, notes and stores still load ("off hides, never deletes"). Opening such a map on purpose (maps picker, region list, hex menu Enter region / Open location, hex editor map chips — `navigateToMap(name, { offerModule: true })`) offers to turn it on (`src/maps/moduleOffer.ts`, `plugin.offerModuleFor`, `plugin.enableMapKind`); "Not now" holds for the session. "New …" flows never pass `offerModule` and never turn a module on (`tests/moduleOffer.test.ts`).
+
+**Boundary ratchet (CM8):** `tests/moduleBoundary.test.ts` scans `src/` for value imports from core files into a module's code (`src/space/`, `src/overworld/`, `src/modules/<id>/`; the registry entry points `index.ts`, `runtime.ts`, `registry.ts`, `types.ts` are allowed) and for map-type branches by name (`isSpaceMap`, `=== "space"`, `.has("world")`…). The counts live in `tests/fixtures/moduleBoundary.json`; a count may never go up, and when one goes down the list must be lowered with it. **Adding a module:** write its `index.ts` (data) and `runtime.ts`, list it in both entry points, give its settings/commands placement ids, and never import it from the core.
+
+**Characterisation:** `tests/moduleCharacterisation.test.ts` pins the core's map-type answers over a matrix of map types × palettes × map trees (`tests/fixtures/moduleCharacterisation.json`, `UPDATE_SNAPSHOT=1` to rewrite after a deliberate change).
+
+---
+
 ## Module responsibilities
 
 | File | Responsibility |

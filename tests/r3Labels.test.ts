@@ -21,7 +21,8 @@ import {
 	DEFAULT_SECTION_WORDS,
 	MAP_KINDS,
 	newTerrains,
-	sectionKindFor,
+	kindForChain,
+	mapKindInfo,
 	sectionWords,
 	sectionWordsFor,
 	terrainsForTables,
@@ -32,7 +33,7 @@ import { hexTableLines, type HexRow } from "../src/export/exporters/mapWithTable
 import { buildManualHtml } from "../src/export/manual/manualHtml";
 import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 
 const read = (...p: string[]) => readFileSync(p.join("/"), "utf8").replace(/\r\n/g, "\n");
 
@@ -241,18 +242,23 @@ describe("G4b: link section words follow the map type", () => {
 	});
 
 	it("finds the type from the palette's terrain types, then the parents' (not from names)", () => {
-		expect(sectionKindFor([SPACE_SECTOR_TERRAINS])).toBe(space);
-		expect(sectionKindFor([SPACE_SYSTEM_TERRAINS])).toBe(space);
-		expect(sectionKindFor([DEFAULT_TERRAIN_PALETTE])).toBeUndefined();
-		// A planet surface (world terrains) under a star system keeps the space words.
-		expect(sectionKindFor([DEFAULT_TERRAIN_PALETTE, SPACE_SYSTEM_TERRAINS])).toBe(space);
+		const t = (terrains: { type?: string }[], kind?: string) => ({ terrains, kind });
+		expect(kindForChain([t(SPACE_SECTOR_TERRAINS)])).toBe("space");
+		expect(kindForChain([t(SPACE_SYSTEM_TERRAINS)])).toBe("space");
+		expect(kindForChain([t(DEFAULT_TERRAIN_PALETTE)])).toBeUndefined();
+		// A planet surface (shared land types, no type declared) under a star system keeps the space words.
+		expect(kindForChain([t(DEFAULT_TERRAIN_PALETTE), t(SPACE_SYSTEM_TERRAINS)])).toBe("space");
 		// A palette named "Space" with no space types is not space.
-		expect(sectionKindFor([[{ type: "forest" }]])).toBeUndefined();
+		expect(kindForChain([t([{ type: "forest" }])])).toBeUndefined();
+		// CM3: the nearest declared type wins (a world palette under a system is world).
+		expect(kindForChain([t(DEFAULT_TERRAIN_PALETTE, "world"), t(SPACE_SYSTEM_TERRAINS, "space")])).toBe("world");
 	});
 
-	it("is data: any map type with section words gets them", () => {
+	it("is data: a map type's section words come from its module", () => {
 		const custom: MapKindInfo = { ...space, id: "space", sectionWords: { Towns: { label: "Habitats", one: "Habitat", noun: "a habitat" } } };
-		expect(sectionWordsFor(sectionKindFor([[{ type: "void" }]], [custom]))("Towns").label).toBe("Habitats");
+		expect(sectionWordsFor(custom)("Towns").label).toBe("Habitats");
+		expect(mapKindInfo("space")).toBe(space);
+		expect(sectionWordsFor(mapKindInfo(kindForChain([{ terrains: [{ type: "void" }] }])))("Towns").label).toBe("Settlements");
 	});
 
 	it("names links in the hover text, the PDF table and the manual in those words", () => {

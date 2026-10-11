@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { planetSurface } from "../src/worldgen/procedural/planetSurface";
 import { mainworldFor, orbits } from "../src/worldgen/procedural/orbits";
 import { sideOf, type GenerationContext, type ProcGrid } from "../src/worldgen/procedural/common";

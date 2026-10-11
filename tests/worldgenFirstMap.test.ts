@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
-import { SPACE_PATH_TYPES, SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SYSTEM_PATH_TYPES } from "../src/palettes/presets";
+import { SPACE_PATH_TYPES, SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SYSTEM_PATH_TYPES } from "../src/modules/space/presets";
 import {
 	OVERLAND_OPTIONS,
 	maxLakeSize,

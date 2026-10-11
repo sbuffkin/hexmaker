@@ -30,7 +30,7 @@ import { Notice, TFile, type App } from "obsidian";
 import { writeJsonBackup } from "./backup";
 import { mapDataLines, moveBodyFieldsIntoMapData, shownValues, type HexMapDataView, type MapDataShown } from "./hexMapData";
 import { linkFrontmatterKey, linkFrontmatterList, linkNotePathKey, linkTokenMap, mapNoteLink, pathLink, renameHexMapKey } from "./noteFormats";
-import { linkWorldTypePalettes, WORLD_TYPES_MARKER } from "./space/worldTypes";
+import type { RefLinker } from "./modules/types";
 import { takeBodyFields } from "./hexBodyFields";
 import { normalizeFolder } from "./utils";
 
@@ -52,8 +52,8 @@ export interface NoteFormatHost {
   mapStore: { isReady(map?: string): boolean; resolve(path: string): { map: string; key: string } | null; notePath?(map: string): string };
   /** Palette notes ("ref-links"); without it no palette name is linked. */
   paletteStore?: { notePathOf(name: string): string | undefined; folder(): string };
-  /** World types tables ("ref-links"). */
-  worldTypeStore?: { folder(): string };
+  /** Each module's rewriters for its own notes ("ref-links"; Space: World types tables). */
+  moduleRefLinks?: RefLinker[];
   hexMapDataView(map: string, x: number, y: number): HexMapDataView;
   calloutMemory?: { set(path: string, values: MapDataShown): void };
   saveSettings(): Promise<void>;
@@ -170,8 +170,8 @@ async function replanOne(host: NoteFormatHost, id: NoteFormatUpgradeId, path: st
 /**
  * "ref-links": which notes can hold a plain reference, and the rewrite of
  * one. Map notes (one per known map), palette notes (the palettes folder),
- * generators and their saves (the generators folder), world types tables
- * (their folder). Each key is rewritten on its own line; nothing else in
+ * generators and their saves (the generators folder), and each module's
+ * own notes (Space: World types tables, in their folder). Each key is rewritten on its own line; nothing else in
  * the note changes.
  */
 function refLinker(host: NoteFormatHost): { mayHave(path: string): boolean; rewrite(path: string, text: string): string } {
@@ -181,7 +181,7 @@ function refLinker(host: NoteFormatHost): { mayHave(path: string): boolean; rewr
   const generators = world ? `${world}/generators` : "generators";
   const saves = `${generators}/saves`;
   const palettes = host.paletteStore ? normalizeFolder(host.paletteStore.folder()) : "";
-  const worldTypes = host.worldTypeStore ? normalizeFolder(host.worldTypeStore.folder()) : "";
+  const modules = (host.moduleRefLinks ?? []).map((l) => ({ linker: l, folder: normalizeFolder(l.folder()) }));
   const mapNotes = new Set(host.mapStore.notePath ? host.settings.maps.map((m) => host.mapStore.notePath!(m.name)) : []);
   const maps = new Set(host.settings.maps.map((m) => m.name));
   const under = (path: string, folder: string) => !!folder && path.startsWith(folder + "/");
@@ -200,7 +200,7 @@ function refLinker(host: NoteFormatHost): { mayHave(path: string): boolean; rewr
   };
   const fm = (text: string) => /^---\r?\n/.test(text);
   return {
-    mayHave: (path) => mapNotes.has(path) || under(path, palettes) || under(path, generators) || under(path, worldTypes),
+    mayHave: (path) => mapNotes.has(path) || under(path, palettes) || under(path, generators) || modules.some((m) => under(path, m.folder)),
     rewrite(path, text) {
       if (!fm(text)) return text;
       if (mapNotes.has(path)) {
@@ -208,8 +208,10 @@ function refLinker(host: NoteFormatHost): { mayHave(path: string): boolean; rewr
         next = linkFrontmatterKey(next, "region-palette", paletteLink).content;
         return next;
       }
-      if (under(path, worldTypes) && new RegExp(`^${WORLD_TYPES_MARKER}\\s*:`, "m").test(text)) {
-        return linkWorldTypePalettes(text, { paletteNote: (n) => (paletteLink(n) ? host.paletteStore?.notePathOf(n) : undefined) });
+      for (const m of modules) {
+        if (!under(path, m.folder)) continue;
+        const next = m.linker.rewrite(text, { paletteNote: (n) => (paletteLink(n) ? host.paletteStore?.notePathOf(n) : undefined) });
+        if (next !== undefined) return next;
       }
       if (under(path, saves) && /^hexmaker-save\s*:/m.test(text)) {
         return linkFrontmatterKey(text, "generator-path", (v) => {

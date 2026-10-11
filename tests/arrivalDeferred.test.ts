@@ -72,7 +72,7 @@ function world(opts: { arrival?: string; seed?: number; mode?: string } = {}) {
 		getPaletteOrPresetTerrains: (n: string) => getPreset(n)?.terrains ?? [],
 		getPaletteOrPresetKind: (n: string) => getPreset(n)?.kind,
 		getPaletteByName: () => undefined,
-		isSpaceMap: () => true,
+		contextKinds: () => new Set(["space"]),
 		childPaletteFor: (n: string) => getPreset(maps.find((m) => m.name === n)?.paletteName ?? "")?.childPalette ?? "Space - System",
 		submapDefaultFor: (n: string, t: string | undefined) => (t ? getPreset(maps.find((m) => m.name === n)?.paletteName ?? "")?.submapDefaults?.[t] : undefined),
 		getPathTypes: () => [],

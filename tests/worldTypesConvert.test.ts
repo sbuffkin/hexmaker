@@ -6,7 +6,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/palettes/presets";
+import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
 import { buildWorldTypes, parseWorldTypes, type WorldTypeTable } from "../src/space/worldTypes";
 import { worldTypesSource } from "../src/space/worldTypesSource";
