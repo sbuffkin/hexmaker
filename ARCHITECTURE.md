@@ -141,7 +141,7 @@ Path: `{hexFolder}/{map}/{x}_{y}.md` — created only when a hex first gets pros
 
 ```yaml
 ---
-hexmaker-map: "[[_Overworld]]"
+map: "[[_Overworld]]"     # NF1; older notes: hexmaker-map: (both read, src/noteFormats.ts)
 aliases: [Glass Wastes]   # the hex's name, when it has one
 ---
 

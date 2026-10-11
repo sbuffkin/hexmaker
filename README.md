@@ -283,7 +283,7 @@ Place movable tokens on the map — useful for tracking party position, NPCs, or
 - **Drag** a token to a different hex to move it. The target hex is highlighted as you drag.
 - **Right-click** a token for its menu: **Token info** (the linked note title and hex position, with "Jump to hex" and "Open note"), edit its properties (icon, shape, colours), or remove it from the map.
 
-Token state is stored in the linked note's frontmatter (`token`, `token-hex`, `token-map`, `token-icon`, `token-shape`, `token-color`, `token-border`, `token-visible`). Tokens follow the map they were placed on and persist with the note.
+Token state is stored in the linked note's frontmatter (`token`, `token-hex`, `token-map`, `token-icon`, `token-shape`, `token-color`, `token-border`, `token-visible`). `token-map` is a link to the map's note (`"[[_Overworld]]"`), so it follows the map when it's renamed; a plain map name is read too. Tokens follow the map they were placed on and persist with the note.
 
 ### Hex table view
 Open via **Command palette → "Hexmap World Creator: Open hex table"** or the ⊞ button in the hex map toolbar.
@@ -376,11 +376,13 @@ The plugin also writes a few things for you to read, worked out from the tables 
 
 **Map data in hex notes.** A hex note from the built-in template has a **Map data** box under its title: the hex's map and coordinates, terrain, region and name, plus its region map and locations (as links) when it has them, and its biome on an overworld (linked to the biome note). The map note is where these live; the box is a copy, refreshed when you open the hex in the hex editor or open the note. You can edit **Terrain**, **Region** and **Name** in the box: when you leave the note (or open the hex editor, or run *Add map data to this map's hex notes*), the change goes onto the map, as one undo step. It doesn't if the map has changed that value since the box was last written (the map's value is newer), if the map's mode locks it (Play can't paint terrain or regions; names are fine), or if the terrain isn't in the map's palette. Those edits stay in the box as a `Not applied:` line saying why, lines it can't read become `Not read:` lines, and a notice tells you; delete those lines when you're done with them. Change the map, region map, locations and biome on the map itself. The plugin keeps what each box last showed in `map-data-shown.json` in its folder; a note it has no record of (first run, another device) just gets its box refreshed from the map.
 
+Older hex templates had `**Terrain:**` and `**Region:**` lines to fill in by hand. The map is where terrain and region live now, so a filled-in line moves into the Map data box as an `Old terrain:` / `Old region:` line, under the map's own values: your words are kept, and they never change the map. Copy one onto the map by editing the box's Terrain or Region if you want it. This happens once for every hex note when you update (after a backup, see below), and again whenever a note gets such a line (when you leave the note or open the hex editor). Empty lines and template placeholders are left where they are.
+
 Hand edits are forgiving. Each setting is one plain property (the parent map and background image are links, e.g. `parent: "[[_coast]]"` with `parent-hex: 3, 4`), so the Properties panel can edit them too, and deleting a property resets that setting. In the tables, headers can be in any case and any order, you can add your own columns (they're kept), the `| --- |` row is optional, hexes can be written `3_4`, `3, 4` or as a link, and `yes`/`true`/`x`/`✓` all mean yes; the next save tidies the formatting without changing your values. Terrain and palette names in the wrong case are matched to the palette. A row or setting that can't be read is kept exactly as you wrote it and listed in a warning box in the note (and a notice), until you fix it. If the note can't be read at all (say the `---` lines around its properties get broken), the plugin won't write to it and shows a notice until you fix it; your text is never rebuilt over.
 
 Map notes written by earlier builds (with JSON values such as `parent: {"map":…}`) still load; the first start of this version converts them once, after saving a copy in the plugin folder's `backups/`.
 
-Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `hexmaker-map:` link to the map note. Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault.
+Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `map:` link to the map note. Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault.
 
 ## Hex notes
 
@@ -388,9 +390,23 @@ Each hex note lives at `{hexFolder}/{map}/{x}_{y}.md` (e.g. `RPG/world/hexes/Ove
 
 ```yaml
 ---
-hexmaker-map: "[[_Overworld]]"
+map: "[[_Overworld]]"
 ---
 ```
+
+Older notes say `hexmaker-map: "[[_Overworld]]"` (map notes use `hexmaker-map:` for their format number). Both are read. A note that already uses `map:` for something of its own keeps it, and its link stays under `hexmaker-map:`.
+
+**Note format changes.** The first start after updating rewrites older notes once, so links survive renames:
+
+| What | Before | After |
+|---|---|---|
+| Hex notes: link to the map note | `hexmaker-map: "[[_coast]]"` | `map: "[[_coast]]"` |
+| Hex notes: hand-filled terrain / region lines | `**Terrain:** forest` in the text | `> Old terrain: forest` in the Map data box |
+| Token notes: the map a token is on | `token-map: coast` | `token-map: "[[_coast]]"` |
+| Second tokens for a note: the note they stand for | `token-link: world/npcs/Ana.md` | `token-link: "[[world/npcs/Ana]]"` |
+| Workflows: their template | `template-file: world/workflows/templates/npc.md` | `template-file: "[[world/workflows/templates/npc]]"` |
+
+Before changing anything, the full text of every note it changes is saved in the plugin folder's `backups/note-formats-<date>/` (one gzipped file per change). Each change runs once per vault (recorded in `data.json`); a vault with nothing to change has no note written. The old forms are still read, so notes from another device on an older version keep working. Notes skipped on purpose (a `map:` key of your own, a link to a note that doesn't exist) are listed in a notice.
 
 **Sections** (used by the editor and table view):
 

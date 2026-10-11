@@ -39,7 +39,7 @@ import {
   common, createSandbox, launchSandbox, stopSandbox, connectPage, obsidianProcesses, pluginErrors, shot, sleep,
 } from "./lib/obsidian.mjs";
 import { machineLoad, pickJobs } from "./lib/concurrency.mjs";
-import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHashes, verifyPaletteUpgrade } from "./lib/disk.mjs";
+import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHashes, verifyPaletteUpgrade, noteFormatBackups } from "./lib/disk.mjs";
 import * as P from "./lib/page.mjs";
 import { canon, jsonDiff, oneTimeOnly } from "./lib/compare.mjs";
 import { SETUPS } from "./setups.mjs";
@@ -252,7 +252,11 @@ async function runSetup(setup) {
         if (probs.length) paletteProbs.push(`${p}: ${probs.slice(0, 4).join(", ")}`); else upgraded.push(p);
       }
       if (upgraded.length || paletteProbs.length) rec("M-palettes", paletteProbs.length === 0, paletteProbs.join("; ") || `${upgraded.length} palette notes upgraded, every terrain row kept: ${upgraded.join(", ")}`);
-      const allowed = (p) => p === `${pluginRel}data.json` || migrated.has(p) || upgraded.includes(p);
+      // Note-format upgrades (NF1–NF3) may rewrite a note once, backed up first.
+      const nfBackups = noteFormatBackups(vault, pluginId);
+      const reformatted = d.changed.filter((p) => nfBackups[p] !== undefined && nfBackups[p] === snap0[p]?.h);
+      if (reformatted.length) rec("M-note-formats", true, `${reformatted.length} notes rewritten to the new note formats, each backed up first: ${reformatted.slice(0, 6).join(", ")}${reformatted.length > 6 ? ", …" : ""}`);
+      const allowed = (p) => p === `${pluginRel}data.json` || migrated.has(p) || upgraded.includes(p) || reformatted.includes(p);
       const changed = d.changed.filter((p) => !allowed(p));
       // A backup rewritten with the same bytes loses nothing; other bytes would ("changed").
       const touched = d.touched.filter((p) => !allowed(p) && !p.startsWith(`${pluginRel}backups/`));

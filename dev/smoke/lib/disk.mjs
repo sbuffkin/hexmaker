@@ -96,13 +96,53 @@ export function hexDataFromFm(fm) {
   return h;
 }
 
+/** A link to a map note ("[[_coast]]"), as hex notes' map key holds (NF1). */
+const isMapLink = (v) => typeof v === "string" && /^\[\[(?:[^\]|#]*\/)?_[^\]]*\]\]$/.test(v.trim());
+
+/** The hex note's link to its map note: `map:` (NF1) or the older `hexmaker-map:`. */
+export const hexNoteMapLink = (fm) => (isMapLink(fm?.map) ? fm.map : isMapLink(fm?.["hexmaker-map"]) ? fm["hexmaker-map"] : null);
+
+/** Filled "**Terrain:**" / "**Region:**" body lines (older templates), as [field, value]. */
+export function bodyFieldLines(body) {
+  const out = [];
+  for (const l of body.split(/\r?\n/)) {
+    const m = /^[ \t]*\*\*(Terrain|Region):?\*\*:?[ \t]*(.*?)[ \t]*$/i.exec(l);
+    if (!m) continue;
+    const v = m[2].trim();
+    if (!v || /^\*?\(.*\)\*?$/.test(v) || /^_+$/.test(v) || v === "-" || v === "—") continue;
+    out.push([m[1].toLowerCase(), v]);
+  }
+  return out;
+}
+
+/**
+ * A body as compared before/after the plugin's note-format work: without
+ * the Map data callout (the plugin's) and the filled Terrain/Region lines
+ * it moves into it (NF2), blank runs collapsed. Everything else must be
+ * identical.
+ */
+export function comparableBody(body) {
+  const lines = body.replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let inCallout = false;
+  for (const l of lines) {
+    if (/^\s*>\s*\[!hexmaker\]/i.test(l)) { inCallout = true; continue; }
+    if (inCallout && /^\s*>/.test(l)) continue;
+    inCallout = false;
+    if (bodyFieldLines(l).length) continue;
+    if (l.trim() === "" && out.length && out[out.length - 1].trim() === "") continue;
+    out.push(l);
+  }
+  return out.join("\n").trim();
+}
+
 function parseNote(text) {
   const mm = FM.exec(text);
   let fm = null, err = null;
   if (mm) { try { fm = YAML.parse(mm[1]) ?? {}; } catch (e) { err = String(e).slice(0, 80); } }
   const body = mm ? text.slice(mm[0].length) : text;
   const other = {};
-  for (const [k, v] of Object.entries(fm ?? {})) if (!DATA_KEYS.includes(k) && k !== "hexmaker-map") other[k] = v;
+  for (const [k, v] of Object.entries(fm ?? {})) if (!DATA_KEYS.includes(k) && k !== "hexmaker-map" && !(k === "map" && isMapLink(v))) other[k] = v;
   return { fm, err, body, other };
 }
 
@@ -126,7 +166,7 @@ export function legacyTruth(vault, data) {
       const n = parseNote(text);
       const h = hexDataFromFm(n.fm);
       if (Object.keys(h).length) out.maps[m][f.replace(/\.md$/, "")] = h;
-      out.notes[relPath] = { text: sha(text), body: sha(n.body), other: sha(JSON.stringify(n.other)), dataKeys: DATA_KEYS.filter((k) => n.fm && k in n.fm), yamlError: n.err };
+      out.notes[relPath] = { text: sha(text), body: sha(comparableBody(n.body)), bodyFields: bodyFieldLines(n.body), other: sha(JSON.stringify(n.other)), dataKeys: DATA_KEYS.filter((k) => n.fm && k in n.fm), yamlError: n.err };
     }
   }
   return out;
@@ -174,13 +214,17 @@ export function verifyMigration(vault, truth, store) {
     const file = path.join(vault, p);
     if (!fs.existsSync(file)) { problems.push(`hex note missing: ${p}`); continue; }
     const n = parseNote(fs.readFileSync(file, "utf8"));
-    if (sha(n.body) !== t.body) problems.push(`body changed: ${p}`); else bodies++;
+    if (sha(comparableBody(n.body)) !== t.body) problems.push(`body changed: ${p}`); else bodies++;
+    // NF2: filled Terrain/Region lines now sit in the Map data callout.
+    for (const [field, value] of t.bodyFields ?? []) {
+      if (!n.body.toLowerCase().includes(`> old ${field}: ${value}`.toLowerCase())) problems.push(`old ${field} line not in Map data: ${p}`);
+    }
     if (sha(JSON.stringify(n.other)) !== t.other) problems.push(`user frontmatter changed: ${p}`);
     const left = DATA_KEYS.filter((k) => n.fm && k in n.fm);
     if (left.length) problems.push(`data keys left: ${p} ${left}`);
     else if (t.dataKeys.length) {
       cleaned++;
-      if (!n.fm?.["hexmaker-map"]) problems.push(`no map link: ${p}`);
+      if (!hexNoteMapLink(n.fm)) problems.push(`no map link: ${p}`);
     }
   }
   return { hexesChecked: hexes, notesChecked: Object.keys(truth.notes).length, bodiesIdentical: bodies, cleaned, problems };
@@ -204,6 +248,28 @@ export function verifyBackups(vault, pluginId, seedTexts) {
         out.notes++;
         if (seedTexts[p] !== undefined && seedTexts[p] !== sha(text)) out.mismatches++;
       }
+    }
+  }
+  return out;
+}
+
+/**
+ * Notes rewritten by the one-time note-format upgrades (NF1–NF3): path →
+ * hash of the original text in the `backups/note-formats-<date>` files.
+ * A note may change on the first start only if its original is here.
+ */
+export function noteFormatBackups(vault, pluginId) {
+  const bdir = path.join(vault, ".obsidian", "plugins", pluginId, "backups");
+  const out = {};
+  if (!fs.existsSync(bdir)) return out;
+  for (const day of fs.readdirSync(bdir)) {
+    if (!day.startsWith("note-formats-")) continue;
+    const d = path.join(bdir, day);
+    for (const f of fs.readdirSync(d)) {
+      if (!/\.json(\.gz)?$/.test(f)) continue;
+      const buf = fs.readFileSync(path.join(d, f));
+      const b = JSON.parse((f.endsWith(".gz") ? zlib.gunzipSync(buf) : buf).toString("utf8"));
+      for (const [p, text] of Object.entries(b.notes ?? {})) out[p] ??= sha(Buffer.from(text, "utf8"));
     }
   }
   return out;
