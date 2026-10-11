@@ -153,9 +153,11 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "palettesFolder",
   "biomesFolder",
   "biomePoolsFolder",
-  // Each module's folder settings (Space: World types folder).
-  ...moduleFolderSettings().map((d) => d.key),
 ]);
+
+/** A folder-path key: the core's, or a module's folder setting (Space: World types folder). */
+const isFolderPathKey = (key: string): boolean =>
+  FOLDER_PATH_KEYS.has(key) || moduleFolderSettings().some((d) => d.key === key);
 
 /** Settings keys whose change should re-render open hex map views. */
 const MAP_REFRESH_KEYS = new Set<string>([
@@ -824,7 +826,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       const n = Math.floor(Number(value));
       if (!Number.isFinite(n) || n <= 0) return;
       s[key] = n;
-    } else if (FOLDER_PATH_KEYS.has(key)) {
+    } else if (isFolderPathKey(key)) {
       s[key] = normalizeFolder(typeof value === "string" ? value : "");
     } else {
       s[key] = value;
