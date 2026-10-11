@@ -113,6 +113,15 @@ export class MapStore {
   /** Old every-hex paths converted this session, per map (for the startup notice). */
   private converted: { map: string; report: CompactReport }[] = [];
   private contextListeners = new Set<(e: RouteContextChange) => boolean | void>();
+  /**
+   * Per map: the MapData object the store last worked with. When settings
+   * are reloaded (onExternalSettingsChange) the map objects are replaced by
+   * fresh ones without `paths` (data.json doesn't hold them); see adopt().
+   */
+  private known = new Map<string, MapData>();
+  /** Maps whose paths / hexes were all removed by an edit (not a reload): allowed to empty the note. */
+  private clearedPaths = new Set<string>();
+  private clearedHexes = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -188,6 +197,7 @@ export class MapStore {
       else (h as Record<string, unknown>)[k] = v;
     }
     if (Object.keys(h).length) t.set(key, h); else t.delete(key);
+    if (!t.size) this.clearedHexes.add(map);
     if ("terrain" in patch) this.terrainChanged(map);
     this.markDirty(map);
     this.emit(map);
@@ -201,15 +211,46 @@ export class MapStore {
       for (const k of Object.keys(h) as (keyof HexData)[]) if (h[k] === undefined || h[k] === "") delete h[k];
       if (Object.keys(h).length) t.set(key, h); else t.delete(key);
     }
+    if (!t.size) this.clearedHexes.add(map);
     this.terrainChanged(map);
     this.markDirty(map);
     this.emit(map);
   }
 
-  /** Terrain changed: if that moves the map's routing context, routes are pinned (see routeCache). */
+  /**
+   * Terrain changed: if that moves the map's routing context, routes are
+   * pinned (see routeCache). Done whether or not the map has paths yet, so
+   * the context is never stale when the first path is drawn.
+   */
   private terrainChanged(name: string): void {
     const map = this.plugin.getMap(name);
-    if (map && map.paths?.length && this.routeCaches.has(name) && this.isReady(name)) this.routeCache(map);
+    if (!map || !this.routeCaches.has(name) || !this.isReady(name)) return;
+    this.adopt(map);
+    this.routeCache(map);
+  }
+
+  /**
+   * `map` replaces the object the store last held for its name (settings
+   * reloaded from data.json): if it came without paths — data.json never
+   * holds the paths of maps whose note does — it takes the store's. Missing
+   * paths mean "not loaded", never "no paths".
+   */
+  private adopt(map: MapData): void {
+    const prev = this.known.get(map.name);
+    if (prev && prev !== map && map.paths === undefined && prev.paths !== undefined) {
+      map.paths = prev.paths;
+      // The same chain objects, so the compatibility view still matches them.
+      map.pathChains = prev.pathChains;
+    }
+    this.known.set(map.name, map);
+  }
+
+  /**
+   * Settings were reloaded (HexmakerPlugin.loadSettings): put the paths the
+   * store holds onto the fresh map objects at once, before anything syncs.
+   */
+  adoptAll(): void {
+    for (const m of this.uniqueMaps()) this.adopt(m);
   }
 
   onChange(fn: (map: string) => void): () => void {
@@ -300,6 +341,12 @@ export class MapStore {
   setPaths(name: string, paths: MapPath[]): void {
     const map = this.plugin.getMap(name);
     if (!map) return;
+    this.adopt(map);
+    // Bring the routing context up to date first, so any pinning it causes
+    // applies to the OLD paths. The new ones were drawn on the map as it is
+    // now and must never be pinned to an older terrain or palette.
+    if (this.routeCaches.has(name) && this.isReady(name)) this.routeCache(map);
+    if (!paths.length) this.clearedPaths.add(name);
     map.paths = paths;
     this.rebuildView(map);
     this.markDirty(name);
@@ -336,10 +383,19 @@ export class MapStore {
    */
   private syncPaths(map: MapData): void {
     if (!this.ready || this.broken.has(map.name) || this.migrating.has(map.name)) return;
+    this.adopt(map);
+    // Paths missing on a map whose note holds them: not loaded (yet), never
+    // "no paths". Leave them missing; reloadFromNotes fills them in, and the
+    // write guard keeps the note's.
+    if (map.paths === undefined && this.holdsPaths(map.name)) return;
+    // Settle the routing context against the current paths before folding edits in.
+    if (this.routeCaches.has(map.name) && this.isReady(map.name)) this.routeCache(map);
     if (!map.pathChains) map.pathChains = [];
     const view = this.views.get(map.name) ?? emptyView();
-    const r = reconcile(map.paths ?? [], map.pathChains, view, (t, h) => this.anchorsOf(map, t, h));
+    const before = map.paths ?? [];
+    const r = reconcile(before, map.pathChains, view, (t, h) => this.anchorsOf(map, t, h));
     this.views.set(map.name, r.view);
+    if (r.changed && before.length && !r.paths.length) this.clearedPaths.add(map.name);
     if (r.changed || !map.paths) map.paths = r.paths;
   }
 
@@ -514,7 +570,8 @@ export class MapStore {
         this.backedUp.add(path);
       }
       await this.savePathReport(map.name);
-      const data = this.dataFor(map);
+      let data = this.dataFor(map);
+      if (this.keepsNoteData(map, path, data, r.data)) data = this.dataFor(map);
       const ctx = this.contextFor(map);
       const next = updateMapNote(current, map.name, data, ctx);
       this.lastDerived.set(map.name, JSON.stringify(ctx));
@@ -523,6 +580,8 @@ export class MapStore {
       this.lastContent.set(path, next);
       if (next !== current) await vault.modify(file, next);
       this.lastKey.set(map.name, mapNoteKey(data));
+      this.clearedPaths.delete(map.name);
+      this.clearedHexes.delete(map.name);
     } else {
       const data = this.dataFor(map);
       const folder = this.mapFolder(map.name);
@@ -536,6 +595,30 @@ export class MapStore {
       await vault.create(path, content);
       this.lastKey.set(map.name, mapNoteKey(data));
     }
+  }
+
+  /**
+   * Write guard (incident 2026-10-10): a write that would drop EVERY path,
+   * or every hex, the note holds is refused unless an edit removed them
+   * (setPaths / the path tool / clearing hexes). Anything else is a lost
+   * or not-yet-loaded copy in memory: the note's are taken back into
+   * memory, logged, and said with a notice. True if anything was kept.
+   */
+  private keepsNoteData(map: MapData, path: string, data: MapNoteData, disk: MapNoteData): boolean {
+    const dropsPaths = disk.paths.length > 0 && data.paths.length === 0 && !this.clearedPaths.has(map.name);
+    const dropsHexes = disk.hexes.size > 0 && data.hexes.size === 0 && !this.clearedHexes.has(map.name);
+    if (!dropsPaths && !dropsHexes) return false;
+    const what = [dropsPaths ? `${disk.paths.length} path${disk.paths.length === 1 ? "" : "s"}` : "", dropsHexes ? `${disk.hexes.size} hex${disk.hexes.size === 1 ? "" : "es"}` : ""].filter(Boolean).join(" and ");
+    console.error(`Hexmap World Creator: a save of ${path} would have removed all its ${what} without them being deleted; the note's were kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
+    new Notice(`Hexmap World Creator: a save would have removed all ${what} from ${path}. They weren't deleted, so the note's were kept. To remove them, delete them again.`, 15000);
+    if (dropsHexes) this.hexes.set(map.name, this.matchCase(map, disk.hexes));
+    if (dropsPaths) {
+      this.views.delete(map.name);
+      this.applyPaths(map, disk);
+    }
+    this.known.set(map.name, map);
+    this.emit(map.name);
+    return true;
   }
 
   // ── load / hand edits ────────────────────────────────────────────────
@@ -560,6 +643,7 @@ export class MapStore {
     }
     this.hexes.set(map.name, this.matchCase(map, data.hexes));
     this.applyPaths(map, data);
+    this.known.set(map.name, map);
     this.lastKey.set(map.name, mapNoteKey(this.dataFor(map)));
     // Loaded or hand-edited: taken as written. Derived parts catch up on the next write.
     this.lastDerived.set(map.name, JSON.stringify(this.contextFor(map)));
@@ -773,7 +857,7 @@ export class MapStore {
     const t = this.hexes.get(oldName);
     if (t) { this.hexes.delete(oldName); this.hexes.set(newName, t); }
     if (this.broken.delete(oldName)) this.broken.add(newName);
-    for (const m of [this.views, this.routeCaches] as Map<string, unknown>[]) {
+    for (const m of [this.views, this.routeCaches, this.known] as Map<string, unknown>[]) {
       if (m.has(oldName)) { m.set(newName, m.get(oldName)); m.delete(oldName); }
     }
     const { vault, fileManager } = this.plugin.app;
@@ -805,6 +889,9 @@ export class MapStore {
     this.hexes.delete(name);
     this.views.delete(name);
     this.routeCaches.delete(name);
+    this.known.delete(name);
+    this.clearedPaths.delete(name);
+    this.clearedHexes.delete(name);
     this.lastKey.delete(name);
     this.lastDerived.delete(name);
     this.dirty.delete(name);

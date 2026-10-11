@@ -674,7 +674,13 @@ export default class HexmakerPlugin extends Plugin {
   async loadSettings() {
     // One-time migration: rename settings keys "regions" → "maps" and "defaultRegion" → "defaultMap"
     // Must run on raw data BEFORE Object.assign so the migrated key wins over DEFAULT_SETTINGS.
-    const data = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+    // One read only: nothing may await between swapping in the new
+    // settings and handing their maps to the map store (adoptAll below), or a
+    // save in between would see maps without their paths (incident
+    // 2026-10-10). rawData is an untouched copy for the "fresh install?" checks.
+    const loaded = (await this.loadData()) as Record<string, unknown> | null;
+    const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
+    const data = loaded ?? {};
     if (data["regions"] !== undefined && data["maps"] === undefined) {
       data["maps"] = data["regions"];
     }
@@ -697,6 +703,10 @@ export default class HexmakerPlugin extends Plugin {
       : [];
 
     this.settings.maps = this.settings.maps.map((r) => migrateMapData(r, DEFAULT_PALETTE_NAME));
+    // Reloaded (onExternalSettingsChange): data.json doesn't hold the paths
+    // of maps whose note does, so the fresh map objects take the store's at
+    // once. Missing paths mean "not loaded", never "no paths".
+    this.mapStore.adoptAll();
     // Ensure terrainPalettes is valid
     if (
       !Array.isArray(this.settings.terrainPalettes) ||
@@ -744,7 +754,6 @@ export default class HexmakerPlugin extends Plugin {
     // settings (an update) gets Advanced so nothing it used disappears; a
     // fresh one starts Simple. Saved right away, so the next load doesn't
     // mistake a fresh install's first save for an update.
-    const rawData = (await this.loadData()) as Record<string, unknown> | null;
     this.settings.featureLevel = resolveFeatureLevel(rawData);
     this.settings.advancedFeatures = Array.isArray(data["advancedFeatures"]) ? (data["advancedFeatures"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
     this.settings.dismissedHints = Array.isArray(data["dismissedHints"]) ? (data["dismissedHints"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
@@ -766,8 +775,26 @@ export default class HexmakerPlugin extends Plugin {
    * note, which a person can read and edit. Maps not yet in a note keep them.
    */
   async saveData(data: unknown): Promise<void> {
-    if (data !== this.settings || !this.mapStore?.isReady()) return super.saveData(data);
-    return super.saveData(withoutNotePaths(this.settings, (name) => this.mapStore.holdsPaths(name)));
+    const out = data !== this.settings || !this.mapStore?.isReady() ? data : withoutNotePaths(this.settings, (name) => this.mapStore.holdsPaths(name));
+    this.rememberWrite(out);
+    return super.saveData(out);
+  }
+
+  /** What we wrote to data.json lately (compact JSON), to tell our own writes from outside changes. */
+  private recentWrites: string[] = [];
+
+  private rememberWrite(data: unknown): void {
+    try {
+      this.recentWrites.push(JSON.stringify(data));
+      if (this.recentWrites.length > 20) this.recentWrites.shift();
+    } catch { /* not JSON-able: never matches */ }
+  }
+
+  /** data.json holds exactly something this session wrote (an echo of our own save). */
+  private isOwnWrite(disk: unknown): boolean {
+    if (disk === null || disk === undefined) return false;
+    const text = JSON.stringify(disk);
+    return this.recentWrites.includes(text);
   }
 
   async saveSettings() {
@@ -793,6 +820,11 @@ export default class HexmakerPlugin extends Plugin {
   // Reloads settings into memory and refreshes all open views so the user sees
   // the synced state without a manual Obsidian restart.
   async onExternalSettingsChange(): Promise<void> {
+    // Obsidian also fires this for our own saves when several land close
+    // together (its watcher sees a write it hasn't recorded yet). Reloading
+    // our own data would at best do nothing and at worst roll back changes
+    // made since that save, so ignore anything we wrote ourselves.
+    if (this.isOwnWrite(await this.loadData())) return;
     await this.loadSettings();
     // Map notes hold paths and map settings; the new data.json doesn't win.
     // Queued before any sync, so nothing writes the bare copy over a note.

@@ -473,6 +473,38 @@ describe("map store: path edits, hand edits and the three-way merge", () => {
     expect(JSON.stringify(m[0].paths)).toBe(pinned);
   });
 
+  it("a path drawn after painting water on a map with no paths routes around it (never pinned to the old terrain)", async () => {
+    const v = new MemVault();
+    const m = [fixtureMap()];
+    const { store } = await boot(v, m);
+    expect(store.resolved("m")).toEqual([]); // the store has a routing context now
+    store.set("m", "3_5", { terrain: "shallows" }); // no paths yet
+    const seen: string[] = [];
+    store.onRouteContextChange((e) => { seen.push(e.map); });
+    store.setPaths("m", [P("Road", "Road", ["0_5", "6_5"])]);
+    expect(m[0].paths![0].branches[0].anchors).toEqual(["0_5", "6_5"]);
+    expect(store.resolved("m")![0].hexes).not.toContain("3_5");
+    expect(seen).toEqual([]); // the context was already current: nothing to pin
+  });
+
+  it("setPaths settles a stale routing context against the OLD paths, never the new ones", async () => {
+    const v = new MemVault();
+    const m = [fixtureMap()];
+    const { store } = await boot(v, m);
+    // Where a road from 0,5 to 6,5 goes on open ground.
+    store.setPaths("m", [P("Road", "Road", ["0_5", "6_5"])]);
+    const open = store.resolved("m")![0].hexes;
+    const mid = open[Math.floor(open.length / 2)];
+    store.setPaths("m", []);
+    store.set("m", mid, { terrain: "forest" });
+    // A context change the store hasn't seen yet (palette edit: forest becomes impassable).
+    const palette = DEFAULT_TERRAIN_PALETTE.map((t) => (t.name === "forest" ? { ...t, impassable: true } : t));
+    (store as unknown as { plugin: { getMapPalette: () => unknown } }).plugin.getMapPalette = () => palette;
+    store.setPaths("m", [P("Road", "Road", ["0_5", "6_5"])]);
+    expect(m[0].paths![0].branches[0].anchors).toEqual(["0_5", "6_5"]);
+    expect(store.resolved("m")![0].hexes).not.toContain(mid);
+  });
+
   it("a format-6 note is broken with a notice that names the format and says to update", async () => {
     const v = new MemVault({ [NOTE]: buildMapNote("m", data([KINGS])).replace(`hexmaker-map: ${MAP_NOTE_FORMAT}`, "hexmaker-map: 6") });
     const before = v.files.get(NOTE);
