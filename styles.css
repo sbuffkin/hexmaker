@@ -377,6 +377,18 @@
     z-index: 5;
 }
 
+/* The path tool's anchor handles and active-end dot: over the paths AND
+   the icon layer (elevated override and GM icons), so no icon hides a
+   handle (#48). Placed in em like the paths. */
+.duckmage-path-handles-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 6;
+}
+
 /* SVG overlay for faction color fills — sits below paths */
 .duckmage-faction-svg {
     position: absolute;
@@ -5654,6 +5666,13 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     color: var(--text-accent);
 }
 
+/* Between the items about what's under the pointer and the tool's own. */
+.duckmage-painter-ctx-separator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--background-modifier-border);
+}
+
 /* ── Stagger offset toggle button ────────────────────────────────────────── */
 
 .duckmage-stagger-toggle {
@@ -8234,6 +8253,15 @@ button.duckmage-terrain-legend-chip {
     min-height: 1.4em;
     margin-top: 0.3em;
     color: var(--text-error);
+    font-size: var(--font-ui-small);
+}
+/* Save while the name is empty or taken: Obsidian's disabled look, even
+   on a mod-cta button (#48). */
+.duckmage-path-name-modal button.mod-disabled,
+.duckmage-path-name-modal button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
 }
 
 /* Path tool: the mode bar text wraps (it has more to say and more controls). */

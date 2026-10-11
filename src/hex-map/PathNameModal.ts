@@ -2,8 +2,25 @@ import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 
 /**
+ * What the rename box's Save does with what's typed (pure): the cleaned
+ * name (trimmed, inner whitespace collapsed) when it can be saved, else
+ * null with a short reason. Empty is refused; the current name is fine
+ * (Save just closes); anything else asks `check` (e.g. the name is taken).
+ */
+export function pathNameState(
+  raw: string,
+  current: string,
+  check: (name: string) => string | null,
+): { name: string | null; problem: string | null } {
+  const name = raw.trim().replace(/\s+/g, " ");
+  const problem = !name ? "A path needs a name." : name === current ? null : check(name);
+  return { name: problem ? null : name, problem };
+}
+
+/**
  * Rename a path: one text field. `check` returns a problem to show (e.g.
- * the name is taken) or null; Save is refused while there is one.
+ * the name is taken) or null. While there is one, Save looks and is
+ * disabled and the reason shows under the field (#48).
  */
 export class PathNameModal extends HexmakerModal {
   constructor(
@@ -31,11 +48,14 @@ export class PathNameModal extends HexmakerModal {
     const save = row.createEl("button", { text: "Save", cls: "mod-cta" });
     const cancel = row.createEl("button", { text: "Cancel" });
     const validate = (): string | null => {
-      const name = input.value.trim().replace(/\s+/g, " ");
-      const msg = !name ? "A path needs a name." : name === this.current ? null : this.check(name);
+      const { name, problem: msg } = pathNameState(input.value, this.current, this.check);
       problem.setText(msg ?? "");
       save.disabled = !!msg;
-      return msg ? null : name;
+      save.toggleClass("mod-disabled", !!msg);
+      save.setAttribute("aria-disabled", String(!!msg));
+      if (msg) save.setAttribute("title", msg);
+      else save.removeAttribute("title");
+      return name;
     };
     const submit = () => {
       const name = validate();

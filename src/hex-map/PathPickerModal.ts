@@ -217,7 +217,7 @@ export class PathPickerModal extends HexmakerModal {
     this.renderPathsOnMap(section, pathTypes);
   }
 
-  /** "Paths on this map": each path (type colour, name, what it is); click to select it on the map. */
+  /** "Paths on this map": each path (type colour, name, its ends, forks and size); click to select it on the map. */
   private renderPathsOnMap(container: HTMLElement, types: PathType[]): void {
     const pm = this.pathsOnMap;
     if (!pm) return;
@@ -228,7 +228,7 @@ export class PathPickerModal extends HexmakerModal {
     }
     const list = container.createDiv({ cls: "duckmage-path-list" });
     for (const p of pm.list) {
-      const row = list.createEl("button", { cls: "duckmage-path-list-row", attr: { title: `Select ${p.name} on the map` } });
+      const row = list.createEl("button", { cls: "duckmage-path-list-row", attr: { title: `Select ${p.name} (${p.typeName}) on the map` } });
       row.toggleClass("is-selected", p.name === pm.selected);
       const swatch = row.createSpan({ cls: "duckmage-path-list-swatch" });
       const color = types.find((t) => t.name === p.typeName)?.color;

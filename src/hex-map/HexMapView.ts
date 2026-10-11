@@ -32,7 +32,7 @@ import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
 import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
-import { pathSummary } from "./pathTool";
+import { pathListSummary } from "./pathTool";
 import { flowerPetals, MapHistory, navArrows, PAD_SIDES } from "../maps/mapNav";
 import { WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
 import { openNoteFocused } from "../openNote";
@@ -2027,7 +2027,6 @@ export class HexMapView extends ItemView {
       switchLabel = "Switch path type";
       extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
       if (!erasing) extra.push({ label: "New path", onClick: () => this.pathTool.startNewPath() });
-      extra.push(...pathItems);
     } else if (mode === "placeToken") {
       onSwitch = () => this.handleTokenButton(true);
       switchLabel = "Switch token";
@@ -2035,7 +2034,8 @@ export class HexMapView extends ItemView {
     // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
 
     this.painterMenu?.close();
-    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra);
+    // The path under the pointer comes first, above a separator (#48).
+    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra, mode === "path" ? pathItems : []);
     this.painterMenu.open(clientX, clientY);
   }
 
@@ -5803,7 +5803,12 @@ export class HexMapView extends ItemView {
         noImpassable: impassableNames(this.plugin.getMapPalette(this.activeMapName)).length === 0,
       },
       {
-        list: this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathSummary(p) })),
+        list: (() => {
+          // Ends, forks and size from the resolved routes (#48), so similar
+          // names (Road 2 … Road 6) can be told apart. Names stay the user's.
+          const resolved = this.plugin.paths.resolved(this.activeMapName);
+          return this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathListSummary(p, resolved) }));
+        })(),
         selected: this.pathTool.selected,
         onPick: (name) => {
           this.leaveOtherToolFor("path");
@@ -5982,19 +5987,27 @@ export class HexMapView extends ItemView {
     const selected = tool?.selected ?? null;
     const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot, handles, selected]);
     const existing = gridContainer.querySelector("svg.duckmage-path-svg");
+    const existingHandles = gridContainer.querySelector("svg.duckmage-path-handles-svg");
+    const wantLines = lines.length > 0;
+    const wantHandles = !!dot || handles.length > 0;
 
     // ── Writes ──
-    if (!existing || key !== this.pathLayerKey) {
+    if (key !== this.pathLayerKey || wantLines !== !!existing || wantHandles !== !!existingHandles) {
       existing?.remove();
+      existingHandles?.remove();
       this.pathLayerKey = key;
-      if (lines.length || dot || handles.length) {
-        const svgNS = "http://www.w3.org/2000/svg";
-        const svg = activeDocument.createElementNS(svgNS, "svg");
-        svg.classList.add("duckmage-path-svg");
-        // One user unit = 1em of the grid (it overflows for seam stubs).
-        svg.setAttribute("width", "1em");
-        svg.setAttribute("height", "1em");
-        svg.setAttribute("viewBox", "0 0 1 1");
+      const svgNS = "http://www.w3.org/2000/svg";
+      // One user unit = 1em of the grid (it overflows for seam stubs).
+      const emSvg = (cls: string): SVGSVGElement => {
+        const s = activeDocument.createElementNS(svgNS, "svg");
+        s.classList.add(cls);
+        s.setAttribute("width", "1em");
+        s.setAttribute("height", "1em");
+        s.setAttribute("viewBox", "0 0 1 1");
+        return s;
+      };
+      if (wantLines) {
+        const svg = emSvg("duckmage-path-svg");
         // The selected path's halo, under every line.
         for (const l of lines) {
           if (l.s.path !== selected) continue;
@@ -6023,6 +6036,17 @@ export class HexMapView extends ItemView {
           path.setAttribute("data-branch", String(l.s.branch));
           svg.appendChild(path);
         }
+        // Under the icon layer (elevated and GM icons sit above paths).
+        const icons = gridContainer.querySelector("svg.duckmage-path-icons-svg");
+        if (icons) gridContainer.insertBefore(svg, icons);
+        else gridContainer.appendChild(svg);
+      }
+      // The tool's handles and active-end dot get their own layer, over
+      // the icon layer (terrain, elevated override and GM icons), so a
+      // handle is never hidden under an icon (#48). Hit-testing is pure
+      // math, so they stay grabbable whatever is drawn over the hex.
+      if (wantHandles) {
+        const svg = emSvg("duckmage-path-handles-svg");
         for (const h of handles) {
           const handle = activeDocument.createElementNS(svgNS, "circle");
           handle.setAttribute("class", "duckmage-svg-path-line duckmage-svg-path-handle");
@@ -6046,10 +6070,7 @@ export class HexMapView extends ItemView {
           circle.setAttribute("opacity", "0.9");
           svg.appendChild(circle);
         }
-        // Under the icon layer (elevated and GM icons sit above paths).
-        const icons = gridContainer.querySelector("svg.duckmage-path-icons-svg");
-        if (icons) gridContainer.insertBefore(svg, icons);
-        else gridContainer.appendChild(svg);
+        gridContainer.appendChild(svg);
       }
     }
     this.renderPathIconsLayer(gridContainer);
