@@ -61,6 +61,13 @@ export function buildPathPreviewSvg(pt: PathType): SVGElement {
   return svg;
 }
 
+/** The open map's paths, listed in the picker. */
+export interface PathsOnMap {
+  list: { name: string; typeName: string; summary: string }[];
+  selected: string | null;
+  onPick: (name: string) => void;
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 
 export class PathPickerModal extends HexmakerModal {
@@ -79,6 +86,8 @@ export class PathPickerModal extends HexmakerModal {
     private onErase?: () => void,
     /** Hex-by-hex vs auto-route switch, shown above the types. */
     private autoRoute?: { value: boolean; onChange: (on: boolean) => void; noImpassable: boolean },
+    /** "Paths on this map": click one to select it (for paths too small to hit on the map). */
+    private pathsOnMap?: PathsOnMap,
   ) {
     super(app);
   }
@@ -105,10 +114,11 @@ export class PathPickerModal extends HexmakerModal {
         });
       }
       hint.setText(
-        ar.value
-          ? "Click a start hex, then an end hex: the path finds its own way and stays editable." +
+        (ar.value
+          ? "Click a start, then click far away: the path finds its own way there. Keep clicking to add more." +
             (ar.noImpassable ? " This palette has no impassable terrain yet: mark the terrains paths can't cross (e.g. water) in the palette editor." : "")
-          : "Click neighbouring hexes one by one.",
+          : "Click neighbouring hexes one by one (a click further away is routed for you).") +
+          " Click a path to select it, then drag its line to reshape it.",
       );
       hint.createSpan({ text: " You can switch this while drawing, from the bar at the top." });
     };
@@ -203,6 +213,33 @@ export class PathPickerModal extends HexmakerModal {
 
     if (pathTypes.length === 0) {
       grid.createEl("p", { text: "No path types defined. Switch to edit mode to add one.", cls: "duckmage-tpe-empty" });
+    }
+    this.renderPathsOnMap(section, pathTypes);
+  }
+
+  /** "Paths on this map": each path (type colour, name, what it is); click to select it on the map. */
+  private renderPathsOnMap(container: HTMLElement, types: PathType[]): void {
+    const pm = this.pathsOnMap;
+    if (!pm) return;
+    container.createDiv({ cls: "duckmage-path-draw-mode-label duckmage-path-type-step", text: "Paths on this map" });
+    if (!pm.list.length) {
+      container.createDiv({ cls: "setting-item-description", text: "None yet: pick a type above and click on the map to start one." });
+      return;
+    }
+    const list = container.createDiv({ cls: "duckmage-path-list" });
+    for (const p of pm.list) {
+      const row = list.createEl("button", { cls: "duckmage-path-list-row", attr: { title: `Select ${p.name} on the map` } });
+      row.toggleClass("is-selected", p.name === pm.selected);
+      const swatch = row.createSpan({ cls: "duckmage-path-list-swatch" });
+      const color = types.find((t) => t.name === p.typeName)?.color;
+      if (color) swatch.setCssProps({ "--duckmage-path-swatch": color });
+      row.createSpan({ cls: "duckmage-path-list-name", text: p.name });
+      row.createSpan({ cls: "duckmage-path-list-summary", text: p.summary });
+      row.addEventListener("click", () => {
+        this.selectionMade = true;
+        pm.onPick(p.name);
+        this.close();
+      });
     }
   }
 

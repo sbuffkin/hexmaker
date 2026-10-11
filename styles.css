@@ -8178,6 +8178,77 @@ button.duckmage-terrain-legend-chip {
     height: 1.8em;
 }
 
+/* Path tool (anchored paths): grab cursor over the selected path, the
+   "Reroute instead" notice button, and "Paths on this map" in the picker. */
+.duckmage-hex-map-viewport.duckmage-draw-mode.duckmage-path-grab .duckmage-hex {
+    cursor: grab;
+}
+.duckmage-hex-map-viewport.duckmage-draw-mode.duckmage-path-grab:active .duckmage-hex {
+    cursor: grabbing;
+}
+.duckmage-notice-btn {
+    margin-left: 0.6em;
+}
+.duckmage-mode-bar-path-name {
+    font-style: italic;
+}
+.duckmage-path-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 14em;
+    overflow-y: auto;
+    margin-top: 0.3em;
+}
+.duckmage-path-list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    justify-content: flex-start;
+    height: auto;
+    padding: 0.25em 0.5em;
+    box-shadow: none;
+    background: transparent;
+    text-align: left;
+}
+.duckmage-path-list-row.is-selected {
+    background: var(--background-modifier-hover);
+    font-weight: 600;
+}
+.duckmage-path-list-swatch {
+    flex: none;
+    width: 1.4em;
+    height: 0.3em;
+    border-radius: 999px;
+    background: var(--duckmage-path-swatch, var(--text-faint));
+}
+.duckmage-path-list-summary {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-path-name-input {
+    width: 100%;
+}
+.duckmage-path-name-problem {
+    min-height: 1.4em;
+    margin-top: 0.3em;
+    color: var(--text-error);
+}
+
+/* Path tool: the mode bar text wraps (it has more to say and more controls). */
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path {
+    border-radius: 0.9em;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-text {
+    white-space: normal;
+    min-width: 14em;
+    line-height: 1.25;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-hint {
+    display: none;
+}
+
 /* ── Overworld playtest fixes (2026-10-10) ───────────────────────────────── */
 
 /* Regions view: only the regions and blank bricks show. The overworld's own

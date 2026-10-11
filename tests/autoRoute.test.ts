@@ -160,7 +160,10 @@ describe("findRoute keeps to the straight line on open ground (round 6 R5)", () 
 });
 
 // ── Round 7: rivers meander (U17); a new route never joins or reshapes (R11) ──
-import { addRoutedLeg, routeExtendTarget, type RouteChain } from "../src/hex-map/autoRoute";
+import { pathClickOutcome, type PathHit } from "../src/hex-map/pathTool";
+import { appendAnchor, newPath } from "../src/paths/edit";
+import { resolvePaths } from "../src/paths/resolve";
+import type { MapPath } from "../src/types";
 import { pathMeanders } from "../src/impassable";
 
 describe("auto-routed rivers wind (round 7 U17)", () => {
@@ -228,41 +231,48 @@ describe("auto-routed rivers wind (round 7 U17)", () => {
 	});
 });
 
-describe("a second auto-route starts a new path (round 7 R11)", () => {
+describe("a new path never joins or reshapes another (round 7 R11, anchored paths)", () => {
 	// The region tester's map: road keep (12_8) → Gullmouth (7_5), then a
-	// second road from the keep to the east edge.
-	const make = (typeName: string, hexes: string[]): RouteChain => ({ typeName, hexes });
-	const first = () => [make("Road", ["12_8", "11_7", "10_7", "9_6", "8_6", "7_5"]), make("River", ["11_13", "10_14", "9_13"])];
+	// second road from the keep to the east edge. With anchored paths a
+	// click on a path selects it; Alt-click or "New path" starts a new one.
+	const ctx = { orientation: "flat" as const, stagger: "odd" as const, bounds: bounds(20, 16), blocked: new Set<string>() };
+	const first = (): MapPath[] => [
+		{ name: "Road", typeName: "Road", branches: [{ anchors: ["12_8", "7_5"] }] },
+		{ name: "River", typeName: "River", branches: [{ anchors: ["11_13", "9_13"] }] },
+	];
+	const onRoad = (hexIdx: number, o: Partial<PathHit> = {}): PathHit => ({ path: "Road", branch: 0, hexIdx, anchor: null, end: null, ...o });
+	const idle = { erasing: false, forceNew: false, activeHex: null, selected: null };
 
-	it("starting on the first road's first hex makes a new road and leaves the first untouched", () => {
-		const chains = first();
-		const before = JSON.parse(JSON.stringify(chains));
-		const leg = addRoutedLeg(chains, "Road", ["12_8", "13_8", "14_8", "15_8"], null, make);
-		expect(chains).toHaveLength(3);
-		expect(chains.slice(0, 2)).toEqual(before);
-		expect(leg).toBe(chains[2]);
-		expect(leg.hexes).toEqual(["12_8", "13_8", "14_8", "15_8"]);
+	it("clicking the first road's first hex selects that road; it doesn't start a road joined to it", () => {
+		expect(pathClickOutcome(idle, "12_8", onRoad(0))).toEqual({ kind: "select", path: "Road" });
 	});
 
-	it("starting in the middle of a road makes a new road", () => {
-		const chains = first();
-		expect(routeExtendTarget(chains, "Road", "10_7", null)).toBeNull();
-		addRoutedLeg(chains, "Road", ["10_7", "10_8"], chains[0], make);
-		expect(chains[0].hexes).toEqual(["12_8", "11_7", "10_7", "9_6", "8_6", "7_5"]);
-		expect(chains).toHaveLength(3);
+	it("Alt-click (or New path) on the keep starts a new road; the first is untouched", () => {
+		const paths = first();
+		const before = JSON.stringify(paths);
+		expect(pathClickOutcome({ ...idle, forceNew: true }, "12_8", onRoad(0))).toEqual({ kind: "start" });
+		// the next click creates it: a separate path with its own name
+		const road2 = appendAnchor(newPath("Road", "12_8", paths.map((p) => p.name)), 0, "15_8");
+		const after = [...paths, road2];
+		expect(road2.name).toBe("Road 2");
+		expect(JSON.stringify(after.slice(0, 2))).toBe(before);
+		const resolved = resolvePaths(after, ctx);
+		expect(resolved.find((r) => r.path === "Road")!.hexes).toEqual(resolvePaths(first(), ctx).find((r) => r.path === "Road")!.hexes);
+		expect(resolved.find((r) => r.path === "Road 2")!.hexes[0]).toBe("12_8");
 	});
 
-	it("starting exactly on a road's end continues it, adding only new hexes", () => {
-		const chains = first();
-		const leg = addRoutedLeg(chains, "Road", ["7_5", "7_4", "7_3"], null, make);
-		expect(leg).toBe(chains[0]);
-		expect(chains).toHaveLength(2);
-		expect(chains[0].hexes).toEqual(["12_8", "11_7", "10_7", "9_6", "8_6", "7_5", "7_4", "7_3"]);
+	it("on the selected road, the middle forks and an end continues; only new anchors are added", () => {
+		const sel = { ...idle, selected: "Road" };
+		expect(pathClickOutcome(sel, "10_7", onRoad(2))).toEqual({ kind: "fork", path: "Road", branch: 0, hexIdx: 2 });
+		expect(pathClickOutcome(sel, "7_5", onRoad(5, { anchor: 1, end: "tail" }))).toEqual({ kind: "continue", path: "Road", branch: 0, end: "tail" });
+		const [road] = first();
+		const longer = appendAnchor(road, 0, "7_3");
+		expect(longer.branches[0].anchors).toEqual(["12_8", "7_5", "7_3"]);
+		const was = resolvePaths([road], ctx)[0].hexes;
+		expect(resolvePaths([longer], ctx)[0].hexes.slice(0, was.length)).toEqual(was);
 	});
 
-	it("a river's end doesn't continue a road", () => {
-		const chains = first();
-		expect(routeExtendTarget(chains, "Road", "9_13", null)).toBeNull();
-		expect(routeExtendTarget(chains, "River", "9_13", null)).toBe(chains[1]);
+	it("while drawing a road, a click on the river adds an anchor to the road and leaves the river alone", () => {
+		expect(pathClickOutcome({ ...idle, selected: "Road", activeHex: "7_5" }, "9_13", { ...onRoad(1), path: "River" })).toEqual({ kind: "append" });
 	});
 });
