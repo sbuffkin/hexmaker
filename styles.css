@@ -8770,3 +8770,8 @@ textarea.duckmage-edit-region-notes-input {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+/* S11: a moon tied to its planet (a faint dashed tether). */
+.duckmage-moon-link {
+    stroke: #d7deff;
+    opacity: 0.55;
+}

@@ -67,6 +67,7 @@ import {
   type LatticeAffine,
   type LatticeGrid,
 } from "../paths/pathGeometry";
+import { moonPlanetLinks, tether } from "./moonLinks";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
@@ -6193,6 +6194,18 @@ export class HexMapView extends ItemView {
         dash: s.dash.map((d) => fmt(d * scale)).join(" "),
       };
     });
+    // Moons tied to their planet (S11): a faint tether across the edge they
+    // share, by terrain type (src/hex-map/moonLinks.ts). Under the paths.
+    const moonLines: { d: string; width: string; dash: string }[] = [];
+    if (calib) {
+      const terrain = new Map<string, string>();
+      for (const [k, h] of this.plugin.mapStore.all(region.name)) if (h.terrain) terrain.set(k, h.terrain);
+      const links = moonPlanetLinks(terrain, this.plugin.getMapPalette(region.name), calib.lattice.orientation, calib.lattice.stagger);
+      for (const [moon, planet] of links) {
+        const [a, b] = em(tether(latticeCenter(moon, calib.lattice), latticeCenter(planet, calib.lattice)));
+        moonLines.push({ d: `M${fmt(a.cx)} ${fmt(a.cy)}L${fmt(b.cx)} ${fmt(b.cy)}`, width: fmt(0.07 * scale), dash: `${fmt(0.1 * scale)} ${fmt(0.08 * scale)}` });
+      }
+    }
     // The path tool: the selected path highlighted, its anchor handles
     // (ends bigger: continue from there) and the dot where clicks add.
     const tool = calib && this.drawingMode === "path" ? this.pathTool.overlay() : null;
@@ -6222,10 +6235,10 @@ export class HexMapView extends ItemView {
       }
     }
     const selected = tool?.selected ?? null;
-    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot, handles, selected]);
+    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot, handles, selected, moonLines]);
     const existing = gridContainer.querySelector("svg.duckmage-path-svg");
     const existingHandles = gridContainer.querySelector("svg.duckmage-path-handles-svg");
-    const wantLines = lines.length > 0;
+    const wantLines = lines.length > 0 || moonLines.length > 0;
     const wantHandles = !!dot || handles.length > 0;
 
     // ── Writes ──
@@ -6245,6 +6258,16 @@ export class HexMapView extends ItemView {
       };
       if (wantLines) {
         const svg = emSvg("duckmage-path-svg");
+        for (const m of moonLines) {
+          const tie = activeDocument.createElementNS(svgNS, "path");
+          tie.setAttribute("class", "duckmage-svg-path-line duckmage-moon-link");
+          tie.setAttribute("d", m.d);
+          tie.setAttribute("stroke-width", m.width);
+          tie.setAttribute("stroke-dasharray", m.dash);
+          tie.setAttribute("stroke-linecap", "round");
+          tie.setAttribute("fill", "none");
+          svg.appendChild(tie);
+        }
         // The selected path's halo, under every line.
         for (const l of lines) {
           if (l.s.path !== selected) continue;
