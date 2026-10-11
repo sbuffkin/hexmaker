@@ -23,7 +23,7 @@
  */
 
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
-import type { BiomeId, BiomeProfile } from "./biomes";
+import { SHORE_TYPES, WATER_TYPES, type BiomeId, type BiomeProfile } from "./biomes";
 import { namesWithinType, typeMix, type BlendField } from "./blendField";
 import { childNeighbours, parentOf, regionCells, type RegionLayout } from "./layout";
 
@@ -138,6 +138,25 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     }
     for (const [k, v] of next) work.set(k, v);
   }
+
+  // 3. Islands for watery biomes (landShare / minIslands), after smoothing:
+  //    smoothing pulls every cell toward the majority type, so scattered
+  //    land in a mostly water biome would otherwise vanish.
+  const ownBiome = field.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
+  const profile = ownBiome ? profiles.get(ownBiome) : undefined;
+  if (ownBiome && profile && (profile.minIslands || profile.landShare)) {
+    placeIslands({
+      layout,
+      cells,
+      work,
+      terrainAt,
+      typeOf,
+      profile,
+      influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
+      rng: mulberry32(cellSeed(input.seed ^ 0x6a09e667, input.parent[0], input.parent[1])),
+    });
+  }
+
   const out = new Map<string, string>();
   for (const k of own) {
     const v = work.get(k);
@@ -148,6 +167,151 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
 
 /** Depth of the smoothed halo around a region. */
 const HALO = 2;
+
+interface IslandInput {
+  layout: RegionLayout;
+  /** The region's own (unpinned) cells: the only cells changed. */
+  cells: [number, number][];
+  /** Terrain being generated; own cells are rewritten in place. */
+  work: Map<string, string>;
+  /** Terrain of any cell (own, halo, pinned), reading `work` first. */
+  terrainAt: (key: string) => string | undefined;
+  typeOf: (terrain: string) => string | undefined;
+  /** The region's own biome (its landShare / minIslands, and its land types and names). */
+  profile: BiomeProfile;
+  /** The region biome's share of the field at a cell (islands go where it is strongest). */
+  influence: (x: number, y: number) => number;
+  rng: () => number;
+}
+
+/**
+ * Islands for watery biomes (BiomeInfo.landShare / minIslands). Smoothing
+ * pulls every cell toward the majority type, so scattered land in a mostly
+ * water biome would vanish; this runs after it.
+ *
+ * Land is any typed terrain whose type isn't in WATER_TYPES. Islands that
+ * already lie wholly inside the region count (a coast running in from a
+ * neighbour doesn't). New islands are grown from cells where the biome is
+ * strongest, a cell apart from other land, until the region has
+ * `minIslands` islands and `landShare` of its cells are land. Each island
+ * is one of the biome's land types (by its shares) and gets a ring of each
+ * SHORE_TYPES type the biome has. Islands stay small (each covers at most a
+ * quarter of the region split between `minIslands`, its beach included,
+ * though never less than one core hex), and a region too small for `minIslands`
+ * still gets as many as fit, at least one when it has any free cell.
+ */
+export function placeIslands(input: IslandInput): void {
+  const { layout, work, terrainAt, typeOf, profile, rng } = input;
+  const minIslands = Math.max(0, Math.floor(profile.minIslands ?? 0));
+  const landShare = Math.min(1, Math.max(0, profile.landShare ?? 0));
+  if (!minIslands && !landShare) return;
+  const water = new Set(WATER_TYPES);
+  const cores = new Map([...profile.types].filter(([t, s]) => s > 0 && !water.has(t) && !SHORE_TYPES.includes(t) && t !== "settlement"));
+  if (!cores.size) return;
+  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const ownList = [...own].sort();
+  const n = own.size;
+  if (!n) return;
+  const nbrs = (k: string): string[] => {
+    const [x, y] = k.split("_").map(Number);
+    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
+  };
+  const isLand = (k: string) => {
+    const t = terrainAt(k);
+    const ty = t ? typeOf(t) : undefined;
+    return ty !== undefined && !water.has(ty);
+  };
+  const nameOf = (type: string): string | undefined => {
+    const names = profile.names.get(type);
+    return names?.size ? pick(names, rng()) : undefined;
+  };
+
+  // Islands already wholly inside the region, and the land there.
+  let have = 0;
+  const seen = new Set<string>();
+  for (const k of ownList) {
+    if (seen.has(k) || !isLand(k)) continue;
+    let inside = true;
+    const stack = [k];
+    seen.add(k);
+    while (stack.length) {
+      const c = stack.pop()!;
+      for (const m of nbrs(c)) {
+        if (!isLand(m)) continue;
+        if (!own.has(m)) { inside = false; continue; }
+        if (!seen.has(m)) { seen.add(m); stack.push(m); }
+      }
+    }
+    if (inside) have++;
+  }
+  const landCount = () => ownList.filter(isLand).length;
+  const landTarget = Math.round(landShare * n);
+
+  const maxSize = Math.max(1, Math.floor(n / (4 * Math.max(1, minIslands))));
+  // Shore rings that are land (a beach) count toward an island's size: the
+  // leading SHORE_TYPES the biome has, up to the first water one.
+  let landRings = 0;
+  for (const shore of SHORE_TYPES) {
+    if (!profile.names.get(shore)?.size) continue;
+    if (water.has(shore)) break;
+    landRings++;
+  }
+  const taken = new Set<string>();
+  const free = (k: string) => own.has(k) && !taken.has(k) && !isLand(k);
+  /** Land an island will cover once its land shore rings are on (own cells only). */
+  const footprint = (island: Set<string>): number => {
+    const all = new Set(island);
+    let ring = [...island];
+    for (let i = 0; i < landRings; i++) {
+      ring = [...new Set(ring.flatMap(nbrs))].filter((k) => free(k) && !all.has(k));
+      for (const k of ring) all.add(k);
+    }
+    return all.size;
+  };
+  for (let guard = 0; guard < n && (have < minIslands || landCount() < landTarget); guard++) {
+    // Seed: a free cell with no land next to it, best where the biome is strongest and away from the edge.
+    let start: string | undefined, best = -1;
+    for (const k of ownList) {
+      if (!free(k)) continue;
+      const around = nbrs(k);
+      if (around.some(isLand)) continue;
+      const [x, y] = k.split("_").map(Number);
+      const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : 0.3) * (0.5 + rng());
+      if (score > best) { best = score; start = k; }
+    }
+    if (!start) break;
+    const remaining = landTarget - landCount();
+    const toAdd = Math.max(1, minIslands - have);
+    const want = remaining > 0 ? (remaining / toAdd) * (0.7 + 0.6 * rng()) : 2 + rng() * 2;
+    const size = Math.max(1, Math.min(maxSize, Math.round(want)));
+    const type = pick(cores, rng())!;
+    const island = new Set<string>();
+    const add = (k: string) => {
+      work.set(k, nameOf(type)!);
+      island.add(k);
+      taken.add(k);
+    };
+    add(start);
+    while (footprint(island) < size) {
+      // Grow onto a free cell that touches no land but this island.
+      const options = [...new Set([...island].flatMap(nbrs))].filter((k) => free(k) && nbrs(k).every((m) => island.has(m) || !isLand(m))).sort();
+      if (!options.length) break;
+      add(options[Math.floor(rng() * options.length)]);
+    }
+    // Shore rings, inner first, for the shore types the biome has.
+    let ring = [...island];
+    for (const shore of SHORE_TYPES) {
+      if (!profile.names.get(shore)?.size) continue;
+      const next = [...new Set(ring.flatMap(nbrs))].filter(free).sort();
+      for (const k of next) {
+        work.set(k, nameOf(shore)!);
+        taken.add(k);
+      }
+      ring = next;
+    }
+    have++;
+  }
+}
 
 /** Spiral order from a centre hex: the order regions are generated in (each pins the earlier ones). */
 export function spiralOrder(hexes: [number, number][], centre: [number, number], distance: (a: [number, number], b: [number, number]) => number): [number, number][] {

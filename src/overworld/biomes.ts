@@ -30,7 +30,26 @@ export interface BiomeInfo {
   zone: "sea" | "low" | "high" | "peak";
   /** Rare biomes: at most one per ~20 overworld hexes. */
   rare?: boolean;
+  /**
+   * Watery biomes: the share of land (0..1) a region of this biome gets as
+   * islands, counting land already there (regionGen placeIslands).
+   * Unset: no land is added beyond `minIslands`.
+   */
+  landShare?: number;
+  /** Fewest islands (separate land patches inside the region) a region of this biome gets. */
+  minIslands?: number;
 }
+
+/**
+ * Terrain types that are water, for islands (landShare / minIslands): every
+ * other type is land, except settlements. Types only, never names.
+ */
+export const WATER_TYPES: readonly string[] = ["water", "deep-water", "shallows"];
+/**
+ * Rings round a placed island, inner first: a ring is painted only when the
+ * biome's generator has that type on the palette.
+ */
+export const SHORE_TYPES: readonly string[] = ["coast", "shallows"];
 
 export const BIOMES: BiomeInfo[] = [
   { id: "tundra", label: "Tundra", slug: "biome-tundra", temp: 0.08, moist: 0.4, zone: "low" },
@@ -48,7 +67,7 @@ export const BIOMES: BiomeInfo[] = [
   { id: "alpine", label: "Alpine", slug: "biome-alpine", temp: 0.2, moist: 0.5, zone: "peak" },
   { id: "volcanic", label: "Volcanic", slug: "preset-volcanic", temp: 0.7, moist: 0.3, zone: "peak", rare: true },
   { id: "coastal-fjord", label: "Coastal fjord", slug: "biome-coastal-fjord", temp: 0.2, moist: 0.7, zone: "low" },
-  { id: "archipelago", label: "Archipelago", slug: "preset-archipelago", temp: 0.6, moist: 0.7, zone: "sea" },
+  { id: "archipelago", label: "Archipelago", slug: "preset-archipelago", temp: 0.6, moist: 0.7, zone: "sea", landShare: 0.25, minIslands: 2 },
   { id: OPEN_SEA, label: "Open sea", temp: 0.5, moist: 1, zone: "sea" },
 ];
 
@@ -240,6 +259,9 @@ export interface BiomeProfile {
   id: BiomeId;
   types: Map<string, number>;
   names: Map<string, Map<string, number>>;
+  /** BiomeInfo.landShare / minIslands, carried for region generation. */
+  landShare?: number;
+  minIslands?: number;
 }
 
 /** Open sea has no shipped generator: deep water with a rim of ocean. */
@@ -297,6 +319,8 @@ export function biomeProfiles(models: Map<string, HexWfcModel | undefined>, pale
     const terrains = b.id === OPEN_SEA ? OPEN_SEA_TERRAINS : b.slug ? models.get(b.slug)?.terrains : undefined;
     if (!terrains) continue;
     const p = profileFromWeights(b.id, terrains, palette);
+    if (b.landShare !== undefined) p.landShare = b.landShare;
+    if (b.minIslands !== undefined) p.minIslands = b.minIslands;
     if (p.types.size) out.set(b.id, p);
   }
   return out;
