@@ -20,17 +20,53 @@ export function paletteHint(name: string): string {
 
 const hintUpdaters = new WeakMap<HTMLSelectElement, () => void>();
 
+/** A palette's (or preset's) terrains by name; the plugin sets it on load. */
+let terrainSource: ((paletteName: string) => readonly { name: string; color: string }[]) | null = null;
+
+/** Where palette previews read a palette's terrains (HexmakerPlugin.onload). */
+export function setPaletteTerrainSource(fn: typeof terrainSource): void {
+  terrainSource = fn;
+}
+
+/**
+ * The swatches a palette preview shows (E4): each terrain once, in palette
+ * order, with its colour; a terrain without a colour shows grey.
+ */
+export function paletteSwatchList(terrains: readonly { name: string; color?: string }[]): { name: string; color: string }[] {
+  const seen = new Set<string>();
+  const out: { name: string; color: string }[] = [];
+  for (const t of terrains) {
+    const key = t.name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name: t.name.trim(), color: /^#[0-9a-f]{3,8}$/i.test(t.color ?? "") ? t.color! : "#888888" });
+  }
+  return out;
+}
+
 /**
  * Add a muted line to `parent` that says what the palette picked in
- * `select` is for (Limited / Expanded); empty for other palettes. Follows
- * the select's changes, and refills by fillPaletteSelect.
+ * `select` is for (Limited / Expanded; empty for other palettes), and a
+ * compact grid of its terrains' colours, named on hover (E4). Follows the
+ * select's changes, and refills by fillPaletteSelect.
  */
 export function attachPaletteHint(parent: HTMLElement, select: HTMLSelectElement): void {
   const hint = parent.createDiv({ cls: "setting-item-description duckmage-palette-hint" });
+  const preview = parent.createDiv({ cls: "duckmage-palette-preview" });
   const update = () => {
     const text = paletteHint(select.value);
     hint.setText(text);
     hint.toggle(!!text);
+    const swatches = paletteSwatchList(terrainSource?.(select.value) ?? []);
+    preview.empty();
+    preview.toggle(swatches.length > 0);
+    if (!swatches.length) return;
+    preview.createSpan({ cls: "duckmage-palette-preview-count", text: `${swatches.length} terrain${swatches.length === 1 ? "" : "s"}` });
+    const grid = preview.createDiv({ cls: "duckmage-palette-swatches" });
+    for (const s of swatches) {
+      const sw = grid.createSpan({ cls: "duckmage-palette-swatch", attr: { title: s.name, "aria-label": s.name } });
+      sw.setCssProps({ "--duckmage-swatch": s.color });
+    }
   };
   hintUpdaters.set(select, update);
   select.addEventListener("change", update);

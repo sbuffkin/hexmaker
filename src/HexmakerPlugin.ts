@@ -42,7 +42,7 @@ import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, isSpacePalette, newTerrains, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type SectionWordsFn } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
-import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
+import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
 import {
@@ -152,6 +152,8 @@ export default class HexmakerPlugin extends Plugin {
     this.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
     // Icon pickers open on the Space tab for space-only setups.
     setIconPackDefault(() => defaultIconPack(this.settings));
+    // Palette pickers preview the picked palette's terrains (E4).
+    setPaletteTerrainSource((name) => this.getPaletteOrPresetTerrains(name));
     setHexDataSource(this.mapStore);
     setPathEditMapLookup((name) => this.getMap(name));
     setModeMapLookup((name) => this.getMap(name));
