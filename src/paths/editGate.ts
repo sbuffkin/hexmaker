@@ -5,10 +5,11 @@
  * keep-the-route pins when terrain, the palette, the map's size or a type's
  * routing changes (routePins.ts), and "Reroute instead".
  *
- * Today it always allows. It is the one place a per-map mode (Play / Build /
- * God, being added on fix/ow-playtest) will answer "is this allowed in this
- * map's mode?": drawing and reshaping paths count as Build. Whether pins
- * over regenerated terrain are allowed outside Build is still undecided.
+ * Today it always allows. It is the one place the per-map work mode
+ * (src/workMode.ts: Play / Build / God, `workModeOf(map)`) will answer "is
+ * this allowed in this map's mode?": drawing and reshaping paths count as
+ * Build. Whether pins over regenerated terrain are allowed outside Build is
+ * still undecided.
  * Pure, no Obsidian imports.
  */
 

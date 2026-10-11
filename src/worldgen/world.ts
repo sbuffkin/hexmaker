@@ -35,7 +35,17 @@ export interface RegionLike {
   gridOffset: { x: number; y: number };
   staggerOffset?: "odd" | "even";
   world?: WorldSlot;
+  /** "region": a Region map of an overworld. Its gridOffset is its place in
+   *  the regions' shared grid, so the map holding a cell is found by
+   *  containment, not slot arithmetic (src/overworld/regionWorld.ts). */
+  submapKind?: string;
 }
+
+/** A Region map placed in its overworld's shared grid. */
+export const isRegionWorldMap = (m: RegionLike): boolean => m.submapKind === "region" && !!m.world;
+
+const contains = (m: RegionLike, x: number, y: number): boolean =>
+  x >= m.gridOffset.x && x < m.gridOffset.x + m.gridSize.cols && y >= m.gridOffset.y && y < m.gridOffset.y + m.gridSize.rows;
 
 export type Orientation = "flat" | "pointy";
 export type Stagger = "odd" | "even";
@@ -85,8 +95,12 @@ export function neighbours<T extends RegionLike>(maps: T[], m: RegionLike): Part
  */
 export function resolveHex<T extends RegionLike>(maps: T[], m: T, x: number, y: number): { map: T; x: number; y: number } | null {
   const { cols, rows } = m.gridSize;
-  const inside = x >= m.gridOffset.x && x < m.gridOffset.x + cols && y >= m.gridOffset.y && y < m.gridOffset.y + rows;
-  if (inside) return { map: m, x, y };
+  if (contains(m, x, y)) return { map: m, x, y };
+  // Regions share one grid: the cell is whichever sibling's block holds it.
+  if (isRegionWorldMap(m)) {
+    const other = maps.find((o) => o.name !== m.name && o.world?.id === m.world!.id && isRegionWorldMap(o) && contains(o, x, y));
+    return other ? { map: other, x, y } : null;
+  }
   const w = toWorld(m, x, y);
   if (!w || !m.world) return null;
   const cx = floorDiv(w.wx, cols), cy = floorDiv(w.wy, rows);
@@ -151,6 +165,8 @@ export type LinkResult = { ok: true; changes: Map<string, WorldSlot> } | { ok: f
 export function link(maps: RegionLike[], aName: string, side: Side, bName: string, rules: GridRules, makeId = newWorldId): LinkResult {
   const a = maps.find((m) => m.name === aName), b = maps.find((m) => m.name === bName);
   if (!a || !b) return { ok: false, reason: "Map not found" };
+  const region = [a, b].find((m) => m.submapKind === "region");
+  if (region) return { ok: false, reason: `"${region.name}" is a region of an overworld: it already joins the regions next to it` };
   if (a.name === b.name) return { ok: false, reason: "A region can't neighbour itself" };
   const changes = new Map<string, WorldSlot>();
   const aSlot: WorldSlot = a.world ?? { id: makeId(), cx: 0, cy: 0 };

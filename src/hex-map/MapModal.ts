@@ -23,6 +23,9 @@ import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, withFeature } from "../advancedHints";
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
+import { GenerateRegionsModal } from "./OverworldModals";
+import { meshes } from "../overworld/regionWorld";
+import { missingRegionHexes } from "../overworld/regionsVault";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
@@ -89,6 +92,13 @@ export class MapModal extends HexmakerModal {
       if (tab === "Properties") {
         tabBar.createEl("button", { text: "New map…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn" })
           .addEventListener("click", () => this.openNewMap());
+        if (hasFeature(this.plugin.settings, "regions")) {
+          tabBar.createEl("button", { text: "New overworld…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn", attr: { title: "A map of biomes whose hexes open into regions that join up" } })
+            .addEventListener("click", () => {
+              this.close();
+              this.plugin.openNewOverworld();
+            });
+        }
       }
       btn.addEventListener("click", () => {
         this.activeTab = tab;
@@ -139,6 +149,19 @@ export class MapModal extends HexmakerModal {
       locked,
       onChange: (s) => void this.plugin.setRegionSettings(map.name, s),
     });
+    if (meshes(map.regions)) {
+      const missing = missingRegionHexes(this.plugin, map.name).length;
+      const row = el.createDiv({ cls: "duckmage-region-row" });
+      const btn = row.createEl("button", { text: missing ? `Make the missing regions (${missing})…` : "Every painted hex has a region" });
+      btn.disabled = !missing;
+      row.createSpan({ cls: "duckmage-map-origin-desc", text: "One region per painted hex, each blending with its neighbours." });
+      btn.addEventListener("click", () => {
+        new GenerateRegionsModal(this.app, this.plugin, map.name, () => {
+          this.render();
+          this.onChanged();
+        }).open();
+      });
+    }
     if (!regions.length) return;
     el.createEl("h4", { text: `Regions (${regions.length})` });
     const list = el.createEl("ul", { cls: "duckmage-region-list" });
@@ -379,10 +402,15 @@ export class MapModal extends HexmakerModal {
     propStaggerBtn.setText(propStaggerVal === "odd" ? "Odd" : "Even");
     propStaggerBtn.toggleClass("is-even", propStaggerVal === "even");
     // A map with neighbours can't flip its stagger: its seams would stop lining up.
-    const hasNeighbours = !!currentMap && Object.keys(regionNeighbours(this.plugin, currentMap.name)).length > 0;
+    // Same for an overworld with regions (each region's slot depends on it) and a region itself.
+    const ownsRegions = !!currentMap && (regionsOf(this.plugin.settings.maps, currentMap.name).length > 0 || currentMap.submapKind === "region");
+    const hasNeighbours = ownsRegions || (!!currentMap && Object.keys(regionNeighbours(this.plugin, currentMap.name)).length > 0);
     if (hasNeighbours) {
       propStaggerBtn.disabled = true;
-      staggerRow.createSpan({ text: "Fixed while this map has neighbouring regions (it has to line up with them).", cls: "duckmage-map-origin-desc" });
+      staggerRow.createSpan({
+        text: ownsRegions ? "Fixed while this map has regions or is one (they have to line up)." : "Fixed while this map has neighbouring regions (it has to line up with them).",
+        cls: "duckmage-map-origin-desc",
+      });
     }
     propStaggerBtn.addEventListener("click", () => {
       if (!currentMap || hasNeighbours) return;
@@ -585,6 +613,15 @@ export class MapModal extends HexmakerModal {
    * lining up, slot free) are offered; an empty side can get a new region.
    */
   private renderNeighbourBlock(el: HTMLElement, map: MapData): void {
+    // A region of an overworld joins the regions next to it by itself.
+    if (map.submapKind === "region" && map.world) {
+      el.createEl("h4", { text: "Neighbouring regions" });
+      el.createEl("p", {
+        cls: "duckmage-map-origin-desc",
+        text: "This is a region of an overworld: it joins the regions of the hexes around it by itself. Their names are in the bar above the map.",
+      });
+      return;
+    }
     // An Advanced feature; a map that's already linked keeps showing its links.
     if (!hasFeature(this.plugin.settings, "regions") && !map.world) {
       renderAdvancedHint(el, this.plugin, "regions", "map-properties",

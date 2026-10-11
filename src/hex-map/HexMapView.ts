@@ -33,6 +33,8 @@ import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathSummary } from "./pathTool";
+import { flowerPetals, MapHistory, navArrows, PAD_SIDES } from "../maps/mapNav";
+import { WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
@@ -72,7 +74,13 @@ import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { LocationsModal } from "./LocationsModal";
 import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
-import { hexChildMaps, submapMenuPlan } from "../maps/submaps";
+import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
+import { OverworldLayer } from "./overworldLayer";
+import { OverworldMinimap } from "./overworldMinimap";
+import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
+import { regionHome } from "../overworld/regionsVault";
+import { overworldRefreshFor } from "../overworld/overworldChanges";
+import { parentOf as parentOfCell } from "../overworld/layout";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { neighbourShadow } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
@@ -117,6 +125,14 @@ type RegionUndoEntry = {
   oldRegion: string | null;
   newRegion: string | null;
 };
+/** A sub-hex painted in an overworld's full view: a hex of a region map. */
+type SubHexUndoEntry = {
+  map: string;
+  key: string;
+  oldTerrain: string | null;
+  oldLocked: boolean;
+  newTerrain: string | null;
+};
 interface CalibrateSnapshot {
   bg?: { offsetX: number; offsetY: number; scale: number; rotation: number; opacity: number };
   grid: { scaleX: number; scaleY: number; offsetX: number; offsetY: number; legacyScale: number };
@@ -128,6 +144,7 @@ type UndoItem =
   | { kind: "icon"; entries: IconUndoEntry[] }
   | { kind: "faction"; entries: FactionUndoEntry[] }
   | { kind: "region"; entries: RegionUndoEntry[] }
+  | { kind: "subhex"; entries: SubHexUndoEntry[] }
   | { kind: "swap"; x1: number; y1: number; x2: number; y2: number }
   | {
       kind: "path";
@@ -352,6 +369,11 @@ export class HexMapView extends ItemView {
   private currentIconStroke: Map<string, IconUndoEntry> | null = null;
   private currentFactionStroke: Map<string, FactionUndoEntry> | null = null;
   private currentRegionStroke: Map<string, RegionUndoEntry> | null = null;
+  private currentSubStroke: Map<string, SubHexUndoEntry> | null = null;
+  /** Overworlds (OW1): every region's hexes stitched on one canvas, and the minimap. */
+  private overworldLayer!: OverworldLayer;
+  private minimap!: OverworldMinimap;
+  private minimapTimer: number | null = null;
   private undoBtn: HTMLButtonElement | null = null;
   private redoBtn: HTMLButtonElement | null = null;
   activeMapName = "default";
@@ -363,10 +385,13 @@ export class HexMapView extends ItemView {
   /** Set when another view/window mutated shared state while this view was
    *  inactive; consumed by a re-render on next activation (issue #32). */
   private needsRerender = false;
-  private mapHistory: string[] = [];
+  /** Back / Forward between maps, like a browser. */
+  private history = new MapHistory();
   private mapBtn: HTMLButtonElement | null = null;
-  private backBtn: HTMLButtonElement | null = null;
-  private upBtn: HTMLButtonElement | null = null;
+  /** ← ↑ →: always in that order, glyphs only (see mapNav.ts). */
+  private navArrowsEl: HTMLElement | null = null;
+  /** The map's work mode (Play / Build / God), always shown. */
+  private workModeBtn: HTMLButtonElement | null = null;
   private crumbsEl: HTMLElement | null = null;
   /** Sideways crumbs: the neighbouring regions of the open map. */
   private sideCrumbsEl: HTMLElement | null = null;
@@ -394,6 +419,18 @@ export class HexMapView extends ItemView {
       refreshBar: () => this.updateModeBar(),
       setGrabCursor: (on) => this.viewportEl?.toggleClass("duckmage-path-grab", on),
     });
+    this.overworldLayer = new OverworldLayer(plugin);
+    this.minimap = new OverworldMinimap(plugin, this);
+  }
+
+  /** Full redraw (the overworld view switch). */
+  redraw(): void {
+    this.renderGrid();
+  }
+
+  /** Timings of the overworld region layer's last draw (dev tools, bench). */
+  overworldStats(): { ms: number; builds: number; regions: number; cells: number } {
+    return { ...this.overworldLayer.lastStats };
   }
 
   getViewType(): string {
@@ -516,23 +553,34 @@ export class HexMapView extends ItemView {
     this.undoStack = [];
     this.redoStack = [];
     this.updateUndoButton();
-    if (opts.recordHistory !== false) {
-      this.mapHistory.push(this.activeMapName);
-      if (this.mapHistory.length > 50) this.mapHistory.shift();
-    }
+    if (opts.recordHistory !== false) this.history.visit(this.activeMapName);
     this.switchToMap(name);
   }
 
   /** Back to the previously viewed map (skips maps deleted since). */
   navigateBack(): boolean {
-    while (this.mapHistory.length > 0) {
-      const prev = this.mapHistory.pop()!;
-      if (!this.plugin.getMap(prev) || prev === this.activeMapName) continue;
-      this.navigateToMap(prev, { recordHistory: false });
-      return true;
+    const prev = this.history.goBack(this.activeMapName, (m) => !!this.plugin.getMap(m));
+    if (!prev) {
+      this.refreshMapNav();
+      return false;
     }
-    this.refreshMapNav();
-    return false;
+    this.navigateToMap(prev, { recordHistory: false });
+    return true;
+  }
+
+  /** Forward again after Back. */
+  navigateForward(): boolean {
+    const next = this.history.goForward(this.activeMapName, (m) => !!this.plugin.getMap(m));
+    if (!next) {
+      this.refreshMapNav();
+      return false;
+    }
+    this.navigateToMap(next, { recordHistory: false });
+    return true;
+  }
+
+  canNavigateForward(): boolean {
+    return this.history.peekForward(this.activeMapName, (m) => !!this.plugin.getMap(m)) !== undefined;
   }
 
   /** Up to the map this one is a submap of, flashing the hex we came from. */
@@ -611,11 +659,7 @@ export class HexMapView extends ItemView {
 
   /** The map Back would go to (skips maps deleted since and the current one). */
   private previousMapName(): string | undefined {
-    for (let i = this.mapHistory.length - 1; i >= 0; i--) {
-      const m = this.mapHistory[i];
-      if (m !== this.activeMapName && this.plugin.getMap(m)) return m;
-    }
-    return undefined;
+    return this.history.peekBack(this.activeMapName, (m) => !!this.plugin.getMap(m));
   }
 
   canNavigateUp(): boolean {
@@ -650,35 +694,10 @@ export class HexMapView extends ItemView {
     this.applyTransform();
   }
 
-  /** Breadcrumb (ancestors), Up and Back buttons for the active map. */
+  /** Breadcrumb (ancestors), the ← ↑ → arrows and the neighbour widget for the active map. */
   private refreshMapNav(): void {
-    // Both buttons name the map they go to (fresh-eyes T4: "↑ up" vs
-    // "← back" wasn't self-explanatory): Parent = the map this one is a
-    // submap of; Previous = the map viewed before this one (like a browser).
-    const prev = this.previousMapName();
-    if (this.backBtn) {
-      if (prev) {
-        this.backBtn.show();
-        const label = `Back to the previous map: ${this.plugin.mapLabel(prev)} (Alt+←)`;
-        this.backBtn.title = label;
-        this.backBtn.setAttr("aria-label", label);
-      } else {
-        this.backBtn.hide();
-      }
-    }
-
-    const parent = this.plugin.parentOf(this.activeMapName);
-    if (this.upBtn) {
-      if (parent) {
-        this.upBtn.show();
-        const label = `Up to the parent map: ${this.plugin.mapLabel(parent.map)}, hex ${hexKeyCoords(parent.hex)} (Alt+↑)`;
-        this.upBtn.title = label;
-        this.upBtn.setAttr("aria-label", label);
-      } else {
-        this.upBtn.hide();
-      }
-    }
-
+    this.refreshNavArrows();
+    this.refreshWorkModeBtn();
     this.refreshSideCrumbs();
     const crumbs = this.crumbsEl;
     if (!crumbs) return;
@@ -697,35 +716,149 @@ export class HexMapView extends ItemView {
     crumbs.toggle(ancestors.length > 0);
   }
 
-  /** Sideways crumbs (X3): the regions next to the open map, one click away. */
+  /**
+   * ← back, ↑ parent, → forward: glyphs only, always in that order. When
+   * any applies all three show (the others disabled) so they never shift;
+   * the target map is in the tooltip.
+   */
+  private refreshNavArrows(): void {
+    const el = this.navArrowsEl;
+    if (!el) return;
+    el.empty();
+    const parent = this.plugin.parentOf(this.activeMapName);
+    const arrows = navArrows({
+      back: this.previousMapName(),
+      up: parent?.map,
+      forward: this.history.peekForward(this.activeMapName, (m) => !!this.plugin.getMap(m)),
+    });
+    el.toggle(arrows.length > 0);
+    for (const a of arrows) {
+      const label = !a.target
+        ? { back: "Back (no previous map)", up: "Up (no parent map)", forward: "Forward (nothing to go forward to)" }[a.id]
+        : a.id === "back" ? `Back to ${this.plugin.mapLabel(a.target)} (Alt+←)`
+        : a.id === "up" ? `Up to ${this.plugin.mapLabel(a.target)}, hex ${hexKeyCoords(parent!.hex)} (Alt+↑)`
+        : `Forward to ${this.plugin.mapLabel(a.target)} (Alt+→)`;
+      const btn = el.createEl("button", {
+        cls: `duckmage-map-nav-arrow duckmage-map-${a.id}-btn`,
+        text: a.glyph,
+        attr: { title: label, "aria-label": label, "data-nav": a.id },
+      });
+      btn.disabled = !a.target;
+      btn.addEventListener("click", () => {
+        if (a.id === "back") this.navigateBack();
+        else if (a.id === "up") this.navigateUp();
+        else this.navigateForward();
+      });
+    }
+  }
+
+  /** The work-mode switch: names the map's mode; click to pick another. */
+  private refreshWorkModeBtn(): void {
+    const btn = this.workModeBtn;
+    if (!btn) return;
+    const mode = workModeOf(this.plugin.getMap(this.activeMapName));
+    const text = WORK_MODE_TEXT[mode];
+    btn.setText(text.label);
+    btn.removeClass("is-play", "is-build", "is-god");
+    btn.addClass(`is-${mode}`);
+    const tip = `Mode: ${text.label}. ${text.desc} Click to change.`;
+    btn.setAttr("title", tip);
+    btn.setAttr("aria-label", tip);
+  }
+
+  private openWorkModeMenu(e: MouseEvent): void {
+    const map = this.plugin.getMap(this.activeMapName);
+    if (!map) return;
+    const cur = workModeOf(map);
+    const menu = new Menu();
+    for (const m of WORK_MODES) {
+      menu.addItem((item) =>
+        item
+          .setTitle(`${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`)
+          .setChecked(m === cur)
+          .onClick(() => this.setWorkMode(m)),
+      );
+    }
+    menu.showAtMouseEvent(e);
+  }
+
+  /** Switch the open map's work mode (saved in its map note as `mode:`). */
+  setWorkMode(mode: WorkMode): void {
+    const map = this.plugin.getMap(this.activeMapName);
+    if (!map || workModeOf(map) === mode) return;
+    map.workMode = mode;
+    void this.plugin.saveSettings();
+    this.refreshWorkModeBtn();
+  }
+
+  /**
+   * The neighbours of the open map, one click away, always in the same
+   * places: a hex flower for a region of an overworld (its six neighbouring
+   * regions, empty petals where there's none yet), a d-pad for maps on a
+   * world grid. Names are in the tooltips, not on the bar.
+   */
   private refreshSideCrumbs(): void {
     const el = this.sideCrumbsEl;
     if (!el) return;
     el.empty();
     const maps = this.plugin.settings.maps;
+    const home = regionHome(this.plugin, this.activeMapName);
+    if (home) {
+      const petals = flowerPetals(home.layout.orientation, home.layout.parentStagger, home.px, home.py);
+      const palette = this.plugin.getMapPalette(home.overworld.name);
+      const flower = el.createDiv({ cls: "duckmage-region-flower", attr: { role: "group", "aria-label": "Neighbouring regions" } });
+      const R = 12; // px from the middle to a petal's centre
+      const here = flower.createSpan({ cls: "duckmage-region-flower-petal is-here", attr: { title: `Here: ${this.plugin.mapLabel(this.activeMapName)}` } });
+      here.setCssProps({ "--duckmage-petal-x": "0px", "--duckmage-petal-y": "0px" });
+      for (const p of petals) {
+        const key = `${p.hex[0]}_${p.hex[1]}`;
+        const region = regionMapAt(maps, home.overworld.name, key);
+        const terrain = this.plugin.mapStore.get(home.overworld.name, key)?.terrain;
+        const colour = terrain ? palette.find((t) => t.name === terrain)?.color : undefined;
+        const word = p.bearing[0].toUpperCase() + p.bearing.slice(1);
+        const title = region ? `${word}: ${this.plugin.mapLabel(region.name)}` : `${word}: no region yet`;
+        const petal = flower.createEl("button", {
+          cls: "duckmage-region-flower-petal" + (region ? "" : " is-empty"),
+          attr: { title, "aria-label": title, "data-side": p.bearing },
+        });
+        petal.setCssProps({ "--duckmage-petal-x": `${(p.dx * R).toFixed(1)}px`, "--duckmage-petal-y": `${(p.dy * R).toFixed(1)}px` });
+        if (colour && region) petal.setCssProps({ "--duckmage-petal-bg": colour });
+        if (region) petal.addEventListener("click", () => this.navigateToMap(region.name));
+        else petal.disabled = true;
+      }
+      el.show();
+      return;
+    }
     let side = neighbourCrumbs(this.plugin.getMap(this.activeMapName), maps);
     let via: string | null = null;
     if (side.length === 0) {
-      // A submap: offer its parent's neighbours too ("beside Thornwood: South: Cole's Ford").
+      // A submap: its parent's neighbours (round 6: one click, not two).
       const up = ancestorNeighbourCrumbs(this.activeMapName, maps, (m) => this.plugin.parentOf(m)?.map);
       if (up) {
         via = up.via;
         side = up.crumbs;
-        el.createSpan({ cls: "duckmage-map-side-via", text: `beside ${this.plugin.mapLabel(via)}:` });
       }
     }
-    for (const c of side) {
-      const title = via
-        ? `Neighbouring region to the ${c.side} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}`
-        : `Neighbouring region to the ${c.side}: ${this.plugin.mapLabel(c.name)}`;
-      const crumb = el.createEl("button", {
-        cls: "duckmage-map-crumb duckmage-map-side-crumb",
-        text: c.text,
-        attr: { title, "aria-label": title, "data-side": c.side },
-      });
-      crumb.addEventListener("click", () => this.navigateToMap(c.name));
+    if (!side.length) {
+      el.hide();
+      return;
     }
-    el.toggle(side.length > 0);
+    const pad = el.createDiv({ cls: "duckmage-map-pad", attr: { role: "group", "aria-label": "Neighbouring maps" } });
+    for (const { side: s, glyph } of PAD_SIDES) {
+      const c = side.find((x) => x.side === s);
+      const word = s[0].toUpperCase() + s.slice(1);
+      const title = !c ? `${word}: nothing there`
+        : via ? `${word} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}`
+        : `${word}: ${this.plugin.mapLabel(c.name)}`;
+      const btn = pad.createEl("button", {
+        cls: `duckmage-map-pad-btn is-${s}`,
+        text: glyph,
+        attr: { title, "aria-label": title, "data-side": s },
+      });
+      if (c) btn.addEventListener("click", () => this.navigateToMap(c.name));
+      else btn.disabled = true;
+    }
+    el.show();
   }
 
   public switchMapFromModal(name: string): void {
@@ -775,6 +908,11 @@ export class HexMapView extends ItemView {
     });
     this.scope.register(["Alt"], "ArrowLeft", (e: KeyboardEvent) => {
       if (!this.navigateBack()) return;
+      e.preventDefault();
+      return false;
+    });
+    this.scope.register(["Alt"], "ArrowRight", (e: KeyboardEvent) => {
+      if (!this.navigateForward()) return;
       e.preventDefault();
       return false;
     });
@@ -865,7 +1003,8 @@ export class HexMapView extends ItemView {
     // current terrain (painting doesn't re-render the grid).
     this.registerDomEvent(clipEl, "mouseover", (e: MouseEvent) => {
       const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
-      if (hexEl) this.labelHex(hexEl);
+      // Regions view: the grid's own tooltip names the region under the pointer.
+      if (hexEl && !hexEl.closest(".duckmage-ow-regions")) this.labelHex(hexEl);
     });
 
     // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
@@ -950,6 +1089,17 @@ export class HexMapView extends ItemView {
         return;
       }
       if (e.button !== 0) return;
+      // Overworld full view: the terrain tool paints the regions' own hexes.
+      if (this.drawingMode === "terrain" && this.overworldLayer.showsRegions(this.getActiveMap())) {
+        isTerrainPainting = true;
+        lastPaintedKey = null;
+        this.currentTerrainStroke = new Map();
+        this.currentSubStroke = new Map();
+        lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
+        hasDragged = true;
+        beginDrag();
+        return;
+      }
       if (this.drawingMode === "terrain" || this.drawingMode === "icon" || this.drawingMode === "factionLink" || this.drawingMode === "regionLink") {
         isTerrainPainting = true;
         lastPaintedKey = null;
@@ -1023,6 +1173,11 @@ export class HexMapView extends ItemView {
     // window's document and drags silently die (issue #32).
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
+      if (isTerrainPainting && this.currentSubStroke) {
+        const key = this.subHexKeyAt(e.clientX, e.clientY);
+        if (key && key !== lastPaintedKey) lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
+        return;
+      }
       if (isTerrainPainting) {
         const el = dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null;
         const hexEl = this.hexElAt(el, e.clientX, e.clientY);
@@ -1248,7 +1403,9 @@ export class HexMapView extends ItemView {
       title: "Manage maps",
     });
     this.updateMapBtnLabel();
-    // Neighbouring regions sit right after the map button: "map ▾  ← west  east →".
+    // ← ↑ → right after the map button, then the neighbours (flower / d-pad).
+    this.navArrowsEl = mapNavGroup.createDiv({ cls: "duckmage-map-nav-arrows" });
+    this.navArrowsEl.hide();
     this.sideCrumbsEl = mapNavGroup.createDiv({ cls: "duckmage-map-crumbs duckmage-map-side-crumbs" });
     this.sideCrumbsEl.hide();
     this.mapBtn.addEventListener("click", () =>
@@ -1265,19 +1422,8 @@ export class HexMapView extends ItemView {
       }).open(),
     );
 
-    this.upBtn = mapNavGroup.createEl("button", {
-      cls: "duckmage-map-up-btn",
-      text: "↑ parent map",
-    });
-    this.upBtn.hide();
-    this.upBtn.addEventListener("click", () => this.navigateUp());
-
-    this.backBtn = mapNavGroup.createEl("button", {
-      cls: "duckmage-map-back-btn",
-      text: "← previous map",
-    });
-    this.backBtn.hide();
-    this.backBtn.addEventListener("click", () => this.navigateBack());
+    this.workModeBtn = mapNavGroup.createEl("button", { cls: "duckmage-work-mode-btn" });
+    this.workModeBtn.addEventListener("click", (e) => this.openWorkModeMenu(e));
     this.refreshMapNav();
 
     this.undoBtn = controlsEl.createEl("button", {
@@ -1423,6 +1569,7 @@ export class HexMapView extends ItemView {
     // Terrain painted / generated → the legend lists what the map now uses.
     this.register(
       this.plugin.mapStore.onChange((map) => {
+        this.onOverworldDataChange(map);
         if (map !== this.activeMapName) return;
         this.scheduleTerrainLegend();
         // A name set without a redraw (hex table, code, map note edit) shows up.
@@ -2580,6 +2727,7 @@ export class HexMapView extends ItemView {
       erasing: this.isErasingMode,
       terrainName: this.paintTerrainName,
       terrainPick: this.terrainPickMode,
+      regionHexes: OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "regions",
       iconName: this.paintIconName,
       iconGmOnly: this.paintIconGmOnly,
       pathTypeName: this.pathTool.currentType(),
@@ -3857,9 +4005,32 @@ export class HexMapView extends ItemView {
     // ~600 fewer linear scans per renderGrid.
     const paletteByName = new Map(palette.map((p) => [p.name, p]));
     const isFlat = this.plugin.settings.hexOrientation === "flat";
+    const owView = OverworldLayer.viewOf(this.plugin, region);
     const gridContainer = this.viewportEl.createDiv({
       cls: `duckmage-hex-map-grid${isFlat ? " duckmage-grid-flat" : ""}`,
     });
+    // An overworld's Regions view shows only the regions (and blank bricks
+    // where there's none yet): its own hexes stay as invisible click
+    // targets, and their coordinates, names and badges are hidden (owner
+    // playtest: "just show blank bricks rather than the hex one behind").
+    const regionsView = owView === "regions";
+    if (regionsView) {
+      gridContainer.addClass("duckmage-ow-regions");
+      // The region's name on hover, nothing drawn on the map.
+      let pending = false;
+      gridContainer.addEventListener("mousemove", (e) => {
+        if (pending) return;
+        pending = true;
+        window.requestAnimationFrame(() => {
+          pending = false;
+          const cell = this.overworldLayer.cellAt(gridContainer, e.clientX, e.clientY);
+          const tip = !cell ? ""
+            : cell.region ? `${this.plugin.mapLabel(cell.region)}: click to go there`
+            : `No region yet (hex ${cell.parentHex.replace("_", ", ")}): click to set its biome`;
+          if (gridContainer.title !== tip) gridContainer.title = tip;
+        });
+      });
+    } else if (owView === "biomes") gridContainer.addClass("duckmage-ow-biomes");
 
     // Apply optional independent grid transform (used for bg-image calibration).
     // Custom-property values default to identity in CSS when unset, so we
@@ -3912,6 +4083,14 @@ export class HexMapView extends ItemView {
         attr: { "data-x": String(x), "data-y": String(y) },
       });
       hexEl.tabIndex = -1;
+
+      if (regionsView) {
+        hexEl.addEventListener("click", (e) => {
+          void this.onHexClick(x, y, e);
+        });
+        hexEl.addEventListener("contextmenu", (evt) => this.onHexContextMenu(evt, x, y));
+        return;
+      }
 
       this.setHexColor(hexEl, terrainEntry?.color);
 
@@ -3980,7 +4159,7 @@ export class HexMapView extends ItemView {
         hexEl.addClass("duckmage-hex-has-region-map");
         hexEl.createSpan({
           cls: "duckmage-hex-region-outline",
-          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (Ctrl+click hex to enter)` },
+          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (${owView ? "click to set its biome, Ctrl+click to enter" : "Ctrl+click hex to enter"})` },
         });
       }
       if (locations.length) {
@@ -4087,6 +4266,11 @@ export class HexMapView extends ItemView {
   /** The layers placed from measured hex geometry (see renderGrid). */
   private renderMeasuredLayers(gridContainer: HTMLElement, region: MapData): void {
     this.renderNeighbourShadow(gridContainer, region);
+    this.overworldLayer.render(gridContainer, region);
+    this.minimap.render(this.contentEl, region);
+    // The view switch or a hand-edited `mode:` may have changed what the bars say.
+    this.updateModeBar();
+    this.refreshWorkModeBtn();
     this.renderPathOverlay(gridContainer);
     this.renderRegionOverlay(gridContainer);
     this.renderFactionOverlay(gridContainer);
@@ -4326,6 +4510,21 @@ export class HexMapView extends ItemView {
 
     const menu = new Menu();
 
+    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap())) {
+      menu.addItem((item) =>
+        item
+          .setTitle("Set biome…")
+          .setIcon("trees")
+          .onClick(() => new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open()),
+      );
+      menu.addItem((item) =>
+        item
+          .setTitle("Edit hex…")
+          .setIcon("pencil")
+          .onClick(() => this.openHexEditorModal(x, y)),
+      );
+    }
+
     menu.addItem((item) =>
       item
         .setTitle("Center on this hex")
@@ -4494,6 +4693,20 @@ export class HexMapView extends ItemView {
     }
     if (this.drawingMode === "placeToken") {
       await this.onHexTokenPlaceClick(x, y);
+      return;
+    }
+
+    // Overworlds: the full view jumps into the region at the clicked hex;
+    // the biomes view (or a hex with no region yet) sets the hex's biome.
+    const ow = OverworldLayer.viewOf(this.plugin, this.getActiveMap());
+    if (ow && !e?.ctrlKey && !e?.metaKey) {
+      const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+      const cell = ow === "regions" && e && grid ? this.overworldLayer.cellAt(grid, e.clientX, e.clientY) : null;
+      if (cell?.region) {
+        this.enterRegionAt(cell.region, cell.x, cell.y);
+        return;
+      }
+      new BiomePickerModal(this.biomeHost(), this.activeMapName, x, y).open();
       return;
     }
 
@@ -4981,7 +5194,116 @@ export class HexMapView extends ItemView {
     else hexEl.removeClass("duckmage-hex-exists");
   }
 
+  private commitSubStroke(): void {
+    const stroke = this.currentSubStroke;
+    this.currentSubStroke = null;
+    if (!stroke || stroke.size === 0) return;
+    this.undoStack.push({ kind: "subhex", entries: [...stroke.values()] });
+    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
+    this.redoStack = [];
+    this.updateUndoButton();
+  }
+
+  /** Undo / redo a full-view stroke: each touched region map gets its hexes back. */
+  private applySubStroke(entries: SubHexUndoEntry[], which: "old" | "new"): void {
+    for (const e of entries) {
+      const terrain = which === "old" ? e.oldTerrain : e.newTerrain;
+      const locked = which === "old" ? e.oldLocked : true;
+      this.plugin.mapStore.set(e.map, e.key, { terrain, locked: locked || null });
+    }
+    void this.plugin.mapStore.flush();
+  }
+
+  /** "x_y" of the region hex under a screen point in the full view (null: none). */
+  private subHexKeyAt(clientX: number, clientY: number): string | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
+    return cell?.region ? `${cell.region}|${cell.x}_${cell.y}` : null;
+  }
+
+  /**
+   * Paint the region hex under a screen point (full view): written to that
+   * region's map and locked, so regenerating the region keeps it. A brush
+   * wider than one hex reaches across seams into the next region.
+   */
+  private paintSubHexAt(clientX: number, clientY: number): string | null {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
+    if (!cell?.region) return null;
+    const home = regionHome(this.plugin, cell.region);
+    if (!home) return null;
+    if (this.terrainPickMode && !this.isErasingMode) {
+      this.terrainPickMode = false;
+      this.paintTerrainName = this.plugin.mapStore.get(cell.region, `${cell.x}_${cell.y}`)?.terrain ?? null;
+      this.updateToolbarButtonStates();
+      return null;
+    }
+    const terrain = this.isErasingMode ? null : this.paintTerrainName;
+    const brush: [number, number][] = [[cell.x, cell.y]];
+    if (this.paintBrushSize > 1) {
+      const nb = hexNeighbors(cell.x, cell.y, home.layout.orientation, home.layout.childStagger);
+      brush.push(...(this.paintBrushSize === 3 ? [nb[2], nb[3]] : nb));
+    }
+    const ow = home.overworld.name;
+    for (const [x, y] of brush) {
+      const ph = parentOfCell(home.layout, x, y).join("_");
+      const region = regionMapAt(this.plugin.settings.maps, ow, ph);
+      if (!region) continue;
+      const key = `${x}_${y}`;
+      const cur = this.plugin.mapStore.get(region.name, key);
+      const id = `${region.name}|${key}`;
+      const prev = this.currentSubStroke?.get(id);
+      if (prev) prev.newTerrain = terrain;
+      else this.currentSubStroke?.set(id, { map: region.name, key, oldTerrain: cur?.terrain ?? null, oldLocked: !!cur?.locked, newTerrain: terrain });
+      this.plugin.mapStore.set(region.name, key, { terrain, locked: terrain ? true : null });
+    }
+    return `${cell.region}|${cell.x}_${cell.y}`;
+  }
+
+  /** Enter a region from the overworld, centred on (and flashing) the hex that was clicked. */
+  private enterRegionAt(region: string, x: number, y: number): void {
+    this.navigateToMap(region);
+    window.requestAnimationFrame(() => {
+      this.centerOnHex(x, y);
+      window.requestAnimationFrame(() => this.flashHex(x, y));
+    });
+  }
+
+  /**
+   * A map's hexes changed: rebuild that region's bitmap when it's a region
+   * of the open overworld, redraw the biome marks when it's the open
+   * overworld, refresh the minimap when it's the overworld behind it.
+   */
+  private onOverworldDataChange(map: string): void {
+    const active = this.getActiveMap();
+    const home = regionHome(this.plugin, active.name);
+    const r = overworldRefreshFor(this.plugin.getMap(map) ?? { name: map }, active.name, home?.overworld.name);
+    // Any region, whatever this view shows: its bitmap is cached here too.
+    if (r.invalidate) this.overworldLayer.invalidate(r.invalidate);
+    if (r.redrawLayer) this.overworldLayer.scheduleRedraw();
+    if (r.refreshMinimap) {
+      if (this.minimapTimer !== null) window.clearTimeout(this.minimapTimer);
+      this.minimapTimer = window.setTimeout(() => {
+        this.minimapTimer = null;
+        this.minimap.render(this.contentEl, this.getActiveMap());
+        // The region flower's petals are coloured by the overworld's biomes.
+        this.refreshSideCrumbs();
+      }, 300);
+    }
+  }
+
+  /** What the biome modals need from the view. */
+  private biomeHost(): BiomeHost {
+    return {
+      app: this.app,
+      plugin: this.plugin,
+      enter: (name) => this.navigateToMap(name),
+      changed: () => this.renderGrid(),
+    };
+  }
+
   private commitTerrainStroke(): void {
+    this.commitSubStroke();
     if (!this.currentTerrainStroke || this.currentTerrainStroke.size === 0) {
       this.currentTerrainStroke = null;
       return;
@@ -5056,6 +5378,8 @@ export class HexMapView extends ItemView {
       await this.applyFactionStroke(item.entries, "old");
     } else if (item.kind === "region") {
       await this.applyRegionStroke(item.entries, "old");
+    } else if (item.kind === "subhex") {
+      this.applySubStroke(item.entries, "old");
     } else if (item.kind === "swap") {
       await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
     } else if (item.kind === "calibrate") {
@@ -5082,6 +5406,8 @@ export class HexMapView extends ItemView {
       await this.applyFactionStroke(item.entries, "new");
     } else if (item.kind === "region") {
       await this.applyRegionStroke(item.entries, "new");
+    } else if (item.kind === "subhex") {
+      this.applySubStroke(item.entries, "new");
     } else if (item.kind === "swap") {
       await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
     } else if (item.kind === "calibrate") {

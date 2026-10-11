@@ -1,6 +1,7 @@
 import type { SubmapDefault, TerrainColor } from "../types";
 import { impassableNoteCell, parseImpassableCell } from "../impassable";
 import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
+import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
 
 // Plain-text palette notes.
 //
@@ -9,8 +10,11 @@ import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrain
 //
 //   | Terrain | Color | Icon | Icon color | Category | Type | Impassable |
 //   | --- | --- | --- | --- | --- | --- | --- |
-//   | ocean | #29507f |  |  | sea | water | (yes) |
-//   | crags | #777777 |  |  |  | (mountains) | yes |
+//   | ocean | `#29507f` |  |  | sea | water | (yes) |
+//   | crags | `#777777` |  |  |  | (mountains) | yes |
+//
+// Colours are written as inline code so Obsidian doesn't read `#29507f` as
+// a tag; plain, bare-hex and any-case spellings read too (colorCell.ts).
 //
 // Columns are matched by header name (case-insensitive, any order), so a
 // hand-edited or shared note only needs the Terrain and Color columns. The
@@ -142,9 +146,10 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
       if (col && cells[idx]) row[col] = cells[idx];
     });
     if (!row.name) continue;
-    const entry: TerrainColor = { name: row.name, color: row.color || "#888888" };
+    const entry: TerrainColor = { name: row.name, color: parseColorCell(row.color) || "#888888" };
     if (row.icon) entry.icon = row.icon;
-    if (row.iconColor) entry.iconColor = row.iconColor;
+    const iconColor = parseColorCell(row.iconColor);
+    if (iconColor) entry.iconColor = iconColor;
     if (row.category) entry.category = row.category;
     // A type typed by hand in any case, or as its label, reads as its id;
     // a derived "(mountains)" is unset; anything else is kept as typed (and
@@ -177,7 +182,7 @@ export function serializePaletteTable(
     `| ${headers.map(() => "---").join(" | ")} |`,
   ];
   for (const t of terrains) {
-    const values = [t.name, t.color, t.icon, t.iconColor, t.category, terrainTypeCell(t), impassableNoteCell(t)];
+    const values = [t.name, colorCell(t.color), t.icon, colorCell(t.iconColor), t.category, terrainTypeCell(t), impassableNoteCell(t)];
     const mine = extra?.rows.get(t.name.toLowerCase()) ?? {};
     for (const h of own) values.push(mine[h]);
     const cells = values.map(escapeCell);
@@ -364,7 +369,7 @@ export function buildPaletteNote(terrains: TerrainColor[], childPalette?: string
     "---",
     "",
     "Hexmap World Creator terrain palette. The note name is the palette name. Each table row is one terrain:",
-    "colors are any CSS color, icons are file names from the icon picker, categories group",
+    "colors are any CSS color (in backticks, like `#3b82f6`, so they aren't read as tags), icons are file names from the icon picker, categories group",
     "terrains in the picker, and the type says what a terrain is (water, forest, star…) for",
     "generators and the hex table. Edit here, in the palette editor, or from the terrain tool on",
     "the hex map. Copy this note into another vault's palettes folder to share it.",
@@ -429,9 +434,25 @@ export function paletteDerivedStale(content: string): boolean {
  * from what it says), or unchanged when they already are.
  */
 export function refreshPaletteDerived(content: string): string {
-  if (!paletteDerivedStale(content)) return content;
-  const terrains = parsePaletteNote(content);
-  return terrains ? updatePaletteNote(content, terrains) : content;
+  const wrapped = wrapPaletteColors(content);
+  if (!paletteDerivedStale(wrapped)) return wrapped;
+  const terrains = parsePaletteNote(wrapped);
+  return terrains ? updatePaletteNote(wrapped, terrains) : wrapped;
+}
+
+/**
+ * The note with the terrain table's Color and Icon color cells written as
+ * inline code (`` `#14223d` ``), so Obsidian doesn't read them as tags. Only
+ * those cells change: every other character, line endings included, is kept.
+ * Unchanged (the same string) when they already are.
+ */
+export function wrapPaletteColors(content: string): string {
+  const lines = content.split("\n");
+  const span = findPaletteTable(lines.map((l) => l.replace(/\r$/, "")));
+  if (!span) return content;
+  const cols = span.columns.flatMap((c, i) => (c === "color" || c === "iconColor" ? [i] : []));
+  const rows = Array.from({ length: span.end - span.start - 2 }, (_, k) => span.start + 2 + k);
+  return wrapColorCellsInRows(lines, rows, cols) ? lines.join("\n") : content;
 }
 
 /** Structural equality used to skip no-op rewrites. */

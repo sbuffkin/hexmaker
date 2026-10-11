@@ -354,7 +354,12 @@ export function worldBiomes(
         const a = biomes.get(k)!, b = biomes.get(n)!;
         const eco = ecotoneBetween(a, b);
         if (!eco) continue;
-        const target = ok(eco);
+        let target = ok(eco);
+        // Rare transitions (karst) count toward the rare cap too: past it,
+        // the nearest common biome stands in.
+        if (biomeInfo(target)?.rare && rareCount() > rareCap) {
+          target = ok(SIMILAR[target]?.find((s) => !biomeInfo(s)?.rare && shown.has(s)) ?? "grassland");
+        }
         const fitK = climateMisfit(a, temperature.get(k)!, moisture.get(k)!);
         const fitN = climateMisfit(b, temperature.get(n)!, moisture.get(n)!);
         const which = fitK >= fitN ? k : n;
@@ -377,6 +382,42 @@ export function worldBiomes(
     if (t) terrain.set(k, t);
   }
   return { biomes, terrain, elevation, temperature, moisture, sea, river, ecotones };
+}
+
+// ── as a generator (registry: "World biomes") ───────────────────────────
+
+export const WORLD_BIOMES_ID = "procedural:world-biomes";
+
+export const WORLD_BIOMES_OPTIONS: { key: string; label: string; choices: { value: string; label: string }[]; default: string }[] = [
+  { key: "climate", label: "Climate", default: "varied", choices: [
+    { value: "varied", label: "Varied" }, { value: "cold", label: "Cold" }, { value: "temperate", label: "Temperate" }, { value: "warm", label: "Warm" },
+  ] },
+  { key: "water", label: "Water %", default: "25", choices: ["10", "25", "40", "60"].map((v) => ({ value: v, label: `${v}%` })) },
+  { key: "land", label: "Land", default: "one", choices: [
+    { value: "one", label: "One continent" }, { value: "two", label: "Two" }, { value: "islands", label: "Islands" },
+  ] },
+  { key: "north", label: "North is", default: "colder", choices: [
+    { value: "colder", label: "Colder" }, { value: "warmer", label: "Warmer" }, { value: "none", label: "No gradient" },
+  ] },
+];
+
+/** worldBiomes from a generator's option strings. */
+export function worldBiomesFromOptions(
+  cells: Iterable<[number, number]>,
+  orientation: Orientation,
+  stagger: Stagger,
+  palette: TerrainColor[],
+  seed: number,
+  options: Record<string, string>,
+): WorldBiomesResult {
+  const pick = <T extends string>(v: string | undefined, ok: readonly T[], d: T): T => (ok.includes(v as T) ? (v as T) : d);
+  return worldBiomes(cells, orientation, stagger, palette, {
+    seed,
+    climate: pick(options.climate, ["cold", "temperate", "warm", "varied"] as const, "varied"),
+    water: Math.min(90, Math.max(0, Number(options.water ?? 25) || 0)) / 100,
+    land: pick(options.land, ["one", "two", "islands"] as const, "one"),
+    north: pick(options.north, ["colder", "warmer", "none"] as const, "colder"),
+  });
 }
 
 /** Lowland biome for a climate (Whittaker-style). */

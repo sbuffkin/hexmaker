@@ -28,14 +28,18 @@ Hexes with locations show a small ring at the top, with a count once there are t
 | **Click the ring**, or **Ctrl/Cmd+click** the hex | Enter the hex's region, or its location (the list when there are several) |
 | **Ctrl/Cmd+Shift+click** the hex | Open it in a new tab |
 | Hex editor **Maps** strip | The region chip (outlined) and one chip per location; **+** for a new map, linking one, or the locations list |
-| **↑ up** button / **Alt+↑** | Back up to the parent map; the hex you came from flashes |
-| **← back** button / **Alt+←** | Return to the previously viewed map |
+| **←** / **Alt+←** | Back to the map you were on before |
+| **↑** / **Alt+↑** | Up to the parent map; the hex you came from flashes |
+| **→** / **Alt+→** | Forward again after going back |
 | Breadcrumb (top left) | Jump to any map above this one |
-| Crumbs after the map button ("East: Cole's Ford") | Jump to a neighbouring region. Inside a submap they show its parent's neighbours ("beside Thornwood: South: Cole's Ford") |
+| Small hex flower after the arrows (a region of an overworld) | The six regions around this one, each in its direction. Hover a petal for its name, click to go there. Empty petals have no region yet |
+| **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name. Inside a submap they go to its parent's neighbours |
+
+The arrows are always ← ↑ → in that order; one that doesn't apply right now is greyed out. Hover any of them for the map it goes to.
 
 **Region settings.** The first region you make on a map asks once how its regions cover its hexes: **Hex flower** (a hex of 7, 19, 37, 61 or 91 hexes) or **Rectangle** (6×6, 8×8, 10×10 or your own size), the palette, and how far neighbouring regions blend. They stay in the map menu's **Regions** tab, which also lists the regions. Shape, size and palette are fixed once a region exists, so every region lines up; delete the regions to change them. Blend stays editable and applies to regions made afterwards.
 
-"Go up to parent map" and "Go back to previous map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
+"Go up to parent map", "Go back to previous map" and "Go forward to the next map" are also commands, so you can bind your own hotkeys. A palette can suggest the palette for its submaps with a `child-palette:` line in its note's frontmatter. *Space - Sector* suggests *Space - System*.
 
 ---
 
@@ -129,6 +133,10 @@ Tokens show their name underneath. The layers panel's **Labels** group turns coo
 
 Turn on any one of them from the hint (✦) where it would appear, or all of them in **Settings → Features**. Switching back hides them again; nothing you made is deleted.
 
+**Overworlds** (Advanced: Regions and overworlds). **Maps → New overworld…** makes a map of biomes whose hexes each open into a rectangle region; regions next to each other share one grid, so they join hex for hex. The switch at the bottom right picks the view (the one showing is highlighted): **Regions** shows every region's hexes stitched together, with blank bricks where there's no region yet (hover for a region's name, click to go in at that spot; the terrain tool paints the regions' own hexes, across seams), **Biomes** shows one biome per hex (click to set one: an empty hex gets its region). The minimap at the bottom right shows the overworld from any of its regions. Hand-painted region hexes are locked, so remaking a region keeps them.
+
+**Work modes: Play, Build, God.** Each map has a mode, shown on the toolbar next to the map button; click it to switch. The map keeps its mode (it's the `mode:` line in the map note) and opens in it next time. New maps are in **Build**. For now the mode guards one thing: changing what's already placed on an overworld (swapping a placed biome, **Reroll**, applying **Settings…** to an existing region) needs **God**. In Build and Play those buttons are greyed out and say "Switch to God to change a placed biome." Placing a biome on an empty hex isn't locked (Play will lock more later). Notes stay editable in every mode, and settings and palettes are never locked. No confirm boxes: the mode is the safety catch.
+
 Neighbouring regions share one set of hex numbers: a new region carries on from the map it was placed next to, so each hex number names one place in the world. Maps you join later keep their own numbers.
 
 A road or river that ends on the edge of a region, next to where the neighbour's road of the same type ends, is drawn on to the shared edge on both maps, so the two join up.
@@ -147,7 +155,7 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 ## Palettes
 
-**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**.
+**Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**. Expanded now has **savanna** and **river delta** too (World biomes paints those biomes with them); an Expanded palette you already have gets them once, after a backup, unless it already has terrains of those names. Delete them and they stay deleted.
 
 No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 

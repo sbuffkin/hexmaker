@@ -20,6 +20,8 @@ export interface ToolModeState {
   erasing: boolean;
   terrainName?: string | null;
   terrainPick?: boolean;
+  /** An overworld's Regions view: the terrain tool paints the regions' own hexes. */
+  regionHexes?: boolean;
   iconName?: string | null;
   iconGmOnly?: boolean;
   pathTypeName?: string | null;
@@ -58,8 +60,8 @@ export function toolModeLabel(s: ToolModeState): string | null {
       return null;
     case "terrain":
       if (s.terrainPick) return "Picking terrain: click a hex to copy its terrain";
-      if (erasing || !s.terrainName) return "Clearing terrain";
-      return `Painting terrain: ${s.terrainName}`;
+      if (erasing || !s.terrainName) return s.regionHexes ? "Clearing region hexes" : "Clearing terrain";
+      return s.regionHexes ? `Painting region hexes: ${s.terrainName}` : `Painting terrain: ${s.terrainName}`;
     case "icon": {
       const what = s.iconGmOnly ? "GM icon" : "icon";
       if (erasing || !s.iconName) return `Erasing ${what}s`;

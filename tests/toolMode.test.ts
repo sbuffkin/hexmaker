@@ -81,6 +81,11 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: null, erasing: false })).toBeNull();
 	});
 
+	it("names the regions' hexes when painting in an overworld's Regions view", () => {
+		expect(toolModeLabel({ mode: "terrain", erasing: false, terrainName: "forest", regionHexes: true })).toBe("Painting region hexes: forest");
+		expect(toolModeLabel({ mode: "terrain", erasing: true, regionHexes: true })).toBe("Clearing region hexes");
+	});
+
 	it("names what each tool is doing", () => {
 		expect(toolModeLabel({ mode: "terrain", erasing: false, terrainName: "forest" })).toBe("Painting terrain: forest");
 		expect(toolModeLabel({ mode: "terrain", erasing: false, terrainName: null })).toBe("Clearing terrain");
@@ -107,15 +112,18 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 	});
 });
 
-describe("Map navigation buttons say where they go (fresh-eyes T4)", () => {
-	it("labels Up/Back as parent/previous map and names the target map", () => {
-		expect(viewSrc).toContain('text: "↑ parent map"');
-		expect(viewSrc).toContain('text: "← previous map"');
-		const nav = method("refreshMapNav");
-		expect(nav).toMatch(/backBtn\.setAttr\("aria-label", label\)/);
-		expect(nav).toMatch(/upBtn\.setAttr\("aria-label", label\)/);
-		expect(nav).toMatch(/previous map: \$\{this\.plugin\.mapLabel\(prev\)\}/);
-		expect(nav).toMatch(/parent map: \$\{this\.plugin\.mapLabel\(parent\.map\)\}/);
+describe("Map navigation buttons say where they go (fresh-eyes T4, owner playtest 2026-10-10)", () => {
+	it("shows arrows only, and names the target map in the tooltip and aria-label", () => {
+		const nav = method("refreshNavArrows");
+		expect(nav).toContain("text: a.glyph");
+		expect(nav).toContain('attr: { title: label, "aria-label": label');
+		expect(nav).toContain("Back to ${this.plugin.mapLabel(a.target)}");
+		expect(nav).toContain("Up to ${this.plugin.mapLabel(a.target)}");
+		expect(nav).toContain("Forward to ${this.plugin.mapLabel(a.target)}");
+		// Neighbours: a hex flower / d-pad with names in tooltips, no "Next to (6)" text.
+		const side = method("refreshSideCrumbs");
+		expect(side).not.toContain("Next to (");
+		expect(side).toContain("flowerPetals(");
 	});
 });
 
