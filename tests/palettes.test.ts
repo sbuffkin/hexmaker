@@ -19,7 +19,7 @@ import {
 	uniquePaletteName,
 } from "../src/palettes/presets";
 import { parsePathTypes, setPathTypes } from "../src/palettes/pathTypeTable";
-import { PaletteStore } from "../src/palettes/PaletteStore";
+import { PaletteStore, missingDefaults, palettesOnLoad } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { iconLabel, iconPack } from "../src/utils";
 import type { HexmakerPluginSettings, PathType, TerrainColor } from "../src/types";
@@ -428,27 +428,48 @@ describe("PaletteStore", () => {
 		expect(h.vault.files.has("world/palettes/Expanded.md")).toBe(false);
 	});
 
-	it("never deletes the last palette", async () => {
+	it("a deleted last palette stays deleted (SM-DEL: never re-written by sync)", async () => {
 		h.settings.terrainPalettes.splice(1);
 		await h.store.init();
 		const f = h.file("world/palettes/Limited.md");
 		h.vault.files.delete(f.path);
 		h.store.onDelete(f);
 		await h.store.sync();
-		expect(h.settings.terrainPalettes.map((x) => x.name)).toEqual(["Limited"]);
-		expect(h.vault.files.has("world/palettes/Limited.md")).toBe(true); // re-written by sync
+		expect(h.settings.terrainPalettes.map((x) => x.name)).toEqual([]);
+		expect(h.vault.files.has("world/palettes/Limited.md")).toBe(false);
 	});
 
-	it("rewrites notes when the folder is emptied (safety net)", async () => {
+	it("palette notes deleted while closed stay deleted: dropped (backed up), not re-written", async () => {
 		await h.store.init();
 		h.vault.files.clear();
 		const fresh = makeHarness({ palettesMigrated: true });
 		fresh.settings.terrainPalettes = h.settings.terrainPalettes;
 		await fresh.store.init();
-		expect([...fresh.vault.files.keys()].sort()).toEqual([
-			"world/palettes/Expanded.md",
-			"world/palettes/Limited.md",
-		]);
+		expect([...fresh.vault.files.keys()]).toEqual([]);
+		expect(fresh.settings.terrainPalettes).toEqual([]);
+		// data.json's copy is kept in a backup before it's dropped.
+		expect([...fresh.vault.raw.keys()].some((p) => p.includes("/backups/palettes-") && p.includes("/deleted-palettes"))).toBe(true);
+	});
+
+	it("an emptied palette list stays empty on load (no notes written)", async () => {
+		const fresh = makeHarness({ palettesMigrated: true });
+		fresh.settings.terrainPalettes = [];
+		await fresh.store.init();
+		await fresh.store.sync();
+		expect(fresh.settings.terrainPalettes).toEqual([]);
+		expect([...fresh.vault.files.keys()]).toEqual([]);
+	});
+
+	it("a palette note that doesn't read is never taken as deleted", async () => {
+		await h.store.init();
+		h.vault.files.clear();
+		h.vault.files.set("world/palettes/Limited.md", "no table here");
+		const fresh = makeHarness({ palettesMigrated: true });
+		for (const [p, c] of h.vault.files) fresh.vault.files.set(p, c);
+		fresh.settings.terrainPalettes = h.settings.terrainPalettes;
+		await fresh.store.init();
+		expect(fresh.settings.terrainPalettes.length).toBe(2);
+		expect(fresh.vault.files.get("world/palettes/Limited.md")).toBe("no table here");
 	});
 
 	it("round-trips child-palette between notes and palettes", async () => {
@@ -809,5 +830,26 @@ describe("PaletteStore colour conversion", () => {
 		await h.store.sync();
 		expect(h.vault.files.get(P)).toBe(note);
 		expect(h.vault.raw.size).toBe(0);
+	});
+});
+
+describe("palette list on load (SM-DEL: no automatic refill)", () => {
+	const defaults = DEFAULT_SETTINGS.terrainPalettes;
+	it("an emptied list stays empty", () => {
+		expect(palettesOnLoad([], defaults)).toEqual([]);
+	});
+	it("no list at all (fresh install, broken data) gets the defaults, as copies", () => {
+		const got = palettesOnLoad(undefined, defaults);
+		expect(got.map((p) => p.name)).toEqual(defaults.map((p) => p.name));
+		expect(got[0].terrains).not.toBe(defaults[0].terrains);
+		expect(palettesOnLoad("nonsense", defaults).length).toBe(defaults.length);
+	});
+	it("a saved list is kept as it is", () => {
+		const mine = [{ name: "Moorland", terrains: [] }];
+		expect(palettesOnLoad(mine, defaults)).toBe(mine);
+	});
+	it("Add default palettes offers only the ones not there (any case)", () => {
+		expect(missingDefaults([], defaults).map((p) => p.name)).toEqual(defaults.map((p) => p.name));
+		expect(missingDefaults([{ name: defaults[0].name.toUpperCase() }], defaults).map((p) => p.name)).toEqual(defaults.slice(1).map((p) => p.name));
 	});
 });

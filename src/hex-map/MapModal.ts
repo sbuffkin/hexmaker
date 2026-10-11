@@ -8,7 +8,6 @@ import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import {
   listGenerators,
-  saveGeneratorFromMap,
   generatorsForRegion,
   type GeneratorFile,
 } from "../worldgen/generators";
@@ -23,6 +22,7 @@ import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, withFeature } from "../advancedHints";
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
+import { openMakeGenerator } from "./MakeGeneratorModal";
 import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
 import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
 import { canReshape, lockedHint } from "../workMode";
@@ -35,6 +35,37 @@ import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } 
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 
 type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
+
+/**
+ * Restore / Remove for a missing map (SM-DEL), in the map list and on the
+ * map view's empty state. Remove asks once more (a second click) before it
+ * drops the map from the list; no file is touched either way.
+ */
+export function renderMissingActions(el: HTMLElement, plugin: HexmakerPlugin, name: string, done: () => void): void {
+  const box = el.createSpan({ cls: "duckmage-map-missing-actions" });
+  const restore = box.createEl("button", { text: "Restore", cls: "mod-cta", attr: { title: "Write its map note back from the last saved copy" } });
+  restore.addEventListener("click", (e) => {
+    e.stopPropagation();
+    restore.disabled = true;
+    void plugin.restoreMissingMap(name).then(done);
+  });
+  const remove = box.createEl("button", { text: "Remove", attr: { title: "Drop it from the map list (no files are deleted)" } });
+  let armed = false;
+  remove.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (!armed) {
+      armed = true;
+      remove.setText("Remove from list?");
+      remove.addClass("mod-warning");
+      return;
+    }
+    remove.disabled = true;
+    void plugin.removeMapEntry(name).then(() => {
+      new Notice(`Removed "${plugin.mapLabel(name)}" from the map list.`);
+      done();
+    });
+  });
+}
 
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
@@ -328,11 +359,15 @@ export class MapModal extends HexmakerModal {
                 .onClick(() => void this.openGenerator(map.name, existing)),
             );
           }
+          // New, or over an existing one (the region's biome's and its parents' first), PR1.
           menu.addItem((item) =>
             item
-              .setTitle(existing ? `Learn a new generator from ${this.plugin.mapLabel(map.name)}` : `Create generator from ${this.plugin.mapLabel(map.name)}`)
+              .setTitle(`Make generator from ${this.plugin.mapLabel(map.name)}…`)
               .setIcon(existing ? "plus" : "wand-sparkles")
-              .onClick(() => void this.createGeneratorFrom(map.name)),
+              .onClick(() => {
+                this.close();
+                openMakeGenerator(this.app, this.plugin, map.name);
+              }),
           );
           menu.showAtPosition(at);
         });
@@ -347,6 +382,12 @@ export class MapModal extends HexmakerModal {
         swatch.addClass("duckmage-map-terrain-swatch--set");
       }
 
+      const missing = this.plugin.mapStore.isMissing(map.name);
+      if (missing) {
+        row.addClass("is-missing");
+        const warn = row.createSpan({ cls: "duckmage-map-missing-icon", attr: { "aria-label": "Missing: its folder and map note were deleted", title: "Missing: its folder and map note were deleted" } });
+        setIcon(warn, "alert-triangle");
+      }
       const nameSpan = row.createSpan({ text: node.label, cls: "duckmage-map-list-name" });
       // The slug is the folder; worth seeing when it differs from the name.
       if (node.label !== map.name) nameSpan.setAttr("title", `Folder: ${map.name}`);
@@ -354,6 +395,13 @@ export class MapModal extends HexmakerModal {
         this.view.switchMapFromModal(map.name);
         this.close();
       });
+      if (missing) {
+        renderMissingActions(row, this.plugin, map.name, () => {
+          this.onChanged();
+          this.render();
+        });
+        return;
+      }
       // "palette: Expanded" in muted text; a bare "Expanded" read like a fold state (round 6 U10).
       row.createSpan({ cls: "duckmage-region-palette-badge", text: `palette: ${map.paletteName}`, attr: { title: "Terrain palette" } });
     }
@@ -745,27 +793,6 @@ export class MapModal extends HexmakerModal {
 
   // ── Generator ─────────────────────────────────────────────────────────────
 
-  /** Learn a generator from a region and open it in the terrain generator. */
-  private async createGeneratorFrom(mapName: string): Promise<void> {
-    // An Advanced feature: in Simple, offer to turn it on first.
-    if (!hasFeature(this.plugin.settings, "generators")) {
-      withFeature(this.plugin, "generators", () => void this.createGeneratorFrom(mapName));
-      return;
-    }
-    const result = await saveGeneratorFromMap(this.plugin, mapName, mapName);
-    if ("error" in result) {
-      new Notice(result.error);
-      return;
-    }
-    new Notice(`Created generator "${result.model.name}" from ${this.plugin.mapLabel(mapName)}.`);
-    this.close();
-    await this.plugin.openTerrainGenerator({
-      mapName,
-      generatorPath: result.file.path,
-      paletteName: result.model.meta.palette,
-    });
-  }
-
   /** Open a region's existing generator in the terrain generator. */
   private async openGenerator(mapName: string, g: GeneratorFile): Promise<void> {
     this.close();
@@ -784,6 +811,8 @@ export class MapModal extends HexmakerModal {
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
     if (folder instanceof TFolder) {
+      // Our own delete: the note going doesn't make the map "missing".
+      this.plugin.mapStore.expectRemoval(name);
       try {
         await this.app.fileManager.trashFile(folder);
       } catch (e) {

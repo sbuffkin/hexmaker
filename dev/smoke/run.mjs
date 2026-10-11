@@ -218,6 +218,8 @@ async function runSetup(setup) {
         firstOpen ??= r;
         opens.push({ map: m.name, ...r });
         if (r.active !== m.name) probs.push(`${m.name}: view shows ${r.active}`);
+        // Deleted by hand (SM-DEL): the view shows the missing empty state.
+        else if (m.missing) { if (!r.missingState) probs.push(`${m.name}: missing, but no missing-map state shown`); }
         else if (m.broken) probs.push(`${m.name}: map note unreadable`);
         else if (r.hexes === 0 && r.canvas === 0) probs.push(`${m.name}: nothing rendered`);
         else if (!m.overworld && r.hexes !== r.expected) probs.push(`${m.name}: ${r.hexes} hexes, expected ${r.expected}`);

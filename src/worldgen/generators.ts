@@ -393,6 +393,12 @@ export async function saveGeneratorFromMaps(
   return { file, model };
 }
 
+/** Learn a generator from one map's painted hexes, in memory (not saved). */
+export function learnGeneratorFromMap(plugin: HexmakerPlugin, mapName: string, rawName: string): { model: HexWfcModel } | { error: string } {
+  const name = slugify(rawName) || slugify(mapName);
+  return learnFromMaps(plugin, [mapName], name, sourceMeta(plugin, [mapName]));
+}
+
 /** Learn a generator from one map (see saveGeneratorFromMaps). */
 export function saveGeneratorFromMap(
   plugin: HexmakerPlugin,

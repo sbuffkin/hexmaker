@@ -174,7 +174,18 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 **Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes and `town.md` for new towns made from the hex editor. Edit them there and new notes follow.
 
+## Missing maps
+
+If a map's folder and map note were deleted outside the plugin, the map isn't re-created empty. It shows with a ⚠ in the map list, and opening it shows **Restore** (puts its map note back from the last saved copy: hexes, paths and settings) and **Remove** (drops it from the list; no files are deleted).
+
+## Make a generator from a region
+
+**Edit region… → Make generator…** (or right-click a map in **Maps**) learns a generator from the region as you painted it. Choose **New generator** or **Overwrite existing**; the list puts the region's own biome's generator and its parent biomes' first. Overwriting keeps a backup. A new generator gets a biome that copies the region's biome (climate, islands, transitions, shore, mix).
+
 ## Palettes
+
+Deleted palettes stay deleted, the last one too. **Settings → Add default palettes** puts the built-in ones back.
+
 
 **Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**. Expanded now has **savanna** and **river delta** too (World biomes paints those biomes with them); an Expanded palette you already have gets them once, after a backup, unless it already has terrains of those names. Delete them and they stay deleted.
 

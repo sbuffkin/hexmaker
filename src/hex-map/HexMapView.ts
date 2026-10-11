@@ -28,7 +28,7 @@ import {
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
-import { MapModal } from "./MapModal";
+import { MapModal, renderMissingActions } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
 import { toolModeLabel } from "./toolMode";
@@ -392,6 +392,22 @@ export class HexMapView extends ItemView {
   }
   getDisplayText(): string {
     return `Hex map — ${this.plugin.mapLabel(this.activeMapName)}`;
+  }
+
+  private missingEl: HTMLElement | null = null;
+
+  /** Show (true) or clear (false) the missing-map empty state for the open map. */
+  private renderMissingState(): boolean {
+    this.missingEl?.remove();
+    this.missingEl = null;
+    const name = this.activeMapName;
+    if (!this.plugin.mapStore.isMissing(name) || !this.controlsEl) return false;
+    const box = this.controlsEl.createDiv({ cls: "duckmage-map-missing-state" });
+    this.missingEl = box;
+    box.createEl("h3", { text: `${this.plugin.mapLabel(name)} is missing` });
+    box.createEl("p", { text: `Its folder and map note (${this.plugin.mapStore.notePath(name)}) were deleted. Restore writes the note back from the last saved copy; Remove drops the map from the list. No file is deleted.` });
+    renderMissingActions(box, this.plugin, name, () => this.renderGrid());
+    return true;
   }
 
   private getActiveMap(): MapData {
@@ -4029,6 +4045,9 @@ export class HexMapView extends ItemView {
     if (!this.viewportEl) return;
     this.factionTooltipEl?.hide();
     this.viewportEl.empty();
+    // A map whose note was deleted by hand (SM-DEL): a clear empty state
+    // with Restore / Remove instead of an empty grid.
+    if (this.renderMissingState()) return;
 
     const gap = this.plugin.settings.hexGap?.trim() || "0.15";
     this.viewportEl.style.setProperty(

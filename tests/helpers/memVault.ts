@@ -80,6 +80,12 @@ export class MemVault {
 		return m ? parseMiniYaml(m[1]) : undefined;
 	}
 
+	/** Delete a file, or a folder and everything in it (as a user would by hand). */
+	remove(path: string): void {
+		for (const p of [...this.files.keys()]) if (p === path || p.startsWith(path + "/")) this.files.delete(p);
+		for (const p of [...this.folders]) if (p === path || p.startsWith(path + "/")) this.folders.delete(p);
+	}
+
 	body(path: string): string {
 		return (this.files.get(path) ?? "").replace(FM, "");
 	}
@@ -110,6 +116,10 @@ export class MemVault {
 					exists: async (p: string) => v.files.has(p) || v.folders.has(p) || v.binaries.has(p),
 					mkdir: async (p: string) => { v.ensureFolder(p); },
 					write: async (p: string, c: string) => { v.put(p, c); },
+					read: async (p: string) => {
+						if (!v.files.has(p)) throw new Error("no file " + p);
+						return v.files.get(p)!;
+					},
 					writeBinary: async (p: string, data: ArrayBuffer) => {
 						if (v.failBinary) throw new Error("disk full");
 						v.binaries.set(p, new Uint8Array(data));

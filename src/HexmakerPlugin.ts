@@ -35,7 +35,7 @@ import { SetupWizardView } from "./SetupWizardView";
 import { BiomeStore } from "./overworld/BiomeStore";
 import { WorldTypeStore } from "./space/WorldTypeStore";
 import { WorldTypesModal } from "./space/WorldTypesModal";
-import { PaletteStore } from "./palettes/PaletteStore";
+import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
@@ -207,11 +207,13 @@ export default class HexmakerPlugin extends Plugin {
         this.paletteStore.onModify(f);
         this.biomeStore.onModify(f);
         this.worldTypeStore.onModify(f);
+        this.mapStore.onCreate(f);
       }),
     );
     this.registerEvent(
       this.app.vault.on("delete", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
+        this.mapStore.onDelete(f);
         this.paletteStore.onDelete(f);
         this.biomeStore.onDelete(f);
         this.worldTypeStore.onDelete(f);
@@ -773,18 +775,10 @@ export default class HexmakerPlugin extends Plugin {
     // of maps whose note does, so the fresh map objects take the store's at
     // once. Missing paths mean "not loaded", never "no paths".
     this.mapStore.adoptAll();
-    // Ensure terrainPalettes is valid
-    if (
-      !Array.isArray(this.settings.terrainPalettes) ||
-      this.settings.terrainPalettes.length === 0
-    ) {
-      this.settings.terrainPalettes = DEFAULT_SETTINGS.terrainPalettes.map(
-        (p) => ({
-          name: p.name,
-          terrains: p.terrains.map((t) => ({ ...t })),
-        }),
-      );
-    }
+    // Ensure terrainPalettes is valid. An empty list is the user's (every
+    // palette deleted, SM-DEL): it stays empty; "Add default palettes" in
+    // settings puts the defaults back on request.
+    this.settings.terrainPalettes = palettesOnLoad(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes);
     // PA5: path types saved before every behaviour was an explicit option get
     // them filled in from the old name rules (once), so no map changes look.
     // Notes are migrated by PaletteStore on attach.
@@ -2168,6 +2162,49 @@ export default class HexmakerPlugin extends Plugin {
    * Create hex notes for every (x, y) in the cartesian product of xs × ys,
    * skipping any that already exist on disk.  Returns the number of notes created.
    */
+  /**
+   * Restore a missing map (SM-DEL): its note is written back from the last
+   * saved copy (see MapStore.restoreMissing). Says what it did.
+   */
+  async restoreMissingMap(name: string): Promise<boolean> {
+    const r = await this.mapStore.restoreMissing(name);
+    if ("error" in r) {
+      new Notice(r.error);
+      return false;
+    }
+    const how = r.source === "settings" ? " from its settings (no saved copy of its hexes was found)" : r.source === "note" ? " (its note was back)" : "";
+    new Notice(`Restored map "${this.mapLabel(name)}"${how}.`);
+    this.refreshHexMap();
+    return true;
+  }
+
+  /**
+   * Remove a map from the map list without touching files (a missing map's
+   * folder is already gone). Links to it in other maps are dropped and its
+   * regions and locations become top-level maps, as when deleting a map.
+   */
+  async removeMapEntry(name: string): Promise<void> {
+    this.settings.maps = this.settings.maps.filter((m) => m.name !== name);
+    if (this.settings.defaultMap === name) this.settings.defaultMap = this.settings.maps[0]?.name ?? "";
+    this.mapStore.forgetMap(name);
+    this.undoBook.forgetMap(name);
+    for (const m of this.settings.maps) {
+      for (const [key, h] of [...this.mapStore.all(m.name)]) {
+        const patch = removeMapPatch(h, name);
+        if (Object.keys(patch).length) this.mapStore.set(m.name, key, patch);
+      }
+      if (m.parent?.map === name) {
+        delete m.parent;
+        delete m.submapKind;
+      }
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)) {
+      if (leaf.view instanceof HexMapView && leaf.view.activeMapName === name) leaf.view.activeMapName = this.settings.maps[0]?.name ?? "";
+    }
+    await this.saveSettings();
+    this.refreshHexMap();
+  }
+
   async createNewMap(
     rawName: string,
     cols: number,
@@ -2585,6 +2622,29 @@ export default class HexmakerPlugin extends Plugin {
     if (Object.keys(defaults).length) pal.submapDefaults = defaults;
     else delete pal.submapDefaults;
     await this.saveSettings();
+  }
+
+  /** The built-in default palettes (a fresh install's) that aren't in the palette list. */
+  missingDefaultPalettes(): string[] {
+    return missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes).map((p) => p.name);
+  }
+
+  /**
+   * Put back the default palettes that aren't there (only ever on request:
+   * palettes the user deleted stay deleted). Returns the names added.
+   */
+  async addDefaultPalettes(): Promise<string[]> {
+    const add = this.missingDefaultPalettes();
+    for (const p of missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes)) {
+      this.settings.terrainPalettes.push(clonePalette(p));
+    }
+    if (!add.length) return add;
+    // Same as a fresh install's: path types from the shipped list.
+    fillPalettePathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
+    await this.saveSettings();
+    await this.ensureTablesForNewTerrains();
+    new Notice(`Added ${add.join(" and ")}.`);
+    return add;
   }
 
   /** Install `name` from the presets if no palette by that name exists yet. */

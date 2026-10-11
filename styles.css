@@ -8770,3 +8770,83 @@ textarea.duckmage-edit-region-notes-input {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+/* Missing maps (SM-DEL): folder and map note deleted by hand */
+.duckmage-map-missing-icon {
+    display: inline-flex;
+    color: var(--text-warning);
+    margin-right: 4px;
+}
+.duckmage-map-missing-icon svg {
+    width: 14px;
+    height: 14px;
+}
+.duckmage-map-list-item.is-missing .duckmage-map-list-name {
+    color: var(--text-muted);
+}
+.duckmage-map-missing-actions {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+.duckmage-map-missing-actions button {
+    padding: 2px 8px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-map-missing-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 420px;
+    padding: 16px 20px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    text-align: center;
+}
+.duckmage-map-missing-state .duckmage-map-missing-actions {
+    margin-left: 0;
+}
+/* Make generator from this region (PR1) */
+.duckmage-make-generator-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.duckmage-make-generator-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: var(--font-semibold);
+}
+.duckmage-make-generator-name {
+    margin-left: 22px;
+    max-width: 320px;
+}
+.duckmage-make-generator-list {
+    margin-left: 22px;
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+}
+.duckmage-make-generator-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+.duckmage-make-generator-row:hover {
+    background: var(--background-modifier-hover);
+}
+.duckmage-make-generator-row.is-selected {
+    background: var(--background-modifier-active-hover);
+}
+.duckmage-make-generator-row-why {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-make-generator-row.is-suggested .duckmage-make-generator-row-name {
+    font-weight: var(--font-semibold);
+}

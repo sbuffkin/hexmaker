@@ -146,6 +146,26 @@ function newNote(pal: TerrainPalette): string {
  * palettes every map could draw every type, so copying them all keeps every
  * map's paths drawable. Returns how many palettes were filled.
  */
+/** A palette's own copy (never alias a shared constant). */
+export function clonePalette(p: TerrainPalette): TerrainPalette {
+  return { name: p.name, terrains: p.terrains.map((t) => ({ ...t })) };
+}
+
+/**
+ * The palette list as loaded from data.json: missing or not a list (a fresh
+ * install, a broken file) → the defaults; any list, empty too, is kept as
+ * the user left it (SM-DEL: deleted palettes stay deleted).
+ */
+export function palettesOnLoad(saved: unknown, defaults: readonly TerrainPalette[]): TerrainPalette[] {
+  return Array.isArray(saved) ? (saved as TerrainPalette[]) : defaults.map(clonePalette);
+}
+
+/** The default palettes not in `list` (by name, any case), in their own order. */
+export function missingDefaults(list: readonly { name: string }[], defaults: readonly TerrainPalette[]): TerrainPalette[] {
+  const have = new Set(list.map((p) => p.name.toLowerCase()));
+  return defaults.filter((p) => !have.has(p.name.toLowerCase()));
+}
+
 export function fillPalettePathTypes(palettes: TerrainPalette[], legacy: PathType[] | undefined): number {
   const source = legacy && legacy.length ? legacy : DEFAULT_PATH_TYPES;
   let n = 0;
@@ -279,11 +299,16 @@ export class PaletteStore {
    * settings-only palettes to notes the first time, then loads every note.
    */
   init(): Promise<void> {
-    return this.enqueue(() => this.attach());
+    return this.enqueue(() => this.attach(true));
   }
 
-  /** Bind to the current folder: migrate if needed, then load from notes. */
-  private async attach(): Promise<void> {
+  /**
+   * Bind to the current folder: migrate if needed, then load from notes.
+   * `startup`: the folder is the one the palettes were saved in, so no
+   * notes there means they were deleted (they stay deleted, SM-DEL); on a
+   * folder change (not startup) every palette is written into the new one.
+   */
+  private async attach(startup = false): Promise<void> {
     this.boundPath = new WeakMap();
     this.knownPaths.clear();
     this.lastContent.clear();
@@ -302,7 +327,11 @@ export class PaletteStore {
     for (const f of this.paletteFiles()) {
       if (parsePaletteNote(await this.plugin.app.vault.cachedRead(f))) existing.push(f);
     }
-    if (!settings.palettesMigrated || existing.length === 0) {
+    // (Only when the folder holds no notes at all: a note that doesn't read is never taken as deleted.)
+    if (startup && settings.palettesMigrated && this.paletteFiles().length === 0 && settings.terrainPalettes.length) {
+      await this.dropDeletedPalettes();
+      dirty = true;
+    } else if (!settings.palettesMigrated || existing.length === 0) {
       const paletteNames = new Set(existing.map((f) => f.basename.toLowerCase()));
       for (const pal of settings.terrainPalettes) {
         const safe = paletteFileName(pal.name);
@@ -398,6 +427,31 @@ export class PaletteStore {
       dirty = true;
     }
     if (dirty) await this.persist();
+  }
+
+  /**
+   * Every palette note was deleted while Obsidian was closed (SM-DEL):
+   * the palettes go too, never re-created from data.json's copy. That copy
+   * is backed up first, and a notice says how to get the defaults back.
+   * Maps keep their palette name, so a palette note put back reattaches.
+   */
+  private async dropDeletedPalettes(): Promise<void> {
+    const settings = this.plugin.settings;
+    const names = settings.terrainPalettes.map((p) => p.name);
+    let where = "";
+    try {
+      const dir = `${this.plugin.manifest.dir}/backups/palettes-${new Date().toISOString().slice(0, 10)}`;
+      where = await writeJsonBackup(this.plugin.app.vault.adapter, dir, "deleted-palettes", JSON.stringify({ savedAt: new Date().toISOString(), palettes: settings.terrainPalettes }));
+    } catch (e) {
+      console.error("Hexmap World Creator: couldn't back up the deleted palettes", e);
+    }
+    settings.terrainPalettes = [];
+    new Notice(
+      `Hexmap World Creator: no palette notes in "${this.folder()}", so there are no terrain palettes now (${names.join(", ")} were deleted).` +
+        (where ? ` A copy is in ${where}.` : "") +
+        " Add palettes, or the defaults, in Settings → Terrain palettes.",
+      15000,
+    );
   }
 
   /**
@@ -731,7 +785,8 @@ export class PaletteStore {
       this.lastContent.delete(file.path);
       const pal = this.paletteBoundTo(file.path);
       const list = this.plugin.settings.terrainPalettes;
-      if (!pal || list.length <= 1) return; // keep at least one palette
+      // Deleted palettes stay deleted, the last one too (SM-DEL).
+      if (!pal) return;
       // Maps keep their paletteName so they reattach if the note comes back
       // (e.g. restored from trash, or delivered late by sync).
       list.splice(list.indexOf(pal), 1);
@@ -756,7 +811,7 @@ export class PaletteStore {
       if (!isPalette) {
         // Moved out of the palettes folder: same as a delete.
         const list = this.plugin.settings.terrainPalettes;
-        if (list.length > 1) list.splice(list.indexOf(pal), 1);
+        list.splice(list.indexOf(pal), 1);
         await this.persist();
         return;
       }

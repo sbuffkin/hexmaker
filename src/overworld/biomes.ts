@@ -13,7 +13,7 @@
 
 import type { HexWfcModel, TerrainEntry } from "../../packages/hex-wfc/src/model";
 import { mapTerrainsByType, TYPE_FALLBACKS } from "../worldgen/builtinGenerators";
-import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields } from "./biomeNote";
+import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
 import type { TerrainColor } from "../types";
 import { typesInGroup } from "../terrainTypes";
 import { climateCentre, isPlaceable, type BiomeClimate, type ClimateElevation, type ClimateRange } from "./biomeClimate";
@@ -441,25 +441,48 @@ function typesToTry(mix: BiomeMixRow[]): string[] {
   return [...own, ...own.flatMap((t) => TYPE_FALLBACKS[t] ?? [])];
 }
 
-/** The palette terrain painted for a note-only biome: the first terrain of its heaviest type the palette has. */
+/**
+ * The palette terrain painted for a note-only biome: of its heaviest type
+ * the palette has, the terrain with the most weight in its Terrain weights
+ * (palette order on a tie; the first one without the table).
+ */
 function noteBiomeTerrain(biome: BiomeId, palette: TerrainColor[]): string | undefined {
   const n = source?.biomes.get(biome);
   if (!n) return undefined;
   for (const ty of typesToTry(n.mix)) {
     if (ty === "settlement") continue;
-    const hit = palette.find((t) => typeOf(t) === ty);
-    if (hit) return hit.name;
+    const of = palette.filter((t) => typeOf(t) === ty).map((t) => t.name);
+    if (!of.length) continue;
+    const w = withinTypeWeights(of, n.terrainWeights);
+    let best = of[0];
+    for (const name of of) if ((w.get(name) ?? 0) > (w.get(best) ?? 0)) best = name;
+    return best;
   }
   return undefined;
 }
 
 /**
- * Profile from a type mix (a biome note's): each type's share, spread
- * evenly over the palette's terrains of that type. A type the palette
+ * How one type's share splits over its palette terrains (`names`), as
+ * fractions summing to 1: a terrain listed in `weights` (any case) gets its
+ * weight, the others 1; weight 0 leaves a terrain out. All left out (or no
+ * weights): an even split, so a type in the mix is never lost.
+ */
+export function withinTypeWeights(names: readonly string[], weights: readonly BiomeTerrainWeight[] | undefined): Map<string, number> {
+  const byName = new Map((weights ?? []).map((w) => [w.terrain.trim().toLowerCase(), w.weight]));
+  const raw = names.map((n) => [n, Math.max(0, byName.get(n.toLowerCase()) ?? 1)] as const);
+  const total = raw.reduce((s, [, v]) => s + v, 0);
+  if (total <= 0) return new Map(names.map((n) => [n, 1 / names.length]));
+  return new Map(raw.filter(([, v]) => v > 0).map(([n, v]) => [n, v / total]));
+}
+
+/**
+ * Profile from a type mix (a biome note's): each type's share, split over
+ * the palette's terrains of that type by `terrainWeights` (the note's
+ * Terrain weights; evenly without them, see withinTypeWeights). A type the palette
  * doesn't have goes to its first fallback type it does (TYPE_FALLBACKS),
  * else is dropped. Settlements never count.
  */
-export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: TerrainColor[]): BiomeProfile {
+export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: TerrainColor[], terrainWeights?: readonly BiomeTerrainWeight[]): BiomeProfile {
   const byType = new Map<string, string[]>();
   for (const t of palette) {
     const ty = typeOf(t);
@@ -475,8 +498,8 @@ export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: Terrain
   const names = new Map<string, Map<string, number>>();
   for (const [ty, v] of types) {
     types.set(ty, v / total);
-    const list = byType.get(ty)!;
-    names.set(ty, new Map(list.map((n) => [n, 1 / list.length])));
+    // Within the type: the Terrain weights table, else an even split.
+    names.set(ty, withinTypeWeights(byType.get(ty)!, terrainWeights));
   }
   const profile: BiomeProfile = { id, types, names };
   // Min patches follow their type to the one the palette has (the same fallback as the mix).
@@ -492,7 +515,7 @@ export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: Terrain
 
 /** A biome note's profile on a palette: its mix, islands and shore settings. */
 export function profileFromFields(b: BiomeNoteFields, palette: TerrainColor[]): BiomeProfile {
-  const p = profileFromMix(b.id, b.mix, palette);
+  const p = profileFromMix(b.id, b.mix, palette, b.terrainWeights);
   if (b.landShare !== undefined) p.landShare = b.landShare;
   if (b.minIslands !== undefined) p.minIslands = b.minIslands;
   if (b.shore) p.shore = true;

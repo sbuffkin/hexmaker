@@ -25,6 +25,7 @@ import { flowerPetals } from "../maps/mapNav";
 import { biomeInfo, type BiomeId } from "../overworld/biomes";
 import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "../overworld/regionsVault";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
+import { openMakeGenerator } from "./MakeGeneratorModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
 import { mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
@@ -127,10 +128,16 @@ export class EditRegionModal extends HexmakerModal {
       biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: `Unknown biome: ${status.unknown} (its note is gone). The region keeps its terrain.` });
     }
     const editGenerator = (row: HTMLElement) => {
-      if (!current) return;
-      row.createEl("button", { text: "Edit generator…", attr: { title: "Tune how this biome's regions are made" } }).addEventListener("click", () => {
+      if (current) {
+        row.createEl("button", { text: "Edit generator…", attr: { title: "Tune how this biome's regions are made" } }).addEventListener("click", () => {
+          this.close();
+          void openBiomeGenerator(plugin, current);
+        });
+      }
+      // PR1: learn a generator from this region as painted (new, or over an existing one).
+      row.createEl("button", { text: "Make generator…", attr: { title: "Learn a generator from this region's terrain; its biome starts as a copy of this one" } }).addEventListener("click", () => {
         this.close();
-        void openBiomeGenerator(plugin, current);
+        openMakeGenerator(plugin.app, plugin, name);
       });
     };
     const biomes = paintableBiomes(plugin, this.overworld);
