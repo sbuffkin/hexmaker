@@ -1,6 +1,6 @@
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { PALETTE_PRESETS } from "./presets";
-import { ALL_MAP_KINDS, enabledKinds, isKindEnabled, isSpacePalette, type MapKind } from "../mapKinds";
+import { ALL_MAP_KINDS, enabledKinds, isKindEnabled, paletteKind } from "../mapKinds";
 import { EXPANDED_PALETTE_NAME, LIMITED_PALETTE_NAME } from "../constants";
 
 /**
@@ -116,19 +116,18 @@ export function resolveDefaultPalette(raw: Record<string, unknown> | null | unde
  */
 export function defaultPaletteFor(settings: {
   mapKinds?: string[];
-  terrainPalettes: { name: string; terrains: readonly { type?: string }[] }[];
+  terrainPalettes: { name: string; kind?: string; terrains: readonly { type?: string }[] }[];
   /** See resolveDefaultPalette. Unset or "" = first palette. */
   defaultPalette?: string;
 }): string {
   const kinds = enabledKinds(settings);
   const pals = settings.terrainPalettes;
-  const kindOf = (terrains: readonly { type?: string }[]): MapKind => (isSpacePalette(terrains) ? "space" : "world");
   const want = settings.defaultPalette;
   const installed = want ? pals.find((p) => p.name === want) : undefined;
-  if (installed && kinds.has(kindOf(installed.terrains))) return installed.name;
+  if (installed && kinds.has(paletteKind(installed))) return installed.name;
   for (const kind of ALL_MAP_KINDS) {
     if (!kinds.has(kind)) continue;
-    const first = pals.find((p) => kindOf(p.terrains) === kind);
+    const first = pals.find((p) => paletteKind(p) === kind);
     if (first) return first.name;
   }
   const preset = want && !installed ? PALETTE_PRESETS.find((p) => p.name === want && kinds.has(p.kind)) : undefined;
@@ -148,11 +147,11 @@ export function fillPaletteSelect(
 ): void {
   select.empty();
   const installed = new Set(plugin.settings.terrainPalettes.map((p) => p.name));
-  // Installed space palettes are hidden too while Space is off — unless
+  // Installed palettes of a map type that's off are hidden too (space ones
+  // while Space is off, fantasy ones in a space-only setup) — unless
   // selected, so a map or saved default using one still shows it.
-  const spaceOn = isKindEnabled(plugin.settings, "space");
   for (const pal of plugin.settings.terrainPalettes) {
-    if (!spaceOn && pal.name !== selected && isSpacePalette(pal.terrains)) continue;
+    if (pal.name !== selected && !isKindEnabled(plugin.settings, paletteKind(pal))) continue;
     const hint = paletteHint(pal.name);
     select.createEl("option", { value: pal.name, text: pal.name, ...(hint ? { attr: { title: hint } } : {}) });
   }

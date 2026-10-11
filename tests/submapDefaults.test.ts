@@ -12,11 +12,12 @@ import {
 	PALETTE_PRESETS,
 	SPACE_SECTOR_PALETTE_NAME,
 	SPACE_SYSTEM_PALETTE_NAME,
+	SPACE_PLANET_PALETTE_NAME,
 	SPACE_SYSTEM_TERRAINS,
 	SPACE_SECTOR_TERRAINS,
 	presetToPalette,
 } from "../src/palettes/presets";
-import { DEFAULT_TERRAIN_PALETTE, EXPANDED_PALETTE_NAME, LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { enabledKinds, isIconHiddenByKind, isKindEnabled } from "../src/mapKinds";
 import { planetSurface, planetSurfaceFits, planetRoles } from "../src/worldgen/procedural/planetSurface";
 import type { SubmapDefault } from "../src/types";
@@ -81,7 +82,7 @@ describe("preset submap defaults", () => {
 
 	it("system planets open as planet-surface maps tuned per type", () => {
 		expect(system.submapDefaults!["ocean planet"]).toMatchObject({
-			palette: EXPANDED_PALETTE_NAME, generator: "procedural:planet-surface", options: { water: "85" },
+			palette: SPACE_PLANET_PALETTE_NAME, generator: "procedural:planet-surface", options: { water: "85" },
 		});
 		expect(system.submapDefaults!["ice planet"].options!.climate).toBe("frozen");
 		expect(system.submapDefaults!["desert planet"].options!.climate).toBe("arid");

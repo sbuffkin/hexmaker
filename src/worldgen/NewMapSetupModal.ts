@@ -525,7 +525,8 @@ export class NewMapSetupModal extends HexmakerModal {
       // Space generators only for space users or maps in space (a space
       // palette here, or a planet submap of a star system); a saved
       // submap default stays visible either way.
-      const spaceContext = isSpacePalette(terrains) || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
+      const spaceContext = isSpacePalette(terrains) || this.plugin.getPaletteOrPresetKind(paletteSelect.value) === "space"
+        || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
       const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator);
       // "Zoom into the parent hex" generators only for submaps (a neighbour
       // has context but no parent hex); next to a neighbour, the ones that

@@ -14,7 +14,7 @@
  *
  *   | World | Weight | Map | Orbit | Stars | Temperature | Size | Generator | Options | Palette | Base | Notes |
  *   | --- | ---: | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
- *   | ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush | Expanded | ocean |  |
+ *   | ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush | Space - Planet | ocean |  |
  *
  * - *World*: the terrain the row places (matched to the palette's terrain
  *   names, any case). The same world may have several rows (different

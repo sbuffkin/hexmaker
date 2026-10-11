@@ -9,7 +9,7 @@ import { inferTerrainType, terrainTypeInfo } from "../terrainTypes";
 import { AddPaletteModal } from "./AddPaletteModal";
 import { fillPaletteSelect } from "./paletteOptions";
 import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
-import { isSpacePalette } from "../mapKinds";
+import { paletteKind } from "../mapKinds";
 import { impassableSourceText, isImpassable, setImpassable } from "../impassable";
 import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
 import { PathTypeEditorModal } from "../hex-map/PathTypeEditorModal";
@@ -430,8 +430,8 @@ export class PaletteEditorView extends ItemView {
       genSel.createEl("option", { value: "", text: "—" });
       // Space generators while Space is off: only for a space palette or a
       // space submap palette (or the saved value).
-      const spaceContext = isSpacePalette(pal.terrains)
-        || (!!d.palette && isSpacePalette(this.plugin.getPaletteOrPresetTerrains(d.palette)));
+      const spaceContext = paletteKind(pal) === "space"
+        || (!!d.palette && this.plugin.getPaletteOrPresetKind(d.palette) === "space");
       for (const g of visibleKinds(this.generators, this.plugin.settings, spaceContext, d.generator)) {
         genSel.createEl("option", { value: g.id, text: g.label });
       }

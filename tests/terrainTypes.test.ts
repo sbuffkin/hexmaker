@@ -23,7 +23,10 @@ describe("terrain type vocabulary", () => {
 		for (const p of PALETTE_PRESETS) {
 			for (const t of p.terrains) {
 				expect({ palette: p.name, terrain: t.name, ok: isTerrainType(t.type) }).toMatchObject({ ok: true });
-				expect({ palette: p.name, terrain: t.name, kind: terrainTypeInfo(t.type)?.kind }).toMatchObject({ kind: p.kind });
+				// A space preset may use land and water types (Space - Planet's surfaces).
+				const info = terrainTypeInfo(t.type);
+				const fits = info?.kind === p.kind || (p.kind === "space" && (info?.group === "land" || info?.group === "water"));
+				expect({ palette: p.name, terrain: t.name, fits }).toMatchObject({ fits: true });
 			}
 		}
 	});

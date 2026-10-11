@@ -44,6 +44,7 @@ export interface PresetPathRoles {
 
 export const SPACE_SECTOR_PALETTE_NAME = "Space - Sector";
 export const SPACE_SYSTEM_PALETTE_NAME = "Space - System";
+export const SPACE_PLANET_PALETTE_NAME = "Space - Planet";
 
 // Sector scale (Traveller subsector / sector chart): one hex is one parsec
 // and holds at most one star system, typed by its mainworld. Drill into a
@@ -103,6 +104,39 @@ export const SPACE_SYSTEM_TERRAINS: TerrainColor[] = [
   { name: "radiation belt", type: "anomaly", color: "#7d6a1f", icon: "space-radioactive.svg", iconColor: "#fef08a", category: "hazards" },
 ];
 
+// Planet scale: one world's surface, opened from a planet or moon in a
+// system. Land terrains with the overland types (water, grassland, desert…)
+// so the Planet surface generator places them; the rest are for painting.
+// Space content all the same (kind "space"), so a space-only setup gets a
+// surface palette without the fantasy ones.
+export const SPACE_PLANET_TERRAINS: TerrainColor[] = [
+  // Seas
+  { name: "deep ocean", type: "deep-water", color: "#10233f", category: "seas" },
+  { name: "ocean", type: "water", color: "#245a87", category: "seas" },
+  { name: "shallows", type: "shallows", color: "#3f86a3", category: "seas" },
+  { name: "shore", type: "coast", color: "#b9ad84", category: "seas" },
+  // Living ground
+  { name: "plains", type: "grassland", color: "#6f9a5a", icon: "bw-grassland.png", category: "living" },
+  { name: "forest", type: "forest", color: "#2f6b4a", icon: "bw-forest.png", category: "living" },
+  { name: "jungle", type: "jungle", color: "#1f6b3a", icon: "bw-jungle.png", category: "living" },
+  { name: "toxic marsh", type: "wetland", color: "#7d8f2a", icon: "bw-swamp.png", iconColor: "#f7fee7", category: "living" },
+  // Barren ground
+  { name: "regolith", type: "badlands", color: "#8a8178", icon: "bw-desert-rocky.png", category: "barren" },
+  { name: "bare rock", type: "badlands", color: "#6b6560", icon: "bw-brokenlands.png", category: "barren" },
+  { name: "dunes", type: "desert", color: "#d6b46a", icon: "bw-dunes.png", category: "barren" },
+  { name: "ice", type: "snow", color: "#dbeaf5", category: "barren" },
+  // Relief
+  { name: "hills", type: "hills", color: "#a49a72", icon: "bw-hills.png", category: "relief" },
+  { name: "crater field", type: "hills", color: "#7b7268", icon: "space-ring.svg", iconColor: "#f5f5f4", category: "relief" },
+  { name: "mountains", type: "mountains", color: "#7a6a58", icon: "bw-mountains.png", category: "relief" },
+  { name: "peaks", type: "peaks", color: "#c9d3dc", icon: "bw-mountains-snow.png", category: "relief" },
+  // Strange ground and sites
+  { name: "lava field", type: "volcanic", color: "#8f2d1c", icon: "bw-volcano.png", iconColor: "#fde68a", category: "strange" },
+  { name: "crystal field", type: "badlands", color: "#6d5bb5", icon: "space-twinkle.svg", iconColor: "#ede9fe", category: "strange" },
+  { name: "ruins", type: "settlement", color: "#8c7b6b", icon: "space-debris.svg", iconColor: "#fafaf9", category: "sites" },
+  { name: "colony", type: "settlement", color: "#9ca3af", icon: "space-beacon-outline.svg", iconColor: "#111827", category: "sites" },
+];
+
 // Sector-scale "roads".
 export const SPACE_PATH_TYPES: PathType[] = [
   { name: "Jump route", color: "#60a5fa", width: 2, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" },
@@ -127,11 +161,11 @@ const SECTOR_SUBMAP_DEFAULTS: Record<string, SubmapDefault> = Object.fromEntries
     "asteroid belt", "gas giant", "star system"].map((t) => [t, { ...SYSTEM_SUBMAP }]),
 );
 
-// …and every rocky world in a system opens as a planet-surface region map,
-// tuned to the planet type. The sea (or desert) is the base terrain, so
-// only land (or oases) gets hex notes up front.
+// …and every rocky world in a system opens as a planet-surface map on
+// Space - Planet, tuned to the planet type. The sea (or dunes, or
+// regolith) is the base terrain.
 const surface = (water: string, climate: string, base: string, relief = "normal"): SubmapDefault => ({
-  palette: EXPANDED_PALETTE_NAME,
+  palette: SPACE_PLANET_PALETTE_NAME,
   cols: 20,
   rows: 14,
   generator: "procedural:planet-surface",
@@ -141,11 +175,11 @@ const surface = (water: string, climate: string, base: string, relief = "normal"
 const SYSTEM_SUBMAP_DEFAULTS: Record<string, SubmapDefault> = {
   "terrestrial planet": surface("65", "temperate", "ocean"),
   "ocean planet": surface("85", "lush", "ocean"),
-  "desert planet": surface("10", "arid", "desert"),
+  "desert planet": surface("10", "arid", "dunes"),
   "ice planet": surface("30", "frozen", "ocean"),
-  "rocky planet": surface("10", "arid", "desert", "rugged"),
-  "molten planet": surface("10", "volcanic", "desert", "rugged"),
-  moon: surface("10", "frozen", "desert", "rugged"),
+  "rocky planet": surface("10", "arid", "regolith", "rugged"),
+  "molten planet": surface("10", "volcanic", "regolith", "rugged"),
+  moon: surface("10", "frozen", "regolith", "rugged"),
 };
 
 export const PALETTE_PRESETS: PalettePreset[] = [
@@ -180,6 +214,12 @@ export const PALETTE_PRESETS: PalettePreset[] = [
     kind: "space",
     submapDefaults: SYSTEM_SUBMAP_DEFAULTS,
   },
+  {
+    name: SPACE_PLANET_PALETTE_NAME,
+    description: "A planet's surface: seas, plains, regolith, dunes, ice, craters, lava fields, toxic marsh, crystal fields, ruins and colonies. Typed for the Planet surface generator.",
+    terrains: SPACE_PLANET_TERRAINS,
+    kind: "space",
+  },
 ];
 
 export function getPreset(name: string): PalettePreset | undefined {
@@ -188,7 +228,7 @@ export function getPreset(name: string): PalettePreset | undefined {
 
 /** Deep copy of a preset's terrains, safe to mutate. */
 export function presetToPalette(preset: PalettePreset, name = preset.name): TerrainPalette {
-  const pal: TerrainPalette = { name, terrains: preset.terrains.map((t) => ({ ...t })) };
+  const pal: TerrainPalette = { name, terrains: preset.terrains.map((t) => ({ ...t })), kind: preset.kind };
   if (preset.childPalette) pal.childPalette = preset.childPalette;
   if (preset.submapDefaults) pal.submapDefaults = cloneSubmapDefaults(preset.submapDefaults);
   pal.pathTypes = clonePathTypes(preset.pathTypes ?? DEFAULT_PATH_TYPES);

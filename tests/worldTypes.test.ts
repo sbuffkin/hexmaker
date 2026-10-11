@@ -64,15 +64,16 @@ function oldWeightedPick(rand: () => number, names: string[], weights: Record<st
 const oldZoneWeights = (bodies: string[], zone: Zone) =>
 	Object.fromEntries(bodies.filter((b) => OLD_BODY_NAMES.includes(b)).map((b) => [b, OLD_ZONE_WEIGHTS[zone][b] ?? 0.5]));
 const ofTypes = (terrains: TerrainColor[], types: string[]) => terrains.filter((t) => types.includes(t.type ?? "")).map((t) => t.name);
-const OLD_SURFACE = { palette: "Expanded", cols: 20, rows: 14, generator: "procedural:planet-surface" };
+// Planet surfaces open on Space - Planet since SP3 (were Expanded, "desert" bases).
+const OLD_SURFACE = { palette: "Space - Planet", cols: 20, rows: 14, generator: "procedural:planet-surface" };
 const OLD_SYSTEM_DEFAULTS: Record<string, object> = {
 	"terrestrial planet": { ...OLD_SURFACE, options: { water: "65", climate: "temperate", relief: "normal" }, baseTerrain: "ocean" },
 	"ocean planet": { ...OLD_SURFACE, options: { water: "85", climate: "lush", relief: "normal" }, baseTerrain: "ocean" },
-	"desert planet": { ...OLD_SURFACE, options: { water: "10", climate: "arid", relief: "normal" }, baseTerrain: "desert" },
+	"desert planet": { ...OLD_SURFACE, options: { water: "10", climate: "arid", relief: "normal" }, baseTerrain: "dunes" },
 	"ice planet": { ...OLD_SURFACE, options: { water: "30", climate: "frozen", relief: "normal" }, baseTerrain: "ocean" },
-	"rocky planet": { ...OLD_SURFACE, options: { water: "10", climate: "arid", relief: "rugged" }, baseTerrain: "desert" },
-	"molten planet": { ...OLD_SURFACE, options: { water: "10", climate: "volcanic", relief: "rugged" }, baseTerrain: "desert" },
-	moon: { ...OLD_SURFACE, options: { water: "10", climate: "frozen", relief: "rugged" }, baseTerrain: "desert" },
+	"rocky planet": { ...OLD_SURFACE, options: { water: "10", climate: "arid", relief: "rugged" }, baseTerrain: "regolith" },
+	"molten planet": { ...OLD_SURFACE, options: { water: "10", climate: "volcanic", relief: "rugged" }, baseTerrain: "regolith" },
+	moon: { ...OLD_SURFACE, options: { water: "10", climate: "frozen", relief: "rugged" }, baseTerrain: "regolith" },
 };
 const OLD_SECTOR_DEFAULT = { palette: "Space - System", cols: 13, rows: 13, generator: "procedural:orbits", baseTerrain: "void" };
 
@@ -127,7 +128,7 @@ describe("Default space reproduces the old built-in odds", () => {
 		expect(back.problems).toEqual([]);
 		expect(back.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
 		expect(text).toContain("hexmaker-world-types: 2");
-		expect(text).toContain("| ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush, relief=normal | Expanded | ocean |  |");
+		expect(text).toContain("| ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush, relief=normal | Space - Planet | ocean |  |");
 	});
 });
 

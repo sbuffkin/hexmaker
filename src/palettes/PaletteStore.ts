@@ -7,9 +7,11 @@ import {
   paletteFileName,
   parsePaletteNote,
   readChildPalette,
+  readPaletteKind,
   readSubmapDefaults,
   refreshPaletteDerived,
   setChildPalette,
+  setPaletteKind,
   setSubmapDefaults,
   submapDefaultsKey,
   terrainsEqual,
@@ -93,6 +95,12 @@ function applyNoteMeta(pal: TerrainPalette, content: string, legacy = false): bo
     else delete pal.childPalette;
     changed = true;
   }
+  const kind = readPaletteKind(content);
+  if (pal.kind !== kind) {
+    if (kind) pal.kind = kind;
+    else delete pal.kind;
+    changed = true;
+  }
   const defaults = readSubmapDefaults(content);
   if (submapDefaultsKey(pal.submapDefaults) !== submapDefaultsKey(defaults)) {
     if (defaults) pal.submapDefaults = defaults;
@@ -136,7 +144,7 @@ export function wrapNoteColors(content: string): string {
 
 /** A fresh note for a palette, metadata included. */
 function newNote(pal: TerrainPalette): string {
-  const note = setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette), pal.submapDefaults);
+  const note = setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette, pal.kind), pal.submapDefaults);
   return pal.pathTypes ? setPathTypes(note, pal.pathTypes) : note;
 }
 
@@ -148,7 +156,7 @@ function newNote(pal: TerrainPalette): string {
  */
 /** A palette's own copy (never alias a shared constant). */
 export function clonePalette(p: TerrainPalette): TerrainPalette {
-  return { name: p.name, terrains: p.terrains.map((t) => ({ ...t })) };
+  return { name: p.name, terrains: p.terrains.map((t) => ({ ...t })), ...(p.kind ? { kind: p.kind } : {}) };
 }
 
 /**
@@ -729,7 +737,7 @@ export class PaletteStore {
             ? editing ? current : refreshPaletteDerived(current)
             : updatePaletteNote(current, pal.terrains);
           const withMeta = setSubmapDefaults(
-            setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette),
+            setPaletteKind(setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette), pal.kind),
             pal.submapDefaults,
           );
           const next = pal.pathTypes ? setPathTypes(withMeta, pal.pathTypes) : withMeta;

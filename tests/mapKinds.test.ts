@@ -5,6 +5,7 @@ import {
 	generatorMapKind,
 	isGeneratorShown,
 	isSpacePalette,
+	paletteKind,
 	resolveMapKinds,
 	terrainsForTables,
 } from "../src/mapKinds";
@@ -42,7 +43,9 @@ describe("isSpacePalette", () => {
 		expect(isSpacePalette(SPACE_SYSTEM_TERRAINS)).toBe(true);
 		expect(isSpacePalette(DEFAULT_TERRAIN_PALETTE)).toBe(false);
 		expect(isSpacePalette(LIMITED_TERRAIN_PALETTE)).toBe(false);
-		for (const p of PALETTE_PRESETS) expect({ p: p.name, space: isSpacePalette(p.terrains) }).toEqual({ p: p.name, space: p.kind === "space" });
+		// Space - Planet is space content on land types (its declared kind says so).
+		for (const p of PALETTE_PRESETS) expect({ p: p.name, kind: paletteKind(p) }).toEqual({ p: p.name, kind: p.kind });
+		expect(isSpacePalette(PALETTE_PRESETS.find((p) => p.name === "Space - Planet")!.terrains)).toBe(false);
 	});
 
 	it("needs a typed space terrain (names alone don't count)", () => {

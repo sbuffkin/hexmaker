@@ -33,7 +33,10 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { BiomeStore } from "./overworld/BiomeStore";
-import { fillBiomeColumns } from "./overworld/overworldGen";
+import { biomePoolsFolder, fillBiomeColumns } from "./overworld/overworldGen";
+import { generatorsFolder } from "./worldgen/generators";
+import { planKindContent, resolveKindContent } from "./kindContent";
+import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import { WorldTypeStore } from "./space/WorldTypeStore";
 import { WorldTypesModal } from "./space/WorldTypesModal";
 import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
@@ -41,7 +44,7 @@ import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, isSpacePalette, newTerrains, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type SectionWordsFn } from "./mapKinds";
+import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
 import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
@@ -172,6 +175,11 @@ export default class HexmakerPlugin extends Plugin {
       // BC1, once per vault: every overworld hex's biome in its Biome column.
       void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
+      // A fresh install whose setup was finished or turned off without
+      // picking map types: its types' content goes in now (SP3).
+      void Promise.all([biomesReady, storesReady]).then(() => {
+        if (!this.settings.kindContent && (this.settings.setupComplete || this.settings.setupDismissed)) return this.applyKindContent();
+      }).catch((e) => console.error("Hexmaker: map type content", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -826,6 +834,9 @@ export default class HexmakerPlugin extends Plugin {
     // (new install / older data) = world, plus space if a palette has space
     // terrains already.
     this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
+    // Shipped content per map type (SP3): an update has its types' content
+    // already; a fresh install writes none until its setup picks the types.
+    this.settings.kindContent = resolveKindContent(rawData, this.settings.mapKinds);
     // Feature level, also from the raw data: an install that already had
     // settings (an update) gets Advanced so nothing it used disappears; a
     // fresh one starts Simple. Saved right away, so the next load doesn't
@@ -842,7 +853,8 @@ export default class HexmakerPlugin extends Plugin {
     // "Palette for new maps": seeded once from the above, then the user's.
     this.settings.defaultPalette = resolveDefaultPalette(rawData);
     const firstDefaultPalette = typeof rawData?.["defaultPalette"] !== "string";
-    if (firstLevel || firstExpanded || firstDefaultPalette || !rawData?.["installedAt"]) await this.saveData(this.settings);
+    const firstKindContent = rawData?.["kindContent"] === undefined;
+    if (firstKindContent || firstLevel || firstExpanded || firstDefaultPalette || !rawData?.["installedAt"]) await this.saveData(this.settings);
   }
 
   /**
@@ -1150,7 +1162,13 @@ export default class HexmakerPlugin extends Plugin {
     const core = loose.internalPlugins?.getPluginById?.("templates");
     const coreFolder = core?.enabled ? core.instance?.options?.folder : undefined;
     const templater = loose.plugins?.plugins?.["templater-obsidian"]?.settings?.templates_folder;
-    return templateNoteRules(this.settings, [coreFolder, templater]);
+    return templateNoteRules(this.settings, [coreFolder, templater], [
+      this.paletteStore.folder(),
+      this.biomeStore.folder(),
+      biomePoolsFolder(this),
+      this.worldTypeStore.folder(),
+      generatorsFolder(this),
+    ]);
   }
 
   /**
@@ -2486,6 +2504,50 @@ export default class HexmakerPlugin extends Plugin {
     return this.getPaletteByName(name)?.terrains ?? getPreset(name)?.terrains ?? [];
   }
 
+  /** The map type of a palette (or a preset not installed yet): see paletteKind. */
+  getPaletteOrPresetKind(name: string): MapKind {
+    return paletteKind(this.getPaletteByName(name) ?? getPreset(name));
+  }
+
+  /**
+   * Install the shipped content of map types that are on and haven't had
+   * it yet (SP3, src/kindContent.ts): their palettes, biome notes (World)
+   * and world types (Space). In the first setup, untouched shipped
+   * palettes of types left off, that no map uses, are dropped again, and
+   * "Palette for new maps" moves off a type that's off. Run when the setup
+   * wizard picks the map types (`fromSetup`) and when a type is turned on
+   * in settings.
+   */
+  async applyKindContent(opts: { fromSetup?: boolean } = {}): Promise<void> {
+    const s = this.settings;
+    const placeholder = s.maps.find((m) => m.name === PLACEHOLDER_MAP_NAME);
+    // The shipped placeholder map doesn't count as using its palette while it's empty.
+    const placeholderUnused = !!placeholder && this.mapStore.all(PLACEHOLDER_MAP_NAME).size === 0;
+    const inUse = new Set(s.maps.filter((m) => !(placeholderUnused && m === placeholder)).map((m) => m.paletteName).filter(Boolean));
+    const plan = planKindContent({
+      kinds: [...enabledKinds(s)],
+      done: s.kindContent,
+      firstSetup: !!opts.fromSetup && !s.setupComplete,
+      palettes: s.terrainPalettes,
+      inUse,
+      defaultPalette: s.defaultPalette,
+    });
+    if (plan.remove.length) s.terrainPalettes = s.terrainPalettes.filter((p) => !plan.remove.includes(p.name));
+    for (const name of plan.install) {
+      const preset = getPreset(name);
+      if (preset) s.terrainPalettes.push(presetToPalette(preset));
+    }
+    if (plan.defaultPalette) s.defaultPalette = plan.defaultPalette;
+    if (placeholder && plan.remove.includes(placeholder.paletteName)) placeholder.paletteName = defaultPaletteFor(s);
+    s.kindContent = plan.done;
+    await this.saveSettings();
+    if (plan.newKinds.length) {
+      await this.biomeStore.seedShipped();
+      if (plan.newKinds.includes("space")) await this.worldTypeStore.ensureDefault();
+    }
+    this.onMapKindsChanged();
+  }
+
   /**
    * Path types maps on this palette can draw, in picker order: the palette's
    * own list (the live array, so editors can change it in place), a preset's
@@ -2752,7 +2814,7 @@ export default class HexmakerPlugin extends Plugin {
     const chain = [...mapAncestors(mapName, (m) => this.parentOf(m)?.map), mapName];
     return chain.some((m) => {
       const paletteName = this.getMap(m)?.paletteName;
-      return !!paletteName && isSpacePalette(this.getPaletteOrPresetTerrains(paletteName));
+      return !!paletteName && this.getPaletteOrPresetKind(paletteName) === "space";
     });
   }
 
@@ -2764,11 +2826,11 @@ export default class HexmakerPlugin extends Plugin {
   sectionWordsFor(mapName: string | undefined): SectionWordsFn {
     if (!mapName || !this.getMap(mapName)) return sectionWordsFor(undefined);
     const chain = [mapName, ...mapAncestors(mapName, (m) => this.parentOf(m)?.map).reverse()];
-    const terrains = chain.map((m) => {
-      const paletteName = this.getMap(m)?.paletteName;
-      return paletteName ? this.getPaletteOrPresetTerrains(paletteName) : [];
-    });
-    return sectionWordsFor(sectionKindFor(terrains));
+    const palettes = chain.map((m) => this.getMap(m)?.paletteName);
+    const terrains = palettes.map((n) => (n ? this.getPaletteOrPresetTerrains(n) : []));
+    // A palette's declared type counts too (a planet map on Space - Planet).
+    const declared = palettes.map((n) => (n ? this.getPaletteByName(n)?.kind ?? getPreset(n)?.kind : undefined));
+    return sectionWordsFor(sectionKindFor(terrains, undefined, declared));
   }
 
   getAllTerrains(): TerrainColor[] {

@@ -257,7 +257,7 @@ function plugin(vault: MemVault, settings: Record<string, unknown> = {}) {
 	const p = {
 		app: vault.app(),
 		manifest: { dir: ".obsidian/plugins/hexmaker" },
-		settings: { worldFolder: "world", biomesFolder: "", ...settings } as Record<string, unknown>,
+		settings: { worldFolder: "world", biomesFolder: "", kindContent: ["world"], mapKinds: ["world"], ...settings } as Record<string, unknown>,
 		saves: 0,
 		saveSettings: async () => { p.saves++; },
 	};
@@ -282,6 +282,23 @@ describe("BiomeStore", () => {
 		const plan = presetsToSeed(["tundra"], new Set(["taiga"]), (f) => f === "Temperate forest", presets);
 		expect(plan.write).toEqual([]);
 		expect(plan.done).toEqual(["taiga", "temperate-forest"]);
+	});
+
+	it("startup in a space-only setup writes no biome notes; turning World on writes them then (SP3)", async () => {
+		const v = new MemVault();
+		const { p, store } = await boot(v, { mapKinds: ["space"], kindContent: ["space"] });
+		expect([...v.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
+		expect(store.list()).toEqual([]);
+		expect(p.settings.biomesSeeded).toBeUndefined();
+		// A fresh install before its setup picks the types: none either.
+		const v2 = new MemVault();
+		await boot(v2, { kindContent: undefined });
+		expect([...v2.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
+		// World turned on later.
+		p.settings.mapKinds = ["space", "world"];
+		p.settings.kindContent = ["space", "world"];
+		await store.seedShipped();
+		expect(v.files.has(`${FOLDER}/Tundra.md`)).toBe(true);
 	});
 
 	it("seeds the built-ins into notes once; a deleted one stays deleted", async () => {
