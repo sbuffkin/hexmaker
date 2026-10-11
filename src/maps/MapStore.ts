@@ -23,6 +23,7 @@ import {
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 import { regionMirrorFixes } from "./submaps";
 import { writeJsonBackup } from "../backup";
+import { HEX_MAP_KEY, hexNoteMapKey, LEGACY_HEX_MAP_KEY } from "../noteFormats";
 import { guardWrite } from "../modeGate";
 import type { ModeAction } from "../workMode";
 import { impassableNames } from "../impassable";
@@ -58,8 +59,6 @@ export interface RouteContextChange {
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
-/** Pointer left in a cleaned hex note's frontmatter. */
-export const MAP_LINK_KEY = "hexmaker-map";
 
 const HEX_FILE = /^(-?\d+)_(-?\d+)\.md$/;
 
@@ -1344,7 +1343,10 @@ export class MapStore {
         }
         await fileManager.processFrontMatter(file, (f: Record<string, unknown>) => {
           for (const k of HEX_DATA_KEYS) delete f[k];
-          f[MAP_LINK_KEY] = link;
+          // `map:` (NF1), unless the note uses `map:` for something of its own.
+          const key = hexNoteMapKey(f);
+          if (key === HEX_MAP_KEY) delete f[LEGACY_HEX_MAP_KEY];
+          f[key] = link;
         });
       }
     }

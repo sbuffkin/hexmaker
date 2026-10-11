@@ -301,15 +301,15 @@ describe("region biome", () => {
 describe("new hex notes", () => {
 	it("swap map-data keys for a link to the map note, keeping the rest", () => {
 		const t = "---\nterrain:\ntags: [hex]\ngm-icons:\n  - a.png\n  - b.png\nregion: North\n---\n# Hex 1, 2\n";
-		expect(withMapLink(t, "coast")).toBe('---\nhexmaker-map: "[[_coast]]"\ntags: [hex]\n---\n# Hex 1, 2\n');
+		expect(withMapLink(t, "coast")).toBe('---\nmap: "[[_coast]]"\ntags: [hex]\n---\n# Hex 1, 2\n');
 	});
 
 	it("adds frontmatter to a template without any", () => {
-		expect(withMapLink("# Hex\n", "m")).toBe('---\nhexmaker-map: "[[_m]]"\n---\n# Hex\n');
+		expect(withMapLink("# Hex\n", "m")).toBe('---\nmap: "[[_m]]"\n---\n# Hex\n');
 	});
 
 	it("handles an empty frontmatter block and CRLF", () => {
-		expect(withMapLink("---\r\n---\r\n\r\n# Hex\r\n", "m")).toBe('---\r\nhexmaker-map: "[[_m]]"\r\n---\r\n\r\n# Hex\r\n');
+		expect(withMapLink("---\r\n---\r\n\r\n# Hex\r\n", "m")).toBe('---\r\nmap: "[[_m]]"\r\n---\r\n\r\n# Hex\r\n');
 	});
 });
 

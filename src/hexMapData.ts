@@ -26,7 +26,14 @@
  * applied stays in the callout as a `Not applied:` line, and lines it can't
  * read as `Not read:` lines, so nothing typed is lost. Overworld hexes get
  * a "Biome:" line too.
+ *
+ * NF2: filled "**Terrain:**" / "**Region:**" lines from older templates
+ * move into the callout as "Old terrain:" / "Old region:" lines
+ * (`moveBodyFieldsIntoMapData`). Like "Not applied:" lines they're the
+ * user's words: kept as written, never read back into the map.
  */
+
+import { takeBodyFields, type TakenBodyField } from "./hexBodyFields";
 
 export const MAP_DATA_CALLOUT = "[!hexmaker]";
 
@@ -132,6 +139,24 @@ export function setMapData(content: string, d: HexMapDataView, insert = false, n
   return lines.join(eol);
 }
 
+/**
+ * NF2: the note with its filled "**Terrain:**" / "**Region:**" body lines
+ * moved into its Map data callout as "Old terrain:" / "Old region:" lines
+ * (the callout is added under the title when the note has none). The map's
+ * own values stay as the callout's Terrain and Region: a moved line never
+ * changes the map. A note with no such lines comes back unchanged.
+ */
+export function moveBodyFieldsIntoMapData(content: string, d: HexMapDataView): { content: string; moved: TakenBodyField[] } {
+  const { content: rest, taken } = takeBodyFields(content);
+  if (!taken.length) return { content, moved: [] };
+  return { content: setMapData(rest, d, true, taken.map(oldFieldLine)), moved: taken };
+}
+
+/** "Old terrain: forest": how a moved body line reads in the callout. */
+export function oldFieldLine(t: TakenBodyField): string {
+  return `Old ${t.field.toLowerCase()}: ${t.value}`;
+}
+
 /** The values written in the callout (a person may have edited them), or null without one. */
 export function readMapData(content: string): { terrain?: string; region?: string; name?: string } | null {
   const lines = content.replace(/\r\n?/g, "\n").split("\n");
@@ -162,7 +187,7 @@ const KEYS: Record<string, string> = {
 export type MapDataShown = Record<string, string>;
 
 /** Lines that hold what a person typed and are kept as they are. */
-const KEPT = /^\s*>\s*(not applied|not read)\s*:/i;
+const KEPT = /^\s*>\s*(not applied|not read|old terrain|old region)\s*:/i;
 const isKeptLine = (l: string) => KEPT.test(l);
 /** The built-in template's placeholder line. */
 const PLACEHOLDER = /^filled in from the map by hexmaker\.?$/i;
@@ -239,8 +264,9 @@ export function planCalloutImport(content: string, shown: MapDataShown | undefin
 }
 
 /** The notice after importing callout edits, or null when there's nothing to say. */
-export function mapDataSyncMessage(where: string, r: { applied: string[]; notApplied: string[]; unreadable: string[] }): string | null {
+export function mapDataSyncMessage(where: string, r: { applied: string[]; notApplied: string[]; unreadable: string[]; moved?: string[] }): string | null {
   const parts: string[] = [];
+  if (r.moved?.length) parts.push(`Moved ${r.moved.length === 1 ? "an old line" : `${r.moved.length} old lines`} (${r.moved.join("; ")}) into Map data; the map keeps its own values.`);
   if (r.applied.length) parts.push(`Put on the map from the note's Map data: ${r.applied.join("; ")}.`);
   if (r.notApplied.length) parts.push(`Not applied: ${r.notApplied.join("; ")}.`);
   if (r.unreadable.length) parts.push(`${r.unreadable.length} line${r.unreadable.length === 1 ? "" : "s"} in Map data couldn't be read; marked "Not read:" in the note.`);

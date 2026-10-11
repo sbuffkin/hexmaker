@@ -1,6 +1,7 @@
 import { App, TFile, parseYaml } from "obsidian";
 import type { TokenEntry, TokenShape, TokenSize } from "./types";
 import type { ModeAction } from "./workMode";
+import { mapNameFromRef, mapNoteLink, noteLink, noteRefTarget } from "./noteFormats";
 import {
   type OverlayPatternKey,
   DEFAULT_OVERLAY_PATTERN_KEY,
@@ -423,20 +424,38 @@ export async function setGmIconsInFile(
 const VALID_SHAPES: TokenShape[] = ["circle", "square", "hexagon"];
 const VALID_SIZES:  TokenSize[]  = ["sm", "md", "lg"];
 
+/** How a token note names its map: a link to the map note (NF3); "" stays "". */
+export function tokenMapValue(map: string): string {
+  return map ? mapNoteLink(map) : map;
+}
+
+/**
+ * The note a reference names: a wikilink (resolved like Obsidian does,
+ * from `sourcePath`) or a vault path (with or without ".md"). Null when
+ * it names no note.
+ */
+export function resolveNoteRef(app: App, value: unknown, sourcePath: string): TFile | null {
+  const { target, link } = noteRefTarget(value);
+  if (!target) return null;
+  const direct = app.vault.getAbstractFileByPath(target) ?? app.vault.getAbstractFileByPath(`${target}.md`);
+  if (direct instanceof TFile) return direct;
+  if (!link) return null;
+  const dest = app.metadataCache.getFirstLinkpathDest?.(target.replace(/\.md$/i, ""), sourcePath);
+  return dest instanceof TFile ? dest : null;
+}
+
 export function getTokenDataFromCache(app: App, file: TFile): TokenEntry | null {
   const cache = app.metadataCache.getFileCache(file);
   const fm = cache?.frontmatter;
   if (!fm?.["token"]) return null;
   const rawShape = fm["token-shape"] as string | undefined;
   const rawSize  = fm["token-size"]  as string | undefined;
-  const tokenLink = typeof fm["token-link"] === "string" ? fm["token-link"] : undefined;
+  // A proxy's original note: a link (NF3) or, in older notes, a path.
+  const linked = resolveNoteRef(app, fm["token-link"], file.path);
+  const tokenLink = linked?.path ?? (noteRefTarget(fm["token-link"]).target || undefined);
 
   // Resolve display title from the linked note if this is a proxy
-  let title = file.basename;
-  if (tokenLink) {
-    const linked = app.vault.getAbstractFileByPath(tokenLink);
-    if (linked instanceof TFile) title = linked.basename;
-  }
+  const title = linked ? linked.basename : file.basename;
 
   return {
     filePath: file.path,
@@ -444,7 +463,8 @@ export function getTokenDataFromCache(app: App, file: TFile): TokenEntry | null 
     tokenLink,
     icon: typeof fm["token-icon"] === "string" ? fm["token-icon"] : undefined,
     hex: typeof fm["token-hex"] === "string" ? fm["token-hex"] : "",
-    map: typeof fm["token-map"] === "string" ? fm["token-map"] : "",
+    // A link to the map note (NF3) or, in older notes, the map's name.
+    map: mapNameFromRef(fm["token-map"]),
     visible: fm["token-visible"] !== false,
     shape: VALID_SHAPES.includes(rawShape as TokenShape)
       ? (rawShape as TokenShape)
@@ -473,7 +493,7 @@ export async function readTokenPlace(app: App, path: string): Promise<{ hex: str
   try { fm = parseYaml(m[1]) as Record<string, unknown> | null; } catch { return null; }
   if (!fm?.["token"]) return null;
   const s = (v: unknown) => (typeof v === "string" ? v : "");
-  return { hex: s(fm["token-hex"]), map: s(fm["token-map"]) };
+  return { hex: s(fm["token-hex"]), map: mapNameFromRef(fm["token-map"]) };
 }
 
 export async function setTokenHex(
@@ -486,7 +506,7 @@ export async function setTokenHex(
   if (!(file instanceof TFile)) return;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
     fm["token-hex"] = hex;
-    fm["token-map"] = map;
+    fm["token-map"] = tokenMapValue(map);
   });
 }
 
@@ -548,7 +568,7 @@ export async function applyTokenFrontmatter(
       else delete fm["token-icon"];
     }
     if (data.hex !== undefined) fm["token-hex"] = data.hex;
-    if (data.map !== undefined) fm["token-map"] = data.map;
+    if (data.map !== undefined) fm["token-map"] = tokenMapValue(data.map);
     if (data.visible !== undefined) fm["token-visible"] = data.visible;
     if (data.shape !== undefined) fm["token-shape"] = data.shape;
     if (data.size !== undefined) fm["token-size"] = data.size;
@@ -558,7 +578,7 @@ export async function applyTokenFrontmatter(
     if (data.border !== undefined) {
       if (data.border) fm["token-border"] = data.border; else delete fm["token-border"];
     }
-    if (data.tokenLink !== undefined) fm["token-link"] = data.tokenLink;
+    if (data.tokenLink !== undefined) fm["token-link"] = data.tokenLink ? noteLink(data.tokenLink) : data.tokenLink;
     if (data.description !== undefined) {
       if (data.description) fm["token-description"] = data.description;
       else delete fm["token-description"];

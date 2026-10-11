@@ -99,4 +99,21 @@ describe("Map data callout phase 2, end to end (syncHexMapData)", () => {
 		expect(s.hexes.get("3_4")?.terrain).toBe("forest");
 		expect(r.notApplied).toEqual(["Terrain: lava (not in this map's palette)"]);
 	});
+
+	it("NF2: moves an old **Terrain:** line into Map data (adding it), never onto the map", async () => {
+		const s = setup({ hex: { terrain: "forest" }, note: () => "# Hex 3, 4\n\n**Terrain:** swamp\n\nText.\n" });
+		const r = await s.sync();
+		expect(r).toMatchObject({ wrote: true, applied: [], moved: ["Old terrain: swamp"] });
+		expect(s.hexes.get("3_4")?.terrain).toBe("forest");
+		expect(s.content()).toBe("# Hex 3, 4\n\n> [!hexmaker] Map data\n> Map: [[_coast|Coast]], hex 3, 4\n> Terrain: forest\n> Region: —\n> Name: —\n> Old terrain: swamp\n\nText.\n");
+		expect(s.memory.get("hexes/coast/3_4.md")?.terrain).toBe("forest");
+		// Done once: the next sync has nothing to move or write.
+		expect(await s.sync()).toMatchObject({ wrote: false, moved: [] });
+	});
+
+	it("a note without a callout or old lines is left alone", async () => {
+		const s = setup({ hex: { terrain: "forest" }, note: () => "# Hex 3, 4\n\n**Terrain:**\n\nText.\n" });
+		expect(await s.sync()).toMatchObject({ wrote: false, moved: [] });
+		expect(s.content()).toBe("# Hex 3, 4\n\n**Terrain:**\n\nText.\n");
+	});
 });
