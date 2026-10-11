@@ -204,7 +204,7 @@ Table notes are meant to be rolled by hand, too. Each row shows its roll range f
 | —     | kraken  | 0 |
 ```
 
-What you see in the roll column is what you get: the plugin rolls the same ranges. A range you type by hand is never overwritten; a blank range cell is filled in from the weights. Weight 0 (`—`) is never rolled. d100 accepts `01–05` and `00`; d66 is supported (`dice: d66`). Columns are found by name (Range/Roll/dN, Result/Entry, Weight/W), and extra columns and text around the table are kept. Older `| Result | Weight |` tables still work; **Add roll ranges to tables** upgrades them (after making a backup), and **Check tables** writes a report of anything that couldn't be read to `_table-check.md` in the tables folder.
+What you see in the roll column is what you get: the plugin rolls the same ranges. A range you type by hand is never overwritten; a blank range cell is filled in from the weights. Weight 0 (`—`) is never rolled. d100 accepts `01–05` and `00`; d66 is supported (`dice: d66`). Columns are found by name (Range/Roll/dN, Result/Entry, Weight/W), and extra columns and text around the table are kept. Older `| Result | Weight |` tables still work. The first time the plugin starts after an update, it backs them up and adds roll ranges once, without asking; **Add roll ranges to tables** does the same by hand (after making a backup), and **Check tables** writes a report of anything that couldn't be read to `_table-check.md` in the tables folder.
 
 More a table can say, all optional (a table without them reads exactly as before):
 

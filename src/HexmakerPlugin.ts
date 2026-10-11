@@ -16,7 +16,7 @@ import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
 import { fillLegacyPathTypes } from "./palettes/pathTypeLegacy";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { maybePromptTableRanges, openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
+import { openTableRangesModal, runTableCheck, upgradeTableRangesOnce } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
 import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
@@ -209,9 +209,9 @@ export default class HexmakerPlugin extends Plugin {
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
       } else {
-        // Once after updating: offer roll ranges for older tables (asks
-        // first). After the stores load, for the same reason.
-        void storesReady.then(() => maybePromptTableRanges(this));
+        // Once after updating: add roll ranges to older tables, silently,
+        // after a backup (DJ-Q6). After the stores load, for the same reason.
+        void storesReady.then(() => upgradeTableRangesOnce(this));
       }
     });
 
@@ -806,6 +806,8 @@ export default class HexmakerPlugin extends Plugin {
       data["defaultMap"] = data["defaultRegion"];
     }
     delete data["defaultRegion"];
+    // The roll-ranges prompt (never released) became a silent upgrade (DJ-Q6).
+    delete data["tableRangesPrompt"];
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
     // Own copy: the default is a shared constant, and editors push into lists.

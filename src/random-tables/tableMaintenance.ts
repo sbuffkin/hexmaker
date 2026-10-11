@@ -4,8 +4,8 @@
  *   folder) listing tables whose ranges, weights or columns couldn't be read.
  * - "Add roll ranges to tables" upgrades older tables to `| dN | Result |
  *   Weight |`, after writing a gzipped full-text backup. It only runs from
- *   the user's click in TableRangesModal; on first load after updating, the
- *   modal is offered once (see maybePromptTableRanges).
+ *   the user's click in TableRangesModal, and once, silently, on the first
+ *   load after updating (see upgradeTableRangesOnce; no prompt: DJ-Q6).
  *
  * Never adds to or alters `_` notes (other than the report it owns).
  */
@@ -186,8 +186,8 @@ export async function writeTableReport(app: App, scope: TableScope, text: string
   return path;
 }
 
-function backupDirFor(plugin: HexmakerPlugin): string {
-  return `${plugin.manifest.dir}/backups/table-ranges-${new Date().toISOString().slice(0, 10)}`;
+function backupDirFor(host: { manifest: { dir?: string } }): string {
+  return `${host.manifest.dir}/backups/table-ranges-${new Date().toISOString().slice(0, 10)}`;
 }
 
 /** "Check tables" command. */
@@ -212,8 +212,8 @@ async function runMigration(plugin: HexmakerPlugin): Promise<void> {
     const result = await migrateTables(plugin.app, scope, backupDirFor(plugin));
     const check = await checkTables(plugin.app, scope);
     const path = await writeTableReport(plugin.app, scope, formatTableReport(new Date(), check, result));
-    if (!result.error) {
-      plugin.settings.tableRangesPrompt = "done";
+    if (!result.error && !plugin.settings.tableRangesUpgraded) {
+      plugin.settings.tableRangesUpgraded = true;
       await plugin.saveSettings();
     }
     new Notice(
@@ -229,13 +229,12 @@ async function runMigration(plugin: HexmakerPlugin): Promise<void> {
   }
 }
 
-/** Asks before adding roll ranges; never runs without the click. */
+/** Shows what would change, then adds roll ranges on the click (the "Add roll ranges to tables" command). */
 export class TableRangesModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
     private survey: MigrationSurvey,
-    private fromPrompt: boolean,
   ) {
     super(app);
   }
@@ -263,14 +262,7 @@ export class TableRangesModal extends HexmakerModal {
       this.close();
       void runMigration(this.plugin);
     });
-    row.createEl("button", { text: "Not now" }).addEventListener("click", () => this.close());
-    if (this.fromPrompt) {
-      row.createEl("button", { text: "Don't ask again" }).addEventListener("click", () => {
-        this.plugin.settings.tableRangesPrompt = "never";
-        void this.plugin.saveSettings();
-        this.close();
-      });
-    }
+    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
   }
 
   onClose(): void {
@@ -289,20 +281,38 @@ export async function openTableRangesModal(plugin: HexmakerPlugin): Promise<void
     );
     return;
   }
-  new TableRangesModal(plugin.app, plugin, survey, false).open();
+  new TableRangesModal(plugin.app, plugin, survey).open();
+}
+
+/** What the one-time upgrade needs from the plugin (tests pass a fake). */
+export interface TableRangesHost {
+  app: App;
+  manifest: { dir?: string };
+  settings: { tablesFolder?: string; workflowsFolder?: string; tableRangesUpgraded?: boolean };
+  saveSettings(): Promise<void>;
 }
 
 /**
- * First load after updating: offer the upgrade once, if any table would
- * change. "Not now" asks again next time; "Don't ask again" stops it.
+ * First load after updating: add roll ranges to older tables, silently and
+ * once (owner decision DJ-Q6: no prompt, no nag). The originals are backed
+ * up first; if the backup fails nothing changes and it runs again next
+ * start. When nothing needs ranges no note is written, only the record.
+ * One short notice afterwards, and only when a table changed.
  */
-export async function maybePromptTableRanges(plugin: HexmakerPlugin): Promise<void> {
-  if (plugin.settings.tableRangesPrompt) return;
-  const survey = await surveyTableMigration(plugin.app, tableScope(plugin));
-  if (!survey.changes.size) {
-    plugin.settings.tableRangesPrompt = "done";
-    await plugin.saveSettings();
-    return;
+export async function upgradeTableRangesOnce(host: TableRangesHost): Promise<MigrationResult | null> {
+  if (host.settings.tableRangesUpgraded) return null;
+  const scope: TableScope = {
+    tablesFolder: normalizeFolder(host.settings.tablesFolder ?? ""),
+    workflowsFolder: normalizeFolder(host.settings.workflowsFolder ?? ""),
+  };
+  const result = await migrateTables(host.app, scope, backupDirFor(host));
+  if (result.error) {
+    console.warn("Hexmap World Creator: roll ranges not added; will try again next start.", result.error);
+    return result;
   }
-  new TableRangesModal(plugin.app, plugin, survey, true).open();
+  host.settings.tableRangesUpgraded = true;
+  await host.saveSettings();
+  const n = result.changed.length;
+  if (n) new Notice(`Added roll ranges to ${n} table${n === 1 ? "" : "s"} (backed up).`);
+  return result;
 }
