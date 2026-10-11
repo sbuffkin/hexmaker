@@ -10,7 +10,7 @@ import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { regionMapAt } from "../maps/submaps";
-import { biomeInfo } from "../overworld/biomes";
+import { biomeInfo, biomeNoteOf } from "../overworld/biomes";
 import { drawMiniOverworld, miniHexAt, miniLayout, type MiniHex } from "../overworld/overworldRender";
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
 import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "../overworld/regionsVault";
@@ -54,8 +54,8 @@ export class OverworldMinimap {
       const sw = box.createDiv({ cls: "duckmage-ow-view-toggle", attr: { role: "group", "aria-label": "Overworld view" } });
       sw.createSpan({ cls: "duckmage-ow-view-label", text: "View:" });
       for (const [id, label, tip] of [
-        ["regions", "Regions", "Every region's hexes, stitched together (blank bricks where there's none yet). Click to enter a region; the terrain tool paints its hexes."],
-        ["biomes", "Biomes", "One biome per hex. Click a hex to enter its region, or to set the biome of one with none yet. Right-click a region → Edit region… for its name, biome and notes."],
+        ["regions", "Regions", "Every region's hexes, stitched together (blank bricks where there's none yet). Click to enter a region; the terrain tool paints its hexes, the Biome tool sets biomes."],
+        ["biomes", "Biomes", "One biome per hex. Click a hex to enter its region, or to set the biome of one with none yet; the Biome tool paints biomes (the terrain tool is off here). Right-click a region → Edit region… for its name, biome and notes."],
       ] as const) {
         const on = view === id;
         const b = sw.createEl("button", { text: label, cls: on ? "is-active" : "", attr: { title: on ? `${tip} (showing now)` : tip, "aria-pressed": on ? "true" : "false" } });
@@ -95,10 +95,12 @@ export class OverworldMinimap {
     const biomes = overworldBiomes(terrain, palette, ow.layout.orientation, ow.layout.parentStagger, placedBiomes(this.plugin, t.overworld.name));
     const eco = ecotoneHexes(biomes, ow.layout.orientation, ow.layout.parentStagger);
     const hexes: MiniHex[] = [];
-    for (const [k, terr] of terrain) {
+    // Painted hexes, and blank-biome hexes (a Biome cell, no terrain) in their biome's colour.
+    for (const k of new Set([...terrain.keys(), ...biomes.keys()])) {
       const [x, y] = k.split("_").map(Number);
       const b = biomes.get(k);
-      hexes.push({ x, y, color: colour.get(terr) ?? "#333", label: b ? biomeInfo(b)?.label : undefined, ecotone: eco.has(k) });
+      const terr = terrain.get(k);
+      hexes.push({ x, y, color: (terr ? colour.get(terr) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeInfo(b)?.label : undefined, ecotone: eco.has(k) });
     }
     if (!hexes.length) { box.remove(); this.el = null; return; }
     const canvas = box.createEl("canvas", { cls: "duckmage-ow-minimap-canvas" });

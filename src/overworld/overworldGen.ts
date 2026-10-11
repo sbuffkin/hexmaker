@@ -31,12 +31,12 @@ import {
 } from "./biomePool";
 import { biomeFileName, type BiomeNoteFields } from "./biomeNote";
 import { BIOME_PRESETS } from "./biomePresets";
-import { biomeForTerrain, biomeNoteOf, type BiomeId } from "./biomes";
+import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeRef, isBlankBiome, type BiomeId } from "./biomes";
 import { regionGenerator } from "./biomeForm";
-import { firstPassWrites } from "./overworldPass";
+import { biomeColumnFills, firstPassWrites } from "./overworldPass";
 import { formatBiomeRiver, regionOrder } from "./regionWorld";
-import { createRegion, overworldOf, regenerateRegion } from "./regionsVault";
-import { worldBiomes, type WorldBiomesOptions, type WorldBiomesResult } from "./worldBiomes";
+import { createRegion, hexBiomeAt, overworldBiomeHexes, overworldOf, regenerateRegion } from "./regionsVault";
+import { unclimatedText, worldBiomes, type WorldBiomesOptions, type WorldBiomesResult } from "./worldBiomes";
 
 /** Hint shown where regenerating a whole overworld is locked. */
 export const REGENERATE_LOCKED_HINT = "Switch to God to regenerate the whole overworld.";
@@ -144,7 +144,7 @@ export function overworldCells(plugin: HexmakerPlugin, mapName: string): [number
   const map = plugin.getMap(mapName);
   if (!map) return [];
   const keys = new Set<string>();
-  for (const [k, h] of plugin.mapStore.all(mapName)) if (h.terrain || h.regionMap) keys.add(k);
+  for (const [k, h] of plugin.mapStore.all(mapName)) if (h.terrain || h.regionMap || h.biome) keys.add(k);
   for (const m of plugin.settings.maps) if (m.submapKind === "region" && m.parent?.map === mapName) keys.add(m.parent.hex);
   if (!keys.size) {
     for (let y = map.gridOffset.y; y < map.gridOffset.y + map.gridSize.rows; y++) {
@@ -167,11 +167,10 @@ export function layOutBiomes(
   return worldBiomes(cells, o, s, palette, { ...opts, biomes: pool });
 }
 
-/** Write a result into the overworld (locked hexes kept). Returns the hexes kept. */
+/** Write a result into the overworld (locked hexes kept): terrain and the Biome column. Returns the hexes kept. */
 export async function writeOverworldBiomes(plugin: HexmakerPlugin, mapName: string, result: WorldBiomesResult): Promise<{ written: number; kept: string[] }> {
-  const palette = plugin.getMapPalette(mapName);
   const current = new Map([...plugin.mapStore.all(mapName)].map(([k, h]) => [k, { terrain: h.terrain, biome: h.biome, locked: h.locked }]));
-  const { cells, kept } = firstPassWrites(current, result, (t) => biomeForTerrain(t, palette));
+  const { cells, kept } = firstPassWrites(current, result, biomeRef, isBlankBiome);
   for (const [k, patch] of cells) plugin.mapStore.set(mapName, k, patch);
   await plugin.mapStore.flush();
   return { written: cells.length, kept };
@@ -214,7 +213,7 @@ export async function regionPass(
         out.remade.push(existing.name);
         name = existing.name;
       }
-    } else if (terrain) {
+    } else if (terrain || biome) {
       const res = await createRegion(plugin, mapName, px, py, { fill: "match", ...(biome ? { biome } : {}) });
       if ("error" in res) out.errors.push(`${px}, ${py}: ${res.error}`);
       else { out.made.push(res.name); name = res.name; }
@@ -225,9 +224,36 @@ export async function regionPass(
 }
 
 function biomeOfHex(plugin: HexmakerPlugin, mapName: string, hex: string, terrain: string | undefined): BiomeId | undefined {
-  const own = plugin.mapStore.get(mapName, hex)?.biome;
-  if (own) return plugin.biomeStore.get(own)?.id;
+  const own = biomeByRef(plugin.mapStore.get(mapName, hex)?.biome);
+  if (own) return own;
   return terrain ? biomeForTerrain(terrain, plugin.getMapPalette(mapName)) : undefined;
+}
+
+/**
+ * BC1, once per vault: older overworlds wrote the Biome column only for
+ * biomes their terrain couldn't say. Fill it for every hex with a biome
+ * (its region's, else its terrain's), so every overworld reads the same.
+ * Hexes with a Biome cell are left as written. Returns how many were filled.
+ */
+export async function fillBiomeColumns(plugin: HexmakerPlugin): Promise<number> {
+  if (plugin.settings.biomeColumnsFilled) return 0;
+  let n = 0;
+  for (const map of plugin.settings.maps) {
+    if (!overworldOf(plugin, map.name)) continue;
+    const fills = biomeColumnFills(
+      overworldBiomeHexes(plugin, map),
+      (k) => plugin.mapStore.get(map.name, k),
+      (k) => hexBiomeAt(plugin, map.name, k),
+      biomeRef,
+    );
+    if (!fills.length) continue;
+    plugin.mapStore.setMany(map.name, fills.map(([k, ref]) => [k, { biome: ref }]));
+    n += fills.length;
+  }
+  if (n) await plugin.mapStore.flush();
+  plugin.settings.biomeColumnsFilled = true;
+  await plugin.saveSettings();
+  return n;
 }
 
 export interface RegenerateOptions extends Omit<WorldBiomesOptions, "biomes"> {
@@ -258,6 +284,7 @@ export async function regenerateOverworld(
   const { written, kept } = await writeOverworldBiomes(plugin, mapName, result);
   map.biomeRiver = result.river.length > 1 ? formatBiomeRiver(result.river) : undefined;
   if (opts.poolPath) map.biomePool = opts.poolPath;
+  map.biomeGaps = unclimatedText(opts.unclimated ?? "fill");
   await plugin.saveSettings();
   let regions = { made: [] as string[], remade: [] as string[], waiting: 0, errors: [] as string[] };
   if ((opts.regions ?? true) && overworldOf(plugin, mapName) && canAdd(map)) {

@@ -231,6 +231,10 @@ export interface MapData {
 	biomeRiver?: string;
 	/** Overworlds: the biome pool note (vault path) its biomes were placed from (`biome-pool: "[[…]]"`). */
 	biomePool?: string;
+	/** Overworlds: what generating does with the pool's biomes that have no
+	 *  climate (BC2), as written: "fill gaps" (default) or "never"
+	 *  (`no-climate-biomes: never`). Read with worldBiomes.parseUnclimated. */
+	biomeGaps?: string;
 	backgroundImage?: MapBackgroundImage;
 	/** Optional independent transform applied to the hex grid container,
 	 *  used during background-image calibration so the user can resize/shift
@@ -361,6 +365,8 @@ export interface HexmakerPluginSettings {
 	biomePoolsFolder?: string;
 	/** True once the shipped "All biomes" pool note was written (once, so a deleted one stays deleted). */
 	biomePoolSeeded?: boolean;
+	/** True once every overworld's Biome column was filled (BC1 migration, once per vault). */
+	biomeColumnsFilled?: boolean;
 	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
 	worldTypesFolder?: string;
 	/** True once the shipped "Default space" world types note was written (once, so a deleted one stays deleted). */

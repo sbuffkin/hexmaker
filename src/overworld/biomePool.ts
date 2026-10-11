@@ -183,9 +183,9 @@ export function updateBiomePool(content: string, rows: BiomePoolRow[]): string {
 
 const key = (r: BiomePoolRow) => [r.biome.toLowerCase(), r.weight ?? 1, r.notes ?? ""];
 
-/** The shipped pool: every built-in biome, linked by its note's name. */
+/** The shipped pool: every built-in biome, linked by its note's name (blank biomes left out: they're placed by hand). */
 export function allBiomesPool(presets: readonly BiomeNoteFields[]): BiomePoolRow[] {
-  return presets.map((p) => ({ biome: biomeFileName(p.label) }));
+  return presets.filter((p) => !p.blank).map((p) => ({ biome: biomeFileName(p.label) }));
 }
 
 /**

@@ -16,7 +16,9 @@ export type DrawingMode =
   | "factionLink"
   | "regionLink"
   | "swap"
-  | "placeToken";
+  | "placeToken"
+  /** The Biome painter (overworlds only). */
+  | "biome";
 
 export interface ToolModeState {
   mode: DrawingMode | null;
@@ -43,6 +45,8 @@ export interface ToolModeState {
   submapName?: string | null;
   factionPath?: string | null;
   regionPath?: string | null;
+  /** The Biome painter's biome (its label). */
+  biomeName?: string | null;
 }
 
 /** "world/factions/Red Hand.md" → "Red Hand"; icon file → its name. */
@@ -102,5 +106,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
       return "Swapping hexes: click two hexes";
     case "placeToken":
       return "Placing token: click a hex";
+    case "biome":
+      return s.biomeName ? `Painting biome: ${s.biomeName} (click or drag over hexes)` : "Painting biome";
   }
 }

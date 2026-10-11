@@ -133,8 +133,9 @@ describe("biome note format", () => {
 // ── presets ──────────────────────────────────────────────────────────────
 
 describe("shipped biome presets", () => {
-	it("cover every built-in biome with the same label (Coast is note-only)", () => {
-		expect(BIOME_PRESETS.map((b) => b.id).filter((id) => id !== "coast")).toEqual(BIOMES.map((b) => b.id));
+	it("cover every built-in biome with the same label (Coast and Custom (blank) are note-only)", () => {
+		expect(BIOME_PRESETS.map((b) => b.id).filter((id) => id !== "coast" && id !== "custom")).toEqual(BIOMES.map((b) => b.id));
+		expect(BIOME_PRESETS.find((p) => p.id === "custom")!.blank).toBe(true);
 		for (const b of BIOMES) expect(BIOME_PRESETS.find((p) => p.id === b.id)!.label).toBe(b.label);
 		expect(BIOME_PRESETS.find((p) => p.id === "coast")!.shore).toBe(true);
 	});

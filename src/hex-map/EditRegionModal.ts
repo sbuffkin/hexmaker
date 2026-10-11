@@ -27,7 +27,7 @@ import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeA
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
-import { mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
+import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "../overworld/overworldPaths";
 import { canDo } from "../modeGate";
@@ -148,7 +148,7 @@ export class EditRegionModal extends HexmakerModal {
       for (const b of biomes) {
         const tile = grid.createDiv({
           cls: `duckmage-terrain-option${b.id === current ? " is-selected" : ""}`,
-          attr: { title: `${b.label}: paints ${b.terrain}`, "data-biome": b.id, role: "button", tabindex: "0" },
+          attr: { title: biomeTileTitle(b), "data-biome": b.id, role: "button", tabindex: "0" },
         });
         const preview = tile.createDiv({ cls: "duckmage-terrain-preview" });
         preview.setCssProps({ "--duckmage-bg": b.color });

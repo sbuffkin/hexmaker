@@ -153,8 +153,8 @@ export function regionNeighbourMaps<T extends Pick<MapData, "name" | "parent" | 
  * the biome signal). Settlements and other terrains with no biome take the
  * most common biome among their neighbours; hexes with nothing to go on are
  * left out (the field skips them). `placed` (hex → biome) wins over the
- * terrain: biomes set on a hex by name (a user's biome, #50), which a
- * terrain can't tell apart.
+ * terrain: biomes set on a hex by name (the Biome column, #50 / BC1). A
+ * placed hex with no terrain (a blank biome's) is included too.
  */
 export function overworldBiomes(
   terrain: ReadonlyMap<string, string>,
@@ -170,6 +170,7 @@ export function overworldBiomes(
     if (b) out.set(k, b);
     else unresolved.push(k);
   }
+  for (const [k, b] of placed ?? []) if (!terrain.has(k)) out.set(k, b);
   for (const k of unresolved) {
     const [x, y] = k.split("_").map(Number);
     const counts = new Map<BiomeId, number>();

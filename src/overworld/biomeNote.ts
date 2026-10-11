@@ -46,6 +46,9 @@
  *   are for watery biomes. All optional.
  * - `generator`: a generator note this biome's regions come from (once
  *   generator regions land); without one it mixes with the blend field.
+ * - `blank: yes`: its regions start blank (nothing generated) and are
+ *   painted by hand (the shipped "Custom (blank)" biome). Never placed by
+ *   World biomes; its Mix may be empty.
  *
  * Reading is forgiving: columns by header name in any order, `colour` or
  * `color`, weights like `40` or `40%`. Rows that can't be read are reported
@@ -123,6 +126,8 @@ export interface BiomeNoteFields {
   terrainWeights?: BiomeTerrainWeight[];
   /** The biome this one was made from (label, id or note name). */
   parent?: string;
+  /** `blank: yes`: its regions start blank, to paint by hand (no generation, never placed by World biomes). */
+  blank?: boolean;
 }
 
 export interface BiomeNoteProblem {
@@ -150,7 +155,7 @@ export function biomeFileName(label: string): string {
 
 export const BIOME_HELP = [
   "> [!info] Biome",
-  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Terrain weights** (optional): how a type's share is split between its terrains, like Pine forest 3 and Oak forest 1 (terrains not listed count 1). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Terrain weights** (optional): how a type's share is split between its terrains, like Pine forest 3 and Oak forest 1 (terrains not listed count 1). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `blank: yes` makes its regions start blank, to paint by hand; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -300,6 +305,12 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
     if (v === true) fields.shore = true;
     else if (v === undefined) problems.push({ where: "settings", text: `shore should be yes or no, not "${shore}"` });
   }
+  const blank = fm.get("blank");
+  if (blank) {
+    const v = readYesNo(blank);
+    if (v === true) fields.blank = true;
+    else if (v === undefined) problems.push({ where: "settings", text: `blank should be yes or no, not "${blank}"` });
+  }
   const climate = readClimate(fm);
   if (climate.climate) fields.climate = climate.climate;
   for (const p of climate.problems) problems.push({ where: "settings", text: p.text });
@@ -404,6 +415,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     ["land-share", f.landShare !== undefined ? shareText(f.landShare) : undefined],
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
     ["shore", f.shore ? "yes" : undefined],
+    ["blank", f.blank ? "yes" : undefined],
     ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
     ["parent", f.parent ? quote(f.parent) : undefined],
     ...climateKeyValues(f.climate),
@@ -478,7 +490,7 @@ function sameValue(key: string, cur: string, want: string): boolean {
   if (key === "colour") return readColour(cur) === readColour(w);
   if (key === "generator" || key === "parent") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
-  if (key === "shore") return readYesNo(cur) === readYesNo(w);
+  if (key === "shore" || key === "blank") return readYesNo(cur) === readYesNo(w);
   if (CLIMATE_KEY_SET.has(key)) return sameClimateValue(key, cur, w);
   return cur.trim() === w.trim();
 }

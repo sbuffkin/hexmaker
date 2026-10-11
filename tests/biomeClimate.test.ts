@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
-import { hexDistance } from "../packages/hex-wfc/src/grid";
+import { hexDistance, hexNeighbors } from "../packages/hex-wfc/src/grid";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import {
 	MOISTURE_WORDS,
@@ -13,7 +13,7 @@ import {
 } from "../src/overworld/biomeClimate";
 import { buildBiomeNote, parseBiomeNote, updateBiomeNote, type BiomeNoteFields } from "../src/overworld/biomeNote";
 import { BIOME_PRESETS, biomePreset } from "../src/overworld/biomePresets";
-import { BIOMES, biomeInfo, setBiomeSource } from "../src/overworld/biomes";
+import { BIOMES, biomeInfo, representativeTerrain, setBiomeSource } from "../src/overworld/biomes";
 import { placementPool, worldBiomes, type WorldBiomesOptions } from "../src/overworld/worldBiomes";
 import { lowland, worldBiomes as legacyWorldBiomes } from "./fixtures/worldBiomesLegacy";
 import { climatesToAdd } from "../src/overworld/BiomeStore";
@@ -95,7 +95,7 @@ describe("biome climate: reading and writing", () => {
 	});
 
 	it("every biome the old generator placed has a climate, and its note round-trips it", () => {
-		// Shipped biomes it never placed (the shore biome Coast) are placed by hand only.
+		// Coast (never placed by the old generator) has a climate too since BC3; Custom (blank) never does.
 		for (const b of BIOMES) expect(isPlaceable(BIOME_PRESETS.find((p) => p.id === b.id)?.climate)).toBe(true);
 		for (const p of BIOME_PRESETS.filter((x) => x.climate)) {
 			const back = parseBiomeNote(buildBiomeNote(p), p.label);
@@ -173,6 +173,27 @@ describe("biome form: climate section", () => {
 
 describe("World biomes from climates", () => {
 	const SEEDS = [1, 2, 3, 7, 11, 42, 99, 123, 777, 2024, 31337, 65535];
+	/**
+	 * Deliberately updated for BC3 (owner, 2026-10-11). Coast got a climate
+	 * (coastal lowland), so the shipped presets no longer give the old
+	 * placement: the frozen copy is compared with the old generator's biomes
+	 * (every shipped biome except Coast). With them:
+	 * - Limited: still exactly the old placement.
+	 * - Expanded: the same sea, river and climate fields; the biomes differ
+	 *   only through one fix that came with BC3: the repairs (majority filter,
+	 *   patch splits, rare swaps, transitions) no longer move a coastal-only
+	 *   biome (Coastal fjord) inland. The old generator put it on ~90 inland
+	 *   hexes over these cases; now a handful (only where a patch is boxed
+	 *   in by biomes it may not touch). Everything downstream of those
+	 *   repairs can shift, so ≥ 90% of hexes keep their old biome.
+	 * Existing overworlds only change when they're regenerated.
+	 */
+	const OLD_SET = BIOME_PRESETS.filter((p) => p.id !== "coast");
+	const inlandCoastal = (r: { biomes: Map<string, string>; sea: Set<string> }) => [...r.biomes].filter(([k, b]) => {
+		if (!BIOME_PRESETS.find((p) => p.id === b)?.climate?.coastal || r.sea.has(k)) return false;
+		const [x, y] = k.split("_").map(Number);
+		return !hexNeighbors(x, y, "flat", "odd").some(([a, c]) => r.sea.has(`${a}_${c}`));
+	}).length;
 	const cases: { cells: [number, number][]; o: Partial<WorldBiomesOptions> }[] = [
 		{ cells: hexWorld(2), o: {} },
 		{ cells: hexWorld(3), o: { climate: "varied" } },
@@ -183,31 +204,50 @@ describe("World biomes from climates", () => {
 		{ cells: hexWorld(6), o: { climate: "varied", north: "warmer", water: 0.4 } },
 	];
 
-	for (const [name, palette] of [["Expanded", DEFAULT_TERRAIN_PALETTE], ["Limited", LIMITED_TERRAIN_PALETTE]] as const) {
-		it(`reproduces the old placement exactly with only the shipped biomes (${name})`, () => {
-			for (const { cells, o } of cases) {
-				for (const seed of SEEDS) {
-					const opts = { seed, ...o };
-					const old = legacyWorldBiomes(cells, "flat", "odd", palette, opts);
-					const now = worldBiomes(cells, "flat", "odd", palette, opts);
-					expect(sorted(now.biomes)).toBe(sorted(old.biomes));
-					expect(sorted(now.terrain)).toBe(sorted(old.terrain));
-					expect(now.river).toEqual(old.river);
-					expect([...now.ecotones].sort()).toEqual([...old.ecotones].sort());
-				}
+	it("reproduces the old placement exactly with the old biomes (Limited)", () => {
+		for (const { cells, o } of cases) {
+			for (const seed of SEEDS) {
+				const opts = { seed, ...o };
+				const old = legacyWorldBiomes(cells, "flat", "odd", LIMITED_TERRAIN_PALETTE, opts);
+				const now = worldBiomes(cells, "flat", "odd", LIMITED_TERRAIN_PALETTE, { ...opts, biomes: OLD_SET });
+				expect(sorted(now.biomes)).toBe(sorted(old.biomes));
+				expect(sorted(now.terrain)).toBe(sorted(old.terrain));
+				expect(now.river).toEqual(old.river);
+				expect([...now.ecotones].sort()).toEqual([...old.ecotones].sort());
 			}
-		});
-	}
+		}
+	});
 
-	it("reproduces it with the shipped biomes loaded from notes, in any order", () => {
-		setBiomeSource([...BIOME_PRESETS].reverse());
+	it("matches the old placement with the old biomes (Expanded), except coastal-only biomes stay on the coast", () => {
+		let same = 0, total = 0, oldInland = 0, newInland = 0;
+		for (const { cells, o } of cases) {
+			for (const seed of SEEDS) {
+				const opts = { seed, ...o };
+				const old = legacyWorldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, opts);
+				const now = worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { ...opts, biomes: OLD_SET });
+				expect([...now.sea].sort()).toEqual([...old.sea].sort());
+				expect(now.river).toEqual(old.river);
+				expect(sorted(now.temperature as never)).toBe(sorted(old.temperature as never));
+				newInland += inlandCoastal(now);
+				oldInland += inlandCoastal(old);
+				for (const [k, b] of old.biomes) { total++; if (now.biomes.get(k) === b) same++; }
+				// Every hex is painted with its own biome's terrain.
+				for (const [k, b] of now.biomes) expect(now.terrain.get(k)).toBe(representativeTerrain(b, DEFAULT_TERRAIN_PALETTE));
+			}
+		}
+		expect(oldInland).toBeGreaterThan(50);
+		expect(newInland).toBeLessThanOrEqual(oldInland / 10);
+		expect(same / total).toBeGreaterThanOrEqual(0.9);
+	});
+
+	it("gives the same placement with the biomes loaded from notes, in any order", () => {
 		for (const { cells, o } of cases.slice(0, 4)) {
 			for (const seed of SEEDS.slice(0, 6)) {
 				const opts = { seed, ...o };
 				setBiomeSource(undefined);
-				const old = legacyWorldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, opts);
+				const shipped = worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { ...opts, biomes: OLD_SET });
 				setBiomeSource([...BIOME_PRESETS].reverse());
-				expect(sorted(worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, opts).biomes)).toBe(sorted(old.biomes));
+				expect(sorted(worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { ...opts, biomes: [...OLD_SET].reverse() }).biomes)).toBe(sorted(shipped.biomes));
 			}
 		}
 	});

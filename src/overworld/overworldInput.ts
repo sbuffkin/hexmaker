@@ -29,6 +29,9 @@ export const BIOME_LOCKED_HINT = "Switch to God to change it.";
 /** The hint when the terrain brush is used on an overworld in Play. */
 export const PAINT_LOCKED_HINT = "Switch to Build to paint the regions.";
 
+/** The terrain tool on an overworld's Biomes view (MM1: that view is biomes only). */
+export const TERRAIN_IN_BIOMES_HINT = "The Biomes view shows biomes only: use the Biome tool here, or switch to Regions to paint terrain.";
+
 /** The hint when the brush lands where there's no region. */
 export const PAINT_NO_REGION_HINT = "No region here yet; place a biome first.";
 

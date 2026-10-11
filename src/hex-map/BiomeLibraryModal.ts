@@ -169,6 +169,11 @@ export class BiomeFormModal extends HexmakerModal {
     const showGenNote = () => genNote.setText(routeNote({ generator: state.generator || undefined }) ?? "Blend mixes the terrain types below, and blends into the biomes next to it.");
     showGenNote();
     gen.addEventListener("change", () => { state.generator = gen.value; showGenNote(); this.schedule(); });
+    const blankRow = form.createEl("label", { cls: "duckmage-region-gen-row" });
+    const blankBox = blankRow.createEl("input", { type: "checkbox", attr: { "aria-label": "Regions start blank" } });
+    blankBox.checked = state.blank;
+    blankRow.createSpan({ text: "Regions start blank (painted by hand; never placed by the generator)" });
+    blankBox.addEventListener("change", () => { state.blank = blankBox.checked; this.check(); this.schedule(); });
 
     // Name and colour.
     const name = field("Name").createEl("input", { type: "text", attr: { "aria-label": "Name", placeholder: "Glass wastes" } });
@@ -389,7 +394,7 @@ export class BiomeFormModal extends HexmakerModal {
     const fields = fieldsFromForm(this.state, existing?.id);
     if (existing) {
       // Unset optional fields are written as removed.
-      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, shore: undefined, climate: undefined, ...fields };
+      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, shore: undefined, blank: undefined, climate: undefined, ...fields };
       delete full.id;
       if (!(await plugin.biomeStore.update(existing.id, full))) return;
     } else {
