@@ -8582,3 +8582,27 @@ textarea.duckmage-edit-region-notes-input {
     display: grid;
     gap: 4px;
 }
+/* Generator page: Biome (blend field) type mix. */
+.duckmage-biome-page-mix {
+    display: grid;
+    grid-template-columns: minmax(6em, max-content) minmax(6em, 1fr) 5em 6em;
+    gap: 2px 8px;
+    align-items: center;
+}
+.duckmage-biome-page-row {
+    display: contents;
+}
+.duckmage-biome-page-row input[type="range"] {
+    width: 100%;
+}
+.duckmage-biome-page-row.is-head span {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-biome-page-row.is-missing > span:first-child {
+    color: var(--text-faint);
+    font-style: italic;
+}
+.duckmage-wfc-used-by {
+    font-style: italic;
+}
