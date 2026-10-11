@@ -182,8 +182,14 @@ export interface MapNoteContext {
   paletteTerrains?: string[];
   /** Path type names the map's palette has (plugin.getMapPathTypes). Empty/absent: not checked. */
   pathTypes?: string[];
-  /** The palette's note (vault path without .md), for the Summary's link. */
+  /**
+   * The palette's note (vault path without .md), for the Summary's link and
+   * the `palette:` key (written as a link to it; plain when absent, e.g. a
+   * palette that isn't installed).
+   */
   paletteNote?: string;
+  /** The note of the region palette (`region-palette:`), likewise. */
+  regionPaletteNote?: string;
   /**
    * Routed facts per path, keyed by pathNameKey(name), for the Route column.
    * The writer can't route (no terrain or palette here); without them Route
@@ -720,6 +726,10 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
       bad(k, field, "should be small, medium, large, huge or a size like 120%");
     } else if (field === "hexNameStyle" && !parseNameStyle(t)) {
       bad(k, field, "should be bold, bold italic, regular or italic");
+    } else if (field === "paletteName") {
+      // A link to the palette's note (`[[world/palettes/Default]]`) or its name.
+      const name = noteName(t);
+      if (name) out[field] = name;
     } else if (field === "submapKind") {
       if (/^(region|location)$/i.test(t)) out[field] = t.toLowerCase();
       else bad(k, field, "should be region or location");
@@ -853,12 +863,19 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
   return { settings: out, format, problems };
 }
 
-function frontmatterLines(settings: Partial<MapSettings>, keep: Set<string> = new Set()): string[] {
+/** A palette name as a link to its note when it has one (`[[world/palettes/Default]]`), else as typed. */
+function paletteRef(name: unknown, note: string | undefined): unknown {
+  if (typeof name !== "string" || !name || !note) return name;
+  const p = note.replace(/\.md$/i, "");
+  return linkSafe(p) && (p.split("/").pop() ?? "") === name ? `[[${p}]]` : name;
+}
+
+function frontmatterLines(settings: Partial<MapSettings>, keep: Set<string> = new Set(), ctx: MapNoteContext = {}): string[] {
   const s = settings as Record<string, unknown>;
   const lines = [`${MAP_NOTE_MARKER}: ${MAP_NOTE_FORMAT}`];
   const put = (key: string, v: unknown) => { if (v !== undefined && !keep.has(key)) lines.push(...yamlValueLines(key, v)); };
   put("display-name", s.displayName);
-  put("palette", s.paletteName);
+  put("palette", paletteRef(s.paletteName, ctx.paletteNote));
   if (settings.gridSize) { put("cols", settings.gridSize.cols); put("rows", settings.gridSize.rows); }
   if (settings.gridOffset) { put("offset-x", settings.gridOffset.x); put("offset-y", settings.gridOffset.y); }
   for (const [field, key, kind] of SIMPLE_KEYS) {
@@ -907,7 +924,7 @@ function frontmatterLines(settings: Partial<MapSettings>, keep: Set<string> = ne
     put(REGION_KEYS.shape, reg.footprint === "hex" ? "hex flower" : "rectangle");
     put(REGION_KEYS.size, regionSizeText(reg as RegionSettings));
     put(REGION_KEYS.blend, reg.blend);
-    put(REGION_KEYS.palette, reg.palette);
+    put(REGION_KEYS.palette, paletteRef(reg.palette, ctx.regionPaletteNote));
     put(REGION_KEYS.world, reg.worldId);
     put(REGION_KEYS.stagger, reg.stagger);
     put(REGION_KEYS.generator, reg.generator);
@@ -1905,7 +1922,7 @@ export function mapNoteFormat(content: string): number | null {
 export function buildMapNote(name: string, data: MapNoteData, ctx: MapNoteContext = {}): string {
   return [
     "---",
-    ...frontmatterLines(data.settings),
+    ...frontmatterLines(data.settings, new Set(), ctx),
     "---",
     `# ${data.settings.displayName || name}`,
     "",
@@ -2045,7 +2062,7 @@ export function updateMapNote(content: string, name: string, data: MapNoteData, 
   lines = placeSummary(lines, summaryLines(data, ctx));
   const fmProblems = front.problems;
   if (fmProblems.length) lines = [...problemCallout(fmProblems, "settings"), "", ...lines];
-  return ["---", ...frontmatterLines(data.settings, keep), ...userFm, "---", ...lines].join("\n");
+  return ["---", ...frontmatterLines(data.settings, keep, ctx), ...userFm, "---", ...lines].join("\n");
 }
 
 /**

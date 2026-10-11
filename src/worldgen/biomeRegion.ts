@@ -15,8 +15,8 @@
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapPath, PathType, TerrainPalette } from "../types";
-import { isModelMarkdown, parseModelMarkdown, type HexWfcModel } from "../../packages/hex-wfc/src";
-import { blendSourcesOf, drawnPathType, generatorFitsPalette, toPathsOn, type GridSpec } from "./generators";
+import { isModelMarkdown, type HexWfcModel } from "../../packages/hex-wfc/src";
+import { blendSourcesOf, drawnPathType, generatorFitsPalette, parseGeneratorText, toPathsOn, type GridSpec } from "./generators";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { solveWithRing } from "./neighbours";
 import { listGeneratorKinds, optionsWithDefaults } from "./registry";
@@ -103,7 +103,7 @@ async function load(plugin: HexmakerPlugin, ref: GeneratorRef): Promise<Loaded> 
     const text = await vault.cachedRead(file);
     if (!isModelMarkdown(text)) throw new BiomeRegionError(`${file.basename} isn't a generator note.`);
     try {
-      return { name: file.basename, model: parseModelMarkdown(text, file.basename).model, preset: false };
+      return { name: file.basename, model: parseGeneratorText(text, file.basename).model, preset: false };
     } catch (e) {
       throw new BiomeRegionError(`Couldn't read generator ${file.basename}: ${e instanceof Error ? e.message : String(e)}`);
     }

@@ -31,6 +31,7 @@ import {
   remakeBlend,
   saveGeneratorModel,
   type GeneratorFile,
+  generatorText,
 } from "./generators";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
@@ -71,7 +72,6 @@ import {
   type CountRange,
   COMPASS,
   type Compass,
-  modelToMarkdown,
   type HexWfcModel,
 } from "../../packages/hex-wfc/src";
 import type { TFile } from "obsidian";
@@ -878,7 +878,7 @@ export class GeneratorPanel {
             cells: snapshot.cells,
             paths: snapshot.paths,
             // A draft has no file; the save keeps its own copy either way.
-            generatorMarkdown: g.file ? await this.app.vault.read(g.file) : modelToMarkdown(model),
+            generatorMarkdown: g.file ? await this.app.vault.read(g.file) : generatorText(this.plugin, model),
           };
           const file = await writeSave(this.plugin, saved);
           GeneratorPanel.loadedSave = { ...saved, name: file.basename };

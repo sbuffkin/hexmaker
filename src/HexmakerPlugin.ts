@@ -183,13 +183,14 @@ export default class HexmakerPlugin extends Plugin {
       // migrate per-hex data out of hex notes on the first run.
       const biomesReady = this.biomeStore.init();
       void this.tableNotes.init();
-      void this.worldTypeStore.init();
+      const worldTypesReady = this.worldTypeStore.init();
       const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
       // BC1, once per vault: every overworld hex's biome in its Biome column.
       void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
-      // NF1–NF3, once per vault: older hex, token and workflow notes in the new note formats (backed up first).
-      void storesReady.then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
+      // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
+      // generator and world types notes in the new note formats (backed up first).
+      void Promise.all([storesReady, worldTypesReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;

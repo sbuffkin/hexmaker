@@ -797,6 +797,10 @@ export class MapStore {
       const used = p.mapPaletteName?.call(this.plugin, map.name);
       const note = used && used === map.paletteName ? p.paletteStore?.notePathOf(used) : undefined;
       if (note) ctx.paletteNote = note.replace(/.md$/i, "");
+      // The region palette's note, when installed, so `region-palette:` is written as a link.
+      const regPal = map.regions?.palette;
+      const regNote = regPal ? p.paletteStore?.notePathOf(regPal) : undefined;
+      if (regNote) ctx.regionPaletteNote = regNote.replace(/.md$/i, "");
     } catch (e) {
       console.error("Hexmaker: couldn't read the palette for a map note's summary", e);
     }

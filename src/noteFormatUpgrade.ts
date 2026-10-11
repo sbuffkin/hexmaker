@@ -13,6 +13,11 @@
  * - "note-links" (NF3): token notes' `token-map: coast` becomes a link to
  *   the map note, `token-link: world/npcs/Ana.md` a link to that note, and
  *   workflows' `template-file:` path a link to the template.
+ * - "ref-links" (NF3, the remaining references): map notes' `palette:` and
+ *   `region-palette:`, palette notes' `child-palette:`, generators'
+ *   `palette:`, `source-map(s):` and `blend-of:`, generator saves'
+ *   `generator-path:`, and world types tables' Palette column become links
+ *   to the notes they name. A name that names no note is left as typed.
  *
  * Before anything is written, the full text of every note about to change
  * is saved as `<plugin>/backups/note-formats-<date>/<id>.json.gz`. If that
@@ -24,13 +29,14 @@
 import { Notice, TFile, type App } from "obsidian";
 import { writeJsonBackup } from "./backup";
 import { mapDataLines, moveBodyFieldsIntoMapData, shownValues, type HexMapDataView, type MapDataShown } from "./hexMapData";
-import { linkNotePathKey, linkTokenMap, renameHexMapKey } from "./noteFormats";
+import { linkFrontmatterKey, linkFrontmatterList, linkNotePathKey, linkTokenMap, mapNoteLink, pathLink, renameHexMapKey } from "./noteFormats";
+import { linkWorldTypePalettes, WORLD_TYPES_MARKER } from "./space/worldTypes";
 import { takeBodyFields } from "./hexBodyFields";
 import { normalizeFolder } from "./utils";
 
-export type NoteFormatUpgradeId = "hex-map-key" | "hex-body-lines" | "note-links";
+export type NoteFormatUpgradeId = "hex-map-key" | "hex-body-lines" | "note-links" | "ref-links";
 
-export const NOTE_FORMAT_UPGRADES: readonly NoteFormatUpgradeId[] = ["hex-map-key", "hex-body-lines", "note-links"];
+export const NOTE_FORMAT_UPGRADES: readonly NoteFormatUpgradeId[] = ["hex-map-key", "hex-body-lines", "note-links", "ref-links"];
 
 /** What the upgrades need from the plugin. */
 export interface NoteFormatHost {
@@ -39,10 +45,15 @@ export interface NoteFormatHost {
   settings: {
     hexFolder: string;
     workflowsFolder?: string;
+    worldFolder?: string;
     maps: { name: string }[];
     noteFormatUpgrades?: string[];
   };
-  mapStore: { isReady(map?: string): boolean; resolve(path: string): { map: string; key: string } | null };
+  mapStore: { isReady(map?: string): boolean; resolve(path: string): { map: string; key: string } | null; notePath?(map: string): string };
+  /** Palette notes ("ref-links"); without it no palette name is linked. */
+  paletteStore?: { notePathOf(name: string): string | undefined; folder(): string };
+  /** World types tables ("ref-links"). */
+  worldTypeStore?: { folder(): string };
   hexMapDataView(map: string, x: number, y: number): HexMapDataView;
   calloutMemory?: { set(path: string, values: MapDataShown): void };
   saveSettings(): Promise<void>;
@@ -110,6 +121,13 @@ export async function planUpgrade(host: NoteFormatHost, id: NoteFormatUpgradeId)
       if (!host.mapStore.isReady(map)) { plan.skipped.push({ path: file.path, reason: `its map (${map}) isn't loaded; the lines move when the note is next opened` }); continue; }
       add(file.path, text, moveBodyFieldsIntoMapData(text, host.hexMapDataView(map, x, y)).content);
     }
+  } else if (id === "ref-links") {
+    const refs = refLinker(host);
+    for (const file of vault.getMarkdownFiles()) {
+      if (!refs.mayHave(file.path)) continue;
+      const text = await vault.cachedRead(file);
+      add(file.path, text, refs.rewrite(file.path, text));
+    }
   } else {
     const exists = (p: string) => vault.getAbstractFileByPath(p) instanceof TFile;
     const wfFolder = normalizeFolder(host.settings.workflowsFolder ?? "");
@@ -140,12 +158,76 @@ async function replanOne(host: NoteFormatHost, id: NoteFormatUpgradeId, path: st
     const [x, y] = loc.key.split("_").map(Number);
     return moveBodyFieldsIntoMapData(current, host.hexMapDataView(loc.map, x, y)).content;
   }
+  if (id === "ref-links") return refLinker(host).rewrite(path, current);
   const exists = (p: string) => vault.getAbstractFileByPath(p) instanceof TFile;
   let next = linkTokenMap(current).content;
   next = linkNotePathKey(next, "token-link", exists).content;
   const wfFolder = normalizeFolder(host.settings.workflowsFolder ?? "");
   if (wfFolder && path.startsWith(wfFolder + "/")) next = linkNotePathKey(next, "template-file", exists).content;
   return next;
+}
+
+/**
+ * "ref-links": which notes can hold a plain reference, and the rewrite of
+ * one. Map notes (one per known map), palette notes (the palettes folder),
+ * generators and their saves (the generators folder), world types tables
+ * (their folder). Each key is rewritten on its own line; nothing else in
+ * the note changes.
+ */
+function refLinker(host: NoteFormatHost): { mayHave(path: string): boolean; rewrite(path: string, text: string): string } {
+  const { vault } = host.app;
+  const isFile = (p: string | undefined): p is string => !!p && vault.getAbstractFileByPath(p) instanceof TFile;
+  const world = normalizeFolder(host.settings.worldFolder ?? "");
+  const generators = world ? `${world}/generators` : "generators";
+  const saves = `${generators}/saves`;
+  const palettes = host.paletteStore ? normalizeFolder(host.paletteStore.folder()) : "";
+  const worldTypes = host.worldTypeStore ? normalizeFolder(host.worldTypeStore.folder()) : "";
+  const mapNotes = new Set(host.mapStore.notePath ? host.settings.maps.map((m) => host.mapStore.notePath!(m.name)) : []);
+  const maps = new Set(host.settings.maps.map((m) => m.name));
+  const under = (path: string, folder: string) => !!folder && path.startsWith(folder + "/");
+  /** A palette name → a link to its note (it must exist). */
+  const paletteLink = (name: string) => {
+    const path = host.paletteStore?.notePathOf(name);
+    const link = isFile(path) ? pathLink(path) : undefined;
+    return link && link.replace(/^\[\[|\]\]$/g, "").split("/").pop() === name ? link : undefined;
+  };
+  const mapLink = (name: string) => (maps.has(name) && host.mapStore.notePath && isFile(host.mapStore.notePath(name)) ? mapNoteLink(name) : undefined);
+  const generatorLink = (name: string) => {
+    const path = `${generators}/${name}.md`;
+    if (isFile(path)) return pathLink(path);
+    const hit = vault.getMarkdownFiles().find((f) => f.basename === name && under(f.path, generators) && !under(f.path, saves));
+    return hit ? pathLink(hit.path) : undefined;
+  };
+  const fm = (text: string) => /^---\r?\n/.test(text);
+  return {
+    mayHave: (path) => mapNotes.has(path) || under(path, palettes) || under(path, generators) || under(path, worldTypes),
+    rewrite(path, text) {
+      if (!fm(text)) return text;
+      if (mapNotes.has(path)) {
+        let next = linkFrontmatterKey(text, "palette", paletteLink).content;
+        next = linkFrontmatterKey(next, "region-palette", paletteLink).content;
+        return next;
+      }
+      if (under(path, worldTypes) && new RegExp(`^${WORLD_TYPES_MARKER}\\s*:`, "m").test(text)) {
+        return linkWorldTypePalettes(text, { paletteNote: (n) => (paletteLink(n) ? host.paletteStore?.notePathOf(n) : undefined) });
+      }
+      if (under(path, saves) && /^hexmaker-save\s*:/m.test(text)) {
+        return linkFrontmatterKey(text, "generator-path", (v) => {
+          const p = /\.md$/i.test(v) ? v : `${v}.md`;
+          return isFile(p) ? pathLink(p) : undefined;
+        }).content;
+      }
+      if (under(path, generators) && /^hex-wfc\s*:/m.test(text)) {
+        let next = linkFrontmatterKey(text, "palette", paletteLink).content;
+        next = linkFrontmatterKey(next, "source-map", mapLink).content;
+        next = linkFrontmatterList(next, "source-maps", mapLink).content;
+        next = linkFrontmatterList(next, "blend-of", generatorLink).content;
+        return next;
+      }
+      if (under(path, palettes)) return linkFrontmatterKey(text, "child-palette", paletteLink).content;
+      return text;
+    },
+  };
 }
 
 function backupDir(host: NoteFormatHost, when: Date): string {
@@ -202,6 +284,7 @@ const UPGRADE_LABEL: Record<NoteFormatUpgradeId, string> = {
   "hex-map-key": "map: links in hex notes",
   "hex-body-lines": "old Terrain/Region lines moved into Map data",
   "note-links": "links for token maps, token notes and workflow templates",
+  "ref-links": "links for palettes, generators and source maps in map, palette, generator and world types notes",
 };
 
 /** The notice after the upgrades, or null when nothing changed or was skipped. */

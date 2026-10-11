@@ -194,3 +194,106 @@ export function linkNotePathKey(content: string, key: string, exists: (path: str
   lines[at] = `${key}: ${JSON.stringify(link)}`;
   return { content: lines.join(span.eol), changed: true };
 }
+
+// ── the remaining references (palettes, generators, maps by name) ─────────
+
+/**
+ * A note's name from a reference as written: `[[world/palettes/Default]]`
+ * or `[[Default|My palette]]` → `Default`, plain `Default` → `Default`.
+ * "" when blank or not a string. Readers of the keys below take both forms
+ * forever (NF3 follow-up: links are written from now on).
+ */
+export function refBasename(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const m = WIKILINK.exec(value);
+  if (!m) return value.trim();
+  return (m[1].trim().split("/").pop() ?? "").replace(/\.md$/i, "").trim();
+}
+
+/** A note path (".md" optional) as `[[path]]`, or undefined when it can't be a link. */
+export function pathLink(path: string | undefined): string | undefined {
+  if (!path) return undefined;
+  const p = path.trim().replace(/\.md$/i, "");
+  return linkSafe(p) ? `[[${p}]]` : undefined;
+}
+
+/**
+ * The items of a list value: a YAML flow list (`["[[_a]]", b]`) or names
+ * joined by " + " (the older form: `a + b`). Quotes are taken off; links
+ * stay as written.
+ */
+export function refListItems(raw: string | undefined): string[] {
+  const t = (raw ?? "").trim();
+  if (!t) return [];
+  if (t.startsWith("[") && !t.startsWith("[[")) {
+    try {
+      const v = JSON.parse(t) as unknown;
+      if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
+    } catch { /* not JSON: read it loosely */ }
+    return splitFlow(t.slice(1, t.endsWith("]") ? -1 : undefined));
+  }
+  return t.split(" + ").map((s) => s.trim()).filter(Boolean);
+}
+
+/** `a, "b, c", [[d]]` → items (commas inside quotes or [[ ]] don't split). */
+function splitFlow(body: string): string[] {
+  const out: string[] = [];
+  let cur = "", quote = "", depth = 0;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (quote) { if (c === quote) quote = ""; else cur += c; continue; }
+    if (c === '"' || c === "'") { quote = c; continue; }
+    if (c === "[" && body[i + 1] === "[") { depth++; cur += "[["; i++; continue; }
+    if (c === "]" && body[i + 1] === "]") { depth = Math.max(0, depth - 1); cur += "]]"; i++; continue; }
+    if (c === "," && !depth) { if (cur.trim()) out.push(cur.trim()); cur = ""; continue; }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/** Items as a YAML flow list (`["[[_a]]", "b"]`): Obsidian reads it as a list property, links and all. */
+export function flowList(items: readonly string[]): string {
+  return `[${items.map((i) => JSON.stringify(i)).join(", ")}]`;
+}
+
+/**
+ * One frontmatter key's plain value → a link: `toLink(value)` gives the
+ * link text, or undefined to leave it as typed (a name that names no
+ * note). Already a link, blank or missing: unchanged. Only that line
+ * changes.
+ */
+export function linkFrontmatterKey(content: string, key: string, toLink: (value: string) => string | undefined): { content: string; changed: boolean } {
+  const span = fmLines(content);
+  if (!span) return { content, changed: false };
+  const at = keyLine(span, key);
+  if (at < 0) return { content, changed: false };
+  const value = scalarOf(span.lines[at]).trim();
+  if (!value || WIKILINK.test(value) || value.startsWith("[")) return { content, changed: false };
+  const link = toLink(value);
+  if (!link || link === value) return { content, changed: false };
+  const lines = [...span.lines];
+  lines[at] = `${key}: ${JSON.stringify(link)}`;
+  return { content: lines.join(span.eol), changed: true };
+}
+
+/**
+ * A key holding names joined by " + " (`source-maps: a + b`) → a flow list
+ * of links (`["[[_a]]", "[[_b]]"]`); each name `toLink` can't link stays as
+ * typed in the list. Unchanged when no name links, or the value is already
+ * a list.
+ */
+export function linkFrontmatterList(content: string, key: string, toLink: (name: string) => string | undefined): { content: string; changed: boolean } {
+  const span = fmLines(content);
+  if (!span) return { content, changed: false };
+  const at = keyLine(span, key);
+  if (at < 0) return { content, changed: false };
+  const raw = span.lines[at].slice(span.lines[at].indexOf(":") + 1).trim();
+  if (!raw || raw.startsWith("[")) return { content, changed: false };
+  const names = refListItems(scalarOf(span.lines[at]));
+  const items = names.map((n) => (WIKILINK.test(n) ? n : toLink(n) ?? n));
+  if (!items.some((v, i) => v !== names[i])) return { content, changed: false };
+  const lines = [...span.lines];
+  lines[at] = `${key}: ${flowList(items)}`;
+  return { content: lines.join(span.eol), changed: true };
+}

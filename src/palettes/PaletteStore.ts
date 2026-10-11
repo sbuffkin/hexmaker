@@ -143,8 +143,8 @@ export function wrapNoteColors(content: string): string {
 }
 
 /** A fresh note for a palette, metadata included. */
-function newNote(pal: TerrainPalette): string {
-  const note = setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette, pal.kind), pal.submapDefaults);
+function newNote(pal: TerrainPalette, childNote?: string): string {
+  const note = setSubmapDefaults(buildPaletteNote(pal.terrains, pal.childPalette, pal.kind, childNote), pal.submapDefaults);
   return pal.pathTypes ? setPathTypes(note, pal.pathTypes) : note;
 }
 
@@ -240,6 +240,11 @@ export class PaletteStore {
     const pal = this.plugin.settings.terrainPalettes.find((p) => p.name === name);
     if (!pal) return undefined;
     return this.boundPath.get(pal) ?? this.pathFor(name);
+  }
+
+  /** The note of a palette's child palette, when that palette is installed (so `child-palette:` is a link). */
+  private childNoteOf(pal: TerrainPalette): string | undefined {
+    return pal.childPalette ? this.notePathOf(pal.childPalette) : undefined;
   }
 
   private pathFor(name: string): string {
@@ -372,7 +377,7 @@ export class PaletteStore {
           name = uniquePaletteName(safe, siblings);
         }
         if (name !== pal.name) this.renamePalette(pal, name);
-        const content = newNote(pal);
+        const content = newNote(pal, this.childNoteOf(pal));
         const path = this.pathFor(pal.name);
         this.bind(pal, path, content);
         await this.plugin.app.vault.create(path, content);
@@ -737,7 +742,7 @@ export class PaletteStore {
             ? editing ? current : refreshPaletteDerived(current)
             : updatePaletteNote(current, pal.terrains);
           const withMeta = setSubmapDefaults(
-            setPaletteKind(setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette), pal.kind),
+            setPaletteKind(setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette, this.childNoteOf(pal)), pal.kind),
             pal.submapDefaults,
           );
           const next = pal.pathTypes ? setPathTypes(withMeta, pal.pathTypes) : withMeta;
@@ -747,7 +752,7 @@ export class PaletteStore {
           }
           this.bind(pal, target, next);
         } else {
-          const content = newNote(pal);
+          const content = newNote(pal, this.childNoteOf(pal));
           this.bind(pal, target, content);
           await vault.create(target, content);
         }

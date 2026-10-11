@@ -78,6 +78,7 @@ import {
   parseClimateRange,
   type ClimateRange,
 } from "../overworld/biomeClimate";
+import { pathLink, refBasename } from "../noteFormats";
 
 export const WORLD_TYPES_MARKER = "hexmaker-world-types";
 /** 2: the note also has the Stars and Sector features tables. 3: a Mainworld column. */
@@ -872,7 +873,8 @@ function readRow(cells: string[], cols: (Column | undefined)[]): { row?: WorldTy
   const opts = readOptions(cell("Options"));
   if (!opts) return { problem: `options "${cell("Options")}" should look like water=85, climate=lush` };
   if (Object.keys(opts).length) row.options = opts;
-  if (cell("Palette")) row.palette = cell("Palette");
+  // A link to the palette's note ([[world/palettes/Space - Planet]]) or its name.
+  if (cell("Palette")) row.palette = refBasename(cell("Palette")) || cell("Palette");
   if (cell("Base")) row.baseTerrain = cell("Base");
   if (cell("Notes")) row.notes = cell("Notes");
   return { row };
@@ -965,8 +967,32 @@ function markdownTable(columns: readonly string[], rightAligned: string, cells: 
   ];
 }
 
-const tableLines = (rows: readonly WorldTypeRow[], keep: readonly string[] = []) =>
-  markdownTable(COLUMNS, "Weight", rows.map(worldTypeCells), keep);
+/**
+ * Where the notes a world types table names are: the Palette column is
+ * written as a link to the palette's note when it has one (NF3 follow-up),
+ * else the name as typed. Readers take both.
+ */
+export interface WorldTypeLinks {
+  /** A palette's note path, when it has one. */
+  paletteNote?(name: string): string | undefined;
+}
+
+/** A Palette cell: a link to the palette's note when `links` knows it, else the name. */
+export function paletteCell(name: string | undefined, links?: WorldTypeLinks): string {
+  if (!name) return "";
+  const link = pathLink(links?.paletteNote?.(name));
+  return link && refBasename(link) === name ? link : name;
+}
+
+/** worldTypeCells, with the Palette cell a link where `links` can make one. */
+export function worldTypeCellsLinked(r: WorldTypeRow, links?: WorldTypeLinks): string[] {
+  const cells = worldTypeCells(r);
+  cells[COLUMNS.indexOf("Palette")] = paletteCell(r.palette, links);
+  return cells;
+}
+
+const tableLines = (rows: readonly WorldTypeRow[], keep: readonly string[] = [], links?: WorldTypeLinks) =>
+  markdownTable(COLUMNS, "Weight", rows.map((r) => worldTypeCellsLinked(r, links)), keep);
 const starTableLines = (rows: readonly StarTypeRow[], keep: readonly string[] = []) =>
   markdownTable(STAR_COLUMNS, "Weight", rows.map(starCells), keep);
 const featureTableLines = (rows: readonly SectorFeatureRow[], keep: readonly string[] = []) =>
@@ -979,12 +1005,12 @@ export interface WorldTypeExtras {
 }
 
 /** A fresh table note (Stars and Sector features are written even when empty). */
-export function buildWorldTypes(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): string {
+export function buildWorldTypes(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}, links?: WorldTypeLinks): string {
   return [
     "---", `${WORLD_TYPES_MARKER}: ${WORLD_TYPES_FORMAT}`, "---", "",
     `# ${name}`, "",
     ...WORLD_TYPES_HELP, "",
-    ...tableLines(rows), "",
+    ...tableLines(rows, [], links), "",
     STARS_HEADING, "",
     ...STARS_HELP, "",
     ...starTableLines(extras.stars ?? []), "",
@@ -1022,14 +1048,14 @@ function putTable(lines: string[], span: Span<string> | null, table: string[], h
  * be read (after the new rows of their table, as written). A table that
  * didn't change isn't rewritten; same string when nothing changes.
  */
-export function updateWorldTypes(content: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): string {
+export function updateWorldTypes(content: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}, links?: WorldTypeLinks): string {
   const eol = content.includes("\r\n") ? "\r\n" : "\n";
   let lines = content.replace(/\r\n?/g, "\n").split("\n");
   const parsed = parseWorldTypes(content);
   let changed = false;
   const t = findTable(lines);
   if (!t || !sameRows(parsed.rows, rows, worldTypeCells)) {
-    lines = putTable(lines, t, tableLines(rows, parsed.unreadable), []);
+    lines = putTable(lines, t, tableLines(rows, parsed.unreadable, links), []);
     changed = true;
   }
   if (extras.stars && !(parsed.stars && sameRows(parsed.stars, extras.stars, starCells))) {
@@ -1067,7 +1093,7 @@ export function withShippedMainworlds(rows: readonly WorldTypeRow[], shipped: re
  * shipped rows' mainworlds. It is marked with the current format. Anything
  * else (current, or a note without the marker) comes back as is.
  */
-export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeExtras> & { rows?: readonly WorldTypeRow[] }): string {
+export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeExtras> & { rows?: readonly WorldTypeRow[] }, links?: WorldTypeLinks): string {
   const p = parseWorldTypes(content);
   if (p.format === undefined || p.format >= WORLD_TYPES_FORMAT) return content;
   const old = p.format < 2;
@@ -1075,10 +1101,31 @@ export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeE
   const next = updateWorldTypes(content, rows, {
     stars: old && !p.stars ? defaults.stars : undefined,
     features: old && !p.features ? defaults.features : undefined,
-  });
+  }, links);
   const eol = next.includes("\r\n") ? "\r\n" : "\n";
   const marked = withFormat(next.replace(/\r\n?/g, "\n").split("\n")).join(eol);
   return marked;
+}
+
+/**
+ * The one-time rewrite (NF3 follow-up): plain Palette cells that name a
+ * palette with a note become links to it. The worlds table is written
+ * again only when some cell changes (rows that can't be read stay as
+ * written); same string otherwise.
+ */
+export function linkWorldTypePalettes(content: string, links: WorldTypeLinks): string {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const t = findTable(lines);
+  if (!t) return content;
+  const col = t.cols.indexOf("Palette");
+  if (col < 0) return content;
+  const plain = (cell: string) => !!cell && !cell.startsWith("[[") && paletteCell(cell, links) !== cell;
+  let any = false;
+  for (let i = t.start + 2; i < t.end && !any; i++) any = plain(splitRow(lines[i])[col] ?? "");
+  if (!any) return content;
+  const parsed = parseWorldTypes(content);
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  return putTable(lines, t, tableLines(parsed.rows, parsed.unreadable, links), []).join(eol);
 }
 
 /** A deep copy of rows (callers may change it). */

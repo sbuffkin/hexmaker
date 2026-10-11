@@ -44,6 +44,7 @@ import {
   type SectorFeatureRow,
   type StarTypeRow,
   type WorldTypeExtras,
+  type WorldTypeLinks,
   type WorldTypeProblem,
   type WorldTypeRow,
   type WorldTypeTable,
@@ -107,6 +108,16 @@ export class WorldTypeStore {
 
   isReady(): boolean {
     return this.ready;
+  }
+
+  /** Where the palettes the tables name have notes (the Palette column is written as links to them). */
+  links(): WorldTypeLinks {
+    return {
+      paletteNote: (name) => {
+        const path = (this.plugin as { paletteStore?: { notePathOf(n: string): string | undefined } }).paletteStore?.notePathOf(name);
+        return path && this.plugin.app.vault.getAbstractFileByPath(path) instanceof TFile ? path : undefined;
+      },
+    };
   }
 
   folder(): string {
@@ -285,7 +296,7 @@ export class WorldTypeStore {
         if (!sameOptional(now.stars, base.stars, starCells)) delete more.stars;
         if (!sameOptional(now.features, base.features, featureCells)) delete more.features;
       }
-      const next = updateWorldTypes(content, put, more);
+      const next = updateWorldTypes(content, put, more, this.links());
       if (next !== content) await this.plugin.app.vault.modify(f, next);
       this.take(f.path, next);
       this.publish();
@@ -306,7 +317,7 @@ export class WorldTypeStore {
     if (this.find(clean) || this.plugin.app.vault.getAbstractFileByPath(path)) return { error: `There's already a table called ${clean}.` };
     await this.enqueue(async () => {
       await this.ensureFolder(folder);
-      const text = buildWorldTypes(clean, copyWorldTypeRows(rows), extras);
+      const text = buildWorldTypes(clean, copyWorldTypeRows(rows), extras, this.links());
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);
       this.publish();
@@ -327,7 +338,7 @@ export class WorldTypeStore {
       if (f instanceof TFile) {
         const content = await this.plugin.app.vault.read(f);
         await this.backup("default-space", { [f.path]: content });
-        const next = updateWorldTypes(content, DEFAULT_WORLD_TYPE_ROWS, DEFAULT_WORLD_TYPE_EXTRAS);
+        const next = updateWorldTypes(content, DEFAULT_WORLD_TYPE_ROWS, DEFAULT_WORLD_TYPE_EXTRAS, this.links());
         if (next !== content) await this.plugin.app.vault.modify(f, next);
         this.take(f.path, next);
       } else {
@@ -407,7 +418,7 @@ export class WorldTypeStore {
   private async load(f: TFile): Promise<boolean> {
     let content = await this.plugin.app.vault.read(f);
     if (this.lastContent.get(f.path) === content && this.entries.has(f.path)) return false;
-    const upgraded = upgradeWorldTypes(content, { ...DEFAULT_WORLD_TYPE_EXTRAS, rows: DEFAULT_WORLD_TYPE_ROWS });
+    const upgraded = upgradeWorldTypes(content, { ...DEFAULT_WORLD_TYPE_EXTRAS, rows: DEFAULT_WORLD_TYPE_ROWS }, this.links());
     if (upgraded !== content) {
       try {
         await this.backup("upgrade", { [f.path]: content });
@@ -451,7 +462,7 @@ export class WorldTypeStore {
     const path = `${folder}/${DEFAULT_WORLD_TYPES}.md`;
     if (this.plugin.app.vault.getAbstractFileByPath(path)) return;
     await this.ensureFolder(folder);
-    const text = buildWorldTypes(DEFAULT_WORLD_TYPES, copyWorldTypeRows(DEFAULT_WORLD_TYPE_ROWS), DEFAULT_WORLD_TYPE_EXTRAS);
+    const text = buildWorldTypes(DEFAULT_WORLD_TYPES, copyWorldTypeRows(DEFAULT_WORLD_TYPE_ROWS), DEFAULT_WORLD_TYPE_EXTRAS, this.links());
     try {
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);

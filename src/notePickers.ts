@@ -12,6 +12,9 @@
  * Pure: no Obsidian imports.
  */
 
+import { tableFitsWant, type TableMaker, type TableWant } from "./random-tables/resolve";
+import type { RandomTable } from "./random-tables/randomTable";
+
 /** A content folder setting. */
 export type ContentFolderKey =
   | "townsFolder"
@@ -82,6 +85,27 @@ export function pickerFolders(
 export function inAnyFolder(path: string, folders: readonly string[]): boolean {
   const p = path.toLowerCase();
   return folders.some((f) => !!f && p.startsWith(f.toLowerCase() + "/"));
+}
+
+/**
+ * A table picker's list in two parts, order kept: the user's own tables,
+ * then the ones the map made (tableFitsWant's "map" group: terrain and
+ * region tables, marked by their frontmatter). Pickers show the user's
+ * first and the map's under one "Made by the map" heading, collapsed where
+ * the picker can collapse. Tables that don't fit the want are left out.
+ */
+export function groupTablesForPicker<T>(
+  items: readonly T[],
+  tableOf: (item: T) => Pick<RandomTable, "rows" | "terrainTypes"> & { madeBy?: TableMaker },
+  want: TableWant = { mapMade: "group" },
+): { own: T[]; mapMade: T[] } {
+  const own: T[] = [], mapMade: T[] = [];
+  for (const item of items) {
+    const r = tableFitsWant(tableOf(item), want);
+    if (r.fit === "no") continue;
+    (r.group === "map" ? mapMade : own).push(item);
+  }
+  return { own, mapMade };
 }
 
 /** Files the table editor's Import… can read: text with one entry per list item or line. */

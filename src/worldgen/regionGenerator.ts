@@ -20,8 +20,7 @@ import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWei
 import { copyClimate } from "../overworld/biomeClimate";
 import { SIMILAR } from "../overworld/biomes";
 import { hexBiomeAt, regionBiomeStatus } from "../overworld/regionsVault";
-import { learnGeneratorFromMap, listGenerators, saveGeneratorFromMap, sourceMapsOf, type GeneratorFile } from "./generators";
-import { modelToMarkdown } from "../../packages/hex-wfc/src";
+import { generatorText, learnGeneratorFromMap, listGenerators, saveGeneratorFromMap, sourceMapsOf, type GeneratorFile } from "./generators";
 
 export type OverwriteReason = "own" | "parent" | "learned" | "related" | "other";
 
@@ -271,7 +270,7 @@ export async function makeRegionGenerator(plugin: HexmakerPlugin, mapName: strin
       console.error("Hexmap World Creator: couldn't back up the generator before overwriting it", e);
       return { error: `Couldn't back up ${f.path}, so it wasn't overwritten.` };
     }
-    await plugin.app.vault.modify(f, modelToMarkdown(learned.model));
+    await plugin.app.vault.modify(f, generatorText(plugin, learned.model));
     file = f;
   }
   const link = file.path.replace(/\.md$/i, "");

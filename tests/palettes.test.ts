@@ -557,9 +557,10 @@ describe("PaletteStore", () => {
 		h.settings.terrainPalettes[0].childPalette = "Expanded";
 		await h.store.init();
 		const p = "world/palettes/Limited.md";
-		expect(h.vault.files.get(p)).toContain('child-palette: "Expanded"');
+		// An installed palette is written as a link to its note (NF3 follow-up).
+		expect(h.vault.files.get(p)).toContain('child-palette: "[[world/palettes/Expanded]]"');
 
-		// In-app change → note.
+		// In-app change → note; a palette that isn't installed stays a plain name.
 		h.settings.terrainPalettes[0].childPalette = "Space - System";
 		await h.store.sync();
 		expect(h.vault.files.get(p)).toContain('child-palette: "Space - System"');
@@ -569,6 +570,12 @@ describe("PaletteStore", () => {
 		h.store.onModify(h.file(p));
 		await h.store.sync();
 		expect(h.settings.terrainPalettes[0].childPalette).toBe("Overland");
+
+		// A link (any folder, alias or not) reads as the palette's name.
+		h.vault.files.set(p, h.vault.files.get(p)!.replace(/child-palette: .*/, 'child-palette: "[[world/palettes/Expanded|Big]]"'));
+		h.store.onModify(h.file(p));
+		await h.store.sync();
+		expect(h.settings.terrainPalettes[0].childPalette).toBe("Expanded");
 	});
 
 	it("seeded terrain types are in the notes when init() resolves (no separately queued write)", async () => {

@@ -5,6 +5,8 @@ import { normalizeFolder } from "../utils";
 import { addLinkToSection, addBacklinkToFile } from "../sections";
 import type { LinkSection } from "../types";
 import { LOCATION_SECTIONS } from "../noteTemplates";
+import { groupTableFiles } from "../random-tables/tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "../random-tables/resolve";
 
 export class LinkPickerModal extends HexmakerModal {
   constructor(
@@ -32,18 +34,28 @@ export class LinkPickerModal extends HexmakerModal {
       .filter((f) => this.plugin.isLinkableNote(f))
       .sort((a, b) => a.basename.localeCompare(b.basename));
 
+    // Tables: the user's own first; the terrain and region tables the map
+    // made sit in a collapsed "Made by the map" group after them.
+    const { own, mapMade } = this.section === "Encounters Table"
+      ? groupTableFiles(this.app, files)
+      : { own: files, mapMade: [] as TFile[] };
+    const addItems = (list: HTMLElement, items: TFile[]) => {
+      for (const file of items) {
+        const li = list.createEl("li", { cls: "duckmage-link-picker-item" });
+        li.setText(file.basename);
+        li.addEventListener("click", () => { void this.addLink(file); });
+      }
+    };
     if (files.length > 0) {
       contentEl.createEl("p", {
         text: "Select existing:",
         cls: "duckmage-link-picker-heading",
       });
-      const list = contentEl.createEl("ul", {
-        cls: "duckmage-link-picker-list",
-      });
-      for (const file of files) {
-        const li = list.createEl("li", { cls: "duckmage-link-picker-item" });
-        li.setText(file.basename);
-        li.addEventListener("click", () => { void this.addLink(file); });
+      if (own.length) addItems(contentEl.createEl("ul", { cls: "duckmage-link-picker-list" }), own);
+      if (mapMade.length) {
+        const group = contentEl.createEl("details", { cls: "duckmage-link-picker-map-made" });
+        group.createEl("summary", { text: `${MAP_MADE_GROUP_LABEL} (${mapMade.length})` });
+        addItems(group.createEl("ul", { cls: "duckmage-link-picker-list" }), mapMade);
       }
     }
 

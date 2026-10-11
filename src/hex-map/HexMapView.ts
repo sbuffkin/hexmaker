@@ -608,10 +608,13 @@ export class HexMapView extends ItemView {
     el.empty();
     const map = this.plugin.getMap(this.activeMapName);
     const state = map?.arrival?.trim().toLowerCase();
-    if (!map || (state !== "open" && state !== "locked") || !map.parent) { el.hide(); return; }
+    const wasShown = el.isShown();
+    // The toolbar row fits itself to what it holds (fitTopBar).
+    const hide = () => { el.hide(); if (wasShown) this.fitTopBar(); };
+    if (!map || (state !== "open" && state !== "locked") || !map.parent) { hide(); return; }
     const open = state === "open";
     // A locked place shows the bar only where it can still be rerolled (God).
-    if (!open && !canRerollPlace(map)) { el.hide(); return; }
+    if (!open && !canRerollPlace(map)) { hide(); return; }
     el.show();
     el.createSpan({ cls: "duckmage-arrival-bar-label", text: open ? "New place" : "Locked place" });
     const reroll = el.createEl("button", {
@@ -623,6 +626,7 @@ export class HexMapView extends ItemView {
       const lock = el.createEl("button", { text: "Lock", attr: { title: `Keep this place as it is (rerolling it then needs ${WORK_MODE_TEXT.god.label} mode)` } });
       lock.addEventListener("click", () => void this.plugin.arrival.lock(map.name).then(() => this.refreshArrivalBar()));
     }
+    this.fitTopBar();
   }
 
   /** "+ New location…" straight away (the Locations list's button). */
@@ -726,16 +730,32 @@ export class HexMapView extends ItemView {
     if (!crumbs) return;
     crumbs.empty();
     const ancestors = mapAncestors(this.activeMapName, (m) => this.plugin.parentOf(m)?.map);
-    for (const name of ancestors) {
+    // The crumbs between the first and the last fold into one "…" when the
+    // row is too narrow for them (fitTopBar); its tooltip and menu list them.
+    const middle = ancestors.slice(1, -1);
+    ancestors.forEach((name, i) => {
       const label = this.plugin.mapLabel(name);
+      const isMiddle = i > 0 && i < ancestors.length - 1;
       const crumb = crumbs.createEl("button", {
-        cls: "duckmage-map-crumb",
+        cls: `duckmage-map-crumb${isMiddle ? " duckmage-map-crumb-mid" : ""}`,
         text: label,
         attr: { title: `Go to ${label}` },
       });
       crumb.addEventListener("click", () => this.navigateToMap(name));
-      crumbs.createSpan({ cls: "duckmage-map-crumb-sep", text: "›" });
-    }
+      crumbs.createSpan({ cls: `duckmage-map-crumb-sep${isMiddle ? " duckmage-map-crumb-mid" : ""}`, text: "›" });
+      if (i === 0 && middle.length) {
+        // Stands for the folded crumbs: the tooltip names them all, a click
+        // goes to the nearest of them (one up from the last crumb shown).
+        const nearest = middle[middle.length - 1];
+        const more = crumbs.createEl("button", {
+          cls: "duckmage-map-crumb duckmage-map-crumb-more",
+          text: "…",
+          attr: { title: `${middle.map((m) => this.plugin.mapLabel(m)).join(" › ")}\nGo to ${this.plugin.mapLabel(nearest)}` },
+        });
+        more.addEventListener("click", () => this.navigateToMap(nearest));
+        crumbs.createSpan({ cls: "duckmage-map-crumb-sep duckmage-map-crumb-more", text: "›" });
+      }
+    });
     // What the hex this map was made from is ("from: barren world"), read
     // from the parent's map data (F11: a sector's world type was nowhere
     // in the system map made from it).
@@ -748,6 +768,46 @@ export class HexMapView extends ItemView {
       });
     }
     crumbs.toggle(ancestors.length > 0);
+    this.fitTopBar();
+  }
+
+  /** The map's view changed size: the top toolbar row may need to fold its breadcrumb. */
+  onResize(): void {
+    this.fitTopBar();
+  }
+
+  /**
+   * Keep the toolbar row clear of the top +/− buttons (the breadcrumb with
+   * its "from: …" crowded them on deep maps). CSS caps the row short of the
+   * side-panel buttons and lets the crumbs shrink (each with an ellipsis
+   * and its full name in the tooltip); when they don't fit whole, the
+   * middle ones fold into "…"; when the row still reaches the centred
+   * +/− buttons, those move to the second row's right side. Classes are
+   * reset first, then read.
+   */
+  private fitTopBar(): void {
+    const crumbs = this.crumbsEl;
+    const nav = crumbs?.parentElement;
+    const controls = nav?.parentElement;
+    if (!crumbs || !nav || !controls) return;
+    const top = controls.querySelector(":scope > .duckmage-expand-group-top");
+    const cut = (el: Element) => el.scrollWidth > el.clientWidth + 1;
+    const fold = () => {
+      crumbs.removeClass("is-folded");
+      // Folded as soon as the crumbs don't fit whole (one is cut short or the row overflows).
+      if (crumbs.querySelector(".duckmage-map-crumb-mid") && (cut(crumbs) || Array.from(crumbs.children).some(cut))) crumbs.addClass("is-folded");
+    };
+    // First try: the row stops short of the centred +/- buttons.
+    nav.addClass("is-centred");
+    controls.removeClass("duckmage-top-crowded");
+    if (!nav.isConnected || nav.clientWidth === 0 || !top) { fold(); return; }
+    fold();
+    const right = Math.max(...Array.from(nav.children).map((c) => c.getBoundingClientRect().right));
+    if (!cut(nav) && right + 8 <= top.getBoundingClientRect().left) return;
+    // The row's own buttons don't fit there: it takes the width and the +/- move down.
+    nav.removeClass("is-centred");
+    controls.addClass("duckmage-top-crowded");
+    fold();
   }
 
   /**
