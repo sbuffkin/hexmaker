@@ -133,6 +133,7 @@ export class BiomeStore implements BiomeStoreApi {
   }
 
   async update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>): Promise<boolean> {
+    await this.queue; // hand edits read first
     const e = this.find(name);
     if (!e) return false;
     const tables = e.problems.filter((p) => p.where !== "settings");
