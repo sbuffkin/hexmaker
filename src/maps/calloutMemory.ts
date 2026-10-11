@@ -65,13 +65,13 @@ export class CalloutMemory {
 
   private scheduleSave(): void {
     this.dirty = true;
-    if (this.saveTimer !== null) activeWindow.clearTimeout(this.saveTimer);
-    this.saveTimer = activeWindow.setTimeout(() => void this.save(), 1500);
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
+    this.saveTimer = window.setTimeout(() => void this.save(), 1500);
   }
 
   /** Write now, when anything changed (also on unload). */
   async save(): Promise<void> {
-    if (this.saveTimer !== null) activeWindow.clearTimeout(this.saveTimer);
+    if (this.saveTimer !== null) window.clearTimeout(this.saveTimer);
     this.saveTimer = null;
     if (!this.dirty) return;
     this.dirty = false;
