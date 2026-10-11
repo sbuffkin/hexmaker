@@ -545,7 +545,7 @@ export class GeneratorPanel {
     ].filter(Boolean);
     el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
-    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every setting below back to its default" } });
+    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every generating setting on this page back to its default" } });
     resetBtn.addEventListener("click", () => {
       new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
         const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
