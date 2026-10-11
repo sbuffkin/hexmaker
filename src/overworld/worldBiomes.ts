@@ -63,7 +63,29 @@ export interface WorldBiomesOptions {
    * biome with a climate.
    */
   biomes?: readonly BiomeNoteFields[];
+  /**
+   * A pool's biomes without a climate (BC2): "fill" (default) puts them
+   * only in hexes no climate biome fits; "never" leaves them for hand
+   * placement. Biomes outside a pool without a climate are never placed.
+   */
+  unclimated?: Unclimated;
 }
+
+/** What World biomes does with a pool's biomes that have no climate (BC2). */
+export type Unclimated = "fill" | "never";
+export const UNCLIMATED_CHOICES: { value: Unclimated; label: string }[] = [
+  { value: "fill", label: "Fill gaps only" },
+  { value: "never", label: "Never place them" },
+];
+
+/** A map note's `no-climate-biomes:` value, read forgivingly ("never", "no", "hand only" → never; anything else → fill). */
+export function parseUnclimated(raw: string | undefined): Unclimated {
+  const t = (raw ?? "").trim().toLowerCase();
+  return /^(never|no|none|off|hand)/.test(t) ? "never" : "fill";
+}
+
+/** How a choice is written in the map note (readable). */
+export const unclimatedText = (u: Unclimated): string => (u === "never" ? "never" : "fill gaps");
 
 export interface WorldBiomesResult {
   /** Hex key → biome. */
@@ -192,7 +214,7 @@ export function worldBiomes(
   // 4. Biome per hex, from the candidates' climates (biomeClimate.ts): the
   //    hex's band (high, mid, low; sea), then the band's biomes that fit its
   //    temperature and moisture, rarest and narrowest first, one roll.
-  const pool = placementPool(opts.biomes);
+  const pool = placementPool(opts.biomes, opts.unclimated);
   const { cands, byId } = pool;
   const isRare = (b: BiomeId) => byId.get(b)?.rare ?? !!biomeInfo(b)?.rare;
   const zoneOf = (b: BiomeId) => byId.get(b)?.zone ?? biomeInfo(b)?.zone;
@@ -206,9 +228,11 @@ export function worldBiomes(
   const ok = (b: BiomeId): BiomeId | undefined => resolveBiome(b, shown) ?? (allowed.has(b) ? b : undefined);
   const band = (e: ClimateElevation) => pool.tryOrder.filter((c) => c.elevation === e);
   const bands = { high: band("high"), mid: band("mid"), low: band("low"), sea: band("sea"), mouth: band("mouth") };
+  /** Biomes the palette can paint: shown, or standing in for by a similar one that is. A biome with neither isn't placed. */
+  const paintable = (b: BiomeId) => resolveBiome(b, shown) !== undefined;
   /** The band's first biome (rarest, narrowest) that fits and takes the roll. */
   const pickFrom = (list: PlacementCandidate[], t: number, m: number, coast: boolean): BiomeId | undefined => {
-    const fit = list.filter((c) => inClimateRange(c.temperature, t) && inClimateRange(c.moisture, m) && (!c.coastal || coast));
+    const fit = list.filter((c) => inClimateRange(c.temperature, t) && inClimateRange(c.moisture, m) && (!c.coastal || coast) && paintable(c.id));
     if (!fit.length) return undefined;
     const roll = fit.some((c) => c.chance < 1) ? rng() : 0;
     return fit.find((c) => roll < c.chance)?.id;
@@ -231,6 +255,9 @@ export function worldBiomes(
   };
   const biomes = new Map<string, BiomeId>();
   const bigLand = landKeys.length >= 8;
+  /** Coastal-only biomes (climate `coastal`) stay on hexes by the coast through every repair. */
+  const onCoast = (k: string) => (sea.has(k) ? toLand.get(k) === 1 : toSea.get(k) === 1);
+  const coastalOnly = (b: BiomeId) => !!byId.get(b)?.coastal;
   for (const k of keys) {
     const t = temperature.get(k)!, m = moisture.get(k)!;
     let b: BiomeId | undefined;
@@ -281,12 +308,12 @@ export function worldBiomes(
   const rareCount = () => [...biomes.values()].filter((b) => isRare(b)).length;
   /** A common land biome for a hex when a rare one has to go and no similar one will do. */
   const commonNear = (k: string): BiomeId | undefined => nearest(
-    cands.filter((c) => !c.rare && c.zone !== "sea" && c.elevation !== "mouth" && shown.has(c.id)),
+    cands.filter((c) => !c.rare && c.zone !== "sea" && c.elevation !== "mouth" && shown.has(c.id) && (!c.coastal || onCoast(k))),
     temperature.get(k)!, moisture.get(k)!,
   );
 
   /** Best replacement biome for a group of hexes now holding `from`. */
-  const alternative = (group: string[], from: BiomeId, avoid: Set<BiomeId> = new Set()): BiomeId | undefined => {
+  const alternative = (group: string[], from: BiomeId, avoid: Set<BiomeId> = new Set(), inlandCoastal = false): BiomeId | undefined => {
     const [t, m] = climateOf(group);
     const inGroup = new Set(group);
     const around = new Set<BiomeId>();
@@ -302,6 +329,9 @@ export function worldBiomes(
       if (c.rare && rareCount() >= rareCap) continue;
       if ([...around].some((a) => !compatible(a, b))) continue;
       const score = misfit(b, t, m) + (similar.includes(b) ? 0 : 0.35) + (around.has(b) ? 0.5 : 0) + rng() * 0.05;
+      // Coastal-only biomes stay by the coast (checked after the roll, so other
+      // picks don't change), unless nothing else fits (`inlandCoastal`).
+      if (c.coastal && !inlandCoastal && !group.every(onCoast)) continue;
       if (score < bestScore) { bestScore = score; best = b; }
     }
     return best;
@@ -339,7 +369,8 @@ export function worldBiomes(
   };
 
   const recolour = (group: string[], from: BiomeId, avoid?: Set<BiomeId>): boolean => {
-    const alt = alternative(group, from, avoid);
+    // Last resort (a patch boxed in by biomes it can't touch): a coastal-only biome inland.
+    const alt = alternative(group, from, avoid) ?? alternative(group, from, avoid, true);
     if (!alt) return false;
     for (const k of group) biomes.set(k, alt);
     return true;
@@ -349,7 +380,7 @@ export function worldBiomes(
   for (const k of landKeys) {
     const counts = new Map<BiomeId, number>();
     for (const n of nbrs.get(k)!) if (isLand(n)) counts.set(biomes.get(n)!, (counts.get(biomes.get(n)!) ?? 0) + 1);
-    for (const [b, c] of counts) if (c >= 4 && b !== biomes.get(k) && !isRare(b)) biomes.set(k, b);
+    for (const [b, c] of counts) if (c >= 4 && b !== biomes.get(k) && !isRare(b) && (!coastalOnly(b) || onCoast(k))) biomes.set(k, b);
   }
 
   // b. A mountain chain from the ridge when there's room and none exists:
@@ -391,7 +422,9 @@ export function worldBiomes(
       if (!recolour(rimChunk(patch, Math.max(1, excess)), top)) break;
     }
     // e. Patches of at most MAX_PATCH hexes.
-    for (let guard = 0; guard < 200; guard++) {
+    // Generous: without a biome that may touch every other (Coastal fjord
+    // used to be one, inland), big maps need more splits to settle.
+    for (let guard = 0; guard < 2000; guard++) {
       const big = patches().filter((p) => p.length > MAX_PATCH).sort((a, b) => b.length - a.length)[0];
       if (!big) break;
       if (!recolour(rimChunk(big, Math.min(4, big.length - 1)), biomes.get(big[0])!)) break;
@@ -437,6 +470,7 @@ export function worldBiomes(
         const fitN = misfit(b, temperature.get(n)!, moisture.get(n)!);
         const which = fitK >= fitN ? k : n;
         if (biomes.get(which) === target) continue;
+        if (coastalOnly(target) && !onCoast(which)) continue;
         biomes.set(which, target);
         ecotones.add(which);
         changed = true;
@@ -492,11 +526,12 @@ export interface PlacementPool {
 
 /**
  * The biomes World biomes may place. With `list` (a biome pool) only those,
- * and the pool's biomes without a climate fill hexes no climate biome fits.
+ * and the pool's biomes without a climate fill hexes no climate biome fits
+ * (`unclimated` "fill"; "never" leaves them out). Blank biomes never.
  * Without one: every biome note with a climate (the shipped presets before
  * the notes load); biomes without a climate are never placed.
  */
-export function placementPool(list?: readonly BiomeNoteFields[]): PlacementPool {
+export function placementPool(list?: readonly BiomeNoteFields[], unclimated: Unclimated = "fill"): PlacementPool {
   const notes: readonly BiomeNoteFields[] = list
     ?? (biomeSourceActive() ? allBiomeIds().map((id) => biomeNoteOf(id)).filter((b): b is BiomeNoteFields => !!b) : BIOME_PRESETS);
   const presetOrder = new Map(BIOME_PRESETS.map((p, i) => [p.id, i]));
@@ -508,9 +543,11 @@ export function placementPool(list?: readonly BiomeNoteFields[]): PlacementPool 
   for (const b of notes) {
     if (seen.has(b.id)) continue;
     seen.add(b.id);
+    // Blank biomes (regions painted by hand) are never placed.
+    if (b.blank) continue;
     const c = b.climate;
     if (!c || !isPlaceable(c)) {
-      if (list) fallback.push({ id: b.id, sea: biomeInfo(b.id)?.zone === "sea" || (b.landShare !== undefined && b.landShare < 0.5) });
+      if (list && unclimated === "fill") fallback.push({ id: b.id, sea: biomeInfo(b.id)?.zone === "sea" || (b.landShare !== undefined && b.landShare < 0.5) });
       continue;
     }
     const elevation = c.elevation ?? "low";

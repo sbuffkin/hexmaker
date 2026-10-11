@@ -387,6 +387,8 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["workMode", "mode", "str"],
   ["biomeRiver", "biome-river", "str"],
   ["biomePool", "biome-pool", "note"],
+  // BC2: "fill gaps" or "never" (worldBiomes.parseUnclimated).
+  ["biomeGaps", "no-climate-biomes", "str"],
   ["showCoords", "show-coords", "bool"],
   ["showTerrainIcons", "show-terrain-icons", "bool"],
   ["showIconOverrides", "show-icon-overrides", "bool"],

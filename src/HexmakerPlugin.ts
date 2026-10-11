@@ -33,6 +33,7 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import { BiomeStore } from "./overworld/BiomeStore";
+import { fillBiomeColumns } from "./overworld/overworldGen";
 import { WorldTypeStore } from "./space/WorldTypeStore";
 import { WorldTypesModal } from "./space/WorldTypesModal";
 import { PaletteStore } from "./palettes/PaletteStore";
@@ -157,9 +158,11 @@ export default class HexmakerPlugin extends Plugin {
       this.loadAvailableIcons();
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
-      void this.biomeStore.init();
+      const biomesReady = this.biomeStore.init();
       void this.worldTypeStore.init();
       const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
+      // BC1, once per vault: every overworld hex's biome in its Biome column.
+      void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {

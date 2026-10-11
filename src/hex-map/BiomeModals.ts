@@ -16,7 +16,7 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
-import { allBiomeIds, biomeInfo, representableBiomes, representativeTerrain, type BiomeId } from "../overworld/biomes";
+import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, representableBiomes, representativeTerrain, type BiomeId } from "../overworld/biomes";
 import { REGION_WARP, type BlendWidth } from "../overworld/blendField";
 import { regionCells } from "../overworld/layout";
 import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "../overworld/overworldRender";
@@ -75,17 +75,33 @@ export function lockButton(btn: HTMLButtonElement, hint: string): void {
   btn.setAttr("aria-label", `${btn.getText()} (${hint})`);
 }
 
-/** The biomes this overworld's palette can paint, with the terrain each paints. */
-export function paintableBiomes(plugin: HexmakerPlugin, parentName: string): { id: BiomeId; label: string; terrain: string; color: string }[] {
+/** A biome offered on an overworld: the terrain it paints there (none for a blank biome) and its swatch colour. */
+export interface PaintableBiome {
+  id: BiomeId;
+  label: string;
+  /** Overworld terrain it paints; undefined for a blank biome (its hex stays blank). */
+  terrain?: string;
+  color: string;
+}
+
+/** The biomes this overworld's palette can paint (with the terrain each paints), and every blank biome. */
+export function paintableBiomes(plugin: HexmakerPlugin, parentName: string): PaintableBiome[] {
   const palette = plugin.getMapPalette(parentName);
   const shown = representableBiomes(palette);
-  const out: { id: BiomeId; label: string; terrain: string; color: string }[] = [];
+  const out: PaintableBiome[] = [];
   for (const id of allBiomeIds()) {
+    const label = biomeInfo(id)?.label ?? id;
+    if (isBlankBiome(id)) { out.push({ id, label, color: biomeNoteOf(id)?.color ?? "#a8a29e" }); continue; }
     if (!shown.has(id)) continue;
     const terrain = representativeTerrain(id, palette)!;
-    out.push({ id, label: biomeInfo(id)?.label ?? id, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888" });
+    out.push({ id, label, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888" });
   }
   return out;
+}
+
+/** A biome tile's tooltip: what it paints. */
+export function biomeTileTitle(b: PaintableBiome): string {
+  return b.terrain ? `${b.label}: paints ${b.terrain}` : `${b.label}: a blank region, to paint by hand`;
 }
 
 export class BiomePickerModal extends HexmakerModal {
@@ -112,7 +128,7 @@ export class BiomePickerModal extends HexmakerModal {
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
     const grid = contentEl.createDiv({ cls: "duckmage-biome-grid" });
     for (const b of paintableBiomes(plugin, this.parentName)) {
-      const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: `Paints ${b.terrain}` } });
+      const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: biomeTileTitle(b) } });
       btn.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color });
       btn.createSpan({ text: b.label });
       // With a region, its current biome stays clickable (a no-op); with

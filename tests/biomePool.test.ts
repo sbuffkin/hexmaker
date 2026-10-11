@@ -15,7 +15,7 @@ import {
 } from "../src/overworld/biomePool";
 import { biomeFileName, type BiomeNoteFields } from "../src/overworld/biomeNote";
 import { BIOME_PRESETS } from "../src/overworld/biomePresets";
-import { biomeForTerrain, setBiomeSource } from "../src/overworld/biomes";
+import { biomeForTerrain, biomeRef, isBlankBiome, setBiomeSource } from "../src/overworld/biomes";
 import { worldBiomes } from "../src/overworld/worldBiomes";
 import { firstPassWrites } from "../src/overworld/overworldPass";
 import { buildMapNote, parseMapNote, type HexData, type MapNoteData } from "../src/maps/mapNote";
@@ -65,13 +65,15 @@ describe("biome pool notes", () => {
 		expect(parseBiomePool("no table here").problems.length).toBe(1);
 	});
 
-	it("ships one pool with every built-in biome", () => {
+	it("ships one pool with every built-in biome (blank ones are placed by hand, not pooled)", () => {
 		const rows = allBiomesPool(BIOME_PRESETS);
+		const pooled = BIOME_PRESETS.filter((p) => !p.blank);
+		expect(pooled.length).toBe(BIOME_PRESETS.length - 1);
 		expect(ALL_BIOMES_POOL).toBe("All biomes");
-		expect(rows.map((r) => r.biome)).toEqual(BIOME_PRESETS.map((p) => biomeFileName(p.label)));
+		expect(rows.map((r) => r.biome)).toEqual(pooled.map((p) => biomeFileName(p.label)));
 		const { biomes, unknown } = poolBiomes(parseBiomePool(buildBiomePool(ALL_BIOMES_POOL, rows)).rows, finder([...BIOME_PRESETS]));
 		expect(unknown).toEqual([]);
-		expect(biomes.map((b) => b.id)).toEqual(BIOME_PRESETS.map((p) => p.id));
+		expect(biomes.map((b) => b.id)).toEqual(pooled.map((p) => p.id));
 	});
 
 	it("weights scale a biome's chance; 0 leaves it out; unknown biomes are reported", () => {
@@ -145,7 +147,7 @@ describe("placement from a pool", () => {
 describe("the first pass writes", () => {
 	const readsAs = (t: string) => biomeForTerrain(t, DEFAULT_TERRAIN_PALETTE);
 
-	it("never touches locked hexes; records a biome its terrain can't say", () => {
+	it("never touches locked hexes; records every hex's biome (BC1), by label", () => {
 		setBiomeSource([...BIOME_PRESETS, { id: "ash", label: "Ash", mix: [{ type: "badlands", weight: 1 }], transitions: [], climate: { elevation: "low" } }]);
 		const r = worldBiomes(hexWorld(3), "flat", "odd", DEFAULT_TERRAIN_PALETTE, { seed: 3 });
 		const keys = [...r.biomes.keys()];
@@ -153,28 +155,31 @@ describe("the first pass writes", () => {
 			[keys[0], { terrain: "my painted", locked: true }],
 			[keys[1], { terrain: "old", biome: "old-one" }],
 		]);
-		const w = firstPassWrites(current, r, readsAs);
+		const w = firstPassWrites(current, r, biomeRef, isBlankBiome);
 		expect(w.kept).toEqual([keys[0]]);
 		expect(w.cells.some(([k]) => k === keys[0])).toBe(false);
+		expect(w.cells.length).toBe(r.biomes.size - 1);
 		for (const [k, patch] of w.cells) {
 			expect(patch.terrain).toBe(r.terrain.get(k));
-			expect(patch.biome).toBe(readsAs(patch.terrain) === r.biomes.get(k) ? null : r.biomes.get(k));
+			expect(patch.biome).toBe(biomeRef(r.biomes.get(k)!));
 		}
+		// Even where the terrain reads back as the biome, the column says it.
+		expect(w.cells.some(([k, p]) => readsAs(p.terrain!) === r.biomes.get(k))).toBe(true);
 		// Nothing to do the second time round (beyond the locked hex).
 		const after = new Map(current);
-		for (const [k, p] of w.cells) after.set(k, { terrain: p.terrain, biome: p.biome ?? undefined });
-		expect(firstPassWrites(after, r, readsAs).cells).toEqual([]);
+		for (const [k, p] of w.cells) after.set(k, { terrain: p.terrain ?? undefined, biome: p.biome });
+		expect(firstPassWrites(after, r, biomeRef, isBlankBiome).cells).toEqual([]);
 	});
 
 	it("regenerating keeps locked hexes across seeds", () => {
 		const cells = hexWorld(3);
 		const first = worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { seed: 1 });
 		const state = new Map<string, { terrain?: string; biome?: string; locked?: boolean }>();
-		for (const [k, p] of firstPassWrites(state, first, readsAs).cells) state.set(k, { terrain: p.terrain });
+		for (const [k, p] of firstPassWrites(state, first, biomeRef).cells) state.set(k, { terrain: p.terrain ?? undefined });
 		const lockedKey = [...state.keys()][4];
 		state.set(lockedKey, { terrain: "hand painted", locked: true });
 		const second = worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { seed: 2 });
-		for (const [k, p] of firstPassWrites(state, second, readsAs).cells) state.set(k, { ...state.get(k), terrain: p.terrain });
+		for (const [k, p] of firstPassWrites(state, second, biomeRef).cells) state.set(k, { ...state.get(k), terrain: p.terrain ?? undefined });
 		expect(state.get(lockedKey)).toEqual({ terrain: "hand painted", locked: true });
 	});
 });

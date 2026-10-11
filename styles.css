@@ -8770,3 +8770,23 @@ textarea.duckmage-edit-region-notes-input {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+
+/* Round 5 overworld tools: the Biome painter, blank biomes, the
+   "Biomes without a climate" row at the top of New overworld. */
+.duckmage-draw-btn-terrain:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.duckmage-biome-blank-preview {
+    background-image: repeating-linear-gradient(45deg, transparent 0 4px, var(--background-modifier-border) 4px 6px);
+}
+.duckmage-ow-top {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-secondary);
+}
+.duckmage-ow-gaps .duckmage-region-gen-label {
+    font-weight: var(--font-semibold);
+}

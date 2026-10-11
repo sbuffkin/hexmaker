@@ -15,7 +15,7 @@ import {
   getGmIconsFromFile,
   readTokenPlace,
 } from "../frontmatter";
-import { cellPatch, currentCellEdits, sameValue, stillCurrent, UNDO_DEPTH, type UndoDirection } from "../undoBook";
+import { cellPatch, currentCellEdits, sameValue, stillCurrent, UNDO_DEPTH, type CellEdit, type UndoDirection } from "../undoBook";
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
@@ -83,9 +83,12 @@ import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
 import { OverworldLayer } from "./overworldLayer";
 import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
+import { BiomePaletteModal } from "./BiomePaletteModal";
+import { BiomeStroke } from "../overworld/biomePainter";
+import { biomeInfo, biomeNoteOf } from "../overworld/biomes";
 import { EditRegionModal } from "./EditRegionModal";
-import { inOverworldGrid, overworldOf, regionHome, regionPalette, walkLock } from "../overworld/regionsVault";
-import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets } from "../overworld/overworldInput";
+import { inOverworldGrid, overworldOf, paintBiomeHex, regionHome, regionPalette, walkLock } from "../overworld/regionsVault";
+import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets, TERRAIN_IN_BIOMES_HINT } from "../overworld/overworldInput";
 import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
 import type { Side } from "../worldgen/world";
 import { withFeature } from "../advancedHints";
@@ -226,6 +229,7 @@ export class HexMapView extends ItemView {
     | "regionLink"
     | "swap"
     | "placeToken"
+    | "biome"
     | null = null;
   private isErasingMode = false;
   /** On-map "which tool is on" bar (fresh-eyes T3); text set in updateModeBar. */
@@ -257,6 +261,11 @@ export class HexMapView extends ItemView {
   private regionLinkBtnLabel: HTMLSpanElement | null = null;
   private paintRegionPath: string | null = null;
   private swapBtn: HTMLButtonElement | null = null;
+  /** The Biome painter (overworlds only): its button, swatch, biome, and the stroke being painted. */
+  private biomeToolbarBtn: HTMLButtonElement | null = null;
+  private biomeBtnPreview: HTMLSpanElement | null = null;
+  private paintBiomeId: string | null = null;
+  private biomeStroke: BiomeStroke<CellEdit> | null = null;
   private overlayPanel: OverlayPanel | null = null;
   private toolsPanel: DrawingToolPanel | null = null;
   private swapSource: { x: number; y: number } | null = null;
@@ -775,6 +784,19 @@ export class HexMapView extends ItemView {
       btn?.toggle(ok);
       if (!ok) locked.push(action);
     }
+    // Overworlds: the Biome painter, and the terrain tool only in the Regions view (MM1).
+    const owView = OverworldLayer.viewOf(this.plugin, this.getActiveMap());
+    const biomeOk = allows(mode, TOOL_ACTIONS.biome);
+    this.biomeToolbarBtn?.toggle(!!owView && biomeOk);
+    if (owView && !biomeOk) locked.push(TOOL_ACTIONS.biome);
+    if (this.terrainToolbarBtn) {
+      const off = owView === "biomes";
+      this.terrainToolbarBtn.disabled = off;
+      this.terrainToolbarBtn.toggleClass("is-locked", off);
+      this.terrainToolbarBtn.setAttr("title", off ? TERRAIN_IN_BIOMES_HINT : "");
+      if (off && this.drawingMode === "terrain") this.exitTerrainMode();
+    }
+    if (!owView && this.drawingMode === "biome") this.exitBiomeMode();
     const hint = lockedSummary(locked);
     if (this.toolsLockedEl) {
       this.toolsLockedEl.setText(hint ?? "");
@@ -1142,10 +1164,21 @@ export class HexMapView extends ItemView {
         hasDragged = true;
         return;
       }
-      // Overworld full view: the terrain tool paints the regions' own hexes.
+      // The Biome painter: each overworld hex crossed gets the biome (and its region).
+      if (this.drawingMode === "biome") {
+        const key = this.overworldHexKeyAt(e.target, e.clientX, e.clientY);
+        this.startBiomeStroke();
+        if (key) this.biomeStroke?.add(key);
+        isTerrainPainting = true;
+        lastPaintedKey = key;
+        hasDragged = true;
+        beginDrag();
+        return;
+      }
+      // Overworld Biomes view: biomes only (MM1), the terrain tool is off there.
       if (this.drawingMode === "terrain" && OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "biomes") {
-        // The brush paints the regions, so it works in the Regions view.
-        this.showOverworldRegions();
+        new Notice(TERRAIN_IN_BIOMES_HINT);
+        this.exitTerrainMode();
         hasDragged = true;
         return;
       }
@@ -1238,6 +1271,14 @@ export class HexMapView extends ItemView {
     // window's document and drags silently die (issue #32).
     let dragDoc: Document | null = null;
     const onDragMove = (e: MouseEvent) => {
+      if (isTerrainPainting && this.drawingMode === "biome") {
+        const key = this.overworldHexKeyAt(dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null, e.clientX, e.clientY);
+        if (key && key !== lastPaintedKey) {
+          lastPaintedKey = key;
+          this.biomeStroke?.add(key);
+        }
+        return;
+      }
       if (isTerrainPainting && this.currentSubStroke) {
         const key = this.subHexKeyAt(e.clientX, e.clientY);
         if (key && key !== lastPaintedKey) lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
@@ -1278,7 +1319,8 @@ export class HexMapView extends ItemView {
     };
     const onDragUp = () => {
       if (isTerrainPainting) {
-        if (this.drawingMode === "terrain") this.commitTerrainStroke();
+        if (this.drawingMode === "biome") void this.finishBiomeStroke();
+        else if (this.drawingMode === "terrain") this.commitTerrainStroke();
         else if (this.drawingMode === "icon") this.commitIconStroke();
         else if (this.drawingMode === "factionLink") this.commitFactionStroke();
         else if (this.drawingMode === "regionLink") this.commitRegionStroke();
@@ -1976,6 +2018,15 @@ export class HexMapView extends ItemView {
       this.handleTerrainButton(),
     );
 
+    // Overworlds only (shown by applyWorkModeUi): paint biomes, regions made as you go.
+    this.biomeToolbarBtn = toolbar.createEl("button", {
+      cls: "duckmage-draw-btn duckmage-draw-btn-terrain duckmage-draw-btn-biome",
+    });
+    this.biomeToolbarBtn.createSpan({ text: "Biome" });
+    this.biomeBtnPreview = this.biomeToolbarBtn.createSpan({ cls: "duckmage-terrain-btn-preview" });
+    this.biomeBtnPreview.hide();
+    this.biomeToolbarBtn.addEventListener("click", () => this.handleBiomeButton());
+
     this.iconToolbarBtn = toolbar.createEl("button", {
       cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
     });
@@ -2100,6 +2151,9 @@ export class HexMapView extends ItemView {
     } else if (mode === "placeToken") {
       onSwitch = () => this.handleTokenButton(true);
       switchLabel = "Switch token";
+    } else if (mode === "biome") {
+      onSwitch = () => this.handleBiomeButton();
+      switchLabel = "Switch biome";
     }
     // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
 
@@ -2128,6 +2182,7 @@ export class HexMapView extends ItemView {
     else if (this.drawingMode === "regionLink") this.exitRegionLinkMode();
     else if (this.drawingMode === "swap") this.exitSwapMode();
     else if (this.drawingMode === "placeToken") this.exitTokenMode();
+    else if (this.drawingMode === "biome") this.exitBiomeMode();
     else {
       if (this.drawingMode === "path") this.exitPathMode();
       this.drawingMode = null;
@@ -2147,6 +2202,10 @@ export class HexMapView extends ItemView {
 
   private handleTerrainButton(): void {
     if (this.drawingMode !== "terrain" && !this.modeAllows(TOOL_ACTIONS.terrain)) return;
+    if (OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "biomes") {
+      new Notice(TERRAIN_IN_BIOMES_HINT);
+      return;
+    }
     // Keep the current tool while the picker is open: closing it without a
     // pick (Escape, clicking away, or after only changing the brush size)
     // must leave painting exactly as it was. It used to exit terrain mode
@@ -2195,6 +2254,79 @@ export class HexMapView extends ItemView {
         this.paintBrushSize = size;
       },
     ).open();
+  }
+
+  /** The Biome painter's button: pick a biome in the palette, then paint overworld hexes. */
+  private handleBiomeButton(): void {
+    if (!OverworldLayer.viewOf(this.plugin, this.getActiveMap())) return;
+    if (this.drawingMode !== "biome" && !this.modeAllows(TOOL_ACTIONS.biome)) return;
+    new BiomePaletteModal(this.app, this.plugin, this.activeMapName, this.paintBiomeId, (biome) => {
+      this.leaveOtherToolFor("biome");
+      this.drawingMode = "biome";
+      this.isErasingMode = false;
+      this.paintBiomeId = biome;
+      this.updateToolbarButtonStates();
+    }).open();
+  }
+
+  private exitBiomeMode(): void {
+    if (this.drawingMode !== "biome") return;
+    void this.finishBiomeStroke();
+    this.drawingMode = null;
+    this.paintBiomeId = null;
+    this.updateToolbarButtonStates();
+  }
+
+  /** The overworld hex under a point: the brick's parent hex in the Regions view, else the hex there. */
+  private overworldHexKeyAt(target: EventTarget | null, clientX: number, clientY: number): string | null {
+    const view = OverworldLayer.viewOf(this.plugin, this.getActiveMap());
+    if (!view) return null;
+    if (view === "regions") {
+      const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+      const cell = grid ? this.overworldLayer.cellAt(grid, clientX, clientY) : null;
+      return cell?.parentHex ?? null;
+    }
+    const hexEl = this.hexElAt(target, clientX, clientY);
+    return hexEl ? `${hexEl.dataset.x}_${hexEl.dataset.y}` : null;
+  }
+
+  /** A new painter stroke on the open overworld (the last one finishes first). */
+  private startBiomeStroke(): void {
+    void this.finishBiomeStroke();
+    const map = this.activeMapName;
+    const biome = this.paintBiomeId;
+    if (!biome) return;
+    this.biomeStroke = new BiomeStroke<CellEdit>(async (key) => {
+      const [px, py] = key.split("_").map(Number);
+      const r = await paintBiomeHex(this.plugin, map, px, py, biome);
+      if ((r.step === "place" || r.step === "reshape") && !r.error && this.activeMapName === map) {
+        // Show it now: the hex's overworld terrain and the layer (labels, region bricks).
+        const el = this.viewportEl?.querySelector<HTMLElement>(`.duckmage-hex[data-x="${px}"][data-y="${py}"]`);
+        if (el) this.applyTerrainToHexEl(el, this.plugin.mapStore.get(map, key)?.terrain ?? null);
+        this.overworldLayer.scheduleRedraw();
+      }
+      return r;
+    });
+  }
+
+  /**
+   * End the painter's stroke: once its hexes are done, one undo entry for
+   * the regions it remade (in the overworld's queue for its mode), the
+   * mode's hint if some hexes were locked, and a redraw.
+   */
+  private async finishBiomeStroke(): Promise<void> {
+    const stroke = this.biomeStroke;
+    if (!stroke) return;
+    this.biomeStroke = null;
+    const map = this.activeMapName;
+    const r = await stroke.finish();
+    if (r.edits.length) {
+      this.pushUndo({ kind: "cells", edits: r.edits }, map);
+      this.updateUndoButton();
+    }
+    for (const h of r.hints) new Notice(h);
+    if (r.errors.length) new Notice(r.errors[0]);
+    if ((r.changed || r.made.length) && this.activeMapName === map) this.renderGrid();
   }
 
   private exitTerrainMode(): void {
@@ -2686,6 +2818,14 @@ export class HexMapView extends ItemView {
     );
     this.swapBtn?.toggleClass("is-active", this.drawingMode === "swap");
     this.tokenBtn?.toggleClass("is-active", this.drawingMode === "placeToken");
+    this.biomeToolbarBtn?.toggleClass("is-active", this.drawingMode === "biome");
+    if (this.biomeBtnPreview) {
+      const colour = this.drawingMode === "biome" && this.paintBiomeId ? biomeNoteOf(this.paintBiomeId)?.color : undefined;
+      if (colour) {
+        this.biomeBtnPreview.setCssProps({ "--duckmage-bg": colour });
+        this.biomeBtnPreview.show();
+      } else this.biomeBtnPreview.hide();
+    }
     this.viewportEl?.toggleClass(
       "duckmage-draw-mode",
       this.drawingMode !== null,
@@ -2825,6 +2965,7 @@ export class HexMapView extends ItemView {
       submapName: this.paintSubmapName,
       factionPath: this.paintFactionPath,
       regionPath: this.paintRegionPath,
+      biomeName: this.paintBiomeId ? biomeInfo(this.paintBiomeId)?.label ?? this.paintBiomeId : null,
     });
     this.renderRouteControls();
     const changed = this.modeBarTextEl.getText() !== (label ?? "");
@@ -4762,6 +4903,8 @@ export class HexMapView extends ItemView {
       await this.onHexTokenPlaceClick(x, y);
       return;
     }
+    // The Biome painter paints on press (and drag), not on click.
+    if (this.drawingMode === "biome") return;
 
     // Overworlds: the full view jumps into the region at the clicked hex;
     // the biomes view (or a hex with no region yet) sets the hex's biome.

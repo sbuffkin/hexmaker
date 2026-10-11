@@ -13,8 +13,12 @@
  * Min patches: the types smoothing washed out of most regions of the biome
  * (measured with dev/measure-patches.ts: 200 seeds of an 8×8 region, on
  * Expanded) that give it its character, e.g. alpine peaks, a volcano.
- * Coast is the one note-only preset (no row in the BIOMES table): a
- * `shore` biome whose land faces its land neighbours.
+ * Coast is a note-only preset (no row in the BIOMES table): a `shore`
+ * biome whose land faces its land neighbours. Its climate (coastal
+ * lowland, BC3, 2026-10-11) lets World biomes place it on sea↔land borders.
+ * "Custom (blank)" is the other note-only preset: `blank`, so its regions
+ * start empty for painting by hand (BC1); it has no mix and no climate and
+ * is never placed by World biomes.
  *
  * Pure: no Obsidian imports.
  */
@@ -39,8 +43,9 @@ export const BIOME_PRESETS: readonly BiomeNoteFields[] = [
   { id: "volcanic", label: "Volcanic", color: "#b91c1c", mix: [{ type: "desert", weight: 26 }, { type: "badlands", weight: 20 }, { type: "hills", weight: 20 }, { type: "mountains", weight: 15, minPatches: 1 }, { type: "forest", weight: 8 }, { type: "water", weight: 6 }, { type: "shallows", weight: 4 }, { type: "volcanic", weight: 1, minPatches: 1 }], transitions: [], climate: { elevation: "high", chance: 0.12, rare: true } },
   { id: "coastal-fjord", label: "Coastal fjord", color: "#cac181", mix: [{ type: "mountains", weight: 28 }, { type: "water", weight: 22 }, { type: "hills", weight: 16, minPatches: 1 }, { type: "forest", weight: 12 }, { type: "peaks", weight: 10, minPatches: 1 }, { type: "shallows", weight: 9 }, { type: "grassland", weight: 3 }, { type: "coast", weight: 1 }], transitions: [], climate: { temperature: { lo: 0, hi: 0.3 }, elevation: "low", coastal: true, chance: 0.5 } },
   { id: "archipelago", label: "Archipelago", color: "#4a82a5", mix: [{ type: "water", weight: 57 }, { type: "shallows", weight: 14 }, { type: "jungle", weight: 11 }, { type: "deep-water", weight: 4 }, { type: "grassland", weight: 3 }, { type: "forest", weight: 3 }, { type: "hills", weight: 3 }, { type: "coast", weight: 2 }, { type: "mountains", weight: 1 }, { type: "volcanic", weight: 1 }, { type: "peaks", weight: 1 }], transitions: [], landShare: 0.3, minIslands: 2, climate: { elevation: "sea", coastal: true, chance: 0.3 } },
-  { id: "coast", label: "Coast", color: "#d9c98f", mix: [{ type: "coast", weight: 30 }, { type: "water", weight: 28 }, { type: "shallows", weight: 18 }, { type: "grassland", weight: 14 }, { type: "hills", weight: 6 }, { type: "wetland", weight: 4 }], transitions: [{ next: "Alpine", between: "Coastal fjord" }], shore: true },
+  { id: "coast", label: "Coast", color: "#d9c98f", mix: [{ type: "coast", weight: 30 }, { type: "water", weight: 28 }, { type: "shallows", weight: 18 }, { type: "grassland", weight: 14 }, { type: "hills", weight: 6 }, { type: "wetland", weight: 4 }], transitions: [{ next: "Alpine", between: "Coastal fjord" }], shore: true, climate: { elevation: "low", coastal: true, chance: 0.35 } },
   { id: "open-sea", label: "Open sea", color: "#29507f", mix: [{ type: "water", weight: 80 }, { type: "deep-water", weight: 20, minPatches: 1 }], transitions: [], climate: { elevation: "sea" } },
+  { id: "custom", label: "Custom (blank)", color: "#a8a29e", mix: [], transitions: [], blank: true },
 ];
 
 /** A copy of a preset's fields (callers may change it). */

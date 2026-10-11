@@ -18,6 +18,8 @@ import type { RegionLayout } from "./layout";
 
 export type RegionRoute =
   | { kind: "blend" }
+  /** A blank biome (`blank: yes`): nothing generated, painted by hand. */
+  | { kind: "blank" }
   /** Made by a generator note (generateBiomeRegion, src/worldgen/biomeRegion.ts). */
   | { kind: "generator"; generator: string; ready: boolean };
 
@@ -26,9 +28,11 @@ export type RegionRoute =
  * with a `generator:` link has its regions made by that generator
  * (generateBiomeRegion, joined to the cells already painted around it;
  * regionsVault.planRegionWithGenerator); every other biome blends (the
- * blend field mixes its type mix with its neighbours').
+ * blend field mixes its type mix with its neighbours'). A blank biome's
+ * regions are left blank.
  */
-export function regionGenerator(biome: Pick<BiomeNoteFields, "generator"> | undefined): RegionRoute {
+export function regionGenerator(biome: Pick<BiomeNoteFields, "generator" | "blank"> | undefined): RegionRoute {
+  if (biome?.blank) return { kind: "blank" };
   if (biome?.generator) return { kind: "generator", generator: biome.generator, ready: true };
   return { kind: "blend" };
 }
@@ -37,8 +41,9 @@ export function regionGenerator(biome: Pick<BiomeNoteFields, "generator"> | unde
 export const generatorName = (target: string): string => target.slice(target.lastIndexOf("/") + 1).replace(/\.md$/, "");
 
 /** The status line shown for a biome (undefined when it simply blends). */
-export function routeNote(biome: Pick<BiomeNoteFields, "generator"> | undefined): string | undefined {
+export function routeNote(biome: Pick<BiomeNoteFields, "generator" | "blank"> | undefined): string | undefined {
   const r = regionGenerator(biome);
+  if (r.kind === "blank") return "Blank: its regions start empty, to paint by hand.";
   if (r.kind === "generator" && !r.ready) return `Uses ${generatorName(r.generator)}: available once generator regions land. Blends until then.`;
   if (r.kind === "generator") return `Made by ${generatorName(r.generator)}, joined to its neighbours.`;
   return undefined;
@@ -61,6 +66,8 @@ export interface BiomeFormState {
   /** Type → fewest patches (the Mix table's Min patches); kept through the form. */
   minPatches: Map<string, number>;
   shore: boolean;
+  /** Regions start blank (painted by hand); the mix may then be empty. */
+  blank: boolean;
   transitions: BiomeTransition[];
   /** Climate for generated overworlds, as typed (blank = not set). */
   climate: ClimateFormState;
@@ -125,6 +132,7 @@ export function formFromFields(fields: BiomeNoteFields | undefined, types: strin
     minIslands: fields?.minIslands,
     minPatches: new Map((fields?.mix ?? []).filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!])),
     shore: !!fields?.shore,
+    blank: !!fields?.blank,
     transitions: (fields?.transitions ?? []).map((t) => ({ ...t })),
     climate: climateFormFrom(fields?.climate),
   };
@@ -148,6 +156,7 @@ export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields 
   if (s.landPercent !== undefined) f.landShare = Math.min(100, Math.max(0, s.landPercent)) / 100;
   if (s.minIslands !== undefined) f.minIslands = Math.max(0, Math.round(s.minIslands));
   if (s.shore) f.shore = true;
+  if (s.blank) f.blank = true;
   const climate = s.climate ? climateFromForm(s.climate).climate : undefined;
   if (climate) f.climate = climate;
   return f;
@@ -160,7 +169,7 @@ export function formProblem(s: BiomeFormState, others: { id: string; label: stri
   const k = biomeSlug(label);
   if (!k) return "Use some letters or numbers in the name.";
   if (others.some((o) => o.id === k || biomeSlug(o.label) === k)) return `There's already a biome called ${label}.`;
-  if (![...s.mix.values()].some((w) => w > 0)) return "Give at least one terrain type a weight.";
+  if (!s.blank && ![...s.mix.values()].some((w) => w > 0)) return "Give at least one terrain type a weight.";
   const climate = s.climate ? climateFromForm(s.climate).problems : [];
   if (climate.length) return `Climate: ${climate[0]}.`;
   return undefined;

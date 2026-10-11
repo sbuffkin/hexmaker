@@ -161,6 +161,8 @@ export const TOOL_ACTIONS: Record<DrawingMode, ModeAction> = {
   regionLink: "paint-region-area",
   swap: "swap-hexes",
   placeToken: "token",
+  // First placements; a placed region's biome is God's (checked per hex, biomePainter.ts).
+  biome: "place-biome",
 };
 
 /** Every registered command id (addCommand in src/). */

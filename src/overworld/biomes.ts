@@ -431,6 +431,21 @@ export function biomeByRef(ref: string | undefined): BiomeId | undefined {
   return ref && source ? source.names.get(biomeSlug(ref)) : undefined;
 }
 
+/**
+ * What the overworld's Biome column says for a biome: its label (readable),
+ * or its id when the label wouldn't read back as this biome (two biomes
+ * sharing a label, or no notes loaded).
+ */
+export function biomeRef(id: BiomeId): string {
+  const label = source?.biomes.get(id)?.label;
+  return label && biomeByRef(label) === id ? label : id;
+}
+
+/** A blank biome (`blank: yes`): its regions start empty, painted by hand. */
+export function isBlankBiome(id: BiomeId | undefined): boolean {
+  return !!id && !!source?.biomes.get(id)?.blank;
+}
+
 function noteBiomeInfo(id: BiomeId): BiomeInfo | undefined {
   return source?.infos.get(id);
 }

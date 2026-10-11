@@ -158,7 +158,8 @@ export class WalkRegionModal extends HexmakerModal {
     roll.addEventListener("click", () => {
       this.seed = randomSeed();
       seedInput.value = String(this.seed);
-      biome = rollBiome(biomes.map((b) => b.id), this.seed, here) ?? biome;
+      // A roll never lands on a blank biome (pick it by hand).
+      biome = rollBiome(biomes.filter((b) => b.terrain).map((b) => b.id), this.seed, here) ?? biome;
       select.value = biome;
       rolled = `Rolled ${labelOf(biome)} (seed ${this.seed}).`;
       refresh();
