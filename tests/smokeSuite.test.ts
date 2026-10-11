@@ -5,6 +5,7 @@ import * as path from "node:path";
 // The smoke suite's pure helpers (dev/smoke; the suite itself needs Windows Obsidian).
 import { canon, jsonDiff, oneTimeOnly } from "../dev/smoke/lib/compare.mjs";
 import { diff, hexDataFromFm, paletteTerrains, verifyPaletteUpgrade } from "../dev/smoke/lib/disk.mjs";
+import { JOB_MEM_BYTES, pickJobs, stopUntilGone } from "../dev/smoke/lib/concurrency.mjs";
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
@@ -91,4 +92,57 @@ describe("smoke suite findings stay fixed", () => {
     expect(src).toMatch(/void storesReady\.then\(\(\) => maybePromptTableRanges\(this\)\);/);
     expect(src).toMatch(/void storesReady\.then\(\(\) => this\.saveSettings\(\)\);/);
   });
+});
+
+describe("smoke suite: concurrency and stopping", () => {
+	const GB = 2 ** 30;
+
+	it("--jobs wins, within 1..4", () => {
+		expect(pickJobs({ requested: "2", freeMem: 0.5 * GB, cpuBusy: 0.99, cpuCount: 2 })).toEqual({ jobs: 2, reason: "--jobs" });
+		expect(pickJobs({ requested: 9, freeMem: 64 * GB, cpuCount: 32 }).jobs).toBe(4);
+		expect(pickJobs({ requested: "abc", freeMem: 64 * GB, cpuCount: 32 }).reason).not.toBe("--jobs");
+	});
+
+	it("runs 4 on an idle machine with room", () => {
+		expect(pickJobs({ freeMem: 16 * GB, cpuBusy: 0.1, cpuCount: 16 }).jobs).toBe(4);
+		expect(pickJobs({ freeMem: 16 * GB, cpuCount: 16 }).jobs).toBe(4);
+	});
+
+	it("runs fewer when free memory is low", () => {
+		expect(pickJobs({ freeMem: 2 * GB + 3 * JOB_MEM_BYTES, cpuBusy: 0, cpuCount: 16 }).jobs).toBe(3);
+		expect(pickJobs({ freeMem: 4 * GB, cpuBusy: 0, cpuCount: 16 }).jobs).toBe(1);
+		// Never 0: one at a time still runs.
+		expect(pickJobs({ freeMem: 0.5 * GB, cpuBusy: 0, cpuCount: 16 }).jobs).toBe(1);
+	});
+
+	it("runs fewer when the CPU is busy or there are few cores", () => {
+		expect(pickJobs({ freeMem: 32 * GB, cpuBusy: 0.7, cpuCount: 16 }).jobs).toBe(2);
+		expect(pickJobs({ freeMem: 32 * GB, cpuBusy: 0.9, cpuCount: 16 }).jobs).toBe(1);
+		expect(pickJobs({ freeMem: 32 * GB, cpuBusy: 0, cpuCount: 4 }).jobs).toBe(2);
+		expect(pickJobs({ freeMem: 32 * GB, cpuBusy: 0.7, cpuCount: 16 }).reason).toMatch(/70% busy/);
+	});
+
+	it("stopUntilGone retries while the run's processes linger, then reports the last result", async () => {
+		const waits: number[] = [];
+		const sleep = async (ms: number) => { waits.push(ms); };
+		const results = [{ ok: false, remainingSandbox: 2 }, { ok: false, remainingSandbox: 1 }, { ok: true, remainingSandbox: 0 }];
+		let calls = 0;
+		const r = await stopUntilGone(async () => results[calls++], { attempts: 5, waitMs: 100, sleep });
+		expect(r).toMatchObject({ ok: true, attempts: 3 });
+		expect(waits).toEqual([100, 100]);
+
+		let n = 0;
+		const never = await stopUntilGone(async () => { n++; throw new Error("busy"); }, { attempts: 3, waitMs: 1, sleep });
+		expect(never).toMatchObject({ ok: false, attempts: 3, error: "busy" });
+		expect(n).toBe(3);
+	});
+
+	it("only counts the suite's own processes (other Obsidian sessions may come and go)", () => {
+		const run = read("dev", "smoke", "run.mjs");
+		expect(run).toMatch(/ok: leftMine\.length === 0,/);
+		expect(run).not.toMatch(/otherBefore\.length === otherAfter\.length/);
+		expect(run).toMatch(/pickJobs\(\{ requested: val\("jobs", null\)/);
+		const lib = read("dev", "smoke", "lib", "obsidian.mjs");
+		expect(lib).toMatch(/stopUntilGone\(/);
+	});
 });

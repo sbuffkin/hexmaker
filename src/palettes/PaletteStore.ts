@@ -17,11 +17,11 @@ import {
   wrapPaletteColors,
 } from "./paletteNote";
 import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
+import { clonePathTypes, parsePathTypes, pathTableHasColumn, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
 import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
-import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
-import { applyPresetTerrains, planPresetTerrains } from "./presetUpdates";
+import { ADDED_PRESET_PATH_FIELDS, ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
+import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
 import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 
@@ -403,6 +403,11 @@ export class PaletteStore {
     // them gets the full old list, and the notes get their table below.
     const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
     if (filled && !blocked) dirty = true;
+    // Fields the shipped path types gained since (River's "Carves: water"):
+    // once each, where the palette never set them (own backup; skipped
+    // entirely while notes can't change).
+    const pathFields = blocked ? false : await this.addNewPresetPathFields();
+    if (pathFields) dirty = true;
     // One-time: give existing palettes terrain types (from same-named
     // preset terrains, else inferred from the name). Later blanks are the
     // user's choice and stay blank.
@@ -430,7 +435,7 @@ export class PaletteStore {
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (!blocked && (seeded || filled || upgraded || added)) await this.syncNow();
+    if (!blocked && (seeded || filled || upgraded || added || pathFields)) await this.syncNow();
     // Notes from older builds (or edited by hand since) get their derived
     // cells shown (the Impassable column, inferred types in parentheses)
     // and their colours written as inline code.
@@ -603,6 +608,48 @@ export class PaletteStore {
       new Notice(`Hexmap World Creator: added ${what}.`);
     }
     settings.presetTerrainsAdded = [...done, ...plan.done];
+    return true;
+  }
+
+  /**
+   * Give palettes' copies of the shipped path types the fields added to them
+   * since (River's "Carves: water"), once each, after backing up the palette
+   * notes. Only where the palette note never had the field (no column for
+   * it): a value the user set or cleared is left alone. Returns true when
+   * anything changed (settings or palettes).
+   */
+  private async addNewPresetPathFields(): Promise<boolean> {
+    const settings = this.plugin.settings;
+    const done = new Set(settings.presetPathFieldsAdded ?? []);
+    const noteOf = (pal: TerrainPalette): string | undefined => {
+      const path = this.boundPath.get(pal);
+      return path === undefined ? undefined : this.lastContent.get(path);
+    };
+    const plan = planPresetPathFields(settings.terrainPalettes, ADDED_PRESET_PATH_FIELDS, done, DEFAULT_PATH_TYPES, (pal, field) => {
+      const content = noteOf(pal);
+      return content !== undefined && !pathTableHasColumn(content, field);
+    });
+    if (!plan.done.length) return false;
+    if (plan.set.length) {
+      try {
+        const notes: Record<string, string> = {};
+        for (const { palette } of plan.set) {
+          const path = this.boundPath.get(palette);
+          if (path) notes[path] = this.lastContent.get(path) ?? "";
+        }
+        const dir = `${this.plugin.manifest.dir}/backups/palettes-${new Date().toISOString().slice(0, 10)}`;
+        await writeJsonBackup(this.plugin.app.vault.adapter, dir, "palettes-before-path-fields", JSON.stringify({ savedAt: new Date().toISOString(), notes }));
+      } catch (e) {
+        // No backup, no change: try again next start.
+        console.error("Hexmap World Creator: couldn't back up palette notes; path types not updated", e);
+        return false;
+      }
+      applyPresetPathFields(plan);
+      const pals = [...new Set(plan.set.map((s) => s.palette.name))].map((n) => `"${n}"`).join(", ");
+      const what = [...new Set(plan.set.map((s) => `${s.pathType.name} ${s.field === "carves" ? "carves" : "carve width"}: ${s.value}`))].join("; ");
+      new Notice(`Hexmap World Creator: path types updated in ${pals} (${what}).`);
+    }
+    settings.presetPathFieldsAdded = [...done, ...plan.done];
     return true;
   }
 
