@@ -6,9 +6,11 @@
  * plans, from that data alone, what to install or drop. Nothing here looks
  * at a palette's name to decide its type.
  *
- * - A type's content is installed once, the first time the type is on
- *   (settings.kindContent records which), so a palette or biome note the
- *   user deleted stays deleted.
+ * - A type's content is installed only when the setup wizard picks the
+ *   type or it's turned on in Settings, and once (settings.kindContent
+ *   records which), so a palette or biome note the user deleted stays
+ *   deleted. Startup never installs: a vault without a record gets one
+ *   inferred from its enabled types (inferKindContent) and nothing written.
  * - During the first setup only (before the wizard finishes), shipped
  *   palettes a fresh install put in for a type the user then left off are
  *   dropped again, but only when untouched (same terrains as the preset)
@@ -23,6 +25,7 @@ import { ALL_MAP_KINDS, paletteKind, type MapKind } from "./mapKinds";
 import type { TerrainColor } from "./types";
 import { PALETTE_PRESETS, type PalettePreset } from "./palettes/presets";
 import { terrainsEqual } from "./palettes/paletteNote";
+import { hasFeature, type FeatureSettings } from "./featureLevel";
 
 export interface KindContentInput {
   /** Map types on now. */
@@ -102,17 +105,40 @@ export function planKindContent(input: KindContentInput): KindContentPlan {
 }
 
 /**
- * May shipped content of this type be written now? Only once the setup has
- * decided the map types (settings.kindContent is set) and the type is on.
- * Gates the stores that seed shipped notes (biome notes, world types).
+ * May the shipped biome notes of map type `kind` be written? Never while the
+ * type is off (a space-only setup gets none). Otherwise when it's asked for
+ * (`explicit`: the setup picked the type, or it was turned on in
+ * Settings), when the overworld tools are on (Regions and overworlds: they
+ * need biomes, however the vault was made), or when the vault already has
+ * shipped biome notes (later shipped biomes top them up, once each).
+ * A vault that never had biome notes and doesn't use overworlds gets none
+ * written on its own (no content into a vault that didn't ask for it).
  */
-export function shippedContentOn(
-  settings: { kindContent?: string[] | null; mapKinds?: string[] },
+export function biomeSeedingOn(
+  settings: FeatureSettings & { mapKinds?: string[]; biomesSeeded?: string[] },
   kind: MapKind,
+  explicit = false,
 ): boolean {
-  if (!Array.isArray(settings.kindContent)) return false;
   const kinds = Array.isArray(settings.mapKinds) ? settings.mapKinds : ALL_MAP_KINDS;
-  return kinds.includes(kind);
+  if (!kinds.includes(kind)) return false;
+  return explicit || hasFeature(settings, "regions") || (settings.biomesSeeded?.length ?? 0) > 0;
+}
+
+/**
+ * settings.kindContent once the setup is over (finished or turned off)
+ * without picking the map types (a vault set up by hand, a recipe, an
+ * older build): the types it has on count as decided, and nothing is
+ * installed for them. Undecided while the setup is still to come.
+ */
+export function inferKindContent(settings: {
+  kindContent?: string[] | null;
+  mapKinds?: string[];
+  setupComplete?: boolean;
+  setupDismissed?: boolean;
+}): string[] | null {
+  if (Array.isArray(settings.kindContent)) return settings.kindContent;
+  if (!settings.setupComplete && !settings.setupDismissed) return null;
+  return [...(Array.isArray(settings.mapKinds) ? settings.mapKinds : ALL_MAP_KINDS)];
 }
 
 /**

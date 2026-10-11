@@ -30,7 +30,7 @@ import type { MapKind } from "../mapKinds";
 /**
  * A shipped biome: its note fields plus the map type it belongs to (data on
  * each item, never decided by name). Its note is only written while that
- * type is on (BiomeStore, shippedContentOn): a space-only setup gets none.
+ * type is on (BiomeStore, biomeSeedingOn): a space-only setup gets none.
  * The type isn't written into the note.
  */
 export type BiomePreset = BiomeNoteFields & { kind: MapKind };

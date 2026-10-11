@@ -978,9 +978,8 @@ export class SetupWizardView extends ItemView {
 		});
 		dontShowBtn.addEventListener("click", () => {
 			this.plugin.settings.setupDismissed = true;
-			// The map types it has now get their content (once).
-			const done = this.plugin.settings.kindContent ? this.plugin.saveSettings() : this.plugin.applyKindContent();
-			void done.then(() => this.leaf.detach());
+			// Not a pick: the types it has are recorded on save, nothing installed.
+			void this.plugin.saveSettings().then(() => this.leaf.detach());
 		});
 	}
 
