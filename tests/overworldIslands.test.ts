@@ -91,8 +91,8 @@ describe("overworld islands (landShare / minIslands)", () => {
 				const sizes = islands(l, out, isLand);
 				const land = sizes.reduce((a, b) => a + b, 0);
 				expect({ seed, islands: sizes.length >= 2 }).toEqual({ seed, islands: true });
-				// Small islands, not a continent: under 40% land and no island over 16 hexes (beach included).
-				expect({ seed, small: land / out.size < 0.4 && Math.max(...sizes) <= 16 }).toEqual({ seed, small: true });
+				// Small islands, not a continent: under 45% land and no island over 16 hexes (beach included).
+				expect({ seed, small: land / out.size < 0.45 && Math.max(...sizes) <= 16 }).toEqual({ seed, small: true });
 				// Mostly still sea.
 				expect([...out.values()].filter((t) => water.has(typeOf(t) ?? "")).length / out.size).toBeGreaterThan(0.6);
 			}

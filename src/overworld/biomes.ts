@@ -67,7 +67,7 @@ export const BIOMES: BiomeInfo[] = [
   { id: "alpine", label: "Alpine", slug: "biome-alpine", temp: 0.2, moist: 0.5, zone: "peak" },
   { id: "volcanic", label: "Volcanic", slug: "preset-volcanic", temp: 0.7, moist: 0.3, zone: "peak", rare: true },
   { id: "coastal-fjord", label: "Coastal fjord", slug: "biome-coastal-fjord", temp: 0.2, moist: 0.7, zone: "low" },
-  { id: "archipelago", label: "Archipelago", slug: "preset-archipelago", temp: 0.6, moist: 0.7, zone: "sea", landShare: 0.25, minIslands: 2 },
+  { id: "archipelago", label: "Archipelago", slug: "preset-archipelago", temp: 0.6, moist: 0.7, zone: "sea", landShare: 0.3, minIslands: 2 },
   { id: OPEN_SEA, label: "Open sea", temp: 0.5, moist: 1, zone: "sea" },
 ];
 

@@ -168,6 +168,9 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
 /** Depth of the smoothed halo around a region. */
 const HALO = 2;
 
+/** Share of an island's shore a land shore ring (a beach) covers. */
+const BEACH_COVER = 0.6;
+
 interface IslandInput {
   layout: RegionLayout;
   /** The region's own (unpinned) cells: the only cells changed. */
@@ -261,12 +264,13 @@ export function placeIslands(input: IslandInput): void {
   /** Land an island will cover once its land shore rings are on (own cells only). */
   const footprint = (island: Set<string>): number => {
     const all = new Set(island);
-    let ring = [...island];
+    let ring = [...island], size = island.size;
     for (let i = 0; i < landRings; i++) {
       ring = [...new Set(ring.flatMap(nbrs))].filter((k) => free(k) && !all.has(k));
       for (const k of ring) all.add(k);
+      size += ring.length * BEACH_COVER;
     }
-    return all.size;
+    return size;
   };
   for (let guard = 0; guard < n && (have < minIslands || landCount() < landTarget); guard++) {
     // Seed: a free cell with no land next to it, best where the biome is strongest and away from the edge.
@@ -298,16 +302,20 @@ export function placeIslands(input: IslandInput): void {
       if (!options.length) break;
       add(options[Math.floor(rng() * options.length)]);
     }
-    // Shore rings, inner first, for the shore types the biome has.
-    let ring = [...island];
+    // Shore rings, inner first, for the shore types the biome has. A land
+    // ring (a beach) is ragged: it covers only part of the shore, and the
+    // next ring fills the gaps, so islands aren't all ringed alike.
+    const shoreSoFar = new Set(island);
     for (const shore of SHORE_TYPES) {
       if (!profile.names.get(shore)?.size) continue;
-      const next = [...new Set(ring.flatMap(nbrs))].filter(free).sort();
-      for (const k of next) {
+      const next = [...new Set([...shoreSoFar].flatMap(nbrs))].filter(free).sort();
+      const ragged = !water.has(shore);
+      next.forEach((k, i) => {
+        if (ragged && i > 0 && rng() >= BEACH_COVER) return;
         work.set(k, nameOf(shore)!);
         taken.add(k);
-      }
-      ring = next;
+        shoreSoFar.add(k);
+      });
     }
     have++;
   }
