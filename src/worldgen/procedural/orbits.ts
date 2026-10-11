@@ -166,7 +166,7 @@ export function orbits(
   const wanted = options.star && options.star !== "random"
     ? roles.stars.find((s) => s.toLowerCase() === options.star)
     : undefined;
-  const star = wanted ?? rollRole(tables, "star", { rand }, roles.stars)?.terrain ?? roles.stars[0];
+  const star = wanted ?? rollRole(tables, "star", { rand, where: cellKey(center[0], center[1]) }, roles.stars)?.terrain ?? roles.stars[0];
   set(center, star);
   // The 100-diameter limit hugs the star: mark the first ring.
   if (roles.jumpLimit && fullRing >= 3) for (const h of ring(1)) set(h, roles.jumpLimit);

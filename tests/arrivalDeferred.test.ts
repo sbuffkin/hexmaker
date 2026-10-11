@@ -15,6 +15,7 @@ import { addLocationPatch } from "../src/maps/submaps";
 import { setHexDataSource } from "../src/frontmatter";
 import { setModeMapLookup } from "../src/modeGate";
 import { ArrivalService } from "../src/arrival/ArrivalService";
+import { EventsService } from "../src/arrival/EventsService";
 import { effectiveArrivalMode } from "../src/arrival/arrival";
 import { convertWorldTypes } from "../src/space/spaceTables";
 import { notesLookup } from "../src/random-tables/resolve";
@@ -93,6 +94,7 @@ function world(opts: { arrival?: string; seed?: number; mode?: string } = {}) {
 		},
 	};
 	p.mapStore = new MapStore(p as never);
+	(p as Record<string, unknown>).events = new EventsService(p as never);
 	setHexDataSource(p.mapStore);
 	setModeMapLookup((n) => p.getMap(n));
 	const service = new ArrivalService(p as never);
@@ -160,7 +162,7 @@ describe("arriving at an unknown sector hex (T5, SP4)", () => {
 		const writes = w.vault.writes.length;
 		expect(w.service.canArrive("drift", 4, 5)).toBe(false);
 		expect(await w.service.arrive("drift", 4, 5)).toBeNull();
-		expect(w.service.resolveHex("drift", 4, 5, "discover")).toBeNull();
+		expect(await w.service.resolveHex("drift", 4, 5, "discover")).toBeNull();
 		expect(w.p.mapStore.get("drift", "4_5")).toEqual(after);
 		expect(w.maps.length).toBe(mapsBefore);
 		expect(w.vault.writes.length).toBe(writes);
@@ -172,7 +174,7 @@ describe("arriving at an unknown sector hex (T5, SP4)", () => {
 		for (let seed = 1; seed < 400; seed++) {
 			const w = world({ arrival: "make places", seed });
 			await sectorWith(w, [["1_1", { onArrival: UNCHARTED }]]);
-			const r = w.service.resolveHex("drift", 1, 1, "discover");
+			const r = await w.service.resolveHex("drift", 1, 1, "discover");
 			if (r?.kind !== "nothing") continue;
 			expect(w.p.mapStore.get("drift", "1_1")).toBeUndefined();
 			return;

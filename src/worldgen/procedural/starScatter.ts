@@ -150,7 +150,7 @@ export function starScatter(
     const k = cellKey(x, y);
     const odds = inCloud.has(k) ? density / 2 : density;
     if (rand() >= odds) continue;
-    const pick = rollRole(tables, "sector-hexes", { rand, deferArrival: true }, roles.worlds);
+    const pick = rollRole(tables, "sector-hexes", { rand, deferArrival: true, where: k }, roles.worlds);
     // A (nothing) row: empty space after all.
     if (!pick || pick.nothing) continue;
     if (pick.arrival) {

@@ -28,6 +28,7 @@ import { rowSubmapDefault } from "../arrival/arrival";
 import { STAR_SCATTER_ID } from "./procedural/starScatter";
 import { ORBITS_ID } from "./procedural/orbits";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
+import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import {
   BLANK_ID,
@@ -95,6 +96,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private kindId = BLANK_ID;
   private options: Record<string, string> = {};
   private seed = randomSeed();
+  /** The Events ledgers where the new map will sit (SP6): once-only rows already used are left out. */
+  private ledgers: Ledgers = NO_LEDGERS;
   private cols: number;
   private rows: number;
   private baseTerrain: string | undefined;
@@ -193,7 +196,9 @@ export class NewMapSetupModal extends HexmakerModal {
         ? `New location — ${this.originTerrain ? `${this.originTerrain}, ` : ""}${this.plugin.mapLabel(this.origin.map)} hex ${this.origin.x}, ${this.origin.y}`
         : "New map",
     );
-    void listGeneratorKinds(this.plugin).then((kinds) => {
+    const ledgers = this.origin ? this.plugin.events.ledgersFor({ parent: this.origin.map }) : Promise.resolve(NO_LEDGERS);
+    void Promise.all([listGeneratorKinds(this.plugin), ledgers]).then(([kinds, used]) => {
+      this.ledgers = used;
       this.kinds = kinds;
       this.render();
       // A hint here can turn a feature on: show what it brings straight away.
@@ -801,6 +806,7 @@ export class NewMapSetupModal extends HexmakerModal {
       terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement,
       pathTypes: this.plugin.getPathTypes(paletteName),
       ...(this.origin ? { tablesFrom: this.origin.map } : {}),
+      ledgers: this.ledgers,
     });
   }
 
@@ -886,6 +892,7 @@ export class NewMapSetupModal extends HexmakerModal {
         quiet: true,
         slug: this.folderSlug(),
         ...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
+        ...(outcome?.ok && outcome.events ? { events: outcome.events } : {}),
       },
     );
     if ("error" in result) {

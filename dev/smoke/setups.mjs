@@ -451,6 +451,73 @@ async function overworldExtra(ctx) {
   const out = [{ check: "F5-regions", ok: regions.length > 0, detail: `${ow.name}: ${regions.length} region maps` }];
   const lock = await ctx.ev((id, n) => window.__smokePage.overworldPaintLock(id, n), ctx.pluginId, ow.name);
   out.push({ check: "C8-overworld-paint", ok: lock.ok, detail: [...lock.steps, ...lock.problems].join("; ") });
+
+  // GM4 on overworlds: with arrival on, going to a hex with a biome and no
+  // region makes the region in Play (seeded, no form); Reroll until Lock.
+  // The hex's unresolved On arrival cell shows the uncharted "?" first.
+  const a = await ctx.ev(async (id, owName) => {
+    const p = window.app.plugins.plugins[id];
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const steps = [], problems = [];
+    const ow = p.getMap(owName);
+    const before = { mode: ow.workMode, cols: ow.gridSize.cols };
+    try {
+      if (!p.arrival?.isOverworld || !p.events) return { skipped: "build has no overworld arrival" };
+      if (p.arrival.canArrive(owName, ow.gridOffset.x, ow.gridOffset.y)) problems.push("arrival on by default");
+      const hasRegion = (k) => p.settings.maps.some((m) => m.submapKind === "region" && m.parent?.map === owName && m.parent.hex === k);
+      let key;
+      for (let y = ow.gridOffset.y; !key && y < ow.gridOffset.y + ow.gridSize.rows; y++)
+        for (let x = ow.gridOffset.x; !key && x < ow.gridOffset.x + ow.gridSize.cols; x++) if (!hasRegion(`${x}_${y}`)) key = `${x}_${y}`;
+      if (!key) {
+        // Every hex has a region: take in one more column.
+        ow.gridSize = { ...ow.gridSize, cols: ow.gridSize.cols + 1 };
+        key = `${ow.gridOffset.x + ow.gridSize.cols - 1}_${ow.gridOffset.y}`;
+        steps.push("grew the overworld by a column");
+      }
+      const [x, y] = key.split("_").map(Number);
+      const terrain = [...p.mapStore.all(owName).values()].find((h) => h.terrain)?.terrain;
+      ow.arrivalMode = "make places";
+      ow.workMode = "play";
+      p.mapStore.set(owName, key, { terrain, onArrival: "Smoke uncharted" });
+      await p.saveSettings();
+      await p.mapStore.flush();
+      await p.showMap(owName);
+      p.refreshHexMap();
+      await sleep(1500);
+      const marks = document.querySelectorAll(".duckmage-uncharted-layer .duckmage-uncharted-mark").length;
+      steps.push(`uncharted marks: ${marks}`);
+      if (marks < 1) problems.push("no uncharted mark on the unresolved hex");
+      if (!p.arrival.canArrive(owName, x, y)) problems.push(`can't arrive at ${key}: ${p.arrival.blocker(owName, x, y)}`);
+      const made = await p.arrival.arrive(owName, x, y);
+      if (!made) problems.push("no region made");
+      else {
+        const r = p.getMap(made);
+        steps.push(`arrived at ${key}: made ${made}`);
+        if (r?.submapKind !== "region" || r?.parent?.hex !== key) problems.push(`not the hex's region: ${r?.submapKind} ${r?.parent?.hex}`);
+        if (r?.arrival !== "open" || r?.workMode !== "play") problems.push(`new region ${r?.arrival}/${r?.workMode}`);
+        if (p.mapStore.get(owName, key)?.onArrival) problems.push("On arrival cell not cleared");
+        if (!p.mapStore.all(made).size) problems.push("region has no terrain");
+        const note = await p.mapStore.readNoteText(made);
+        if (!note?.includes("## Arrival")) problems.push("no Arrival section");
+        const seed = r.regionSeed;
+        if (!(await p.arrival.reroll(made))) problems.push("Play couldn't reroll an open region");
+        else if (r.regionSeed === seed) problems.push("reroll kept the seed");
+        await p.arrival.lock(made);
+        if (await p.arrival.reroll(made)) problems.push("Play rerolled a locked region");
+        else steps.push("reroll then lock: Play can't reroll after the lock");
+        if (p.arrival.canArrive(owName, x, y)) problems.push("can arrive again");
+      }
+    } catch (e) {
+      problems.push(String(e?.stack ?? e).slice(0, 400));
+    } finally {
+      ow.workMode = before.mode;
+      delete ow.arrivalMode;
+      await p.saveSettings();
+      await p.mapStore.flush();
+    }
+    return { steps, problems };
+  }, ctx.pluginId, ow.name);
+  out.push({ check: "GM4-overworld-arrival", ok: !a.skipped && a.problems.length === 0, detail: a.skipped ?? [...a.steps, ...a.problems].join("; ") });
   return out;
 }
 

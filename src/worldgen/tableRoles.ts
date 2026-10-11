@@ -24,6 +24,7 @@ import type { RandomTable, RowType } from "../random-tables/randomTable";
 import { resolveOdds, resolveRoll, skippedRows, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import type { ConditionContext } from "../random-tables/tableConditions";
 import type { OrbitZone } from "../space/worldTypes";
+import type { OnceTracker } from "../arrival/eventsLedger";
 
 export type RoleId = "sector-hexes" | "star" | "inner-orbits" | "habitable-orbits" | "outer-orbits";
 
@@ -121,6 +122,25 @@ export interface TableSource {
   rowAttrs(role: RoleId, name: string): Record<string, string> | undefined;
   /** Anything the source itself has to say about a role (rows it couldn't use). */
   notes?(role: RoleId): string[];
+  /**
+   * Once rows (SP6): what's used already, and where this run's fired ones
+   * are recorded. Set by withOnce for one generator run.
+   */
+  readonly once?: OnceTracker;
+}
+
+/** The source with a Once tracker for one run (the tracker's ledgers leave used rows out). */
+export function withOnce(source: TableSource | undefined, once: OnceTracker): TableSource | undefined {
+  if (!source) return undefined;
+  return {
+    label: source.label,
+    lookup: source.lookup,
+    terrains: source.terrains,
+    tableFor: (role) => source.tableFor(role),
+    rowAttrs: (role, name) => source.rowAttrs(role, name),
+    ...(source.notes ? { notes: (role: RoleId) => source.notes!(role) } : {}),
+    once,
+  };
 }
 
 /** What the engine knows where it rolls (conditions), plus its random stream. */
@@ -132,6 +152,8 @@ export interface RoleContext extends ConditionContext {
    * then (plan-tables-everywhere §2.6).
    */
   deferArrival?: boolean;
+  /** The hex the roll is for ("x_y"), written with any Once row it fires. */
+  where?: string;
 }
 
 export interface RolePick {
@@ -179,9 +201,16 @@ function usesTable(source: TableSource | undefined, role: RoleId, fallback: read
  */
 export function rollRole(source: TableSource | undefined, role: RoleId, ctx: RoleContext, fallback: readonly string[]): RolePick | undefined {
   const lookup = withEqualOdds(source?.lookup ?? NO_SOURCE, fallback);
-  const { rand, deferArrival, ...cond } = ctx;
+  const { rand, deferArrival, where, ...cond } = ctx;
   const link = usesTable(source, role, fallback, cond) ?? EQUAL_ODDS;
-  const r = resolveRoll(link, lookup, { ...resolveCtx(source, fallback, cond), rand, ...(deferArrival ? { deferArrival } : {}) });
+  const once = source?.once;
+  const r = resolveRoll(link, lookup, {
+    ...resolveCtx(source, fallback, cond),
+    rand,
+    ...(deferArrival ? { deferArrival } : {}),
+    ...(once ? { isUsed: once.isUsed } : {}),
+  });
+  once?.fire(r.onces, where);
   if (r.kind === "nothing") return { terrain: "", nothing: true, attrs: r.attrs };
   if (r.kind === "deferred") {
     // Shown as a palette terrain (its spelling), else nothing shown yet.

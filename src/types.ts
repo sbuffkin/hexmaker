@@ -195,6 +195,8 @@ export interface MapData {
 	showRegionOverlay?: boolean;  // undefined = false (opt-in)
 	showGmLayer?: boolean;        // undefined = true (older maps); new maps are created with false
 	showTokens?: boolean;         // undefined = true (on by default)
+	/** The "?" on hexes with an On arrival roll still to come. undefined = true. */
+	showUncharted?: boolean;
 	/** Corner badges per link type (towns, dungeons…). undefined = true. */
 	showLinkBadges?: boolean;
 	/** Badge types turned off in the layers menu (BADGE_SECTIONS names). */

@@ -26,6 +26,7 @@
 
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import { conditionsFit, type ConditionContext } from "./tableConditions";
+import type { OnceHit } from "../arrival/eventsLedger";
 import { locateRollTable, parseRandomTable, resolveTable, rollTable, rowInfoOf, type RandomTable, type RandomTableEntry, type RowType } from "./randomTable";
 
 /** What a cell turned out to be. */
@@ -52,8 +53,8 @@ export interface ResolveContext extends ConditionContext {
   onlyTerrains?: boolean;
   /** Stop at a row whose Roll is "on arrival" instead of rolling it through. */
   deferArrival?: boolean;
-  /** Once rows already used (the ledger): those rows are left out. */
-  isUsed?: (tableKey: string, index: number, entry: RandomTableEntry) => boolean;
+  /** Once rows already used (the ledger): those rows are left out. `scope` is the row's Once. */
+  isUsed?: (tableKey: string, index: number, entry: RandomTableEntry, scope: "world" | "map") => boolean;
   /** Deepest nesting followed (default 5). */
   maxDepth?: number;
 }
@@ -78,6 +79,12 @@ export interface Resolved {
   chain: ResolveStep[];
   /** The last Once row on the chain, for the caller's ledger. */
   once?: { table: string; index: number; scope: "world" | "map" };
+  /**
+   * Every Once row on the chain, outermost first, with what it said (for
+   * the Events ledger, arrival/eventsLedger.ts). Not set for a deferred
+   * result: nothing has happened yet.
+   */
+  onces?: OnceHit[];
   /** An on-arrival row: what the hex shows until then. */
   shownAs?: string;
 }
@@ -148,7 +155,7 @@ class Resolver {
       const e = table.entries[i];
       const info = rowInfoOf(table, i);
       if (!conditionsFit(info.when, this.ctx)) { skipped.push({ table: key, index: i, result: e.result, why: "when" }); return 0; }
-      if (info.once && this.ctx.isUsed?.(key, i, e)) { skipped.push({ table: key, index: i, result: e.result, why: "used" }); return 0; }
+      if (info.once && this.ctx.isUsed?.(key, i, e, info.once)) { skipped.push({ table: key, index: i, result: e.result, why: "used" }); return 0; }
       if (this.ctx.onlyTerrains) {
         const { kind, value } = cellKind(table, e, this.lookup, this.ctx);
         if (kind === "table") {
@@ -208,13 +215,18 @@ class Resolver {
       if (once) out.once = once;
       return out;
     }
+    const hit: OnceHit | undefined = info.once
+      ? { table: key, index, scope: info.once, result: entry.result, link: entryLink(table, entry) !== undefined }
+      : undefined;
     if (kind === "table") {
       const inner = this.roll(value, rand, [...visited, key], nextChain, nextAttrs);
       if (!inner.once && once) inner.once = once;
+      if (hit && inner.kind !== "deferred" && inner.kind !== "empty" && inner.kind !== "loop") inner.onces = [hit, ...(inner.onces ?? [])];
       return inner;
     }
     const out: Resolved = { kind, value, attrs: nextAttrs, chain: nextChain };
     if (once) out.once = once;
+    if (hit) out.onces = [hit];
     return out;
   }
 

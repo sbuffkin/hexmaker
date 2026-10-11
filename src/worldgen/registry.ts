@@ -39,6 +39,8 @@ import { generateConnected, type NewRegion } from "./neighbours";
 import { WORLD_TYPES_KEY, worldTypesOption } from "../space/worldTypesSource";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { OnceTracker, type FiredEvent, type Ledgers } from "../arrival/eventsLedger";
+import { withOnce } from "./tableRoles";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -62,6 +64,8 @@ export type GenerateOutcome =
       warnings: string[];
       /** Hexes left to roll on arrival ("x_y" → table link): the map note's On arrival column. */
       arrivals?: Map<string, string>;
+      /** Once rows that came up (SP6): the caller writes them to the Events ledgers once the map exists. */
+      events?: FiredEvent[];
     }
   | { ok: false; message: string };
 
@@ -84,6 +88,12 @@ export interface GenerateRequest {
    * ancestors' tables win over the World types option's.
    */
   tablesFrom?: string;
+  /**
+   * The Events ledgers (SP6) where the map sits: Once rows already used
+   * there are left out. Unset: none used yet (rows still fire at most once
+   * per run).
+   */
+  ledgers?: Ledgers;
 }
 
 export interface TerrainGeneratorKind {
@@ -201,6 +211,9 @@ function worldTypesChoice(plugin: HexmakerPlugin): ProcOption {
   return worldTypesOption(store.list().map((t) => t.name), store.defaultName());
 }
 
+/** The Once rows a run fired, for the outcome (nothing when none). */
+const firedEvents = (once: OnceTracker): { events?: FiredEvent[] } => (once.fired.length ? { events: once.fired } : {});
+
 const missingWorldTypes = (name: string) => `No World types table called "${name}", so equal odds.`;
 
 function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
@@ -235,9 +248,10 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         // None picked on purpose: no routes, and nothing to warn about.
         const options = !routeType && req.options[ROUTE_TYPE_KEY] === NO_PATHS ? { ...req.options, routes: "none" } : req.options;
         const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
-        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType, wt.source);
+        const once = new OnceTracker(req.ledgers);
+        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType, withOnce(wt.source, once));
         if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
-        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+        return r.cells.size ? { ok: true, ...r, ...firedEvents(once) } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toPaths,
     },
@@ -253,12 +267,13 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       generate: (req) => {
         const orbitType = chosenPathType(req.options[ORBIT_TYPE_KEY], "orbits", req.pathTypes);
         const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
-        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context, wt.source);
+        const once = new OnceTracker(req.ledgers);
+        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context, withOnce(wt.source, once));
         if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
         // No type and not None on purpose: say why there are no rings.
         if (!orbitType && req.options[ORBIT_TYPE_KEY] !== NO_PATHS && r.cells.size)
           r.warnings.push("No path type for orbits, so the rings weren't drawn. Pick one under Path type for orbits (or add a path type to the palette).");
-        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
+        return r.cells.size ? { ok: true, ...r, ...firedEvents(once) } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
       },
       toPaths,
     },

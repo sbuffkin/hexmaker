@@ -81,6 +81,8 @@ import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
 import type { RoleId } from "./worldgen/tableRoles";
 import { ArrivalService } from "./arrival/ArrivalService";
+import { EventsService } from "./arrival/EventsService";
+import type { FiredEvent } from "./arrival/eventsLedger";
 import { effectiveArrivalMode, type ArrivalMode } from "./arrival/arrival";
 import { withMapLink } from "./maps/mapNote";
 import {
@@ -128,6 +130,8 @@ export default class HexmakerPlugin extends Plugin {
   tableNotes!: TableNotes;
   /** Places made on arrival: roll, make, reroll, lock (src/arrival). */
   arrival = new ArrivalService(this);
+  /** The Events ledgers of once-only rows in map notes (SP6). */
+  events = new EventsService(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
   /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
@@ -2356,6 +2360,8 @@ export default class HexmakerPlugin extends Plugin {
       slug?: string;
       /** Hexes left to roll on arrival ("x_y" → table link), for the On arrival column. */
       arrivals?: Map<string, string>;
+      /** Once rows the generator fired (SP6), written to the Events ledgers once the map exists. */
+      events?: FiredEvent[];
     } = {},
   ): Promise<{ name: string } | { error: string }> {
     if (!rawName.trim()) return { error: "Enter a map name." };
@@ -2407,6 +2413,7 @@ export default class HexmakerPlugin extends Plugin {
     this.mapStore.setMany(name, cells);
     onProgress?.(cols * rows, cols * rows);
     await this.mapStore.flush();
+    await this.events.record(name, extra.events);
     if (!extra.quiet) new Notice(`Created map "${displayName ?? name}".`);
 
     return { name };

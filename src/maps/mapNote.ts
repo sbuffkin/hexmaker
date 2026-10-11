@@ -422,6 +422,7 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["linkBadgeSize", "link-badge-size", "str"],
   ["showHexNames", "show-hex-names", "bool"],
   ["showTokenNames", "show-token-names", "bool"],
+  ["showUncharted", "show-uncharted", "bool"],
   // Hex-name font (NM3): plain words, read forgivingly (hexNameFont.ts).
   ["hexNameFont", "name-font", "str"],
   ["hexNameSize", "name-size", "str"],

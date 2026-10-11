@@ -14,6 +14,13 @@
  * - reroll / lock (GM4): a place made on arrival can be made again in any
  *   mode until it's locked (`arrival: locked` in its note); after that only
  *   in God.
+ * - On an overworld (a map whose regions join up), going to a hex with no
+ *   region makes its region, seeded and with no form, from the hex's biome
+ *   through the same path as the Biome painter and walking into new land
+ *   (createRegion). Same Reroll/Lock rules (GM4: "a new planet, new
+ *   region").
+ * - Once-only rows (SP6): every roll here leaves out rows the Events
+ *   ledgers hold, and writes the ones it lands on (EventsService).
  *
  * A world that isn't set to make places never gets here: nothing changes.
  */
@@ -22,7 +29,10 @@ import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { randomSeed } from "../../packages/hex-wfc/src/rng";
 import { chainLabel, resolveRoll, type ResolvedOdds, type TableLookup } from "../random-tables/resolve";
-import { hexChildMaps } from "../maps/submaps";
+import { hexChildMaps, regionMapAt } from "../maps/submaps";
+import { createRegion, hexBiomeAt, inOverworldGrid, overworldOf, regenerateRegion } from "../overworld/regionsVault";
+import { biomeNoteOf } from "../overworld/biomes";
+import { OnceTracker, type FiredEvent } from "./eventsLedger";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { buildSubmapContext } from "../worldgen/submapContext";
 import { addGeneratedPaths } from "../worldgen/generators";
@@ -59,6 +69,13 @@ export interface HexResolution {
   value: string;
   attrs: Record<string, string>;
   chain: string;
+  /** Once-only rows it landed on (written to the Events ledgers). */
+  events: FiredEvent[];
+}
+
+/** "Found the Silent Fleet (once per world)." lines for the write-up. */
+function eventLines(events: readonly FiredEvent[]): string[] {
+  return events.map((e) => `Found ${e.link ? `[[${e.result.replace(/^.*\//, "")}]]` : e.result} (once per ${e.scope}; in the Events list).`);
 }
 
 /** The submap size when nothing else says (SUBMAP_SIZE_PRESETS' Medium). */
@@ -75,10 +92,23 @@ export class ArrivalService {
     const { plugin } = this;
     if (!plugin.getMap(mapName)) return "No such map.";
     if (plugin.arrivalModeFor(mapName).mode !== "make") return "off";
-    const h = plugin.mapStore.get(mapName, keyOf(x, y));
+    const key = keyOf(x, y);
+    const h = plugin.mapStore.get(mapName, key);
     if (h?.locked) return "This hex is locked.";
+    if (this.isOverworld(mapName)) {
+      // An overworld's hexes are regions: arriving makes the region.
+      if (regionMapAt(plugin.settings.maps, mapName, key)) return "This hex already has a region.";
+      if (!inOverworldGrid(plugin.getMap(mapName)!, x, y)) return "This hex is off the map.";
+      if (!h?.onArrival && !hexBiomeAt(plugin, mapName, key)) return "This hex has no biome yet.";
+      return null;
+    }
     if (hexChildMaps(h).some((m) => !!plugin.getMap(m))) return "This hex already has a map.";
     return null;
+  }
+
+  /** A map whose regions join up (an overworld): arrival makes regions there. */
+  isOverworld(mapName: string): boolean {
+    return !!overworldOf(this.plugin, mapName);
   }
 
   /** Whether "Go there" makes a place at hex (x, y). */
@@ -116,27 +146,35 @@ export class ArrivalService {
   /**
    * Roll hex (x, y)'s On arrival table (seeded by the map's seed and the
    * hex) and write what came up onto the hex: a terrain replaces the shown
-   * one, (nothing) clears it; the cell is cleared either way. Null when the
-   * hex has nothing to roll or the write was refused.
+   * one, (nothing) clears it; the cell is cleared either way. Once-only
+   * rows in the Events ledgers are left out, and the ones it lands on are
+   * written there. Null when the hex has nothing to roll or the write was
+   * refused.
    */
-  resolveHex(mapName: string, x: number, y: number, action: ModeAction): HexResolution | null {
+  async resolveHex(mapName: string, x: number, y: number, action: ModeAction): Promise<HexResolution | null> {
     const { plugin } = this;
     const key = keyOf(x, y);
     const cell = plugin.mapStore.get(mapName, key)?.onArrival;
     if (!cell) return null;
     const seed = arrivalSeed(this.seedOf(mapName), key, "arrival", 0);
     const { lookup, terrains } = this.lookupFor(mapName);
-    const r = resolveRoll(cell, lookup, { seed, terrains });
+    const once = new OnceTracker(await plugin.events.ledgersFor({ map: mapName }));
+    // The cell may have been resolved while the ledgers were read.
+    if (plugin.mapStore.get(mapName, key)?.onArrival !== cell) return null;
+    const r = resolveRoll(cell, lookup, { seed, terrains, isUsed: once.isUsed });
     const patch: { onArrival: null; terrain?: string | null } = { onArrival: null };
     if (r.kind === "terrain") patch.terrain = r.value;
     else if (r.kind === "nothing") patch.terrain = null;
     if (!plugin.mapStore.set(mapName, key, patch, action)) return null;
+    once.fire(r.onces, key);
+    await plugin.events.record(mapName, once.fired);
     return {
       table: cell,
       kind: r.kind,
       value: r.kind === "nothing" ? "(nothing)" : r.kind === "empty" ? `nothing to roll on ${cell}` : r.value,
       attrs: r.attrs,
       chain: chainLabel(r),
+      events: once.fired,
     };
   }
 
@@ -180,10 +218,11 @@ export class ArrivalService {
       if (why !== "off") new Notice(why);
       return null;
     }
+    if (this.isOverworld(mapName)) return this.arriveRegion(mapName, x, y);
     const parent = plugin.getMap(mapName)!;
     const key = keyOf(x, y);
     const pseed = this.seedOf(mapName);
-    const resolution = this.resolveHex(mapName, x, y, "discover");
+    const resolution = await this.resolveHex(mapName, x, y, "discover");
     if (resolution?.kind === "nothing") {
       await plugin.saveSettings();
       new Notice(`Nothing at ${hexText(key)}: empty space.`);
@@ -205,6 +244,7 @@ export class ArrivalService {
       context: buildSubmapContext(plugin, mapName, x, y),
       pathTypes: plugin.getPathTypes(setup.palette),
       tablesFrom: mapName,
+      ledgers: await plugin.events.ledgersFor({ parent: mapName }),
     });
     if (!outcome.ok) {
       await plugin.saveSettings();
@@ -241,7 +281,9 @@ export class ArrivalService {
     }
     await plugin.saveSettings();
     await plugin.mapStore.flush();
+    await plugin.events.record(made.name, outcome.events);
 
+    const extra = [...(note ? [note] : []), ...eventLines([...(resolution?.events ?? []), ...(outcome.events ?? [])])];
     const report: ArrivalReport = {
       date: new Date().toISOString().slice(0, 10),
       parentNote: `_${mapName}`,
@@ -249,7 +291,7 @@ export class ArrivalService {
       ...(resolution ? { rolled: { table: resolution.table, result: resolution.value, chain: resolution.chain } } : {}),
       ...(terrain ? { terrain } : {}),
       made: { generator: kind.label, palette: setup.palette, cols: setup.cols, rows: setup.rows, seed },
-      ...(note ? { extra: [note] } : {}),
+      ...(extra.length ? { extra } : {}),
     };
     await plugin.mapStore.editNoteText(made.name, (c) => withArrivalSection(c, arrivalLines(report)));
     new Notice(arrivalSummary(plugin.mapLabel(made.name), report), 8000);
@@ -266,10 +308,13 @@ export class ArrivalService {
     const map = plugin.getMap(mapName);
     if (!map?.arrival || !map.parent || !plugin.getMap(map.parent.map)) return false;
     if (!canRerollPlace(map)) { new Notice(REROLL_PLACE_LOCKED_HINT); return false; }
+    if (map.submapKind === "region") return this.rerollRegion(mapName);
     const { map: parentName, hex } = map.parent;
     const [x, y] = hex.split("_").map(Number);
     const n = (map.arrivalRerolls ?? 0) + 1;
     const seed = arrivalSeed(this.seedOf(parentName), hex, "submap", n);
+    // The old landscape's once-only events go with it.
+    await plugin.events.forgetMap(mapName);
     const terrain = plugin.mapStore.get(parentName, hex)?.terrain ?? plugin.getMap(parentName)?.baseTerrain;
     const source = plugin.worldTypeStore.sourceFor(undefined, plugin.getMapPalette(parentName).map((t) => t.name), parentName).source;
     const attrs = terrain ? attrsForTerrain(source, terrain) : undefined;
@@ -289,6 +334,7 @@ export class ArrivalService {
       context: buildSubmapContext(plugin, parentName, x, y),
       pathTypes: plugin.getPathTypes(map.paletteName),
       tablesFrom: parentName,
+      ledgers: await plugin.events.ledgersFor({ map: mapName }),
     });
     if (!outcome.ok) { new Notice(`Couldn't reroll: ${outcome.message}`); return false; }
 
@@ -302,8 +348,94 @@ export class ArrivalService {
     map.arrivalRerolls = n;
     await plugin.saveSettings();
     await plugin.mapStore.flush();
+    await plugin.events.record(mapName, outcome.events);
     await plugin.mapStore.editNoteText(mapName, (c) => restateArrival(c, {
       made: { generator: kind.label, palette: map.paletteName, cols: map.gridSize.cols, rows: map.gridSize.rows, seed },
+      rerolls: n,
+      locked: map.arrival === "locked",
+    }));
+    plugin.refreshHexMap();
+    new Notice(`Rerolled ${plugin.mapLabel(mapName)}.`);
+    return true;
+  }
+
+  // ── regions on an overworld (GM4: "a new region") ─────────────────────
+
+  /** A biome's name as written. */
+  private biomeText(id: string): string {
+    return biomeNoteOf(id)?.label ?? id;
+  }
+
+  /**
+   * Arrive at overworld hex (x, y): roll its On arrival table if it has
+   * one, then make its region from the hex's biome, seeded from the
+   * overworld's seed, with no form (the Biome painter's path). Opens in the
+   * overworld's mode, open for rerolls until locked.
+   */
+  private async arriveRegion(mapName: string, x: number, y: number): Promise<string | null> {
+    const { plugin } = this;
+    const parent = plugin.getMap(mapName)!;
+    const key = keyOf(x, y);
+    const pseed = this.seedOf(mapName);
+    const resolution = await this.resolveHex(mapName, x, y, "discover");
+    if (resolution?.kind === "nothing") {
+      await plugin.saveSettings();
+      new Notice(`Nothing at ${hexText(key)}.`);
+      plugin.refreshHexMap();
+      return null;
+    }
+    const biome = hexBiomeAt(plugin, mapName, key);
+    if (!biome) {
+      await plugin.saveSettings();
+      new Notice(`Nothing to make at ${hexText(key)}: the hex has no biome.`);
+      plugin.refreshHexMap();
+      return null;
+    }
+    const seed = arrivalSeed(pseed, key, "submap", 0);
+    const res = await createRegion(plugin, mapName, x, y, { fill: "match", biome, seed, arrival: true });
+    if ("error" in res) {
+      await plugin.saveSettings();
+      new Notice(res.error);
+      return null;
+    }
+    const child = plugin.getMap(res.name);
+    if (child) {
+      child.arrival = "open";
+      if (parent.workMode) child.workMode = workModeOf(parent);
+    }
+    await plugin.saveSettings();
+    await plugin.mapStore.flush();
+    const terrain = plugin.mapStore.get(mapName, key)?.terrain;
+    const extra = eventLines(resolution?.events ?? []);
+    const report: ArrivalReport = {
+      date: new Date().toISOString().slice(0, 10),
+      parentNote: `_${mapName}`,
+      hex: hexText(key),
+      ...(resolution ? { rolled: { table: resolution.table, result: resolution.value, chain: resolution.chain } } : {}),
+      ...(terrain ? { terrain } : {}),
+      made: { generator: `the ${this.biomeText(biome)} biome`, palette: child?.paletteName ?? "", cols: child?.gridSize.cols ?? 0, rows: child?.gridSize.rows ?? 0, seed },
+      ...(extra.length ? { extra } : {}),
+    };
+    await plugin.mapStore.editNoteText(res.name, (c) => withArrivalSection(c, arrivalLines(report)));
+    new Notice(arrivalSummary(plugin.mapLabel(res.name), report), 8000);
+    return res.name;
+  }
+
+  /** Make a region made on arrival again: the next seed, its biome as the overworld has it now. Locked cells stay. */
+  private async rerollRegion(mapName: string): Promise<boolean> {
+    const { plugin } = this;
+    const map = plugin.getMap(mapName)!;
+    const { map: parentName, hex } = map.parent!;
+    const n = (map.arrivalRerolls ?? 0) + 1;
+    const seed = arrivalSeed(this.seedOf(parentName), hex, "submap", n);
+    await plugin.events.forgetMap(mapName);
+    await regenerateRegion(plugin, mapName, { seed, arrival: true });
+    map.arrivalRerolls = n;
+    await plugin.saveSettings();
+    await plugin.mapStore.flush();
+    const biome = hexBiomeAt(plugin, parentName, hex);
+    await plugin.mapStore.editNoteText(mapName, (c) => restateArrival(c, {
+      made: { generator: `the ${biome ? this.biomeText(biome) : "region's"} biome`, palette: map.paletteName, cols: map.gridSize.cols, rows: map.gridSize.rows, seed },
       rerolls: n,
       locked: map.arrival === "locked",
     }));

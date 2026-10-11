@@ -1,3 +1,4 @@
+import { handRollLabel } from "../arrival/eventsLedger";
 import {
   ItemView,
   MarkdownRenderer,
@@ -21,7 +22,6 @@ import {
   parseRandomTableWithReport,
   emptyTableMessage,
   rollTable,
-  rollLabel,
   resolveTable,
   rowOdds,
   rowInfoOf,
@@ -1870,7 +1870,7 @@ export class RandomTableView extends ItemView {
 
     resultBox.show();
     if (faceEl) {
-      const face = rollLabel(table, outcome);
+      const face = handRollLabel(table, outcome);
       faceEl.setText(face);
       faceEl.toggle(!!face);
     }

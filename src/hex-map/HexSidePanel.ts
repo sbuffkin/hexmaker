@@ -89,6 +89,7 @@ export type OverlayKey =
   | "showCoords"
   | "showHexNames"
   | "showTokenNames"
+  | "showUncharted"
   | "showTerrainIcons"
   | "showIconOverrides"
   | "showPaths";
@@ -109,6 +110,8 @@ const OVERLAY_OPTIONS: OverlayOption[] = [
   { key: "showCoords",     label: "Coordinates", cssClass: "duckmage-hide-coords",      inLabels: true },
   { key: "showHexNames",   label: "Hex names",   cssClass: "duckmage-hide-hex-names",   inLabels: true },
   { key: "showTokenNames", label: "Token names", cssClass: "duckmage-hide-token-names", inLabels: true },
+  // Hexes still to roll on arrival (a ? mark).
+  { key: "showUncharted",  label: "Uncharted (?)", cssClass: "duckmage-hide-uncharted",   inLabels: true },
 ];
 
 /** Optional layers-menu rows (kept out of the positional callbacks). */

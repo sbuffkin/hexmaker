@@ -24,6 +24,8 @@ const r = await withBrowser(async ({ page }) => {
     batch_noBg: await m("batch", false),
     thrash_bg: await m("thrash", true),
     batch_bg: await m("batch", true),
+    uncharted_noBg: await m("uncharted", false),
+    uncharted_bg: await m("uncharted", true),
   };
 });
 
@@ -32,5 +34,6 @@ console.log(`\nrenderCoordLabelsLayer cost — hexes=${r.hexCount}, median of ${
 console.log(`                 no bg image     with bg image`);
 console.log(`thrash (current) ${f(r.thrash_noBg)}      ${f(r.thrash_bg)}   ← regression`);
 console.log(`batch  (fixed)   ${f(r.batch_noBg)}      ${f(r.batch_bg)}`);
+console.log(`batch + uncharted ${f(r.uncharted_noBg)}      ${f(r.uncharted_bg)}   (the ? layer reuses the read positions)`);
 console.log(`\nspeedup  no-bg: ${(r.thrash_noBg / r.batch_noBg).toFixed(1)}×   with-bg: ${(r.thrash_bg / r.batch_bg).toFixed(1)}×`);
 console.log(`bg amplifies thrash by ${(r.thrash_bg / r.thrash_noBg).toFixed(1)}× (vs ${(r.batch_bg / r.batch_noBg).toFixed(1)}× when batched)\n`);

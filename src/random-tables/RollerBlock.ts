@@ -1,6 +1,7 @@
 import { TFile } from "obsidian";
+import { handRollLabel } from "../arrival/eventsLedger";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { dieLabel, emptyTableMessage, parseRandomTable, rollLabel, rollTable } from "./randomTable";
+import { dieLabel, emptyTableMessage, parseRandomTable, rollTable } from "./randomTable";
 
 /**
  * Registers the `duckmage-roller` fenced code block processor.
@@ -126,7 +127,7 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
 
           resultTextarea.value = display;
           // "d20 → 14": the face rolled, so it can be checked against the note.
-          const face = rollLabel(table, outcome);
+          const face = handRollLabel(table, outcome);
           faceEl.setText(face);
           faceEl.toggle(!!face);
           resultBox.show();

@@ -202,6 +202,12 @@ export interface RegionGenOptions {
   hexTerrain?: string;
   /** The region's own biome (a hex set to a user's biome, which its terrain can't tell); default read from the overworld. */
   biome?: BiomeId;
+  /**
+   * Made or rerolled on arrival (GM4): the caller has checked the rules
+   * (arrival on; a new place may be rerolled until it's locked), so the
+   * map's work mode doesn't stop it here.
+   */
+  arrival?: boolean;
 }
 
 /**
@@ -348,7 +354,7 @@ export interface CreateRegionOptions extends RegionGenOptions {
  */
 export async function createRegion(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: CreateRegionOptions): Promise<{ name: string } | { error: string }> {
   const parent = plugin.getMap(parentName);
-  if (!canAdd(parent)) return { error: ADD_REGION_LOCKED_HINT };
+  if (!opts.arrival && !canAdd(parent)) return { error: ADD_REGION_LOCKED_HINT };
   if (!parent?.regions) return { error: "Set up this map's regions first." };
   if (!meshes(parent.regions)) return { error: "Hex-flower regions don't join up yet: make this one from the new-map form." };
   const hex = `${px}_${py}`;
@@ -478,7 +484,7 @@ export function reshapeGate(plugin: HexmakerPlugin, parentName: string, px: numb
 export async function regenerateRegion(plugin: HexmakerPlugin, regionName: string, opts: RegionGenOptions = {}): Promise<number> {
   const region = plugin.getMap(regionName);
   if (region?.submapKind !== "region" || !region.parent) return 0;
-  if (!canReshape(plugin.getMap(region.parent.map))) return 0; // see reshapeGate
+  if (!opts.arrival && !canReshape(plugin.getMap(region.parent.map))) return 0; // see reshapeGate
   const [px, py] = region.parent.hex.split("_").map(Number);
   const planned = await planOrError(plugin, region.parent.map, px, py, opts);
   if (planned && "error" in planned) {

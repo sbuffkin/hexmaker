@@ -74,6 +74,7 @@ import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { FactionPickerModal } from "./FactionPickerModal";
 import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
+import { renderUnchartedLayer, unchartedKeys } from "./unchartedLayer";
 import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, hiddenBadges, legendBadgeKinds, linkedNotesText, linksBySection, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "./linkBadges";
 import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "./terrainLegend";
 import { TokenModal } from "./TokenModal";
@@ -4648,6 +4649,8 @@ export class HexMapView extends ItemView {
     this.renderCoordLabelsLayer(gridContainer);
     // Badges reuse the hex centres the coord labels just measured.
     this.renderLinkBadges(gridContainer);
+    // So does the uncharted marker (no layout reads of its own).
+    renderUnchartedLayer(gridContainer, this.coordPlacements, this.coordGridSize, unchartedKeys(this.plugin.mapStore.all(this.activeMapName)));
     this.drawHexNames(gridContainer);
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
@@ -4994,6 +4997,11 @@ export class HexMapView extends ItemView {
     const region = regionMapAt(this.plugin.settings.maps, this.activeMapName, key)?.name;
     const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
     const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", "set-biome": "trees", center: "crosshair", locations: "list" };
+    // Arrival (GM4): a world set to make places makes this hex's region on the spot, in any mode.
+    if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
+      menu.add("ow.arrive", "Go there", "footprints", () => void this.arriveAt(px, py));
+      menu.addSeparator();
+    }
     for (const it of overworldMenu(this.getActiveMap(), !!region, locations)) {
       const id = `ow.${it.id}` as const;
       const title = it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`;
@@ -5071,6 +5079,9 @@ export class HexMapView extends ItemView {
       if (act.kind === "enter" && region) {
         if (cell) this.enterRegionAt(region, cell.x, cell.y);
         else this.navigateToMap(region);
+      } else if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
+        // Arrival on: going there makes the region from its biome (GM4).
+        await this.arriveAt(px, py);
       } else if (act.kind === "place") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
       else if (act.kind === "hint") new Notice(act.hint);
       return;

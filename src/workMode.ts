@@ -218,6 +218,7 @@ export const MENU_ACTIONS = {
   "hex.remove-icon": "paint-icon",
   // overworld hex menu
   "ow.enter-region": "navigate",
+  "ow.arrive": "discover",
   "ow.edit-region": "open-editor",
   "ow.set-biome": "place-biome",
   "ow.center": "navigate",

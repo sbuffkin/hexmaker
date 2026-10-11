@@ -1,8 +1,9 @@
 import { App, Notice, TFile } from "obsidian";
+import { handRollLabel } from "../arrival/eventsLedger";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, rollTable, rollLabel, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
+import { parseRandomTable, rollTable, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { groupTableFiles } from "./tablePickerGroups";
@@ -376,7 +377,7 @@ export class RandomTableModal extends HexmakerModal {
         tr.toggleClass("is-rolled", tr.dataset.index === String(outcome.index));
       });
       resultBox.el.show();
-      const face = rollLabel(table, outcome);
+      const face = handRollLabel(table, outcome);
       resultBox.face.setText(face);
       resultBox.face.toggle(!!face);
       resultBox.textarea.value = outcome.entry.result;
