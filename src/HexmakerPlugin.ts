@@ -1986,6 +1986,8 @@ export default class HexmakerPlugin extends Plugin {
     const current = await this.app.vault.read(file);
     const now = () => shownValues(mapDataLines(this.hexMapDataView(mapName, x, y)));
     const plan = planCalloutImport(current, this.calloutMemory.get(path), now());
+    // No callout and none to add: nothing to do.
+    if (!plan && !opts.insert) return out;
     if (plan) {
       out.notApplied.push(...plan.notApplied);
       out.unreadable.push(...plan.unreadable);
