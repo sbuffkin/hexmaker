@@ -25,6 +25,7 @@ import { biomeForTerrain, biomeGeneratorId, ecotoneBetween, type BiomeId, type B
 import { BlendField, REGION_WARP, type BlendWidth } from "./blendField";
 import { regionBox, regionCells, regionCentrePoint, type RegionLayout } from "./layout";
 import { generateRegion } from "./regionGen";
+import { hash2 } from "./noise";
 
 export interface GridRules {
   orientation: Orientation;
@@ -311,4 +312,35 @@ export function parseBiomeRiver(raw: string | undefined): string[] {
 /** ["2_0", "2_1"] → "2,0 > 2,1". */
 export function formatBiomeRiver(keys: string[]): string {
   return keys.map((k) => k.replace("_", ",")).join(" > ");
+}
+
+// ── walking into new land ────────────────────────────────────────────────
+
+/**
+ * The grid that also holds hex (x, y): the smallest growth of offset/size
+ * that takes it in (like the map's + expand buttons), or null when it is
+ * inside already. Hex numbers never change, so regions keep their slots.
+ */
+export function gridToInclude(
+  offset: { x: number; y: number },
+  size: { cols: number; rows: number },
+  x: number,
+  y: number,
+): { offset: { x: number; y: number }; size: { cols: number; rows: number } } | null {
+  const x0 = Math.min(offset.x, x), y0 = Math.min(offset.y, y);
+  const x1 = Math.max(offset.x + size.cols - 1, x), y1 = Math.max(offset.y + size.rows - 1, y);
+  if (x0 === offset.x && y0 === offset.y && x1 - x0 + 1 === size.cols && y1 - y0 + 1 === size.rows) return null;
+  return { offset: { x: x0, y: y0 }, size: { cols: x1 - x0 + 1, rows: y1 - y0 + 1 } };
+}
+
+/**
+ * Roll a biome from `ids` with `seed`: the same seed always gives the same
+ * biome, so a roll can be shown and repeated. Avoids `avoid` (the biome
+ * being walked from) when there is any other.
+ */
+export function rollBiome(ids: readonly string[], seed: number, avoid?: string): string | undefined {
+  const others = ids.filter((id) => id !== avoid);
+  const pool = others.length ? others : ids;
+  if (!pool.length) return undefined;
+  return pool[Math.floor(hash2(seed >>> 0, 0x5eed, 0xb10e) * pool.length)];
 }

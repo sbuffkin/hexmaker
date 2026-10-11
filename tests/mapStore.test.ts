@@ -1,6 +1,6 @@
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { MapStore, HEX_DATA_KEYS, withoutNotePaths } from "../src/maps/MapStore";
+import { MapStore, HEX_DATA_KEYS, droppedWhat, withoutNotePaths } from "../src/maps/MapStore";
 import { parseMapNote } from "../src/maps/mapNote";
 import { MemVault } from "./helpers/memVault";
 import { Notice } from "obsidian";
@@ -628,5 +628,15 @@ describe("map store: derived Summary and Route (#46)", () => {
 		await store.sync();
 		expect(v.writes).toEqual([NOTE]);
 		expect(v.files.get(NOTE)).not.toContain("not in the palette");
+	});
+});
+
+describe("map store: the write guard says what it kept", () => {
+	it("pluralises: its only path, all its N paths", () => {
+		expect(droppedWhat(1, 0)).toBe("its only path");
+		expect(droppedWhat(3, 0)).toBe("all its 3 paths");
+		expect(droppedWhat(0, 1)).toBe("its only hex");
+		expect(droppedWhat(2, 12)).toBe("all its 2 paths and all its 12 hexes");
+		expect(droppedWhat(1, 5)).toBe("its only path and all its 5 hexes");
 	});
 });

@@ -32,8 +32,8 @@ Hexes with locations show a small ring at the top, with a count once there are t
 | **↑** / **Alt+↑** | Up to the parent map; the hex you came from flashes |
 | **→** / **Alt+→** | Forward again after going back |
 | Breadcrumb (top left) | Jump to any map above this one |
-| Small hex flower after the arrows (a region of an overworld) | The six regions around this one, each in its direction. Hover a petal for its name, click to go there. Empty petals have no region yet |
-| **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name. Inside a submap they go to its parent's neighbours |
+| Small hex flower after the arrows (a region of an overworld) | The six regions around this one, each in its direction. Hover a petal for its name, click to go there. An empty petal's **+** makes the region there (pick or roll its biome) |
+| **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name. **+** on an empty side makes new land there. Inside a submap they go to its parent's neighbours |
 
 The arrows are always ← ↑ → in that order; one that doesn't apply right now is greyed out. Hover any of them for the map it goes to.
 
@@ -139,6 +139,8 @@ Turn on any one of them from the hint (✦) where it would appear, or all of the
 **Overworlds** (Advanced: Regions and overworlds). **Maps → New overworld…** makes a map of biomes whose hexes each open into a rectangle region; regions next to each other share one grid, so they join hex for hex. The switch at the bottom right picks the view (the one showing is highlighted): **Regions** shows every region's hexes stitched together, with blank bricks where there's no region yet (hover for a region's name, click to go in at that spot; the terrain tool paints the regions' own hexes, across seams), **Biomes** shows one biome per hex (hover for its region's name; click to set one: an empty hex gets its region). The minimap at the bottom right shows the overworld from any of its regions. Hand-painted region hexes are locked, so remaking a region keeps them.
 
 **Work modes: Play, Build, God.** Each map has a mode, shown on the toolbar next to the map button; click it to switch. The map keeps its mode (it's the `mode:` line in the map note) and opens in it next time. New maps are in **Build**. For now the mode guards two things on overworlds. Changing what's already placed (swapping a placed biome, **Reroll**, applying **Settings…** to an existing region) needs **God**; in Build and Play those buttons are greyed out and say "Switch to God to change a placed biome." Placing a biome on an empty hex (which makes its region) needs **Build** or God; in Play the biome picker is greyed out and says "Switch to Build to place a biome.", and **New map from this hex… → Region** says "Switch to Build to make a region." Notes stay editable in every mode, and settings and palettes are never locked. No confirm boxes: the mode is the safety catch.
+
+**Walking into new land.** In a region, the hex flower on the toolbar shows a **+** on each neighbour that has no region yet ("New region to the east"). Click it, pick the biome that lies there or **Roll** for one (the seed is shown; the same seed rolls the same biome), watch the preview of the new region blended with the regions around it, then **Create and go**. A different biome makes border country in between. Past the overworld's edge, the overworld grows by a hex to fit the new region. The hex editor's neighbour flower does the same on the hexes past the region's edge, and maps joined side by side get a **+** on the empty sides of their arrow pad. Needs Build or God: in Play the **+** says "Switch to Build to make a region."
 
 Neighbouring regions share one set of hex numbers: a new region carries on from the map it was placed next to, so each hex number names one place in the world. Maps you join later keep their own numbers.
 

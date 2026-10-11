@@ -6442,6 +6442,13 @@ button.duckmage-wfc-library-tab.is-active {
     opacity: 0.9;
 }
 
+/* Play mode: the "+" stays, locked (its tooltip says to switch to Build). */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new.is-locked,
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new.is-locked:hover {
+    opacity: 0.25;
+    cursor: default;
+}
+
 /* "Go to region?" box. */
 .duckmage-region-nav-preview {
     display: block;
@@ -8357,6 +8364,28 @@ button.duckmage-terrain-legend-chip {
     opacity: 0.6;
     cursor: default;
 }
+/* An empty petal is new land: a "+" that opens the walk (pick or roll a biome). */
+.duckmage-region-flower-petal.is-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-muted);
+    opacity: 0.85;
+    cursor: pointer;
+}
+.duckmage-region-flower-petal.is-new:hover:not(:disabled) {
+    color: var(--interactive-accent);
+}
+.duckmage-region-flower-petal.is-new.is-locked {
+    opacity: 0.4;
+    cursor: default;
+}
+.duckmage-region-nav input.duckmage-walk-seed {
+    width: 9em;
+}
 
 /* Maps on a world grid: their four sides as a d-pad (◀ ▲ ▼ ▶), fixed order. */
 .duckmage-map-pad {
@@ -8381,6 +8410,10 @@ button.duckmage-terrain-legend-chip {
 .duckmage-map-pad .duckmage-map-pad-btn:disabled {
     opacity: 0.35;
     cursor: default;
+}
+.duckmage-map-pad .duckmage-map-pad-btn.is-new {
+    font-weight: 700;
+    border-style: dashed;
 }
 
 /* Work mode (Play / Build / God): always on the toolbar. */

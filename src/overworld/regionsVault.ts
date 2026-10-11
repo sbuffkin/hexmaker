@@ -21,6 +21,7 @@ import { ADD_REGION_LOCKED_HINT, canAdd, canReshape, PLACE_LOCKED_HINT, RESHAPE_
 import {
   defaultRegionName,
   dominantTerrain,
+  gridToInclude,
   meshes,
   overworldBiomes,
   paletteTypeOf,
@@ -311,7 +312,7 @@ export async function setBiomeAt(
   px: number,
   py: number,
   biome: BiomeId,
-  opts: RegionGenOptions = {},
+  opts: RegionGenOptions & { name?: string } = {},
 ): Promise<{ name: string } | { error: string }> {
   const parent = plugin.getMap(parentName);
   if (!parent) return { error: "Map not found." };
@@ -330,4 +331,56 @@ export async function setBiomeAt(
     return { name: existing.name };
   }
   return createRegion(plugin, parentName, px, py, { ...opts, fill: "match" });
+}
+
+// ── walking into new land ────────────────────────────────────────────────
+
+/** Is overworld hex (px, py) inside the overworld's grid? */
+export function inOverworldGrid(map: Pick<MapData, "gridOffset" | "gridSize">, px: number, py: number): boolean {
+  return gridToInclude(map.gridOffset, map.gridSize, px, py) === null;
+}
+
+/**
+ * Why walking from `fromMap` into new land on overworld `overworldName` is
+ * locked, or undefined when it may go ahead. Both maps' work modes count:
+ * the one you're on (its mode is on the toolbar) and the overworld the new
+ * region is added to. Build and God allow it; Play doesn't.
+ */
+export function walkLock(plugin: HexmakerPlugin, fromMap: string, overworldName: string): string | undefined {
+  if (!canAdd(plugin.getMap(fromMap))) return ADD_REGION_LOCKED_HINT;
+  if (!canAdd(plugin.getMap(overworldName))) return `Switch ${plugin.mapLabel(overworldName)} to Build to make a region.`;
+  return undefined;
+}
+
+/**
+ * Walk from a region into new land at overworld hex (px, py) (the region
+ * flower's "+"): grow the overworld to take the hex in when it lies past
+ * the grid, set the hex's biome and make its region, blended with the
+ * overworld and pinned to the regions around it. Build and God only; a hex
+ * that already has a region is refused (its biome is God's to change).
+ */
+export async function walkIntoHex(
+  plugin: HexmakerPlugin,
+  parentName: string,
+  px: number,
+  py: number,
+  biome: BiomeId,
+  opts: RegionGenOptions & { name?: string; from?: string } = {},
+): Promise<{ name: string; grew: boolean } | { error: string }> {
+  const parent = plugin.getMap(parentName);
+  if (!parent) return { error: "Map not found." };
+  const lock = walkLock(plugin, opts.from ?? parentName, parentName);
+  if (lock) return { error: lock };
+  if (!overworldOf(plugin, parentName)) return { error: "This map has no rectangle region settings." };
+  const existing = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  if (existing) return { error: `That hex's region is ${plugin.mapLabel(existing.name)}.` };
+  if (!representativeTerrain(biome, plugin.getMapPalette(parentName))) return { error: "This map's palette has no terrain for that biome." };
+  const grow = gridToInclude(parent.gridOffset, parent.gridSize, px, py);
+  if (grow) {
+    parent.gridOffset = grow.offset;
+    parent.gridSize = grow.size;
+    await plugin.saveSettings();
+  }
+  const res = await setBiomeAt(plugin, parentName, px, py, biome, opts);
+  return "error" in res ? res : { name: res.name, grew: !!grow };
 }

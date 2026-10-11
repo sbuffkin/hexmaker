@@ -112,6 +112,49 @@ export function flowerPetals(orientation: Orientation, stagger: Stagger, px: num
   return out.map(({ bearing, hex, dx, dy }) => ({ bearing, hex, dx, dy }));
 }
 
+/**
+ * What one neighbour button (a flower petal or a d-pad side) does:
+ * - go: a map is there, click to go to it;
+ * - new: nothing there yet, a "+" that walks into new land (pick or roll
+ *   its biome, see WalkRegionModal); `grows` when the overworld must grow
+ *   by that hex first;
+ * - locked: the "+" is there but the map's work mode is Play;
+ * - none: nothing there and nothing can be made (shown disabled).
+ */
+export type NeighbourAction =
+  | { kind: "go"; target: string }
+  | { kind: "new"; grows: boolean }
+  | { kind: "locked"; hint: string }
+  | { kind: "none" };
+
+export interface NeighbourButton {
+  action: NeighbourAction;
+  /** Show a "+": an empty spot that can take a new region (now or in another mode). */
+  plus: boolean;
+  disabled: boolean;
+  title: string;
+}
+
+/**
+ * The button for the neighbour in `direction` ("north-east"). `there` is
+ * the map in that spot. With nothing there, `canMake` says whether new land
+ * can be made in that spot at all, `canAdd` whether the work mode allows it
+ * now (Build and God; src/workMode.ts), `inGrid` whether the spot is inside
+ * the overworld's grid (false: making it grows the overworld).
+ */
+export function neighbourButton(
+  direction: string,
+  there: { name: string; label: string } | undefined,
+  opts: { canMake: boolean; canAdd: boolean; lockedHint: string; inGrid?: boolean; emptyTitle?: string },
+): NeighbourButton {
+  const word = direction[0].toUpperCase() + direction.slice(1);
+  if (there) return { action: { kind: "go", target: there.name }, plus: false, disabled: false, title: `${word}: ${there.label}` };
+  if (!opts.canMake) return { action: { kind: "none" }, plus: false, disabled: true, title: `${word}: ${opts.emptyTitle ?? "nothing there"}` };
+  const title = `New region to the ${direction}`;
+  if (!opts.canAdd) return { action: { kind: "locked", hint: opts.lockedHint }, plus: true, disabled: true, title: `${title}. ${opts.lockedHint}` };
+  return { action: { kind: "new", grows: opts.inGrid === false }, plus: true, disabled: false, title };
+}
+
 /** The four sides of a world-grid map, always in this order (a d-pad: ◀ ▲ ▼ ▶). */
 export const PAD_SIDES = [
   { side: "west", glyph: "◀" },

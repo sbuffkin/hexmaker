@@ -33,8 +33,8 @@ import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
-import { flowerPetals, MapHistory, navArrows, PAD_SIDES } from "../maps/mapNav";
-import { WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
+import { flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
+import { ADD_REGION_LOCKED_HINT, canAdd, WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
 import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
@@ -79,11 +79,14 @@ import { hexChildMaps, regionMapAt, submapMenuPlan } from "../maps/submaps";
 import { OverworldLayer } from "./overworldLayer";
 import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
-import { regionHome } from "../overworld/regionsVault";
+import { inOverworldGrid, regionHome, walkLock } from "../overworld/regionsVault";
+import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
+import type { Side } from "../worldgen/world";
+import { withFeature } from "../advancedHints";
 import { overworldRefreshFor } from "../overworld/overworldChanges";
 import { parentOf as parentOfCell } from "../overworld/layout";
 import { RegionNavigateModal } from "./RegionNavigateModal";
-import { neighbourShadow } from "../worldgen/neighbours";
+import { neighbourShadow, neighbourSpec } from "../worldgen/neighbours";
 import { TokenInfoModal } from "./TokenInfoModal";
 import {
   getTokenDataFromCache,
@@ -790,6 +793,8 @@ export class HexMapView extends ItemView {
     map.workMode = mode;
     void this.plugin.saveSettings();
     this.refreshWorkModeBtn();
+    // The neighbour "+" buttons lock and unlock with the mode.
+    this.refreshSideCrumbs();
   }
 
   /**
@@ -811,21 +816,32 @@ export class HexMapView extends ItemView {
       const R = 12; // px from the middle to a petal's centre
       const here = flower.createSpan({ cls: "duckmage-region-flower-petal is-here", attr: { title: `Here: ${this.plugin.mapLabel(this.activeMapName)}` } });
       here.setCssProps({ "--duckmage-petal-x": "0px", "--duckmage-petal-y": "0px" });
+      const lock = walkLock(this.plugin, this.activeMapName, home.overworld.name);
       for (const p of petals) {
         const key = `${p.hex[0]}_${p.hex[1]}`;
         const region = regionMapAt(maps, home.overworld.name, key);
         const terrain = this.plugin.mapStore.get(home.overworld.name, key)?.terrain;
         const colour = terrain ? palette.find((t) => t.name === terrain)?.color : undefined;
-        const word = p.bearing[0].toUpperCase() + p.bearing.slice(1);
-        const title = region ? `${word}: ${this.plugin.mapLabel(region.name)}` : `${word}: no region yet`;
+        // An empty petal is new land: "+" walks into it (pick or roll its biome).
+        const b = neighbourButton(p.bearing, region ? { name: region.name, label: this.plugin.mapLabel(region.name) } : undefined, {
+          canMake: true,
+          canAdd: !lock,
+          lockedHint: lock ?? "",
+          inGrid: inOverworldGrid(home.overworld, p.hex[0], p.hex[1]),
+        });
         const petal = flower.createEl("button", {
-          cls: "duckmage-region-flower-petal" + (region ? "" : " is-empty"),
-          attr: { title, "aria-label": title, "data-side": p.bearing },
+          cls: "duckmage-region-flower-petal" + (region ? "" : " is-empty is-new") + (b.action.kind === "locked" ? " is-locked" : ""),
+          text: b.plus ? "+" : "",
+          attr: { title: b.title, "aria-label": b.title, "data-side": p.bearing, "data-hex": key },
         });
         petal.setCssProps({ "--duckmage-petal-x": `${(p.dx * R).toFixed(1)}px`, "--duckmage-petal-y": `${(p.dy * R).toFixed(1)}px` });
         if (colour && region) petal.setCssProps({ "--duckmage-petal-bg": colour });
-        if (region) petal.addEventListener("click", () => this.navigateToMap(region.name));
-        else petal.disabled = true;
+        petal.disabled = b.disabled;
+        const action = b.action;
+        if (action.kind === "go") petal.addEventListener("click", () => this.navigateToMap(action.target));
+        else if (action.kind === "new") {
+          petal.addEventListener("click", () => this.openWalk({ overworld: home.overworld.name, px: p.hex[0], py: p.hex[1], bearing: p.bearing }));
+        }
       }
       el.show();
       return;
@@ -845,21 +861,44 @@ export class HexMapView extends ItemView {
       return;
     }
     const pad = el.createDiv({ cls: "duckmage-map-pad", attr: { role: "group", "aria-label": "Neighbouring maps" } });
+    const active = this.plugin.getMap(this.activeMapName);
     for (const { side: s, glyph } of PAD_SIDES) {
       const c = side.find((x) => x.side === s);
-      const word = s[0].toUpperCase() + s.slice(1);
-      const title = !c ? `${word}: nothing there`
-        : via ? `${word} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}`
-        : `${word}: ${this.plugin.mapLabel(c.name)}`;
+      // An empty side of this map's own world is new land (the hex editor's
+      // flower offers the same); a submap's borrowed pad only goes places.
+      const b = neighbourButton(s, c ? { name: c.name, label: this.plugin.mapLabel(c.name) } : undefined, {
+        canMake: !via && neighbourSpec(this.plugin, this.activeMapName, s).ok,
+        canAdd: canAdd(active),
+        lockedHint: ADD_REGION_LOCKED_HINT,
+      });
+      const title = c && via ? `${s[0].toUpperCase() + s.slice(1)} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}` : b.title;
       const btn = pad.createEl("button", {
-        cls: `duckmage-map-pad-btn is-${s}`,
-        text: glyph,
+        cls: `duckmage-map-pad-btn is-${s}` + (b.plus ? " is-new" : "") + (b.action.kind === "locked" ? " is-locked" : ""),
+        text: b.plus ? "+" : glyph,
         attr: { title, "aria-label": title, "data-side": s },
       });
-      if (c) btn.addEventListener("click", () => this.navigateToMap(c.name));
-      else btn.disabled = true;
+      btn.disabled = b.disabled;
+      const action = b.action;
+      if (action.kind === "go") btn.addEventListener("click", () => this.navigateToMap(action.target));
+      else if (action.kind === "new") btn.addEventListener("click", () => this.openWalk(s));
     }
     el.show();
+  }
+
+  /**
+   * Walk into new land from the open map (a "+" on the region flower or the
+   * d-pad): pick or roll its biome, preview, create, then go there. The same
+   * flow as the hex editor's neighbour flower (WalkRegionModal).
+   */
+  private openWalk(to: Side | OverworldWalk): void {
+    const from = this.activeMapName;
+    const open = () => new WalkRegionModal(this.app, this.plugin, from, to, (name) => {
+      if (this.activeMapName === from) this.navigateToMap(name);
+      else this.refreshSideCrumbs();
+    }).open();
+    // A side-by-side world picks a terrain generator; an overworld needs neither feature.
+    if (typeof to === "string") withFeature(this.plugin, "regions", () => withFeature(this.plugin, "generators", open));
+    else open();
   }
 
   public switchMapFromModal(name: string): void {

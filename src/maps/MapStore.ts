@@ -608,9 +608,9 @@ export class MapStore {
     const dropsPaths = disk.paths.length > 0 && data.paths.length === 0 && !this.clearedPaths.has(map.name);
     const dropsHexes = disk.hexes.size > 0 && data.hexes.size === 0 && !this.clearedHexes.has(map.name);
     if (!dropsPaths && !dropsHexes) return false;
-    const what = [dropsPaths ? `${disk.paths.length} path${disk.paths.length === 1 ? "" : "s"}` : "", dropsHexes ? `${disk.hexes.size} hex${disk.hexes.size === 1 ? "" : "es"}` : ""].filter(Boolean).join(" and ");
-    console.error(`Hexmap World Creator: a save of ${path} would have removed all its ${what} without them being deleted; the note's were kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
-    new Notice(`Hexmap World Creator: a save would have removed all ${what} from ${path}. They weren't deleted, so the note's were kept. To remove them, delete them again.`, 15000);
+    const what = droppedWhat(dropsPaths ? disk.paths.length : 0, dropsHexes ? disk.hexes.size : 0);
+    console.error(`Hexmap World Creator: a save of ${path} would have removed ${what}, but nothing was deleted, so the note's copy was kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
+    new Notice(`Hexmap World Creator: a save of ${path} would have removed ${what}. Nothing was deleted, so the note's copy was kept. If you meant to remove it, delete again.`, 15000);
     if (dropsHexes) this.hexes.set(map.name, this.matchCase(map, disk.hexes));
     if (dropsPaths) {
       this.views.delete(map.name);
@@ -1092,6 +1092,16 @@ const NO_FRONTMATTER = "its frontmatter (the --- lines with hexmaker-map at the 
 
 function problemSignature(problems: MapNoteProblem[] | undefined): string {
   return (problems ?? []).map((p) => `${p.where}\u0000${p.text}\u0000${p.reason}`).join("\u0001");
+}
+
+/**
+ * What a refused save would have dropped, for the write guard's message:
+ * "its only path", "all its 3 paths", "its only path and all its 12 hexes".
+ * Zero counts are left out.
+ */
+export function droppedWhat(paths: number, hexes: number): string {
+  const part = (n: number, one: string, many: string) => (n === 1 ? `its only ${one}` : `all its ${n} ${many}`);
+  return [paths ? part(paths, "path", "paths") : "", hexes ? part(hexes, "hex", "hexes") : ""].filter(Boolean).join(" and ");
 }
 
 /**

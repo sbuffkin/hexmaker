@@ -53,7 +53,7 @@ export function mayReshape(host: BiomeHost, parentName: string, px: number, py: 
 }
 
 /** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
-function lockButton(btn: HTMLButtonElement, hint: string): void {
+export function lockButton(btn: HTMLButtonElement, hint: string): void {
   btn.disabled = true;
   btn.addClass("is-locked");
   btn.setAttr("title", hint);
@@ -61,7 +61,7 @@ function lockButton(btn: HTMLButtonElement, hint: string): void {
 }
 
 /** The biomes this overworld's palette can paint, with the terrain each paints. */
-function paintableBiomes(plugin: HexmakerPlugin, parentName: string): { id: BiomeId; label: string; terrain: string; color: string }[] {
+export function paintableBiomes(plugin: HexmakerPlugin, parentName: string): { id: BiomeId; label: string; terrain: string; color: string }[] {
   const palette = plugin.getMapPalette(parentName);
   const shown = representableBiomes(palette);
   const out: { id: BiomeId; label: string; terrain: string; color: string }[] = [];
@@ -232,48 +232,9 @@ export class RegionGenModal extends HexmakerModal {
   }
 
   private redraw(): void {
-    const { plugin } = this.host;
-    const ow = overworldOf(plugin, this.parentName);
-    const ctx = this.canvas.getContext("2d");
-    if (!ow || !ctx) return;
     // Preview with the chosen biome on the hex (nothing is written).
-    const hex = `${this.px}_${this.py}`;
-    const plan = planRegionAt(plugin, this.parentName, this.px, this.py, { ...this.opts, hexTerrain: this.biomeTerrain() });
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (!plan) return;
-    const layout = ow.layout;
-    const colour = new Map(plugin.getPaletteOrPresetTerrains(ow.settings.palette ?? ow.map.paletteName).map((t) => [t.name, t.color]));
-    const own: RegionCell[] = [...plan.cells].map(([k, t]) => {
-      const [x, y] = k.split("_").map(Number);
-      return { x, y, color: colour.get(t) ?? "#333" };
-    });
-    const locked = regionMapAt(plugin.settings.maps, this.parentName, hex);
-    if (locked) for (const [k, h] of plugin.mapStore.all(locked.name)) {
-      if (!h.locked || !h.terrain) continue;
-      const [x, y] = k.split("_").map(Number);
-      own.push({ x, y, color: colour.get(h.terrain) ?? "#333" });
-    }
-    const around: RegionCell[] = [];
-    for (const [qx, qy] of hexNeighbors(this.px, this.py, layout.orientation, layout.parentStagger)) {
-      const r = regionMapAt(plugin.settings.maps, this.parentName, `${qx}_${qy}`);
-      if (!r) continue;
-      const hexes = plugin.mapStore.all(r.name);
-      for (const [x, y] of regionCells(layout, qx, qy)) {
-        const t = hexes.get(`${x}_${y}`)?.terrain;
-        if (t) around.push({ x, y, color: colour.get(t) ?? "#333" });
-      }
-    }
-    const all = [...own, ...around];
-    if (!all.length) return;
-    const box = cellsBox(layout, regionCells(layout, this.px, this.py).map(([x, y]) => ({ x, y })), [1, 0, 0, 1, 0, 0]);
-    // Fit this region plus a margin of its neighbours into the canvas.
-    const pad = Math.max(box.w, box.h) * 0.45;
-    const k = Math.min(this.canvas.width / (box.w + 2 * pad), this.canvas.height / (box.h + 2 * pad));
-    const to = composeAffine([1, 0, 0, 1, 0, 0], [k, 0, 0, k, (-box.x + pad) * k + (this.canvas.width - (box.w + 2 * pad) * k) / 2, (-box.y + pad) * k + (this.canvas.height - (box.h + 2 * pad) * k) / 2]);
-    ctx.globalAlpha = 0.45;
-    drawRegionCells(ctx, layout, around, to, { seams: false });
-    ctx.globalAlpha = 1;
-    drawRegionCells(ctx, layout, own, to);
+    const plan = planRegionAt(this.host.plugin, this.parentName, this.px, this.py, { ...this.opts, hexTerrain: this.biomeTerrain() });
+    drawRegionPlan(this.canvas, this.host.plugin, this.parentName, this.px, this.py, plan);
   }
 
   private async apply(): Promise<void> {
@@ -294,4 +255,57 @@ export class RegionGenModal extends HexmakerModal {
   onClose(): void {
     this.contentEl.empty();
   }
+}
+
+/**
+ * Draw a region plan (planRegionAt) for hex (px, py): the region bright
+ * (with its hand-painted, locked cells), the regions around it dimmed.
+ * Shared by the region settings modal and the walk-into-new-land flow.
+ */
+export function drawRegionPlan(
+  canvas: HTMLCanvasElement,
+  plugin: HexmakerPlugin,
+  parentName: string,
+  px: number,
+  py: number,
+  plan: ReturnType<typeof planRegionAt>,
+): void {
+  const ow = overworldOf(plugin, parentName);
+  const ctx = canvas.getContext("2d");
+  if (!ow || !ctx) return;
+  const hex = `${px}_${py}`;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!plan) return;
+  const layout = ow.layout;
+  const colour = new Map(plugin.getPaletteOrPresetTerrains(ow.settings.palette ?? ow.map.paletteName).map((t) => [t.name, t.color]));
+  const own: RegionCell[] = [...plan.cells].map(([k, t]) => {
+    const [x, y] = k.split("_").map(Number);
+    return { x, y, color: colour.get(t) ?? "#333" };
+  });
+  const locked = regionMapAt(plugin.settings.maps, parentName, hex);
+  if (locked) for (const [k, h] of plugin.mapStore.all(locked.name)) {
+    if (!h.locked || !h.terrain) continue;
+    const [x, y] = k.split("_").map(Number);
+    own.push({ x, y, color: colour.get(h.terrain) ?? "#333" });
+  }
+  const around: RegionCell[] = [];
+  for (const [qx, qy] of hexNeighbors(px, py, layout.orientation, layout.parentStagger)) {
+    const r = regionMapAt(plugin.settings.maps, parentName, `${qx}_${qy}`);
+    if (!r) continue;
+    const hexes = plugin.mapStore.all(r.name);
+    for (const [x, y] of regionCells(layout, qx, qy)) {
+      const t = hexes.get(`${x}_${y}`)?.terrain;
+      if (t) around.push({ x, y, color: colour.get(t) ?? "#333" });
+    }
+  }
+  if (!own.length && !around.length) return;
+  const box = cellsBox(layout, regionCells(layout, px, py).map(([x, y]) => ({ x, y })), [1, 0, 0, 1, 0, 0]);
+  // Fit this region plus a margin of its neighbours into the canvas.
+  const pad = Math.max(box.w, box.h) * 0.45;
+  const k = Math.min(canvas.width / (box.w + 2 * pad), canvas.height / (box.h + 2 * pad));
+  const to = composeAffine([1, 0, 0, 1, 0, 0], [k, 0, 0, k, (-box.x + pad) * k + (canvas.width - (box.w + 2 * pad) * k) / 2, (-box.y + pad) * k + (canvas.height - (box.h + 2 * pad) * k) / 2]);
+  ctx.globalAlpha = 0.45;
+  drawRegionCells(ctx, layout, around, to, { seams: false });
+  ctx.globalAlpha = 1;
+  drawRegionCells(ctx, layout, own, to);
 }
