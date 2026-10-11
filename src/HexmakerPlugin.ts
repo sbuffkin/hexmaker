@@ -850,7 +850,8 @@ export default class HexmakerPlugin extends Plugin {
    * note, which a person can read and edit. Maps not yet in a note keep them.
    */
   async saveData(data: unknown): Promise<void> {
-    const out = data !== this.settings || !this.mapStore?.isReady() ? data : withoutNotePaths(this.settings, (name) => this.mapStore.holdsPaths(name));
+    const ready = !!this.mapStore?.isReady();
+    const out = data !== this.settings ? data : withoutNotePaths(this.settings, (name) => ready && this.mapStore.holdsPaths(name));
     this.rememberWrite(out);
     return super.saveData(out);
   }

@@ -2,6 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { MapStore, HEX_DATA_KEYS, droppedWhat, withoutNotePaths } from "../src/maps/MapStore";
 import { parseMapNote } from "../src/maps/mapNote";
+import { migrateMapData } from "../src/compat";
 import { MemVault } from "./helpers/memVault";
 import { Notice } from "obsidian";
 import type { MapData } from "../src/types";
@@ -521,6 +522,18 @@ describe("map store: paths live only in the map note", () => {
 		const { store } = await boot(v);
 		expect(store.holdsPaths("coast")).toBe(false);
 		expect(store.holdsPaths("coast-3-4")).toBe(true);
+	});
+
+	it("an empty pathChains (filled in on load) is never written, so a restart rewrites nothing", () => {
+		const settings = { maps: [
+			{ name: "empty", pathChains: [] },
+			{ name: "with-paths", pathChains: [{ typeName: "Road", hexes: ["1_1", "2_1"] }] },
+		] as unknown as MapData[] };
+		const disk = withoutNotePaths(settings, () => false);
+		expect("pathChains" in disk.maps[0]).toBe(false);
+		expect(disk.maps[1].pathChains).toHaveLength(1);
+		// Loading it back gives the same map in memory.
+		expect(migrateMapData(disk.maps[0]).pathChains).toEqual([]);
 	});
 
 	it("a data.json synced in from another device doesn't overwrite the notes' paths", async () => {

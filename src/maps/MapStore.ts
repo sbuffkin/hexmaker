@@ -1393,11 +1393,18 @@ export function droppedWhat(paths: number, hexes: number): string {
 
 /**
  * Settings as written to data.json: maps whose note holds their paths
- * (`holds`) go without `pathChains`. Everything else is shared, not copied.
+ * (`holds`) go without `pathChains`. An empty `pathChains` isn't written
+ * either: loading fills it in (compat.migrateMapData), so writing it would
+ * make a restart rewrite data.json (a missing map, or a save before the
+ * store is ready). Everything else is shared, not copied.
  */
 export function withoutNotePaths<S extends { maps: MapData[] }>(settings: S, holds: (name: string) => boolean): S {
   const maps = settings.maps.map((m) => {
-    if (!holds(m.name)) return m;
+    if (!holds(m.name)) {
+      if (!Array.isArray(m.pathChains) || m.pathChains.length) return m;
+      const { pathChains: _chains, ...rest } = m;
+      return rest as MapData;
+    }
     const { pathChains: _chains, paths: _paths, ...rest } = m;
     return rest as MapData;
   });
