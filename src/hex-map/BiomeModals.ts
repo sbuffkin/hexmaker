@@ -56,6 +56,17 @@ export function mayReshape(host: BiomeHost, parentName: string, px: number, py: 
   return biomeLock(host, parentName, px, py) === undefined;
 }
 
+/**
+ * Run a biome change on hex (px, py) of an overworld. Changing a placed
+ * region (swap, reroll, regenerate) is recorded for undo in the overworld
+ * queue of its mode (WM6), as the map data it changes; making a region
+ * for the first time is not (it makes a map).
+ */
+export async function reshapeUndoable<T>(plugin: HexmakerPlugin, parentName: string, px: number, py: number, fn: () => Promise<T>): Promise<T> {
+  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return fn();
+  return plugin.undoableEdit(parentName, fn);
+}
+
 /** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
 export function lockButton(btn: HTMLButtonElement, hint: string): void {
   btn.disabled = true;
@@ -122,7 +133,7 @@ export class BiomePickerModal extends HexmakerModal {
       reroll.addEventListener("click", () => {
         if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
         this.close();
-        void regenerateRegion(plugin, region.name, { seed: newSeed() }).then(() => this.host.changed());
+        void reshapeUndoable(plugin, this.parentName, this.px, this.py, () => regenerateRegion(plugin, region.name, { seed: newSeed() })).then(() => this.host.changed());
       });
     }
     row.createEl("button", { text: "Settings…" }).addEventListener("click", () => {
@@ -137,7 +148,7 @@ export class BiomePickerModal extends HexmakerModal {
 
   private async apply(biome: BiomeId): Promise<void> {
     const notice = new Notice("Making the region…", 0);
-    const res = await setBiomeAt(this.host.plugin, this.parentName, this.px, this.py, biome);
+    const res = await reshapeUndoable(this.host.plugin, this.parentName, this.px, this.py, () => setBiomeAt(this.host.plugin, this.parentName, this.px, this.py, biome));
     notice.hide();
     if ("error" in res) new Notice(res.error);
     this.host.changed();
@@ -264,8 +275,8 @@ export class RegionGenModal extends HexmakerModal {
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
     const notice = new Notice(region ? "Remaking the region…" : "Making the region…", 0);
     let res: { name: string } | { error: string };
-    if (this.opts.biome) res = await setBiomeAt(plugin, this.parentName, this.px, this.py, this.opts.biome, this.opts);
-    else if (region) { await regenerateRegion(plugin, region.name, this.opts); res = { name: region.name }; }
+    if (this.opts.biome) { const biome = this.opts.biome; res = await reshapeUndoable(plugin, this.parentName, this.px, this.py, () => setBiomeAt(plugin, this.parentName, this.px, this.py, biome, this.opts)); }
+    else if (region) { await reshapeUndoable(plugin, this.parentName, this.px, this.py, () => regenerateRegion(plugin, region.name, this.opts)); res = { name: region.name }; }
     else res = await createRegion(plugin, this.parentName, this.px, this.py, { ...this.opts, fill: "match" });
     notice.hide();
     if ("error" in res) new Notice(res.error);

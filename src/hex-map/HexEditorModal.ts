@@ -1,4 +1,7 @@
-import { App, Menu, Notice, TFile } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
+import { canDo } from "../modeGate";
+import { lockedHint, workModeOf, type ModeAction } from "../workMode";
+import { ModeMenu } from "./modeMenu";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
@@ -281,11 +284,14 @@ export class HexEditorModal extends HexmakerModal {
     });
     this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
     const changeHint = terrainHeader.createSpan({ cls: "duckmage-terrain-change-hint", text: "▸ change" });
-    const syncChangeHint = () => changeHint.toggle(!terrainBody.isShown());
+    const syncChangeHint = () => changeHint.toggle(!terrainBody.isShown() && canDo(this.mapName, "paint-terrain"));
     syncChangeHint();
     terrainHeader.addEventListener("click", syncChangeHint);
     const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
-    this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
+    // Terrain and icons are map data: the map's work mode may lock them
+    // (one line instead of the pickers). Notes are never locked (WM2).
+    if (canDo(this.mapName, "paint-terrain")) this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
+    else this.renderModeLocked(terrainBody, "paint-terrain");
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
@@ -410,7 +416,13 @@ export class HexEditorModal extends HexmakerModal {
       "Icons",
       "hexEditorIconsCollapsed",
     );
-    this.renderIconSections(iconsBody, path, directIcon, this.directGmIcons, refreshHeader);
+    if (canDo(this.mapName, "paint-icon")) this.renderIconSections(iconsBody, path, directIcon, this.directGmIcons, refreshHeader);
+    else this.renderModeLocked(iconsBody, "paint-icon");
+  }
+
+  /** One line where a section the work mode locks would be. */
+  private renderModeLocked(container: HTMLElement, action: ModeAction): void {
+    container.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint(action) });
   }
 
   onClose() {
@@ -470,7 +482,7 @@ export class HexEditorModal extends HexmakerModal {
         return;
       }
       saved = name;
-      void this.saves.track(this.plugin.setHexName(mapName, x, y, name).then(() => this.onChanged()));
+      void this.saves.track(this.plugin.undoableEdit(mapName, () => this.plugin.setHexName(mapName, x, y, name)).then(() => this.onChanged()));
     };
     input.addEventListener("input", () => {
       debounce.schedule();
@@ -697,13 +709,13 @@ export class HexEditorModal extends HexmakerModal {
     const add = strip.createEl("button", { cls: "duckmage-maps-chip-add", text: "+", attr: { "aria-label": "Add a map to this hex", title: "New map from this hex, link one, or manage locations" } });
     add.addEventListener("click", (e) => {
       const { x, y } = this;
-      const menu = new Menu();
-      menu.addItem((i) => i.setTitle("New map from this hex…").setIcon("plus").onClick(() => { this.close(); this.options.onNewChildMap?.(x, y); }));
+      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)));
+      menu.add("editor.new-map", "New map from this hex…", "plus", () => { this.close(); this.options.onNewChildMap?.(x, y); });
       if (this.options.onLinkExistingMap) {
-        menu.addItem((i) => i.setTitle("Link existing map…").setIcon("link").onClick(() => { this.close(); this.options.onLinkExistingMap?.(x, y); }));
+        menu.add("editor.link-map", "Link existing map…", "link", () => { this.close(); this.options.onLinkExistingMap?.(x, y); });
       }
       if (locs.length && this.options.onManageLocations) {
-        menu.addItem((i) => i.setTitle(`Manage locations (${locs.length})…`).setIcon("list").onClick(() => { this.close(); this.options.onManageLocations?.(x, y); }));
+        menu.add("editor.manage-locations", `Manage locations (${locs.length})…`, "list", () => { this.close(); this.options.onManageLocations?.(x, y); });
       }
       menu.showAtMouseEvent(e);
     });
@@ -815,7 +827,7 @@ export class HexEditorModal extends HexmakerModal {
     let selectedTerrain = currentTerrain;
     const applyTerrain = async (terrain: string | null): Promise<void> => {
       if (terrain !== null) await this.ensureHexNote();
-      await setTerrainInFile(this.app, path, terrain);
+      if (!(await this.plugin.undoableEdit(this.mapName, () => setTerrainInFile(this.app, path, terrain)))) return;
       // The terrain's encounters table follows the terrain: show the swap.
       void this.plugin
         .syncHexEncounterTableLink(path, terrain)
@@ -914,7 +926,7 @@ export class HexEditorModal extends HexmakerModal {
       "— terrain default —",
       async (picked) => {
         await this.ensureHexNote();
-        await setIconOverrideInFile(this.app, path, picked);
+        if (!(await this.plugin.undoableEdit(this.mapName, () => setIconOverrideInFile(this.app, path, picked)))) return;
         this.directIcon = picked;
         onIconChange(); // header shows the icon override
         this.onChanged(terrainOverrides(), new Map([[path, picked]]));
@@ -953,7 +965,7 @@ export class HexEditorModal extends HexmakerModal {
 
     const persist = async (): Promise<void> => {
       await this.ensureHexNote();
-      await setGmIconsInFile(this.app, path, list);
+      if (!(await this.plugin.undoableEdit(this.mapName, () => setGmIconsInFile(this.app, path, list)))) return;
       // Pass the new list directly via the overrides arg so the view
       // can update the hex's data-gm-icons attribute immediately
       // without round-tripping through the metadata cache (which lags
@@ -1477,16 +1489,16 @@ export class HexEditorModal extends HexmakerModal {
       const terrain = field === "Terrain"
         ? this.plugin.getMapPalette(this.mapName).find((t) => sameName(t.name, written))?.name
         : undefined;
-      if (field === "Region" || terrain) {
+      if ((field === "Region" || terrain) && canDo(this.mapName, field === "Region" ? "paint-region-area" : "paint-terrain")) {
         actions.createEl("button", { text: `Use "${terrain ?? written}" on the map` }).addEventListener("click", () => {
           void this.saves.track((async () => {
             if (field === "Terrain") {
               await this.ensureHexNote();
-              await setTerrainInFile(this.app, path, terrain!);
+              await this.plugin.undoableEdit(this.mapName, () => setTerrainInFile(this.app, path, terrain!));
               await this.plugin.syncHexEncounterTableLink(path, terrain!);
               this.onChanged(new Map([[path, terrain!]]));
             } else {
-              await setHexRegionInFile(this.app, path, written);
+              await this.plugin.undoableEdit(this.mapName, () => setHexRegionInFile(this.app, path, written));
               this.onChanged();
             }
             await this.loadData();
@@ -1738,16 +1750,17 @@ export class HexEditorModal extends HexmakerModal {
 
     rollBtn.addEventListener("click", () => {
       const picked = pick();
-      if (!picked) { setMapTable(); return; }
+      // No table yet: the map's (Build), else this hex's own (note text, any mode).
+      if (!picked) { if (canDo(this.mapName, "map-properties")) setMapTable(); else chooseTable((f) => setHexTable(f)); return; }
       new RandomTableModal(this.app, this.plugin, undefined, picked.path, this.rollTarget(section)).open();
     });
     srcBtn.addEventListener("click", (e) => {
-      const menu = new Menu();
+      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)));
       const mapTable = mapSectionTable(this.plugin.getMap(this.mapName), section);
-      menu.addItem((i) => i.setTitle(mapTable ? `Change the map's ${spec.noun} table…` : `Set the map's ${spec.noun} table…`).onClick(setMapTable));
-      menu.addItem((i) => i.setTitle(`Use a different table for this hex…`).onClick(() => chooseTable((f) => setHexTable(f))));
+      menu.add("editor.map-table", mapTable ? `Change the map's ${spec.noun} table…` : `Set the map's ${spec.noun} table…`, null, setMapTable);
+      menu.add("editor.hex-table", `Use a different table for this hex…`, null, () => chooseTable((f) => setHexTable(f)));
       if (this.hexSectionTable(path, section)) {
-        menu.addItem((i) => i.setTitle("Use the map's table on this hex").onClick(() => setHexTable(null)));
+        menu.add("editor.hex-table", "Use the map's table on this hex", null, () => setHexTable(null));
       }
       menu.showAtMouseEvent(e);
     });

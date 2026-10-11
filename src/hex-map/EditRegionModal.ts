@@ -26,7 +26,7 @@ import { biomeInfo, type BiomeId } from "../overworld/biomes";
 import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "../overworld/regionsVault";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
-import { mayReshape, paintableBiomes, RegionGenModal, type BiomeHost } from "./BiomeModals";
+import { mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { createIconEl, getIconUrl } from "../utils";
 
@@ -270,7 +270,7 @@ export class EditRegionModal extends HexmakerModal {
   private async setBiome(biome: BiomeId): Promise<void> {
     if (!mayReshape(this.host, this.overworld, this.px, this.py)) return;
     const notice = new Notice("Remaking the region…", 0);
-    const res = await setBiomeAt(this.host.plugin, this.overworld, this.px, this.py, biome);
+    const res = await reshapeUndoable(this.host.plugin, this.overworld, this.px, this.py, () => setBiomeAt(this.host.plugin, this.overworld, this.px, this.py, biome));
     notice.hide();
     if ("error" in res) new Notice(res.error);
     this.host.changed();
@@ -280,7 +280,7 @@ export class EditRegionModal extends HexmakerModal {
 
   private async reroll(name: string): Promise<void> {
     if (!mayReshape(this.host, this.overworld, this.px, this.py)) return;
-    await regenerateRegion(this.host.plugin, name, { seed: Math.floor(Math.random() * 1e9) });
+    await reshapeUndoable(this.host.plugin, this.overworld, this.px, this.py, () => regenerateRegion(this.host.plugin, name, { seed: Math.floor(Math.random() * 1e9) }));
     this.host.changed();
     await this.saveNotes();
     this.render();

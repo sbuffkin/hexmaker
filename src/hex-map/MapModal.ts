@@ -25,7 +25,8 @@ import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
 import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
 import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
-import { canReshape } from "../workMode";
+import { canReshape, lockedHint } from "../workMode";
+import { canDo, guardWrite } from "../modeGate";
 import { meshes } from "../overworld/regionWorld";
 import { missingRegionHexes } from "../overworld/regionsVault";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
@@ -362,6 +363,12 @@ export class MapModal extends HexmakerModal {
 
   private renderPropertiesTab(el: HTMLElement): void {
     const currentMap = this.plugin.getMap(this.view.activeMapName);
+    // Properties are map structure: locked in Play (one line, not a wall of
+    // disabled fields).
+    if (!canDo(this.view.activeMapName, "map-properties")) {
+      el.createEl("p", { cls: "duckmage-editor-mode-locked", text: lockedHint("map-properties") });
+      return;
+    }
 
     // Name (display only: nothing moves) and folder name (the slug; moves
     // the folder and map note, and updates every reference).
@@ -588,6 +595,10 @@ export class MapModal extends HexmakerModal {
 
   private renderDeleteBlock(el: HTMLElement, name: string): void {
     el.createEl("h4", { text: "Delete map" });
+    if (!canDo(name, "delete-map")) {
+      el.createEl("p", { text: lockedHint("delete-map"), cls: "duckmage-map-origin-desc" });
+      return;
+    }
     if (this.plugin.settings.maps.length <= 1) {
       el.createEl("p", { text: "This is the only map, so it can't be deleted.", cls: "duckmage-map-origin-desc" });
       return;
@@ -768,6 +779,7 @@ export class MapModal extends HexmakerModal {
   // ── Delete ────────────────────────────────────────────────────────────────
 
   private async deleteMap(name: string): Promise<void> {
+    if (!guardWrite(name, "delete-map")) return;
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
@@ -799,6 +811,7 @@ export class MapModal extends HexmakerModal {
     // Hexes pointing at the deleted map lose that link (region or location);
     // its own regions and locations become top-level maps.
     this.plugin.mapStore.forgetMap(name);
+    this.plugin.undoBook.forgetMap(name);
     for (const m of this.plugin.settings.maps) {
       for (const [key, h] of [...this.plugin.mapStore.all(m.name)]) {
         const patch = removeMapPatch(h, name);
@@ -856,6 +869,8 @@ export class MapModal extends HexmakerModal {
     if (map) map.name = newName;
     // The map note moved with its folder; give it the new name too.
     await this.plugin.mapStore.renameMap(oldName, newName);
+    // Its undo queues follow it (WM6).
+    this.plugin.undoBook.renameMap(oldName, newName);
     if (this.plugin.settings.defaultMap === oldName) {
       this.plugin.settings.defaultMap = newName;
     }

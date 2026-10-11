@@ -68,6 +68,10 @@ import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
+import { setModeMapLookup } from "./modeGate";
+import { cellEdits, UndoBook } from "./undoBook";
+import type { UndoItem } from "./hex-map/undoItems";
+import { workModeOf } from "./workMode";
 import { withMapLink } from "./maps/mapNote";
 import {
   addLocationPatch,
@@ -130,6 +134,8 @@ export default class HexmakerPlugin extends Plugin {
   });
   /** Keeps routes in place when terrain, the palette, the size or a type's routing changes (Decision 3). */
   pathPins = new RoutePins(this);
+  /** Undo/redo, one queue per map per work mode, for as long as the vault is open (WM6). */
+  undoBook = new UndoBook<UndoItem>();
 
   async onload() {
     await this.loadSettings();
@@ -142,6 +148,7 @@ export default class HexmakerPlugin extends Plugin {
     setIconPackDefault(() => defaultIconPack(this.settings));
     setHexDataSource(this.mapStore);
     setPathEditMapLookup((name) => this.getMap(name));
+    setModeMapLookup((name) => this.getMap(name));
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
     // Defer until vault metadata cache is ready; calling before layout-ready
@@ -1751,12 +1758,29 @@ export default class HexmakerPlugin extends Plugin {
    * note; a hex that has a note also gets it as an alias, replacing the
    * previous name's alias and keeping any the user added.
    */
+  /** Record an action done on `mapName` in its current work mode (WM6). */
+  pushUndo(mapName: string, item: UndoItem): void {
+    this.undoBook.push(mapName, workModeOf(this.getMap(mapName)), item);
+  }
+
+  /**
+   * Run a map data edit (hex editor, biome and region actions) and record
+   * the hexes it changed, field by field, in `mapName`'s queue for its
+   * current mode. Edits that change nothing record nothing.
+   */
+  async undoableEdit<T>(mapName: string, fn: () => T | Promise<T>): Promise<T> {
+    const { result, cells } = await this.mapStore.record(fn);
+    const edits = cellEdits(cells);
+    if (edits.length) this.pushUndo(mapName, { kind: "cells", edits });
+    return result;
+  }
+
   async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
     const key = `${x}_${y}`;
     const name = cleanHexName(raw);
     const old = this.mapStore.get(mapName, key)?.name;
     if ((old ?? "") === name) return;
-    this.mapStore.set(mapName, key, { name: name || null });
+    this.mapStore.set(mapName, key, { name: name || null }, "edit-note");
     // The "<map> x, y" alias rides along (added if the note lacks it).
     const coord = this.hexCoordAlias(mapName, x, y);
     await syncHexAliases(this.app, this.hexPath(x, y, mapName), [
@@ -2426,7 +2450,7 @@ export default class HexmakerPlugin extends Plugin {
     if (childMap === parentMap) return;
     const key = `${x}_${y}`;
     const patch = addLocationPatch(this.mapStore.get(parentMap, key), childMap);
-    if (patch.locations) this.mapStore.set(parentMap, key, patch);
+    if (patch.locations && !this.mapStore.set(parentMap, key, patch, "link-map")) return;
     this.noParentMaps.clear();
     const child = this.getMap(childMap);
     if (child && !child.parent) {
@@ -2466,7 +2490,7 @@ export default class HexmakerPlugin extends Plugin {
     let changed = false;
     for (const n of names) {
       const patch = removeMapPatch(this.mapStore.get(parentMap, key), n);
-      if (Object.keys(patch).length) this.mapStore.set(parentMap, key, patch);
+      if (Object.keys(patch).length && !this.mapStore.set(parentMap, key, patch, "link-map")) continue;
       const child = this.getMap(n);
       if (child?.parent?.map === parentMap && child.parent.hex === key) {
         delete child.parent;
@@ -2481,7 +2505,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Reorder the Locations of hex (x, y). */
   setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void {
-    this.mapStore.set(parentMap, `${x}_${y}`, { locations: locations.length ? locations : null });
+    this.mapStore.set(parentMap, `${x}_${y}`, { locations: locations.length ? locations : null }, "link-map");
   }
 
   /** Save region settings on `mapName` (fixed fields stay put while it has regions). */

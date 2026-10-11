@@ -1,4 +1,5 @@
-import { App } from "obsidian";
+import { App, Notice } from "obsidian";
+import { lockedHint } from "../workMode";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { getIconUrl, normalizeFolder, createIconEl } from "../utils";
@@ -47,7 +48,8 @@ export class HexTerrainPickerModal extends HexmakerModal {
             const mapName = relative.split("/")[0];
             await this.plugin.createHexNote(hx, hy, mapName);
           }
-          await setTerrainInFile(this.app, this.hexPath, entry.name);
+          // Refused when the map's work mode locks terrain (src/workMode.ts).
+          if (!(await setTerrainInFile(this.app, this.hexPath, entry.name))) new Notice(lockedHint("paint-terrain"));
           this.onPicked();
           this.close();
         })();
@@ -61,7 +63,7 @@ export class HexTerrainPickerModal extends HexmakerModal {
       });
       clearBtn.addEventListener("click", () => {
         void (async () => {
-          await setTerrainInFile(this.app, this.hexPath, null);
+          if (!(await setTerrainInFile(this.app, this.hexPath, null))) new Notice(lockedHint("paint-terrain"));
           this.onPicked();
           this.close();
         })();

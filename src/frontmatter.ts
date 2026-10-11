@@ -1,5 +1,6 @@
-import { App, TFile } from "obsidian";
+import { App, TFile, parseYaml } from "obsidian";
 import type { TokenEntry, TokenShape, TokenSize } from "./types";
+import type { ModeAction } from "./workMode";
 import {
   type OverlayPatternKey,
   DEFAULT_OVERLAY_PATTERN_KEY,
@@ -77,7 +78,8 @@ export interface HexDataSource {
   isReady(): boolean;
   resolve(path: string): { map: string; key: string } | null;
   get(map: string, key: string): import("./maps/mapNote").HexData | undefined;
-  set(map: string, key: string, patch: Record<string, unknown>): void;
+  /** `action`: the user action (work-mode gate); false when refused. */
+  set(map: string, key: string, patch: Record<string, unknown>, action?: ModeAction): boolean;
 }
 let hexSource: HexDataSource | null = null;
 export function setHexDataSource(src: HexDataSource | null): void {
@@ -158,7 +160,7 @@ export async function setTerrainInFile(
   terrainKey: string | null,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { terrain: terrainKey }); return true; }
+  if (loc) return hexSource!.set(loc.map, loc.key, { terrain: terrainKey }, "paint-terrain");
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -254,7 +256,7 @@ export async function setHexRegionInFile(
   regionName: string | null,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { region: regionName }); return true; }
+  if (loc) return hexSource!.set(loc.map, loc.key, { region: regionName }, "paint-region-area");
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -339,7 +341,7 @@ export async function setIconOverrideInFile(
   icon: string | null,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { icon }); return true; }
+  if (loc) return hexSource!.set(loc.map, loc.key, { icon }, "paint-icon");
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -401,7 +403,7 @@ export async function setGmIconsInFile(
   icons: string[],
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { gmIcons: [...icons] }); return true; }
+  if (loc) return hexSource!.set(loc.map, loc.key, { gmIcons: [...icons] }, "paint-icon");
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -454,6 +456,24 @@ export function getTokenDataFromCache(app: App, file: TFile): TokenEntry | null 
     border: typeof fm["token-border"] === "string" ? fm["token-border"] : undefined,
     description: typeof fm["token-description"] === "string" ? fm["token-description"] : undefined,
   };
+}
+
+/**
+ * Where a token note's token is now ({hex, map}), read from the file
+ * itself (the metadata cache can lag a write by a tick), or null when the
+ * note isn't a token. For undo's "has it moved since?" check.
+ */
+export async function readTokenPlace(app: App, path: string): Promise<{ hex: string; map: string } | null> {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) return null;
+  const text = await app.vault.read(file);
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+  if (!m) return null;
+  let fm: Record<string, unknown> | null = null;
+  try { fm = parseYaml(m[1]) as Record<string, unknown> | null; } catch { return null; }
+  if (!fm?.["token"]) return null;
+  const s = (v: unknown) => (typeof v === "string" ? v : "");
+  return { hex: s(fm["token-hex"]), map: s(fm["token-map"]) };
 }
 
 export async function setTokenHex(
@@ -574,7 +594,7 @@ export async function setSubmapInFile(
   mapName: string | null,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) { hexSource!.set(loc.map, loc.key, { locations: mapName ? [mapName] : null }); return true; }
+  if (loc) return hexSource!.set(loc.map, loc.key, { locations: mapName ? [mapName] : null }, "link-map");
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {

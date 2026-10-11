@@ -281,8 +281,7 @@ export async function paintRoundTrip(id, name) {
 /**
  * C8 mode locks on `name` (a plain map): in Play the path tool's edits are
  * refused and nothing is written; in Build the same edit goes through and
- * undoes. Also records whether terrain paint is locked in Play (it isn't
- * yet: the modes plan's later phases).
+ * undoes. Terrain paint likewise: Play refuses it, Build paints and undoes.
  */
 export async function modeLocks(id, name) {
   const app = window.app;
@@ -352,35 +351,56 @@ export async function modeLocks(id, name) {
         else out.steps.push("play: the same path edit refused, map note unchanged");
       }
     }
-    // Play + terrain paint on a plain map: not locked yet (recorded, not failed).
-    view.setWorkMode("play");
-    await sleep(200);
+    // Terrain paint on a plain map, through the real mouse handlers: Play
+    // refuses it (nothing written), Build paints it, and Build's undo takes
+    // it back (WM6: Play's queue is untouched).
     const hexEl = view.containerEl.querySelector(".duckmage-hex[data-x]");
     if (hexEl) {
       const key = `${hexEl.dataset.x}_${hexEl.dataset.y}`;
-      const before = JSON.stringify(store.get(name, key) ?? null);
       const terrain = p.getMapPalette(name).map((t) => t.name).find((t) => t !== store.get(name, key)?.terrain);
       if (terrain) {
-        view.leaveOtherToolFor?.("terrain");
-        view.drawingMode = "terrain";
-        view.isErasingMode = false;
-        view.terrainPickMode = false;
-        view.paintTerrainName = terrain;
-        view.paintBrushSize = 1;
-        const r = hexEl.getBoundingClientRect();
-        const at = { bubbles: true, cancelable: true, button: 0, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
-        hexEl.dispatchEvent(new MouseEvent("mousedown", at));
-        hexEl.ownerDocument.dispatchEvent(new MouseEvent("mouseup", at));
-        await view.terrainWritesSettled?.();
-        const changed = JSON.stringify(store.get(name, key) ?? null) !== before;
-        if (changed) {
-          out.gaps.push("Play doesn't lock terrain paint on a plain map yet (modes plan, Phase 2)");
+        const paint = async () => {
+          view.leaveOtherToolFor?.("terrain");
+          view.drawingMode = "terrain";
+          view.isErasingMode = false;
+          view.terrainPickMode = false;
+          view.paintTerrainName = terrain;
+          view.paintBrushSize = 1;
+          const el = view.containerEl.querySelector(`.duckmage-hex[data-x="${hexEl.dataset.x}"][data-y="${hexEl.dataset.y}"]`) ?? hexEl;
+          const r = el.getBoundingClientRect();
+          const at = { bubbles: true, cancelable: true, button: 0, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+          el.dispatchEvent(new MouseEvent("mousedown", at));
+          el.ownerDocument.dispatchEvent(new MouseEvent("mouseup", at));
+          await view.terrainWritesSettled?.();
+          await sleep(100);
+          view.exitTerrainMode?.();
+          view.drawingMode = null;
+        };
+        const now = () => JSON.stringify(store.get(name, key) ?? null);
+        view.setWorkMode("play");
+        await sleep(200);
+        const before = now(), text = await readNote();
+        await paint();
+        await store.flush();
+        if (now() !== before) {
+          fail("Play: terrain paint was written");
           view.setWorkMode("build");
           await view.undo();
           await view.terrainWritesSettled?.();
-        } else out.steps.push("play: terrain paint refused");
-        view.exitTerrainMode?.();
-        view.drawingMode = null;
+        } else if ((await readNote()) !== text) fail("Play: the map note changed after a refused terrain paint");
+        else out.steps.push("play: terrain paint refused, map note unchanged");
+        view.setWorkMode("build");
+        await sleep(200);
+        await paint();
+        if (store.get(name, key)?.terrain !== terrain) fail("Build: terrain paint was not written");
+        else {
+          out.steps.push("build: terrain paint written");
+          await view.undo();
+          await view.terrainWritesSettled?.();
+          await sleep(100);
+          if (now() !== before) fail("Build: undo didn't take the paint back");
+          else out.steps.push("build: undo took it back");
+        }
       }
     }
   } finally {

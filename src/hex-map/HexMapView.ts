@@ -1,4 +1,4 @@
-import { ItemView, Menu, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
@@ -12,7 +12,10 @@ import {
   setGmIconsInFile,
   setTerrainInFile,
   setIconOverrideInFile,
+  getGmIconsFromFile,
+  readTokenPlace,
 } from "../frontmatter";
+import { cellPatch, currentCellEdits, sameValue, stillCurrent, UNDO_DEPTH, type UndoDirection } from "../undoBook";
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
 import { IconPickerModal } from "./IconPickerModal";
@@ -33,7 +36,9 @@ import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
 import { flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
-import { ADD_REGION_LOCKED_HINT, canAdd, WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, allows, canAdd, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
+import { canDo, guardWrite } from "../modeGate";
+import { ModeMenu } from "./modeMenu";
 import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
@@ -96,72 +101,7 @@ import {
 } from "../frontmatter";
 import { PainterContextMenu } from "./PainterContextMenu";
 
-type TerrainUndoEntry = {
-  x: number;
-  y: number;
-  path: string;
-  oldTerrain: string | null;
-  newTerrain: string | null;
-};
-type IconUndoEntry = {
-  x: number;
-  y: number;
-  path: string;
-  oldIcon: string | null;
-  newIcon: string | null;
-  isGm: boolean;
-  /** Full GM-icon list before/after the stroke. Only populated when
-   *  isGm=true and the new painter (multi-add) path mutated this hex.
-   *  Undo restores the full list; legacy oldIcon/newIcon kept for
-   *  back-compat with strokes recorded before the multi-add change. */
-  oldGmList?: string[];
-  newGmList?: string[];
-};
-type FactionUndoEntry = {
-  hexPath: string;
-  factionBasename: string;
-  factionFilePath: string;
-  /** Whether the faction link was present before this stroke began. */
-  wasPresent: boolean;
-};
-type RegionUndoEntry = {
-  hexPath: string;
-  oldRegion: string | null;
-  newRegion: string | null;
-};
-/** A sub-hex painted in an overworld's full view: a hex of a region map. */
-type SubHexUndoEntry = {
-  map: string;
-  key: string;
-  oldTerrain: string | null;
-  oldLocked: boolean;
-  newTerrain: string | null;
-};
-interface CalibrateSnapshot {
-  bg?: { offsetX: number; offsetY: number; scale: number; rotation: number; opacity: number };
-  grid: { scaleX: number; scaleY: number; offsetX: number; offsetY: number; legacyScale: number };
-}
-
-type UndoItem =
-  /** `pins`: anchors the stroke made paths gain to keep their routes (undone with it). */
-  | { kind: "terrain"; entries: TerrainUndoEntry[]; pins?: PinRecord[] }
-  | { kind: "icon"; entries: IconUndoEntry[] }
-  | { kind: "faction"; entries: FactionUndoEntry[] }
-  | { kind: "region"; entries: RegionUndoEntry[] }
-  | { kind: "subhex"; entries: SubHexUndoEntry[] }
-  | { kind: "swap"; x1: number; y1: number; x2: number; y2: number }
-  | {
-      kind: "path";
-      mapName: string;
-      before: MapPath[];
-      after: MapPath[];
-    }
-  | {
-      kind: "calibrate";
-      mapName: string;
-      before: CalibrateSnapshot;
-      after: CalibrateSnapshot;
-    };
+import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
   return new Map(paths.map((p) => [p, null]));
@@ -366,9 +306,8 @@ export class HexMapView extends ItemView {
   private erasedRegions = new Set<string>();           // hexPaths with cleared region
   private savingIndicatorEl: HTMLElement | null = null;
   // Undo / redo
-  private readonly UNDO_DEPTH = 20;
-  private undoStack: UndoItem[] = [];
-  private redoStack: UndoItem[] = [];
+  // (the queues live in plugin.undoBook: one per map per work mode, WM6)
+  private stopUndoListen: (() => void) | null = null;
   private currentTerrainStroke: Map<string, TerrainUndoEntry> | null = null;
   private currentIconStroke: Map<string, IconUndoEntry> | null = null;
   private currentFactionStroke: Map<string, FactionUndoEntry> | null = null;
@@ -414,6 +353,8 @@ export class HexMapView extends ItemView {
   private pendingTokenNotePath: string | null = null;
   private pendingTokenPlaceData: { icon?: string; shape: import("../types").TokenShape; size: import("../types").TokenSize; color?: string; border?: string; description?: string } | null = null;
   private tokenBtn: HTMLButtonElement | null = null;
+  /** The drawing panel's one line naming the mode that unlocks the hidden tools. */
+  private toolsLockedEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: HexmakerPlugin) {
     super(leaf);
@@ -563,11 +504,10 @@ export class HexMapView extends ItemView {
     }
     this.exitCurrentMode();
     this.exitPathMode();
-    this.undoStack = [];
-    this.redoStack = [];
-    this.updateUndoButton();
     if (opts.recordHistory !== false) this.history.visit(this.activeMapName);
     this.switchToMap(name);
+    // Each map keeps its own undo queues (WM6): show the new map's.
+    this.updateUndoButton();
   }
 
   /** Back to the previously viewed map (skips maps deleted since). */
@@ -767,6 +707,7 @@ export class HexMapView extends ItemView {
 
   /** The work-mode switch: names the map's mode; click to pick another. */
   private refreshWorkModeBtn(): void {
+    this.applyWorkModeUi();
     const btn = this.workModeBtn;
     if (!btn) return;
     const mode = workModeOf(this.plugin.getMap(this.activeMapName));
@@ -783,14 +724,9 @@ export class HexMapView extends ItemView {
     const map = this.plugin.getMap(this.activeMapName);
     if (!map) return;
     const cur = workModeOf(map);
-    const menu = new Menu();
+    const menu = new ModeMenu(cur);
     for (const m of WORK_MODES) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`)
-          .setChecked(m === cur)
-          .onClick(() => this.setWorkMode(m)),
-      );
+      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`, null, () => this.setWorkMode(m), { checked: m === cur });
     }
     menu.showAtMouseEvent(e);
   }
@@ -799,11 +735,65 @@ export class HexMapView extends ItemView {
   setWorkMode(mode: WorkMode): void {
     const map = this.plugin.getMap(this.activeMapName);
     if (!map || workModeOf(map) === mode) return;
+    // The current stroke belongs to the mode it was made in.
+    this.commitTerrainStroke();
+    this.commitIconStroke();
     map.workMode = mode;
     void this.plugin.saveSettings();
+    // A tool the new mode locks is put down.
+    if (this.drawingMode && !allows(mode, TOOL_ACTIONS[this.drawingMode])) this.exitCurrentMode();
     this.refreshWorkModeBtn();
     // The neighbour "+" buttons lock and unlock with the mode.
     this.refreshSideCrumbs();
+    this.applyWorkModeUi();
+    // Each mode has its own undo queue (WM6).
+    this.updateUndoButton();
+  }
+
+  /**
+   * Show the open map's mode on the UI: the drawing panel shows only the
+   * tools the mode allows, with one line naming the mode that unlocks the
+   * rest; the grid's +/− buttons follow (CSS on the mode class).
+   */
+  private applyWorkModeUi(): void {
+    const mode = this.currentWorkMode();
+    this.contentEl.removeClass("duckmage-mode-play", "duckmage-mode-build", "duckmage-mode-god");
+    this.contentEl.addClass(`duckmage-mode-${mode}`);
+    const tools: [HTMLElement | null, ModeAction][] = [
+      [this.terrainToolbarBtn, TOOL_ACTIONS.terrain],
+      [this.iconToolbarBtn, TOOL_ACTIONS.icon],
+      [this.pathToolbarBtn, TOOL_ACTIONS.path],
+      [this.tableLinkBtn, TOOL_ACTIONS.tableLink],
+      [this.submapLinkBtn, TOOL_ACTIONS.submapLink],
+      [this.factionLinkBtn, TOOL_ACTIONS.factionLink],
+      [this.regionLinkBtn, TOOL_ACTIONS.regionLink],
+      [this.tokenBtn, TOOL_ACTIONS.placeToken],
+    ];
+    const locked: ModeAction[] = [];
+    for (const [btn, action] of tools) {
+      const ok = allows(mode, action);
+      btn?.toggle(ok);
+      if (!ok) locked.push(action);
+    }
+    const hint = lockedSummary(locked);
+    if (this.toolsLockedEl) {
+      this.toolsLockedEl.setText(hint ?? "");
+      this.toolsLockedEl.toggle(!!hint);
+    }
+    for (const b of this.contentEl.querySelectorAll<HTMLButtonElement>(".duckmage-shrink-btn")) {
+      b.disabled = !allows(mode, "shrink-map");
+      b.setAttr("title", allows(mode, "shrink-map") ? "Remove this edge" : lockedHint("shrink-map"));
+    }
+  }
+
+  /**
+   * May the open map do `action` in its mode? When not, says which mode
+   * would (one Notice) and returns false.
+   */
+  private modeAllows(action: ModeAction): boolean {
+    if (canDo(this.activeMapName, action)) return true;
+    new Notice(lockedHint(action));
+    return false;
   }
 
   /**
@@ -932,6 +922,9 @@ export class HexMapView extends ItemView {
 
     const { contentEl } = this;
     contentEl.addClass("duckmage-hex-map-container");
+    // Undo entries can come from outside the view (hex editor, region editor).
+    this.stopUndoListen?.();
+    this.stopUndoListen = this.plugin.undoBook.onChange(() => this.updateUndoButton());
 
     // A prior build (or a crashed view) may have left a calibration banner
     // attached to the document body. Sweep before we render so the user
@@ -1143,6 +1136,12 @@ export class HexMapView extends ItemView {
         return;
       }
       if (e.button !== 0) return;
+      // The map's work mode may lock the active tool: say so once, put it down.
+      if (this.drawingMode && !this.modeAllows(TOOL_ACTIONS[this.drawingMode])) {
+        this.exitCurrentMode();
+        hasDragged = true;
+        return;
+      }
       // Overworld full view: the terrain tool paints the regions' own hexes.
       if (this.drawingMode === "terrain" && OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "biomes") {
         // The brush paints the regions, so it works in the Regions view.
@@ -1478,8 +1477,6 @@ export class HexMapView extends ItemView {
       new MapModal(this.app, this.plugin, this, () => {
         this.exitTerrainMode();
         this.exitPathMode();
-        this.undoStack = [];
-        this.redoStack = [];
         this.updateUndoButton();
         this.updateMapBtnLabel();
         this.refreshMapNav();
@@ -1900,7 +1897,7 @@ export class HexMapView extends ItemView {
 
       group.createEl("button", { cls: "duckmage-expand-btn", text: "+" })
         .addEventListener("click", () => {
-          if (!sizeLocked()) void expandAction();
+          if (this.modeAllows("grow-map") && !sizeLocked()) void expandAction();
         });
 
       const shrinkBtn = group.createEl("button", {
@@ -1920,7 +1917,7 @@ export class HexMapView extends ItemView {
       let pendingPaths: string[] = [];
       let confirmTimer: number | null = null;
       shrinkBtn.addEventListener("click", () => {
-        if (!canShrink() || sizeLocked()) return;
+        if (!this.modeAllows("shrink-map") || !canShrink() || sizeLocked()) return;
         const paths = edgePaths();
         const dirty = paths.some((p) => this.hexHasContent(p));
         if (dirty && !shrinkBtn.hasClass("is-confirming")) {
@@ -2046,6 +2043,11 @@ export class HexMapView extends ItemView {
       text: "Token",
     });
     this.tokenBtn.addEventListener("click", () => this.handleTokenButton());
+
+    // Tools the map's mode locks are hidden; this line says how to get them.
+    this.toolsLockedEl = toolbar.createDiv({ cls: "duckmage-tools-locked" });
+    this.toolsLockedEl.hide();
+    this.applyWorkModeUi();
   }
 
   private showPainterContextMenu(
@@ -2144,6 +2146,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleTerrainButton(): void {
+    if (this.drawingMode !== "terrain" && !this.modeAllows(TOOL_ACTIONS.terrain)) return;
     // Keep the current tool while the picker is open: closing it without a
     // pick (Escape, clicking away, or after only changing the brush size)
     // must leave painting exactly as it was. It used to exit terrain mode
@@ -2206,6 +2209,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleIconButton(): void {
+    if (this.drawingMode !== "icon" && !this.modeAllows(TOOL_ACTIONS.icon)) return;
     if (this.drawingMode === "icon") { this.exitIconMode(); return; }
     this.openIconPicker();
   }
@@ -2262,6 +2266,7 @@ export class HexMapView extends ItemView {
 
   /** `keep`: opened from the tool's own right-click menu; stay in the tool unless something is picked. */
   private handleTableLinkButton(keep = false): void {
+    if (this.drawingMode !== "tableLink" && !this.modeAllows(TOOL_ACTIONS.tableLink)) return;
     if (!keep && this.drawingMode === "tableLink") { this.exitTableLinkMode(); return; }
     new FolderTreePickerModal(
       this.app,
@@ -2294,6 +2299,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleSubmapLinkButton(keep = false): void {
+    if (this.drawingMode !== "submapLink" && !this.modeAllows(TOOL_ACTIONS.submapLink)) return;
     if (!keep && this.drawingMode === "submapLink") { this.exitSubmapLinkMode(); return; }
     new SubmapPickerModal(
       this.app,
@@ -2319,6 +2325,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleFactionLinkButton(): void {
+    if (this.drawingMode !== "factionLink" && !this.modeAllows(TOOL_ACTIONS.factionLink)) return;
     new FactionPickerModal(this.app, this.plugin, (filePath) => {
       this.leaveOtherToolFor("factionLink");
       this.drawingMode = "factionLink";
@@ -2341,6 +2348,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleRegionLinkButton(): void {
+    if (this.drawingMode !== "regionLink" && !this.modeAllows(TOOL_ACTIONS.regionLink)) return;
     new GeoRegionPickerModal(this.app, this.plugin, (filePath) => {
       this.leaveOtherToolFor("regionLink");
       this.drawingMode = "regionLink";
@@ -2369,6 +2377,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleTokenButton(keep = false): void {
+    if (this.drawingMode !== "placeToken" && !this.modeAllows(TOOL_ACTIONS.placeToken)) return;
     if (!keep && this.drawingMode === "placeToken") {
       this.exitTokenMode();
       return;
@@ -2399,6 +2408,7 @@ export class HexMapView extends ItemView {
   }
 
   private handleSwapButton(): void {
+    if (this.drawingMode !== "swap" && !this.modeAllows(TOOL_ACTIONS.swap)) return;
     if (this.drawingMode === "swap") {
       this.exitSwapMode();
     } else {
@@ -2486,34 +2496,34 @@ export class HexMapView extends ItemView {
       "",
       { color: this.nextTokenFill() },
       (notePath, data) => {
-        void applyTokenFrontmatter(this.app, notePath, {
+        void this.placeToken(notePath, {
           icon: data.icon,
           shape: data.shape,
           size: data.size,
           color: data.color,
           border: data.border,
           description: data.description,
-          hex: `${x}_${y}`,
-          map: this.activeMapName,
-          visible: true,
-        }).then(() => this.updateTokenLayer());
+        }, `${x}_${y}`);
       },
       undefined,
       "Create token",
     ).open();
   }
 
+  /** Put a token (new or moved) on hex `hex` of the open map; undoable. */
+  private async placeToken(notePath: string, look: NonNullable<TokenSnap["look"]>, hex: string): Promise<void> {
+    const map = this.activeMapName;
+    if (!guardWrite(map, "token")) return;
+    const was = await readTokenPlace(this.app, notePath);
+    this.pushTokenUndo(notePath, map, was, { hex, map, visible: true, look });
+    await applyTokenFrontmatter(this.app, notePath, { ...look, hex, map, visible: true });
+    this.updateTokenLayer();
+  }
+
   private async onHexTokenPlaceClick(x: number, y: number): Promise<void> {
     if (!this.pendingTokenNotePath || !this.pendingTokenPlaceData) return;
-    const hexKey = `${x}_${y}`;
-    await applyTokenFrontmatter(this.app, this.pendingTokenNotePath, {
-      ...this.pendingTokenPlaceData,
-      hex: hexKey,
-      map: this.activeMapName,
-      visible: true,
-    });
+    await this.placeToken(this.pendingTokenNotePath, this.pendingTokenPlaceData, `${x}_${y}`);
     this.exitTokenMode();
-    this.updateTokenLayer();
   }
 
   private async performSwap(pathA: string, pathB: string): Promise<void> {
@@ -2561,6 +2571,8 @@ export class HexMapView extends ItemView {
     y2: number,
     isUndoRedo = false,
   ): Promise<void> {
+    // Swapping moves notes and map data: God only (src/workMode.ts).
+    if (!guardWrite(this.activeMapName, "swap-hexes")) return;
     const pathA = this.plugin.hexPath(x1, y1, this.activeMapName);
     const pathB = this.plugin.hexPath(x2, y2, this.activeMapName);
 
@@ -2626,9 +2638,8 @@ export class HexMapView extends ItemView {
     }
 
     if (!isUndoRedo) {
-      this.undoStack.push({ kind: "swap", x1, y1, x2, y2 });
-      if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-      this.redoStack = [];
+      const at = (x: number, y: number) => this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`) ?? null;
+      this.pushUndo({ kind: "swap", x1, y1, x2, y2, after: [at(x1, y1), at(x2, y2)] });
       this.updateUndoButton();
     }
   }
@@ -3014,9 +3025,7 @@ export class HexMapView extends ItemView {
   ): void {
     // Skip no-op snapshots (drag that didn't actually move anything)
     if (JSON.stringify(before) === JSON.stringify(after)) return;
-    this.undoStack.push({ kind: "calibrate", mapName, before, after });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "calibrate", mapName, before, after }, mapName);
     this.updateUndoButton();
   }
 
@@ -3538,6 +3547,8 @@ export class HexMapView extends ItemView {
    * view open doesn't inherit a half-dead calibration state.
    */
   async onClose(): Promise<void> {
+    this.stopUndoListen?.();
+    this.stopUndoListen = null;
     if (this.settleTimer !== null) window.clearTimeout(this.settleTimer);
     if (this.badgeTimer !== null) window.clearTimeout(this.badgeTimer);
     this.cancelMeasuredLayers?.();
@@ -4591,143 +4602,83 @@ export class HexMapView extends ItemView {
     const childPlan = submapMenuPlan(this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
       ?? { locations: getHexMapsFromFile(this.app, hexPath).locations });
 
-    const menu = new Menu();
+    // Items the map's work mode locks are left out, with one hint line.
+    const menu = new ModeMenu(this.currentWorkMode());
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Center on this hex")
-        .setIcon("crosshair")
-        .onClick(() => this.centerOnHex(x, y)),
-    );
+    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
 
     menu.addSeparator();
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Open note")
-        .setIcon("file-text")
-        .onClick(async () => {
-          const existing = this.app.vault.getAbstractFileByPath(hexPath);
-          const file =
-            existing instanceof TFile
-              ? existing
-              : await this.plugin.createHexNote(x, y, this.activeMapName);
-          if (file) await openNoteFocused(this.app, file);
-        }),
-    );
+    menu.add("hex.open-note", "Open note", "file-text", () => {
+      void (async () => {
+        const existing = this.app.vault.getAbstractFileByPath(hexPath);
+        const file =
+          existing instanceof TFile
+            ? existing
+            : await this.plugin.createHexNote(x, y, this.activeMapName);
+        if (file) await openNoteFocused(this.app, file);
+      })();
+    });
 
     // Maps from this hex (K7): its region, then up to two locations by
     // name, or one "Locations (n)…" item that opens the list.
     const region = childPlan.region;
     if (region && this.plugin.getMap(region)) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`Enter region: ${this.plugin.mapLabel(region)}`)
-          .setIcon("log-in")
-          .onClick(() => this.navigateToMap(region)),
-      );
+      menu.add("hex.enter-region", `Enter region: ${this.plugin.mapLabel(region)}`, "log-in", () => this.navigateToMap(region));
     }
     for (const loc of childPlan.open) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`Open: ${this.plugin.mapLabel(loc)}`)
-          .setIcon("map-pin")
-          .onClick(() => {
-            if (this.plugin.getMap(loc)) this.navigateToMap(loc);
-            else this.openLocationsList(x, y);
-          }),
-      );
+      menu.add("hex.open-location", `Open: ${this.plugin.mapLabel(loc)}`, "map-pin", () => {
+        if (this.plugin.getMap(loc)) this.navigateToMap(loc);
+        else this.openLocationsList(x, y);
+      });
     }
     if (childPlan.listCount) {
-      menu.addItem((item) =>
-        item
-          .setTitle(`Locations (${childPlan.listCount})…`)
-          .setIcon("list")
-          .onClick(() => this.openLocationsList(x, y)),
-      );
+      menu.add("hex.locations", `Locations (${childPlan.listCount})…`, "list", () => this.openLocationsList(x, y));
     }
-    menu.addItem((item) =>
-      item
-        .setTitle("New map from this hex…")
-        .setIcon("plus")
-        .onClick(() => this.openNewSubmapSetup(x, y)),
-    );
-    menu.addItem((item) =>
-      item
-        .setTitle("Link existing map…")
-        .setIcon("link")
-        .onClick(() => this.openLinkExistingMap(x, y)),
-    );
+    menu.add("hex.new-map", "New map from this hex…", "plus", () => this.openNewSubmapSetup(x, y));
+    menu.add("hex.link-map", "Link existing map…", "link", () => this.openLinkExistingMap(x, y));
     if (childPlan.open.length) {
       // Unlinking and reordering live in the list.
-      menu.addItem((item) =>
-        item
-          .setTitle("Manage locations…")
-          .setIcon("list")
-          .onClick(() => this.openLocationsList(x, y)),
-      );
+      menu.add("hex.manage-locations", "Manage locations…", "list", () => this.openLocationsList(x, y));
     }
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Link table")
-        .setIcon("table")
-        .onClick(() => {
-          new FolderTreePickerModal(
-            this.app,
-            this.plugin,
-            this.plugin.settings.tablesFolder,
-            "Link table",
-            "Filter tables…",
-            "No tables found.",
-            (file) => void this.linkTableToHex(x, y, file),
-            () => {
-              void this.app.workspace
-                .getLeaf("tab")
-                .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-            },
-            (file) => void this.openRandomTableAtFile(file),
-          ).open();
-        }),
-    );
+    menu.add("hex.link-table", "Link table", "table", () => {
+      new FolderTreePickerModal(
+        this.app,
+        this.plugin,
+        this.plugin.settings.tablesFolder,
+        "Link table",
+        "Filter tables…",
+        "No tables found.",
+        (file) => void this.linkTableToHex(x, y, file),
+        () => {
+          void this.app.workspace
+            .getLeaf("tab")
+            .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
+        },
+        (file) => void this.openRandomTableAtFile(file),
+      ).open();
+    });
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Swap hex")
-        .setIcon("arrow-left-right")
-        .onClick(() => {
-          if (this.drawingMode !== "swap") this.handleSwapButton();
-          void this.onHexSwapClick(x, y);
-        }),
-    );
+    menu.add("hex.swap", "Swap hex", "arrow-left-right", () => {
+      if (this.drawingMode !== "swap") this.handleSwapButton();
+      void this.onHexSwapClick(x, y);
+    });
 
-    menu.addItem((item) =>
-      item
-        .setTitle("Create token here")
-        .setIcon("circle-user")
-        .onClick(() => this.createTokenAtHex(x, y)),
-    );
+    menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
 
     // ── Contextual delete options ──────────────────────────────────────────
     if (terrain || iconOverride) {
       menu.addSeparator();
       if (terrain) {
-        menu.addItem((item) =>
-          item.setTitle("Clear terrain").setIcon("eraser")
-            .onClick(() => {
-              this.scheduleTerrainWrite(x, y, hexPath, null);
-              this.renderGrid();
-            }),
-        );
+        menu.add("hex.clear-terrain", "Clear terrain", "eraser", () => {
+          this.paintOne(x, y, null);
+        });
       }
       if (iconOverride) {
-        menu.addItem((item) =>
-          item.setTitle("Remove icon override").setIcon("image-off")
-            .onClick(() => {
-              this.scheduleIconWrite(x, y, hexPath, null);
-              this.renderGrid(undefined, new Map([[hexPath, null]]));
-            }),
-        );
+        menu.add("hex.remove-icon", "Remove icon override", "image-off", () => {
+          this.removeIconOverride(x, y);
+        });
       }
     }
 
@@ -4747,30 +4698,23 @@ export class HexMapView extends ItemView {
     const key = `${px}_${py}`;
     const region = regionMapAt(this.plugin.settings.maps, this.activeMapName, key)?.name;
     const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
-    const menu = new Menu();
+    const menu = new ModeMenu(this.currentWorkMode());
     const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", "set-biome": "trees", center: "crosshair", locations: "list" };
     for (const it of overworldMenu(this.getActiveMap(), !!region, locations)) {
-      menu.addItem((item) => {
-        item
-          .setTitle(it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`)
-          .setIcon(icons[it.id] ?? "dot")
-          .setDisabled(!it.enabled);
-        if (!it.enabled) return;
-        item.onClick(() => {
-          if (it.id === "enter-region" && region) {
-            if (cell) this.enterRegionAt(region, cell.x, cell.y);
-            else this.navigateToMap(region);
-          } else if (it.id === "edit-region") this.openEditRegion(px, py);
-          else if (it.id === "set-biome") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
-          else if (it.id === "center") this.centerOnHex(px, py);
-          else if (it.id === "locations") this.openLocationsList(px, py);
-        });
-      });
+      const id = `ow.${it.id}` as const;
+      const title = it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`;
+      menu.add(id, title, icons[it.id] ?? "dot", () => {
+        if (it.id === "enter-region" && region) {
+          if (cell) this.enterRegionAt(region, cell.x, cell.y);
+          else this.navigateToMap(region);
+        } else if (it.id === "edit-region") this.openEditRegion(px, py);
+        else if (it.id === "set-biome") new BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
+        else if (it.id === "center") this.centerOnHex(px, py);
+        else if (it.id === "locations") this.openLocationsList(px, py);
+      }, { disabled: !it.enabled });
     }
     // Mark the party (or anything) on the overworld: tokens sit on its hexes.
-    menu.addItem((item) =>
-      item.setTitle("Create token here").setIcon("circle-user").onClick(() => this.createTokenAtHex(px, py)),
-    );
+    menu.add("ow.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(px, py));
     menu.showAtMouseEvent(evt);
   }
 
@@ -4786,6 +4730,10 @@ export class HexMapView extends ItemView {
   }
 
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {
+    if (this.drawingMode && !this.modeAllows(TOOL_ACTIONS[this.drawingMode])) {
+      this.exitCurrentMode();
+      return;
+    }
     if (this.drawingMode === "path") {
       this.pathTool.click(x, y, e, this.isErasingMode);
       return;
@@ -4989,9 +4937,7 @@ export class HexMapView extends ItemView {
       oldGmList: priorList,
       newGmList: newList,
     };
-    this.undoStack.push({ kind: "icon", entries: [undoEntry] });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "icon", entries: [undoEntry] });
     this.updateUndoButton();
 
     if (newList.length > 0) {
@@ -5330,9 +5276,7 @@ export class HexMapView extends ItemView {
     const stroke = this.currentSubStroke;
     this.currentSubStroke = null;
     if (!stroke || stroke.size === 0) return;
-    this.undoStack.push({ kind: "subhex", entries: [...stroke.values()] });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "subhex", entries: [...stroke.values()] });
     this.updateUndoButton();
   }
 
@@ -5471,6 +5415,28 @@ export class HexMapView extends ItemView {
     };
   }
 
+  /** Set (or clear) one hex's terrain from a menu: mode-gated and undoable. */
+  private paintOne(x: number, y: number, terrain: string | null): void {
+    if (!this.modeAllows("paint-terrain")) return;
+    const path = this.plugin.hexPath(x, y, this.activeMapName);
+    const old = getTerrainFromFile(this.app, path);
+    if (old === terrain) return;
+    this.pushUndo({ kind: "terrain", entries: [{ x, y, path, oldTerrain: old, newTerrain: terrain }] });
+    this.scheduleTerrainWrite(x, y, path, terrain);
+    this.renderGrid();
+  }
+
+  /** "Remove icon override" from the hex menu: mode-gated and undoable. */
+  private removeIconOverride(x: number, y: number): void {
+    if (!this.modeAllows("paint-icon")) return;
+    const path = this.plugin.hexPath(x, y, this.activeMapName);
+    const old = getIconOverrideFromFile(this.app, path);
+    if (!old) return;
+    this.pushUndo({ kind: "icon", entries: [{ x, y, path, oldIcon: old, newIcon: null, isGm: false }] });
+    this.scheduleIconWrite(x, y, path, null);
+    this.renderGrid(undefined, new Map([[path, null]]));
+  }
+
   private commitTerrainStroke(): void {
     this.commitSubStroke();
     if (!this.currentTerrainStroke || this.currentTerrainStroke.size === 0) {
@@ -5481,9 +5447,7 @@ export class HexMapView extends ItemView {
     // Pins made by this stroke's writes (some land after the mouse is up).
     const pins = this.strokePins ?? [];
     this.strokePins = pins;
-    this.undoStack.push({ kind: "terrain", entries, pins });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "terrain", entries, pins });
     this.currentTerrainStroke = null;
     this.updateUndoButton();
     void this.releaseStrokePins(pins);
@@ -5495,9 +5459,7 @@ export class HexMapView extends ItemView {
       return;
     }
     const entries = [...this.currentIconStroke.values()];
-    this.undoStack.push({ kind: "icon", entries });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "icon", entries });
     this.currentIconStroke = null;
     this.updateUndoButton();
   }
@@ -5508,9 +5470,7 @@ export class HexMapView extends ItemView {
       return;
     }
     const entries = [...this.currentFactionStroke.values()];
-    this.undoStack.push({ kind: "faction", entries });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "faction", entries });
     this.currentFactionStroke = null;
     this.updateUndoButton();
   }
@@ -5521,70 +5481,168 @@ export class HexMapView extends ItemView {
       return;
     }
     const entries = [...this.currentRegionStroke.values()];
-    this.undoStack.push({ kind: "region", entries });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "region", entries });
     this.currentRegionStroke = null;
     this.updateUndoButton();
   }
 
+  /** Record an action in this map's queue for its current mode (WM6). */
+  private pushUndo(item: UndoItem, mapName = this.activeMapName): void {
+    this.plugin.pushUndo(mapName, item);
+  }
+
+  /** The open map's work mode: its undo queue is the one the buttons use. */
+  private currentWorkMode(): WorkMode {
+    return workModeOf(this.plugin.getMap(this.activeMapName));
+  }
+
+  private undoBusy = false;
+
+  /** Undo the last action done on this map in its current mode (WM6). */
   private async undo(): Promise<void> {
-    const item = this.undoStack.pop();
-    if (!item) return;
-    this.redoStack.push(item);
-    if (item.kind === "terrain") {
-      this.strokePins = null;
-      this.applyStroke(item.entries, "old");
-      // Once the old terrain is back, the anchors the stroke pinned go too.
-      if (item.pins?.length) {
-        const pins = item.pins;
-        await this.terrainWritesSettled();
-        this.plugin.pathPins.rerouteInstead(pins);
-      }
-    } else if (item.kind === "icon") {
-      await this.applyIconStroke(item.entries, "old");
-    } else if (item.kind === "faction") {
-      await this.applyFactionStroke(item.entries, "old");
-    } else if (item.kind === "region") {
-      await this.applyRegionStroke(item.entries, "old");
-    } else if (item.kind === "subhex") {
-      this.applySubStroke(item.entries, "old");
-    } else if (item.kind === "swap") {
-      await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
-    } else if (item.kind === "calibrate") {
-      await this.applyCalibrationSnapshot(item.mapName, item.before);
-    } else {
-      await this.applyPathSnapshot(item.mapName, item.before);
-    }
-    this.updateUndoButton();
+    await this.undoStep("undo");
   }
 
   private async redo(): Promise<void> {
-    const item = this.redoStack.pop();
-    if (!item) return;
-    this.undoStack.push(item);
+    await this.undoStep("redo");
+  }
+
+  /**
+   * One undo or redo step from this map's queue for its mode. An entry whose
+   * target changed since (in another mode, or by hand) is skipped part by
+   * part, so it never reverts the newer change (prepareUndo).
+   */
+  private async undoStep(dir: UndoDirection): Promise<void> {
+    if (this.undoBusy) return;
+    this.undoBusy = true;
+    try {
+      // Reads below compare against what's stored: let queued writes land.
+      await this.terrainWritesSettled();
+      const item = await this.plugin.undoBook.step(this.activeMapName, this.currentWorkMode(), dir, (it, d) => this.prepareUndo(it, d));
+      if (item) await this.applyUndo(item, dir);
+    } finally {
+      this.undoBusy = false;
+      this.updateUndoButton();
+    }
+  }
+
+  /**
+   * The part of `item` whose target still shows what the entry left there
+   * (undo: its "after"; redo: its "before"), or null when none does.
+   */
+  private async prepareUndo(item: UndoItem, dir: UndoDirection): Promise<UndoItem | null> {
+    const store = this.plugin.mapStore;
+    const keep = <E>(parts: E[], current: (p: E) => unknown, before: (p: E) => unknown, after: (p: E) => unknown) =>
+      stillCurrent(parts, dir, current, before, after);
+    switch (item.kind) {
+      case "terrain": {
+        const entries = keep(item.entries, (e) => getTerrainFromFile(this.app, e.path), (e) => e.oldTerrain, (e) => e.newTerrain);
+        return entries ? { ...item, entries } : null;
+      }
+      case "icon": {
+        const list = (l: string[] | undefined, one: string | null) => l ?? (one !== null ? [one] : []);
+        const entries = keep(
+          item.entries,
+          (e) => (e.isGm ? getGmIconsFromFile(this.app, e.path) : getIconOverrideFromFile(this.app, e.path)),
+          (e) => (e.isGm ? list(e.oldGmList, e.oldIcon) : e.oldIcon),
+          (e) => (e.isGm ? list(e.newGmList, e.newIcon) : e.newIcon),
+        );
+        return entries ? { ...item, entries } : null;
+      }
+      case "faction": {
+        const entries = keep(item.entries, (e) => this.getFactionLinksFromCache(e.hexPath).includes(e.factionBasename), (e) => e.wasPresent, (e) => !e.wasPresent);
+        return entries ? { ...item, entries } : null;
+      }
+      case "region": {
+        const entries = keep(item.entries, (e) => getHexRegionFromFile(this.app, e.hexPath), (e) => e.oldRegion, (e) => e.newRegion);
+        return entries ? { ...item, entries } : null;
+      }
+      case "subhex": {
+        const entries = keep(item.entries, (e) => store.get(e.map, e.key)?.terrain ?? null, (e) => e.oldTerrain, (e) => e.newTerrain);
+        return entries ? { ...item, entries } : null;
+      }
+      case "swap": {
+        if (!item.after) return item;
+        const now = [store.get(this.activeMapName, `${item.x1}_${item.y1}`) ?? null, store.get(this.activeMapName, `${item.x2}_${item.y2}`) ?? null];
+        // A swap is its own inverse: before it, the two hexes held each other's data.
+        const want = dir === "undo" ? item.after : [item.after[1], item.after[0]];
+        return sameValue(now, want) ? item : null;
+      }
+      case "path": {
+        const want = dir === "undo" ? item.after : item.before;
+        return sameValue(store.paths(item.mapName), want) ? item : null;
+      }
+      case "calibrate": {
+        const map = this.plugin.getMap(item.mapName);
+        if (!map) return null;
+        return sameValue(this.captureCalibration(map), dir === "undo" ? item.after : item.before) ? item : null;
+      }
+      case "cells": {
+        const edits = currentCellEdits(item.edits, dir, (m, k) => store.get(m, k) as Record<string, unknown> | undefined);
+        return edits ? { ...item, edits } : null;
+      }
+      case "token": {
+        const now = await readTokenPlace(this.app, item.path);
+        const want = dir === "undo" ? item.after : item.before;
+        const place = (t: TokenSnap | null) => (t ? { hex: t.hex, map: t.map } : null);
+        return sameValue(now, place(want)) ? item : null;
+      }
+    }
+  }
+
+  /** Apply a prepared entry (undo: back to "before"; redo: to "after"). */
+  private async applyUndo(item: UndoItem, dir: UndoDirection): Promise<void> {
+    const which = dir === "undo" ? "old" : "new";
     if (item.kind === "terrain") {
-      // Repainting pins the routes again (and they're recorded afresh).
-      item.pins = [];
-      this.strokePins = item.pins;
-      this.applyStroke(item.entries, "new");
-      void this.releaseStrokePins(item.pins);
+      if (dir === "undo") {
+        this.strokePins = null;
+        this.applyStroke(item.entries, "old");
+        // Once the old terrain is back, the anchors the stroke pinned go too.
+        if (item.pins?.length) {
+          const pins = item.pins;
+          await this.terrainWritesSettled();
+          this.plugin.pathPins.rerouteInstead(pins);
+        }
+      } else {
+        // Repainting pins the routes again (and they're recorded afresh).
+        item.pins = [];
+        this.strokePins = item.pins;
+        this.applyStroke(item.entries, "new");
+        void this.releaseStrokePins(item.pins);
+      }
     } else if (item.kind === "icon") {
-      await this.applyIconStroke(item.entries, "new");
+      await this.applyIconStroke(item.entries, which);
     } else if (item.kind === "faction") {
-      await this.applyFactionStroke(item.entries, "new");
+      await this.applyFactionStroke(item.entries, which);
     } else if (item.kind === "region") {
-      await this.applyRegionStroke(item.entries, "new");
+      await this.applyRegionStroke(item.entries, which);
     } else if (item.kind === "subhex") {
-      this.applySubStroke(item.entries, "new");
+      this.applySubStroke(item.entries, which);
     } else if (item.kind === "swap") {
       await this.executeHexSwap(item.x1, item.y1, item.x2, item.y2, true);
     } else if (item.kind === "calibrate") {
-      await this.applyCalibrationSnapshot(item.mapName, item.after);
+      await this.applyCalibrationSnapshot(item.mapName, dir === "undo" ? item.before : item.after);
+    } else if (item.kind === "path") {
+      await this.applyPathSnapshot(item.mapName, dir === "undo" ? item.before : item.after);
+    } else if (item.kind === "cells") {
+      for (const e of item.edits) this.plugin.mapStore.set(e.map, e.key, cellPatch(e, dir));
+      this.renderGrid();
     } else {
-      await this.applyPathSnapshot(item.mapName, item.after);
+      await this.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);
     }
-    this.updateUndoButton();
+  }
+
+  /** Put a token where a snapshot says (null: it stops being a token). */
+  private async applyTokenSnap(path: string, snap: TokenSnap | null): Promise<void> {
+    if (!snap) await removeTokenFrontmatter(this.app, path);
+    else await applyTokenFrontmatter(this.app, path, { ...(snap.look ?? {}), hex: snap.hex, map: snap.map, visible: snap.visible ?? true });
+    this.updateTokenLayer();
+  }
+
+  /** Record a token change for undo (from a token's data before and after). */
+  private pushTokenUndo(path: string, mapName: string, before: TokenSnap | null, after: TokenSnap | null): void {
+    if (sameValue(before, after)) return;
+    this.pushUndo({ kind: "token", path, before, after }, mapName);
   }
 
   private applyPathSnapshot(mapName: string, paths: MapPath[]): Promise<void> {
@@ -5711,8 +5769,18 @@ export class HexMapView extends ItemView {
   }
 
   private updateUndoButton(): void {
-    if (this.undoBtn) this.undoBtn.disabled = this.undoStack.length === 0;
-    if (this.redoBtn) this.redoBtn.disabled = this.redoStack.length === 0;
+    // The buttons act on this map's queue for its current mode, and say so.
+    const mode = this.currentWorkMode();
+    const label = WORK_MODE_TEXT[mode].label;
+    const book = this.plugin.undoBook;
+    if (this.undoBtn) {
+      this.undoBtn.disabled = !book.canUndo(this.activeMapName, mode);
+      this.undoBtn.setAttr("title", `Undo (${label} mode, up to ${UNDO_DEPTH})`);
+    }
+    if (this.redoBtn) {
+      this.redoBtn.disabled = !book.canRedo(this.activeMapName, mode);
+      this.redoBtn.setAttr("title", `Redo (${label} mode)`);
+    }
   }
 
   private updateSavingIndicator(): void {
@@ -5942,6 +6010,7 @@ export class HexMapView extends ItemView {
    * T7); leave the tool with right-click → Exit tool, Esc, or the mode bar.
    */
   private handlePathButton(): void {
+    if (this.drawingMode !== "path" && !this.modeAllows(TOOL_ACTIONS.path)) return;
     new PathPickerModal(
       this.app,
       this.plugin,
@@ -6006,9 +6075,7 @@ export class HexMapView extends ItemView {
   }
 
   private pushPathUndo(mapName: string, before: MapPath[], after: MapPath[]): void {
-    this.undoStack.push({ kind: "path", mapName, before, after });
-    if (this.undoStack.length > this.UNDO_DEPTH) this.undoStack.shift();
-    this.redoStack = [];
+    this.pushUndo({ kind: "path", mapName, before, after }, mapName);
     this.updateUndoButton();
   }
 
@@ -7626,7 +7693,10 @@ export class HexMapView extends ItemView {
           tokenEl.style.left = `${newCenter.cx}px`;
           tokenEl.style.top  = `${newCenter.cy}px`;
         }
-        void setTokenHex(this.app, token.filePath, closestHex, token.map);
+        if (guardWrite(token.map, "token")) {
+          this.pushTokenUndo(token.filePath, token.map, { hex: token.hex, map: token.map }, { hex: closestHex, map: token.map });
+          void setTokenHex(this.app, token.filePath, closestHex, token.map);
+        }
       } else {
         const orig = centerMap.get(token.hex);
         if (orig) {
@@ -7651,11 +7721,26 @@ export class HexMapView extends ItemView {
         void applyTokenFrontmatter(this.app, token.filePath, data)
           .then(() => this.updateTokenLayer());
       },
-      () => {
-        void removeTokenFrontmatter(this.app, token.filePath)
-          .then(() => this.updateTokenLayer());
-      },
+      () => this.removeToken(token),
     ).open();
+  }
+
+  /** A token's place and look, for undo of making or removing it. */
+  private tokenSnap(token: TokenEntry): TokenSnap {
+    return {
+      hex: token.hex,
+      map: token.map,
+      visible: token.visible,
+      look: { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, tokenLink: token.tokenLink, description: token.description },
+    };
+  }
+
+  /** Remove a token from the map (the note stays); undoable. */
+  private removeToken(token: TokenEntry): void {
+    if (!guardWrite(token.map, "token")) return;
+    this.pushTokenUndo(token.filePath, token.map, this.tokenSnap(token), null);
+    void removeTokenFrontmatter(this.app, token.filePath)
+      .then(() => this.updateTokenLayer());
   }
 
   private openTokenInfo(token: TokenEntry): void {
@@ -7663,55 +7748,21 @@ export class HexMapView extends ItemView {
       this.app,
       token,
       (x, y) => this.centerOnHex(x, y),
-      () => {
-        void removeTokenFrontmatter(this.app, token.filePath)
-          .then(() => this.updateTokenLayer());
-      },
+      () => this.removeToken(token),
       () => this.openTokenEditor(token),
     ).open();
   }
 
   private showTokenContextMenu(evt: MouseEvent, token: TokenEntry): void {
-    const menu = new Menu();
-
-    menu.addItem((item) =>
-      item
-        .setTitle("Token info")
-        .setIcon("info")
-        .onClick(() => this.openTokenInfo(token)),
-    );
-
-    menu.addItem((item) =>
-      item
-        .setTitle("Edit token")
-        .setIcon("pencil")
-        .onClick(() => this.openTokenEditor(token)),
-    );
-
-    menu.addItem((item) =>
-      item
-        .setTitle("Open note")
-        .setIcon("file-text")
-        .onClick(() => {
-          const file = this.app.vault.getAbstractFileByPath(token.filePath);
-          if (file instanceof TFile) {
-            void openNoteFocused(this.app, file);
-          }
-        }),
-    );
-
+    const menu = new ModeMenu(this.currentWorkMode());
+    menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
+    menu.add("token.edit", "Edit token", "pencil", () => this.openTokenEditor(token));
+    menu.add("token.open-note", "Open note", "file-text", () => {
+      const file = this.app.vault.getAbstractFileByPath(token.filePath);
+      if (file instanceof TFile) void openNoteFocused(this.app, file);
+    });
     menu.addSeparator();
-
-    menu.addItem((item) =>
-      item
-        .setTitle("Remove token")
-        .setIcon("trash")
-        .onClick(() => {
-          void removeTokenFrontmatter(this.app, token.filePath)
-            .then(() => this.updateTokenLayer());
-        }),
-    );
-
+    menu.add("token.remove", "Remove token", "trash", () => this.removeToken(token));
     menu.showAtMouseEvent(evt);
   }
 }

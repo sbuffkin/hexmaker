@@ -8751,3 +8751,22 @@ textarea.duckmage-edit-region-notes-input {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
 }
+
+/* Work modes (src/workMode.ts): Play hides the grid's +/- (map structure);
+   the drawing panel hides locked tools behind one line. */
+.duckmage-hex-map-container.duckmage-mode-play .duckmage-expand-group {
+    display: none;
+}
+.duckmage-shrink-btn:disabled {
+    cursor: not-allowed;
+}
+.duckmage-tools-locked {
+    padding: 4px 2px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-editor-mode-locked {
+    margin: 4px 0;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}

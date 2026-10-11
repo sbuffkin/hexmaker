@@ -2,6 +2,8 @@ import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { filterByQuery, moveItem } from "../maps/submaps";
+import { canDo } from "../modeGate";
+import { lockedHint } from "../workMode";
 
 export interface LocationsModalActions {
   open: (map: string) => void;
@@ -51,6 +53,12 @@ export class LocationsModal extends HexmakerModal {
     });
     this.contentEl.createDiv({ cls: "duckmage-locations-list" });
     const foot = this.contentEl.createDiv({ cls: "duckmage-locations-foot" });
+    // Adding, unlinking and reordering change the map (Build); Play only opens.
+    if (!canDo(this.mapName, "link-map")) {
+      foot.createSpan({ cls: "duckmage-editor-mode-locked", text: lockedHint("link-map") });
+      this.drawList();
+      return;
+    }
     foot.createEl("button", { text: "New location…" }).addEventListener("click", () => {
       this.close();
       this.actions.newLocation();
@@ -73,7 +81,8 @@ export class LocationsModal extends HexmakerModal {
     if (!all.length) list.createDiv({ cls: "duckmage-picker-list-empty", text: "No locations yet." });
     else if (!shown.length) list.createDiv({ cls: "duckmage-picker-list-empty", text: "No location matches." });
     // Reordering only makes sense on the whole list.
-    const canDrag = !this.query.trim() && all.length > 1;
+    const editable = canDo(this.mapName, "link-map");
+    const canDrag = editable && !this.query.trim() && all.length > 1;
     for (const it of shown) {
       const map = this.plugin.getMap(it.name);
       const row = list.createDiv({ cls: "duckmage-locations-row" });
@@ -109,6 +118,7 @@ export class LocationsModal extends HexmakerModal {
       const open = row.createEl("button", { text: "Open", attr: { "aria-label": `Open ${it.label}` } });
       open.disabled = !map;
       open.addEventListener("click", () => this.openMap(it.name));
+      if (!editable) continue;
       const unlink = row.createEl("button", { text: "✕", cls: "duckmage-locations-unlink", attr: { "aria-label": `Unlink ${it.label}`, title: "Unlink from this hex (the map itself stays)" } });
       unlink.addEventListener("click", () => {
         void this.plugin.unlinkSubmap(this.mapName, this.x, this.y, it.name).then(() => {

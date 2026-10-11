@@ -13,7 +13,7 @@
  * no lookup (tests, early load) everything is allowed.
  * Pure, no Obsidian imports.
  */
-import { canAdd } from "../workMode";
+import { mapAllows } from "../workMode";
 
 /** What kind of path edit is being asked for. */
 export type PathEditAction =
@@ -41,5 +41,5 @@ export const PATH_EDIT_LOCKED_HINT = "Switch to Build to change paths on this ma
 export function canEditPaths(mapName: string, action: PathEditAction): boolean {
   if (action === "pin") return true; // keeps what is drawn; never a user change
   if (!lookup) return true;
-  return canAdd(lookup(mapName));
+  return mapAllows(lookup(mapName), "edit-path");
 }

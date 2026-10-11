@@ -23,6 +23,8 @@ import {
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 import { regionMirrorFixes } from "./submaps";
 import { writeJsonBackup } from "../backup";
+import { guardWrite } from "../modeGate";
+import type { ModeAction } from "../workMode";
 import { impassableNames } from "../impassable";
 import type { RouteContext } from "../paths/router";
 import { RouteCache, type SegmentRouter } from "../paths/routeCache";
@@ -33,6 +35,14 @@ import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { mapRouteContext, pathTypeStyleFor } from "../paths/mapContext";
 import { buildView, emptyView, reconcile, type PathView } from "../paths/chainView";
+
+/** One hex changed during MapStore.record: its data before and after. */
+export interface HexCellChange {
+  map: string;
+  key: string;
+  before: HexData | undefined;
+  after: HexData | undefined;
+}
 
 /** A map's routing context changed (terrain, palette impassability, size, stagger). */
 export interface RouteContextChange {
@@ -122,6 +132,8 @@ export class MapStore {
   /** Maps whose paths / hexes were all removed by an edit (not a reload): allowed to empty the note. */
   private clearedPaths = new Set<string>();
   private clearedHexes = new Set<string>();
+  /** While `record` runs: hears each hex's value before its first change. */
+  private recorder: ((map: string, key: string, before: HexData | undefined) => void) | null = null;
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -187,8 +199,15 @@ export class MapStore {
   /**
    * Patch one hex. `undefined`/`null`/empty values clear that field. The
    * note write is debounced; listeners hear about the change at once.
+   *
+   * `action`: the user action this write is part of. When given, the map's
+   * work mode must allow it (src/modeGate.ts) or nothing is written and
+   * `false` comes back. Writes without one (derived data, renames, the
+   * palette) are never locked.
    */
-  set(map: string, key: string, patch: { [K in keyof HexData]?: HexData[K] | null }): void {
+  set(map: string, key: string, patch: { [K in keyof HexData]?: HexData[K] | null }, action?: ModeAction): boolean {
+    if (action && !guardWrite(map, action)) return false;
+    this.recorder?.(map, key, this.get(map, key));
     const t = this.table(map);
     const h: HexData = { ...(t.get(key) ?? {}) };
     for (const [k, v] of Object.entries(patch) as [keyof HexData, unknown][]) {
@@ -201,12 +220,38 @@ export class MapStore {
     if ("terrain" in patch) this.terrainChanged(map);
     this.markDirty(map);
     this.emit(map);
+    return true;
+  }
+
+  /**
+   * Run `fn` and return every hex it changed, with its value before and
+   * after (for undo: src/undoBook.ts). Writes made by anything else while
+   * `fn` runs are recorded too. Nested calls share the outer recording.
+   */
+  async record<T>(fn: () => T | Promise<T>): Promise<{ result: T; cells: HexCellChange[] }> {
+    if (this.recorder) return { result: await fn(), cells: [] };
+    const before = new Map<string, { map: string; key: string; before: HexData | undefined }>();
+    this.recorder = (map, key, b) => {
+      const id = `${map}\u0000${key}`;
+      if (!before.has(id)) before.set(id, { map, key, before: b ? { ...b } : undefined });
+    };
+    try {
+      const result = await fn();
+      const cells = [...before.values()].map((c) => {
+        const now = this.get(c.map, c.key);
+        return { ...c, after: now ? { ...now } : undefined };
+      });
+      return { result, cells };
+    } finally {
+      this.recorder = null;
+    }
   }
 
   /** Bulk set (generators, map creation): one dirty mark, one event. */
   setMany(map: string, cells: Iterable<[string, Partial<HexData>]>): void {
     const t = this.table(map);
     for (const [key, patch] of cells) {
+      this.recorder?.(map, key, t.get(key));
       const h: HexData = { ...(t.get(key) ?? {}), ...patch };
       for (const k of Object.keys(h) as (keyof HexData)[]) if (h[k] === undefined || h[k] === "") delete h[k];
       if (Object.keys(h).length) t.set(key, h); else t.delete(key);

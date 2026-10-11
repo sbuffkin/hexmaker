@@ -59,7 +59,8 @@ describe("openNoteFocused", () => {
 			expect(read(...f)).toMatch(/openNoteFocused\(this\.app, /);
 		}
 		const view = read("src", "hex-map", "HexMapView.ts").replace(/\r\n/g, "\n");
-		const openNoteItems = view.split('.setTitle("Open note")').slice(1).map((s) => s.slice(0, 500));
+		// Map menus go through ModeMenu: menu.add(<id>, "Open note", …).
+		const openNoteItems = view.split('"Open note", "file-text"').slice(1).map((s) => s.slice(0, 500));
 		expect(openNoteItems.length).toBeGreaterThan(0);
 		for (const item of openNoteItems) expect(item).toMatch(/openNoteFocused/);
 	});
