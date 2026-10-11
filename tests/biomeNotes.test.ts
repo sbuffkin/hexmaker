@@ -267,10 +267,16 @@ function plugin(vault: MemVault, settings: Record<string, unknown> = {}) {
 const FOLDER = "world/biomes";
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-async function boot(vault: MemVault, settings: Record<string, unknown> = {}) {
+/**
+ * Start a store. `overworld`: the vault has made an overworld or region,
+ * which is when the shipped biome notes are written (DJ-Q4,
+ * HexmakerPlugin.ensureOverworldBiomes); off = a plain start-up.
+ */
+async function boot(vault: MemVault, settings: Record<string, unknown> = {}, overworld = true) {
 	const p = plugin(vault, settings);
 	const store = new BiomeStore(p as never);
 	await store.init();
+	if (overworld) await store.seedShipped(true);
 	return { p, store };
 }
 
@@ -290,17 +296,16 @@ describe("BiomeStore", () => {
 		expect([...v.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
 		expect(store.list()).toEqual([]);
 		expect(p.settings.biomesSeeded).toBeUndefined();
-		// A fresh Simple install before its setup picks the types: none either.
+		// A fresh install before its setup picks the types: none at start-up.
 		const v2 = new MemVault();
-		const fresh = await boot(v2, { kindContent: null, featureLevel: "simple" });
+		const fresh = await boot(v2, { kindContent: null }, false);
 		expect([...v2.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
-		// ...until it asks: Regions and overworlds turned on (smoke "overworld": a recipe vault).
-		fresh.p.settings.advancedFeatures = ["regions"];
-		await fresh.store.seedShipped();
+		// ...until the first overworld or region is made (DJ-Q4).
+		await fresh.store.seedShipped(true);
 		expect(v2.files.has(`${FOLDER}/Tundra.md`)).toBe(true);
-		// A Simple vault that never had biomes and doesn't use overworlds: none at startup.
+		// A world vault that never had biomes and makes no overworld: none at start-up.
 		const v3 = new MemVault();
-		await boot(v3, { kindContent: ["world"], featureLevel: "simple" });
+		await boot(v3, { kindContent: ["world"] }, false);
 		expect([...v3.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
 		// World turned on later (an explicit pick).
 		p.settings.mapKinds = ["space", "world"];

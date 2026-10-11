@@ -25,7 +25,6 @@ import { ALL_MAP_KINDS, paletteKind, type MapKind } from "./mapKinds";
 import type { TerrainColor } from "./types";
 import { PALETTE_PRESETS, type PalettePreset } from "./palettes/presets";
 import { terrainsEqual } from "./palettes/paletteNote";
-import { hasFeature, type FeatureSettings } from "./featureLevel";
 
 export interface KindContentInput {
   /** Map types on now. */
@@ -107,21 +106,20 @@ export function planKindContent(input: KindContentInput): KindContentPlan {
 /**
  * May the shipped biome notes of map type `kind` be written? Never while the
  * type is off (a space-only setup gets none). Otherwise when it's asked for
- * (`explicit`: the setup picked the type, or it was turned on in
- * Settings), when the overworld tools are on (Regions and overworlds: they
- * need biomes, however the vault was made), or when the vault already has
- * shipped biome notes (later shipped biomes top them up, once each).
- * A vault that never had biome notes and doesn't use overworlds gets none
- * written on its own (no content into a vault that didn't ask for it).
+ * (`explicit`: the setup picked the type, it was turned on in Settings, or
+ * the first overworld or region was made, DJ-Q4), or when the vault
+ * already has shipped biome notes (later shipped biomes top them up, once
+ * each). A vault that never had biome notes and makes no overworld gets
+ * none written on its own (no content into a vault that didn't ask for it).
  */
 export function biomeSeedingOn(
-  settings: FeatureSettings & { mapKinds?: string[]; biomesSeeded?: string[] },
+  settings: { mapKinds?: string[]; biomesSeeded?: string[] },
   kind: MapKind,
   explicit = false,
 ): boolean {
   const kinds = Array.isArray(settings.mapKinds) ? settings.mapKinds : ALL_MAP_KINDS;
   if (!kinds.includes(kind)) return false;
-  return explicit || hasFeature(settings, "regions") || (settings.biomesSeeded?.length ?? 0) > 0;
+  return explicit || (settings.biomesSeeded?.length ?? 0) > 0;
 }
 
 /**

@@ -6551,67 +6551,6 @@ button.duckmage-wfc-library-tab.is-active {
     min-width: 0;
 }
 
-/* Advanced-feature hint (src/advancedHints.ts): a quiet one-liner where a
-   hidden Advanced feature would sit, with "Turn on" and close buttons. */
-.duckmage-advanced-hint {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin: 0.5em 0;
-    padding: 0.35em 0.6em;
-    border: 1px dashed var(--background-modifier-border);
-    border-radius: var(--radius-s);
-    color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
-}
-
-.duckmage-advanced-hint-mark {
-    color: var(--interactive-accent);
-}
-
-.duckmage-advanced-hint-text {
-    flex: 1;
-}
-
-.duckmage-advanced-hint button {
-    font-size: var(--font-ui-smaller);
-    padding: 0.15em 0.6em;
-    height: auto;
-}
-
-.duckmage-advanced-hint-close {
-    box-shadow: none;
-    background: transparent;
-    color: var(--text-faint);
-}
-
-/* "More options" (MoreFeaturesModal): one row per hidden feature. */
-.duckmage-more-features {
-    display: flex;
-    flex-direction: column;
-    gap: 0.6em;
-    margin: 0.6em 0 1em;
-}
-
-.duckmage-more-features-row {
-    display: flex;
-    align-items: center;
-    gap: 1em;
-}
-
-.duckmage-more-features-text {
-    flex: 1;
-    color: var(--text-muted);
-}
-
-.duckmage-more-features-text strong {
-    color: var(--text-normal);
-}
-
-.duckmage-more-features-on {
-    color: var(--text-success);
-}
-
 /* ── Fresh-eyes fixes: hex editor (#38), path tool & navigation (#39) ───── */
 
 /* Hex editor: the link fields sit in a "Linked notes" group, each in its own
@@ -7135,11 +7074,6 @@ button.duckmage-wfc-library-tab.is-active {
 /* Maps → New map: the chosen generator's description under the dropdown. */
 .duckmage-map-generator-desc {
     margin-top: 0.25em;
-}
-
-/* The More options box is short: no draggable-modal minimum height. */
-.modal.duckmage-editor-modal-drag.duckmage-more-features-modal {
-    min-height: 0;
 }
 
 /* Map list as a tree (N4): submaps under their parent, neighbouring
@@ -9113,4 +9047,59 @@ textarea.duckmage-edit-region-notes-input {
     color: #ffffff;
     opacity: 0.7;
     text-shadow: 0 0 2px #000000, 0 0 3px #000000;
+}
+
+/* ── Local disclosure (src/ui/disclosure.ts, src/ui/placement.ts) ─────────
+   Each surface's collapsed "Advanced" dropdown, with the "Debug"
+   subsection inside it (debug mode only), and the settings tab's rows. */
+.duckmage-disclosure {
+    margin: 0.75em 0;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 0.4em;
+}
+
+.duckmage-disclosure-summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    padding: 0.2em 0;
+}
+
+.duckmage-disclosure-summary:hover {
+    color: var(--text-normal);
+}
+
+.duckmage-disclosure-body {
+    padding-top: 0.25em;
+}
+
+.duckmage-disclosure-debug {
+    margin-top: 0.6em;
+    padding: 0.4em 0.6em;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: var(--radius-s);
+}
+
+.duckmage-disclosure-debug-title {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25em;
+}
+
+/* Settings tab: the Advanced row opens and closes the dropdown. */
+.duckmage-settings-advanced-row {
+    cursor: pointer;
+}
+
+.duckmage-settings-advanced-row:hover .setting-item-name {
+    color: var(--text-accent);
+}
+
+/* Status bar: "Debug" while debug mode is on (click to turn it off). */
+.duckmage-debug-status {
+    color: var(--text-warning);
 }

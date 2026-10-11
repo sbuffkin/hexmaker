@@ -179,6 +179,8 @@ describe("biome page edits round-trip through the store", () => {
 		const v = new MemVault();
 		const store = new BiomeStore(storePlugin(v) as never);
 		await store.init();
+		// The shipped notes come with the first overworld or region (DJ-Q4).
+		await store.seedShipped(true);
 		const path = "world/biomes/Alpine.md";
 		v.files.set(path, v.files.get(path)! + "\nMy notes about the peaks.\n");
 		store.onModify(v.app().vault.getAbstractFileByPath(path)!);
@@ -218,6 +220,8 @@ describe("biome page edits round-trip through the store", () => {
 		const v = new MemVault();
 		const store = new BiomeStore(storePlugin(v) as never);
 		await store.init();
+		// The shipped notes come with the first overworld or region (DJ-Q4).
+		await store.seedShipped(true);
 		expect(store.get("coast")?.shore).toBe(true);
 		expect(v.files.get("world/biomes/Coast.md")).toContain("shore: yes");
 		await store.update("coast", { shore: undefined });

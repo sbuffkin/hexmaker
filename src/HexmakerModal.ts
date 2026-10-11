@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import { iconLabel, iconPack, iconPackTabs, placeIconKind, PLACE_ICON_KINDS, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
+import { Disclosure } from "./ui/disclosure";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | "all" | undefined;
@@ -24,6 +25,38 @@ export function setIconPackDefault(fn: () => IconPack | "all"): void {
 export class HexmakerModal extends Modal {
 	constructor(app: App) {
 		super(app);
+	}
+
+	/**
+	 * Stable id of this surface (the UI inventory's screen id, e.g.
+	 * "MapModal"): keys the Advanced dropdown's remembered open state.
+	 * Subclasses that use section/place set it; else the title is used.
+	 */
+	protected surfaceId = "";
+	private disclosureState?: Disclosure;
+
+	/** This modal's Advanced dropdown and Debug subsection (src/ui/disclosure.ts). */
+	protected get disclosure(): Disclosure {
+		this.disclosureState ??= new Disclosure(this.app, this.surfaceId || this.titleEl.getText() || "modal", () => this.contentEl);
+		return this.disclosureState;
+	}
+
+	/**
+	 * The collapsed "Advanced" dropdown at the current end of the modal
+	 * (made on first use), or the "Debug" subsection inside it: null while
+	 * debug mode is off.
+	 */
+	protected section(layer: "advanced" | "debug"): HTMLElement | null {
+		return this.disclosure.section(layer);
+	}
+
+	/**
+	 * Put a built control where the placement map (src/ui/placement.ts)
+	 * says: left in place, moved into Advanced or Debug, or removed. Returns
+	 * whether it is shown.
+	 */
+	protected place(id: string, el: HTMLElement): boolean {
+		return this.disclosure.place(id, el);
 	}
 
 	/**

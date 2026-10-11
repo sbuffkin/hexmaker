@@ -73,7 +73,7 @@ function world() {
 	const p = {
 		app: vault.app(),
 		manifest: { dir: ".obsidian/plugins/hexmaker" },
-		settings: { hexFolder: "world/hexes", worldFolder: "world", tablesFolder: "world/tables", maps, hexOrientation: "flat", staggerOffset: "odd", mapKinds: ["space"], featureLevel: "advanced" } as Record<string, unknown> & { maps: MapData[] },
+		settings: { hexFolder: "world/hexes", worldFolder: "world", tablesFolder: "world/tables", maps, hexOrientation: "flat", staggerOffset: "odd", mapKinds: ["space"] } as Record<string, unknown> & { maps: MapData[] },
 		mapStore: undefined as unknown as MapStore,
 		events: undefined as unknown as EventsService,
 		saves: 0,

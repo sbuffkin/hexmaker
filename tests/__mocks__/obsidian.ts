@@ -32,6 +32,8 @@ export class Notice {
 	hide() { this.rec.hidden = true; }
 }
 export class Plugin { constructor(_app: App, _manifest: any) {} }
+export class PluginSettingTab { app: App; containerEl: any = {}; constructor(app: App, _plugin: unknown) { this.app = app; } display(): void {} hide(): void {} }
+export class Setting { constructor(_el: unknown) {} }
 export function setIcon(_el: HTMLElement, _icon: string): void {}
 export function getIcon(_icon: string): SVGSVGElement | null { return null; }
 

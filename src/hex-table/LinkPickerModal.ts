@@ -13,7 +13,7 @@ export class LinkPickerModal extends HexmakerModal {
     app: App,
     private plugin: HexmakerPlugin,
     private hexPath: string,
-    private section: LinkSection,
+    private linkSection: LinkSection,
     private sourceFolder: string,
     private onLinked: () => void,
     private createTemplate = "",
@@ -24,7 +24,7 @@ export class LinkPickerModal extends HexmakerModal {
   onOpen(): void {
     this.makeDraggable();
     const { contentEl } = this;
-    this.titleEl.setText(`Add ${this.section}`);
+    this.titleEl.setText(`Add ${this.linkSection}`);
     contentEl.addClass("duckmage-link-picker-modal");
 
     const normalized = normalizeFolder(this.sourceFolder);
@@ -36,7 +36,7 @@ export class LinkPickerModal extends HexmakerModal {
 
     // Tables: the user's own first; the terrain and region tables the map
     // made sit in a collapsed "Made by the map" group after them.
-    const { own, mapMade } = this.section === "Encounters Table"
+    const { own, mapMade } = this.linkSection === "Encounters Table"
       ? groupTableFiles(this.app, files)
       : { own: files, mapMade: [] as TFile[] };
     const addItems = (list: HTMLElement, items: TFile[]) => {
@@ -68,7 +68,7 @@ export class LinkPickerModal extends HexmakerModal {
       type: "text",
       cls: "duckmage-link-picker-input",
     });
-    input.placeholder = `${this.section.slice(0, -1)} name…`;
+    input.placeholder = `${this.linkSection.slice(0, -1)} name…`;
     const createBtn = row.createEl("button", {
       text: "Create",
       cls: "mod-cta",
@@ -85,7 +85,7 @@ export class LinkPickerModal extends HexmakerModal {
   private async addLink(file: TFile): Promise<void> {
     await this.ensureHexNote();
     const linkText = `[[${this.app.metadataCache.fileToLinktext(file, this.hexPath)}]]`;
-    await addLinkToSection(this.app, this.hexPath, this.section, linkText);
+    await addLinkToSection(this.app, this.hexPath, this.linkSection, linkText);
     await addBacklinkToFile(this.app, file.path, this.hexPath, this.plugin.hexLinkAlias(this.hexPath));
     this.onLinked();
     this.close();
@@ -104,8 +104,8 @@ export class LinkPickerModal extends HexmakerModal {
         // Towns start from the town template (PA3) unless the caller gave one.
         // Places made from a hex say where they are (a Location line, R3).
         const content = this.createTemplate
-          ? (LOCATION_SECTIONS.includes(this.section) ? this.plugin.withHexLocation(this.createTemplate, this.hexPath) : this.createTemplate)
-          : await this.plugin.newLinkedNoteContent(this.section, name, this.hexPath);
+          ? (LOCATION_SECTIONS.includes(this.linkSection) ? this.plugin.withHexLocation(this.createTemplate, this.hexPath) : this.createTemplate)
+          : await this.plugin.newLinkedNoteContent(this.linkSection, name, this.hexPath);
         file = await this.app.vault.create(newPath, content);
       } catch (err) {
         new Notice(`Could not create ${newPath}: ${String(err)}`);

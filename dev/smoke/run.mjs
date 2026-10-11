@@ -200,9 +200,6 @@ async function runSetup(setup) {
       const probs = [];
       if (!disk) probs.push("no data.json written");
       else {
-        if (disk.featureLevel === undefined) probs.push("featureLevel not saved");
-        if (setup.expect.level && state.featureLevel !== setup.expect.level) probs.push(`level ${state.featureLevel}, expected ${setup.expect.level}`);
-        if (setup.expect.level && disk.featureLevel !== setup.expect.level) probs.push(`saved level ${disk.featureLevel}, expected ${setup.expect.level}`);
         const renamed = { regions: "maps", defaultRegion: "defaultMap" };
         const lost = Object.keys(dataIn ?? {}).filter((k) => !(k in disk) && !(renamed[k] && renamed[k] in disk));
         if (lost.length) probs.push(`keys lost from data.json: ${lost.join(", ")}`);
@@ -211,7 +208,7 @@ async function runSetup(setup) {
         const goneMaps = [...inMaps].filter((m) => !outMaps.has(m));
         if (goneMaps.length) probs.push(`maps lost from data.json: ${goneMaps.join(", ")}`);
       }
-      rec("C2-settings", probs.length === 0, probs.join("; ") || `level ${state.featureLevel}, ${state.maps.length} maps, palettes ${state.palettes.length}, kinds ${state.mapKinds}`);
+      rec("C2-settings", probs.length === 0, probs.join("; ") || `${state.maps.length} maps, palettes ${state.palettes.length}, kinds ${state.mapKinds}`);
     }
 
     // C3: every map opens and renders.
@@ -349,7 +346,6 @@ async function runSetup(setup) {
 
     // ── C5: restart rewrites nothing ──
     const storeBefore = canon(await ev(P.dumpStore, pluginId));
-    const levelBefore = state.featureLevel;
     await ev(P.settle, pluginId, 3000, 60_000);
     await stop();
     const snapA = snapshot(vault, pluginId);
@@ -377,9 +373,8 @@ async function runSetup(setup) {
       if (d.added.length) probs.push(`new: ${d.added.slice(0, 12).join(", ")}`);
       if (d.removed.length) probs.push(`removed: ${d.removed.slice(0, 12).join(", ")}`);
       if (storeAfter !== storeBefore) probs.push(`map data differs after restart: ${jsonDiff(JSON.parse(storeBefore), JSON.parse(storeAfter)).join("; ")}`);
-      if (state2.featureLevel !== levelBefore) probs.push(`level ${levelBefore} → ${state2.featureLevel}`);
       if (errs2.length) probs.push(`plugin errors: ${errs2.slice(0, 3).map((e) => e.text.split("\n")[0]).join(" || ")}`);
-      rec("C5-restart", probs.length === 0, probs.join("; ") || `0 files rewritten, map data and level the same (ready ${r2.ms} ms)`);
+      rec("C5-restart", probs.length === 0, probs.join("; ") || `0 files rewritten, map data the same (ready ${r2.ms} ms)`);
     }
   } catch (e) {
     rec("crash", false, e.stack ?? String(e));

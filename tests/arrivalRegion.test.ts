@@ -80,6 +80,8 @@ function world(opts: { mode?: string; arrival?: string } = {}) {
 			made.push({ name: slug, cells });
 			return { name: slug };
 		},
+		// The first region writes the shipped biome notes (DJ-Q4); nothing to write here.
+		ensureOverworldBiomes: async () => {},
 		linkRegion: async (_p: string, _x: number, _y: number, child: string) => {
 			const c = maps.find((m) => m.name === child)!;
 			c.submapKind = "region";

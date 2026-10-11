@@ -83,9 +83,6 @@ export function state(id) {
   }));
   return {
     version: p.manifest.version,
-    featureLevel: s.featureLevel,
-    advancedFeatures: s.advancedFeatures ?? [],
-    dismissedHints: s.dismissedHints ?? [],
     mapKinds: s.mapKinds,
     palettes: s.terrainPalettes.map((x) => x.name),
     pathTypes: (s.pathTypes ?? []).length,

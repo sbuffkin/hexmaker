@@ -428,20 +428,8 @@ export interface HexmakerPluginSettings {
 	 * are written until it does (saved as null so a restart still knows).
 	 */
 	kindContent?: string[] | null;
-	/** Simple or Advanced (see src/featureLevel.ts). */
-	featureLevel: "simple" | "advanced";
-	/** Advanced features turned on one by one while in Simple. */
-	advancedFeatures: string[];
-	/** Advanced hints the user closed, by spot id. */
-	dismissedHints: string[];
 	/** The one-time "Add roll ranges to tables?" offer: answered ("done") or turned off ("never"). Unset = not asked yet. */
 	tableRangesPrompt?: "done" | "never";
-	/** When the plugin first ran (ISO date), for the "ready for more?" check-in. */
-	installedAt?: string;
-	/** Last time the check-in was shown (ISO date). */
-	advancedNudgeAt?: string;
-	/** "Don't ask again" on the check-in. */
-	advancedNudgeOff?: boolean;
 	/** True once existing palettes got terrain types (one-time seeding). */
 	terrainTypesSeeded: boolean;
 	/** Default hex-name font for maps without their own (NM3; see hexNameFont.ts). Unset = theme font, medium, bold. */

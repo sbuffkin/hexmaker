@@ -2,8 +2,6 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { RegionSettings, SubmapKind } from "../types";
-import { hasFeature } from "../featureLevel";
-import { renderAdvancedHint } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { DEFAULT_REGION_SETTINGS, regionMapAt } from "../maps/submaps";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
@@ -113,7 +111,6 @@ export class ChildKindModal extends HexmakerModal {
     contentEl.empty();
     const { plugin } = this.host;
     const existing = regionMapAt(plugin.settings.maps, this.parentMap, `${this.x}_${this.y}`);
-    const regionsOn = hasFeature(plugin.settings, "regions");
     const text = childKindText(plugin.isSpaceMap(this.parentMap));
 
     // The hex's maps first (C11): opening what's there is the usual pick;
@@ -148,27 +145,16 @@ export class ChildKindModal extends HexmakerModal {
 
     const why = existing
       ? `This hex's region is ${plugin.mapLabel(existing.name)}.`
-      : !regionsOn ? "Advanced: needs Regions and overworlds."
       : !canAdd(plugin.getMap(this.parentMap)) ? ADD_REGION_LOCKED_HINT : undefined;
     card("region", why);
     if (existing && this.host.onEnter) {
       const enter = contentEl.createEl("button", { cls: "duckmage-child-kind-enter", text: `Enter ${plugin.mapLabel(existing.name)}` });
       enter.addEventListener("click", () => { this.close(); this.host.onEnter?.(existing.name); });
     }
-    if (!regionsOn && !existing) {
-      renderAdvancedHint(contentEl, plugin, "regions", "child-kind-region", "Regions: a map of each hex that lines up with its neighbours.");
-    }
     card("location");
-    // Turning Regions on from the hint enables the card at once.
-    const stop = plugin.onFeatureChange(() => this.render());
-    this.stopFeatureChange?.();
-    this.stopFeatureChange = stop;
   }
 
-  private stopFeatureChange?: () => void;
-
   onClose(): void {
-    this.stopFeatureChange?.();
     this.contentEl.empty();
   }
 }

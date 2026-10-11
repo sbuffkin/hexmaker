@@ -5,7 +5,27 @@ import { normalizeFolder } from "./utils";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
-import { ADVANCED_FEATURES, hasFeature, isAdvanced } from "./featureLevel";
+import { ConfirmModal } from "./worldgen/ConfirmModal";
+import { Disclosure, disclosureOpen, setDisclosureOpen } from "./ui/disclosure";
+import { partition } from "./ui/placement";
+import {
+  DEBUG_CONFIRM_TEXT,
+  debugModeConfirmed,
+  isDebugMode,
+  markDebugModeConfirmed,
+  onDebugModeChange,
+  setDebugMode,
+} from "./ui/debugMode";
+
+/** The settings tab's surface id (placement ids are `Settings.<control>`). */
+const SURFACE = "Settings";
+
+/** The Advanced dropdown row's description (both settings paths). */
+const ADVANCED_DESC = "Folder layout and other options most people never change.";
+
+/** The debug-mode switch's description (both settings paths). */
+const DEBUG_MODE_DESC =
+  "Show backend controls (engine tuning, maintenance) in a Debug section inside each Advanced dropdown. On this device only.";
 
 /** Size names in the settings dropdowns. */
 const NAME_SIZE_TEXT: Record<HexNameSize, string> = { small: "Small", medium: "Medium", large: "Large", huge: "Huge" };
@@ -242,8 +262,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
       };
     });
 
-    return [
-      {
+    const T = (id: string, item: LocalSettingDefinitionItem) => ({ id, item });
+    const tagged: { id: string; item: LocalSettingDefinitionItem }[] = [
+      T("Settings.rerunSetupWizard", {
         name: "Setup wizard",
         desc: "Re-open the setup wizard to reconfigure folders or create a new map.",
         render: (setting: Setting) => {
@@ -256,13 +277,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
             }),
           );
         },
-      },
-      {
-        type: "group",
-        heading: "Features",
-        items: this.featureItems(),
-      },
-      {
+      }),
+      T("Settings.defaultTableDice", {
         name: "Default die for new tables",
         desc: "Die size used when creating new random table notes (d6, d20, d100, etc.).",
         aliases: ["dice"],
@@ -283,20 +299,20 @@ export class HexmakerSettingTab extends PluginSettingTab {
           },
           defaultValue: "100",
         },
-      },
-      {
+      }),
+      T("Settings.collapseSections", {
         name: "Hex editor sections start collapsed",
         desc: "Choose which sections open collapsed by default in the right-click hex editor.",
         aliases: ["terrain", "features", "notes", "collapse"],
         render: (setting: Setting) => this.buildCollapseTogglesRow(setting),
-      },
-      folderText(
+      }),
+      T("Settings.templatePath", folderText(
         "Template path",
         "templatePath",
         "templates/hex.md",
         "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ### Towns, ### Dungeons, and ### Features headings for the link sections. Blank = hex.md in the templates folder.",
-      ),
-      {
+      )),
+      T("Settings.defaultMap", {
         name: "Default map",
         desc: "The map opened when the hex map is launched.",
         control: {
@@ -305,8 +321,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: mapOptions,
           defaultValue: this.plugin.settings.maps[0]?.name ?? "",
         },
-      },
-      {
+      }),
+      T("Settings.hexOrientation", {
         name: "Hex orientation",
         desc: "Pointy-top: points face north/south, flat sides east/west. Flat-top: flat sides face north/south, points east/west.",
         control: {
@@ -315,8 +331,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: { pointy: "Pointy-top", flat: "Flat-top" },
           defaultValue: "pointy",
         },
-      },
-      {
+      }),
+      T("Settings.staggerOffset", {
         name: "Stagger offset",
         desc: "Which set of columns (flat-top) or rows (pointy-top) is offset by half a hex. Affects how new maps render unless overridden per-map.",
         render: (setting: Setting) => {
@@ -334,8 +350,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
             void this.plugin.saveSettings();
           });
         },
-      },
-      {
+      }),
+      T("Settings.coordPlacement", {
         name: "Coordinate placement",
         desc: "Where the coordinate label sits inside each hex. Move to top or bottom to keep it from clashing with a centered terrain icon.",
         control: {
@@ -344,8 +360,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: { top: "Top", middle: "Middle", bottom: "Bottom" },
           defaultValue: "bottom",
         },
-      },
-      {
+      }),
+      T("Settings.coordFontSize", {
         name: "Coordinate label size",
         desc: "Size of the coordinate label, relative to the hex.",
         control: {
@@ -357,8 +373,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           displayFormat: (value) => value.toFixed(2),
           defaultValue: 0.8,
         },
-      },
-      {
+      }),
+      T("Settings.coordFontFamily", {
         name: "Coordinate label font",
         desc: "Font used for the coordinate label.",
         control: {
@@ -371,8 +387,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           },
           defaultValue: "interface",
         },
-      },
-      {
+      }),
+      T("Settings.coordFontColor", {
         name: "Coordinate label color",
         desc: "Color of the coordinate label.",
         control: {
@@ -380,8 +396,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           key: "coordFontColor",
           defaultValue: "#ffffff",
         },
-      },
-      {
+      }),
+      T("Settings.hexNameFont", {
         name: "Hex name font",
         desc: "Default font for hex names on maps and in PNG exports. Each map can pick its own in the layers menu.",
         control: {
@@ -390,8 +406,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: Object.fromEntries(NAME_FAMILIES.map((f) => [f.id, f.label])),
           defaultValue: DEFAULT_NAME_FONT.family,
         },
-      },
-      {
+      }),
+      T("Settings.hexNameSize", {
         name: "Hex name size",
         desc: "Default size for hex names. Names never get smaller than readable on screen.",
         control: {
@@ -400,8 +416,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: Object.fromEntries(NAME_SIZES.map((s) => [s.id, NAME_SIZE_TEXT[s.id]])),
           defaultValue: "medium",
         },
-      },
-      {
+      }),
+      T("Settings.hexNameStyle", {
         name: "Hex name style",
         desc: "Default weight and slant for hex names.",
         control: {
@@ -410,8 +426,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           options: Object.fromEntries(NAME_STYLES.map((s) => [s.id, s.label])),
           defaultValue: "bold",
         },
-      },
-      {
+      }),
+      T("Settings.hexGap", {
         name: "Hex cell spacing",
         desc: "Gap between hex cells (0 – 0.5 em).",
         control: {
@@ -423,8 +439,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           displayFormat: (value) => value.toFixed(2),
           defaultValue: 0.15,
         },
-      },
-      {
+      }),
+      T("Settings.defaultNewMapCols", {
         name: "Default new map columns",
         desc: "Default number of columns when creating a new top-level map.",
         control: {
@@ -435,8 +451,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           step: 1,
           defaultValue: 20,
         },
-      },
-      {
+      }),
+      T("Settings.defaultNewMapRows", {
         name: "Default new map rows",
         desc: "Default number of rows when creating a new top-level map.",
         control: {
@@ -447,8 +463,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           step: 1,
           defaultValue: 16,
         },
-      },
-      {
+      }),
+      T("Settings.defaultSubmapCols", {
         name: "Default submap columns",
         desc: "Default number of columns when creating a new submap.",
         control: {
@@ -459,8 +475,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
           step: 1,
           defaultValue: 10,
         },
-      },
-      {
+      }),
+      T("Settings.defaultSubmapRows", {
         name: "Default submap rows",
         desc: "Default number of rows when creating a new submap.",
         control: {
@@ -471,49 +487,38 @@ export class HexmakerSettingTab extends PluginSettingTab {
           step: 1,
           defaultValue: 10,
         },
-      },
-      folderText(
+      }),
+      T("Settings.iconsFolder", folderText(
         "Custom icons folder",
         "iconsFolder",
         "Icons",
         "Vault-relative folder containing additional icon images (PNG, JPG, SVG, etc.) for the terrain palette and hex icon override. These are merged with the built-in icons.",
-      ),
-      {
-        type: "group",
-        heading: "Generate world data",
-        items: [
-          {
-            name: "",
-            desc: "⚠️ configure all folder settings before selecting generate. This will create terrain table notes, add roller links to all table notes, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing notes and links are not overwritten.",
-            searchable: false,
-          },
-          {
-            name: "Generate terrain tables & hex links",
-            desc: "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the hexmaker roller from within Obsidian), and links each hex note's terrain encounters table into its encounters table section.",
-            render: (setting: Setting) => {
-              setting.addButton((btn) =>
-                btn
-                  .setButtonText("Generate")
-                  .setCta()
-                  .onClick(async () => {
-                    btn.setDisabled(true);
-                    btn.setButtonText("Generating…");
-                    try {
-                      await this.plugin.ensureTerrainTables();
-                      await this.plugin.ensureAllRollerLinks();
-                      await this.plugin.backfillTerrainLinks();
-                      await this.plugin.backfillRegionLinks();
-                    } finally {
-                      btn.setDisabled(false);
-                      btn.setButtonText("Generate");
-                    }
-                  }),
-              );
-            },
-          },
-        ],
-      },
-      {
+      )),
+      T("Settings.generateWorldData", {
+        name: "Generate terrain tables & hex links",
+        desc: "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the hexmaker roller from within Obsidian), and links each hex note's terrain encounters table into its encounters table section. Set the folders first. Safe to run more than once: existing notes and links are not overwritten.",
+        render: (setting: Setting) => {
+          setting.addButton((btn) =>
+            btn
+              .setButtonText("Generate")
+              .setCta()
+              .onClick(async () => {
+                btn.setDisabled(true);
+                btn.setButtonText("Generating…");
+                try {
+                  await this.plugin.ensureTerrainTables();
+                  await this.plugin.ensureAllRollerLinks();
+                  await this.plugin.backfillTerrainLinks();
+                  await this.plugin.backfillRegionLinks();
+                } finally {
+                  btn.setDisabled(false);
+                  btn.setButtonText("Generate");
+                }
+              }),
+          );
+        },
+      }),
+      T("Settings.pathTypesNote", {
         type: "group",
         heading: "Path types",
         items: [
@@ -523,14 +528,14 @@ export class HexmakerSettingTab extends PluginSettingTab {
             searchable: false,
           },
         ],
-      },
-      folderText(
+      }),
+      T("Settings.worldFolder", folderText(
         "World notes folder",
         "worldFolder",
         "World.",
         "Vault-relative path. Scopes the file search when adding links to hexes.",
-      ),
-      {
+      )),
+      T("Settings.generateFolders", {
         name: "Set up folders",
         desc: "Populates any blank folder settings below with defaults under the world folder, then creates those folders in your vault. Only blank fields are affected — manually set values are left untouched.",
         render: (setting: Setting) => {
@@ -604,92 +609,92 @@ export class HexmakerSettingTab extends PluginSettingTab {
               }),
           );
         },
-      },
-      folderText(
+      }),
+      T("Settings.hexFolder", folderText(
         "Hex notes folder",
         "hexFolder",
         "World/hexes",
         "Vault-relative path where hex notes (X_y.md) are stored.",
-      ),
-      folderText(
+      )),
+      T("Settings.townsFolder", folderText(
         "Towns folder",
         "townsFolder",
         "World/towns",
         "Vault-relative folder to populate the towns dropdown in the hex editor. Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.dungeonsFolder", folderText(
         "Dungeons folder",
         "dungeonsFolder",
         "World/dungeons",
         "Vault-relative folder to populate the dungeons dropdown in the hex editor. Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.questsFolder", folderText(
         "Quests folder",
         "questsFolder",
         "World/quests",
         "Vault-relative folder to populate the quests dropdown in the hex editor. Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.featuresFolder", folderText(
         "Features folder",
         "featuresFolder",
         "World/features",
         "Vault-relative folder to populate the features dropdown in the hex editor. Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.factionsFolder", folderText(
         "Factions folder",
         "factionsFolder",
         "World/factions",
         "Vault-relative folder to populate the factions dropdown in the hex editor. Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.regionsFolder", folderText(
         "Regions folder",
         "regionsFolder",
         "World/regions",
         "Vault-relative folder for geographic region notes (used by the region overlay paint tool). Files starting with _ are excluded.",
-      ),
-      folderText(
+      )),
+      T("Settings.tablesFolder", folderText(
         "Tables folder",
         "tablesFolder",
         "World/tables",
         "Vault-relative folder for random table notes. Used by the encounters table section and the random tables view.",
-      ),
-      folderText(
+      )),
+      T("Settings.workflowsFolder", folderText(
         "Workflows folder",
         "workflowsFolder",
         "World/workflows",
         "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.",
-      ),
-      folderText(
+      )),
+      T("Settings.templatesFolder", folderText(
         "Templates folder",
         "templatesFolder",
         "World/templates",
         TEMPLATES_FOLDER_DESC,
-      ),
-      folderText(
+      )),
+      T("Settings.palettesFolder", folderText(
         "Palettes folder",
         "palettesFolder",
         "World/palettes",
         PALETTES_FOLDER_DESC,
-      ),
-      folderText(
+      )),
+      T("Settings.biomesFolder", folderText(
         "Biomes folder",
         "biomesFolder",
         "World/biomes",
         BIOMES_FOLDER_DESC,
-      ),
-      folderText(
+      )),
+      T("Settings.biomePoolsFolder", folderText(
         "Biome pools folder",
         "biomePoolsFolder",
         "World/biome-pools",
         BIOME_POOLS_FOLDER_DESC,
-      ),
-      folderText(
+      )),
+      T("Settings.worldTypesFolder", folderText(
         "World types folder",
         "worldTypesFolder",
         "World/world-types",
         WORLD_TYPES_FOLDER_DESC,
-      ),
-      {
+      )),
+      T("Settings.mapKinds", {
         type: "group",
         heading: "Map types",
         items: MAP_KINDS.map((k): LocalSettingDefinition => ({
@@ -702,7 +707,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
             );
           },
         })),
-      },
+      }),
+    ];
+    // Terrain palettes LAST among the regular settings (see the comment on
+    // them); the Advanced dropdown and the debug-mode switch go after them.
+    const palettesSection: LocalSettingDefinitionItem[] = [
       // Terrain palettes LAST, deliberately: on update() the declarative
       // renderer reuses unchanged rows but re-creates a changed list and
       // appends it at the END of the page — a mid-page list visibly "drops
@@ -774,6 +783,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
         },
       },
     ];
+    this.watchDebugMode(() => this.requestDeclarativeRerender());
+    return this.layoutDefinitions(tagged, palettesSection);
   }
 
   /**
@@ -881,55 +892,117 @@ export class HexmakerSettingTab extends PluginSettingTab {
   }
 
   /**
-   * Feature level (src/featureLevel.ts): Simple or Advanced, each Advanced
-   * feature on its own while in Simple, and a way to bring closed hints back.
+   * The declarative page: the regular settings above the fold (`main`, then
+   * `more`), Terrain palettes, then the collapsed Advanced dropdown with its
+   * Debug subsection (only in debug mode), then the debug-mode switch at the
+   * very bottom. Each setting's layer comes from the placement map
+   * (src/ui/placement.ts), keyed by its `Settings.<control>` id.
    */
-  private featureItems(): LocalSettingDefinition[] {
-    const s = this.plugin.settings;
-    const refresh = () => {
-      if (typeof (this as unknown as { update?: () => void }).update === "function") this.requestDeclarativeRerender();
-      else this.renderSettings();
-    };
-    const items: LocalSettingDefinition[] = [
-      {
-        name: "Feature level",
-        desc: "Simple: paint maps, write hex notes, roll on encounter tables, export. Advanced: also terrain generators, workflows, custom palettes and neighbouring regions. Nothing you've made is touched either way.",
-        aliases: ["simple", "advanced", "mode"],
-        render: (setting: Setting) => {
-          setting.addDropdown((d) =>
-            d.addOption("simple", "Simple").addOption("advanced", "Advanced")
-              .setValue(s.featureLevel)
-              .onChange((v) => void this.plugin.setFeatureLevel(v === "simple" ? "simple" : "advanced").then(refresh)),
-          );
-        },
-      },
-    ];
-    for (const f of ADVANCED_FEATURES) {
-      items.push({
-        name: f.label,
-        desc: isAdvanced(s) ? `${f.pitch} (On with Advanced.)` : f.pitch,
-        render: (setting: Setting) => {
-          setting.addToggle((t) => {
-            t.setValue(hasFeature(s, f.id)).setDisabled(isAdvanced(s));
-            t.onChange((on) => void (on ? this.plugin.enableAdvancedFeature(f.id) : this.plugin.disableAdvancedFeature(f.id)).then(refresh));
-          });
-        },
+  private layoutDefinitions(
+    tagged: { id: string; item: LocalSettingDefinitionItem }[],
+    palettesSection: LocalSettingDefinitionItem[],
+  ): LocalSettingDefinitionItem[] {
+    // Every layer is laid out; Debug shows only while debug mode is on.
+    const { main, more, advanced, debug } = partition(tagged, true);
+    const open = () => disclosureOpen(this.app, SURFACE);
+    const debugOn = () => isDebugMode(this.app);
+    // Settings in a dropdown are flat rows: a group's rows go in without its heading.
+    const flat = (items: LocalSettingDefinitionItem[]): LocalSettingDefinition[] =>
+      items.flatMap((i) => ("type" in i && (i.type === "group" || i.type === "list") ? (i.items ?? []) : [i as LocalSettingDefinition]));
+    const shownWhen = (items: LocalSettingDefinition[], when: () => boolean): LocalSettingDefinition[] =>
+      items.map((i) => {
+        const own = i.visible;
+        return { ...i, visible: () => when() && (own === undefined || (typeof own === "function" ? own() : own)) };
       });
+    const out: LocalSettingDefinitionItem[] = [...main, ...more, ...palettesSection];
+    if (advanced.length || debug.length) {
+      out.push({
+        type: "group",
+        cls: "duckmage-settings-advanced",
+        items: [
+          {
+            name: "Advanced",
+            desc: ADVANCED_DESC,
+            aliases: ["folders"],
+            render: (setting: Setting) => this.renderAdvancedRow(setting, () => this.requestDeclarativeRerender()),
+          },
+          ...shownWhen(flat(advanced), open),
+        ],
+      });
+      if (debug.length)
+        out.push({
+          type: "group",
+          heading: "Debug",
+          cls: "duckmage-settings-debug",
+          visible: () => open() && debugOn(),
+          items: shownWhen(flat(debug), () => open() && debugOn()),
+        });
     }
-    if (s.dismissedHints.length)
-      items.push({
-        name: "Hints",
-        desc: `${s.dismissedHints.length} hint${s.dismissedHints.length === 1 ? "" : "s"} about Advanced features hidden.`,
-        render: (setting: Setting) => {
-          setting.addButton((b) =>
-            b.setButtonText("Show hints again").onClick(() => {
-              s.dismissedHints = [];
-              void this.plugin.saveSettings().then(refresh);
-            }),
-          );
-        },
-      });
-    return items;
+    out.push({
+      type: "group",
+      cls: "duckmage-settings-debug-mode",
+      items: [this.debugModeDefinition()],
+    });
+    return out;
+  }
+
+  /** The Advanced dropdown's header row: click to open or close it (remembered on this device). */
+  private renderAdvancedRow(setting: Setting, refresh: () => void): void {
+    const open = disclosureOpen(this.app, SURFACE);
+    setting.settingEl.addClass("duckmage-settings-advanced-row");
+    setting.settingEl.toggleClass("is-open", open);
+    setting.settingEl.setAttr("role", "button");
+    setting.settingEl.setAttr("aria-expanded", String(open));
+    setting.addExtraButton((b) =>
+      b.setIcon(open ? "chevron-down" : "chevron-right").setTooltip(open ? "Hide advanced settings" : "Show advanced settings"),
+    );
+    setting.settingEl.addEventListener("click", () => {
+      setDisclosureOpen(this.app, SURFACE, !open);
+      refresh();
+    });
+  }
+
+  /**
+   * The debug-mode switch (both settings paths): the only way to turn debug
+   * mode on. The first time on this device it asks first. The page redraws
+   * through watchDebugMode.
+   */
+  private debugModeDefinition(): LocalSettingDefinition {
+    return {
+      name: "Debug mode",
+      desc: DEBUG_MODE_DESC,
+      aliases: ["debug", "developer", "maintenance"],
+      render: (setting: Setting) => {
+        setting.addToggle((t) =>
+          t.setValue(isDebugMode(this.app)).onChange((on) => {
+            if (!on || debugModeConfirmed(this.app)) {
+              setDebugMode(this.app, on);
+              return;
+            }
+            // Not on until the user confirms.
+            t.setValue(false);
+            new ConfirmModal(this.app, DEBUG_CONFIRM_TEXT.title, DEBUG_CONFIRM_TEXT.body, DEBUG_CONFIRM_TEXT.confirm, () => {
+              markDebugModeConfirmed(this.app);
+              setDebugMode(this.app, true);
+            }).open();
+          }),
+        );
+      },
+    };
+  }
+
+  /** Redraws the tab when debug mode changes (this switch, or the status bar). */
+  private stopDebugWatch?: () => void;
+
+  hide(): void {
+    this.stopDebugWatch?.();
+    this.stopDebugWatch = undefined;
+    super.hide();
+  }
+
+  private watchDebugMode(refresh: () => void): void {
+    this.stopDebugWatch?.();
+    this.stopDebugWatch = onDebugModeChange(() => refresh());
   }
 
   private requestDeclarativeRerender(): void {
@@ -1013,8 +1086,14 @@ export class HexmakerSettingTab extends PluginSettingTab {
   private renderSettings(): void {
     const { containerEl } = this;
     containerEl.empty();
+    this.watchDebugMode(() => this.renderSettings());
+    // Each row's layer comes from the placement map (Settings.<control> ids):
+    // built above the fold, in the Advanced dropdown, in Debug, or nowhere
+    // (a detached element) when it isn't shown.
+    const disclosure = new Disclosure(this.app, SURFACE, () => containerEl);
+    const at = (id: string): HTMLElement => disclosure.target(id, containerEl) ?? createDiv();
 
-    new Setting(containerEl)
+    new Setting(at("Settings.rerunSetupWizard"))
       .setName("Setup wizard")
       .setDesc("Re-open the setup wizard to reconfigure folders or create a new map.")
       .addButton((btn) =>
@@ -1026,14 +1105,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl).setName("Features").setHeading();
-    for (const item of this.featureItems()) {
-      const s = new Setting(containerEl).setName(item.name ?? "");
-      if (typeof item.desc === "string") s.setDesc(item.desc);
-      item.render?.(s);
-    }
-
-    new Setting(containerEl)
+    new Setting(at("Settings.defaultTableDice"))
       .setName("Default die for new tables")
       .setDesc(
         "Die size used when creating new random table notes (d6, d20, d100, etc.).",
@@ -1057,14 +1129,14 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.collapseSections"))
       .setName("Hex editor sections start collapsed")
       .setDesc(
         "Choose which sections open collapsed by default in the right-click hex editor.",
       )
       .then((setting) => this.buildCollapseTogglesRow(setting));
 
-    new Setting(containerEl)
+    new Setting(at("Settings.templatePath"))
       .setName("Template path")
       .setDesc(
         "Vault-relative path to a hex note template. Supports {{x}}, {{y}}, {{title}}. Include ### Towns, ### Dungeons, and ### Features headings for the link sections. Blank = hex.md in the templates folder.",
@@ -1079,7 +1151,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.defaultMap"))
       .setName("Default map")
       .setDesc("The map opened when the hex map is launched.")
       .addDropdown((dropdown) => {
@@ -1098,7 +1170,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           });
       });
 
-    new Setting(containerEl)
+    new Setting(at("Settings.hexOrientation"))
       .setName("Hex orientation")
       .setDesc(
         "Pointy-top: points face north/south, flat sides east/west. Flat-top: flat sides face north/south, points east/west.",
@@ -1114,7 +1186,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.staggerOffset"))
       .setName("Stagger offset")
       .setDesc(
         "Which set of columns (flat-top) or rows (pointy-top) is offset by half a hex. Affects how new maps render unless overridden per-map.",
@@ -1133,7 +1205,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
         });
       });
 
-    new Setting(containerEl)
+    new Setting(at("Settings.coordPlacement"))
       .setName("Coordinate placement")
       .setDesc(
         "Where the coordinate label sits inside each hex. Move to top or bottom to keep it from clashing with a centered terrain icon.",
@@ -1155,7 +1227,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       );
 
     {
-      const coordSetting = new Setting(containerEl)
+      const coordSetting = new Setting(at("Settings.coordFontSize"))
         .setName("Coordinate label")
         .setDesc(
           "Size (relative to the hex) and font for the coordinate label.",
@@ -1209,7 +1281,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
         this.plugin.refreshHexMap();
       };
-      new Setting(containerEl)
+      new Setting(at("Settings.hexNameFont"))
         .setName("Hex name font")
         .setDesc("Default font, size and style for hex names on maps and in PNG exports. Each map can pick its own in the layers menu.")
         .addDropdown((dropdown) => {
@@ -1236,7 +1308,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
 
     {
-      const gapSetting = new Setting(containerEl)
+      const gapSetting = new Setting(at("Settings.hexGap"))
         .setName("Hex cell spacing")
         .setDesc("Gap between hex cells (0 – 0.5 em).");
       const currentGap =
@@ -1258,7 +1330,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       );
     }
 
-    new Setting(containerEl)
+    new Setting(at("Settings.defaultNewMapCols"))
       .setName("Default new map size")
       .setDesc("Default columns and rows when creating a new top-level map.")
       .addText((text) =>
@@ -1280,7 +1352,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.defaultSubmapCols"))
       .setName("Default submap size")
       .setDesc("Default columns and rows when creating a new submap.")
       .addText((text) =>
@@ -1302,7 +1374,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.iconsFolder"))
       .setName("Custom icons folder")
       .setDesc(
         "Vault-relative folder containing additional icon images (PNG, JPG, SVG, etc.) for the terrain palette and hex icon override. These are merged with the built-in icons.",
@@ -1318,15 +1390,10 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl).setName("Generate world data").setHeading();
-    containerEl.createEl("p", {
-      cls: "setting-item-description duckmage-generate-warning",
-      text: "⚠️ configure all folder settings above before selecting generate. This will create terrain table notes, add roller links to all table notes, and link each hex note to its terrain's encounters table. Safe to run multiple times — existing notes and links are not overwritten.",
-    });
-    new Setting(containerEl)
+    new Setting(at("Settings.generateWorldData"))
       .setName("Generate terrain tables & hex links")
       .setDesc(
-        "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the hexmaker roller from within Obsidian), and links each hex note's terrain encounters table into its encounters table section.",
+        "Creates missing terrain table notes, adds roller links to all table notes (so they can be opened in the hexmaker roller from within Obsidian), and links each hex note's terrain encounters table into its encounters table section. Set the folders first. Safe to run more than once: existing notes and links are not overwritten.",
       )
       .addButton((btn) =>
         btn
@@ -1353,7 +1420,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       cls: "setting-item-description",
     });
 
-    new Setting(containerEl)
+    new Setting(at("Settings.worldFolder"))
       .setName("World notes folder")
       .setDesc(
         "Vault-relative path. Scopes the file search when adding links to hexes.",
@@ -1368,7 +1435,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.generateFolders"))
       .setName("Set up folders")
       .setDesc(
         "Populates any blank folder settings below with defaults under the world folder, then creates those folders in your vault. Only blank fields are affected — manually set values are left untouched.",
@@ -1442,7 +1509,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.hexFolder"))
       .setName("Hex notes folder")
       .setDesc("Vault-relative path where hex notes (X_y.md) are stored.")
       .addText((text) =>
@@ -1455,7 +1522,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.townsFolder"))
       .setName("Towns folder")
       .setDesc(
         "Vault-relative folder to populate the towns dropdown in the hex editor. Files starting with _ are excluded.",
@@ -1470,7 +1537,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.dungeonsFolder"))
       .setName("Dungeons folder")
       .setDesc(
         "Vault-relative folder to populate the dungeons dropdown in the hex editor. Files starting with _ are excluded.",
@@ -1485,7 +1552,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.questsFolder"))
       .setName("Quests folder")
       .setDesc(
         "Vault-relative folder to populate the quests dropdown in the hex editor. Files starting with _ are excluded.",
@@ -1500,7 +1567,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.featuresFolder"))
       .setName("Features folder")
       .setDesc(
         "Vault-relative folder to populate the features dropdown in the hex editor. Files starting with _ are excluded.",
@@ -1515,7 +1582,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.factionsFolder"))
       .setName("Factions folder")
       .setDesc(
         "Vault-relative folder to populate the factions dropdown in the hex editor. Files starting with _ are excluded.",
@@ -1530,7 +1597,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.regionsFolder"))
       .setName("Regions folder")
       .setDesc(
         "Vault-relative folder for geographic region notes (used by the region overlay paint tool). Files starting with _ are excluded.",
@@ -1545,7 +1612,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.tablesFolder"))
       .setName("Tables folder")
       .setDesc(
         "Vault-relative folder for random table notes. Used by the encounters table section and the random tables view.",
@@ -1560,7 +1627,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.workflowsFolder"))
       .setName("Workflows folder")
       .setDesc(
         "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.",
@@ -1575,7 +1642,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.templatesFolder"))
       .setName("Templates folder")
       .setDesc(TEMPLATES_FOLDER_DESC)
       .addText((text) =>
@@ -1588,7 +1655,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.palettesFolder"))
       .setName("Palettes folder")
       .setDesc(PALETTES_FOLDER_DESC)
       .addText((text) =>
@@ -1601,7 +1668,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.biomesFolder"))
       .setName("Biomes folder")
       .setDesc(BIOMES_FOLDER_DESC)
       .addText((text) =>
@@ -1615,7 +1682,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.biomePoolsFolder"))
       .setName("Biome pools folder")
       .setDesc(BIOME_POOLS_FOLDER_DESC)
       .addText((text) =>
@@ -1628,7 +1695,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           }),
       );
 
-    new Setting(containerEl)
+    new Setting(at("Settings.worldTypesFolder"))
       .setName("World types folder")
       .setDesc(WORLD_TYPES_FOLDER_DESC)
       .addText((text) =>
@@ -1688,13 +1755,11 @@ export class HexmakerSettingTab extends PluginSettingTab {
 
     const palettes = this.plugin.settings.terrainPalettes;
 
+    // The list redraws inside its own host, so what's below it stays below.
+    const listHost = containerEl.createDiv();
     const renderPaletteList = () => {
-      const existingList = containerEl.querySelector(
-        ".duckmage-palette-mgmt-list",
-      );
-      if (existingList) existingList.remove();
-
-      const listEl = containerEl.createDiv({
+      listHost.empty();
+      const listEl = listHost.createDiv({
         cls: "duckmage-palette-mgmt-list",
       });
 
@@ -1765,5 +1830,13 @@ export class HexmakerSettingTab extends PluginSettingTab {
     };
 
     renderPaletteList();
+
+    // The Advanced dropdown (with Debug inside) below everything else, then
+    // the debug-mode switch at the very bottom.
+    disclosure.toEnd();
+    const debugRow = new Setting(containerEl).setName("Debug mode");
+    const debugDef = this.debugModeDefinition();
+    if (typeof debugDef.desc === "string") debugRow.setDesc(debugDef.desc);
+    debugDef.render?.(debugRow);
   }
 }

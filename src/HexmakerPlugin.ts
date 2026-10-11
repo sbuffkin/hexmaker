@@ -45,10 +45,9 @@ import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, sectionKindFor, sectionWordsFor, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
-import { enableFeature, hasFeature, resolveFeatureLevel, shouldNudge, type AdvancedFeature, type FeatureLevel } from "./featureLevel";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
-import { AdvancedNudgeModal, EnableFeatureModal } from "./advancedHints";
 import { mapAncestors } from "./hex-map/submapNav";
+import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import {
   getPreset,
   presetToPalette,
@@ -209,14 +208,6 @@ export default class HexmakerPlugin extends Plugin {
       TableStore.register(this);
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
-      } else if (shouldNudge(this.settings, this.settings.maps.length)) {
-        // A Simple user who's been at it a while: offer Advanced, once.
-        this.settings.advancedNudgeAt = new Date().toISOString().slice(0, 10);
-        // Saved once the map notes are loaded: a save before that writes
-        // every map's (empty) path list back into data.json, though the
-        // paths live in the map notes (smoke suite C5).
-        void storesReady.then(() => this.saveSettings());
-        new AdvancedNudgeModal(this.app, this).open();
       } else {
         // Once after updating: offer roll ranges for older tables (asks
         // first). After the stores load, for the same reason.
@@ -328,7 +319,7 @@ export default class HexmakerPlugin extends Plugin {
       id: "edit-world-types",
       name: "Edit world types…",
       checkCallback: (checking) => {
-        if (!hasFeature(this.settings, "generators") || !enabledKinds(this.settings).has("space")) return false;
+        if (!enabledKinds(this.settings).has("space")) return false;
         if (!checking) {
           const open = this.app.workspace.getActiveViewOfType(HexMapView);
           new WorldTypesModal(this.app, this, open?.activeMapName).open();
@@ -340,7 +331,7 @@ export default class HexmakerPlugin extends Plugin {
       id: "convert-world-types",
       name: "Convert world types to tables",
       checkCallback: (checking) => {
-        if (!hasFeature(this.settings, "generators") || !this.worldTypeStore.list().some((t) => !this.worldTypeStore.isConverted(t.name))) return false;
+        if (!this.worldTypeStore.list().some((t) => !this.worldTypeStore.isConverted(t.name))) return false;
         if (!checking) void this.convertWorldTypes();
         return true;
       },
@@ -348,11 +339,7 @@ export default class HexmakerPlugin extends Plugin {
     this.addCommand({
       id: "new-overworld",
       name: "New overworld…",
-      checkCallback: (checking) => {
-        if (!hasFeature(this.settings, "regions")) return false;
-        if (!checking) this.openNewOverworld();
-        return true;
-      },
+      callback: () => this.openNewOverworld(),
     });
     this.addCommand({
       id: "map-go-up",
@@ -519,6 +506,16 @@ export default class HexmakerPlugin extends Plugin {
       }),
     );
     this.addSettingTab(new HexmakerSettingTab(this.app, this));
+    // Debug mode (per device, src/ui/debugMode.ts): "Debug" in the status
+    // bar while it's on; clicking it turns it off. Pages with a Debug
+    // subsection re-render when it changes.
+    this.syncDebugStatus(isDebugMode(this.app));
+    this.register(onDebugModeChange((on) => {
+      this.syncDebugStatus(on);
+      for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)) {
+        if (leaf.view instanceof GeneratorView) leaf.view.refresh();
+      }
+    }));
 
     // Register the embedded roller code block processor
     registerRollerBlock(this);
@@ -724,11 +721,6 @@ export default class HexmakerPlugin extends Plugin {
    * generator (the page says which biomes use it).
    */
   async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string } = {}): Promise<void> {
-    // An Advanced feature: in Simple, offer to turn it on first.
-    if (!hasFeature(this.settings, "generators")) {
-      new EnableFeatureModal(this.app, this, "generators", () => void this.openTerrainGenerator(select)).open();
-      return;
-    }
     if (select.mapName) GeneratorPanel.mapName = select.mapName;
     if (select.paletteName) GeneratorPanel.paletteName = select.paletteName;
     if (select.generatorPath) {
@@ -754,7 +746,18 @@ export default class HexmakerPlugin extends Plugin {
 
   /** "New overworld…": a World biomes map with its region settings (and its regions). */
   openNewOverworld(): void {
-    new NewOverworldModal(this.app, this, (name) => void this.showMap(name)).open();
+    // The form picks biomes from the notes: the shipped ones go in first (DJ-Q4).
+    void this.ensureOverworldBiomes().then(() => new NewOverworldModal(this.app, this, (name) => void this.showMap(name)).open());
+  }
+
+  /**
+   * DJ-Q4: the shipped biome notes are written when the first overworld or
+   * region is made (New overworld, a map given region settings, a region
+   * created), not on start-up. Each is written once and never over a note,
+   * so a deleted one stays deleted; later calls only top up new shipped ones.
+   */
+  async ensureOverworldBiomes(): Promise<void> {
+    await this.biomeStore.seedShipped(true);
   }
 
   /**
@@ -860,24 +863,15 @@ export default class HexmakerPlugin extends Plugin {
     // already; a fresh install writes none until its setup picks the types.
     // Setup over without a pick: inferred, nothing installed (saved with the next save).
     this.settings.kindContent = inferKindContent({ ...this.settings, kindContent: resolveKindContent(rawData, this.settings.mapKinds) });
-    // Feature level, also from the raw data: an install that already had
-    // settings (an update) gets Advanced so nothing it used disappears; a
-    // fresh one starts Simple. Saved right away, so the next load doesn't
-    // mistake a fresh install's first save for an update.
-    this.settings.featureLevel = resolveFeatureLevel(rawData);
-    this.settings.advancedFeatures = Array.isArray(data["advancedFeatures"]) ? (data["advancedFeatures"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
-    this.settings.dismissedHints = Array.isArray(data["dismissedHints"]) ? (data["dismissedHints"] as unknown[]).filter((f): f is string => typeof f === "string") : [];
-    const firstLevel = rawData?.["featureLevel"] === undefined;
-    if (!this.settings.installedAt) this.settings.installedAt = new Date().toISOString().slice(0, 10);
     // New maps default to Expanded on fresh installs only (GEN1): decided
-    // once from the raw data, like the level, and saved with it.
+    // once from the raw data, and saved with it.
     this.settings.expandedByDefault = resolveExpandedDefault(rawData);
     const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
     // "Palette for new maps": seeded once from the above, then the user's.
     this.settings.defaultPalette = resolveDefaultPalette(rawData);
     const firstDefaultPalette = typeof rawData?.["defaultPalette"] !== "string";
     const firstKindContent = rawData?.["kindContent"] === undefined;
-    if (firstKindContent || firstLevel || firstExpanded || firstDefaultPalette || !rawData?.["installedAt"]) await this.saveData(this.settings);
+    if (firstKindContent || firstExpanded || firstDefaultPalette) await this.saveData(this.settings);
   }
 
   /**
@@ -992,11 +986,6 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Open (or focus) the palette editor page, optionally on one palette. */
   async openPaletteEditor(paletteName?: string): Promise<void> {
-    // An Advanced feature: in Simple, offer to turn it on first.
-    if (!hasFeature(this.settings, "palettes")) {
-      new EnableFeatureModal(this.app, this, "palettes", () => void this.openPaletteEditor(paletteName)).open();
-      return;
-    }
     if (paletteName) PaletteEditorView.paletteName = paletteName;
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_PALETTE_EDITOR)[0];
     if (existing) {
@@ -1014,63 +1003,29 @@ export default class HexmakerPlugin extends Plugin {
     }
   }
 
+  /** The status-bar "Debug" item, while debug mode is on. */
+  private debugStatusEl: HTMLElement | null = null;
+
+  private syncDebugStatus(on: boolean): void {
+    if (on && !this.debugStatusEl) {
+      const el = this.addStatusBarItem();
+      el.addClass("mod-clickable", "duckmage-debug-status");
+      el.setText("Debug");
+      el.setAttr("aria-label", "Hexmaker debug mode is on. Click to turn it off.");
+      el.setAttr("data-tooltip-position", "top");
+      el.addEventListener("click", () => setDebugMode(this.app, false));
+      this.debugStatusEl = el;
+    } else if (!on && this.debugStatusEl) {
+      this.debugStatusEl.remove();
+      this.debugStatusEl = null;
+    }
+  }
+
   /**
    * Map types turned on/off (settings, setup wizard): reload the icon
    * pickers and re-render open pages that list palettes or generators so
    * the change shows at once. Modals read the setting when they open.
    */
-  /** Switch between Simple and Advanced (settings, wizard, hints). */
-  async setFeatureLevel(level: FeatureLevel): Promise<void> {
-    this.settings.featureLevel = level;
-    await this.saveSettings();
-    await this.biomesForOverworlds();
-    this.onFeaturesChanged();
-  }
-
-  /** Turn on one Advanced feature while in Simple (see enableFeature). */
-  async enableAdvancedFeature(f: AdvancedFeature): Promise<void> {
-    enableFeature(this.settings, f);
-    await this.saveSettings();
-    await this.biomesForOverworlds();
-    this.onFeaturesChanged();
-  }
-
-  /** Overworlds need biomes: the shipped ones (of map types that are on) once Regions and overworlds is on. */
-  private async biomesForOverworlds(): Promise<void> {
-    if (hasFeature(this.settings, "regions")) await this.biomeStore.seedShipped();
-  }
-
-  /** Turn off one Advanced feature that was turned on by itself (Simple only). */
-  async disableAdvancedFeature(f: AdvancedFeature): Promise<void> {
-    this.settings.advancedFeatures = this.settings.advancedFeatures.filter((x) => x !== f);
-    await this.saveSettings();
-    this.onFeaturesChanged();
-  }
-
-  /** Open modals that show or hide features (see onFeatureChange). */
-  private featureListeners = new Set<() => void>();
-
-  /**
-   * Re-render when the feature level or an Advanced feature changes, e.g. a
-   * modal whose hint turned one on. Returns the unsubscribe; call it on close.
-   */
-  onFeatureChange(fn: () => void): () => void {
-    this.featureListeners.add(fn);
-    return () => this.featureListeners.delete(fn);
-  }
-
-  /**
-   * Feature level or an Advanced feature changed: re-render open pages and
-   * modals that show or hide features.
-   */
-  onFeaturesChanged(): void {
-    this.onMapKindsChanged();
-    for (const fn of [...this.featureListeners]) fn();
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES)) {
-      if (leaf.view instanceof RandomTableView) leaf.view.refreshFeatures();
-    }
-  }
-
   onMapKindsChanged(): void {
     this.loadAvailableIcons();
     this.refreshPaletteEditors();
@@ -2738,8 +2693,11 @@ export default class HexmakerPlugin extends Plugin {
     const map = this.getMap(mapName);
     if (!map) return;
     const locked = regionsLocked(this.settings.maps, mapName);
+    const first = !map.regions;
     map.regions = map.regions ? applyRegionSettingsEdit(map.regions, next, locked) : next;
     await this.saveSettings();
+    // The first overworld: its biomes need the shipped biome notes (DJ-Q4).
+    if (first) await this.ensureOverworldBiomes();
   }
 
   /**

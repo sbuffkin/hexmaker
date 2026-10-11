@@ -9,7 +9,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { contentFolder } from "../notePickers";
-import { hasFeature } from "../featureLevel";
 import { ENGINE_ROLES, type RoleId } from "../worldgen/tableRoles";
 import { fittingRoleTables } from "../worldgen/tableSources";
 import { SPACE_TABLES_FOLDER } from "../space/spaceTables";
@@ -52,7 +51,7 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
   const own = map.roleTables ?? {};
   const inherited = plugin.roleTablesFor(map.name);
   const anySet = Object.keys(inherited).length > 0;
-  if (!anySet && (!plugin.isSpaceMap(map.name) || !hasFeature(plugin.settings, "generators"))) return;
+  if (!anySet && !plugin.isSpaceMap(map.name)) return;
 
   el.createEl("h4", { text: "Generator tables" });
   el.createDiv({

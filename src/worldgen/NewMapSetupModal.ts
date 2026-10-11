@@ -7,8 +7,6 @@ import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
-import { hasFeature } from "../featureLevel";
-import { renderAdvancedHints } from "../advancedHints";
 import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
@@ -115,7 +113,6 @@ export class NewMapSetupModal extends HexmakerModal {
   /** "Use for new submaps of <terrain> hexes" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
   private stopKeepInViewport?: () => void;
-  private stopFeatureChange?: () => void;
   /** The neighbours' terrain just past the new map's edges (faded in the preview). */
   private shadow: Map<string, string> | undefined;
   /** Set once the user clicks a generator card: placement then stops re-picking one. */
@@ -201,15 +198,12 @@ export class NewMapSetupModal extends HexmakerModal {
       this.ledgers = used;
       this.kinds = kinds;
       this.render();
-      // A hint here can turn a feature on: show what it brings straight away.
-      this.stopFeatureChange = this.plugin.onFeatureChange(() => this.render());
     });
     this.contentEl.createDiv({ cls: "duckmage-setup-loading", text: "Loading generators…" });
   }
 
   onClose(): void {
     this.stopKeepInViewport?.();
-    this.stopFeatureChange?.();
     this.contentEl.empty();
   }
 
@@ -332,11 +326,10 @@ export class NewMapSetupModal extends HexmakerModal {
     // ── Next to (new top-level maps): join a world of neighbouring regions.
     // Size, palette, offset and stagger then follow the neighbour; terrain
     // and roads continue across the borders.
-    // An Advanced feature (the More options hint under Generator offers it in Simple).
     let applyPrefill: (() => void) | undefined;
     /** Set by the "More" section below: placement locks its fields. */
     let lockMore: ((locked: boolean) => void) | undefined;
-    if (!this.origin && this.plugin.settings.maps.length > 0 && hasFeature(this.plugin.settings, "regions")) {
+    if (!this.origin && this.plugin.settings.maps.length > 0) {
       const nextRow = this.row(form, "Next to");
       const anchorSel = this.labelled(nextRow, nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } }));
       anchorSel.createEl("option", { value: "", text: "— none (stand-alone) —" });
@@ -413,14 +406,6 @@ export class NewMapSetupModal extends HexmakerModal {
     genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
     this.rememberBox(genRow, "generator", "generator and its options");
-    // Simple shows Blank, the starter generators and Space ones; one hint
-    // offers the rest, and placing the map next to another.
-    renderAdvancedHints(form, this.plugin, [
-      { feature: "generators", text: "Generate terrain for you: learned from maps you've painted, or from biome presets." },
-      ...(!this.origin && this.plugin.settings.maps.length > 0
-        ? [{ feature: "regions" as const, text: "Place this map next to an existing one so they join into one world." }]
-        : []),
-    ], "new-map-setup-more");
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
 
     // ── Base terrain ──
@@ -534,7 +519,6 @@ export class NewMapSetupModal extends HexmakerModal {
     const actions = contentEl.createDiv({ cls: "duckmage-setup-actions" });
     const goBtn = actions.createEl("button", { cls: "mod-cta" });
     const genBtn = actions.createEl("button", { text: "Open in generator", attr: { title: "Create the map blank and open the generator view on it to tune generation by hand" } });
-    if (!hasFeature(this.plugin.settings, "generators")) genBtn.hide();
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
     const renderGenerators = () => {
@@ -650,7 +634,7 @@ export class NewMapSetupModal extends HexmakerModal {
       }
       // Space generators: the worlds they place come from a world types table
       // (the World types option picks it; this edits it).
-      if (kind && (kind.id === STAR_SCATTER_ID || kind.id === ORBITS_ID) && hasFeature(this.plugin.settings, "generators")) {
+      if (kind && (kind.id === STAR_SCATTER_ID || kind.id === ORBITS_ID)) {
         const r = worldTypesRow ?? this.row(optsBox, "World types");
         const btn = r.createEl("button", { text: "Edit world types…" });
         btn.addEventListener("click", () => {

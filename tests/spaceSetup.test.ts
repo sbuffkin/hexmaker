@@ -82,13 +82,12 @@ describe("what a setup installs follows the map types picked (SP3)", () => {
 		expect(plan.remove).toEqual([]);
 	});
 
-	it("biome notes: never for a type that's off; else when asked, for overworlds, or to top up", () => {
-		expect(biomeSeedingOn({ mapKinds: ["space"], featureLevel: "advanced" }, "world", true)).toBe(false);
-		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple" }, "world")).toBe(false);
-		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple" }, "world", true)).toBe(true);
-		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "advanced" }, "world")).toBe(true);
-		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple", advancedFeatures: ["regions"] }, "world")).toBe(true);
-		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple", biomesSeeded: ["tundra"] }, "world")).toBe(true);
+	it("biome notes: never for a type that's off; else when asked (first overworld or region, DJ-Q4) or to top up", () => {
+		expect(biomeSeedingOn({ mapKinds: ["space"] }, "world", true)).toBe(false);
+		// Not on start-up by themselves: a world vault gets none until it asks.
+		expect(biomeSeedingOn({ mapKinds: ["world"] }, "world")).toBe(false);
+		expect(biomeSeedingOn({ mapKinds: ["world"] }, "world", true)).toBe(true);
+		expect(biomeSeedingOn({ mapKinds: ["world"], biomesSeeded: ["tundra"] }, "world")).toBe(true);
 	});
 
 	it("a vault set up without a pick (recipe, Don't show again, custom or deleted palettes) is recorded, nothing installed", () => {
@@ -111,7 +110,7 @@ describe("what a setup installs follows the map types picked (SP3)", () => {
 		expect(resolveKindContent(null, ["world"])).toBeNull();
 		expect(resolveKindContent({}, ["world"])).toBeNull();
 		// A fresh install's first save keeps it undecided across a restart.
-		expect(resolveKindContent({ featureLevel: "simple", kindContent: null }, ["world"])).toBeNull();
+		expect(resolveKindContent({ setupComplete: false, kindContent: null }, ["world"])).toBeNull();
 		expect(resolveKindContent({ maps: [] }, ["world", "space"])).toEqual(["world", "space"]);
 		expect(resolveKindContent({ kindContent: ["space"] }, ["world"])).toEqual(["space"]);
 	});

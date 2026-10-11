@@ -144,6 +144,8 @@ describe("walkIntoHex: making the next region", () => {
 				made.push({ name: slug, cols, rows, cells });
 				return { name: slug };
 			},
+			// The first region writes the shipped biome notes (DJ-Q4); nothing to write here.
+			ensureOverworldBiomes: async () => {},
 			linkRegion: async () => true,
 		};
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any

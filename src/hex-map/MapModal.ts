@@ -19,8 +19,6 @@ import {
   linkRegions,
   regionNeighbours,
 } from "../worldgen/neighbours";
-import { hasFeature } from "../featureLevel";
-import { renderAdvancedHint, withFeature } from "../advancedHints";
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
 import { openMakeGenerator } from "./MakeGeneratorModal";
@@ -72,7 +70,6 @@ export function renderMissingActions(el: HTMLElement, plugin: HexmakerPlugin, na
 export class MapModal extends HexmakerModal {
   private confirmingDelete: string | null = null;
   private stopKeepInViewport?: () => void;
-  private stopFeatureChange?: () => void;
   private activeTab: ModalTab = "Maps";
 
   constructor(
@@ -91,8 +88,6 @@ export class MapModal extends HexmakerModal {
     // moves up as a tab grows (fresh-eyes r4: Export ran off the bottom).
     this.modalEl.addClass("duckmage-map-modal");
     this.stopKeepInViewport = this.keepInViewport();
-    // A hint here can turn a feature on: show what it brings straight away.
-    this.stopFeatureChange = this.plugin.onFeatureChange(() => this.render());
     this.render();
   }
 
@@ -103,9 +98,8 @@ export class MapModal extends HexmakerModal {
 
     // Tab bar
     const tabBar = contentEl.createDiv({ cls: "duckmage-rt-mode-tabs duckmage-map-modal-tabs" });
-    // Regions: shown once the map has region settings, or Regions are on.
     const active = this.plugin.getMap(this.view.activeMapName);
-    const showRegions = !!active && (!!active.regions || hasFeature(this.plugin.settings, "regions"));
+    const showRegions = !!active;
     const tabNames: ModalTab[] = showRegions ? ["Maps", "Properties", "Regions", "Export"] : ["Maps", "Properties", "Export"];
     if (!tabNames.includes(this.activeTab)) this.activeTab = "Maps";
 
@@ -128,13 +122,11 @@ export class MapModal extends HexmakerModal {
       if (tab === "Properties") {
         tabBar.createEl("button", { text: "New map…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn" })
           .addEventListener("click", () => this.openNewMap());
-        if (hasFeature(this.plugin.settings, "regions")) {
-          tabBar.createEl("button", { text: "New overworld…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn", attr: { title: "A map of biomes whose hexes open into regions that join up" } })
-            .addEventListener("click", () => {
-              this.close();
-              this.plugin.openNewOverworld();
-            });
-        }
+        tabBar.createEl("button", { text: "New overworld…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn", attr: { title: "A map of biomes whose hexes open into regions that join up" } })
+          .addEventListener("click", () => {
+            this.close();
+            this.plugin.openNewOverworld();
+          });
       }
       btn.addEventListener("click", () => {
         this.activeTab = tab;
@@ -169,9 +161,9 @@ export class MapModal extends HexmakerModal {
     });
     if (!map.regions) {
       const btn = el.createEl("button", { text: "Set up regions…" });
-      btn.addEventListener("click", () => withFeature(this.plugin, "regions", () => {
+      btn.addEventListener("click", () => {
         new RegionSettingsModal(this.app, this.plugin, map.name, () => this.render()).open();
-      }));
+      });
       return;
     }
     const regions = regionsOf(this.plugin.settings.maps, map.name);
@@ -699,12 +691,6 @@ export class MapModal extends HexmakerModal {
       });
       return;
     }
-    // An Advanced feature; a map that's already linked keeps showing its links.
-    if (!hasFeature(this.plugin.settings, "regions") && !map.world) {
-      renderAdvancedHint(el, this.plugin, "regions", "map-properties",
-        "Join this map edge to edge with others into one big world, and walk from one into the next: neighbouring regions.");
-      return;
-    }
     el.createEl("h4", { text: "Neighbouring regions" });
     el.createEl("p", {
       text: "Regions next to each other share one grid: walking off this map's edge (or the hex flower) leads into them. They must be the same size and use the same palette.",
@@ -924,7 +910,6 @@ export class MapModal extends HexmakerModal {
 
   onClose(): void {
     this.stopKeepInViewport?.();
-    this.stopFeatureChange?.();
     this.contentEl.empty();
   }
 }

@@ -123,9 +123,10 @@ describe("Run workflow from a hex (PA2)", () => {
     expect(sectionText(out, "landmark")).toBe("");
   });
 
-  it("the hex editor offers it only with workflows on, and passes this hex as the target", () => {
+  it("the hex editor always offers it (no feature switch), and passes this hex as the target", () => {
     const src = readFileSync("src/hex-map/HexEditorModal.ts", "utf8");
-    expect(src).toMatch(/hasFeature\(this\.plugin\.settings, "workflows"\)[\s\S]{0,200}Run workflow/);
+    expect(src).toContain('text: "Run workflow"');
+    expect(src).not.toMatch(/hasFeature|withFeature/);
     expect(src).toContain("new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget(");
     const wizard = readFileSync("src/random-tables/WorkflowWizardModal.ts", "utf8");
     expect(wizard).toContain("renderAddToHex(resultBtns, this.hexTarget");

@@ -53,8 +53,6 @@ import { WalkRegionModal } from "../worldgen/WalkRegionModal";
 import { regionHome, walkLock } from "../overworld/regionsVault";
 import { parentOf } from "../overworld/layout";
 import { flowerPetals, neighbourButton } from "../maps/mapNav";
-import { hasFeature } from "../featureLevel";
-import { withFeature } from "../advancedHints";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
@@ -223,15 +221,13 @@ export class HexEditorModal extends HexmakerModal {
       });
     }
     // Run a workflow for this hex (PA2): its result can be added to a
-    // section here. Workflows are an Advanced feature.
-    if (hasFeature(this.plugin.settings, "workflows")) {
-      const wfLink = titleLeft.createEl("a", {
-        text: "Run workflow",
-        cls: "duckmage-editor-open-link",
-        attr: { title: "Roll a workflow and add the result to this hex" },
-      });
-      wfLink.addEventListener("click", () => this.pickWorkflow());
-    }
+    // section here.
+    const wfLink = titleLeft.createEl("a", {
+      text: "Run workflow",
+      cls: "duckmage-editor-open-link",
+      attr: { title: "Roll a workflow and add the result to this hex" },
+    });
+    wfLink.addEventListener("click", () => this.pickWorkflow());
     this.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
     this.renderMapsStrip(contentEl);
@@ -621,21 +617,15 @@ export class HexEditorModal extends HexmakerModal {
           const side = offMapSide(here, nx, ny);
           tile.addClass("duckmage-neighbor-tile-new");
           tile.removeClass("duckmage-neighbor-tile-offmap");
-          tile.title = hasFeature(this.plugin.settings, "regions")
-            ? `New land to the ${side}…`
-            : `Join a new map to the ${side} (neighbouring regions)…`;
+          tile.title = `New land to the ${side}…`;
           tile.addEventListener("click", () => {
-            // Needs neighbouring regions, and generators to pick a biome;
-            // in Simple each asks to be turned on first.
-            withFeature(this.plugin, "regions", () => withFeature(this.plugin, "generators", () => {
-              new WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
-                const now = this.plugin.getMap(this.mapName);
-                const arrived = now ? resolveHex(this.plugin.settings.maps, now, nx, ny) : null;
-                if (!arrived || arrived.map.name === this.mapName) return;
-                this.close();
-                this.options.onCrossToRegion?.(arrived.map.name, arrived.x, arrived.y);
-              }).open();
-            }));
+            new WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
+              const now = this.plugin.getMap(this.mapName);
+              const arrived = now ? resolveHex(this.plugin.settings.maps, now, nx, ny) : null;
+              if (!arrived || arrived.map.name === this.mapName) return;
+              this.close();
+              this.options.onCrossToRegion?.(arrived.map.name, arrived.x, arrived.y);
+            }).open();
           });
         } else {
           tile.title = "Off map";

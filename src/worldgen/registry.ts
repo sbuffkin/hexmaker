@@ -34,7 +34,6 @@ import {
 } from "./procedural/planetSurface";
 import { generatorMapKind, isGeneratorShown, isSpacePalette, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
-import { hasFeature, type FeatureSettings } from "../featureLevel";
 import { generateConnected, type NewRegion } from "./neighbours";
 import { WORLD_TYPES_KEY, worldTypesOption } from "../space/worldTypesSource";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
@@ -387,8 +386,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
 }
 
 /**
- * A shipped biome / preset generator as a generator kind. World type and
- * outside STARTER_IDS, so Simple doesn't offer it.
+ * A shipped biome / preset generator as a generator kind (World type).
  */
 export function builtinKind(
   plugin: HexmakerPlugin,
@@ -466,26 +464,13 @@ export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">,
  * Generators to offer: those whose map type is on, space ones on a space
  * map (`spaceContext`), and the current/saved choice (`selectedId`).
  */
-/**
- * Generators Simple offers without the generators feature: Blank, the ones
- * a first map starts with, and Region detail, which a submap of a painted
- * hex starts on (submaps are Simple).
- */
-const STARTER_IDS = new Set([BLANK_ID, OVERLAND_ID, STAR_SCATTER_ID, REGION_DETAIL_ID]);
-
 export function visibleKinds(
   kinds: TerrainGeneratorKind[],
-  settings: { mapKinds?: string[] } & FeatureSettings,
+  settings: { mapKinds?: string[] },
   spaceContext: boolean,
   selectedId?: string,
 ): TerrainGeneratorKind[] {
-  return kinds.filter(
-    (k) =>
-      isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId })
-      // Generators are an Advanced feature. Simple still gets the starter
-      // ones (STARTER_IDS), and Space brings its own at either level.
-      && (STARTER_IDS.has(k.id) || k.id === selectedId || k.mapKind === "space" || hasFeature(settings, "generators")),
-  );
+  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
 }
 
 /**
@@ -496,7 +481,7 @@ export function visibleKinds(
  */
 export function newMapGeneratorChoices(
   kinds: TerrainGeneratorKind[],
-  settings: { mapKinds?: string[] } & FeatureSettings,
+  settings: { mapKinds?: string[] },
   terrains: TerrainColor[],
   currentId: string | undefined,
   neighbour: boolean,

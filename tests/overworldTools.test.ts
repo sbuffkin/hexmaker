@@ -101,6 +101,8 @@ function world(mode?: string) {
 			made.push({ name: slug, cells });
 			return { name: slug };
 		},
+		// The first region writes the shipped biome notes (DJ-Q4); nothing to write here.
+		ensureOverworldBiomes: async () => {},
 		linkRegion: async () => true,
 	};
 	/** A region already made on hex (x, y), painted with `terrain`. */

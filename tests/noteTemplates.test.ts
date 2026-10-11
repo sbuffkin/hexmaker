@@ -58,7 +58,7 @@ describe("templates folder (PA3)", () => {
 		// …and say which hex they're in (a Location line, R3).
 		expect(editor).toContain("this.plugin.newLinkedNoteContent(section, name, path)");
 		const picker = readFileSync("src/hex-table/LinkPickerModal.ts", "utf8");
-		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.section, name, this.hexPath)");
+		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.linkSection, name, this.hexPath)");
 	});
 
 	it("the Templates folder setting is in both settings paths", () => {

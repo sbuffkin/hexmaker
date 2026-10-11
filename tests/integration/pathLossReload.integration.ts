@@ -52,8 +52,6 @@ function initialData() {
 	return {
 		hexFolder: "world/hexes",
 		hexOrientation: "flat",
-		featureLevel: "advanced",
-		installedAt: "2026-01-01",
 		expandedByDefault: false,
 		defaultPalette: "Default",
 		maps: [
@@ -66,7 +64,7 @@ function initialData() {
 interface Booted {
 	v: MemVault;
 	plugin: {
-		settings: { maps: MapData[]; dismissedHints?: string[] };
+		settings: { maps: MapData[]; hiddenIcons?: string[] };
 		getMap(name: string): MapData | undefined;
 		loadSettings(): Promise<void>;
 		saveSettings(): Promise<void>;
@@ -137,8 +135,8 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		plugin.loadSettings = async () => { loads++; await load(); };
 		const burst: Promise<void>[] = [plugin.saveSettings(), plugin.saveSettings()];
 		// Another device (or a hand edit) changes data.json: not one of our own writes.
-		const disk = JSON.parse(v.files.get(DATA)!) as { dismissedHints?: string[] };
-		disk.dismissedHints = [...(disk.dismissedHints ?? []), "from-elsewhere"];
+		const disk = JSON.parse(v.files.get(DATA)!) as { hiddenIcons?: string[] };
+		disk.hiddenIcons = [...(disk.hiddenIcons ?? []), "from-elsewhere"];
 		v.files.set(DATA, JSON.stringify(disk, null, 2));
 		burst.push(plugin.onExternalSettingsChange());
 		// The burst goes on while the reload is in flight.
@@ -193,8 +191,8 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		const b = await boot();
 		const { v, plugin } = b;
 		plugin.getMap("coast")!.world = { id: "w3", cx: 0, cy: 0 };
-		const disk = JSON.parse(v.files.get(DATA)!) as { dismissedHints?: string[] };
-		disk.dismissedHints = ["x"];
+		const disk = JSON.parse(v.files.get(DATA)!) as { hiddenIcons?: string[] };
+		disk.hiddenIcons = ["x"];
 		v.files.set(DATA, JSON.stringify(disk, null, 2));
 		await Promise.all([plugin.saveSettings(), plugin.onExternalSettingsChange(), plugin.saveSettings()]);
 		await settle(b);
@@ -236,7 +234,7 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		expect(dataWrites).toBe(0);
 		expect(v.files.get(DATA)).toBe(text);
 		// A real change is still written.
-		again.settings.dismissedHints = ["changed"];
+		again.settings.hiddenIcons = ["changed"];
 		await again.saveSettings();
 		expect(dataWrites).toBe(1);
 	});

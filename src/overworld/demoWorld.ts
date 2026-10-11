@@ -74,14 +74,13 @@ export function overworldSeams(plugin: HexmakerPlugin, overworld: string): DemoW
 }
 
 /**
- * The owner's playtest world: Advanced on, a 19-hex hex-shaped overworld
+ * The owner's playtest world: a 19-hex hex-shaped overworld
  * (World biomes) with 8×8 brick regions, all generated, plus a few
  * location stubs (three on one hex to exercise the Locations list).
  */
 export async function buildDemoWorld(plugin: HexmakerPlugin, opts: { seed?: number } = {}): Promise<DemoWorldReport> {
   const t0 = performance.now();
-  await plugin.enableAdvancedFeature("regions");
-  await plugin.enableAdvancedFeature("generators");
+  await plugin.ensureOverworldBiomes();
   plugin.settings.setupComplete = true;
   await plugin.ensurePaletteInstalled(EXPANDED_PALETTE_NAME);
   const seed = opts.seed ?? 7;
@@ -121,7 +120,7 @@ export async function buildDemoWorld(plugin: HexmakerPlugin, opts: { seed?: numb
 
 /** The bench world: a 10×10 overworld with 8×8 regions (100 regions, 6,400 hexes). */
 export async function buildBenchWorld(plugin: HexmakerPlugin, opts: { seed?: number; side?: number } = {}): Promise<{ name: string; regions: number; hexes: number; msOverworld: number; msRegions: number }> {
-  await plugin.enableAdvancedFeature("regions");
+  await plugin.ensureOverworldBiomes();
   const side = opts.side ?? 10;
   const cells: [number, number][] = [];
   for (let y = 0; y < side; y++) for (let x = 0; x < side; x++) cells.push([x, y]);

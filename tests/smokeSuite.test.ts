@@ -23,7 +23,7 @@ describe("smoke suite: comparison helpers", () => {
 
   it("a restart may only write the one-time settings", () => {
     expect(oneTimeOnly({ a: 1 }, { a: 1, tableRangesPrompt: "done" })).toBe(true);
-    expect(oneTimeOnly({ a: 1 }, { a: 1, advancedNudgeAt: "2026-10-11", tableRangesPrompt: "done" })).toBe(true);
+    expect(oneTimeOnly({ a: 1 }, { a: 1, noteFormatUpgrades: ["NF1"], tableRangesPrompt: "done" })).toBe(true);
     // The churn the suite found: maps' path lists written back on a later start.
     expect(oneTimeOnly({ maps: [{ name: "a" }] }, { maps: [{ name: "a", pathChains: [] }], tableRangesPrompt: "done" })).toBe(false);
     expect(oneTimeOnly({ a: 1 }, { a: 1 })).toBe(false);
@@ -101,7 +101,6 @@ describe("smoke suite findings stay fixed", () => {
   it("C5: startup saves wait for the map notes to load", () => {
     const src = read("src", "HexmakerPlugin.ts");
     expect(src).toMatch(/void storesReady\.then\(\(\) => maybePromptTableRanges\(this\)\);/);
-    expect(src).toMatch(/void storesReady\.then\(\(\) => this\.saveSettings\(\)\);/);
   });
 });
 

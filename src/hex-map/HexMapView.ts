@@ -95,7 +95,6 @@ import { draftsAfterEdit, isApplied } from "../overworld/pathProjection";
 import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets, TERRAIN_IN_BIOMES_HINT } from "../overworld/overworldInput";
 import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
 import type { Side } from "../worldgen/world";
-import { withFeature } from "../advancedHints";
 import { overworldRefreshFor } from "../overworld/overworldChanges";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { neighbourShadow, neighbourSpec } from "../worldgen/neighbours";
@@ -1053,13 +1052,10 @@ export class HexMapView extends ItemView {
    */
   private openWalk(to: Side | OverworldWalk): void {
     const from = this.activeMapName;
-    const open = () => new WalkRegionModal(this.app, this.plugin, from, to, (name) => {
+    new WalkRegionModal(this.app, this.plugin, from, to, (name) => {
       if (this.activeMapName === from) this.navigateToMap(name);
       else this.refreshSideCrumbs();
     }).open();
-    // A side-by-side world picks a terrain generator; an overworld needs neither feature.
-    if (typeof to === "string") withFeature(this.plugin, "regions", () => withFeature(this.plugin, "generators", open));
-    else open();
   }
 
   public switchMapFromModal(name: string): void {

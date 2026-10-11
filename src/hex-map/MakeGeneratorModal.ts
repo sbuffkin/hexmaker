@@ -11,16 +11,10 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { makeRegionGenerator, overwriteTargets, type OverwriteCandidate } from "../worldgen/regionGenerator";
-import { hasFeature } from "../featureLevel";
-import { withFeature } from "../advancedHints";
 import { slugify } from "../utils";
 
-/** Open the dialog (an Advanced feature: in Simple, offers to turn Generators on first). */
+/** Open the "Make generator from this map" dialog. */
 export function openMakeGenerator(app: App, plugin: HexmakerPlugin, mapName: string): void {
-  if (!hasFeature(plugin.settings, "generators")) {
-    withFeature(plugin, "generators", () => openMakeGenerator(app, plugin, mapName));
-    return;
-  }
   new MakeGeneratorModal(app, plugin, mapName).open();
 }
 

@@ -47,7 +47,7 @@ function world(opts: { arrival?: string; seed?: number; mode?: string } = {}) {
 	const p = {
 		app: vault.app(),
 		manifest: { dir: ".obsidian/plugins/hexmaker" },
-		settings: { hexFolder: "world/hexes", worldFolder: "world", tablesFolder: "world/tables", maps, hexOrientation: "flat", staggerOffset: "odd", mapKinds: ["space"], featureLevel: "advanced" } as Record<string, unknown> & { maps: MapData[] },
+		settings: { hexFolder: "world/hexes", worldFolder: "world", tablesFolder: "world/tables", maps, hexOrientation: "flat", staggerOffset: "odd", mapKinds: ["space"] } as Record<string, unknown> & { maps: MapData[] },
 		mapStore: undefined as unknown as MapStore,
 		saves: 0,
 		getMap: (n: string) => maps.find((m) => m.name === n),

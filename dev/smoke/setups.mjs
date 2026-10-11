@@ -1,5 +1,5 @@
 /**
- * The vault setups of the smoke matrix (plan-work-modes §3.1, F1–F10).
+ * The vault setups of the smoke matrix (plan-work-modes §3.1, F1–F9; F10, the Simple-level setup, went with the feature level).
  * Every fixture is built from code into a temp folder, or copied; never the
  * main vault. A setup can:
  *   build(dir)   write seed notes / a data.json into `dir` → { seed?, pluginData? }
@@ -162,7 +162,6 @@ function recipeOverworld(id) {
     const p = window.app.plugins.plugins[id];
     p.settings.setupComplete = true;
     window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
-    await p.setFeatureLevel("advanced");
     const t0 = Date.now();
     while (!p.devTools && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 300));
     if (!p.devTools) throw new Error("devTools missing (sandbox marker?)");
@@ -178,7 +177,6 @@ function recipeNeighbours(id) {
     const p = window.app.plugins.plugins[id];
     p.settings.setupComplete = true;
     window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
-    await p.setFeatureLevel("advanced");
     const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
     const wid = "wsmoke1";
     const names = [];
@@ -248,7 +246,6 @@ function recipeDeleted(id) {
     const p = window.app.plugins.plugins[id];
     p.settings.setupComplete = true;
     window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
-    await p.setFeatureLevel("advanced");
     const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
     const made = [];
     for (const n of ["Gone One", "Gone Two"]) {
@@ -274,7 +271,6 @@ function recipeManyMaps(id) {
     const p = window.app.plugins.plugins[id];
     p.settings.setupComplete = true;
     window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
-    await p.setFeatureLevel("advanced");
     const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
     const made = [];
     const errors = [];
@@ -302,28 +298,6 @@ function recipeManyMaps(id) {
     await p.saveSettings();
     await p.mapStore.flush();
     return { made: made.length, errors };
-  })();
-}
-
-function recipeSimpleMid(id) {
-  return (async () => {
-    const p = window.app.plugins.plugins[id];
-    p.settings.setupComplete = true;
-    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
-    await p.setFeatureLevel("simple");
-    await p.enableAdvancedFeature("workflows");
-    p.settings.dismissedHints = [...new Set([...(p.settings.dismissedHints ?? []), "generators-toolbar", "regions-map-menu"])];
-    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
-    const r = await p.createNewMap("Starter Isle", 10, 8, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
-    if ("error" in r) throw new Error(r.error);
-    const terr = p.getMapPalette(r.name).map((t) => t.name);
-    const cells = [];
-    for (let x = 0; x < 10; x++) for (let y = 0; y < 8; y++) if ((x + 2 * y) % 4 === 0) cells.push([`${x}_${y}`, { terrain: terr[(x + y) % terr.length] }]);
-    p.mapStore.setMany(r.name, cells);
-    p.settings.defaultMap = r.name;
-    await p.saveSettings();
-    await p.mapStore.flush();
-    return { map: r.name, level: p.settings.featureLevel, advancedFeatures: p.settings.advancedFeatures };
   })();
 }
 
@@ -569,26 +543,6 @@ async function manyMapsExtra(ctx) {
   return [{ check: "F9-count", ok: n >= 80, detail: `${n} maps, ${deep} at depth 4, store ready in ${ctx.readyMs} ms` }];
 }
 
-async function simpleMidExtra(ctx) {
-  const st = ctx.state;
-  const out = [];
-  out.push({ check: "F10-level", ok: st.featureLevel === "simple" && st.advancedFeatures.includes("workflows"), detail: `level ${st.featureLevel}, advanced ${JSON.stringify(st.advancedFeatures)}` });
-  out.push({ check: "F10-hints", ok: st.dismissedHints.includes("generators-toolbar"), detail: `dismissed ${JSON.stringify(st.dismissedHints)}` });
-  // The generator page is Advanced: in Simple the command offers to turn it on instead.
-  const r = await ctx.ev((id) => (async () => {
-    const app = window.app;
-    app.commands.executeCommandById(`${id}:open-terrain-generator`);
-    await new Promise((res) => setTimeout(res, 800));
-    const modal = document.querySelectorAll(".modal-container").length;
-    const gen = app.workspace.getLeavesOfType("duckmage-terrain-generator").length;
-    document.querySelectorAll(".modal-container .modal-close-button").forEach((b) => b.click());
-    return { modal, gen };
-  })(), ctx.pluginId);
-  out.push({ check: "F10-gate", ok: r.modal > 0 && r.gen === 0, detail: `generator command: modal ${r.modal}, generator view ${r.gen}` });
-  out.push({ check: "F10-mode-switch", ok: !!ctx.firstOpen?.workModeBtn, detail: `work mode button on the map: ${!!ctx.firstOpen?.workModeBtn}` });
-  return out;
-}
-
 // ── the matrix ────────────────────────────────────────────────────────────
 
 export const SETUPS = [
@@ -604,13 +558,13 @@ export const SETUPS = [
       return { seed: REAL_SEED, pluginData };
     },
     migration: true,
-    expect: { level: "advanced", readyMs: 600_000, openMs: 60_000 },
+    expect: { readyMs: 600_000, openMs: 60_000 },
   },
-  { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { level: "simple", wizard: true }, extra: freshExtra, skipPaint: true },
-  { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: { level: "advanced" } },
+  { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { wizard: true }, extra: freshExtra, skipPaint: true },
+  { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: {} },
   { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra },
-  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, expect: { level: "advanced", openMs: 60_000 }, extra: overworldExtra },
-  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: { level: "advanced" }, extra: neighboursExtra },
+  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, expect: { openMs: 60_000 }, extra: overworldExtra },
+  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra },
   { id: "custom-palette", title: "One custom palette, no default names", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeCustomPalette, expect: {}, extra: customPaletteExtra },
   {
     id: "deleted", title: "Everything deleted (no palettes, path types or map folders)",
@@ -626,9 +580,8 @@ export const SETUPS = [
       data.pathTypes = [];
       fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
     },
-    expect: { level: "advanced" }, extra: deletedExtra, skipModeLocks: true,
+    expect: {}, extra: deletedExtra, skipModeLocks: true,
   },
-  { id: "many-maps", title: "Many maps (80, nested 4 deep, look-alike names)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeManyMaps, expect: { level: "advanced" }, extra: manyMapsExtra },
-  { id: "simple-mid", title: "Simple level, mid-ramp (workflows on, hints dismissed)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSimpleMid, expect: { level: "simple" }, extra: simpleMidExtra },
+  { id: "many-maps", title: "Many maps (80, nested 4 deep, look-alike names)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeManyMaps, expect: {}, extra: manyMapsExtra },
 ];
 

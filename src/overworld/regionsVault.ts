@@ -390,6 +390,8 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
     recordHexBiome(plugin, parentName, hex, biome);
     await plugin.mapStore.flush();
   }
+  // The first region made: the shipped biome notes go in (DJ-Q4; once each).
+  await plugin.ensureOverworldBiomes();
   return res;
 }
 

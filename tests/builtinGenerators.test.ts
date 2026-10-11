@@ -140,12 +140,12 @@ describe("shipped biome / preset generators", () => {
 		for (const model of models.values()) expect(fitBuiltinModel(model, SPACE_SYSTEM_TERRAINS)).toBeUndefined();
 	});
 
-	it("are world generators, hidden in Simple", () => {
+	it("are world generators, shown where world maps are", () => {
 		const kind = builtinKind(plugin, "biome-taiga", "Taiga", "", models.get("biome-taiga")!);
 		expect(kind.id).toBe("builtin:biome-taiga");
 		expect(kind.mapKind).toBe("world");
-		expect(visibleKinds([kind], { mapKinds: ["world"], featureLevel: "simple" }, false)).toEqual([]);
-		expect(visibleKinds([kind], { mapKinds: ["world"], featureLevel: "advanced" }, false)).toEqual([kind]);
+		expect(visibleKinds([kind], { mapKinds: ["world"] }, false)).toEqual([kind]);
+		expect(visibleKinds([kind], { mapKinds: ["space"] }, false)).toEqual([]);
 	});
 });
 

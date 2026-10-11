@@ -44,9 +44,8 @@ import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { BiomePanel } from "./BiomePanel";
-import { hasFeature } from "../featureLevel";
-import { renderAdvancedHint } from "../advancedHints";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
+import { Disclosure } from "../ui/disclosure";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
 import { ConfirmModal } from "./ConfirmModal";
@@ -281,6 +280,15 @@ export class GeneratorPanel {
     const saved = file ? { ...g, file } : null;
     // Controls go into the current section; each section() call starts a new one.
     let el = main;
+    // Recipe extras go in the page's Advanced dropdown, engine tuning in its
+    // Debug subsection (debug mode only): the placement map (src/ui/placement.ts)
+    // says which, by GenPage.<control> id.
+    const disclosure = new Disclosure(this.plugin.app, "GenPage", () => main);
+    const place = (id: string, control: HTMLElement) => disclosure.place(id, control);
+    /** A section whose controls all moved to Advanced or Debug goes. */
+    const dropIfEmpty = (body: HTMLElement) => {
+      if (!body.childElementCount) body.parentElement?.remove();
+    };
     const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
     // One short line; the per-shape breakdown is on hover.
     const byShape = (shape: string) => model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
@@ -624,13 +632,6 @@ export class GeneratorPanel {
     anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
     sideSelect.value = GeneratorPanel.connect?.side ?? "east";
     sideSelect.disabled = !anchorSelect.value;
-    // Neighbouring regions are an Advanced feature: a hint instead in Simple.
-    if (!hasFeature(this.plugin.settings, "regions")) {
-      connectRow.hide();
-      GeneratorPanel.connect = null;
-      renderAdvancedHint(el, this.plugin, "regions", "generator-connect",
-        "Make the new map a neighbour of an existing one, its terrain carrying on across the border: neighbouring regions.");
-    }
     const connectNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
     let connected: NewRegion | null = null;
     if (GeneratorPanel.connect) {
@@ -1010,7 +1011,7 @@ export class GeneratorPanel {
     // Shape
     el = this.section(main, "Shape");
     this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
-    this.slider(el, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v }));
+    place("GenPage.clumping", this.slider(el, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v })));
     if (model.terrains.some((t) => t.shape === "line")) {
       const learnedWidth = Math.max(1, Math.round(Math.max(...model.terrains.filter((t) => t.shape === "line").map((t) => t.width ?? 1))));
       this.slider(el, "Line width", "Thickness of line-shaped terrain, in hexes.", 1, 3, 1, s().lineWidth > 0 ? s().lineWidth : learnedWidth, (v) => save({ lineWidth: v }));
@@ -1018,34 +1019,36 @@ export class GeneratorPanel {
     // Clean-up after generating. Older generators only have one "smoothing"
     // value; the sliders start from what it meant, and any change replaces it.
     const cleanup = cleanupStrengths(s());
-    this.slider(el, "Edge smoothing", "Trim one-hex bumps and notches along the edges of patches. Lone hexes are left alone.", 0, 1, 0.1, cleanup.edges,
-      (v) => save({ edgeSmoothing: v, speckSize: cleanupStrengths(s()).speckSize, smoothing: undefined }));
-    this.slider(el, "Remove small patches", "Fill in patches of this many hexes or fewer with the terrain around them. 0 = keep all.", 0, 6, 1, cleanup.speckSize,
-      (v) => save({ speckSize: v, edgeSmoothing: cleanupStrengths(s()).edges, smoothing: undefined }));
-    this.slider(el, "Keep rare terrain", "Terrains under this share of the example (%) are never smoothed or removed, so the odd rare hex survives.", 0, 20, 1,
-      Math.round(s().keepRare * 100), (v) => save({ keepRare: v / 100 }));
-    this.select(el, "Symmetry", "Mirror the map. Symmetric wherever the rules allow.",
-      SYMMETRIES.map((v) => [v, SYMMETRY_LABELS[v]]), s().symmetry, (v) => save({ symmetry: v }));
-    this.select(el, "Edge style", "What the map border prefers: a terrain of your choice, or the example's border.",
+    place("GenPage.edgeSmoothing", this.slider(el, "Edge smoothing", "Trim one-hex bumps and notches along the edges of patches. Lone hexes are left alone.", 0, 1, 0.1, cleanup.edges,
+      (v) => save({ edgeSmoothing: v, speckSize: cleanupStrengths(s()).speckSize, smoothing: undefined })));
+    place("GenPage.removeSmallPatches", this.slider(el, "Remove small patches", "Fill in patches of this many hexes or fewer with the terrain around them. 0 = keep all.", 0, 6, 1, cleanup.speckSize,
+      (v) => save({ speckSize: v, edgeSmoothing: cleanupStrengths(s()).edges, smoothing: undefined })));
+    place("GenPage.keepRare", this.slider(el, "Keep rare terrain", "Terrains under this share of the example (%) are never smoothed or removed, so the odd rare hex survives.", 0, 20, 1,
+      Math.round(s().keepRare * 100), (v) => save({ keepRare: v / 100 })));
+    place("GenPage.symmetry", this.select(el, "Symmetry", "Mirror the map. Symmetric wherever the rules allow.",
+      SYMMETRIES.map((v) => [v, SYMMETRY_LABELS[v]]), s().symmetry, (v) => save({ symmetry: v })));
+    place("GenPage.edgeStyle", this.select(el, "Edge style", "What the map border prefers: a terrain of your choice, or the example's border.",
       [["", "As in the example"], ...model.terrains.map((t): [string, string] => [t.name, t.name])],
-      s().edgeTerrain, (v) => save({ edgeTerrain: v || undefined }));
-    this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v }));
+      s().edgeTerrain, (v) => save({ edgeTerrain: v || undefined })));
+    place("GenPage.edgeStrength", this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v })));
+    dropIfEmpty(el);
 
     // Placement
     el = this.section(main, "Placement");
-    this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }));
-    this.slider(el, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v }));
+    place("GenPage.directionalBias", this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v })));
+    place("GenPage.scatter", this.slider(el, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v })));
     if (model.terrains.some((t) => t.shape === "scatter")) {
-      this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v }));
+      place("GenPage.spacing", this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v })));
     }
-    this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v }));
+    place("GenPage.randomness", this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v })));
+    dropIfEmpty(el);
 
     // Guarantees
     el = this.section(main, "Guarantees");
     if (model.features?.length) {
-      this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v }));
+      place("GenPage.guaranteedFeatures", this.toggle(el, "Guaranteed features", "Always place the example's anchored terrain lines (such as a river painted as terrain). Drawn paths have their own section below.", s().features, (v) => save({ features: v })));
     }
-    this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v }));
+    place("GenPage.connectedLand", this.toggle(el, "Connected land", "Fill cut-off pockets so every passable hex connects.", s().connected, (v) => save({ connected: v })));
     const impassableBox = el.createDiv();
     const hintBox = el.createDiv({ cls: "duckmage-wfc-hint" });
     // Terrain the learned paths go around, offered to add (never added for you).
@@ -1173,7 +1176,7 @@ export class GeneratorPanel {
       });
     }
 
-    this.slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v }));
+    place("GenPage.mixStrength", this.slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v })));
 
     // Paths: one row per learned route (type + what its ends connect to)
     if (model.paths?.length) {
@@ -1400,7 +1403,8 @@ export class GeneratorPanel {
       refreshGroups();
     }
 
-
+    // The Advanced dropdown (if anything went in it) after every section.
+    disclosure.toEnd();
     schedulePreview();
   }
 
@@ -1444,9 +1448,11 @@ export class GeneratorPanel {
     step: number,
     value: number,
     onChange: (v: number) => void,
-  ): void {
-    const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
-    const row = el.createDiv({ cls: "duckmage-region-row" });
+  ): HTMLElement {
+    // One box per control, so the placement map can move it as a whole.
+    const box = el.createDiv({ cls: "duckmage-wfc-control" });
+    const labelEl = box.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const row = box.createDiv({ cls: "duckmage-region-row" });
     const input = row.createEl("input", { type: "range" });
     linkLabel(labelEl, input);
     input.min = String(min);
@@ -1454,9 +1460,10 @@ export class GeneratorPanel {
     input.step = String(step);
     input.value = String(value);
     const valueEl = row.createSpan({ text: String(value) });
-    el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
+    box.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
     input.addEventListener("input", () => valueEl.setText(input.value));
     input.addEventListener("change", () => onChange(Number(input.value)));
+    return box;
   }
 
   private select<T extends string>(
@@ -1466,23 +1473,27 @@ export class GeneratorPanel {
     options: [T, string][],
     value: T,
     onChange: (v: T) => void,
-  ): void {
-    const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
-    const sel = el.createDiv({ cls: "duckmage-region-row" }).createEl("select");
+  ): HTMLElement {
+    const box = el.createDiv({ cls: "duckmage-wfc-control" });
+    const labelEl = box.createEl("label", { text: label, cls: "duckmage-map-field-label" });
+    const sel = box.createDiv({ cls: "duckmage-region-row" }).createEl("select");
     linkLabel(labelEl, sel);
     for (const [v, text] of options) sel.createEl("option", { value: v, text });
     sel.value = value;
-    el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
+    box.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
     sel.addEventListener("change", () => onChange(sel.value as T));
+    return box;
   }
 
-  private toggle(el: HTMLElement, label: string, hint: string, value: boolean, onChange: (v: boolean) => void): void {
-    const row = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
+  private toggle(el: HTMLElement, label: string, hint: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
+    const box = el.createDiv({ cls: "duckmage-wfc-control" });
+    const row = box.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
     const cb = row.createEl("input", { type: "checkbox" });
     cb.checked = value;
     row.createSpan({ text: label });
-    if (hint) el.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
+    if (hint) box.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
     cb.addEventListener("change", () => onChange(cb.checked));
+    return box;
   }
   /**
    * Searchable terrain list: type to filter, click a match to add it; added
