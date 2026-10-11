@@ -71,7 +71,7 @@ import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
-import { lockedHint, workModeOf } from "./workMode";
+import { workModeOf } from "./workMode";
 import { withMapLink } from "./maps/mapNote";
 import {
   addLocationPatch,
@@ -84,11 +84,11 @@ import {
   setRegionPatch,
 } from "./maps/submaps";
 import type { RegionSettings } from "./types";
-import { mapDataLines, mapDataSyncMessage, planCalloutImport, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
+import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
+import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
 import { hexBiomeAt, overworldOf } from "./overworld/regionsVault";
 import { BIOMES, biomeNoteOf } from "./overworld/biomes";
-import { sameName } from "./hexBodyFields";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
@@ -1976,62 +1976,8 @@ export default class HexmakerPlugin extends Plugin {
    */
   async syncHexMapData(
     mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {},
-  ): Promise<{ wrote: boolean; applied: string[]; notApplied: string[]; unreadable: string[] }> {
-    const out = { wrote: false, applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
-    const path = this.hexPath(x, y, mapName);
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) return out;
-    await this.calloutMemory.ready();
-    // Read first: most notes need nothing, and a no-op process() still writes.
-    const current = await this.app.vault.read(file);
-    const now = () => shownValues(mapDataLines(this.hexMapDataView(mapName, x, y)));
-    const plan = planCalloutImport(current, this.calloutMemory.get(path), now());
-    // No callout and none to add: nothing to do.
-    if (!plan && !opts.insert) return out;
-    if (plan) {
-      out.notApplied.push(...plan.notApplied);
-      out.unreadable.push(...plan.unreadable);
-      const edits = Object.entries(plan.apply) as [keyof typeof plan.apply, string | null][];
-      if (edits.length) {
-        await this.undoableEdit(mapName, async () => {
-          const key = `${x}_${y}`;
-          for (const [field, value] of edits) {
-            const shown = `${field[0].toUpperCase()}${field.slice(1)}: ${value ?? "—"}`;
-            if (field === "name") {
-              await this.setHexName(mapName, x, y, value ?? "");
-              out.applied.push(shown);
-            } else if (field === "terrain") {
-              // A terrain must be one the map's palette has (matched ignoring case).
-              const terrain = value === null ? null : this.getMapPalette(mapName).find((t) => sameName(t.name, value))?.name;
-              if (terrain === undefined) { out.notApplied.push(`${shown} (not in this map's palette)`); continue; }
-              if (!this.mapStore.set(mapName, key, { terrain }, "paint-terrain")) { out.notApplied.push(`${shown} (${lockedHint("paint-terrain")})`); continue; }
-              await this.syncHexEncounterTableLink(path, terrain);
-              out.applied.push(shown);
-            } else {
-              if (!this.mapStore.set(mapName, key, { region: value }, "paint-region-area")) { out.notApplied.push(`${shown} (${lockedHint("paint-region-area")})`); continue; }
-              out.applied.push(shown);
-            }
-          }
-        });
-      }
-    }
-    const view = this.hexMapDataView(mapName, x, y);
-    const notes = [...out.notApplied.map((s) => `Not applied: ${s}`), ...out.unreadable.map((s) => `Not read: ${s}`)];
-    const latest = await this.app.vault.read(file);
-    if (setMapData(latest, view, opts.insert, notes) !== latest) {
-      await this.app.vault.process(file, (content) => {
-        const next = setMapData(content, view, opts.insert, notes);
-        out.wrote = next !== content;
-        return next;
-      });
-    }
-    // Remember what the callout shows now, so the next edit is told from a stale copy.
-    if (plan || opts.insert) this.calloutMemory.set(path, now());
-    if (!opts.quiet) {
-      const msg = mapDataSyncMessage(`${this.mapLabel(mapName)} ${x}, ${y}`, out);
-      if (msg) new Notice(msg, 8000);
-    }
-    return out;
+  ): Promise<CalloutSyncResult> {
+    return syncHexMapDataWith(this, mapName, x, y, opts);
   }
 
   /** Add (or update) the Map data callout in every hex note of a map. Returns how many notes changed. */
