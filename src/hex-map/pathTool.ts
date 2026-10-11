@@ -1093,6 +1093,8 @@ export class PathTool {
         this.cancelDrawDrag();
         return;
       }
+      // The bar says "drawing" from the first hex, not only after release.
+      this.host.refreshBar();
     }
     d.lastHex = hex;
     // Every hex is taken now (none skipped); the preview redraws once per frame.

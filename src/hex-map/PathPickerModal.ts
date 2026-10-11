@@ -117,7 +117,7 @@ export class PathPickerModal extends HexmakerModal {
         (ar.value
           ? "Click a start, then click far away: the path finds its own way there. Keep clicking to add more." +
             (ar.noImpassable ? " This palette has no impassable terrain yet: mark the terrains paths can't cross (e.g. water) in the palette editor." : "")
-          : "Click neighbouring hexes one by one (a click further away is routed for you).") +
+          : "Click neighbouring hexes one by one, or press and drag across them (a click further away is routed for you).") +
           " Click a path to select it, then drag its line to reshape it.",
       );
       hint.createSpan({ text: " You can switch this while drawing, from the bar at the top." });
