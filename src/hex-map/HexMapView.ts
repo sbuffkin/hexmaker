@@ -655,16 +655,10 @@ export class HexMapView extends ItemView {
       this.app,
       this.plugin,
       undefined,
-      (mapName, created) => {
-        void (async () => {
-          await this.plugin.linkSubmap(parentMap, x, y, mapName);
-          // A freshly made map is where the user wants to be next.
-          if (created && this.activeMapName === parentMap) this.navigateToMap(mapName);
-          else this.renderGrid();
-        })();
+      (mapName) => {
+        void this.plugin.linkSubmap(parentMap, x, y, mapName).then(() => this.renderGrid());
       },
       undefined,
-      { map: parentMap, x, y },
       () => this.openNewLocationSetup(x, y),
       { title: "Link existing map", exclude: [...linked, parentMap] },
     ).open();
@@ -2547,11 +2541,6 @@ export class HexMapView extends ItemView {
         this.isErasingMode = false;
         this.paintTablePath = file.path;
         this.updateToolbarButtonStates();
-      },
-      () => {
-        void this.app.workspace
-          .getLeaf("tab")
-          .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
       },
     ).open();
   }
@@ -4947,11 +4936,6 @@ export class HexMapView extends ItemView {
         "Filter tables…",
         "No tables found.",
         (file) => void this.linkTableToHex(x, y, file),
-        () => {
-          void this.app.workspace
-            .getLeaf("tab")
-            .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-        },
         (file) => void this.openRandomTableAtFile(file),
       ).open();
     });

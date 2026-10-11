@@ -14,6 +14,7 @@ import {
   type ExportLayerKey,
   type MapExportPrefs,
 } from "./exportNames";
+import { Disclosure } from "../ui/disclosure";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -69,6 +70,9 @@ export function renderMapExportForm(
   const prefs: MapExportPrefs = plugin.settings.mapExportPrefs?.[mapName] ?? {};
   const ticks = exportLayerDefaults({ ...map, showLegend: plugin.settings.showTerrainLegend }, prefs);
 
+  // The form's Advanced dropdown, at its end.
+  const disclosure = new Disclosure(plugin.app, "MapExport", () => el);
+
   const hint = el.createEl("p", { cls: "duckmage-export-tab-hint" });
   hint.setText(`Export the map "${plugin.mapLabel(mapName)}". Files go to the export folder and open in a tab; exporting again under the same name replaces the file.`);
 
@@ -121,7 +125,10 @@ export function renderMapExportForm(
     "A key beside the map: the terrains used and the badge kinds.");
   const showFactionOverlay = inlineCheck(layerRow, "Faction overlay", ticks.showFactionOverlay,
     "Tints hexes by faction and lists the faction names: leave off if players shouldn't know them.");
-  const showRegionOverlay = inlineCheck(layerRow, "Region overlay", ticks.showRegionOverlay,
+  // Region overlay is Advanced (placement map): its own row in the dropdown.
+  const regionHost = disclosure.target("MapExport.showRegionOverlay", layerRow);
+  const regionRow = regionHost === layerRow ? layerRow : (regionHost ?? createDiv()).createDiv({ cls: "duckmage-export-inline" });
+  const showRegionOverlay = inlineCheck(regionRow, "Region overlay", regionHost ? ticks.showRegionOverlay : false,
     "Tints hexes by region and labels each region by name.");
   const layerChecks: Record<ExportLayerKey, HTMLInputElement> = {
     showCoords, showIcons, showPaths, showHexNames, showTokens, showLinkBadges, showLegend, showFactionOverlay, showRegionOverlay,
@@ -175,21 +182,6 @@ export function renderMapExportForm(
   for (const input of [nameInput, sizeSelect, boldPaths, ...Object.values(layerChecks)]) {
     input.addEventListener("change", remember);
   }
-
-  // What players would see: the map images never carry GM content.
-  const included = el.createDiv({ cls: "duckmage-export-included" });
-  included.createDiv({ cls: "duckmage-export-included-title", text: "What's in each file" });
-  const list = included.createEl("ul");
-  list.createEl("li", {
-    text: "PNG: the map with what you tick under On the map (the faction and region overlays print their names). " +
-      "Never game master icons, hidden tokens or any note text (description, hidden, secret), so it's safe to hand to players.",
-  });
-  list.createEl("li", {
-    text: "PDF with reference table: that map, then a table per section with the columns you tick (name, linked notes, the start of the description…); no hidden or secret sections.",
-  });
-  list.createEl("li", {
-    text: "Hexcrawl manual: the full game master gazetteer with the parts you tick, hidden and secret sections included, unless you tick the player version.",
-  });
 
   // The exact file names each button writes (shared with the exporters' naming).
   const preview = el.createDiv({ cls: "duckmage-export-tab-preview" });
@@ -265,6 +257,22 @@ export function renderMapExportForm(
     });
     form.onExport?.();
   });
+
+  // What players would see: the map images never carry GM content.
+  const included = el.createDiv({ cls: "duckmage-export-included" });
+  included.createDiv({ cls: "duckmage-export-included-title", text: "What's in each file" });
+  const list = included.createEl("ul");
+  list.createEl("li", {
+    text: "PNG: the map with what you tick under On the map (the faction and region overlays print their names). " +
+      "Never game master icons, hidden tokens or any note text (description, hidden, secret), so it's safe to hand to players.",
+  });
+  list.createEl("li", {
+    text: "PDF with reference table: that map, then a table per section with the columns you tick (name, linked notes, the start of the description…); no hidden or secret sections.",
+  });
+  list.createEl("li", {
+    text: "Hexcrawl manual: the full game master gazetteer with the parts you tick, hidden and secret sections included, unless you tick the player version.",
+  });
+  disclosure.toEnd();
 }
 
 /** "Export current map…": the export form on its own, for any map. */

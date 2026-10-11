@@ -28,6 +28,9 @@ import { ORBITS_ID } from "./procedural/orbits";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
+import { Disclosure } from "../ui/disclosure";
+import { groupId } from "../ui/placeGroup";
+import { newMapOptionId } from "./newMapOptionIds";
 import {
   BLANK_ID,
   defaultGeneratorFor,
@@ -130,6 +133,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private bgPath: string | null = null;
   /** An image dropped from the computer: imported into the new map's _bg folder on create. */
   private bgFile: File | null = null;
+  /** This form's Advanced dropdown (and Debug inside it); made by render(). */
+  private advanced: Disclosure | undefined;
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -217,12 +222,15 @@ export class NewMapSetupModal extends HexmakerModal {
     const form = contentEl.createDiv({ cls: "duckmage-setup-form" });
     const side = contentEl.createDiv({ cls: "duckmage-setup-preview" });
     contentEl.addClass("duckmage-setup-layout");
+    // Advanced dropdown at the end of the form (the preview sits beside it).
+    const disclosure = new Disclosure(this.app, "NewMap", () => form);
+    this.advanced = disclosure;
 
     // Submaps started from saved settings: say what the ticked boxes mean.
     if (this.originTerrain && this.saved && Object.keys(this.saved).length) {
       form.createDiv({
         cls: "setting-item-description duckmage-setup-defaults-note",
-        text: `Started from the saved settings for new submaps of ${this.originTerrain} hexes (the ticked boxes). Untick a box to stop using that setting next time.`,
+        text: `Started from the saved settings for new submaps of ${this.originTerrain} hexes (ticked under Advanced). Untick a box there to stop using that setting next time.`,
       });
     }
 
@@ -267,7 +275,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (fixed && [...paletteSelect.options].some((o) => o.value === fixed)) paletteSelect.value = fixed;
       paletteSelect.disabled = true;
     }
-    this.rememberBox(palRow, "palette");
+    this.rememberBox(palRow, "palette", "NewMap.rememberPalette");
     attachPaletteHint(palRow, paletteSelect);
 
     // ── Size ──
@@ -314,7 +322,7 @@ export class NewMapSetupModal extends HexmakerModal {
         onSize(true);
       });
     }
-    this.rememberBox(sizeRow, "size");
+    this.rememberBox(sizeRow, "size", "NewMap.rememberSize");
     if (this.asRegion) {
       for (const el of [colsInput, rowsInput, ...presetBtns]) el.disabled = true;
       sizeRow.createDiv({
@@ -405,85 +413,72 @@ export class NewMapSetupModal extends HexmakerModal {
     const genLabelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
     genRow.parentElement?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", genLabelId);
     const genList = genRow.createDiv({ cls: "duckmage-setup-generators", attr: { role: "radiogroup", "aria-labelledby": genLabelId } });
-    this.rememberBox(genRow, "generator", "generator and its options");
+    this.rememberBox(genRow, "generator", "NewMap.rememberGenerator", "generator and its options");
     const optsBox = form.createDiv({ cls: "duckmage-setup-options" });
+    /** The chosen generator's Advanced options (inside the Advanced dropdown). */
+    let advOpts: HTMLElement | undefined;
 
     // ── Base terrain ──
     const baseRow = this.row(form, "Base terrain");
     const baseSelect = this.labelled(baseRow, baseRow.createEl("select"));
-    this.rememberBox(baseRow, "base", "base terrain");
+    this.rememberBox(baseRow, "base", "NewMap.rememberBase", "base terrain");
     baseRow.createDiv({
       cls: "setting-item-description",
       text: BASE_TERRAIN_HELP,
     });
 
-    // ── More: folder name; top-level maps also starting coordinates,
-    // stagger, background.
-    const more = form.createEl("details", { cls: "duckmage-setup-more" });
-    more.createEl("summary", {
-      text: this.origin ? "More: folder name" : "More: folder name, starting coordinates, stagger, background image",
-    });
-    const slugRow = this.row(more, "Folder name");
-    slugInput = this.labelled(slugRow, slugRow.createEl("input", { type: "text", cls: "duckmage-setup-slug", value: derivedSlug() }));
-    slugInput.addEventListener("input", () => { slugEdited = true; });
-    slugRow.createDiv({
-      cls: "setting-item-description",
-      text: "The map's folder. Made from the name; change it here or later in Map properties.",
-    });
+    // ── Stagger (top-level maps). Advanced: starting coordinates and a
+    // background image; Debug: the folder name.
+    const slugEl = disclosure.target("NewMap.folderName", form);
+    if (slugEl) {
+      const slugRow = this.row(slugEl, "Folder name");
+      slugInput = this.labelled(slugRow, slugRow.createEl("input", { type: "text", cls: "duckmage-setup-slug", value: derivedSlug() }));
+      slugInput.addEventListener("input", () => { slugEdited = true; });
+      slugRow.createDiv({
+        cls: "setting-item-description",
+        text: "The map's folder. Made from the name.",
+      });
+    }
     if (!this.origin) {
-      const coordRow = this.row(more, "Starting coordinates");
-      const xIn = this.labelled(coordRow, coordRow.createEl("input", { type: "number", value: String(this.originX), cls: "duckmage-setup-coord", attr: { "aria-label": "X" } }));
-      const yIn = coordRow.createEl("input", { type: "number", value: String(this.originY), cls: "duckmage-setup-coord", attr: { "aria-label": "Y" } });
-      coordRow.createDiv({ cls: "setting-item-description", text: "Hex labels and file names start from these values instead of 0, 0." });
-      const onCoord = () => {
-        this.originX = Math.trunc(Number(xIn.value)) || 0;
-        this.originY = Math.trunc(Number(yIn.value)) || 0;
-        refresh();
-      };
-      xIn.addEventListener("change", onCoord);
-      yIn.addEventListener("change", onCoord);
-      const stagRow = this.row(more, "Stagger offset");
-      const stagSel = this.labelled(stagRow, stagRow.createEl("select"));
-      stagSel.createEl("option", { value: "odd", text: "Odd" });
-      stagSel.createEl("option", { value: "even", text: "Even" });
-      stagSel.value = this.stagger;
-      stagSel.addEventListener("change", () => {
-        this.stagger = stagSel.value === "even" ? "even" : "odd";
-        refresh();
-      });
-      const bgRowEl = this.row(more, "Background image");
-      bgRowEl.addClass("duckmage-bg-image-row");
-      const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: "(None) — drop an image here" });
-      const pick = bgRowEl.createEl("button", { text: "Pick image…" });
-      const clear = bgRowEl.createEl("button", { text: "Clear" });
-      clear.disabled = true;
-      pick.addEventListener("click", () => {
-        new FileLinkSuggestModal(this.app, this.plugin, (file) => {
-          this.bgPath = file.path;
-          this.bgFile = null;
-          bgLabel.setText(file.path);
-          clear.disabled = false;
-        }, "", IMAGE_EXTENSIONS).open();
-      });
-      clear.addEventListener("click", () => {
-        this.bgPath = null;
-        this.bgFile = null;
-        bgLabel.setText("(None) — drop an image here");
-        clear.disabled = true;
-      });
-      // An image dragged in from the computer, as in Properties: imported
-      // into the new map's _bg folder when the map is created.
-      attachImageDropZone(bgRowEl, async (file) => {
-        this.bgFile = file;
-        this.bgPath = null;
-        bgLabel.setText(`${file.name} (imported on create)`);
-        clear.disabled = false;
-      });
+      const stagEl = disclosure.target("NewMap.stagger", form);
+      let stagSel: HTMLSelectElement | undefined;
+      if (stagEl) {
+        const stagRow = this.row(stagEl, "Stagger offset");
+        const sel = this.labelled(stagRow, stagRow.createEl("select"));
+        sel.createEl("option", { value: "odd", text: "Odd" });
+        sel.createEl("option", { value: "even", text: "Even" });
+        sel.value = this.stagger;
+        sel.addEventListener("change", () => {
+          this.stagger = sel.value === "even" ? "even" : "odd";
+          refresh();
+        });
+        stagSel = sel;
+      }
+      const coordEl = disclosure.target("NewMap.startCoords", form);
+      let xIn: HTMLInputElement | undefined;
+      let yIn: HTMLInputElement | undefined;
+      if (coordEl) {
+        const coordRow = this.row(coordEl, "Starting coordinates");
+        const x = this.labelled(coordRow, coordRow.createEl("input", { type: "number", value: String(this.originX), cls: "duckmage-setup-coord", attr: { "aria-label": "X" } }));
+        const y = coordRow.createEl("input", { type: "number", value: String(this.originY), cls: "duckmage-setup-coord", attr: { "aria-label": "Y" } });
+        coordRow.createDiv({ cls: "setting-item-description", text: "Hex labels and file names start from these values instead of 0, 0." });
+        const onCoord = () => {
+          this.originX = Math.trunc(Number(x.value)) || 0;
+          this.originY = Math.trunc(Number(y.value)) || 0;
+          refresh();
+        };
+        x.addEventListener("change", onCoord);
+        y.addEventListener("change", onCoord);
+        xIn = x;
+        yIn = y;
+      }
+      const bgEl = disclosure.target(groupId(["NewMap.bgPick", "NewMap.bgClear", "NewMapSetup.backgroundImagePicker"]), form);
+      if (bgEl) this.renderBackgroundRow(bgEl);
       // Next to a map, its neighbour decides the numbering and stagger.
       lockMore = (locked) => {
-        xIn.disabled = locked;
-        yIn.disabled = locked;
-        stagSel.disabled = locked;
+        if (xIn) xIn.disabled = locked;
+        if (yIn) yIn.disabled = locked;
+        if (stagSel) stagSel.disabled = locked;
       };
     }
 
@@ -612,8 +607,22 @@ export class NewMapSetupModal extends HexmakerModal {
         this.seaFromNeighbour = true;
       }
       let worldTypesRow: HTMLElement | undefined;
+      // Advanced options go first in the Advanced dropdown, in their own box.
+      advOpts?.remove();
+      advOpts = undefined;
+      const optionHost = (id: string | undefined): HTMLElement | null => {
+        const at = id ? disclosure.target(id, optsBox) : optsBox;
+        if (!at || at === optsBox) return at;
+        if (!advOpts?.isConnected) {
+          advOpts = at.createDiv({ cls: "duckmage-setup-options" });
+          at.prepend(advOpts);
+        }
+        return advOpts;
+      };
       for (const opt of kind ? kindOptions(kind, terrains, this.plugin.getPathTypes(paletteSelect.value)) : []) {
-        const r = this.row(optsBox, opt.label);
+        const host = optionHost(newMapOptionId(kind?.id ?? "", opt.key));
+        if (!host) continue;
+        const r = this.row(host, opt.label);
         if (opt.key === WORLD_TYPES_KEY) worldTypesRow = r;
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
@@ -734,6 +743,7 @@ export class NewMapSetupModal extends HexmakerModal {
       renderBase();
       refresh();
     }
+    disclosure.toEnd();
     nameInput.focus();
     nameInput.select();
   }
@@ -744,9 +754,12 @@ export class NewMapSetupModal extends HexmakerModal {
    * created and pre-filled next time. Only shown when the submap comes
    * from a hex with a terrain.
    */
-  private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], what: string = key): void {
+  private rememberBox(row: HTMLElement, key: keyof NewMapSetupModal["remember"], id: string, what: string = key): void {
     if (!this.originTerrain || this.asRegion) return;
-    const label = row.createEl("label", {
+    // Where the placement map puts it: the row itself, or the Advanced dropdown.
+    const at = this.advanced?.target(id, row) ?? null;
+    if (!at) return;
+    const label = at.createEl("label", {
       cls: "duckmage-setup-default",
       attr: { title: `Saved when you create this submap, and used to start every new submap of a ${this.originTerrain} hex` },
     });
@@ -754,6 +767,39 @@ export class NewMapSetupModal extends HexmakerModal {
     cb.checked = this.remember[key];
     label.createSpan({ text: `Use this ${what} for new submaps of ${this.originTerrain} hexes` });
     cb.addEventListener("change", () => { this.remember[key] = cb.checked; });
+  }
+
+  /** Background image for a new top-level map: pick, drop or clear (imported on create). */
+  private renderBackgroundRow(parent: HTMLElement): void {
+    const bgRowEl = this.row(parent, "Background image");
+    bgRowEl.addClass("duckmage-bg-image-row");
+    const none = "(None) — drop an image here";
+    const bgLabel = bgRowEl.createSpan({ cls: "duckmage-bg-image-path", text: this.bgFile ? `${this.bgFile.name} (imported on create)` : (this.bgPath ?? none) });
+    const pick = bgRowEl.createEl("button", { text: "Pick image…" });
+    const clear = bgRowEl.createEl("button", { text: "Clear" });
+    clear.disabled = !this.bgPath && !this.bgFile;
+    pick.addEventListener("click", () => {
+      new FileLinkSuggestModal(this.app, this.plugin, (file) => {
+        this.bgPath = file.path;
+        this.bgFile = null;
+        bgLabel.setText(file.path);
+        clear.disabled = false;
+      }, "", IMAGE_EXTENSIONS).open();
+    });
+    clear.addEventListener("click", () => {
+      this.bgPath = null;
+      this.bgFile = null;
+      bgLabel.setText(none);
+      clear.disabled = true;
+    });
+    // An image dragged in from the computer, as in Properties: imported
+    // into the new map's _bg folder when the map is created.
+    attachImageDropZone(bgRowEl, async (file) => {
+      this.bgFile = file;
+      this.bgPath = null;
+      bgLabel.setText(`${file.name} (imported on create)`);
+      clear.disabled = false;
+    });
   }
 
   /** Store (or forget) the ticked choices as this terrain's submap defaults. */

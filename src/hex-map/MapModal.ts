@@ -33,6 +33,10 @@ import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
+import { MenuLayers } from "../ui/menuLayers";
+import { Disclosure } from "../ui/disclosure";
+import { isDebugMode } from "../ui/debugMode";
+import { groupId } from "../ui/placeGroup";
 
 type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
 
@@ -345,8 +349,10 @@ export class MapModal extends HexmakerModal {
         void listGenerators(this.plugin).then((all) => {
           const existing = generatorsForRegion(all, map.name)[0];
           const menu = new Menu();
+          // Generators are Advanced (placement map): an "Advanced ▸" submenu.
+          const layers = new MenuLayers(menu, isDebugMode(this.app));
           if (existing) {
-            menu.addItem((item) =>
+            layers.add("MapModal.mapRowContextGenerator", (item) =>
               item
                 .setTitle(`Open generator "${existing.model.name}"`)
                 .setIcon("wand-sparkles")
@@ -354,7 +360,7 @@ export class MapModal extends HexmakerModal {
             );
           }
           // New, or over an existing one (the region's biome's and its parents' first), PR1.
-          menu.addItem((item) =>
+          layers.add("MapModal.mapRowContextMakeGenerator", (item) =>
             item
               .setTitle(`Make generator from ${this.plugin.mapLabel(map.name)}…`)
               .setIcon(existing ? "plus" : "wand-sparkles")
@@ -363,6 +369,7 @@ export class MapModal extends HexmakerModal {
                 openMakeGenerator(this.app, this.plugin, map.name);
               }),
           );
+          layers.finish(false);
           menu.showAtPosition(at);
         });
       });
@@ -437,21 +444,13 @@ export class MapModal extends HexmakerModal {
     });
     el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Shown everywhere. Its folder stays put." });
 
-    el.createEl("h4", { text: "Folder name" });
-    const renameRow = el.createDiv({ cls: "duckmage-region-row" });
-    const renameInput = renameRow.createEl("input", {
-      type: "text",
-      value: this.view.activeMapName,
-      attr: { "aria-label": "Folder name" },
-    });
-    const renameBtn = renameRow.createEl("button", { text: "Rename folder" });
-    renameBtn.addEventListener("click", () =>
-      void this.renameMap(renameInput.value.trim(), renameBtn, renameInput),
-    );
-    renameInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter")
-        void this.renameMap(renameInput.value.trim(), renameBtn, renameInput);
-    });
+    // The page's Advanced dropdown (and Debug inside it), at the end of the tab.
+    const disclosure = new Disclosure(this.app, "MapModal.Properties", () => el);
+    const at = (ids: readonly string[]) => disclosure.target(groupId(ids), el);
+
+    // Folder name (the slug): Debug.
+    const folderEl = at(["MapModal.propsFolderName", "MapModal.propsRenameFolder"]);
+    if (folderEl) this.renderFolderName(folderEl);
 
     // Stagger offset
     el.createEl("h4", { text: "Stagger offset" });
@@ -482,7 +481,44 @@ export class MapModal extends HexmakerModal {
 
     if (currentMap) this.renderNeighbourBlock(el, currentMap);
 
-    // Terrain theme
+    if (currentMap) {
+      renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
+      renderRoleTables(el, this.plugin, currentMap, () => this.render());
+    }
+
+    this.renderBackgroundImage(el, currentMap, at(["MapProps.backgroundImagePicker"]));
+
+    if (currentMap) this.renderDeleteBlock(el, currentMap.name);
+
+    // ── Advanced: terrain theme, weather and rumours tables ───────────────
+    const themeEl = at(["MapModal.propsTerrainTheme"]);
+    if (themeEl) this.renderTerrainTheme(themeEl, currentMap);
+    const tablesEl = at(["MapModal.propsWeatherTable", "MapModal.propsWeatherClear", "MapModal.propsRumoursTable", "MapModal.propsRumoursClear", "MapProps.sectionTablePicker"]);
+    if (currentMap && tablesEl) this.renderRegionTables(tablesEl, currentMap);
+    disclosure.toEnd();
+  }
+
+  /** Folder name (the slug): moves the folder and map note, and updates every reference. */
+  private renderFolderName(el: HTMLElement): void {
+    el.createEl("h4", { text: "Folder name" });
+    const renameRow = el.createDiv({ cls: "duckmage-region-row" });
+    const renameInput = renameRow.createEl("input", {
+      type: "text",
+      value: this.view.activeMapName,
+      attr: { "aria-label": "Folder name" },
+    });
+    const renameBtn = renameRow.createEl("button", { text: "Rename folder" });
+    renameBtn.addEventListener("click", () =>
+      void this.renameMap(renameInput.value.trim(), renameBtn, renameInput),
+    );
+    renameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter")
+        void this.renameMap(renameInput.value.trim(), renameBtn, renameInput);
+    });
+  }
+
+  /** The map's own terrain (shown in the map list swatch). */
+  private renderTerrainTheme(el: HTMLElement, currentMap: MapData | undefined): void {
     el.createEl("h4", { text: "Terrain theme" });
     const terrainPalette = this.plugin.getMapPalette(this.view.activeMapName);
     const terrainGrid = el.createDiv({ cls: "duckmage-terrain-picker" });
@@ -527,24 +563,23 @@ export class MapModal extends HexmakerModal {
       });
     }
 
-    // ── Region tables (E2) ─────────────────────────────────────────────────
-    if (currentMap) this.renderRegionTables(el, currentMap);
+  }
 
-    // ── Arrival (GM4) and generator tables (T11) ──────────────────────────
-    if (currentMap) {
-      renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
-      renderRoleTables(el, this.plugin, currentMap, () => this.render());
-    }
-
-    // ── Background image ───────────────────────────────────────────────────
+  /**
+   * Background image: drop an image on the row, clear, opacity, calibrate.
+   * "Pick image…" is in `pickEl` (the Advanced dropdown), or left out.
+   */
+  private renderBackgroundImage(el: HTMLElement, currentMap: MapData | undefined, pickEl: HTMLElement | null): void {
     el.createEl("h4", { text: "Background image" });
     const bgRow = el.createDiv({ cls: "duckmage-region-row duckmage-bg-image-row" });
     bgRow.createSpan({
       text: currentMap?.backgroundImage?.path ?? "(none) — drop an image here",
       cls: "duckmage-bg-image-path",
     });
-    const pickBtn = bgRow.createEl("button", { text: "Pick image…" });
-    pickBtn.addEventListener("click", () => {
+    if (pickEl) {
+      const pickRow = pickEl.createDiv({ cls: "duckmage-region-row" });
+      pickRow.createSpan({ text: "Background image", cls: "duckmage-map-field-label" });
+      pickRow.createEl("button", { text: "Pick image…" }).addEventListener("click", () => {
       new FileLinkSuggestModal(
         this.app,
         this.plugin,
@@ -552,7 +587,8 @@ export class MapModal extends HexmakerModal {
         "", // whole vault
         IMAGE_EXTENSIONS,
       ).open();
-    });
+      });
+    }
     const clearBtn = bgRow.createEl("button", { text: "Clear" });
     clearBtn.disabled = !currentMap?.backgroundImage;
     clearBtn.addEventListener("click", () => {
@@ -596,8 +632,6 @@ export class MapModal extends HexmakerModal {
         this.view.enterBgCalibration();
       });
     }
-
-    if (currentMap) this.renderDeleteBlock(el, currentMap.name);
   }
 
   /**
