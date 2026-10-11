@@ -274,6 +274,13 @@ export class WorldTypesModal extends HexmakerModal {
       text: `What the space generators place and how often. Each table is a note in ${store.folder()}.`,
     });
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
+    // Converted (phase 3): the generators roll on the tables the note links now.
+    if (store.isConverted(this.tableName)) {
+      contentEl.createEl("p", {
+        cls: "duckmage-locked-hint",
+        text: "This table was converted to random tables: the generators roll on the tables its note links; open the note to see them. Changes here only change the old copy.",
+      });
+    }
     this.problemsEl = contentEl.createDiv();
     this.renderProblems();
 

@@ -53,6 +53,13 @@ export function startNewChildMap(host: NewChildMapHost, parentMap: string, x: nu
 }
 
 export function startNewLocation(host: NewChildMapHost, parentMap: string, x: number, y: number): void {
+  // An unknown hex (an On arrival table) is rolled first, so the form
+  // starts from what turned out to be there (T5).
+  const rolled = host.plugin.arrival.resolveHex(parentMap, x, y, "new-child-map");
+  if (rolled) {
+    void host.plugin.saveSettings();
+    new Notice(`Rolled on arrival: ${rolled.chain}.`);
+  }
   new NewMapSetupModal(host.app, host.plugin, ({ name }) => {
     void host.plugin.linkSubmap(parentMap, x, y, name).then(() => host.onCreated(name, "location"));
   }, { map: parentMap, x, y }).open();

@@ -23,6 +23,8 @@ import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVa
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { WorldTypesModal } from "../space/WorldTypesModal";
 import { WORLD_TYPES_KEY } from "../space/worldTypesSource";
+import { attrsForTerrain } from "./tableSources";
+import { rowSubmapDefault } from "../arrival/arrival";
 import { STAR_SCATTER_ID } from "./procedural/starScatter";
 import { ORBITS_ID } from "./procedural/orbits";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
@@ -101,6 +103,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private originTerrain: string | undefined;
   /** Saved setup for submaps of that terrain, applied as the starting values. */
   private saved: SubmapDefault | undefined;
+  /** What the hex's row in the generator tables says (Size, Generator…): the start where nothing is saved (SP4's chain). */
+  private rowStart: SubmapDefault | undefined;
   /** The parent hex and its neighbours, so generation fits the bigger map. */
   private context: GenerationContext | undefined;
   /** "Next to" placement in a world of neighbouring regions (top-level maps). */
@@ -152,7 +156,11 @@ export class NewMapSetupModal extends HexmakerModal {
         getTerrainFromFile(app, plugin.hexPath(origin.x, origin.y, origin.map)) ?? parent?.baseTerrain ?? undefined;
       this.saved = plugin.submapDefaultFor(origin.map, this.originTerrain);
       this.context = buildSubmapContext(plugin, origin.map, origin.x, origin.y);
-      const d = this.saved;
+      if (this.originTerrain) {
+        const source = plugin.worldTypeStore.sourceFor(undefined, plugin.getMapPalette(origin.map).map((t) => t.name), origin.map).source;
+        this.rowStart = rowSubmapDefault(attrsForTerrain(source, this.originTerrain));
+      }
+      const d: SubmapDefault | undefined = this.rowStart || this.saved ? { ...this.rowStart, ...this.saved } : undefined;
       if (d?.cols && d.rows) { this.cols = d.cols; this.rows = d.rows; }
       if (d?.generator) this.kindId = d.generator;
       if (d?.options) this.options = { ...d.options };
@@ -169,6 +177,7 @@ export class NewMapSetupModal extends HexmakerModal {
       this.rows = g.rows;
       // Saved submap defaults are for locations: a region uses its settings.
       this.saved = undefined;
+      this.rowStart = undefined;
       this.remember = { palette: false, size: false, generator: false, base: false };
     }
   }
@@ -251,7 +260,7 @@ export class NewMapSetupModal extends HexmakerModal {
     fillPaletteSelect(
       this.plugin,
       paletteSelect,
-      this.saved?.palette
+      this.saved?.palette ?? this.rowStart?.palette
         ?? (this.origin ? this.plugin.childPaletteFor(this.origin.map) : defaultPaletteFor(this.plugin.settings)),
     );
     if (this.asRegion) {
@@ -530,7 +539,7 @@ export class NewMapSetupModal extends HexmakerModal {
       // submap default stays visible either way.
       const spaceContext = isSpacePalette(terrains) || this.plugin.getPaletteOrPresetKind(paletteSelect.value) === "space"
         || (!!this.origin && this.plugin.isSpaceMap(this.origin.map));
-      const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator);
+      const shown = visibleKinds(this.kinds, this.plugin.settings, spaceContext, this.saved?.generator ?? this.rowStart?.generator);
       // "Zoom into the parent hex" generators only for submaps (a neighbour
       // has context but no parent hex); next to a neighbour, the ones that
       // carry on from its edge come first.
@@ -542,7 +551,7 @@ export class NewMapSetupModal extends HexmakerModal {
       if (where.parentHex) {
         this.kindId = submapStartKind(fitting, this.kindId, {
           parentTerrain: this.originTerrain,
-          savedGenerator: this.saved?.generator,
+          savedGenerator: this.saved?.generator ?? this.rowStart?.generator,
           picked: this.pickedKind,
         });
       }
@@ -651,7 +660,7 @@ export class NewMapSetupModal extends HexmakerModal {
       baseSelect.empty();
       baseSelect.createEl("option", { value: "", text: BASE_TERRAIN_NONE_LABEL });
       for (const t of terrains) baseSelect.createEl("option", { value: t.name, text: t.name });
-      const savedBase = this.saved?.baseTerrain;
+      const savedBase = this.saved?.baseTerrain ?? this.rowStart?.baseTerrain;
       this.baseTerrain = savedBase !== undefined && (savedBase === "" || terrains.some((t) => t.name === savedBase))
         ? savedBase || undefined
         : suggestBaseTerrain(terrains);
@@ -791,6 +800,7 @@ export class NewMapSetupModal extends HexmakerModal {
     return runGenerator(this.plugin.settings.hexOrientation, kind, {
       terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement,
       pathTypes: this.plugin.getPathTypes(paletteName),
+      ...(this.origin ? { tablesFrom: this.origin.map } : {}),
     });
   }
 
@@ -875,6 +885,7 @@ export class NewMapSetupModal extends HexmakerModal {
         parent: this.origin ? { map: this.origin.map, hex: `${this.origin.x}_${this.origin.y}` } : undefined,
         quiet: true,
         slug: this.folderSlug(),
+        ...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
       },
     );
     if ("error" in result) {

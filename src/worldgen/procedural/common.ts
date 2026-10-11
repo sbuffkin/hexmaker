@@ -26,6 +26,12 @@ export interface ProcResult {
   cells: Map<string, string>;
   paths: ProcPath[];
   warnings: string[];
+  /**
+   * Hexes left to roll when someone first arrives ("x_y" → table link):
+   * rows whose Roll is "on arrival" (plan-tables-everywhere §2.6). Written
+   * to the map note's On arrival column.
+   */
+  arrivals?: Map<string, string>;
 }
 
 /** Compass sides of a map, for what lies beyond each edge. */

@@ -36,7 +36,7 @@ import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
 import { flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
-import { ADD_REGION_LOCKED_HINT, allows, canAdd, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { ModeMenu } from "./modeMenu";
 import { REGION_AREAS_TOOL } from "./toolMode";
@@ -356,6 +356,8 @@ export class HexMapView extends ItemView {
   private navArrowsEl: HTMLElement | null = null;
   /** The map's work mode (Play / Build / God), always shown. */
   private workModeBtn: HTMLButtonElement | null = null;
+  /** Reroll / Lock for a place made on arrival (refreshArrivalBar). */
+  private arrivalBarEl: HTMLElement | null = null;
   private crumbsEl: HTMLElement | null = null;
   /** Sideways crumbs: the neighbouring regions of the open map. */
   private sideCrumbsEl: HTMLElement | null = null;
@@ -584,6 +586,45 @@ export class HexMapView extends ItemView {
     startNewChildMap(this.childMapHost(), this.activeMapName, x, y);
   }
 
+  /**
+   * Go into hex (x, y) where nothing exists yet (arrival, GM4/SP4): its On
+   * arrival table is rolled, its place made from the result with no form,
+   * and the view enters it.
+   */
+  async arriveAt(x: number, y: number): Promise<void> {
+    const from = this.activeMapName;
+    const made = await this.plugin.arrival.arrive(from, x, y);
+    if (made && this.activeMapName === from) this.navigateToMap(made);
+    else this.renderGrid();
+  }
+
+  /**
+   * The bar for a place made on arrival (GM4): Reroll makes it again (any
+   * mode until locked, then God), Lock keeps it. Hidden on other maps.
+   */
+  private refreshArrivalBar(): void {
+    const el = this.arrivalBarEl;
+    if (!el) return;
+    el.empty();
+    const map = this.plugin.getMap(this.activeMapName);
+    const state = map?.arrival?.trim().toLowerCase();
+    if (!map || (state !== "open" && state !== "locked") || !map.parent) { el.hide(); return; }
+    const open = state === "open";
+    // A locked place shows the bar only where it can still be rerolled (God).
+    if (!open && !canRerollPlace(map)) { el.hide(); return; }
+    el.show();
+    el.createSpan({ cls: "duckmage-arrival-bar-label", text: open ? "New place" : "Locked place" });
+    const reroll = el.createEl("button", {
+      text: "Reroll",
+      attr: { title: open ? "Make this place again (its terrain and paths are replaced)" : "Make this locked place again (God mode)" },
+    });
+    reroll.addEventListener("click", () => void this.plugin.arrival.reroll(map.name).then(() => { this.refreshArrivalBar(); this.renderGrid(); }));
+    if (open) {
+      const lock = el.createEl("button", { text: "Lock", attr: { title: `Keep this place as it is (rerolling it then needs ${WORK_MODE_TEXT.god.label} mode)` } });
+      lock.addEventListener("click", () => void this.plugin.arrival.lock(map.name).then(() => this.refreshArrivalBar()));
+    }
+  }
+
   /** "+ New location…" straight away (the Locations list's button). */
   private openNewLocationSetup(x: number, y: number): void {
     startNewLocation(this.childMapHost(), this.activeMapName, x, y);
@@ -748,6 +789,8 @@ export class HexMapView extends ItemView {
   /** The work-mode switch: names the map's mode; click to pick another. */
   private refreshWorkModeBtn(): void {
     this.applyWorkModeUi();
+    // Reroll / Lock depend on the mode too (a locked place: God only).
+    this.refreshArrivalBar();
     const btn = this.workModeBtn;
     if (!btn) return;
     const mode = workModeOf(this.plugin.getMap(this.activeMapName));
@@ -1561,6 +1604,8 @@ export class HexMapView extends ItemView {
 
     this.workModeBtn = mapNavGroup.createEl("button", { cls: "duckmage-work-mode-btn" });
     this.workModeBtn.addEventListener("click", (e) => this.openWorkModeMenu(e));
+    this.arrivalBarEl = mapNavGroup.createDiv({ cls: "duckmage-arrival-bar" });
+    this.arrivalBarEl.hide();
     this.refreshMapNav();
 
     this.undoBtn = controlsEl.createEl("button", {
@@ -4804,6 +4849,11 @@ export class HexMapView extends ItemView {
     if (childPlan.listCount) {
       menu.add("hex.locations", `Locations (${childPlan.listCount})…`, "list", () => this.openLocationsList(x, y));
     }
+    // Arrival (GM4): a world set to make places makes this hex's place on
+    // the spot, in any mode, when it has none yet.
+    if (!hasRegion && !childPlan.open.length && !childPlan.listCount && this.plugin.arrival.canArrive(this.activeMapName, x, y)) {
+      menu.add("hex.arrive", "Go there", "footprints", () => void this.arriveAt(x, y));
+    }
     if (hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
 
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
@@ -4981,6 +5031,11 @@ export class HexMapView extends ItemView {
         } else {
           this.navigateToMap(submap);
         }
+        return;
+      }
+      // No map there yet: arriving makes one (when the world makes places).
+      if (!e.shiftKey && !ow && this.plugin.arrival.canArrive(this.activeMapName, x, y)) {
+        await this.arriveAt(x, y);
         return;
       }
     }

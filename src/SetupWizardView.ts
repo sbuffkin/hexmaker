@@ -758,7 +758,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				plugin.settings.staggerOffset,
 				undefined,
 				outcome?.ok ? outcome.cells : undefined,
-				{ baseTerrain: suggestBaseTerrain(terrains), quiet: true },
+				{ baseTerrain: suggestBaseTerrain(terrains), quiet: true, ...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}) },
 			);
 			if ("error" in result) throw new Error(result.error);
 

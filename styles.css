@@ -8973,3 +8973,38 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-world-types-rows:focus {
     outline: none;
 }
+
+/* A place made on arrival (GM4): Reroll / Lock next to the mode switch. */
+.duckmage-map-nav-group .duckmage-arrival-bar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.duckmage-arrival-bar .duckmage-arrival-bar-label {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.duckmage-map-nav-group .duckmage-arrival-bar button {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.8em;
+}
+
+/* Map properties → Tables (T11): one row per generator role. */
+.duckmage-role-table-row {
+    display: grid;
+    grid-template-columns: 9em 1fr;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+}
+.duckmage-role-table-row select {
+    min-width: 0;
+    width: 100%;
+}
+.duckmage-role-table-from {
+    grid-column: 2;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}

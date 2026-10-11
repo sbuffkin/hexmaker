@@ -75,7 +75,13 @@ import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
-import { workModeOf } from "./workMode";
+import { workModeOf, type ModeAction } from "./workMode";
+import { contentFolder } from "./notePickers";
+import { TableNotes } from "./random-tables/TableNotes";
+import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
+import type { RoleId } from "./worldgen/tableRoles";
+import { ArrivalService } from "./arrival/ArrivalService";
+import { effectiveArrivalMode, type ArrivalMode } from "./arrival/arrival";
 import { withMapLink } from "./maps/mapNote";
 import {
   addLocationPatch,
@@ -118,6 +124,10 @@ export default class HexmakerPlugin extends Plugin {
   biomeStore = new BiomeStore(this);
   /** World types tables for the space generators (src/space). */
   worldTypeStore = new WorldTypeStore(this);
+  /** The tables folder's notes in memory, for rolls the generators make (src/random-tables/TableNotes.ts). */
+  tableNotes!: TableNotes;
+  /** Places made on arrival: roll, make, reroll, lock (src/arrival). */
+  arrival = new ArrivalService(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
   /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
@@ -150,6 +160,7 @@ export default class HexmakerPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings();
+    this.tableNotes = TableNotes.register(this);
     this.pathPins.attach();
     // Terrains known now (data.json's copy of the palettes). Any a palette
     // note adds while Obsidian was closed get their tables once the notes
@@ -171,6 +182,7 @@ export default class HexmakerPlugin extends Plugin {
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
       const biomesReady = this.biomeStore.init();
+      void this.tableNotes.init();
       void this.worldTypeStore.init();
       const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
       // BC1, once per vault: every overworld hex's biome in its Biome column.
@@ -316,6 +328,15 @@ export default class HexmakerPlugin extends Plugin {
           const open = this.app.workspace.getActiveViewOfType(HexMapView);
           new WorldTypesModal(this.app, this, open?.activeMapName).open();
         }
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "convert-world-types",
+      name: "Convert world types to tables",
+      checkCallback: (checking) => {
+        if (!hasFeature(this.settings, "generators") || !this.worldTypeStore.list().some((t) => !this.worldTypeStore.isConverted(t.name))) return false;
+        if (!checking) void this.convertWorldTypes();
         return true;
       },
     });
@@ -2332,6 +2353,8 @@ export default class HexmakerPlugin extends Plugin {
       quiet?: boolean;
       /** Folder name (slug) to use instead of one made from rawName (NAV2). */
       slug?: string;
+      /** Hexes left to roll on arrival ("x_y" → table link), for the On arrival column. */
+      arrivals?: Map<string, string>;
     } = {},
   ): Promise<{ name: string } | { error: string }> {
     if (!rawName.trim()) return { error: "Enter a map name." };
@@ -2372,9 +2395,14 @@ export default class HexmakerPlugin extends Plugin {
 
     // Notes on use: a new map writes no hex notes — terrain goes into the
     // map note, and a hex note appears when the hex first gets content.
-    const cells = [...(terrainAt ?? new Map<string, string>())]
+    const cells: [string, { terrain?: string; onArrival?: string }][] = [...(terrainAt ?? new Map<string, string>())]
       .filter(([, t]) => t && t !== extra.baseTerrain)
-      .map(([k, t]): [string, { terrain: string }] => [k, { terrain: t }]);
+      .map(([k, t]): [string, { terrain?: string; onArrival?: string }] => [k, { terrain: t }]);
+    for (const [k, table] of extra.arrivals ?? []) {
+      const c = cells.find(([key]) => key === k);
+      if (c) c[1].onArrival = table;
+      else cells.push([k, { onArrival: table }]);
+    }
     this.mapStore.setMany(name, cells);
     onProgress?.(cols * rows, cols * rows);
     await this.mapStore.flush();
@@ -2635,11 +2663,11 @@ export default class HexmakerPlugin extends Plugin {
    * wins, so linking a shared map from a second hex doesn't move its
    * breadcrumb).
    */
-  async linkSubmap(parentMap: string, x: number, y: number, childMap: string): Promise<void> {
+  async linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> {
     if (childMap === parentMap) return;
     const key = `${x}_${y}`;
     const patch = addLocationPatch(this.mapStore.get(parentMap, key), childMap);
-    if (patch.locations && !this.mapStore.set(parentMap, key, patch, "link-map")) return;
+    if (patch.locations && !this.mapStore.set(parentMap, key, patch, action)) return;
     this.noParentMaps.clear();
     const child = this.getMap(childMap);
     if (child && !child.parent) {
@@ -2728,6 +2756,27 @@ export default class HexmakerPlugin extends Plugin {
     }
     this.noParentMaps.add(mapName);
     return undefined;
+  }
+
+  /**
+   * Each generator role's table set on `mapName` or the nearest map above
+   * it (Map properties → Tables, T11), with the map that set it.
+   */
+  roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> {
+    return inheritedRoleTables(mapName, (m) => this.getMap(m)?.roleTables, (m) => this.parentOf(m)?.map);
+  }
+
+  /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */
+  arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } {
+    return effectiveArrivalMode(mapName, (m) => this.getMap(m)?.arrivalMode, (m) => this.parentOf(m)?.map);
+  }
+
+  /** "Convert world types to tables": every World types note not yet converted (backed up first). */
+  async convertWorldTypes(): Promise<void> {
+    const r = await this.worldTypeStore.convertAll();
+    if (!r.converted.length) { new Notice("All world types tables are converted already."); return; }
+    const kept = r.kept.length ? ` Kept ${r.kept.length} table${r.kept.length === 1 ? "" : "s"} that already existed.` : "";
+    new Notice(`Converted ${r.converted.join(", ")} to tables in ${contentFolder(this.settings, "tablesFolder")}/space (${r.written.length} notes).${kept} The old notes were backed up and kept.`, 10000);
   }
 
   /** Maps whose parent scan came up empty this session (cleared on any link change). */

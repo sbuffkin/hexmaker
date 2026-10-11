@@ -34,6 +34,7 @@ import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
+import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
 
 type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
 
@@ -536,6 +537,12 @@ export class MapModal extends HexmakerModal {
 
     // ── Region tables (E2) ─────────────────────────────────────────────────
     if (currentMap) this.renderRegionTables(el, currentMap);
+
+    // ── Arrival (GM4) and generator tables (T11) ──────────────────────────
+    if (currentMap) {
+      renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
+      renderRoleTables(el, this.plugin, currentMap, () => this.render());
+    }
 
     // ── Background image ───────────────────────────────────────────────────
     el.createEl("h4", { text: "Background image" });

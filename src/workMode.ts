@@ -13,6 +13,12 @@
  *
  * Never locked: note text (WM2), settings and palettes (WM4).
  *
+ * Arrival (GM4, plan-tables-everywhere phase 4): when a world is set to
+ * make places on arrival, Play may make a place where nothing exists yet
+ * (`discover`): it only fills in an unknown hex and adds a new map, never
+ * reshapes what's there. The new place can be rerolled in any mode until
+ * someone locks it; after that rerolling it is God's (canRerollPlace).
+ *
  * ACTION_POLICY is the classification of every user action;
  * TOOL_ACTIONS / COMMAND_ACTIONS / MENU_ACTIONS map each drawing tool,
  * command and map-view menu item onto it. tests/workModeCoverage.test.ts
@@ -55,6 +61,8 @@ export type ModeAction =
   | "settings" // plugin settings and palettes: never locked (WM4)
   | "switch-mode" // the mode switch itself
   | "new-top-map" // a new map that isn't made from a hex of another map
+  | "discover" // arrival: make a place where nothing exists yet (only when the world is set to make places)
+  | "lock-place" // lock a place made on arrival (after that, rerolling it needs God)
   // ── Build and God ──
   | "paint-terrain"
   | "paint-icon" // icon overrides and GM icons
@@ -98,6 +106,8 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   settings: { modes: ALL, verb: "change settings" },
   "switch-mode": { modes: ALL, verb: "switch modes" },
   "new-top-map": { modes: ALL, verb: "make a map" },
+  discover: { modes: ALL, verb: "go somewhere new" },
+  "lock-place": { modes: ALL, verb: "lock a new place" },
   "paint-terrain": { modes: BUILD, verb: "paint terrain" },
   "paint-icon": { modes: BUILD, verb: "change icons" },
   "paint-region-area": { modes: BUILD, verb: "paint region areas" },
@@ -172,6 +182,7 @@ export const COMMAND_ACTIONS: Record<string, ModeAction> = {
   "open-terrain-generator": "view",
   "open-palette-editor": "settings",
   "edit-world-types": "edit-biomes",
+  "convert-world-types": "edit-biomes",
   "new-overworld": "new-top-map",
   "map-go-up": "navigate",
   "map-go-back": "navigate",
@@ -195,6 +206,7 @@ export const MENU_ACTIONS = {
   "hex.open-note": "open-note",
   "hex.enter-region": "navigate",
   "hex.open-location": "navigate",
+  "hex.arrive": "discover",
   "hex.locations": "navigate",
   "hex.new-map": "new-child-map",
   "hex.link-map": "link-map",
@@ -256,6 +268,19 @@ export function workModeOf(map: { workMode?: string } | undefined): WorkMode {
 
 /** May what's already placed on this map be changed (biome swap, reroll, regenerate)? */
 export function canReshape(map: { workMode?: string } | undefined): boolean {
+  return mapAllows(map, "reshape");
+}
+
+/** The hint when a locked place can't be rerolled. */
+export const REROLL_PLACE_LOCKED_HINT = "This place is locked. Switch to God to reroll it.";
+
+/**
+ * May a place made on arrival be rerolled? Until it's locked (`arrival:
+ * open`), in any mode; once locked, only in God (GM4). A map not made on
+ * arrival follows the usual reshape rule.
+ */
+export function canRerollPlace(map: { workMode?: string; arrival?: string } | undefined): boolean {
+  if (map?.arrival?.trim().toLowerCase() === "open") return true;
   return mapAllows(map, "reshape");
 }
 

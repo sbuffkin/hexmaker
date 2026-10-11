@@ -60,6 +60,8 @@ export type GenerateOutcome =
       paths: GeneratedPath[];
       featureCells?: Set<string>;
       warnings: string[];
+      /** Hexes left to roll on arrival ("x_y" → table link): the map note's On arrival column. */
+      arrivals?: Map<string, string>;
     }
   | { ok: false; message: string };
 
@@ -76,6 +78,12 @@ export interface GenerateRequest {
   /** A new region placed next to existing ones: learned generators solve
    *  against the neighbours' edges (generateConnected). */
   region?: NewRegion;
+  /**
+   * The map whose generator tables apply (Map properties → Tables, T11):
+   * the map being made's parent, or the map itself. Its own and its
+   * ancestors' tables win over the World types option's.
+   */
+  tablesFrom?: string;
 }
 
 export interface TerrainGeneratorKind {
@@ -226,7 +234,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const routeType = chosenPathType(req.options[ROUTE_TYPE_KEY], "routes", req.pathTypes);
         // None picked on purpose: no routes, and nothing to warn about.
         const options = !routeType && req.options[ROUTE_TYPE_KEY] === NO_PATHS ? { ...req.options, routes: "none" } : req.options;
-        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains);
+        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
         const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType, wt.source);
         if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
         return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
@@ -244,7 +252,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       fits: orbitsFits,
       generate: (req) => {
         const orbitType = chosenPathType(req.options[ORBIT_TYPE_KEY], "orbits", req.pathTypes);
-        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains);
+        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
         const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context, wt.source);
         if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
         // No type and not None on purpose: say why there are no rings.

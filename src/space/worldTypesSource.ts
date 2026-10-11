@@ -54,7 +54,7 @@ const ATTR_COLUMNS = ["Mainworld", "Size", "Generator", "Options", "Palette", "B
 
 const lc = (s: string) => s.trim().toLowerCase();
 
-function attrsOf(r: WorldTypeRow): Record<string, string> {
+export function attrsOf(r: WorldTypeRow): Record<string, string> {
   const cells = worldTypeCells(r);
   const out: Record<string, string> = {};
   for (const c of ATTR_COLUMNS) {
@@ -65,7 +65,7 @@ function attrsOf(r: WorldTypeRow): Record<string, string> {
 }
 
 /** A worlds row's limits other than map and zone, as When conditions. */
-function conditionsOf(r: WorldTypeRow): TableCondition[] {
+export function conditionsOf(r: WorldTypeRow): TableCondition[] {
   const out: TableCondition[] = [];
   if (r.distance) out.push({ key: "ring", range: { ...r.distance } });
   if (r.stars?.length) out.push({ key: "star", values: r.stars.map(lc) });

@@ -218,6 +218,22 @@ export interface MapData {
 	biome?: RegionBiome;
 	/** Region maps: the seed its terrain was last generated with (Reroll picks a new one). */
 	regionSeed?: number;
+	/** The map's own seed (`seed:`): places made on arrival from its hexes
+	 *  are seeded from it, so they don't depend on the map's name. */
+	seed?: number;
+	/** Generator tables per role (`sector-hexes-table: "[[…]]"`, T11): role
+	 *  id (worldgen/tableRoles.ts) → table note path. Inherited by every map
+	 *  under this one unless that map sets its own. */
+	roleTables?: Record<string, string>;
+	/** "When you arrive somewhere new" (`on-arrival:`), as written: "make
+	 *  places" or "off". Unset = the parent map's, else off. Read with
+	 *  arrival/arrival.ts parseArrivalMode. */
+	arrivalMode?: string;
+	/** A place made on arrival (`arrival:`): "open" while Play may still
+	 *  reroll it, "locked" once the user locked it (then only God may). */
+	arrival?: string;
+	/** How often a place made on arrival was rerolled (`arrival-rerolls:`). */
+	arrivalRerolls?: number;
 	/** Overworlds: "regions" shows every region's hexes stitched together on
 	 *  the map (the full view); "biomes" shows the overworld's own hexes, one
 	 *  biome each. Unset = regions once the map has any. */

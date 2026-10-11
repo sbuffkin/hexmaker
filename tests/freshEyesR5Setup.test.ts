@@ -77,7 +77,7 @@ describe("1. New submap: starts on the generator that fits the parent hex", () =
 
 	it("the setup modal applies it (and only for submaps)", () => {
 		const src = read("src", "worldgen", "NewMapSetupModal.ts");
-		expect(src).toMatch(/if \(where\.parentHex\) \{\n\s+this\.kindId = submapStartKind\(fitting, this\.kindId, \{\n\s+parentTerrain: this\.originTerrain,\n\s+savedGenerator: this\.saved\?\.generator,\n\s+picked: this\.pickedKind,/);
+		expect(src).toMatch(/if \(where\.parentHex\) \{\n\s+this\.kindId = submapStartKind\(fitting, this\.kindId, \{\n\s+parentTerrain: this\.originTerrain,\n\s+savedGenerator: this\.saved\?\.generator(?: \?\? this\.rowStart\?\.generator)?,\n\s+picked: this\.pickedKind,/);
 	});
 });
 

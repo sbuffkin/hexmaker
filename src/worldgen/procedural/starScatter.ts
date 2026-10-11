@@ -145,13 +145,22 @@ export function starScatter(
 
   // Systems: one roll per hex; nebulae halve the odds.
   const systems: [number, number][] = [];
+  const arrivals = new Map<string, string>();
   for (const [x, y] of hexes) {
     const k = cellKey(x, y);
     const odds = inCloud.has(k) ? density / 2 : density;
     if (rand() >= odds) continue;
-    const pick = rollRole(tables, "sector-hexes", { rand }, roles.worlds);
+    const pick = rollRole(tables, "sector-hexes", { rand, deferArrival: true }, roles.worlds);
     // A (nothing) row: empty space after all.
     if (!pick || pick.nothing) continue;
+    if (pick.arrival) {
+      // Rolled when someone arrives: until then the hex shows its Shown as
+      // terrain (or stays background), and hosts a system for the routes.
+      arrivals.set(k, pick.arrival);
+      if (pick.terrain) cells.set(k, pick.terrain);
+      systems.push([x, y]);
+      continue;
+    }
     cells.set(k, pick.terrain);
     // A world hosts a system (and so a route); of the rest, only station-like types do.
     if (!isFeature(pick.terrain) || hostsSystem(pick.terrain)) systems.push([x, y]);
@@ -183,7 +192,7 @@ export function starScatter(
     }
   }
   if (systems.length === 0) warnings.push("No systems rolled — try a higher density or another seed.");
-  return { cells, paths, warnings };
+  return arrivals.size ? { cells, paths, warnings, arrivals } : { cells, paths, warnings };
 }
 
 /**

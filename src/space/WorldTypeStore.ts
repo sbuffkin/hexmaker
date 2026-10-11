@@ -13,7 +13,12 @@
  *   is given the shipped Stars and Sector features tables once, when read;
  *   one from before the Mainworld column (format 1 or 2) the shipped
  *   rows' mainworlds (backed up first).
- * - source(): a table as the space generators' role tables (SP1).
+ * - sourceFor(): a table as the space generators' role tables (SP1). A
+ *   converted note (its `## Tables` list, space/spaceTables.ts) gives the
+ *   table notes it links; a map's own Tables (inherited down the map tree)
+ *   win over both (worldgen/tableSources.ts).
+ * - convertAll(): the one-time Convert to tables (backed up first; the
+ *   notes are kept and link out to the new tables). Never runs by itself.
  * - Every change is told to onChange listeners.
  */
 
@@ -46,6 +51,10 @@ import {
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
 import { chosenWorldTypes, defaultWorldTypesName, worldTypesSource } from "./worldTypesSource";
 import type { TableSource } from "../worldgen/tableRoles";
+import { layeredSource, notesTableSource } from "../worldgen/tableSources";
+import { convertWorldTypes, isConverted, markConverted, readRoleTables } from "./spaceTables";
+import { contentFolder } from "../notePickers";
+import { PALETTE_PRESETS } from "../palettes/presets";
 
 interface Entry {
   path: string;
@@ -166,11 +175,85 @@ export class WorldTypeStore {
    * (SP1), for a palette. `source` undefined: no table (None, or none at
    * all), so equal odds; `missing`: the picked table isn't there.
    */
-  sourceFor(value: string | undefined, palette: readonly (string | { name: string })[]): { source?: TableSource; missing?: string } {
+  sourceFor(value: string | undefined, palette: readonly (string | { name: string })[], mapName?: string): { source?: TableSource; missing?: string } {
     const name = chosenWorldTypes(value, this.list().map((t) => t.name), this.defaultName());
-    if (!name) return {};
-    const t = this.get(name);
-    return t ? { source: worldTypesSource(t, palette) } : { missing: name };
+    const terrains = palette.map((t) => (typeof t === "string" ? t : t.name));
+    const notes = this.plugin.tableNotes.lookup();
+    let base: TableSource | undefined;
+    let missing: string | undefined;
+    if (name) {
+      const e = this.find(name);
+      if (!e) missing = name;
+      else {
+        const roles = readRoleTables(this.lastContent.get(e.path) ?? "");
+        base = Object.keys(roles).length ? notesTableSource(roles, notes, terrains, `Tables: ${e.name}`) : worldTypesSource(tableOf(e), palette);
+      }
+    }
+    // The map's own Tables (and its ancestors') win over the setup's.
+    const own = mapName ? this.plugin.roleTablesFor(mapName) : {};
+    const overrides = Object.fromEntries(Object.entries(own).map(([r, p]) => [r, p.link]));
+    const source = layeredSource(base, overrides, notes, terrains);
+    return { ...(source ? { source } : {}), ...(missing ? { missing } : {}) };
+  }
+
+  /** Whether a table's note was converted to tables (it has a `## Tables` list). */
+  isConverted(name: string): boolean {
+    const e = this.find(name);
+    return !!e && isConverted(this.lastContent.get(e.path) ?? "");
+  }
+
+  /**
+   * Convert every World types note not yet converted into table notes
+   * under `{tables}/space/<name>/` (T1, T2). The notes are backed up
+   * first and kept; each gets a `## Tables` list linking its tables. A
+   * table note that already exists is never overwritten (it's listed in
+   * `kept`). Running it again changes nothing.
+   */
+  async convertAll(): Promise<{ converted: string[]; written: string[]; kept: string[] }> {
+    const out = { converted: [] as string[], written: [] as string[], kept: [] as string[] };
+    await this.queue; // hand edits read first
+    await this.enqueue(async () => {
+      const todo = this.sorted().filter((e) => !isConverted(this.lastContent.get(e.path) ?? ""));
+      if (!todo.length) return;
+      const vault = this.plugin.app.vault;
+      const notes: Record<string, string> = {};
+      for (const e of todo) {
+        const f = vault.getAbstractFileByPath(e.path);
+        if (f instanceof TFile) notes[e.path] = await vault.read(f);
+      }
+      await this.backup("convert", notes);
+      const tablesFolder = contentFolder(this.plugin.settings, "tablesFolder");
+      const shownAs = this.starSystemTerrain();
+      for (const e of todo) {
+        const f = vault.getAbstractFileByPath(e.path);
+        const content = notes[e.path];
+        if (!(f instanceof TFile) || content === undefined) continue;
+        const set = convertWorldTypes(tableOf(e), { tablesFolder, shownAs, unreadable: parseWorldTypes(content).unreadable });
+        for (const file of set.files) {
+          if (vault.getAbstractFileByPath(file.path)) { out.kept.push(file.path); continue; }
+          await this.ensureFolder(file.path.slice(0, file.path.lastIndexOf("/")));
+          await vault.create(file.path, file.content);
+          this.plugin.tableNotes.put(file.path, file.content);
+          out.written.push(file.path);
+        }
+        const next = markConverted(content, set);
+        if (next !== content) await vault.modify(f, next);
+        this.take(f.path, next);
+        out.converted.push(e.name);
+      }
+      this.publish();
+    });
+    return out;
+  }
+
+  /** A terrain of type star-system (what a somewhat known hex shows), found by type: installed palettes first, then the shipped ones. */
+  private starSystemTerrain(): string | undefined {
+    const pals = [...this.plugin.settings.terrainPalettes, ...PALETTE_PRESETS];
+    for (const p of pals) {
+      const t = p.terrains.find((x) => x.type === "star-system");
+      if (t) return t.name;
+    }
+    return undefined;
   }
 
   hasDefault(name: string): boolean {

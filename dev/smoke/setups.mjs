@@ -387,6 +387,60 @@ async function spaceExtra(ctx) {
   out.push({ check: "F4-no-biome-notes", ok: r.biomeNotes === 0, detail: `biome notes: ${r.biomeNotes}` });
   out.push({ check: "F4-default-palette", ok: r.defaultPalette === "Space - Sector", detail: `Palette for new maps: ${r.defaultPalette}; kindContent ${JSON.stringify(r.kindContent)}` });
   out.push({ check: "F4-planet-palette", ok: r.planet === "Space - Planet", detail: `planet palette: ${r.planet}` });
+
+  // Tables everywhere phases 3-4: convert World types to tables, then arrive
+  // in Play at an unknown sector hex (SP4/SP5/GM4/T5). The C5 restart that
+  // follows checks none of it is rewritten on load.
+  const a = await ctx.ev(async (id) => {
+    const p = window.app.plugins.plugins[id];
+    const steps = [], problems = [];
+    try {
+      if (!p.arrival || !p.worldTypeStore?.convertAll) return { skipped: "build has no arrival" };
+      const s = p.settings.maps.find((m) => m.displayName === "Rim Sector" || m.name === "rim-sector")?.name;
+      if (!s) return { skipped: "no Rim Sector" };
+      const sector = p.getMap(s);
+      if (p.arrival.canArrive(s, 6, 6)) problems.push("arrival on by default");
+      await p.worldTypeStore.ensureDefault();
+      const conv = await p.worldTypeStore.convertAll();
+      steps.push(`converted ${conv.converted.join(", ")} (${conv.written.length} notes)`);
+      const again = await p.worldTypeStore.convertAll();
+      if (again.converted.length || again.written.length) problems.push("converting twice wrote again");
+      const mainworlds = conv.written.find((f) => f.endsWith("/Sector/Mainworlds.md"));
+      if (!mainworlds) return { steps, problems: [...problems, "no Mainworlds table written"] };
+      const before = sector.workMode;
+      sector.arrivalMode = "make places";
+      sector.workMode = "play";
+      p.mapStore.set(s, "6_6", { terrain: "star system", onArrival: mainworlds.replace(/\.md$/, "") });
+      await p.saveSettings();
+      await p.mapStore.flush();
+      const made = await p.arrival.arrive(s, 6, 6);
+      const hex = p.mapStore.get(s, "6_6") ?? {};
+      if (!made) problems.push("no place made");
+      else {
+        steps.push(`arrived: 6,6 is now ${hex.terrain}; made ${made}`);
+        if (hex.onArrival) problems.push("On arrival cell not cleared");
+        if (!hex.terrain || hex.terrain === "star system") problems.push(`hex terrain ${hex.terrain}`);
+        if (!(hex.locations ?? []).includes(made)) problems.push("place not linked");
+        const child = p.getMap(made);
+        if (child?.arrival !== "open" || child?.workMode !== "play") problems.push(`new place ${child?.arrival}/${child?.workMode}`);
+        const note = await p.mapStore.readNoteText(made);
+        if (!note?.includes("## Arrival")) problems.push("no Arrival section");
+        if (!(await p.arrival.reroll(made))) problems.push("Play couldn't reroll an open place");
+        await p.arrival.lock(made);
+        if (await p.arrival.reroll(made)) problems.push("Play rerolled a locked place");
+        else steps.push("reroll then lock: Play can't reroll after the lock");
+        if ((await p.arrival.arrive(s, 6, 6)) !== null) problems.push("second visit made another place");
+      }
+      sector.workMode = before;
+      delete sector.arrivalMode;
+      await p.saveSettings();
+      await p.mapStore.flush();
+    } catch (e) {
+      problems.push(String(e?.stack ?? e).slice(0, 400));
+    }
+    return { steps, problems };
+  }, ctx.pluginId);
+  out.push({ check: "F13-arrival", ok: !a.skipped && a.problems.length === 0, detail: a.skipped ?? [...a.steps, ...a.problems].join("; ") });
   return out;
 }
 

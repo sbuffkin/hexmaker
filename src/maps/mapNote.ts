@@ -4,6 +4,7 @@ import { formatAnchors, formatAnchor, parseAnchors } from "../paths/anchorText";
 import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
+import { ENGINE_ROLES } from "../worldgen/tableRoles";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -99,6 +100,13 @@ export interface HexData {
   /** Location maps opened from this hex (towns, dungeons…), in the user's order. */
   locations?: string[];
   locked?: boolean;
+  /**
+   * A table to roll when someone first arrives here (the optional "On
+   * arrival" column, plan-tables-everywhere §2.6): the table's link target
+   * as written (`world/tables/space/…/Mainworlds`, or a plain name).
+   * Cleared once rolled.
+   */
+  onArrival?: string;
   /**
    * The hex's biome (an id or name of a biome note), on an overworld: set
    * when its terrain alone can't say it (a user's biome paints a terrain
@@ -382,6 +390,11 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   // "region" or "location": this map's role under its parent hex.
   ["submapKind", "submap-kind", "str"],
   ["regionSeed", "region-seed", "num"],
+  // Places made on arrival (plan-tables-everywhere phase 4).
+  ["seed", "seed", "num"],
+  ["arrivalMode", "on-arrival", "str"],
+  ["arrival", "arrival", "str"],
+  ["arrivalRerolls", "arrival-rerolls", "num"],
   ["overworldView", "overworld-view", "str"],
   ["showMinimap", "show-minimap", "bool"],
   // Work mode: play, build or god (src/workMode.ts).
@@ -430,6 +443,8 @@ const REGION_KEYS = {
   stagger: "region-stagger",
   generator: "region-generator",
 } as const;
+/** Generator tables per role (T11): `sector-hexes-table: "[[…]]"`, one key per engine role. */
+const ROLE_TABLE_KEYS: Record<string, string> = Object.fromEntries(ENGINE_ROLES.map((r) => [r.id, `${r.id}-table`]));
 /** Prefix for MapData fields this build doesn't know (`hexmaker-origin-x`). */
 const OTHER_PREFIX = "hexmaker-";
 /** Format 1's one-line JSON catch-all, still read. */
@@ -442,6 +457,7 @@ function ownsKey(key: string): boolean {
 }
 const OWNED_KEYS = new Set<string>([
   MAP_NOTE_MARKER, ...SIZE_KEYS, ...PARENT_KEYS, ...WORLD_KEYS, ...BG_KEYS, BIOME_KEY, BIOME_FROM_KEY, ...Object.values(REGION_KEYS),
+  ...Object.values(ROLE_TABLE_KEYS),
   ...SIMPLE_KEYS.flatMap(([, k, , old]) => [k, ...(old ?? [])]),
 ]);
 
@@ -451,6 +467,11 @@ const SKIP_FIELDS = new Set(["name", "pathChains", "paths", "savedViewport", "gr
 const KNOWN_FIELDS = new Set<string>([
   ...SIMPLE_KEYS.map(([f]) => f as string), "parent", "world", "backgroundImage",
 ]);
+/** Whether a roleTables value is one the readable keys can hold (else it goes to a hexmaker- key). */
+function roleTablesReadable(v: unknown): v is Record<string, string> {
+  return !!v && typeof v === "object" && !Array.isArray(v)
+    && Object.entries(v as Record<string, unknown>).every(([k, x]) => k in ROLE_TABLE_KEYS && typeof x === "string" && x !== "");
+}
 
 /**
  * Optional map settings a map note owns: a key deleted by hand resets that
@@ -458,7 +479,7 @@ const KNOWN_FIELDS = new Set<string>([
  */
 export const RESETTABLE_FIELDS: readonly string[] = [
   ...SIMPLE_KEYS.map(([f]) => f as string).filter((f) => f !== "paletteName"),
-  "parent", "world", "backgroundImage", "biome", "regions",
+  "parent", "world", "backgroundImage", "biome", "regions", "roleTables",
 ];
 
 const FLOWER_CELLS = [7, 19, 37, 61, 91];
@@ -809,6 +830,16 @@ function readFrontmatter(src: string, opts: MapNoteReadOptions): FmRead {
     }
   }
 
+  // sector-hexes-table: "[[Unexplored sector]]" … (generator tables per role, T11)
+  const roleTables: Record<string, string> = {};
+  for (const [role, key] of Object.entries(ROLE_TABLE_KEYS)) {
+    const t = textOf(key);
+    const link = t ? noteLink(t, ".md") : undefined;
+    if (link) roleTables[role] = link;
+    else if (has(key) && values.get(key)!.t !== "s") bad(key, "roleTables", "should be a link to a table note");
+  }
+  if (Object.keys(roleTables).length) out.roleTables = roleTables;
+
   // fields this build doesn't know: hexmaker-<name> keys, then format 1's JSON catch-all
   for (const [k, node] of values) {
     if (!k.startsWith(OTHER_PREFIX) || k === MAP_NOTE_MARKER || k === LEGACY_EXTRA_KEY) continue;
@@ -881,7 +912,16 @@ function frontmatterLines(settings: Partial<MapSettings>, keep: Set<string> = ne
     put(REGION_KEYS.stagger, reg.stagger);
     put(REGION_KEYS.generator, reg.generator);
   }
+  const roles = s.roleTables;
+  const rolesReadable = roleTablesReadable(roles);
+  if (rolesReadable) {
+    for (const r of ENGINE_ROLES) {
+      const v = roles[r.id];
+      if (v && !keep.has(ROLE_TABLE_KEYS[r.id])) lines.push(`${ROLE_TABLE_KEYS[r.id]}: ${linkTo(v.replace(/\.md$/i, ""))}`);
+    }
+  }
   const readable = new Set<string>(KNOWN_FIELDS);
+  if (rolesReadable) readable.add("roleTables");
   if (regionsReadable) readable.add("regions");
   if (!parentReadable) readable.delete("parent");
   if (!worldReadable) readable.delete("world");
@@ -898,11 +938,12 @@ const FRONTMATTER = /^---[ \t]*\n(?:([\s\S]*?)\n)?---[ \t]*(\n|$)/;
 
 // ── tables ───────────────────────────────────────────────────────────────
 
-const HEX_HEADERS = ["Hex", "Name", "Terrain", "Biome", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked"];
+const HEX_HEADERS = ["Hex", "Name", "Terrain", "Biome", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked", "On arrival"];
 /** Known columns written only when the table has them or some row needs them (column → does a row need it). */
 const OPTIONAL_HEX_HEADERS: Record<string, (h: HexData) => boolean> = {
   "region map": (h) => !!h.regionMap,
   biome: (h) => !!h.biome,
+  "on arrival": (h) => !!h.onArrival,
 };
 /** `## Paths` (format 5): what each path is. Route is derived. */
 const PATH_HEADERS = ["Path", "Type", "Route", "Notes"];
@@ -926,6 +967,7 @@ const HEX_COL_ALIASES: Record<string, string> = {
   submap: "locations", submaps: "locations",
   locked: "locked",
   biome: "biome",
+  onarrival: "on arrival", arrival: "on arrival", rollonarrival: "on arrival",
 };
 const PATH_COL_ALIASES: Record<string, string> = {
   path: "path", paths: "path", pathname: "path",
@@ -1045,7 +1087,7 @@ export function compareHexKeys(a: string, b: string): number {
 
 /** Anything besides terrain set on a hex. */
 function hasNonTerrainData(h: HexData): boolean {
-  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.regionMap || (h.locations && h.locations.length) || h.locked || h.biome
+  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.regionMap || (h.locations && h.locations.length) || h.locked || h.biome || h.onArrival
     || (h.extra && Object.values(h.extra).some(Boolean)));
 }
 
@@ -1119,6 +1161,7 @@ const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = 
   "region map": (_k, h) => (h.regionMap ? mapLinkText(h.regionMap) : undefined),
   locations: (_k, h) => h.locations?.map(mapLinkText).join(", "),
   locked: (_k, h) => (h.locked ? "yes" : ""),
+  "on arrival": (_k, h) => (h.onArrival ? `[[${h.onArrival.replace(/\.md$/i, "")}]]` : undefined),
 };
 
 function hexTable(hexes: Map<string, HexData>, baseTerrain?: string, existing?: string[], keptRows: string[] = []): string {
@@ -1279,7 +1322,7 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
   const bad: MapNoteProblem[] = [];
   if (!t) return { rows: out, bad };
   const col = (name: string) => t.cols.indexOf(name);
-  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked"), biome: col("biome") };
+  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked"), biome: col("biome"), onArrival: col("on arrival") };
   // Locations may sit in more than one column (a Submap column next to a
   // Locations one): all are read, in column order.
   const locCols = t.cols.flatMap((c, i) => (c === "locations" ? [i] : []));
@@ -1316,6 +1359,8 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
     const locs = [...regionMaps.slice(1), ...locations].filter((m, i, a) => m !== h.regionMap && a.indexOf(m) === i);
     if (locs.length) h.locations = locs;
     if (TRUE_WORDS.test(lockedRaw)) h.locked = true;
+    const arrival = get(ci.onArrival);
+    if (arrival) h.onArrival = unlink(arrival) || arrival;
     const extra = readExtra(c, unknown);
     if (extra) h.extra = extra;
     out.set(key, h);

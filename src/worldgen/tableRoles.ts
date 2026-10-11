@@ -126,13 +126,21 @@ export interface TableSource {
 /** What the engine knows where it rolls (conditions), plus its random stream. */
 export interface RoleContext extends ConditionContext {
   rand: () => number;
+  /**
+   * Leave rows whose Roll is "on arrival" for later (Star scatter): the pick
+   * then says which table to roll on arrival and what the hex shows until
+   * then (plan-tables-everywhere §2.6).
+   */
+  deferArrival?: boolean;
 }
 
 export interface RolePick {
-  /** The terrain to place; "" for a (nothing) row. */
+  /** The terrain to place; "" for a (nothing) row, or an on-arrival row with nothing to show. */
   terrain: string;
   nothing?: boolean;
   attrs: Record<string, string>;
+  /** An on-arrival row (deferArrival): the table to roll when someone arrives. */
+  arrival?: string;
 }
 
 /**
@@ -152,7 +160,7 @@ function withEqualOdds(lookup: TableLookup, fallback: readonly string[]): TableL
 
 const NO_SOURCE: TableLookup = { table: () => undefined };
 
-function resolveCtx(source: TableSource | undefined, fallback: readonly string[], ctx: ConditionContext): ResolveContext {
+function resolveCtx(source: TableSource | undefined, fallback: readonly string[], ctx: ConditionContext & { deferArrival?: boolean }): ResolveContext {
   return { ...ctx, terrains: source?.terrains ?? fallback, onlyTerrains: true };
 }
 
@@ -171,10 +179,16 @@ function usesTable(source: TableSource | undefined, role: RoleId, fallback: read
  */
 export function rollRole(source: TableSource | undefined, role: RoleId, ctx: RoleContext, fallback: readonly string[]): RolePick | undefined {
   const lookup = withEqualOdds(source?.lookup ?? NO_SOURCE, fallback);
-  const { rand, ...cond } = ctx;
+  const { rand, deferArrival, ...cond } = ctx;
   const link = usesTable(source, role, fallback, cond) ?? EQUAL_ODDS;
-  const r = resolveRoll(link, lookup, { ...resolveCtx(source, fallback, cond), rand });
+  const r = resolveRoll(link, lookup, { ...resolveCtx(source, fallback, cond), rand, ...(deferArrival ? { deferArrival } : {}) });
   if (r.kind === "nothing") return { terrain: "", nothing: true, attrs: r.attrs };
+  if (r.kind === "deferred") {
+    // Shown as a palette terrain (its spelling), else nothing shown yet.
+    const terrains = source?.terrains ?? fallback;
+    const shown = r.shownAs ? terrains.find((t) => t.trim().toLowerCase() === r.shownAs!.trim().toLowerCase()) : undefined;
+    return { terrain: shown ?? "", attrs: r.attrs, arrival: r.value };
+  }
   if (r.kind === "terrain") return { terrain: r.value, attrs: r.attrs };
   return undefined;
 }
