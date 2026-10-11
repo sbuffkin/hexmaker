@@ -9,3 +9,5 @@ data.json
 .claude/worktrees/*
 .integration-out/
 dev/overworld-preview.js
+dev/smoke/last-run.json
+dev/smoke/last-pass.json

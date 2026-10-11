@@ -398,7 +398,12 @@ npm run dev        # watch mode — rebuilds main.js on every save
 npm run build      # production build (type-check + bundle)
 npm run version    # bump version (updates manifest.json and versions.json)
 npm test           # run the test suite
+npm run test:integration  # integration tests
+npm run smoke      # smoke vault matrix in sandboxed Obsidian (Windows; see below)
+npm run premerge   # build + lint + tests + integration + smoke: run before merging or deploying
 ```
+
+**Before merging into the integration branch or deploying a build into a real vault, run `npm run premerge`** and wait for `PREMERGE PASSED`. The smoke matrix (`dev/smoke/run.mjs`) starts a throwaway, separately profiled Obsidian per vault setup (fresh install, an old 1.5.5 vault, space only, an overworld with regions, neighbour maps, a custom palette, a vault with its folders deleted, 80 maps, Simple level…), up to 4 at once, and checks the plugin loads without errors, every map opens, untouched notes stay byte-identical, a restart rewrites nothing, paint and undo round-trip, and Play mode refuses edits. It needs Windows Obsidian and the fresh-eyes tester's `sandbox.mjs` (set `UX_TOOLS_DIR` if it isn't in the default place); `npm run smoke -- --list` shows the setups and `--only <ids>` runs some of them. Results go to `dev/smoke/last-run.json` (and `last-pass.json` on a full pass).
 
 The built output is `main.js` in the repo root. Obsidian loads this file directly from the plugin folder.
 

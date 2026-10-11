@@ -1,0 +1,470 @@
+/**
+ * The vault setups of the smoke matrix (plan-work-modes §3.1, F1–F10).
+ * Every fixture is built from code into a temp folder, or copied; never the
+ * main vault. A setup can:
+ *   build(dir)   write seed notes / a data.json into `dir` → { seed?, pluginData? }
+ *   recipe       an in-page function run in a first "prep" launch (makes
+ *                maps through the plugin's own API), then Obsidian stops
+ *   postPrep(vault, prepInfo)   change the vault on disk after prep
+ *   migration    the check launch migrates legacy hex notes (verified)
+ *   expect       what the checks assert for this setup
+ *   extra        setup-specific checks in the check launch
+ */
+import fs from "node:fs";
+import path from "node:path";
+
+export const REAL_SEED = process.env.SMOKE_REAL_SEED ?? "C:/Users/markr/work/tmp/migtest/seedF";
+export const REAL_DATA = process.env.SMOKE_REAL_DATA ?? "C:/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin/data.json";
+export const MARKER = ".hexmaker-sandbox";
+
+const write = (file, text) => { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, text); };
+const writeJson = (file, obj) => write(file, JSON.stringify(obj, null, 2));
+const seedDir = (dir) => { const s = path.join(dir, "seed"); fs.mkdirSync(s, { recursive: true }); write(path.join(s, MARKER), "smoke suite sandbox\n"); return s; };
+
+// ── F2: a small vault as plugin 1.5.5 left it ─────────────────────────────
+
+const V155_TERRAINS = [
+  { name: "ocean", color: "#29507f", category: "sea" },
+  { name: "grass", color: "#69a168", icon: "bw-grassland.png", category: "lowlands" },
+  { name: "hills", color: "#e0e8a1", icon: "bw-hills.png", category: "lowlands" },
+  { name: "forest", color: "#2f6b3a", category: "forest" },
+  { name: "mountains", color: "#8b7d6b", category: "mountains" },
+  { name: "snow", color: "#e0f2fe", category: "snow" },
+];
+
+/** Hex note text in the 1.5.5 shape: map data in frontmatter, old template body. */
+function v155Note(x, y, fm, body = "") {
+  const lines = ["---"];
+  for (const [k, v] of Object.entries(fm)) {
+    if (Array.isArray(v)) { lines.push(`${k}:`); for (const i of v) lines.push(`  - ${i}`); }
+    else lines.push(`${k}: ${v}`);
+  }
+  lines.push("---", "", `# Hex ${x}, ${y}`, "", "**Region:**", "**Terrain:**", "", "### description", "", body, "", "### Towns", "", "### Dungeons", "", "### Features", "", "### Quests", "", "### Factions", "", "### Encounters Table", "");
+  return lines.join("\n");
+}
+
+function buildV155(dir) {
+  const seed = seedDir(dir);
+  const hexRoot = path.join(seed, "world", "hexes");
+  const maps = [
+    { name: "coast", cols: 8, rows: 6 },
+    { name: "north", cols: 6, rows: 5 },
+    { name: "harbour", cols: 4, rows: 4 },
+  ];
+  const terr = V155_TERRAINS.map((t) => t.name);
+  for (const m of maps) {
+    for (let y = 0; y < m.rows; y++) for (let x = 0; x < m.cols; x++) {
+      const i = x * 7 + y * 3 + m.name.length;
+      if (i % 5 === 4) continue; // some hexes have no note at all
+      const fm = { terrain: terr[i % terr.length] };
+      if (i % 7 === 0) fm.icon = "bw-hills.png";
+      if (i % 11 === 0) fm["gm-icons"] = ["I_Ruins.png", "I_Monolith.png"];
+      if (m.name === "coast" && x < 3) fm.region = "Saltmarsh";
+      if (i % 13 === 0) fm.locked = true;
+      if (i % 9 === 0) { fm.tags = "[hex, smoke]"; fm.aliases = `[Spot ${x}-${y}]`; }
+      const body = i % 4 === 0 ? `Old notes for ${m.name} ${x},${y}. Keep me exactly.` : "";
+      write(path.join(hexRoot, m.name, `${x}_${y}.md`), v155Note(x, y, fm, body));
+    }
+  }
+  // The harbour is a submap of coast 2_2 (1.5.5: duckmage-submap on the hex note).
+  write(path.join(hexRoot, "coast", "2_2.md"), v155Note(2, 2, { terrain: "grass", "duckmage-submap": "harbour" }, "The harbour town."));
+  // A hex note with no frontmatter at all, and one with a typed body.
+  write(path.join(hexRoot, "north", "5_4.md"), "# Hex 5, 4\n\nJust prose, no frontmatter.\n");
+  write(path.join(seed, "world", "Lore.md"), "# Lore\n\nA note that isn't a hex. [[coast]]\n");
+  const data = {
+    mySetting: "default",
+    worldFolder: "world",
+    hexFolder: "world/hexes",
+    townsFolder: "", dungeonsFolder: "", questsFolder: "", featuresFolder: "", iconsFolder: "",
+    templatePath: "",
+    hexGap: "0.2",
+    terrainPalettes: [{ name: "Default", terrains: V155_TERRAINS }],
+    maps: [
+      {
+        name: "coast", paletteName: "Default", gridSize: { cols: 8, rows: 6 }, gridOffset: { x: 0, y: 0 }, staggerOffset: "odd",
+        pathChains: [
+          { typeName: "Road", hexes: ["0_1", "1_1", "2_2", "3_2", "4_3"] },
+          { typeName: "River", hexes: ["6_0", "6_1", "5_2", "5_3"] },
+          { typeName: "Road", hexes: ["2_2"] },
+        ],
+      },
+      { name: "north", paletteName: "Default", gridSize: { cols: 6, rows: 5 }, gridOffset: { x: 0, y: 0 }, pathChains: [{ typeName: "River", hexes: ["0_0", "1_0", "2_1"] }] },
+      { name: "harbour", paletteName: "Default", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [] },
+    ],
+    zoomLevel: 1,
+    pathTypes: [
+      { name: "Road", color: "#a16207", width: 5, lineStyle: "solid", routing: "through" },
+      { name: "River", color: "#3b82f6", width: 6, lineStyle: "solid", routing: "through" },
+    ],
+    hexOrientation: "flat",
+    staggerOffset: "odd",
+    tablesFolder: "world/tables",
+    factionsFolder: "", regionsFolder: "",
+    defaultTableDice: 100,
+    rollTableExcludedFolders: ["terrain"],
+    encounterTableExcludedFolders: ["terrain"],
+    defaultMap: "coast",
+    workflowsFolder: "",
+    setupComplete: true,
+    setupDismissed: false,
+    roadColor: "#a16207",
+    riverColor: "#3b82f6",
+    savedWith: "1.5.5",
+  };
+  const pluginData = path.join(dir, "data.json");
+  writeJson(pluginData, data);
+  return { seed, pluginData };
+}
+
+// ── in-page recipes (self-contained; run with (pluginId, args)) ───────────
+
+function recipeSpace(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    p.settings.mapKinds = ["space"];
+    p.onMapKindsChanged?.();
+    const sector = await p.installPalettePreset("Space - Sector");
+    const system = await p.installPalettePreset("Space - System");
+    const made = [];
+    const mk = async (name, cols, rows, pal, parent) => {
+      const r = await p.createNewMap(name, cols, rows, pal, 0, 0, undefined, undefined, undefined, { quiet: true, ...(parent ? { parent } : {}) });
+      if ("error" in r) throw new Error(r.error);
+      made.push(r.name);
+      return r.name;
+    };
+    const s = await mk("Rim Sector", 10, 8, sector);
+    const pal = p.getMapPalette(s).map((t) => t.name);
+    p.mapStore.setMany(s, [["2_2", { terrain: pal[1] ?? pal[0] }], ["3_3", { terrain: pal[2] ?? pal[0] }], ["5_4", { terrain: pal[0] }]]);
+    const sys = await mk("Vega System", 9, 9, system, { map: s, hex: "2_2" });
+    await p.linkSubmap(s, 2, 2, sys);
+    const planetPal = p.childPaletteFor(sys);
+    const planet = await mk("Vega IV", 8, 6, planetPal, { map: sys, hex: "4_4" });
+    await p.linkSubmap(sys, 4, 4, planet);
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { made, palettes: p.settings.terrainPalettes.map((x) => x.name), planetPal };
+  })();
+}
+
+function recipeOverworld(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    await p.setFeatureLevel("advanced");
+    const t0 = Date.now();
+    while (!p.devTools && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 300));
+    if (!p.devTools) throw new Error("devTools missing (sandbox marker?)");
+    const demo = await p.devTools.buildDemoWorld({ seed: 7 });
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { overworld: demo.overworld, regions: demo.regions, hexes: demo.overworldHexes };
+  })();
+}
+
+function recipeNeighbours(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    await p.setFeatureLevel("advanced");
+    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
+    const wid = "wsmoke1";
+    const names = [];
+    const slots = [[0, 0], [1, 0], [0, 1], [1, 1]];
+    for (const [i, [cx, cy]] of slots.entries()) {
+      // Legacy worlds: every map numbers its own hexes from 0 (no shared coordinates).
+      const r = await p.createNewMap(`Shire ${String.fromCharCode(65 + i)}`, 10, 8, pal, 0, 0, "odd", undefined, undefined, { quiet: true });
+      if ("error" in r) throw new Error(r.error);
+      p.getMap(r.name).world = { id: wid, cx, cy };
+      const terr = p.getMapPalette(r.name).map((t) => t.name);
+      const cells = [];
+      for (let x = 0; x < 10; x++) for (let y = 0; y < 8; y++) if ((x + y + i) % 3 === 0) cells.push([`${x}_${y}`, { terrain: terr[(x * 3 + y + i) % terr.length] }]);
+      p.mapStore.setMany(r.name, cells);
+      names.push(r.name);
+    }
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { maps: names };
+  })();
+}
+
+function recipeCustomPalette(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    const app = window.app;
+    p.settings.setupComplete = true;
+    app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    p.settings.terrainPalettes.push({
+      name: "Moorland",
+      terrains: [
+        { name: "bog", color: "#556b2f" },
+        { name: "crag", color: "#7a7a7a" },
+        { name: "heath", color: "#9a7b9a", type: "grassland" },
+        { name: "tarn", color: "#24466b", type: "water" },
+        { name: "barrow", color: "#3b2f2f" },
+      ],
+    });
+    p.settings.defaultPalette = "Moorland";
+    await p.saveSettings();
+    await sleep(1500);
+    // Delete every other palette's note: the store drops them from settings.
+    for (const pal of p.settings.terrainPalettes.map((x) => x.name)) {
+      if (pal === "Moorland") continue;
+      const f = p.paletteStore.noteFor(pal);
+      if (f) await app.vault.delete(f);
+      await sleep(300);
+    }
+    await sleep(1500);
+    // The default map from a fresh install (on a default palette) goes too.
+    for (const m of [...p.settings.maps]) if (m.paletteName !== "Moorland") p.settings.maps.splice(p.settings.maps.indexOf(m), 1);
+    const r = await p.createNewMap("The Moor", 9, 7, "Moorland", 0, 0, undefined, undefined, undefined, { quiet: true });
+    if ("error" in r) throw new Error(r.error);
+    p.settings.defaultMap = r.name;
+    const terr = ["bog", "crag", "heath", "tarn", "barrow"];
+    const cells = [];
+    for (let x = 0; x < 9; x++) for (let y = 0; y < 7; y++) if ((x * y) % 2 === 0) cells.push([`${x}_${y}`, { terrain: terr[(x + y) % 5] }]);
+    p.mapStore.setMany(r.name, cells);
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { palettes: p.settings.terrainPalettes.map((x) => x.name), map: r.name };
+  })();
+}
+
+function recipeDeleted(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    await p.setFeatureLevel("advanced");
+    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
+    const made = [];
+    for (const n of ["Gone One", "Gone Two"]) {
+      const r = await p.createNewMap(n, 8, 6, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
+      if ("error" in r) throw new Error(r.error);
+      const terr = p.getMapPalette(r.name).map((t) => t.name);
+      p.mapStore.setMany(r.name, [["1_1", { terrain: terr[0] }], ["2_2", { terrain: terr[1] }], ["3_3", { terrain: terr[2] }]]);
+      made.push(r.name);
+    }
+    const types = p.getMapPathTypes(made[0]);
+    if (types.length) p.mapStore.setPaths(made[0], [{ name: "Old road", typeName: types[0].name, branches: [{ anchors: ["0_1", "4_3"] }] }]);
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return {
+      made,
+      folders: [p.settings.hexFolder, p.paletteStore.folder(), p.settings.tablesFolder, p.settings.workflowsFolder, p.templatesFolder?.()].filter(Boolean),
+    };
+  })();
+}
+
+function recipeManyMaps(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    await p.setFeatureLevel("advanced");
+    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
+    const made = [];
+    const errors = [];
+    const mk = async (raw, parent) => {
+      const r = await p.createNewMap(raw, 6, 5, pal, 0, 0, undefined, undefined, undefined, { quiet: true, ...(parent ? { parent: { map: parent, hex: "2_2" } } : {}) });
+      if ("error" in r) { errors.push(`${raw}: ${r.error}`); return null; }
+      const terr = p.getMapPalette(r.name).map((t) => t.name);
+      p.mapStore.setMany(r.name, [["0_0", { terrain: terr[made.length % terr.length] }], ["2_2", { terrain: terr[(made.length + 1) % terr.length] }]]);
+      if (parent) await p.linkSubmap(parent, 2, 2, r.name);
+      made.push(r.name);
+      return r.name;
+    };
+    // Duplicate-ish names: same words, different case/spacing/punctuation.
+    const tops = ["Ash Vale", "Ash  Vale!", "ash vale 2", "Ashvale", "Ash-Vale (old)", "Brine", "BRINE", "Brine 1", "Cinder", "Cinder Isle",
+      "Dune", "Dunes", "Elder", "Elder Wood", "Fen", "Fenn", "Gale", "Gale's End", "Hollow", "Hollows"];
+    const topNames = [];
+    for (const t of tops) { const n = await mk(t); if (n) topNames.push(n); }
+    // Names that slug to a folder already taken are refused (as they should be): top up to 20.
+    for (let i = 1; topNames.length < 20; i++) { const n = await mk(`Isle ${i}`); if (n) topNames.push(n); }
+    // Nested locations four deep under the first 15 tops (15 × 4 = 60).
+    for (const top of topNames.slice(0, 15)) {
+      let parent = top;
+      for (let d = 1; d <= 4; d++) parent = (await mk(`${top} L${d}`, parent)) ?? parent;
+    }
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { made: made.length, errors };
+  })();
+}
+
+function recipeSimpleMid(id) {
+  return (async () => {
+    const p = window.app.plugins.plugins[id];
+    p.settings.setupComplete = true;
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    await p.setFeatureLevel("simple");
+    await p.enableAdvancedFeature("workflows");
+    p.settings.dismissedHints = [...new Set([...(p.settings.dismissedHints ?? []), "generators-toolbar", "regions-map-menu"])];
+    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
+    const r = await p.createNewMap("Starter Isle", 10, 8, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
+    if ("error" in r) throw new Error(r.error);
+    const terr = p.getMapPalette(r.name).map((t) => t.name);
+    const cells = [];
+    for (let x = 0; x < 10; x++) for (let y = 0; y < 8; y++) if ((x + 2 * y) % 4 === 0) cells.push([`${x}_${y}`, { terrain: terr[(x + y) % terr.length] }]);
+    p.mapStore.setMany(r.name, cells);
+    p.settings.defaultMap = r.name;
+    await p.saveSettings();
+    await p.mapStore.flush();
+    return { map: r.name, level: p.settings.featureLevel, advancedFeatures: p.settings.advancedFeatures };
+  })();
+}
+
+// ── setup-specific checks (Node side; ctx.ev(fn, ...args) evaluates in page) ──
+
+async function freshExtra(ctx) {
+  const out = [];
+  const st = ctx.state;
+  out.push({ check: "F1-wizard", ok: st.wizardOpen > 0, detail: `setup wizard leaves: ${st.wizardOpen}` });
+  // Create a map + paint through the API: only the map note may be written.
+  const r = await ctx.ev((id) => (async () => {
+    const app = window.app, p = app.plugins.plugins[id];
+    const t = Date.now();
+    const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
+    const res = await p.createNewMap("Smoke Fresh", 8, 6, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
+    if ("error" in res) return { error: res.error };
+    const terr = p.getMapPalette(res.name).map((x) => x.name);
+    p.mapStore.set(res.name, "1_1", { terrain: terr[0] });
+    p.mapStore.set(res.name, "2_3", { terrain: terr[1] });
+    await p.mapStore.flush();
+    await new Promise((r2) => setTimeout(r2, 1500));
+    const files = [...new Set(window.__smoke.writes.filter((w) => w.t >= t && /\.md$/.test(w.path)).map((w) => w.path))];
+    const note = p.mapStore.notePath(res.name);
+    // First hex note: links its map note, carries no map data.
+    await p.createHexNote(1, 1, res.name);
+    const hexPath = p.hexPath(1, 1, res.name);
+    const text = (await app.vault.adapter.exists(hexPath)) ? await app.vault.adapter.read(hexPath) : null;
+    return { map: res.name, files, note, hexPath, hasLink: !!text && /hexmaker-map:/.test(text), hasTerrain: !!text && /^terrain\s*:/m.test(text) };
+  })(), ctx.pluginId);
+  if (r.error) out.push({ check: "F1-create-paint", ok: false, detail: r.error });
+  else {
+    const others = r.files.filter((f) => f !== r.note);
+    out.push({ check: "F1-create-paint", ok: r.files.includes(r.note) && others.length === 0, detail: `wrote ${r.files.join(", ") || "(nothing)"}` });
+    out.push({ check: "F1-first-hex-note", ok: r.hasLink && !r.hasTerrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain key ${r.hasTerrain}` });
+  }
+  return out;
+}
+
+async function spaceExtra(ctx) {
+  const st = ctx.state;
+  const out = [];
+  out.push({ check: "F4-kinds", ok: JSON.stringify(st.mapKinds) === JSON.stringify(["space"]), detail: `mapKinds ${JSON.stringify(st.mapKinds)}` });
+  const spaceMaps = st.maps.filter((m) => m.space).map((m) => m.name);
+  out.push({ check: "F4-space-maps", ok: spaceMaps.length >= 2, detail: `space maps: ${spaceMaps.join(", ")}` });
+  const chain = st.maps.filter((m) => m.parent).map((m) => `${m.parent} → ${m.name}`);
+  out.push({ check: "F4-chain", ok: chain.length >= 2, detail: chain.join("; ") });
+  return out;
+}
+
+async function overworldExtra(ctx) {
+  const ow = ctx.state.maps.find((m) => m.overworld);
+  if (!ow) return [{ check: "F5-overworld", ok: false, detail: "no overworld map" }];
+  const regions = ctx.state.maps.filter((m) => m.submapKind === "region" && m.parent === ow.name);
+  const out = [{ check: "F5-regions", ok: regions.length > 0, detail: `${ow.name}: ${regions.length} region maps` }];
+  const lock = await ctx.ev((id, n) => window.__smokePage.overworldPaintLock(id, n), ctx.pluginId, ow.name);
+  out.push({ check: "C8-overworld-paint", ok: lock.ok, detail: [...lock.steps, ...lock.problems].join("; ") });
+  return out;
+}
+
+async function neighboursExtra(ctx) {
+  const inWorld = ctx.state.maps.filter((m) => m.world);
+  return [{ check: "F6-world", ok: inWorld.length === 4, detail: inWorld.map((m) => `${m.name}@${m.world}`).join(", ") }];
+}
+
+async function customPaletteExtra(ctx) {
+  const st = ctx.state;
+  return [
+    { check: "F7-palettes", ok: st.palettes.length === 1 && st.palettes[0] === "Moorland", detail: `palettes: ${st.palettes.join(", ")}` },
+  ];
+}
+
+async function deletedExtra(ctx) {
+  const st = ctx.state;
+  const notices = await ctx.ev(() => window.__smokePage.notices());
+  const errLoop = ctx.log.length;
+  await new Promise((r) => setTimeout(r, 8000));
+  const grew = ctx.log.length - errLoop;
+  return [
+    // Recorded, not judged (owner call, see open-work): what the plugin does with maps whose folder and note are gone.
+    { check: "F8-loads", ok: true, detail: `maps: ${st.maps.map((m) => `${m.name} (${!m.noteExists ? "no note" : ctx.snap0[m.notePath] ? "note kept" : "note re-created, " + m.hexes + " hexes"})`).join(", ")}; palettes: ${st.palettes.join(", ") || "(none)"}; path types: ${st.pathTypes}` },
+    { check: "F8-no-loop", ok: grew === 0, detail: `console errors/warnings added in 8 s idle: ${grew}; notices: ${notices.join(" | ") || "(none)"}` },
+  ];
+}
+
+async function manyMapsExtra(ctx) {
+  const n = ctx.state.maps.length;
+  const deep = ctx.state.maps.filter((m) => / L4$/i.test(m.name) || /-l4$/.test(m.name)).length;
+  return [{ check: "F9-count", ok: n >= 80, detail: `${n} maps, ${deep} at depth 4, store ready in ${ctx.readyMs} ms` }];
+}
+
+async function simpleMidExtra(ctx) {
+  const st = ctx.state;
+  const out = [];
+  out.push({ check: "F10-level", ok: st.featureLevel === "simple" && st.advancedFeatures.includes("workflows"), detail: `level ${st.featureLevel}, advanced ${JSON.stringify(st.advancedFeatures)}` });
+  out.push({ check: "F10-hints", ok: st.dismissedHints.includes("generators-toolbar"), detail: `dismissed ${JSON.stringify(st.dismissedHints)}` });
+  // The generator page is Advanced: in Simple the command offers to turn it on instead.
+  const r = await ctx.ev((id) => (async () => {
+    const app = window.app;
+    app.commands.executeCommandById(`${id}:open-terrain-generator`);
+    await new Promise((res) => setTimeout(res, 800));
+    const modal = document.querySelectorAll(".modal-container").length;
+    const gen = app.workspace.getLeavesOfType("duckmage-terrain-generator").length;
+    document.querySelectorAll(".modal-container .modal-close-button").forEach((b) => b.click());
+    return { modal, gen };
+  })(), ctx.pluginId);
+  out.push({ check: "F10-gate", ok: r.modal > 0 && r.gen === 0, detail: `generator command: modal ${r.modal}, generator view ${r.gen}` });
+  out.push({ check: "F10-mode-switch", ok: !!ctx.firstOpen?.workModeBtn, detail: `work mode button on the map: ${!!ctx.firstOpen?.workModeBtn}` });
+  return out;
+}
+
+// ── the matrix ────────────────────────────────────────────────────────────
+
+export const SETUPS = [
+  {
+    id: "real-data", title: "Owner real-data copy (seedF + live data.json), migrates", slow: true,
+    // Private data on the owner's machine (SMOKE_REAL_SEED / SMOKE_REAL_DATA elsewhere): skipped, loudly, without it.
+    unavailable: () => (!fs.existsSync(REAL_SEED) ? `real seed missing: ${REAL_SEED}` : !fs.existsSync(REAL_DATA) ? `live data.json missing: ${REAL_DATA}` : null),
+    build(dir) {
+      if (!fs.existsSync(REAL_SEED)) throw new Error(`real seed missing: ${REAL_SEED}`);
+      if (!fs.existsSync(REAL_DATA)) throw new Error(`live data.json missing: ${REAL_DATA}`);
+      const pluginData = path.join(dir, "data.json");
+      fs.copyFileSync(REAL_DATA, pluginData); // a COPY: the sandbox never sees the live file
+      return { seed: REAL_SEED, pluginData };
+    },
+    migration: true,
+    expect: { level: "advanced", readyMs: 600_000, openMs: 60_000 },
+  },
+  { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { level: "simple", wizard: true }, extra: freshExtra, skipPaint: true },
+  { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: { level: "advanced" } },
+  { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra },
+  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, expect: { level: "advanced", openMs: 60_000 }, extra: overworldExtra },
+  { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: { level: "advanced" }, extra: neighboursExtra },
+  { id: "custom-palette", title: "One custom palette, no default names", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeCustomPalette, expect: {}, extra: customPaletteExtra },
+  {
+    id: "deleted", title: "Everything deleted (no palettes, path types or map folders)",
+    build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeDeleted,
+    postPrep(vault, info, pluginId) {
+      for (const f of info.folders ?? []) {
+        const p = path.join(vault, f);
+        if (fs.existsSync(p) && path.resolve(p).startsWith(path.resolve(vault) + path.sep)) fs.rmSync(p, { recursive: true, force: true });
+      }
+      const dataFile = path.join(vault, ".obsidian", "plugins", pluginId, "data.json");
+      const data = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+      data.terrainPalettes = [];
+      data.pathTypes = [];
+      fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+    },
+    expect: { level: "advanced" }, extra: deletedExtra, skipModeLocks: true,
+  },
+  { id: "many-maps", title: "Many maps (80, nested 4 deep, look-alike names)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeManyMaps, expect: { level: "advanced" }, extra: manyMapsExtra },
+  { id: "simple-mid", title: "Simple level, mid-ramp (workflows on, hints dismissed)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSimpleMid, expect: { level: "simple" }, extra: simpleMidExtra },
+];
+
