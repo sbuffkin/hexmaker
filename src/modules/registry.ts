@@ -9,11 +9,13 @@
  */
 
 import type {
+  EngineDef,
   EngineRoleDef,
   HexmakerModule,
   IconPackDef,
   KindId,
   KindInfo,
+  TableConditionDef,
   TerrainGroupDef,
   TerrainTypeDef,
 } from "./types";
@@ -108,6 +110,15 @@ export class ModuleRegistry {
 
   tableRoles(): EngineRoleDef[] {
     return this.modules.flatMap((m) => [...(m.tableRoles ?? [])]);
+  }
+
+  /** Engines the modules' generators run, in registry order. */
+  engines(): (EngineDef & { module: string })[] {
+    return this.modules.flatMap((m) => (m.engines ?? []).map((e) => ({ ...e, module: m.id })));
+  }
+
+  tableConditions(): TableConditionDef[] {
+    return this.modules.flatMap((m) => [...(m.tableConditions ?? [])]);
   }
 
   pathRoles(): Record<string, string> {

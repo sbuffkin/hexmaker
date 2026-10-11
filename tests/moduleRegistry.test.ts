@@ -180,3 +180,40 @@ describe("one map-type rule (CM3): the nearest type up the map tree", () => {
     expect(sectionWordsIn(host, undefined)("Towns").label).toBe("Towns");
   });
 });
+
+describe("generators, engines and table roles through modules (P3)", () => {
+  it("every table role rolls on an engine of its own module", () => {
+    for (const m of MODULES) {
+      const engines = new Set((m.engines ?? []).map((e) => e.id));
+      for (const r of m.tableRoles ?? []) expect({ role: r.id, ok: engines.has(r.engine) }).toEqual({ role: r.id, ok: true });
+    }
+    expect(registry.engines().map((e) => e.id)).toEqual(["procedural:star-scatter", "procedural:orbits"]);
+  });
+
+  it("the modules' built-in generators keep the list order", async () => {
+    const { moduleGenerators, MODULE_RUNTIMES } = await import("../src/modules/runtime");
+    expect(MODULE_RUNTIMES.map((r) => r.id)).toEqual(MODULES.map((m) => m.id));
+    const plugin = { settings: { hexOrientation: "flat" } } as never;
+    const gens = moduleGenerators(plugin, { toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => ({ ...g, orientation: "flat" }) });
+    expect(gens.map((g) => g.id)).toEqual([
+      "procedural:star-scatter", "procedural:orbits", "procedural:region-detail",
+      "procedural:overland", "procedural:world-biomes", "procedural:planet-surface",
+    ]);
+    // Each generator is tagged with a map type a module provides.
+    for (const g of gens) expect(registry.kindIds()).toContain(g.mapKind);
+  });
+
+  it("first-map generators and background terrains come from the map types", () => {
+    expect(registry.kindInfo("world")?.firstGenerators).toEqual(["procedural:overland"]);
+    expect(registry.kindInfo("space")?.firstGenerators).toEqual(["procedural:star-scatter"]);
+    expect(registry.kindInfo("space")?.baseTerrainTypes).toEqual(["void"]);
+  });
+
+  it("path roles and When keys come from the modules", async () => {
+    const { conditionKeys, parseWhen, formatWhen } = await import("../src/random-tables/tableConditions");
+    expect(registry.pathRoles()).toEqual({ routes: "Path type for routes", orbits: "Path type for orbits" });
+    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "type", "terrain"]);
+    // Aliases read as the module's key.
+    expect(formatWhen(parseWhen("orbit: outer; distance: 2-3; temp: cold"))).toBe("zone: outer; ring: 2–3; temperature: 0–0.2");
+  });
+});

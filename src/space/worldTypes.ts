@@ -79,6 +79,20 @@ import {
   type ClimateRange,
 } from "../overworld/biomeClimate";
 import { pathLink, refBasename } from "../noteFormats";
+import {
+  generatorRefId,
+  readGenerator,
+  readIntRange,
+  readOptions,
+  readSize,
+  type IntRange,
+  type WorldGeneratorRef,
+  type WorldSizeRange,
+} from "../worldgen/cellReaders";
+import { ORBIT_ZONES, orbitZone, readOrbit, type OrbitZone } from "../modules/space/orbitZones";
+
+export { generatorRefId, readGenerator, readIntRange, readOptions, readSize, ORBIT_ZONES, orbitZone, readOrbit };
+export type { IntRange, OrbitZone, WorldGeneratorRef, WorldSizeRange };
 
 export const WORLD_TYPES_MARKER = "hexmaker-world-types";
 /** 2: the note also has the Stars and Sector features tables. 3: a Mainworld column. */
@@ -86,31 +100,10 @@ export const WORLD_TYPES_FORMAT = 3;
 /** The shipped table's name (and note name). */
 export const DEFAULT_WORLD_TYPES = "Default space";
 
-export type OrbitZone = "inner" | "habitable" | "outer";
-export const ORBIT_ZONES: readonly OrbitZone[] = ["inner", "habitable", "outer"];
 
 /** Which kind of space map picks: a sector's systems, or a system's orbits. */
 export type WorldTypeMap = "sector" | "system";
 export const WORLD_TYPE_MAPS: readonly WorldTypeMap[] = ["sector", "system"];
-
-/**
- * The generator a world's submap is made with. Assignable to
- * worldgen/biomeRegion's GeneratorRef (minus the in-memory form):
- * `{ path }` a generator note, `{ builtin }` a shipped generator's slug,
- * `{ id }` a registry id (`procedural:planet-surface`, `wfc:<path>`, …).
- */
-export type WorldGeneratorRef = { path: string } | { builtin: string } | { id: string };
-
-/** Inclusive integer range. */
-export interface IntRange {
-  lo: number;
-  hi: number;
-}
-
-export interface WorldSizeRange {
-  cols: IntRange;
-  rows: IntRange;
-}
 
 export interface WorldTypeRow {
   /** The terrain this row places, as written ("ocean planet"). */
@@ -233,15 +226,6 @@ export interface WorldTypePick {
 
 // ── zones ────────────────────────────────────────────────────────────────
 
-/**
- * The orbit zone of ring `d` when orbits run from ring `first` to `last`:
- * the first 30% inner, up to 60% habitable, the rest outer (Orbits' rule).
- */
-export function orbitZone(d: number, first: number, last: number): OrbitZone {
-  const t = (d - first) / Math.max(1, last - first);
-  return t < 0.3 ? "inner" : t < 0.6 ? "habitable" : "outer";
-}
-
 // ── matching and picking ─────────────────────────────────────────────────
 
 const lc = (s: string) => s.trim().toLowerCase();
@@ -340,13 +324,6 @@ export function pickWorldType(table: WorldTypeTable, ctx: WorldTypeContext): Wor
  */
 export function worldTypeFor(table: WorldTypeTable, world: string, ctx: Omit<WorldTypeContext, "seed"> & { seed?: number } = {}): WorldTypeRow | undefined {
   return table.rows.find((r) => lc(r.world) === lc(world) && worldTypeFits(r, ctx));
-}
-
-/** A generator ref as a registry id (`{ path }` → `wfc:<path>.md`, `{ builtin }` → `builtin:<slug>`). */
-export function generatorRefId(ref: WorldGeneratorRef): string {
-  if ("id" in ref) return ref.id;
-  if ("builtin" in ref) return `builtin:${ref.builtin}`;
-  return `wfc:${/\.md$/i.test(ref.path) ? ref.path : `${ref.path}.md`}`;
 }
 
 /** A row's map setup in the palette's submap-default shape (types.ts SubmapDefault). */
@@ -528,53 +505,8 @@ export function readWeight(raw: string): number {
   return pct ? n / 100 : n;
 }
 
-const RANGE_SPLIT = /\s*(?:–|—|\.\.|\bto\b|-)\s*/;
-
-/** "20", "16–24", "16 to 24" → an integer range ≥ 1 (turned round when backwards). */
-export function readIntRange(raw: string): IntRange | undefined {
-  const parts = raw.trim().split(RANGE_SPLIT).filter((p) => p !== "");
-  if (parts.length < 1 || parts.length > 2) return undefined;
-  const nums = parts.map((p) => Number(p));
-  if (nums.some((n) => !Number.isInteger(n) || n < 1)) return undefined;
-  const lo = Math.min(...nums), hi = Math.max(...nums);
-  return { lo, hi };
-}
-
-/** "20×14", "20x14", "16–24 × 10–14", "20 by 14" → a size range. */
-export function readSize(raw: string): WorldSizeRange | undefined {
-  const parts = raw.trim().toLowerCase().split(/\s*(?:×|\*|\bby\b|(?<=[\d\s])x(?=[\s\d]))\s*/).filter((p) => p !== "");
-  if (parts.length !== 2) return undefined;
-  const cols = readIntRange(parts[0]), rows = readIntRange(parts[1]);
-  return cols && rows ? { cols, rows } : undefined;
-}
-
 const fmtInt = (r: IntRange) => (r.lo === r.hi ? String(r.lo) : `${r.lo}–${r.hi}`);
 export const formatSize = (s: WorldSizeRange) => `${fmtInt(s.cols)}×${fmtInt(s.rows)}`;
-
-const ZONE_ALIASES: Record<string, OrbitZone> = {
-  inner: "inner", hot: "inner", close: "inner",
-  habitable: "habitable", hab: "habitable", middle: "habitable", mid: "habitable", goldilocks: "habitable",
-  outer: "outer", cold: "outer", far: "outer",
-};
-
-/** "inner, habitable", "2–4", "habitable, 3-5" → zones and/or a ring band. */
-export function readOrbit(raw: string): { zones?: OrbitZone[]; distance?: IntRange } | undefined {
-  const t = raw.trim().toLowerCase();
-  if (!t || t === "any") return {};
-  const out: { zones?: OrbitZone[]; distance?: IntRange } = {};
-  for (const tok of t.split(/\s*[,;/]\s*|\s+and\s+/).filter((p) => p !== "")) {
-    const z = ZONE_ALIASES[tok.replace(/\s*zone$/, "")];
-    if (z) {
-      out.zones = [...(out.zones ?? []).filter((x) => x !== z), z];
-      continue;
-    }
-    const d = readIntRange(tok.replace(/^(?:rings?|distance)\s*/, ""));
-    if (!d || out.distance) return undefined;
-    out.distance = d;
-  }
-  if (out.zones) out.zones = ORBIT_ZONES.filter((z) => out.zones!.includes(z));
-  return out;
-}
 
 export function formatOrbit(row: Pick<WorldTypeRow, "zones" | "distance">): string {
   const parts: string[] = [...(row.zones ?? [])];
@@ -591,34 +523,11 @@ export function readMap(raw: string): WorldTypeMap | undefined | null {
   return null;
 }
 
-/** "[[My gen]]" → path; "procedural:x" → id; "preset-volcanic" → builtin; "" / "none" → undefined. */
-export function readGenerator(raw: string): WorldGeneratorRef | undefined {
-  const t = raw.trim();
-  if (!t || /^(none|-|—)$/i.test(t)) return undefined;
-  const link = /\[\[([^\]|#]+)(?:#[^\]|]*)?(?:\|[^\]]*)?\]\]/.exec(t);
-  if (link) return { path: link[1].trim() };
-  if (t.includes(":")) return { id: t };
-  return { builtin: t.toLowerCase() };
-}
-
 export function formatGenerator(g: WorldGeneratorRef | undefined): string {
   if (!g) return "";
   if ("path" in g) return `[[${g.path}]]`;
   if ("id" in g) return g.id;
   return g.builtin;
-}
-
-/** "water=85, climate=lush" (or "water: 85; climate: lush") → options; undefined when unreadable. */
-export function readOptions(raw: string): Record<string, string> | undefined {
-  const out: Record<string, string> = {};
-  const t = raw.trim();
-  if (!t) return out;
-  for (const pair of t.split(/\s*[,;]\s*/).filter((p) => p !== "")) {
-    const m = /^([^=:]+?)\s*[=:]\s*(.+)$/.exec(pair);
-    if (!m) return undefined;
-    out[m[1].trim()] = m[2].trim();
-  }
-  return out;
 }
 
 export const formatOptions = (o: Record<string, string> | undefined) =>

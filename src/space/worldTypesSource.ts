@@ -67,9 +67,9 @@ export function attrsOf(r: WorldTypeRow): Record<string, string> {
 /** A worlds row's limits other than map and zone, as When conditions. */
 export function conditionsOf(r: WorldTypeRow): TableCondition[] {
   const out: TableCondition[] = [];
-  if (r.distance) out.push({ key: "ring", range: { ...r.distance } });
-  if (r.stars?.length) out.push({ key: "star", values: r.stars.map(lc) });
-  if (r.temperature) out.push({ key: "temperature", range: { ...r.temperature } });
+  if (r.distance) out.push({ key: "ring", value: { ...r.distance } });
+  if (r.stars?.length) out.push({ key: "star", value: r.stars.map(lc) });
+  if (r.temperature) out.push({ key: "temperature", value: { ...r.temperature } });
   return out;
 }
 

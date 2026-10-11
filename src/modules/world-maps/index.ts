@@ -7,9 +7,11 @@
  */
 
 import type { HexmakerModule } from "../types";
+import { WORLD_MAPS_TABLE_CONDITIONS } from "./tableConditions";
 
 export const worldMapsModule: HexmakerModule = {
   id: "world-maps",
   slice: "W",
+  tableConditions: WORLD_MAPS_TABLE_CONDITIONS,
   owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
 };

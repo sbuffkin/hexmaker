@@ -3,7 +3,6 @@
     "src/HexmakerPlugin.ts -> space": 2,
     "src/HexmakerPlugin.ts -> world-maps": 5,
     "src/arrival/ArrivalService.ts -> world-maps": 2,
-    "src/arrival/arrival.ts -> space": 1,
     "src/hex-map/BiomeLibraryModal.ts -> world-maps": 5,
     "src/hex-map/BiomeModals.ts -> world-maps": 5,
     "src/hex-map/EditRegionModal.ts -> world-maps": 4,
@@ -17,19 +16,14 @@
     "src/hex-map/overworldMinimap.ts -> world-maps": 4,
     "src/maps/mapNav.ts -> world-maps": 1,
     "src/noteFormatUpgrade.ts -> space": 1,
-    "src/random-tables/tableConditions.ts -> space": 1,
-    "src/random-tables/tableConditions.ts -> world-maps": 1,
     "src/worldgen/BiomePanel.ts -> world-maps": 6,
     "src/worldgen/NewMapSetupModal.ts -> space": 2,
     "src/worldgen/WalkRegionModal.ts -> world-maps": 3,
     "src/worldgen/generators.ts -> world-maps": 1,
     "src/worldgen/procedural/orbits.ts -> space": 1,
-    "src/worldgen/regionGenerator.ts -> world-maps": 4,
-    "src/worldgen/registry.ts -> space": 1,
-    "src/worldgen/registry.ts -> world-maps": 2
+    "src/worldgen/regionGenerator.ts -> world-maps": 4
   },
   "decisions": {
-    "src/HexmakerPlugin.ts -> space": 2,
-    "src/worldgen/registry.ts -> world": 1
+    "src/HexmakerPlugin.ts -> space": 2
   }
 }

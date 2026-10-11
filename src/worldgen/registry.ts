@@ -8,39 +8,15 @@ import {
   toMapPaths,
   type GridSpec,
 } from "./generators";
-import {
-  NO_PATHS,
-  ORBIT_TYPE_KEY,
-  ROUTE_TYPE_KEY,
-  chosenPathType,
-  pathTypeOption,
-  staticPathTypeOption,
-} from "./generatorPathTypes";
-import { representableBiomes } from "../overworld/biomes";
-import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, worldBiomesFromOptions } from "../overworld/worldBiomes";
-import { gridKeys, ofType, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
-import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "./procedural/starScatter";
-import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits, orbitsOptions } from "./procedural/orbits";
-import {
-  PLANET_SURFACE_ID,
-  OVERLAND_ID,
-  OVERLAND_OPTIONS,
-  PLANET_SURFACE_OPTIONS,
-  REGION_DETAIL_ID,
-  REGION_DETAIL_OPTIONS,
-  overlandDescription,
-  planetSurface,
-  planetSurfaceFits,
-} from "./procedural/planetSurface";
+import { ofType, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
 import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
 import { registry } from "../modules";
 import { generateConnected, type NewRegion } from "./neighbours";
-import { WORLD_TYPES_KEY, worldTypesOption } from "../space/worldTypesSource";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
-import { OnceTracker, type FiredEvent, type Ledgers } from "../arrival/eventsLedger";
-import { withOnce } from "./tableRoles";
+import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
+import { moduleGenerators } from "../modules/runtime";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -198,23 +174,12 @@ export function describeKind(kind: TerrainGeneratorKind, terrains: TerrainColor[
 
 /**
  * The terrain a fresh map shows where nothing has been painted: the
- * palette's first void-typed terrain (the space background), otherwise
- * none. By type, so a renamed or custom background works too.
+ * palette's first terrain of a map type's background types (Space: void),
+ * otherwise none. By type, so a renamed or custom background works too.
  */
 export function suggestBaseTerrain(terrains: TerrainColor[]): string | undefined {
-  return ofType(terrains, ["void"])[0];
+  return ofType(terrains, registry.kinds().flatMap((k) => k.baseTerrainTypes ?? []))[0];
 }
-
-/** The World types option with the vault's tables (Star scatter and Orbits roll on the chosen one, SP1). */
-function worldTypesChoice(plugin: HexmakerPlugin): ProcOption {
-  const store = plugin.worldTypeStore;
-  return worldTypesOption(store.list().map((t) => t.name), store.defaultName());
-}
-
-/** The Once rows a run fired, for the outcome (nothing when none). */
-const firedEvents = (once: OnceTracker): { events?: FiredEvent[] } => (once.fired.length ? { events: once.fired } : {});
-
-const missingWorldTypes = (name: string) => `No World types table called "${name}", so equal odds.`;
 
 function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
   return { ...grid, orientation: plugin.settings.hexOrientation };
@@ -234,117 +199,9 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
       toPaths,
     },
-    {
-      id: STAR_SCATTER_ID,
-      label: "Star scatter",
-      mapKind: "space",
-      description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
-      source: "built-in",
-      options: [...STAR_SCATTER_OPTIONS, worldTypesOption([]), staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
-      optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, worldTypesChoice(plugin), pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
-      fits: starScatterOffered,
-      generate: (req) => {
-        const routeType = chosenPathType(req.options[ROUTE_TYPE_KEY], "routes", req.pathTypes);
-        // None picked on purpose: no routes, and nothing to warn about.
-        const options = !routeType && req.options[ROUTE_TYPE_KEY] === NO_PATHS ? { ...req.options, routes: "none" } : req.options;
-        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
-        const once = new OnceTracker(req.ledgers);
-        const r = starScatter(req.terrains, procGrid(plugin, req.grid), req.seed, options, routeType, withOnce(wt.source, once));
-        if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
-        return r.cells.size ? { ok: true, ...r, ...firedEvents(once) } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
-      },
-      toPaths,
-    },
-    {
-      id: ORBITS_ID,
-      label: "Orbits",
-      mapKind: "space",
-      description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
-      source: "built-in",
-      options: [...ORBITS_OPTIONS, worldTypesOption([]), staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
-      optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), worldTypesChoice(plugin), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
-      fits: orbitsFits,
-      generate: (req) => {
-        const orbitType = chosenPathType(req.options[ORBIT_TYPE_KEY], "orbits", req.pathTypes);
-        const wt = plugin.worldTypeStore.sourceFor(req.options[WORLD_TYPES_KEY], req.terrains, req.tablesFrom);
-        const once = new OnceTracker(req.ledgers);
-        const r = orbits(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, orbitType, req.context, withOnce(wt.source, once));
-        if (wt.missing) r.warnings.unshift(missingWorldTypes(wt.missing));
-        // No type and not None on purpose: say why there are no rings.
-        if (!orbitType && req.options[ORBIT_TYPE_KEY] !== NO_PATHS && r.cells.size)
-          r.warnings.push("No path type for orbits, so the rings weren't drawn. Pick one under Path type for orbits (or add a path type to the palette).");
-        return r.cells.size ? { ok: true, ...r, ...firedEvents(once) } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
-      },
-      toPaths,
-    },
-    {
-      id: REGION_DETAIL_ID,
-      label: "Region detail",
-      mapKind: "world",
-      needsContext: true,
-      description: REGION_DETAIL_DESCRIPTION,
-      source: "built-in",
-      options: REGION_DETAIL_OPTIONS,
-      fits: planetSurfaceFits,
-      generate: (req) => {
-        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, req.context ?? {});
-        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
-      },
-      toPaths,
-    },
-    {
-      id: OVERLAND_ID,
-      label: "Overland",
-      // Planet surface's noise generator under a world name, so world-only
-      // users get a procedural map without seeing space options.
-      mapKind: "world",
-      description: "A region from noise: sea, land and high ground from whatever terrains your palette has. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.",
-      describe: overlandDescription,
-      source: "built-in",
-      continuesNeighbours: true,
-      options: OVERLAND_OPTIONS,
-      fits: planetSurfaceFits,
-      generate: (req) => {
-        // Only a neighbouring region's border (edgeCells) is used, not a parent hex.
-        const edge = req.context?.edgeCells?.size ? { edgeCells: req.context.edgeCells } : undefined;
-        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options, edge, "overland");
-        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
-      },
-      toPaths,
-    },
-    {
-      id: WORLD_BIOMES_ID,
-      label: "World biomes",
-      mapKind: "world",
-      description: "An overworld: each hex is one biome (tundra, forest, savanna…), laid out by climate, with transition biomes between ones that shouldn't touch. Its hexes then open into regions that blend with their neighbours.",
-      source: "built-in",
-      options: WORLD_BIOMES_OPTIONS,
-      fits: (terrains) => representableBiomes(terrains).size >= 3,
-      generate: (req) => {
-        const g = procGrid(plugin, req.grid);
-        const r = worldBiomesFromOptions(gridKeys(g), g.orientation, g.stagger, req.terrains, req.seed, req.options);
-        // The river is biome data on an overworld, not a path (paths come later).
-        return r.terrain.size ? { ok: true, cells: r.terrain, paths: [], warnings: [] } : { ok: false, message: "This palette has no terrains for biomes." };
-      },
-      toPaths,
-    },
-    {
-      id: PLANET_SURFACE_ID,
-      label: "Planet surface",
-      // Space: made for the planets of a star system (System palette submap
-      // defaults). Offered there — and to space users — but not on a plain
-      // fantasy map, where Region detail / learned generators fit better.
-      mapKind: "space",
-      description: "Region map from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
-      source: "built-in",
-      options: PLANET_SURFACE_OPTIONS,
-      fits: planetSurfaceFits,
-      generate: (req) => {
-        const r = planetSurface(req.terrains, procGrid(plugin, req.grid), req.seed, req.options);
-        return r.cells.size ? { ok: true, ...r } : { ok: false, message: r.warnings[0] ?? "Nothing generated." };
-      },
-      toPaths,
-    },
+    // Each module's built-in generators (Star scatter, Orbits, Region detail,
+    // Overland, World biomes, Planet surface), in their list order.
+    ...moduleGenerators(plugin, { toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
   ];
   // Every generator, tagged with its map type: callers filter with
   // visibleKinds (they know the palette, the parent map and the current choice).
@@ -494,13 +351,19 @@ export function newMapGeneratorChoices(
 }
 
 /**
- * Generator a first map starts with (setup wizard): Overland for world
- * users, Star scatter for space-only users — whichever of the two fits the
- * palette, in that order of preference — else Blank.
+ * Generator a first map starts with (setup wizard): each map type's first
+ * choice (World: Overland, Space: Star scatter), the types that are on
+ * first (in module order), then the rest with the fallback type (World)
+ * last; the first that fits the palette, else Blank.
  */
 export function firstMapGenerator(fitting: { id: string }[], mapKinds: Iterable<string>): string {
-  const kinds = new Set(mapKinds);
-  const prefs = kinds.has("world") ? [OVERLAND_ID, STAR_SCATTER_ID] : [STAR_SCATTER_ID, OVERLAND_ID];
+  const on = new Set(mapKinds);
+  const fallback = registry.fallbackKind();
+  const rank = (k: { id: string }) => (on.has(k.id) ? 0 : k.id === fallback ? 2 : 1);
+  const prefs = registry.kinds()
+    .map((k, i) => ({ k, i }))
+    .sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i)
+    .flatMap(({ k }) => k.firstGenerators ?? []);
   return prefs.find((id) => fitting.some((k) => k.id === id)) ?? BLANK_ID;
 }
 

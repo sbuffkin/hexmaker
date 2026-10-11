@@ -29,13 +29,12 @@ export interface PalettePreset {
   pathRoles?: PresetPathRoles;
 }
 
-/** The generator path roles a preset can fill (see worldgen/generatorPathTypes.ts). */
-export interface PresetPathRoles {
-  /** Star scatter's routes between systems. */
-  routes?: string;
-  /** Orbits' rings around the star. */
-  orbits?: string;
-}
+/**
+ * The generator path roles a preset fills: role id → the preset's path
+ * type for it (Space: Star scatter's routes, Orbits' rings). The roles are
+ * a module's (HexmakerModule.pathRoles; see worldgen/generatorPathTypes.ts).
+ */
+export type PresetPathRoles = Partial<Record<string, string>>;
 
 /**
  * Every preset, in module order (src/modules): World's Expanded and
