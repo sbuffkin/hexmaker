@@ -28,6 +28,7 @@ import {
   regionBiomeStatus,
   overworldOf,
   planRegionAt,
+  planRegionWithGenerator,
   regenerateRegion,
   reshapeLock,
   setBiomeAt,
@@ -243,10 +244,18 @@ export class RegionGenModal extends HexmakerModal {
     return this.opts.biome ? representativeTerrain(this.opts.biome, plugin.getMapPalette(this.parentName)) : undefined;
   }
 
+  private redrawToken = 0;
+
   private redraw(): void {
-    // Preview with the chosen biome on the hex (nothing is written).
-    const plan = planRegionAt(this.host.plugin, this.parentName, this.px, this.py, { ...this.opts, hexTerrain: this.biomeTerrain() });
-    drawRegionPlan(this.canvas, this.host.plugin, this.parentName, this.px, this.py, plan);
+    // Preview with the chosen biome on the hex (nothing is written), made
+    // the way the region will be (a generator-backed biome by its generator).
+    const token = ++this.redrawToken;
+    const opts = { ...this.opts, hexTerrain: this.biomeTerrain() };
+    void planRegionWithGenerator(this.host.plugin, this.parentName, this.px, this.py, opts)
+      .catch(() => planRegionAt(this.host.plugin, this.parentName, this.px, this.py, opts))
+      .then((plan) => {
+        if (token === this.redrawToken) drawRegionPlan(this.canvas, this.host.plugin, this.parentName, this.px, this.py, plan);
+      });
   }
 
   private async apply(): Promise<void> {

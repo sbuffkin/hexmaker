@@ -25,7 +25,8 @@
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import { SHORE_TYPES, WATER_TYPES, type BiomeId, type BiomeProfile } from "./biomes";
 import { namesWithinType, typeMix, type BlendField } from "./blendField";
-import { childNeighbours, parentOf, regionCells, type RegionLayout } from "./layout";
+import { childNeighbours, childPoint, neighbourRegions, parentOf, regionCells, regionCentrePoint, regionSpacing, type RegionLayout } from "./layout";
+import { fbm, hash2 } from "./noise";
 
 export interface RegionGenInput {
   layout: RegionLayout;
@@ -144,7 +145,24 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   //    land in a mostly water biome would otherwise vanish.
   const ownBiome = field.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
   const profile = ownBiome ? profiles.get(ownBiome) : undefined;
-  if (ownBiome && profile && (profile.minIslands || profile.landShare)) {
+  if (ownBiome && profile?.shore) {
+    // A shoreline biome: its land share becomes a direction (land toward
+    // the land-heavy neighbours). Islands don't apply.
+    placeShore({
+      layout,
+      parent: input.parent,
+      cells,
+      work,
+      terrainAt,
+      typeOf,
+      profile,
+      profiles,
+      field,
+      pinned,
+      sharpness: sharp,
+      seed: input.seed,
+    });
+  } else if (ownBiome && profile && (profile.minIslands || profile.landShare)) {
     placeIslands({
       layout,
       cells,
@@ -154,6 +172,21 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       profile,
       influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
       rng: mulberry32(cellSeed(input.seed ^ 0x6a09e667, input.parent[0], input.parent[1])),
+    });
+  }
+
+  // 4. Min patches (the Mix table's column), after smoothing and islands:
+  //    smoothing erases a type that's only a sprinkle (alpine peaks, a volcano).
+  if (ownBiome && profile?.minPatches?.size) {
+    placePatches({
+      layout,
+      cells,
+      work,
+      terrainAt,
+      typeOf,
+      profile,
+      influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
+      rng: mulberry32(cellSeed(input.seed ^ 0x3c6ef372, input.parent[0], input.parent[1])),
     });
   }
 
@@ -318,6 +351,291 @@ export function placeIslands(input: IslandInput): void {
       });
     }
     have++;
+  }
+}
+
+interface PatchInput {
+  layout: RegionLayout;
+  /** The region's own (unpinned) cells: the only cells changed. */
+  cells: [number, number][];
+  work: Map<string, string>;
+  terrainAt: (key: string) => string | undefined;
+  typeOf: (terrain: string) => string | undefined;
+  /** The region's own biome: its minPatches, shares and names. */
+  profile: BiomeProfile;
+  /** The region biome's share of the field at a cell (patches go where it is strongest). */
+  influence: (x: number, y: number) => number;
+  rng: () => number;
+}
+
+/**
+ * Min patches per type (the biome note's Mix "Min patches" column): after
+ * smoothing, a type the biome has only a little of (alpine peaks, a
+ * volcano) is usually washed out. For each such type (in type order), the
+ * patches already inside the region are counted, and new ones grown from
+ * free cells where the biome is strongest (away from the edge, not
+ * touching that type) until there are enough. A patch is about the type's
+ * share of the region split between its patches, never over a quarter of
+ * it. Only the region's own cells change; cells of a type that has its
+ * own minimum are never painted over. Deterministic for a seed.
+ */
+export function placePatches(input: PatchInput): void {
+  const { layout, work, terrainAt, typeOf, profile, rng } = input;
+  const wants = [...(profile.minPatches ?? [])].filter(([t, n]) => n > 0 && profile.names.get(t)?.size).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  if (!wants.length) return;
+  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const ownList = [...own].sort();
+  const n = ownList.length;
+  if (!n) return;
+  const protectedTypes = new Set(wants.map(([t]) => t));
+  const nbrs = (k: string): string[] => {
+    const [x, y] = k.split("_").map(Number);
+    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
+  };
+  const typeAt = (k: string) => {
+    const t = terrainAt(k);
+    return t ? typeOf(t) : undefined;
+  };
+  const taken = new Set<string>();
+  for (const [type, min] of wants) {
+    // Patches of this type already in the region (own cells only).
+    const seen = new Set<string>();
+    let have = 0;
+    for (const k of ownList) {
+      if (seen.has(k) || typeAt(k) !== type) continue;
+      have++;
+      const stack = [k];
+      seen.add(k);
+      while (stack.length) {
+        for (const m of nbrs(stack.pop()!)) {
+          if (own.has(m) && !seen.has(m) && typeAt(m) === type) { seen.add(m); stack.push(m); }
+        }
+      }
+    }
+    const free = (k: string) => own.has(k) && !taken.has(k) && !protectedTypes.has(typeAt(k) ?? "");
+    const share = profile.types.get(type) ?? 0;
+    const size = Math.max(1, Math.min(Math.round((share * n) / min), Math.floor(n / (4 * min))));
+    const names = profile.names.get(type)!;
+    for (let guard = 0; guard < n && have < min; guard++) {
+      let start: string | undefined, best = -1;
+      for (const k of ownList) {
+        if (!free(k)) continue;
+        const around = nbrs(k);
+        if (around.some((m) => typeAt(m) === type)) continue;
+        const [x, y] = k.split("_").map(Number);
+        const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : 0.3) * (0.5 + rng());
+        if (score > best) { best = score; start = k; }
+      }
+      if (!start) break;
+      const patch = new Set<string>();
+      const add = (k: string) => {
+        work.set(k, pick(names, rng())!);
+        patch.add(k);
+        taken.add(k);
+      };
+      add(start);
+      while (patch.size < size) {
+        // Grow onto a free cell that touches no other patch of this type.
+        const options = [...new Set([...patch].flatMap(nbrs))].filter((k) => free(k) && nbrs(k).every((m) => patch.has(m) || typeAt(m) !== type)).sort();
+        if (!options.length) break;
+        add(options[Math.floor(rng() * options.length)]);
+      }
+      have++;
+    }
+  }
+}
+
+interface ShoreInput {
+  layout: RegionLayout;
+  parent: [number, number];
+  /** The region's own (unpinned) cells: the only cells changed. */
+  cells: [number, number][];
+  work: Map<string, string>;
+  terrainAt: (key: string) => string | undefined;
+  typeOf: (terrain: string) => string | undefined;
+  /** The region's own (shore) biome. */
+  profile: BiomeProfile;
+  profiles: ReadonlyMap<BiomeId, BiomeProfile>;
+  field: BlendField;
+  pinned: ReadonlyMap<string, string>;
+  sharpness: number;
+  seed: number;
+}
+
+/** How sharply a cell leans toward the neighbour it faces: exp(SHORE_LEAN · projection), as in hex-wfc's directional blend. */
+const SHORE_LEAN = 1.6;
+/** Raggedness of the coastline (noise added to a cell's landness). */
+const SHORE_RAGGED = 0.12;
+
+/** Land share of a biome profile: its landShare, else its non-water type shares. */
+function profileLand(p: BiomeProfile | undefined): number | undefined {
+  if (!p) return undefined;
+  if (p.landShare !== undefined) return p.landShare;
+  let land = 0;
+  for (const [t, v] of p.types) if (!WATER_TYPES.includes(t)) land += v;
+  return land;
+}
+
+/**
+ * Each neighbouring region's land share, by parent hex: from its cells
+ * already painted (pinned) when there are some, else from its biome's mix.
+ */
+export function neighbourLand(
+  layout: RegionLayout,
+  parent: [number, number],
+  pinned: ReadonlyMap<string, string>,
+  biomes: ReadonlyMap<string, BiomeId>,
+  profiles: ReadonlyMap<BiomeId, BiomeProfile>,
+  typeOf: (terrain: string) => string | undefined,
+): { hex: [number, number]; land: number }[] {
+  const painted = new Map<string, { land: number; all: number }>();
+  for (const [k, t] of pinned) {
+    const [x, y] = k.split("_").map(Number);
+    const pk = parentOf(layout, x, y).join("_");
+    const ty = typeOf(t);
+    if (!ty) continue;
+    const c = painted.get(pk) ?? { land: 0, all: 0 };
+    c.all++;
+    if (!WATER_TYPES.includes(ty)) c.land++;
+    painted.set(pk, c);
+  }
+  const out: { hex: [number, number]; land: number }[] = [];
+  for (const [qx, qy] of neighbourRegions(layout, parent[0], parent[1])) {
+    const pk = `${qx}_${qy}`;
+    const c = painted.get(pk);
+    if (c && c.all >= 3) { out.push({ hex: [qx, qy], land: c.land / c.all }); continue; }
+    const b = biomes.get(pk);
+    const land = profileLand(b ? profiles.get(b) : undefined);
+    if (land !== undefined) out.push({ hex: [qx, qy], land });
+  }
+  return out;
+}
+
+/**
+ * A shoreline region (a biome with `shore`): the region's land goes toward
+ * its land-heavy neighbours and its water toward the others, with a coast
+ * band between.
+ *
+ * 1. Each neighbouring region's land share (neighbourLand). Each own cell's
+ *    landness is those shares weighted by exp(1.6 · projection) of the cell
+ *    onto the direction of each neighbour (hex-wfc's directional blend), so
+ *    a cell leans toward the neighbour it faces; plus a little smooth noise
+ *    so the coastline is ragged.
+ * 2. With no land neighbour to lean on (all within 0.15 of each other, or
+ *    none known), one side picked from the seed is made land (a mostly
+ *    water neighbourhood) or water (a mostly land one): a water region
+ *    with a ragged coast along that side, never an island.
+ * 3. The most landward cells become land: the biome's land-share when set,
+ *    else the mean landness (between 15% and 85%).
+ * 4. Land cells next to water take the biome's land shore type (coast),
+ *    water cells next to land its water one (shallows); other land cells
+ *    keep a land terrain or take one from the field (so they look like the
+ *    land neighbour); other water cells likewise.
+ *
+ * Only the region's own cells change. Deterministic for a seed.
+ */
+export function placeShore(input: ShoreInput): void {
+  const { layout, parent, work, terrainAt, typeOf, profile, profiles, field } = input;
+  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const ownList = [...own].sort();
+  if (!ownList.length) return;
+  const water = new Set(WATER_TYPES);
+  const isWaterType = (t: string | undefined) => t !== undefined && water.has(t);
+
+  // 1–2. Neighbours and their land.
+  const sides = neighbourLand(layout, parent, input.pinned, field.biomes, profiles, typeOf);
+  const [cx, cy] = regionCentrePoint(layout, parent[0], parent[1]);
+  const dirs = sides.map((s) => {
+    const [qx, qy] = regionCentrePoint(layout, s.hex[0], s.hex[1]);
+    const len = Math.hypot(qx - cx, qy - cy) || 1;
+    return { ux: (qx - cx) / len, uy: (qy - cy) / len, land: s.land };
+  });
+  const lands = dirs.map((d) => d.land);
+  if (!dirs.length || Math.max(...lands) - Math.min(...lands) < 0.15) {
+    const mean = lands.length ? lands.reduce((a, b) => a + b, 0) / lands.length : 0;
+    const all = neighbourRegions(layout, parent[0], parent[1]);
+    const pickHex = all[Math.floor(hash2(input.seed >>> 0, parent[0], parent[1]) * all.length) % all.length];
+    const [qx, qy] = regionCentrePoint(layout, pickHex[0], pickHex[1]);
+    const len = Math.hypot(qx - cx, qy - cy) || 1;
+    const towardLand = mean < 0.5;
+    if (!dirs.length) {
+      // Nothing known around: water everywhere but the one land side.
+      for (const [ax, ay] of all) {
+        if (ax === pickHex[0] && ay === pickHex[1]) continue;
+        const [bx, by] = regionCentrePoint(layout, ax, ay);
+        const l = Math.hypot(bx - cx, by - cy) || 1;
+        dirs.push({ ux: (bx - cx) / l, uy: (by - cy) / l, land: 0 });
+      }
+    }
+    dirs.push({ ux: (qx - cx) / len, uy: (qy - cy) / len, land: towardLand ? 1 : 0 });
+  }
+
+  const radius = regionSpacing(layout) / 2 || 1;
+  const f = 1.4 / (radius * 2);
+  const landness = new Map<string, number>();
+  for (const k of ownList) {
+    const [x, y] = k.split("_").map(Number);
+    const [px, py] = childPoint(layout, x, y);
+    const vx = (px - cx) / radius, vy = (py - cy) / radius;
+    let sw = 0, sl = 0;
+    for (const d of dirs) {
+      const w = Math.exp(SHORE_LEAN * (vx * d.ux + vy * d.uy));
+      sw += w;
+      sl += w * d.land;
+    }
+    const noise = (fbm((input.seed ^ 0x51ed) >>> 0, px * f, py * f, 2) - 0.5) * 2 * SHORE_RAGGED;
+    landness.set(k, sl / sw + noise);
+  }
+
+  // 3. The most landward cells are land.
+  const mean = ownList.reduce((s, k) => s + landness.get(k)!, 0) / ownList.length;
+  const target = profile.landShare ?? Math.min(0.85, Math.max(0.15, mean));
+  const order = [...ownList].sort((a, b) => landness.get(b)! - landness.get(a)! || (a < b ? -1 : 1));
+  const landCount = Math.round(target * ownList.length);
+  const isLandCell = new Map(order.map((k, i) => [k, i < landCount]));
+
+  // 4. Terrain for each cell.
+  const rng = mulberry32(cellSeed(input.seed ^ 0x1f83d9ab, parent[0], parent[1]));
+  const nbrs = (k: string): string[] => {
+    const [x, y] = k.split("_").map(Number);
+    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
+  };
+  /** Is a neighbouring cell land? Own cells by the plan, others by their terrain. */
+  const landAt = (k: string): boolean | undefined => {
+    if (isLandCell.has(k)) return isLandCell.get(k);
+    const t = terrainAt(k);
+    const ty = t ? typeOf(t) : undefined;
+    return ty === undefined ? undefined : !water.has(ty);
+  };
+  const has = (type: string) => !!profile.names.get(type)?.size;
+  const landShore = SHORE_TYPES.find((t) => !water.has(t) && has(t));
+  const waterShore = SHORE_TYPES.find((t) => water.has(t) && has(t));
+  const shoreSet = new Set(SHORE_TYPES);
+  const nameFor = (k: string, wantLand: boolean): string | undefined => {
+    const [x, y] = k.split("_").map(Number);
+    const phi = field.at(x, y);
+    const ok = (t: string) => t !== "settlement" && !shoreSet.has(t) && (wantLand ? !water.has(t) : water.has(t));
+    let odds = new Map([...typeMix(phi, profiles)].filter(([t]) => ok(t)));
+    if (!odds.size) odds = new Map([...profile.types].filter(([t]) => ok(t)));
+    if (!odds.size) {
+      const fallback = wantLand ? landShore : waterShore;
+      return fallback ? pick(profile.names.get(fallback)!, rng()) : undefined;
+    }
+    const type = pick(odds, rng())!;
+    const names = namesWithinType(phi, profiles, type, input.sharpness);
+    return pick(names.size ? names : profile.names.get(type) ?? new Map<string, number>(), rng());
+  };
+  for (const k of ownList) {
+    const land = isLandCell.get(k)!;
+    const around = nbrs(k).map(landAt);
+    const cur = work.get(k);
+    const curType = cur ? typeOf(cur) : undefined;
+    let next: string | undefined;
+    if (land && landShore && around.some((v) => v === false)) next = curType === landShore ? cur : pick(profile.names.get(landShore)!, rng());
+    else if (!land && waterShore && around.some((v) => v === true)) next = curType === waterShore ? cur : pick(profile.names.get(waterShore)!, rng());
+    else if (curType !== undefined && !shoreSet.has(curType) && curType !== "settlement" && isWaterType(curType) === !land) next = cur;
+    else next = nameFor(k, land);
+    if (next) work.set(k, next);
   }
 }
 

@@ -1,7 +1,10 @@
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
 import { hexDistance } from "../packages/hex-wfc/src/grid";
-import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
+import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE } from "../src/constants";
+import { learnModel, modelToMarkdown } from "../packages/hex-wfc/src";
+import { planBiomePreview } from "../src/overworld/regionsVault";
+import { MemVault } from "./helpers/memVault";
 import {
 	ALL_BIOMES_POOL,
 	allBiomesPool,
@@ -173,6 +176,38 @@ describe("the first pass writes", () => {
 		const second = worldBiomes(cells, "flat", "odd", DEFAULT_TERRAIN_PALETTE, { seed: 2 });
 		for (const [k, p] of firstPassWrites(state, second, readsAs).cells) state.set(k, { ...state.get(k), terrain: p.terrain });
 		expect(state.get(lockedKey)).toEqual({ terrain: "hand painted", locked: true });
+	});
+});
+
+describe("biome form preview routing", () => {
+	(globalThis as Record<string, unknown>).window ??= globalThis;
+	const PALETTE = { name: "Expanded", terrains: DEFAULT_TERRAIN_PALETTE, pathTypes: DEFAULT_PATH_TYPES };
+	const woods = () => {
+		const m = new Map<string, string>();
+		for (let x = 0; x < 10; x++) for (let y = 0; y < 8; y++) m.set(`${x}_${y}`, (x + y) % 4 === 0 ? "grass" : "forest");
+		return learnModel(m, { name: "my-woods", orientation: "flat", meta: { palette: "Expanded" } });
+	};
+	const plugin = (v: MemVault) => ({
+		app: { ...v.app(), metadataCache: { getFirstLinkpathDest: () => null } },
+		settings: { hexOrientation: "flat", staggerOffset: "odd", terrainPalettes: [PALETTE], maps: [] },
+		getPathTypes: () => DEFAULT_PATH_TYPES,
+		getMap: (n: string) => (n === "ow" ? { name: "ow", paletteName: "Expanded", regions: { footprint: "rect", size: 6 } } : undefined),
+		getPaletteOrPresetTerrains: () => DEFAULT_TERRAIN_PALETTE,
+		getPaletteByName: () => PALETTE,
+	});
+	const base: BiomeNoteFields = { id: "b", label: "B", mix: [{ type: "badlands", weight: 1 }], transitions: [] };
+
+	it("a generator-backed biome previews from its generator; the rest blend", async () => {
+		const v = new MemVault({ "world/generators/my-woods.md": modelToMarkdown(woods()) });
+		const p = plugin(v) as never;
+		const blend = (await planBiomePreview(p, "ow", base, 3))!;
+		expect(blend.cells.size).toBe(36);
+		const made = (await planBiomePreview(p, "ow", { ...base, generator: "world/generators/my-woods" }, 3))!;
+		expect(made.cells.size).toBe(36);
+		// The generator only knows forest and grass; the blend paints badlands.
+		expect([...made.cells.values()].every((t) => t === "forest" || t === "grass")).toBe(true);
+		expect([...blend.cells.values()].some((t) => DEFAULT_TERRAIN_PALETTE.find((x) => x.name === t)?.type === "badlands")).toBe(true);
+		await expect(planBiomePreview(p, "ow", { ...base, generator: "world/generators/nope" }, 3)).rejects.toThrow(/nope wasn't found/);
 	});
 });
 

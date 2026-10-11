@@ -338,7 +338,7 @@ export class NewOverworldModal extends HexmakerModal {
       const tags: string[] = [];
       if (b && !b.climate) tags.push("fills gaps");
       if (b?.generator) tags.push("generator");
-      if (tags.length) item.createSpan({ cls: "duckmage-ow-pool-tag", text: tags.join(", "), attr: { title: b && !b.climate ? "No climate: only placed where no other biome in the pool fits." : "Its regions are made by its generator once generator regions land; blends until then." } });
+      if (tags.length) item.createSpan({ cls: "duckmage-ow-pool-tag", text: tags.join(", "), attr: { title: b && !b.climate ? "No climate: only placed where no other biome in the pool fits." : "Its regions are made by its generator, joined to their neighbours." } });
       const w = item.createEl("input", { type: "number", cls: "duckmage-biome-weight", attr: { min: "0", step: "0.5", placeholder: "1", "aria-label": `${b?.label ?? r.biome} weight`, title: "Weight: how often it's chosen where it fits (1 = as its note says)" } });
       w.value = r.weight !== undefined ? String(r.weight) : "";
       w.addEventListener("change", () => {
@@ -440,7 +440,7 @@ export class NewOverworldModal extends HexmakerModal {
         remake: false,
         onProgress: (done, total) => status.setText(`Making regions: ${done} of ${total}…`),
       });
-      new Notice(`Made ${r.made.length} regions in ${((performance.now() - t0) / 1000).toFixed(1)} s.${r.errors.length ? ` ${r.errors.length} failed.` : ""}${r.waiting ? ` ${r.waiting} blend until generator regions land.` : ""}`);
+      new Notice(`Made ${r.made.length} regions in ${((performance.now() - t0) / 1000).toFixed(1)} s.${r.errors.length ? ` ${r.errors.length} failed.` : ""}`);
     }
     this.close();
     this.onCreated(res.name);

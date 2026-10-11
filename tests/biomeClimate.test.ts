@@ -94,9 +94,10 @@ describe("biome climate: reading and writing", () => {
 		expect(isPlaceable(f.climate)).toBe(false);
 	});
 
-	it("every shipped biome has a climate, and its note round-trips it", () => {
-		for (const p of BIOME_PRESETS) {
-			expect(isPlaceable(p.climate)).toBe(true);
+	it("every biome the old generator placed has a climate, and its note round-trips it", () => {
+		// Shipped biomes it never placed (the shore biome Coast) are placed by hand only.
+		for (const b of BIOMES) expect(isPlaceable(BIOME_PRESETS.find((p) => p.id === b.id)?.climate)).toBe(true);
+		for (const p of BIOME_PRESETS.filter((x) => x.climate)) {
 			const back = parseBiomeNote(buildBiomeNote(p), p.label);
 			expect(back.problems).toEqual([]);
 			for (const k of ["temperature", "moisture"] as const) {
@@ -128,8 +129,9 @@ describe("biome climate: reading and writing", () => {
 		const old = BIOME_PRESETS.map((p) => ({ ...p, climate: undefined }));
 		const mine = { ...old[0], climate: { elevation: "high" as const } };
 		const plan = climatesToAdd([], [mine, ...old.slice(1), { id: "mine", label: "Mine", mix: [], transitions: [] }]);
-		expect(plan.done.length).toBe(BIOME_PRESETS.length);
-		expect(plan.add.map((b) => b.id)).toEqual(BIOME_PRESETS.slice(1).map((p) => p.id)); // own climate kept, user biome untouched
+		const withClimate = BIOME_PRESETS.filter((p) => p.climate);
+		expect(plan.done.length).toBe(withClimate.length);
+		expect(plan.add.map((b) => b.id)).toEqual(withClimate.slice(1).map((p) => p.id)); // own climate kept, user biome untouched
 		expect(plan.add[0].climate).toEqual(BIOME_PRESETS[1].climate);
 		expect(climatesToAdd(plan.done, old).add).toEqual([]);
 	});

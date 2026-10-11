@@ -10,8 +10,8 @@
  *   hexes keep their terrain and biome, and their regions are left alone.
  *   Regions are remade in place (their notes, names and locked cells stay).
  * - Every region goes through regionGenerator(biome), the single routing
- *   point: generator-backed biomes use their generator once generator
- *   regions are ready; until then they blend like the rest.
+ *   point (inside createRegion / regenerateRegion, planRegionWithGenerator):
+ *   generator-backed biomes are made by their generator, the rest blend.
  */
 
 import { TFile, TFolder } from "obsidian";

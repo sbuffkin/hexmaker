@@ -2,6 +2,7 @@ import { ItemView, type WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { VIEW_TYPE_GENERATOR } from "../constants";
 import { GeneratorPanel } from "./GeneratorPanel";
+import { BiomePanel } from "./BiomePanel";
 
 /** Full-page terrain generator (wave function collapse). */
 export class GeneratorView extends ItemView {
@@ -40,6 +41,7 @@ export class GeneratorView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    BiomePanel.dispose();
     this.contentEl.empty();
   }
 }

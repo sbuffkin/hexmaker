@@ -8,8 +8,14 @@
  * writes the plugin's maps.
  */
 
+import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import type { MapData, RegionSettings, TerrainColor } from "../types";
+import type { MapData, MapPath, RegionSettings, TerrainColor, TerrainPalette } from "../types";
+import { addGeneratedPaths } from "../worldgen/generators";
+import { BiomeRegionError, generateBiomeRegion } from "../worldgen/biomeRegion";
+import { previewRegion, regionGenerator } from "./biomeForm";
+import type { BiomeNoteFields } from "./biomeNote";
+import { inRegion, regionBox } from "./layout";
 import { slugify } from "../utils";
 import { newWorldId } from "../worldgen/world";
 import { BUILTIN_GENERATORS, builtinModel } from "../worldgen/builtinGenerators";
@@ -186,6 +192,11 @@ export interface RegionGenOptions {
  * are and blended around.
  */
 export function planRegionAt(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: RegionGenOptions = {}): RegionPlan | undefined {
+  return regionInputs(plugin, parentName, px, py, opts)?.plan();
+}
+
+/** Everything a region of hex (px, py) is made from (planRegionAt, planRegionWithGenerator). */
+function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: RegionGenOptions) {
   const ow = overworldOf(plugin, parentName);
   if (!ow) return undefined;
   const palette = regionPalette(plugin, ow.map);
@@ -200,7 +211,8 @@ export function planRegionAt(plugin: HexmakerPlugin, parentName: string, px: num
   const pinned = pinnedAround(plugin, parentName, ow.layout, px, py);
   const own = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
   if (own) for (const [k, h] of plugin.mapStore.all(own.name)) if (h.locked && h.terrain) pinned.set(k, h.terrain);
-  return planRegion({
+  const seed = opts.seed ?? own?.regionSeed ?? ws;
+  const plan = () => planRegion({
     layout: ow.layout,
     parent: [px, py],
     biomes,
@@ -208,10 +220,90 @@ export function planRegionAt(plugin: HexmakerPlugin, parentName: string, px: num
     pinned,
     typeOf: paletteTypeOf(palette),
     worldSeed: ws,
-    seed: opts.seed ?? own?.regionSeed ?? ws,
+    seed,
     blend: opts.blend ?? (ownBiome ? biomeNoteOf(ownBiome)?.blend : undefined) ?? ow.settings.blend,
     warp: opts.warp,
   });
+  return { ow, palette, ownBiome, pinned, seed, plan };
+}
+
+/** A region plan, with the paths and note a generator-made region may bring. */
+export type RegionPlanOut = RegionPlan & { paths?: MapPath[]; note?: string };
+
+/**
+ * What the region of hex (px, py) would be, made the way its biome says
+ * (biomeForm.regionGenerator): a biome with a generator link has its
+ * region made by that generator (generateBiomeRegion), joined to the cells
+ * painted around it; every other biome blends (planRegionAt). Throws
+ * BiomeRegionError when the generator can't make it (not found, doesn't
+ * fit the palette).
+ */
+export async function planRegionWithGenerator(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: RegionGenOptions = {}): Promise<RegionPlanOut | undefined> {
+  const inputs = regionInputs(plugin, parentName, px, py, opts);
+  if (!inputs) return undefined;
+  const { ow, palette, ownBiome, pinned, seed } = inputs;
+  const plan = inputs.plan();
+  const note = ownBiome ? biomeNoteOf(ownBiome) : undefined;
+  const route = regionGenerator(note);
+  if (route.kind !== "generator" || !route.ready) return plan;
+  const box = regionBox(ow.layout, px, py);
+  const name = ow.settings.palette ?? ow.map.paletteName;
+  const pal: TerrainPalette = { ...(plugin.getPaletteByName(name) ?? { name }), terrains: palette };
+  const made = await generateBiomeRegion(plugin, {
+    generator: { path: route.generator },
+    palette: pal,
+    bounds: { cols: box.cols, rows: box.rows, offset: { x: box.x, y: box.y }, stagger: ow.layout.childStagger },
+    mask: (k) => {
+      const [x, y] = k.split("_").map(Number);
+      return inRegion(ow.layout, px, py, x, y);
+    },
+    pinned,
+    seed,
+  });
+  // Locked own cells stay out of the plan, as with the blend (they aren't rewritten).
+  const cells = new Map([...made.cells].filter(([k]) => !pinned.has(k)));
+  return { ...plan, cells, ...(made.paths ? { paths: made.paths } : {}), ...(made.note ? { note: made.note } : {}) };
+}
+
+/**
+ * The Add / Edit biome form's preview: one region of a biome (as the form
+ * says it, not yet saved) with neighbours of the same biome, made the way
+ * its regions will be (regionGenerator, as planRegionWithGenerator): a
+ * generator-backed biome by its generator, every other one by the blend
+ * field (biomeForm.previewRegion). Throws BiomeRegionError like it.
+ */
+export async function planBiomePreview(plugin: HexmakerPlugin, overworldName: string, fields: BiomeNoteFields, seed: number): Promise<RegionPlanOut | undefined> {
+  const ow = overworldOf(plugin, overworldName);
+  if (!ow) return undefined;
+  const palette = regionPalette(plugin, ow.map);
+  const route = regionGenerator(fields);
+  if (route.kind !== "generator" || !route.ready) return fields.mix.length ? previewRegion(ow.layout, palette, fields, seed) : undefined;
+  const plan: RegionPlanOut = { cells: new Map(), mix: new Map([[fields.id, 1]]) };
+  const box = regionBox(ow.layout, 0, 0);
+  const name = ow.settings.palette ?? ow.map.paletteName;
+  const pal: TerrainPalette = { ...(plugin.getPaletteByName(name) ?? { name }), terrains: palette };
+  const made = await generateBiomeRegion(plugin, {
+    generator: { path: route.generator },
+    palette: pal,
+    bounds: { cols: box.cols, rows: box.rows, offset: { x: box.x, y: box.y }, stagger: ow.layout.childStagger },
+    mask: (k) => {
+      const [x, y] = k.split("_").map(Number);
+      return inRegion(ow.layout, 0, 0, x, y);
+    },
+    pinned: new Map(),
+    seed,
+  });
+  return { ...plan, cells: made.cells, ...(made.paths ? { paths: made.paths } : {}), ...(made.note ? { note: made.note } : {}) };
+}
+
+/** planRegionWithGenerator, with a generator's error as a message instead of a throw. */
+async function planOrError(plugin: HexmakerPlugin, parentName: string, px: number, py: number, opts: RegionGenOptions): Promise<RegionPlanOut | { error: string } | undefined> {
+  try {
+    return await planRegionWithGenerator(plugin, parentName, px, py, opts);
+  } catch (e) {
+    if (e instanceof BiomeRegionError) return { error: e.message };
+    throw e;
+  }
 }
 
 /** The palette regions of this overworld are painted with. */
@@ -242,7 +334,9 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   const settings = await ensureMeshFields(plugin, parent);
   const layout = regionLayoutOf(parent, gridRulesOf(plugin))!;
   const slot = regionSlot(layout, settings.worldId!, px, py);
-  const plan = opts.fill === "match" ? planRegionAt(plugin, parentName, px, py, opts) : undefined;
+  const planned = opts.fill === "match" ? await planOrError(plugin, parentName, px, py, opts) : undefined;
+  if (planned && "error" in planned) return planned;
+  const plan = planned;
   const paletteName = settings.palette ?? parent.paletteName;
   const taken = (n: string) => plugin.settings.maps.some((m) => m.name === slugify(n));
   const name = opts.name?.trim() || defaultRegionName(plugin.mapLabel(parentName), px, py, plugin.mapStore.get(parentName, hex)?.name, taken);
@@ -255,6 +349,8 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   child.world = slot.world;
   if (plan?.biome) child.biome = plan.biome;
   if (opts.seed !== undefined) child.regionSeed = opts.seed;
+  if (plan?.paths?.length) addGeneratedPaths(plugin, res.name, plan.paths);
+  if (plan?.note) new Notice(`${plugin.mapLabel(res.name)}: ${plan.note}`);
   await plugin.linkRegion(parentName, px, py, res.name);
   await fillBlankParent(plugin, parentName, px, py, res.name);
   return res;
@@ -353,12 +449,20 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
   if (region?.submapKind !== "region" || !region.parent) return 0;
   if (!canReshape(plugin.getMap(region.parent.map))) return 0; // see reshapeGate
   const [px, py] = region.parent.hex.split("_").map(Number);
-  const plan = planRegionAt(plugin, region.parent.map, px, py, opts);
+  const planned = await planOrError(plugin, region.parent.map, px, py, opts);
+  if (planned && "error" in planned) {
+    new Notice(planned.error);
+    return 0;
+  }
+  const plan = planned;
   if (!plan) return 0;
   const cur = plugin.mapStore.all(regionName);
   const cells: [string, { terrain: string }][] = [];
   for (const [k, t] of plan.cells) if (cur.get(k)?.terrain !== t) cells.push([k, { terrain: t }]);
   plugin.mapStore.setMany(regionName, cells);
+  // A generator's paths replace the ones of the same types it drew before.
+  if (plan.paths?.length) addGeneratedPaths(plugin, regionName, plan.paths, new Set(plan.paths.map((p) => p.typeName)));
+  if (plan.note) new Notice(`${plugin.mapLabel(regionName)}: ${plan.note}`);
   if (plan.biome) region.biome = plan.biome;
   if (opts.seed !== undefined) region.regionSeed = opts.seed;
   await plugin.saveSettings();

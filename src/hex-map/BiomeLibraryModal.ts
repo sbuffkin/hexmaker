@@ -18,8 +18,10 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { canAdd } from "../workMode";
 import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "../overworld/biomeNote";
-import { fieldsFromForm, formFromFields, formProblem, formTypes, generatorName, previewRegion, routeNote, type BiomeFormState, type ClimateFormState } from "../overworld/biomeForm";
-import { overworldOf, regionPalette } from "../overworld/regionsVault";
+import { fieldsFromForm, formFromFields, formProblem, formTypes, generatorName, routeNote, type BiomeFormState, type ClimateFormState } from "../overworld/biomeForm";
+import type { RegionPlan } from "../overworld/regionWorld";
+import { BiomeRegionError } from "../worldgen/biomeRegion";
+import { overworldOf, planBiomePreview, regionPalette } from "../overworld/regionsVault";
 import { cellsBox, composeAffine, drawRegionCells, type RegionCell } from "../overworld/overworldRender";
 import { regionCells } from "../overworld/layout";
 import { listGenerators } from "../worldgen/generators";
@@ -30,11 +32,8 @@ export function biomeEditLock(plugin: HexmakerPlugin, overworldName: string): st
   return canAdd(plugin.getMap(overworldName)) ? undefined : "Switch to Build to add or edit biomes.";
 }
 
-/**
- * Whether the generator page can open a biome (`openTerrainGenerator({ biome })`).
- * TODO(#50): set true once the generator page takes biomes (other session).
- */
-const GENERATOR_PAGE_TAKES_BIOMES = false;
+/** Whether the generator page can open a biome (`openTerrainGenerator({ biome })`). */
+const GENERATOR_PAGE_TAKES_BIOMES = true;
 
 /**
  * "Edit generator…" for a biome, in one place: a biome with a generator
@@ -49,7 +48,7 @@ export async function openBiomeGenerator(plugin: HexmakerPlugin, biome: string):
     if (file) { await plugin.openTerrainGenerator({ generatorPath: file.path }); return; }
     new Notice(`Generator ${generatorName(b.generator)} wasn't found; opening the biome's note.`);
   } else if (GENERATOR_PAGE_TAKES_BIOMES) {
-    await (plugin.openTerrainGenerator as (s: { biome: string }) => Promise<void>)({ biome: b.id });
+    await plugin.openTerrainGenerator({ biome: b.id });
     return;
   }
   const path = plugin.biomeStore.pathOf(b.id);
@@ -120,6 +119,8 @@ export class BiomeFormModal extends HexmakerModal {
   private saveBtn!: HTMLButtonElement;
   private seed = Math.floor(Math.random() * 1e9);
   private redrawTimer: number | undefined;
+  private drawToken = 0;
+  private previewNote: HTMLElement | undefined;
 
   /** `biome`: the biome to edit (id, label or note name); none = a new one. */
   constructor(app: App, private plugin: HexmakerPlugin, private overworldName: string, private biome?: string) {
@@ -165,9 +166,9 @@ export class BiomeFormModal extends HexmakerModal {
     if (state.generator && ![...gen.options].some((o) => o.value === state.generator)) gen.createEl("option", { text: generatorName(state.generator), value: state.generator });
     gen.value = state.generator;
     const genNote = form.createEl("p", { cls: "setting-item-description" });
-    const showGenNote = () => genNote.setText(routeNote({ generator: state.generator || undefined }) ?? "Blend mixes the terrain types below, and blends into the biomes next to it. A temporary stand-in until generator regions land.");
+    const showGenNote = () => genNote.setText(routeNote({ generator: state.generator || undefined }) ?? "Blend mixes the terrain types below, and blends into the biomes next to it.");
     showGenNote();
-    gen.addEventListener("change", () => { state.generator = gen.value; showGenNote(); });
+    gen.addEventListener("change", () => { state.generator = gen.value; showGenNote(); this.schedule(); });
 
     // Name and colour.
     const name = field("Name").createEl("input", { type: "text", attr: { "aria-label": "Name", placeholder: "Glass wastes" } });
@@ -296,7 +297,7 @@ export class BiomeFormModal extends HexmakerModal {
     this.canvas.width = 320;
     this.canvas.height = 220;
     const prevRow = contentEl.createDiv({ cls: "duckmage-region-gen-row" });
-    prevRow.createSpan({ cls: "setting-item-description", text: "Preview: one region of this biome, blended." });
+    this.previewNote = prevRow.createSpan({ cls: "setting-item-description", text: "Preview: one region of this biome, blended." });
     prevRow.createEl("button", { text: "Reroll" }).addEventListener("click", () => { this.seed = Math.floor(Math.random() * 1e9); this.redraw(); });
 
     this.problemEl = contentEl.createEl("p", { cls: "duckmage-locked-hint" });
@@ -339,16 +340,34 @@ export class BiomeFormModal extends HexmakerModal {
     this.redrawTimer = window.setTimeout(() => { this.redrawTimer = undefined; this.redraw(); }, 120);
   }
 
+  /**
+   * The preview, made the way this biome's regions will be (planBiomePreview:
+   * its generator when it has one, else the blend field). Async: a newer
+   * redraw wins over one still running.
+   */
   private redraw(): void {
+    const token = ++this.drawToken;
+    const ow = overworldOf(this.plugin, this.overworldName);
+    if (!this.canvas || !ow) return;
+    const fields = fieldsFromForm(this.state, this.existing?.id ?? "preview");
+    this.previewNote?.setText(fields.generator ? `Preview: one region made by ${generatorName(fields.generator)}.` : "Preview: one region of this biome, blended.");
+    void planBiomePreview(this.plugin, this.overworldName, fields, this.seed)
+      .then((plan) => { if (token === this.drawToken) this.paint(plan); })
+      .catch((e: unknown) => {
+        if (token !== this.drawToken) return;
+        this.paint(undefined);
+        this.previewNote?.setText(e instanceof BiomeRegionError ? `No preview: ${e.message}` : "No preview.");
+        if (!(e instanceof BiomeRegionError)) console.error("Hexmaker: biome preview", e);
+      });
+  }
+
+  private paint(plan: RegionPlan | undefined): void {
     const ctx = this.canvas?.getContext("2d");
     const ow = overworldOf(this.plugin, this.overworldName);
     if (!ctx || !this.canvas) return;
     ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    if (!ow) return;
+    if (!ow || !plan) return;
     const palette = this.palette();
-    const fields = fieldsFromForm(this.state, this.existing?.id ?? "preview");
-    if (!fields.mix.length) return;
-    const plan = previewRegion(ow.layout, palette, fields, this.seed);
     const colour = new Map(palette.map((t) => [t.name, t.color]));
     const cells: RegionCell[] = [...plan.cells].map(([k, t]) => {
       const [x, y] = k.split("_").map(Number);
@@ -370,7 +389,7 @@ export class BiomeFormModal extends HexmakerModal {
     const fields = fieldsFromForm(this.state, existing?.id);
     if (existing) {
       // Unset optional fields are written as removed.
-      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, climate: undefined, ...fields };
+      const full: Partial<BiomeNoteFields> = { color: undefined, generator: undefined, blend: undefined, landShare: undefined, minIslands: undefined, shore: undefined, climate: undefined, ...fields };
       delete full.id;
       if (!(await plugin.biomeStore.update(existing.id, full))) return;
     } else {
