@@ -71,7 +71,7 @@ import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
-import { workModeOf } from "./workMode";
+import { lockedHint, workModeOf } from "./workMode";
 import { withMapLink } from "./maps/mapNote";
 import {
   addLocationPatch,
@@ -84,7 +84,11 @@ import {
   setRegionPatch,
 } from "./maps/submaps";
 import type { RegionSettings } from "./types";
-import { setMapData, type HexMapDataView } from "./hexMapData";
+import { mapDataLines, mapDataSyncMessage, planCalloutImport, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
+import { CalloutMemory } from "./maps/calloutMemory";
+import { hexBiomeAt, overworldOf } from "./overworld/regionsVault";
+import { BIOMES, biomeNoteOf } from "./overworld/biomes";
+import { sameName } from "./hexBodyFields";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
@@ -111,6 +115,8 @@ export default class HexmakerPlugin extends Plugin {
   worldTypeStore = new WorldTypeStore(this);
   /** Per-hex map data, backed by one map note per map (src/maps). */
   mapStore = new MapStore(this);
+  /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
+  calloutMemory = new CalloutMemory(() => this.app.vault.adapter, () => this.manifest.dir ?? "");
   /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
   private tableTerrainNames: Set<string> | null = null;
   /** Table creation runs one batch at a time; awaiting any call waits for those before it. */
@@ -215,6 +221,7 @@ export default class HexmakerPlugin extends Plugin {
         this.paletteStore.onDelete(f);
         this.biomeStore.onDelete(f);
         this.worldTypeStore.onDelete(f);
+        this.calloutMemory.forget(f.path);
       }),
     );
     this.registerEvent(
@@ -223,6 +230,7 @@ export default class HexmakerPlugin extends Plugin {
         this.paletteStore.onRename(f, oldPath);
         this.biomeStore.onRename(f, oldPath);
         this.worldTypeStore.onRename(f, oldPath);
+        this.calloutMemory.rename(oldPath, f.path);
         if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
       }),
     );
@@ -230,6 +238,7 @@ export default class HexmakerPlugin extends Plugin {
     this.registerEvent(
       this.app.workspace.on("file-open", (file) => {
         if (file && this.regionOrFactionKind(file)) void this.refreshRegionMapData(file);
+        this.onHexNoteFocus(file);
       }),
     );
     // Palette notes edited by hand (or by sync) flow back into the palettes.
@@ -663,6 +672,7 @@ export default class HexmakerPlugin extends Plugin {
 
   onunload() {
     this.pathPins.detach();
+    void this.calloutMemory.save();
     clearPendingTerrain();
   }
 
@@ -1841,7 +1851,11 @@ export default class HexmakerPlugin extends Plugin {
     content = withMapLink(content, mapName);
     if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
     // The template's Map data callout shows what the map has for this hex.
-    content = setMapData(content, this.hexMapDataView(mapName, x, y));
+    const mapDataView = this.hexMapDataView(mapName, x, y);
+    const withMapData = setMapData(content, mapDataView);
+    // Remember what it shows, so a later hand edit is told from a stale copy.
+    if (withMapData !== content) this.calloutMemory.set(path, shownValues(mapDataLines(mapDataView)));
+    content = withMapData;
     // The hex's terrain (just set, or painted before it had a note) gets
     // its encounter-table link now rather than patched in later.
     const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
@@ -1893,6 +1907,30 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /** Read the hex template once (used by bulk generation to avoid N redundant reads). */
+  /** The hex note last opened in an editor (its callout is synced when another file opens). */
+  private focusedHexNote: string | null = null;
+
+  /**
+   * A file opened in an editor: a hex note left behind has its Map data
+   * callout synced (hand edits made in it go to the map), and a hex note
+   * being opened gets its callout brought up to date before it's edited.
+   * Not while the user is still in the note: rewriting it mid-typing would
+   * fight the editor.
+   */
+  private onHexNoteFocus(file: TFile | null): void {
+    const sync = (path: string) => {
+      const loc = this.mapStore.isReady() ? this.mapStore.resolve(path) : null;
+      if (!loc || !this.getMap(loc.map)) return;
+      const [x, y] = loc.key.split("_").map(Number);
+      void this.syncHexMapData(loc.map, x, y);
+    };
+    const prev = this.focusedHexNote;
+    const next = file && this.mapStore.isReady() && this.mapStore.resolve(file.path) ? file.path : null;
+    if (prev && prev !== file?.path) sync(prev);
+    if (next && next !== prev) sync(next);
+    this.focusedHexNote = next;
+  }
+
   /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
   hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
     const h = this.mapStore.get(mapName, `${x}_${y}`) ?? {};
@@ -1901,28 +1939,95 @@ export default class HexmakerPlugin extends Plugin {
       map: mapName, mapLabel: this.mapLabel(mapName), x, y, terrain: h.terrain, region: h.region, name: h.name,
       regionMap: h.regionMap ? ref(h.regionMap) : undefined,
       locations: h.locations?.length ? h.locations.map(ref) : undefined,
+      biome: this.hexBiomeRef(mapName, `${x}_${y}`),
     };
+  }
+
+  /** An overworld hex's biome for its Map data callout: its label, and its biome note when it has one. */
+  private hexBiomeRef(mapName: string, key: string): { label: string; note?: string } | undefined {
+    if (!overworldOf(this, mapName)) return undefined;
+    const id = hexBiomeAt(this, mapName, key);
+    if (!id) return undefined;
+    const label = biomeNoteOf(id)?.label ?? BIOMES.find((b) => b.id === id)?.label ?? id;
+    return { label, note: this.biomeStore.pathOf(id) };
   }
 
   /**
    * Bring a hex note's Map data callout up to date with the map (or add one
-   * when `insert`). Only writes when something changed; a note without a
-   * callout is left alone unless `insert`. Returns whether it wrote.
+   * when `insert`). Hand edits made inside the callout go to the map first
+   * (phase 2, see `syncHexMapData`). Only writes when something changed; a
+   * note without a callout is left alone unless `insert`. Returns whether
+   * it wrote.
    */
   async refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> {
-    const file = this.app.vault.getAbstractFileByPath(this.hexPath(x, y, mapName));
-    if (!(file instanceof TFile)) return false;
-    const view = this.hexMapDataView(mapName, x, y);
+    return (await this.syncHexMapData(mapName, x, y, { insert })).wrote;
+  }
+
+  /**
+   * A hex note's Map data callout, both ways (phase 2): hand edits to
+   * Terrain, Region or Name made since the plugin last wrote it go to the
+   * map (through the work-mode gate, as one undo step), unless the map has
+   * changed them since (the map is newer); then the callout is rewritten
+   * to show the map. Edits that weren't applied stay in the callout as
+   * "Not applied:" lines and lines it can't read as "Not read:" lines, and
+   * a notice says so (unless `quiet`).
+   */
+  async syncHexMapData(
+    mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {},
+  ): Promise<{ wrote: boolean; applied: string[]; notApplied: string[]; unreadable: string[] }> {
+    const out = { wrote: false, applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
+    const path = this.hexPath(x, y, mapName);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!(file instanceof TFile)) return out;
+    await this.calloutMemory.ready();
     // Read first: most notes need nothing, and a no-op process() still writes.
     const current = await this.app.vault.read(file);
-    if (setMapData(current, view, insert) === current) return false;
-    let wrote = false;
-    await this.app.vault.process(file, (content) => {
-      const next = setMapData(content, view, insert);
-      wrote = next !== content;
-      return next;
-    });
-    return wrote;
+    const now = () => shownValues(mapDataLines(this.hexMapDataView(mapName, x, y)));
+    const plan = planCalloutImport(current, this.calloutMemory.get(path), now());
+    if (plan) {
+      out.notApplied.push(...plan.notApplied);
+      out.unreadable.push(...plan.unreadable);
+      const edits = Object.entries(plan.apply) as [keyof typeof plan.apply, string | null][];
+      if (edits.length) {
+        await this.undoableEdit(mapName, async () => {
+          const key = `${x}_${y}`;
+          for (const [field, value] of edits) {
+            const shown = `${field[0].toUpperCase()}${field.slice(1)}: ${value ?? "—"}`;
+            if (field === "name") {
+              await this.setHexName(mapName, x, y, value ?? "");
+              out.applied.push(shown);
+            } else if (field === "terrain") {
+              // A terrain must be one the map's palette has (matched ignoring case).
+              const terrain = value === null ? null : this.getMapPalette(mapName).find((t) => sameName(t.name, value))?.name;
+              if (terrain === undefined) { out.notApplied.push(`${shown} (not in this map's palette)`); continue; }
+              if (!this.mapStore.set(mapName, key, { terrain }, "paint-terrain")) { out.notApplied.push(`${shown} (${lockedHint("paint-terrain")})`); continue; }
+              await this.syncHexEncounterTableLink(path, terrain);
+              out.applied.push(shown);
+            } else {
+              if (!this.mapStore.set(mapName, key, { region: value }, "paint-region-area")) { out.notApplied.push(`${shown} (${lockedHint("paint-region-area")})`); continue; }
+              out.applied.push(shown);
+            }
+          }
+        });
+      }
+    }
+    const view = this.hexMapDataView(mapName, x, y);
+    const notes = [...out.notApplied.map((s) => `Not applied: ${s}`), ...out.unreadable.map((s) => `Not read: ${s}`)];
+    const latest = await this.app.vault.read(file);
+    if (setMapData(latest, view, opts.insert, notes) !== latest) {
+      await this.app.vault.process(file, (content) => {
+        const next = setMapData(content, view, opts.insert, notes);
+        out.wrote = next !== content;
+        return next;
+      });
+    }
+    // Remember what the callout shows now, so the next edit is told from a stale copy.
+    if (plan || opts.insert) this.calloutMemory.set(path, now());
+    if (!opts.quiet) {
+      const msg = mapDataSyncMessage(`${this.mapLabel(mapName)} ${x}, ${y}`, out);
+      if (msg) new Notice(msg, 8000);
+    }
+    return out;
   }
 
   /** Add (or update) the Map data callout in every hex note of a map. Returns how many notes changed. */
@@ -1931,11 +2036,19 @@ export default class HexmakerPlugin extends Plugin {
     const folder = this.app.vault.getAbstractFileByPath(hexBase ? `${hexBase}/${mapName}` : mapName);
     if (!(folder instanceof TFolder)) return 0;
     let n = 0;
+    const totals = { applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
     for (const f of folder.children) {
       if (!(f instanceof TFile)) continue;
       const m = /^(-?\d+)_(-?\d+)\.md$/.exec(f.name);
-      if (m && await this.refreshHexMapData(mapName, Number(m[1]), Number(m[2]), true)) n++;
+      if (!m) continue;
+      const r = await this.syncHexMapData(mapName, Number(m[1]), Number(m[2]), { insert: true, quiet: true });
+      if (r.wrote) n++;
+      totals.applied.push(...r.applied);
+      totals.notApplied.push(...r.notApplied);
+      totals.unreadable.push(...r.unreadable);
     }
+    const msg = mapDataSyncMessage(this.mapLabel(mapName), totals);
+    if (msg) new Notice(msg, 8000);
     return n;
   }
 

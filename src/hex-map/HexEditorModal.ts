@@ -24,7 +24,6 @@ import {
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
 import { BODY_FIELDS, readBodyField, sameName, setBodyField, type BodyField } from "../hexBodyFields";
-import { hasMapData } from "../hexMapData";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -140,6 +139,9 @@ export class HexEditorModal extends HexmakerModal {
     this.directGmIcons = [];
 
     const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+    // Hand edits in the note's Map data callout go to the map first (phase
+    // 2), so the editor shows them; the callout then shows what the map has.
+    if (this.app.vault.getAbstractFileByPath(path) instanceof TFile) await this.plugin.syncHexMapData(this.mapName, this.x, this.y);
     // Terrain, icon and GM icons live in the map note (the map store), not in
     // the hex note — and a hex can have them before its note exists. Reading
     // only hex frontmatter left the current terrain never highlighted (E1).
@@ -170,8 +172,6 @@ export class HexEditorModal extends HexmakerModal {
       const v = readBodyField(rawContent, f);
       if (v !== undefined) this.bodyFields.set(f, v);
     }
-    // The note's Map data callout shows what the map has now.
-    if (hasMapData(rawContent)) void this.plugin.refreshHexMapData(this.mapName, this.x, this.y);
     ({ text: this.allText, links: this.allLinks, headings: this.allHeadings } = await getAllSectionData(
       this.app,
       path,
