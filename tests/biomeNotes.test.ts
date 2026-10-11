@@ -133,9 +133,10 @@ describe("biome note format", () => {
 // ── presets ──────────────────────────────────────────────────────────────
 
 describe("shipped biome presets", () => {
-	it("cover every built-in biome with the same label", () => {
-		expect(BIOME_PRESETS.map((b) => b.id)).toEqual(BIOMES.map((b) => b.id));
-		for (const p of BIOME_PRESETS) expect(p.label).toBe(BIOMES.find((b) => b.id === p.id)!.label);
+	it("cover every built-in biome with the same label (Coast is note-only)", () => {
+		expect(BIOME_PRESETS.map((b) => b.id).filter((id) => id !== "coast")).toEqual(BIOMES.map((b) => b.id));
+		for (const b of BIOMES) expect(BIOME_PRESETS.find((p) => p.id === b.id)!.label).toBe(b.label);
+		expect(BIOME_PRESETS.find((p) => p.id === "coast")!.shore).toBe(true);
 	});
 
 	it("as notes, give the same transitions as the old table", () => {
@@ -172,7 +173,7 @@ describe("shipped biome presets", () => {
 		const before = representableBiomes(DEFAULT_TERRAIN_PALETTE);
 		setBiomeSource(BIOME_PRESETS);
 		try {
-			expect(representableBiomes(DEFAULT_TERRAIN_PALETTE)).toEqual(before);
+			expect(representableBiomes(DEFAULT_TERRAIN_PALETTE)).toEqual(new Set([...before, "coast"]));
 		} finally {
 			setBiomeSource(undefined);
 		}
@@ -411,10 +412,10 @@ describe("biome form model", () => {
 		expect(fieldsFromForm(s)).toEqual({ id: "tundra", label: "Tundra", color: "#7a9a5a", mix: [{ type: "desert", weight: 5 }], transitions: [] });
 	});
 
-	it("routes: blend, or a generator marked as waiting for generator regions", () => {
+	it("routes: blend, or the linked generator", () => {
 		expect(regionGenerator({})).toEqual({ kind: "blend" });
-		expect(regionGenerator(GLASS)).toEqual({ kind: "generator", generator: GLASS.generator, ready: false });
-		expect(routeNote(GLASS)).toMatch(/^Uses Glass dunes: available once generator regions land/);
+		expect(regionGenerator(GLASS)).toEqual({ kind: "generator", generator: GLASS.generator, ready: true });
+		expect(routeNote(GLASS)).toMatch(/^Made by Glass dunes/);
 		expect(routeNote({})).toBeUndefined();
 	});
 

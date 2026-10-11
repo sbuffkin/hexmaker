@@ -9,7 +9,7 @@
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import type { TerrainColor } from "../types";
 import { biomeSlug, type BiomeBlend, type BiomeNoteFields, type BiomeTransition } from "./biomeNote";
-import { profileFromMix, type BiomeId } from "./biomes";
+import { profileFromFields, type BiomeId } from "./biomes";
 import { planRegion, paletteTypeOf, type RegionPlan } from "./regionWorld";
 import type { RegionLayout } from "./layout";
 
@@ -17,18 +17,18 @@ import type { RegionLayout } from "./layout";
 
 export type RegionRoute =
   | { kind: "blend" }
-  /** Made by a generator note; `ready` once the generator-region bridge lands. */
+  /** Made by a generator note (generateBiomeRegion, src/worldgen/biomeRegion.ts). */
   | { kind: "generator"; generator: string; ready: boolean };
 
 /**
- * How regions of this biome are made: the single routing point. Today
- * every biome blends (the blend field mixes its type mix with its
- * neighbours'); a biome with a `generator:` link is marked as waiting.
- * TODO(#50 bridge): when generateBiomeRegion(plugin, req) lands, return
- * `ready: true` for linked biomes and route planRegionAt through it.
+ * How regions of this biome are made: the single routing point. A biome
+ * with a `generator:` link has its regions made by that generator
+ * (generateBiomeRegion, joined to the cells already painted around it;
+ * regionsVault.planRegionWithGenerator); every other biome blends (the
+ * blend field mixes its type mix with its neighbours').
  */
 export function regionGenerator(biome: Pick<BiomeNoteFields, "generator"> | undefined): RegionRoute {
-  if (biome?.generator) return { kind: "generator", generator: biome.generator, ready: false };
+  if (biome?.generator) return { kind: "generator", generator: biome.generator, ready: true };
   return { kind: "blend" };
 }
 
@@ -39,6 +39,7 @@ export const generatorName = (target: string): string => target.slice(target.las
 export function routeNote(biome: Pick<BiomeNoteFields, "generator"> | undefined): string | undefined {
   const r = regionGenerator(biome);
   if (r.kind === "generator" && !r.ready) return `Uses ${generatorName(r.generator)}: available once generator regions land. Blends until then.`;
+  if (r.kind === "generator") return `Made by ${generatorName(r.generator)}, joined to its neighbours.`;
   return undefined;
 }
 
@@ -56,6 +57,9 @@ export interface BiomeFormState {
   /** 0..100, or undefined (not set). */
   landPercent?: number;
   minIslands?: number;
+  /** Type → fewest patches (the Mix table's Min patches); kept through the form. */
+  minPatches: Map<string, number>;
+  shore: boolean;
   transitions: BiomeTransition[];
 }
 
@@ -79,6 +83,8 @@ export function formFromFields(fields: BiomeNoteFields | undefined, types: strin
     blend: fields?.blend ?? "",
     landPercent: fields?.landShare !== undefined ? Math.round(fields.landShare * 100) : undefined,
     minIslands: fields?.minIslands,
+    minPatches: new Map((fields?.mix ?? []).filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!])),
+    shore: !!fields?.shore,
     transitions: (fields?.transitions ?? []).map((t) => ({ ...t })),
   };
 }
@@ -89,7 +95,10 @@ export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields 
     id: id ?? (biomeSlug(s.label) || "biome"),
     label: s.label.trim(),
     color: s.color || undefined,
-    mix: [...s.mix].filter(([, w]) => w > 0).map(([type, weight]) => ({ type, weight })),
+    mix: [...s.mix].filter(([, w]) => w > 0).map(([type, weight]) => {
+      const minPatches = s.minPatches?.get(type);
+      return minPatches !== undefined ? { type, weight, minPatches } : { type, weight };
+    }),
     transitions: s.transitions.filter((t) => t.next.trim() && t.between.trim()).map((t) => ({ next: t.next.trim(), between: t.between.trim() })),
   };
   if (!f.color) delete f.color;
@@ -97,6 +106,7 @@ export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields 
   if (s.blend) f.blend = s.blend;
   if (s.landPercent !== undefined) f.landShare = Math.min(100, Math.max(0, s.landPercent)) / 100;
   if (s.minIslands !== undefined) f.minIslands = Math.max(0, Math.round(s.minIslands));
+  if (s.shore) f.shore = true;
   return f;
 }
 
@@ -119,9 +129,7 @@ export function previewRegion(layout: RegionLayout, palette: TerrainColor[], fie
   const id: BiomeId = fields.id;
   const biomes = new Map<string, BiomeId>([["0_0", id]]);
   for (const [x, y] of hexNeighbors(0, 0, layout.orientation, layout.parentStagger)) biomes.set(`${x}_${y}`, id);
-  const profile = profileFromMix(id, fields.mix, palette);
-  if (fields.landShare !== undefined) profile.landShare = fields.landShare;
-  if (fields.minIslands !== undefined) profile.minIslands = fields.minIslands;
+  const profile = profileFromFields({ ...fields, id }, palette);
   return planRegion({
     layout,
     parent: [0, 0],

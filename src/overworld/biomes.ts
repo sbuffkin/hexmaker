@@ -266,6 +266,10 @@ export interface BiomeProfile {
   /** BiomeInfo.landShare / minIslands, carried for region generation. */
   landShare?: number;
   minIslands?: number;
+  /** Type → fewest separate patches of it a region gets (the note's Min patches). */
+  minPatches?: Map<string, number>;
+  /** Land toward land-heavy neighbours, water toward the rest (the note's `shore`). */
+  shore?: boolean;
 }
 
 /** Open sea has no shipped generator: deep water with a rim of ocean. */
@@ -448,7 +452,25 @@ export function profileFromMix(id: BiomeId, mix: BiomeMixRow[], palette: Terrain
     const list = byType.get(ty)!;
     names.set(ty, new Map(list.map((n) => [n, 1 / list.length])));
   }
-  return { id, types, names };
+  const profile: BiomeProfile = { id, types, names };
+  // Min patches follow their type to the one the palette has (the same fallback as the mix).
+  const minPatches = new Map<string, number>();
+  for (const r of mix) {
+    if (!r.minPatches || r.weight <= 0) continue;
+    const to = [r.type, ...(TYPE_FALLBACKS[r.type] ?? [])].find((x) => types.has(x));
+    if (to) minPatches.set(to, Math.max(minPatches.get(to) ?? 0, r.minPatches));
+  }
+  if (minPatches.size) profile.minPatches = minPatches;
+  return profile;
+}
+
+/** A biome note's profile on a palette: its mix, islands and shore settings. */
+export function profileFromFields(b: BiomeNoteFields, palette: TerrainColor[]): BiomeProfile {
+  const p = profileFromMix(b.id, b.mix, palette);
+  if (b.landShare !== undefined) p.landShare = b.landShare;
+  if (b.minIslands !== undefined) p.minIslands = b.minIslands;
+  if (b.shore) p.shore = true;
+  return p;
 }
 
 /** Profiles of every note biome with a mix the palette can show. */
@@ -456,9 +478,7 @@ export function noteBiomeProfiles(palette: TerrainColor[]): Map<BiomeId, BiomePr
   const out = new Map<BiomeId, BiomeProfile>();
   if (!source) return out;
   for (const b of source.biomes.values()) {
-    const p = profileFromMix(b.id, b.mix, palette);
-    if (b.landShare !== undefined) p.landShare = b.landShare;
-    if (b.minIslands !== undefined) p.minIslands = b.minIslands;
+    const p = profileFromFields(b, palette);
     if (p.types.size) out.set(b.id, p);
   }
   return out;

@@ -63,6 +63,11 @@ export interface BiomeMixRow {
   type: string;
   /** Relative weight, > 0, any scale. */
   weight: number;
+  /**
+   * Fewest separate patches of this type a region of the biome gets (the
+   * Mix table's optional "Min patches" column). Unset = no minimum.
+   */
+  minPatches?: number;
 }
 
 export interface BiomeTransition {
@@ -88,6 +93,12 @@ export interface BiomeNoteFields {
   landShare?: number;
   /** Fewest islands a region of this biome gets. */
   minIslands?: number;
+  /**
+   * A shoreline biome (`shore: yes`): a region's land goes toward its
+   * land-heavy neighbours and its water toward the others, with a coast
+   * band between (regionGen placeShore).
+   */
+  shore?: boolean;
   /** Link target of a generator note (no brackets), e.g. "world/generators/My tundra". */
   generator?: string;
 }
@@ -117,7 +128,7 @@ export function biomeFileName(label: string): string {
 
 export const BIOME_HELP = [
   "> [!info] Biome",
-  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `generator` links a generator note. Delete a row to drop it.",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `generator` links a generator note. Delete a row to drop it.",
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -184,6 +195,17 @@ function readFrontmatter(lines: string[]): Map<string, string> {
   return out;
 }
 
+/** Headers the Mix table's min-patches column may have. */
+const MIN_PATCH_HEADERS = ["min patches", "min-patches", "minimum patches", "fewest patches", "patches"];
+
+/** "yes" / "true" / "on" / "1" → true, "no" / "false" / "off" / "0" → false, else undefined. */
+function readYesNo(raw: string): boolean | undefined {
+  const t = raw.trim().toLowerCase();
+  if (["yes", "y", "true", "on", "1"].includes(t)) return true;
+  if (["no", "n", "false", "off", "0"].includes(t)) return false;
+  return undefined;
+}
+
 /** "40", "40%", "0.4" → a number, or NaN. */
 const num = (raw: string) => Number(raw.trim().replace(/%$/, "").trim());
 
@@ -247,11 +269,18 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
   }
   const gen = fm.get("generator");
   if (gen && linkTarget(gen)) fields.generator = linkTarget(gen);
+  const shore = fm.get("shore");
+  if (shore) {
+    const v = readYesNo(shore);
+    if (v === true) fields.shore = true;
+    else if (v === undefined) problems.push({ where: "settings", text: `shore should be yes or no, not "${shore}"` });
+  }
 
   const mix = findTable(lines, isMix);
   if (mix) {
     const ti = mix.headers.indexOf("type");
     const wi = mix.headers.includes("weight") ? mix.headers.indexOf("weight") : mix.headers.indexOf("share");
+    const pi = mix.headers.findIndex((h) => MIN_PATCH_HEADERS.includes(h));
     for (let i = mix.start + 2; i < mix.end; i++) {
       const cells = splitRow(lines[i]);
       if (cells.every((c) => c === "")) continue;
@@ -260,9 +289,19 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
       if (!type) { problems.push({ where: "Mix", text: `row ${i + 1}: no type` }); continue; }
       if (!Number.isFinite(w) || w < 0) { problems.push({ where: "Mix", text: `row ${i + 1}: weight "${cells[wi] ?? ""}" isn't a number` }); continue; }
       if (w === 0) continue;
+      // Min patches: blank = none; a bad value is reported, the row still counts.
+      const rawP = pi >= 0 ? (cells[pi] ?? "").trim() : "";
+      let minPatches: number | undefined;
+      if (rawP && rawP !== "-" && rawP !== "—") {
+        const p = num(rawP);
+        if (Number.isInteger(p) && p >= 0) minPatches = p;
+        else problems.push({ where: "Mix", text: `row ${i + 1}: min patches "${rawP}" isn't a whole number` });
+      }
       const hit = fields.mix.find((r) => r.type === type);
-      if (hit) hit.weight += w;
-      else fields.mix.push({ type, weight: w });
+      if (hit) {
+        hit.weight += w;
+        if (minPatches !== undefined) hit.minPatches = Math.max(hit.minPatches ?? 0, minPatches);
+      } else fields.mix.push(minPatches !== undefined ? { type, weight: w, minPatches } : { type, weight: w });
     }
   }
   const tr = findTable(lines, isTransitions);
@@ -289,8 +328,15 @@ const quote = (s: string) => (/^[\w .,()'-]*$/.test(s) && !/^\s|\s$/.test(s) && 
 /** "0.6" → "60%". */
 export const shareText = (v: number) => `${fmt(v * 100)}%`;
 
+/** The Mix table; the Min patches column only when some row has one (older notes stay as they were). */
 function mixTable(rows: BiomeMixRow[]): string[] {
-  return ["| Type | Weight |", "| --- | ---: |", ...rows.map((r) => `| ${esc(r.type)} | ${fmt(r.weight)} |`)];
+  if (!rows.some((r) => r.minPatches !== undefined))
+    return ["| Type | Weight |", "| --- | ---: |", ...rows.map((r) => `| ${esc(r.type)} | ${fmt(r.weight)} |`)];
+  return [
+    "| Type | Weight | Min patches |",
+    "| --- | ---: | ---: |",
+    ...rows.map((r) => `| ${esc(r.type)} | ${fmt(r.weight)} | ${r.minPatches !== undefined ? String(r.minPatches) : ""} |`),
+  ];
 }
 
 function transitionsTable(rows: BiomeTransition[]): string[] {
@@ -307,6 +353,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     ["blend", f.blend],
     ["land-share", f.landShare !== undefined ? shareText(f.landShare) : undefined],
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
+    ["shore", f.shore ? "yes" : undefined],
     ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
   ];
 }
@@ -374,6 +421,7 @@ function sameValue(key: string, cur: string, want: string): boolean {
   if (key === "colour") return readColour(cur) === readColour(w);
   if (key === "generator") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
+  if (key === "shore") return readYesNo(cur) === readYesNo(w);
   return cur.trim() === w.trim();
 }
 
