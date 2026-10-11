@@ -35,7 +35,7 @@ import { SetupWizardView } from "./SetupWizardView";
 import { BiomeStore } from "./overworld/BiomeStore";
 import { biomePoolsFolder, fillBiomeColumns } from "./overworld/overworldGen";
 import { generatorsFolder } from "./worldgen/generators";
-import { planKindContent, resolveKindContent } from "./kindContent";
+import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import { WorldTypeStore } from "./space/WorldTypeStore";
 import { WorldTypesModal } from "./space/WorldTypesModal";
@@ -178,11 +178,6 @@ export default class HexmakerPlugin extends Plugin {
       void storesReady.then(() => this.ensureTablesForNewTerrains());
       // NF1–NF3, once per vault: older hex, token and workflow notes in the new note formats (backed up first).
       void storesReady.then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
-      // A fresh install whose setup was finished or turned off without
-      // picking map types: its types' content goes in now (SP3).
-      void Promise.all([biomesReady, storesReady]).then(() => {
-        if (!this.settings.kindContent && (this.settings.setupComplete || this.settings.setupDismissed)) return this.applyKindContent();
-      }).catch((e) => console.error("Hexmaker: map type content", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -837,7 +832,8 @@ export default class HexmakerPlugin extends Plugin {
     this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
     // Shipped content per map type (SP3): an update has its types' content
     // already; a fresh install writes none until its setup picks the types.
-    this.settings.kindContent = resolveKindContent(rawData, this.settings.mapKinds);
+    // Setup over without a pick: inferred, nothing installed (saved with the next save).
+    this.settings.kindContent = inferKindContent({ ...this.settings, kindContent: resolveKindContent(rawData, this.settings.mapKinds) });
     // Feature level, also from the raw data: an install that already had
     // settings (an update) gets Advanced so nothing it used disappears; a
     // fresh one starts Simple. Saved right away, so the next load doesn't
@@ -898,6 +894,9 @@ export default class HexmakerPlugin extends Plugin {
 
   async saveSettings() {
     this.settings.savedWith = pluginVersion(this);
+    // The setup just finished or was turned off without picking map types
+    // (e.g. "Don't show again", a recipe): record its types, install nothing.
+    this.settings.kindContent = inferKindContent(this.settings);
     await this.saveData(this.settings);
     // Mirror palette edits (from any editor) into the palette notes.
     void this.paletteStore.sync();
@@ -998,6 +997,7 @@ export default class HexmakerPlugin extends Plugin {
   async setFeatureLevel(level: FeatureLevel): Promise<void> {
     this.settings.featureLevel = level;
     await this.saveSettings();
+    await this.biomesForOverworlds();
     this.onFeaturesChanged();
   }
 
@@ -1005,7 +1005,13 @@ export default class HexmakerPlugin extends Plugin {
   async enableAdvancedFeature(f: AdvancedFeature): Promise<void> {
     enableFeature(this.settings, f);
     await this.saveSettings();
+    await this.biomesForOverworlds();
     this.onFeaturesChanged();
+  }
+
+  /** Overworlds need biomes: the shipped ones (of map types that are on) once Regions and overworlds is on. */
+  private async biomesForOverworlds(): Promise<void> {
+    if (hasFeature(this.settings, "regions")) await this.biomeStore.seedShipped();
   }
 
   /** Turn off one Advanced feature that was turned on by itself (Simple only). */
@@ -2544,7 +2550,7 @@ export default class HexmakerPlugin extends Plugin {
     s.kindContent = plan.done;
     await this.saveSettings();
     if (plan.newKinds.length) {
-      await this.biomeStore.seedShipped();
+      await this.biomeStore.seedShipped(true);
       if (plan.newKinds.includes("space")) await this.worldTypeStore.ensureDefault();
     }
     this.onMapKindsChanged();

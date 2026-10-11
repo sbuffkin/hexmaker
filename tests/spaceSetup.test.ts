@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { planKindContent, resolveKindContent, shippedContentOn } from "../src/kindContent";
+import { biomeSeedingOn, inferKindContent, planKindContent, resolveKindContent } from "../src/kindContent";
 import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import {
 	PALETTE_PRESETS,
@@ -82,10 +82,32 @@ describe("what a setup installs follows the map types picked (SP3)", () => {
 		expect(plan.remove).toEqual([]);
 	});
 
+	it("biome notes: never for a type that's off; else when asked, for overworlds, or to top up", () => {
+		expect(biomeSeedingOn({ mapKinds: ["space"], featureLevel: "advanced" }, "world", true)).toBe(false);
+		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple" }, "world")).toBe(false);
+		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple" }, "world", true)).toBe(true);
+		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "advanced" }, "world")).toBe(true);
+		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple", advancedFeatures: ["regions"] }, "world")).toBe(true);
+		expect(biomeSeedingOn({ mapKinds: ["world"], featureLevel: "simple", biomesSeeded: ["tundra"] }, "world")).toBe(true);
+	});
+
+	it("a vault set up without a pick (recipe, Don't show again, custom or deleted palettes) is recorded, nothing installed", () => {
+		// smoke custom-palette / deleted: setup done by hand, no record.
+		const done = inferKindContent({ kindContent: null, mapKinds: ["world"], setupComplete: true });
+		expect(done).toEqual(["world"]);
+		expect(inferKindContent({ kindContent: null, mapKinds: ["world"], setupDismissed: true })).toEqual(["world"]);
+		expect(inferKindContent({ kindContent: null, mapKinds: ["world"] })).toBeNull();
+		expect(inferKindContent({ kindContent: ["space"], mapKinds: ["world"], setupComplete: true })).toEqual(["space"]);
+		// With that record nothing is planned: Moorland alone, or no palettes at all, stay so (SM-DEL).
+		for (const palettes of [[{ name: "Moorland", terrains: [{ name: "moor", color: "#556b2f", type: "grassland" }] }], []]) {
+			const plan = planKindContent({ kinds: ["world"], done, firstSetup: false, palettes, inUse: new Set(), defaultPalette: "Expanded" });
+			expect(plan.install).toEqual([]);
+			expect(plan.remove).toEqual([]);
+			expect(plan.newKinds).toEqual([]);
+		}
+	});
+
 	it("shipped notes wait until the setup picks the types; updates count as done", () => {
-		expect(shippedContentOn({ mapKinds: ["world"] }, "world")).toBe(false);
-		expect(shippedContentOn({ mapKinds: ["space"], kindContent: ["space"] }, "world")).toBe(false);
-		expect(shippedContentOn({ mapKinds: ["world"], kindContent: ["world"] }, "world")).toBe(true);
 		expect(resolveKindContent(null, ["world"])).toBeNull();
 		expect(resolveKindContent({}, ["world"])).toBeNull();
 		// A fresh install's first save keeps it undecided across a restart.

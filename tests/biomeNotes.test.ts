@@ -290,14 +290,22 @@ describe("BiomeStore", () => {
 		expect([...v.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
 		expect(store.list()).toEqual([]);
 		expect(p.settings.biomesSeeded).toBeUndefined();
-		// A fresh install before its setup picks the types: none either.
+		// A fresh Simple install before its setup picks the types: none either.
 		const v2 = new MemVault();
-		await boot(v2, { kindContent: undefined });
+		const fresh = await boot(v2, { kindContent: null, featureLevel: "simple" });
 		expect([...v2.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
-		// World turned on later.
+		// ...until it asks: Regions and overworlds turned on (smoke "overworld": a recipe vault).
+		fresh.p.settings.advancedFeatures = ["regions"];
+		await fresh.store.seedShipped();
+		expect(v2.files.has(`${FOLDER}/Tundra.md`)).toBe(true);
+		// A Simple vault that never had biomes and doesn't use overworlds: none at startup.
+		const v3 = new MemVault();
+		await boot(v3, { kindContent: ["world"], featureLevel: "simple" });
+		expect([...v3.files.keys()].filter((f) => f.startsWith(FOLDER))).toEqual([]);
+		// World turned on later (an explicit pick).
 		p.settings.mapKinds = ["space", "world"];
 		p.settings.kindContent = ["space", "world"];
-		await store.seedShipped();
+		await store.seedShipped(true);
 		expect(v.files.has(`${FOLDER}/Tundra.md`)).toBe(true);
 	});
 
