@@ -35,7 +35,7 @@ import type { PinRecord } from "../paths/routePins";
 import { pathSummary } from "./pathTool";
 import { flowerPetals, MapHistory, navArrows, PAD_SIDES } from "../maps/mapNav";
 import { WORK_MODES, WORK_MODE_TEXT, workModeOf, type WorkMode } from "../workMode";
-import { REGION_AREAS_TOOL, toolModeLabel } from "./toolMode";
+import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
