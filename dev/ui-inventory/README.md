@@ -18,3 +18,7 @@ Built with the `ui-inventory` skill (`work/tools/skills-share/ux-testing/ui-inve
 To review again, run the skill's `build-page.mjs` with `items.json` + `config.json` and load the last submission as progress, so the owner starts from these answers. Then apply the new resolved tags to `src/ui/placement.ts`.
 
 KB: `knowledgebase/projects/duckmage-plugin/notes/impl/audit-inputs-2026-10-11.md`.
+
+## Removed with the global level (ee28ebd)
+These worksheet items described the old Simple/Advanced level, feature switches, hints and nudges. They're gone from the code and marked `removed` in the resolved JSON, so leave them out of the next round:
+`Settings.featureLevel`, `Settings.featureGenerators`, `Settings.featureWorkflows`, `Settings.featurePalettes`, `Settings.featureRegions`, `Settings.showHintsAgain`, `Wizard.featureLevel`, `Hint.turnOnFeature`, `Hint.close`, `Hints.show`, `MoreFeatures.turnOn`, `MoreFeatures.turnOnAll`, `MoreFeatures.closeButtons`, `EnableFeature.turnOnOne`, `EnableFeature.turnOnAll`, `EnableFeature.closeButtons`, `Nudge.turnOnAdvanced`, `Nudge.closeButtons`, `Nudge.dontAskAgain`, `MapModal.propsNeighbourHint`, `NewMap.moreOptionsHint`, `ChildKind.regionsHint`, `GenPage.regionsHint`, `RTView.workflowsHintTurnOn`, `RTView.workflowsHintHide`.

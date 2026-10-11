@@ -27,7 +27,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.featureGenerators",
@@ -42,7 +43,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.featureWorkflows",
@@ -57,7 +59,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.featurePalettes",
@@ -72,7 +75,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.featureRegions",
@@ -87,7 +91,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.showHintsAgain",
@@ -102,7 +107,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Settings.mapKindWorld",
@@ -1092,7 +1098,8 @@
   "viaSuggested": false,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Wizard.worldFolder",
@@ -1572,7 +1579,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Hint.close",
@@ -1587,7 +1595,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Hints.show",
@@ -1602,7 +1611,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "MoreFeatures.turnOn",
@@ -1617,7 +1627,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "MoreFeatures.turnOnAll",
@@ -1632,7 +1643,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "MoreFeatures.closeButtons",
@@ -1647,7 +1659,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "EnableFeature.turnOnOne",
@@ -1662,7 +1675,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "EnableFeature.turnOnAll",
@@ -1677,7 +1691,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "EnableFeature.closeButtons",
@@ -1692,7 +1707,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Nudge.turnOnAdvanced",
@@ -1707,7 +1723,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Nudge.closeButtons",
@@ -1722,7 +1739,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Nudge.dontAskAgain",
@@ -1737,7 +1755,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "Plugin.ribbonOpenHexMap",
@@ -8562,7 +8581,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "MapModal.propsTerrainTheme",
@@ -9072,7 +9092,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "NewMap.baseTerrain",
@@ -9642,7 +9663,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "WalkOW.biome",
@@ -12762,7 +12784,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "GenPage.leanToNeighbours",
@@ -14412,7 +14435,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "RTView.workflowsHintHide",
@@ -14427,7 +14451,8 @@
   "viaSuggested": true,
   "overrides": "",
   "twinOf": "",
-  "note": ""
+  "note": "",
+  "removed": "ee28ebd: global Simple/Advanced level, feature switches, hints and nudges removed (owner 2026-10-11)"
  },
  {
   "id": "RTView.filterSearch",
