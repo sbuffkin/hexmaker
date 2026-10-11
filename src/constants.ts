@@ -340,6 +340,12 @@ export const DEFAULT_PATH_TYPES: PathType[] = [
   { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false, autoRoute: "winding", carves: "water" },
 ];
 
+/** Fields added to the shipped path types after palettes copied them:
+ *  set once where the palette never set them (src/palettes/presetUpdates.ts). */
+export const ADDED_PRESET_PATH_FIELDS: { pathType: string; field: "carves" | "carveWidth" }[] = [
+  { pathType: "River", field: "carves" },
+];
+
 /** How a path is drawn when its type isn't in the map's palette (renamed or
  *  deleted there): plain grey, so it stays visible and can be fixed. */
 export const UNKNOWN_PATH_TYPE: PathType = { name: "", color: "#9ca3af", width: 3, lineStyle: "dashed", routing: "through", avoidImpassable: true, autoRoute: "direct" };
@@ -415,4 +421,5 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   dismissedHints: [],
   terrainTypesSeeded: false,
   presetTerrainsAdded: [],
+  presetPathFieldsAdded: [],
 };

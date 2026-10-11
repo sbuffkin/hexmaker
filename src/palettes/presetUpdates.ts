@@ -15,7 +15,7 @@
  * applying the result.
  */
 
-import type { TerrainColor, TerrainPalette } from "../types";
+import type { PathType, TerrainColor, TerrainPalette } from "../types";
 
 export interface AddedPresetTerrain {
   /** Preset (palette) name. */
@@ -74,4 +74,84 @@ export function planPresetTerrains(
 /** Apply a plan: append the terrains to each palette. */
 export function applyPresetTerrains(plan: PresetTerrainPlan): void {
   for (const { palette, terrains } of plan.add) palette.terrains.push(...terrains.map((t) => ({ ...t })));
+}
+
+// ── Path-type fields added to the shipped path types ─────────────────────────
+//
+// The same idea for path types: a field the shipped path types gained after
+// palettes copied them (River's "Carves: water"). The shipped entry
+// (DEFAULT_PATH_TYPES) is the source of the value. A palette's path type gets
+// it ONCE, and only when the palette's path types are still a copy of the
+// shipped list and that field was never set there (the caller checks the
+// palette note: no column for it). A value the user set, or cleared to
+// "none", is never touched. The path type must still be the shipped record:
+// same name and the same behaviour the plugin wrote (routing, auto-route,
+// avoid impassable), so a type the user built or reshaped is left alone.
+
+export type PresetPathField = "carves" | "carveWidth";
+
+export interface AddedPresetPathField {
+  /** Path type name in the shipped list. */
+  pathType: string;
+  field: PresetPathField;
+}
+
+/** The once-only key for an entry (stored in settings.presetPathFieldsAdded). */
+export const pathFieldKey = (a: AddedPresetPathField): string => `${a.pathType}/${a.field}`.toLowerCase();
+
+export interface PresetPathFieldPlan {
+  /** Fields to set, per palette path type (the objects themselves). */
+  set: { palette: TerrainPalette; pathType: PathType; field: PresetPathField; value: string | number }[];
+  /** Keys to remember as done (offered, whether set anywhere or not). */
+  done: string[];
+}
+
+/** Still the shipped path type: the behaviour fields the plugin wrote are unchanged. */
+const sameShippedRecord = (pt: PathType, shipped: PathType): boolean =>
+  pt.routing === shipped.routing && pt.autoRoute === shipped.autoRoute && pt.avoidImpassable === shipped.avoidImpassable;
+
+const isSet = (v: unknown): boolean => (typeof v === "string" ? v.trim() !== "" : v !== undefined && v !== null);
+
+/**
+ * Which palettes' path types get which shipped field values. `neverSet` says
+ * whether a palette never had `field` set (its note has no column for it).
+ * Nothing is changed here.
+ */
+export function planPresetPathFields(
+  palettes: TerrainPalette[],
+  entries: AddedPresetPathField[],
+  alreadyDone: ReadonlySet<string>,
+  shipped: readonly PathType[],
+  neverSet: (palette: TerrainPalette, field: PresetPathField) => boolean,
+): PresetPathFieldPlan {
+  const set: PresetPathFieldPlan["set"] = [];
+  const done: string[] = [];
+  const shippedNames = shipped.map((t) => t.name.toLowerCase());
+  for (const e of entries) {
+    const key = pathFieldKey(e);
+    if (alreadyDone.has(key)) continue;
+    const source = shipped.find((t) => t.name.toLowerCase() === e.pathType.toLowerCase());
+    const value = source?.[e.field];
+    if (!source || !isSet(value)) continue; // not shipped (yet): try again next time
+    done.push(key);
+    for (const pal of palettes) {
+      const types = pal.pathTypes ?? [];
+      // A copy of the shipped list: still has most of its types.
+      const names = new Set(types.map((t) => t.name.toLowerCase()));
+      const kept = shippedNames.filter((n) => names.has(n)).length;
+      if (!shippedNames.length || kept / shippedNames.length < COPY_OVERLAP) continue;
+      const pt = types.find((t) => t.name.toLowerCase() === source.name.toLowerCase());
+      if (!pt || !sameShippedRecord(pt, source) || isSet(pt[e.field]) || !neverSet(pal, e.field)) continue;
+      set.push({ palette: pal, pathType: pt, field: e.field, value: value as string | number });
+    }
+  }
+  return { set, done };
+}
+
+/** Apply a plan: set each field. */
+export function applyPresetPathFields(plan: PresetPathFieldPlan): void {
+  for (const { pathType, field, value } of plan.set) {
+    if (field === "carves") pathType.carves = String(value);
+    else pathType.carveWidth = Number(value);
+  }
 }

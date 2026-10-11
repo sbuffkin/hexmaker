@@ -934,3 +934,70 @@ describe("palette list on load (SM-DEL: no automatic refill)", () => {
 		expect(missingDefaults([{ name: defaults[0].name.toUpperCase() }], defaults).map((p) => p.name)).toEqual(defaults.slice(1).map((p) => p.name));
 	});
 });
+
+// River's "Carves: water" for palettes from before carving shipped: once,
+// only where the note never had a Carves column, backup first.
+describe("PaletteStore: shipped path-type fields added since (River carves water)", () => {
+	const note = (pathTable: string[]) =>
+		["---", "hexmaker-palette: 1", "---", "", "| Terrain | Color |", "| --- | --- |", "| sea | `#0000ff` |", "", "## Path types", "", ...pathTable, ""].join("\n");
+	const OLD = note([
+		"| Path | Color | Width | Style | Routing | Avoid impassable | Auto-route |",
+		"| --- | --- | --- | --- | --- | --- | --- |",
+		"| Road | `#a16207` | 4 | solid | through | yes | direct |",
+		"| River | `#3b82f6` | 3 | solid | meander | no | winding |",
+	]);
+	const CLEARED = note([
+		"| Path | Color | Width | Style | Routing | Avoid impassable | Auto-route | Carves | Carve width |",
+		"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+		"| Road | `#a16207` | 4 | solid | through | yes | direct | none | 0 |",
+		"| River | `#3b82f6` | 3 | solid | meander | no | winding | none | 0 |",
+	]);
+	const L = "world/palettes/Limited.md";
+	const E = "world/palettes/Expanded.md";
+	const river = (h: ReturnType<typeof makeHarness>, name: string) =>
+		h.settings.terrainPalettes.find((p) => p.name === name)!.pathTypes!.find((t) => t.name === "River")!;
+
+	it("sets it once where never set, keeps a cleared one, backs up first and records it", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true, paletteColorsCode: true, paletteDataUpgraded: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set(L, OLD);
+		h.vault.files.set(E, CLEARED);
+		await h.store.init();
+
+		expect(river(h, "Limited").carves).toBe("water");
+		expect(h.vault.files.get(L)).toContain("| River | `#3b82f6` | 3 | solid | meander | no | winding | water | 0 |");
+		// The user cleared it in Expanded: left alone.
+		expect(river(h, "Expanded").carves).toBeUndefined();
+		expect(h.vault.files.get(E)).toContain("| River | `#3b82f6` | 3 | solid | meander | no | winding | none | 0 |");
+		expect(h.settings.presetPathFieldsAdded).toEqual(["river/carves"]);
+		const backups = [...h.vault.raw.keys()].filter((k) => k.includes("palettes-before-path-fields"));
+		expect(backups).toHaveLength(1);
+
+		// Never again: clearing it now sticks across loads.
+		river(h, "Limited").carves = undefined;
+		await h.store.sync();
+		expect(h.vault.files.get(L)!).toContain("| River | `#3b82f6` | 3 | solid | meander | no | winding | none | 0 |");
+		await h.store.init();
+		expect(river(h, "Limited").carves).toBeUndefined();
+		expect(h.vault.files.get(L)).toContain("| River | `#3b82f6` | 3 | solid | meander | no | winding | none | 0 |");
+		expect([...h.vault.raw.keys()].filter((k) => k.includes("palettes-before-path-fields"))).toHaveLength(1);
+	});
+
+	it("changes nothing when the backup can't be saved, and tries again next load", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true, paletteColorsCode: true, paletteDataUpgraded: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set(L, OLD);
+		h.vault.files.set(E, CLEARED);
+		h.vault.failBackups = true;
+		await h.store.init();
+		expect(river(h, "Limited").carves).toBeUndefined();
+		expect(h.vault.files.get(L)).toContain("| River | `#3b82f6` | 3 | solid | meander | no | winding |");
+		expect(h.vault.files.get(L)).not.toContain("Carves");
+		expect(h.settings.presetPathFieldsAdded ?? []).toEqual([]);
+
+		h.vault.failBackups = false;
+		await h.store.init();
+		expect(river(h, "Limited").carves).toBe("water");
+		expect(h.settings.presetPathFieldsAdded).toEqual(["river/carves"]);
+	});
+});

@@ -316,3 +316,13 @@ export function wrapPathTypeColors(content: string): string {
 }
 
 export const clonePathTypes = (types: readonly PathType[]): PathType[] => types.map((t) => ({ ...t }));
+
+/**
+ * Whether a palette note's path-types table has a column for `field`. A note
+ * without that column never had the field set (the column is written once
+ * any type has it, and kept from then on, even when cleared to "none").
+ */
+export function pathTableHasColumn(content: string, field: "carves" | "carveWidth"): boolean {
+  const span = findPathTypesTable(content.replace(/\r\n?/g, "\n").split("\n"));
+  return !!span && span.columns.includes(field);
+}

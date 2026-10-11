@@ -415,6 +415,8 @@ export interface HexmakerPluginSettings {
 	hexNameStyle?: string;
 	/** Bundled-palette terrains already offered to installed copies ("expanded/savanna"); see presetUpdates.ts. */
 	presetTerrainsAdded?: string[];
+	/** Shipped path-type fields already offered to palettes ("river/carves"); see presetUpdates.ts. */
+	presetPathFieldsAdded?: string[];
 	/** Terrain legend on the map and generator previews. Unset = shown. */
 	showTerrainLegend?: boolean;
 	/** The map export form's last choices, per map name (round 6 S9). */
