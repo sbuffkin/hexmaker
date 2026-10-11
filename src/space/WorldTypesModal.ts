@@ -310,7 +310,7 @@ export class WorldTypesModal extends HexmakerModal {
     const wrap = parent.createEl("label", { cls: `duckmage-world-types-cell is-${c.toLowerCase()}` });
     wrap.createSpan({ cls: "duckmage-world-types-cell-label", text: c });
     if (c === "Map") {
-      const sel = wrap.createEl("select");
+      const sel = wrap.createEl("select", { attr: { "aria-label": c } });
       for (const [v, text] of [["", "Any"], ["sector", "Sector"], ["system", "System"]]) sel.createEl("option", { value: v, text });
       // A value the select doesn't list (typed in the note) stays as it was.
       if (cells[i] && !["sector", "system"].includes(cells[i])) sel.createEl("option", { value: cells[i], text: cells[i] });
@@ -319,7 +319,7 @@ export class WorldTypesModal extends HexmakerModal {
       sel.addEventListener("change", () => { cells[i] = sel.value; this.cellChanged(cells, row); });
       return;
     }
-    const input = wrap.createEl("input", { type: "text", value: cells[i] ?? "", attr: { placeholder: PLACEHOLDERS[c] ?? "" } });
+    const input = wrap.createEl("input", { type: "text", value: cells[i] ?? "", attr: { placeholder: PLACEHOLDERS[c] ?? "", "aria-label": c } });
     if (list) input.setAttr("list", list);
     input.disabled = locked;
     input.addEventListener("input", () => { cells[i] = input.value; this.cellChanged(cells, row); });
@@ -341,7 +341,7 @@ export class WorldTypesModal extends HexmakerModal {
     const controls = el.createDiv({ cls: "duckmage-world-types-preview-controls" });
     const select = (label: string, options: [string, string][], value: string, set: (v: string) => void) => {
       const l = controls.createEl("label", { text: `${label} ` });
-      const s = l.createEl("select");
+      const s = l.createEl("select", { attr: { "aria-label": `Preview ${label.toLowerCase()}` } });
       for (const [v, t] of options) s.createEl("option", { value: v, text: t });
       s.value = value;
       s.addEventListener("change", () => { set(s.value); this.renderPreview(); });

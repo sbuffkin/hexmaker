@@ -8648,8 +8648,9 @@ textarea.duckmage-edit-region-notes-input {
     font-style: italic;
 }
 /* World types table editor (space generators). */
-.duckmage-world-types-modal {
-    width: min(64em, 95vw);
+.modal.duckmage-world-types-modal {
+    width: min(72em, 95vw);
+    max-width: 95vw;
 }
 .duckmage-world-types-head,
 .duckmage-world-types-new,
@@ -8711,6 +8712,7 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-world-types-cell.is-weight input {
     width: 4em;
 }
+.duckmage-world-types-cell.is-palette input,
 .duckmage-world-types-cell.is-generator input,
 .duckmage-world-types-cell.is-options input {
     width: 13em;
