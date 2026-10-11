@@ -73,7 +73,7 @@ There's no separate edit mode. While the tool is on a type (say Road), every Roa
 - **Reshape the line:** drag the line itself: a new point is added where you grabbed it, and moves with the pointer.
 - **Delete a point:** right-click it, or hover it and press **Backspace**. A branch left with one point goes, and so does a path; the map says so and undo brings it back. Backspace while drawing removes the last point.
 - **Continue:** click an end to carry on from it.
-- **Select and fork:** click a path's line to select it (it's highlighted and its name shows in the bar; click the name to rename it). Click the selected path's line again to start a fork there. A path and its forks are one path in the map note.
+- **Select and fork:** click a path's line to select it (it's highlighted and its name shows in the bar; click the name to rename it). Click the selected path's line again to start a fork there. A path and its forks are one path in the map note. Forks stay attached: drag the point a fork leaves from and the fork comes along; delete it and the fork joins the nearest point that is left. If a main line goes, its forks become paths of their own (one undo step).
 - **New path:** click empty ground. **Alt-click**, or **New path** in the bar, starts a new path even on top of a path of the same type (a crossroads of two roads).
 - **Path menu:** right-click a path's line, or **Shift**+right-click a point: its own items come first (**Split here**, **Delete this fork**, **Delete path**, **Rename…**, **Change type…**, **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path of the tool's type to split it there.
 - **Esc** steps out one level: finish the branch, then deselect, then leave the tool. **Ctrl/Cmd+Z** undoes each change.

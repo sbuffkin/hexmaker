@@ -24,14 +24,12 @@ import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapPath } from "../types";
 import { latticeCenter, type LatticeGrid, type PathStroke, type Pt } from "../paths/pathGeometry";
-import type { ResolvedBranch } from "../paths/resolve";
 import type { RouteCache } from "../paths/routeCache";
 import {
   appendAnchor,
   clonePath,
   clonePaths,
   deleteAnchor,
-  deleteBranch,
   forkAt,
   insertAnchorAt,
   moveAnchor,
@@ -41,6 +39,8 @@ import {
   splitBranchAt,
 } from "../paths/edit";
 import { anchorsFor, routeFnFor } from "../paths/fromHexes";
+import { keepForksAttached, splitOffOrphans } from "../paths/forks";
+import { routeBranch, type ResolvedBranch } from "../paths/resolve";
 import { canEditPaths, PATH_EDIT_LOCKED_HINT, type PathEditAction } from "../paths/editGate";
 import { pathRouteText } from "../maps/mapNote";
 import { pathRouteStats } from "../maps/MapStore";
@@ -909,7 +909,7 @@ export class PathTool {
   deleteBranch(path: string, branch: number): void {
     const p = this.pathNamed(path);
     if (!p) return;
-    this.afterPathEdit(p.name, deleteBranch(p, branch));
+    this.removeBranch(p, branch, () => { this.active = null; });
   }
 
   deletePath(path: string): void {
@@ -917,16 +917,67 @@ export class PathTool {
     this.afterPathEdit(path, null);
   }
 
+  /** The routes of a path's branches as they are now (its anchors where not resolved). */
+  private routesOf(p: MapPath): HexKey[][] {
+    return p.branches.map((b, i) => this.branchRoute(p.name, i)?.hexes ?? [...b.anchors]);
+  }
+
+  /** A branch's route for `anchors` (the type's routing), or null before the map is ready. */
+  private routeOf(typeName: string, anchors: readonly HexKey[]): HexKey[] | null {
+    const router = this.plugin.paths.router(this.map);
+    if (!router) return null;
+    return routeBranch(anchors, this.plugin.paths.styleOf(this.map, typeName), router).hexes;
+  }
+
+  /**
+   * After branch `branch` of `p` was re-routed (from `oldRoute`): forks and
+   * joins that were on it follow it (keepForksAttached), so they stay attached.
+   */
+  private attachForks(p: MapPath, branch: number, oldRoute: readonly HexKey[], moved?: { from: HexKey; to: HexKey }): MapPath {
+    const grid = this.grid();
+    const anchors = p.branches[branch]?.anchors;
+    if (!grid || !anchors || p.branches.length < 2) return p;
+    const route = this.routeOf(p.typeName, anchors);
+    return route ? keepForksAttached(p, branch, oldRoute, route, grid, moved) : p;
+  }
+
+  /**
+   * Remove a branch; forks that hung off it become paths of their own
+   * (splitOffOrphans), all in one undo step, with a notice naming them.
+   */
+  private removeBranch(p: MapPath, branch: number, adjust?: (next: MapPath | null) => void): void {
+    const taken = this.paths().map((q) => q.name);
+    const { path: rest, split } = splitOffOrphans(p, branch, this.routesOf(p), taken);
+    this.afterPathEdit(p.name, rest, (q) => {
+      adjust?.(q);
+      if (split.length) {
+        const names = split.map((s) => s.name).join(", ");
+        new Notice(split.length === 1 ? `Its fork is now a path of its own: ${names}.` : `Its forks are now paths of their own: ${names}.`);
+      }
+    }, split);
+  }
+
   deleteAnchor(path: string, branch: number, anchor: number): void {
     const p = this.pathNamed(path);
     if (!p) return;
     const next = deleteAnchor(p, branch, anchor);
-    // The active end steps back with its anchor; a branch that went takes it along.
-    this.afterPathEdit(p.name, next, (q) => {
-      if (!q || q.branches.length < p.branches.length) this.active = null;
-      // A branch (or the path) with one point left goes too: say so.
+    // A branch (or the path) with one point left goes too: say so.
+    const say = (q: MapPath | null) => {
       const note = anchorDeleteNotice(p, q, branch);
       if (note) new Notice(note);
+    };
+    if (!next || next.branches.length < p.branches.length) {
+      // The branch went: the active end goes with it; its forks split off.
+      this.removeBranch(p, branch, (q) => {
+        this.active = null;
+        say(q);
+      });
+      return;
+    }
+    // Forks that left the deleted point re-attach to the nearest point of the new route.
+    const fixed = this.attachForks(next, branch, this.routesOf(p)[branch]);
+    this.afterPathEdit(p.name, fixed, (q) => {
+      if (!q || q.branches.length < p.branches.length) this.active = null;
     });
   }
 
@@ -962,9 +1013,9 @@ export class PathTool {
     }).open();
   }
 
-  /** Commit one path's replacement (null removes it), keeping the tool state valid. */
-  private afterPathEdit(name: string, next: MapPath | null, adjust?: (next: MapPath | null) => void): void {
-    if (!this.commit(this.replacePath(name, next))) return;
+  /** Commit one path's replacement (null removes it; extra: paths split off it), keeping the tool state valid. */
+  private afterPathEdit(name: string, next: MapPath | null, adjust?: (next: MapPath | null) => void, extra: MapPath[] = []): void {
+    if (!this.commit([...this.replacePath(name, next), ...extra])) return;
     adjust?.(next);
     if (!next && this.selected === name) {
       this.selected = null;
@@ -1322,7 +1373,9 @@ export class PathTool {
       p = ins.path;
       anchor = ins.anchor;
     }
-    const moved = moveAnchor(p, d.branch, anchor, d.lastHex);
+    const from = p.branches[d.branch].anchors[anchor];
+    // Forks leaving the dragged point move with it; others on the old route stay on the new one.
+    const moved = this.attachForks(moveAnchor(p, d.branch, anchor, d.lastHex), d.branch, d.route.hexes, { from, to: d.lastHex });
     d.preview = d.before.map((q) => (q.name === d.path ? moved : q));
     this.plugin.paths.setPreview(this.map, d.preview);
     this.strokeMemo = null;
