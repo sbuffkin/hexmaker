@@ -48,6 +48,11 @@ describe('"Paths on this map" summary (#48)', () => {
     expect(pathListSummary({ name: "Lone", typeName: "Road", branches: [{ anchors: ["1_1"] }] }, [])).toBe("1, 1");
   });
 
+  it("says what the map note's Route column says, warnings included", () => {
+    const p: MapPath = { name: "Old Way", typeName: "Causeway", branches: [{ anchors: ["0_0", "2_0"] }] };
+    expect(pathListSummary(p, resolvePaths([p], ctx), ["Road", "River"])).toMatch(/^0, 0 → 2, 0 · 3 hexes · ⚠/);
+  });
+
   it("never renames: the summary is beside the name, not part of it", () => {
     const p: MapPath = { name: "Road 6", typeName: "Road", branches: [{ anchors: ["0_0", "2_0"] }] };
     expect(pathListSummary(p, resolvePaths([p], ctx))).not.toContain("Road 6");

@@ -35,6 +35,8 @@ import {
 } from "../paths/edit";
 import { anchorsFor, routeFnFor } from "../paths/fromHexes";
 import { canEditPaths, type PathEditAction } from "../paths/editGate";
+import { pathRouteText } from "../maps/mapNote";
+import { pathRouteStats } from "../maps/MapStore";
 import { impassableNames, noRouteMessage } from "../impassable";
 import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";
@@ -228,29 +230,17 @@ export function pathMenuItems(p: MapPath, branch: number, act: PathMenuActions):
   return items;
 }
 
-const hexLabel = (k: HexKey): string => k.replace("_", ", ");
-
 /**
- * "3, 4 → 9, 2 · 2 forks · 18 hexes": a path's ends (its main line's
- * first and last routed hex), forks and size (distinct routed hexes over
- * every branch), from the resolved routes, so paths with similar names
- * (Road 2 … Road 6) can be told apart in "Paths on this map" (#48).
- * Before the routes are resolved it falls back to the main line's anchors
- * and leaves the size out.
+ * "3, 4 → 9, 2 · 2 forks · 18 hexes": a path's ends, forks and size
+ * (distinct routed hexes over every branch, from the resolved routes), so
+ * paths with similar names (Road 2 … Road 6) can be told apart in "Paths
+ * on this map" (#48). It's the map note's own Route cell (pathRouteText,
+ * pathRouteStats), so the list and the note say the same thing, warnings
+ * included. Before the routes are resolved the size is left out.
  */
-export function pathListSummary(p: MapPath, resolved: readonly ResolvedBranch[]): string {
+export function pathListSummary(p: MapPath, resolved: readonly ResolvedBranch[], pathTypes?: string[]): string {
   const own = resolved.filter((r) => r.path === p.name);
-  const main = own.find((r) => r.branch === 0)?.hexes ?? p.branches[0]?.anchors ?? [];
-  const parts: string[] = [];
-  if (main.length) parts.push(main.length > 1 ? `${hexLabel(main[0])} → ${hexLabel(main[main.length - 1])}` : hexLabel(main[0]));
-  const forks = p.branches.length - 1;
-  if (forks) parts.push(`${forks} fork${forks === 1 ? "" : "s"}`);
-  if (own.length) {
-    const hexes = new Set<HexKey>();
-    for (const r of own) for (const h of r.hexes) hexes.add(h);
-    parts.push(`${hexes.size} hex${hexes.size === 1 ? "" : "es"}`);
-  }
-  return parts.join(" · ");
+  return pathRouteText(p, { pathRoutes: pathRouteStats([p], own), pathTypes });
 }
 
 // ── The controller ───────────────────────────────────────────────────────────

@@ -5807,7 +5807,8 @@ export class HexMapView extends ItemView {
           // Ends, forks and size from the resolved routes (#48), so similar
           // names (Road 2 … Road 6) can be told apart. Names stay the user's.
           const resolved = this.plugin.paths.resolved(this.activeMapName);
-          return this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathListSummary(p, resolved) }));
+          const types = this.plugin.getMapPathTypes(this.activeMapName).map((t) => t.name);
+          return this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathListSummary(p, resolved, types) }));
         })(),
         selected: this.pathTool.selected,
         onPick: (name) => {
