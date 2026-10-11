@@ -86,7 +86,7 @@ describe("F10: Region vs Location says which fits on a space map", () => {
 
 	it("keys off the map's palette (space terrain types), not terrain names", () => {
 		const dialog = src("src", "hex-map", "newChildMap.ts");
-		expect(dialog).toContain("childKindText(plugin.isSpaceMap(this.parentMap) ? \"space\" : undefined)");
+		expect(dialog).toContain("childKindText(plugin.kindFor(this.parentMap))");
 	});
 });
 

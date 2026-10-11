@@ -5,7 +5,6 @@
  * palettes, maps or icons already in use.
  */
 
-import { terrainTypeInfo } from "./terrainTypes";
 import { registry } from "./modules";
 import type { KindId, SectionWords } from "./modules/types";
 
@@ -67,28 +66,6 @@ export function sectionWordsFor(kind?: MapKindInfo): SectionWordsFn {
   return (section) => sectionWords(section, kind);
 }
 
-/**
- * The map type whose section words a map uses (G4b). `chain` is the
- * terrain lists of the map's palette, then its parent's, and so on up: the
- * first one using terrain types of a map type that names its sections
- * decides (a planet submap of a star system keeps the system's words).
- * Driven by the types' data, so any map type with `sectionWords` works.
- */
-export function sectionKindFor(
-  chain: readonly (readonly { type?: string }[])[],
-  kinds: readonly MapKindInfo[] = MAP_KINDS,
-  /** Each palette's declared map type (TerrainPalette.kind), same order as `chain`. */
-  declared: readonly (string | undefined)[] = [],
-): MapKindInfo | undefined {
-  for (const [i, terrains] of chain.entries()) {
-    const used = new Set(terrains.map((t) => terrainTypeInfo(t.type)?.kind).filter(Boolean));
-    if (declared[i]) used.add(declared[i]);
-    const hit = kinds.find((k) => k.sectionWords && used.has(k.id));
-    if (hit) return hit;
-  }
-  return undefined;
-}
-
 export const ALL_MAP_KINDS: MapKind[] = MAP_KINDS.map((k) => k.id);
 
 /** Kinds enabled in settings; unset (older data.json) = all. */
@@ -116,27 +93,86 @@ export function generatorMapKind(meta: Record<string, string | undefined> | unde
   return registry.kindId(meta?.["map-kind"]);
 }
 
-/** A space palette: at least one terrain has a space terrain type ("void", "star"…). */
-export function isSpacePalette(terrains: readonly { type?: string }[] | undefined): boolean {
-  return (terrains ?? []).some((t) => terrainTypeInfo(t.type)?.kind === "space");
+/**
+ * The map type a palette's terrain types say: the first type, in module
+ * order, with a terrain of one of its own terrain types (Space: "void",
+ * "star"…). Land and water types are shared (CM5) and say nothing, so a
+ * palette of only those, or untyped, gives undefined. Never by names.
+ */
+export function inferredKind(terrains: readonly { type?: string }[] | undefined): MapKind | undefined {
+  const used = new Set((terrains ?? []).map((t) => registry.moduleTypeKind(t.type)).filter((k): k is MapKind => !!k));
+  return registry.kindIds().find((k) => used.has(k));
+}
+
+/** inferredKind, else the fallback type (World): what a palette with no declared type counts as. */
+export function kindOfTerrains(terrains: readonly { type?: string }[] | undefined): MapKind {
+  return inferredKind(terrains) ?? registry.fallbackKind() ?? "";
+}
+
+/** A known map type id, or undefined. */
+function knownKind(raw: string | undefined): MapKind | undefined {
+  return raw && ALL_MAP_KINDS.includes(raw) ? raw : undefined;
 }
 
 /**
  * The map type a palette belongs to: its declared `kind` (the shipped
- * palettes say; a palette note's `map-kind`), else space when any terrain
- * has a space type, else world. Data on the palette decides, never its name.
+ * palettes say; a palette note's `map-kind`), else what its terrain types
+ * say (kindOfTerrains). Data on the palette decides, never its name.
  */
 export function paletteKind(p: { kind?: string; terrains?: readonly { type?: string }[] } | undefined): MapKind {
-  const declared = p?.kind;
-  if (declared && (ALL_MAP_KINDS).includes(declared)) return declared;
-  return isSpacePalette(p?.terrains) ? "space" : "world";
+  return knownKind(p?.kind) ?? kindOfTerrains(p?.terrains);
+}
+
+/** A palette (or preset) in a map's chain, as the map-type rules see it. */
+export type ChainPalette = { kind?: string; terrains?: readonly { type?: string }[] } | undefined;
+
+/**
+ * One rule for a map's type (owner call CM3): walk from the map up its
+ * parents (`chain`: the map's palette first); the nearest palette that
+ * says a type decides. A palette says a type by declaring one (`kind`, a
+ * palette note's `map-kind`), else by having terrains of a module's own
+ * types (inferredKind). Shared land and water types say nothing, so a
+ * plain planet-surface palette under a star system is in space. No palette
+ * says one: none. Section words, the Region / Location cards and "turn this
+ * module on?" all use it.
+ */
+export function kindForChain(chain: readonly ChainPalette[]): MapKind | undefined {
+  for (const p of chain) {
+    const k = knownKind(p?.kind) ?? inferredKind(p?.terrains);
+    if (k) return k;
+  }
+  return undefined;
 }
 
 /**
- * Terrains that get description / encounter tables: every palette's, but
- * with World off (a Space-only setup), only the space palettes' — no
- * tables for the fantasy palettes that ship installed (G4). Deduplicated
- * by name, in palette order.
+ * The map types in context on a map: each palette's type (paletteKind)
+ * along the chain. Generators of a type that is offered in context
+ * (Space) show on such maps even with the type off (a planet submap of a
+ * star system still gets planet generators).
+ */
+export function contextKindsOf(chain: readonly ChainPalette[]): Set<MapKind> {
+  return new Set(chain.filter((p) => p !== undefined).map((p) => paletteKind(p)));
+}
+
+/**
+ * A generator-note tag (its raw `map-kind:`) offered only from a map made
+ * by a generator with the same tag (see KindInfo.contextOnlyTags).
+ */
+export function isContextOnlyTag(tag: string | undefined): boolean {
+  return tag !== undefined && registry.kinds().some((k) => (k.contextOnlyTags ?? []).includes(tag));
+}
+
+/** MapKindInfo for a map type id (section words etc.), or undefined. */
+export function mapKindInfo(kind: MapKind | undefined): MapKindInfo | undefined {
+  return kind ? MAP_KINDS.find((k) => k.id === kind) : undefined;
+}
+
+/**
+ * Terrains that get description / encounter tables: every palette's,
+ * except that the fallback type's palettes (World: the fantasy palettes
+ * that ship installed) get none while that type is off (G4: a Space-only
+ * setup). Palettes a map uses always do. Deduplicated by name, in palette
+ * order.
  */
 export function terrainsForTables<T extends { name: string; type?: string }>(
   palettes: readonly { name?: string; kind?: string; terrains: readonly T[] }[],
@@ -144,12 +180,13 @@ export function terrainsForTables<T extends { name: string; type?: string }>(
   /** Palettes a map uses: their terrains always get tables (HG5). */
   inUse: Iterable<string> = [],
 ): T[] {
-  const spaceOnly = !new Set(kinds).has("world");
+  const fallback = registry.fallbackKind();
+  const fallbackOff = fallback !== undefined && !new Set(kinds).has(fallback);
   const used = new Set(inUse);
   const seen = new Set<string>();
   const out: T[] = [];
   for (const p of palettes) {
-    if (spaceOnly && paletteKind(p) !== "space" && !(p.name !== undefined && used.has(p.name))) continue;
+    if (fallbackOff && paletteKind(p) === fallback && !(p.name !== undefined && used.has(p.name))) continue;
     for (const t of p.terrains) {
       if (seen.has(t.name)) continue;
       seen.add(t.name);
@@ -173,36 +210,39 @@ export function newTerrains<T extends { name: string }>(known: ReadonlySet<strin
 }
 
 export interface GeneratorShowContext {
-  /** The map being made is in space: its palette, or a parent map's, is a
-   *  space palette (planet submaps of a system still get planet generators). */
-  spaceContext?: boolean;
+  /** Map types in context where the map is made (contextKindsOf): its
+   *  palette's, its parents' (planet submaps of a system still get planet
+   *  generators). */
+  context?: ReadonlySet<MapKind>;
   /** The current / saved choice: always shown so the value stays visible. */
   selected?: boolean;
 }
 
 /**
  * Should a generator of map type `kind` be offered? Yes when its type is on
- * (no type = always), when it's a space generator and the map is in space,
- * or when it's the current choice.
+ * (no type = always), when its type is offered in context (Space) and is
+ * in the map's context, or when it's the current choice.
  */
 export function isGeneratorShown(
   settings: { mapKinds?: string[] },
   kind: MapKind | undefined,
   ctx: GeneratorShowContext = {},
 ): boolean {
-  return !!ctx.selected || isKindEnabled(settings, kind) || (kind === "space" && !!ctx.spaceContext);
+  return !!ctx.selected || isKindEnabled(settings, kind)
+    || (!!kind && !!registry.kindInfo(kind)?.offerInContext && !!ctx.context?.has(kind));
 }
 
 /**
  * Map types for settings loaded from data.json. A saved list always wins.
- * Missing (new install, or an upgrade from before map types): world, plus
- * space if a palette already has space terrains — space users keep their
- * options, everyone else isn't shown space ones.
+ * Missing (new install, or an upgrade from before map types): the fallback
+ * type (World), plus every type a palette already belongs to — space users
+ * keep their options, everyone else isn't shown space ones.
  */
 export function resolveMapKinds(
   saved: unknown,
   palettes: readonly { kind?: string; terrains: readonly { type?: string }[] }[],
 ): MapKind[] {
   if (Array.isArray(saved)) return saved.filter((k): k is MapKind => (ALL_MAP_KINDS as unknown[]).includes(k));
-  return palettes.some((p) => paletteKind(p) === "space") ? ["world", "space"] : ["world"];
+  const fallback = registry.fallbackKind();
+  return ALL_MAP_KINDS.filter((k) => k === fallback || palettes.some((p) => paletteKind(p) === k));
 }

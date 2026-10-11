@@ -202,7 +202,7 @@ export class WorldTypeStore {
     }
     // The map's own Tables (and its ancestors') win over the setup's.
     const own = mapName ? this.plugin.roleTablesFor(mapName) : {};
-    const overrides = Object.fromEntries(Object.entries(own).map(([r, p]) => [r, p.link]));
+    const overrides = Object.fromEntries(Object.entries(own).flatMap(([r, p]) => (p ? [[r, p.link]] : [])));
     const source = layeredSource(base, overrides, notes, terrains);
     return { ...(source ? { source } : {}), ...(missing ? { missing } : {}) };
   }

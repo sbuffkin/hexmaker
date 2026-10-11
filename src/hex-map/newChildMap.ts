@@ -106,7 +106,7 @@ export class ChildKindModal extends HexmakerModal {
     contentEl.empty();
     const { plugin } = this.host;
     const existing = regionMapAt(plugin.settings.maps, this.parentMap, `${this.x}_${this.y}`);
-    const text = childKindText(plugin.isSpaceMap(this.parentMap) ? "space" : undefined);
+    const text = childKindText(plugin.kindFor(this.parentMap));
 
     // The hex's maps first (C11): opening what's there is the usual pick;
     // making another location stays possible below.

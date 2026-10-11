@@ -5,7 +5,7 @@ import type { TerrainColor } from "./types";
 import { linkLabel, normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
-import { MAP_KINDS, enabledKinds, isSpacePalette, terrainsForTables, type MapKind } from "./mapKinds";
+import { MAP_KINDS, enabledKinds, kindOfTerrains, terrainsForTables, type MapKind } from "./mapKinds";
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { addGeneratedPaths, pathColors } from "./worldgen/generators";
@@ -170,7 +170,7 @@ function wizardKinds(
 	terrains: TerrainColor[],
 ): { fitting: TerrainGeneratorKind[]; selected: string } {
 	// Every generator the map types allow; the default starter is selected.
-	const fitting = kindsForPalette(visibleKinds(kinds, { mapKinds: ctx.mapKinds }, isSpacePalette(terrains), ctx.generatorId), terrains);
+	const fitting = kindsForPalette(visibleKinds(kinds, { mapKinds: ctx.mapKinds }, new Set([kindOfTerrains(terrains)]), ctx.generatorId), terrains);
 	const starter = firstMapGenerator(fitting, ctx.mapKinds);
 	const selected = ctx.generatorId && fitting.some((k) => k.id === ctx.generatorId)
 		? ctx.generatorId

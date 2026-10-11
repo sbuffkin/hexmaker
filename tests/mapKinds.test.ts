@@ -4,7 +4,7 @@ import { TFile } from "obsidian";
 import {
 	generatorMapKind,
 	isGeneratorShown,
-	isSpacePalette,
+	inferredKind,
 	paletteKind,
 	resolveMapKinds,
 	terrainsForTables,
@@ -38,22 +38,22 @@ describe("generatorMapKind", () => {
 	});
 });
 
-describe("isSpacePalette", () => {
+describe("inferredKind (was isSpacePalette)", () => {
 	it("is true for the space presets, false for the world ones", () => {
-		expect(isSpacePalette(SPACE_SECTOR_TERRAINS)).toBe(true);
-		expect(isSpacePalette(SPACE_SYSTEM_TERRAINS)).toBe(true);
-		expect(isSpacePalette(DEFAULT_TERRAIN_PALETTE)).toBe(false);
-		expect(isSpacePalette(LIMITED_TERRAIN_PALETTE)).toBe(false);
+		expect(inferredKind(SPACE_SECTOR_TERRAINS)).toBe("space");
+		expect(inferredKind(SPACE_SYSTEM_TERRAINS)).toBe("space");
+		expect(inferredKind(DEFAULT_TERRAIN_PALETTE)).toBeUndefined();
+		expect(inferredKind(LIMITED_TERRAIN_PALETTE)).toBeUndefined();
 		// Space - Planet is space content on land types (its declared kind says so).
 		for (const p of PALETTE_PRESETS) expect({ p: p.name, kind: paletteKind(p) }).toEqual({ p: p.name, kind: p.kind });
-		expect(isSpacePalette(PALETTE_PRESETS.find((p) => p.name === "Space - Planet")!.terrains)).toBe(false);
+		expect(inferredKind(PALETTE_PRESETS.find((p) => p.name === "Space - Planet")!.terrains)).toBeUndefined();
 	});
 
 	it("needs a typed space terrain (names alone don't count)", () => {
-		expect(isSpacePalette([{ name: "void" } as { name: string; type?: string }])).toBe(false);
-		expect(isSpacePalette([{ type: "forest" }, { type: "star" }])).toBe(true);
-		expect(isSpacePalette([])).toBe(false);
-		expect(isSpacePalette(undefined)).toBe(false);
+		expect(inferredKind([{ name: "void" } as { name: string; type?: string }])).toBeUndefined();
+		expect(inferredKind([{ type: "forest" }, { type: "star" }])).toBe("space");
+		expect(inferredKind([])).toBeUndefined();
+		expect(inferredKind(undefined)).toBeUndefined();
 	});
 });
 
@@ -65,17 +65,17 @@ describe("isGeneratorShown", () => {
 
 	it("hides space generators from world-only users on a world map", () => {
 		expect(isGeneratorShown(WORLD_ONLY, "space")).toBe(false);
-		expect(isGeneratorShown(WORLD_ONLY, "space", { spaceContext: false, selected: false })).toBe(false);
+		expect(isGeneratorShown(WORLD_ONLY, "space", { context: new Set(), selected: false })).toBe(false);
 	});
 
 	it("shows space generators when space is on, in space, or selected", () => {
 		expect(isGeneratorShown(BOTH, "space")).toBe(true);
-		expect(isGeneratorShown(WORLD_ONLY, "space", { spaceContext: true })).toBe(true);
+		expect(isGeneratorShown(WORLD_ONLY, "space", { context: new Set(["space"]) })).toBe(true);
 		expect(isGeneratorShown(WORLD_ONLY, "space", { selected: true })).toBe(true);
 	});
 
 	it("a space context doesn't reveal world generators to space-only users", () => {
-		expect(isGeneratorShown({ mapKinds: ["space"] }, "world", { spaceContext: true })).toBe(false);
+		expect(isGeneratorShown({ mapKinds: ["space"] }, "world", { context: new Set(["space"]) })).toBe(false);
 		expect(isGeneratorShown({ mapKinds: ["space"] }, "world", { selected: true })).toBe(true);
 	});
 });
@@ -144,7 +144,7 @@ describe("generator registry visibility", () => {
 
 	it("world-only users on a world map don't see space generators", async () => {
 		const plugin = pluginWith(learned, ["world"]);
-		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, false));
+		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, new Set()));
 		expect(shown).toContain(BLANK_ID);
 		expect(shown).toContain(REGION_DETAIL_ID);
 		// a procedural top-level generator without the space wording
@@ -157,7 +157,7 @@ describe("generator registry visibility", () => {
 
 	it("a planet submap of a star system still gets Planet surface and planet generators", async () => {
 		const plugin = pluginWith(learned, ["world"]);
-		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, true));
+		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, new Set(["space"])));
 		expect(shown).toContain(PLANET_SURFACE_ID);
 		expect(shown).toContain("wfc:world/generators/planet-ocean.md");
 	});
@@ -165,17 +165,17 @@ describe("generator registry visibility", () => {
 	it("every generator of the map types that are on is offered (no feature level)", async () => {
 		const plugin = pluginWith(learned, ["world", "space"]);
 		const all = await listGeneratorKinds(plugin);
-		const world = ids(visibleKinds(all, plugin.settings, false));
+		const world = ids(visibleKinds(all, plugin.settings, new Set()));
 		for (const id of [BLANK_ID, OVERLAND_ID, REGION_DETAIL_ID]) expect(world).toContain(id);
 		expect(world).toContain("wfc:world/generators/my-coast.md");
-		const space = ids(visibleKinds(all, plugin.settings, true));
+		const space = ids(visibleKinds(all, plugin.settings, new Set(["space"])));
 		expect(space).toContain(STAR_SCATTER_ID);
 		expect(space).toContain("wfc:world/generators/planet-ocean.md");
 	});
 
 	it("keeps a saved choice visible", async () => {
 		const plugin = pluginWith(learned, ["world"]);
-		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, false, PLANET_SURFACE_ID));
+		const shown = ids(visibleKinds(await listGeneratorKinds(plugin), plugin.settings, new Set(), PLANET_SURFACE_ID));
 		expect(shown).toContain(PLANET_SURFACE_ID);
 		expect(shown).not.toContain(ORBITS_ID);
 	});
@@ -183,7 +183,7 @@ describe("generator registry visibility", () => {
 	it("space users see everything", async () => {
 		const plugin = pluginWith(learned, ["world", "space"]);
 		const all = await listGeneratorKinds(plugin);
-		expect(visibleKinds(all, plugin.settings, false)).toHaveLength(all.length);
+		expect(visibleKinds(all, plugin.settings, new Set())).toHaveLength(all.length);
 	});
 });
 
@@ -195,7 +195,7 @@ describe("space presets end-to-end (submap defaults)", () => {
 			for (const [terrain, d] of Object.entries(p.submapDefaults ?? {})) {
 				if (!d.generator) continue;
 				// The parent map uses this space palette → space context.
-				const shown = ids(visibleKinds(all, plugin.settings, isSpacePalette(p.terrains)));
+				const shown = ids(visibleKinds(all, plugin.settings, new Set([inferredKind(p.terrains)].filter((k) => k !== undefined))));
 				expect({ palette: p.name, terrain, ok: shown.includes(d.generator) }).toMatchObject({ ok: true });
 			}
 		}

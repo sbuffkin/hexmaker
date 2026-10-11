@@ -3,13 +3,13 @@ import expect from "expect";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
-import { isSpaceMapIn, sectionWordsIn, type MapKindHost } from "../src/maps/mapKindQueries";
+import { contextKindsIn, kindForIn, sectionWordsIn, type MapKindHost } from "../src/maps/mapKindQueries";
 import {
   MAP_KINDS,
   generatorMapKind,
   isGeneratorShown,
   isIconHiddenByKind,
-  isSpacePalette,
+  inferredKind,
   paletteKind,
   resolveMapKinds,
   terrainsForTables,
@@ -136,7 +136,7 @@ async function collect(): Promise<Record<string, unknown>> {
   out.iconPackTabs = iconPackTabs(new Map([["terrain", 3], ["places", 2], ["space", 0]] as [never, number][]));
   out.generatorMapKind = Object.fromEntries(["planet", "space", " Planet ", "world", "dungeon", ""].map((v) => [v || "(blank)", generatorMapKind({ "map-kind": v }) ?? null]));
   out.paletteKind = Object.fromEntries(ALL_PALETTES.map((n) => [n, paletteKind(palObj(n))]));
-  out.isSpacePalette = Object.fromEntries(ALL_PALETTES.map((n) => [n, isSpacePalette(palTerrains(n))]));
+  out.isSpacePalette = Object.fromEntries(ALL_PALETTES.map((n) => [n, inferredKind(palTerrains(n)) === "space"]));
   out.suggestBaseTerrain = Object.fromEntries(ALL_PALETTES.map((n) => [n, suggestBaseTerrain(palTerrains(n)) ?? null]));
   out.refinedSpaceType = ["moon|world", "Luna satellite|world", "comet|asteroids", "wreck|asteroids", "jump gate|station", "starport|station", "jump limit|void", "star system|star", "forest|forest"]
     .map((s) => { const [name, type] = s.split("|"); return `${s} -> ${refinedSpaceType({ name, type }) ?? ""}`; });
@@ -170,11 +170,11 @@ async function collect(): Promise<Record<string, unknown>> {
       ["Custom plain"],
     ).map((t) => t.name);
     row.generatorShown = Object.fromEntries(["world", "space", undefined].flatMap((k) => [false, true].map((ctx) =>
-      [`${k ?? "none"}|ctx=${ctx}`, isGeneratorShown(s, k as never, { spaceContext: ctx })])));
+      [`${k ?? "none"}|ctx=${ctx}`, isGeneratorShown(s, k as never, { context: new Set(ctx ? ["space"] : []) })])));
     row.visible = {
-      noContext: visibleKinds(gens, s, false).map((g) => g.id),
-      spaceContext: visibleKinds(gens, s, true).map((g) => g.id),
-      selectedPlanet: visibleKinds(gens, s, false, "procedural:planet-surface").map((g) => g.id),
+      noContext: visibleKinds(gens, s, new Set()).map((g) => g.id),
+      spaceContext: visibleKinds(gens, s, new Set(["space"])).map((g) => g.id),
+      selectedPlanet: visibleKinds(gens, s, new Set(), "procedural:planet-surface").map((g) => g.id),
     };
     row.newMapChoices = Object.fromEntries(ALL_PALETTES.map((n) => [n, newMapGeneratorChoices(gens, s, palTerrains(n), undefined, false).map((g) => g.id)]));
     row.firstMapGenerator = Object.fromEntries(ALL_PALETTES.map((n) => {
@@ -189,7 +189,7 @@ async function collect(): Promise<Record<string, unknown>> {
       inUse: new Set(["Expanded"]),
       defaultPalette: "Expanded",
     });
-    row.isSpaceMap = Object.fromEntries(TREE.map(([m]) => [m, isSpaceMapIn(plugin, m)]));
+    row.isSpaceMap = Object.fromEntries(TREE.map(([m]) => [m, contextKindsIn(plugin, m).has("space")]));
     perKinds[ks(kinds)] = row;
   }
   out.perKinds = perKinds;
@@ -200,6 +200,9 @@ async function collect(): Promise<Record<string, unknown>> {
     const w = sectionWordsIn(plugin, m);
     return [m, ["Towns", "Dungeons", "Features", "Quests", "Factions"].map((s) => w(s).label).join(",")];
   }));
+
+  // CM3: one map-type rule (P2). Not in today's code before P2.
+  out.kindFor = Object.fromEntries(TREE.map(([m]) => [m, kindForIn(plugin, m) ?? null]));
 
   // runGenerator: context paths carried over (not on space palettes).
   const fake: TerrainGeneratorKind = {

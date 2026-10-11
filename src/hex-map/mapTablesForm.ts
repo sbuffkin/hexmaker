@@ -11,6 +11,7 @@ import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { contentFolder } from "../notePickers";
 import { ENGINE_ROLES, type RoleId } from "../worldgen/tableRoles";
 import { fittingRoleTables } from "../worldgen/tableSources";
+import { registry } from "../modules";
 import { SPACE_TABLES_FOLDER } from "../space/spaceTables";
 import { ARRIVAL_MODE_TEXT, ARRIVAL_MODE_WORDS, parseArrivalMode, type ArrivalMode } from "../arrival/arrival";
 
@@ -45,13 +46,15 @@ export function renderArrivalSetting(el: HTMLElement, plugin: HexmakerPlugin, ma
 /**
  * "Generator tables": the table each generator role rolls on for this map
  * and the maps under it. Blank follows the map above, else the World types
- * picked when generating. Shown on space maps, or wherever a table is set.
+ * picked when generating. Shown on maps of a type whose generators roll on
+ * tables (Space), or wherever a table is set.
  */
 export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void {
   const own = map.roleTables ?? {};
   const inherited = plugin.roleTablesFor(map.name);
   const anySet = Object.keys(inherited).length > 0;
-  if (!anySet && !plugin.isSpaceMap(map.name)) return;
+  const context = plugin.contextKinds(map.name);
+  if (!anySet && !registry.kindsWithTableRoles().some((k) => context.has(k))) return;
 
   el.createEl("h4", { text: "Generator tables" });
   el.createDiv({

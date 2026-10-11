@@ -53,10 +53,22 @@ export interface KindInfo {
    */
   offerInContext?: boolean;
   /**
+   * Generator-note tags (`map-kind:` values) offered only from a map made
+   * by a generator with the same tag (Space: "planet" generators only on a
+   * planet, when walking into a new region).
+   */
+  contextOnlyTags?: string[];
+  /**
    * The type a palette counts as when none of its terrain types belong to
    * another type and it declares none (exactly one type says so).
    */
   fallback?: boolean;
+  /**
+   * Generators on this type's palettes carry a parent hex's or neighbour's
+   * paths across the new map (default true). Space: false (a jump route
+   * through a sector hex isn't a lane in the system).
+   */
+  carryContextPaths?: boolean;
   /** Icon pickers open on this type's icon pack when it's the only type on. */
   iconPackFirst?: boolean;
 }

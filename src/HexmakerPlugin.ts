@@ -46,7 +46,7 @@ import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
-import { isSpaceMapIn, sectionWordsIn } from "./maps/mapKindQueries";
+import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import {
   getPreset,
@@ -2831,12 +2831,21 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   /**
-   * Is `mapName` in space: its palette, or any ancestor map's (a planet
-   * submap of a star system), is a space palette? Space generators are
-   * offered there even when the Space map type is off.
+   * The map types in context on `mapName`: its palette's and every
+   * ancestor map's (a planet submap of a star system is in space). A type
+   * offered in context (Space) has its generators shown there even when
+   * it's off.
    */
-  isSpaceMap(mapName: string): boolean {
-    return isSpaceMapIn(this, mapName);
+  contextKinds(mapName: string): Set<MapKind> {
+    return contextKindsIn(this, mapName);
+  }
+
+  /**
+   * The map's type (owner call CM3): the nearest declared type up the map
+   * tree, else the nearest its terrain types say. Undefined: no type.
+   */
+  kindFor(mapName: string): MapKind | undefined {
+    return kindForIn(this, mapName);
   }
 
   /**

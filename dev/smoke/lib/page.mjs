@@ -79,7 +79,8 @@ export function state(id) {
     missing: !!p.mapStore.isMissing?.(m.name),
     noteExists: !!app.vault.getAbstractFileByPath(p.mapStore.notePath(m.name)),
     notePath: p.mapStore.notePath(m.name),
-    space: !!p.isSpaceMap?.(m.name),
+    // contextKinds since the module registry (P2); isSpaceMap on older builds.
+    space: !!(p.contextKinds ? p.contextKinds(m.name).has("space") : p.isSpaceMap?.(m.name)),
   }));
   return {
     version: p.manifest.version,

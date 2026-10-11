@@ -10,6 +10,7 @@ import type { HexmakerModule } from "../types";
 import { SPACE_TERRAIN_GROUPS, SPACE_TERRAIN_TYPES } from "./terrainTypes";
 import { SPACE_PRESETS } from "./presets";
 import { BUNDLED_SPACE_ICONS } from "./spaceIcons";
+import { SPACE_TABLE_ROLES } from "./tableRoles";
 
 export const spaceModule: HexmakerModule = {
   id: "space",
@@ -33,12 +34,15 @@ export const spaceModule: HexmakerModule = {
     // Generator notes learned from a planet map say `map-kind: planet`.
     aliases: ["planet"],
     offerInContext: true,
+    contextOnlyTags: ["planet"],
+    carryContextPaths: false,
     iconPackFirst: true,
   },
   terrainTypes: SPACE_TERRAIN_TYPES,
   terrainGroups: SPACE_TERRAIN_GROUPS,
   iconPack: { id: "space", label: "Space", prefix: "space-", icons: BUNDLED_SPACE_ICONS },
   palettes: SPACE_PRESETS,
+  tableRoles: SPACE_TABLE_ROLES,
   owns: {
     settingsKeys: ["worldTypesFolder", "worldTypesSeeded"],
     mapNoteKeys: [],

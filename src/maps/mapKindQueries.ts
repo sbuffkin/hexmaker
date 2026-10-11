@@ -7,7 +7,15 @@
 import type { TerrainColor } from "../types";
 import { mapAncestors } from "../hex-map/submapNav";
 import { getPreset } from "../palettes/presets";
-import { paletteKind, sectionKindFor, sectionWordsFor, type SectionWordsFn } from "../mapKinds";
+import {
+  contextKindsOf,
+  kindForChain,
+  mapKindInfo,
+  sectionWordsFor,
+  type ChainPalette,
+  type MapKind,
+  type SectionWordsFn,
+} from "../mapKinds";
 
 export interface MapKindHost {
   getMap(name: string): { paletteName?: string } | undefined;
@@ -21,22 +29,36 @@ export function paletteChain(host: MapKindHost, mapName: string): (string | unde
   return chain.map((m) => host.getMap(m)?.paletteName);
 }
 
-const paletteOrPreset = (host: MapKindHost, name: string) => host.getPaletteByName(name) ?? getPreset(name);
-
 /**
- * Is `mapName` in space: its palette, or any ancestor map's (a planet
- * submap of a star system), is a space palette?
+ * The palettes (or presets not installed yet) from `mapName` up, as the
+ * map-type rules see them: an installed palette's terrains, and its
+ * declared type or else the preset's of the same name.
  */
-export function isSpaceMapIn(host: MapKindHost, mapName: string): boolean {
-  return paletteChain(host, mapName).some((n) => !!n && paletteKind(paletteOrPreset(host, n)) === "space");
+function chainOf(host: MapKindHost, mapName: string): ChainPalette[] {
+  return paletteChain(host, mapName).map((n) => {
+    if (!n) return undefined;
+    const pal = host.getPaletteByName(n);
+    const preset = getPreset(n);
+    if (!pal && !preset) return undefined;
+    return { kind: pal?.kind ?? preset?.kind, terrains: pal?.terrains ?? preset?.terrains ?? [] };
+  });
 }
 
-/** Display words for link sections on `mapName` (G4b); see HexmakerPlugin.sectionWordsFor. */
+/** The map's type (CM3: the nearest declared type up the map tree); see kindForChain. */
+export function kindForIn(host: MapKindHost, mapName: string): MapKind | undefined {
+  return host.getMap(mapName) ? kindForChain(chainOf(host, mapName)) : undefined;
+}
+
+/**
+ * The map types in context on `mapName`: its palette's, and every
+ * ancestor map's (a planet submap of a star system is in space).
+ */
+export function contextKindsIn(host: MapKindHost, mapName: string): Set<MapKind> {
+  return contextKindsOf(paletteChain(host, mapName).map((n) => (n ? host.getPaletteByName(n) ?? getPreset(n) : undefined)));
+}
+
+/** Display words for link sections on `mapName` (G4b): its map type's (kindForIn). No map = the usual words. */
 export function sectionWordsIn(host: MapKindHost, mapName: string | undefined): SectionWordsFn {
-  if (!mapName || !host.getMap(mapName)) return sectionWordsFor(undefined);
-  const palettes = paletteChain(host, mapName);
-  const terrains = palettes.map((n) => (n ? host.getPaletteByName(n)?.terrains ?? getPreset(n)?.terrains ?? [] : []));
-  // A palette's declared type counts too (a planet map on Space - Planet).
-  const declared = palettes.map((n) => (n ? host.getPaletteByName(n)?.kind ?? getPreset(n)?.kind : undefined));
-  return sectionWordsFor(sectionKindFor(terrains, undefined, declared));
+  if (!mapName) return sectionWordsFor(undefined);
+  return sectionWordsFor(mapKindInfo(kindForIn(host, mapName)));
 }

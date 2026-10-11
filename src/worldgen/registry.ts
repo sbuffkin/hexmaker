@@ -32,8 +32,9 @@ import {
   planetSurface,
   planetSurfaceFits,
 } from "./procedural/planetSurface";
-import { generatorMapKind, isGeneratorShown, isSpacePalette, type MapKind } from "../mapKinds";
+import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
+import { registry } from "../modules";
 import { generateConnected, type NewRegion } from "./neighbours";
 import { WORLD_TYPES_KEY, worldTypesOption } from "../space/worldTypesSource";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
@@ -428,8 +429,8 @@ export function builtinKind(
 /**
  * Run a generator with its context, then continue the context's paths
  * (a parent hex's roads / rivers, a neighbour's crossing roads) across the
- * result. Space palettes skip the carry-over (a jump route through a sector
- * hex isn't a lane in the system). Shared by the setup modal and the Maps →
+ * result. Palettes of a map type that says so skip the carry-over (Space:
+ * a jump route through a sector hex isn't a lane in the system). Shared by the setup modal and the Maps →
  * New map tab so both make the same map from the same choices.
  */
 export function runGenerator(
@@ -439,7 +440,7 @@ export function runGenerator(
 ): GenerateOutcome {
   const outcome = kind.generate(req);
   const carry = req.context?.paths ?? [];
-  if (!outcome.ok || carry.length === 0 || isSpacePalette(req.terrains)) return outcome;
+  if (!outcome.ok || carry.length === 0 || registry.kindInfo(kindOfTerrains(req.terrains))?.carryContextPaths === false) return outcome;
   const routed = routeContextPaths(outcome.cells, req.terrains, { ...req.grid, orientation }, carry, req.seed);
   return { ...outcome, paths: [...outcome.paths, ...routed] };
 }
@@ -461,16 +462,17 @@ export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">,
 }
 
 /**
- * Generators to offer: those whose map type is on, space ones on a space
- * map (`spaceContext`), and the current/saved choice (`selectedId`).
+ * Generators to offer: those whose map type is on, those of a type offered
+ * in context (Space) on a map with that type in context (`context`, contextKindsOf), and
+ * the current/saved choice (`selectedId`).
  */
 export function visibleKinds(
   kinds: TerrainGeneratorKind[],
   settings: { mapKinds?: string[] },
-  spaceContext: boolean,
+  context: ReadonlySet<MapKind>,
   selectedId?: string,
 ): TerrainGeneratorKind[] {
-  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { spaceContext, selected: k.id === selectedId }));
+  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { context, selected: k.id === selectedId }));
 }
 
 /**
@@ -486,7 +488,7 @@ export function newMapGeneratorChoices(
   currentId: string | undefined,
   neighbour: boolean,
 ): TerrainGeneratorKind[] {
-  const shown = visibleKinds(kinds, settings, isSpacePalette(terrains), currentId);
+  const shown = visibleKinds(kinds, settings, new Set([kindOfTerrains(terrains)]), currentId);
   const fitting = kindsForPalette(shown, terrains, false).filter((k) => k.id !== BLANK_ID);
   return neighbour ? neighbourFirst(fitting) : fitting;
 }

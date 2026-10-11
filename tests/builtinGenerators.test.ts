@@ -144,8 +144,8 @@ describe("shipped biome / preset generators", () => {
 		const kind = builtinKind(plugin, "biome-taiga", "Taiga", "", models.get("biome-taiga")!);
 		expect(kind.id).toBe("builtin:biome-taiga");
 		expect(kind.mapKind).toBe("world");
-		expect(visibleKinds([kind], { mapKinds: ["world"] }, false)).toEqual([kind]);
-		expect(visibleKinds([kind], { mapKinds: ["space"] }, false)).toEqual([]);
+		expect(visibleKinds([kind], { mapKinds: ["world"] }, new Set())).toEqual([kind]);
+		expect(visibleKinds([kind], { mapKinds: ["space"] }, new Set())).toEqual([]);
 	});
 });
 

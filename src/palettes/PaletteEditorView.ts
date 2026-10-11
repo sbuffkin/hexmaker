@@ -440,11 +440,10 @@ export class PaletteEditorView extends ItemView {
 
       const genSel = tr.createEl("td").createEl("select");
       genSel.createEl("option", { value: "", text: "—" });
-      // Space generators while Space is off: only for a space palette or a
-      // space submap palette (or the saved value).
-      const spaceContext = paletteKind(pal) === "space"
-        || (!!d.palette && this.plugin.getPaletteOrPresetKind(d.palette) === "space");
-      for (const g of visibleKinds(this.generators, this.plugin.settings, spaceContext, d.generator)) {
+      // Generators of a type that's off (Space): only for a palette of that
+      // type or a submap palette of it (or the saved value).
+      const context = new Set([paletteKind(pal), ...(d.palette ? [this.plugin.getPaletteOrPresetKind(d.palette)] : [])]);
+      for (const g of visibleKinds(this.generators, this.plugin.settings, context, d.generator)) {
         genSel.createEl("option", { value: g.id, text: g.label });
       }
       if (d.generator && !this.generators.some((g) => g.id === d.generator)) {

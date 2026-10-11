@@ -29,20 +29,7 @@
     "src/worldgen/registry.ts -> world-maps": 2
   },
   "decisions": {
-    "src/HexmakerPlugin.ts -> space": 3,
-    "src/SetupWizardView.ts -> space": 2,
-    "src/arrival/ArrivalService.ts -> space": 3,
-    "src/hex-map/OverworldModals.ts -> space": 2,
-    "src/hex-map/mapTablesForm.ts -> space": 1,
-    "src/hex-map/newChildMap.ts -> space": 1,
-    "src/mapKinds.ts -> space": 8,
-    "src/mapKinds.ts -> world": 1,
-    "src/maps/mapKindQueries.ts -> space": 1,
-    "src/palettes/PaletteEditorView.ts -> space": 4,
-    "src/worldgen/GeneratorPanel.ts -> space": 4,
-    "src/worldgen/NewMapSetupModal.ts -> space": 6,
-    "src/worldgen/WalkRegionModal.ts -> space": 2,
-    "src/worldgen/registry.ts -> space": 5,
+    "src/HexmakerPlugin.ts -> space": 2,
     "src/worldgen/registry.ts -> world": 1
   }
 }

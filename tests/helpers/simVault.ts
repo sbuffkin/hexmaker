@@ -274,7 +274,7 @@ export class MockApp {
 // ─── Plugin ────────────────────────────────────────────────────────────────
 
 import { DEFAULT_PATH_TYPES, DEFAULT_SETTINGS } from "../../src/constants";
-import { sectionKindFor, sectionWordsFor } from "../../src/mapKinds";
+import { kindForChain, mapKindInfo, sectionWordsFor } from "../../src/mapKinds";
 import { PathsService } from "../../src/paths/PathsService";
 import type { HexmakerPluginSettings } from "../../src/types";
 
@@ -326,7 +326,7 @@ export class MockHexmakerPlugin {
 
   /** Section display words by map type (G4b), from the map's own palette. */
   sectionWordsFor(mapName: string | undefined) {
-    return sectionWordsFor(sectionKindFor(mapName ? [this.getMapPalette(mapName)] : []));
+    return sectionWordsFor(mapKindInfo(mapName ? kindForChain([{ terrains: this.getMapPalette(mapName) }]) : undefined));
   }
 }
 

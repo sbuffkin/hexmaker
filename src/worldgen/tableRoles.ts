@@ -20,78 +20,26 @@
  * Pure: no Obsidian imports.
  */
 
-import type { RandomTable, RowType } from "../random-tables/randomTable";
+import type { RandomTable } from "../random-tables/randomTable";
 import { resolveOdds, resolveRoll, skippedRows, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import type { ConditionContext } from "../random-tables/tableConditions";
 import type { OrbitZone } from "../space/worldTypes";
 import type { OnceTracker } from "../arrival/eventsLedger";
+import type { EngineRoleDef } from "../modules/types";
+import { registry } from "../modules";
 
-export type RoleId = "sector-hexes" | "star" | "inner-orbits" | "habitable-orbits" | "outer-orbits";
+/** A table role id ("sector-hexes", "inner-orbits"…), from a module's roles. */
+export type RoleId = string;
 
-export interface EngineRole {
-  id: RoleId;
-  /** The generator id that rolls on it. */
-  engine: string;
-  /** Its name, as shown and as written in a recipe's Tables section. */
-  name: string;
-  /** What its rows must be. */
-  rows: RowType;
-  /** Terrain types its rows place, and what equal odds fall back to. */
-  terrainTypes: readonly string[];
-  /** What the generator does with a roll (help text). */
-  help: string;
-  /** What equal odds run over when there is no table (plain words). */
-  fallback: string;
-}
+/** An engine's table role (its schema lives with the module; see EngineRoleDef). */
+export type EngineRole = EngineRoleDef;
 
-/** The engine role schema. Roles are only added by engines (tests/generatorRoles.test.ts checks coverage). */
-export const ENGINE_ROLES: readonly EngineRole[] = [
-  {
-    id: "sector-hexes",
-    engine: "procedural:star-scatter",
-    name: "Sector hexes",
-    rows: "terrain",
-    terrainTypes: ["world", "gas-giant", "asteroids", "station", "starport", "jump-point", "anomaly"],
-    help: "What each star system hex of a sector is: its mainworld, or a special hex like a station. A row's Mainworld says which body is that system's mainworld.",
-    fallback: "world terrains (no special hexes)",
-  },
-  {
-    id: "star",
-    engine: "procedural:orbits",
-    name: "Star",
-    rows: "terrain",
-    terrainTypes: ["star"],
-    help: "The star at the centre of a system, when the Star option is Random.",
-    fallback: "star terrains",
-  },
-  {
-    id: "inner-orbits",
-    engine: "procedural:orbits",
-    name: "Inner orbits",
-    rows: "terrain",
-    terrainTypes: ["world", "gas-giant", "asteroids"],
-    help: "The body on each orbit in the inner zone (the first 30% of the rings).",
-    fallback: "planet terrains",
-  },
-  {
-    id: "habitable-orbits",
-    engine: "procedural:orbits",
-    name: "Habitable orbits",
-    rows: "terrain",
-    terrainTypes: ["world", "gas-giant", "asteroids"],
-    help: "The body on each orbit in the habitable zone (30–60% of the rings).",
-    fallback: "planet terrains",
-  },
-  {
-    id: "outer-orbits",
-    engine: "procedural:orbits",
-    name: "Outer orbits",
-    rows: "terrain",
-    terrainTypes: ["world", "gas-giant", "asteroids"],
-    help: "The body on each orbit in the outer zone (the rest of the rings).",
-    fallback: "planet terrains",
-  },
-];
+/**
+ * The engine role schema: every module's roles (src/modules; Space brings
+ * Star scatter's and Orbits'). Roles are only added by engines
+ * (tests/generatorRoles.test.ts checks coverage).
+ */
+export const ENGINE_ROLES: readonly EngineRole[] = registry.tableRoles();
 
 export const ZONE_ROLES: Record<OrbitZone, RoleId> = {
   inner: "inner-orbits",

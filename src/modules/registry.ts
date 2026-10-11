@@ -74,6 +74,20 @@ export class ModuleRegistry {
     return this.modules.flatMap((m) => [...(m.terrainTypes ?? [])]);
   }
 
+  /**
+   * The map type a module's terrain type belongs to (Space: "star" → space).
+   * The core's land and water types belong to no module: they are shared
+   * (CM5), so they never say which type a map is.
+   */
+  moduleTypeKind(typeId: string | undefined): KindId | undefined {
+    return typeId ? this.terrainTypes().find((t) => t.id === typeId)?.kind : undefined;
+  }
+
+  /** Map types whose modules bring engine table roles. */
+  kindsWithTableRoles(): KindId[] {
+    return this.modules.flatMap((m) => (m.kind && m.tableRoles?.length ? [m.kind.id] : []));
+  }
+
   terrainGroups(): TerrainGroupDef[] {
     return this.modules.flatMap((m) => [...(m.terrainGroups ?? [])]);
   }
