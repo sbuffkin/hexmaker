@@ -51,6 +51,8 @@ The **How to edit this note** box at the top of the map note explains the column
 
 The map note's **Summary** (above the Hexes table) and the *Route* column in Paths are written by the plugin: extent, base terrain, a terrain legend with counts, regions, each path's ends, forks and length, and a ⚠ for any terrain or path type not in the palette. They update on each save, so edits there are replaced.
 
+**Map data in hex notes.** Hex notes from the built-in template have a **Map data** box: the hex's terrain, region and name (and its region map, locations and, on an overworld, biome). You can edit Terrain, Region or Name there: when you leave the note or open the hex editor, the change goes onto the map. It doesn't if the map changed that value since (the map wins), if the mode locks it (Play), or if the terrain isn't in the palette; then the box keeps a `Not applied:` line saying why. Lines it can't read become `Not read:` lines.
+
 Paths are named. The **Paths** table lists each path (name, type, your notes); **Path routes** lists the hexes each one passes through in order, like `0, 8 → 9, 8 → 13, 8`, and the map draws the way between them. A path's `main` row is its main line; other rows are forks that leave it at their first hex. The tables are linked by name, so to rename a path edit it in both. Older notes that listed every hex of a path are converted once, after a backup, with a report of what changed beside it.
 
 ---
@@ -178,7 +180,9 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 **Expanded** is the default fantasy palette on new installs (if you used the plugin before, new maps keep starting on your first palette): more terrains (coasts, wetlands, forest and mountain kinds) and it matches the generators. **Limited** has fewer, simpler terrains and is quicker to paint. Pick any palette as the start for new maps in **Settings → Palette for new maps**. Expanded now has **savanna** and **river delta** too (World biomes paints those biomes with them); an Expanded palette you already have gets them once, after a backup, unless it already has terrains of those names. Delete them and they stay deleted.
 
-No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
+No palette or terrain is special because of its name. What a terrain does comes from its **Type**: water types are impassable to auto-routes, generators place terrain by type, Orbits puts the *moon*-type terrain beside planets and the *jump point* past the last orbit. Rename anything, or build a palette from scratch, and it works the same once its terrains have types. On space maps a faint dashed tether joins each moon to the planet beside it (hidden with the paths).
+
+Palette menus (setup, New map, new submap) show the picked palette's terrains as colour swatches; hover one for its name. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 
 ## Rolling from a hex
 
