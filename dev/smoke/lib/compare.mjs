@@ -21,10 +21,10 @@ export function canon(v) {
 
 /**
  * Settings the plugin sets once, on some later start (the one-time
- * table-ranges survey, note format upgrades): a restart may write these
+ * table-ranges upgrade, note format upgrades): a restart may write these
  * to data.json. Anything else it writes is a rewrite.
  */
-export const ONE_TIME_KEYS = new Set(["tableRangesPrompt", "noteFormatUpgrades"]);
+export const ONE_TIME_KEYS = new Set(["tableRangesUpgraded", "tableRangesPrompt", "noteFormatUpgrades"]);
 
 
 /** data.json changed only in ONE_TIME_KEYS (top level). */

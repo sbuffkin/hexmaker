@@ -1,4 +1,4 @@
-import { Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
+import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -16,7 +16,7 @@ import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
 import { fillLegacyPathTypes } from "./palettes/pathTypeLegacy";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { maybePromptTableRanges, openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
+import { openTableRangesModal, runTableCheck, upgradeTableRangesOnce } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
 import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
@@ -51,6 +51,7 @@ import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
+import { addPlacedMenuItems, placeCommand } from "./ui/commandPlacement";
 import {
   getPreset,
   presetToPalette,
@@ -77,7 +78,9 @@ import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
-import { workModeOf, type ModeAction } from "./workMode";
+import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
+import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
+import { contentFolder } from "./notePickers";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
 import type { RoleId } from "./worldgen/tableRoles";
@@ -223,9 +226,9 @@ export default class HexmakerPlugin extends Plugin {
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
       } else {
-        // Once after updating: offer roll ranges for older tables (asks
-        // first). After the stores load, for the same reason.
-        void storesReady.then(() => maybePromptTableRanges(this));
+        // Once after updating: add roll ranges to older tables, silently,
+        // after a backup (DJ-Q6). After the stores load, for the same reason.
+        void storesReady.then(() => upgradeTableRangesOnce(this));
       }
     });
 
@@ -306,12 +309,18 @@ export default class HexmakerPlugin extends Plugin {
     this.addRibbonIcon("map", "Open hex map", () =>
       this.openHexMap(),
     );
-    this.addCommand({
+    // Commands are placed by id like every other control (src/ui/placement.ts):
+    // Debug ones are offered only in debug mode (src/ui/commandPlacement.ts).
+    const addPlaced = (id: string, cmd: Command) => {
+      const placed = placeCommand(id, cmd, () => isDebugMode(this.app));
+      if (placed) this.addCommand(placed);
+    };
+    addPlaced("Plugin.cmd.openHexMap", {
       id: "open-hex-map",
       name: "Open hex map",
       callback: () => this.openHexMap(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openHexTable", {
       id: "open-hex-table",
       name: "Open hex table",
       callback: () =>
@@ -319,19 +328,20 @@ export default class HexmakerPlugin extends Plugin {
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_HEX_TABLE }),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openTerrainGenerator", {
       id: "open-terrain-generator",
       name: "Open terrain generator",
       callback: () => void this.openTerrainGenerator(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openPaletteEditor", {
       id: "open-palette-editor",
       name: "Open palette editor",
       callback: () => void this.openPaletteEditor(),
     });
-    // Each module's commands (Space: Edit world types…, Convert world types to tables).
+    // Each module's commands (Space: Edit world types…, Convert world types to tables),
+    // placed by their placement id when they have one.
     for (const { command, kind } of moduleCommands()) {
-      this.addCommand({
+      const cmd: Command = {
         id: command.id,
         name: command.name,
         checkCallback: (checking) => {
@@ -340,14 +350,16 @@ export default class HexmakerPlugin extends Plugin {
           if (!checking) void command.run(this);
           return true;
         },
-      });
+      };
+      if (command.placementId) addPlaced(command.placementId, cmd);
+      else this.addCommand(cmd);
     }
-    this.addCommand({
+    addPlaced("Plugin.cmd.newOverworld", {
       id: "new-overworld",
       name: "New overworld…",
       callback: () => this.openNewOverworld(),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoUp", {
       id: "map-go-up",
       name: "Go up to parent map",
       checkCallback: (checking) => {
@@ -357,7 +369,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoBack", {
       id: "map-go-back",
       name: "Go back to previous map",
       checkCallback: (checking) => {
@@ -367,7 +379,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.mapGoForward", {
       id: "map-go-forward",
       name: "Go forward to the next map",
       checkCallback: (checking) => {
@@ -377,7 +389,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.openRandomTables", {
       id: "open-random-tables",
       name: "Open random tables",
       callback: () =>
@@ -385,17 +397,17 @@ export default class HexmakerPlugin extends Plugin {
           .getLeaf()
           .setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.addRollRanges", {
       id: "add-roll-ranges",
       name: "Add roll ranges to tables",
       callback: () => void openTableRangesModal(this),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.checkTables", {
       id: "check-tables",
       name: "Check tables",
       callback: () => void runTableCheck(this),
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportNotePdf", {
       id: "export-current-note-pdf",
       name: "Export current note to PDF",
       checkCallback: (checking) => {
@@ -405,7 +417,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportNoteMarkdown", {
       id: "export-current-note-markdown",
       name: "Export current note to Markdown",
       checkCallback: (checking) => {
@@ -415,7 +427,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentHex", {
       id: "export-current-hex",
       name: "Export current hex (structured PDF / Markdown)",
       checkCallback: (checking) => {
@@ -425,7 +437,7 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentWorkflow", {
       id: "export-current-workflow",
       name: "Export current workflow with rolled samples",
       checkCallback: (checking) => {
@@ -438,7 +450,7 @@ export default class HexmakerPlugin extends Plugin {
     // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
     // Map data callouts (src/hexMapData.ts) in the open map's hex notes: an
     // opt-in for notes made before the template had one.
-    this.addCommand({
+    addPlaced("Plugin.cmd.addMapDataToHexNotes", {
       id: "add-map-data-to-hex-notes",
       name: "Add map data to this map's hex notes",
       checkCallback: (checking) => {
@@ -460,7 +472,7 @@ export default class HexmakerPlugin extends Plugin {
     });
     // Map data callouts in region and faction notes (R1): which maps use
     // them, with hex counts. Adds the callout where it's missing.
-    this.addCommand({
+    addPlaced("Plugin.cmd.updateRegionFactionMapData", {
       id: "update-region-faction-map-data",
       name: "Update map data in region and faction notes",
       checkCallback: (checking) => {
@@ -478,7 +490,7 @@ export default class HexmakerPlugin extends Plugin {
       },
     });
     // Export, for the map open in the hex map view (else the default map).
-    this.addCommand({
+    addPlaced("Plugin.cmd.exportCurrentMap", {
       id: "export-current-map",
       name: "Export current map…",
       checkCallback: (checking) => {
@@ -491,24 +503,15 @@ export default class HexmakerPlugin extends Plugin {
         return true;
       },
     });
-    // File-menu items: right-click any markdown file → Export to PDF / Markdown
+    // File-menu items: right-click any markdown file → Export to PDF /
+    // Markdown. Placed by id: Advanced ones go in one "Export note" submenu.
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
         if (!(file instanceof TFile) || file.extension !== "md") return;
-        menu.addItem((item) =>
-          item
-            .setTitle("Export to PDF")
-            .setIcon("file-down")
-            .setSection("action")
-            .onClick(() => void exportSingleNoteAsPdf(this, file)),
-        );
-        menu.addItem((item) =>
-          item
-            .setTitle("Export to Markdown")
-            .setIcon("file-text")
-            .setSection("action")
-            .onClick(() => void exportSingleNoteAsMarkdown(this, file)),
-        );
+        addPlacedMenuItems(menu, "Export note", "file-down", [
+          { id: "Plugin.fileMenuExportPdf", title: "Export to PDF", short: "PDF", icon: "file-down", run: () => void exportSingleNoteAsPdf(this, file) },
+          { id: "Plugin.fileMenuExportMarkdown", title: "Export to Markdown", short: "Markdown", icon: "file-text", run: () => void exportSingleNoteAsMarkdown(this, file) },
+        ], isDebugMode(this.app));
       }),
     );
     this.addSettingTab(new HexmakerSettingTab(this.app, this));
@@ -562,11 +565,7 @@ export default class HexmakerPlugin extends Plugin {
               .setSection("insert")
               .onClick(() => {
                 new MapLinkModal(this.app, this, (mapName, linkText) => {
-                  const vault = encodeURIComponent(this.app.vault.getName());
-                  const map   = encodeURIComponent(mapName);
-                  editor.replaceSelection(
-                    `[${linkText}](obsidian://duckmage-openmap?vault=${vault}&map=${map})`,
-                  );
+                  editor.replaceSelection(`[${linkText}](${mapLinkUri(this.app.vault.getName(), { map: mapName })})`);
                 }).open();
               }),
           );
@@ -616,23 +615,27 @@ export default class HexmakerPlugin extends Plugin {
       }
     });
 
-    this.registerObsidianProtocolHandler("duckmage-openmap", (params) => {
-      const mapName = params["map"];
-      if (!mapName) return;
+    // A map link (`map=`), or a hex link (`map=&x=&y=`: the map centred on
+    // that hex, e.g. copied from the hex editor's centre dot). src/hexLink.ts.
+    this.registerObsidianProtocolHandler(OPEN_MAP_ACTION, (params) => {
+      const target = parseMapLinkParams(params);
+      if (!target) return;
+      const go = (view: HexMapView, record: boolean) => {
+        if (target.hex) view.goToHex(target.map, target.hex.x, target.hex.y, { recordHistory: record });
+        else view.navigateToMap(target.map, { recordHistory: record });
+      };
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
         // Revealing loads a deferred (restored, never shown) tab first.
         void this.app.workspace.revealLeaf(leaves[0]).then(() => {
-          if (leaves[0].view instanceof HexMapView) leaves[0].view.navigateToMap(mapName);
+          if (leaves[0].view instanceof HexMapView) go(leaves[0].view, true);
         });
       } else {
         void this.app.workspace.getLeaf("tab")
           .setViewState({ type: VIEW_TYPE_HEX_MAP })
           .then(() => {
-            const newLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-            if (newLeaves.length > 0) {
-              (newLeaves[0].view as HexMapView).navigateToMap(mapName, { recordHistory: false });
-            }
+            const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view;
+            if (view instanceof HexMapView) go(view, false);
           });
       }
     });
@@ -789,6 +792,26 @@ export default class HexmakerPlugin extends Plugin {
     if (leaf.view instanceof HexMapView) leaf.view.switchMapFromModal(name);
   }
 
+  /**
+   * Switch a map's work mode (saved as `mode:` in its map note). An open map
+   * view showing it switches through its own setWorkMode (puts a locked tool
+   * down, refreshes its bars); otherwise the map is just saved.
+   */
+  setMapWorkMode(mapName: string, mode: WorkMode): void {
+    const map = this.getMap(mapName);
+    if (!map) return;
+    let viaView = false;
+    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)) {
+      if (leaf.view instanceof HexMapView && leaf.view.activeMapName === mapName) {
+        leaf.view.setWorkMode(mode);
+        viaView = true;
+      }
+    }
+    if (viaView || workModeOf(map) === mode) return;
+    map.workMode = mode;
+    void this.saveSettings();
+  }
+
   openSetupWizard(): void {
     void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_SETUP_WIZARD });
   }
@@ -812,6 +835,8 @@ export default class HexmakerPlugin extends Plugin {
       data["defaultMap"] = data["defaultRegion"];
     }
     delete data["defaultRegion"];
+    // The roll-ranges prompt (never released) became a silent upgrade (DJ-Q6).
+    delete data["tableRangesPrompt"];
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
     // Own copy: the default is a shared constant, and editors push into lists.

@@ -6,6 +6,7 @@ import { getIconUrl, createIconEl } from "../utils";
 import { TerrainEntryEditorModal } from "./TerrainEntryEditorModal";
 
 export class TerrainPickerModal extends HexmakerModal {
+  protected surfaceId = "TerrainPicker";
   private editMode = false;
   private editChanged = false;
   private selectionMade = false;
@@ -286,6 +287,9 @@ export class TerrainPickerModal extends HexmakerModal {
         refreshBtn.setText("Done");
       })();
     });
+    // A repair tool: Debug (placement: TerrainPicker.refreshEncounterLinks).
+    this.place("TerrainPicker.refreshEncounterLinks", refreshBtn);
+    if (!footer.childElementCount) footer.remove();
   }
 }
 

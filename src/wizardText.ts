@@ -23,3 +23,13 @@ export function slugHint(typed: string): string {
 	const slug = slugify(typed);
 	return slug && slug !== typed ? `Folder: "${slug}" (the map keeps the name you typed).` : "";
 }
+
+/**
+ * The placement id (src/ui/placement.ts) of a generator option in the
+ * wizard: Wizard.genOptWater, …Climate, …Relief, …Sea; any other option
+ * is Wizard.genOptOther.
+ */
+export function wizardOptionId(key: string): string {
+	const named = ["water", "climate", "relief", "sea"];
+	return named.includes(key) ? `Wizard.genOpt${key.charAt(0).toUpperCase()}${key.slice(1)}` : "Wizard.genOptOther";
+}

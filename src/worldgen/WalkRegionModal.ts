@@ -40,6 +40,7 @@ export interface OverworldWalk {
  *   terrain generator, blended with the neighbours (planWalk).
  */
 export class WalkRegionModal extends HexmakerModal {
+  protected surfaceId = "WalkOW";
   private seed = randomSeed();
   private side: Side = "east";
   private walk: OverworldWalk | null = null;
@@ -101,11 +102,12 @@ export class WalkRegionModal extends HexmakerModal {
     select.value = biome;
     const roll = row.createEl("button", { text: "Roll", attr: { title: "Roll a biome from a new seed (a different one from here, if there is one)" } });
 
-    const seedRow = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    const reroll = row.createEl("button", { text: "Re-roll terrain", attr: { title: "Same biome, new seed" } });
+    // The seed itself is a Debug control (placed after the buttons, below).
+    const seedRow = createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
     const seedInput = seedRow.createEl("input", { type: "number", cls: "duckmage-walk-seed", attr: { "aria-label": "Seed" } });
     seedInput.value = String(this.seed);
-    const reroll = seedRow.createEl("button", { text: "Re-roll terrain", attr: { title: "Same biome, new seed" } });
 
     const note = contentEl.createEl("p", { cls: "duckmage-map-origin-desc" });
     const canvas = contentEl.createEl("canvas", { cls: "duckmage-region-gen-preview" });
@@ -123,6 +125,8 @@ export class WalkRegionModal extends HexmakerModal {
     const buttons = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
     const create = buttons.createEl("button", { text: "Create and go", cls: "mod-cta" });
     buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    contentEl.appendChild(seedRow);
+    this.place("WalkOW.seed", seedRow);
     const lock = walkLock(plugin, this.fromMap, walk.overworld);
     const locked = !!lock;
     if (lock) {

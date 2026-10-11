@@ -259,11 +259,21 @@ export function verifyBackups(vault, pluginId, seedTexts) {
  * A note may change on the first start only if its original is here.
  */
 export function noteFormatBackups(vault, pluginId) {
+  return backupsUnder(vault, pluginId, "note-formats-");
+}
+
+/** Roll-range table upgrades (DJ-Q6, silent and backed up): note path → hash of the backed-up original. */
+export function tableRangeBackups(vault, pluginId) {
+  return backupsUnder(vault, pluginId, "table-ranges-");
+}
+
+/** note path → hash of the original text kept in the plugin backups folders starting with prefix. */
+function backupsUnder(vault, pluginId, prefix) {
   const bdir = path.join(vault, ".obsidian", "plugins", pluginId, "backups");
   const out = {};
   if (!fs.existsSync(bdir)) return out;
   for (const day of fs.readdirSync(bdir)) {
-    if (!day.startsWith("note-formats-")) continue;
+    if (!day.startsWith(prefix)) continue;
     const d = path.join(bdir, day);
     for (const f of fs.readdirSync(d)) {
       if (!/\.json(\.gz)?$/.test(f)) continue;

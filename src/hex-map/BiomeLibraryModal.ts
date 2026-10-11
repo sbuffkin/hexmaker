@@ -113,6 +113,7 @@ export class BiomeLibraryModal extends HexmakerModal {
 const BLEND_GENERATOR = "";
 
 export class BiomeFormModal extends HexmakerModal {
+  protected surfaceId = "BiomeForm";
   private state!: BiomeFormState;
   private canvas!: HTMLCanvasElement;
   private problemEl!: HTMLElement;
@@ -192,13 +193,13 @@ export class BiomeFormModal extends HexmakerModal {
     for (const [type, w] of state.mix) {
       const row = field(type, mixGrid);
       if (!typesPresent.has(type)) row.addClass("is-missing");
-      const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${type} weight` } });
-      const num = row.createEl("input", { type: "number", cls: "duckmage-biome-weight", attr: { min: "0", step: "1", "aria-label": `${type} weight value` } });
-      slider.value = String(Math.min(100, w));
-      num.value = String(w);
+      // The slider alone (the typed weight box was dropped, UI worksheet
+      // 2026-10-11); a weight over 100 from the note widens its range.
+      const slider = row.createEl("input", { type: "range", attr: { min: "0", max: String(Math.max(100, w)), step: "1", "aria-label": `${type} weight` } });
+      const shown = row.createSpan({ cls: "duckmage-biome-weight", text: String(w) });
+      slider.value = String(w);
       const set = (v: number) => { state.mix.set(type, Math.max(0, Number.isFinite(v) ? v : 0)); this.check(); this.schedule(); };
-      slider.addEventListener("input", () => { num.value = slider.value; set(Number(slider.value)); });
-      num.addEventListener("change", () => { slider.value = String(Math.min(100, Number(num.value) || 0)); set(Number(num.value)); });
+      slider.addEventListener("input", () => { shown.setText(slider.value); set(Number(slider.value)); });
       if (!typesPresent.has(type)) row.createSpan({ cls: "setting-item-description", text: "not in this palette" });
     }
 
@@ -247,7 +248,8 @@ export class BiomeFormModal extends HexmakerModal {
     for (const [v, t] of [["", "Not set (low)"], ["low", "Low"], ["mid", "Mid (hills)"], ["high", "High (peaks)"], ["sea", "Sea"], ["mouth", "River mouth"]] as const) elev.createEl("option", { value: v, text: t });
     elev.value = cl.elevation;
     elev.addEventListener("change", () => { cl.elevation = elev.value as ClimateFormState["elevation"]; this.check(); });
-    const chance = field("Chance %", clGrid).createEl("input", { type: "number", attr: { min: "0", max: "100", step: "5", placeholder: "100", "aria-label": "Chance" } });
+    const chanceRow = field("Chance %", clGrid);
+    const chance = chanceRow.createEl("input", { type: "number", attr: { min: "0", max: "100", step: "5", placeholder: "100", "aria-label": "Chance" } });
     chance.value = cl.chancePercent !== undefined ? String(cl.chancePercent) : "";
     chance.addEventListener("change", () => { cl.chancePercent = chance.value.trim() === "" ? undefined : Math.min(100, Math.max(0, Number(chance.value) || 0)); this.check(); });
     const tick = (label: string, on: boolean, set: (v: boolean) => void) => {
@@ -259,6 +261,8 @@ export class BiomeFormModal extends HexmakerModal {
     };
     tick("Coast only", cl.coastal, (v) => { cl.coastal = v; });
     tick("Rare", cl.rare, (v) => { cl.rare = v; });
+    // Chance % is a Debug control: into this form's Advanced ▸ Debug (or gone).
+    this.place("BiomeForm.chance", chanceRow);
     clBox.createEl("p", { cls: "setting-item-description", text: "When set, the overworld generator can place this biome where the climate fits, like a built-in one. Left blank, it's only placed by hand. Temperature: cold, cool, mild, warm, hot; moisture: dry, moderate, wet; or numbers from 0 to 1." });
 
     // Transitions.
@@ -328,6 +332,7 @@ export class BiomeFormModal extends HexmakerModal {
     const lock = biomeEditLock(plugin, this.overworldName);
     if (lock) lockButton(this.saveBtn, lock);
     this.saveBtn.addEventListener("click", () => void this.save());
+    this.disclosure.toEnd();
     this.check();
     this.redraw();
   }

@@ -6,7 +6,8 @@
 | **Scroll wheel** | Zoom in / out |
 | **Left-click** a hex | Open the hex editor (terrain, notes, links) |
 | **Right-click** a hex | Context menu: its region and locations first, then center on hex, open note, new map from this hex (**Add another map…** once it has one), link a map, link table, swap hex, create token here, clear terrain. On a token: the token's items, then the hex's |
-| **Double-right-click** anywhere | Exit the active tool and return to normal mode |
+| **Esc**, or right-click → **Exit tool** | Leave the active tool |
+| Hex editor: the flower's **centre dot** | Copy a link to the hex. Paste it in a note: clicking it opens the map centred on that hex |
 
 ---
 
@@ -65,8 +66,10 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 
 ## Drawing tools
 
+The everyday tools come first in the panel; **Link table**, **Link submap** and **Region areas** are in its **Advanced** dropdown.
+
 ### Paths
-Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker, with its ends, forks and size; click one there to select it (the tool switches to its type).
+Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker's **Advanced** dropdown, with its ends, forks and size; click one there to select it (the tool switches to its type).
 
 There's no separate edit mode. While the tool is on a type (say Road), every Road on the map shows its points as handles (the bigger ones are ends), and you can work on any of them straight away. Paths of other types are left alone: clicking on a river starts a new road there, and hovering one says which type to switch to. Right-click it for **Switch to River**.
 
@@ -77,10 +80,10 @@ There's no separate edit mode. While the tool is on a type (say Road), every Roa
 - **Continue:** click an end to carry on from it.
 - **Select and fork:** click a path's line to select it (it's highlighted and its name shows in the bar; click the name to rename it). Click the selected path's line again to start a fork there. A path and its forks are one path in the map note. Forks stay attached: drag the point a fork leaves from and the fork comes along; delete it and the fork joins the nearest point that is left. If a main line goes, its forks become paths of their own (one undo step).
 - **New path:** click empty ground. **Alt-click**, or **New path** in the bar, starts a new path even on top of a path of the same type (a crossroads of two roads).
-- **Path menu:** right-click a path's line, or **Shift**+right-click a point: its own items come first (**Split here**, **Delete this fork**, **Delete path**, **Rename…**, **Change type…**, **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path of the tool's type to split it there.
+- **Path menu:** right-click a path's line, or **Shift**+right-click a point: its own items come first (**Rename…**, **Delete path**, **Change type…**, **Delete this fork**, and **Advanced ▸** with **Split here** and **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path of the tool's type to split it there.
 - **Esc** steps out one level: finish the branch, then deselect, then leave the tool. **Ctrl/Cmd+Z** undoes each change.
 
-Mark terrains impassable in the palette editor (every water-type terrain is impassable by default). Each path type chooses whether it goes around them (roads do, rivers don't) and whether it winds. Tick **Cross impassable** in the bar to let the next legs go through. If painting terrain, changing the palette, resizing the map or changing a type's routing would move an existing path, it keeps its route (points are added to hold it) and a notice offers **Reroute instead**; undoing the paint stroke undoes that too.
+Mark terrains impassable in the palette editor (every water-type terrain is impassable by default). Each path type chooses whether it goes around them (roads do, rivers don't) and whether it winds. Turn on **Cross impassable** under **Advanced ▸** in the bar to let the next legs go through. If painting terrain, changing the palette, resizing the map or changing a type's routing would move an existing path, it keeps its route (points are added to hold it) and a notice offers **Reroute instead**; undoing the paint stroke undoes that too.
 
 ### Biome (overworlds only)
 Opens a palette of biomes, like the terrain palette. Pick one, then click or drag over the overworld's hexes (in either view): each hex gets that biome and its region is made straight away, no window. A hex with no region yet can be painted in Build or God. Changing the biome of a hex that already has a region needs God, and only remakes the region where the biome is different: painting the same biome again does nothing. A stroke that remakes regions is one undo step (in the mode it was done in); making a region for the first time isn't undone (it makes a map). **Custom (blank)** paints a blank region to fill by hand.
@@ -141,9 +144,19 @@ Tokens show their name underneath. The layers panel's **Labels** group turns coo
 
 ## Advanced dropdowns and Debug mode
 
-Every feature is always there: there's no Simple or Advanced level to switch. Each page keeps the everyday options on top; options most people never change sit in a collapsed **Advanced** dropdown at the bottom of that page (in Settings: the folder layout; on the terrain generator page: Symmetry, Edge style and the guarantees). Open it when you want it; it stays open or closed on that page next time (on this device).
+Every feature is always there: there's no Simple or Advanced level to switch. Each page keeps the everyday options on top; options most people never change sit in a collapsed **Advanced** dropdown at the bottom of that page. Inside it, related options can have their own collapsible sections: in Settings, **Folders**, **New map sizes** and **Palettes** (with **Generate terrain tables & hex links** at the top: the fix when a table or table link is missing); on the terrain generator page, **Engine tuning** (clumping, smoothing, scatter, near rules, mix strength and the like), **Paths** (single routes) and **Seed**. In the setup wizard, the per-folder paths and the generator's options. Open them when you want them; each stays open or closed on that page next time (on this device).
 
-**Debug mode** shows backend controls, such as the generator's engine tuning sliders and maintenance buttons (Generate folders, Generate terrain tables & hex links), in a **Debug** section inside each Advanced dropdown. Turn it on with **Settings → Debug mode**, at the very bottom; the first time, it asks to make sure. While it's on, **Debug** shows in the status bar: click it to turn debug mode off. It's kept per device and never synced.
+**Debug mode** shows backend controls, such as the Biomes, Biome pools and World types folder settings, in a **Debug** section inside each Advanced dropdown, and offers the maintenance commands (Add roll ranges to tables, Check tables, the map data commands) in the command palette. Turn it on with **Settings → Debug mode**, at the very bottom; the first time, it asks to make sure. While it's on, **Debug** shows in the status bar: click it to turn debug mode off. It's kept per device and never synced.
+
+**Menus and toolbars** have no dropdown, so their rarer items sit in an **Advanced ▸** submenu at the end (and debug items in **Debug ▸**, only in debug mode): **God** in the mode menu, **Split here** and **Reverse** in a path's menu, **Cross impassable** in the path bar. On the map's other surfaces: the drawing panel's link tools, the layers panel's region overlay, the hex table's X / Y ranges (Refresh is in Debug), the terrain filter's type rows, the hex editor's weather and rumours table choice, a token's Description, the path picker's **Paths on this map** and a path type's **Carves terrain** (Carve width in Debug) are in that surface's **Advanced** dropdown; the terrain picker's **Refresh all encounter table links** is in Debug.
+
+Where things are on each page:
+- **Maps → Properties**: name, stagger, neighbours, arrival and generator tables, background image and **Delete** on top; **Advanced** has the terrain theme, the weather and rumours tables and **Pick image…**; the folder name is in Debug. Right-click a map in the list → **Advanced** for its generator.
+- **New map…**, **New overworld…**, **Region settings**, **New land**: the seed boxes, how wiggly region borders are and the biome form's **Chance %** are in Debug; **Reroll** stays on the form. The biome form's weights are sliders.
+- **Random tables**: the list keeps itself up to date (its refresh button is in Debug); right-click a folder or table → **Advanced** for the roll picker and encounters filters; **Generate from folder or file** is under the list's Advanced dropdown. A table's **Roll** sits above its entries; **Copy link** and a linked folder's **Refresh** are under Advanced (linked folders sync on their own). In the table editor, **-1** / **+1**, **Import…**, the linked folder and the two filters are under Advanced.
+- **Link submap** only links an existing map; **New location…** makes one. The table picker no longer has its own Open tables view button.
+- **Export**: **Region overlay** is under Advanced; the buttons come right after the options.
+- **World types** (Debug): a world row's Generator and Options columns and the preview's Map, Orbit, Star and Rolls choices. **Palette editor** (Debug): the submap defaults' Options column.
 
 **Map types.** What the setup installs follows the map types you pick: World gets the Expanded and Limited palettes and the biome notes; Space alone gets Space - Sector, Space - System and Space - Planet and nothing fantasy. Turning a type on later in **Settings → Map types** installs its content then. Planets and moons open on **Space - Planet**, a land palette for surfaces. Note pickers list only what they're for: the token form's Note list shows the tokens, towns, dungeons, features, quests, factions and regions folders, never biomes, palettes, tables or other plugin notes.
 
@@ -155,7 +168,7 @@ Every feature is always there: there's no Simple or Advanced level to switch. Ea
 
 - **Play** is for running a game: move, place and remove tokens, open and edit notes, roll tables, link tables and factions to hexes, turn layers on and off. The map itself stays as it is. The drawing panel shows only the tools Play allows, with one line naming the mode for the rest ("Switch to Build to edit the map."); the grid's **+** / **−** buttons are hidden, the hex editor shows "Switch to Build to paint terrain." where the terrain and icon pickers were, the map's properties say "Switch to Build to change the map's properties.", and the right-click menu leaves out what's locked and ends with one such line.
 - **Build** adds and edits: paint terrain, icons and region areas, draw paths, link maps to hexes, grow the map, make maps and regions from a hex, change the map's properties, place a biome on an empty overworld hex.
-- **God** can do everything, including changing a placed biome (**Reroll**, **Settings…**), swapping hexes, shrinking the grid and deleting the map.
+- **God** can do everything, including changing a placed biome (**Reroll**, **Settings…**), swapping hexes, shrinking the grid and deleting the map. It's under **Advanced ▸** in the mode menu. You don't have to go looking for it: where something needs God (swap a hex, shrink an edge, change a placed biome, regenerate, delete the map), the "Switch to God…" hint there has a **Switch to God for this map** button.
 
 Notes, settings and palettes are never locked. There are no confirm boxes for these: the mode is the safety catch.
 
@@ -195,7 +208,7 @@ A road or river that ends on the edge of a region, next to where the neighbour's
 
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 
-**New map…** (in Maps) is one form: generator cards with a live preview, Next to, and **More** for starting coordinates, stagger and a background image (pick one from the vault, or drop one from your computer). A new map starts on Overland; pick Blank to paint by hand.
+**New map…** (in Maps) is one form: generator cards with a live preview, Next to and stagger. Its **Advanced** dropdown has the starting coordinates, a background image (pick one from the vault, or drop one from your computer), the generator's finer options and the "Use this … for new submaps" boxes. A new map starts on Overland; pick Blank to paint by hand.
 
 Pickers that link notes (to hexes, tokens, sections) never offer template notes (the hex template, workflow templates, a Templates folder); pickers for choosing a template do. Notes starting with `_` are never offered.
 

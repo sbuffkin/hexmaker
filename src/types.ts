@@ -428,8 +428,8 @@ export interface HexmakerPluginSettings {
 	 * are written until it does (saved as null so a restart still knows).
 	 */
 	kindContent?: string[] | null;
-	/** The one-time "Add roll ranges to tables?" offer: answered ("done") or turned off ("never"). Unset = not asked yet. */
-	tableRangesPrompt?: "done" | "never";
+	/** True once the one-time silent "add roll ranges to older tables" upgrade ran (DJ-Q6). */
+	tableRangesUpgraded?: boolean;
 	/** True once existing palettes got terrain types (one-time seeding). */
 	terrainTypesSeeded: boolean;
 	/** Default hex-name font for maps without their own (NM3; see hexNameFont.ts). Unset = theme font, medium, bold. */

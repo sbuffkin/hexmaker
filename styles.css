@@ -2966,15 +2966,7 @@ tr.duckmage-row-hidden {
     background: var(--background-secondary);
 }
 
-.duckmage-table-picker-topbar {
-    display: flex;
-    margin-bottom: 10px;
-}
 
-.duckmage-table-picker-view-btn {
-    font-size: var(--font-ui-small);
-    padding: 3px 8px;
-}
 
 .duckmage-table-picker-combo {
     margin-bottom: 0;
@@ -3003,43 +2995,12 @@ tr.duckmage-row-hidden {
     font-weight: 500;
 }
 
-.duckmage-submap-create-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin-bottom: 0.4em;
-}
 
-.duckmage-submap-create-label {
-    min-width: 56px;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
 
-.duckmage-submap-create-name {
-    flex: 1;
-}
 
-.duckmage-submap-create-sep {
-    color: var(--text-muted);
-}
 
-.duckmage-submap-create-palette {
-    flex: 1;
-}
 
-.duckmage-submap-terrain-heading {
-    margin: 0.6em 0 0.3em;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    font-weight: 500;
-}
 
-.duckmage-submap-create-btn {
-    width: 100%;
-    margin-top: 0.5em;
-}
 
 .duckmage-table-picker-new-heading {
     margin: 16px 0 8px;
@@ -5853,8 +5814,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-wfc-terrain-row {
     display: grid;
-    /* Terrain, Mix, Min, Max, Near, Example, Map */
-    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em minmax(6em, 1fr) 3.5em 5.5em;
+    /* Terrain, Mix, Min, Max, Example, Map (Near is under Advanced → Engine tuning) */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em;
     align-items: center;
     gap: 0.5em;
 }
@@ -6549,6 +6510,18 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-wfc-near {
     width: 100%;
     min-width: 0;
+}
+
+/* Near rules (Advanced → Engine tuning): one row per terrain. */
+.duckmage-wfc-near-list {
+    display: grid;
+    grid-template-columns: minmax(7em, max-content) minmax(6em, 12em);
+    gap: 0.25em 0.5em;
+    align-items: center;
+}
+
+.duckmage-wfc-near-row {
+    display: contents;
 }
 
 /* ── Fresh-eyes fixes: hex editor (#38), path tool & navigation (#39) ───── */
@@ -8558,7 +8531,8 @@ textarea.duckmage-edit-region-notes-input {
 /* Generator page: Biome (blend field) type mix. */
 .duckmage-biome-page-mix {
     display: grid;
-    grid-template-columns: minmax(6em, max-content) minmax(6em, 1fr) 5em 6em;
+    /* Type, Weight, Min patches */
+    grid-template-columns: minmax(6em, max-content) minmax(6em, 1fr) 6em;
     gap: 2px 8px;
     align-items: center;
 }
@@ -8721,7 +8695,8 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-hex-map-container.duckmage-mode-play .duckmage-expand-group {
     display: none;
 }
-.duckmage-shrink-btn:disabled {
+.duckmage-shrink-btn:disabled,
+.duckmage-shrink-btn.is-locked {
     cursor: not-allowed;
 }
 .duckmage-tools-locked {
@@ -9075,6 +9050,29 @@ textarea.duckmage-edit-region-notes-input {
     padding-top: 0.25em;
 }
 
+/* Sub-sections inside Advanced ("advanced/<Sub-section>"): nested, closed by default. */
+.duckmage-disclosure-sub {
+    margin: 0.35em 0 0.35em 0.4em;
+    padding-left: 0.6em;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.duckmage-disclosure-sub-summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: 0.15em 0;
+}
+
+.duckmage-disclosure-sub-summary:hover {
+    color: var(--text-normal);
+}
+
+.duckmage-disclosure-sub-body {
+    padding-top: 0.2em;
+}
+
 .duckmage-disclosure-debug {
     margin-top: 0.6em;
     padding: 0.4em 0.6em;
@@ -9090,6 +9088,66 @@ textarea.duckmage-edit-region-notes-input {
     margin-bottom: 0.25em;
 }
 
+/* Compact surfaces: the map's side panels and the hex table toolbar. */
+.duckmage-side-panel > .duckmage-disclosure {
+    margin: 0;
+    padding-top: 4px;
+}
+.duckmage-side-panel .duckmage-disclosure-body,
+.duckmage-side-panel .duckmage-disclosure-debug {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.duckmage-hex-table-toolbar > .duckmage-disclosure {
+    margin: 0;
+    padding-top: 0;
+    border-top: none;
+}
+.duckmage-hex-table-toolbar .duckmage-disclosure-body,
+.duckmage-hex-table-toolbar .duckmage-disclosure-debug {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+}
+.duckmage-filter-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Hex editor: a section's table source (⋯) moved into Advanced. */
+.duckmage-section-table-source.is-advanced {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-ui-small);
+}
+
+/* The inline God offer (src/hex-map/godOffer.ts). */
+.duckmage-god-offer {
+    margin-left: 6px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-god-offer-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+.duckmage-god-offer-notice .duckmage-god-offer {
+    margin-left: 0;
+}
+
+/* Hex editor: the flower's centre dot copies a link to the hex. */
+button.duckmage-neighbor-centre {
+    padding: 0;
+    min-height: 0;
+    height: 12px;
+    box-shadow: none;
+}
+
 /* Settings tab: the Advanced row opens and closes the dropdown. */
 .duckmage-settings-advanced-row {
     cursor: pointer;
@@ -9097,6 +9155,25 @@ textarea.duckmage-edit-region-notes-input {
 
 .duckmage-settings-advanced-row:hover .setting-item-name {
     color: var(--text-accent);
+}
+
+/* A sub-section's row inside the settings tab's Advanced dropdown. */
+.duckmage-settings-advanced-row.is-sub {
+    padding-left: 1em;
+}
+
+.duckmage-settings-advanced-row.is-sub .setting-item-name {
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+}
+
+/* Settings tab: palette list inside one setting row, full width under its name. */
+.duckmage-palette-mgmt-setting {
+    flex-wrap: wrap;
+}
+
+.duckmage-palette-mgmt-setting > .duckmage-palette-mgmt-host {
+    flex-basis: 100%;
 }
 
 /* Status bar: "Debug" while debug mode is on (click to turn it off). */

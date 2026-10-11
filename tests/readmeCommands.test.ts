@@ -13,7 +13,8 @@ const readme = read("../README.md");
 const plugin = read("../src/HexmakerPlugin.ts");
 const pluginName = (JSON.parse(read("../manifest.json")) as { name: string }).name;
 
-const core = [...plugin.matchAll(/addCommand\(\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
+// Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
+const core = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
 // Modules add theirs as command contributions (src/modules/<id>/runtime.ts).
 const moduleRuntimes = readdirSync(new URL("../src/modules", import.meta.url), { withFileTypes: true })
 	.filter((d) => d.isDirectory() && existsSync(new URL(`../src/modules/${d.name}/runtime.ts`, import.meta.url)))

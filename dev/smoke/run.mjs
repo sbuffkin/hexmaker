@@ -39,7 +39,7 @@ import {
   common, createSandbox, launchSandbox, stopSandbox, connectPage, obsidianProcesses, pluginErrors, shot, sleep,
 } from "./lib/obsidian.mjs";
 import { machineLoad, pickJobs } from "./lib/concurrency.mjs";
-import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHashes, verifyPaletteUpgrade, noteFormatBackups } from "./lib/disk.mjs";
+import { snapshot, diff, legacyTruth, verifyMigration, verifyBackups, noteTextHashes, verifyPaletteUpgrade, noteFormatBackups, tableRangeBackups } from "./lib/disk.mjs";
 import * as P from "./lib/page.mjs";
 import { canon, jsonDiff, oneTimeOnly } from "./lib/compare.mjs";
 import { SETUPS } from "./setups.mjs";
@@ -104,7 +104,8 @@ const buildHash = hash.digest("hex").slice(0, 16);
 const manifest = JSON.parse(fs.readFileSync(path.join(buildDir, "manifest.json"), "utf8"));
 const pluginId = manifest.id;
 const mainJs = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
-const expectedCommands = [...new Set([...mainJs.matchAll(/addCommand\(\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
+// Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
+const expectedCommands = [...new Set([...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
 log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands`);
 
 // ── 2. the matrix ─────────────────────────────────────────────────────────
@@ -253,7 +254,11 @@ async function runSetup(setup) {
       const nfBackups = noteFormatBackups(vault, pluginId);
       const reformatted = d.changed.filter((p) => nfBackups[p] !== undefined && nfBackups[p] === snap0[p]?.h);
       if (reformatted.length) rec("M-note-formats", true, `${reformatted.length} notes rewritten to the new note formats, each backed up first: ${reformatted.slice(0, 6).join(", ")}${reformatted.length > 6 ? ", …" : ""}`);
-      const allowed = (p) => p === `${pluginRel}data.json` || migrated.has(p) || upgraded.includes(p) || reformatted.includes(p);
+      // Older tables get roll ranges once on the first start, silently, backed up first (DJ-Q6).
+      const trBackups = tableRangeBackups(vault, pluginId);
+      const ranged = d.changed.filter((p) => trBackups[p] !== undefined && trBackups[p] === snap0[p]?.h);
+      if (ranged.length) rec("M-table-ranges", true, `${ranged.length} tables got roll ranges, each backed up first: ${ranged.slice(0, 6).join(", ")}${ranged.length > 6 ? ", …" : ""}`);
+      const allowed = (p) => p === `${pluginRel}data.json` || migrated.has(p) || upgraded.includes(p) || reformatted.includes(p) || ranged.includes(p);
       const changed = d.changed.filter((p) => !allowed(p));
       // A backup rewritten with the same bytes loses nothing; other bytes would ("changed").
       const touched = d.touched.filter((p) => !allowed(p) && !p.startsWith(`${pluginRel}backups/`));

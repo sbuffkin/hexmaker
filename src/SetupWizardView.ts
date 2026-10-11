@@ -25,7 +25,8 @@ import {
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
-import { TERRAIN_TABLES_SUMMARY, slugHint } from "./wizardText";
+import { TERRAIN_TABLES_SUMMARY, slugHint, wizardOptionId } from "./wizardText";
+import { Disclosure } from "./ui/disclosure";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -264,7 +265,7 @@ function makeWelcomeStep(): WizardStep {
 
 // ─── Step 2 — Folder setup ────────────────────────────────────────────────────
 
-function makeFolderStep(): WizardStep {
+function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 	return {
 		id: "folders",
 		title: "Where should your world live?",
@@ -372,6 +373,11 @@ function makeFolderStep(): WizardStep {
 			// Initial render
 			syncAdvancedInputs();
 			refreshPreview();
+			// Per-folder paths go in this step's Advanced dropdown (placement:
+			// Wizard.configureFoldersIndividually); the world folder is enough.
+			const disclosure = new Disclosure(plugin.app, "Wizard.folders", () => container);
+			disclosure.place("Wizard.configureFoldersIndividually", advRow);
+			disclosure.place("Wizard.configureFoldersIndividually", advSection);
 		},
 		canProceed(ctx) {
 			if (!ctx.worldFolder.trim()) return false;
@@ -612,8 +618,12 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				optsBox.empty();
 				seaRandomOption = undefined;
 				const kind = kinds.find((k) => k.id === ctx.generatorId);
+				// The generator's options sit in an Advanced dropdown under the
+				// cards (placement: Wizard.genOpt<Key>); the defaults make a good map.
+				const optsDisclosure = new Disclosure(plugin.app, "Wizard.map", () => optsBox);
 				for (const opt of kind ? kindOptions(kind, terrains(), plugin.getPathTypes(ctx.paletteName)) : []) {
 					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
+					optsDisclosure.place(wizardOptionId(opt.key), row);
 					row.createSpan({ text: opt.label });
 					const sel = row.createEl("select");
 					for (const c of opt.choices) {
@@ -854,7 +864,7 @@ export class SetupWizardView extends ItemView {
 		};
 		this.steps = [
 			makeWelcomeStep(),
-			makeFolderStep(),
+			makeFolderStep(plugin),
 			makeMapStep(plugin),
 			makeDoneStep(),
 		];

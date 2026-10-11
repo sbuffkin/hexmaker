@@ -225,6 +225,8 @@ export interface CommandContribution {
   /** Command id (the palette shows "<plugin name>: <name>"). */
   id: string;
   name: string;
+  /** Its id in the placement map (src/ui/placement.ts), when it has one: placed like the core's commands. */
+  placementId?: string;
   /** Only while the module's map type is on (Settings → Map types). */
   onlyWhenOn?: boolean;
   /** Can it run now? Default yes. */

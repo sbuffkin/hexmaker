@@ -18,6 +18,7 @@
     "src/worldgen/NewMapSetupModal.ts -> space": 2,
     "src/worldgen/WalkRegionModal.ts -> world-maps": 3,
     "src/worldgen/generators.ts -> world-maps": 1,
+    "src/worldgen/newMapOptionIds.ts -> world-maps": 1,
     "src/worldgen/procedural/orbits.ts -> space": 1,
     "src/worldgen/regionGenerator.ts -> world-maps": 4
   },

@@ -108,16 +108,15 @@ export class LocationsModal extends HexmakerModal {
         swatch.setCssProps({ "--duckmage-bg": terrain.color });
         swatch.addClass("duckmage-map-terrain-swatch--set");
       }
-      const name = row.createEl("a", { cls: "duckmage-locations-name", text: it.label });
+      const name = row.createEl("a", { cls: "duckmage-locations-name", text: it.label, attr: { title: map ? `Open ${it.label}` : "", role: "button", tabindex: "0" } });
       name.addEventListener("click", () => this.openMap(it.name));
+      name.addEventListener("keydown", (e) => { if (e.key === "Enter") this.openMap(it.name); });
       row.createSpan({
         cls: "duckmage-locations-size",
         text: map ? `${map.gridSize.cols}×${map.gridSize.rows}` : "missing",
         attr: { title: map ? "Size" : "No map with this name (fix it in the map note's Locations column)" },
       });
-      const open = row.createEl("button", { text: "Open", attr: { "aria-label": `Open ${it.label}` } });
-      open.disabled = !map;
-      open.addEventListener("click", () => this.openMap(it.name));
+      // No "Open" button (Locations.openButton, dropped): the name opens it.
       if (!editable) continue;
       const unlink = row.createEl("button", { text: "✕", cls: "duckmage-locations-unlink", attr: { "aria-label": `Unlink ${it.label}`, title: "Unlink from this hex (the map itself stays)" } });
       unlink.addEventListener("click", () => {

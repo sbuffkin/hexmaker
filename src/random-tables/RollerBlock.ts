@@ -2,6 +2,7 @@ import { TFile } from "obsidian";
 import { handRollLabel } from "../arrival/eventsLedger";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { dieLabel, emptyTableMessage, parseRandomTable, rollTable } from "./randomTable";
+import { withRepairHint } from "../ui/repairHint";
 
 /**
  * Registers the `duckmage-roller` fenced code block processor.
@@ -23,7 +24,7 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
       if (!(file instanceof TFile)) {
         el.createDiv({
           cls: "duckmage-rt-empty",
-          text: `Table not found: "${targetPath}"`,
+          text: withRepairHint(`Table not found: "${targetPath}"`),
         });
         return;
       }

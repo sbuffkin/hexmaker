@@ -139,6 +139,7 @@ export const spaceRuntime: ModuleRuntime = {
     {
       id: "edit-world-types",
       name: "Edit world types…",
+      placementId: "Plugin.cmd.editWorldTypes",
       onlyWhenOn: true,
       run: (plugin) => {
         new WorldTypesModal(plugin.app, plugin, plugin.activeMapName()).open();

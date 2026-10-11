@@ -25,6 +25,7 @@ import { newWorldId } from "../worldgen/world";
 import { inferredKind } from "../mapKinds";
 import { ecotoneHexes } from "../overworld/regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
+import { addGodOffer } from "./godOffer";
 import { ALL_BIOMES_POOL, type BiomePoolRow } from "../overworld/biomePool";
 import {
   REGENERATE_LOCKED_HINT,
@@ -153,6 +154,8 @@ export class NewOverworldModal extends HexmakerModal {
   onOpen(): void {
     this.makeDraggable();
     const regen = this.regenerate ? this.plugin.getMap(this.regenerate) : undefined;
+    // The overworld keeps its seed (`seed:` in its map note): start from it.
+    if (typeof regen?.seed === "number") this.seed = regen.seed;
     this.titleEl.setText(regen ? `Generate overworld: ${this.plugin.mapLabel(regen.name)}` : "New overworld");
     this.modalEl.addClass("duckmage-new-overworld-modal");
     // Palettes of only shared (land and water) types: no other map type's terrains.
@@ -315,10 +318,12 @@ export class NewOverworldModal extends HexmakerModal {
         this.regen();
       });
     }
-    const seedRow = field("Seed");
+    // Reroll stays in reach; the seed itself is Debug (placed below the buttons).
+    const seedRow = createDiv({ cls: "duckmage-region-gen-row" });
+    seedRow.createSpan({ cls: "duckmage-region-gen-label", text: "Seed" });
     const seed = seedRow.createEl("input", { type: "number", value: String(this.seed), attr: { "aria-label": "Seed" } });
     seed.addEventListener("change", () => { this.seed = Number(seed.value) >>> 0; this.regen(); });
-    seedRow.createEl("button", { text: "Reroll" }).addEventListener("click", () => {
+    form.createDiv({ cls: "duckmage-region-gen-row" }).createEl("button", { text: "Reroll" }).addEventListener("click", () => {
       this.seed = Math.floor(Math.random() * 1e6);
       seed.value = String(this.seed);
       this.regen();
@@ -350,12 +355,22 @@ export class NewOverworldModal extends HexmakerModal {
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     const create = row.createEl("button", { text: regen ? "Regenerate" : "Create", cls: "mod-cta" });
+    contentEl.appendChild(seedRow);
+    this.place("NewOverworld.seed", seedRow);
     if (regen && !canReshape(regen)) {
       create.disabled = true;
       create.addClass("is-locked");
       create.setAttr("title", REGENERATE_LOCKED_HINT);
       status.setText(REGENERATE_LOCKED_HINT);
       status.addClass("duckmage-locked-hint");
+      // Regenerating is God's: offer the switch right here (godOffer.ts).
+      addGodOffer(status, this.plugin, regen.name, REGENERATE_LOCKED_HINT, () => {
+        create.disabled = false;
+        create.removeClass("is-locked");
+        create.removeAttribute("title");
+        status.setText("");
+        status.removeClass("duckmage-locked-hint");
+      });
     }
     create.addEventListener("click", () => {
       create.disabled = true;
@@ -483,7 +498,11 @@ export class NewOverworldModal extends HexmakerModal {
     map.regions = withMeshFields({ footprint: "rect", size: this.regionSize, blend: this.blend, palette: this.palette }, stagger, newWorldId);
     if (this.result.river.length > 1) map.biomeRiver = formatBiomeRiver(this.result.river);
     if (this.poolPath) map.biomePool = this.poolPath;
+    // The layout's seed is kept with the map (its `seed:`), so the roll is on record.
+    map.seed ??= this.seed;
     map.biomeGaps = unclimatedText(this.unclimated);
+    // Saved with the map (`seed:`), so its layout can be made again.
+    map.seed = this.seed;
     await this.plugin.saveSettings();
     // Every hex's biome goes in the Biome column (BC1); blank hexes get no terrain.
     await writeOverworldBiomes(this.plugin, res.name, this.result);
@@ -503,6 +522,9 @@ export class NewOverworldModal extends HexmakerModal {
     const name = this.regenerate!;
     status.setText("Regenerating…");
     const t0 = performance.now();
+    // regenerateOverworld saves the map, with the seed it used.
+    const target = this.plugin.getMap(name);
+    if (target) target.seed = this.seed;
     const res = await regenerateOverworld(this.plugin, name, {
       seed: this.seed, climate: this.climate, water: this.water / 100, land: this.land, north: this.north,
       pool: this.poolBiomes(), poolPath: this.poolPath, regions: this.makeAll, unclimated: this.unclimated,

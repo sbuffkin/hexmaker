@@ -215,7 +215,8 @@ describe("NM3: hex-name font options", () => {
 		expect(panel).toMatch(/buildNameFontRow\(labelTitle, labelGroup\)/);
 		const tab = read("src", "HexmakerSettingTab.ts");
 		expect(tab).toMatch(/key: "hexNameFont"/);
-		expect(tab).toMatch(/\.setName\("Hex name font"\)/);
+		// The pre-1.13 page draws the same definitions (display → renderDefinitions).
+		expect(tab).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");
 	});
 });
 

@@ -236,8 +236,10 @@ in any new code; failing these means another bump-and-fix cycle.
 - **Settings tab is declarative (Obsidian ≥1.13).** `HexmakerSettingTab`
   implements `getSettingDefinitions()`; on 1.13+ the tab renders FROM THE
   DEFINITIONS and `display()` is never called (it remains only as the
-  pre-1.13 fallback). Any new setting must be added to BOTH paths until
-  minAppVersion reaches 1.13. Local `obsidian` typings are 1.12 — the
+  pre-1.13 fallback). The fallback draws the SAME definitions
+  (`display()` → `renderDefinitions`), so a new setting goes in
+  `getSettingDefinitions()` only, tagged with its `Settings.<control>`
+  placement id, and one placement entry places it on both paths. Local `obsidian` typings are 1.12 — the
   1.13 shapes are mirrored as local interfaces in HexmakerSettingTab.ts;
   delete them when the package is bumped.
 - **CSS lint "css-clip-path partially supported" warnings are accepted** —

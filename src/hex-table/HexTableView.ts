@@ -13,6 +13,7 @@ import { getTerrainFromFile, getHexNameFromFile } from "../frontmatter";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { contentFolder } from "../notePickers";
 import { TerrainFilterModal } from "./TerrainFilterModal";
+import { Disclosure } from "../ui/disclosure";
 import { HexCellModal } from "./HexCellModal";
 import { MultiLinkNavModal } from "./MultiLinkNavModal";
 import { HexTerrainPickerModal } from "./HexTerrainPickerModal";
@@ -141,65 +142,33 @@ export class HexTableView extends ItemView {
     // ── Toolbar ──────────────────────────────────────────────────────────
     const toolbar = contentEl.createDiv({ cls: "duckmage-hex-table-toolbar" });
 
+    // The toolbar's simple filters come first; the X / Y range boxes are in
+    // its Advanced dropdown, and Refresh (the table updates live) in Debug
+    // (placement: HexTable.*).
+    const disclosure = new Disclosure(this.app, "HexTable", () => toolbar);
     const refreshBtn = toolbar.createEl("button", {
       text: "Refresh",
       cls: "duckmage-filter-btn",
     });
     refreshBtn.addEventListener("click", () => void this.loadTable());
+    disclosure.place("HexTable.refresh", refreshBtn);
 
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
-
-    // X range filter
-    toolbar.createSpan({ text: "X:", cls: "duckmage-filter-label" });
-    this.filterXMinInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterXMinInput.type = "number";
-    this.filterXMinInput.placeholder = "Min";
-    this.filterXMinInput.addEventListener("input", () => {
-      const v = this.filterXMinInput!.value;
-      this.filterXMin = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-    toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
-    this.filterXMaxInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterXMaxInput.type = "number";
-    this.filterXMaxInput.placeholder = "Max";
-    this.filterXMaxInput.addEventListener("input", () => {
-      const v = this.filterXMaxInput!.value;
-      this.filterXMax = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
-
-    // Y range filter
-    toolbar.createSpan({ text: "Y:", cls: "duckmage-filter-label" });
-    this.filterYMinInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterYMinInput.type = "number";
-    this.filterYMinInput.placeholder = "Min";
-    this.filterYMinInput.addEventListener("input", () => {
-      const v = this.filterYMinInput!.value;
-      this.filterYMin = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-    toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
-    this.filterYMaxInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterYMaxInput.type = "number";
-    this.filterYMaxInput.placeholder = "Max";
-    this.filterYMaxInput.addEventListener("input", () => {
-      const v = this.filterYMaxInput!.value;
-      this.filterYMax = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
+    // X / Y range filters: one labelled box per bound.
+    const rangeInput = (id: string, label: string, set: (v: number | null) => void): HTMLInputElement => {
+      const wrap = toolbar.createEl("label", { cls: "duckmage-filter-range" });
+      wrap.createSpan({ text: label, cls: "duckmage-filter-label" });
+      const input = wrap.createEl("input", { cls: "duckmage-filter-range-input", type: "number" });
+      input.addEventListener("input", () => {
+        set(input.value !== "" ? Number(input.value) : null);
+        this.applyFilters();
+      });
+      disclosure.place(id, wrap);
+      return input;
+    };
+    this.filterXMinInput = rangeInput("HexTable.xMin", "X min", (v) => { this.filterXMin = v; });
+    this.filterXMaxInput = rangeInput("HexTable.xMax", "X max", (v) => { this.filterXMax = v; });
+    this.filterYMinInput = rangeInput("HexTable.yMin", "Y min", (v) => { this.filterYMin = v; });
+    this.filterYMaxInput = rangeInput("HexTable.yMax", "Y max", (v) => { this.filterYMax = v; });
 
     // Terrain multi-select filter
     this.terrainFilterBtn = toolbar.createEl("button", {
@@ -358,6 +327,8 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-btn",
     });
     clearBtn.addEventListener("click", () => this.clearFilters());
+    // The Advanced dropdown (if anything went in it) ends the toolbar.
+    disclosure.toEnd();
 
     // ── Scroll area ───────────────────────────────────────────────────────
     this.scrollEl = contentEl.createDiv({ cls: "duckmage-hex-table-scroll" });

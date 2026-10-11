@@ -282,9 +282,10 @@ export class GeneratorPanel {
     const saved = file ? { ...g, file } : null;
     // Controls go into the current section; each section() call starts a new one.
     let el = main;
-    // Recipe extras go in the page's Advanced dropdown, engine tuning in its
-    // Debug subsection (debug mode only): the placement map (src/ui/placement.ts)
-    // says which, by GenPage.<control> id.
+    // The page's Advanced dropdown (closed by default, open state kept per
+    // device) holds the overkill controls in sub-sections: Engine tuning,
+    // Paths (single routes) and Seed. The placement map (src/ui/placement.ts)
+    // says which, by GenPage.<control> id; nothing here needs debug mode.
     const disclosure = new Disclosure(this.plugin.app, "GenPage", () => main);
     const place = (id: string, control: HTMLElement) => disclosure.place(id, control);
     /** A section whose controls all moved to Advanced or Debug goes. */
@@ -334,11 +335,9 @@ export class GeneratorPanel {
       schedulePreview();
     };
 
-    // Generator settings: what's saved on the generator itself (its name,
-    // palette and where it came from), as opposed to how it generates.
-    el = this.section(main, "Generator settings");
+    // An unsaved draft says so at the very top, with Save and Discard.
     if (!file) {
-      const draftRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-draft" });
+      const draftRow = main.createDiv({ cls: "duckmage-region-row duckmage-wfc-draft" });
       draftRow.createSpan({
         text: "Not saved: this blend lives only on this page. Try it out, then save it to keep it in your generator list.",
         cls: "duckmage-map-origin-desc",
@@ -363,6 +362,11 @@ export class GeneratorPanel {
         this.host.rerender();
       });
     }
+    // Generator settings: what's saved on the generator itself (its name,
+    // palette and where it came from), as opposed to how it generates. Set
+    // once, so the section is moved below the generating controls at the end.
+    el = this.section(main, "Generator settings");
+    const generatorSettingsBox = el.parentElement;
     const nameRow = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
     const nameInput = nameRow.createEl("input", { type: "text", value: model.name, attr: { placeholder: "Generator name" } });
@@ -543,7 +547,7 @@ export class GeneratorPanel {
     ].filter(Boolean);
     el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
-    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every setting below back to its default" } });
+    const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every generating setting on this page back to its default" } });
     resetBtn.addEventListener("click", () => {
       new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
         const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
@@ -562,16 +566,22 @@ export class GeneratorPanel {
     const legendBox = previewBox.createDiv();
     const status = previewBox.createEl("p", { cls: "duckmage-map-origin-desc" });
     const previewRow = previewBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    previewRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
-    const seedInput = previewRow.createEl("input", { type: "number", value: String(this.seed), cls: "duckmage-wfc-seed" });
-    // Locked: the button regenerates with the same seed, so a settings change
-    // can be compared on the same map (large maps don't preview on their own).
-    const lockBtn = previewRow.createEl("button", { cls: "clickable-icon duckmage-wfc-lock" });
     const rerollBtn = previewRow.createEl("button");
     previewRow.createSpan({ text: "Size", cls: "duckmage-map-origin-label" });
     const colsInput = previewRow.createEl("input", { type: "number", value: String(this.previewCols), cls: "duckmage-wfc-num" });
     previewRow.createSpan({ text: "×" });
     const rowsInput = previewRow.createEl("input", { type: "number", value: String(this.previewRows), cls: "duckmage-wfc-num" });
+    // The seed (Advanced → Seed, placed at the end): saved with every save
+    // and shown in the saves list, so a save can always be remade.
+    const seedBox = previewBox.createDiv({ cls: "duckmage-wfc-control" });
+    const seedRow = seedBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    const seedLabel = seedRow.createEl("label", { text: "Seed", cls: "duckmage-map-origin-label" });
+    const seedInput = seedRow.createEl("input", { type: "number", value: String(this.seed), cls: "duckmage-wfc-seed" });
+    linkLabel(seedLabel, seedInput);
+    // Locked: the button regenerates with the same seed, so a settings change
+    // can be compared on the same map (large maps don't preview on their own).
+    const lockBtn = seedRow.createEl("button", { cls: "clickable-icon duckmage-wfc-lock" });
+    seedBox.createEl("p", { text: "The preview's seed. Lock it to compare settings on the same map. Saves keep their seed.", cls: "duckmage-map-origin-desc" });
     const paletteRow = previewBox.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     paletteRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
     const paletteSelect = paletteRow.createEl("select");
@@ -846,7 +856,7 @@ export class GeneratorPanel {
       if (Number(colsInput.value) * Number(rowsInput.value) > PREVIEW_AUTO_LIMIT) {
         status.setText(GeneratorPanel.seedLocked
           ? "Large map: press Regenerate to see your changes on this seed."
-          : "Large map: re-roll to preview it, or lock the seed to compare settings.");
+          : "Large map: re-roll to preview it, or lock the seed (Advanced → Seed) to compare settings.");
         return;
       }
       this.previewTimer = window.setTimeout(() => {
@@ -1088,7 +1098,7 @@ export class GeneratorPanel {
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
     el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Near keeps a terrain within some hexes of another, such as lava fields near a volcano. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
+      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
     const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
@@ -1098,7 +1108,6 @@ export class GeneratorPanel {
       ["Mix", ""],
       ["Min", "Fewest separate patches"],
       ["Max", "Most separate patches"],
-      ["Near", "Keep this terrain within some hexes of another, e.g. \"volcano 3\" (how hard it steers follows Clumping). Blank = the generator's own rule; \"off\" = none"],
       ["Example", "Share of the map this generator was learned from"],
       ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
     ];
@@ -1108,6 +1117,14 @@ export class GeneratorPanel {
     const counts: Record<string, CountRange> = Object.fromEntries(Object.entries(s().counts).map(([k, r]) => [k, { ...r }]));
     const near: Record<string, NearRule | null> = { ...s().near };
     const terrainNames = new Set(model.terrains.map((t) => t.name));
+    // Near rules: one per terrain, in their own box (Advanced → Engine tuning).
+    const nearBox = el.createDiv({ cls: "duckmage-wfc-control" });
+    nearBox.createEl("label", { text: "Near", cls: "duckmage-map-field-label" });
+    nearBox.createEl("p", {
+      text: "Keep a terrain within some hexes of another, such as lava fields near a volcano: \"volcano 3\" (how hard it steers follows the clumping slider). Blank = the generator's own rule; \"off\" = none.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const nearList = nearBox.createDiv({ cls: "duckmage-wfc-near-list" });
     for (const t of model.terrains) {
       const row = table.createDiv({ cls: "duckmage-wfc-terrain-row" });
       // Guaranteed line features are laid down before the solver runs, so
@@ -1148,7 +1165,9 @@ export class GeneratorPanel {
         });
       }
       // Near rule: blank = the generator's own (shown as the placeholder).
-      const nearInput = row.createEl("input", {
+      const nearRow = nearList.createDiv({ cls: "duckmage-wfc-near-row" });
+      nearRow.createSpan({ text: t.name, cls: "duckmage-wfc-terrain-name" });
+      const nearInput = nearRow.createEl("input", {
         type: "text",
         cls: "duckmage-wfc-near",
         attr: { placeholder: t.near ? `${t.near.terrain} ${t.near.distance}` : "–", "aria-label": `${t.name} near rule` },
@@ -1178,13 +1197,14 @@ export class GeneratorPanel {
       });
     }
 
+    place("GenPage.near", nearBox);
     place("GenPage.mixStrength", this.slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v })));
 
     // Paths: one row per learned route (type + what its ends connect to)
     if (model.paths?.length) {
       el = this.section(main, "Paths");
       el.createEl("p", {
-        text: "Roads and rivers drawn over the terrain, grouped by type. Each type's checkbox and sliders apply to all its routes; Amount turns off the routes the example had least of. Open a type to set single routes: Count is how many to draw (blank = learned amount for this map size; drag or scroll on it). Hover a route to highlight it on the preview.",
+        text: "Roads and rivers drawn over the terrain, grouped by type. Each type's checkbox and sliders apply to all its routes; Amount turns off the routes the example had least of. Single routes (how many, how they wind, what they're drawn as) are in the advanced section below.",
         cls: "duckmage-map-origin-desc",
       });
       const tweaks: Record<string, PathTweak> = Object.fromEntries(Object.entries(s().paths).map(([k, t]) => [k, { ...t }]));
@@ -1206,15 +1226,24 @@ export class GeneratorPanel {
         refreshGroups();
       };
       const table = el.createDiv({ cls: "duckmage-wfc-paths" });
+      /** Each type's single routes (Advanced → Paths): dimmed with the rest when paths are off. */
+      const routeLists: HTMLElement[] = [];
+      const showPathsOn = (on: boolean) => {
+        table.toggleClass("is-off", !on);
+        for (const r of routeLists) r.toggleClass("is-off", !on);
+      };
       this.toggle(table, "Draw paths", "", pathsEnabled(model), (v) => {
         save({ drawPaths: v });
-        table.toggleClass("is-off", !v);
+        showPathsOn(v);
       });
-      table.toggleClass("is-off", !pathsEnabled(model));
       const mapTypes = this.plugin.getPathTypes(GeneratorPanel.paletteName).map((t) => t.name);
       const typeColors = pathColors(this.plugin, GeneratorPanel.paletteName);
+      const swatchFor = (parent: HTMLElement, type: string) =>
+        parent.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": typeColors.get(type) ?? "var(--background-modifier-border)" });
 
-      // One collapsible group per path type, most common type first.
+      // One group per path type, most common type first: its on/off and
+      // type-wide sliders here; its single routes in their own collapsible
+      // list (Advanced → Paths).
       const byType = new Map<string, PathFeature[]>();
       for (const f of model.paths) byType.set(f.type, [...(byType.get(f.type) ?? []), f]);
       const groupOrder = [...byType].sort((a, b) =>
@@ -1223,25 +1252,14 @@ export class GeneratorPanel {
       const refreshGroups = () => groupRefreshers.forEach((r) => r());
       for (const [type, routes] of groupOrder) {
         const group = table.createDiv({ cls: "duckmage-wfc-path-group" });
-        const open = () => GeneratorPanel.openPathTypes.has(type);
-        group.toggleClass("is-collapsed", !open());
         const head = group.createDiv({ cls: "duckmage-wfc-path-group-head" });
         const title = head.createDiv({ cls: "duckmage-wfc-path-group-title" });
-        const fold = title.createEl("button", { cls: "clickable-icon duckmage-wfc-fold", attr: { "aria-label": `Show ${type} routes` } });
-        setIcon(fold, "chevron-down");
         const all = title.createEl("input", { type: "checkbox", attr: { "aria-label": `Draw ${type} paths` } });
         const name = title.createSpan({ cls: "duckmage-wfc-terrain-name" });
-        name.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": typeColors.get(type) ?? "var(--background-modifier-border)" });
+        swatchFor(name, type);
         name.createSpan({ text: type });
         const summary = title.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-group-summary" });
         const placedEl = title.createSpan({ cls: "duckmage-wfc-path-placed", text: "–" });
-        const toggleOpen = () => {
-          if (!GeneratorPanel.openPathTypes.delete(type)) GeneratorPanel.openPathTypes.add(type);
-          group.toggleClass("is-collapsed", !open());
-          fold.setAttr("aria-expanded", String(open()));
-        };
-        fold.addEventListener("click", toggleOpen);
-        name.addEventListener("click", toggleOpen);
         all.addEventListener("change", () => {
           if (all.checked) {
             // Turning a type on also turns its routes back on.
@@ -1282,9 +1300,30 @@ export class GeneratorPanel {
         typeKnob("Wiggle", "wiggle", `Multiplies every ${type} route's wiggle.`);
         if (routes.some((f) => f.to === "none" || f.to === "edge")) typeKnob("Length", "length", `Multiplies every ${type} route's length.`);
         typeKnob("Follow terrain", "follow", `Multiplies how strongly every ${type} route keeps to its terrains.`);
+
+        // The type's single routes: a collapsible list (its fold, closed by
+        // default), moved to Advanced → Paths with everything in it.
+        const detail = table.createDiv({ cls: "duckmage-wfc-paths duckmage-wfc-path-group duckmage-wfc-path-routes" });
+        routeLists.push(detail);
+        const open = () => GeneratorPanel.openPathTypes.has(type);
+        detail.toggleClass("is-collapsed", !open());
+        const detailHead = detail.createDiv({ cls: "duckmage-wfc-path-group-title" });
+        const fold = detailHead.createEl("button", { cls: "clickable-icon duckmage-wfc-fold", attr: { "aria-label": `Show ${type} routes` } });
+        setIcon(fold, "chevron-down");
+        fold.setAttr("aria-expanded", String(open()));
+        const detailName = detailHead.createSpan({ cls: "duckmage-wfc-terrain-name" });
+        swatchFor(detailName, type);
+        detailName.createSpan({ text: `${type} routes` });
+        const toggleOpen = () => {
+          if (!GeneratorPanel.openPathTypes.delete(type)) GeneratorPanel.openPathTypes.add(type);
+          detail.toggleClass("is-collapsed", !open());
+          fold.setAttr("aria-expanded", String(open()));
+        };
+        fold.addEventListener("click", toggleOpen);
+        detailName.addEventListener("click", toggleOpen);
         // Guarantee: never over impassable terrain (on unless turned off).
         const impassableList = s().impassable;
-        const avoid = knobs.createEl("label", {
+        const avoid = detail.createEl("label", {
           cls: "duckmage-wfc-toggle duckmage-wfc-path-avoid",
           attr: {
             title: impassableList.length
@@ -1294,11 +1333,14 @@ export class GeneratorPanel {
         });
         const avoidBox = avoid.createEl("input", { type: "checkbox" });
         avoidBox.checked = !types[type]?.crossImpassable;
-
-        avoid.createSpan({ text: "Avoid impassable terrain and the map border" });
+        avoid.createSpan({ text: `${type}: avoid impassable terrain and the map border` });
         avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
 
-        const body = group.createDiv({ cls: "duckmage-wfc-path-group-body" });
+        const body = detail.createDiv({ cls: "duckmage-wfc-path-group-body" });
+        body.createEl("p", {
+          text: "Count is how many to draw (blank = the learned amount for this map size; drag or scroll on it). Hover a route to highlight it on the preview.",
+          cls: "duckmage-map-origin-desc",
+        });
         const rowEls: { route: string; row: HTMLElement; on: HTMLInputElement; why: HTMLElement }[] = [];
         for (const f of [...routes].sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)))) {
           const route = pathRouteKey(f);
@@ -1324,9 +1366,7 @@ export class GeneratorPanel {
             refreshGroups();
           });
           const routeName = top.createSpan({ cls: "duckmage-wfc-terrain-name" });
-          routeName.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({
-            "--duckmage-wfc-swatch": typeColors.get(tw.as ?? f.type) ?? "var(--background-modifier-border)",
-          });
+          swatchFor(routeName, tw.as ?? f.type);
           routeName.createSpan({ text: `${end(f.from)} → ${end(f.to)}` });
           const why = top.createSpan({ cls: "duckmage-map-origin-desc duckmage-wfc-path-route" });
 
@@ -1380,6 +1420,9 @@ export class GeneratorPanel {
           knob("Follow terrain", "How strongly it keeps to the terrains it ran through in the example. 0 = ignores terrain.", "follow", 3);
           rowEls.push({ route, row, on, why });
         }
+        // The list carries the route controls (GenPage.route*) and the
+        // avoid switch (GenPage.pathTypeAvoid): all placed with it.
+        place("GenPage.pathTypeFold", detail);
 
         // Header checkbox, summary and each row's on/off state, from the
         // route settings with the type's applied.
@@ -1402,10 +1445,15 @@ export class GeneratorPanel {
         });
         pathGroupPlaced.set(type, { el: placedEl, routes: rowEls.map((r) => r.route) });
       }
+      showPathsOn(pathsEnabled(model));
       refreshGroups();
     }
 
-    // The Advanced dropdown (if anything went in it) after every section.
+    // Set-once generator settings below the generating controls, then the
+    // seed into Advanced → Seed (last of its sub-sections), then the
+    // Advanced dropdown after every section.
+    if (generatorSettingsBox) main.appendChild(generatorSettingsBox);
+    place("GenPage.seed", seedBox);
     disclosure.toEnd();
     schedulePreview();
   }

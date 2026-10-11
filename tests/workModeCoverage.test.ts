@@ -40,7 +40,7 @@ const src = sources("src");
 describe("work mode classification covers every entry point", () => {
 	it("every registered command is classified (and none is stale)", () => {
 		const ids = [
-			...src.flatMap((f) => [...read(f).matchAll(/addCommand\(\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1])),
+			...src.flatMap((f) => [...read(f).matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1])),
 			// Modules' command contributions (src/modules/<id>/runtime.ts).
 			...src.filter((f) => /^src\/modules\/[^/]+\/runtime\.ts$/.test(f))
 				.flatMap((f) => [...read(f).matchAll(/\{\s*id:\s*"([^"]+)",\s*name:\s*"/g)].map((m) => m[1])),

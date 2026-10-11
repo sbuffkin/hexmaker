@@ -179,6 +179,7 @@ const newSeed = () => Math.floor(Math.random() * 1e9);
 
 /** A small generator editor for one region, with a live preview. */
 export class RegionGenModal extends HexmakerModal {
+  protected surfaceId = "RegionGen";
   private opts: RegionGenOptions & { biome?: BiomeId } = {};
   private canvas!: HTMLCanvasElement;
 
@@ -227,6 +228,7 @@ export class RegionGenModal extends HexmakerModal {
     blendSel.value = this.opts.blend as string;
     blendSel.addEventListener("change", () => { this.opts.blend = blendSel.value as BlendWidth; this.redraw(); });
 
+    // Wiggly borders and the seed are Debug; Reroll stays in reach.
     const warpRow = field("Wiggly borders");
     const warp = warpRow.createEl("input", { type: "range", attr: { min: "0", max: "0.5", step: "0.05", "aria-label": "Wiggly borders" } });
     warp.value = String(this.opts.warp);
@@ -238,7 +240,7 @@ export class RegionGenModal extends HexmakerModal {
     const seed = seedRow.createEl("input", { type: "number", attr: { "aria-label": "Seed" } });
     seed.value = String(this.opts.seed);
     seed.addEventListener("change", () => { this.opts.seed = Number(seed.value) >>> 0; this.redraw(); });
-    seedRow.createEl("button", { text: "Reroll" }).addEventListener("click", () => {
+    form.createDiv({ cls: "duckmage-region-gen-row" }).createEl("button", { text: "Reroll" }).addEventListener("click", () => {
       this.opts.seed = newSeed();
       seed.value = String(this.opts.seed);
       this.redraw();
@@ -262,6 +264,8 @@ export class RegionGenModal extends HexmakerModal {
       this.close();
       void this.apply();
     });
+    this.place("RegionGen.wigglyBorders", warpRow);
+    this.place("RegionGen.seed", seedRow);
     this.redraw();
   }
 
