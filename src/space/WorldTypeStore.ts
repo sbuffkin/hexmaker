@@ -9,6 +9,8 @@
  *   space maps are on (ensureDefault() does it on demand otherwise).
  * - Hand edits are read back live (vault events); rows that can't be read
  *   are reported once per edit, never used, and kept as written.
+ * - A note from before stars and sector features were rows (format 1)
+ *   is given the shipped Stars and Sector features tables once, when read.
  * - Every change is told to onChange listeners.
  */
 
@@ -21,20 +23,38 @@ import { biomeFileName } from "../overworld/biomeNote";
 import {
   DEFAULT_WORLD_TYPES,
   buildWorldTypes,
+  copyFeatureRows,
+  copyStarRows,
   copyWorldTypeRows,
   parseWorldTypes,
   updateWorldTypes,
+  upgradeWorldTypes,
+  type SectorFeatureRow,
+  type StarTypeRow,
+  type WorldTypeExtras,
   type WorldTypeProblem,
   type WorldTypeRow,
   type WorldTypeTable,
 } from "./worldTypes";
-import { DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
+import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
 
 interface Entry {
   path: string;
   name: string;
   rows: WorldTypeRow[];
+  /** Undefined: the note has no Stars table. */
+  stars?: StarTypeRow[];
+  /** Undefined: the note has no Sector features table. */
+  features?: SectorFeatureRow[];
   problems: WorldTypeProblem[];
+}
+
+/** An entry as a table (copies, so callers may change it). */
+function tableOf(e: Entry): WorldTypeTable {
+  const t: WorldTypeTable = { name: e.name, rows: copyWorldTypeRows(e.rows) };
+  if (e.stars) t.stars = copyStarRows(e.stars);
+  if (e.features) t.features = copyFeatureRows(e.features);
+  return t;
 }
 
 /** Settings the store reads (a subset of the plugin's). */
@@ -109,13 +129,13 @@ export class WorldTypeStore {
 
   /** Every table, by name. */
   list(): WorldTypeTable[] {
-    return this.sorted().map((e) => ({ name: e.name, rows: copyWorldTypeRows(e.rows) }));
+    return this.sorted().map(tableOf);
   }
 
   /** A table by name (any case) or note path. */
   get(name: string): WorldTypeTable | undefined {
     const e = this.find(name);
-    return e ? { name: e.name, rows: copyWorldTypeRows(e.rows) } : undefined;
+    return e ? tableOf(e) : undefined;
   }
 
   pathOf(name: string): string | undefined {
@@ -131,8 +151,11 @@ export class WorldTypeStore {
     return name.trim().toLowerCase() === DEFAULT_WORLD_TYPES.toLowerCase();
   }
 
-  /** Set a table's rows (rows the note has that can't be read are kept as written). */
-  async update(name: string, rows: readonly WorldTypeRow[]): Promise<boolean> {
+  /**
+   * Set a table's rows, and its Stars / Sector features rows when given
+   * (rows the note has that can't be read are kept as written).
+   */
+  async update(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): Promise<boolean> {
     await this.queue; // hand edits read first
     const e = this.find(name);
     if (!e) return false;
@@ -140,7 +163,7 @@ export class WorldTypeStore {
     if (!(f instanceof TFile)) return false;
     await this.enqueue(async () => {
       const content = await this.plugin.app.vault.read(f);
-      const next = updateWorldTypes(content, rows);
+      const next = updateWorldTypes(content, rows, extras);
       if (next !== content) await this.plugin.app.vault.modify(f, next);
       this.take(f.path, next);
       this.publish();
@@ -149,7 +172,11 @@ export class WorldTypeStore {
   }
 
   /** A new table note (rows default to a copy of the shipped table). Returns its name, or an error. */
-  async create(name: string, rows: readonly WorldTypeRow[] = DEFAULT_WORLD_TYPE_ROWS): Promise<{ name: string } | { error: string }> {
+  async create(
+    name: string,
+    rows: readonly WorldTypeRow[] = DEFAULT_WORLD_TYPE_ROWS,
+    extras: WorldTypeExtras = DEFAULT_WORLD_TYPE_EXTRAS,
+  ): Promise<{ name: string } | { error: string }> {
     const clean = name.trim() ? biomeFileName(name.trim()) : "";
     if (!clean) return { error: "Give the table a name." };
     const folder = this.folder();
@@ -157,7 +184,7 @@ export class WorldTypeStore {
     if (this.find(clean) || this.plugin.app.vault.getAbstractFileByPath(path)) return { error: `There's already a table called ${clean}.` };
     await this.enqueue(async () => {
       await this.ensureFolder(folder);
-      const text = buildWorldTypes(clean, copyWorldTypeRows(rows));
+      const text = buildWorldTypes(clean, copyWorldTypeRows(rows), extras);
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);
       this.publish();
@@ -178,7 +205,7 @@ export class WorldTypeStore {
       if (f instanceof TFile) {
         const content = await this.plugin.app.vault.read(f);
         await this.backup("default-space", { [f.path]: content });
-        const next = updateWorldTypes(content, DEFAULT_WORLD_TYPE_ROWS);
+        const next = updateWorldTypes(content, DEFAULT_WORLD_TYPE_ROWS, DEFAULT_WORLD_TYPE_EXTRAS);
         if (next !== content) await this.plugin.app.vault.modify(f, next);
         this.take(f.path, next);
       } else {
@@ -254,18 +281,30 @@ export class WorldTypeStore {
     return out.sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  /** Read one note. True when what it says changed. */
+  /** Read one note (upgrading a format 1 note first). True when what it says changed. */
   private async load(f: TFile): Promise<boolean> {
-    const content = await this.plugin.app.vault.read(f);
+    let content = await this.plugin.app.vault.read(f);
     if (this.lastContent.get(f.path) === content && this.entries.has(f.path)) return false;
+    const upgraded = upgradeWorldTypes(content, DEFAULT_WORLD_TYPE_EXTRAS);
+    if (upgraded !== content) {
+      try {
+        await this.plugin.app.vault.modify(f, upgraded);
+        content = upgraded;
+      } catch (e) {
+        console.error("Hexmaker: couldn't add stars and sector features to", f.path, e);
+      }
+    }
     this.take(f.path, content);
     return true;
   }
 
   private take(path: string, content: string): void {
-    const { rows, problems } = parseWorldTypes(content);
+    const { rows, stars, features, problems } = parseWorldTypes(content);
     const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/i, "");
-    this.entries.set(path, { path, name, rows, problems });
+    const entry: Entry = { path, name, rows, problems };
+    if (stars) entry.stars = stars;
+    if (features) entry.features = features;
+    this.entries.set(path, entry);
     this.lastContent.set(path, content);
     this.report(path, name, problems);
   }
@@ -289,7 +328,7 @@ export class WorldTypeStore {
     const path = `${folder}/${DEFAULT_WORLD_TYPES}.md`;
     if (this.plugin.app.vault.getAbstractFileByPath(path)) return;
     await this.ensureFolder(folder);
-    const text = buildWorldTypes(DEFAULT_WORLD_TYPES, copyWorldTypeRows(DEFAULT_WORLD_TYPE_ROWS));
+    const text = buildWorldTypes(DEFAULT_WORLD_TYPES, copyWorldTypeRows(DEFAULT_WORLD_TYPE_ROWS), DEFAULT_WORLD_TYPE_EXTRAS);
     try {
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);

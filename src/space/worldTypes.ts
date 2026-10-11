@@ -48,6 +48,25 @@
  * gives exactly the odds (and, for the same random stream, the same
  * choices) Star scatter and Orbits had built in.
  *
+ * Two more tables follow in the same note, each under its own heading
+ * (format 2; found by their header, so the heading is only for people):
+ *
+ *   ## Stars
+ *   | Star | Weight | Notes |
+ *   | red dwarf | 6 |  |
+ *
+ *   ## Sector features
+ *   | Feature | Chance | Notes |
+ *   | deep-space station | 1 in 50 |  |
+ *
+ * - *Stars*: which star Orbits puts at a system's centre (when its Star
+ *   option is Random), by weight. pickStar.
+ * - *Sector features*: Star scatter's special hexes. Each star system hex
+ *   has the row's *Chance* (`1 in 50`, `2%`, `0.02`) of being that feature
+ *   instead of a system. pickSectorFeature.
+ * A format 1 note (no such tables yet) is given the shipped rows once
+ * (upgradeWorldTypes); after that a deleted table stays deleted.
+ *
  * Pure: no Obsidian imports.
  */
 
@@ -61,7 +80,8 @@ import {
 } from "../overworld/biomeClimate";
 
 export const WORLD_TYPES_MARKER = "hexmaker-world-types";
-export const WORLD_TYPES_FORMAT = 1;
+/** 2: the note also has the Stars and Sector features tables. */
+export const WORLD_TYPES_FORMAT = 2;
 /** The shipped table's name (and note name). */
 export const DEFAULT_WORLD_TYPES = "Default space";
 
@@ -119,9 +139,31 @@ export interface WorldTypeRow {
   notes?: string;
 }
 
+/** A row of the Stars table: a star terrain and its odds. */
+export interface StarTypeRow {
+  /** The star terrain, as written ("red dwarf"). */
+  star: string;
+  /** Relative odds among the stars; default 1; 0 = never rolled. */
+  weight?: number;
+  notes?: string;
+}
+
+/** A row of the Sector features table: a special hex and its chance per star system hex. */
+export interface SectorFeatureRow {
+  /** The feature terrain, as written ("black hole"). */
+  feature: string;
+  /** Chance (0..1) that a star system hex is this feature instead. */
+  chance: number;
+  notes?: string;
+}
+
 export interface WorldTypeTable {
   name: string;
   rows: WorldTypeRow[];
+  /** The Stars table (none = the note has none). */
+  stars?: StarTypeRow[];
+  /** The Sector features table (none = the note has none). */
+  features?: SectorFeatureRow[];
 }
 
 export interface WorldTypeProblem {
@@ -135,6 +177,14 @@ export interface ParsedWorldTypes {
   problems: WorldTypeProblem[];
   /** Table rows that couldn't be read, exactly as written (kept on rewrite). */
   unreadable: string[];
+  /** The Stars table's rows; undefined when the note has no Stars table. */
+  stars?: StarTypeRow[];
+  /** The Sector features table's rows; undefined when the note has none. */
+  features?: SectorFeatureRow[];
+  unreadableStars: string[];
+  unreadableFeatures: string[];
+  /** The `hexmaker-world-types:` number in the frontmatter, if any. */
+  format?: number;
 }
 
 /** What the generator knows where it is placing a world. Every field but `seed` is optional. */
@@ -306,6 +356,160 @@ export function worldTypeSubmapDefault(row: WorldTypeRow, size?: { cols: number;
   return out;
 }
 
+// ── stars and sector features ────────────────────────────────────────────
+
+/** What a generator passes when picking a star or a sector feature. */
+export interface SpacePickContext {
+  seed: number;
+  /**
+   * The generator's own random stream. pickStar takes exactly one draw
+   * from it when it returns a star (none when nothing fits);
+   * pickSectorFeature always takes exactly one.
+   */
+  rand?: () => number;
+  /**
+   * The palette's terrains (names, or terrains with a name): only rows
+   * naming one of them count, in palette order.
+   */
+  palette?: readonly (string | { name: string })[];
+}
+
+/**
+ * Rows grouped by name (a name's rows add up), in palette order when a
+ * palette is given (names not in it left out), else table order. Each
+ * group keeps its first row and the palette's spelling of the name.
+ */
+function groupByName<R>(
+  rows: readonly R[],
+  nameOf: (r: R) => string,
+  amountOf: (r: R) => number,
+  palette: SpacePickContext["palette"],
+): { key: string; terrain: string; row: R; amount: number }[] {
+  const groups = new Map<string, { key: string; terrain: string; row: R; amount: number }>();
+  for (const r of rows) {
+    const name = nameOf(r).trim();
+    const amount = amountOf(r);
+    if (!name || !(amount > 0)) continue;
+    const k = lc(name);
+    const g = groups.get(k);
+    if (g) g.amount += amount;
+    else groups.set(k, { key: k, terrain: name, row: r, amount });
+  }
+  const names = paletteNames(palette);
+  if (!names) return [...groups.values()];
+  const out: { key: string; terrain: string; row: R; amount: number }[] = [];
+  const seen = new Set<string>();
+  for (const n of names) {
+    const g = groups.get(lc(n));
+    if (!g || seen.has(g.key)) continue;
+    seen.add(g.key);
+    out.push({ ...g, terrain: n });
+  }
+  return out;
+}
+
+const starGroups = (table: WorldTypeTable, palette?: SpacePickContext["palette"]) =>
+  groupByName(table.stars ?? [], (r) => r.star, (r) => r.weight ?? 1, palette);
+const featureGroups = (table: WorldTypeTable, palette?: SpacePickContext["palette"]) =>
+  groupByName(table.features ?? [], (r) => r.feature, (r) => r.chance, palette);
+
+export interface StarPick {
+  row: StarTypeRow;
+  /** The palette's own name for the star (its case), else the row's. */
+  terrain: string;
+}
+
+export interface SectorFeaturePick {
+  row: SectorFeatureRow;
+  /** The palette's own name for the feature (its case), else the row's. */
+  terrain: string;
+}
+
+/** Each star's total weight (lower-case name → weight), weight 0 left out. */
+export function starWeights(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed"> & { seed?: number } = {}): Record<string, number> {
+  return Object.fromEntries(starGroups(table, ctx.palette).map((g) => [g.key, g.amount]));
+}
+
+/**
+ * Pick the star at a system's centre: one weighted draw over the stars
+ * (in palette order when a palette is given). Null when no star row fits;
+ * then no draw is taken, so a generator can fall back to its own pick.
+ */
+export function pickStar(table: WorldTypeTable, ctx: SpacePickContext): StarPick | null {
+  const groups = starGroups(table, ctx.palette);
+  if (!groups.length) return null;
+  const rand = ctx.rand ?? mulberry32(ctx.seed >>> 0);
+  const g = groups[pickIndex(rand, groups.map((x) => x.amount))];
+  return { row: g.row, terrain: g.terrain };
+}
+
+/** Each star's exact odds (0..1), most likely first. */
+export function starOdds(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed" | "rand"> = {}): { star: string; odds: number }[] {
+  const groups = starGroups(table, ctx.palette);
+  const total = groups.reduce((a, g) => a + g.amount, 0);
+  if (total <= 0) return [];
+  return groups.map((g) => ({ star: g.terrain, odds: g.amount / total })).sort((a, b) => b.odds - a.odds || a.star.localeCompare(b.star));
+}
+
+/** Roll `n` stars (seeds `seed`, `seed + 1`, …) and count them, most rolled first. */
+export function rollStars(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed" | "rand">, n: number, seed = 1): { star: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    const p = pickStar(table, { ...ctx, seed: seed + i });
+    if (p) counts.set(p.terrain, (counts.get(p.terrain) ?? 0) + 1);
+  }
+  return [...counts].map(([star, count]) => ({ star, count })).sort((a, b) => b.count - a.count || a.star.localeCompare(b.star));
+}
+
+/** Each feature's chance per star system hex (lower-case name → 0..1), chance 0 left out. */
+export function sectorFeatureChances(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed"> & { seed?: number } = {}): Record<string, number> {
+  return Object.fromEntries(featureGroups(table, ctx.palette).map((g) => [g.key, g.amount]));
+}
+
+/**
+ * Whether a star system hex is a special feature instead, and which:
+ * exactly one draw `u`; the features (in palette order when a palette is
+ * given) take consecutive slices of 0..1 as wide as their chance, so `u`
+ * below the total chance lands on a feature, anything else is null (an
+ * ordinary system). The draw is taken even when no feature fits, so the
+ * generator's later rolls don't depend on the palette.
+ */
+export function pickSectorFeature(table: WorldTypeTable, ctx: SpacePickContext): SectorFeaturePick | null {
+  const rand = ctx.rand ?? mulberry32(ctx.seed >>> 0);
+  const u = rand();
+  let edge = 0;
+  for (const g of featureGroups(table, ctx.palette)) {
+    edge += g.amount;
+    if (u < edge) return { row: g.row, terrain: g.terrain };
+  }
+  return null;
+}
+
+/** Each feature's chance per star system hex, most likely first, and their total (capped at 1). */
+export function sectorFeatureOdds(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed" | "rand"> = {}): { features: { feature: string; chance: number }[]; total: number } {
+  const groups = featureGroups(table, ctx.palette);
+  let left = 1;
+  const features = groups.map((g) => {
+    const chance = Math.max(0, Math.min(g.amount, left));
+    left -= chance;
+    return { feature: g.terrain, chance };
+  }).filter((f) => f.chance > 0);
+  return {
+    features: features.sort((a, b) => b.chance - a.chance || a.feature.localeCompare(b.feature)),
+    total: features.reduce((a, f) => a + f.chance, 0),
+  };
+}
+
+/** Roll `n` star system hexes (seeds `seed`, `seed + 1`, …): how many became each feature, most first. */
+export function rollSectorFeatures(table: WorldTypeTable, ctx: Omit<SpacePickContext, "seed" | "rand">, n: number, seed = 1): { feature: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (let i = 0; i < n; i++) {
+    const p = pickSectorFeature(table, { ...ctx, seed: seed + i });
+    if (p) counts.set(p.terrain, (counts.get(p.terrain) ?? 0) + 1);
+  }
+  return [...counts].map(([feature, count]) => ({ feature, count })).sort((a, b) => b.count - a.count || a.feature.localeCompare(b.feature));
+}
+
 // ── cells ────────────────────────────────────────────────────────────────
 
 /** "2", "50%", "0.5" → a weight ≥ 0, or NaN. */
@@ -413,6 +617,37 @@ export function readOptions(raw: string): Record<string, string> | undefined {
 export const formatOptions = (o: Record<string, string> | undefined) =>
   o ? Object.entries(o).map(([k, v]) => `${k}=${v}`).join(", ") : "";
 
+/**
+ * A chance per star system hex: "1 in 50", "1/50", "2%", "0.02", "never"
+ * or "0" → 0..1; NaN when unreadable (blank, over 100%, a bare number
+ * above 1, or "0 in 5").
+ */
+export function readChance(raw: string): number {
+  const t = raw.trim().toLowerCase();
+  if (!t) return NaN;
+  if (t === "never" || t === "none") return 0;
+  const inN = /^(\d+(?:\.\d+)?)\s*(?:in|\/|out of)\s*(\d+(?:\.\d+)?)$/.exec(t);
+  if (inN) {
+    const a = Number(inN[1]), b = Number(inN[2]);
+    return b > 0 && a <= b ? a / b : NaN;
+  }
+  const pct = t.endsWith("%");
+  const n = Number(t.replace(/%$/, "").trim());
+  if (!Number.isFinite(n) || n < 0) return NaN;
+  const c = pct ? n / 100 : n;
+  return c <= 1 ? c : NaN;
+}
+
+/** 1/50 → "1 in 50", 0.03 → "3%", 0 → "never". */
+export function formatChance(c: number): string {
+  if (!(c > 0)) return "never";
+  if (c >= 1) return "100%";
+  const inv = 1 / c;
+  const n = Math.round(inv);
+  if (n >= 2 && Math.abs(inv - n) < 1e-9 * n) return `1 in ${n}`;
+  return `${String(Math.round(c * 100 * 1000) / 1000)}%`;
+}
+
 const readList = (raw: string) => {
   const t = raw.trim();
   if (!t || t.toLowerCase() === "any") return [];
@@ -446,6 +681,35 @@ const HEADER_ALIASES: Record<string, Column> = {
   notes: "Notes", note: "Notes", comment: "Notes",
 };
 
+export const STARS_HEADING = "## Stars";
+export const STARS_HELP = [
+  "> [!info] Stars",
+  "> Which star Orbits puts at the centre of a system when its Star option is Random. **Star** is a star terrain of the palette; **Weight** (1 if blank) is its odds against the other stars; 0 never rolls it.",
+];
+export const FEATURES_HEADING = "## Sector features";
+export const FEATURES_HELP = [
+  "> [!info] Sector features",
+  "> Star scatter's special hexes. **Feature** is a terrain of the palette; **Chance** is how likely each star system hex is to be that feature instead, like 1 in 50, 2% or never.",
+];
+
+/** The Stars table's columns, in order. */
+export const STAR_COLUMNS = ["Star", "Weight", "Notes"] as const;
+export type StarColumn = (typeof STAR_COLUMNS)[number];
+const STAR_ALIASES: Record<string, StarColumn> = {
+  star: "Star", stars: "Star", "star type": "Star", "star types": "Star", sun: "Star",
+  weight: "Weight", odds: "Weight",
+  notes: "Notes", note: "Notes", comment: "Notes",
+};
+
+/** The Sector features table's columns, in order. */
+export const FEATURE_COLUMNS = ["Feature", "Chance", "Notes"] as const;
+export type FeatureColumn = (typeof FEATURE_COLUMNS)[number];
+const FEATURE_ALIASES: Record<string, FeatureColumn> = {
+  feature: "Feature", features: "Feature", "sector feature": "Feature", "sector features": "Feature", special: "Feature", "special hex": "Feature",
+  chance: "Chance", odds: "Chance", "chance per system": "Chance", "per system": "Chance", "chance per system hex": "Chance",
+  notes: "Notes", note: "Notes", comment: "Notes",
+};
+
 function splitRow(line: string): string[] {
   let s = line.trim();
   if (s.startsWith("|")) s = s.slice(1);
@@ -468,18 +732,92 @@ function splitRow(line: string): string[] {
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 const normHeader = (h: string) => h.trim().toLowerCase().replace(/[*_]/g, "").replace(/\s+/g, " ");
 
-interface Span { start: number; end: number; cols: (Column | undefined)[] }
+interface Span<C extends string = Column> { start: number; end: number; cols: (C | undefined)[] }
 
-function findTable(lines: string[]): Span | null {
+type TableKind = "worlds" | "stars" | "features";
+
+/**
+ * The note's first table of a kind, told apart by its header: Sector
+ * features has a Feature column; Stars a Star column and no World;
+ * the worlds table a World column and no Feature.
+ */
+function findKind<C extends string>(lines: string[], kind: TableKind, aliases: Record<string, C>): Span<C> | null {
   for (let i = 0; i < lines.length - 1; i++) {
     if (!lines[i].trim().startsWith("|") || !SEPARATOR_ROW.test(lines[i + 1])) continue;
-    const cols = splitRow(lines[i]).map((h) => HEADER_ALIASES[normHeader(h)]);
-    if (!cols.includes("World")) continue;
+    const heads = splitRow(lines[i]).map(normHeader);
+    const isFeatures = heads.some((h) => FEATURE_ALIASES[h] === "Feature");
+    const hasWorld = heads.some((h) => HEADER_ALIASES[h] === "World");
+    const fits = kind === "features" ? isFeatures
+      : kind === "stars" ? !isFeatures && !hasWorld && heads.some((h) => STAR_ALIASES[h] === "Star")
+      : !isFeatures && hasWorld;
+    if (!fits) continue;
     let end = i + 2;
     while (end < lines.length && lines[end].trim().startsWith("|")) end++;
-    return { start: i, end, cols };
+    return { start: i, end, cols: heads.map((h) => aliases[h]) };
   }
   return null;
+}
+
+const findTable = (lines: string[]) => findKind(lines, "worlds", HEADER_ALIASES);
+const findStars = (lines: string[]) => findKind(lines, "stars", STAR_ALIASES);
+const findFeatures = (lines: string[]) => findKind(lines, "features", FEATURE_ALIASES);
+
+/** A cell by column name (blank when the column is missing). */
+const cellOf = <C extends string>(cells: string[], cols: (C | undefined)[], c: C) => {
+  const i = cols.indexOf(c);
+  return i >= 0 ? (cells[i] ?? "").trim() : "";
+};
+/** A name cell: a `[[link]]`'s target, else the text. */
+const nameCell = (raw: string) => (/\[\[([^\]|#]+)/.exec(raw)?.[1] ?? raw).trim();
+
+function readStarRow(cells: string[], cols: (StarColumn | undefined)[]): { row?: StarTypeRow; problem?: string } {
+  const star = nameCell(cellOf(cells, cols, "Star"));
+  if (!star) return { problem: "no star" };
+  const row: StarTypeRow = { star };
+  const w = cellOf(cells, cols, "Weight");
+  if (w) {
+    const n = readWeight(w);
+    if (!Number.isFinite(n)) return { problem: `weight "${w}" isn't a number` };
+    row.weight = n;
+  }
+  const notes = cellOf(cells, cols, "Notes");
+  if (notes) row.notes = notes;
+  return { row };
+}
+
+function readFeatureRow(cells: string[], cols: (FeatureColumn | undefined)[]): { row?: SectorFeatureRow; problem?: string } {
+  const feature = nameCell(cellOf(cells, cols, "Feature"));
+  if (!feature) return { problem: "no feature" };
+  const c = cellOf(cells, cols, "Chance");
+  const chance = readChance(c);
+  if (!Number.isFinite(chance)) return { problem: c ? `chance "${c}" should look like 1 in 50 or 2%` : "no chance (like 1 in 50 or 2%)" };
+  const row: SectorFeatureRow = { feature, chance };
+  const notes = cellOf(cells, cols, "Notes");
+  if (notes) row.notes = notes;
+  return { row };
+}
+
+/** The frontmatter's `hexmaker-world-types:` number. */
+function readFormat(lines: string[]): number | undefined {
+  if (lines[0]?.trim() !== "---") return undefined;
+  for (let i = 1; i < lines.length && lines[i].trim() !== "---"; i++) {
+    const m = new RegExp(`^\\s*${WORLD_TYPES_MARKER}:\\s*(\\d+)\\s*$`).exec(lines[i]);
+    if (m) return Number(m[1]);
+  }
+  return undefined;
+}
+
+/** The lines with the frontmatter's format number set to the current one (when it has one). */
+function withFormat(lines: string[]): string[] {
+  if (lines[0]?.trim() !== "---") return lines;
+  for (let i = 1; i < lines.length && lines[i].trim() !== "---"; i++) {
+    const m = new RegExp(`^(\\s*${WORLD_TYPES_MARKER}:\\s*)\\d+(\\s*)$`).exec(lines[i]);
+    if (!m) continue;
+    const out = [...lines];
+    out[i] = `${m[1]}${WORLD_TYPES_FORMAT}${m[2]}`;
+    return out;
+  }
+  return lines;
 }
 
 /** One table row → a row, or why it can't be read. */
@@ -531,25 +869,50 @@ function readRow(cells: string[], cols: (Column | undefined)[]): { row?: WorldTy
   return { row };
 }
 
-/** Read a world types note. Never throws. */
-export function parseWorldTypes(content: string): ParsedWorldTypes {
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const rows: WorldTypeRow[] = [];
-  const problems: WorldTypeProblem[] = [];
-  const unreadable: string[] = [];
-  const t = findTable(lines);
-  if (!t) return { rows, problems: [{ text: "no table with a World column" }], unreadable };
+/** Read one table's rows into `rows`; rows that can't be read go to `unreadable` and `problems`. */
+function readInto<C extends string, R>(
+  lines: string[],
+  t: Span<C>,
+  read: (cells: string[], cols: (C | undefined)[]) => { row?: R; problem?: string },
+  label: string,
+  rows: R[],
+  problems: WorldTypeProblem[],
+  unreadable: string[],
+): void {
   for (let i = t.start + 2; i < t.end; i++) {
     const cells = splitRow(lines[i]);
     if (cells.every((c) => c === "")) continue;
-    const { row, problem } = readRow(cells, t.cols);
+    const { row, problem } = read(cells, t.cols);
     if (row) rows.push(row);
     else {
-      problems.push({ line: i + 1, text: `row ${i + 1}: ${problem ?? "can't be read"} (left as written, not used)` });
+      problems.push({ line: i + 1, text: `${label}row ${i + 1}: ${problem ?? "can't be read"} (left as written, not used)` });
       unreadable.push(lines[i]);
     }
   }
-  return { rows, problems, unreadable };
+}
+
+/** Read a world types note (worlds, and the Stars and Sector features tables when it has them). Never throws. */
+export function parseWorldTypes(content: string): ParsedWorldTypes {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const out: ParsedWorldTypes = { rows: [], problems: [], unreadable: [], unreadableStars: [], unreadableFeatures: [] };
+  const format = readFormat(lines);
+  if (format !== undefined) out.format = format;
+  const t = findTable(lines);
+  if (t) readInto(lines, t, readRow, "", out.rows, out.problems, out.unreadable);
+  else out.problems.push({ text: "no table with a World column" });
+  const s = findStars(lines);
+  if (s) {
+    out.stars = [];
+    readInto(lines, s, readStarRow, "Stars ", out.stars, out.problems, out.unreadableStars);
+  }
+  const f = findFeatures(lines);
+  if (f) {
+    out.features = [];
+    readInto(lines, f, readFeatureRow, "Sector features ", out.features, out.problems, out.unreadableFeatures);
+    const total = out.features.reduce((a, r) => a + r.chance, 0);
+    if (total > 1 + 1e-9) out.problems.push({ text: `Sector features: the chances add up to over 100% (${Math.round(total * 1000) / 10}%), so the last ones come up less` });
+  }
+  return out;
 }
 
 const esc = (s: string) => s.replace(/\|/g, "\\|");
@@ -573,47 +936,115 @@ export function worldTypeCells(r: WorldTypeRow): string[] {
   ];
 }
 
-function tableLines(rows: readonly WorldTypeRow[], keep: readonly string[] = []): string[] {
+/** A Stars row as the note's cells, in STAR_COLUMNS order. */
+export function starCells(r: StarTypeRow): string[] {
+  return [r.star, r.weight === undefined ? "" : fmtNum(r.weight), r.notes ?? ""];
+}
+
+/** A Sector features row as the note's cells, in FEATURE_COLUMNS order. */
+export function featureCells(r: SectorFeatureRow): string[] {
+  return [r.feature, formatChance(r.chance), r.notes ?? ""];
+}
+
+function markdownTable(columns: readonly string[], rightAligned: string, cells: string[][], keep: readonly string[]): string[] {
   return [
-    `| ${COLUMNS.join(" | ")} |`,
-    `| ${COLUMNS.map((c) => (c === "Weight" ? "---:" : "---")).join(" | ")} |`,
-    ...rows.map((r) => `| ${worldTypeCells(r).map((c) => (c.startsWith("[[") ? c : esc(c))).join(" | ")} |`),
+    `| ${columns.join(" | ")} |`,
+    `| ${columns.map((c) => (c === rightAligned ? "---:" : "---")).join(" | ")} |`,
+    ...cells.map((row) => `| ${row.map((c) => (c.startsWith("[[") ? c : esc(c))).join(" | ")} |`),
     ...keep,
   ];
 }
 
-/** A fresh table note. */
-export function buildWorldTypes(name: string, rows: readonly WorldTypeRow[]): string {
+const tableLines = (rows: readonly WorldTypeRow[], keep: readonly string[] = []) =>
+  markdownTable(COLUMNS, "Weight", rows.map(worldTypeCells), keep);
+const starTableLines = (rows: readonly StarTypeRow[], keep: readonly string[] = []) =>
+  markdownTable(STAR_COLUMNS, "Weight", rows.map(starCells), keep);
+const featureTableLines = (rows: readonly SectorFeatureRow[], keep: readonly string[] = []) =>
+  markdownTable(FEATURE_COLUMNS, "Chance", rows.map(featureCells), keep);
+
+/** The Stars and Sector features tables a note is given (each optional). */
+export interface WorldTypeExtras {
+  stars?: readonly StarTypeRow[];
+  features?: readonly SectorFeatureRow[];
+}
+
+/** A fresh table note (Stars and Sector features are written even when empty). */
+export function buildWorldTypes(name: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): string {
   return [
     "---", `${WORLD_TYPES_MARKER}: ${WORLD_TYPES_FORMAT}`, "---", "",
     `# ${name}`, "",
     ...WORLD_TYPES_HELP, "",
     ...tableLines(rows), "",
+    STARS_HEADING, "",
+    ...STARS_HELP, "",
+    ...starTableLines(extras.stars ?? []), "",
+    FEATURES_HEADING, "",
+    ...FEATURES_HELP, "",
+    ...featureTableLines(extras.features ?? []), "",
   ].join("\n");
 }
 
-const rowKey = (r: WorldTypeRow) => JSON.stringify(worldTypeCells(r).map((c, i) => (i === 0 ? c.toLowerCase() : c)));
+/** Rows compared as their cells (the name in any case). */
+function sameRows<R>(a: readonly R[], b: readonly R[], cellsOf: (r: R) => string[]): boolean {
+  const key = (r: R) => JSON.stringify(cellsOf(r).map((c, i) => (i === 0 ? c.toLowerCase() : c)));
+  return a.length === b.length && a.every((r, i) => key(r) === key(b[i]));
+}
+
+/** `table` in place of the span, or appended at the end after `head` (a heading and help). */
+function putTable(lines: string[], span: Span<string> | null, table: string[], head: string[]): string[] {
+  if (span) return [...lines.slice(0, span.start), ...table, ...lines.slice(span.end)];
+  const out = [...lines];
+  while (out.length && out[out.length - 1].trim() === "") out.pop();
+  out.push("", ...head, ...table, "");
+  return out;
+}
 
 /**
- * The note with its table set to `rows`; everything else is kept, and so
- * are rows that couldn't be read (after the new rows, as written). Same
- * string when nothing changes.
+ * The note with its worlds table set to `rows` and, when given, its Stars
+ * and Sector features tables set too (added under their heading when the
+ * note has none). Everything else is kept, and so are rows that couldn't
+ * be read (after the new rows of their table, as written). A table that
+ * didn't change isn't rewritten; same string when nothing changes.
  */
-export function updateWorldTypes(content: string, rows: readonly WorldTypeRow[]): string {
+export function updateWorldTypes(content: string, rows: readonly WorldTypeRow[], extras: WorldTypeExtras = {}): string {
   const eol = content.includes("\r\n") ? "\r\n" : "\n";
-  const lines = content.replace(/\r\n?/g, "\n").split("\n");
-  const t = findTable(lines);
+  let lines = content.replace(/\r\n?/g, "\n").split("\n");
   const parsed = parseWorldTypes(content);
-  if (t && parsed.rows.length === rows.length && parsed.rows.every((r, i) => rowKey(r) === rowKey(rows[i]))) return content;
-  const table = tableLines(rows, parsed.unreadable);
-  let out: string[];
-  if (t) out = [...lines.slice(0, t.start), ...table, ...lines.slice(t.end)];
-  else {
-    out = [...lines];
-    while (out.length && out[out.length - 1].trim() === "") out.pop();
-    out.push("", ...table, "");
+  let changed = false;
+  const t = findTable(lines);
+  if (!t || !sameRows(parsed.rows, rows, worldTypeCells)) {
+    lines = putTable(lines, t, tableLines(rows, parsed.unreadable), []);
+    changed = true;
   }
-  return out.join(eol);
+  if (extras.stars && !(parsed.stars && sameRows(parsed.stars, extras.stars, starCells))) {
+    lines = putTable(lines, findStars(lines), starTableLines(extras.stars, parsed.unreadableStars), [STARS_HEADING, "", ...STARS_HELP, ""]);
+    changed = true;
+  }
+  if (extras.features && !(parsed.features && sameRows(parsed.features, extras.features, featureCells))) {
+    lines = putTable(lines, findFeatures(lines), featureTableLines(extras.features, parsed.unreadableFeatures), [FEATURES_HEADING, "", ...FEATURES_HELP, ""]);
+    changed = true;
+  }
+  if (!changed) return content;
+  if (findStars(lines) && findFeatures(lines)) lines = withFormat(lines);
+  return lines.join(eol);
+}
+
+/**
+ * A format 1 note (written before stars and sector features were rows)
+ * given the shipped Stars and Sector features tables it doesn't have, and
+ * marked format 2, so it keeps placing what the generators always did.
+ * Anything else (format 2, or a note without the marker) comes back as is.
+ */
+export function upgradeWorldTypes(content: string, defaults: Required<WorldTypeExtras>): string {
+  const p = parseWorldTypes(content);
+  if (p.format === undefined || p.format >= WORLD_TYPES_FORMAT) return content;
+  const next = updateWorldTypes(content, p.rows, {
+    stars: p.stars ? undefined : defaults.stars,
+    features: p.features ? undefined : defaults.features,
+  });
+  const eol = next.includes("\r\n") ? "\r\n" : "\n";
+  const marked = withFormat(next.replace(/\r\n?/g, "\n").split("\n")).join(eol);
+  return marked;
 }
 
 /** A deep copy of rows (callers may change it). */
@@ -638,6 +1069,19 @@ export function copyWorldTypeRows(rows: readonly WorldTypeRow[]): WorldTypeRow[]
 export function readWorldTypeCells(cells: readonly string[]): { row?: WorldTypeRow; problem?: string } {
   return readRow([...cells], [...COLUMNS]);
 }
+
+/** Cells in STAR_COLUMNS order → a Stars row, or what's wrong. */
+export function readStarCells(cells: readonly string[]): { row?: StarTypeRow; problem?: string } {
+  return readStarRow([...cells], [...STAR_COLUMNS]);
+}
+
+/** Cells in FEATURE_COLUMNS order → a Sector features row, or what's wrong. */
+export function readFeatureCells(cells: readonly string[]): { row?: SectorFeatureRow; problem?: string } {
+  return readFeatureRow([...cells], [...FEATURE_COLUMNS]);
+}
+
+export const copyStarRows = (rows: readonly StarTypeRow[]): StarTypeRow[] => rows.map((r) => ({ ...r }));
+export const copyFeatureRows = (rows: readonly SectorFeatureRow[]): SectorFeatureRow[] => rows.map((r) => ({ ...r }));
 
 /** Each fitting world's exact odds (0..1) for a context, most likely first. */
 export function worldTypeOdds(table: WorldTypeTable, ctx: Omit<WorldTypeContext, "seed"> & { seed?: number }): { world: string; odds: number }[] {

@@ -8722,6 +8722,25 @@ textarea.duckmage-edit-region-notes-input {
     gap: 2px;
     margin-left: auto;
 }
+.duckmage-world-types-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 4px;
+}
+.duckmage-world-types-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-world-types-cell.is-star input,
+.duckmage-world-types-cell.is-feature input {
+    width: 13em;
+}
+.duckmage-world-types-cell.is-chance input {
+    width: 7em;
+}
 .duckmage-world-types-dist {
     display: grid;
     grid-template-columns: minmax(8em, max-content) minmax(6em, 1fr) max-content max-content;

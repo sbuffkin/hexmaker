@@ -126,7 +126,7 @@ describe("Default space reproduces the old built-in odds", () => {
 		const back = parseWorldTypes(text);
 		expect(back.problems).toEqual([]);
 		expect(back.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
-		expect(text).toContain("hexmaker-world-types: 1");
+		expect(text).toContain("hexmaker-world-types: 2");
 		expect(text).toContain("| ocean planet | 3 | system | habitable |  |  | 20×14 | procedural:planet-surface | water=85, climate=lush, relief=normal | Expanded | ocean |  |");
 	});
 });
@@ -140,7 +140,7 @@ describe("world types note", () => {
 
 	it("round-trips every column and keeps prose", () => {
 		const text = buildWorldTypes("Mine", rows).replace("# Mine", "# Mine\n\nMy own words.");
-		expect(parseWorldTypes(text)).toEqual({ rows, problems: [], unreadable: [] });
+		expect(parseWorldTypes(text)).toEqual({ rows, problems: [], unreadable: [], stars: [], features: [], unreadableStars: [], unreadableFeatures: [], format: 2 });
 		expect(updateWorldTypes(text, rows)).toBe(text);
 		const next = updateWorldTypes(text, rows.slice(1));
 		expect(next).toContain("My own words.");
@@ -271,7 +271,7 @@ describe("WorldTypeStore", () => {
 		const plugin = storePlugin(v);
 		const store = new WorldTypeStore(plugin as never);
 		await store.init();
-		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 1");
+		expect(v.files.get(NOTE)).toContain("hexmaker-world-types: 2");
 		expect(store.get(DEFAULT_WORLD_TYPES)!.rows).toEqual(DEFAULT_WORLD_TYPE_ROWS);
 		expect(plugin.settings.worldTypesSeeded).toBe(true);
 		v.files.delete(NOTE);

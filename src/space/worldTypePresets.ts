@@ -13,14 +13,17 @@
  *    weighed 0.5 there), the rocky ones opening as 20×14 Planet surface
  *    maps tuned to the planet;
  *  - the moon (weight 0: Orbits puts moons beside planets, it never rolls
- *    them) for its map setup.
+ *    them) for its map setup;
+ *  - Stars: Orbits' random star weights (red dwarfs dominate);
+ *  - Sector features: Star scatter's special hexes, 1 in 25 star system
+ *    hexes split 3 : 2 : 1 between station, anomaly and black hole.
  * tests/worldTypes.test.ts holds a frozen copy of the old tables and
  * checks this against it.
  *
  * Pure: no Obsidian imports.
  */
 
-import type { OrbitZone, WorldTypeRow } from "./worldTypes";
+import type { OrbitZone, SectorFeatureRow, StarTypeRow, WorldTypeRow } from "./worldTypes";
 
 const SYSTEM_PALETTE = "Space - System";
 const SURFACE_PALETTE = "Expanded";
@@ -80,3 +83,29 @@ export const DEFAULT_WORLD_TYPE_ROWS: readonly WorldTypeRow[] = [
   ...body("asteroid belt", { inner: 0.5, habitable: 1, outer: 1.5 }),
   { world: "moon", weight: 0, map: "system", ...surface("10", "frozen", "desert", "rugged"), notes: "placed beside planets, never rolled" },
 ];
+
+/** Orbits' random star (its old built-in weights). */
+export const DEFAULT_STAR_ROWS: readonly StarTypeRow[] = [
+  { star: "red dwarf", weight: 6 },
+  { star: "yellow star", weight: 3 },
+  { star: "brown dwarf", weight: 1.5 },
+  { star: "white dwarf", weight: 1 },
+  { star: "blue giant", weight: 0.5 },
+];
+
+/**
+ * Star scatter's special hexes: it made 4% (1 in 25) of star system hexes
+ * a feature, split 3 : 2 : 1 by weight. As chances per hex that is exactly
+ * 1 in 50, 1 in 75 and 1 in 150.
+ */
+export const DEFAULT_SECTOR_FEATURE_ROWS: readonly SectorFeatureRow[] = [
+  { feature: "deep-space station", chance: 1 / 50 },
+  { feature: "anomaly", chance: 1 / 75 },
+  { feature: "black hole", chance: 1 / 150 },
+];
+
+/** The shipped Stars and Sector features tables, together. */
+export const DEFAULT_WORLD_TYPE_EXTRAS = {
+  get stars(): StarTypeRow[] { return DEFAULT_STAR_ROWS.map((r) => ({ ...r })); },
+  get features(): SectorFeatureRow[] { return DEFAULT_SECTOR_FEATURE_ROWS.map((r) => ({ ...r })); },
+};
