@@ -32,6 +32,9 @@ const DATA = ".obsidian/plugins/hexmaker/data.json";
 const COAST = "world/hexes/coast/_coast.md";
 const NORTH = "world/hexes/north/_north.md";
 
+/** data.json writes so far (Plugin.saveData calls that reached the file). */
+let dataWrites = 0;
+
 /** Obsidian's Plugin.loadData / saveData, against data.json in the in-memory vault. */
 function wireDataJson(v: MemVault): void {
 	const proto = (mock.Plugin as { prototype: Record<string, unknown> }).prototype;
@@ -40,6 +43,7 @@ function wireDataJson(v: MemVault): void {
 		return text === undefined ? null : JSON.parse(text);
 	};
 	proto.saveData = async function (data: unknown) {
+		dataWrites++;
 		v.files.set(DATA, JSON.stringify(data, null, 2));
 	};
 }
@@ -208,5 +212,32 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		await again.mapStore.init();
 		expect([JSON.stringify(again.getMap("coast")!.paths), JSON.stringify(again.getMap("north")!.paths)]).toEqual(expected);
 		expect(again.getMap("coast")!.world).toEqual({ id: "w3", cx: 0, cy: 0 });
+	});
+
+	it("a restart that changes nothing leaves data.json alone, even with saves before the store is ready", async () => {
+		const b = await boot();
+		const { v, plugin } = b;
+		await settle(b);
+		const text = v.files.get(DATA);
+		const { default: HexmakerPlugin } = await import("../../src/HexmakerPlugin");
+		const again = new HexmakerPlugin(plugin.app as never, plugin.manifest as never) as unknown as Booted["plugin"] & Record<string, unknown>;
+		again.app = (plugin as unknown as Record<string, unknown>).app;
+		again.manifest = (plugin as unknown as Record<string, unknown>).manifest;
+		again.refreshHexMap = () => {};
+		again.loadAvailableIcons = () => {};
+		again.ensureTablesForNewTerrains = async () => {};
+		dataWrites = 0;
+		await again.loadSettings();
+		await again.saveSettings(); // before the stores load: maps still carry the empty pathChains filled in on load
+		await again.paletteStore.init();
+		await again.mapStore.init();
+		await again.saveSettings();
+		await settle({ v, plugin: again });
+		expect(dataWrites).toBe(0);
+		expect(v.files.get(DATA)).toBe(text);
+		// A real change is still written.
+		again.settings.dismissedHints = ["changed"];
+		await again.saveSettings();
+		expect(dataWrites).toBe(1);
 	});
 });

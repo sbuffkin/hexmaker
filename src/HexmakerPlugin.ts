@@ -763,6 +763,7 @@ export default class HexmakerPlugin extends Plugin {
     // 2026-10-10). rawData is an untouched copy for the "fresh install?" checks.
     const loaded = (await this.loadData()) as Record<string, unknown> | null;
     const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
+    this.onDisk = loaded ? JSON.stringify(loaded) : null;
     const data = loaded ?? {};
     if (data["regions"] !== undefined && data["maps"] === undefined) {
       data["maps"] = data["regions"];
@@ -852,9 +853,18 @@ export default class HexmakerPlugin extends Plugin {
   async saveData(data: unknown): Promise<void> {
     const ready = !!this.mapStore?.isReady();
     const out = data !== this.settings ? data : withoutNotePaths(this.settings, (name) => ready && this.mapStore.holdsPaths(name));
+    // Same as what data.json holds (last loaded or written): don't touch the
+    // file. Startup saves that change nothing then leave it alone (smoke C5).
+    let text: string | null = null;
+    try { text = JSON.stringify(out); } catch { /* not JSON-able: write it */ }
+    if (text !== null && text === this.onDisk) return;
     this.rememberWrite(out);
-    return super.saveData(out);
+    await super.saveData(out);
+    this.onDisk = text;
   }
+
+  /** data.json's content as last loaded or written by this session (compact JSON). */
+  private onDisk: string | null = null;
 
   /** What we wrote to data.json lately (compact JSON), to tell our own writes from outside changes. */
   private recentWrites: string[] = [];
@@ -900,7 +910,11 @@ export default class HexmakerPlugin extends Plugin {
     // together (its watcher sees a write it hasn't recorded yet). Reloading
     // our own data would at best do nothing and at worst roll back changes
     // made since that save, so ignore anything we wrote ourselves.
-    if (this.isOwnWrite(await this.loadData())) return;
+    const disk = await this.loadData();
+    if (this.isOwnWrite(disk)) {
+      this.onDisk = JSON.stringify(disk);
+      return;
+    }
     await this.loadSettings();
     // Map notes hold paths and map settings; the new data.json doesn't win.
     // Queued before any sync, so nothing writes the bare copy over a note.
