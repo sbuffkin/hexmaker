@@ -7,7 +7,6 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import {
 	brushCells,
-	EDIT_REGION_LOCKED_HINT,
 	FrameThrottle,
 	overworldLeftClick,
 	overworldMenu,
@@ -34,22 +33,29 @@ describe("overworld click routing (mode × has region × button)", () => {
 		expect(overworldLeftClick(m("play"), false)).toEqual({ kind: "hint", hint: PLACE_LOCKED_HINT });
 	});
 
-	it("right click on a region: Enter region always, Edit region… enabled in God only, else disabled with its hint", () => {
-		expect(overworldMenu(m("god"), true)).toEqual([
-			{ id: "enter-region", title: "Enter region", enabled: true },
-			{ id: "edit-region", title: "Edit region…", enabled: true },
-		]);
-		for (const mode of ["build", "play", undefined]) {
+	it("right click on a region: Enter region and Edit region… in every mode, no Edit hex (#49)", () => {
+		for (const mode of MODES) {
 			const items = overworldMenu(m(mode), true);
-			expect(items[0]).toEqual({ id: "enter-region", title: "Enter region", enabled: true });
-			expect(items[1]).toEqual({ id: "edit-region", title: "Edit region…", enabled: false, hint: EDIT_REGION_LOCKED_HINT });
+			expect(items.map((i) => i.id)).toEqual(["enter-region", "edit-region", "center"]);
+			expect(items.every((i) => i.enabled)).toBe(true);
+			expect(items.find((i) => i.id === "edit-region")!.title).toBe("Edit region…");
+			expect(items.some((i) => /edit hex/i.test(i.title))).toBe(false);
 		}
-		expect(EDIT_REGION_LOCKED_HINT).toBe("Switch to God to change a placed region.");
 	});
 
-	it("right click on an empty hex: Set biome…, disabled in Play", () => {
-		expect(overworldMenu(m("build"), false)).toEqual([{ id: "set-biome", title: "Set biome…", enabled: true }]);
-		expect(overworldMenu(m("play"), false)).toEqual([{ id: "set-biome", title: "Set biome…", enabled: false, hint: PLACE_LOCKED_HINT }]);
+	it("right click on an empty hex: Set biome…, disabled in Play; never a hex editor", () => {
+		expect(overworldMenu(m("build"), false)).toEqual([
+			{ id: "set-biome", title: "Set biome…", enabled: true },
+			{ id: "center", title: "Center on this hex", enabled: true },
+		]);
+		expect(overworldMenu(m("play"), false)[0]).toEqual({ id: "set-biome", title: "Set biome…", enabled: false, hint: PLACE_LOCKED_HINT });
+		for (const mode of MODES) expect(overworldMenu(m(mode), false).some((i) => /edit hex/i.test(i.title))).toBe(false);
+	});
+
+	it("only region-level items: the hex's Locations when it has any, no per-hex items", () => {
+		expect(overworldMenu(m("build"), true, 3).map((i) => i.title)).toEqual(["Enter region", "Edit region…", "Center on this hex", "Locations (3)…"]);
+		const titles = overworldMenu(m("god"), true, 1).map((i) => i.title).join(" | ");
+		for (const hexItem of ["Open note", "Link table", "Swap hex", "Clear terrain", "New map from this hex"]) expect(titles).not.toContain(hexItem);
 	});
 });
 
