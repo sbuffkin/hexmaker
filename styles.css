@@ -2966,15 +2966,7 @@ tr.duckmage-row-hidden {
     background: var(--background-secondary);
 }
 
-.duckmage-table-picker-topbar {
-    display: flex;
-    margin-bottom: 10px;
-}
 
-.duckmage-table-picker-view-btn {
-    font-size: var(--font-ui-small);
-    padding: 3px 8px;
-}
 
 .duckmage-table-picker-combo {
     margin-bottom: 0;
@@ -3003,43 +2995,12 @@ tr.duckmage-row-hidden {
     font-weight: 500;
 }
 
-.duckmage-submap-create-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin-bottom: 0.4em;
-}
 
-.duckmage-submap-create-label {
-    min-width: 56px;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
 
-.duckmage-submap-create-name {
-    flex: 1;
-}
 
-.duckmage-submap-create-sep {
-    color: var(--text-muted);
-}
 
-.duckmage-submap-create-palette {
-    flex: 1;
-}
 
-.duckmage-submap-terrain-heading {
-    margin: 0.6em 0 0.3em;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    font-weight: 500;
-}
 
-.duckmage-submap-create-btn {
-    width: 100%;
-    margin-top: 0.5em;
-}
 
 .duckmage-table-picker-new-heading {
     margin: 16px 0 8px;

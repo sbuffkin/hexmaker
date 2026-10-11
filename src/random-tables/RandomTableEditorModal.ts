@@ -29,6 +29,7 @@ export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["rang
  * Saves back to the file, preserving frontmatter.
  */
 export class RandomTableEditorModal extends HexmakerModal {
+  protected surfaceId = "TableEditor";
   // Held so onClose can flush a pending "add row" entry and save it
   private flushAndSave: (() => Promise<void>) | null = null;
 
@@ -501,6 +502,18 @@ export class RandomTableEditorModal extends HexmakerModal {
     encFilterCb.checked =
       this.parseFrontmatterBool(frontmatter, "encounter-filter") === false;
     encFilterRow.createEl("label", { text: "Exclude from encounters table" });
+
+    // ── Advanced: bulk weight steps, import, linked folder, filters ──
+    // (Placement map; the filters stay hidden on the map's own tables.)
+    this.place("TableEditor.minusOneAll", subOneToAllBtn);
+    this.place("TableEditor.plusOneAll", addOneToAllBtn);
+    this.place("TableEditor.import", importBtn);
+    this.place("TableEditor.linkedFolder", folderRow);
+    if (!isSystemTable) {
+      this.place("TableEditor.excludeRollPicker", rollFilterRow);
+      this.place("TableEditor.excludeEncounters", encFilterRow);
+    }
+    this.disclosure.toEnd();
 
     const doAdd = () => {
       const raw = newResult.value.trim();

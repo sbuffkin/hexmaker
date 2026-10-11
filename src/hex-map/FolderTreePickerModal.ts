@@ -7,7 +7,6 @@ import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/Fol
  * Unified table/file picker modal.
  *
  * - `onChoose`       — called when the user selects an existing file.
- * - `onOpenView`     — if provided, renders a "🎲 Open tables view" button.
  * - `onTableCreated` — if provided, called after a new table is created (e.g. to open it in RT view).
  */
 export class FolderTreePickerModal extends Modal {
@@ -19,7 +18,6 @@ export class FolderTreePickerModal extends Modal {
     private filterPlaceholder: string,
     private emptyMessage: string,
     private onChoose: (file: TFile) => void,
-    private onOpenView?: () => void,
     private onTableCreated?: (file: TFile) => void,
   ) {
     super(app);
@@ -29,16 +27,6 @@ export class FolderTreePickerModal extends Modal {
     this.titleEl.setText(this.modalTitle);
     const { contentEl } = this;
     contentEl.addClass("duckmage-table-picker-modal");
-
-    // ── Optional "open tables view" button ───────────────────────────────
-    if (this.onOpenView) {
-      const topBar = contentEl.createDiv({ cls: "duckmage-table-picker-topbar" });
-      topBar.createEl("button", {
-        cls: "duckmage-rt-icon-btn duckmage-table-picker-view-btn",
-        text: "🎲 Open tables view",
-        title: "Open random tables view",
-      }).addEventListener("click", () => this.onOpenView!());
-    }
 
     // ── Filter input ─────────────────────────────────────────────────────
     const filterInput = contentEl.createEl("input", {

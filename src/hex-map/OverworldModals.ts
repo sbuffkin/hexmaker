@@ -317,10 +317,12 @@ export class NewOverworldModal extends HexmakerModal {
         this.regen();
       });
     }
-    const seedRow = field("Seed");
+    // Reroll stays in reach; the seed itself is Debug (placed below the buttons).
+    const seedRow = createDiv({ cls: "duckmage-region-gen-row" });
+    seedRow.createSpan({ cls: "duckmage-region-gen-label", text: "Seed" });
     const seed = seedRow.createEl("input", { type: "number", value: String(this.seed), attr: { "aria-label": "Seed" } });
     seed.addEventListener("change", () => { this.seed = Number(seed.value) >>> 0; this.regen(); });
-    seedRow.createEl("button", { text: "Reroll" }).addEventListener("click", () => {
+    form.createDiv({ cls: "duckmage-region-gen-row" }).createEl("button", { text: "Reroll" }).addEventListener("click", () => {
       this.seed = Math.floor(Math.random() * 1e6);
       seed.value = String(this.seed);
       this.regen();
@@ -352,6 +354,8 @@ export class NewOverworldModal extends HexmakerModal {
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
     const create = row.createEl("button", { text: regen ? "Regenerate" : "Create", cls: "mod-cta" });
+    contentEl.appendChild(seedRow);
+    this.place("NewOverworld.seed", seedRow);
     if (regen && !canReshape(regen)) {
       create.disabled = true;
       create.addClass("is-locked");
@@ -493,6 +497,8 @@ export class NewOverworldModal extends HexmakerModal {
     map.regions = withMeshFields({ footprint: "rect", size: this.regionSize, blend: this.blend, palette: this.palette }, stagger, newWorldId);
     if (this.result.river.length > 1) map.biomeRiver = formatBiomeRiver(this.result.river);
     if (this.poolPath) map.biomePool = this.poolPath;
+    // The layout's seed is kept with the map (its `seed:`), so the roll is on record.
+    map.seed ??= this.seed;
     map.biomeGaps = unclimatedText(this.unclimated);
     // Saved with the map (`seed:`), so its layout can be made again.
     map.seed = this.seed;

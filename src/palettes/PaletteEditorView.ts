@@ -13,6 +13,8 @@ import { paletteKind } from "../mapKinds";
 import { impassableSourceText, isImpassable, setImpassable } from "../impassable";
 import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
 import { PathTypeEditorModal } from "../hex-map/PathTypeEditorModal";
+import { isDebugMode, onDebugModeChange } from "../ui/debugMode";
+import { isShown } from "../ui/placement";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -45,6 +47,8 @@ export class PaletteEditorView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    // Debug-only columns (Submap defaults' Options) come and go with debug mode.
+    this.register(onDebugModeChange(() => this.render()));
     this.generators = await listGeneratorKinds(this.plugin);
     this.render();
   }
@@ -398,12 +402,14 @@ export class PaletteEditorView extends ItemView {
     contentEl.createEl("h3", { text: "Submap defaults" });
     contentEl.createDiv({
       cls: "setting-item-description",
-      text: "When you make a submap from a hex of one of these terrains, the new-submap window starts with these choices. Tick \"Default for …\" there to add rows from real use.",
+      text: "When you make a submap from a hex of one of these terrains, the new-submap window starts with these choices. Tick \"Use this … for new submaps\" under Advanced there to add rows from real use.",
     });
+    // The raw generator options cell is a Debug control (one column per row, so shown only in debug mode).
+    const showOptions = isShown("PaletteEditor.generatorOptions", isDebugMode(this.app));
     const defaults = pal.submapDefaults ?? {};
     const table = contentEl.createEl("table", { cls: "duckmage-pe-table duckmage-pe-defaults" });
     const head = table.createEl("thead").createEl("tr");
-    for (const h of ["Terrain", "Palette", "Size", "Generator", "Options", "Base terrain", ""]) head.createEl("th", { text: h });
+    for (const h of ["Terrain", "Palette", "Size", "Generator", ...(showOptions ? ["Options"] : []), "Base terrain", ""]) head.createEl("th", { text: h });
     const body = table.createEl("tbody");
 
     const update = (terrain: string, patch: (d: SubmapDefault) => void) => {
@@ -453,16 +459,18 @@ export class PaletteEditorView extends ItemView {
       genSel.value = d.generator ?? "";
       genSel.addEventListener("change", () => update(terrain, (x) => { if (genSel.value) x.generator = genSel.value; else delete x.generator; }));
 
-      const opts = tr.createEl("td").createEl("input", { type: "text", attr: { placeholder: "Key=value; key=value", "aria-label": "Generator options" } });
-      opts.value = d.options ? Object.entries(d.options).map(([k, v]) => `${k}=${v}`).join("; ") : "";
-      opts.addEventListener("change", () => update(terrain, (x) => {
-        const parsed: Record<string, string> = {};
-        for (const part of opts.value.split(/[;,]/)) {
-          const m = /^\s*([^=]+?)\s*=\s*(.*?)\s*$/.exec(part);
-          if (m) parsed[m[1]] = m[2];
-        }
-        if (Object.keys(parsed).length) x.options = parsed; else delete x.options;
-      }));
+      if (showOptions) {
+        const opts = tr.createEl("td").createEl("input", { type: "text", attr: { placeholder: "Key=value; key=value", "aria-label": "Generator options" } });
+        opts.value = d.options ? Object.entries(d.options).map(([k, v]) => `${k}=${v}`).join("; ") : "";
+        opts.addEventListener("change", () => update(terrain, (x) => {
+          const parsed: Record<string, string> = {};
+          for (const part of opts.value.split(/[;,]/)) {
+            const m = /^\s*([^=]+?)\s*=\s*(.*?)\s*$/.exec(part);
+            if (m) parsed[m[1]] = m[2];
+          }
+          if (Object.keys(parsed).length) x.options = parsed; else delete x.options;
+        }));
+      }
 
       const base = tr.createEl("td").createEl("input", { type: "text", attr: { placeholder: "—", "aria-label": "Base terrain" } });
       base.value = d.baseTerrain ?? "";

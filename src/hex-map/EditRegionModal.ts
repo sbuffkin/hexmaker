@@ -284,6 +284,9 @@ export class EditRegionModal extends HexmakerModal {
       this.notesTimer = window.setTimeout(() => void this.saveNotes(), NOTES_SAVE_MS);
     });
     notes.addEventListener("blur", () => void this.saveNotes());
+    // The simple job first (UI worksheet: name, enter, notes are Simple):
+    // notes sit right under the header, above the biome and the facts.
+    head.after(notesSec);
   }
 
   /** Write typed notes into the region map note's Notes section. */

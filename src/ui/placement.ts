@@ -173,6 +173,118 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "GenPage.seed": "advanced/Seed",
   "GenPage.seedLock": "advanced/Seed",
   "BiomePage.seed": "advanced/Seed",
+  // ── Owner worksheet 2026-10-11 (dev/ui-inventory/inputs-tags-resolved.json):
+  // maps, new maps, regions/overworlds/biomes, world types, palette editor,
+  // random tables, workflows, export. simple = main, advanced = advanced,
+  // overkill = debug; dropped controls were removed from the code. ──
+  // Maps modal › Maps list
+  "MapModal.mapRowContextGenerator": "advanced",
+  "MapModal.mapRowContextMakeGenerator": "advanced",
+  // Maps modal › Properties
+  "MapProps.sectionTablePicker": "advanced",
+  "MapModal.propsFolderName": "debug",
+  "MapModal.propsRenameFolder": "debug",
+  "MapModal.propsStagger": "main",
+  "MapModal.propsTerrainTheme": "advanced",
+  "MapModal.propsDelete": "main",
+  "MapModal.propsDeleteConfirm": "main",
+  // Maps modal › Weather & rumours
+  "MapModal.propsWeatherTable": "advanced",
+  "MapModal.propsWeatherClear": "advanced",
+  "MapModal.propsRumoursTable": "advanced",
+  "MapModal.propsRumoursClear": "advanced",
+  // Maps modal › Background image
+  "MapProps.backgroundImagePicker": "advanced",
+  // New maps & map links › New map form
+  "NewMap.rememberPalette": "advanced",
+  "NewMap.rememberSize": "advanced",
+  "NewMap.rememberGenerator": "advanced",
+  "NewMap.rememberBase": "advanced",
+  // New maps & map links › New map form: More
+  "NewMapSetup.backgroundImagePicker": "advanced",
+  "NewMap.folderName": "debug",
+  "NewMap.startCoords": "advanced",
+  "NewMap.stagger": "main",
+  "NewMap.bgPick": "advanced",
+  "NewMap.bgClear": "advanced",
+  // New maps & map links › Generator options (world)
+  "NewMap.overlandWater": "advanced",
+  "NewMap.overlandClimate": "advanced",
+  "NewMap.overlandRelief": "advanced",
+  "NewMap.overlandSea": "advanced",
+  "NewMap.planetRelief": "advanced",
+  "NewMap.regionDetailInfluence": "advanced",
+  "NewMap.regionDetailVariety": "advanced",
+  // New maps & map links › Generator options (space)
+  "NewMap.starRouteType": "advanced",
+  "NewMap.orbitsPathType": "advanced",
+  // New maps & map links › New land beside a map
+  "WalkOW.seed": "debug",
+  // Regions, overworlds & biomes › New overworld
+  "NewOverworld.seed": "debug",
+  // Regions, overworlds & biomes › Biome library & biome form
+  "BiomeForm.chance": "debug",
+  // Regions, overworlds & biomes › Biome picker & paint
+  "BiomePicker.enterRegion": "main",
+  // Regions, overworlds & biomes › Region settings
+  "RegionGen.wigglyBorders": "debug",
+  "RegionGen.seed": "debug",
+  // Regions, overworlds & biomes › Edit region
+  "EditRegion.name": "main",
+  "EditRegion.enterRegion": "main",
+  "EditRegion.openMapNote": "main",
+  "EditRegion.locationsList": "main",
+  "EditRegion.notes": "main",
+  // Space: world types › Worlds tab
+  "WorldTypes.worldGenerator": "debug",
+  "WorldTypes.worldOptions": "debug",
+  // Space: world types › Preview
+  "WorldTypes.previewMap": "debug",
+  "WorldTypes.previewOrbit": "debug",
+  "WorldTypes.previewStar": "debug",
+  "WorldTypes.previewTemperature": "debug",
+  "WorldTypes.previewRolls": "debug",
+  // Palette editor › Submap defaults
+  "PaletteEditor.generatorOptions": "debug",
+  // Random tables › Tables list
+  "RTView.refreshList": "debug",
+  "RTView.tablesTree": "main",
+  "RTView.folderMenuRollPicker": "advanced",
+  "RTView.folderMenuEncounters": "advanced",
+  "RTView.fileMenuRollPicker": "advanced",
+  "RTView.fileMenuEncounters": "advanced",
+  "RTView.generateFromFolder": "advanced",
+  // Random tables › Table detail
+  "RTView.refreshLinked": "debug",
+  "RTView.copyRollLink": "advanced",
+  "RTView.roll": "main",
+  // Random tables › Rolling
+  "RollModal.roll": "main",
+  "RollerBlock.roll": "main",
+  // Random tables › Table editor
+  "TableEditor.minusOneAll": "advanced",
+  "TableEditor.plusOneAll": "advanced",
+  "TableEditor.import": "advanced",
+  "TableEditor.linkedFolder": "advanced",
+  "TableEditor.excludeRollPicker": "advanced",
+  "TableEditor.excludeEncounters": "advanced",
+  // Export › Map export
+  "MapExport.boldPaths": "main",
+  "MapExport.showLinkBadges": "main",
+  "MapExport.showFactionOverlay": "main",
+  "MapExport.showRegionOverlay": "advanced",
+  "MapExport.pdfColumnsFold": "main",
+  "MapExport.exportPng": "main",
+  "MapExport.exportPdf": "main",
+  "MapExport.exportManual": "main",
+  // Export › Map export: Hexcrawl manual
+  "MapExport.playerEdition": "main",
+  "MapExport.manualPartLegend": "main",
+  "MapExport.manualPartTables": "main",
+  "MapExport.manualPartFactions": "main",
+  "MapExport.manualPartIndex": "main",
+  // Export › Hex export
+  "HexExport.exportMarkdown": "main",
 };
 
 /** Read a placement value: its layer and, for `advanced/<Sub>`, the sub-section. Null when it isn't one. */

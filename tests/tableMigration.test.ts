@@ -6,7 +6,8 @@ import type { App } from "obsidian";
 import { MemVault } from "./helpers/memVault";
 import { parseRandomTable, parseRandomTableWithReport, resolveTable } from "../src/random-tables/randomTable";
 import { isTableNotePath, planTableMigration } from "../src/random-tables/tableMigration";
-import { checkTables, formatTableReport, migrateTables, surveyTableMigration, writeTableReport } from "../src/random-tables/tableMaintenance";
+import { checkTables, formatTableReport, migrateTables, surveyTableMigration, upgradeTableRangesOnce, writeTableReport } from "../src/random-tables/tableMaintenance";
+import { Notice } from "obsidian";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
@@ -175,5 +176,89 @@ describe("Check tables report", () => {
     expect(v.files.get(p)).toBe(text);
     // The report is a _ note, so it's never a table itself.
     expect(isTableNotePath(p, "tables", "")).toBe(false);
+  });
+});
+
+describe("silent one-time roll-ranges upgrade (DJ-Q6: no prompt)", () => {
+  function host(v: MemVault, settings: { tableRangesUpgraded?: boolean } = {}) {
+    let saves = 0;
+    return {
+      app: app(v),
+      manifest: { dir: "plugin" },
+      settings: { tablesFolder: "tables", workflowsFolder: "workflows", ...settings } as { tablesFolder: string; workflowsFolder: string; tableRangesUpgraded?: boolean },
+      saveSettings: async () => { saves++; },
+      get saves() { return saves; },
+    };
+  }
+
+  /** Each note write, tagged with whether a backup existed by then. */
+  function watchWrites(v: MemVault): string[] {
+    const seen: string[] = [];
+    const mv = v as unknown as { put: (p: string, c: string) => void };
+    const put = mv.put.bind(v);
+    mv.put = (p: string, c: string) => {
+      seen.push(v.binaries.size ? "after-backup" : "before-backup");
+      put(p, c);
+    };
+    return seen;
+  }
+
+  it("backs the tables up before writing, adds ranges, records it and says so once", async () => {
+    const v = vault();
+    const writes = watchWrites(v);
+    const h = host(v);
+    Notice.shown.length = 0;
+    const res = await upgradeTableRangesOnce(h);
+    expect(res?.changed).toEqual(["tables/beach.md"]);
+    expect(writes).toEqual(["after-backup"]);
+    expect([...v.binaries.keys()][0]).toMatch(/^plugin\/backups\/table-ranges-/);
+    expect(v.files.get("tables/beach.md")).toBe(LEGACY_MIGRATED);
+    expect(h.settings.tableRangesUpgraded).toBe(true);
+    expect(Notice.shown.map((n) => n.msg)).toEqual(["Added roll ranges to 1 table (backed up)."]);
+  });
+
+  it("runs once: after a recorded run, the next start does nothing", async () => {
+    const v = vault();
+    const h = host(v);
+    await upgradeTableRangesOnce(h);
+    const after = new Map(v.files);
+    const backups = v.binaries.size;
+    expect(await upgradeTableRangesOnce(h)).toBeNull();
+    expect(v.files).toEqual(after);
+    expect(v.binaries.size).toBe(backups);
+    expect(h.saves).toBe(1);
+  });
+
+  it("if the backup fails nothing changes and nothing is recorded (it tries again next start)", async () => {
+    const v = vault();
+    v.failBinary = true;
+    const before = new Map(v.files);
+    const h = host(v);
+    const res = await upgradeTableRangesOnce(h);
+    expect(res?.error).toMatch(/backup/);
+    expect(v.files).toEqual(before);
+    expect(h.settings.tableRangesUpgraded).toBeUndefined();
+    expect(h.saves).toBe(0);
+    v.failBinary = false;
+    expect((await upgradeTableRangesOnce(h))?.changed).toEqual(["tables/beach.md"]);
+  });
+
+  it("writes no note when nothing needs ranges (smoke C5): only the record, no notice", async () => {
+    const v = new MemVault({ "tables/done.md": "---\ndice: 6\n---\n| d6 | Result | Weight |\n|---|---|---|\n| 1–6 | a | 1 |\n" });
+    const writes = watchWrites(v);
+    const h = host(v);
+    Notice.shown.length = 0;
+    const res = await upgradeTableRangesOnce(h);
+    expect(res?.changed).toEqual([]);
+    expect(writes).toEqual([]);
+    expect(v.binaries.size).toBe(0);
+    expect(h.settings.tableRangesUpgraded).toBe(true);
+    expect(Notice.shown).toEqual([]);
+  });
+
+  it("the prompt is gone: no Not now / Don't ask again buttons, no tableRangesPrompt setting", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/random-tables/tableMaintenance.ts"), "utf8");
+    expect(src).not.toMatch(/Don't ask again|Not now|maybePromptTableRanges|tableRangesPrompt/);
+    expect(readFileSync(path.join(process.cwd(), "src/types.ts"), "utf8")).not.toMatch(/tableRangesPrompt/);
   });
 });

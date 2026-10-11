@@ -48,6 +48,8 @@ import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import type { TerrainColor } from "../types";
 import { TAB_ORDER, WorldTypesDraft, type WorldTypesTab } from "./worldTypesDraft";
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "../hex-map/saveStatus";
+import { isDebugMode } from "../ui/debugMode";
+import { isShown, layerOf } from "../ui/placement";
 
 /** Why world types can't be edited from this map now, or undefined. */
 export function worldTypesEditLock(plugin: HexmakerPlugin, mapName: string | undefined): string | undefined {
@@ -84,6 +86,16 @@ const PLACEHOLDERS: Record<string, string> = {
 /** Columns shown on a row's first line (what is picked, and where); the rest are its map setup. */
 const PICK_COLUMNS: WorldTypeColumn[] = ["World", "Weight", "Map", "Orbit", "Stars", "Temperature"];
 const SETUP_COLUMNS: WorldTypeColumn[] = ["Mainworld", "Size", "Generator", "Options", "Palette", "Base", "Notes"];
+/** Per-row cells the placement map can move (a row can't have its own dropdown: Debug ones show inline only in debug mode). */
+const PLACED_CELLS: Partial<Record<WorldTypeColumn, string>> = { Generator: "WorldTypes.worldGenerator", Options: "WorldTypes.worldOptions" };
+/** The preview's controls, by label. */
+const PREVIEW_IDS: Record<string, string> = {
+  Map: "WorldTypes.previewMap",
+  Orbit: "WorldTypes.previewOrbit",
+  Star: "WorldTypes.previewStar",
+  Temperature: "WorldTypes.previewTemperature",
+  Rolls: "WorldTypes.previewRolls",
+};
 
 const col = (c: WorldTypeColumn) => WORLD_TYPE_COLUMNS.indexOf(c);
 
@@ -116,6 +128,7 @@ const SUGGEST_TYPES: Record<string, string[]> = {
 };
 
 export class WorldTypesModal extends HexmakerModal {
+  protected surfaceId = "WorldTypes";
   private tableName: string;
   private tab: WorldTypesTab;
   /** The rows being edited and when they need saving (set once the store is ready). */
@@ -455,7 +468,13 @@ export class WorldTypesModal extends HexmakerModal {
       const top = this.tab === "worlds"
         ? line("duckmage-world-types-line", PICK_COLUMNS)
         : line("duckmage-world-types-line", spec.columns);
-      if (this.tab === "worlds") line("duckmage-world-types-line is-setup", SETUP_COLUMNS);
+      if (this.tab === "worlds") {
+        const debugOn = isDebugMode(this.app);
+        line("duckmage-world-types-line is-setup", SETUP_COLUMNS.filter((c) => {
+          const id = PLACED_CELLS[c];
+          return !id || isShown(id, debugOn);
+        }));
+      }
       const tools = top.createDiv({ cls: "duckmage-world-types-tools" });
       const btn = (text: string, label: string, fn: () => void, disabled: boolean, after: () => { row: number; target: "up" | "down" | "list" }, keep = false) => {
         const b = tools.createEl("button", { text, attr: { "aria-label": label, title: label } });
@@ -553,8 +572,24 @@ export class WorldTypesModal extends HexmakerModal {
     el.empty();
     const p = this.preview;
     const controls = el.createDiv({ cls: "duckmage-world-types-preview-controls" });
+    // Controls the placement map puts in Debug go in a preview box there.
+    const debugBox = (): HTMLElement | null => {
+      const dbg = this.section("debug");
+      if (!dbg) return null;
+      let box = dbg.querySelector<HTMLElement>(":scope > .duckmage-world-types-preview-controls");
+      if (!box) {
+        dbg.createDiv({ cls: "setting-item-description", text: "Preview" });
+        box = dbg.createDiv({ cls: "duckmage-world-types-preview-controls" });
+      }
+      return box;
+    };
+    debugBox()?.empty();
     const select = (label: string, options: [string, string][], value: string, set: (v: string) => void) => {
-      const l = controls.createEl("label", { text: `${label} ` });
+      const id = PREVIEW_IDS[label];
+      const layer = id ? layerOf(id) : "main";
+      const at = layer === "main" || layer === "more" ? controls : layer === "hidden" ? null : layer === "advanced" ? this.section("advanced") : debugBox();
+      if (!at) return;
+      const l = at.createEl("label", { text: `${label} ` });
       const s = l.createEl("select", { attr: { "aria-label": `Preview ${label.toLowerCase()}` } });
       for (const [v, t] of options) s.createEl("option", { value: v, text: t });
       s.value = value;
