@@ -102,11 +102,28 @@ export function placedBiomes(plugin: HexmakerPlugin, overworldName: string): Map
     const id = biomeByRef(m.biome?.generator);
     if (id) out.set(m.parent.hex, id);
   }
+  // The overworld's own Biome column wins (set with the biome, before any region exists).
+  for (const [k, h] of plugin.mapStore.all(overworldName)) {
+    const id = biomeByRef(h.biome);
+    if (id) out.set(k, id);
+  }
   return out;
+}
+
+/**
+ * Record hex `hex`'s biome in the overworld's Biome column when its
+ * terrain can't say it (a user's biome), else clear it. Not flushed.
+ */
+export function recordHexBiome(plugin: HexmakerPlugin, overworldName: string, hex: string, biome: BiomeId, terrain: string | undefined): void {
+  const reads = terrain ? biomeForTerrain(terrain, plugin.getMapPalette(overworldName)) : undefined;
+  const want = reads === biome ? undefined : biome;
+  if ((plugin.mapStore.get(overworldName, hex)?.biome ?? undefined) !== want) plugin.mapStore.set(overworldName, hex, { biome: want ?? null });
 }
 
 /** One overworld hex's biome: its placed biome, else read from its terrain. */
 export function hexBiomeAt(plugin: HexmakerPlugin, overworldName: string, hex: string): BiomeId | undefined {
+  const own = biomeByRef(plugin.mapStore.get(overworldName, hex)?.biome);
+  if (own) return own;
   const region = regionMapAt(plugin.settings.maps, overworldName, hex);
   const placed = region ? biomeByRef(region.biome?.generator) : undefined;
   if (placed) return placed;
@@ -370,10 +387,9 @@ export async function setBiomeAt(
   const hex = `${px}_${py}`;
   const lock = reshapeLock(plugin, parentName, px, py);
   if (lock) return { error: lock };
-  if (plugin.mapStore.get(parentName, hex)?.terrain !== terrain) {
-    plugin.mapStore.set(parentName, hex, { terrain });
-    await plugin.mapStore.flush();
-  }
+  if (plugin.mapStore.get(parentName, hex)?.terrain !== terrain) plugin.mapStore.set(parentName, hex, { terrain });
+  recordHexBiome(plugin, parentName, hex, biome, terrain);
+  await plugin.mapStore.flush();
   const existing = regionMapAt(plugin.settings.maps, parentName, hex);
   if (existing) {
     await regenerateRegion(plugin, existing.name, { ...opts, biome });

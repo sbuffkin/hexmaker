@@ -16,6 +16,9 @@ const PALETTES_FOLDER_DESC =
 const BIOMES_FOLDER_DESC =
   "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
 
+const BIOME_POOLS_FOLDER_DESC =
+  "Vault-relative folder for biome pool notes (each lists the biomes a generated overworld may use). Defaults to a biome-pools folder inside the world folder.";
+
 // ---------------------------------------------------------------------------
 // Obsidian 1.13 declarative settings API — local structural types.
 //
@@ -125,6 +128,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "templatesFolder",
   "palettesFolder",
   "biomesFolder",
+  "biomePoolsFolder",
 ]);
 
 /** Settings keys whose change should re-render open hex map views. */
@@ -665,6 +669,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
         "biomesFolder",
         "World/biomes",
         BIOMES_FOLDER_DESC,
+      ),
+      folderText(
+        "Biome pools folder",
+        "biomePoolsFolder",
+        "World/biome-pools",
+        BIOME_POOLS_FOLDER_DESC,
       ),
       {
         type: "group",
@@ -1575,6 +1585,19 @@ export class HexmakerSettingTab extends PluginSettingTab {
             this.plugin.settings.biomesFolder = normalizeFolder(value ?? "");
             await this.plugin.saveSettings();
             void this.plugin.biomeStore.reload();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("Biome pools folder")
+      .setDesc(BIOME_POOLS_FOLDER_DESC)
+      .addText((text) =>
+        text
+          .setPlaceholder("World/biome-pools")
+          .setValue(this.plugin.settings.biomePoolsFolder ?? "")
+          .onChange(async (value) => {
+            this.plugin.settings.biomePoolsFolder = normalizeFolder(value ?? "");
+            await this.plugin.saveSettings();
           }),
       );
 

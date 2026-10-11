@@ -23,7 +23,9 @@ import { hasFeature } from "../featureLevel";
 import { renderAdvancedHint, withFeature } from "../advancedHints";
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
-import { GenerateRegionsModal } from "./OverworldModals";
+import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
+import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
+import { canReshape } from "../workMode";
 import { meshes } from "../overworld/regionWorld";
 import { missingRegionHexes } from "../overworld/regionsVault";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
@@ -160,6 +162,14 @@ export class MapModal extends HexmakerModal {
           this.render();
           this.onChanged();
         }).open();
+      });
+      // The first pass again, over the whole map (God only; locked hexes kept).
+      const genRow = el.createDiv({ cls: "duckmage-region-row" });
+      const gen = genRow.createEl("button", { text: "Generate overworld…" });
+      genRow.createSpan({ cls: "duckmage-map-origin-desc", text: canReshape(map) ? "Lay out biomes from a pool again and remake the regions. Locked hexes stay." : REGENERATE_LOCKED_HINT });
+      gen.addEventListener("click", () => {
+        this.close();
+        new NewOverworldModal(this.app, this.plugin, () => this.onChanged(), map.name).open();
       });
     }
     if (!regions.length) return;

@@ -99,6 +99,12 @@ export interface HexData {
   locations?: string[];
   locked?: boolean;
   /**
+   * The hex's biome (an id or name of a biome note), on an overworld: set
+   * when its terrain alone can't say it (a user's biome paints a terrain
+   * that reads back as a built-in one). The optional "Biome" column.
+   */
+  biome?: string;
+  /**
    * Cells of Hexes-table columns this build doesn't know (header → value),
    * in the table's column order. Kept opaque and written back unchanged, so
    * an older build rewriting the note never drops a newer build's column.
@@ -380,6 +386,7 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   // Work mode: play, build or god (src/workMode.ts).
   ["workMode", "mode", "str"],
   ["biomeRiver", "biome-river", "str"],
+  ["biomePool", "biome-pool", "note"],
   ["showCoords", "show-coords", "bool"],
   ["showTerrainIcons", "show-terrain-icons", "bool"],
   ["showIconOverrides", "show-icon-overrides", "bool"],
@@ -888,9 +895,12 @@ const FRONTMATTER = /^---[ \t]*\n(?:([\s\S]*?)\n)?---[ \t]*(\n|$)/;
 
 // ── tables ───────────────────────────────────────────────────────────────
 
-const HEX_HEADERS = ["Hex", "Name", "Terrain", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked"];
-/** Known columns written only when the table has them or some row needs them. */
-const OPTIONAL_HEX_HEADERS = new Set(["region map"]);
+const HEX_HEADERS = ["Hex", "Name", "Terrain", "Biome", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked"];
+/** Known columns written only when the table has them or some row needs them (column → does a row need it). */
+const OPTIONAL_HEX_HEADERS: Record<string, (h: HexData) => boolean> = {
+  "region map": (h) => !!h.regionMap,
+  biome: (h) => !!h.biome,
+};
 /** `## Paths` (format 5): what each path is. Route is derived. */
 const PATH_HEADERS = ["Path", "Type", "Route", "Notes"];
 /** `## Path routes`: where each path goes. Pure input, nothing derived. */
@@ -912,6 +922,7 @@ const HEX_COL_ALIASES: Record<string, string> = {
   // Format 2's one-submap column: read as Locations, renamed on write.
   submap: "locations", submaps: "locations",
   locked: "locked",
+  biome: "biome",
 };
 const PATH_COL_ALIASES: Record<string, string> = {
   path: "path", paths: "path", pathname: "path",
@@ -1031,7 +1042,7 @@ export function compareHexKeys(a: string, b: string): number {
 
 /** Anything besides terrain set on a hex. */
 function hasNonTerrainData(h: HexData): boolean {
-  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.regionMap || (h.locations && h.locations.length) || h.locked
+  return !!(h.name || h.icon || (h.gmIcons && h.gmIcons.length) || h.region || h.regionMap || (h.locations && h.locations.length) || h.locked || h.biome
     || (h.extra && Object.values(h.extra).some(Boolean)));
 }
 
@@ -1098,6 +1109,7 @@ const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = 
   hex: (k) => k,
   name: (_k, h) => h.name,
   terrain: (_k, h) => h.terrain,
+  biome: (_k, h) => h.biome,
   icon: (_k, h) => h.icon,
   "gm icons": (_k, h) => h.gmIcons?.join(", "),
   region: (_k, h) => (h.region ? regionLinkText(h.region) : undefined),
@@ -1108,7 +1120,7 @@ const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = 
 
 function hexTable(hexes: Map<string, HexData>, baseTerrain?: string, existing?: string[], keptRows: string[] = []): string {
   const rows = hexRowsToWrite(hexes, baseTerrain);
-  const skip = new Set([...OPTIONAL_HEX_HEADERS].filter((c) => c !== "region map" || !rows.some(([, h]) => h.regionMap)));
+  const skip = new Set(Object.entries(OPTIONAL_HEX_HEADERS).filter(([, needs]) => !rows.some(([, h]) => needs(h))).map(([c]) => c));
   const headers = columnOrder(HEX_HEADERS, HEX_COL_ALIASES, existing, extraHeaders(rows.map(([, h]) => h)), skip);
   const lines = tableHead(headers);
   for (const [k, h] of rows) {
@@ -1264,7 +1276,7 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
   const bad: MapNoteProblem[] = [];
   if (!t) return { rows: out, bad };
   const col = (name: string) => t.cols.indexOf(name);
-  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked") };
+  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked"), biome: col("biome") };
   // Locations may sit in more than one column (a Submap column next to a
   // Locations one): all are read, in column order.
   const locCols = t.cols.flatMap((c, i) => (c === "locations" ? [i] : []));
@@ -1286,6 +1298,8 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
     // Notes from before hex names have no Name column (index -1): no name.
     if (get(ci.name)) h.name = get(ci.name);
     if (get(ci.terrain)) h.terrain = get(ci.terrain);
+    const biome = get(ci.biome);
+    if (biome) h.biome = noteName(biome) || biome;
     if (get(ci.icon)) h.icon = get(ci.icon);
     const gm = get(ci.gm);
     if (gm) h.gmIcons = gm.split(/[,;]/).map((s) => s.trim()).filter(Boolean);

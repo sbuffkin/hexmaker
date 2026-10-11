@@ -221,6 +221,8 @@ export interface MapData {
 	/** Overworlds made by World biomes: the river's hexes, source to mouth,
 	 *  as "x,y > x,y > …" (biome data drawn on the overworld; not a path). */
 	biomeRiver?: string;
+	/** Overworlds: the biome pool note (vault path) its biomes were placed from (`biome-pool: "[[…]]"`). */
+	biomePool?: string;
 	backgroundImage?: MapBackgroundImage;
 	/** Optional independent transform applied to the hex grid container,
 	 *  used during background-image calibration so the user can resize/shift
@@ -347,6 +349,10 @@ export interface HexmakerPluginSettings {
 	biomesSeeded?: string[];
 	/** Shipped biomes whose notes got their climate added (ids): once each, so a climate cleared by hand stays cleared. */
 	biomeClimatesSeeded?: string[];
+	/** Vault folder for biome pool notes; blank = `<worldFolder>/biome-pools`. */
+	biomePoolsFolder?: string;
+	/** True once the shipped "All biomes" pool note was written (once, so a deleted one stays deleted). */
+	biomePoolSeeded?: boolean;
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
 	/**

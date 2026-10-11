@@ -8587,3 +8587,39 @@ textarea.duckmage-edit-region-notes-input {
     flex: 1 1 auto;
     min-width: 6em;
 }
+/* Generate overworld: the biome pool list (compact, scrolls when long). */
+.duckmage-ow-pool-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15em, 1fr));
+    gap: 2px 10px;
+    max-height: 14em;
+    overflow-y: auto;
+    margin: 4px 0;
+}
+.duckmage-ow-pool-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.duckmage-ow-pool-swatch {
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 2px;
+    flex: none;
+    background: var(--duckmage-swatch, transparent);
+}
+.duckmage-ow-pool-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-ow-pool-tag {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-ow-pool-item .duckmage-biome-weight {
+    width: 3.5em;
+}

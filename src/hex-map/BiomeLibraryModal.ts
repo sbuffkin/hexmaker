@@ -253,7 +253,7 @@ export class BiomeFormModal extends HexmakerModal {
     };
     tick("Coast only", cl.coastal, (v) => { cl.coastal = v; });
     tick("Rare", cl.rare, (v) => { cl.rare = v; });
-    clBox.createEl("p", { cls: "setting-item-description", text: "When set, World biomes can place this biome where the climate fits, like a built-in one. Left blank, it's only placed by hand. Temperature: cold, cool, mild, warm, hot; moisture: dry, moderate, wet; or numbers from 0 to 1." });
+    clBox.createEl("p", { cls: "setting-item-description", text: "When set, the overworld generator can place this biome where the climate fits, like a built-in one. Left blank, it's only placed by hand. Temperature: cold, cool, mild, warm, hot; moisture: dry, moderate, wet; or numbers from 0 to 1." });
 
     // Transitions.
     const trBox = form.createEl("details", { cls: "duckmage-biome-transitions" });
