@@ -439,18 +439,6 @@ describe("PaletteStore", () => {
 		expect(h.vault.files.has("world/palettes/Limited.md")).toBe(false);
 	});
 
-	it("palette notes deleted while closed stay deleted: dropped (backed up), not re-written", async () => {
-		await h.store.init();
-		h.vault.files.clear();
-		const fresh = makeHarness({ palettesMigrated: true });
-		fresh.settings.terrainPalettes = h.settings.terrainPalettes;
-		await fresh.store.init();
-		expect([...fresh.vault.files.keys()]).toEqual([]);
-		expect(fresh.settings.terrainPalettes).toEqual([]);
-		// data.json's copy is kept in a backup before it's dropped.
-		expect([...fresh.vault.raw.keys()].some((p) => p.includes("/backups/palettes-") && p.includes("/deleted-palettes"))).toBe(true);
-	});
-
 	it("an emptied palette list stays empty on load (no notes written)", async () => {
 		const fresh = makeHarness({ palettesMigrated: true });
 		fresh.settings.terrainPalettes = [];
@@ -462,14 +450,107 @@ describe("PaletteStore", () => {
 
 	it("a palette note that doesn't read is never taken as deleted", async () => {
 		await h.store.init();
-		h.vault.files.clear();
 		h.vault.files.set("world/palettes/Limited.md", "no table here");
-		const fresh = makeHarness({ palettesMigrated: true });
+		const fresh = makeHarness({ palettesMigrated: true, paletteNotes: h.settings.paletteNotes });
 		for (const [p, c] of h.vault.files) fresh.vault.files.set(p, c);
 		fresh.settings.terrainPalettes = h.settings.terrainPalettes;
 		await fresh.store.init();
-		expect(fresh.settings.terrainPalettes.length).toBe(2);
+		// Not a deletion: no backup, nothing dropped as deleted, the note left as written.
+		expect([...fresh.vault.raw.keys()].some((p) => p.includes("/deleted-palettes"))).toBe(false);
 		expect(fresh.vault.files.get("world/palettes/Limited.md")).toBe("no table here");
+	});
+
+	// SM-DEL guard: absence is deletion only with a record that the plugin wrote the note.
+	describe("deleted palette notes: only on a positive record", () => {
+		const backups = (hh: ReturnType<typeof makeHarness>) => [...hh.vault.raw.keys()].filter((p) => p.includes("/backups/palettes-") && p.includes("/deleted-palettes"));
+
+		it("records each palette's note path (and the folder) once the notes are written", async () => {
+			await h.store.init();
+			expect(h.settings.paletteNotes).toEqual({ folder: "world/palettes", notes: { Limited: "world/palettes/Limited.md", Expanded: "world/palettes/Expanded.md" } });
+		});
+
+		it("upgrade from data.json-only palettes (no record, no notes): keeps them and writes the notes", async () => {
+			for (const migrated of [false, true]) {
+				const fresh = makeHarness({ palettesMigrated: migrated });
+				await fresh.store.init();
+				expect(fresh.settings.terrainPalettes.map((p) => p.name).sort()).toEqual(["Expanded", "Limited"]);
+				expect([...fresh.vault.files.keys()].sort()).toEqual(["world/palettes/Expanded.md", "world/palettes/Limited.md"]);
+				expect(backups(fresh)).toEqual([]);
+			}
+		});
+
+		it("a deliberate deletion after the plugin wrote the notes removes them, with a backup", async () => {
+			await h.store.init();
+			const limited = h.vault.files.get("world/palettes/Limited.md")!;
+			h.vault.files.delete("world/palettes/Limited.md"); // deleted while Obsidian was closed
+			const fresh = makeHarness({ palettesMigrated: true, paletteNotes: h.settings.paletteNotes });
+			for (const [p, c] of h.vault.files) fresh.vault.files.set(p, c);
+			fresh.vault.folders.add("world").add("world/palettes");
+			fresh.settings.terrainPalettes = h.settings.terrainPalettes;
+			await fresh.store.init();
+			await fresh.store.sync();
+			expect(fresh.settings.terrainPalettes.map((p) => p.name)).toEqual(["Expanded"]);
+			expect(fresh.vault.files.has("world/palettes/Limited.md")).toBe(false);
+			expect(backups(fresh)).toHaveLength(1);
+			expect(fresh.settings.paletteNotes!.notes).toEqual({ Expanded: "world/palettes/Expanded.md" });
+			expect(limited).toContain("|");
+		});
+
+		it("every recorded note deleted: the list ends up empty, nothing re-written", async () => {
+			await h.store.init();
+			h.vault.files.clear();
+			const fresh = makeHarness({ palettesMigrated: true, paletteNotes: h.settings.paletteNotes });
+			fresh.settings.terrainPalettes = h.settings.terrainPalettes;
+			await fresh.store.init();
+			await fresh.store.sync();
+			expect(fresh.settings.terrainPalettes).toEqual([]);
+			expect([...fresh.vault.files.keys()]).toEqual([]);
+			expect(backups(fresh)).toHaveLength(1);
+		});
+
+		it("synced vault, notes arriving late: each palette comes back in its place when its note is created", async () => {
+			await h.store.init();
+			const notes = new Map(h.vault.files);
+			const fresh = makeHarness({ palettesMigrated: true, paletteNotes: h.settings.paletteNotes });
+			fresh.settings.terrainPalettes = h.settings.terrainPalettes;
+			const before = fresh.settings.terrainPalettes.map((p) => p.name);
+			const objects = [...fresh.settings.terrainPalettes];
+			await fresh.store.init(); // data.json arrived, the notes haven't yet
+			for (const [p, c] of notes) {
+				fresh.vault.files.set(p, c);
+				fresh.store.onModify(fresh.file(p)); // vault "create" event
+			}
+			await fresh.store.sync();
+			expect(fresh.settings.terrainPalettes.map((p) => p.name)).toEqual(before);
+			expect(fresh.settings.terrainPalettes[0]).toBe(objects[0]); // same objects, open views keep them
+			// Nothing was written over the arriving notes.
+			for (const [p, c] of notes) expect(fresh.vault.files.get(p)).toBe(c);
+		});
+
+		it("a palettes folder that doesn't match the record (moved, renamed setting): palettes kept and written there", async () => {
+			await h.store.init();
+			const fresh = makeHarness({ palettesMigrated: true, paletteNotes: h.settings.paletteNotes, palettesFolder: "elsewhere/pals" });
+			fresh.settings.terrainPalettes = h.settings.terrainPalettes;
+			await fresh.store.init();
+			expect(fresh.settings.terrainPalettes.map((p) => p.name).sort()).toEqual(["Expanded", "Limited"]);
+			expect([...fresh.vault.files.keys()].sort()).toEqual(["elsewhere/pals/Expanded.md", "elsewhere/pals/Limited.md"]);
+			expect(backups(fresh)).toEqual([]);
+			expect(fresh.settings.paletteNotes!.folder).toBe("elsewhere/pals");
+		});
+
+		it("changing the folder setting to a new empty folder while running: palettes kept and written there", async () => {
+			(globalThis as Record<string, unknown>).window ??= globalThis; // the re-attach timer
+			await h.store.init();
+			h.settings.palettesFolder = "new/pals";
+			await h.store.sync(); // schedules the re-attach once typing stops
+			await new Promise((r) => setTimeout(r, 1700));
+			await h.store.sync();
+			expect(h.settings.terrainPalettes.map((p) => p.name).sort()).toEqual(["Expanded", "Limited"]);
+			expect(h.vault.files.has("new/pals/Expanded.md")).toBe(true);
+			expect(h.vault.files.has("new/pals/Limited.md")).toBe(true);
+			expect(h.settings.paletteNotes!.folder).toBe("new/pals");
+			expect(backups(h)).toEqual([]);
+		});
 	});
 
 	it("round-trips child-palette between notes and palettes", async () => {

@@ -360,6 +360,13 @@ export interface HexmakerPluginSettings {
 	/** True once settings-only palettes were written out as notes. */
 	palettesMigrated: boolean;
 	/**
+	 * The palette notes the plugin has written or read (SM-DEL): the folder,
+	 * and each palette's note path by palette name. A palette counts as
+	 * deleted at startup only when it's recorded here, in the same folder,
+	 * and its note is gone; without a record its note is written again.
+	 */
+	paletteNotes?: { folder: string; notes: Record<string, string> };
+	/**
 	 * True once every path type's behaviour (avoid impassable, auto-route,
 	 * routing) was written out explicitly (PA5). Before that, blank cells in
 	 * palette notes are read with the old name rules (pathTypeLegacy.ts).
