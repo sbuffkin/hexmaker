@@ -12,7 +12,6 @@ import {
   setGmIconsInFile,
   setTerrainInFile,
   setIconOverrideInFile,
-  Frontmatter,
 } from "../frontmatter";
 import { HexEditorModal } from "./HexEditorModal";
 import { TerrainPickerModal } from "./TerrainPickerModal";
@@ -4941,9 +4940,12 @@ export class HexMapView extends ItemView {
       const path = this.plugin.hexPath(hx, hy, this.activeMapName);
       if (this.currentTerrainStroke) {
         if (!this.currentTerrainStroke.has(path)) {
-          const fmCache: Frontmatter | undefined =
-            this.app.metadataCache.getCache(path)?.frontmatter;
-          const oldTerrain = fmCache?.terrain ?? null;
+          // The terrain before this stroke: a write still queued for the
+          // hex, else the map data (the map note, via the store). Hex-note
+          // frontmatter no longer holds terrain, so reading it made undo
+          // clear a repainted hex instead of restoring it (smoke suite C6).
+          const pending = this.pendingTerrainWrites.get(path);
+          const oldTerrain = pending ? pending.terrain : getTerrainFromFile(this.app, path);
           this.currentTerrainStroke.set(path, {
             x: hx,
             y: hy,

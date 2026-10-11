@@ -152,7 +152,8 @@ export default class HexmakerPlugin extends Plugin {
       // migrate per-hex data out of hex notes on the first run.
       void this.biomeStore.init();
       void this.worldTypeStore.init();
-      void this.paletteStore.init().then(() => this.mapStore.init()).then(() => this.ensureTablesForNewTerrains());
+      const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
+      void storesReady.then(() => this.ensureTablesForNewTerrains());
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -170,11 +171,15 @@ export default class HexmakerPlugin extends Plugin {
       } else if (shouldNudge(this.settings, this.settings.maps.length)) {
         // A Simple user who's been at it a while: offer Advanced, once.
         this.settings.advancedNudgeAt = new Date().toISOString().slice(0, 10);
-        void this.saveSettings();
+        // Saved once the map notes are loaded: a save before that writes
+        // every map's (empty) path list back into data.json, though the
+        // paths live in the map notes (smoke suite C5).
+        void storesReady.then(() => this.saveSettings());
         new AdvancedNudgeModal(this.app, this).open();
       } else {
-        // Once after updating: offer roll ranges for older tables (asks first).
-        void maybePromptTableRanges(this);
+        // Once after updating: offer roll ranges for older tables (asks
+        // first). After the stores load, for the same reason.
+        void storesReady.then(() => maybePromptTableRanges(this));
       }
     });
 
@@ -558,8 +563,10 @@ export default class HexmakerPlugin extends Plugin {
       if (!mapName) return;
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as HexMapView).navigateToMap(mapName);
+        // Revealing loads a deferred (restored, never shown) tab first.
+        void this.app.workspace.revealLeaf(leaves[0]).then(() => {
+          if (leaves[0].view instanceof HexMapView) leaves[0].view.navigateToMap(mapName);
+        });
       } else {
         void this.app.workspace.getLeaf("tab")
           .setViewState({ type: VIEW_TYPE_HEX_MAP })
@@ -715,7 +722,8 @@ export default class HexmakerPlugin extends Plugin {
       await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP, active: true });
     }
     await this.app.workspace.revealLeaf(leaf);
-    (leaf.view as HexMapView).switchMapFromModal(name);
+    // Revealing loads a deferred tab, so this is the map view by now.
+    if (leaf.view instanceof HexMapView) leaf.view.switchMapFromModal(name);
   }
 
   openSetupWizard(): void {
@@ -885,7 +893,7 @@ export default class HexmakerPlugin extends Plugin {
     this.loadAvailableIcons();
     this.refreshHexMap();
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
-      void (leaf.view as HexTableView).loadTable();
+      if (leaf.view instanceof HexTableView) void leaf.view.loadTable();
     });
   }
 
@@ -996,8 +1004,10 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   refreshHexMap(): void {
+    // A tab restored at startup but not shown yet holds a deferred stand-in,
+    // not a HexMapView, until it's opened (and it renders then anyway).
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      (leaf.view as HexMapView).renderGrid();
+      if (leaf.view instanceof HexMapView) leaf.view.renderGrid();
     });
   }
 
@@ -1725,14 +1735,14 @@ export default class HexmakerPlugin extends Plugin {
     terrainOverrides: Map<string, string | null>,
   ): void {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      (leaf.view as HexMapView).renderGrid(terrainOverrides);
+      if (leaf.view instanceof HexMapView) leaf.view.renderGrid(terrainOverrides);
     });
   }
 
   /** Update terrain filter sets in all open hex table views after a rename. */
   refreshHexTableTerrainRename(oldName: string, newName: string): void {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
-      (leaf.view as HexTableView).renameTerrainInFilters(oldName, newName);
+      if (leaf.view instanceof HexTableView) leaf.view.renameTerrainInFilters(oldName, newName);
     });
   }
 
