@@ -377,7 +377,13 @@ export class BiomePanel {
       status.setText("Give at least one terrain type a weight.");
       return;
     }
-    const landBiome = plugin.biomeStore.list().find((b) => b.id !== this.fields.id && !b.generator && !b.shore && (b.landShare === undefined || b.landShare > 0.5) && b.mix.some((r) => r.type === "forest" || r.type === "grassland"))?.id ?? "grassland";
+    // The land beside it: the biome most made of lowland (forest, grassland) types.
+    const lowland = (b: BiomeNoteFields) => {
+      const total = b.mix.reduce((s, r) => s + r.weight, 0) || 1;
+      return b.mix.filter((r) => r.type === "forest" || r.type === "grassland").reduce((s, r) => s + r.weight, 0) / total;
+    };
+    const candidates = plugin.biomeStore.list().filter((b) => b.id !== this.fields.id && !b.generator && !b.shore);
+    const landBiome = candidates.sort((a, b) => lowland(b) - lowland(a))[0]?.id ?? this.fields.id;
     const t0 = activeWindow.performance.now();
     const plan = biomeSamplePlan(layout, palette, this.fields, BiomePanel.seed, BiomePanel.surround, landBiome);
     const b = regionBox(layout, 0, 0);
