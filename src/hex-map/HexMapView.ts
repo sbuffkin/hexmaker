@@ -2598,6 +2598,9 @@ export class HexMapView extends ItemView {
     const changed = this.modeBarTextEl.getText() !== (label ?? "");
     this.modeBarTextEl.setText(label ?? "");
     this.modeBarEl.toggle(label !== null);
+    // The path tool says more and has more controls: its text wraps instead of being cut off.
+    this.modeBarEl.toggleClass("is-path", this.drawingMode === "path");
+    this.modeBarTextEl.setAttr("title", label ?? "");
     if (label === null || !changed) return;
     // A tool just started or changed: pulse the bar so it's noticed
     // (round 4: a tester never saw it). The map does NOT move here: a tool
@@ -5481,6 +5484,9 @@ export class HexMapView extends ItemView {
           this.drawingMode = "path";
           this.isErasingMode = false;
           this.pathTool.selectPath(name);
+          // Show it: the list is for paths that are hard to find on the map.
+          const first = this.plugin.mapStore.paths(this.activeMapName).find((q) => q.name === name)?.branches[0]?.anchors[0];
+          if (first) { const [hx, hy] = first.split("_").map(Number); this.centerOnHex(hx, hy); }
           this.updateToolbarButtonStates();
           this.updatePathOverlay();
         },

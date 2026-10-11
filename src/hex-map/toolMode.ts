@@ -76,7 +76,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
         return `${name}: click to add (${how}) · Esc to finish${note}`;
       }
       if (s.pathSelected) {
-        const what = s.pathSummary ? ` (${s.pathSummary})` : "";
+        const what = s.pathSummary && s.pathSummary !== s.pathSelected ? ` (${s.pathSummary})` : "";
         return `${s.pathSelected}${what}: drag the line to reshape · click an end to continue · click the line to fork${note}`;
       }
       return `${type}: click to start a path · click a path to edit it${note}`;

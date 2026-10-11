@@ -8121,3 +8121,16 @@ button.duckmage-terrain-legend-chip {
     margin-top: 0.3em;
     color: var(--text-error);
 }
+
+/* Path tool: the mode bar text wraps (it has more to say and more controls). */
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path {
+    border-radius: 0.9em;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-text {
+    white-space: normal;
+    min-width: 14em;
+    line-height: 1.25;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-hint {
+    display: none;
+}

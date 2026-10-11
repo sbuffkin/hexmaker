@@ -460,6 +460,8 @@ export class PathTool {
   selectPath(name: string): void {
     const p = this.pathNamed(name);
     if (!p) return;
+    // Picked from the list before any type: new paths take this one.
+    if (!this.typeName) this.typeName = p.typeName;
     this.selected = p.name;
     this.active = null;
     this.pending = null;
@@ -471,6 +473,9 @@ export class PathTool {
 
   /** "New path" (mode bar): the next click starts a new path, even on top of another. */
   startNewPath(): void {
+    // No type picked yet (the tool was entered from "Paths on this map"):
+    // the new path takes the selected one's.
+    if (!this.typeName) this.typeName = this.currentType();
     this.selected = null;
     this.active = null;
     this.pending = null;
@@ -526,6 +531,8 @@ export class PathTool {
       case "none":
         break;
       case "start":
+        // No type picked yet: Alt-click beside a selected path takes its type.
+        if (!this.typeName) this.typeName = this.currentType();
         if (!this.typeName) {
           new Notice("Pick a path type first: click the path button.");
           return;
@@ -747,6 +754,7 @@ export class PathTool {
     }
     if (next && this.active && this.active.branch >= next.branches.length) this.active = null;
     this.hover = null;
+    this.hint = null;
     this.host.redraw();
     this.host.refreshBar();
   }

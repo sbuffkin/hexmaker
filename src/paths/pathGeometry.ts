@@ -282,7 +282,7 @@ const DASH_PX: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
 export const END_DOT_PX = { r: 5, stroke: 1.5 };
 
 /** The path tool's anchor handles on the selected path: radius (ends bigger) and outline, px at the default zoom. */
-export const HANDLE_PX = { r: 4, end: 6, stroke: 1.5 };
+export const HANDLE_PX = { r: 5, end: 7.5, stroke: 1.5 };
 
 export interface PathStroke {
   /** MapPath.name and branch index (data-path / data-branch on screen). */
