@@ -374,6 +374,12 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["createdWith", "created-with", "str"],
   // "region" or "location": this map's role under its parent hex.
   ["submapKind", "submap-kind", "str"],
+  ["regionSeed", "region-seed", "num"],
+  ["overworldView", "overworld-view", "str"],
+  ["showMinimap", "show-minimap", "bool"],
+  // Work mode: play, build or god (src/workMode.ts).
+  ["workMode", "mode", "str"],
+  ["biomeRiver", "biome-river", "str"],
   ["showCoords", "show-coords", "bool"],
   ["showTerrainIcons", "show-terrain-icons", "bool"],
   ["showIconOverrides", "show-icon-overrides", "bool"],

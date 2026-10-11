@@ -32,11 +32,11 @@ describe("palette derived cells (P1)", () => {
 	it("always writes the Impassable column, defaults in parentheses", () => {
 		const table = serializePaletteTable(terrains);
 		expect(table.split("\n")[0]).toBe("| Terrain | Color | Icon | Icon color | Category | Type | Impassable |");
-		expect(row(table, "ocean")).toBe("| ocean | #29507f |  |  |  | water | (yes) |");
-		expect(row(table, "crags")).toBe("| crags | #777777 |  |  |  |  | (no) |");
-		expect(row(table, "ford")).toBe("| ford | #4a82a5 |  |  |  | shallows | no |");
+		expect(row(table, "ocean")).toBe("| ocean | `#29507f` |  |  |  | water | (yes) |");
+		expect(row(table, "crags")).toBe("| crags | `#777777` |  |  |  |  | (no) |");
+		expect(row(table, "ford")).toBe("| ford | `#4a82a5` |  |  |  | shallows | no |");
 		// No type: blank, and the default for no type shows.
-		expect(row(table, "Mirror Mere")).toBe("| Mirror Mere | #0000ff |  |  |  |  | (no) |");
+		expect(row(table, "Mirror Mere")).toBe("| Mirror Mere | `#0000ff` |  |  |  |  | (no) |");
 	});
 
 	it("round-trips: parenthesised values read back as unset", () => {
@@ -52,13 +52,13 @@ describe("palette derived cells (P1)", () => {
 
 	it("a hand edit that removes the parentheses makes the value explicit", () => {
 		const note = buildPaletteNote(terrains)
-			.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | mountains | yes |")
-			.replace("| ocean | #29507f |  |  |  | water | (yes) |", "| ocean | #29507f |  |  |  | water | yes |");
+			.replace("| crags | `#777777` |  |  |  |  | (no) |", "| crags | `#777777` |  |  |  | mountains | yes |")
+			.replace("| ocean | `#29507f` |  |  |  | water | (yes) |", "| ocean | `#29507f` |  |  |  | water | yes |");
 		const parsed = parsePaletteNote(note)!;
 		expect(parsed.find((t) => t.name === "crags")).toEqual({ name: "crags", color: "#777777", type: "mountains", impassable: true });
 		// Same as the default, but now the user's own: kept explicit, written plain.
 		expect(parsed.find((t) => t.name === "ocean")).toEqual({ name: "ocean", color: "#29507f", type: "water", impassable: true });
-		expect(row(serializePaletteTable(parsed), "ocean")).toBe("| ocean | #29507f |  |  |  | water | yes |");
+		expect(row(serializePaletteTable(parsed), "ocean")).toBe("| ocean | `#29507f` |  |  |  | water | yes |");
 	});
 
 	it("older builds read the new cells as unset", () => {
@@ -86,8 +86,8 @@ describe("palette derived cells (P1)", () => {
 		]);
 		expect(paletteDerivedStale(old)).toBe(true);
 		const fresh = refreshPaletteDerived(old);
-		expect(fresh).toContain("| sea | #00f |  |  |  | water | (yes) |");
-		expect(fresh).toContain("| crags | #777 |  |  |  |  | (no) |");
+		expect(fresh).toContain("| sea | `#00f` |  |  |  | water | (yes) |");
+		expect(fresh).toContain("| crags | `#777` |  |  |  |  | (no) |");
 		expect(fresh).toContain("Intro.");
 		expect(fresh).toContain("Outro.");
 		expect(parsePaletteNote(fresh)).toEqual(parsePaletteNote(old));
@@ -99,18 +99,18 @@ describe("palette derived cells (P1)", () => {
 		const note = buildPaletteNote(terrains);
 		expect(paletteDerivedStale(note)).toBe(false);
 		// The user types a type: the Impassable default it implies changes.
-		const typed = note.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | water | (no) |");
+		const typed = note.replace("| crags | `#777777` |  |  |  |  | (no) |", "| crags | `#777777` |  |  |  | water | (no) |");
 		expect(paletteDerivedStale(typed)).toBe(true);
-		expect(refreshPaletteDerived(typed)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
+		expect(refreshPaletteDerived(typed)).toContain("| crags | `#777777` |  |  |  | water | (yes) |");
 		// Filled-in values are the user's, whatever they say.
-		const own = note.replace("| crags | #777777 |  |  |  |  | (no) |", "| crags | #777777 |  |  |  | Mountains | Y |");
+		const own = note.replace("| crags | `#777777` |  |  |  |  | (no) |", "| crags | `#777777` |  |  |  | Mountains | Y |");
 		expect(paletteDerivedStale(own)).toBe(false);
 	});
 
 	it("in-app edits regenerate the derived cells", () => {
 		const note = buildPaletteNote(terrains);
 		const next = terrains.map((t) => (t.name === "crags" ? { ...t, type: "water" } : t));
-		expect(updatePaletteNote(note, next)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
+		expect(updatePaletteNote(note, next)).toContain("| crags | `#777777` |  |  |  | water | (yes) |");
 	});
 
 	it("cell helpers", () => {
@@ -131,8 +131,8 @@ describe("path types write every option out (PA5)", () => {
 
 	it("writes explicit values and round-trips", () => {
 		const table = serializePathTypes(types);
-		expect(row(table, "Road")).toBe("| Road | #a16207 | 4 | solid | through | yes | direct |");
-		expect(row(table, "River")).toBe("| River | #3b82f6 | 3 | solid | meander | no | winding |");
+		expect(row(table, "Road")).toBe("| Road | `#a16207` | 4 | solid | through | yes | direct |");
+		expect(row(table, "River")).toBe("| River | `#3b82f6` | 3 | solid | meander | no | winding |");
 		const back = parsePathTypes(`## Path types\n\n${table}\n`)!;
 		expect(back.types).toEqual(types);
 		expect(back.implicit).toBe(false);
@@ -142,12 +142,12 @@ describe("path types write every option out (PA5)", () => {
 	it("refreshNoteDerived fills blank path cells and the terrain cells, and leaves a full note alone", () => {
 		const old = "---\nhexmaker-palette: 1\n---\n\n| Terrain | Color |\n| --- | --- |\n| lake | #00f |\n\n## Path types\n\n| Path | Color | Width | Style | Routing | Avoid impassable |\n| --- | --- | --- | --- | --- | --- |\n| Ley line | #3b82f6 | 3 | solid | meander |  |\n";
 		const fresh = refreshNoteDerived(old);
-		expect(fresh).toContain("| lake | #00f |  |  |  |  | (no) |");
-		expect(fresh).toContain("| Ley line | #3b82f6 | 3 | solid | meander | yes | direct |");
+		expect(fresh).toContain("| lake | `#00f` |  |  |  |  | (no) |");
+		expect(fresh).toContain("| Ley line | `#3b82f6` | 3 | solid | meander | yes | direct |");
 		expect(refreshNoteDerived(fresh)).toBe(fresh);
 		// With the palette's own types (read with the old rules while migrating), those are written.
 		const migrated = refreshNoteDerived(old, [{ ...types[1], name: "Ley line" }]);
-		expect(migrated).toContain("| Ley line | #3b82f6 | 3 | solid | meander | no | winding |");
+		expect(migrated).toContain("| Ley line | `#3b82f6` | 3 | solid | meander | no | winding |");
 	});
 });
 

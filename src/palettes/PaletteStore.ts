@@ -14,11 +14,14 @@ import {
   submapDefaultsKey,
   terrainsEqual,
   updatePaletteNote,
+  wrapPaletteColors,
 } from "./paletteNote";
 import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes } from "./pathTypeTable";
+import { clonePathTypes, parsePathTypes, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
+import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
-import { DEFAULT_PATH_TYPES } from "../constants";
+import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
+import { applyPresetTerrains, planPresetTerrains } from "./presetUpdates";
 import { inferTerrainType, refinedSpaceType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 
@@ -116,10 +119,19 @@ function applyNoteMeta(pal: TerrainPalette, content: string, legacy = false): bo
  * table with unreadable rows is left alone.
  */
 export function refreshNoteDerived(content: string, pathTypes?: PathType[]): string {
-  const next = refreshPaletteDerived(content);
+  const next = wrapPathTypeColors(refreshPaletteDerived(content));
   const paths = parsePathTypes(next);
   if (!paths || paths.skipped.length || !paths.implicit) return next;
   return setPathTypes(next, pathTypes ?? paths.types);
+}
+
+/**
+ * The note with every colour cell (terrain Color and Icon color, path type
+ * Color) written as inline code, so Obsidian doesn't read `#14223d` as a
+ * tag. Nothing else in the note changes; the same string when nothing needs to.
+ */
+export function wrapNoteColors(content: string): string {
+  return wrapPathTypeColors(wrapPaletteColors(content));
 }
 
 /** A fresh note for a palette, metadata included. */
@@ -324,18 +336,41 @@ export class PaletteStore {
     }
 
     if (await this.loadAll()) dirty = true;
+    // Colours in palette notes became inline code (Obsidian read `#14223d`
+    // as a tag). Before the first pass that converts them, every palette
+    // note is backed up. If that backup fails, NO load-time pass may
+    // rewrite a note (every note write puts colours in inline code): the
+    // one-time passes below still apply in memory for this session, but
+    // their flags stay unset and nothing is written, so all of it runs
+    // again, backup first, on the next load. (A note the plugin rewrites
+    // later because the user changed something still converts.)
+    let refresh = true;
+    if (!settings.paletteColorsCode) {
+      refresh = await this.backupBeforeColorConversion();
+      if (refresh) {
+        settings.paletteColorsCode = true;
+        dirty = true;
+      }
+    }
+    const blocked = !refresh;
+    // Terrains added to a bundled palette since it was installed: once each
+    // (it takes its own backup; skipped entirely while notes can't change).
+    const added = blocked ? false : await this.addNewPresetTerrains();
+    if (added) dirty = true;
     // Path types moved from settings into palettes: every palette without
     // them gets the full old list, and the notes get their table below.
     const filled = fillPalettePathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
-    if (filled) dirty = true;
+    if (filled && !blocked) dirty = true;
     // One-time: give existing palettes terrain types (from same-named
     // preset terrains, else inferred from the name). Later blanks are the
     // user's choice and stay blank.
     let seeded = false;
     if (!settings.terrainTypesSeeded) {
       seeded = seedTerrainTypes(settings.terrainPalettes) > 0;
-      settings.terrainTypesSeeded = true;
-      dirty = true;
+      if (!blocked) {
+        settings.terrainTypesSeeded = true;
+        dirty = true;
+      }
     }
     // One-time: write into the palettes what used to be inferred from
     // names at run time (space role types, a preset's child palette and
@@ -344,22 +379,52 @@ export class PaletteStore {
     let upgraded = false;
     if (!settings.paletteDataUpgraded) {
       upgraded = upgradePaletteData(settings.terrainPalettes) > 0;
-      settings.paletteDataUpgraded = true;
-      dirty = true;
+      if (!blocked) {
+        settings.paletteDataUpgraded = true;
+        dirty = true;
+      }
     }
     this.ready = true;
     // Write seeded types into the notes now, in the same queued step. Queued
     // separately, an unload in between left notes untyped while settings
     // said seeding was done — and notes win on the next load.
-    if (seeded || filled || upgraded) await this.syncNow();
+    if (!blocked && (seeded || filled || upgraded || added)) await this.syncNow();
     // Notes from older builds (or edited by hand since) get their derived
-    // cells shown: the Impassable column, inferred types in parentheses.
-    for (const file of this.paletteFiles()) await this.refreshDerived(file);
-    if (!settings.pathTypesExplicit) {
+    // cells shown (the Impassable column, inferred types in parentheses)
+    // and their colours written as inline code.
+    if (refresh) for (const file of this.paletteFiles()) await this.refreshDerived(file);
+    if (!settings.pathTypesExplicit && !blocked) {
       settings.pathTypesExplicit = true;
       dirty = true;
     }
     if (dirty) await this.persist();
+  }
+
+  /**
+   * Save the full text of every palette note (gzipped JSON in the plugin's
+   * backups folder) when any of them still has colours that aren't inline
+   * code. Returns false, after saying so, if the backup couldn't be saved.
+   */
+  private async backupBeforeColorConversion(): Promise<boolean> {
+    const { vault } = this.plugin.app;
+    const notes: Record<string, string> = {};
+    let needed = false;
+    for (const file of this.paletteFiles()) {
+      const content = await vault.read(file);
+      notes[file.path] = content;
+      if (parsePaletteNote(content) && wrapNoteColors(content) !== content) needed = true;
+    }
+    if (!needed) return true;
+    try {
+      const dir = `${this.plugin.manifest.dir}/backups/palette-colours-${new Date().toISOString().slice(0, 10)}`;
+      const json = JSON.stringify({ kind: "palette-colours", savedAt: new Date().toISOString(), notes });
+      await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
+      return true;
+    } catch (e) {
+      console.error("Hexmaker: couldn't back up palette notes; their colours weren't converted", e);
+      new Notice("Hexmaker: couldn't save a backup of the palette notes, so their colours weren't converted yet. It will try again next time.", 10000);
+      return false;
+    }
   }
 
   /**
@@ -414,6 +479,39 @@ export class PaletteStore {
       const loaded = await this.loadAll();
       if (fillPalettePathTypes(this.plugin.settings.terrainPalettes, this.plugin.settings.pathTypes) || loaded) await this.persist();
     });
+  }
+
+  /**
+   * Give installed copies of bundled palettes the terrains added to them
+   * since (OW8), once each, after backing up the palette notes. A terrain
+   * the palette already has is left exactly as the user made it. Returns
+   * true when anything changed (settings or palettes).
+   */
+  private async addNewPresetTerrains(): Promise<boolean> {
+    const settings = this.plugin.settings;
+    const done = new Set(settings.presetTerrainsAdded ?? []);
+    const plan = planPresetTerrains(settings.terrainPalettes, ADDED_PRESET_TERRAINS, done, (n) => PALETTE_PRESETS.find((p) => p.name === n)?.terrains);
+    if (!plan.done.length) return false;
+    if (plan.add.length) {
+      try {
+        const notes: Record<string, string> = {};
+        for (const { palette } of plan.add) {
+          const path = this.boundPath.get(palette);
+          if (path) notes[path] = this.lastContent.get(path) ?? "";
+        }
+        const dir = `${this.plugin.manifest.dir}/backups/palettes-${new Date().toISOString().slice(0, 10)}`;
+        await writeJsonBackup(this.plugin.app.vault.adapter, dir, "palettes-before-new-terrains", JSON.stringify({ savedAt: new Date().toISOString(), notes }));
+      } catch (e) {
+        // No backup, no change: try again next start.
+        console.error("Hexmap World Creator: couldn't back up palette notes; new terrains not added", e);
+        return false;
+      }
+      applyPresetTerrains(plan);
+      const what = plan.add.map(({ palette, terrains }) => `${terrains.map((t) => t.name).join(", ")} to "${palette.name}"`).join("; ");
+      new Notice(`Hexmap World Creator: added ${what}.`);
+    }
+    settings.presetTerrainsAdded = [...done, ...plan.done];
+    return true;
   }
 
   private async persist(): Promise<void> {
@@ -485,13 +583,14 @@ export class PaletteStore {
             this.bind(pal, target, current);
             continue;
           }
+          // A note the user is typing in keeps its text (derived cells and
+          // colour cells are brought up to date once they leave it).
+          const editing = this.isBeingEdited(target);
+          const base = parsed && terrainsEqual(parsed, pal.terrains)
+            ? editing ? current : refreshPaletteDerived(current)
+            : updatePaletteNote(current, pal.terrains);
           const withMeta = setSubmapDefaults(
-            setChildPalette(
-              parsed && terrainsEqual(parsed, pal.terrains)
-                ? this.isBeingEdited(target) ? current : refreshPaletteDerived(current)
-                : updatePaletteNote(current, pal.terrains),
-              pal.childPalette,
-            ),
+            setChildPalette(editing ? base : wrapPathTypeColors(base), pal.childPalette),
             pal.submapDefaults,
           );
           const next = pal.pathTypes ? setPathTypes(withMeta, pal.pathTypes) : withMeta;

@@ -38,8 +38,8 @@ export function renderRegionSettingsForm(
   shapeRow.createSpan({ cls: "duckmage-region-settings-label", text: "Shape" });
   const shapes = shapeRow.createDiv({ cls: "duckmage-region-settings-choices" });
   const shapeOpts: { id: RegionSettings["footprint"]; label: string; desc: string }[] = [
-    { id: "hex", label: "Hex flower", desc: "Each hex opens into a hex of hexes; neighbours fit together exactly." },
-    { id: "rect", label: "Rectangle", desc: "A square block per hex. Its corners overlap the neighbours a little." },
+    { id: "rect", label: "Rectangle", desc: "A square block per hex, laid like bricks. Neighbouring regions join up, and the overworld shows them all." },
+    { id: "hex", label: "Hex flower", desc: "Each hex opens into a hex of hexes. Not joined to its neighbours yet: that comes later." },
   ];
   const sizeBox = form.createDiv({ cls: "duckmage-region-settings-row" });
   for (const o of shapeOpts) {

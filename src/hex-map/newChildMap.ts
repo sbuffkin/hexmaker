@@ -7,6 +7,8 @@ import { renderAdvancedHint } from "../advancedHints";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { DEFAULT_REGION_SETTINGS, regionMapAt } from "../maps/submaps";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
+import { meshes } from "../overworld/regionWorld";
+import { RegionGenModal } from "./BiomeModals";
 
 /** The two kinds of map a hex opens into, with the small line under each (K1). */
 export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
@@ -44,6 +46,18 @@ export function startNewRegion(host: NewChildMapHost, parentMap: string, x: numb
   const parent = host.plugin.getMap(parentMap);
   if (!parent) return;
   const go = (settings: RegionSettings) => {
+    // Rectangles join their neighbours: the region form (biome, blend, seed,
+    // live preview) makes it in its slot of the shared grid.
+    if (meshes(settings)) {
+      new RegionGenModal({
+        app: host.app,
+        plugin: host.plugin,
+        enter: (name) => host.onEnter?.(name),
+        changed: () => {},
+        made: (name) => host.onCreated(name, "region"),
+      }, parentMap, x, y).open();
+      return;
+    }
     new NewMapSetupModal(host.app, host.plugin, ({ name }) => {
       void host.plugin.linkRegion(parentMap, x, y, name).then((ok) => {
         if (!ok) new Notice("This hex already has a region; the new map was kept as a separate map.");

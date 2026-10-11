@@ -226,6 +226,21 @@ class FakeVault {
 		this.files.set(f.path, content);
 		this.writes++;
 	};
+	/** Files written through the adapter (backups), outside the vault's notes. */
+	raw = new Map<string, string | ArrayBuffer>();
+	failBackups = false;
+	adapter = {
+		exists: async (p: string) => this.raw.has(p) || [...this.raw.keys()].some((k) => k.startsWith(p + "/")),
+		mkdir: async () => {},
+		write: async (p: string, data: string) => {
+			if (this.failBackups) throw new Error("disk full");
+			this.raw.set(p, data);
+		},
+		writeBinary: async (p: string, data: ArrayBuffer) => {
+			if (this.failBackups) throw new Error("disk full");
+			this.raw.set(p, data);
+		},
+	};
 	rename(from: string, to: string) {
 		const c = this.files.get(from);
 		if (c === undefined) throw new Error(`missing: ${from}`);
@@ -249,6 +264,7 @@ function makeHarness(settingsPatch: Partial<HexmakerPluginSettings> = {}) {
 	let saves = 0;
 	const plugin = {
 		settings,
+		manifest: { dir: ".obsidian/plugins/hexmaker" },
 		app: {
 			vault,
 			fileManager: {
@@ -263,6 +279,8 @@ function makeHarness(settingsPatch: Partial<HexmakerPluginSettings> = {}) {
 			saves++;
 		},
 		refreshHexMap: () => {},
+		refreshPaletteEditors: () => {},
+		ensureTablesForNewTerrains: async () => {},
 		getPaletteByName: (name: string) => settings.terrainPalettes.find((p) => p.name === name),
 	};
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -489,7 +507,7 @@ describe("PaletteStore: path types live in palettes", () => {
 		const h = makeHarness();
 		await h.store.init();
 		const p = "world/palettes/Limited.md";
-		h.vault.files.set(p, h.vault.files.get(p)!.replace("| River | #3b82f6 | 3 |", "| Stream | #3b82f6 | 2 |"));
+		h.vault.files.set(p, h.vault.files.get(p)!.replace("| River | `#3b82f6` | 3 |", "| Stream | `#3b82f6` | 2 |"));
 		h.store.onModify(h.file(p));
 		await h.store.sync();
 		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
@@ -583,8 +601,8 @@ describe("PaletteStore derived cells", () => {
 		await h.store.init();
 		const note = h.vault.files.get("world/palettes/Limited.md")!;
 		expect(note).toContain("My notes.");
-		expect(note).toContain("| sea | #0000ff |  |  |  | water | (yes) |");
-		expect(note).toContain("| crags | #777777 |  |  |  |  | (no) |");
+		expect(note).toContain("| sea | `#0000ff` |  |  |  | water | (yes) |");
+		expect(note).toContain("| crags | `#777777` |  |  |  |  | (no) |");
 		expect(h.settings.terrainPalettes.find((p) => p.name === "Limited")!.terrains.slice(0, 2)).toEqual([
 			{ name: "sea", color: "#0000ff", type: "water" },
 			{ name: "crags", color: "#777777" },
@@ -603,7 +621,7 @@ describe("PaletteStore derived cells", () => {
 		await h.store.sync();
 		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
 		expect(pal.terrains).toEqual([{ name: "crags", color: "#777777", type: "water" }]);
-		expect(h.vault.files.get(p)).toContain("| crags | #777777 |  |  |  | water | (yes) |");
+		expect(h.vault.files.get(p)).toContain("| crags | `#777777` |  |  |  | water | (yes) |");
 	});
 
 	it("waits until the user leaves a note they're typing in", async () => {
@@ -658,14 +676,138 @@ describe("PaletteStore path type migration (PA5)", () => {
 		await h.store.init();
 		const pal = h.settings.terrainPalettes.find((x) => x.name === "Limited")!;
 		expect(pal.pathTypes!.find((t) => t.name === "Creek")).toMatchObject({ routing: "meander", avoidImpassable: false, autoRoute: "winding" });
-		expect(h.vault.files.get(p)).toContain("| Creek | #39f | 2 | solid | meander | no | winding |");
-		expect(h.vault.files.get(p)).toContain("| Road | #a16207 | 4 | solid | through | yes | direct |");
+		expect(h.vault.files.get(p)).toContain("| Creek | `#39f` | 2 | solid | meander | no | winding |");
+		expect(h.vault.files.get(p)).toContain("| Road | `#a16207` | 4 | solid | through | yes | direct |");
 		expect(h.settings.pathTypesExplicit).toBe(true);
 		// After the migration a hand-typed row with blanks gets the plain defaults, whatever its name.
 		h.vault.files.set(p, h.vault.files.get(p)! + "| River two | #00f | 2 | solid |  |  |  |\n");
 		h.store.onModify(h.file(p));
 		await h.store.sync();
 		expect(pal.pathTypes!.find((t) => t.name === "River two")).toMatchObject({ routing: "through", avoidImpassable: true, autoRoute: "direct" });
-		expect(h.vault.files.get(p)).toContain("| River two | #00f | 2 | solid | through | yes | direct |");
+		expect(h.vault.files.get(p)).toContain("| River two | `#00f` | 2 | solid | through | yes | direct |");
+	});
+});
+
+// Colours as inline code, not tags: the one-time conversion on load.
+describe("PaletteStore colour conversion", () => {
+	const BARE = [
+		"---",
+		"hexmaker-palette: 1",
+		"---",
+		"",
+		"My notes, with a #tag of my own.",
+		"",
+		"| Terrain | Color | Icon | Icon color | Category | Type | Impassable | Mine |",
+		"| --- | --- | --- | --- | --- | --- | --- | --- |",
+		"| sea | #0000ff |  | #FFF |  | water | (yes) | keep  me |",
+		"| crags | 777777 |  |  |  |  | (no) |  |",
+		"",
+		"## Path types",
+		"",
+		"| Path | Color | Width | Style | Routing | Avoid impassable | Auto-route |",
+		"| --- | --- | --- | --- | --- | --- | --- |",
+		"| Road | #a16207 | 4 | solid | through | yes | direct |",
+		"",
+	].join("\n");
+	const P = "world/palettes/Limited.md";
+	const BACKUP = /^\.obsidian\/plugins\/hexmaker\/backups\/palette-colours-\d{4}-\d{2}-\d{2}\/palette-notes\.json(\.gz)?$/;
+
+	async function readBackup(data: string | ArrayBuffer): Promise<{ kind: string; notes: Record<string, string> }> {
+		if (typeof data === "string") return JSON.parse(data);
+		const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("gzip"));
+		return JSON.parse(await new Response(stream).text());
+	}
+
+	it("backs up the palette notes, then converts their colours and nothing else", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set(P, BARE);
+		await h.store.init();
+
+		const backups = [...h.vault.raw.keys()];
+		expect(backups).toHaveLength(1);
+		expect(backups[0]).toMatch(BACKUP);
+		const saved = await readBackup(h.vault.raw.get(backups[0])!);
+		expect(saved.kind).toBe("palette-colours");
+		expect(saved.notes[P]).toBe(BARE);
+
+		const note = h.vault.files.get(P)!;
+		expect(note).toBe(
+			BARE.replace("| #0000ff |  | #FFF |", "| `#0000ff` |  | `#fff` |")
+				.replace("| 777777 |", "| `#777777` |")
+				.replace("| #a16207 |", "| `#a16207` |"),
+		);
+		expect(h.settings.paletteColorsCode).toBe(true);
+
+		// Idempotent: loading again neither backs up nor writes.
+		const writes = h.vault.writes;
+		await h.store.init();
+		await h.store.sync();
+		expect(h.vault.raw.size).toBe(1);
+		expect(h.vault.writes).toBe(writes);
+		expect(h.vault.files.get(P)).toBe(note);
+	});
+
+	it("changes nothing when the backup can't be saved, and tries again next load", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true });
+		await h.vault.createFolder("world/palettes");
+		h.vault.files.set(P, BARE);
+		h.vault.failBackups = true;
+		await h.store.init();
+		expect(h.vault.files.get(P)).toBe(BARE);
+		expect(h.settings.paletteColorsCode).toBeFalsy();
+		// The other load-time passes wait too (nothing written, run again next load).
+		expect(h.settings.presetTerrainsAdded ?? []).toHaveLength(0);
+		expect(h.settings.paletteDataUpgraded).toBeFalsy();
+
+		h.vault.failBackups = false;
+		await h.store.init();
+		expect(h.vault.raw.size).toBe(1);
+		expect(h.vault.files.get(P)).toContain("| sea | `#0000ff` |");
+		expect(h.settings.paletteColorsCode).toBe(true);
+	});
+
+	it("a failed backup also holds back new preset terrains (OW8) and leaves bare colours alone", async () => {
+		const h = makeHarness({ palettesMigrated: true, terrainTypesSeeded: true, pathTypesExplicit: true });
+		await h.vault.createFolder("world/palettes");
+		const E = "world/palettes/Expanded.md";
+		const expanded = h.settings.terrainPalettes.find((p) => p.name === "Expanded")!;
+		// An installed Expanded from before savanna/river delta, colours bare.
+		const old = expanded.terrains.filter((t) => !/savanna|river delta/i.test(t.name));
+		const rows = old.map((t) => `| ${t.name} | ${t.color} |`).join("\n");
+		const note = ["---", "hexmaker-palette: 1", "---", "", "| Terrain | Color |", "| --- | --- |", rows, ""].join("\n");
+		h.vault.files.set(E, note);
+		h.vault.files.set(P, BARE);
+		h.vault.failBackups = true;
+		await h.store.init();
+		expect(h.vault.files.get(E)).toBe(note);
+		expect(h.vault.files.get(P)).toBe(BARE);
+		expect(h.settings.presetTerrainsAdded ?? []).toHaveLength(0);
+
+		h.vault.failBackups = false;
+		await h.store.init();
+		expect(h.vault.files.get(E)).toMatch(/\| savanna \| `#/i);
+		expect(h.vault.files.get(E)).not.toMatch(/\| #[0-9a-f]{3,8} \|/i);
+	});
+
+	it("needs no backup when every note is already converted", async () => {
+		const h = makeHarness();
+		await h.store.init(); // fresh notes are written with inline-code colours
+		expect(h.vault.raw.size).toBe(0);
+		expect(h.settings.paletteColorsCode).toBe(true);
+		for (const content of h.vault.files.values()) expect(content).not.toMatch(/\| #[0-9a-f]{3,8} \|/i);
+	});
+
+	it("a later hand edit with a bare colour converts like any other refresh", async () => {
+		const h = makeHarness();
+		await h.store.init();
+		const note = h.vault.files.get(P)!;
+		const typed = note.replace(/\| `(#[0-9a-f]{6})` \|/, "| $1 |");
+		expect(typed).not.toBe(note);
+		h.vault.files.set(P, typed);
+		h.store.onModify(h.file(P));
+		await h.store.sync();
+		expect(h.vault.files.get(P)).toBe(note);
+		expect(h.vault.raw.size).toBe(0);
 	});
 });

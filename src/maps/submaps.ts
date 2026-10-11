@@ -133,7 +133,8 @@ export function regionMapAt<T extends Pick<MapData, "name" | "parent" | "submapK
 export const FLOWER_RADII = [1, 2, 3, 4, 5] as const;
 export const RECT_SIDES = [6, 8, 10] as const;
 export const RECT_SIDE_RANGE = { min: 2, max: 32 };
-export const DEFAULT_REGION_SETTINGS: RegionSettings = { footprint: "hex", size: 3, blend: "normal" };
+/** Rectangles first (OW1): hex flowers don't join their neighbours until the map-shape work (phase 2b). */
+export const DEFAULT_REGION_SETTINGS: RegionSettings = { footprint: "rect", size: 8, blend: "normal" };
 
 /** Hexes in one region. */
 export function regionCellCount(s: Pick<RegionSettings, "footprint" | "size">): number {

@@ -7,6 +7,8 @@ import { HexExportModal } from "./hex-map/HexExportModal";
 import { MapExportModal } from "./export/MapExportModal";
 import { WorkflowExportModal } from "./random-tables/WorkflowExportModal";
 import { HexMapView } from "./hex-map/HexMapView";
+import { NewOverworldModal } from "./hex-map/OverworldModals";
+import { SANDBOX_MARKER, buildBenchWorld, buildDemoWorld } from "./overworld/demoWorld";
 import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
@@ -134,6 +136,15 @@ export default class HexmakerPlugin extends Plugin {
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
       void this.paletteStore.init().then(() => this.mapStore.init()).then(() => this.ensureTablesForNewTerrains());
+      // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
+      void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
+        if (!sandbox) return;
+        this.devTools = {
+          buildDemoWorld: (o) => buildDemoWorld(this, o),
+          buildBenchWorld: (o) => buildBenchWorld(this, o),
+          overworldStats: () => this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => (l.view instanceof HexMapView ? l.view.overworldStats() : null)),
+        };
+      });
       void this.autoRegisterMapsFromVault();
       // Hand edits to table notes (ranges, die, weights) are imported.
       TableStore.register(this);
@@ -238,6 +249,15 @@ export default class HexmakerPlugin extends Plugin {
       callback: () => void this.openPaletteEditor(),
     });
     this.addCommand({
+      id: "new-overworld",
+      name: "New overworld…",
+      checkCallback: (checking) => {
+        if (!hasFeature(this.settings, "regions")) return false;
+        if (!checking) this.openNewOverworld();
+        return true;
+      },
+    });
+    this.addCommand({
       id: "map-go-up",
       name: "Go up to parent map",
       checkCallback: (checking) => {
@@ -254,6 +274,16 @@ export default class HexmakerPlugin extends Plugin {
         const view = this.app.workspace.getActiveViewOfType(HexMapView);
         if (!view?.canNavigateBack()) return false;
         if (!checking) view.navigateBack();
+        return true;
+      },
+    });
+    this.addCommand({
+      id: "map-go-forward",
+      name: "Go forward to the next map",
+      checkCallback: (checking) => {
+        const view = this.app.workspace.getActiveViewOfType(HexMapView);
+        if (!view?.canNavigateForward()) return false;
+        if (!checking) view.navigateForward();
         return true;
       },
     });
@@ -609,6 +639,22 @@ export default class HexmakerPlugin extends Plugin {
     }
     await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true });
   }
+
+  /** "New overworld…": a World biomes map with its region settings (and its regions). */
+  openNewOverworld(): void {
+    new NewOverworldModal(this.app, this, (name) => void this.showMap(name)).open();
+  }
+
+  /**
+   * Sandbox-only helpers for dev/demo-world.mjs (OW7): set only when the
+   * vault root holds the `.hexmaker-sandbox` marker. No command, no UI.
+   */
+  devTools?: {
+    buildDemoWorld(opts?: { seed?: number }): Promise<unknown>;
+    buildBenchWorld(opts?: { seed?: number; side?: number }): Promise<unknown>;
+    /** The open map view's overworld layer timings. */
+    overworldStats(): unknown;
+  };
 
   /** Show a map in the hex map view, opening the view if it isn't open. */
   async showMap(name: string): Promise<void> {
