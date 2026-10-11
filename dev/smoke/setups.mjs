@@ -392,11 +392,28 @@ async function deletedExtra(ctx) {
   const errLoop = ctx.log.length;
   await new Promise((r) => setTimeout(r, 8000));
   const grew = ctx.log.length - errLoop;
-  return [
-    // Recorded, not judged (owner call, see open-work): what the plugin does with maps whose folder and note are gone.
-    { check: "F8-loads", ok: true, detail: `maps: ${st.maps.map((m) => `${m.name} (${!m.noteExists ? "no note" : ctx.snap0[m.notePath] ? "note kept" : "note re-created, " + m.hexes + " hexes"})`).join(", ")}; palettes: ${st.palettes.join(", ") || "(none)"}; path types: ${st.pathTypes}` },
+  const gone = st.maps.filter((m) => m.name.startsWith("gone-"));
+  // Owner call SM-DEL: maps whose folder and note are gone are marked missing, never re-created;
+  // an emptied palette list stays empty (no automatic defaults).
+  const out = [
+    { check: "F8-missing", ok: gone.length === 2 && gone.every((m) => m.missing && !m.noteExists), detail: `maps: ${st.maps.map((m) => `${m.name} (${m.missing ? "missing" : !m.noteExists ? "no note" : ctx.snap0[m.notePath] ? "note kept" : "note re-created, " + m.hexes + " hexes"})`).join(", ")}` },
+    { check: "F8-no-refill", ok: st.palettes.length === 0, detail: `palettes: ${st.palettes.join(", ") || "(none)"}; path types: ${st.pathTypes}` },
     { check: "F8-no-loop", ok: grew === 0, detail: `console errors/warnings added in 8 s idle: ${grew}; notices: ${notices.join(" | ") || "(none)"}` },
   ];
+  // Restore one from its cached note: hexes and the path come back exactly; Remove the other.
+  const r = await ctx.ev((id) => (async () => {
+    const p = window.app.plugins.plugins[id];
+    const ok = await p.restoreMissingMap("gone-one");
+    await p.mapStore.flush();
+    const hexes = [...p.mapStore.all("gone-one")].map(([k, h]) => `${k}=${h.terrain}`).sort();
+    const paths = p.mapStore.paths("gone-one").map((x) => `${x.name}:${x.branches[0]?.anchors.join(">")}`);
+    const note = !!window.app.vault.getAbstractFileByPath(p.mapStore.notePath("gone-one"));
+    await p.removeMapEntry("gone-two");
+    return { ok, hexes, paths, note, missing: p.mapStore.isMissing("gone-one"), maps: p.settings.maps.map((m) => m.name) };
+  })(), ctx.pluginId);
+  out.push({ check: "F8-restore", ok: r.ok && r.note && !r.missing && r.hexes.length === 3 && r.paths.length === 1 && r.paths[0].startsWith("Old road:0_1>4_3"), detail: `restored gone-one: note ${r.note}, hexes ${r.hexes.join(" ")}, paths ${r.paths.join(" ")}` });
+  out.push({ check: "F8-remove", ok: !r.maps.includes("gone-two"), detail: `maps now: ${r.maps.join(", ")}` });
+  return out;
 }
 
 async function manyMapsExtra(ctx) {

@@ -76,6 +76,7 @@ export function state(id) {
     paths: p.mapStore.paths(m.name)?.length ?? 0,
     hexes: p.mapStore.all(m.name).size,
     broken: !!p.mapStore.broken?.has?.(m.name),
+    missing: !!p.mapStore.isMissing?.(m.name),
     noteExists: !!app.vault.getAbstractFileByPath(p.mapStore.notePath(m.name)),
     notePath: p.mapStore.notePath(m.name),
     space: !!p.isSpaceMap?.(m.name),
@@ -144,6 +145,8 @@ export async function openMap(id, name, timeoutMs) {
     const root = v?.containerEl;
     hexes = root ? root.querySelectorAll(".duckmage-hex[data-x]").length : 0;
     const canvas = root ? root.querySelectorAll("canvas").length : 0;
+    // A missing map (SM-DEL) shows its empty state instead of a grid.
+    if (v?.activeMapName === name && root?.querySelector(".duckmage-map-missing-state")) break;
     if (v?.activeMapName === name && (hexes > 0 || canvas > 0)) {
       if (hexes === last) stable++; else stable = 0;
       if (stable >= 3) break;
@@ -160,6 +163,7 @@ export async function openMap(id, name, timeoutMs) {
     expected: m ? m.gridSize.cols * m.gridSize.rows : null,
     canvas: v?.containerEl?.querySelectorAll("canvas").length ?? 0,
     workModeBtn: !!v?.containerEl?.querySelector(".duckmage-work-mode-btn"),
+    missingState: !!v?.containerEl?.querySelector(".duckmage-map-missing-state"),
   };
 }
 

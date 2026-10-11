@@ -110,6 +110,9 @@ type LocalSettingDefinitionItem =
 const TEMPLATES_FOLDER_DESC =
   "Vault-relative folder for the plugin's note templates: the hex template (unless Template path points elsewhere) and the town template. Edit them there; new notes use them. Blank = \"templates\" in the world folder. Workflow templates stay with their workflows.";
 
+/** "Add default palettes" (both settings paths): deleted palettes stay deleted until asked. */
+const ADD_DEFAULTS_DESC = "Put the built-in palettes back. Palettes you delete stay deleted; they only come back from here.";
+
 /** The "Palette for new maps" setting's description (both settings paths). */
 const DEFAULT_PALETTE_DESC =
   "The palette a new map starts on. First palette = the first one listed below (overland before space).";
@@ -722,6 +725,18 @@ export class HexmakerSettingTab extends PluginSettingTab {
               key: "defaultPalette",
               options: this.defaultPaletteOptions(),
               defaultValue: "",
+            },
+          },
+          {
+            name: "Add default palettes",
+            desc: ADD_DEFAULTS_DESC,
+            visible: () => this.plugin.missingDefaultPalettes().length > 0,
+            render: (setting: Setting) => {
+              setting.addButton((b) =>
+                b.setButtonText(`Add ${this.plugin.missingDefaultPalettes().join(" and ")}`).onClick(() => {
+                  void this.plugin.addDefaultPalettes().then(() => this.requestDeclarativeRerender());
+                }),
+              );
             },
           },
         ],
@@ -1657,6 +1672,18 @@ export class HexmakerSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           }),
       );
+
+    const missingDefaults = this.plugin.missingDefaultPalettes();
+    if (missingDefaults.length) {
+      new Setting(containerEl)
+        .setName("Add default palettes")
+        .setDesc(ADD_DEFAULTS_DESC)
+        .addButton((b) =>
+          b.setButtonText(`Add ${missingDefaults.join(" and ")}`).onClick(() => {
+            void this.plugin.addDefaultPalettes().then(() => this.display());
+          }),
+        );
+    }
 
     const palettes = this.plugin.settings.terrainPalettes;
 

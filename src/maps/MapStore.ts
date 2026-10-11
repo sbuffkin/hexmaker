@@ -134,6 +134,17 @@ export class MapStore {
   private clearedHexes = new Set<string>();
   /** While `record` runs: hears each hex's value before its first change. */
   private recorder: ((map: string, key: string, before: HexData | undefined) => void) | null = null;
+  /**
+   * Maps whose note (and usually folder) was deleted by hand (SM-DEL): never
+   * re-created behind the user's back. Shown with Restore / Remove.
+   */
+  private missing = new Set<string>();
+  /** Maps the plugin itself is deleting: their note going away isn't "missing". */
+  private removing = new Set<string>();
+  /** Per map: the note text last saved to the map cache (skip same-text writes). */
+  private cached = new Map<string, string>();
+  private deleteTimer: number | undefined;
+  private deleted = new Set<string>();
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -149,7 +160,188 @@ export class MapStore {
     if (map === undefined) return true;
     const ps = (this.plugin as { paletteStore?: { isReady?: () => boolean } }).paletteStore;
     if (ps?.isReady && !ps.isReady()) return false;
-    return !!this.plugin.getMap(map) && !this.broken.has(map) && !this.migrating.has(map);
+    return !!this.plugin.getMap(map) && !this.broken.has(map) && !this.migrating.has(map) && !this.missing.has(map);
+  }
+
+  // ── missing maps (SM-DEL) ────────────────────────────────────────────
+
+  /** The map's note was deleted by hand: it's listed with Restore / Remove and never re-created on its own. */
+  isMissing(map: string): boolean {
+    return this.missing.has(map);
+  }
+
+  /** Every missing map, in settings order. */
+  missingMaps(): string[] {
+    return this.uniqueMaps().map((m) => m.name).filter((n) => this.missing.has(n));
+  }
+
+  /** The plugin is about to delete this map's folder (MapModal's Delete): not "missing". */
+  expectRemoval(map: string): void {
+    this.removing.add(map);
+  }
+
+  private markMissing(map: string): void {
+    if (this.missing.has(map)) return;
+    this.missing.add(map);
+    this.dirty.delete(map);
+    console.warn(`Hexmap World Creator: the map note of "${map}" is gone; the map is marked missing (Restore or Remove it in the map list).`);
+  }
+
+  /** Where the last known copy of each map note is kept (plugin folder, outside the vault's notes). */
+  private cacheDir(): string {
+    return `${this.plugin.manifest.dir}/map-cache`;
+  }
+
+  cachePath(map: string): string {
+    return `${this.cacheDir()}/${map.replace(/[\\/:*?"<>|]/g, "_")}.md`;
+  }
+
+  /**
+   * Keep a copy of a map note's text (the last one read or written) so a
+   * note deleted by hand can be restored exactly. Never throws.
+   */
+  private async cacheNote(map: string, text: string): Promise<void> {
+    if (this.cached.get(map) === text) return;
+    const adapter = this.plugin.app.vault.adapter as { exists(p: string): Promise<boolean>; mkdir(p: string): Promise<void>; write(p: string, d: string): Promise<void>; read?(p: string): Promise<string> };
+    try {
+      const path = this.cachePath(map);
+      if (!this.cached.has(map) && adapter.read && (await adapter.exists(path)) && (await adapter.read(path)) === text) {
+        this.cached.set(map, text);
+        return;
+      }
+      if (!(await adapter.exists(this.cacheDir()))) await adapter.mkdir(this.cacheDir());
+      await adapter.write(path, text);
+      this.cached.set(map, text);
+    } catch (e) {
+      console.error(`Hexmap World Creator: couldn't save the map cache for ${map}`, e);
+    }
+  }
+
+  /** The cached copy of a map's note, or null. */
+  async readCache(map: string): Promise<string | null> {
+    const adapter = this.plugin.app.vault.adapter as { exists(p: string): Promise<boolean>; read?(p: string): Promise<string> };
+    try {
+      const path = this.cachePath(map);
+      if (!adapter.read || !(await adapter.exists(path))) return null;
+      return await adapter.read(path);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * No note, and nothing in its folder to migrate, but the map had a note
+   * before (its cache exists): deleted by hand. A map that never had a note
+   * (a fresh install's placeholder, a 1.5 map) is migrated as before.
+   */
+  private async wasDeleted(map: MapData): Promise<boolean> {
+    const adapter = this.plugin.app.vault.adapter as { exists(p: string): Promise<boolean> };
+    try {
+      if (!(await adapter.exists(this.cachePath(map.name)))) return false;
+    } catch {
+      return false;
+    }
+    for (const file of this.hexFiles(map.name)) {
+      const fm = await this.frontmatterOf(file);
+      if (fm && HEX_DATA_KEYS.some((k) => k in fm)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Re-create a missing map's note from the best copy there is: the data in
+   * memory (deleted this session), else the cached note text (exact: hexes,
+   * paths, settings), else its settings alone. Returns where it came from.
+   */
+  restoreMissing(name: string): Promise<{ source: "memory" | "cache" | "settings" | "note" } | { error: string }> {
+    let out: { source: "memory" | "cache" | "settings" | "note" } | { error: string } = { error: `No map called ${name}.` };
+    return this.enqueue(async () => {
+      const map = this.plugin.getMap(name);
+      if (!map) return;
+      const { vault } = this.plugin.app;
+      const path = this.notePath(name);
+      if (vault.getAbstractFileByPath(path) instanceof TFile) {
+        // Put back by hand meanwhile: just load it.
+        this.missing.delete(name);
+        const r = await this.loadMap(map);
+        out = typeof r === "object" ? { error: `The map note ${path} is back but can't be read: ${r.unreadable}` } : { source: "note" };
+        return;
+      }
+      await this.ensureFolders(this.mapFolder(name));
+      if (this.lastKey.has(name)) {
+        this.missing.delete(name);
+        await this.writeNote(map);
+        out = { source: "memory" };
+      } else {
+        const cached = await this.readCache(name);
+        const r = cached ? readMapNote(cached, this.readOpts(path)) : null;
+        this.missing.delete(name);
+        if (cached && r && r.ok) {
+          this.lastContent.set(path, cached);
+          await vault.create(path, cached);
+          await this.loadMap(map);
+          out = { source: "cache" };
+        } else {
+          await this.writeNote(map);
+          out = { source: "settings" };
+        }
+      }
+      this.emit(name);
+      await this.plugin.saveData(this.plugin.settings);
+      this.plugin.refreshHexMap();
+    }).then(() => out);
+  }
+
+  private async ensureFolders(folder: string): Promise<void> {
+    const { vault } = this.plugin.app;
+    const parts = folder.split("/");
+    for (let i = 1; i <= parts.length; i++) {
+      const p = parts.slice(0, i).join("/");
+      if (!vault.getAbstractFileByPath(p)) {
+        try { await vault.createFolder(p); } catch { /* made meanwhile */ }
+      }
+    }
+  }
+
+  /** A note or folder was deleted: maps whose note went with it are marked missing (after a moment, so the plugin's own deletes settle first). */
+  onDelete(file: TAbstractFile): void {
+    if (!this.ready) return;
+    const p = file.path;
+    for (const m of this.uniqueMaps()) {
+      const note = this.notePath(m.name);
+      if (note === p || note.startsWith(p + "/")) this.deleted.add(m.name);
+    }
+    if (!this.deleted.size) return;
+    window.clearTimeout(this.deleteTimer);
+    this.deleteTimer = window.setTimeout(() => void this.enqueue(async () => {
+      const names = [...this.deleted];
+      this.deleted.clear();
+      let any = false;
+      for (const name of names) {
+        if (this.removing.delete(name)) continue;
+        if (!this.plugin.getMap(name) || this.plugin.app.vault.getAbstractFileByPath(this.notePath(name)) instanceof TFile) continue;
+        this.markMissing(name);
+        any = true;
+        this.emit(name);
+      }
+      if (any) this.plugin.refreshHexMap();
+    }), 250);
+  }
+
+  /** A note appeared: a missing map's note put back (undo in the file explorer, sync) loads. */
+  onCreate(file: TAbstractFile): void {
+    if (!this.ready || !(file instanceof TFile)) return;
+    const name = this.missingMaps().find((n) => this.notePath(n) === file.path);
+    if (!name) return;
+    void this.enqueue(async () => {
+      const map = this.plugin.getMap(name);
+      if (!map || !this.missing.has(name)) return;
+      const r = await this.loadMap(map);
+      if (r !== "loaded") return;
+      this.missing.delete(name);
+      this.emit(name);
+      this.plugin.refreshHexMap();
+    });
   }
 
   // ── paths ────────────────────────────────────────────────────────────
@@ -573,6 +765,10 @@ export class MapStore {
         if (this.broken.has(map.name)) continue;
         const r = await this.loadMap(map);
         if (typeof r === "object") this.markBroken(map.name, this.notePath(map.name), r.unreadable, r.newer);
+        // No note (deleted, or not synced in yet): never written from the
+        // bare data.json copy; it loads when the note arrives (onCreate).
+        else if (r === "missing") this.markMissing(map.name);
+        else this.missing.delete(map.name);
       }
       this.plugin.refreshHexMap();
     });
@@ -582,6 +778,7 @@ export class MapStore {
   sync(): Promise<void> {
     if (!this.ready) return this.queue;
     for (const m of this.uniqueMaps()) {
+      if (this.missing.has(m.name)) continue;
       if (this.lastKey.get(m.name) !== mapNoteKey(this.dataFor(m))) this.dirty.add(m.name);
       // A palette change can change the derived Summary (a terrain no longer
       // "not in the palette"): rewrite; the write is skipped if the text is the same.
@@ -616,7 +813,7 @@ export class MapStore {
   }
 
   private async writeNote(map: MapData): Promise<void> {
-    if (this.broken.has(map.name)) return;
+    if (this.broken.has(map.name) || this.missing.has(map.name)) return;
     const { vault } = this.plugin.app;
     const path = this.notePath(map.name);
     const file = vault.getAbstractFileByPath(path);
@@ -652,6 +849,7 @@ export class MapStore {
       this.reported.set(map.name, problemSignature(r.data.problems));
       this.lastContent.set(path, next);
       if (next !== current) await vault.modify(file, next);
+      await this.cacheNote(map.name, next);
       this.lastKey.set(map.name, mapNoteKey(data));
       this.clearedPaths.delete(map.name);
       this.clearedHexes.delete(map.name);
@@ -666,6 +864,7 @@ export class MapStore {
       this.lastDerived.set(map.name, JSON.stringify(ctx));
       this.lastContent.set(path, content);
       await vault.create(path, content);
+      await this.cacheNote(map.name, content);
       this.lastKey.set(map.name, mapNoteKey(data));
     }
   }
@@ -805,6 +1004,7 @@ export class MapStore {
     this.lastContent.set(file.path, content);
     if (!r || !r.ok) return { unreadable: r ? r.reason : NO_FRONTMATTER, newer: r && !r.ok ? r.newer : undefined };
     this.apply(map, r.data);
+    await this.cacheNote(map.name, content);
     if ((r.data.format ?? 1) < MAP_NOTE_FORMAT) this.dirty.add(map.name);
     else if (r.data.problems?.length) this.toReview.add(map.name);
     return "loaded";
@@ -851,6 +1051,7 @@ export class MapStore {
         return;
       }
       this.markReadable(map.name);
+      await this.cacheNote(map.name, content);
       const data = r.data;
       const before = new Map(this.hexes.get(map.name) ?? []);
       this.apply(map, data);
@@ -930,6 +1131,8 @@ export class MapStore {
     const t = this.hexes.get(oldName);
     if (t) { this.hexes.delete(oldName); this.hexes.set(newName, t); }
     if (this.broken.delete(oldName)) this.broken.add(newName);
+    if (this.missing.delete(oldName)) this.missing.add(newName);
+    this.cached.delete(oldName);
     for (const m of [this.views, this.routeCaches, this.known] as Map<string, unknown>[]) {
       if (m.has(oldName)) { m.set(newName, m.get(oldName)); m.delete(oldName); }
     }
@@ -950,7 +1153,7 @@ export class MapStore {
   repairRegionMirrors(skip: string[] = []): number {
     const maps = this.uniqueMaps();
     const fixes = regionMirrorFixes(maps, (m, k) => this.get(m, k), (m) => this.all(m))
-      .filter((f) => !skip.includes(f.map) && !this.broken.has(f.map));
+      .filter((f) => !skip.includes(f.map) && !this.broken.has(f.map) && !this.missing.has(f.map));
     for (const f of fixes) {
       console.warn(`Hexmap World Creator: fixed a region link: ${f.map} hex ${f.hex}: ${f.reason}.`);
       this.set(f.map, f.hex, f.patch);
@@ -968,6 +1171,9 @@ export class MapStore {
     this.lastKey.delete(name);
     this.lastDerived.delete(name);
     this.dirty.delete(name);
+    this.missing.delete(name);
+    this.removing.delete(name);
+    this.cached.delete(name);
   }
 
   // ── startup + migration ──────────────────────────────────────────────
@@ -984,9 +1190,12 @@ export class MapStore {
       const maps = this.uniqueMaps();
       const toMigrate: MapData[] = [];
       const unreadable: MapData[] = [];
+      const gone: MapData[] = [];
       for (const map of maps) {
         const r = await this.loadMap(map);
-        if (r === "missing") toMigrate.push(map);
+        // Deleted by hand (SM-DEL): marked missing, never re-created empty.
+        if (r === "missing" && (await this.wasDeleted(map))) gone.push(map);
+        else if (r === "missing") toMigrate.push(map);
         else if (r !== "loaded") {
           // A map note that exists but doesn't parse (hand-broken
           // frontmatter or table) must never be "migrated" over: its hex
@@ -997,13 +1206,14 @@ export class MapStore {
         }
       }
       for (const m of toMigrate) this.migrating.add(m.name);
+      for (const m of gone) this.markMissing(m.name);
       this.ready = true;
       if (toMigrate.length) await this.migrate(toMigrate);
       // Hex notes still carrying map data after a load (an interrupted
       // cleanup, or notes synced in from an older device) get cleaned now.
-      await this.cleanHexNotes(maps.filter((m) => !toMigrate.includes(m) && !unreadable.includes(m)), false);
+      await this.cleanHexNotes(maps.filter((m) => !toMigrate.includes(m) && !unreadable.includes(m) && !gone.includes(m)), false);
       // Region map cells follow the region maps' own records.
-      this.repairRegionMirrors(unreadable.map((m) => m.name));
+      this.repairRegionMirrors([...unreadable, ...gone].map((m) => m.name));
       // Notes in the older format (JSON values) are converted once, after a
       // backup; unreadable rows in the others are reported.
       for (const name of [...this.dirty]) {
@@ -1013,6 +1223,10 @@ export class MapStore {
       }
       await this.review();
       this.reportConversions();
+      if (gone.length) {
+        const names = gone.map((m) => (this.plugin as { mapLabel?: (n: string) => string }).mapLabel?.call(this.plugin, m.name) ?? m.name);
+        new Notice(`Hexmap World Creator: the map note${gone.length === 1 ? " of" : "s of"} ${names.join(", ")} ${gone.length === 1 ? "is" : "are"} gone. ${gone.length === 1 ? "It's" : "They're"} marked missing in the map list: Restore puts the last saved copy back, Remove drops the map.`, 15000);
+      }
       this.plugin.refreshHexMap();
     });
   }

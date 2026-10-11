@@ -33,6 +33,12 @@
  * - *Mix* is by terrain TYPE (the palette's Type column), never by terrain
  *   name: a region of this biome gets each type in proportion to its weight
  *   (any scale), spread over the palette's terrains of that type.
+ * - *Terrain weights* (optional, PR1): how one type's share is split among
+ *   the palette's terrains of that type, by name (`| Terrain | Weight |`,
+ *   "Pine forest 3, Oak forest 1"). Terrains not listed count 1; 0 leaves
+ *   one out. Without the table a type's share is split evenly.
+ * - `parent`: the biome this one was made from ("Make generator from
+ *   this region"); used to list related generators first.
  * - *Transitions*: biomes this one shouldn't touch on an overworld, and the
  *   biome put between them. Biomes are named by label, id or note name.
  * - `blend`: narrow, normal or wide (how far the biome mixes into its
@@ -72,6 +78,14 @@ export interface BiomeMixRow {
   minPatches?: number;
 }
 
+/** One row of the optional Terrain weights table: a palette terrain's weight within its type. */
+export interface BiomeTerrainWeight {
+  /** Palette terrain name, as written (matched ignoring case). */
+  terrain: string;
+  /** Relative weight within its type, >= 0 (0 = never). */
+  weight: number;
+}
+
 export interface BiomeTransition {
   /** The biome this one shouldn't touch (as written: label, id or note name). */
   next: string;
@@ -105,6 +119,10 @@ export interface BiomeNoteFields {
   generator?: string;
   /** Where World biomes may place it (biomeClimate.ts); unset = only by hand. */
   climate?: BiomeClimate;
+  /** Per-terrain weights within a type (the optional Terrain weights table). */
+  terrainWeights?: BiomeTerrainWeight[];
+  /** The biome this one was made from (label, id or note name). */
+  parent?: string;
 }
 
 export interface BiomeNoteProblem {
@@ -132,7 +150,7 @@ export function biomeFileName(label: string): string {
 
 export const BIOME_HELP = [
   "> [!info] Biome",
-  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Terrain weights** (optional): how a type's share is split between its terrains, like Pine forest 3 and Oak forest 1 (terrains not listed count 1). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -172,6 +190,7 @@ function findTable(lines: string[], want: (headers: string[]) => boolean): Span 
 }
 
 const isMix = (h: string[]) => h.includes("type") && (h.includes("weight") || h.includes("share"));
+const isTerrainWeights = (h: string[]) => h.includes("terrain") && !h.includes("type") && (h.includes("weight") || h.includes("share"));
 const isTransitions = (h: string[]) => (h.includes("next to") || h.includes("biome")) && (h.includes("put between") || h.includes("between") || h.includes("transition"));
 
 /** The frontmatter span (line indices: the opening and closing `---`), or null. */
@@ -273,6 +292,8 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
   }
   const gen = fm.get("generator");
   if (gen && linkTarget(gen)) fields.generator = linkTarget(gen);
+  const parent = fm.get("parent");
+  if (parent && linkTarget(parent)) fields.parent = linkTarget(parent);
   const shore = fm.get("shore");
   if (shore) {
     const v = readYesNo(shore);
@@ -311,6 +332,24 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
       } else fields.mix.push(minPatches !== undefined ? { type, weight: w, minPatches } : { type, weight: w });
     }
   }
+  const tw = findTable(lines, isTerrainWeights);
+  if (tw) {
+    const ni = tw.headers.indexOf("terrain");
+    const wi = tw.headers.includes("weight") ? tw.headers.indexOf("weight") : tw.headers.indexOf("share");
+    const rows: BiomeTerrainWeight[] = [];
+    for (let i = tw.start + 2; i < tw.end; i++) {
+      const cells = splitRow(lines[i]);
+      if (cells.every((c) => c === "")) continue;
+      const terrain = linkTarget(cells[ni] ?? "");
+      const w = num(cells[wi] ?? "");
+      if (!terrain) { problems.push({ where: "Terrain weights", text: `row ${i + 1}: no terrain` }); continue; }
+      if (!Number.isFinite(w) || w < 0) { problems.push({ where: "Terrain weights", text: `row ${i + 1}: weight "${cells[wi] ?? ""}" isn't a number` }); continue; }
+      const hit = rows.find((r) => r.terrain.toLowerCase() === terrain.toLowerCase());
+      if (hit) hit.weight += w;
+      else rows.push({ terrain, weight: w });
+    }
+    if (rows.length) fields.terrainWeights = rows;
+  }
   const tr = findTable(lines, isTransitions);
   if (tr) {
     const ni = tr.headers.includes("next to") ? tr.headers.indexOf("next to") : tr.headers.indexOf("biome");
@@ -346,6 +385,10 @@ function mixTable(rows: BiomeMixRow[]): string[] {
   ];
 }
 
+function terrainWeightsTable(rows: BiomeTerrainWeight[]): string[] {
+  return ["| Terrain | Weight |", "| --- | ---: |", ...rows.map((r) => `| ${esc(r.terrain)} | ${fmt(r.weight)} |`)];
+}
+
 function transitionsTable(rows: BiomeTransition[]): string[] {
   return ["| Next to | Put between |", "| --- | --- |", ...rows.map((r) => `| ${esc(r.next)} | ${esc(r.between)} |`)];
 }
@@ -362,6 +405,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
     ["shore", f.shore ? "yes" : undefined],
     ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
+    ["parent", f.parent ? quote(f.parent) : undefined],
     ...climateKeyValues(f.climate),
   ];
 }
@@ -377,6 +421,7 @@ export function buildBiomeNote(f: BiomeNoteFields): string {
     ...BIOME_HELP, "",
     "## Mix", "",
     ...mixTable(f.mix), "",
+    ...(f.terrainWeights?.length ? ["## Terrain weights", "", ...terrainWeightsTable(f.terrainWeights), ""] : []),
     "## Transitions", "",
     ...transitionsTable(f.transitions), "",
   ].join("\n");
@@ -418,6 +463,8 @@ export function updateBiomeNote(content: string, f: BiomeNoteFields): string {
   lines.splice(fm.open + 1, fm.close - fm.open - 1, ...nextBody);
   // Tables.
   lines = putTable(lines, isMix, mixTable(f.mix), "## Mix");
+  // Only written when there are weights, or the note already has the table.
+  if (f.terrainWeights?.length || findTable(lines, isTerrainWeights)) lines = putTable(lines, isTerrainWeights, terrainWeightsTable(f.terrainWeights ?? []), "## Terrain weights");
   lines = putTable(lines, isTransitions, transitionsTable(f.transitions), "## Transitions");
   const out = lines.join(eol);
   return out === content.replace(/\r\n?/g, "\n").split("\n").join(eol) ? content : out;
@@ -429,7 +476,7 @@ function sameValue(key: string, cur: string, want: string): boolean {
   const w = unquote(want);
   if (key === "land-share") return parseShare(cur) === parseShare(w);
   if (key === "colour") return readColour(cur) === readColour(w);
-  if (key === "generator") return linkTarget(cur) === linkTarget(w);
+  if (key === "generator" || key === "parent") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
   if (key === "shore") return readYesNo(cur) === readYesNo(w);
   if (CLIMATE_KEY_SET.has(key)) return sameClimateValue(key, cur, w);
