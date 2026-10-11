@@ -85,6 +85,8 @@ import { OverworldMinimap } from "./overworldMinimap";
 import { BiomePickerModal, type BiomeHost } from "./BiomeModals";
 import { EditRegionModal } from "./EditRegionModal";
 import { inOverworldGrid, overworldOf, regionHome, regionPalette, walkLock } from "../overworld/regionsVault";
+import { applyProjectionUndo, confirmOverworldPath, draftPathNames, isPathOverworld, prepareProjectionUndo, removeOverworldPath } from "../overworld/overworldPaths";
+import { draftsAfterEdit, isApplied } from "../overworld/pathProjection";
 import { brushCells, FrameThrottle, terrainDiff, overworldLeftClick, overworldMenu, PAINT_LOCKED_HINT, PAINT_NO_REGION_HINT, paintTargets } from "../overworld/overworldInput";
 import { WalkRegionModal, type OverworldWalk } from "../worldgen/WalkRegionModal";
 import type { Side } from "../worldgen/world";
@@ -1364,7 +1366,7 @@ export class HexMapView extends ItemView {
         if (this.drawingMode === "path" && !this.isErasingMode) {
           const r = this.pathTool.contextMenu(e);
           if (r && "handled" in r) return;
-          if (r) pathItems = r.items;
+          if (r) pathItems = [...r.items, ...this.overworldPathItems(this.pathTool.labelState().selected)];
         }
         this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY, pathItems);
       },
@@ -5581,6 +5583,8 @@ export class HexMapView extends ItemView {
         const edits = currentCellEdits(item.edits, dir, (m, k) => store.get(m, k) as Record<string, unknown> | undefined);
         return edits ? { ...item, edits } : null;
       }
+      case "projection":
+        return prepareProjectionUndo(this.plugin, item, dir);
       case "token": {
         const now = await readTokenPlace(this.app, item.path);
         const want = dir === "undo" ? item.after : item.before;
@@ -5627,6 +5631,11 @@ export class HexMapView extends ItemView {
     } else if (item.kind === "cells") {
       for (const e of item.edits) this.plugin.mapStore.set(e.map, e.key, cellPatch(e, dir));
       this.renderGrid();
+    } else if (item.kind === "projection") {
+      applyProjectionUndo(this.plugin, item, dir);
+      void this.plugin.saveSettings();
+      this.renderGrid();
+      this.updateModeBar();
     } else {
       await this.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);
     }
@@ -6072,9 +6081,61 @@ export class HexMapView extends ItemView {
     const show = this.drawingMode === "path" && !this.isErasingMode;
     el.toggle(show);
     if (show) this.pathTool.renderBarControls(el);
+    // An overworld's selected path: confirm it into its regions from the bar too.
+    const selected = show ? this.pathTool.labelState().selected : null;
+    const confirm = this.overworldPathItems(selected)[0];
+    if (confirm) {
+      const btn = el.createEl("button", {
+        text: confirm.label,
+        cls: "duckmage-mode-bar-route-toggle duckmage-path-confirm-btn",
+        attr: { title: "Put this path into every region it crosses, joined at the seams (one undo step)." },
+      });
+      btn.addEventListener("click", confirm.onClick);
+    }
+  }
+
+  /**
+   * An overworld path's region actions (path menu, mode bar): "Confirm into
+   * regions" for a draft, "Update regions" + "Remove from regions" for a
+   * confirmed one. None on other maps, or when the mode doesn't allow it.
+   */
+  private overworldPathItems(pathName: string | null): { label: string; onClick: () => void }[] {
+    const mapName = this.activeMapName;
+    if (!pathName || !isPathOverworld(this.plugin, mapName) || !canDo(mapName, "edit-path")) return [];
+    const p = this.plugin.mapStore.paths(mapName).find((q) => q.name === pathName);
+    if (!p) return [];
+    const run = (remove: boolean) => () => void this.runPathProjection(pathName, remove);
+    return isApplied(p)
+      ? [{ label: "Update regions", onClick: run(false) }, { label: "Remove from regions", onClick: run(true) }]
+      : [{ label: "Confirm into regions", onClick: run(false) }];
+  }
+
+  /** Confirm (or remove) an overworld path into its regions, and say what happened. */
+  async runPathProjection(pathName: string, remove: boolean): Promise<void> {
+    const mapName = this.activeMapName;
+    const res = remove ? await removeOverworldPath(this.plugin, mapName, pathName) : await confirmOverworldPath(this.plugin, mapName, pathName);
+    if ("error" in res) {
+      new Notice(res.error);
+      return;
+    }
+    const n = res.regions.length;
+    const where = n === 1 ? "1 region" : `${n} regions`;
+    const msg = remove ? `${pathName}: taken out of ${where}.` : `${pathName}: ${n ? `in ${where}` : "crosses no regions yet"}.`;
+    const skipped = res.skipped.length ? ` ${res.skipped.length} still loading: confirm again in a moment.` : "";
+    new Notice(msg + skipped);
+    this.updateUndoButton();
+    this.renderGrid();
+    this.updateModeBar();
   }
 
   private pushPathUndo(mapName: string, before: MapPath[], after: MapPath[]): void {
+    // A confirmed overworld path that was just reshaped, retyped or renamed
+    // is a draft again until it's confirmed into its regions once more.
+    const drafted = draftsAfterEdit(before, after);
+    if (drafted !== after) {
+      this.plugin.mapStore.setPaths(mapName, drafted);
+      after = drafted;
+    }
     this.pushUndo({ kind: "path", mapName, before, after }, mapName);
     this.updateUndoButton();
   }
@@ -6222,7 +6283,9 @@ export class HexMapView extends ItemView {
       }
     }
     const selected = tool?.selected ?? null;
-    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color]), dot, handles, selected]);
+    // On an overworld, paths not yet confirmed into their regions are drafts (drawn faded).
+    const drafts = draftPathNames(this.plugin, region.name);
+    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color, drafts.has(l.s.path)]), dot, handles, selected]);
     const existing = gridContainer.querySelector("svg.duckmage-path-svg");
     const existingHandles = gridContainer.querySelector("svg.duckmage-path-handles-svg");
     const wantLines = lines.length > 0;
@@ -6261,7 +6324,7 @@ export class HexMapView extends ItemView {
         }
         for (const l of lines) {
           const path = activeDocument.createElementNS(svgNS, "path");
-          path.setAttribute("class", "duckmage-svg-path-line");
+          path.setAttribute("class", drafts.has(l.s.path) ? "duckmage-svg-path-line duckmage-svg-path-draft" : "duckmage-svg-path-line");
           path.setAttribute("d", l.d);
           path.setAttribute("stroke", l.s.color);
           path.setAttribute("stroke-width", l.width);

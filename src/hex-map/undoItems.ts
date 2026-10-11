@@ -8,6 +8,7 @@ import type { PinRecord } from "../paths/routePins";
 import type { MapPath, TokenShape, TokenSize } from "../types";
 import type { HexData } from "../maps/mapNote";
 import type { CellEdit } from "../undoBook";
+import type { ProjectionUndo } from "../overworld/overworldPaths";
 
 export type TerrainUndoEntry = {
   x: number;
@@ -84,5 +85,7 @@ export type UndoItem =
   | { kind: "calibrate"; mapName: string; before: CalibrateSnapshot; after: CalibrateSnapshot }
   /** Any map data edit recorded field by field (hex editor, biome and region actions). */
   | { kind: "cells"; edits: CellEdit[] }
+  /** An overworld path confirmed into (or taken out of) its regions: paths of several maps and the terrain carved. */
+  | ProjectionUndo
   /** A token moved, placed or removed (null: not a token on a map). */
   | { kind: "token"; path: string; before: TokenSnap | null; after: TokenSnap | null };

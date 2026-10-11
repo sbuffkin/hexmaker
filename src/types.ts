@@ -40,6 +40,14 @@ export interface PathType {
 	avoidImpassable: boolean;
 	/** Auto-route keeps to the straight line ("direct") or wanders ("winding"). */
 	autoRoute: PathAutoRoute;
+	/** When an overworld path of this type is confirmed into its regions, the
+	 *  hexes it crosses there become this terrain: a terrain's name, or a
+	 *  terrain type ("water": the palette's first water terrain). Unset =
+	 *  terrain is left alone. Locked hexes are never repainted. */
+	carves?: string;
+	/** How wide the carve is: 0 = the path's own hexes, 1 = those and the
+	 *  hexes beside them. Unset = 0. */
+	carveWidth?: number;
 }
 
 export interface PathChain {
