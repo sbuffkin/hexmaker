@@ -38,6 +38,7 @@ import {
 import { planTableMigration } from "./tableMigration";
 import { processTableNote } from "./TableStore";
 import { parseWorkflow, generateDefaultTemplate } from "./workflow";
+import { resolveWorkflowTemplate } from "./workflowFiles";
 import { Frontmatter } from "../frontmatter";
 import { buildTree, renderFolderTree, type TreeNode } from "./FolderTree";
 import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
@@ -929,10 +930,8 @@ export class RandomTableView extends ItemView {
         const wf = parseWorkflow(content, file.basename);
         let tmplContent = "";
         if (wf.templateFile) {
-          const tmplFile = this.app.vault.getAbstractFileByPath(
-            wf.templateFile,
-          );
-          if (tmplFile instanceof TFile) {
+          const tmplFile = resolveWorkflowTemplate(this.app, wf.templateFile, file.path);
+          if (tmplFile) {
             tmplContent = await this.app.vault.read(tmplFile);
           }
         }
@@ -1034,10 +1033,8 @@ export class RandomTableView extends ItemView {
 
     // ── Template link + preview ─────────────────────────────────────────
     if (workflow.templateFile) {
-      const tmplFile = this.app.vault.getAbstractFileByPath(
-        workflow.templateFile,
-      );
-      if (tmplFile instanceof TFile) {
+      const tmplFile = resolveWorkflowTemplate(this.app, workflow.templateFile, file.path);
+      if (tmplFile) {
         const tmplSection = this.detailEl.createDiv({
           cls: "duckmage-wf-template-section",
         });

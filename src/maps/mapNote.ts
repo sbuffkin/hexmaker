@@ -3,6 +3,7 @@ import type { HexKey, MapData, MapPath, PathBranch, PathChain, RegionSettings } 
 import { formatAnchors, formatAnchor, parseAnchors } from "../paths/anchorText";
 import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
+import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -2047,24 +2048,33 @@ export function mapNoteKey(data: MapNoteData): string {
 /** Hex-note frontmatter keys that hold map data (they live in the map note). */
 const HEX_NOTE_DATA_KEY = /^(terrain|icon|gm-icons|gm-icon|region|duckmage-submap|locked|hexmaker-map)\s*:/;
 
+/** A top-level `map:` line, and its value. */
+const MAP_KEY_LINE = /^["']?map["']?\s*:(.*)$/;
+
 /**
  * Prepare a new hex note's text: drop map-data keys a template may carry
  * (the default one had `terrain:`) and point at the map note instead, so
- * nobody edits a terrain field that the map no longer reads.
+ * nobody edits a terrain field that the map no longer reads. The link goes
+ * under `map:` (NF1), or under `hexmaker-map:` when the template has a
+ * `map:` key of its own, which is kept.
  */
 export function withMapLink(content: string, mapName: string): string {
-  const link = `hexmaker-map: "[[_${mapName}]]"`;
   const nl = content.includes("\r\n") ? "\r\n" : "\n";
+  const line = (key: string) => `${key}: "[[_${mapName}]]"`;
   const m = /^---\r?\n([\s\S]*?)\r?\n?---(\r?\n|$)/.exec(content);
-  if (!m) return `---${nl}${link}${nl}---${nl}${content}`;
-  const kept: string[] = [link];
+  if (!m) return `---${nl}${line(HEX_MAP_KEY)}${nl}---${nl}${content}`;
+  const kept: string[] = [];
   let inDropped = false;
-  for (const line of m[1].split(/\r?\n/)) {
-    if (HEX_NOTE_DATA_KEY.test(line)) { inDropped = true; continue; }
+  for (const l of m[1].split(/\r?\n/)) {
+    const mapKey = MAP_KEY_LINE.exec(l);
+    // An earlier map link (a template copied from a hex note) is replaced.
+    const oldLink = !!mapKey && isMapNoteLink(mapKey[1].trim().replace(/^(["'])(.*)\1$/, "$2"));
+    if (HEX_NOTE_DATA_KEY.test(l) || oldLink) { inDropped = true; continue; }
     // indented lines (list items) belong to the key above them
-    if (inDropped && /^\s+\S/.test(line)) continue;
+    if (inDropped && /^\s+\S/.test(l)) continue;
     inDropped = false;
-    if (line.trim()) kept.push(line);
+    if (l.trim()) kept.push(l);
   }
-  return `---${nl}${kept.join(nl)}${nl}---${m[2] || nl}${content.slice(m[0].length)}`;
+  const key = kept.some((l) => MAP_KEY_LINE.test(l)) ? LEGACY_HEX_MAP_KEY : HEX_MAP_KEY;
+  return `---${nl}${[line(key), ...kept].join(nl)}${nl}---${m[2] || nl}${content.slice(m[0].length)}`;
 }

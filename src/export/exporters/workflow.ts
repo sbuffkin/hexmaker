@@ -32,6 +32,7 @@ import {
 } from "../../random-tables/randomTable";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { resolveWorkflowTemplate } from "../../random-tables/workflowFiles";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
 import { exportedMessage, openExported, withExportProvenance } from "../exportFolder";
 
@@ -243,16 +244,9 @@ async function loadTemplate(
   workflowFile: TFile,
 ): Promise<string> {
   if (!workflow.templateFile) return "";
-  // Template may be stored as a vault-relative path (with or without .md) or
-  // an Obsidian link target — try both.
-  const tf =
-    plugin.app.vault.getAbstractFileByPath(workflow.templateFile + ".md") ??
-    plugin.app.vault.getAbstractFileByPath(workflow.templateFile) ??
-    plugin.app.metadataCache.getFirstLinkpathDest(
-      workflow.templateFile,
-      workflowFile.path,
-    );
-  if (!(tf instanceof TFile)) return "";
+  // A wikilink (NF3) or, in older workflows, a vault path (with or without .md).
+  const tf = resolveWorkflowTemplate(plugin.app, workflow.templateFile, workflowFile.path);
+  if (!tf) return "";
   return await plugin.app.vault.read(tf);
 }
 

@@ -67,7 +67,7 @@ import type {
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
-import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource } from "./frontmatter";
+import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
@@ -88,6 +88,7 @@ import type { RegionSettings } from "./types";
 import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
+import { runNoteFormatUpgrades } from "./noteFormatUpgrade";
 import { hexBiomeAt, overworldOf } from "./overworld/regionsVault";
 import { BIOMES, biomeNoteOf } from "./overworld/biomes";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
@@ -172,6 +173,8 @@ export default class HexmakerPlugin extends Plugin {
       // BC1, once per vault: every overworld hex's biome in its Biome column.
       void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
+      // NF1–NF3, once per vault: older hex, token and workflow notes in the new note formats (backed up first).
+      void storesReady.then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -2133,7 +2136,8 @@ export default class HexmakerPlugin extends Plugin {
       if (!fm || renamedTokenMap(fm["token-map"], oldName, newName) === null) continue;
       await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
         const next = renamedTokenMap(front["token-map"], oldName, newName);
-        if (next !== null) front["token-map"] = next;
+        // An old plain name becomes a link to the map note (NF3); a link keeps its form.
+        if (next !== null) front["token-map"] = next === newName ? tokenMapValue(newName) : next;
       });
       n++;
     }

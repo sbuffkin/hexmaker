@@ -3,6 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TokenShape, TokenSize } from "../types";
 import { normalizeFolder, getIconUrl, iconLabel } from "../utils";
+import { noteLink } from "../noteFormats";
 import { generatorsFolder } from "../worldgen/generators";
 import { DEFAULT_TOKEN_FILL, isTokenNoteCandidate } from "./tokenDefaults";
 
@@ -482,7 +483,8 @@ export class TokenModal extends HexmakerModal {
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try { await this.app.vault.createFolder(folder); } catch { /* race */ }
     }
-    await this.app.vault.create(proxyPath, `---\ntoken-link: ${originalPath}\n---\n# ${base}-${n}\n`);
+    // A link, so renaming the original note keeps the proxy pointing at it (NF3).
+    await this.app.vault.create(proxyPath, `---\ntoken-link: ${JSON.stringify(noteLink(originalPath))}\n---\n# ${base}-${n}\n`);
     return proxyPath;
   }
 

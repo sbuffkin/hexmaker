@@ -20,11 +20,8 @@ import {
   getGmIconsFromFile,
   getHexMapsFromFile,
   getHexNameFromFile,
-  getHexRegionFromFile,
-  setHexRegionInFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
-import { BODY_FIELDS, readBodyField, sameName, setBodyField, type BodyField } from "../hexBodyFields";
 import {
   addLinkToSection,
   removeLinkFromSection,
@@ -84,8 +81,6 @@ export class HexEditorModal extends HexmakerModal {
   private allLinks = new Map<string, string[]>();
   /** Section key → its heading as written in the note (see getAllSectionData). */
   private allHeadings = new Map<string, string>();
-  /** "**Terrain:**" / "**Region:**" values written in the note's body (see hexBodyFields). */
-  private bodyFields = new Map<BodyField, string>();
   private directTerrain: string | null = null;
   private directIcon: string | null = null;
   private directGmIcon: string | null = null;
@@ -133,7 +128,6 @@ export class HexEditorModal extends HexmakerModal {
     this.allText = new Map();
     this.allLinks = new Map();
     this.allHeadings = new Map();
-    this.bodyFields = new Map();
     this.directTerrain = null;
     this.directIcon = null;
     this.directGmIcon = null;
@@ -169,10 +163,6 @@ export class HexEditorModal extends HexmakerModal {
       if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
-    for (const f of BODY_FIELDS) {
-      const v = readBodyField(rawContent, f);
-      if (v !== undefined) this.bodyFields.set(f, v);
-    }
     ({ text: this.allText, links: this.allLinks, headings: this.allHeadings } = await getAllSectionData(
       this.app,
       path,
@@ -301,7 +291,6 @@ export class HexEditorModal extends HexmakerModal {
       "Notes",
       "hexEditorNotesCollapsed",
     );
-    this.renderBodyFieldNotices(notesBody, path);
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
       this.renderTextSection(
@@ -1463,60 +1452,6 @@ export class HexEditorModal extends HexmakerModal {
           });
           removeBtn.addEventListener("click", () => onRemove(link));
         }
-      }
-    }
-  }
-
-  /**
-   * A "**Terrain:**" or "**Region:**" line in the note that disagrees with
-   * the map (an older template's hand-filled lines): say so, and offer to
-   * apply it to the map or to update the line. The line is never removed.
-   */
-  private renderBodyFieldNotices(container: HTMLElement, path: string): void {
-    const mapValue: Record<BodyField, string | null> = {
-      Terrain: this.directTerrain,
-      Region: getHexRegionFromFile(this.app, path),
-    };
-    for (const field of BODY_FIELDS) {
-      const written = this.bodyFields.get(field);
-      if (written === undefined || sameName(written, mapValue[field])) continue;
-      const row = container.createDiv({ cls: "duckmage-editor-body-field" });
-      const onMap = mapValue[field];
-      row.createSpan({
-        text: `This note's text says ${field}: ${written}, but the map has ${onMap ? onMap : "none"}.`,
-      });
-      const actions = row.createDiv({ cls: "duckmage-editor-body-field-actions" });
-      // Terrain must be one the map's palette has (matched case-insensitively).
-      const terrain = field === "Terrain"
-        ? this.plugin.getMapPalette(this.mapName).find((t) => sameName(t.name, written))?.name
-        : undefined;
-      if ((field === "Region" || terrain) && canDo(this.mapName, field === "Region" ? "paint-region-area" : "paint-terrain")) {
-        actions.createEl("button", { text: `Use "${terrain ?? written}" on the map` }).addEventListener("click", () => {
-          void this.saves.track((async () => {
-            if (field === "Terrain") {
-              await this.ensureHexNote();
-              await this.plugin.undoableEdit(this.mapName, () => setTerrainInFile(this.app, path, terrain!));
-              await this.plugin.syncHexEncounterTableLink(path, terrain!);
-              this.onChanged(new Map([[path, terrain!]]));
-            } else {
-              await this.plugin.undoableEdit(this.mapName, () => setHexRegionInFile(this.app, path, written));
-              this.onChanged();
-            }
-            await this.loadData();
-            this.onOpen();
-          })());
-        });
-      }
-      if (onMap) {
-        actions.createEl("button", { text: `Change the note to "${onMap}"` }).addEventListener("click", () => {
-          const file = this.app.vault.getAbstractFileByPath(path);
-          if (!(file instanceof TFile)) return;
-          void this.saves.track((async () => {
-            await this.app.vault.process(file, (c) => setBodyField(c, field, onMap));
-            await this.loadData();
-            this.onOpen();
-          })());
-        });
       }
     }
   }

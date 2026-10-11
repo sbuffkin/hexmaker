@@ -24,7 +24,7 @@ export function canon(v) {
  * more?" check-in, the one-time table-ranges survey): a restart may write
  * these to data.json. Anything else it writes is a rewrite.
  */
-export const ONE_TIME_KEYS = new Set(["tableRangesPrompt", "advancedNudgeAt"]);
+export const ONE_TIME_KEYS = new Set(["tableRangesPrompt", "advancedNudgeAt", "noteFormatUpgrades"]);
 
 
 /** data.json changed only in ONE_TIME_KEYS (top level). */

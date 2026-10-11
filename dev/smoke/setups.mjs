@@ -342,7 +342,7 @@ async function freshExtra(ctx) {
     await p.createHexNote(1, 1, res.name);
     const hexPath = p.hexPath(1, 1, res.name);
     const text = (await app.vault.adapter.exists(hexPath)) ? await app.vault.adapter.read(hexPath) : null;
-    return { map: res.name, files, note, hexPath, hasLink: !!text && /hexmaker-map:/.test(text), hasTerrain: !!text && /^terrain\s*:/m.test(text) };
+    return { map: res.name, files, note, hexPath, hasLink: !!text && /^map:\s*"\[\[_/m.test(text), hasTerrain: !!text && /^terrain\s*:/m.test(text) };
   })(), ctx.pluginId);
   if (r.error) out.push({ check: "F1-create-paint", ok: false, detail: r.error });
   else {

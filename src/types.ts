@@ -367,6 +367,8 @@ export interface HexmakerPluginSettings {
 	biomePoolSeeded?: boolean;
 	/** True once every overworld's Biome column was filled (BC1 migration, once per vault). */
 	biomeColumnsFilled?: boolean;
+	/** One-time note-format rewrites already done in this vault (src/noteFormatUpgrade.ts: NF1–NF3). */
+	noteFormatUpgrades?: string[];
 	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
 	worldTypesFolder?: string;
 	/** True once the shipped "Default space" world types note was written (once, so a deleted one stays deleted). */

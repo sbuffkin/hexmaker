@@ -16,6 +16,7 @@ import {
   type WorkflowStep,
 } from "./workflow";
 import { newTemplatePath, resolveWorkflowTemplate, stepDieLabels } from "./workflowFiles";
+import { noteLink } from "../noteFormats";
 import { escapeRegex, placeholderPattern } from "../textUtils";
 
 /** Convert a table basename to a default label: spaces → underscores. */
@@ -652,7 +653,8 @@ export class WorkflowEditorModal extends HexmakerModal {
         name: this.file.basename,
         description: description || undefined,
         resultsFolder: resultsFolder || undefined,
-        templateFile: handSet || templatePath,
+        // Written as a link, so renaming the template keeps it (NF3).
+        templateFile: handSet || JSON.stringify(noteLink(templatePath)),
         steps,
       };
 
