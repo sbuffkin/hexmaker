@@ -8,6 +8,7 @@ import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { groupTableFiles } from "./tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "./resolve";
+import { withRepairHint } from "../ui/repairHint";
 
 /**
  * "Add to this hex" target for a roll made from a hex (P2): which sections
@@ -111,7 +112,7 @@ export class RandomTableModal extends HexmakerModal {
     if (files.length === 0) {
       contentEl.createDiv({
         cls: "duckmage-rt-empty",
-        text: `No tables found in "${this.plugin.settings.tablesFolder}".`,
+        text: withRepairHint(`No tables found in "${this.plugin.settings.tablesFolder}".`),
       });
       return;
     }
@@ -180,7 +181,7 @@ export class RandomTableModal extends HexmakerModal {
     if (!(file instanceof TFile)) {
       contentEl.createDiv({
         cls: "duckmage-rt-empty",
-        text: "Table file not found.",
+        text: withRepairHint("Table file not found."),
       });
       return;
     }

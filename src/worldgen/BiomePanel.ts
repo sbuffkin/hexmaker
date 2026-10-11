@@ -26,6 +26,7 @@ import { neighbourRegions, regionBox, type RegionLayout } from "../overworld/lay
 import { drawPreview } from "./preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl } from "../utils";
+import { Disclosure } from "../ui/disclosure";
 import { randomSeed } from "../../packages/hex-wfc/src";
 
 export interface BiomePanelHost {
@@ -182,36 +183,29 @@ export class BiomePanel {
     const present = new Set(palette.map((t) => t.type));
     const grid = el.createDiv({ cls: "duckmage-biome-page-mix" });
     const headRow = grid.createDiv({ cls: "duckmage-biome-page-row is-head" });
-    for (const h of ["Type", "Weight", "", "Min patches"]) headRow.createSpan({ text: h });
+    for (const h of ["Type", "Weight", "Min patches"]) headRow.createSpan({ text: h });
     for (const type of formTypes(palette, f)) {
       const row = grid.createDiv({ cls: "duckmage-biome-page-row" });
       if (!present.has(type)) row.addClass("is-missing");
       row.createSpan({ text: type, attr: { title: present.has(type) ? type : `${type}: not in this palette` } });
       const cur = () => f.mix.find((r) => r.type === type);
       const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${type} weight` } });
-      const num = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", step: "1", "aria-label": `${type} weight value` } });
       const patches = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", step: "1", placeholder: "—", "aria-label": `${type} min patches` } });
       const show = () => {
         const r = cur();
         slider.value = String(Math.min(100, r?.weight ?? 0));
-        num.value = String(r?.weight ?? 0);
+        slider.title = String(r?.weight ?? 0);
         patches.value = r?.minPatches !== undefined ? String(r.minPatches) : "";
         patches.disabled = !r;
       };
       show();
       slider.addEventListener("input", () => {
         setMixRow(f, type, { weight: Number(slider.value) });
-        num.value = slider.value;
+        slider.title = slider.value;
         patches.disabled = !cur();
         this.schedulePreview();
       });
       slider.addEventListener("change", () => this.save());
-      num.addEventListener("change", () => {
-        setMixRow(f, type, { weight: Number(num.value) });
-        show();
-        this.schedulePreview();
-        this.save();
-      });
       patches.addEventListener("change", () => {
         setMixRow(f, type, { minPatches: patches.value.trim() === "" ? null : Number(patches.value) });
         show();
@@ -326,8 +320,10 @@ export class BiomePanel {
     const legend = box.createDiv();
     const status = box.createEl("p", { cls: "duckmage-map-origin-desc" });
     const seedRow = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
-    const seed = seedRow.createEl("input", { type: "number", cls: "duckmage-wfc-seed", value: String(BiomePanel.seed) });
+    // The seed itself is in Advanced → Seed (placed at the end); Re-roll stays here.
+    const seedBox = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    seedBox.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
+    const seed = seedBox.createEl("input", { type: "number", cls: "duckmage-wfc-seed", value: String(BiomePanel.seed), attr: { "aria-label": "Seed" } });
     seed.addEventListener("change", () => { BiomePanel.seed = Number(seed.value) >>> 0; this.drawPreview(canvas, legend, status, side); });
     seedRow.createEl("button", { text: "Re-roll" }).addEventListener("click", () => {
       BiomePanel.seed = randomSeed();
@@ -356,6 +352,9 @@ export class BiomePanel {
     palSel.addEventListener("change", () => { this.onPalette(palSel.value); });
     this.redrawPreview = () => this.drawPreview(canvas, legend, status, side);
     this.drawPreview(canvas, legend, status, side);
+    // The page's Advanced dropdown (src/ui/placement.ts): the seed, by id.
+    const disclosure = new Disclosure(plugin.app, "BiomePage", () => main);
+    disclosure.place("BiomePage.seed", seedBox);
   }
 
   /** Called with a new preview palette (the page keeps it). */

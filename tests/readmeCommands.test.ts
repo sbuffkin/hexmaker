@@ -13,7 +13,8 @@ const readme = read("../README.md");
 const plugin = read("../src/HexmakerPlugin.ts");
 const pluginName = (JSON.parse(read("../manifest.json")) as { name: string }).name;
 
-const registered = [...plugin.matchAll(/addCommand\(\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
+// Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
+const registered = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
 const prefix = `${pluginName}: `;
 const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\\*|"|\\s\\|)`, "g"))].map((m) => m[1].trim());

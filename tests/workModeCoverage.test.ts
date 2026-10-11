@@ -39,7 +39,7 @@ const src = sources("src");
 
 describe("work mode classification covers every entry point", () => {
 	it("every registered command is classified (and none is stale)", () => {
-		const ids = src.flatMap((f) => [...read(f).matchAll(/addCommand\(\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]));
+		const ids = src.flatMap((f) => [...read(f).matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]));
 		expect(ids.length).toBeGreaterThan(10);
 		const missing = ids.filter((id) => !(id in COMMAND_ACTIONS));
 		expect(missing).toEqual([]);

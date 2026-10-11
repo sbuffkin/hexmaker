@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { LAYERS, PLACEMENT, idsOn, isShown, layerOf, partition, type Layer } from "../src/ui/placement";
+import { PLACEMENT, idsOn, isShown, layerOf, parsePlacement, partition, subSectionOf, type Layer } from "../src/ui/placement";
 import {
   DEBUG_CONFIRMED_KEY,
   DEBUG_MODE_KEY,
@@ -13,7 +13,7 @@ import {
   setDebugMode,
   type LocalStore,
 } from "../src/ui/debugMode";
-import { DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen } from "../src/ui/disclosure";
+import { DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen, subSectionKey } from "../src/ui/disclosure";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 
@@ -34,32 +34,40 @@ describe("placement map", () => {
     expect(layerOf("Settings.hexGap")).toBe("main");
     expect(layerOf("Nowhere.atAll")).toBe("main");
     expect(layerOf("Settings.hexFolder")).toBe("advanced");
+    expect(subSectionOf("Settings.hexFolder")).toBe("Folders");
     expect(layerOf("Settings.generateWorldData")).toBe("advanced");
+    expect(subSectionOf("Settings.generateWorldData")).toBeUndefined();
     expect(layerOf("Settings.biomesFolder")).toBe("debug");
-    expect(layerOf("GenPage.clumping")).toBe("debug");
-    expect(layerOf("GenPage.symmetry")).toBe("advanced");
+    expect(layerOf("GenPage.clumping")).toBe("advanced");
+    expect(subSectionOf("GenPage.clumping")).toBe("Engine tuning");
+    expect(layerOf("GenPage.symmetry")).toBe("main");
     // Not a prototype key or a bad value.
     expect(layerOf("toString")).toBe("main");
     expect(layerOf("X.y", { "X.y": "sideways" as Layer })).toBe("main");
   });
 
-  it("every listed layer is a real one, and ids look like <Surface>.<control>", () => {
-    for (const [id, layer] of Object.entries(PLACEMENT)) {
-      expect(LAYERS).toContain(layer);
-      expect(id).toMatch(/^[A-Z][A-Za-z]+\.[a-z][A-Za-z0-9]*$/);
+  it("every listed placement is a real one, and ids look like <Surface>.<control>", () => {
+    for (const [id, value] of Object.entries(PLACEMENT)) {
+      expect(parsePlacement(value)).not.toBeNull();
+      expect(id).toMatch(/^[A-Z][A-Za-z]+(.[a-z][A-Za-z0-9]*)+$/);
     }
   });
 
   it("moving a control is one entry: a custom map overrides the default", () => {
     expect(layerOf("Settings.hexGap", { "Settings.hexGap": "advanced" })).toBe("advanced");
+    expect(layerOf("Settings.hexGap", { "Settings.hexGap": "advanced/Look" })).toBe("advanced");
+    expect(subSectionOf("Settings.hexGap", { "Settings.hexGap": "advanced/Look" })).toBe("Look");
     expect(layerOf("Settings.hexFolder", {})).toBe("main");
   });
 
-  it("the proof placements: folders and setup tools Advanced, storage plumbing and engine tuning Debug", () => {
-    expect(idsOn("advanced").filter((id) => id.startsWith("Settings."))).toContain("Settings.worldFolder");
+  it("folders and setup tools Advanced, storage plumbing Debug, generator tuning in Advanced sub-sections", () => {
+    // The world folder is "keep" in the owner's worksheet: main.
+    expect(layerOf("Settings.worldFolder")).toBe("main");
     // The setup tools are in the README's manual setup, so Advanced, not Debug.
-    expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData"]));
-    expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder", "GenPage.scatter", "GenPage.mixStrength"]));
+    expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData", "GenPage.scatter", "GenPage.mixStrength"]));
+    expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder"]));
+    // Nothing on the generator page needs debug mode (owner).
+    expect(idsOn("debug").filter((id) => /^(GenPage|BiomePage)./.test(id))).toEqual([]);
     // Customisation is not "advanced" (rule 5): the custom icons folder stays main.
     expect(layerOf("Settings.iconsFolder")).toBe("main");
   });
@@ -203,19 +211,30 @@ describe("settings definitions (Obsidian 1.13+)", () => {
     expect(all).not.toContain("Feature level");
   });
 
-  it("put folders and setup tools in Advanced (collapsed) and storage plumbing in Debug (debug mode only)", () => {
+  it("put folders and setup tools in Advanced (collapsed, folders in their own sub-section) and storage plumbing in Debug (debug mode only)", () => {
     const store = new FakeStore();
     let defs = tabWith(store).getSettingDefinitions() as Item[];
     const advanced = defs.find((d) => d.items?.[0]?.name === "Advanced")!;
     const folders = advanced.items!.find((i) => i.name === "Hex notes folder")!;
+    const repair = advanced.items!.find((i) => i.name === "Generate terrain tables & hex links")!;
     expect(folders).toBeDefined();
-    // Main settings stay above the fold.
-    expect(defs.some((d) => d.name === "Hex cell spacing")).toBe(true);
-    expect(defs.some((d) => d.name === "Hex notes folder")).toBe(false);
-    // Collapsed until opened.
+    // Main settings stay above the fold, under their headings.
+    const above = defs.filter((d) => d !== advanced && d.heading !== "Debug");
+    expect(names(above)).toContain("Hex cell spacing");
+    expect(names(above)).not.toContain("Hex notes folder");
+    // Collapsed until opened; folders sit in the Folders sub-section, closed until opened too.
     expect(shown(folders.visible)).toBe(false);
+    expect(shown(repair.visible)).toBe(false);
     setDisclosureOpen(store, "Settings", true);
+    expect(shown(repair.visible)).toBe(true);
+    const folderHeader = advanced.items!.find((i) => i.name === "Folders")!;
+    expect(shown(folderHeader.visible)).toBe(true);
+    expect(shown(folders.visible)).toBe(false);
+    setDisclosureOpen(store, subSectionKey("Settings", "Folders"), true);
     expect(shown(folders.visible)).toBe(true);
+    // Plain Advanced rows come before the sub-sections.
+    const order = advanced.items!.map((i) => i.name);
+    expect(order.indexOf("Generate terrain tables & hex links")).toBeLessThan(order.indexOf("Folders"));
     // Debug: only while debug mode is on (and Advanced is open).
     defs = tabWith(store).getSettingDefinitions() as Item[];
     const debug = defs.find((d) => d.heading === "Debug")!;

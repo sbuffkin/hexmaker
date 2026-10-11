@@ -22,6 +22,7 @@ import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
 import { resolveStepTable, resolveWorkflowTemplate } from "./workflowFiles";
 import { ConfirmModal } from "../worldgen/ConfirmModal";
 import { localIsoDateTime } from "../provenance";
+import { withRepairHint } from "../ui/repairHint";
 
 /** How a slot got its value, for the results note's Rolls table. */
 interface SlotInfo {
@@ -405,7 +406,7 @@ export class WorkflowWizardModal extends HexmakerModal {
     // Try exact path first, then Obsidian link resolution with workflow file as source
     const tableFile = resolveStepTable(this.app, step, this.workflowFile.path);
     if (!tableFile) {
-      new Notice(`Table not found: ${step.tablePath}`);
+      new Notice(withRepairHint(`Table not found: ${step.tablePath}`));
       return;
     }
     const content = await this.app.vault.read(tableFile);
