@@ -4851,10 +4851,9 @@ export class HexMapView extends ItemView {
     }
     // Arrival (GM4): a world set to make places makes this hex's place on
     // the spot, in any mode, when it has none yet.
-    if (!hasRegion && !childPlan.open.length && !childPlan.listCount && this.plugin.arrival.canArrive(this.activeMapName, x, y)) {
-      menu.add("hex.arrive", "Go there", "footprints", () => void this.arriveAt(x, y));
-    }
-    if (hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
+    const arrive = !hasRegion && !childPlan.open.length && !childPlan.listCount && this.plugin.arrival.canArrive(this.activeMapName, x, y);
+    if (arrive) menu.add("hex.arrive", "Go there", "footprints", () => void this.arriveAt(x, y));
+    if (arrive || hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
 
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
 
