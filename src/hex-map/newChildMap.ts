@@ -9,6 +9,7 @@ import { DEFAULT_REGION_SETTINGS, regionMapAt } from "../maps/submaps";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { meshes } from "../overworld/regionWorld";
 import { RegionGenModal } from "./BiomeModals";
+import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 
 /** The two kinds of map a hex opens into, with the small line under each (K1). */
 export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
@@ -45,6 +46,8 @@ export function startNewLocation(host: NewChildMapHost, parentMap: string, x: nu
 export function startNewRegion(host: NewChildMapHost, parentMap: string, x: number, y: number): void {
   const parent = host.plugin.getMap(parentMap);
   if (!parent) return;
+  // Play mode: making a region is locked (the Region card says so too).
+  if (!canAdd(parent)) { new Notice(ADD_REGION_LOCKED_HINT); return; }
   const go = (settings: RegionSettings) => {
     // Rectangles join their neighbours: the region form (biome, blend, seed,
     // live preview) makes it in its slot of the shared grid.
@@ -108,7 +111,8 @@ export class ChildKindModal extends HexmakerModal {
 
     const why = existing
       ? `This hex's region is ${plugin.mapLabel(existing.name)}.`
-      : !regionsOn ? "Advanced: needs Regions and overworlds." : undefined;
+      : !regionsOn ? "Advanced: needs Regions and overworlds."
+      : !canAdd(plugin.getMap(this.parentMap)) ? ADD_REGION_LOCKED_HINT : undefined;
     card("region", why);
     if (existing && this.host.onEnter) {
       const enter = contentEl.createEl("button", { cls: "duckmage-child-kind-enter", text: `Enter ${plugin.mapLabel(existing.name)}` });

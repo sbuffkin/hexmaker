@@ -5122,7 +5122,11 @@ export class HexMapView extends ItemView {
     // The notes it links (towns, dungeons…), from the metadata cache (S3).
     const note = this.app.vault.getAbstractFileByPath(hexPath);
     const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note)), this.plugin.sectionWordsFor(this.activeMapName)) : "";
-    const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked);
+    // Biomes view: the region outline is hidden (every hex has one), so the
+    // tooltip names the hex's region instead.
+    const regionMap = OverworldLayer.viewOf(this.plugin, this.getActiveMap()) === "biomes" ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)?.regionMap : undefined;
+    const region = regionMap && this.plugin.getMap(regionMap) ? this.plugin.mapLabel(regionMap) : null;
+    const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked, region);
     if (hexEl.title !== label) {
       hexEl.title = label;
       hexEl.setAttr("aria-label", label);

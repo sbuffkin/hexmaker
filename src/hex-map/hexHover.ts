@@ -10,6 +10,7 @@ export function hexHoverLabel(
   baseTerrain: string | null,
   name: string | null = null,
   linked = "",
+  region: string | null = null,
 ): string {
   const where = `hex ${x}, ${y}`;
   const label = ownTerrain
@@ -18,7 +19,9 @@ export function hexHoverLabel(
       ? `${baseTerrain} (map base) · ${where}`
       : `Hex ${x}, ${y}`;
   // A named hex leads with its name (N1).
-  const full = name ? `${name} · ${label}` : label;
+  const named = name ? `${name} · ${label}` : label;
+  // An overworld hex in the Biomes view: its region (it has no outline there).
+  const full = region ? `${named} · Region: ${region}` : named;
   // Then what it links: "· Town: Gullmouth" (round 6 S3).
   return linked ? `${full} · ${linked}` : full;
 }

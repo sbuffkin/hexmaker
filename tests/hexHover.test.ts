@@ -19,6 +19,11 @@ describe("hexHoverLabel", () => {
 		expect(hexHoverLabel(6, 6, "beach", null, null, "")).toBe("beach · hex 6, 6");
 	});
 
+	it("names the hex's region after its coordinates (Biomes view, where the outline is hidden)", () => {
+		expect(hexHoverLabel(4, 2, "taiga", null, null, "", "Frostmarch")).toBe("taiga · hex 4, 2 · Region: Frostmarch");
+		expect(hexHoverLabel(4, 2, "taiga", null, "Old Pass", "Town: Rime", "Frostmarch")).toBe("Old Pass · taiga · hex 4, 2 · Region: Frostmarch · Town: Rime");
+	});
+
 	it("falls back to the coordinates", () => {
 		expect(hexHoverLabel(0, 0, null, null)).toBe("Hex 0, 0");
 	});
