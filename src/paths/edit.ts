@@ -209,6 +209,17 @@ export function segmentFn(router: SegmentRouter, styleFor?: StyleFor): SegmentFn
 
 const sameHexes = (x: readonly HexKey[], y: readonly HexKey[]) => x.length === y.length && x.every((k, i) => k === y[i]);
 
+const segmentKey = (typeName: string, a: HexKey, b: HexKey) => `${typeName}\u0000${a}\u0000${b}`;
+
+/** Every segment (type, anchor, next anchor) of some paths. */
+function segmentKeys(paths: readonly MapPath[]): Set<string> {
+  const out = new Set<string>();
+  for (const p of paths) {
+    for (const b of p.branches) for (let i = 1; i < b.anchors.length; i++) out.add(segmentKey(p.typeName, b.anchors[i - 1], b.anchors[i]));
+  }
+  return out;
+}
+
 /**
  * Before a context change (terrain or palette impassability, a resize, a
  * type's avoid/winding style) takes effect: every segment whose route would
@@ -216,14 +227,22 @@ const sameHexes = (x: readonly HexKey[], y: readonly HexKey[]) => x.length === y
  * old hexes. Paths with nothing to pin are returned as the same objects.
  * `pinned` lists each changed path and how many anchors it gained (for the
  * "Kept the route of …" notice; dropping those anchors is "Reroute instead").
+ *
+ * `drawnBefore`: when the paths changed in the same step as the context (a
+ * hand edit of the map note that moved anchors and painted terrain), the
+ * paths as they were. Only segments that were already there (same type,
+ * same two anchors in that order) had a route to keep; a segment the edit
+ * made is routed under the map as it is now, never pinned to the old one.
  */
 export function pinChanged(
   paths: readonly MapPath[],
   oldSeg: SegmentFn,
   newSeg: SegmentFn,
   grid?: Grid,
+  drawnBefore?: readonly MapPath[],
 ): { paths: MapPath[]; pinned: { path: string; added: number }[] } {
   const pinned: { path: string; added: number }[] = [];
+  const existed = drawnBefore ? segmentKeys(drawnBefore) : null;
   const out = paths.map((p) => {
     let added = 0;
     const branches = p.branches.map((b) => {
@@ -231,6 +250,10 @@ export function pinChanged(
       for (let i = 1; i < b.anchors.length; i++) {
         const a = b.anchors[i - 1];
         const c = b.anchors[i];
+        if (existed && !existed.has(segmentKey(p.typeName, a, c))) {
+          anchors.push(c);
+          continue;
+        }
         const before = oldSeg(p.typeName, a, c).hexes;
         if (!sameHexes(before, newSeg(p.typeName, a, c).hexes)) {
           const inner = anchorsFor(before, (x, y) => newSeg(p.typeName, x, y), grid).slice(1, -1);
