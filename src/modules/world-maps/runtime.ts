@@ -9,7 +9,7 @@
 
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "../types";
-import { representableBiomes } from "../../overworld/biomes";
+import { biomeByRef, representableBiomes } from "../../overworld/biomes";
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, WORLD_BIOMES_TUNING, worldBiomesFromOptions } from "../../overworld/worldBiomes";
 import { gridKeys } from "../../worldgen/procedural/common";
 import { BiomeStore } from "../../overworld/BiomeStore";
@@ -99,6 +99,22 @@ export const worldMapsRuntime: ModuleRuntime = {
     buildBenchWorld: (o?: { seed?: number; side?: number }) => buildBenchWorld(plugin, o),
     // The open map views' overworld layer timings (HexMapView.overworldStats; not imported, so tests load this without Obsidian's views).
     overworldStats: () => plugin.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => (l.view as { overworldStats?: () => unknown }).overworldStats?.() ?? null),
+    // Visual checks: set an overworld hex's biome by name ("Caverns", "Alpine 2 + Taiga"), as the Biome painter does.
+    paintBiome: async (map: string, x: number, y: number, ref: string) => {
+      const id = biomeByRef(ref);
+      return id ? worldMapsApi().paintBiomeHex(plugin, map, x, y, id) : { error: `No biome "${ref}"` };
+    },
+    // ...and open Edit region… on a hex, as the overworld's menu does.
+    editRegion: (map: string, x: number, y: number) => {
+      const host = {
+        app: plugin.app,
+        plugin,
+        enter: (name: string) => void plugin.showMap(name),
+        changed: () => plugin.refreshHexMap(),
+        openLocations: () => undefined,
+      };
+      new (worldMapsApi().EditRegionModal)(host, map, x, y).open();
+    },
   }),
   worldMaps: worldMapsApi,
 };

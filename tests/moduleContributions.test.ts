@@ -99,7 +99,7 @@ describe("P7: World maps through its contributions", () => {
   });
 
   it("offers the sandbox dev helpers (only the plugin decides when: the sandbox marker)", () => {
-    expect(Object.keys(moduleDevTools({} as never)).sort()).toEqual(["buildBenchWorld", "buildDemoWorld", "overworldStats"]);
+    expect(Object.keys(moduleDevTools({} as never)).sort()).toEqual(["buildBenchWorld", "buildDemoWorld", "editRegion", "overworldStats", "paintBiome"]);
   });
 
   it("its map-surface hooks are one object, made once, and every entry is defined", () => {

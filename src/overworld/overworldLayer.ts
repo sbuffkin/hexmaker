@@ -21,7 +21,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { hexCenter } from "../../packages/hex-wfc/src/grid";
 import { regionsOf } from "../maps/submaps";
-import { biomeInfo } from "./biomes";
+import { biomeInfo, biomeParts } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import {
   affineScale,
@@ -328,9 +328,15 @@ export class OverworldLayer {
     for (const [key, b] of biomes) {
       const [x, y] = key.split("_").map(Number);
       const [X, Y] = at(x, y);
-      const text = biomeInfo(b)?.label ?? "";
-      ctx.strokeText(text, X, Y - 0.3 * k * s);
-      ctx.fillText(text, X, Y - 0.3 * k * s);
+      // A mix (Alpine + Taiga) is one part per line, "+" before the rest, so it fits the hex.
+      const parts = biomeParts(b);
+      const lines = parts.length > 1 ? parts.map((p, i) => `${i ? "+ " : ""}${biomeInfo(p.id)?.label ?? p.id}`) : [biomeInfo(b)?.label ?? ""];
+      const lh = Math.max(8, 0.2 * k * s) * 1.1;
+      lines.forEach((text, i) => {
+        const ty = Y - 0.3 * k * s - (lines.length - 1 - i) * lh;
+        ctx.strokeText(text, X, ty);
+        ctx.fillText(text, X, ty);
+      });
     }
   }
 }

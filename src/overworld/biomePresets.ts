@@ -28,7 +28,10 @@
  * Underground lake, Mines and halls and Magma caves, marked `layer:
  * underground`: World biomes never places those, they're picked by hand.
  * The underground ones paint with World's own terrain types (cave floor,
- * solid rock, fungus…; src/modules/world/terrainTypes.ts). Like any new
+ * solid rock, fungus…; core terrain types). They're enclosed: a narrow
+ * blend, and their Tuning turns off the lean toward the made regions next
+ * door (neighbour influence 0, as before super-region), or a cave amid
+ * forests reads as forest. Like any new
  * shipped biome, an existing vault gets each note once (BiomeStore seed).
  *
  * Pure: no Obsidian imports.

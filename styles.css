@@ -8112,6 +8112,10 @@ button.duckmage-terrain-legend-chip {
 .duckmage-biome-group-head:first-child {
     margin-top: 0;
 }
+/* Edit region…'s biome strip: tall enough to show a group heading with its row. */
+.duckmage-terrain-picker.duckmage-edit-region-biomes {
+    max-height: 15em;
+}
 .duckmage-biome-filter {
     width: 100%;
     margin-bottom: 0.4em;

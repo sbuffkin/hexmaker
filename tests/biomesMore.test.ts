@@ -87,8 +87,8 @@ describe("new shipped biomes", () => {
 	it("surface ones carry a climate (World biomes places them); underground ones are marked and carry none", () => {
 		for (const id of SURFACE_NEW) expect({ id, placeable: isPlaceable(preset(id).climate), layer: preset(id).layer }).toEqual({ id, placeable: true, layer: undefined });
 		for (const id of UNDERGROUND_NEW) expect({ id, climate: preset(id).climate, layer: preset(id).layer }).toEqual({ id, climate: undefined, layer: "underground" });
-		// Caverns: big patches, little smoothing.
-		expect(preset("caverns").tuning).toMatchObject({ smoothing: 1, "patch-size": 2 });
+		// Caverns: little smoothing, and its patches may grow big.
+		expect(preset("caverns").tuning).toMatchObject({ smoothing: 1, "patch-max": 0.35 });
 	});
 
 	it("can be painted on Expanded with their own terrains, and on Limited by type fallback", () => {
