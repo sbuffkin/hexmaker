@@ -893,11 +893,11 @@ export class HexMapView extends ItemView {
     const map = this.plugin.getMap(this.activeMapName);
     if (!map) return;
     const cur = workModeOf(map);
-    // Play and Build first; God is in Advanced ▸ (placement: WorkModeMenu.god)
-    // and offered where an action needs it (godOffer.ts).
+    // Play, Build and God in one list (owner 2026-10-12: God isn't in
+    // Advanced); God is also offered where an action needs it (godOffer.ts).
     const menu = new ModeMenu(cur, { store: this.app });
     for (const m of WORK_MODES) {
-      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].desc}`, null, () => this.setWorkMode(m), { checked: m === cur, place: `WorkModeMenu.${m}` });
+      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].short}`, null, () => this.setWorkMode(m), { checked: m === cur, place: `WorkModeMenu.${m}` });
     }
     menu.showAtMouseEvent(e);
   }

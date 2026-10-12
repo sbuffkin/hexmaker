@@ -36,10 +36,11 @@ export const WORK_MODES: readonly WorkMode[] = ["play", "build", "god"];
 
 export const DEFAULT_WORK_MODE: WorkMode = "build";
 
-export const WORK_MODE_TEXT: Record<WorkMode, { label: string; desc: string }> = {
-  play: { label: "Play", desc: "Run a game: move tokens, read and write notes, roll. The map itself stays as it is." },
-  build: { label: "Build", desc: "Add to and edit the map: paint, draw paths, make maps and regions." },
-  god: { label: "God", desc: "Change anything, including placed biomes, rerolls, regenerating, swapping hexes and deleting." },
+/** label, a 3-word `short` for the mode menu (owner 2026-10-12), and the full `desc` for the button's tooltip. */
+export const WORK_MODE_TEXT: Record<WorkMode, { label: string; short: string; desc: string }> = {
+  play: { label: "Play", short: "Run the game", desc: "Run a game: move tokens, read and write notes, roll. The map itself stays as it is." },
+  build: { label: "Build", short: "Edit the map", desc: "Add to and edit the map: paint, draw paths, make maps and regions." },
+  god: { label: "God", short: "Edit anything, anywhere", desc: "Change anything, including placed biomes, rerolls, regenerating, swapping hexes and deleting." },
 };
 
 /**
@@ -142,8 +143,8 @@ export function lockedHint(action: ModeAction): string {
 }
 
 /**
- * God is in the mode switch's Advanced ▸ submenu (owner, 2026-10-11), so
- * it's offered where it's needed instead: a hint that says God unlocks
+ * God is in the mode switch's list, and it's also offered where it's
+ * needed: a hint that says God unlocks
  * the action gets a "Switch to God for this map" button or menu item right
  * there. Never offered for an action Build already allows, and never
  * anywhere else (no nags).
