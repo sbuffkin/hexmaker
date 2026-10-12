@@ -348,6 +348,9 @@ async function wizardMapStepChecks(ctx) {
   const r = await ctx.ev(() => (async () => {
     const leaf = window.app.workspace.getLeavesOfType("duckmage-setup-wizard")[0];
     if (!leaf) return { error: "no wizard leaf" };
+    // Shown and focused: a hidden leaf's fields can't take focus (the wheel steps a focused field).
+    await window.app.workspace.revealLeaf(leaf);
+    window.app.workspace.setActiveLeaf(leaf, { focus: true });
     const view = leaf.view;
     const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { const v = fn(); if (v) return v; await new Promise((r2) => setTimeout(r2, 100)); } return fn(); };
     view.currentIndex = 2;
@@ -366,6 +369,7 @@ async function wizardMapStepChecks(ctx) {
     const second = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
     colsAt.biomes = cols.value;
     cols.focus();
+    colsAt.focused = document.activeElement === cols;
     cols.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
     colsAt.wheel = cols.value;
     root.querySelector(".duckmage-wizard-size-reset")?.click();
@@ -391,7 +395,7 @@ async function wizardMapStepChecks(ctx) {
     { check: "F1-wizard-scales", ok: r.scaleLabels.length >= 2 && r.first.gens[0] === "Blank" && r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens),
       detail: `scales ${r.scaleLabels.join(", ")}; ${r.first.scale}: ${r.first.gens.join(", ")}; ${r.second.scale}: ${r.second.gens.join(", ")}` },
     { check: "F1-wizard-size", ok: r.colsAt.biomes !== r.colsAt.start && Number(r.colsAt.wheel) === Number(r.colsAt.biomes) + 1 && r.colsAt.reset === r.colsAt.biomes,
-      detail: `columns: start ${r.colsAt.start}, Biomes ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel}, reset ${r.colsAt.reset}` },
+      detail: `columns: start ${r.colsAt.start}, Biomes ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel} (focused ${r.colsAt.focused}), reset ${r.colsAt.reset}` },
     { check: "F1-wizard-advanced", ok: r.opts > 0 && r.optsInAdvanced === 0 && r.sliders >= 5 && r.sliders <= 10 && r.slidersInAdvanced === r.sliders && /· 1 set/.test(r.after) && !/set/.test(r.reset),
       detail: `options ${r.opts} (${r.optsInAdvanced} in Advanced); sliders ${r.sliders} (${r.slidersInAdvanced} in Advanced); header "${r.before}" → "${r.after}" → "${r.reset}"` },
   ];
