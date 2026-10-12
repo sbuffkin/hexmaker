@@ -11,6 +11,8 @@ import {
   type ProcOption,
   type ProcPath,
   type ProcResult,
+  type TuningDef,
+  tuned,
 } from "../worldgen/procedural/common";
 import { ZONE_ROLES, roleOdds, rollRole, type TableSource } from "../worldgen/tableRoles";
 import { ORBIT_ZONES, orbitZone } from "./worldTypes";
@@ -56,6 +58,17 @@ export const ORBITS_OPTIONS: ProcOption[] = [
     ],
     default: "normal",
   },
+];
+
+/** Orbits' tuning sliders (setup wizard Advanced). */
+export const ORBITS_TUNING: readonly TuningDef[] = [
+  { key: "firstOrbit", label: "First orbit", help: "Rings out from the star where the first planet may orbit.", min: 1, max: 4, step: 1, default: 2 },
+  { key: "emptyOrbits", label: "More empty orbits", help: "Percentage points added to (or taken from) the chance a ring has no planet.", min: -40, max: 40, step: 5, default: 0 },
+  { key: "moons", label: "Moons", help: "Chance a planet (other than a gas giant) has a moon.", min: 0, max: 1, step: 0.05, default: 0.3 },
+  { key: "giantMoons", label: "Gas giant moons", help: "Chance a gas giant has a moon.", min: 0, max: 1, step: 0.05, default: 0.7 },
+  { key: "beltLength", label: "Belt length", help: "The shortest share of its ring an asteroid belt fills.", min: 0, max: 0.6, step: 0.05, default: 0.3 },
+  { key: "station", label: "Station", help: "Chance of a station beside the mainworld.", min: 0, max: 1, step: 0.05, default: 0.5 },
+  { key: "comet", label: "Comet", help: "Chance of a comet past the last orbit.", min: 0, max: 1, step: 0.05, default: 0.6 },
 ];
 
 /**
@@ -172,9 +185,11 @@ export function orbits(
   if (roles.jumpLimit && fullRing >= 3) for (const h of ring(1)) set(h, roles.jumpLimit);
 
   // Orbits from ring 2 out to the last full ring.
-  const first = 2;
+  const first = Math.max(1, Math.round(tuned(options, "firstOrbit", 2)));
   const last = Math.max(first, fullRing);
-  const skip = options.bodies === "few" ? 0.45 : options.bodies === "crowded" ? 0.05 : 0.2;
+  const baseSkip = options.bodies === "few" ? 0.45 : options.bodies === "crowded" ? 0.05 : 0.2;
+  const moreEmpty = tuned(options, "emptyOrbits", 0);
+  const skip = moreEmpty ? Math.min(1, Math.max(0, baseSkip + moreEmpty / 100)) : baseSkip;
   const warnings: string[] = [];
   // Rows that can't be placed, and roles with no table, are said (never dropped silently).
   const notes = new Set<string>();
@@ -211,7 +226,7 @@ export function orbits(
     if (roles.belts.includes(body)) {
       // Belts sweep an arc of the ring rather than sitting on one hex.
       const start = Math.floor(rand() * hexesOnRing.length);
-      const span = Math.max(2, Math.floor(hexesOnRing.length * (0.3 + rand() * 0.4)));
+      const span = Math.max(2, Math.floor(hexesOnRing.length * (tuned(options, "beltLength", 0.3) + rand() * 0.4)));
       const sorted = sortAround(hexesOnRing, center, grid);
       for (let i = 0; i < span; i++) {
         const h = sorted[(start + i) % sorted.length];
@@ -231,7 +246,7 @@ export function orbits(
     // or two, rocky worlds sometimes one.
     if (roles.moon) {
       const giant = roles.giants.includes(body);
-      let moons = rand() < (giant ? 0.7 : 0.3) ? 1 : 0;
+      let moons = rand() < (giant ? tuned(options, "giantMoons", 0.7) : tuned(options, "moons", 0.3)) ? 1 : 0;
       if (giant && moons && rand() < 0.35) moons++;
       const free = hexes.filter((h) => distance(h, pos, grid) === 1 && isFree(h));
       for (; moons > 0 && free.length; moons--) {
@@ -265,7 +280,7 @@ export function orbits(
       && cells.get(cellKey(h[0], h[1])) === roles.background);
     const pickFree = () => free.splice(Math.floor(rand() * free.length), 1)[0];
     if (roles.starport && free.length) set(pickFree(), roles.starport);
-    if (roles.station && free.length && rand() < 0.5) set(pickFree(), roles.station);
+    if (roles.station && free.length && rand() < tuned(options, "station", 0.5)) set(pickFree(), roles.station);
   }
 
   // Out past the last orbit: a jump point and maybe a comet.
@@ -273,7 +288,7 @@ export function orbits(
     && cells.get(cellKey(h[0], h[1])) === roles.background);
   const takeOuter = () => outer.splice(Math.floor(rand() * outer.length), 1)[0];
   if (roles.jumpPoint && outer.length) set(takeOuter(), roles.jumpPoint);
-  if (roles.comet && outer.length && rand() < 0.6) set(takeOuter(), roles.comet);
+  if (roles.comet && outer.length && rand() < tuned(options, "comet", 0.6)) set(takeOuter(), roles.comet);
   if (maxD > last + 1 && outer.length === 0) warnings.push("No room outside the orbits for a jump point.");
 
   return { cells, paths, warnings };

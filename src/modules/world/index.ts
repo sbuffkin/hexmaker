@@ -31,5 +31,15 @@ export const worldModule: HexmakerModule = {
     subgroupOf: new Map(BUNDLED_PLACE_ICONS.map(([file, , kind]) => [file, kind])),
   },
   palettes: WORLD_PRESETS,
+  mapScales: [{
+    id: "overland",
+    label: "Overland",
+    description: "A region of land and sea: forests, hills, coasts, towns.",
+    kind: "world",
+    size: { cols: 20, rows: 16 },
+    palette: "Expanded",
+    generators: ["procedural:overland"],
+    otherGenerators: true,
+  }],
   owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
 };

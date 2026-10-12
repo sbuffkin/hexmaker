@@ -1406,6 +1406,22 @@
   "subgroup": "Map"
  },
  {
+  "kind": "radio cards",
+  "level": "always",
+  "pick": "keep",
+  "lists": "",
+  "focused": null,
+  "mix": "",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "surface": "Setup wizard: Map",
+  "id": "Wizard.mapScale",
+  "label": "What are you mapping?",
+  "loc": "src/SetupWizardView.ts",
+  "desc": "Overland, Biomes, Sector or system, Planet (from the modules whose map types are on). Sets the size, palette and generator list.",
+  "why": "Owner 2026-10-12: scale and generator are two choices."
+ },
+ {
   "id": "Wizard.gridCols",
   "surface": "Setup wizard: Map",
   "label": "Grid size (columns)",
@@ -1436,6 +1452,22 @@
   "mix": "",
   "group": "Setup wizard",
   "subgroup": "Map"
+ },
+ {
+  "kind": "button",
+  "level": "always",
+  "pick": "keep",
+  "lists": "",
+  "focused": null,
+  "mix": "",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "surface": "Setup wizard: Map",
+  "id": "Wizard.gridSizeReset",
+  "label": "Reset grid size",
+  "loc": "src/SetupWizardView.ts",
+  "desc": "Puts columns and rows back to the chosen scale size. The size fields also step with the mouse wheel while hovered or focused.",
+  "why": "Owner 2026-10-12: grid size easy to reset."
  },
  {
   "id": "Wizard.hexOrientation",
@@ -1559,6 +1591,22 @@
   "desc": "Options of whichever other generator is picked (space, learned).",
   "pick": "advanced",
   "why": "Options of other generators are part of using generators; defaults and Re-roll cover Simple.",
+  "lists": "Per-generator option choices",
+  "focused": true,
+  "mix": "",
+  "group": "Setup wizard",
+  "subgroup": "Map"
+ },
+ {
+  "id": "Wizard.tuning",
+  "surface": "Setup wizard: Map",
+  "label": "Engine tuning sliders",
+  "kind": "slider",
+  "level": "conditional: another generator chosen",
+  "loc": "src/SetupWizardView.ts:647",
+  "desc": "5 to 10 sliders per generator that most change the layout, each with its default and a reset.",
+  "pick": "advanced",
+  "why": "Owner 2026-10-12: Advanced is a trimmed set of tuning sliders.",
   "lists": "Per-generator option choices",
   "focused": true,
   "mix": "",

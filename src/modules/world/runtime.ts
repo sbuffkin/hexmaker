@@ -12,6 +12,7 @@ import {
   REGION_DETAIL_ID,
   REGION_DETAIL_OPTIONS,
   overlandDescription,
+  OVERLAND_TUNING,
   planetSurface,
   planetSurfaceFits,
 } from "../../worldgen/procedural/planetSurface";
@@ -47,6 +48,7 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
       source: "built-in",
       continuesNeighbours: true,
       options: OVERLAND_OPTIONS,
+      tuning: OVERLAND_TUNING,
       fits: planetSurfaceFits,
       generate: (req) => {
         // Only a neighbouring region's border (edgeCells) is used, not a parent hex.

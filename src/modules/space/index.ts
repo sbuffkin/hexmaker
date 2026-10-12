@@ -53,6 +53,28 @@ export const spaceModule: HexmakerModule = {
     { id: "procedural:orbits", label: "Orbits" },
   ],
   pathRoles: { routes: "Path type for routes", orbits: "Path type for orbits" },
+  mapScales: [
+    {
+      id: "space-worlds",
+      label: "Sector or system",
+      description: "Worlds in space: a sector of star systems, or one star and its orbits.",
+      kind: "space",
+      size: { cols: 12, rows: 10 },
+      palette: "Space - Sector",
+      generators: ["procedural:star-scatter", "procedural:orbits"],
+      generatorPalettes: { "procedural:orbits": "Space - System" },
+    },
+    {
+      id: "planet",
+      label: "Planet",
+      description: "One planet's surface: seas, land, ice.",
+      kind: "space",
+      size: { cols: 20, rows: 14 },
+      palette: "Space - Planet",
+      generators: ["procedural:planet-surface"],
+      otherGenerators: true,
+    },
+  ],
   owns: {
     settingsKeys: ["worldTypesFolder", "worldTypesSeeded"],
     mapNoteKeys: [],

@@ -13,5 +13,14 @@ export const worldMapsModule: HexmakerModule = {
   id: "world-maps",
   slice: "W",
   tableConditions: WORLD_MAPS_TABLE_CONDITIONS,
+  mapScales: [{
+    id: "biomes",
+    label: "Biomes",
+    description: "An overworld: one biome per hex, each opening into a region map.",
+    kind: "world",
+    size: { cols: 16, rows: 12 },
+    palette: "Expanded",
+    generators: ["procedural:world-biomes"],
+  }],
   owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
 };

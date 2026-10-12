@@ -13,6 +13,7 @@ import type {
   EngineRoleDef,
   HexmakerModule,
   IconPackDef,
+  MapScaleDef,
   KindId,
   KindInfo,
   TableConditionDef,
@@ -124,6 +125,11 @@ export class ModuleRegistry {
 
   tableConditions(): TableConditionDef[] {
     return this.modules.flatMap((m) => [...(m.tableConditions ?? [])]);
+  }
+
+  /** Every module's map scales, in registry order. */
+  mapScales(): MapScaleDef[] {
+    return this.modules.flatMap((m) => [...(m.mapScales ?? [])]);
   }
 
   pathRoles(): Record<string, string> {

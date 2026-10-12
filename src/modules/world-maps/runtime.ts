@@ -6,7 +6,7 @@
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "../types";
 import { representableBiomes } from "../../overworld/biomes";
-import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, worldBiomesFromOptions } from "../../overworld/worldBiomes";
+import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, WORLD_BIOMES_TUNING, worldBiomesFromOptions } from "../../overworld/worldBiomes";
 import { gridKeys } from "../../worldgen/procedural/common";
 
 function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelpers): GeneratorContribution[] {
@@ -19,6 +19,7 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
       description: "An overworld: each hex is one biome (tundra, forest, savanna…), laid out by climate, with transition biomes between ones that shouldn't touch. Its hexes then open into regions that blend with their neighbours.",
       source: "built-in",
       options: WORLD_BIOMES_OPTIONS,
+      tuning: WORLD_BIOMES_TUNING,
       fits: (terrains) => representableBiomes(terrains).size >= 3,
       generate: (req) => {
         const g = procGrid(req.grid);

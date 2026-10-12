@@ -154,6 +154,31 @@ export interface EngineDef {
   label: string;
 }
 
+/**
+ * A kind of map a first map can be ("What are you mapping?" in the setup
+ * wizard): Overland, Biomes, a space sector or system, a planet. Each
+ * brings its default size and palette and the generators that fit it;
+ * the wizard lists Blank first, then these.
+ */
+export interface MapScaleDef {
+  id: string;
+  label: string;
+  /** One line under the label. */
+  description: string;
+  /** Shown only while this map type is on (Settings → Map types). */
+  kind: KindId;
+  /** The grid size it starts at (and resets to). */
+  size: { cols: number; rows: number };
+  /** The palette (preset or installed) it starts on. */
+  palette: string;
+  /** Generator ids that fit it, in list order (Blank is always first and isn't listed). */
+  generators: readonly string[];
+  /** Also list generators of its map type that no scale lists (learned ones). */
+  otherGenerators?: boolean;
+  /** A palette a generator wants instead (Orbits: Space - System). */
+  generatorPalettes?: Readonly<Record<string, string>>;
+}
+
 export interface HexmakerModule {
   /** Stable id: "world", "world-maps", "space". Never reused. */
   id: string;
@@ -180,6 +205,8 @@ export interface HexmakerModule {
   engines?: readonly EngineDef[];
   /** Generator path roles: role id → option label ("routes" → "Path type for routes"). */
   pathRoles?: Readonly<Record<string, string>>;
+  /** Kinds of map a first map can be (setup wizard). */
+  mapScales?: readonly MapScaleDef[];
   /** Data the module owns (release slicing derives its lists from these). */
   owns: {
     settingsKeys: readonly string[];

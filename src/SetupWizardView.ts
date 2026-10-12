@@ -5,27 +5,27 @@ import type { TerrainColor } from "./types";
 import { linkLabel, normalizeFolder, slugify } from "./utils";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
-import { MAP_KINDS, enabledKinds, kindOfTerrains, terrainsForTables, type MapKind } from "./mapKinds";
+import { MAP_KINDS, enabledKinds, terrainsForTables, type MapKind } from "./mapKinds";
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { addGeneratedPaths, pathColors } from "./worldgen/generators";
 import {
 	BLANK_ID,
 	describeKind,
-	firstMapGenerator,
 	generationKey,
 	kindOptions,
-	kindsForPalette,
 	listGeneratorKinds,
 	suggestBaseTerrain,
-	visibleKinds,
 	type GenerateOutcome,
 	type TerrainGeneratorKind,
 } from "./worldgen/registry";
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
-import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "./sizeInput";
-import { TERRAIN_TABLES_SUMMARY, slugHint, wizardOptionId } from "./wizardText";
+import { LIVE_PREVIEW_DELAY_MS, sizeFromInput, wheelStep } from "./sizeInput";
+import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
+import { wizardKinds, wizardScale } from "./wizardKinds";
+import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, tuningText, wizardOptionId } from "./wizardText";
+import { tuneKey } from "./worldgen/procedural/common";
 import { Disclosure } from "./ui/disclosure";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +54,8 @@ interface WizardContext {
 	hexOrientation: "flat" | "pointy";
 	/** Map types to enable (src/mapKinds.ts). */
 	mapKinds: MapKind[];
+	/** "What are you mapping?" (src/mapScales.ts); undefined = the first of the map types on. */
+	scaleId?: string;
 	/** Generator for the first map (registry id); undefined = pick the
 	 *  default for the map types and palette (firstMapGenerator). */
 	generatorId?: string;
@@ -123,6 +125,11 @@ function wizardGrid(plugin: HexmakerPlugin, ctx: WizardContext) {
 function resolvedOptions(kind: TerrainGeneratorKind, ctx: WizardContext): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const o of kind.options) out[o.key] = ctx.generatorOptions[o.key] ?? o.default;
+	// Tuning sliders that were moved (unset ones leave the engine as it is).
+	for (const t of kind.tuning ?? []) {
+		const v = ctx.generatorOptions[tuneKey(t.key)];
+		if (v !== undefined) out[tuneKey(t.key)] = v;
+	}
 	return out;
 }
 
@@ -162,21 +169,6 @@ function runGenerator(
 	} finally {
 		plugin.settings.hexOrientation = saved;
 	}
-}
-
-/** Generators to offer for the wizard's palette, and the one to select. */
-function wizardKinds(
-	kinds: TerrainGeneratorKind[],
-	ctx: WizardContext,
-	terrains: TerrainColor[],
-): { fitting: TerrainGeneratorKind[]; selected: string } {
-	// Every generator the map types allow; the default starter is selected.
-	const fitting = kindsForPalette(visibleKinds(kinds, { mapKinds: ctx.mapKinds }, new Set([kindOfTerrains(terrains)]), ctx.generatorId), terrains);
-	const starter = firstMapGenerator(fitting, ctx.mapKinds);
-	const selected = ctx.generatorId && fitting.some((k) => k.id === ctx.generatorId)
-		? ctx.generatorId
-		: starter;
-	return { fitting, selected };
 }
 
 /**
@@ -443,6 +435,65 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				cb.onUpdate();
 			});
 
+			// What are you mapping? (owner 2026-10-12): the scale picks the
+			// size, palette and generator list below; each module brings its
+			// own (src/mapScales.ts). Only the map types that are on.
+			const placeMap = new Disclosure(plugin.app, "Wizard.map", () => container);
+			const scales = scalesFor(ctx.mapKinds);
+			const firstScale = !ctx.scaleId;
+			const startScale = wizardScale(ctx);
+			ctx.scaleId = startScale?.id;
+			if (startScale && firstScale) { ctx.mapCols = startScale.size.cols; ctx.mapRows = startScale.size.rows; }
+			const scaleRow = container.createDiv({ cls: "duckmage-wizard-field" });
+			scaleRow.createEl("label", { text: "What are you mapping?", cls: "duckmage-wizard-label", attr: { id: "duckmage-wizard-scale-label" } });
+			const scaleCardsEl = scaleRow.createDiv({
+				cls: "duckmage-wizard-orient-row duckmage-wizard-scale-row",
+				attr: { role: "radiogroup", "aria-labelledby": "duckmage-wizard-scale-label" },
+			});
+			const scaleCards: { id: string; el: HTMLElement; mark: HTMLElement }[] = [];
+			const syncScales = () => {
+				for (const c of scaleCards) {
+					const on = ctx.scaleId === c.id;
+					c.el.toggleClass("is-active", on);
+					c.el.setAttr("aria-checked", on ? "true" : "false");
+					c.el.setAttr("tabindex", on ? "0" : "-1");
+					c.mark.setText(on ? "✓ Selected" : "");
+				}
+			};
+			const pickScale = (s: MapScaleDef) => {
+				if (ctx.scaleId === s.id) return;
+				ctx.scaleId = s.id;
+				ctx.generatorId = undefined;
+				ctx.generatorOptions = {};
+				setSize(s.size.cols, s.size.rows);
+				usePalette(scalePalette(s, undefined));
+				syncScales();
+				renderGenerators();
+				refresh();
+				cb.onUpdate();
+			};
+			for (const s of scales) {
+				const card = scaleCardsEl.createDiv({ cls: "duckmage-wizard-orient-btn duckmage-wizard-scale-btn", attr: { role: "radio", "data-scale": s.id } });
+				const head = card.createDiv({ cls: "duckmage-wizard-orient-head" });
+				head.createSpan({ text: s.label, cls: "duckmage-wizard-orient-label" });
+				const mark = head.createSpan({ cls: "duckmage-wizard-orient-mark" });
+				card.createSpan({ text: s.description, cls: "duckmage-wizard-orient-desc" });
+				scaleCards.push({ id: s.id, el: card, mark });
+				card.addEventListener("click", () => pickScale(s));
+				card.addEventListener("keydown", (e) => {
+					if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickScale(s); }
+					if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown") {
+						e.preventDefault();
+						const i = scales.findIndex((x) => x.id === ctx.scaleId);
+						const next = scales[(i + (e.key === "ArrowLeft" || e.key === "ArrowUp" ? scales.length - 1 : 1)) % scales.length];
+						pickScale(next);
+						scaleCards.find((c) => c.id === next.id)?.el.focus();
+					}
+				});
+			}
+			syncScales();
+			placeMap.place("Wizard.mapScale", scaleRow);
+
 			// Grid size
 			const sizeRow = container.createDiv({ cls: "duckmage-wizard-field" });
 			const sizeLabel = sizeRow.createEl("label", { text: "Grid size", cls: "duckmage-wizard-label" });
@@ -466,6 +517,13 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			rowsInput.min = "2";
 			rowsInput.max = "200";
 			sizeInputs.createSpan({ text: " rows", cls: "duckmage-wizard-size-sep" });
+			// Back to the scale's size in one click.
+			const resetBtn = sizeInputs.createEl("button", {
+				cls: "duckmage-wizard-size-reset",
+				text: "↺",
+				attr: { "aria-label": "Reset to the default size", title: "Reset to the default size" },
+			});
+			placeMap.place("Wizard.gridSizeReset", resetBtn);
 
 			const noteCount = sizeRow.createEl("p", { cls: "duckmage-wizard-note-count" });
 			const updateCount = () => {
@@ -499,7 +557,19 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 					window.clearTimeout(sizeTimer);
 					applySize(true);
 				});
+				// The mouse wheel steps the size while the field is hovered or focused.
+				wheelStep(input, 2, 200, () => activeDocument.activeElement === input);
 			}
+			/** Set both fields and apply them (a scale picked, reset). */
+			function setSize(cols: number, rows: number): void {
+				colsInput.value = String(cols);
+				rowsInput.value = String(rows);
+				applySize(true);
+			}
+			resetBtn.addEventListener("click", () => {
+				const s = wizardScale(ctx);
+				setSize(s?.size.cols ?? 20, s?.size.rows ?? 16);
+			});
 
 			// Hex orientation
 			const orientRow = container.createDiv({ cls: "duckmage-wizard-field" });
@@ -562,6 +632,12 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			linkLabel(paletteLabel, paletteSelect);
 			fillPaletteSelect(plugin, paletteSelect, ctx.paletteName);
 			attachPaletteHint(paletteRow, paletteSelect);
+			/** Switch to palette `name` when the list has it (a scale's or a generator's palette). */
+			function usePalette(name: string): void {
+				if (name === ctx.paletteName || !Array.from(paletteSelect.options).some((o) => o.value === name)) return;
+				paletteSelect.value = name;
+				paletteSelect.dispatchEvent(new Event("change"));
+			}
 			paletteSelect.addEventListener("change", () => {
 				ctx.paletteName = paletteSelect.value;
 				renderGenerators();
@@ -571,7 +647,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// Terrain: generator choice + small live preview. The same
 			// generators as Maps → New map… (src/worldgen/registry.ts).
 			const genField = container.createDiv({ cls: "duckmage-wizard-field duckmage-wizard-generator" });
-			genField.createEl("label", { text: "Terrain", cls: "duckmage-wizard-label" });
+			genField.createEl("label", { text: "Generator", cls: "duckmage-wizard-label" });
 			const genBody = genField.createDiv({ cls: "duckmage-wizard-generator-body" });
 			const genSide = genBody.createDiv({ cls: "duckmage-wizard-generator-choices" });
 			const genList = genSide.createDiv({ cls: "duckmage-setup-generators", text: "Loading generators…" });
@@ -611,6 +687,9 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 					card.addEventListener("click", () => {
 						ctx.generatorId = k.id;
 						ctx.generatorOptions = {};
+						// A generator that wants its own palette (Orbits: Space - System).
+						const s = wizardScale(ctx);
+						if (s) usePalette(scalePalette(s, k.id));
 						renderGenerators();
 						refresh();
 					});
@@ -634,7 +713,54 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 					if (sel.selectedIndex < 0) sel.value = opt.default;
 					sel.addEventListener("change", () => { ctx.generatorOptions[opt.key] = sel.value; refresh(); });
 				}
+				// Advanced: a few engine sliders that most change the layout
+				// (owner 2026-10-12), each with its default and a reset.
+				if (kind) renderTuning(kind, optsDisclosure);
 				syncSeaLabel();
+			};
+
+			let tuneTimer: number | undefined;
+			const renderTuning = (kind: TerrainGeneratorKind, disclosure: Disclosure) => {
+				for (const t of kind.tuning ?? []) {
+					const key = tuneKey(t.key);
+					const isSet = () => ctx.generatorOptions[key] !== undefined;
+					const value = () => (isSet() ? Number(ctx.generatorOptions[key]) : t.default);
+					const row = optsBox.createDiv({ cls: "duckmage-wizard-tuning" });
+					const head = row.createDiv({ cls: "duckmage-wizard-tuning-head" });
+					const label = head.createEl("label", { text: t.label, attr: { title: t.help } });
+					const shown = head.createSpan({ cls: "duckmage-wizard-tuning-value" });
+					const reset = head.createEl("button", {
+						cls: "duckmage-wizard-tuning-reset",
+						text: "↺",
+						attr: { "aria-label": `Reset ${t.label} to ${tuningText(t.default)}`, title: `Reset to ${tuningText(t.default)}` },
+					});
+					const slider = row.createEl("input", { type: "range", attr: { min: String(t.min), max: String(t.max), step: String(t.step) } });
+					linkLabel(label, slider);
+					row.createDiv({ cls: "setting-item-description", text: `${t.help} Default ${tuningText(t.default)}.` });
+					const sync = () => {
+						slider.value = String(value());
+						shown.setText(tuningText(value()));
+						reset.disabled = !isSet();
+					};
+					const changed = () => {
+						sync();
+						disclosure.refreshSet();
+						window.clearTimeout(tuneTimer);
+						tuneTimer = window.setTimeout(refresh, LIVE_PREVIEW_DELAY_MS);
+					};
+					slider.addEventListener("input", () => {
+						const v = Number(slider.value);
+						if (v === t.default) delete ctx.generatorOptions[key];
+						else ctx.generatorOptions[key] = slider.value;
+						changed();
+					});
+					reset.addEventListener("click", () => {
+						delete ctx.generatorOptions[key];
+						changed();
+					});
+					sync();
+					disclosure.place(WIZARD_TUNING_ID, row, isSet);
+				}
 			};
 
 			const refresh = () => {

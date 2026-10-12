@@ -9,9 +9,9 @@
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "../types";
 import type { ProcOption } from "../../worldgen/procedural/common";
-import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "../../space/starScatter";
-import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits, orbitsOptions } from "../../space/orbits";
-import { PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, planetSurface, planetSurfaceFits } from "../../worldgen/procedural/planetSurface";
+import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, STAR_SCATTER_TUNING, starScatter, starScatterOffered } from "../../space/starScatter";
+import { ORBITS_ID, ORBITS_OPTIONS, ORBITS_TUNING, orbits, orbitsFits, orbitsOptions } from "../../space/orbits";
+import { PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, PLANET_SURFACE_TUNING, planetSurface, planetSurfaceFits } from "../../worldgen/procedural/planetSurface";
 import {
   NO_PATHS,
   ORBIT_TYPE_KEY,
@@ -53,6 +53,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
       options: [...STAR_SCATTER_OPTIONS, worldTypesOption([]), staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
+      tuning: STAR_SCATTER_TUNING,
       optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, worldTypesChoice(plugin), pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
       fits: starScatterOffered,
       generate: (req) => {
@@ -75,6 +76,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
       options: [...ORBITS_OPTIONS, worldTypesOption([]), staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
+      tuning: ORBITS_TUNING,
       optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), worldTypesChoice(plugin), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
       fits: orbitsFits,
       generate: (req) => {
@@ -101,6 +103,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Region map from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
       source: "built-in",
       options: PLANET_SURFACE_OPTIONS,
+      tuning: PLANET_SURFACE_TUNING,
       fits: planetSurfaceFits,
       generate: (req) => {
         const r = planetSurface(req.terrains, procGrid(req.grid), req.seed, req.options);

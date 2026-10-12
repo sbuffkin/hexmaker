@@ -49,6 +49,12 @@ const EXCEPTIONS: Record<string, { layer: Layer; why: string }> = {
   "Settings.generateWorldData": { layer: "advanced", why: "overkill, but the README's manual setup uses it and missing-table messages point to it" },
   "Settings.generateFolders": { layer: "advanced", why: "overkill, but the README's manual setup uses it" },
   "Settings.paletteDelete": { layer: "main", why: "owner: custom palettes are simple (note on its legacy twin)" },
+  // Owner 2026-10-12: "the current 'advanced' options in hex map setup are actually the standard ones and should be above the fold".
+  "Wizard.genOptWater": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptClimate": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptRelief": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptSea": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptOther": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
 };
 
 /** The layer a worksheet tier asks for on these surfaces. */
@@ -383,7 +389,7 @@ describe("generator page and wizard place their controls by id", () => {
     expect(wizardOptionId("relief")).toBe("Wizard.genOptRelief");
     expect(wizardOptionId("sea")).toBe("Wizard.genOptSea");
     expect(wizardOptionId("rivers")).toBe("Wizard.genOptOther");
-    for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("advanced");
+    for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("main"); // owner override 2026-10-12
     expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key), row)");
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advRow)');
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advSection)');
