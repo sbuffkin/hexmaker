@@ -19,7 +19,7 @@ import {
   PLACE_LOCKED_HINT,
   RESHAPE_LOCKED_HINT,
   REROLL_PLACE_LOCKED_HINT,
-  WORK_MODES,
+  WORK_MODES, WORK_MODE_TEXT,
   type WorkMode,
 } from "../src/workMode";
 import { BIOME_LOCKED_HINT, PAINT_LOCKED_HINT } from "../src/overworld/overworldInput";
@@ -41,7 +41,8 @@ const mine = resolved.filter((r) => SURFACES.includes(r.group));
 
 const TIER: Record<Resolved["choice"], Layer> = { keep: "main", simple: "main", advanced: "advanced", overkill: "debug", drop: "hidden" };
 /** Owner notes that override a tag: the centre dot now copies a hex link, so it stays (main). */
-const OVERRIDES: Record<string, Layer> = { "HexEditor.neighborCentreDot": "main" };
+// God goes back in the mode menu's list (owner 2026-10-12: "don't put god mode in advanced").
+const OVERRIDES: Record<string, Layer> = { "HexEditor.neighborCentreDot": "main", "WorkModeMenu.god": "main" };
 
 function sources(dir: string): string[] {
   const out: string[] = [];
@@ -117,25 +118,17 @@ describe("menus and toolbars: Advanced ▸ and Debug ▸ submenus", () => {
     expect(submenuRows(on, noop).map((r) => r.label)).toEqual([DEBUG_SUBMENU]);
   });
 
-  it("the mode switch: Play and Build in the menu, God in Advanced ▸", () => {
+  it("the mode switch: Play, Build and God in one list, no Advanced ▸ (owner 2026-10-12)", () => {
     Menu.shown = [];
     const menu = new ModeMenu("build");
     for (const m of WORK_MODES) menu.add("mode.switch", m, null, noop, { checked: m === "build", place: `WorkModeMenu.${m}` });
     menu.showAtPosition({ x: 0, y: 0 });
     const titles = (menu.menu as unknown as Menu).items.map((i) => (i === "separator" ? "---" : i.title));
-    expect(titles).toEqual(["play", "build", "---", ADVANCED_SUBMENU]);
-    const adv = (menu.menu as unknown as Menu).items[3] as MenuItem;
-    adv.click?.();
-    const sub = Menu.shown[Menu.shown.length - 1];
-    expect(sub.items.map((i) => (i === "separator" ? "---" : i.title))).toEqual(["god"]);
+    expect(titles).toEqual(["play", "build", "god"]);
   });
 
-  it("the mode switch in God: Advanced says one is set (God is on)", () => {
-    const menu = new ModeMenu("god");
-    for (const m of WORK_MODES) menu.add("mode.switch", m, null, noop, { checked: m === "god", place: `WorkModeMenu.${m}` });
-    menu.showAtPosition({ x: 0, y: 0 });
-    const items = (menu.menu as unknown as Menu).items;
-    expect((items[items.length - 1] as MenuItem).title).toBe("Advanced · 1 set ▸");
+  it("the mode menu's lines are three words each", () => {
+    for (const m of WORK_MODES) expect(WORK_MODE_TEXT[m].short.split(/\s+/)).toHaveLength(3);
   });
 
   it("the path tool's Cross impassable stays an Advanced ▸ button (the bar has other buttons) and says when it's on", () => {

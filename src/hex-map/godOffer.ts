@@ -1,6 +1,6 @@
 /**
- * The inline God offer (owner, 2026-10-11): God sits in the mode switch's
- * Advanced ▸ submenu, so where someone tries an action only God may do
+ * The inline God offer (owner, 2026-10-11): besides the mode switch's list,
+ * where someone tries an action only God may do
  * (reroll a locked place, change a placed biome, regenerate, swap, shrink,
  * delete), the "Switch to God…" hint becomes a button that switches the map
  * there and then. Hints for Build stay plain text; nothing is offered

@@ -87,7 +87,6 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
 
   // ── Hex map view (menus and toolbars: Advanced ▸ / Debug ▸ submenus,
   // src/ui/placedMenu.ts; panels: an Advanced dropdown) ──
-  "WorkModeMenu.god": "advanced",
   "ModeBar.crossImpassable": "advanced",
   "DrawingPanel.linkTable": "advanced",
   "DrawingPanel.linkSubmap": "advanced",
