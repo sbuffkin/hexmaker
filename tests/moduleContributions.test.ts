@@ -26,13 +26,16 @@ const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "u
 const runtime = (id: string) => MODULE_RUNTIMES.find((r) => r.id === id)!;
 
 describe("P5: map UI pieces are module contributions", () => {
-  it("Space's moon tethers are the only overlay; Generator tables the only Map properties section", () => {
+  it("Space's moon tethers are the only overlay; its Convert world types button the only Map properties section", () => {
     expect(moduleOverlays()).toEqual([MOON_TETHER_OVERLAY]);
     expect(moduleMapProperties()).toEqual([ROLE_TABLES_SECTION]);
-    // The Maps modal draws every module's sections; it names none of them.
+    // Generator tables is the core's (Names is on every map); the modules' sections come after it.
     const modal = read("src", "hex-map", "MapModal.ts");
-    expect(modal).toMatch(/for \(const section of moduleMapProperties\(\)\) section\.render\(/);
-    expect(modal).not.toMatch(/renderRoleTables|SPACE_TABLES_FOLDER/);
+    expect(modal).toMatch(/renderRoleTables\(el, this\.plugin, currentMap, \(\) => this\.render\(\)\);\n\s+\/\/ Modules' sections[^\n]*\n\s+for \(const section of moduleMapProperties\(\)\) section\.render\(/);
+    // The core's form names no module: a role's tables folder is module data.
+    const form = read("src", "hex-map", "mapTablesForm.ts");
+    expect(form).not.toMatch(/SPACE_TABLES_FOLDER|World types|worldTypeStore/);
+    expect(registry.module("space")!.tablesFolder).toBe("space");
   });
 
   it("New map setup: Edit world types… joins the World types option of Star scatter and Orbits only", () => {

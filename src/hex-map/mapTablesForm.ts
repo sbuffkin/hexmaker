@@ -46,9 +46,9 @@ export function renderArrivalSetting(el: HTMLElement, plugin: HexmakerPlugin, ma
 /**
  * "Generator tables": the table each generator role rolls on for this map
  * and the maps under it. Blank follows the map above, else the role's own
- * default (the World types picked when generating; a shipped table; for
+ * default (its unsetLabel: a module's setup choice or shipped table; for
  * Names, the hex's terrain and coordinates). Names shows on every map; a
- * module's roles on maps of its type (Space), or wherever one is set.
+ * module's roles on maps of its type, or wherever one is set.
  */
 export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void {
   const own = map.roleTables ?? {};
