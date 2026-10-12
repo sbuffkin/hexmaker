@@ -16,28 +16,26 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexDistance } from "../../packages/hex-wfc/src/grid";
 import { biomeInfo, biomeNoteOf } from "./biomes";
 import { drawMiniOverworld, miniLayout, type MiniHex } from "./overworldRender";
-import { formatBiomeRiver, withMeshFields } from "./regionWorld";
 import { generateMissingRegions } from "./regionsVault";
-import { parseUnclimated, UNCLIMATED_CHOICES, unclimatedText, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "./worldBiomes";
+import { parseUnclimated, UNCLIMATED_CHOICES, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "./worldBiomes";
 import { pickBlankHexes } from "./overworldPass";
 import { RECT_SIDES } from "../maps/submaps";
-import { newWorldId } from "../worldgen/world";
 import { inferredKind } from "../mapKinds";
 import { ecotoneHexes } from "./regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
 import { addGodOffer } from "../hex-map/godOffer";
 import { ALL_BIOMES_POOL, type BiomePoolRow } from "./biomePool";
 import {
+  NEW_OVERWORLD_DEFAULTS,
   REGENERATE_LOCKED_HINT,
+  finishNewOverworld,
   layOutBiomes,
   listBiomePools,
   overworldCells,
   poolRowFor,
   regenerateOverworld,
-  regionPass,
   resolvePool,
   saveBiomePool,
-  writeOverworldBiomes,
   type PoolNote,
 } from "./overworldGen";
 
@@ -129,11 +127,11 @@ export class NewOverworldModal extends HexmakerModal {
   private land: LandShape = "one";
   private north: NorthIs = "colder";
   private seed = Math.floor(Math.random() * 1e6);
-  private regionSize = 8;
-  private blend: "narrow" | "normal" | "wide" = "normal";
-  private makeAll = true;
+  private regionSize = NEW_OVERWORLD_DEFAULTS.regionSize;
+  private blend: "narrow" | "normal" | "wide" = NEW_OVERWORLD_DEFAULTS.blend;
+  private makeAll = NEW_OVERWORLD_DEFAULTS.makeAll;
   /** BC2: what the pool's biomes without a climate do. */
-  private unclimated: Unclimated = "fill";
+  private unclimated: Unclimated = NEW_OVERWORLD_DEFAULTS.unclimated;
   /** "Blank hexes": how many hexes become a blank biome, and which one. */
   private blankCount = 0;
   private blankBiome = "";
@@ -494,26 +492,15 @@ export class NewOverworldModal extends HexmakerModal {
     status.setText("Creating the overworld…");
     const res = await this.plugin.createNewMap(this.name.trim() || "Overworld", cols, rows, this.palette, 0, 0, stagger, undefined, this.result.terrain, { quiet: true });
     if ("error" in res) { status.setText(res.error); return; }
-    const map = this.plugin.getMap(res.name)!;
-    map.regions = withMeshFields({ footprint: "rect", size: this.regionSize, blend: this.blend, palette: this.palette }, stagger, newWorldId);
-    if (this.result.river.length > 1) map.biomeRiver = formatBiomeRiver(this.result.river);
-    if (this.poolPath) map.biomePool = this.poolPath;
-    // The layout's seed is kept with the map (its `seed:`), so the roll is on record.
-    map.seed ??= this.seed;
-    map.biomeGaps = unclimatedText(this.unclimated);
-    // Saved with the map (`seed:`), so its layout can be made again.
-    map.seed = this.seed;
-    await this.plugin.saveSettings();
-    // Every hex's biome goes in the Biome column (BC1); blank hexes get no terrain.
-    await writeOverworldBiomes(this.plugin, res.name, this.result);
-    if (this.makeAll) {
-      const t0 = performance.now();
-      const r = await regionPass(this.plugin, res.name, this.cells(), {
-        remake: false,
-        onProgress: (done, total) => status.setText(`Making regions: ${done} of ${total}…`),
-      });
-      new Notice(`Made ${r.made.length} regions in ${((performance.now() - t0) / 1000).toFixed(1)} s.${r.errors.length ? ` ${r.errors.length} failed.` : ""}`);
-    }
+    // Region settings, river, pool, seed and the Biome column (blank hexes
+    // get no terrain); then every region when asked.
+    const t0 = performance.now();
+    const r = await finishNewOverworld(this.plugin, res.name, this.result, {
+      regionSize: this.regionSize, blend: this.blend, palette: this.palette, stagger, seed: this.seed,
+      unclimated: this.unclimated, poolPath: this.poolPath, makeAll: this.makeAll, cells: this.cells(),
+      onProgress: (done, total) => status.setText(`Making regions: ${done} of ${total}…`),
+    });
+    if (r) new Notice(`Made ${r.made.length} regions in ${((performance.now() - t0) / 1000).toFixed(1)} s.${r.errors.length ? ` ${r.errors.length} failed.` : ""}`);
     this.close();
     this.onCreated(res.name);
   }

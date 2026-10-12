@@ -132,6 +132,9 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // should be above the fold". The generator's options are main; the
   // step's Advanced holds a trimmed set of engine tuning sliders instead.
   "Wizard.tuning": "advanced",
+  // World maps' Biomes scale makes an overworld; "Make every region now"
+  // is off and out of the way (a 16 × 12 overworld is 192 regions).
+  "Wizard.makeAllRegions": "advanced",
 
   // ── Commands & menus ──
   "Plugin.cmd.addRollRanges": "debug",
@@ -244,17 +247,18 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "NewMap.stagger": "main",
   "NewMap.bgPick": "advanced",
   "NewMap.bgClear": "advanced",
-  // New maps & map links › Generator options (world)
-  "NewMap.overlandWater": "advanced",
-  "NewMap.overlandClimate": "advanced",
-  "NewMap.overlandRelief": "advanced",
-  "NewMap.overlandSea": "advanced",
-  "NewMap.planetRelief": "advanced",
-  "NewMap.regionDetailInfluence": "advanced",
-  "NewMap.regionDetailVariety": "advanced",
-  // New maps & map links › Generator options (space)
-  "NewMap.starRouteType": "advanced",
-  "NewMap.orbitsPathType": "advanced",
+  // New maps & map links › Generator options (world and space)
+  // Owner override 2026-10-12 (replaces the worksheet's "advanced" for
+  // NewMap.overlandWater / Climate / Relief / Sea, planetRelief,
+  // regionDetailInfluence / Variety, starRouteType, orbitsPathType), the
+  // same call as the setup wizard's: "the current 'advanced' options in hex
+  // map setup are actually the standard ones and should be above the fold".
+  // Every generator option is main; New map's Advanced holds the trimmed
+  // engine tuning sliders instead, and a scale's own choices.
+  "NewMap.tuning": "advanced",
+  // World maps' Biomes scale: "Make every region now" (default off, so
+  // the first-map step stays simple; the overworld form keeps it in view).
+  "NewMap.makeAllRegions": "advanced",
   // New maps & map links › New land beside a map
   "WalkOW.seed": "debug",
   // Regions, overworlds & biomes › New overworld

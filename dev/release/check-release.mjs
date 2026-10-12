@@ -12,9 +12,14 @@
  *      keys (as keys, not inside a placement id like "Settings.x"), its
  *      map-note keys and its own strings. Any hit fails, naming the slice
  *      and the text;
- *   3. the bundled help has no slice markers left.
+ *   3. the bundled help has no slice markers left;
+ *   4. the release README the build wrote (dist/README.md beside main.js,
+ *      README.md with the off slices' marked blocks removed) has no marker
+ *      left, none of the off modules' own strings, and none of the text of
+ *      the off slices' blocks in README.md.
  * A full build is checked too: it must contain every owned string, so the
- * deny-list can't pass by accident (a renamed string would).
+ * deny-list can't pass by accident (a renamed string would), and its
+ * README every slice's block text.
  *
  * Exit 0 when every build passes. Run from the repo root (uses node_modules).
  */
@@ -24,7 +29,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readSlices } from "./slices.mjs";
+import { readSlices, releaseReadmePath, sliceBlockText } from "./slices.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const args = process.argv.slice(2);
@@ -40,6 +45,7 @@ function readOwns() {
 	return JSON.parse(out);
 }
 
+/** Build main.js (and the release README beside it) into `dir`; returns both. */
 function build(off, full, dir) {
 	const outfile = join(dir, "main.js");
 	execFileSync(process.execPath, ["esbuild.config.mjs", "production", ...(full ? ["--full"] : [])], {
@@ -47,8 +53,13 @@ function build(off, full, dir) {
 		env: { ...process.env, HEXMAKER_SLICES_OFF: off.join(","), HEXMAKER_OUTFILE: outfile },
 		stdio: ["ignore", "inherit", "inherit"],
 	});
-	return readFileSync(outfile, "utf8");
+	return { js: readFileSync(outfile, "utf8"), readme: readFileSync(releaseReadmePath(outfile), "utf8") };
 }
+
+/** README.md as written, with its slice markers. */
+const README = readFileSync(join(ROOT, "README.md"), "utf8");
+/** Each flagged slice's README block text (lines only its blocks hold). */
+const readmeText = (id) => sliceBlockText(README, id);
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -87,15 +98,20 @@ const report = (ok, line) => {
 
 try {
 	// The full build has every owned string (else the deny-list proves nothing).
-	const full = build([], true, tmp);
+	const { js: full, readme: fullReadme } = build([], true, tmp);
 	for (const id of flagged) {
 		for (const m of ofSlice(id)) {
 			const missing = needles(m).filter((n) => !n.re.test(full)).map((n) => n.what);
 			report(missing.length === 0, `full build holds ${m.id}'s ${needles(m).length} owned names${missing.length ? `; missing: ${missing.join(", ")}` : ""}`);
 		}
+		// README: the slice has marked text, and the full build's README keeps it (markers dropped).
+		const text = readmeText(id);
+		const lost = text.filter((t) => !fullReadme.includes(t));
+		report(text.length > 0 && lost.length === 0 && !/<!-- \/?slice/.test(fullReadme),
+			`full build's README holds ${id}'s ${text.length} marked lines${text.length ? "" : " (README.md marks none)"}${lost.length ? `; missing: ${lost.slice(0, 3).join(" | ")}` : ""}`);
 	}
 	for (const off of runs) {
-		const js = build(off, false, tmp);
+		const { js, readme } = build(off, false, tmp);
 		const label = `release build without ${off.join(" + ")} (${(js.length / 1024).toFixed(0)} KB)`;
 		const hits = [];
 		for (const id of off) {
@@ -108,6 +124,16 @@ try {
 		}
 		if (/<!-- slice:/.test(js)) hits.push("a slice marker is left in the bundled Markdown");
 		report(hits.length === 0, label + (hits.length ? `\n      ${hits.join("\n      ")}` : ": no trace of the slices built off"));
+		// The release README of the same build.
+		const readmeHits = [];
+		if (/<!-- \/?slice/.test(readme)) readmeHits.push("a slice marker is left in the README");
+		for (const id of off) {
+			for (const m of ofSlice(id)) {
+				for (const str of m.owns.strings ?? []) if (readme.includes(str)) readmeHits.push(`[${id}/${m.id}] string "${str}"`);
+			}
+			for (const t of readmeText(id)) if (readme.includes(t)) readmeHits.push(`[${id}] README text: ${t.slice(0, 100)}`);
+		}
+		report(readmeHits.length === 0, `release README without ${off.join(" + ")}` + (readmeHits.length ? `\n      ${readmeHits.join("\n      ")}` : ": none of their text"));
 	}
 } finally {
 	rmSync(tmp, { recursive: true, force: true });

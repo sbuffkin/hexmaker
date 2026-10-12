@@ -1,7 +1,7 @@
 import esbuild from "esbuild";
 import process from "process";
 import { createRequire } from "module";
-import { sliceFlags, sliceModules, stripSliceMarkers } from "./dev/release/slices.mjs";
+import { releaseReadme, releaseReadmePath, sliceFlags, sliceModules, stripSliceMarkers } from "./dev/release/slices.mjs";
 
 const require = createRequire(import.meta.url);
 const manifest = require("./manifest.json");
@@ -88,6 +88,11 @@ const context = await esbuild.context({
 
 if (prod) {
 	await context.rebuild();
+	// The release README beside it (dist/README.md): no text of a slice built
+	// off (README.md's slice markers, as help.md's; npm run check:release).
+	const readmeOut = releaseReadmePath(outFile);
+	fs.mkdirSync(require("path").dirname(readmeOut), { recursive: true });
+	fs.writeFileSync(readmeOut, releaseReadme(fs.readFileSync(new URL("./README.md", import.meta.url), "utf8"), off));
 	process.exit(0);
 } else {
 	await context.watch();

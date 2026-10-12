@@ -5206,6 +5206,27 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     width: 100%;
 }
 
+/* A map scale's own choice (Biomes: Make every region now), wizard and New map. */
+.duckmage-scale-choice {
+    margin-bottom: 8px;
+}
+
+.duckmage-scale-choice-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* New map: the scale cards, smaller than the wizard's. */
+.duckmage-setup-scale .duckmage-wizard-scale-row {
+    gap: 6px;
+}
+
+.duckmage-setup-scale .duckmage-wizard-scale-btn {
+    min-width: 120px;
+    padding: 6px 10px;
+}
+
 /* ── Palette select ── */
 
 .duckmage-wizard-select {

@@ -21,6 +21,11 @@ export function wizardScale(ctx: Pick<WizardContext, "mapKinds" | "scaleId">): M
 	return scaleOrFirst(scalesFor(ctx.mapKinds), ctx.scaleId);
 }
 
+/** A scale's list starts on its first real generator (Blank when it has none). */
+export function scaleStarter(fitting: readonly { id: string }[]): string {
+	return fitting.find((k) => k.id !== BLANK_ID)?.id ?? BLANK_ID;
+}
+
 /**
  * Generators to offer for the wizard's scale and palette, and the one to
  * select: the scale's list (Blank first) that fits the palette, starting on
@@ -35,7 +40,7 @@ export function wizardKinds(
 	const pool = scale ? scaleGenerators(scale, kinds) : kinds;
 	const fitting = kindsForPalette(visibleKinds(pool, { mapKinds: ctx.mapKinds }, new Set([kindOfTerrains(terrains)]), ctx.generatorId), terrains);
 	const starter = scale
-		? fitting.find((k) => k.id !== BLANK_ID)?.id ?? BLANK_ID
+		? scaleStarter(fitting)
 		: firstMapGenerator(fitting, ctx.mapKinds);
 	const selected = ctx.generatorId && fitting.some((k) => k.id === ctx.generatorId)
 		? ctx.generatorId

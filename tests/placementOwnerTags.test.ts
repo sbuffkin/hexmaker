@@ -540,7 +540,9 @@ describe("seeds are kept with what they made", () => {
 
   it("a new overworld keeps its seed on the map (seed: in its note), and Generate overworld starts from it", () => {
     const src = read("src", "overworld", "OverworldModals.ts");
-    expect(src).toContain("map.seed = this.seed;");
+    // Its map-note fields come from newOverworldFields (shared with the Biomes scale), seed included.
+    expect(src).toMatch(/finishNewOverworld\(this\.plugin, res\.name, this\.result, \{[\s\S]*?seed: this\.seed,/);
+    expect(read("src", "overworld", "overworldGen.ts")).toContain("seed: s.seed,");
     expect(src).toContain('if (typeof regen?.seed === "number") this.seed = regen.seed;');
     expect(src).toContain("if (target) target.seed = this.seed;");
   });

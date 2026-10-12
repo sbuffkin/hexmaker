@@ -19,6 +19,8 @@ import type {
   ModuleRuntime,
   ModuleStore,
   RefLinker,
+  ScaleChoice,
+  ScaleMapMade,
 } from "./types";
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
@@ -135,6 +137,24 @@ export function moduleDevTools(plugin: HexmakerPlugin): Record<string, (...args:
 /** Tell every module a map scale was picked (setup wizard), in module order. */
 export async function runOnScalePicked(plugin: HexmakerPlugin, scaleId: string): Promise<void> {
   for (const m of MODULE_RUNTIMES) await m.onScalePicked?.(plugin, scaleId);
+}
+
+/** The choices scale `scaleId` shows beside generator `generatorId` (setup wizard, New map). */
+export function moduleScaleChoices(scaleId: string | undefined, generatorId: string | undefined): ScaleChoice[] {
+  if (!scaleId) return [];
+  return MODULE_RUNTIMES.flatMap((m) => (m.scaleSetup ?? []).filter((x) => x.scaleId === scaleId).flatMap((x) => [...(x.choices ?? [])]))
+    .filter((c) => !c.forGenerators || (generatorId !== undefined && c.forGenerators.includes(generatorId)));
+}
+
+/** The choices' values: each as set, else its default. */
+export function scaleChoiceValues(choices: readonly ScaleChoice[], set: Readonly<Record<string, boolean>>): Record<string, boolean> {
+  return Object.fromEntries(choices.map((c) => [c.key, set[c.key] ?? c.default]));
+}
+
+/** A map was just made on scale `scaleId`: each module that sets that scale up does, in module order. */
+export async function runScaleMapMade(plugin: HexmakerPlugin, scaleId: string | undefined, made: ScaleMapMade): Promise<void> {
+  if (!scaleId) return;
+  for (const m of MODULE_RUNTIMES) for (const x of m.scaleSetup ?? []) if (x.scaleId === scaleId) await x.afterCreate(plugin, made);
 }
 
 /** Tell every module that map types were just turned on, in module order. */

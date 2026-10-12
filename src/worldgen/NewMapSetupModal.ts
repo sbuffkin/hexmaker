@@ -21,7 +21,11 @@ import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVa
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
 import { attrsForTerrain } from "./tableSources";
 import { rowSubmapDefault } from "../arrival/arrival";
-import { moduleArrivalTables, moduleNewMapSetup } from "../modules/runtime";
+import { moduleArrivalTables, moduleNewMapSetup, moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "../modules/runtime";
+import { scaleGenerators, scalePalette, scalesFor, type MapScaleDef } from "../mapScales";
+import { scaleStarter } from "../wizardKinds";
+import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui/mapScaleForm";
+import { NEW_MAP_TUNING_ID } from "../wizardText";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
@@ -38,6 +42,7 @@ import {
   neighbourFirst,
   kindOptions,
   optionsWithDefaults,
+  optionsWithTuning,
   regionDetailDescription,
   runGenerator,
   submapStartKind,
@@ -132,6 +137,16 @@ export class NewMapSetupModal extends HexmakerModal {
   private bgFile: File | null = null;
   /** This form's Advanced dropdown (and Debug inside it); made by render(). */
   private advanced: Disclosure | undefined;
+  /**
+   * "What are you mapping?" (owner 2026-10-12, as the setup wizard): the
+   * map scale whose generators are listed. New top-level maps only, and
+   * not while placed next to a map (the neighbour decides then).
+   */
+  private scaleId: string | undefined;
+  /** The scale's own choices changed from their default (Biomes: Make every region now). */
+  private scaleChoices: Record<string, boolean> = {};
+  /** The generator's tuning sliders and scale choices on the form (taken off when it changes). */
+  private generatorExtras: HTMLElement[] = [];
   /** Ids for <label for> on this modal's controls. */
   private static nextId = 0;
 
@@ -260,6 +275,21 @@ export class NewMapSetupModal extends HexmakerModal {
     });
     this.folderSlug = () => (slugEdited && slugInput ? slugInput.value.trim() : derivedSlug());
 
+    // ── What are you mapping? (new top-level maps; owner 2026-10-12, as the
+    // setup wizard): the scale sets the size and palette and lists its
+    // generators, Blank first (src/mapScales.ts, src/ui/mapScaleForm.ts).
+    const scales = this.scales();
+    let scaleCards: { sync: () => void } | undefined;
+    let scaleField: HTMLElement | undefined;
+    if (scales.length) {
+      const scaleRow = this.row(form, "What are you mapping?");
+      scaleField = scaleRow.parentElement ?? undefined;
+      scaleField?.addClass("duckmage-setup-scale");
+      const labelId = `duckmage-setup-field-${NewMapSetupModal.nextId++}`;
+      scaleField?.querySelector(":scope > .duckmage-setup-label")?.setAttr("id", labelId);
+      scaleCards = renderScaleCards(scaleRow, scales, { labelId, selected: () => this.scaleId, pick: (s) => pickScale(s) });
+    }
+
     // ── Palette ──
     const palRow = this.row(form, "Palette");
     const paletteSelect = this.labelled(palRow, palRow.createEl("select"));
@@ -330,6 +360,43 @@ export class NewMapSetupModal extends HexmakerModal {
       });
     }
 
+    /** Switch to palette `name` when the list has it and it isn't fixed (a scale's or a generator's palette). */
+    const usePalette = (name: string): void => {
+      if (paletteSelect.disabled || name === paletteSelect.value || ![...paletteSelect.options].some((o) => o.value === name)) return;
+      paletteSelect.value = name;
+      refreshPaletteHint(paletteSelect);
+    };
+    // The scale starts on the one for the palette new maps start on (its map type), else the first.
+    if (scales.length && !this.scaleId) {
+      const kind = this.plugin.getPaletteOrPresetKind(paletteSelect.value);
+      this.scaleId = (scales.find((s) => s.kind === kind) ?? scales[0]).id;
+    }
+    scaleCards?.sync();
+    const pickScale = (s: MapScaleDef) => {
+      if (this.scaleId === s.id || this.placement) return;
+      this.scaleId = s.id;
+      this.kindId = BLANK_ID;
+      this.pickedKind = false;
+      this.options = {};
+      this.scaleChoices = {};
+      this.cols = s.size.cols;
+      this.rows = s.size.rows;
+      colsInput.value = String(s.size.cols);
+      rowsInput.value = String(s.size.rows);
+      syncPresetBtns();
+      usePalette(scalePalette(s, undefined));
+      scaleCards?.sync();
+      renderGenerators();
+      renderBase();
+      refresh();
+      // The scale's module gets its content ready (Biomes: the biome notes), then the list again.
+      void runOnScalePicked(this.plugin, s.id).then(() => {
+        if (this.scaleId !== s.id || !this.contentEl.isConnected) return;
+        renderGenerators();
+        refresh();
+      });
+    };
+
     // ── Next to (new top-level maps): join a world of neighbouring regions.
     // Size, palette, offset and stagger then follow the neighbour; terrain
     // and roads continue across the borders.
@@ -383,6 +450,8 @@ export class NewMapSetupModal extends HexmakerModal {
         }
         const locked = !!this.placement;
         lockMore?.(locked);
+        // Next to a map, the neighbour decides what this is: no scale.
+        scaleField?.toggle(!locked);
         colsInput.disabled = locked;
         rowsInput.disabled = locked;
         paletteSelect.disabled = locked;
@@ -515,6 +584,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const genBtn = actions.createEl("button", { text: "Open in generator", attr: { title: "Create the map blank and open the generator view on it to tune generation by hand" } });
     actions.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
 
+    let tuneTimer: number | undefined;
     const renderGenerators = () => {
       const terrains = this.terrains(paletteSelect.value);
       // Space generators only for space users or maps in space (a space
@@ -526,11 +596,14 @@ export class NewMapSetupModal extends HexmakerModal {
         ...(this.origin ? this.plugin.contextKinds(this.origin.map) : []),
       ]);
       const shown = visibleKinds(this.kinds, this.plugin.settings, context, this.saved?.generator ?? this.rowStart?.generator);
+      // A new top-level map lists its scale's generators, Blank first.
+      const scale = this.activeScale();
+      const pool = scale ? scaleGenerators(scale, shown) : shown;
       // "Zoom into the parent hex" generators only for submaps (a neighbour
       // has context but no parent hex); next to a neighbour, the ones that
       // carry on from its edge come first.
       const where = { parentHex: !!this.origin, neighbour: !!this.placement };
-      let fitting = kindsForPalette(shown, terrains, where.parentHex);
+      let fitting = kindsForPalette(pool, terrains, where.parentHex);
       if (where.neighbour) fitting = neighbourFirst(fitting);
       // A submap of a painted hex starts on Region detail, not Blank
       // (unless a saved default or the user's click says otherwise).
@@ -555,7 +628,7 @@ export class NewMapSetupModal extends HexmakerModal {
       // uses (Overland for world maps, Star scatter for space), not Blank,
       // so the preview shows something (fresh-eyes round 7).
       if (!this.origin && !where.neighbour && !this.pickedKind && this.kindId === BLANK_ID) {
-        const first = firstMapGenerator(fitting, enabledKinds(this.plugin.settings));
+        const first = scale ? scaleStarter(fitting) : firstMapGenerator(fitting, enabledKinds(this.plugin.settings));
         if (first !== BLANK_ID) {
           this.kindId = first;
           this.options = {};
@@ -585,11 +658,16 @@ export class NewMapSetupModal extends HexmakerModal {
           this.kindId = k.id;
           this.pickedKind = true;
           this.options = {};
+          // A generator that wants its own palette (Orbits: Space - System).
+          const s = this.activeScale();
+          const palette = paletteSelect.value;
+          if (s) usePalette(scalePalette(s, k.id));
           renderGenerators();
+          if (paletteSelect.value !== palette) renderBase();
           refresh();
         });
       }
-      const hidden = shown.length - fitting.length;
+      const hidden = pool.length - fitting.length;
       if (hidden > 0) {
         genList.createDiv({
           cls: "setting-item-description",
@@ -653,6 +731,18 @@ export class NewMapSetupModal extends HexmakerModal {
         const r = optionRows.get(extra.optionKey) ?? this.row(optsBox, extra.label);
         extra.render(r, { plugin: this.plugin, generatorId: kind!.id, originMap: this.origin?.map });
       }
+      // Advanced: the generator's tuning sliders (as the setup wizard's),
+      // then the scale's own choices (Biomes: Make every region now).
+      // Shared with the wizard: src/ui/mapScaleForm.ts.
+      for (const el of this.generatorExtras) el.remove();
+      this.generatorExtras = [
+        ...renderTuningSliders(optsBox, kind?.tuning, this.options, disclosure, NEW_MAP_TUNING_ID, () => {
+          window.clearTimeout(tuneTimer);
+          tuneTimer = window.setTimeout(refresh, LIVE_PREVIEW_DELAY_MS);
+        }),
+        ...renderScaleChoices(optsBox, moduleScaleChoices(scale?.id, kind?.id), this.scaleChoices, disclosure, "NewMap"),
+      ];
+      disclosure.refreshSet();
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
     };
 
@@ -815,7 +905,8 @@ export class NewMapSetupModal extends HexmakerModal {
     const kind = this.kind();
     if (this.remember.generator && kind) {
       set.generator = kind.id;
-      const opts = this.resolvedOptions(kind);
+      // The options only: tuning sliders are for this map, not saved defaults.
+      const opts = optionsWithDefaults(kind, this.options);
       if (Object.keys(opts).length) set.options = opts; else clear.push("options");
     } else {
       clear.push("generator", "options");
@@ -864,8 +955,19 @@ export class NewMapSetupModal extends HexmakerModal {
     return this.kinds.find((k) => k.id === this.kindId);
   }
 
+  /** The scales this form offers: new top-level maps only, of the map types that are on. */
+  private scales(): MapScaleDef[] {
+    return this.origin || this.asRegion ? [] : scalesFor(enabledKinds(this.plugin.settings));
+  }
+
+  /** The scale whose generators are listed now (none for submaps, regions, or next to a map). */
+  private activeScale(): MapScaleDef | undefined {
+    if (this.placement) return undefined;
+    return this.scales().find((s) => s.id === this.scaleId);
+  }
+
   private resolvedOptions(kind: TerrainGeneratorKind): Record<string, string> {
-    return optionsWithDefaults(kind, this.options);
+    return optionsWithTuning(kind, this.options);
   }
 
   private grid() {
@@ -949,6 +1051,20 @@ export class NewMapSetupModal extends HexmakerModal {
       // Expected and harmless (an Orbit path crossing a planet hex has no
       // path type on the planet's palette): skip quietly (fresh-eyes F12).
       if (missing.length) console.warn(`[hexmaker] ${result.name}: skipped generated paths with no matching path type: ${missing.join(", ")}`);
+    }
+    // What the scale's module adds (Biomes: an overworld with its region settings).
+    const scale = this.activeScale();
+    if (scale) {
+      await runScaleMapMade(this.plugin, scale.id, {
+        mapName: result.name,
+        generatorId: effective?.id ?? BLANK_ID,
+        options: effective ? this.resolvedOptions(effective) : {},
+        seed: this.seed,
+        grid: this.grid(),
+        paletteName,
+        choices: scaleChoiceValues(moduleScaleChoices(scale.id, effective?.id), this.scaleChoices),
+        onProgress: (message) => { if (message) goBtn.setText(message); },
+      });
     }
     let backgroundImage: string | undefined;
     let bgPath = this.origin ? null : this.bgPath;

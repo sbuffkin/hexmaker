@@ -1507,6 +1507,21 @@
   "note": "Owner 2026-10-12: Advanced is a trimmed set of 5-10 tuning sliders."
  },
  {
+  "id": "Wizard.makeAllRegions",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "label": "Make every region now (Biomes)",
+  "loc": "src/overworld/scaleOverworld.ts",
+  "suggestion": "advanced",
+  "choice": "advanced",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: Biomes makes an overworld; making every region is off and out of the way so the step stays simple."
+ },
+ {
   "id": "Wizard.reroll",
   "group": "Setup wizard",
   "subgroup": "Map",
@@ -9649,6 +9664,36 @@
   "overrides": "",
   "twinOf": "",
   "note": ""
+ },
+ {
+  "id": "NewMap.tuning",
+  "group": "New maps & map links",
+  "subgroup": "Generator options (world)",
+  "label": "Engine tuning sliders",
+  "loc": "src/worldgen/NewMapSetupModal.ts",
+  "suggestion": "advanced",
+  "choice": "advanced",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: as the wizard, generator options above the fold and a trimmed set of 5-10 tuning sliders in Advanced."
+ },
+ {
+  "id": "NewMap.makeAllRegions",
+  "group": "New maps & map links",
+  "subgroup": "Generator options (world)",
+  "label": "Make every region now (Biomes)",
+  "loc": "src/overworld/scaleOverworld.ts",
+  "suggestion": "advanced",
+  "choice": "advanced",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: as the wizard."
  },
  {
   "id": "ChildKind.region",
