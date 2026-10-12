@@ -1,7 +1,8 @@
 import type { SubmapDefault, TerrainColor } from "../types";
 import { impassableNoteCell, parseImpassableCell } from "../impassable";
 import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
-import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
+import { colorCell, isCssColor, parseColorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
+import { findPathTypesTable, splitRow as splitPathRow } from "./pathTypeTable";
 import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
 import { pathLink, refBasename } from "../noteFormats";
 import { registry } from "../modules";
@@ -149,7 +150,8 @@ export function parsePaletteNote(content: string): TerrainColor[] | null {
       if (col && cells[idx]) row[col] = cells[idx];
     });
     if (!row.name) continue;
-    const entry: TerrainColor = { name: row.name, color: parseColorCell(row.color) || "#888888" };
+    // A colour that can't be read is drawn grey and kept as typed (unreadColor).
+    const entry: TerrainColor = { name: row.name, ...readColor(row.color) };
     if (row.icon) entry.icon = row.icon;
     const iconColor = parseColorCell(row.iconColor);
     if (iconColor) entry.iconColor = iconColor;
@@ -185,7 +187,7 @@ export function serializePaletteTable(
     `| ${headers.map(() => "---").join(" | ")} |`,
   ];
   for (const t of terrains) {
-    const values = [t.name, colorCell(t.color), t.icon, colorCell(t.iconColor), t.category, terrainTypeCell(t), impassableNoteCell(t)];
+    const values = [t.name, colorCell(writtenColor(t)), t.icon, colorCell(t.iconColor), t.category, terrainTypeCell(t), impassableNoteCell(t)];
     const mine = extra?.rows.get(t.name.toLowerCase()) ?? {};
     for (const h of own) values.push(mine[h]);
     const cells = values.map(escapeCell);
@@ -498,6 +500,58 @@ export function wrapPaletteColors(content: string): string {
   return wrapColorCellsInRows(lines, rows, cols) ? lines.join("\n") : content;
 }
 
+/** A colour cell in a palette note that isn't a colour as typed. */
+export interface PaletteColorIssue {
+  /** The terrain or path type the row is for. */
+  row: string;
+  column: "Color" | "Icon color";
+  /** The cell as typed (backticks taken off). */
+  text: string;
+  /** The colour it was read as (a safe fix), or undefined when it can't be read (drawn grey). */
+  fixed?: string;
+}
+
+/**
+ * Colour cells in the terrain and path types tables that aren't a CSS
+ * colour as typed: each one either has a single safe reading (`fixed`,
+ * used and written back) or can't be read (kept as typed, drawn grey).
+ */
+export function paletteColorIssues(content: string): PaletteColorIssue[] {
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const out: PaletteColorIssue[] = [];
+  const check = (row: string, column: PaletteColorIssue["column"], raw: string | undefined) => {
+    const text = (raw ?? "").trim().replace(/^`+/, "").replace(/`+$/, "").trim();
+    if (!text || isCssColor(text) || /^[0-9a-f]{3}$|^[0-9a-f]{6}$/i.test(text)) return;
+    const read = parseColorCell(text);
+    out.push(isCssColor(read) ? { row, column, text, fixed: read } : { row, column, text });
+  };
+  const span = findPaletteTable(lines);
+  if (span) {
+    const at = (c: Column) => span.columns.indexOf(c);
+    for (let i = span.start + 2; i < span.end; i++) {
+      const cells = splitRow(lines[i]);
+      const name = cells[at("name")]?.trim();
+      if (!name) continue;
+      check(name, "Color", cells[at("color")]);
+      if (at("iconColor") >= 0) check(name, "Icon color", cells[at("iconColor")]);
+    }
+  }
+  const paths = findPathTypesTable(lines);
+  if (paths && paths.columns.includes("name") && paths.columns.includes("color")) {
+    for (let i = paths.start + 2; i < paths.end; i++) {
+      const cells = splitPathRow(lines[i]);
+      const name = cells[paths.columns.indexOf("name")]?.trim();
+      if (name) check(name, "Color", cells[paths.columns.indexOf("color")]);
+    }
+  }
+  return out;
+}
+
+/** "forest: "blu"; Road: "#12g"" (the unreadable ones), for a notice. */
+export function colorIssuesText(issues: readonly PaletteColorIssue[]): string {
+  return issues.map((i) => `${i.row}${i.column === "Icon color" ? " (icon)" : ""}: "${i.text}"${i.fixed ? ` → ${i.fixed}` : ""}`).join("; ");
+}
+
 /** Structural equality used to skip no-op rewrites. */
 export function terrainsEqual(a: TerrainColor[], b: TerrainColor[]): boolean {
   if (a.length !== b.length) return false;
@@ -506,6 +560,7 @@ export function terrainsEqual(a: TerrainColor[], b: TerrainColor[]): boolean {
     return (
       t.name === u.name &&
       t.color === u.color &&
+      (t.unreadColor ?? "") === (u.unreadColor ?? "") &&
       (t.icon ?? "") === (u.icon ?? "") &&
       (t.iconColor ?? "") === (u.iconColor ?? "") &&
       (t.category ?? "") === (u.category ?? "") &&

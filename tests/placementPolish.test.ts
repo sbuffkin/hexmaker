@@ -71,6 +71,22 @@ class FakeEl {
   find(cls: string): FakeEl[] {
     return this.children.flatMap((c) => [...(c.cls.split(" ").includes(cls) ? [c] : []), ...c.find(cls)]);
   }
+  get childElementCount(): number {
+    return this.children.length;
+  }
+  get firstElementChild(): FakeEl | null {
+    return this.children[0] ?? null;
+  }
+  get parentElement(): FakeEl | null {
+    return this.parent;
+  }
+  insertBefore(c: FakeEl, ref: FakeEl): FakeEl {
+    c.remove();
+    c.parent = this;
+    const i = this.children.indexOf(ref);
+    this.children.splice(i < 0 ? this.children.length : i, 0, c);
+    return c;
+  }
 }
 
 function page(store: FakeStore, surface = "GenPage") {
@@ -86,6 +102,51 @@ function page(store: FakeStore, surface = "GenPage") {
   const subHeaders = () => host.find("duckmage-disclosure-sub-summary").map((s) => s.text);
   return { host, d, put, header, subHeaders };
 }
+
+// ── Round 10: one item isn't worth a dropdown ───────────────────────────────
+
+describe("one-item Advanced dropdowns and sub-sections show inline (owner, round 10)", () => {
+  const settled = () => Promise.resolve(); // settle() runs as a microtask after the surface is built
+
+  it("a dropdown left holding one control shows it inline", async () => {
+    const { host, put } = page(new FakeStore(), "HexTable");
+    const el = put("HexTable.xMin");
+    expect(host.find("duckmage-disclosure")).toHaveLength(1);
+    await settled();
+    expect(host.find("duckmage-disclosure")).toHaveLength(0);
+    expect(el.parent).toBe(host);
+  });
+
+  it("two controls keep the dropdown", async () => {
+    const { host, put } = page(new FakeStore(), "HexTable");
+    put("HexTable.xMin");
+    put("HexTable.xMax");
+    await settled();
+    expect(host.find("duckmage-disclosure")).toHaveLength(1);
+  });
+
+  it("a one-control sub-section folds into plain Advanced; the dropdown stays when more is in it", async () => {
+    const { host, put } = page(new FakeStore(), "GenPage");
+    put("GenPage.clumping"); // Engine tuning
+    const seed = put("GenPage.seed"); // Seed (only one)
+    put("GenPage.edgeSmoothing"); // Engine tuning
+    await settled();
+    expect(host.find("duckmage-disclosure")).toHaveLength(1);
+    expect(host.find("duckmage-disclosure-sub-summary").map((s) => s.text)).toEqual(["Engine tuning"]);
+    expect(seed.parent?.cls).toBe("duckmage-disclosure-body");
+  });
+
+  it("with Debug in it (debug mode), a single Advanced control keeps the dropdown", async () => {
+    const store = new FakeStore();
+    setDebugMode(store, true);
+    const { host, put } = page(store, "Settings");
+    put("Settings.hexFolder");
+    put("Settings.biomesFolder"); // Debug
+    await settled();
+    expect(host.find("duckmage-disclosure")).toHaveLength(1);
+    setDebugMode(store, false);
+  });
+});
 
 // ── 3. "Advanced · N set" ────────────────────────────────────────────────────
 
@@ -133,9 +194,9 @@ describe("Advanced · N set: dropdown headers count the controls that are on", (
 
   it("refreshSet for changes made from outside (a map switch, Clear filters)", () => {
     const store = new FakeStore();
-    const { d, put, header } = page(store, "LayersMenu");
+    const { d, put, header } = page(store, "HexTable");
     let on = false;
-    put("LayersMenu.regionOverlay", () => on);
+    put("HexTable.xMin", () => on);
     expect(header()).toBe("Advanced");
     on = true;
     d.refreshSet();
@@ -144,12 +205,12 @@ describe("Advanced · N set: dropdown headers count the controls that are on", (
 
   it("track counts a control built some other way; main controls and hidden Debug never count", () => {
     const store = new FakeStore();
-    const { d, put, header } = page(store, "MapExport");
+    const { d, put, header } = page(store, "HexTable");
     put("Nowhere.main", () => true);
     d.track("Nowhere.main", () => true);
     d.track("Settings.biomesFolder", () => true); // Debug, debug mode off
     expect(header).toThrow(); // no dropdown was made at all
-    d.track("MapExport.showRegionOverlay", () => true);
+    d.track("HexTable.xMin", () => true);
     expect(header()).toBe("Advanced · 1 set");
   });
 
@@ -259,9 +320,9 @@ describe("one menu helper", () => {
 
   it("no main items: Advanced is shown directly; with others, it stays a submenu", () => {
     const noop = () => {};
-    const rows = [{ id: "RTView.folderMenuRollPicker", label: "a", onClick: noop }, { id: "PathType.carveWidth", label: "dbg", onClick: noop }];
+    const rows = [{ id: "RTView.folderMenuRollPicker", label: "a", onClick: noop }, { id: "RTView.folderMenuEncounters", label: "b", onClick: noop }, { id: "PathType.carveWidth", label: "dbg", onClick: noop }];
     const alone = placedRows(rows, true);
-    expect(alone.shown.map((r) => r.label)).toEqual(["a"]);
+    expect(alone.shown.map((r) => r.label)).toEqual(["a", "b"]);
     expect(submenuRows(alone, noop).map((r) => r.label)).toEqual(["Debug ▸"]);
     const withOthers = placedRows(rows, false, 2);
     expect(withOthers.shown).toEqual([]);
@@ -271,11 +332,11 @@ describe("one menu helper", () => {
   it("Debug ▸ sits inside Advanced ▸ when both exist", () => {
     const noop = () => {};
     let opened: string[] = [];
-    const split = placedRows([{ id: "RTView.folderMenuRollPicker", label: "a", onClick: noop }, { id: "PathType.carveWidth", label: "dbg", onClick: noop }], true, 1);
+    const split = placedRows([{ id: "RTView.folderMenuRollPicker", label: "a", onClick: noop }, { id: "RTView.folderMenuEncounters", label: "b", onClick: noop }, { id: "PathType.carveWidth", label: "dbg", onClick: noop }], true, 1);
     const top = submenuRows(split, (r) => { opened = r.map((x) => x.label); });
     expect(top.map((r) => r.label)).toEqual(["Advanced ▸"]);
     top[0].onClick();
-    expect(opened).toEqual(["a", "Debug ▸"]);
+    expect(opened).toEqual(["a", "b", "Debug ▸"]);
   });
 });
 

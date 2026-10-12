@@ -423,8 +423,11 @@ async function spaceExtra(ctx) {
       defaultPalette: p.settings.defaultPalette,
       planet: p.getMap("vega-iv")?.paletteName ?? p.getMap("Vega IV")?.paletteName,
       kindContent: p.settings.kindContent,
+      // Shipped tables come with their map type (phase 6): no fantasy starters here.
+      fantasyTables: ["weather.md", "rumors.md"].filter((n) => window.app.vault.getAbstractFileByPath(`${p.settings.tablesFolder}/${n}`)),
     };
   }, ctx.pluginId);
+  out.push({ check: "F4-no-fantasy-tables", ok: r.fantasyTables.length === 0, detail: `starter tables: ${r.fantasyTables.join(", ") || "none"}` });
   out.push({ check: "F4-no-biome-notes", ok: r.biomeNotes === 0, detail: `biome notes: ${r.biomeNotes}` });
   out.push({ check: "F4-default-palette", ok: r.defaultPalette === "Space - Sector", detail: `Palette for new maps: ${r.defaultPalette}; kindContent ${JSON.stringify(r.kindContent)}` });
   out.push({ check: "F4-planet-palette", ok: r.planet === "Space - Planet", detail: `planet palette: ${r.planet}` });

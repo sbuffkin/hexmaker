@@ -42,6 +42,8 @@ function world(opts: { mode?: string; arrival?: string } = {}) {
 	const plugin = {
 		settings: { maps, hexOrientation: "flat", staggerOffset: "odd" },
 		getMap: (n: string) => maps.find((m) => m.name === n),
+
+		rolledMapName: () => undefined,
 		parentOf: (n: string) => maps.find((m) => m.name === n)?.parent,
 		getMapPalette: () => DEFAULT_TERRAIN_PALETTE,
 		getPaletteOrPresetTerrains: () => DEFAULT_TERRAIN_PALETTE,

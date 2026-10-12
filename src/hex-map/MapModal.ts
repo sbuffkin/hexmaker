@@ -28,7 +28,7 @@ import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
-import { renderArrivalSetting } from "./mapTablesForm";
+import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
 import { moduleMapProperties, worldMaps } from "../modules/runtime";
 import { PlacedMenu } from "../ui/placedMenu";
 import { Disclosure } from "../ui/disclosure";
@@ -467,7 +467,8 @@ export class MapModal extends HexmakerModal {
 
     if (currentMap) {
       renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
-      // Modules' sections (Space: Generator tables).
+      renderRoleTables(el, this.plugin, currentMap, () => this.render());
+      // Modules' sections (Space: Convert world types to tables).
       for (const section of moduleMapProperties()) section.render(el, this.plugin, currentMap, () => this.render());
     }
 

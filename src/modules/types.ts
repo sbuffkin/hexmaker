@@ -128,7 +128,30 @@ export interface EngineRoleDef {
   rows: RowType;
   terrainTypes: readonly string[];
   help: string;
+  /** What the engine does with no table (in notes: "no table, so equal odds over the palette's …"). */
   fallback: string;
+  /**
+   * The table it rolls on when no map or setup names one: a table this
+   * module ships (ShippedTableDef.path). The copy installed in the tables
+   * folder wins when it's there (edit it to change the odds); else the
+   * shipped text, read in memory (T12: today's odds unless a table is set).
+   */
+  defaultTable?: string;
+  /** Text for "no table set here" in the Map properties picker (else "World types (as picked)"). */
+  unsetLabel?: string;
+}
+
+/**
+ * A table note a module ships (plan-tables-everywhere §2.9): data, the
+ * text of a .md file in the module's tables/ folder. Installed under the
+ * tables folder at `path` when missing (never over a note that's there),
+ * while the module's map type is on.
+ */
+export interface ShippedTableDef {
+  /** Where it goes, under the tables folder ("weather.md", "space/Orbits/Moons.md"). */
+  path: string;
+  /** The note's text. */
+  text: string;
 }
 
 /**
@@ -194,6 +217,10 @@ export interface HexmakerModule {
   palettes?: readonly PalettePreset[];
   /** Table roles of the engines this module's generators run. */
   tableRoles?: readonly EngineRoleDef[];
+  /** The folder under the tables folder its role tables live in ("space"): listed first in role pickers. */
+  tablesFolder?: string;
+  /** Table notes it ships (starter tables, role tables): data, never code. */
+  tables?: readonly ShippedTableDef[];
   /**
    * One-time upgrade of terrains typed before this module's finer types
    * existed (run once per vault by the palette data upgrade): the refined

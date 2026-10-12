@@ -49,6 +49,10 @@ export const LAYERS: readonly Layer[] = ["main", "more", "advanced", "debug", "h
 /** Prefix of an Advanced sub-section placement. */
 const SUB_PREFIX = "advanced/";
 
+// Round 10 (owner 2026-10-12): one-item Advanced sections moved to the basic options:
+// path bar Cross impassable, layers Region overlay, terrain-filter type rows, token
+// Description, path picker Paths on this map, path type Carves, export Region overlay,
+// path menu Split here / Reverse. Biome page Seed stays Advanced without a sub-section.
 export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // ── Settings ──
   // The world folder and custom icons folder stay main (keep); the rest of
@@ -87,14 +91,10 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
 
   // ── Hex map view (menus and toolbars: Advanced ▸ / Debug ▸ submenus,
   // src/ui/placedMenu.ts; panels: an Advanced dropdown) ──
-  "ModeBar.crossImpassable": "advanced",
   "DrawingPanel.linkTable": "advanced",
   "DrawingPanel.linkSubmap": "advanced",
   "DrawingPanel.regionAreas": "advanced",
   "MapView.tableLinkToolPicker": "advanced",
-  "PathMenu.splitHere": "advanced",
-  "PathMenu.reverse": "advanced",
-  "LayersMenu.regionOverlay": "advanced",
   // Dropped (the code is gone; listed so the inventory stays complete).
   "PainterMenu.newPath": "hidden",
   "MapView.dblRightClickExit": "hidden",
@@ -112,12 +112,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "HexTable.xMax": "advanced",
   "HexTable.yMin": "advanced",
   "HexTable.yMax": "advanced",
-  "TerrainFilter.typeRow": "advanced",
 
   // ── Map pickers and editors ──
-  "Token.description": "advanced",
-  "PathPicker.pathsOnMap": "advanced",
-  "PathType.carves": "advanced",
   "PathType.carveWidth": "debug",
   "TerrainPicker.refreshEncounterLinks": "debug",
   "Locations.openButton": "hidden",
@@ -172,7 +168,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // stays by the preview.
   "GenPage.seed": "advanced/Seed",
   "GenPage.seedLock": "advanced/Seed",
-  "BiomePage.seed": "advanced/Seed",
+  "BiomePage.seed": "advanced",
   // ── Owner worksheet 2026-10-11 (dev/ui-inventory/inputs-tags-resolved.json):
   // maps, new maps, regions/overworlds/biomes, world types, palette editor,
   // random tables, workflows, export. simple = main, advanced = advanced,
@@ -274,7 +270,6 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapExport.boldPaths": "main",
   "MapExport.showLinkBadges": "main",
   "MapExport.showFactionOverlay": "main",
-  "MapExport.showRegionOverlay": "advanced",
   "MapExport.pdfColumnsFold": "main",
   "MapExport.exportPng": "main",
   "MapExport.exportPdf": "main",

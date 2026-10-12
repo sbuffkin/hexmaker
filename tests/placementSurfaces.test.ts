@@ -39,7 +39,8 @@ const TIER: Record<string, Layer | "drop"> = { keep: "main", simple: "main", adv
  * image row stays together on the main page (2026-10-11: customisation
  * stays simple), so its "Pick image…" isn't Advanced.
  */
-const OVERRIDES: Record<string, Layer> = { "MapProps.backgroundImagePicker": "main" };
+// Round 10 (owner 2026-10-12): the export dialog's lone Advanced item moved to the basic options.
+const OVERRIDES: Record<string, Layer> = { "MapProps.backgroundImagePicker": "main", "MapExport.showRegionOverlay": "main" };
 
 const resolved = (JSON.parse(readFileSync(join("dev", "ui-inventory", "inputs-tags-resolved.json"), "utf8")) as Resolved[])
   .filter((x) => SURFACES.includes(x.group));
@@ -251,7 +252,8 @@ describe("menus: Advanced ▸ and Debug ▸ submenus (src/ui/placedMenu.ts)", ()
     pm.addItem((i) => i.setTitle("Open in new tab"));
     pm.add("M.a", { label: "Exclude A", onClick: noop });
     pm.finish(() => ({ x: 0, y: 0 }));
-    expect(menu.items).toEqual(["Open in new tab", "---", "Advanced ▸"]);
+    // One Advanced item is shown inline (round 10).
+    expect(menu.items).toEqual(["Open in new tab", "Exclude A"]);
   });
 
   it("the map list's and the tables view's context menus use it", () => {

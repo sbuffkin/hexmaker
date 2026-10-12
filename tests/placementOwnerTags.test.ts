@@ -100,7 +100,8 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
       // Simple ones are never below the fold either.
       if (tier === "simple" && !EXCEPTIONS[id]) expect(got).toBe("main");
       // Generator-page overkill: in a named Advanced sub-section.
-      if (tier === "overkill" && /^(GenPage|BiomePage)\./.test(id)) expect(subSectionOf(id)).toBeTruthy();
+      // (Round 10: the biome page's Seed was a one-item sub-section, so it's plain Advanced.)
+      if (tier === "overkill" && /^(GenPage|BiomePage)\./.test(id) && id !== "BiomePage.seed") expect(subSectionOf(id)).toBeTruthy();
     });
   }
 

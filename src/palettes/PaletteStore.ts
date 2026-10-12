@@ -4,6 +4,8 @@ import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
 import {
   buildPaletteNote,
+  colorIssuesText,
+  paletteColorIssues,
   paletteFileName,
   parsePaletteNote,
   readChildPalette,
@@ -27,6 +29,10 @@ import { registry } from "../modules";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
 import { inferTerrainType, refinedTerrainType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
+import { TerrainRenameOffers } from "./renameOffer";
+
+/** Local storage key (per device): what was last said about each palette note's colours. */
+const COLOR_REPORTED_KEY = "hexmaker-palette-colors-reported";
 
 /**
  * Fill in missing terrain types: a same-named terrain in a preset wins,
@@ -163,10 +169,12 @@ export function clonePalette(p: TerrainPalette): TerrainPalette {
 /**
  * The palette list as loaded from data.json: missing or not a list (a fresh
  * install, a broken file) → the defaults; any list, empty too, is kept as
- * the user left it (SM-DEL: deleted palettes stay deleted).
+ * the user left it (SM-DEL: deleted palettes stay deleted). The defaults
+ * themselves (settings filled from DEFAULT_SETTINGS on a fresh install) are
+ * copied, so editing a palette never changes the shipped constant.
  */
 export function palettesOnLoad(saved: unknown, defaults: readonly TerrainPalette[]): TerrainPalette[] {
-  return Array.isArray(saved) ? (saved as TerrainPalette[]) : defaults.map(clonePalette);
+  return Array.isArray(saved) && saved !== defaults ? (saved as TerrainPalette[]) : defaults.map(clonePalette);
 }
 
 /** The default palettes not in `list` (by name, any case), in their own order. */
@@ -221,8 +229,71 @@ export class PaletteStore {
   private broken = new Set<string>();
   /** Hand-edited notes whose derived cells wait until the user stops editing them. */
   private pendingDerived = new Set<string>();
+  /** Hand-edited notes whose colour problems and terrain renames wait until the user stops editing them. */
+  private pendingReview = new Map<string, string>();
+  /** What was last said about each note's colours (said again only when it changes). */
+  private colorReported = new Map<string, string>();
+  private colorReportedLoaded = false;
+  /** Terrains renamed by hand: the "Rename everywhere" offers. */
+  readonly renames: TerrainRenameOffers;
 
-  constructor(private plugin: HexmakerPlugin) {}
+  constructor(private plugin: HexmakerPlugin) {
+    this.renames = new TerrainRenameOffers(plugin);
+  }
+
+  /** Names a terrain was renamed to by hand, waiting for "Rename everywhere" (no new tables yet). */
+  heldTerrainNames(): Set<string> {
+    return this.renames.held();
+  }
+
+  /**
+   * Say which colours in a palette note can't be read (drawn grey, kept as
+   * typed) and which were read a safe way (written back so). Once per change.
+   */
+  private reportColors(path: string, name: string, content: string): void {
+    const issues = paletteColorIssues(content);
+    const sig = JSON.stringify(issues);
+    // Remembered per device across restarts (local storage, never data.json):
+    // the same unreadable colours aren't reported again on every start.
+    if (!this.colorReportedLoaded) {
+      this.colorReportedLoaded = true;
+      const saved: unknown = this.plugin.app.loadLocalStorage?.(COLOR_REPORTED_KEY);
+      if (saved && typeof saved === "object") for (const [p, s] of Object.entries(saved as Record<string, unknown>)) if (typeof s === "string") this.colorReported.set(p, s);
+    }
+    if ((this.colorReported.get(path) ?? "[]") === sig) return;
+    this.colorReported.set(path, sig);
+    this.plugin.app.saveLocalStorage?.(COLOR_REPORTED_KEY, Object.fromEntries(this.colorReported));
+    const bad = issues.filter((i) => !i.fixed);
+    const fixed = issues.filter((i) => i.fixed);
+    const lines: string[] = [];
+    if (bad.length) {
+      lines.push(`Hexmaker: palette "${name}" has ${bad.length === 1 ? "a colour" : `${bad.length} colours`} it can't read, drawn grey until fixed in the note (your text is kept): ${colorIssuesText(bad)}.`);
+    }
+    if (fixed.length) lines.push(`${bad.length ? "Read" : `Hexmaker: in palette "${name}", read`} ${colorIssuesText(fixed)}.`);
+    if (lines.length) new Notice(lines.join(" "), 15000);
+  }
+
+  /**
+   * Offer the renames found while loading (a palette note renamed by hand
+   * while Obsidian was closed). Call once the map notes are loaded, so the
+   * hexes still using the old names can be counted.
+   */
+  offerPendingRenames(): Promise<void> {
+    return this.enqueue(async () => {
+      for (const path of this.renames.paths()) {
+        const pal = this.paletteBoundTo(path);
+        if (pal && !this.isBeingEdited(path)) await this.renames.offer(path, pal.name);
+      }
+    });
+  }
+
+  /** A hand-edited note (as the user left it): report its colours and offer its renames. */
+  private async review(path: string, content: string): Promise<void> {
+    const pal = this.paletteBoundTo(path);
+    if (!pal) return;
+    this.reportColors(path, pal.name, content);
+    await this.renames.offer(path, pal.name);
+  }
 
   /** The palette notes have been read (palettes, impassable flags and path types are final). */
   isReady(): boolean {
@@ -560,6 +631,9 @@ export class PaletteStore {
           changed = true;
         }
         if (!terrainsEqual(pal.terrains, terrains)) {
+          // Renamed in the note while Obsidian was closed (or synced in):
+          // offered once the maps are loaded (offerPendingRenames).
+          this.renames.noteEdit(file.path, pal.terrains, terrains);
           pal.terrains.splice(0, pal.terrains.length, ...terrains);
           changed = true;
         }
@@ -569,6 +643,7 @@ export class PaletteStore {
       }
       if (applyNoteMeta(pal, content, !settings.pathTypesExplicit)) changed = true;
       this.bind(pal, file.path, content);
+      this.reportColors(file.path, pal.name, content);
       next.push(pal);
     }
     if (next.length === 0) return changed; // never empty the list; the cache stays usable
@@ -805,7 +880,13 @@ export class PaletteStore {
    * fight the cursor, so onModify leaves those for here.
    */
   flushPendingDerived(): void {
-    if (!this.ready || !this.pendingDerived.size) return;
+    if (!this.ready) return;
+    // Reviewed first, while the note still reads as the user left it.
+    for (const [path, content] of [...this.pendingReview]) {
+      if (this.isBeingEdited(path)) continue;
+      this.pendingReview.delete(path);
+      void this.enqueue(() => this.review(path, content));
+    }
     for (const path of [...this.pendingDerived]) {
       if (this.isBeingEdited(path)) continue;
       this.pendingDerived.delete(path);
@@ -860,6 +941,10 @@ export class PaletteStore {
       let changed = false;
       if (pal) {
         if (!terrainsEqual(pal.terrains, terrains)) {
+          // A terrain renamed here by hand: offered "Rename everywhere" once
+          // the user leaves the note (before persist, so the new name's
+          // tables wait for the answer).
+          this.renames.noteEdit(file.path, pal.terrains, terrains);
           pal.terrains.splice(0, pal.terrains.length, ...terrains);
           changed = true;
         }
@@ -884,6 +969,13 @@ export class PaletteStore {
       this.bind(pal, file.path, content);
       if (this.recordNotes()) changed = true;
       if (changed) await this.persist();
+      // Colours it can't read and terrains renamed: said once the user
+      // leaves the note (not at every pause while typing).
+      if (this.isBeingEdited(file.path)) this.pendingReview.set(file.path, content);
+      else {
+        this.pendingReview.delete(file.path);
+        await this.review(file.path, content);
+      }
       // The hand edit may have changed what the derived cells should say
       // (a new type, a terrain added without a type): refresh them now, or
       // once the user leaves the note if they're still typing in it.
@@ -934,6 +1026,12 @@ export class PaletteStore {
       }
       if (content !== undefined) this.bind(pal, file.path, content);
       else this.boundPath.set(pal, file.path);
+      this.renames.moved(oldPath, file.path);
+      const review = this.pendingReview.get(oldPath);
+      if (review !== undefined) {
+        this.pendingReview.delete(oldPath);
+        this.pendingReview.set(file.path, review);
+      }
       this.knownPaths.add(file.path);
       if (pal.name !== file.basename) {
         this.renamePalette(pal, file.basename);

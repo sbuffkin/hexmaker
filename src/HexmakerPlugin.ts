@@ -57,7 +57,7 @@ import {
 } from "./palettes/presets";
 import { clonePathTypes } from "./palettes/pathTypeTable";
 import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons } from "./utils";
-import { STARTER_RUMORS, STARTER_WEATHER, starterTablePath } from "./regionTables";
+import { shippedTablesToInstall } from "./random-tables/shippedTables";
 import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
@@ -71,6 +71,7 @@ import type {
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
+import { writeJsonBackup } from "./backup";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
@@ -80,7 +81,9 @@ import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
 import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
-import type { RoleId } from "./worldgen/tableRoles";
+import { NAMES_ROLE, type RoleId } from "./worldgen/tableRoles";
+import { rollMapName } from "./maps/mapNames";
+import { effectiveTerrainType } from "./terrainTypes";
 import { ArrivalService } from "./arrival/ArrivalService";
 import { EventsService } from "./arrival/EventsService";
 import type { FiredEvent } from "./arrival/eventsLedger";
@@ -208,6 +211,8 @@ export default class HexmakerPlugin extends Plugin {
       // (World maps, BC1: every overworld hex's biome in its Biome column).
       runAfterStoresReady(this, storesReady, this.moduleStores, storeReady);
       void storesReady.then(() => this.ensureTablesForNewTerrains());
+      // Terrains renamed in a palette note while Obsidian was closed: offer "Rename everywhere".
+      void storesReady.then(() => this.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
       // generator and modules' notes (world types) in the new note formats (backed up first).
       void Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
@@ -1232,6 +1237,35 @@ export default class HexmakerPlugin extends Plugin {
     return changed;
   }
 
+  /**
+   * Write the shipped table notes of the modules of `kinds` (default: the
+   * map types that are on) that the tables folder doesn't have yet
+   * (plan-tables-everywhere phase 6). A note that's there, edited or not,
+   * is never touched; nothing is written when every one is there.
+   * Returns the paths written.
+   */
+  async installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> {
+    const plan = shippedTablesToInstall(registry.shippedTables(kinds), normalizeFolder(this.settings.tablesFolder), (p) => !!this.app.vault.getAbstractFileByPath(p));
+    const written: string[] = [];
+    for (const t of plan) {
+      const parts = t.path.split("/").slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) {
+        const dir = parts.slice(0, i).join("/");
+        if (!this.app.vault.getAbstractFileByPath(dir)) {
+          try { await this.app.vault.createFolder(dir); } catch { /* made meanwhile */ }
+        }
+      }
+      try {
+        await this.app.vault.create(t.path, t.text);
+        this.tableNotes.put(t.path, t.text);
+        written.push(t.path);
+      } catch {
+        /* made meanwhile */
+      }
+    }
+    return written;
+  }
+
   /** Add roller blocks to the table notes in the tables folder that lack one. */
   async ensureAllRollerLinks(): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
@@ -1259,6 +1293,7 @@ export default class HexmakerPlugin extends Plugin {
    */
   async ensureTerrainTables(
     terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)),
+    kinds: Iterable<string> = enabledKinds(this.settings),
   ): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
 
@@ -1292,29 +1327,11 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
 
-    // Starter weather and rumours tables (E2): rolled from the hex editor
-    // when the map and hex don't name their own.
-    for (const [section, rows] of [["weather", STARTER_WEATHER], ["hooks & rumors", STARTER_RUMORS]] as const) {
-      const path = starterTablePath(folder, section);
-      if (this.app.vault.getAbstractFileByPath(path)) continue;
-      try {
-        await this.app.vault.create(
-          path,
-          makeTableTemplate(
-            this.settings.defaultTableDice,
-            {
-              "table-type": section === "weather" ? "weather" : "rumors",
-              "roll-filter": false,
-              "encounter-filter": false,
-            },
-            this.buildRollerLink(),
-            rows,
-          ),
-        );
-      } catch {
-        /* ignore */
-      }
-    }
+    // The modules' shipped tables: the starter weather and rumours tables
+    // (E2, rolled from the hex editor when the map and hex don't name their
+    // own) and the space generators' optional role tables. Data, never
+    // written over a note that's there.
+    await this.installShippedTables([...kinds]);
 
     // Terrain-specific tables
     const subfolder = folder ? `${folder}/terrain` : "terrain";
@@ -1379,7 +1396,11 @@ export default class HexmakerPlugin extends Plugin {
    * exists). Awaiting it waits for the files.
    */
   ensureTablesForNewTerrains(): Promise<void> {
-    const terrains = this.tableTerrains();
+    // A name a terrain was just renamed to by hand waits for the answer to
+    // "Rename everywhere" (its old tables may move to it), and names typed
+    // on the way there ("w", "wo"…) never get tables.
+    const held = this.paletteStore?.heldTerrainNames() ?? new Set<string>();
+    const terrains = this.tableTerrains().filter((t) => !held.has(t.name));
     const known = this.tableTerrainNames;
     this.tableTerrainNames = new Set(terrains.map((t) => t.name));
     const added = known ? newTerrains(known, terrains) : [];
@@ -1693,11 +1714,14 @@ export default class HexmakerPlugin extends Plugin {
   async renameTerrainInHexes(
     oldName: string,
     newName: string,
+    paletteName?: string,
   ): Promise<Map<string, string>> {
     // Terrain lives in map notes: rename it there (in memory now, notes
-    // follow). Hex notes no longer carry terrain.
+    // follow). Hex notes no longer carry terrain. Only maps drawn with
+    // `paletteName` (when given): another palette's terrain of the same
+    // name is a different terrain.
     const overrides = new Map<string, string>();
-    for (const m of this.settings.maps) {
+    for (const m of paletteName === undefined ? this.settings.maps : this.mapsOnPalette(paletteName)) {
       for (const [key, h] of this.mapStore.all(m.name)) {
         if (h.terrain !== oldName) continue;
         this.mapStore.set(m.name, key, { terrain: newName });
@@ -1719,7 +1743,10 @@ export default class HexmakerPlugin extends Plugin {
   async renameTerrain(entry: TerrainColor, newName: string): Promise<void> {
     const oldName = entry.name;
     if (!newName || newName === oldName) return;
-    const overrides = await this.renameTerrainInHexes(oldName, newName);
+    // The palette the entry is in (an entry in none, e.g. a stray copy,
+    // renames on every map as before).
+    const palette = this.settings.terrainPalettes.find((p) => p.terrains.includes(entry))?.name;
+    const overrides = await this.renameTerrainInHexes(oldName, newName, palette);
     // Another palette still has a terrain of the old name: its tables stay
     // and the renamed one gets a copy.
     const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t !== entry && t.name === oldName));
@@ -1728,6 +1755,49 @@ export default class HexmakerPlugin extends Plugin {
     await this.saveSettings();
     this.refreshHexMapWithOverrides(overrides);
     this.refreshHexTableTerrainRename(oldName, newName);
+  }
+
+  /** The terrain table files of a name that exist (description, encounters). */
+  terrainTableFiles(name: string): TFile[] {
+    return (["description", "encounters"] as const)
+      .map((type) => this.app.vault.getAbstractFileByPath(this.terrainTablePath(name, type)))
+      .filter((f): f is TFile => f instanceof TFile);
+  }
+
+  /**
+   * "Rename everywhere" for a terrain already renamed in its palette (by
+   * hand in the palette note): the hexes and base terrains of that
+   * palette's maps, and the terrain's tables, follow it. The map notes and
+   * tables it changes are backed up first; nothing changes when the backup
+   * can't be saved. Returns the backup path, or null when it failed.
+   */
+  async renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> {
+    const maps = this.mapsOnPalette(paletteName);
+    const notes: Record<string, string> = {};
+    let where: string;
+    try {
+      for (const m of maps) {
+        const text = await this.mapStore.readNoteText(m.name);
+        if (text !== null) notes[this.mapStore.notePath(m.name)] = text;
+      }
+      for (const f of this.terrainTableFiles(oldName)) notes[f.path] = await this.app.vault.read(f);
+      const dir = `${this.manifest.dir}/backups/terrain-rename-${new Date().toISOString().slice(0, 10)}`;
+      const json = JSON.stringify({ kind: "terrain-rename", palette: paletteName, from: oldName, to: newName, savedAt: new Date().toISOString(), notes });
+      where = await writeJsonBackup(this.app.vault.adapter, dir, "before-rename", json);
+    } catch (e) {
+      console.error("Hexmap World Creator: couldn't back up before renaming a terrain; nothing was changed", e);
+      new Notice(`Couldn't save a backup, so "${oldName}" wasn't renamed. Nothing was changed.`, 10000);
+      return null;
+    }
+    const overrides = await this.renameTerrainInHexes(oldName, newName, paletteName);
+    // A palette that still has a terrain of the old name keeps its tables
+    // (the renamed one gets a copy); otherwise they move.
+    const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t.name === oldName));
+    await this.renameTerrainTables(oldName, newName, shared);
+    await this.saveSettings();
+    this.refreshHexMapWithOverrides(overrides);
+    this.refreshHexTableTerrainRename(oldName, newName);
+    return where;
   }
 
   private terrainTablePath(name: string, type: "description" | "encounters"): string {
@@ -2733,6 +2803,25 @@ export default class HexmakerPlugin extends Plugin {
    */
   roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> {
     return inheritedRoleTables(mapName, (m) => this.getMap(m)?.roleTables, (m) => this.parentOf(m)?.map);
+  }
+
+  /**
+   * A name for a map made from hex `hexKey` of `parentMap`, rolled on the
+   * Names table set there or on a map above it (the Names role), with the
+   * hex's terrain and type as When context. Undefined with no table (the
+   * caller uses the hex's terrain and coordinates). Seeded with `seed`.
+   */
+  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined {
+    const link = this.roleTablesFor(parentMap)[NAMES_ROLE.id]?.link;
+    if (!link) return undefined;
+    const terrain = this.mapStore.get(parentMap, hexKey)?.terrain ?? this.getMap(parentMap)?.baseTerrain;
+    const entry = terrain ? this.getMapPalette(parentMap).find((t) => t.name === terrain) : undefined;
+    const type = entry ? effectiveTerrainType(entry) : undefined;
+    return rollMapName(link, this.tableNotes.lookup(), {
+      ...(terrain ? { terrain } : {}),
+      ...(type ? { type } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+    });
   }
 
   /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */

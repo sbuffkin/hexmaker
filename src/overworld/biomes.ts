@@ -17,6 +17,7 @@ import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields, type Biom
 import type { TerrainColor } from "../types";
 import { typesInGroup } from "../terrainTypes";
 import { climateCentre, isPlaceable, type BiomeClimate, type ClimateElevation, type ClimateRange } from "./biomeClimate";
+import { BIOME_PRESETS } from "./biomePresets";
 
 export type BiomeId = string;
 export const OPEN_SEA = "open-sea";
@@ -273,12 +274,6 @@ export interface BiomeProfile {
   shore?: boolean;
 }
 
-/** Open sea has no shipped generator: deep water with a rim of ocean. */
-const OPEN_SEA_TERRAINS: { name: string; weight: number }[] = [
-  { name: "ocean", weight: 80 },
-  { name: "trench", weight: 20 },
-];
-
 /**
  * Profile from a generator's terrain weights, fitted to `palette` by type
  * (the same mapping the built-in generators use). Settlements are dropped:
@@ -320,14 +315,22 @@ export function profileFromWeights(id: BiomeId, terrains: { name: string; weight
 /**
  * Profiles for every biome the palette can show. `models` holds the shipped
  * generators by slug (builtinModel(slug) in the plugin; read from disk in
- * tests, where .md imports are stubbed).
+ * tests, where .md imports are stubbed). A biome with no shipped generator
+ * (Open sea) is drawn from its shipped biome note's Mix (`presets`, data:
+ * the same mix the note in the vault has), never from terrain names in
+ * code. Neither: no profile.
  */
-export function biomeProfiles(models: Map<string, HexWfcModel | undefined>, palette: TerrainColor[]): Map<BiomeId, BiomeProfile> {
+export function biomeProfiles(
+  models: Map<string, HexWfcModel | undefined>,
+  palette: TerrainColor[],
+  presets: readonly BiomeNoteFields[] = BIOME_PRESETS,
+): Map<BiomeId, BiomeProfile> {
   const out = new Map<BiomeId, BiomeProfile>();
   for (const b of BIOMES) {
-    const terrains = b.id === OPEN_SEA ? OPEN_SEA_TERRAINS : b.slug ? models.get(b.slug)?.terrains : undefined;
-    if (!terrains) continue;
-    const p = profileFromWeights(b.id, terrains, palette);
+    const terrains = b.slug ? models.get(b.slug)?.terrains : undefined;
+    const preset = terrains ? undefined : presets.find((x) => x.id === b.id && x.mix.length);
+    if (!terrains && !preset) continue;
+    const p = terrains ? profileFromWeights(b.id, terrains, palette) : profileFromFields(preset!, palette);
     if (b.landShare !== undefined) p.landShare = b.landShare;
     if (b.minIslands !== undefined) p.minIslands = b.minIslands;
     if (p.types.size) out.set(b.id, p);

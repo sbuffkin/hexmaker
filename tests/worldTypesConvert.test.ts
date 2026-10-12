@@ -43,7 +43,8 @@ describe("converting a World types note to space tables", () => {
 			"Sector/Charted sector.md", "Sector/Mainworlds.md", "Sector/Uncharted.md", "Sector/Unexplored sector.md",
 			"System/Habitable orbits.md", "System/Inner orbits.md", "System/Outer orbits.md", "System/Stars.md",
 		]);
-		expect(Object.keys(set.roles).sort()).toEqual(ENGINE_ROLES.map((r) => r.id).sort());
+		// Every role World types covers (the optional ones keep their shipped tables; Names is the map's).
+		expect(Object.keys(set.roles).sort()).toEqual(ENGINE_ROLES.filter((r) => !r.defaultTable && r.id !== "names").map((r) => r.id).sort());
 	});
 
 	it("every table reads cleanly, with rows: terrain and roll ranges where the die fits", () => {

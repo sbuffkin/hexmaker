@@ -55,6 +55,12 @@ export interface RouteContextChange {
   /** Routes under `after` (cached). */
   current: SegmentRouter;
   styleFor: StyleFor;
+  /**
+   * Set when the paths changed in the same step (a hand edit of the map
+   * note): the paths as they were. Only their segments had a route to
+   * keep; see pinChanged.
+   */
+  drawnBefore?: readonly MapPath[];
 }
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
@@ -532,8 +538,12 @@ export class MapStore {
     return pathTypeStyleFor(types);
   }
 
-  /** The map's segment cache, switched to its current context (pinning first if that changed). */
-  routeCache(map: MapData): RouteCache {
+  /**
+   * The map's segment cache, switched to its current context (pinning first
+   * if that changed). `drawnBefore`: the paths before a hand edit that
+   * also changed them (see RouteContextChange).
+   */
+  routeCache(map: MapData, drawnBefore?: readonly MapPath[]): RouteCache {
     let cache = this.routeCaches.get(map.name);
     if (!cache) { cache = new RouteCache(); this.routeCaches.set(map.name, cache); }
     const before = cache.context;
@@ -543,11 +553,11 @@ export class MapStore {
     const styleFor = this.pathStyleFor(map);
     let handled = false;
     for (const fn of this.contextListeners) {
-      try { if (fn({ map: map.name, before, after, previous, current: cache, styleFor }) === true) handled = true; }
+      try { if (fn({ map: map.name, before, after, previous, current: cache, styleFor, ...(drawnBefore ? { drawnBefore } : {}) }) === true) handled = true; }
       catch (e) { console.error("Hexmaker: route context listener failed", e); }
     }
     if (!handled && map.paths?.length) {
-      const { paths, pinned } = pinChanged(map.paths, segmentFn(previous, styleFor), segmentFn(cache, styleFor), after);
+      const { paths, pinned } = pinChanged(map.paths, segmentFn(previous, styleFor), segmentFn(cache, styleFor), after, drawnBefore);
       if (pinned.length) {
         map.paths = paths;
         if (!this.broken.has(map.name)) this.markDirty(map.name);
@@ -935,8 +945,13 @@ export class MapStore {
     if (legacy.size && (data.format ?? 1) < PATHS_FORMAT) {
       this.convertLegacy(map, data.paths.filter((p) => legacy.has(p.name)), data.paths.filter((p) => !legacy.has(p.name)));
     } else {
+      // The paths as they were drawn: when a hand edit changed both the
+      // anchors and the terrain, only the segments that were there before
+      // keep their old route (the ones typed in are routed on the map as
+      // it is now).
+      const drawn = map.paths;
       map.paths = data.paths;
-      this.routeCache(map);
+      this.routeCache(map, drawn);
     }
     this.rebuildView(map);
   }
@@ -975,6 +990,8 @@ export class MapStore {
   private foldIn(map: MapData, seenText: string, theirs: MapNoteData): void {
     const base = parseMapNote(seenText);
     if (!base) { this.apply(map, theirs); return; }
+    // Our own path edits folded in, under the map as it was before their edit.
+    this.syncPaths(map);
     const t = this.table(map.name);
     const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
     for (const k of new Set([...base.hexes.keys(), ...theirs.hexes.keys()])) {
@@ -989,13 +1006,15 @@ export class MapStore {
       if (k in ts) m[k] = ts[k];
       else if ((theirs.format ?? 1) >= READABLE_KEYS_FORMAT && RESETTABLE_FIELDS.includes(k)) delete m[k];
     }
-    this.syncPaths(map);
     const merged = mergePaths(base.paths, theirs.paths, map.paths ?? []);
-    if (!same(merged, map.paths ?? [])) {
-      map.paths = merged;
-      this.routeCache(map);
-      this.rebuildView(map);
-    }
+    const drawn = map.paths ?? [];
+    const changed = !same(merged, drawn);
+    if (changed) map.paths = merged;
+    // Their terrain or size edits move routes: the segments that were
+    // already drawn keep theirs (pinned); segments their edit added are
+    // routed on the map as it is now.
+    this.routeCache(map, changed ? drawn : undefined);
+    this.rebuildView(map);
   }
 
   /** "loaded", "missing" (no note: migrate), or why it can't be read (leave it alone). */

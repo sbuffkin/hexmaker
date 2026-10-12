@@ -5,7 +5,8 @@ import type { MapData } from "./types";
  * to each hex (E2): a map note can name a weather table and a rumours table,
  * and a hex can override either by linking its own table in its note (under
  * "### Weather Table" / "### Rumors Table", like the Encounters Table). With
- * neither, the starter table in the tables folder is used if it exists.
+ * neither, the starter table in the tables folder is used if it exists
+ * (shipped as data by the World module, src/modules/world/tables).
  */
 
 export type RolledSection = "weather" | "hooks & rumors";
@@ -69,28 +70,3 @@ export function starterTablePath(tablesFolder: string, section: RolledSection): 
 export function tableSourceLabel(source: TableSource): string {
   return source === "hex" ? "this hex's table" : source === "map" ? "the map's table" : "the starter table";
 }
-
-/** Starter weather table rows (result, weight), seeded once per vault. */
-export const STARTER_WEATHER: [string, number][] = [
-  ["Clear and calm", 4],
-  ["Overcast, cool", 3],
-  ["Light rain", 3],
-  ["Fog until midday", 2],
-  ["Strong wind", 2],
-  ["Heavy rain; travel slowed", 2],
-  ["Thunderstorm", 1],
-  ["Unseasonal heat or cold", 1],
-  ["Strange weather (magical or ill-omened)", 1],
-];
-
-/** Starter rumours table rows: prompts to fill in for the region. */
-export const STARTER_RUMORS: [string, number][] = [
-  ["A traveller went missing on the road nearby", 1],
-  ["Strange lights were seen in the hills at night", 1],
-  ["A merchant pays well for an escort", 1],
-  ["Bandits have been seen near the river crossing", 1],
-  ["An old ruin was uncovered by a landslide", 1],
-  ["A local noble is looking for a lost heirloom", 1],
-  ["Wolves (or worse) are taking livestock", 1],
-  ["A hermit claims to know a secret way through", 1],
-];

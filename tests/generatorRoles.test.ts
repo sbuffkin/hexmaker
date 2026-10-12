@@ -6,7 +6,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
-import { ENGINE_ROLES, ZONE_ROLES, engineRole, roleOdds, rolesOf, type RoleId } from "../src/worldgen/tableRoles";
+import { ENGINE_ROLES, NAMES_ROLE, ZONE_ROLES, engineRole, roleOdds, rolesOf, type RoleId } from "../src/worldgen/tableRoles";
 import { STAR_SCATTER_ID, starScatterRoles } from "../src/space/starScatter";
 import { ORBITS_ID, orbitRoles } from "../src/space/orbits";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
@@ -52,22 +52,24 @@ const expectClose = (got: Record<string, number>, want: Record<string, number>) 
 describe("the engine role schema", () => {
 	it("every role names its engine, rows, types, help and fallback; engines list their roles", () => {
 		for (const r of ENGINE_ROLES) {
-			expect([STAR_SCATTER_ID, ORBITS_ID]).toContain(r.engine);
+			expect([STAR_SCATTER_ID, ORBITS_ID, NAMES_ROLE.engine]).toContain(r.engine);
 			expect(r.name.trim()).not.toBe("");
 			expect(r.help.length).toBeGreaterThan(20);
 			expect(r.fallback.trim()).not.toBe("");
-			expect(r.terrainTypes.length).toBeGreaterThan(0);
+			// Roles that place terrains name their types; Names (text) places none.
+			if (r.rows === "terrain") expect(r.terrainTypes.length).toBeGreaterThan(0);
 			expect(engineRole(r.id)).toBe(r);
 		}
 		expect(new Set(ENGINE_ROLES.map((r) => r.id)).size).toBe(ENGINE_ROLES.length);
 		expect(rolesOf(STAR_SCATTER_ID).map((r) => r.id)).toEqual(["sector-hexes"]);
-		expect(rolesOf(ORBITS_ID).map((r) => r.id)).toEqual(["star", "inner-orbits", "habitable-orbits", "outer-orbits"]);
+		expect(rolesOf(ORBITS_ID).map((r) => r.id)).toEqual(["star", "inner-orbits", "habitable-orbits", "outer-orbits", "moons", "system-extras"]);
+		expect(rolesOf(NAMES_ROLE.engine).map((r) => r.id)).toEqual(["names"]);
 		expect(Object.values(ZONE_ROLES).sort()).toEqual(["habitable-orbits", "inner-orbits", "outer-orbits"]);
 	});
 
-	it("the World types adapter gives a table for every role", () => {
+	it("the World types adapter gives a table for every role it covers (not the optional ones, not Names)", () => {
 		const s = worldTypesSource(DEFAULT_SPACE, SPACE_SYSTEM_TERRAINS);
-		for (const r of ENGINE_ROLES) {
+		for (const r of ENGINE_ROLES.filter((x) => !x.defaultTable && x.id !== NAMES_ROLE.id)) {
 			const link = s.tableFor(r.id);
 			expect(link).toBeDefined();
 			expect(s.lookup.table(link!)).toBeDefined();

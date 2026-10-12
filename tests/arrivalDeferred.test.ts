@@ -51,6 +51,8 @@ function world(opts: { arrival?: string; seed?: number; mode?: string } = {}) {
 		mapStore: undefined as unknown as MapStore,
 		saves: 0,
 		getMap: (n: string) => maps.find((m) => m.name === n),
+
+		rolledMapName: () => undefined,
 		mapLabel: (n: string) => maps.find((m) => m.name === n)?.displayName ?? n,
 		parentOf: (n: string) => maps.find((m) => m.name === n)?.parent,
 		hexPath: (x: number, y: number, map: string) => `world/hexes/${map}/${x}_${y}.md`,

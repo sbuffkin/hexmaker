@@ -251,11 +251,14 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
   it("onEnabled runs only for the map types just turned on, in module order", async () => {
     const { runOnEnabled } = await import("../src/modules/runtime");
     const calls: string[] = [];
-    const plugin = { worldTypeStore: { ensureDefault: async () => { calls.push("world types"); } } } as never;
+    const plugin = {
+      worldTypeStore: { ensureDefault: async () => { calls.push("world types"); } },
+      installShippedTables: async (kinds: string[]) => { calls.push(`tables ${kinds.join(",")}`); return []; },
+    } as never;
     await runOnEnabled(plugin, ["world"]);
     expect(calls).toEqual([]);
     await runOnEnabled(plugin, ["world", "space"]);
-    expect(calls).toEqual(["world types"]);
+    expect(calls).toEqual(["world types", "tables space"]);
   });
 
   it("the one-time terrain type refinement comes from the modules", async () => {

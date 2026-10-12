@@ -142,3 +142,45 @@ export function fittingRoleTables(
     .map((t) => t.path)
     .sort((a, b) => inSpace(a) - inSpace(b) || a.localeCompare(b));
 }
+
+/**
+ * The installed copies of the roles' shipped tables (T12): a role no map
+ * or setup names, whose shipped table is installed in the tables folder
+ * (`{tables}/<path>`, see EngineRoleDef.defaultTable), rolls on that note,
+ * so editing it changes the odds. A role whose copy isn't there rolls on
+ * the shipped text (tableRoles.ts roleTable). Undefined in, nothing
+ * installed: undefined out.
+ */
+export function withShippedRoleTables(
+  base: TableSource | undefined,
+  notes: TableLookup,
+  terrains: readonly string[],
+  tablesFolder: string,
+): TableSource | undefined {
+  const installed: Partial<Record<RoleId, string>> = {};
+  for (const r of ENGINE_ROLES) {
+    if (!r.defaultTable || base?.tableFor(r.id)) continue;
+    const path = tablesFolder ? `${tablesFolder}/${r.defaultTable}` : r.defaultTable;
+    if (notes.table(path)) installed[r.id] = path;
+  }
+  if (!Object.keys(installed).length) return base;
+  const lookup: TableLookup = {
+    table: (link) => base?.lookup.table(link) ?? notes.table(link),
+    kindOf: (link) => {
+      const k = base?.lookup.kindOf?.(link);
+      return k && k !== "missing" ? k : notes.kindOf?.(link) ?? "note";
+    },
+  };
+  return {
+    label: base?.label ?? "Shipped tables",
+    lookup,
+    terrains: base?.terrains ?? terrains,
+    tableFor: (role) => base?.tableFor(role) ?? installed[role],
+    rowAttrs: (role, name) => {
+      const link = base?.tableFor(role) ? undefined : installed[role];
+      return link ? findRow(link, name, lookup)?.attrs : base?.rowAttrs(role, name);
+    },
+    ...(base?.notes ? { notes: (role: RoleId) => base.notes!(role) } : {}),
+    ...(base?.once ? { once: base.once } : {}),
+  };
+}

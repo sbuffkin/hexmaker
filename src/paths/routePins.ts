@@ -12,6 +12,10 @@
  * Hooks:
  * - context changes come from MapStore.onRouteContextChange (terrain painted
  *   or imported, and any change MapStore sees when it next routes the map).
+ *   Hand edits of the map note come through here too: when one changed the
+ *   anchors and the terrain at once, only the segments that were already
+ *   drawn are pinned (RouteContextChange.drawnBefore), so anchors typed in
+ *   are routed on the map as it is now;
  *   This class TAKES OVER the store's own silent pin (returns true): it
  *   pins the same way and also knows what it added, for the notice;
  * - palette flags, resizes and type style edits are caught before the next
@@ -130,7 +134,9 @@ export class RoutePins {
     if (!canEditPaths(e.map, "pin")) return true; // not allowed: the route moves
     const paths = this.host.mapStore.paths(e.map);
     if (!paths.length) return true;
-    const r = pinChanged(paths, segmentFn(e.previous, e.styleFor), segmentFn(e.current, e.styleFor), e.after);
+    // A hand edit that changed the paths too: only segments that were drawn
+    // before keep their route; the ones it added route on the map as it is.
+    const r = pinChanged(paths, segmentFn(e.previous, e.styleFor), segmentFn(e.current, e.styleFor), e.after, e.drawnBefore);
     if (r.pinned.length) this.apply(e.map, paths, r.paths, r.pinned);
     return true;
   }

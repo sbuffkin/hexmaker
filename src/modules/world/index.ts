@@ -7,6 +7,7 @@
 
 import type { HexmakerModule } from "../types";
 import { WORLD_PRESETS } from "./presets";
+import { WORLD_TABLES } from "./shippedTables";
 import { BUNDLED_PLACE_ICONS, PLACE_KINDS } from "./placeIcons";
 
 export const worldModule: HexmakerModule = {
@@ -31,6 +32,7 @@ export const worldModule: HexmakerModule = {
     subgroupOf: new Map(BUNDLED_PLACE_ICONS.map(([file, , kind]) => [file, kind])),
   },
   palettes: WORLD_PRESETS,
+  tables: WORLD_TABLES,
   mapScales: [{
     id: "overland",
     label: "Overland",
