@@ -27,6 +27,7 @@ import { SHORE_TYPES, WATER_TYPES, type BiomeId, type BiomeProfile } from "./bio
 import { namesWithinType, typeMix, type BlendField } from "./blendField";
 import { childNeighbours, childPoint, neighbourRegions, parentOf, regionCells, regionCentrePoint, regionSpacing, type RegionLayout } from "./layout";
 import { fbm, hash2 } from "./noise";
+import { tuned, type BiomeTuning } from "./biomeTuning";
 
 export interface RegionGenInput {
   layout: RegionLayout;
@@ -39,11 +40,11 @@ export interface RegionGenInput {
   /** Type of a palette terrain (for pinned cells and smoothing). */
   typeOf: (terrain: string) => string | undefined;
   seed: number;
-  /** Smoothing passes (default 2). */
+  /** Smoothing passes (default: the own biome's tuned "smoothing", 2). */
   smoothing?: number;
-  /** How strongly the field's odds hold a cell against its neighbours (default 1.5). */
+  /** How strongly the field's odds hold a cell against its neighbours (default: tuned "field-hold", 1.5). */
   fieldHold?: number;
-  /** Name-within-type sharpness (blendField.namesWithinType). */
+  /** Name-within-type sharpness (blendField.namesWithinType; default: tuned "name-sharpness", 2). */
   sharpness?: number;
 }
 
@@ -55,7 +56,12 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   // and count as fixed context, like the neighbours' cells.
   const cells = regionCells(layout, input.parent[0], input.parent[1]).filter(([x, y]) => !pinned.has(`${x}_${y}`));
   const own = new Set(cells.map(([x, y]) => `${x}_${y}`));
-  const sharp = input.sharpness ?? 2;
+  // The region's own biome: its islands, patches and tuning (biomeTuning.ts).
+  const ownBiome = field.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
+  const profile = ownBiome ? profiles.get(ownBiome) : undefined;
+  const tuning = profile?.tuning;
+  const sharp = input.sharpness ?? tuned(tuning, "name-sharpness");
+  const haloDepth = tuned(tuning, "halo");
 
   // 1. Seeded draw per cell: type, then name within type.
   const types = new Map<string, Map<string, number>>();
@@ -74,13 +80,13 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   }
 
   // 2. Type-first smoothing (synchronous passes, so cell order doesn't matter).
-  //    A halo of not-yet-generated neighbour cells (HALO deep) is drawn and
+  //    A halo of not-yet-generated neighbour cells (tuned "halo" deep, default 2) is drawn and
   //    smoothed along with the region, so the region's edge settles toward
   //    what the next region will become. Pinned cells are fixed context.
   const halo: [number, number][] = [];
   const seen = new Set(own);
   let ring = cells;
-  for (let d = 0; d < HALO; d++) {
+  for (let d = 0; d < haloDepth; d++) {
     const next: [number, number][] = [];
     for (const [x, y] of ring) {
       for (const [a, b] of childNeighbours(layout, x, y)) {
@@ -105,8 +111,9 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     }
     return outer.get(k);
   };
-  const hold = input.fieldHold ?? 1.5;
-  for (let pass = 0; pass < (input.smoothing ?? 2); pass++) {
+  const hold = input.fieldHold ?? tuned(tuning, "field-hold");
+  const passes = input.smoothing ?? tuned(tuning, "smoothing");
+  for (let pass = 0; pass < passes; pass++) {
     const next = new Map(work);
     for (const [x, y] of [...cells, ...halo]) {
       const k = `${x}_${y}`;
@@ -143,8 +150,6 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   // 3. Islands for watery biomes (landShare / minIslands), after smoothing:
   //    smoothing pulls every cell toward the majority type, so scattered
   //    land in a mostly water biome would otherwise vanish.
-  const ownBiome = field.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
-  const profile = ownBiome ? profiles.get(ownBiome) : undefined;
   if (ownBiome && profile?.shore) {
     // A shoreline biome: its land share becomes a direction (land toward
     // the land-heavy neighbours). Islands don't apply.
@@ -198,11 +203,6 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   return out;
 }
 
-/** Depth of the smoothed halo around a region. */
-const HALO = 2;
-
-/** Share of an island's shore a land shore ring (a beach) covers. */
-const BEACH_COVER = 0.6;
 
 interface IslandInput {
   layout: RegionLayout;
@@ -238,6 +238,9 @@ interface IslandInput {
  */
 export function placeIslands(input: IslandInput): void {
   const { layout, work, terrainAt, typeOf, profile, rng } = input;
+  const t: BiomeTuning | undefined = profile.tuning;
+  const beachCover = tuned(t, "beach");
+  const edgeShy = tuned(t, "island-edge");
   const minIslands = Math.max(0, Math.floor(profile.minIslands ?? 0));
   const landShare = Math.min(1, Math.max(0, profile.landShare ?? 0));
   if (!minIslands && !landShare) return;
@@ -283,7 +286,7 @@ export function placeIslands(input: IslandInput): void {
   const landCount = () => ownList.filter(isLand).length;
   const landTarget = Math.round(landShare * n);
 
-  const maxSize = Math.max(1, Math.floor(n / (4 * Math.max(1, minIslands))));
+  const maxSize = Math.max(1, Math.floor((n * tuned(t, "island-max")) / Math.max(1, minIslands)));
   // Shore rings that are land (a beach) count toward an island's size: the
   // leading SHORE_TYPES the biome has, up to the first water one.
   let landRings = 0;
@@ -301,7 +304,7 @@ export function placeIslands(input: IslandInput): void {
     for (let i = 0; i < landRings; i++) {
       ring = [...new Set(ring.flatMap(nbrs))].filter((k) => free(k) && !all.has(k));
       for (const k of ring) all.add(k);
-      size += ring.length * BEACH_COVER;
+      size += ring.length * beachCover;
     }
     return size;
   };
@@ -313,7 +316,7 @@ export function placeIslands(input: IslandInput): void {
       const around = nbrs(k);
       if (around.some(isLand)) continue;
       const [x, y] = k.split("_").map(Number);
-      const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : 0.3) * (0.5 + rng());
+      const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : edgeShy) * (0.5 + rng());
       if (score > best) { best = score; start = k; }
     }
     if (!start) break;
@@ -344,7 +347,7 @@ export function placeIslands(input: IslandInput): void {
       const next = [...new Set([...shoreSoFar].flatMap(nbrs))].filter(free).sort();
       const ragged = !water.has(shore);
       next.forEach((k, i) => {
-        if (ragged && i > 0 && rng() >= BEACH_COVER) return;
+        if (ragged && i > 0 && rng() >= beachCover) return;
         work.set(k, nameOf(shore)!);
         taken.add(k);
         shoreSoFar.add(k);
@@ -381,6 +384,10 @@ interface PatchInput {
  */
 export function placePatches(input: PatchInput): void {
   const { layout, work, terrainAt, typeOf, profile, rng } = input;
+  const t: BiomeTuning | undefined = profile.tuning;
+  const sizeMul = tuned(t, "patch-size");
+  const maxShare = tuned(t, "patch-max");
+  const edgeShy = tuned(t, "patch-edge");
   const wants = [...(profile.minPatches ?? [])].filter(([t, n]) => n > 0 && profile.names.get(t)?.size).sort((a, b) => (a[0] < b[0] ? -1 : 1));
   if (!wants.length) return;
   const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
@@ -414,7 +421,7 @@ export function placePatches(input: PatchInput): void {
     }
     const free = (k: string) => own.has(k) && !taken.has(k) && !protectedTypes.has(typeAt(k) ?? "");
     const share = profile.types.get(type) ?? 0;
-    const size = Math.max(1, Math.min(Math.round((share * n) / min), Math.floor(n / (4 * min))));
+    const size = Math.max(1, Math.min(Math.round(((share * n) / min) * sizeMul), Math.floor((n * maxShare) / min)));
     const names = profile.names.get(type)!;
     for (let guard = 0; guard < n && have < min; guard++) {
       let start: string | undefined, best = -1;
@@ -423,7 +430,7 @@ export function placePatches(input: PatchInput): void {
         const around = nbrs(k);
         if (around.some((m) => typeAt(m) === type)) continue;
         const [x, y] = k.split("_").map(Number);
-        const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : 0.3) * (0.5 + rng());
+        const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : edgeShy) * (0.5 + rng());
         if (score > best) { best = score; start = k; }
       }
       if (!start) break;
@@ -462,10 +469,10 @@ interface ShoreInput {
   seed: number;
 }
 
-/** How sharply a cell leans toward the neighbour it faces: exp(SHORE_LEAN · projection), as in hex-wfc's directional blend. */
-const SHORE_LEAN = 1.6;
-/** Raggedness of the coastline (noise added to a cell's landness). */
-const SHORE_RAGGED = 0.12;
+// How sharply a cell leans toward the neighbour it faces (exp(lean · projection),
+// as in hex-wfc's directional blend), the coastline's raggedness and the coast
+// band's depth are the biome's tuning: "shore-lean" 1.6, "shore-ragged" 0.12,
+// "coast-width" 1 (biomeTuning.ts).
 
 /** Land share of a biome profile: its landShare, else its non-water type shares. */
 function profileLand(p: BiomeProfile | undefined): number | undefined {
@@ -536,6 +543,9 @@ export function neighbourLand(
  */
 export function placeShore(input: ShoreInput): void {
   const { layout, parent, work, terrainAt, typeOf, profile, profiles, field } = input;
+  const lean = tuned(profile.tuning, "shore-lean");
+  const ragged = tuned(profile.tuning, "shore-ragged");
+  const coastWidth = tuned(profile.tuning, "coast-width");
   const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
   const ownList = [...own].sort();
   if (!ownList.length) return;
@@ -579,11 +589,11 @@ export function placeShore(input: ShoreInput): void {
     const vx = (px - cx) / radius, vy = (py - cy) / radius;
     let sw = 0, sl = 0;
     for (const d of dirs) {
-      const w = Math.exp(SHORE_LEAN * (vx * d.ux + vy * d.uy));
+      const w = Math.exp(lean * (vx * d.ux + vy * d.uy));
       sw += w;
       sl += w * d.land;
     }
-    const noise = (fbm((input.seed ^ 0x51ed) >>> 0, px * f, py * f, 2) - 0.5) * 2 * SHORE_RAGGED;
+    const noise = (fbm((input.seed ^ 0x51ed) >>> 0, px * f, py * f, 2) - 0.5) * 2 * ragged;
     landness.set(k, sl / sw + noise);
   }
 
@@ -625,18 +635,53 @@ export function placeShore(input: ShoreInput): void {
     const names = namesWithinType(phi, profiles, type, input.sharpness);
     return pick(names.size ? names : profile.names.get(type) ?? new Map<string, number>(), rng());
   };
+  // Cells in the coast band: next to the other side (width 1), or within
+  // coastWidth steps of it through the region's own cells.
+  const inBand = coastBand(ownList, nbrs, landAt, isLandCell, coastWidth);
   for (const k of ownList) {
     const land = isLandCell.get(k)!;
-    const around = nbrs(k).map(landAt);
     const cur = work.get(k);
     const curType = cur ? typeOf(cur) : undefined;
     let next: string | undefined;
-    if (land && landShore && around.some((v) => v === false)) next = curType === landShore ? cur : pick(profile.names.get(landShore)!, rng());
-    else if (!land && waterShore && around.some((v) => v === true)) next = curType === waterShore ? cur : pick(profile.names.get(waterShore)!, rng());
+    if (land && landShore && inBand.has(k)) next = curType === landShore ? cur : pick(profile.names.get(landShore)!, rng());
+    else if (!land && waterShore && inBand.has(k)) next = curType === waterShore ? cur : pick(profile.names.get(waterShore)!, rng());
     else if (curType !== undefined && !shoreSet.has(curType) && curType !== "settlement" && isWaterType(curType) === !land) next = cur;
     else next = nameFor(k, land);
     if (next) work.set(k, next);
   }
+}
+
+/**
+ * Own cells within `width` steps of the other side of the coastline: a land
+ * cell with water next to it (or a water cell with land) is step 1, as
+ * before tuning; wider bands grow inward through own cells of the same side.
+ */
+function coastBand(
+  ownList: string[],
+  nbrs: (k: string) => string[],
+  landAt: (k: string) => boolean | undefined,
+  isLandCell: ReadonlyMap<string, boolean>,
+  width: number,
+): Set<string> {
+  const band = new Set<string>();
+  let ring: string[] = [];
+  for (const k of ownList) {
+    const land = isLandCell.get(k)!;
+    if (nbrs(k).some((m) => landAt(m) === !land)) { band.add(k); ring.push(k); }
+  }
+  for (let d = 2; d <= width; d++) {
+    const next: string[] = [];
+    for (const k of ring) {
+      const land = isLandCell.get(k)!;
+      for (const m of nbrs(k)) {
+        if (band.has(m) || isLandCell.get(m) !== land) continue;
+        band.add(m);
+        next.push(m);
+      }
+    }
+    ring = next.sort();
+  }
+  return band;
 }
 
 /** Spiral order from a centre hex: the order regions are generated in (each pins the earlier ones). */

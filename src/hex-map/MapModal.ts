@@ -22,6 +22,7 @@ import {
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
 import { openMakeGenerator } from "./MakeGeneratorModal";
+import { blendMenuLabel, openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
 import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
 import { canReshape, lockedHint } from "../workMode";
@@ -348,7 +349,7 @@ export class MapModal extends HexmakerModal {
         const at = { x: e.clientX, y: e.clientY };
         // A region that already has a generator opens it; learning another
         // stays available below.
-        void listGenerators(this.plugin).then((all) => {
+        void Promise.all([listGenerators(this.plugin), blendMenuLabel(this.plugin, map.name)]).then(([all, blendLabel]) => {
           const existing = generatorsForRegion(all, map.name)[0];
           const menu = new Menu();
           // Generators are Advanced (placement map). Nothing else is in this
@@ -370,6 +371,17 @@ export class MapModal extends HexmakerModal {
               openMakeGenerator(this.app, this.plugin, map.name);
             },
           });
+          // Fold the map, as hand-edited, back into the biome it was made from.
+          if (blendLabel) {
+            layers.add("MapModal.mapRowContextBlendIntoBiome", {
+              label: blendLabel,
+              icon: "combine",
+              onClick: () => {
+                this.close();
+                void openBlendIntoBiome(this.app, this.plugin, map.name);
+              },
+            });
+          }
           layers.finish(() => at);
           menu.showAtPosition(at);
         });

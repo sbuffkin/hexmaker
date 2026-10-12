@@ -8,7 +8,7 @@
 
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import type { TerrainColor } from "../types";
-import { biomeSlug, type BiomeBlend, type BiomeNoteFields, type BiomeTransition } from "./biomeNote";
+import { biomeSlug, tunedOrUnset, type BiomeBlend, type BiomeNoteFields, type BiomeTransition } from "./biomeNote";
 import { climateKeyValues, readClimate, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
 import { profileFromFields, type BiomeId } from "./biomes";
 import { planRegion, paletteTypeOf, type RegionPlan } from "./regionWorld";
@@ -192,6 +192,6 @@ export function previewRegion(layout: RegionLayout, palette: TerrainColor[], fie
     typeOf: paletteTypeOf(palette),
     worldSeed: seed,
     seed,
-    blend: fields.blend,
+    blend: tunedOrUnset(fields.tuning, "blend-k") ?? fields.blend,
   });
 }

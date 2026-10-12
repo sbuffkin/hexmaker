@@ -25,6 +25,7 @@ import { biomeForTerrain, biomeGeneratorId, ecotoneBetween, type BiomeId, type B
 import { BlendField, REGION_WARP, type BlendWidth } from "./blendField";
 import { regionBox, regionCells, regionCentrePoint, type RegionLayout } from "./layout";
 import { generateRegion } from "./regionGen";
+import { tuned, tunedOrUnset } from "./biomeTuning";
 import { hash2 } from "./noise";
 
 export interface GridRules {
@@ -225,8 +226,9 @@ export interface RegionPlanInput {
   worldSeed: number;
   /** Seed for this region's draws; default the world seed. */
   seed?: number;
-  blend?: BlendWidth;
-  /** Domain warp in region spacings; default REGION_WARP. */
+  /** Blend width (named, or a falloff k); default the own biome's tuned "blend-k", else normal. */
+  blend?: BlendWidth | number;
+  /** Domain warp in region spacings; default the own biome's tuned "wiggle" (REGION_WARP). */
   warp?: number;
 }
 
@@ -244,7 +246,15 @@ export const FROM_SHARE = 0.1;
 
 /** Terrain for one region, blended with the overworld and pinned to its painted neighbours. */
 export function planRegion(input: RegionPlanInput): RegionPlan {
-  const field = new BlendField(input.layout, input.biomes, input.blend ?? "normal", { warp: input.warp ?? REGION_WARP, seed: input.worldSeed });
+  // The region's own biome's tuning shapes the field it's made from (biomeTuning.ts).
+  const ownId = input.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
+  const t = ownId ? input.profiles.get(ownId)?.tuning : undefined;
+  const field = new BlendField(input.layout, input.biomes, input.blend ?? tunedOrUnset(t, "blend-k") ?? "normal", {
+    warp: input.warp ?? (t ? tuned(t, "wiggle") : REGION_WARP),
+    seed: input.worldSeed,
+    warpScale: tuned(t, "wiggle-scale"),
+    reach: tuned(t, "reach"),
+  });
   const cells = generateRegion({
     layout: input.layout,
     parent: input.parent,

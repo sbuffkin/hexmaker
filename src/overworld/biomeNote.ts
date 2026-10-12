@@ -46,6 +46,8 @@
  *   are for watery biomes. All optional.
  * - `generator`: a generator note this biome's regions come from (once
  *   generator regions land); without one it mixes with the blend field.
+ * - *Tuning* (optional, `| Setting | Value | Default |`): per-biome
+ *   generator settings (biomeTuning.ts), only those off their default.
  * - `blank: yes`: its regions start blank (nothing generated) and are
  *   painted by hand (the shipped "Custom (blank)" biome). Never placed by
  *   World biomes; its Mix may be empty.
@@ -73,6 +75,8 @@ export {
   engineOverrides,
   isDefaultValue,
   paramsIn,
+  shownDefault,
+  tuningControlId,
   tuned,
   tunedOrUnset,
   tuningCount,
@@ -572,7 +576,7 @@ export interface BiomeStoreApi {
   /** Every biome, in note-name order. */
   list(): BiomeNoteFields[];
   /** Write a change to a biome's note (user prose kept). False when there's no such biome or its note doesn't read. */
-  update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>): Promise<boolean>;
+  update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>, opts?: { backup?: boolean }): Promise<boolean>;
   /** Rewrite a shipped biome's note from its preset data (the old note is backed up). False for user biomes. */
   restoreDefault(name: string): Promise<boolean>;
   /** Whether a biome has shipped preset data (Restore default applies). */

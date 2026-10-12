@@ -38,10 +38,12 @@ export function blendK(width: BlendWidth | number | undefined): number {
   return BLEND_K[(width as BlendWidth) ?? "normal"] ?? BLEND_K.normal;
 }
 
-/** Overworld hexes are searched this many steps out from the cell's own parent. */
+/** Overworld hexes are searched this many steps out from the cell's own parent (at least; a longer reach searches further). */
 const SEARCH_RING = 3;
-/** Influence cut-off, in region spacings. */
-const CUTOFF = 2;
+/** Influence cut-off, in region spacings (biome tuning "reach"). */
+export const CUTOFF = 2;
+/** Border-wiggle noise frequency: bumps per region spacing (biome tuning "wiggle-scale"). */
+export const WARP_SCALE = 1.4;
 
 export type BiomeMix = Map<BiomeId, number>;
 
@@ -54,6 +56,11 @@ export class BlendField {
 
   readonly warp: number;
   readonly warpSeed: number;
+  /** Noise bumps per region spacing in the warp. */
+  readonly warpScale: number;
+  /** Influence cut-off, in region spacings. */
+  readonly reach: number;
+  private ring: number;
 
   /**
    * @param biomes overworld hex key ("px_py") → its biome. Hexes without a
@@ -67,12 +74,15 @@ export class BlendField {
     readonly layout: RegionLayout,
     readonly biomes: ReadonlyMap<string, BiomeId>,
     width: BlendWidth | number = "normal",
-    opts: { warp?: number; seed?: number } = {},
+    opts: { warp?: number; seed?: number; warpScale?: number; reach?: number } = {},
   ) {
     this.k = blendK(width);
     this.spacing = regionSpacing(layout);
     this.warp = Math.max(0, opts.warp ?? 0);
     this.warpSeed = (opts.seed ?? 0) >>> 0;
+    this.warpScale = opts.warpScale !== undefined && opts.warpScale > 0 ? opts.warpScale : WARP_SCALE;
+    this.reach = opts.reach !== undefined && opts.reach > 0 ? opts.reach : CUTOFF;
+    this.ring = Math.max(SEARCH_RING, Math.ceil(this.reach) + 1);
   }
 
   /** The cell's (warped) point in the child plane. */
@@ -80,7 +90,7 @@ export class BlendField {
     const [cx, cy] = childPoint(this.layout, x, y);
     if (!this.warp) return [cx, cy];
     // About one noise bump per region; two octaves.
-    const f = 1.4 / this.spacing;
+    const f = this.warpScale / this.spacing;
     const dx = fbm(this.warpSeed + 17, cx * f, cy * f, 2) - 0.5;
     const dy = fbm(this.warpSeed + 4099, cx * f, cy * f, 2) - 0.5;
     const amp = 2 * this.warp * this.spacing;
@@ -100,15 +110,16 @@ export class BlendField {
     const [p0x, p0y] = parentOf(l, x, y);
     const [cx, cy] = this.point(x, y);
     const out: [string, number][] = [];
-    for (let dy = -SEARCH_RING; dy <= SEARCH_RING; dy++) {
-      for (let dx = -SEARCH_RING; dx <= SEARCH_RING; dx++) {
+    const ring = this.ring;
+    for (let dy = -ring; dy <= ring; dy++) {
+      for (let dx = -ring; dx <= ring; dx++) {
         const px = p0x + dx, py = p0y + dy;
-        if (hexDistance([p0x, p0y], [px, py], l.orientation, l.parentStagger) > SEARCH_RING) continue;
+        if (hexDistance([p0x, p0y], [px, py], l.orientation, l.parentStagger) > ring) continue;
         const key = `${px}_${py}`;
         if (!this.biomes.has(key)) continue;
         const [ax, ay] = this.centre(px, py);
         const d = Math.hypot(ax - cx, ay - cy) / this.spacing;
-        if (d > CUTOFF) continue;
+        if (d > this.reach) continue;
         out.push([key, Math.exp(-this.k * d * d)]);
       }
     }

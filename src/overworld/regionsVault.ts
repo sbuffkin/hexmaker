@@ -16,6 +16,11 @@ import { BiomeRegionError, generateBiomeRegion } from "../worldgen/biomeRegion";
 import { previewRegion, regionGenerator } from "./biomeForm";
 import type { BiomeNoteFields } from "./biomeNote";
 import { inRegion, regionBox } from "./layout";
+import { engineOverrides, tunedOrUnset } from "./biomeTuning";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
+
+// Blending a hand-edited map into its biome (biomeBlend.ts), for the core's "Blend into" glue.
+export { blendBiomeFields, measureMap, type MapStats } from "./biomeBlend";
 import { slugify } from "../utils";
 import { newWorldId } from "../worldgen/world";
 import { BUILTIN_GENERATORS, builtinModel } from "../worldgen/builtinGenerators";
@@ -232,6 +237,7 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
   if (opts.biome) placed.set(`${px}_${py}`, opts.biome);
   const biomes = overworldBiomes(terrain, owPalette, ow.layout.orientation, ow.layout.parentStagger, placed);
   const ownBiome = biomes.get(`${px}_${py}`);
+  const ownNote = ownBiome ? biomeNoteOf(ownBiome) : undefined;
   // A blank biome's hexes are painted by hand: they don't blend into their neighbours.
   for (const [k, b] of biomes) if (isBlankBiome(b) && k !== `${px}_${py}`) biomes.delete(k);
   const ws = worldSeed(ow.settings.worldId ?? ow.map.name);
@@ -248,7 +254,8 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
     typeOf: paletteTypeOf(palette),
     worldSeed: ws,
     seed,
-    blend: opts.blend ?? (ownBiome ? biomeNoteOf(ownBiome)?.blend : undefined) ?? ow.settings.blend,
+    // The biome's tuned falloff (Tuning "blend-k") is a finer Blend width.
+    blend: opts.blend ?? (ownNote ? tunedOrUnset(ownNote.tuning, "blend-k") ?? ownNote.blend : undefined) ?? ow.settings.blend,
     warp: opts.warp,
   });
   return { ow, palette, ownBiome, pinned, seed, plan };
@@ -288,6 +295,7 @@ export async function planRegionWithGenerator(plugin: HexmakerPlugin, parentName
     },
     pinned,
     seed,
+    settings: engineOverrides(note?.tuning),
   });
   // Locked own cells stay out of the plan, as with the blend (they aren't rewritten).
   const cells = new Map([...made.cells].filter(([k]) => !pinned.has(k)));
@@ -301,19 +309,20 @@ export async function planRegionWithGenerator(plugin: HexmakerPlugin, parentName
  * generator-backed biome by its generator, every other one by the blend
  * field (biomeForm.previewRegion). Throws BiomeRegionError like it.
  */
-export async function planBiomePreview(plugin: HexmakerPlugin, overworldName: string, fields: BiomeNoteFields, seed: number): Promise<RegionPlanOut | undefined> {
+export async function planBiomePreview(plugin: HexmakerPlugin, overworldName: string, fields: BiomeNoteFields, seed: number, model?: HexWfcModel): Promise<RegionPlanOut | undefined> {
   const ow = overworldOf(plugin, overworldName);
   if (!ow) return undefined;
   const palette = regionPalette(plugin, ow.map);
   const route = regionGenerator(fields);
-  if (route.kind === "blank") return undefined;
-  if (route.kind !== "generator" || !route.ready) return fields.mix.length ? previewRegion(ow.layout, palette, fields, seed) : undefined;
+  if (route.kind === "blank" && !model) return undefined;
+  if (!model && (route.kind !== "generator" || !route.ready)) return fields.mix.length ? previewRegion(ow.layout, palette, fields, seed) : undefined;
   const plan: RegionPlanOut = { cells: new Map(), mix: new Map([[fields.id, 1]]) };
   const box = regionBox(ow.layout, 0, 0);
   const name = ow.settings.palette ?? ow.map.paletteName;
   const pal: TerrainPalette = { ...(plugin.getPaletteByName(name) ?? { name }), terrains: palette };
   const made = await generateBiomeRegion(plugin, {
-    generator: { path: route.generator },
+    // An unsaved generator (a blend being previewed) wins over the biome's link.
+    generator: model ? { model, source: "blend" } : { path: route.kind === "generator" ? route.generator : "" },
     palette: pal,
     bounds: { cols: box.cols, rows: box.rows, offset: { x: box.x, y: box.y }, stagger: ow.layout.childStagger },
     mask: (k) => {
@@ -322,6 +331,7 @@ export async function planBiomePreview(plugin: HexmakerPlugin, overworldName: st
     },
     pinned: new Map(),
     seed,
+    settings: engineOverrides(fields.tuning),
   });
   return { ...plan, cells: made.cells, ...(made.paths ? { paths: made.paths } : {}), ...(made.note ? { note: made.note } : {}) };
 }

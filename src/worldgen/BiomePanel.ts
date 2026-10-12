@@ -17,7 +17,20 @@
 import { Notice, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "../overworld/biomeNote";
+import {
+  BIOME_BLENDS,
+  TUNING_SECTIONS,
+  clampTuning,
+  cleanTuning,
+  engineOverrides,
+  isDefaultValue,
+  paramsIn,
+  shownDefault,
+  tuningControlId,
+  type BiomeBlend,
+  type BiomeNoteFields,
+  type TuningParam,
+} from "../overworld/biomeNote";
 import { formTypes } from "../overworld/biomeForm";
 import { OPEN_SEA, profileFromFields, type BiomeId } from "../overworld/biomes";
 import { profilesForPalette } from "../overworld/regionsVault";
@@ -28,6 +41,7 @@ import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl } from "../utils";
 import { Disclosure } from "../ui/disclosure";
 import { randomSeed } from "../../packages/hex-wfc/src";
+import { generateBiomeRegion } from "./biomeRegion";
 
 export interface BiomePanelHost {
   rerender(): void;
@@ -49,7 +63,21 @@ export function biomePagePatch(f: BiomeNoteFields): Partial<Omit<BiomeNoteFields
     landShare: f.landShare,
     minIslands: f.minIslands,
     shore: f.shore ? true : undefined,
+    tuning: cleanTuning(f.tuning),
   };
+}
+
+/** Set (or, at its default, clear) one tuning value on the page's fields. Pure. */
+export function setTuningValue(f: BiomeNoteFields, p: TuningParam, value: number | null): void {
+  const next = { ...f.tuning };
+  if (value === null || !Number.isFinite(value)) delete next[p.key];
+  else {
+    const v = clampTuning(p, value);
+    if (isDefaultValue(p, v)) delete next[p.key];
+    else next[p.key] = v;
+  }
+  if (Object.keys(next).length) f.tuning = next;
+  else delete f.tuning;
 }
 
 /** Set a type's weight (0 drops it from the mix) or min patches (undefined clears it). Pure. */
@@ -97,7 +125,8 @@ export function biomeSamplePlan(
     typeOf: paletteTypeOf(palette),
     worldSeed: seed,
     seed,
-    blend: fields.blend,
+    // A tuned falloff is a finer Blend width.
+    blend: fields.tuning?.["blend-k"] ?? fields.blend,
   });
 }
 
@@ -120,7 +149,7 @@ export class BiomePanel {
     private paletteName: () => string,
   ) {
     const b = plugin.biomeStore.get(id)!;
-    this.fields = { ...b, mix: b.mix.map((r) => ({ ...r })), transitions: b.transitions.map((t) => ({ ...t })) };
+    this.fields = { ...b, mix: b.mix.map((r) => ({ ...r })), transitions: b.transitions.map((t) => ({ ...t })), ...(b.tuning ? { tuning: { ...b.tuning } } : {}) };
   }
 
   /** Drop the page's store listener (the page closed or shows something else). */
@@ -150,8 +179,9 @@ export class BiomePanel {
     head.createSpan({ text: "Biome", cls: "duckmage-map-origin-label" });
     const pick = head.createEl("select", { attr: { "aria-label": "Biome" } });
     for (const b of plugin.biomeStore.list()) {
-      if (b.generator) continue;
-      pick.createEl("option", { text: b.label, value: b.id });
+      if (b.blank) continue;
+      // Generator biomes too: their mix still blends into neighbours, and Debug › Engine tunes their generator.
+      pick.createEl("option", { text: b.generator ? `${b.label} (generator)` : b.label, value: b.id });
     }
     pick.value = this.id;
     pick.addEventListener("change", () => {
@@ -313,6 +343,10 @@ export class BiomePanel {
     };
     renderTr();
 
+    // Debug (debug mode only): every generator constant, per biome (biomeTuning.ts).
+    const disclosure = new Disclosure(plugin.app, "BiomePage", () => main);
+    this.renderTuning(disclosure, main);
+
     // Preview (sticky side column).
     const box = side.createDiv({ cls: "duckmage-wfc-section" });
     box.createEl("h4", { text: "Preview" });
@@ -353,8 +387,63 @@ export class BiomePanel {
     this.redrawPreview = () => this.drawPreview(canvas, legend, status, side);
     this.drawPreview(canvas, legend, status, side);
     // The page's Advanced dropdown (src/ui/placement.ts): the seed, by id.
-    const disclosure = new Disclosure(plugin.app, "BiomePage", () => main);
     disclosure.place("BiomePage.seed", seedBox);
+    // Keep the dropdown below everything else on the page.
+    disclosure.toEnd();
+  }
+
+  /**
+   * The tuning controls, one per param, in Debug sub-sections (placement
+   * `BiomePage.tune.<key>`). Each shows its value (the default when
+   * unset), resets to the default, redraws the preview and counts toward
+   * "· N set". Engine only for a biome that links a generator.
+   */
+  private renderTuning(disclosure: Disclosure, main: HTMLElement): void {
+    const f = this.fields;
+    for (const section of TUNING_SECTIONS) {
+      if (section === "Engine" && !f.generator) continue;
+      for (const p of paramsIn(section)) {
+        const id = tuningControlId(p.key);
+        const parent = disclosure.target(id, main, () => f.tuning?.[p.key] !== undefined);
+        if (!parent) continue;
+        const row = parent.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row duckmage-biome-tune-row" });
+        row.createSpan({ text: p.label, cls: "duckmage-map-origin-label", attr: { title: p.help } });
+        const range = row.createEl("input", { type: "range", attr: { min: String(p.min), max: String(p.max), step: String(p.step), "aria-label": p.label } });
+        const box = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: String(p.min), max: String(p.max), step: String(p.step), "aria-label": `${p.label} value` } });
+        const reset = row.createEl("button", { text: "Reset", cls: "duckmage-biome-tune-reset" });
+        const show = () => {
+          const def = shownDefault(p, f.blend);
+          const v = f.tuning?.[p.key] ?? def;
+          range.value = String(v);
+          box.value = String(v);
+          const set = f.tuning?.[p.key] !== undefined;
+          row.toggleClass("is-set", set);
+          reset.disabled = !set;
+          reset.title = p.inherits && p.engine ? "Back to the generator's own setting" : `Back to the default (${def})`;
+        };
+        show();
+        range.addEventListener("input", () => {
+          setTuningValue(f, p, Number(range.value));
+          box.value = range.value;
+          row.toggleClass("is-set", f.tuning?.[p.key] !== undefined);
+          this.schedulePreview();
+        });
+        range.addEventListener("change", () => { show(); this.save(); });
+        box.addEventListener("change", () => {
+          setTuningValue(f, p, box.value.trim() === "" ? null : Number(box.value));
+          show();
+          this.schedulePreview();
+          this.save();
+        });
+        reset.addEventListener("click", () => {
+          setTuningValue(f, p, null);
+          show();
+          this.schedulePreview();
+          this.save();
+          disclosure.refreshSet();
+        });
+      }
+    }
   }
 
   /** Called with a new preview palette (the page keeps it). */
@@ -384,13 +473,49 @@ export class BiomePanel {
     const candidates = plugin.biomeStore.list().filter((b) => b.id !== this.fields.id && !b.generator && !b.shore);
     const landBiome = candidates.sort((a, b) => lowland(b) - lowland(a))[0]?.id ?? this.fields.id;
     const t0 = activeWindow.performance.now();
-    const plan = biomeSamplePlan(layout, palette, this.fields, BiomePanel.seed, BiomePanel.surround, landBiome);
     const b = regionBox(layout, 0, 0);
+    if (this.fields.generator) {
+      // A generator biome: its region comes from the generator, with the Engine tuning on top.
+      void this.drawGeneratorPreview(canvas, legend, status, side, layout);
+      return;
+    }
+    const plan = biomeSamplePlan(layout, palette, this.fields, BiomePanel.seed, BiomePanel.surround, landBiome);
     const colors = new Map(palette.map((t) => [t.name, t.color]));
     const dpr = activeWindow.devicePixelRatio || 1;
     drawPreview(canvas, plan.cells, { cols: b.cols, rows: b.rows, offset: { x: b.x, y: b.y }, stagger }, plugin.settings.hexOrientation, colors, undefined, [], new Map(), Math.max(420, side.clientWidth) * dpr, 40 * dpr);
     renderPreviewLegend(legend, plugin, palette, plan.cells.values(), (i) => getIconUrl(plugin, i));
     status.setText(`One ${layout.size}×${layout.size} region · ${Math.round(activeWindow.performance.now() - t0)} ms`);
+  }
+
+  private previewTicket = 0;
+
+  /** The preview of a generator biome: one region from its generator (Engine tuning applied). */
+  private async drawGeneratorPreview(canvas: HTMLCanvasElement, legend: HTMLElement, status: HTMLElement, side: HTMLElement, layout: RegionLayout): Promise<void> {
+    const { plugin } = this;
+    const ticket = ++this.previewTicket;
+    const palette = this.palette();
+    const stagger = layout.childStagger;
+    const b = regionBox(layout, 0, 0);
+    const t0 = activeWindow.performance.now();
+    status.setText("Making a sample region…");
+    try {
+      const made = await generateBiomeRegion(plugin, {
+        generator: { path: this.fields.generator! },
+        palette: { name: this.paletteName(), terrains: palette },
+        bounds: { cols: b.cols, rows: b.rows, offset: { x: b.x, y: b.y }, stagger },
+        pinned: new Map(),
+        seed: BiomePanel.seed,
+        settings: engineOverrides(this.fields.tuning),
+      });
+      if (ticket !== this.previewTicket) return;
+      const colors = new Map(palette.map((t) => [t.name, t.color]));
+      const dpr = activeWindow.devicePixelRatio || 1;
+      drawPreview(canvas, made.cells, { cols: b.cols, rows: b.rows, offset: { x: b.x, y: b.y }, stagger }, plugin.settings.hexOrientation, colors, undefined, [], new Map(), Math.max(420, side.clientWidth) * dpr, 40 * dpr);
+      renderPreviewLegend(legend, plugin, palette, made.cells.values(), (i) => getIconUrl(plugin, i));
+      status.setText(`One ${layout.size}×${layout.size} region from its generator · ${Math.round(activeWindow.performance.now() - t0)} ms`);
+    } catch (e) {
+      if (ticket === this.previewTicket) status.setText(e instanceof Error ? e.message : String(e));
+    }
   }
 
   /** Write the page's fields to the biome's note (debounced). */

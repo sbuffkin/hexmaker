@@ -26,6 +26,7 @@ import { biomeInfo, type BiomeId } from "../overworld/biomes";
 import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "../overworld/regionsVault";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
+import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
 import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
@@ -142,6 +143,16 @@ export class EditRegionModal extends HexmakerModal {
         this.close();
         openMakeGenerator(plugin.app, plugin, name);
       });
+      // Fold this region, as hand-edited, back into its biome (Advanced; Build or God).
+      const biome = current ? plugin.biomeStore.get(current) : undefined;
+      if (biome && !biome.blank) {
+        const blend = row.createEl("button", { text: `Blend into ${biome.label}…`, attr: { title: "Learn from this region and blend it into its biome's generator (or the biome's own settings)" } });
+        blend.addEventListener("click", () => {
+          this.close();
+          void openBlendIntoBiome(plugin.app, plugin, name);
+        });
+        this.place("EditRegion.blendIntoBiome", blend);
+      }
     };
     const biomes = paintableBiomes(plugin, this.overworld);
     if (plan.biome === "pick") {

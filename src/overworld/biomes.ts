@@ -14,6 +14,7 @@
 import type { HexWfcModel, TerrainEntry } from "../../packages/hex-wfc/src/model";
 import { mapTerrainsByType, TYPE_FALLBACKS } from "../worldgen/builtinGenerators";
 import { biomeSlug, mixShares, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
+import { cleanTuning, type BiomeTuning } from "./biomeTuning";
 import type { TerrainColor } from "../types";
 import { typesInGroup } from "../terrainTypes";
 import { climateCentre, isPlaceable, type BiomeClimate, type ClimateElevation, type ClimateRange } from "./biomeClimate";
@@ -272,6 +273,8 @@ export interface BiomeProfile {
   minPatches?: Map<string, number>;
   /** Land toward land-heavy neighbours, water toward the rest (the note's `shore`). */
   shore?: boolean;
+  /** The biome's generator tuning (its note's Tuning table); unset = today's constants. */
+  tuning?: BiomeTuning;
 }
 
 /**
@@ -537,6 +540,8 @@ export function profileFromFields(b: BiomeNoteFields, palette: TerrainColor[]): 
   if (b.landShare !== undefined) p.landShare = b.landShare;
   if (b.minIslands !== undefined) p.minIslands = b.minIslands;
   if (b.shore) p.shore = true;
+  const tuning = cleanTuning(b.tuning);
+  if (tuning) p.tuning = tuning;
   return p;
 }
 

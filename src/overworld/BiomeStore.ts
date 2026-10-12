@@ -173,11 +173,12 @@ export class BiomeStore implements BiomeStoreApi {
     return !!e && !!biomePreset(e.fields.id);
   }
 
-  async update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>): Promise<boolean> {
+  async update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>, opts: { backup?: boolean } = {}): Promise<boolean> {
     await this.queue; // hand edits read first
     const e = this.find(name);
     if (!e) return false;
-    const tables = e.problems.filter((p) => p.where !== "settings");
+    // A Tuning row that can't be read is kept as written, so it doesn't block a write.
+    const tables = e.problems.filter((p) => p.where !== "settings" && p.where !== "Tuning");
     if (tables.length && (patch.mix || patch.transitions)) {
       new Notice(`Biome ${e.fields.label}: fix the rows that can't be read in its note first (${tables[0].text}).`);
       return false;
@@ -189,7 +190,10 @@ export class BiomeStore implements BiomeStoreApi {
     await this.enqueue(async () => {
       const content = await this.plugin.app.vault.read(f);
       const next = updateBiomeNote(content, fields);
-      if (next !== content) await this.plugin.app.vault.modify(f, next);
+      if (next !== content) {
+        if (opts.backup) await this.backup(`biome-${e.fields.id}`, { [e.path]: content });
+        await this.plugin.app.vault.modify(f, next);
+      }
       this.take(f.path, f.basename, next);
       this.publish();
     });

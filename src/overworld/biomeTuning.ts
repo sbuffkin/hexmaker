@@ -28,6 +28,12 @@
  */
 
 import { DEFAULT_SETTINGS } from "../../packages/hex-wfc/src/model";
+import { BLEND_K, type BlendWidth } from "./blendField";
+
+/** The placement id of a param's control on the biome page: `BiomePage.tune.<camelCase key>`. */
+export function tuningControlId(key: string): string {
+  return `BiomePage.tune.${key.replace(/-(\w)/g, (_, c: string) => c.toUpperCase())}`;
+}
 
 /** The Debug sub-sections the biome page shows, in order. */
 export const TUNING_SECTIONS = ["Layout", "Borders & transitions", "Water & islands", "Patches & detail", "Engine"] as const;
@@ -112,6 +118,15 @@ export const TUNING_PARAMS: readonly TuningParam[] = [
   { key: "directional-bias", label: "Directional bias", section: "Engine", default: DEFAULT_SETTINGS.directionalBias, min: 0, max: 1, step: 0.05, inherits: true, engine: "directionalBias", help: "Keep terrain where it sat in the example." },
 ];
 
+/**
+ * The value a param has when unset, for showing: its default, except the
+ * blend falloff, which follows the biome's Blend width.
+ */
+export function shownDefault(p: TuningParam, blend?: string): number {
+  if (p.key === "blend-k") return BLEND_K[(blend as BlendWidth) ?? "normal"] ?? BLEND_K.normal;
+  return p.default;
+}
+
 /** Set values by param key (only the set ones). */
 export type BiomeTuning = Record<string, number>;
 
@@ -132,7 +147,8 @@ export const paramsIn = (section: TuningSection): TuningParam[] => TUNING_PARAMS
 /** Clamp (and round, for whole-number params) a value into a param's range. */
 export function clampTuning(p: TuningParam, v: number): number {
   const c = Math.min(p.max, Math.max(p.min, v));
-  return p.integer ? Math.round(c) : c;
+  // Six decimals at most (blends and sliders leave float noise like 0.30000000000000004).
+  return p.integer ? Math.round(c) : Math.round(c * 1e6) / 1e6;
 }
 
 /** Is `v` the param's default (so it isn't written)? Never for `inherits` params. */
