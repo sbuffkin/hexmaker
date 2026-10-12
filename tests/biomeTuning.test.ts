@@ -40,8 +40,14 @@ import { biomePagePatch, setTuningValue } from "../src/overworld/BiomePanel";
 const parity = JSON.parse(readFileSync(PARITY_FILE, "utf8")) as Record<string, Record<string, string>>;
 
 describe("biome tuning: same seed and defaults give today's regions", () => {
-	it("every scenario matches the snapshots taken before tuning was wired in", () => {
-		expect(snapshot()).toEqual(parity);
+	it("every scenario matches the snapshots taken before tuning was wired in (neighbour influence off)", () => {
+		// The super-region (neighbour context, tests/regionMesh.test.ts) is the one
+		// deliberate change since: with its influence at 0 every region is as before.
+		const s0 = SCENARIOS.map((s) => {
+			const profiles = new Map([...scenarioProfiles(s)].map(([k, p]) => [k, { ...p, tuning: { "neighbour-influence": 0 } }]));
+			return [s.name, Object.fromEntries([...runScenario(s, profiles)].map(([k, c]) => [k, digest(c)]))];
+		});
+		expect(Object.fromEntries(s0)).toEqual(parity);
 	});
 
 	it("tuning set to every default (written or not) changes nothing", () => {
@@ -49,7 +55,7 @@ describe("biome tuning: same seed and defaults give today's regions", () => {
 		const all: Record<string, number> = {};
 		for (const p of TUNING_PARAMS) if (!p.inherits) all[p.key] = p.default;
 		const regions = runScenario(s, scenarioProfiles(s, (f) => ({ ...f, tuning: all })));
-		expect(Object.fromEntries([...regions].map(([k, c]) => [k, digest(c)]))).toEqual(parity[s.name]);
+		expect(Object.fromEntries([...regions].map(([k, c]) => [k, digest(c)]))).toEqual(snapshot()[s.name]);
 	});
 
 	it("the defaults are the constants generation used", () => {

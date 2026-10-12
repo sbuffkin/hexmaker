@@ -11,6 +11,12 @@
  *    pick the name the neighbours of that type use. Types first, so a
  *    forest edge lines up across a seam even where the names differ.
  *
+ * The neighbours already made are fixed context (NeighbourContext, owner
+ * 2026-10-12: "all neighbors that already exist should be treated as set
+ * tiles"): the region is made on an enlarged canvas, itself plus a margin
+ * of their real hexes, and the draws, smoothing, a shore's land side and
+ * patches all read that margin. Only the region's own cells are written.
+ *
  * Where WFC plugs in later: replace steps 1–2 with hex-wfc `solve` over the
  * region's bounding box, using `mergeModels` of the biomes whose mean Φ is
  * above 1% (weights = mean Φ), each terrain's layout taken from a 5×5
@@ -62,16 +68,27 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   const tuning = profile?.tuning;
   const sharp = input.sharpness ?? tuned(tuning, "name-sharpness");
   const haloDepth = tuned(tuning, "halo");
+  // The neighbours' hexes already made (and the region's locked ones), as
+  // fixed context every stage reads ("super-region", owner 2026-10-12).
+  // None, or influence 0: exactly the generation from before.
+  const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence"));
+  /** Name odds within a type at a cell: the field's, leaning to the names the context uses near it. */
+  const namesAt = (x: number, y: number, type: string) => {
+    const nu = namesWithinType(field.at(x, y), profiles, type, sharp);
+    return ctx ? ctx.leanNames(x, y, type, nu) : nu;
+  };
 
-  // 1. Seeded draw per cell: type, then name within type.
+  // 1. Seeded draw per cell: type, then name within type. Near the context
+  //    the odds lean toward the types (and names) it has there.
   const types = new Map<string, Map<string, number>>();
   const draw = (x: number, y: number): string | undefined => {
     const phi = field.at(x, y);
-    const tau = typeMix(phi, profiles);
+    const base = typeMix(phi, profiles);
+    const tau = ctx ? ctx.leanTypes(x, y, base) : base;
     types.set(`${x}_${y}`, tau);
     const rng = mulberry32(cellSeed(input.seed, x, y));
     const type = pick(tau, rng());
-    return type ? pick(namesWithinType(phi, profiles, type, sharp), rng()) : undefined;
+    return type ? pick(ctx ? namesAt(x, y, type) : namesWithinType(phi, profiles, type, sharp), rng()) : undefined;
   };
   const work = new Map<string, string>();
   for (const [x, y] of cells) {
@@ -141,7 +158,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       const nm = namesByType.get(bestType);
       const name = nm?.size
         ? [...nm].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0]
-        : argmax(namesWithinType(field.at(x, y), profiles, bestType, sharp));
+        : argmax(namesAt(x, y, bestType));
       if (name) next.set(k, name);
     }
     for (const [k, v] of next) work.set(k, v);
@@ -166,6 +183,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       pinned,
       sharpness: sharp,
       seed: input.seed,
+      context: ctx,
     });
   } else if (ownBiome && profile && (profile.minIslands || profile.landShare)) {
     placeIslands({
@@ -191,6 +209,8 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       typeOf,
       profile,
       influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
+      // A patch type the neighbours have next door starts near it (a ridge carries on).
+      ...(ctx ? { affinity: (type: string, x: number, y: number) => ctx.typeNear(x, y, type) } : {}),
       rng: mulberry32(cellSeed(input.seed ^ 0x3c6ef372, input.parent[0], input.parent[1])),
     });
   }
@@ -203,6 +223,242 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   return out;
 }
 
+
+// ── neighbour context ("super-region") ───────────────────────────────────
+
+/** Context weight falls by e per cell step past the first (cells right by the seam weigh 1). */
+const CONTEXT_FALLOFF = 1;
+/** Context weights below this are skipped. */
+const CONTEXT_MIN = 1e-3;
+/** A made neighbour's land as seen from a cell: weights fall by e every this many steps. */
+const SIDE_SCALE = 2;
+/** Child cells are √3 apart in the child plane. */
+const STEP = Math.sqrt(3);
+
+interface ContextCell {
+  key: string;
+  /** Point in the child plane. */
+  px: number;
+  py: number;
+  name: string;
+  type?: string;
+  /** Land (not a WATER_TYPES type); undefined for untyped terrain. */
+  land?: boolean;
+  /** Parent key of the region it belongs to. */
+  region: string;
+}
+
+/**
+ * The hexes already made around a region (its neighbours' cells within
+ * `depth` steps of it, and its own locked cells), held fixed while it's
+ * generated: one enlarged canvas, the region plus that margin. Each stage
+ * reads it:
+ *
+ * - the type and name odds of a cell lean toward the context near it,
+ *   W·Σk / (1 + W·Σk) of the way (W the biome's "neighbour influence", k
+ *   falling by e per step from 1 by the seam), so a forest, a coast or the
+ *   sea carries on across the seam, fading a few cells in;
+ * - smoothing reads the seam cells as neighbours (as before) and keeps the
+ *   context's types where the leaned odds allow them;
+ * - a shore biome reads each made neighbour's land near each cell (sideLand)
+ *   instead of one share for its whole side;
+ * - patches of a type the context has nearby may start by the seam.
+ *
+ * Only the region's own cells are ever written.
+ */
+export class NeighbourContext {
+  private near = new Map<string, [ContextCell, number][]>();
+  private byRegion = new Map<string, ContextCell[]>();
+
+  constructor(readonly layout: RegionLayout, readonly cells: ContextCell[], readonly influence: number) {
+    for (const c of cells) {
+      const list = this.byRegion.get(c.region);
+      if (list) list.push(c);
+      else this.byRegion.set(c.region, [c]);
+    }
+  }
+
+  /** Context cells near (x, y) with their weights. */
+  private around(x: number, y: number): [ContextCell, number][] {
+    const key = `${x}_${y}`;
+    let hit = this.near.get(key);
+    if (hit) return hit;
+    const [ax, ay] = childPoint(this.layout, x, y);
+    hit = [];
+    for (const c of this.cells) {
+      const d = Math.hypot(c.px - ax, c.py - ay) / STEP;
+      const k = Math.exp(-Math.max(0, d - 1) / CONTEXT_FALLOFF);
+      if (k >= CONTEXT_MIN) hit.push([c, k]);
+    }
+    this.near.set(key, hit);
+    return hit;
+  }
+
+  /** Type odds at (x, y), leaned toward the context's types near it. */
+  leanTypes(x: number, y: number, base: Map<string, number>): Map<string, number> {
+    const by = new Map<string, number>();
+    let mass = 0;
+    for (const [c, k] of this.around(x, y)) {
+      if (!c.type) continue;
+      by.set(c.type, (by.get(c.type) ?? 0) + k);
+      mass += k;
+    }
+    if (!mass) return base;
+    const w = this.influence, den = 1 + w * mass;
+    const out = new Map<string, number>();
+    for (const [t, v] of base) out.set(t, (v + w * (by.get(t) ?? 0)) / den);
+    for (const [t, s] of by) if (!out.has(t)) out.set(t, (w * s) / den);
+    return out;
+  }
+
+  /** Name odds within `type` at (x, y), leaned toward the names the context uses for it nearby. */
+  leanNames(x: number, y: number, type: string, base: Map<string, number>): Map<string, number> {
+    const by = new Map<string, number>();
+    let mass = 0;
+    for (const [c, k] of this.around(x, y)) {
+      if (c.type !== type) continue;
+      by.set(c.name, (by.get(c.name) ?? 0) + k);
+      mass += k;
+    }
+    if (!mass) return base;
+    // An empty base (no biome here has the type) sums to 0: the context's names alone.
+    let total = 0;
+    for (const v of base.values()) total += v;
+    const w = this.influence, den = total + w * mass;
+    const out = new Map<string, number>();
+    for (const [n, v] of base) out.set(n, (v + w * (by.get(n) ?? 0)) / den);
+    for (const [n, s] of by) if (!out.has(n)) out.set(n, (w * s) / den);
+    return out;
+  }
+
+  /** How much of `type` the context has near (x, y), 0..1 (its share of the leaned odds). */
+  typeNear(x: number, y: number, type: string): number {
+    let mass = 0, of = 0;
+    for (const [c, k] of this.around(x, y)) {
+      if (!c.type) continue;
+      mass += k;
+      if (c.type === type) of += k;
+    }
+    return mass ? (this.influence * of) / (1 + this.influence * mass) : 0;
+  }
+
+  /** Does the context hold cells of the region of parent hex `hex`? */
+  hasRegion(hex: [number, number]): boolean {
+    return this.byRegion.has(`${hex[0]}_${hex[1]}`);
+  }
+
+  /** The land values (0 / 1) a made neighbour's context cells take: [min, max]. */
+  landRange(region: string): number[] {
+    const vals = (this.byRegion.get(region) ?? []).filter((c) => c.land !== undefined).map((c) => (c.land ? 1 : 0));
+    return vals.length ? [Math.min(...vals), Math.max(...vals)] : [];
+  }
+
+  /**
+   * A made neighbour's land as seen from own cell (x, y): its context
+   * cells' land, nearest weighing most, mixed with its whole-region share
+   * (`share`) by the influence (1 or more: the local land alone).
+   */
+  sideLand(region: string, x: number, y: number, share: number): number {
+    const list = this.byRegion.get(region);
+    if (!list) return share;
+    const [ax, ay] = childPoint(this.layout, x, y);
+    let sw = 0, sl = 0;
+    for (const c of list) {
+      if (c.land === undefined) continue;
+      const w = Math.exp(-(Math.hypot(c.px - ax, c.py - ay) / STEP) / SIDE_SCALE);
+      sw += w;
+      if (c.land) sl += w;
+    }
+    if (!sw) return share;
+    const a = Math.min(1, this.influence);
+    return (1 - a) * share + a * (sl / sw);
+  }
+}
+
+/**
+ * The context of a region being generated (NeighbourContext): pinned cells
+ * (made neighbours, locked own cells) within `depth` steps of its own
+ * cells. Undefined when there are none, or `depth` or `influence` is 0
+ * (then generation is exactly what it was without context).
+ */
+export function neighbourContext(
+  layout: RegionLayout,
+  cells: [number, number][],
+  pinned: ReadonlyMap<string, string>,
+  typeOf: (terrain: string) => string | undefined,
+  depth: number,
+  influence: number,
+): NeighbourContext | undefined {
+  if (!(depth > 0) || !(influence > 0) || !pinned.size || !cells.length) return undefined;
+  const water = new Set(WATER_TYPES);
+  const seen = new Set(cells.map(([x, y]) => `${x}_${y}`));
+  const out: ContextCell[] = [];
+  let ring = cells;
+  for (let d = 1; d <= depth && ring.length; d++) {
+    const next: [number, number][] = [];
+    for (const [x, y] of ring) {
+      for (const [a, b] of childNeighbours(layout, x, y)) {
+        const k = `${a}_${b}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        next.push([a, b]);
+        const name = pinned.get(k);
+        if (name === undefined) continue;
+        const type = typeOf(name);
+        const [px, py] = childPoint(layout, a, b);
+        out.push({ key: k, px, py, name, region: parentOf(layout, a, b).join("_"), ...(type ? { type, land: !water.has(type) } : {}) });
+      }
+    }
+    ring = next;
+  }
+  return out.length ? new NeighbourContext(layout, out, influence) : undefined;
+}
+
+export interface SeamContinuity {
+  /** The region's own cells next to a made neighbour's cell. */
+  edge: number;
+  /** Of those, the ones whose land/water class matches the neighbour across the seam. */
+  matched: number;
+  share: number;
+}
+
+/**
+ * How well a region continues its made neighbours: of its own cells next to
+ * a neighbour's (pinned) cell, the share whose land/water class matches the
+ * cells across the seam (their majority; a tie matches either). Untyped
+ * terrain doesn't count.
+ */
+export function seamContinuity(
+  layout: RegionLayout,
+  parent: [number, number],
+  own: ReadonlyMap<string, string>,
+  pinned: ReadonlyMap<string, string>,
+  typeOf: (terrain: string) => string | undefined,
+): SeamContinuity {
+  const water = new Set(WATER_TYPES);
+  const cls = (t: string | undefined): number | undefined => {
+    const ty = t ? typeOf(t) : undefined;
+    return ty === undefined ? undefined : water.has(ty) ? 0 : 1;
+  };
+  const home = `${parent[0]}_${parent[1]}`;
+  let edge = 0, matched = 0;
+  for (const [k, t] of own) {
+    const mine = cls(t);
+    if (mine === undefined) continue;
+    const [x, y] = k.split("_").map(Number);
+    let land = 0, wet = 0;
+    for (const [a, b] of childNeighbours(layout, x, y)) {
+      if (parentOf(layout, a, b).join("_") === home) continue;
+      const c = cls(pinned.get(`${a}_${b}`));
+      if (c === 1) land++;
+      else if (c === 0) wet++;
+    }
+    if (!land && !wet) continue;
+    edge++;
+    if ((mine === 1 && land >= wet) || (mine === 0 && wet >= land)) matched++;
+  }
+  return { edge, matched, share: edge ? matched / edge : 1 };
+}
 
 interface IslandInput {
   layout: RegionLayout;
@@ -368,6 +624,8 @@ interface PatchInput {
   profile: BiomeProfile;
   /** The region biome's share of the field at a cell (patches go where it is strongest). */
   influence: (x: number, y: number) => number;
+  /** Extra seed score for a type at a cell: how much of it the neighbours' context has nearby. */
+  affinity?: (type: string, x: number, y: number) => number;
   rng: () => number;
 }
 
@@ -430,7 +688,10 @@ export function placePatches(input: PatchInput): void {
         const around = nbrs(k);
         if (around.some((m) => typeAt(m) === type)) continue;
         const [x, y] = k.split("_").map(Number);
-        const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : edgeShy) * (0.5 + rng());
+        const near = input.affinity ? input.affinity(type, x, y) : 0;
+        // Next to the same type in a neighbour, the edge is no reason to stay away.
+        const shy = around.every((m) => own.has(m)) ? 1 : edgeShy + (1 - edgeShy) * Math.min(1, near);
+        const score = (input.influence(x, y) + 0.05 + near) * shy * (0.5 + rng());
         if (score > best) { best = score; start = k; }
       }
       if (!start) break;
@@ -467,6 +728,8 @@ interface ShoreInput {
   pinned: ReadonlyMap<string, string>;
   sharpness: number;
   seed: number;
+  /** The neighbours' hexes as context (neighbourContext): each made neighbour's land is read near each cell. */
+  context?: NeighbourContext;
 }
 
 // How sharply a cell leans toward the neighbour it faces (exp(lean · projection),
@@ -555,16 +818,27 @@ export function placeShore(input: ShoreInput): void {
   // 1–2. Neighbours and their land.
   const sides = neighbourLand(layout, parent, input.pinned, field.biomes, profiles, typeOf);
   const [cx, cy] = regionCentrePoint(layout, parent[0], parent[1]);
-  const dirs = sides.map((s) => {
+  // A neighbour already made is read where it is near each cell (its real
+  // land and water by the seam), not as one share for its whole side: a
+  // coast whose land is on its right continues on the right (owner 2026-10-12).
+  const ctx = input.context;
+  const dirs: { ux: number; uy: number; land: number; local?: string }[] = sides.map((s) => {
     const [qx, qy] = regionCentrePoint(layout, s.hex[0], s.hex[1]);
     const len = Math.hypot(qx - cx, qy - cy) || 1;
-    return { ux: (qx - cx) / len, uy: (qy - cy) / len, land: s.land };
+    const local = ctx?.hasRegion(s.hex) ? `${s.hex[0]}_${s.hex[1]}` : undefined;
+    return { ux: (qx - cx) / len, uy: (qy - cy) / len, land: s.land, ...(local ? { local } : {}) };
   });
-  const lands = dirs.map((d) => d.land);
+  const lands = dirs.flatMap((d) => {
+    const range = d.local ? ctx!.landRange(d.local) : [];
+    return range.length ? range : [d.land];
+  });
   if (!dirs.length || Math.max(...lands) - Math.min(...lands) < 0.15) {
     const mean = lands.length ? lands.reduce((a, b) => a + b, 0) / lands.length : 0;
     const all = neighbourRegions(layout, parent[0], parent[1]);
-    const pickHex = all[Math.floor(hash2(input.seed >>> 0, parent[0], parent[1]) * all.length) % all.length];
+    // The made side is known: the side picked is one that isn't made yet, when there is one.
+    const open = ctx ? all.filter((h) => !ctx.hasRegion(h)) : all;
+    const from = open.length ? open : all;
+    const pickHex = from[Math.floor(hash2(input.seed >>> 0, parent[0], parent[1]) * from.length) % from.length];
     const [qx, qy] = regionCentrePoint(layout, pickHex[0], pickHex[1]);
     const len = Math.hypot(qx - cx, qy - cy) || 1;
     const towardLand = mean < 0.5;
@@ -591,7 +865,7 @@ export function placeShore(input: ShoreInput): void {
     for (const d of dirs) {
       const w = Math.exp(lean * (vx * d.ux + vy * d.uy));
       sw += w;
-      sl += w * d.land;
+      sl += w * (d.local ? ctx!.sideLand(d.local, x, y, d.land) : d.land);
     }
     const noise = (fbm((input.seed ^ 0x51ed) >>> 0, px * f, py * f, 2) - 0.5) * 2 * ragged;
     landness.set(k, sl / sw + noise);

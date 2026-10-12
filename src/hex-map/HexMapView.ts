@@ -638,6 +638,11 @@ export class HexMapView extends ItemView {
     else this.renderGrid();
   }
 
+  /** Redraw the New place bar (after a lock elsewhere: the Lock button, the first hand edit). */
+  refreshPlaceBar(): void {
+    this.refreshArrivalBar();
+  }
+
   /**
    * The bar for a place made on arrival (GM4): Reroll makes it again (any
    * mode until locked, then God), Lock keeps it. Hidden on other maps.
@@ -5036,15 +5041,18 @@ export class HexMapView extends ItemView {
       ? this.overworldLayer?.cellAt(grid, evt.clientX, evt.clientY) ?? null : null;
     const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
     const key = `${px}_${py}`;
-    const region = regionMapAt(this.plugin.settings.maps, this.activeMapName, key)?.name;
+    const regionMap = regionMapAt(this.plugin.settings.maps, this.activeMapName, key);
+    const region = regionMap?.name;
     const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
-    const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", "set-biome": "trees", center: "crosshair", locations: "list" };
+    const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", reroll: "dices", lock: "lock", "set-biome": "trees", center: "crosshair", locations: "list" };
+    // Reroll / Lock on a new (open) region: placed main (src/ui/placement.ts).
+    const places: Record<string, string> = { reroll: "OverworldMenu.reroll", lock: "OverworldMenu.lock" };
     // Arrival (GM4): a world set to make places makes this hex's region on the spot, in any mode.
     if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
       menu.add("ow.arrive", "Go there", "footprints", () => void this.arriveAt(px, py));
       menu.addSeparator();
     }
-    for (const it of wm.overworldMenu(this.getActiveMap(), !!region, locations)) {
+    for (const it of wm.overworldMenu(this.getActiveMap(), !!region, locations, regionMap)) {
       const id = `ow.${it.id}` as const;
       const title = it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`;
       menu.add(id, title, icons[it.id] ?? "dot", () => {
@@ -5052,10 +5060,12 @@ export class HexMapView extends ItemView {
           if (cell) this.enterRegionAt(region, cell.x, cell.y);
           else this.navigateToMap(region);
         } else if (it.id === "edit-region") this.openEditRegion(px, py);
+        else if (it.id === "reroll") void wm.rerollRegionAt(this.biomeHost(), this.activeMapName, px, py);
+        else if (it.id === "lock" && region) void this.plugin.arrival.lock(region).then(() => this.renderGrid());
         else if (it.id === "set-biome") new wm.BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
         else if (it.id === "center") this.centerOnHex(px, py);
         else if (it.id === "locations") this.openLocationsList(px, py);
-      }, { disabled: !it.enabled });
+      }, { disabled: !it.enabled, ...(places[it.id] ? { place: places[it.id] } : {}) });
     }
     menu.add("ow.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, px, py));
     // Mark the party (or anything) on the overworld: tokens sit on its hexes.
@@ -5697,7 +5707,8 @@ export class HexMapView extends ItemView {
       if (prev) prev.newTerrain = terrain;
       else this.currentSubStroke?.set(id, { map, key, oldTerrain: cur?.terrain ?? null, oldLocked: !!cur?.locked, newTerrain: terrain });
       if (cur?.terrain === terrain && !!cur?.locked === !!terrain) continue;
-      this.plugin.mapStore.set(map, key, { terrain, locked: terrain ? true : null });
+      // A hand edit of the region (paint-terrain): it locks a new region (modeGate.noteHandEdit).
+      this.plugin.mapStore.set(map, key, { terrain, locked: terrain ? true : null }, "paint-terrain");
     }
     return `${cell.x}_${cell.y}`;
   }

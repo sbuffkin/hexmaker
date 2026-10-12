@@ -24,12 +24,12 @@ import { terrainCounts } from "../maps/mapNote";
 import { readNotesSection, writeNotesSection } from "../maps/mapNoteNotes";
 import { flowerPetals } from "../maps/mapNav";
 import { biomeInfo, type BiomeId } from "./biomes";
-import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "./regionsVault";
+import { hexBiomeAt, overworldOf, regionBiomeStatus, setBiomeAt } from "./regionsVault";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { editRegionPlan, terrainCountsText } from "./overworldInput";
-import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
+import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
@@ -188,7 +188,7 @@ export class EditRegionModal extends HexmakerModal {
       const row = biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" });
       if (plan.reroll) {
         row.createEl("button", { text: "Reroll", attr: { title: "Remake the region with a new seed (hand-painted hexes stay)" } })
-          .addEventListener("click", () => void this.reroll(name));
+          .addEventListener("click", () => void this.reroll());
       }
       if (plan.settings) {
         row.createEl("button", { text: "Settings…", attr: { title: "Biome, blend, seed, with a live preview" } }).addEventListener("click", () => {
@@ -346,10 +346,8 @@ export class EditRegionModal extends HexmakerModal {
       }));
   }
 
-  private async reroll(name: string): Promise<void> {
-    if (!mayReshape(this.host, this.overworld, this.px, this.py)) return;
-    await reshapeUndoable(this.host.plugin, this.overworld, this.px, this.py, () => regenerateRegion(this.host.plugin, name, { seed: Math.floor(Math.random() * 1e9) }));
-    this.host.changed();
+  private async reroll(): Promise<void> {
+    if (!(await rerollRegionAt(this.host, this.overworld, this.px, this.py))) return;
     await this.saveNotes();
     this.render();
   }

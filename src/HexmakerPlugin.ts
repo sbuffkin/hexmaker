@@ -74,7 +74,7 @@ import { migrateMapData, pluginVersion } from "./compat";
 import { writeJsonBackup } from "./backup";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
-import { setModeMapLookup } from "./modeGate";
+import { setHandEditListener, setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
@@ -193,6 +193,8 @@ export default class HexmakerPlugin extends Plugin {
     setHexDataSource(this.mapStore);
     setPathEditMapLookup((name) => this.getMap(name));
     setModeMapLookup((name) => this.getMap(name));
+    // The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
+    setHandEditListener((name) => this.arrival.lockOnHandEdit(name));
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
     // Defer until vault metadata cache is ready; calling before layout-ready
@@ -1045,6 +1047,13 @@ export default class HexmakerPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)) {
       if (leaf.view instanceof GeneratorView) leaf.view.refresh();
     }
+  }
+
+  /** Redraw every open map view's New place bar (Reroll / Lock) only, never the grid: safe mid-stroke. */
+  refreshPlaceBars(): void {
+    this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
+      if (leaf.view instanceof HexMapView) leaf.view.refreshPlaceBar();
+    });
   }
 
   refreshHexMap(): void {

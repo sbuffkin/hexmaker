@@ -49,7 +49,7 @@ export function overworldLeftClick(map: Mode, hasRegion: boolean): OverworldLeft
 }
 
 export interface OverworldMenuItem {
-  id: "enter-region" | "edit-region" | "set-biome" | "center" | "locations";
+  id: "enter-region" | "edit-region" | "reroll" | "lock" | "set-biome" | "center" | "locations";
   title: string;
   enabled: boolean;
   /** Why it's disabled (shown with it). */
@@ -61,15 +61,24 @@ export interface OverworldMenuItem {
  * the big-picture view (owner, #49): no hex editor and no per-hex items
  * (notes, tables, swaps, terrain clears), only region-level ones. A hex
  * with a region: Enter region, and Edit region… in every mode (the modal
- * shows what the mode may change). An empty hex: Set biome… (Build and
- * God; shown disabled with its hint in Play). Then Center on this hex,
- * and the hex's Locations when it has any.
+ * shows what the mode may change). A new region (open, `arrival: open`)
+ * also gets Reroll and Lock right there (owner 2026-10-12: "no reroll on
+ * right click for session-new blocks"), as Edit region… has them. The map
+ * view's mode menu shows Reroll where the mode may change the region
+ * (canChangeRegion: Build while it's open) and Lock in every mode. Once
+ * locked they're gone; God changes it from Edit region… (the God offer).
+ * An empty hex: Set biome… (Build and God; shown disabled with its hint
+ * in Play). Then Center on this hex, and the hex's Locations when it has any.
  */
-export function overworldMenu(map: Mode, hasRegion: boolean, locations = 0): OverworldMenuItem[] {
+export function overworldMenu(map: Mode, hasRegion: boolean, locations = 0, region?: { arrival?: string }): OverworldMenuItem[] {
   const out: OverworldMenuItem[] = [];
   if (hasRegion) {
     out.push({ id: "enter-region", title: "Enter region", enabled: true });
     out.push({ id: "edit-region", title: "Edit region…", enabled: true });
+    if (isOpenPlace(region)) {
+      out.push({ id: "reroll", title: "Reroll region", enabled: true });
+      out.push({ id: "lock", title: "Lock region", enabled: true });
+    }
   } else {
     const add = canAdd(map);
     out.push({ id: "set-biome", title: "Set biome…", enabled: add, ...(add ? {} : { hint: PLACE_LOCKED_HINT }) });

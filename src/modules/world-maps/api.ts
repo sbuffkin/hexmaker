@@ -16,7 +16,7 @@
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { OverworldLayer } from "../../overworld/overworldLayer";
 import { OverworldMinimap } from "../../overworld/overworldMinimap";
-import { BiomePickerModal, RegionGenModal } from "../../overworld/BiomeModals";
+import { BiomePickerModal, RegionGenModal, rerollRegionAt } from "../../overworld/BiomeModals";
 import { BiomePaletteModal } from "../../overworld/BiomePaletteModal";
 import { BiomeStroke } from "../../overworld/biomePainter";
 import { BIOMES, biomeInfo, biomeNoteOf } from "../../overworld/biomes";
@@ -79,6 +79,7 @@ function makeApi() {
   missingRegionHexes,
   createRegion,
   regenerateRegion,
+  rerollRegionAt,
   walkLock,
   parentOf,
   hexBiomeAt,

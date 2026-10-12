@@ -67,6 +67,19 @@ export async function reshapeUndoable<T>(plugin: HexmakerPlugin, parentName: str
   return plugin.undoableEdit(parentName, fn);
 }
 
+/**
+ * Reroll the region of hex (px, py) with a new seed (Edit region…'s and the
+ * overworld menu's Reroll): its made neighbours stay fixed context, its
+ * locked hexes stay. Refused (false) where the mode can't change it. Undoable.
+ */
+export async function rerollRegionAt(host: BiomeHost, parentName: string, px: number, py: number): Promise<boolean> {
+  const region = regionMapAt(host.plugin.settings.maps, parentName, `${px}_${py}`);
+  if (!region || !mayReshape(host, parentName, px, py)) return false;
+  await reshapeUndoable(host.plugin, parentName, px, py, () => regenerateRegion(host.plugin, region.name, { seed: newSeed() }));
+  host.changed();
+  return true;
+}
+
 /** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
 export function lockButton(btn: HTMLButtonElement, hint: string): void {
   btn.disabled = true;

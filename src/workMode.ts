@@ -246,6 +246,9 @@ export const MENU_ACTIONS = {
   "ow.enter-region": "navigate",
   "ow.arrive": "discover",
   "ow.edit-region": "open-editor",
+  // Only on a new (open) region: changing it is placing it (regionChangeAction), Build.
+  "ow.reroll": "place-biome",
+  "ow.lock": "lock-place",
   "ow.set-biome": "place-biome",
   "ow.center": "navigate",
   "ow.copy-link": "navigate",
@@ -320,6 +323,17 @@ export function canRerollPlace(map: { workMode?: string; arrival?: string } | un
  */
 export function isOpenPlace(place: { arrival?: string } | undefined): boolean {
   return place?.arrival?.trim().toLowerCase() === "open";
+}
+
+/**
+ * Does a hand edit (painting, a path drawn by hand: modeGate's
+ * HAND_EDIT_ACTIONS) lock this place? Only an open place made from a hex
+ * (a new region, a place made on arrival): the user's own work goes in, so
+ * rerolling it would throw that away. Navigating in, viewing and rerolling
+ * never lock (owner 2026-10-12).
+ */
+export function handEditLocks(place: { arrival?: string; parent?: unknown } | undefined): boolean {
+  return !!place?.parent && isOpenPlace(place);
 }
 
 /**

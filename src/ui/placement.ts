@@ -188,6 +188,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "BiomePage.tune.blendK": "debug/Borders & transitions",
   "BiomePage.tune.wiggle": "debug/Borders & transitions",
   "BiomePage.tune.nameSharpness": "debug/Borders & transitions",
+  "BiomePage.tune.neighbourInfluence": "debug/Borders & transitions",
+  "BiomePage.tune.contextDepth": "debug/Borders & transitions",
   "BiomePage.tune.islandMax": "debug/Water & islands",
   "BiomePage.tune.islandEdge": "debug/Water & islands",
   "BiomePage.tune.beach": "debug/Water & islands",
@@ -277,6 +279,10 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "EditRegion.locationsList": "main",
   "EditRegion.notes": "main",
   "EditRegion.blendIntoBiome": "advanced",
+  // Regions, overworlds & biomes › Overworld right-click menu: Reroll and
+  // Lock, only on a new (open) region (owner 2026-10-12).
+  "OverworldMenu.reroll": "main",
+  "OverworldMenu.lock": "main",
   // Space: world types › Worlds tab
   "WorldTypes.worldGenerator": "debug",
   "WorldTypes.worldOptions": "debug",

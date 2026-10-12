@@ -42,6 +42,7 @@ import { anchorsFor, routeFnFor } from "../paths/fromHexes";
 import { keepForksAttached, splitOffOrphans } from "../paths/forks";
 import { routeBranch, type ResolvedBranch } from "../paths/resolve";
 import { canEditPaths, PATH_EDIT_LOCKED_HINT, type PathEditAction } from "../paths/editGate";
+import { noteHandEdit } from "../modeGate";
 import { pathRouteText } from "../maps/mapNote";
 import { pathRouteStats } from "../maps/MapStore";
 import { impassableNames, noRouteMessage } from "../impassable";
@@ -582,6 +583,8 @@ export class PathTool {
     }
     const before = clonePaths(this.paths());
     if (JSON.stringify(before) === JSON.stringify(next)) return false;
+    // A path drawn by hand locks a new (open) place (modeGate.noteHandEdit).
+    noteHandEdit(map, "edit-path");
     // setPaths settles any pending routing-context change against the paths
     // as they were, so the new ones are never pinned to an out-of-date route.
     this.plugin.mapStore.setPaths(map, next);

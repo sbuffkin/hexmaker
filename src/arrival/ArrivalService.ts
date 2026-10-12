@@ -47,7 +47,7 @@ import {
 } from "../worldgen/registry";
 import { attrsForTerrain } from "../worldgen/tableSources";
 import { moduleArrivalTables, worldMaps } from "../modules/runtime";
-import { canRerollPlace, REROLL_PLACE_LOCKED_HINT, workModeOf, type ModeAction } from "../workMode";
+import { canRerollPlace, handEditLocks, REROLL_PLACE_LOCKED_HINT, WORK_MODE_TEXT, workModeOf, type ModeAction } from "../workMode";
 import { lockedNotice } from "../hex-map/godOffer";
 import {
   arrivalLines,
@@ -450,6 +450,30 @@ export class ArrivalService {
     plugin.refreshHexMap();
     new Notice(`Rerolled ${plugin.mapLabel(mapName)}.`);
     return true;
+  }
+
+  /**
+   * The first hand edit of a new (open) place locks it (owner 2026-10-12:
+   * "rerolls NEED to work on build mode until the user locks the region by
+   * painting their own stuff on it … Just navigating in shouldn't lock
+   * it"). Called by the write gate (modeGate.noteHandEdit) for every hand
+   * edit; only an open place with a parent is changed, so it runs once per
+   * place, with one notice. `arrival: locked` is set at once, so the rest
+   * of a paint stroke sees it locked; the save, the note's Arrival lines
+   * and the toolbar follow.
+   */
+  lockOnHandEdit(mapName: string): void {
+    const { plugin } = this;
+    const map = plugin.getMap(mapName);
+    if (!handEditLocks(map)) return;
+    map!.arrival = "locked";
+    const what = map!.submapKind === "region" ? "Region" : "Place";
+    void (async () => {
+      await plugin.saveSettings();
+      await plugin.mapStore.editNoteText(mapName, (c) => restateArrival(c, { rerolls: map!.arrivalRerolls ?? 0, locked: true }));
+      plugin.refreshPlaceBars();
+      new Notice(`${what} locked: your edits are kept. Rerolling it now needs ${WORK_MODE_TEXT.god.label} mode.`);
+    })();
   }
 
   /** Lock a place made on arrival (GM4): from now on only God may reroll it. */
