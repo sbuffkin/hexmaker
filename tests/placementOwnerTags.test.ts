@@ -49,6 +49,12 @@ const EXCEPTIONS: Record<string, { layer: Layer; why: string }> = {
   "Settings.generateWorldData": { layer: "advanced", why: "overkill, but the README's manual setup uses it and missing-table messages point to it" },
   "Settings.generateFolders": { layer: "advanced", why: "overkill, but the README's manual setup uses it" },
   "Settings.paletteDelete": { layer: "main", why: "owner: custom palettes are simple (note on its legacy twin)" },
+  // Owner 2026-10-12: "the current 'advanced' options in hex map setup are actually the standard ones and should be above the fold".
+  "Wizard.genOptWater": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptClimate": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptRelief": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptSea": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
+  "Wizard.genOptOther": { layer: "main", why: "owner override 2026-10-12: generator options above the fold" },
 };
 
 /** The layer a worksheet tier asks for on these surfaces. */
@@ -345,7 +351,7 @@ describe("Advanced sub-sections", () => {
 
 describe("generator page and wizard place their controls by id", () => {
   const panel = read("src", "worldgen", "GeneratorPanel.ts");
-  const biome = read("src", "worldgen", "BiomePanel.ts");
+  const biome = read("src", "overworld", "BiomePanel.ts");
   const wizard = read("src", "SetupWizardView.ts");
   /** Controls that move inside another placed control (and so share its placement). */
   const CARRIED: Record<string, string> = {
@@ -384,7 +390,7 @@ describe("generator page and wizard place their controls by id", () => {
     expect(wizardOptionId("relief")).toBe("Wizard.genOptRelief");
     expect(wizardOptionId("sea")).toBe("Wizard.genOptSea");
     expect(wizardOptionId("rivers")).toBe("Wizard.genOptOther");
-    for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("advanced");
+    for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("main"); // owner override 2026-10-12
     expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key), row)");
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advRow)');
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advSection)');
@@ -393,7 +399,7 @@ describe("generator page and wizard place their controls by id", () => {
 
 describe("dropped controls are gone", () => {
   it("the biome page's typed weight box (BiomePage.weightNumber) is removed; the slider stays", () => {
-    const biome = read("src", "worldgen", "BiomePanel.ts");
+    const biome = read("src", "overworld", "BiomePanel.ts");
     expect(biome).not.toContain("weight value");
     expect(biome).toContain("weight` } });");
     expect(read("styles.css")).toMatch(/\.duckmage-biome-page-mix \{[^}]*grid-template-columns: minmax\(6em, max-content\) minmax\(6em, 1fr\) 6em;/);
@@ -529,7 +535,7 @@ describe("seeds are kept with what they made", () => {
   });
 
   it("a new overworld keeps its seed on the map (seed: in its note), and Generate overworld starts from it", () => {
-    const src = read("src", "hex-map", "OverworldModals.ts");
+    const src = read("src", "overworld", "OverworldModals.ts");
     expect(src).toContain("map.seed = this.seed;");
     expect(src).toContain('if (typeof regen?.seed === "number") this.seed = regen.seed;');
     expect(src).toContain("if (target) target.seed = this.seed;");

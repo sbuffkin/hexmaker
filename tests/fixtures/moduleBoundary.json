@@ -1,26 +1,4 @@
 {
-  "imports": {
-    "src/HexmakerPlugin.ts -> world-maps": 5,
-    "src/arrival/ArrivalService.ts -> world-maps": 2,
-    "src/hex-map/BiomeLibraryModal.ts -> world-maps": 5,
-    "src/hex-map/BiomeModals.ts -> world-maps": 5,
-    "src/hex-map/EditRegionModal.ts -> world-maps": 4,
-    "src/hex-map/HexEditorModal.ts -> world-maps": 2,
-    "src/hex-map/HexMapView.ts -> world-maps": 7,
-    "src/hex-map/MapModal.ts -> world-maps": 3,
-    "src/hex-map/OverworldModals.ts -> world-maps": 9,
-    "src/hex-map/mapTablesForm.ts -> space": 1,
-    "src/hex-map/newChildMap.ts -> world-maps": 1,
-    "src/hex-map/overworldLayer.ts -> world-maps": 6,
-    "src/hex-map/overworldMinimap.ts -> world-maps": 4,
-    "src/maps/mapNav.ts -> world-maps": 1,
-    "src/worldgen/BiomePanel.ts -> world-maps": 6,
-    "src/worldgen/NewMapSetupModal.ts -> space": 2,
-    "src/worldgen/WalkRegionModal.ts -> world-maps": 3,
-    "src/worldgen/generators.ts -> world-maps": 1,
-    "src/worldgen/newMapOptionIds.ts -> world-maps": 1,
-    "src/worldgen/procedural/orbits.ts -> space": 1,
-    "src/worldgen/regionGenerator.ts -> world-maps": 4
-  },
+  "imports": {},
   "decisions": {}
 }

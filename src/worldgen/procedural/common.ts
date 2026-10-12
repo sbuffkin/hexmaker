@@ -112,6 +112,38 @@ export interface ProcOption {
   default: string;
 }
 
+/**
+ * An engine tuning slider (owner 2026-10-12: a trimmed set that most
+ * affects the first map's layout, in the setup wizard's Advanced). Its
+ * value travels in the generator options as `tune.<key>` (a number as
+ * text); unset means `default`, which is exactly what the engine did
+ * before the slider existed.
+ */
+export interface TuningDef {
+  key: string;
+  label: string;
+  /** One line: what moving it does. */
+  help: string;
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+}
+
+/** The options key a tuning slider's value travels under. */
+export const tuneKey = (key: string): string => `tune.${key}`;
+
+/** A tuning value from the options: the number set, else `def`. */
+export function tuned(options: Readonly<Record<string, string>> | undefined, key: string, def: number): number {
+  const raw = options?.[tuneKey(key)];
+  if (raw === undefined || raw.trim() === "") return def;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : def;
+}
+
+/** A quantile clamped into (0, 1), unchanged when it already is. */
+export const clampQ = (q: number): number => Math.min(0.995, Math.max(0.005, q));
+
 /** Every "x_y" key of the grid, column-major like map creation. */
 export function gridKeys(grid: ProcGrid): [number, number][] {
   const out: [number, number][] = [];

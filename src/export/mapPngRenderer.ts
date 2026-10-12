@@ -42,7 +42,7 @@ import {
 } from "./handoutLabels";
 import { BADGE_INFO, BADGE_SECTIONS, badgeSize, hiddenBadges as hiddenBadgeKinds, linkSectionsFromCache, type BadgeSection } from "../hex-map/linkBadges";
 import { usedTerrainEntries } from "../hex-map/terrainLegend";
-import { MOON_TETHER_STYLE, moonTethers } from "../hex-map/moonLinks";
+import { moduleOverlays } from "../modules/runtime";
 import { hexNameTone } from "../hex-map/hexNameLayer";
 import { MIN_NAME_SCREEN_PX, nameFontShorthand, resolveNameFont } from "../hex-map/hexNameFont";
 import { DEFAULT_TOKEN_FILL, groupSize, tokenGroupOffsets, tokenNamePlacement } from "../hex-map/tokenDefaults";
@@ -509,18 +509,24 @@ export async function renderMapToPngBlob(
     // only bolder when asked (decision 4 of the path-anchors design).
     const strokes = plugin.paths.strokes(map.name, { laneScale: boldPaths ? PNG_PATH_BOLD : 1 });
     const affine = { sx: R, sy: R, tx: padding - minX, ty: padding - minY };
-    // Moons tied to their planet (S11), under the paths as on screen. Only
-    // ties whose two hexes are both in the exported range.
-    const terrainAt = new Map<string, string>();
-    for (const [k, h] of plugin.mapStore.all(map.name)) if (h.terrain) terrainAt.set(k, h.terrain);
-    const lattice = plugin.paths.lattice(map.name);
+    // Module overlays (Space: moons tied to their planet, S11), under the
+    // paths as on screen: the same overlay.segments the map view draws.
+    // Only segments whose two hexes are both in the exported range.
+    const overlays = moduleOverlays();
+    const lattice = overlays.length ? plugin.paths.lattice(map.name) : undefined;
     if (lattice) {
-      ctx.save();
-      ctx.globalAlpha = MOON_TETHER_STYLE.opacity;
-      for (const seg of moonTethers(terrainAt, plugin.getMapPalette(map.name), lattice, (k) => centerMap.has(k))) {
-        drawPath(ctx, applyAffine(seg, affine), MOON_TETHER_STYLE.color, MOON_TETHER_STYLE.width * R, MOON_TETHER_STYLE.dash.map((d) => d * R), false);
+      const terrainAt = new Map<string, string>();
+      for (const [k, h] of plugin.mapStore.all(map.name)) if (h.terrain) terrainAt.set(k, h.terrain);
+      const palette = plugin.getMapPalette(map.name);
+      for (const overlay of overlays) {
+        const style = overlay.style;
+        ctx.save();
+        ctx.globalAlpha = style.opacity;
+        for (const seg of overlay.segments(terrainAt, palette, lattice, (k) => centerMap.has(k))) {
+          drawPath(ctx, applyAffine(seg, affine), style.color, style.width * R, style.dash.map((d) => d * R), false);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
     for (const st of strokes) {
       const width = boldPaths ? pngPathWidth(st.width * SCREEN_HEX_RADIUS, R) : st.width * R;

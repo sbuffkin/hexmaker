@@ -13,8 +13,8 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } fr
 import { PALETTE_PRESETS } from "../src/palettes/presets";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { listGeneratorKinds, visibleKinds, BLANK_ID } from "../src/worldgen/registry";
-import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
-import { ORBITS_ID } from "../src/worldgen/procedural/orbits";
+import { STAR_SCATTER_ID } from "../src/space/starScatter";
+import { ORBITS_ID } from "../src/space/orbits";
 import { OVERLAND_ID, PLANET_SURFACE_ID, REGION_DETAIL_ID } from "../src/worldgen/procedural/planetSurface";
 import { learnModel, modelToMarkdown } from "../packages/hex-wfc/src";
 import type HexmakerPlugin from "../src/HexmakerPlugin";

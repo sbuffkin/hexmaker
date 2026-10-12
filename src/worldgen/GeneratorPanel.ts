@@ -43,7 +43,7 @@ import { isImpassable } from "../impassable";
 import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
-import { BiomePanel } from "./BiomePanel";
+import { worldMaps } from "../modules/runtime";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
 import { Disclosure } from "../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
@@ -196,13 +196,15 @@ export class GeneratorPanel {
     const show = () => {
       body.empty();
       side.empty();
-      BiomePanel.dispose();
-      const biome = GeneratorPanel.biome ? this.plugin.biomeStore.get(GeneratorPanel.biome) : undefined;
-      if (biome && !biome.generator) {
-        const panel = new BiomePanel(this.plugin, {
+      // World maps: a blend-field biome shown instead of a generator (BiomePanel).
+      const wm = worldMaps();
+      wm?.BiomePanel.dispose();
+      const biome = GeneratorPanel.biome ? this.plugin.biomeStore?.get(GeneratorPanel.biome) : undefined;
+      if (wm && biome && !biome.generator) {
+        const panel = new wm.BiomePanel(this.plugin, {
           rerender: () => this.host.rerender(),
           section: (e, t) => this.section(e, t),
-          back: () => { GeneratorPanel.biome = ""; BiomePanel.dispose(); show(); },
+          back: () => { GeneratorPanel.biome = ""; wm.BiomePanel.dispose(); show(); },
         }, biome.id, () => GeneratorPanel.paletteName);
         panel.onPalette = (name) => { GeneratorPanel.paletteName = name; show(); };
         panel.render(body, side);

@@ -11,7 +11,33 @@ import { WORLD_MAPS_TABLE_CONDITIONS } from "./tableConditions";
 
 export const worldMapsModule: HexmakerModule = {
   id: "world-maps",
-  slice: "W",
+  slice: "worldmaps",
   tableConditions: WORLD_MAPS_TABLE_CONDITIONS,
-  owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
+  // River carves its overworld path's cells into water (overworld paths).
+  addedPresetPathFields: [{ pathType: "River", field: "carves" }],
+  mapScales: [{
+    id: "biomes",
+    label: "Biomes",
+    description: "A world map of biomes, one per hex, laid out by climate.",
+    kind: "world",
+    size: { cols: 16, rows: 12 },
+    palette: "Expanded",
+    generators: ["procedural:world-biomes"],
+  }],
+  owns: {
+    settingsKeys: ["biomesFolder", "biomePoolsFolder", "biomesSeeded", "biomeClimatesSeeded", "biomeColumnsFilled"],
+    mapNoteKeys: [],
+    commands: ["new-overworld"],
+    strings: [
+      "New overworld…",
+      "World biomes",
+      "procedural:world-biomes",
+      "Biomes folder",
+      "Biome pools folder",
+      "Edit region…",
+      "Generate overworld…",
+      "Make the missing regions",
+      "hexmaker-biome",
+    ],
+  },
 };

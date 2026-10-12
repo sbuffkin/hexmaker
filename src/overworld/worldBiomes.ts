@@ -58,6 +58,8 @@ export interface WorldBiomesOptions {
   north?: NorthIs;
   /** Trace a river from the highest hex down to the sea (default true). */
   river?: boolean;
+  /** Tuning sliders (setup wizard Advanced, WORLD_BIOMES_TUNING); unset = the engine's own values. */
+  tuning?: Partial<Record<WorldBiomesTuningKey, number>>;
   /**
    * A biome pool: only these are placed (placementPool). Unset: every
    * biome with a climate.
@@ -112,6 +114,18 @@ const key = (x: number, y: number) => `${x}_${y}`;
 
 // ── generator ────────────────────────────────────────────────────────────
 
+/** World biomes' tuning sliders, each with the value the engine used before it existed. */
+export const WORLD_BIOMES_TUNING = [
+  { key: "features", label: "Feature size", help: "Smaller, busier landforms (higher) or broad, simple ones (lower).", min: 0.4, max: 2.5, step: 0.1, default: 1 },
+  { key: "spread", label: "Continent spread", help: "How far the land reaches from the middle of the map.", min: 0.5, max: 1.8, step: 0.05, default: 1 },
+  { key: "ragged", label: "Ragged coasts", help: "More noise in the land's outline: bays, peninsulas and stray islands.", min: -0.4, max: 0.4, step: 0.05, default: 0 },
+  { key: "warmth", label: "Warmth", help: "Warmer or colder than the climate picked.", min: -0.4, max: 0.4, step: 0.05, default: 0 },
+  { key: "wetness", label: "Wetness", help: "Wetter or drier everywhere.", min: -0.4, max: 0.4, step: 0.05, default: 0 },
+  { key: "coastRain", label: "Coastal rain", help: "How much wetter land near the sea is than inland.", min: 0, max: 0.9, step: 0.05, default: 0.45 },
+  { key: "patchiness", label: "Climate patchiness", help: "Random warm and cold patches on top of north and south.", min: 0, max: 0.5, step: 0.02, default: 0.16 },
+] as const;
+export type WorldBiomesTuningKey = (typeof WORLD_BIOMES_TUNING)[number]["key"];
+
 export function worldBiomes(
   cells: Iterable<[number, number]>,
   orientation: Orientation,
@@ -144,7 +158,8 @@ export function worldBiomes(
   keys.forEach((k, i) => pos.set(k, [(pts[i][0] - minX) / span, (pts[i][1] - minY) / span]));
   const cxm = (maxX - minX) / span / 2, cym = (maxY - minY) / span / 2;
   // Noise frequency grows with map size so a 400-hex map isn't one blob.
-  const freq = 1.6 + Math.sqrt(N) / 6;
+  const tune = (k: WorldBiomesTuningKey, def: number): number => opts.tuning?.[k] ?? def;
+  const freq = (1.6 + Math.sqrt(N) / 6) * tune("features", 1);
 
   // 1. Elevation: fBm × continent mask; sea = lowest `water` share.
   const land = opts.land ?? "one";
@@ -156,9 +171,10 @@ export function worldBiomes(
   for (const k of keys) {
     const [u, v] = pos.get(k)!;
     const n = fbm(seed, u * freq, v * freq);
-    const d = Math.min(...lobes.map(([a, b]) => Math.hypot(u - a, v - b))) / (land === "two" ? 0.36 : 0.62);
+    const d = Math.min(...lobes.map(([a, b]) => Math.hypot(u - a, v - b))) / ((land === "two" ? 0.36 : 0.62) * tune("spread", 1));
     const mask = land === "islands" ? 0.5 : Math.max(0, 1 - d * d);
-    const w = land === "islands" ? 0.85 : 0.5;
+    const ragged = tune("ragged", 0);
+    const w = ragged ? Math.min(1, Math.max(0, (land === "islands" ? 0.85 : 0.5) + ragged)) : land === "islands" ? 0.85 : 0.5;
     elevation.set(k, w * n + (1 - w) * mask);
   }
   const water = Math.min(0.9, Math.max(0, opts.water ?? 0.3));
@@ -195,7 +211,8 @@ export function worldBiomes(
     if (climate === "cold") t -= 0.28;
     if (climate === "warm") t += 0.28;
     t -= 0.3 * Math.max(0, (rank.get(k) ?? 0) - 0.5);
-    t += 0.16 * (fbm(seed + 77, pos.get(k)![0] * 2, pos.get(k)![1] * 2) - 0.5) * (north === "none" ? 3 : 1);
+    t += tune("patchiness", 0.16) * (fbm(seed + 77, pos.get(k)![0] * 2, pos.get(k)![1] * 2) - 0.5) * (north === "none" ? 3 : 1);
+    t += tune("warmth", 0);
     temperature.set(k, Math.min(1, Math.max(0, t)));
   }
 
@@ -207,7 +224,7 @@ export function worldBiomes(
     let shadow = 0;
     for (let s = 1; s <= 3; s++) if (high(key(x - s, y))) shadow++;
     const nearSea = sea.size ? 1 - Math.min(toSea.get(k) ?? 4, 4) / 4 : 0.4;
-    const m = 0.55 * fbm(seed + 991, pos.get(k)![0] * freq, pos.get(k)![1] * freq) + 0.45 * nearSea - 0.15 * shadow;
+    const m = 0.55 * fbm(seed + 991, pos.get(k)![0] * freq, pos.get(k)![1] * freq) + tune("coastRain", 0.45) * nearSea - 0.15 * shadow + tune("wetness", 0);
     moisture.set(k, Math.min(1, Math.max(0, m)));
   }
 
@@ -601,5 +618,17 @@ export function worldBiomesFromOptions(
     water: Math.min(90, Math.max(0, Number(options.water ?? 25) || 0)) / 100,
     land: pick(options.land, ["one", "two", "islands"] as const, "one"),
     north: pick(options.north, ["colder", "warmer", "none"] as const, "colder"),
+    ...tuningOf(options),
   });
+}
+
+/** The tuning sliders set in a generator's options (tune.<key>), for worldBiomes. */
+function tuningOf(options: Record<string, string>): { tuning?: Partial<Record<WorldBiomesTuningKey, number>> } {
+  const out: Partial<Record<WorldBiomesTuningKey, number>> = {};
+  for (const t of WORLD_BIOMES_TUNING) {
+    const raw = options[`tune.${t.key}`];
+    const n = raw === undefined || raw.trim() === "" ? NaN : Number(raw);
+    if (Number.isFinite(n)) out[t.key] = n;
+  }
+  return Object.keys(out).length ? { tuning: out } : {};
 }

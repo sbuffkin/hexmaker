@@ -16,12 +16,12 @@
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "../overworld/biomeNote";
-import { copyClimate } from "../overworld/biomeClimate";
-import { SIMILAR } from "../overworld/biomes";
-import { blendBiomeFields, hexBiomeAt, measureMap, planBiomePreview, regionBiomeStatus, regionHome, regionPalette } from "../overworld/regionsVault";
-import { foldMapIntoModel, learnGeneratorFromMap, listGenerators, mapStagger, saveGeneratorFromMap, sourceMapsOf, writeGeneratorInPlace, type GeneratorFile } from "./generators";
-import { addBlendOfRow } from "./generatorNoteUpdate";
+import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
+import { copyClimate } from "./biomeClimate";
+import { SIMILAR } from "./biomes";
+import { blendBiomeFields, hexBiomeAt, measureMap, planBiomePreview, regionBiomeStatus, regionHome, regionPalette } from "./regionsVault";
+import { foldMapIntoModel, learnGeneratorFromMap, listGenerators, mapStagger, saveGeneratorFromMap, sourceMapsOf, writeGeneratorInPlace, type GeneratorFile } from "../worldgen/generators";
+import { addBlendOfRow } from "../worldgen/generatorNoteUpdate";
 import { mapAllows, lockedHint } from "../workMode";
 import { mapNoteLink } from "../noteFormats";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";

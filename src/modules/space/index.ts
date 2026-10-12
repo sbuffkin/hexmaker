@@ -16,7 +16,7 @@ import { SPACE_TABLES } from "./shippedTables";
 
 export const spaceModule: HexmakerModule = {
   id: "space",
-  slice: "S",
+  slice: "space",
   kind: {
     id: "space",
     label: "Space",
@@ -48,6 +48,7 @@ export const spaceModule: HexmakerModule = {
   iconPack: { id: "space", label: "Space", prefix: "space-", icons: BUNDLED_SPACE_ICONS },
   palettes: SPACE_PRESETS,
   tableRoles: SPACE_TABLE_ROLES,
+  tablesFolder: "space",
   tables: SPACE_TABLES,
   tableConditions: SPACE_TABLE_CONDITIONS,
   engines: [
@@ -55,9 +56,48 @@ export const spaceModule: HexmakerModule = {
     { id: "procedural:orbits", label: "Orbits" },
   ],
   pathRoles: { routes: "Path type for routes", orbits: "Path type for orbits" },
+  submapGeneratorIds: ["procedural:star-scatter", "procedural:orbits", "procedural:planet-surface"],
+  mapScales: [
+    {
+      id: "space-worlds",
+      label: "Sector or system",
+      description: "Worlds in space: a sector of star systems, or one star and its orbits.",
+      kind: "space",
+      size: { cols: 12, rows: 10 },
+      palette: "Space - Sector",
+      generators: ["procedural:star-scatter", "procedural:orbits"],
+      generatorPalettes: { "procedural:orbits": "Space - System" },
+    },
+    {
+      id: "planet",
+      label: "Planet",
+      description: "One planet's surface: seas, land, ice.",
+      kind: "space",
+      size: { cols: 20, rows: 14 },
+      palette: "Space - Planet",
+      generators: ["procedural:planet-surface"],
+      otherGenerators: true,
+    },
+  ],
   owns: {
     settingsKeys: ["worldTypesFolder", "worldTypesSeeded"],
     mapNoteKeys: [],
     commands: ["edit-world-types", "convert-world-types"],
+    strings: [
+      "Star scatter",
+      "procedural:star-scatter",
+      "procedural:orbits",
+      "Edit world types",
+      "World types folder",
+      "Convert world types to tables",
+      "Space - Sector",
+      "Space - System",
+      "Space - Planet",
+      "duckmage-moon-link",
+      "Sector or system",
+      "space-worlds",
+      "Points of Interest",
+      "hexmaker-world-types",
+    ],
   },
 };

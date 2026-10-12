@@ -333,7 +333,74 @@ async function freshExtra(ctx) {
     out.push({ check: "F1-create-paint", ok: r.files.includes(r.note) && others.length === 0, detail: `wrote ${r.files.join(", ") || "(nothing)"}` });
     out.push({ check: "F1-first-hex-note", ok: r.hasLink && !r.hasTerrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain key ${r.hasTerrain}` });
   }
+  out.push(...(await wizardMapStepChecks(ctx)));
   return out;
+}
+
+/**
+ * The setup wizard's map step (owner 2026-10-12): "What are you mapping?"
+ * then a generator list (Blank first) that swaps with it; the grid size
+ * steps with the wheel and resets to the scale's size; the generator's
+ * options are above the fold and Advanced holds 5–10 tuning sliders that
+ * count in its header once moved. Nothing is created (no map name).
+ */
+async function wizardMapStepChecks(ctx) {
+  const r = await ctx.ev(() => (async () => {
+    const leaf = window.app.workspace.getLeavesOfType("duckmage-setup-wizard")[0];
+    if (!leaf) return { error: "no wizard leaf" };
+    // Shown and focused: a hidden leaf's fields can't take focus (the wheel steps a focused field).
+    await window.app.workspace.revealLeaf(leaf);
+    window.app.workspace.setActiveLeaf(leaf, { focus: true });
+    const view = leaf.view;
+    const until = async (fn, ms = 8000) => { const t = Date.now(); while (Date.now() - t < ms) { const v = fn(); if (v) return v; await new Promise((r2) => setTimeout(r2, 100)); } return fn(); };
+    view.currentIndex = 2;
+    view.renderView();
+    const root = view.contentEl;
+    const scales = [...root.querySelectorAll(".duckmage-wizard-scale-btn")];
+    const scaleLabels = scales.map((c) => c.querySelector(".duckmage-wizard-orient-label")?.textContent);
+    const gens = () => [...root.querySelectorAll(".duckmage-setup-gen .duckmage-setup-gen-title")].map((e) => e.textContent);
+    await until(() => gens().length > 0);
+    const first = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
+    const cols = root.querySelector('input[aria-label="Columns"]');
+    const colsAt = { start: cols.value };
+    // Another scale (Biomes when World maps is built); a build with one scale only checks the size.
+    const other = scales.find((c) => c.dataset.scale === "biomes") ?? scales.find((c) => c.dataset.scale !== first.scale);
+    other?.click();
+    // Biomes gets its biome notes when picked, then lists World biomes.
+    if (other) await until(() => gens()[1] !== first.gens[1] && (other.dataset.scale !== "biomes" || gens().includes("World biomes")));
+    const second = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
+    colsAt.biomes = cols.value;
+    cols.focus();
+    colsAt.focused = document.activeElement === cols;
+    cols.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true }));
+    colsAt.wheel = cols.value;
+    root.querySelector(".duckmage-wizard-size-reset")?.click();
+    colsAt.reset = cols.value;
+    // Back to the first scale: options main, Advanced = tuning sliders.
+    scales.find((c) => c.dataset.scale === first.scale)?.click();
+    await until(() => gens()[1] === first.gens[1]);
+    const opts = [...root.querySelectorAll(".duckmage-wizard-generator-option")];
+    const optsInAdvanced = opts.filter((o) => o.closest(".duckmage-disclosure")).length;
+    const sliders = [...root.querySelectorAll(".duckmage-wizard-tuning")];
+    const slidersInAdvanced = sliders.filter((s) => s.closest(".duckmage-disclosure")).length;
+    const summary = () => root.querySelector(".duckmage-wizard-generator-options .duckmage-disclosure-summary")?.textContent ?? "";
+    const before = summary();
+    const range = sliders[0]?.querySelector('input[type="range"]');
+    if (range) { range.value = String(Number(range.max)); range.dispatchEvent(new Event("input", { bubbles: true })); }
+    const after = summary();
+    sliders[0]?.querySelector(".duckmage-wizard-tuning-reset")?.click();
+    const reset = summary();
+    return { single: !other, scaleLabels, first, second, colsAt, opts: opts.length, optsInAdvanced, sliders: sliders.length, slidersInAdvanced, before, after, reset };
+  })());
+  if (r.error) return [{ check: "F1-wizard-scales", ok: false, detail: r.error }];
+  return [
+    { check: "F1-wizard-scales", ok: r.first.gens[0] === "Blank" && (r.single ? r.scaleLabels.length === 1 : r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens) && (r.second.scale !== "biomes" || r.second.gens.includes("World biomes"))),
+      detail: `scales ${r.scaleLabels.join(", ")}; ${r.first.scale}: ${r.first.gens.join(", ")}; ${r.second.scale}: ${r.second.gens.join(", ")}` },
+    { check: "F1-wizard-size", ok: (r.single || r.colsAt.biomes !== r.colsAt.start) && Number(r.colsAt.wheel) === Number(r.colsAt.biomes) + 1 && r.colsAt.reset === r.colsAt.biomes,
+      detail: `columns: start ${r.colsAt.start}, ${r.single ? "same scale" : r.second.scale} ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel} (focused ${r.colsAt.focused}), reset ${r.colsAt.reset}` },
+    { check: "F1-wizard-advanced", ok: r.opts > 0 && r.optsInAdvanced === 0 && r.sliders >= 5 && r.sliders <= 10 && r.slidersInAdvanced === r.sliders && /· 1 set/.test(r.after) && !/set/.test(r.reset),
+      detail: `options ${r.opts} (${r.optsInAdvanced} in Advanced); sliders ${r.sliders} (${r.slidersInAdvanced} in Advanced); header "${r.before}" → "${r.after}" → "${r.reset}"` },
+  ];
 }
 
 async function spaceExtra(ctx) {

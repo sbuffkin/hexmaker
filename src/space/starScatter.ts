@@ -1,7 +1,7 @@
-import { mulberry32 } from "../../../packages/hex-wfc/src";
+import { mulberry32 } from "../../packages/hex-wfc/src";
 import { orbitsFits } from "./orbits";
-import { roleOdds, rollRole, type TableSource } from "../tableRoles";
-import type { TerrainColor } from "../../types";
+import { roleOdds, rollRole, type TableSource } from "../worldgen/tableRoles";
+import type { TerrainColor } from "../types";
 import {
   cellKey,
   distance,
@@ -12,7 +12,9 @@ import {
   type ProcOption,
   type ProcPath,
   type ProcResult,
-} from "./common";
+  type TuningDef,
+  tuned,
+} from "../worldgen/procedural/common";
 
 /**
  * Sector "star scatter": the classic subsector roll. Each hex holds a star
@@ -64,6 +66,15 @@ export const STAR_SCATTER_OPTIONS: ProcOption[] = [
 ];
 
 const DENSITY: Record<string, number> = { sparse: 1 / 3, standard: 1 / 2, dense: 2 / 3, cluster: 5 / 6 };
+
+/** Star scatter's tuning sliders (setup wizard Advanced). */
+export const STAR_SCATTER_TUNING: readonly TuningDef[] = [
+  { key: "density", label: "More systems", help: "Percentage points added to (or taken from) the System density odds.", min: -30, max: 30, step: 5, default: 0 },
+  { key: "nebulaAmount", label: "Nebula amount", help: "How many nebulae, times the Nebulae choice. 0 = none.", min: 0, max: 4, step: 0.25, default: 1 },
+  { key: "nebulaSize", label: "Nebula size", help: "The smallest nebula radius, in hexes.", min: 0, max: 4, step: 1, default: 1 },
+  { key: "nebulaEdge", label: "Nebula edge fill", help: "How much of each nebula's outer ring is filled. Lower gives ragged clouds.", min: 0, max: 1, step: 0.05, default: 0.45 },
+  { key: "inNebula", label: "Systems in nebulae", help: "Odds of a system inside a nebula, as a share of the odds outside.", min: 0, max: 1, step: 0.05, default: 0.5 },
+];
 
 export interface StarScatterRoles {
   background: string;
@@ -118,24 +129,31 @@ export function starScatter(
   // Stations host a system (and so a route); black holes and anomalies don't.
   const hostsSystem = (t: string) => HOSTS_SYSTEM.has(types.get(t.toLowerCase()) ?? "");
   const isFeature = (t: string) => roles.features.some((f) => f.toLowerCase() === t.toLowerCase());
-  const density = DENSITY[options.density ?? "standard"] ?? 0.5;
+  const moreSystems = tuned(options, "density", 0);
+  const density = moreSystems
+    ? Math.min(1, Math.max(0, (DENSITY[options.density ?? "standard"] ?? 0.5) + moreSystems / 100))
+    : DENSITY[options.density ?? "standard"] ?? 0.5;
+  const nebulaAmount = tuned(options, "nebulaAmount", 1);
   const hexes = gridKeys(grid);
   const cells = new Map<string, string>();
   for (const [x, y] of hexes) cells.set(cellKey(x, y), roles.background);
 
   // Nebula / dust patches: a few blobs grown from random seeds.
   const cloudCount = roles.clouds.length === 0 ? 0
-    : options.clouds === "none" ? 0
-    : Math.max(1, Math.round((hexes.length / 80) * (options.clouds === "many" ? 2.5 : 1)));
+    : options.clouds === "none" || nebulaAmount <= 0 ? 0
+    : Math.max(1, Math.round((hexes.length / 80) * (options.clouds === "many" ? 2.5 : 1) * nebulaAmount));
+  const nebulaSize = Math.round(tuned(options, "nebulaSize", 1));
+  const nebulaEdge = tuned(options, "nebulaEdge", 0.45);
+  const inNebula = tuned(options, "inNebula", 0.5);
   const inCloud = new Set<string>();
   for (let c = 0; c < cloudCount; c++) {
     const center = hexes[Math.floor(rand() * hexes.length)];
-    const radius = 1 + Math.floor(rand() * 2) + (rand() < 0.3 ? 1 : 0);
+    const radius = nebulaSize + Math.floor(rand() * 2) + (rand() < 0.3 ? 1 : 0);
     const terrain = roles.clouds[Math.floor(rand() * roles.clouds.length)];
     for (const h of hexes) {
       const d = distance(center, h, grid);
       // Ragged edge: the outer ring is only partly filled.
-      if (d < radius || (d === radius && rand() < 0.45)) {
+      if (d < radius || (d === radius && rand() < nebulaEdge)) {
         const k = cellKey(h[0], h[1]);
         cells.set(k, terrain);
         inCloud.add(k);
@@ -148,7 +166,7 @@ export function starScatter(
   const arrivals = new Map<string, string>();
   for (const [x, y] of hexes) {
     const k = cellKey(x, y);
-    const odds = inCloud.has(k) ? density / 2 : density;
+    const odds = inCloud.has(k) ? density * inNebula : density;
     if (rand() >= odds) continue;
     const pick = rollRole(tables, "sector-hexes", { rand, deferArrival: true, where: k }, roles.worlds);
     // A (nothing) row: empty space after all.

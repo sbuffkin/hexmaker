@@ -33,3 +33,11 @@ export function wizardOptionId(key: string): string {
 	const named = ["water", "climate", "relief", "sea"];
 	return named.includes(key) ? `Wizard.genOpt${key.charAt(0).toUpperCase()}${key.slice(1)}` : "Wizard.genOptOther";
 }
+
+/** Inventory id of the setup wizard's engine tuning sliders (its Advanced). */
+export const WIZARD_TUNING_ID = "Wizard.tuning";
+
+/** A tuning slider's value as shown: at most two decimals, no trailing zeros. */
+export function tuningText(n: number): string {
+	return String(Math.round(n * 100) / 100);
+}

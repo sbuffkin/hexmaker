@@ -5162,6 +5162,50 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     line-height: 1.4;
 }
 
+/* ── What are you mapping? (map scales, one card per scale) ── */
+
+.duckmage-wizard-scale-row {
+    flex-wrap: wrap;
+}
+
+.duckmage-wizard-scale-btn {
+    min-width: 150px;
+}
+
+/* Grid size back to the scale's default. */
+.duckmage-wizard-size-reset {
+    padding: 2px 8px;
+    margin-left: 4px;
+}
+
+/* Setup wizard Advanced: engine tuning sliders (owner 2026-10-12). */
+.duckmage-wizard-tuning {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+}
+
+.duckmage-wizard-tuning-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.duckmage-wizard-tuning-value {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.duckmage-wizard-tuning-reset {
+    padding: 0 6px;
+}
+
+.duckmage-wizard-tuning input[type="range"] {
+    width: 100%;
+}
+
 /* ── Palette select ── */
 
 .duckmage-wizard-select {

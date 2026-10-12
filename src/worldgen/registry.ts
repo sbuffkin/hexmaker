@@ -8,13 +8,13 @@ import {
   toMapPaths,
   type GridSpec,
 } from "./generators";
-import { ofType, SIDES, type GenerationContext, type ProcGrid, type ProcOption, type Side } from "./procedural/common";
+import { ofType, SIDES, tuneKey, type GenerationContext, type ProcGrid, type ProcOption, type Side, type TuningDef } from "./procedural/common";
 import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
 import { registry } from "../modules";
 import { generateConnected, type NewRegion } from "./neighbours";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
-import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
 import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
 import { moduleGenerators } from "../modules/runtime";
 
@@ -91,6 +91,13 @@ export interface TerrainGeneratorKind {
    *  via generateConnected). */
   continuesNeighbours?: boolean;
   options: ProcOption[];
+  /**
+   * Engine tuning sliders (the setup wizard's Advanced, owner 2026-10-12):
+   * the few that most change the map's layout. Their values travel in the
+   * options as `tune.<key>`; unset = the default, which is the engine's
+   * own behaviour.
+   */
+  tuning?: readonly TuningDef[];
   /** The options as shown for one palette, when a choice lists that
    *  palette's own terrains (Orbits' Star) or path types (Star scatter's
    *  and Orbits' path type). Same keys as `options`; see kindOptions. */
@@ -199,8 +206,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
       toPaths,
     },
-    // Each module's built-in generators (Star scatter, Orbits, Region detail,
-    // Overland, World biomes, Planet surface), in their list order.
+    // Each module's built-in generators, in their list order.
     ...moduleGenerators(plugin, { toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
   ];
   // Every generator, tagged with its map type: callers filter with
@@ -226,14 +232,16 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       source: "learned",
       mapKind: generatorMapKind(g.model.meta),
       options: [],
+      tuning: wfcTuning(g.model),
       generatorPath: g.file.path,
       continuesNeighbours: true,
       fits: (terrains) => generatorFitsPalette(g.model, terrains.map((t) => t.name)),
       generate: (req) => {
         const names = req.terrains.map((t) => t.name);
+        const model = withWfcTuning(g.model, req.options);
         const res = req.region
-          ? generateConnected(plugin, g.model, names, req.region, req.seed)
-          : generateTerrain(plugin, g.model, names, req.grid, req.seed);
+          ? generateConnected(plugin, model, names, req.region, req.seed)
+          : generateTerrain(plugin, model, names, req.grid, req.seed);
         if (!res.ok) return { ok: false, message: res.message };
         return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
       },
@@ -241,6 +249,39 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
     });
   }
   return kinds;
+}
+
+/**
+ * The learned-terrain engine's tuning sliders, from the generator page's
+ * Engine tuning (same names, ranges and settings keys). Each starts on the
+ * generator's own value (its note's settings, else the engine default).
+ */
+const WFC_TUNING: readonly (Omit<TuningDef, "default"> & { setting: "featureSize" | "neighbourInfluence" | "frequencyFeedback" | "scatter" | "randomness" | "directionalBias" | "edgeStrength" })[] = [
+  { key: "featureSize", setting: "featureSize", label: "Feature size", help: "Size of each terrain's patches. Lower makes more, smaller patches.", min: 0, max: 3, step: 0.25 },
+  { key: "clumping", setting: "neighbourInfluence", label: "Clumping", help: "How strongly each hex follows its neighbours. 0 gives speckled noise.", min: 0, max: 6, step: 0.5 },
+  { key: "mixStrength", setting: "frequencyFeedback", label: "Mix strength", help: "How closely the overall terrain mix follows the example.", min: 0, max: 4, step: 0.5 },
+  { key: "scatter", setting: "scatter", label: "Scatter", help: "Randomness in where patches start. Too low and one terrain can take over.", min: 0, max: 6, step: 0.5 },
+  { key: "randomness", setting: "randomness", label: "Randomness", help: "Share of hexes chosen by chance, ignoring neighbours.", min: 0, max: 1, step: 0.05 },
+  { key: "directionalBias", setting: "directionalBias", label: "Directional bias", help: "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", min: 0, max: 1, step: 0.05 },
+  { key: "edgeStrength", setting: "edgeStrength", label: "Edge strength", help: "How strongly the border follows the edge style. 0 = off.", min: 0, max: 1, step: 0.05 },
+];
+
+/** A learned or shipped generator's tuning sliders, starting on its own values. */
+export function wfcTuning(model: Pick<HexWfcModel, "settings">): TuningDef[] {
+  const s = { ...WFC_DEFAULT_SETTINGS, ...(model.settings ?? {}) };
+  return WFC_TUNING.map(({ setting, ...t }) => ({ ...t, default: s[setting] }));
+}
+
+/** The model with any tuning set in `options` applied to its settings (the model itself when none is). */
+export function withWfcTuning<M extends Pick<HexWfcModel, "settings">>(model: M, options: Readonly<Record<string, string>> | undefined): M {
+  const over: Record<string, number> = {};
+  for (const t of WFC_TUNING) {
+    const raw = options?.[tuneKey(t.key)];
+    if (raw === undefined || raw.trim() === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n)) over[t.setting] = n;
+  }
+  return Object.keys(over).length ? { ...model, settings: { ...(model.settings ?? {}), ...over } } : model;
 }
 
 /**
@@ -263,15 +304,17 @@ export function builtinKind(
     mapKind: "world",
     continuesNeighbours: true,
     options: [],
+    tuning: wfcTuning(model),
     fits: (terrains) => fitBuiltinModel(model, terrains) !== undefined,
     generate: (req) => {
       const fit = fitBuiltinModel(model, req.terrains);
       if (!fit) return { ok: false, message: "This palette has too few terrains with a type for this generator." };
       fitted = fit;
       const names = req.terrains.map((t) => t.name);
+      const tunedFit = withWfcTuning(fit, req.options);
       const res = req.region
-        ? generateConnected(plugin, fit, names, req.region, req.seed)
-        : generateTerrain(plugin, fit, names, req.grid, req.seed);
+        ? generateConnected(plugin, tunedFit, names, req.region, req.seed)
+        : generateTerrain(plugin, tunedFit, names, req.grid, req.seed);
       if (!res.ok) return { ok: false, message: res.message };
       return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
     },

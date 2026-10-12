@@ -12,7 +12,7 @@ import { BUNDLED_PLACE_ICONS, PLACE_KINDS } from "./placeIcons";
 
 export const worldModule: HexmakerModule = {
   id: "world",
-  slice: "F",
+  slice: "foundation",
   kind: {
     id: "world",
     label: "World / fantasy overland",
@@ -33,5 +33,15 @@ export const worldModule: HexmakerModule = {
   },
   palettes: WORLD_PRESETS,
   tables: WORLD_TABLES,
+  mapScales: [{
+    id: "overland",
+    label: "Overland",
+    description: "A region of land and sea: forests, hills, coasts, towns.",
+    kind: "world",
+    size: { cols: 20, rows: 16 },
+    palette: "Expanded",
+    generators: ["procedural:overland"],
+    otherGenerators: true,
+  }],
   owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
 };

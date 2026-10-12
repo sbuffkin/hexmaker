@@ -35,7 +35,7 @@ import { neighbourRegions, type RegionLayout } from "../src/overworld/layout";
 import { paletteTypeOf, planRegion } from "../src/overworld/regionWorld";
 import type { BiomeProfile } from "../src/overworld/biomes";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
-import { biomePagePatch, setTuningValue } from "../src/worldgen/BiomePanel";
+import { biomePagePatch, setTuningValue } from "../src/overworld/BiomePanel";
 
 const parity = JSON.parse(readFileSync(PARITY_FILE, "utf8")) as Record<string, Record<string, string>>;
 

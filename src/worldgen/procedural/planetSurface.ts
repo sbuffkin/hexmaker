@@ -16,6 +16,9 @@ import {
   type ProcGrid,
   type ProcOption,
   type ProcResult,
+  type TuningDef,
+  clampQ,
+  tuned,
 } from "./common";
 
 /**
@@ -196,6 +199,27 @@ const SEA_TILT = 0.6;
  * land's relief keeps the gentler SEA_TILT.
  */
 const SEA_MASK_TILT = 1.6;
+
+/** Tuning sliders shared by Planet surface and Overland (setup wizard Advanced). */
+const SURFACE_TUNING: TuningDef[] = [
+  { key: "features", label: "Feature size", help: "How many land and sea shapes fit across the map. Lower makes bigger continents.", min: 1, max: 8, step: 0.2, default: 3.2 },
+  { key: "hills", label: "More hills", help: "Percent of the land moved into (or out of) the hills.", min: -30, max: 30, step: 5, default: 0 },
+  { key: "mountains", label: "More mountains", help: "Percent of the land moved into (or out of) the mountains.", min: -30, max: 30, step: 5, default: 0 },
+  { key: "peaks", label: "More peaks", help: "Percent of the land moved into (or out of) the highest peaks.", min: -20, max: 20, step: 2, default: 0 },
+  { key: "deep", label: "More deep water", help: "Percent of the sea that is deep water instead of open sea or shallows.", min: -30, max: 30, step: 5, default: 0 },
+  { key: "warmth", label: "Warmth", help: "Warmer or colder than the climate picked: more desert and jungle, or more snow.", min: -0.5, max: 0.5, step: 0.05, default: 0 },
+  { key: "wetness", label: "Wetness", help: "Wetter or drier than the climate picked: more forest and swamp, or more plains and desert.", min: -0.5, max: 0.5, step: 0.05, default: 0 },
+];
+
+/** Planet surface's tuning sliders. */
+export const PLANET_SURFACE_TUNING: readonly TuningDef[] = SURFACE_TUNING;
+
+/** Overland's: the same, plus how the land rises from its sea side. */
+export const OVERLAND_TUNING: readonly TuningDef[] = [
+  ...SURFACE_TUNING,
+  { key: "inland", label: "Inland rise", help: "How much the land climbs away from the sea side. 0 = high ground anywhere.", min: 0, max: 2, step: 0.1, default: SEA_TILT },
+  { key: "coastHug", label: "Sea keeps to its side", help: "Higher keeps the sea along its side; lower lets bays and inlets reach in.", min: 0.4, max: 3, step: 0.1, default: SEA_MASK_TILT },
+];
 
 /** Largest inland lake kept on an Overland map with a sea side (hexes, at least 3). */
 export function maxLakeSize(hexCount: number): number {
@@ -560,7 +584,7 @@ export function planetSurface(
   const xs = centers.map((c) => c[0]), ys = centers.map((c) => c[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
   const span = Math.max(maxX - minX, maxY - minY, 1);
-  const scale = 3.2 / span;
+  const scale = tuned(options, "features", 3.2) / span;
   const ox = rand() * 100, oy = rand() * 100;
   const noiseE = centers.map(([px, py]) => elevNoise(ox + px * scale, oy + py * scale));
   const noiseM = centers.map(([px, py]) => moistNoise(oy + px * scale * 1.3, ox + py * scale * 1.3));
@@ -585,13 +609,15 @@ export function planetSurface(
     const spanX = Math.max(maxX - minX, 1e-6), spanY = Math.max(maxY - minY, 1e-6);
     const inlandAt = (i: number) => inland(sea, (xs[i] - minX) / spanX, (ys[i] - minY) / spanY) - 0.5;
     const sided = sea !== "scattered" && sea !== "none";
-    elev = sided ? noiseE.map((n, i) => n + SEA_TILT * inlandAt(i)) : noiseE;
+    const seaTilt = tuned(options, "inland", SEA_TILT);
+    elev = sided ? noiseE.map((n, i) => n + seaTilt * inlandAt(i)) : noiseE;
     let seaLevel: number;
     if (sided && water > 0) {
       // The sea hugs its side: one body touching that edge (plus small
       // lakes), from a steeper-tilted field so the coast is ragged but
       // the sea doesn't streak across the map (sideSeaMask).
-      let field = noiseE.map((n, i) => n + SEA_MASK_TILT * inlandAt(i));
+      const maskTilt = tuned(options, "coastHug", SEA_MASK_TILT);
+      let field = noiseE.map((n, i) => n + maskTilt * inlandAt(i));
       if (pulls) {
         // Water across the seam stays water; land across it keeps the sea off.
         const lo = Math.min(...field) - 0.01, hi = Math.max(...field) + 0.01;
@@ -622,20 +648,25 @@ export function planetSurface(
     const lowLevel = Number.isFinite(seaLevel) ? seaLevel : quantile(elev, 0.1);
     const landElev = elev.filter((e, i) => !wetAt(e, i));
     const seaElev = elev.filter((e, i) => wetAt(e, i));
+    // Tuning (setup wizard Advanced) moves each line by a share of the land or sea.
+    const more = (key: string, q: number, sign: 1 | -1) => {
+      const by = tuned(options, key, 0);
+      return by ? clampQ(q + (sign * by) / 100) : q;
+    };
     lv = {
       sea: seaLevel,
-      hill: quantile(landElev.length ? landElev : [1], relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7),
-      mountain: quantile(landElev.length ? landElev : [1], mountainQuantile(relief, flavor)),
-      peak: quantile(landElev.length ? landElev : [1], relief === "rugged" ? 0.92 : 0.97),
+      hill: quantile(landElev.length ? landElev : [1], more("hills", relief === "flat" ? 0.88 : relief === "rugged" ? 0.5 : 0.7, -1)),
+      mountain: quantile(landElev.length ? landElev : [1], more("mountains", mountainQuantile(relief, flavor), -1)),
+      peak: quantile(landElev.length ? landElev : [1], more("peaks", relief === "rugged" ? 0.92 : 0.97, -1)),
       // Overland: only the far offshore water is deep (no trench band along the edge).
-      deep: quantile(seaElev.length ? seaElev : [0], overland ? 0.12 : 0.35),
+      deep: quantile(seaElev.length ? seaElev : [0], more("deep", overland ? 0.12 : 0.35, 1)),
       shelf: quantile(seaElev.length ? seaElev : [0], 0.8),
       low: lowLevel,
     };
     const climateShift: Record<string, number> = { temperate: 0, lush: 0.12, arid: 0.15, frozen: -0.55, volcanic: 0.3 };
     const moistShift: Record<string, number> = { temperate: 0, lush: 0.25, arid: -0.35, frozen: -0.1, volcanic: -0.2 };
-    const tShift = climateShift[climate] ?? 0;
-    const mShift = moistShift[climate] ?? 0;
+    const tShift = (climateShift[climate] ?? 0) + tuned(options, "warmth", 0);
+    const mShift = (moistShift[climate] ?? 0) + tuned(options, "wetness", 0);
     let moistBase = noiseM.map((m) => m + mShift);
     if (pulls) {
       // Pull elevation (in this map's own levels) and moisture toward the

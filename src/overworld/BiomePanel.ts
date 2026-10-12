@@ -30,18 +30,18 @@ import {
   type BiomeBlend,
   type BiomeNoteFields,
   type TuningParam,
-} from "../overworld/biomeNote";
-import { formTypes } from "../overworld/biomeForm";
-import { OPEN_SEA, profileFromFields, type BiomeId } from "../overworld/biomes";
-import { profilesForPalette } from "../overworld/regionsVault";
-import { paletteTypeOf, planRegion } from "../overworld/regionWorld";
-import { neighbourRegions, regionBox, type RegionLayout } from "../overworld/layout";
-import { drawPreview } from "./preview";
+} from "./biomeNote";
+import { formTypes } from "./biomeForm";
+import { OPEN_SEA, profileFromFields, type BiomeId } from "./biomes";
+import { profilesForPalette } from "./regionsVault";
+import { paletteTypeOf, planRegion } from "./regionWorld";
+import { neighbourRegions, regionBox, type RegionLayout } from "./layout";
+import { drawPreview } from "../worldgen/preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl } from "../utils";
 import { Disclosure } from "../ui/disclosure";
-import { randomSeed } from "../../packages/hex-wfc/src";
-import { generateBiomeRegion } from "./biomeRegion";
+import { randomSeed } from "../../packages/hex-wfc/src/index";
+import { generateBiomeRegion } from "../worldgen/biomeRegion";
 
 export interface BiomePanelHost {
   rerender(): void;

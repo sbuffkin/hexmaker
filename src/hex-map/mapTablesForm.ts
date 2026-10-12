@@ -2,7 +2,8 @@
  * Map properties: what happens on arrival (GM4) and the generator tables
  * (T11), for the open map and everything under it. One select per line,
  * so a change is two clicks ("easy, modular and as low-click as
- * possible").
+ * possible"). Modules add their own sections after these
+ * (MapPropertiesSection; Space: Convert world types to tables).
  */
 
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -12,7 +13,6 @@ import { contentFolder } from "../notePickers";
 import { ENGINE_ROLES, type RoleId } from "../worldgen/tableRoles";
 import { fittingRoleTables } from "../worldgen/tableSources";
 import { registry } from "../modules";
-import { SPACE_TABLES_FOLDER } from "../space/spaceTables";
 import { ARRIVAL_MODE_TEXT, ARRIVAL_MODE_WORDS, parseArrivalMode, type ArrivalMode } from "../arrival/arrival";
 
 const noteName = (path: string) => path.replace(/\.md$/i, "").replace(/^.*\//, "");
@@ -46,9 +46,9 @@ export function renderArrivalSetting(el: HTMLElement, plugin: HexmakerPlugin, ma
 /**
  * "Generator tables": the table each generator role rolls on for this map
  * and the maps under it. Blank follows the map above, else the role's own
- * default (the World types picked when generating; a shipped table; for
+ * default (its unsetLabel: a module's setup choice or shipped table; for
  * Names, the hex's terrain and coordinates). Names shows on every map; a
- * module's roles on maps of its type (Space), or wherever one is set.
+ * module's roles on maps of its type, or wherever one is set.
  */
 export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void {
   const own = map.roleTables ?? {};
@@ -58,6 +58,8 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
   // A module role shows on its type's maps, or when it's set here or above.
   const moduleRoles = new Set(registry.tableRoles().map((r) => r.id));
   const kindOfRole = new Map(registry.modules.flatMap((m) => (m.tableRoles ?? []).map((r) => [r.id, m.kind?.id] as const)));
+  // A module role's tables are listed from its module's folder first ("{tables}/space/…"), with their set's name.
+  const folderOfRole = new Map(registry.modules.flatMap((m) => (m.tableRoles ?? []).map((r) => [r.id, m.tablesFolder ?? ""] as const)));
   const roles = ENGINE_ROLES.filter((r) => !moduleRoles.has(r.id) || inherited[r.id] || moduleKinds.has(kindOfRole.get(r.id) ?? ""));
   if (!roles.length) return;
 
@@ -83,16 +85,17 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
     const above = map.parent ? plugin.roleTablesFor(map.parent.map)[role.id] : undefined;
     select.createEl("option", {
       value: "",
-      text: above ? `${noteName(above.link)} (from ${plugin.mapLabel(above.from)})` : (role.unsetLabel ?? "World types (as picked)"),
+      text: above ? `${noteName(above.link)} (from ${plugin.mapLabel(above.from)})` : (role.unsetLabel ?? "Default"),
     });
-    const choices = fittingRoleTables(all, role.id, `${tablesFolder}/${SPACE_TABLES_FOLDER}`);
+    const roleFolder = folderOfRole.get(role.id) ?? "";
+    const choices = fittingRoleTables(all, role.id, roleFolder ? `${tablesFolder}/${roleFolder}` : "");
     const current = own[role.id];
     if (current && !choices.includes(withMd(current))) choices.unshift(withMd(current));
     for (const p of choices) {
       // Name plus its set ("Unexplored sector · Default space").
       const rel = p.startsWith(`${tablesFolder}/`) ? p.slice(tablesFolder.length + 1) : p;
       const parts = rel.replace(/\.md$/i, "").split("/");
-      const set = parts[0] === SPACE_TABLES_FOLDER && parts.length > 2 ? ` · ${parts[1]}` : "";
+      const set = roleFolder && parts[0] === roleFolder && parts.length > 2 ? ` · ${parts[1]}` : "";
       select.createEl("option", { value: p, text: `${noteName(p)}${set}` });
     }
     select.createEl("option", { value: "__other", text: "Other table…" });
@@ -102,9 +105,5 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
       select.value = current ? withMd(current) : "";
       new FileLinkSuggestModal(plugin.app, plugin, (file) => save(role.id, file.path), tablesFolder, ["md"]).open();
     });
-  }
-  if (roles.some((r) => moduleRoles.has(r.id)) && plugin.worldTypeStore.list().some((t) => !plugin.worldTypeStore.isConverted(t.name))) {
-    const btn = el.createEl("button", { text: "Convert world types to tables…", attr: { title: "Write each world types table as random tables under the tables folder (backed up first; the old notes are kept)" } });
-    btn.addEventListener("click", () => void plugin.runModuleCommand("convert-world-types").then(rerender));
   }
 }

@@ -10,10 +10,10 @@ import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { regionMapAt } from "../maps/submaps";
-import { biomeInfo, biomeNoteOf } from "../overworld/biomes";
-import { drawMiniOverworld, miniHexAt, miniLayout, type MiniHex } from "../overworld/overworldRender";
-import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
-import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "../overworld/regionsVault";
+import { biomeInfo, biomeNoteOf } from "./biomes";
+import { drawMiniOverworld, miniHexAt, miniLayout, type MiniHex } from "./overworldRender";
+import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
+import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "./regionsVault";
 import { OverworldLayer } from "./overworldLayer";
 import { BiomeLibraryModal } from "./BiomeLibraryModal";
 

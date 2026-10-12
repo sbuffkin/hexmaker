@@ -35,8 +35,9 @@ import { childNeighbours, childPoint, regionCells, regionCentreCell, regionCentr
 
 /** Overworld Paths column: "yes" once a path is confirmed into its regions. */
 export const APPLIED_COL = "Applied";
-/** Region Paths column: the overworld path a projected path came from. */
-export const OWNER_COL = "Overworld path";
+import { OWNER_COL, extraCell, ownerOf, withExtraCell } from "../paths/pathColumns";
+/** Region Paths column and the column helpers (the core's, src/paths/pathColumns.ts). */
+export { OWNER_COL, extraCell, ownerOf, withExtraCell };
 
 const xy = (k: HexKey): [number, number] => {
   const [x, y] = k.split("_").map(Number);
@@ -46,26 +47,6 @@ const key = (x: number, y: number): HexKey => `${x}_${y}`;
 
 // ── the two columns ──────────────────────────────────────────────────────
 
-/** An extra column's value, by header ignoring case and spacing. */
-export function extraCell(extra: Record<string, string> | undefined, header: string): string | undefined {
-  if (!extra) return undefined;
-  const want = header.toLowerCase().replace(/\s+/g, "");
-  for (const [h, v] of Object.entries(extra)) if (h.toLowerCase().replace(/\s+/g, "") === want) return v;
-  return undefined;
-}
-
-/** `extra` with one column set (or removed, for undefined), keeping the header as the note spells it. */
-export function withExtraCell(extra: Record<string, string> | undefined, header: string, value: string | undefined): Record<string, string> | undefined {
-  const out: Record<string, string> = {};
-  let spelled = header;
-  const want = header.toLowerCase().replace(/\s+/g, "");
-  for (const [h, v] of Object.entries(extra ?? {})) {
-    if (h.toLowerCase().replace(/\s+/g, "") === want) spelled = h;
-    else out[h] = v;
-  }
-  if (value) out[spelled] = value;
-  return Object.keys(out).length ? out : undefined;
-}
 
 const APPLIED_WORDS = ["yes", "y", "true", "x", "done", "applied", "confirmed", "✓", "✔"];
 
@@ -84,10 +65,6 @@ export function withApplied<P extends MapPath>(p: P, on: boolean): P {
   return out;
 }
 
-/** The overworld path a region path was projected from, if any. */
-export function ownerOf(p: Pick<MapPath, "extra">): string | undefined {
-  return extraCell(p.extra, OWNER_COL)?.trim() || undefined;
-}
 
 /** Geometry and type of a path (what a projection depends on). */
 function shapeKey(p: MapPath): string {

@@ -14,9 +14,9 @@ import {
 	seaSideFromNeighbours,
 	OVERLAND_ID,
 } from "../src/worldgen/procedural/planetSurface";
-import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
+import { STAR_SCATTER_ID } from "../src/space/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey, kindOptions, listGeneratorKinds, optionsWithDefaults } from "../src/worldgen/registry";
-import { ORBITS_ID } from "../src/worldgen/procedural/orbits";
+import { ORBITS_ID } from "../src/space/orbits";
 import { NO_PATHS, ORBIT_TYPE_KEY, PRESET_PATH_TYPE, ROUTE_TYPE_KEY, chosenPathType, defaultPathTypeFor } from "../src/worldgen/generatorPathTypes";
 import { generatedToMapPaths, routedBranches } from "../src/paths/fromGenerated";
 import { mapRouteContext, pathTypeStyleFor } from "../src/paths/mapContext";

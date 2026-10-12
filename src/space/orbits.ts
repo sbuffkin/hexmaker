@@ -1,6 +1,6 @@
-import { hexCenter, mulberry32 } from "../../../packages/hex-wfc/src";
-import type { TerrainColor } from "../../types";
-import { effectiveTerrainType, normalizeTerrainType } from "../../terrainTypes";
+import { hexCenter, mulberry32 } from "../../packages/hex-wfc/src";
+import type { TerrainColor } from "../types";
+import { effectiveTerrainType, normalizeTerrainType } from "../terrainTypes";
 import {
   cellKey,
   centerHex,
@@ -12,9 +12,11 @@ import {
   type ProcOption,
   type ProcPath,
   type ProcResult,
-} from "./common";
-import { ZONE_ROLES, readCount, roleOdds, roleValueOdds, rollRole, rollRoleEach, rollRoleValue, type TableSource } from "../tableRoles";
-import { ORBIT_ZONES, orbitZone } from "../../space/worldTypes";
+  type TuningDef,
+  tuned,
+} from "../worldgen/procedural/common";
+import { ZONE_ROLES, readCount, roleOdds, roleValueOdds, rollRole, rollRoleEach, rollRoleValue, type TableSource } from "../worldgen/tableRoles";
+import { ORBIT_ZONES, orbitZone } from "./worldTypes";
 
 /**
  * Star-system "orbits": a star at the centre, then one body per orbit ring
@@ -64,6 +66,19 @@ export const ORBITS_OPTIONS: ProcOption[] = [
     ],
     default: "normal",
   },
+];
+
+/**
+ * Orbits' tuning sliders (setup wizard Advanced): the ring layout. Moons
+ * and system extras roll on their tables (Moons, System extras), so their
+ * odds are edited there, not here.
+ */
+export const ORBITS_TUNING: readonly TuningDef[] = [
+  { key: "firstOrbit", label: "First orbit", help: "Rings out from the star where the first planet may orbit.", min: 1, max: 4, step: 1, default: 2 },
+  { key: "outerRoom", label: "Room past the orbits", help: "Rings left empty at the edge for the jump point and other outer extras.", min: 0, max: 4, step: 1, default: 0 },
+  { key: "emptyOrbits", label: "More empty orbits", help: "Percentage points added to (or taken from) the chance a ring has no planet.", min: -40, max: 40, step: 5, default: 0 },
+  { key: "beltLength", label: "Belt length", help: "The shortest share of its ring an asteroid belt fills.", min: 0, max: 0.6, step: 0.05, default: 0.3 },
+  { key: "beltSpread", label: "Belt variety", help: "How much longer than the shortest a belt may be, as a share of its ring.", min: 0, max: 0.6, step: 0.05, default: 0.4 },
 ];
 
 /**
@@ -181,9 +196,11 @@ export function orbits(
   if (roles.jumpLimit && fullRing >= 3) for (const h of ring(1)) set(h, roles.jumpLimit);
 
   // Orbits from ring 2 out to the last full ring.
-  const first = 2;
-  const last = Math.max(first, fullRing);
-  const skip = options.bodies === "few" ? 0.45 : options.bodies === "crowded" ? 0.05 : 0.2;
+  const first = Math.max(1, Math.round(tuned(options, "firstOrbit", 2)));
+  const last = Math.max(first, fullRing - Math.max(0, Math.round(tuned(options, "outerRoom", 0))));
+  const baseSkip = options.bodies === "few" ? 0.45 : options.bodies === "crowded" ? 0.05 : 0.2;
+  const moreEmpty = tuned(options, "emptyOrbits", 0);
+  const skip = moreEmpty ? Math.min(1, Math.max(0, baseSkip + moreEmpty / 100)) : baseSkip;
   const warnings: string[] = [];
   // Rows that can't be placed, and roles with no table, are said (never dropped silently).
   const notes = new Set<string>();
@@ -220,7 +237,7 @@ export function orbits(
     if (roles.belts.includes(body)) {
       // Belts sweep an arc of the ring rather than sitting on one hex.
       const start = Math.floor(rand() * hexesOnRing.length);
-      const span = Math.max(2, Math.floor(hexesOnRing.length * (0.3 + rand() * 0.4)));
+      const span = Math.max(2, Math.floor(hexesOnRing.length * (tuned(options, "beltLength", 0.3) + rand() * tuned(options, "beltSpread", 0.4))));
       const sorted = sortAround(hexesOnRing, center, grid);
       for (let i = 0; i < span; i++) {
         const h = sorted[(start + i) % sorted.length];

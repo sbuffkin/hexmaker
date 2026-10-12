@@ -18,6 +18,7 @@ export const SPACE_TABLE_ROLES: EngineRoleDef[] = [
     terrainTypes: ["world", "gas-giant", "asteroids", "station", "starport", "jump-point", "anomaly"],
     help: "What each star system hex of a sector is: its mainworld, or a special hex like a station. A row's Mainworld says which body is that system's mainworld.",
     fallback: "world terrains (no special hexes)",
+    unsetLabel: "World types (as picked)",
   },
   {
     id: "star",
@@ -27,6 +28,7 @@ export const SPACE_TABLE_ROLES: EngineRoleDef[] = [
     terrainTypes: ["star"],
     help: "The star at the centre of a system, when the Star option is Random.",
     fallback: "star terrains",
+    unsetLabel: "World types (as picked)",
   },
   {
     id: "inner-orbits",
@@ -36,6 +38,7 @@ export const SPACE_TABLE_ROLES: EngineRoleDef[] = [
     terrainTypes: ["world", "gas-giant", "asteroids"],
     help: "The body on each orbit in the inner zone (the first 30% of the rings).",
     fallback: "planet terrains",
+    unsetLabel: "World types (as picked)",
   },
   {
     id: "habitable-orbits",
@@ -45,6 +48,7 @@ export const SPACE_TABLE_ROLES: EngineRoleDef[] = [
     terrainTypes: ["world", "gas-giant", "asteroids"],
     help: "The body on each orbit in the habitable zone (30–60% of the rings).",
     fallback: "planet terrains",
+    unsetLabel: "World types (as picked)",
   },
   {
     id: "outer-orbits",
@@ -54,6 +58,7 @@ export const SPACE_TABLE_ROLES: EngineRoleDef[] = [
     terrainTypes: ["world", "gas-giant", "asteroids"],
     help: "The body on each orbit in the outer zone (the rest of the rings).",
     fallback: "planet terrains",
+    unsetLabel: "World types (as picked)",
   },
   {
     id: "moons",

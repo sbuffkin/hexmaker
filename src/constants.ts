@@ -312,7 +312,7 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
     icon: "bw-dunes.png",
     category: "coast",
   },
-  // Added after release (OW8): the World biomes generator paints savanna and
+  // Added after release (OW8): the overworld biome generator paints savanna and
   // river delta overworld hexes with these. Existing Expanded palettes get
   // them once (src/palettes/presetUpdates.ts, ADDED_PRESET_TERRAINS).
   { name: "savanna", type: "grassland", color: "#c4b25c", icon: "bw-grassland.png", category: "lowlands" },
@@ -340,11 +340,6 @@ export const DEFAULT_PATH_TYPES: PathType[] = [
   { name: "River", color: "#3b82f6", width: 3, lineStyle: "solid", routing: "meander", avoidImpassable: false, autoRoute: "winding", carves: "water" },
 ];
 
-/** Fields added to the shipped path types after palettes copied them:
- *  set once where the palette never set them (src/palettes/presetUpdates.ts). */
-export const ADDED_PRESET_PATH_FIELDS: { pathType: string; field: "carves" | "carveWidth" }[] = [
-  { pathType: "River", field: "carves" },
-];
 
 /** How a path is drawn when its type isn't in the map's palette (renamed or
  *  deleted there): plain grey, so it stays visible and can be fixed. */
@@ -406,9 +401,9 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   setupComplete: false,
   setupDismissed: false,
   palettesFolder: "",
-  biomesFolder: "",
-  biomePoolsFolder: "",
-  worldTypesFolder: "",
+  // Modules' own settings (a module's folder) have no default here:
+  // they're written only once set, so a build without the module never
+  // writes them (plan-code-modules rule 4). Readers use `?? ""`.
   palettesMigrated: false,
   // Space is opt-in (setup wizard / settings → Map types). Upgrades without
   // the setting get space too if they already have space palettes

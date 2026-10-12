@@ -21,8 +21,8 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { hexCenter } from "../../packages/hex-wfc/src/grid";
 import { regionsOf } from "../maps/submaps";
-import { biomeInfo } from "../overworld/biomes";
-import { parentOf, regionCells, type RegionLayout } from "../overworld/layout";
+import { biomeInfo } from "./biomes";
+import { parentOf, regionCells, type RegionLayout } from "./layout";
 import {
   affineScale,
   applyAffine,
@@ -38,10 +38,10 @@ import {
   RegionBitmapCache,
   type Affine,
   type RegionCell,
-} from "../overworld/overworldRender";
-import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "../overworld/regionWorld";
-import { overworldOf, overworldTerrain, placedBiomes } from "../overworld/regionsVault";
-import { FrameThrottle } from "../overworld/overworldInput";
+} from "./overworldRender";
+import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
+import { overworldOf, overworldTerrain, placedBiomes } from "./regionsVault";
+import { FrameThrottle } from "./overworldInput";
 
 interface Geometry {
   map: string;

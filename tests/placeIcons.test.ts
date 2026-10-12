@@ -4,14 +4,16 @@ import fs from "node:fs";
 import path from "node:path";
 import {
 	ICON_PACK_LABELS,
-	PLACE_ICON_KINDS,
 	defaultIconPack,
 	iconLabel,
 	iconPack,
 	iconPackTabs,
-	placeIconKind,
+	iconSubgroup,
+	iconSubgroups,
 	sortIcons,
 } from "../src/utils";
+
+const PLACE_ICON_KINDS = iconSubgroups("places");
 import { BUNDLED_ICONS } from "../src/bundledIcons";
 import { BUNDLED_PLACE_ICONS } from "../src/modules/world/placeIcons";
 import { isIconHiddenByKind } from "../src/mapKinds";
@@ -27,7 +29,7 @@ describe("Places icon pack (N2b)", () => {
 		const kinds = new Set(PLACE_ICON_KINDS.map(([id]) => id));
 		for (const f of placeFiles) {
 			expect(BUNDLED_ICONS.has(f)).toBe(true);
-			expect(kinds.has(placeIconKind(f) ?? "")).toBe(true);
+			expect(kinds.has(iconSubgroup(f) ?? "")).toBe(true);
 		}
 		// Every sub-group has icons in it.
 		for (const [id] of PLACE_ICON_KINDS) {
@@ -71,8 +73,15 @@ describe("Places icon pack (N2b)", () => {
 
 	it("labels drop the place- prefix", () => {
 		expect(iconLabel("place-castle-ruins.svg")).toBe("castle ruins");
-		expect(placeIconKind("place-castle-ruins.svg")).toBe("ruin");
-		expect(placeIconKind("space-sun.svg")).toBeUndefined();
+		expect(iconSubgroup("place-castle-ruins.svg")).toBe("ruin");
+		expect(iconSubgroup("space-sun.svg")).toBeUndefined();
+	});
+
+	it("sub-groups come from the pack, not its name (P5): only packs that declare them have chips", () => {
+		expect(iconSubgroups("places").length).toBeGreaterThan(0);
+		for (const pack of ["all", "terrain", "space", "custom"]) expect(iconSubgroups(pack)).toEqual([]);
+		const modal = fs.readFileSync(path.join(root, "src", "HexmakerModal.ts"), "utf8");
+		expect(modal).not.toMatch(/"places"/);
 	});
 
 	it("belongs to World maps: hidden in a space-only setup, shown otherwise", () => {

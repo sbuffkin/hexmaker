@@ -126,11 +126,12 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
 
   // ── Setup wizard ──
   "Wizard.configureFoldersIndividually": "advanced",
-  "Wizard.genOptWater": "advanced",
-  "Wizard.genOptClimate": "advanced",
-  "Wizard.genOptRelief": "advanced",
-  "Wizard.genOptSea": "advanced",
-  "Wizard.genOptOther": "advanced",
+  // Owner override 2026-10-12 (replaces the worksheet's "advanced" for
+  // Wizard.genOptWater / Climate / Relief / Sea / Other): "the current
+  // 'advanced' options in hex map setup are actually the standard ones and
+  // should be above the fold". The generator's options are main; the
+  // step's Advanced holds a trimmed set of engine tuning sliders instead.
+  "Wizard.tuning": "advanced",
 
   // ── Commands & menus ──
   "Plugin.cmd.addRollRanges": "debug",

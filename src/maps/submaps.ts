@@ -282,3 +282,8 @@ export function parentHexTerrain(host: ParentHexHost, mapName: string): { terrai
 export function newMapItemTitle(h: Pick<HexData, "regionMap" | "locations"> | undefined): string {
   return hexChildMaps(h).length ? "Add another map…" : "New map from this hex…";
 }
+
+/** Region footprints placed in the shared grid today (hex flowers: phase 2b). */
+export function meshes(s: Pick<RegionSettings, "footprint"> | undefined): boolean {
+  return s?.footprint === "rect";
+}

@@ -9,9 +9,9 @@
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "../types";
 import type { ProcOption } from "../../worldgen/procedural/common";
-import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, starScatter, starScatterOffered } from "../../worldgen/procedural/starScatter";
-import { ORBITS_ID, ORBITS_OPTIONS, orbits, orbitsFits, orbitsOptions } from "../../worldgen/procedural/orbits";
-import { PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, planetSurface, planetSurfaceFits } from "../../worldgen/procedural/planetSurface";
+import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS, STAR_SCATTER_TUNING, starScatter, starScatterOffered } from "../../space/starScatter";
+import { ORBITS_ID, ORBITS_OPTIONS, ORBITS_TUNING, orbits, orbitsFits, orbitsOptions } from "../../space/orbits";
+import { PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, PLANET_SURFACE_TUNING, planetSurface, planetSurfaceFits } from "../../worldgen/procedural/planetSurface";
 import {
   NO_PATHS,
   ORBIT_TYPE_KEY,
@@ -28,6 +28,8 @@ import { WorldTypesModal } from "../../space/WorldTypesModal";
 import { WorldTypeStore } from "../../space/WorldTypeStore";
 import { linkWorldTypePalettes, WORLD_TYPES_MARKER } from "../../space/worldTypes";
 import { contentFolder } from "../../notePickers";
+import { MOON_TETHER_OVERLAY } from "../../space/moonLinks";
+import { ROLE_TABLES_SECTION } from "../../space/roleTablesSection";
 import { normalizeFolder } from "../../utils";
 
 /** The World types option with the vault's tables (Star scatter and Orbits roll on the chosen one, SP1). */
@@ -51,6 +53,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Sector chart: each hex rolls for a star system, typed by its main world; nebulae and jump routes.",
       source: "built-in",
       options: [...STAR_SCATTER_OPTIONS, worldTypesOption([]), staticPathTypeOption(ROUTE_TYPE_KEY, "routes")],
+      tuning: STAR_SCATTER_TUNING,
       optionsFor: (_terrains, pathTypes) => [...STAR_SCATTER_OPTIONS, worldTypesChoice(plugin), pathTypeOption(ROUTE_TYPE_KEY, "routes", pathTypes)],
       fits: starScatterOffered,
       generate: (req) => {
@@ -73,6 +76,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Star system: a star at the centre, planets on rings by zone, belts, moons, starport and jump point.",
       source: "built-in",
       options: [...ORBITS_OPTIONS, worldTypesOption([]), staticPathTypeOption(ORBIT_TYPE_KEY, "orbits")],
+      tuning: ORBITS_TUNING,
       optionsFor: (terrains, pathTypes) => [...orbitsOptions(terrains), worldTypesChoice(plugin), pathTypeOption(ORBIT_TYPE_KEY, "orbits", pathTypes)],
       fits: orbitsFits,
       generate: (req) => {
@@ -99,6 +103,7 @@ function generators(plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelp
       description: "Region map from noise: seas, coasts, plains, forests, hills, mountains, deserts, ice. Set water % and climate.",
       source: "built-in",
       options: PLANET_SURFACE_OPTIONS,
+      tuning: PLANET_SURFACE_TUNING,
       fits: planetSurfaceFits,
       generate: (req) => {
         const r = planetSurface(req.terrains, procGrid(req.grid), req.seed, req.options);
@@ -162,5 +167,31 @@ export const spaceRuntime: ModuleRuntime = {
   onEnabled: async (plugin) => {
     await plugin.worldTypeStore.ensureDefault();
     await plugin.installShippedTables(["space"]);
+  },
+  // Moons tied to their planet (S11).
+  overlays: [MOON_TETHER_OVERLAY],
+  // Map properties → Generator tables (T11).
+  mapProperties: [ROLE_TABLES_SECTION],
+  // The worlds Star scatter and Orbits place come from a World types table
+  // (the World types option picks it; this edits it).
+  newMapSetup: [{
+    forGenerators: [STAR_SCATTER_ID, ORBITS_ID],
+    optionKey: WORLD_TYPES_KEY,
+    label: "World types",
+    render: (row, { plugin, generatorId, originMap }) => {
+      const btn = row.createEl("button", { text: "Edit world types…" });
+      btn.addEventListener("click", () => {
+        new WorldTypesModal(plugin.app, plugin, originMap, undefined, generatorId === ORBITS_ID ? "system" : "sector").open();
+      });
+    },
+  }],
+  newMapOptionIds: {
+    [PLANET_SURFACE_ID]: { water: "NewMap.planetWater", climate: "NewMap.planetClimate", relief: "NewMap.planetRelief" },
+    [STAR_SCATTER_ID]: { density: "NewMap.starDensity", clouds: "NewMap.starNebulae", routes: "NewMap.starJumpRoutes", [ROUTE_TYPE_KEY]: "NewMap.starRouteType" },
+    [ORBITS_ID]: { star: "NewMap.orbitsStar", bodies: "NewMap.orbitsPlanets", [ORBIT_TYPE_KEY]: "NewMap.orbitsPathType" },
+  },
+  // A place made on arrival rolls on the World types tables (and the map's own Tables).
+  arrival: {
+    tableSourceFor: (plugin, terrains, mapName) => plugin.worldTypeStore.sourceFor(undefined, terrains, mapName).source,
   },
 };

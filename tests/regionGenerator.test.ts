@@ -8,7 +8,7 @@
  */
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
-import { biomeAncestors, inheritedBiome, makeRegionGenerator, mixFromTerrain, rankOverwriteTargets, relatedBiomes, terrainWeightsFromTerrain, type RankedGenerator } from "../src/worldgen/regionGenerator";
+import { biomeAncestors, inheritedBiome, makeRegionGenerator, mixFromTerrain, rankOverwriteTargets, relatedBiomes, terrainWeightsFromTerrain, type RankedGenerator } from "../src/overworld/regionGenerator";
 import { buildBiomeNote, parseBiomeNote, updateBiomeNote, type BiomeNoteFields } from "../src/overworld/biomeNote";
 import { profileFromFields, profileFromMix, setBiomeSource, withinTypeWeights } from "../src/overworld/biomes";
 import { setHexDataSource } from "../src/frontmatter";

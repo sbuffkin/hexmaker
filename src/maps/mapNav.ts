@@ -13,7 +13,7 @@
  */
 
 import { hexCenter, hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
-import { bearingWord } from "../overworld/regionWorld";
+import { bearingWord } from "./compass";
 
 export type NavArrowId = "back" | "up" | "forward";
 

@@ -9,7 +9,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import { SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
-import { extraWhere, orbitRoles, orbits, terrainOrType } from "../src/worldgen/procedural/orbits";
+import { extraWhere, orbitRoles, orbits, terrainOrType } from "../src/space/orbits";
 import { distance, type ProcGrid } from "../src/worldgen/procedural/common";
 import { readCount, roleTable, roleValueOdds, rollRoleEach, type TableSource } from "../src/worldgen/tableRoles";
 import { notesTableSource } from "../src/worldgen/tableSources";
@@ -52,7 +52,7 @@ describe("Moons: the shipped table gives the old odds", () => {
 	});
 
 	it("the code holds no moon or extras odds any more", () => {
-		const code = readFileSync("src/worldgen/procedural/orbits.ts", "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+		const code = readFileSync("src/space/orbits.ts", "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
 		expect(code).not.toMatch(/rand\(\) < 0\.|rand\(\) < \(giant/);
 		expect(code).not.toMatch(/roles\.(starport|station|comet|jumpPoint)\b/);
 	});

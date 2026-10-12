@@ -14,19 +14,19 @@ import { App, Notice, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexDistance } from "../../packages/hex-wfc/src/grid";
-import { biomeInfo, biomeNoteOf } from "../overworld/biomes";
-import { drawMiniOverworld, miniLayout, type MiniHex } from "../overworld/overworldRender";
-import { formatBiomeRiver, withMeshFields } from "../overworld/regionWorld";
-import { generateMissingRegions } from "../overworld/regionsVault";
-import { parseUnclimated, UNCLIMATED_CHOICES, unclimatedText, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "../overworld/worldBiomes";
-import { pickBlankHexes } from "../overworld/overworldPass";
+import { biomeInfo, biomeNoteOf } from "./biomes";
+import { drawMiniOverworld, miniLayout, type MiniHex } from "./overworldRender";
+import { formatBiomeRiver, withMeshFields } from "./regionWorld";
+import { generateMissingRegions } from "./regionsVault";
+import { parseUnclimated, UNCLIMATED_CHOICES, unclimatedText, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "./worldBiomes";
+import { pickBlankHexes } from "./overworldPass";
 import { RECT_SIDES } from "../maps/submaps";
 import { newWorldId } from "../worldgen/world";
 import { inferredKind } from "../mapKinds";
-import { ecotoneHexes } from "../overworld/regionWorld";
+import { ecotoneHexes } from "./regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd, canReshape } from "../workMode";
-import { addGodOffer } from "./godOffer";
-import { ALL_BIOMES_POOL, type BiomePoolRow } from "../overworld/biomePool";
+import { addGodOffer } from "../hex-map/godOffer";
+import { ALL_BIOMES_POOL, type BiomePoolRow } from "./biomePool";
 import {
   REGENERATE_LOCKED_HINT,
   layOutBiomes,
@@ -39,7 +39,7 @@ import {
   saveBiomePool,
   writeOverworldBiomes,
   type PoolNote,
-} from "../overworld/overworldGen";
+} from "./overworldGen";
 
 export class GenerateRegionsModal extends HexmakerModal {
   private stop = false;

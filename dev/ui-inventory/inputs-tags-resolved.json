@@ -1312,6 +1312,21 @@
   "note": ""
  },
  {
+  "id": "Wizard.mapScale",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "label": "What are you mapping?",
+  "loc": "src/SetupWizardView.ts",
+  "suggestion": "keep",
+  "choice": "keep",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: scale and generator are two choices."
+ },
+ {
   "id": "Wizard.gridCols",
   "group": "Setup wizard",
   "subgroup": "Map",
@@ -1340,6 +1355,21 @@
   "overrides": "",
   "twinOf": "",
   "note": ""
+ },
+ {
+  "id": "Wizard.gridSizeReset",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "label": "Reset grid size",
+  "loc": "src/SetupWizardView.ts",
+  "suggestion": "keep",
+  "choice": "keep",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: grid size easy to reset."
  },
  {
   "id": "Wizard.hexOrientation",
@@ -1460,6 +1490,21 @@
   "overrides": "",
   "twinOf": "",
   "note": ""
+ },
+ {
+  "id": "Wizard.tuning",
+  "group": "Setup wizard",
+  "subgroup": "Map",
+  "label": "Engine tuning sliders",
+  "loc": "src/SetupWizardView.ts",
+  "suggestion": "advanced",
+  "choice": "advanced",
+  "source": "owner",
+  "via": "owner 2026-10-12",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "Owner 2026-10-12: Advanced is a trimmed set of 5-10 tuning sliders."
  },
  {
   "id": "Wizard.reroll",

@@ -5,6 +5,7 @@ import { colorCell, isCssColor, parseColorCell, readColor, wrapColorCellsInRows,
 import { findPathTypesTable, splitRow as splitPathRow } from "./pathTypeTable";
 import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
 import { pathLink, refBasename } from "../noteFormats";
+import { registry } from "../modules";
 
 // Plain-text palette notes.
 //
@@ -397,7 +398,7 @@ export function setSubmapDefaults(content: string, defaults: Record<string, Subm
   return (
     base +
     `\n${SUBMAP_HEADING}\n\n` +
-    "New submaps made from a hex of these terrains start with these choices (generator ids: blank, procedural:star-scatter, procedural:orbits, procedural:planet-surface, wfc:<generator note path>).\n\n" +
+    `New submaps made from a hex of these terrains start with these choices (generator ids: ${["blank", ...registry.submapGeneratorIds(), "wfc:<generator note path>"].join(", ")}).\n\n` +
     serializeSubmapDefaults(defaults!) +
     "\n"
   );

@@ -13,16 +13,25 @@ import type {
   FolderSettingContribution,
   GeneratorContribution,
   GeneratorHelpers,
+  MapOverlayDef,
+  MapPropertiesSection,
+  NewMapSetupExtra,
   ModuleRuntime,
   ModuleStore,
   RefLinker,
 } from "./types";
+import type { TableSource } from "../worldgen/tableRoles";
+import type { WorldMapsApi } from "./world-maps/api";
 import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 
-export const MODULE_RUNTIMES: readonly ModuleRuntime[] = [worldRuntime, worldMapsRuntime, spaceRuntime];
+/** The runtime halves, by the same slice flags as ./index.ts. */
+const compiled: ModuleRuntime[] = [worldRuntime];
+if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
+if (__SLICE_SPACE__) compiled.push(spaceRuntime);
+export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 
 /** Every module's built-in generators, in list order. */
 export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpers): GeneratorContribution[] {
@@ -33,7 +42,11 @@ export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpe
 
 /** Every module's note stores, made once with the plugin (in module order). */
 export function createModuleStores(plugin: HexmakerPlugin): ModuleStore[] {
-  return MODULE_RUNTIMES.flatMap((m) => m.stores?.(plugin) ?? []);
+  return MODULE_RUNTIMES.flatMap((m) => {
+    const made = m.stores?.(plugin) ?? [];
+    for (const s of made) storeOwner.set(s, m.id);
+    return made;
+  });
 }
 
 /** Every module's commands, each with the map type it waits on (onlyWhenOn). */
@@ -60,4 +73,71 @@ export async function runOnEnabled(plugin: HexmakerPlugin, kinds: readonly strin
     const kind = registry.module(m.id)?.kind?.id;
     if (kind && kinds.includes(kind)) await m.onEnabled?.(plugin);
   }
+}
+
+/** Every module's map overlays, in module order (map view and PNG export). */
+export function moduleOverlays(): MapOverlayDef[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.overlays ?? [])]);
+}
+
+/** Every module's Map properties sections, in module order. */
+export function moduleMapProperties(): MapPropertiesSection[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.mapProperties ?? [])]);
+}
+
+/** The New map setup extras for generator `generatorId`, in module order. */
+export function moduleNewMapSetup(generatorId: string): NewMapSetupExtra[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.newMapSetup ?? []).filter((x) => x.forGenerators.includes(generatorId)));
+}
+
+/** The table source for rolls on arrival: the first module that answers. */
+export function moduleArrivalTables(plugin: HexmakerPlugin, terrains: string[], mapName: string): TableSource | undefined {
+  for (const m of MODULE_RUNTIMES) {
+    const source = m.arrival?.tableSourceFor?.(plugin, terrains, mapName);
+    if (source) return source;
+  }
+  return undefined;
+}
+
+/** Every module's New map option inventory ids: generator id → option key → id. */
+export function moduleNewMapOptionIds(): Record<string, Readonly<Record<string, string>>> {
+  return Object.assign({}, ...MODULE_RUNTIMES.map((m) => m.newMapOptionIds ?? {})) as Record<string, Readonly<Record<string, string>>>;
+}
+
+/** World maps' hooks into the map surfaces (undefined in a build without the World maps slice). */
+export function worldMaps(): WorldMapsApi | undefined {
+  for (const m of MODULE_RUNTIMES) if (m.worldMaps) return m.worldMaps();
+  return undefined;
+}
+
+/** Each module's start-up upgrades, once the core's stores and its own have loaded. */
+export function runAfterStoresReady(plugin: HexmakerPlugin, coreReady: Promise<unknown>, stores: readonly ModuleStore[], ready: ReadonlyMap<ModuleStore, Promise<unknown>>): void {
+  for (const m of MODULE_RUNTIMES) {
+    if (!m.afterStoresReady) continue;
+    const own = (m.stores ? stores.filter((s) => storeOwner.get(s) === m.id) : []).map((s) => ready.get(s));
+    void Promise.all([coreReady, ...own]).then(() => m.afterStoresReady!(plugin)).catch((e) => console.error(`Hexmaker: ${m.id} start-up upgrade`, e));
+  }
+}
+
+/** Which module made each store (createModuleStores). */
+const storeOwner = new WeakMap<ModuleStore, string>();
+
+/** Every module's extra note folders. */
+export function moduleFolders(plugin: HexmakerPlugin): string[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.folders?.(plugin) ?? []);
+}
+
+/** Every module's sandbox dev helpers, merged. */
+export function moduleDevTools(plugin: HexmakerPlugin): Record<string, (...args: never[]) => unknown> {
+  return Object.assign({}, ...MODULE_RUNTIMES.map((m) => m.devTools?.(plugin) ?? {})) as Record<string, (...args: never[]) => unknown>;
+}
+
+/** Tell every module a map scale was picked (setup wizard), in module order. */
+export async function runOnScalePicked(plugin: HexmakerPlugin, scaleId: string): Promise<void> {
+  for (const m of MODULE_RUNTIMES) await m.onScalePicked?.(plugin, scaleId);
+}
+
+/** Tell every module that map types were just turned on, in module order. */
+export async function runOnKindsEnabled(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void> {
+  for (const m of MODULE_RUNTIMES) await m.onKindsEnabled?.(plugin, kinds);
 }

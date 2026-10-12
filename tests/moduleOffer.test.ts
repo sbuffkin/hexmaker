@@ -80,8 +80,8 @@ describe("CM6: offered only when a map is opened on purpose", () => {
     const newFlows = [
       "src/worldgen/NewMapSetupModal.ts",
       "src/hex-map/newChildMap.ts",
-      "src/hex-map/OverworldModals.ts",
-      "src/worldgen/WalkRegionModal.ts",
+      "src/overworld/OverworldModals.ts",
+      "src/overworld/WalkRegionModal.ts",
       "src/SetupWizardView.ts",
     ];
     for (const f of newFlows) expect({ f, hit: /offerModule|offerModuleFor|enableMapKind/.test(read(f)) }).toEqual({ f, hit: false });

@@ -223,10 +223,15 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
     const { MODULE_RUNTIMES, moduleCommands, moduleFolderSettings } = await import("../src/modules/runtime");
     const space = MODULE_RUNTIMES.find((r) => r.id === "space")!;
     expect(moduleCommands().map((c) => [c.command.id, c.kind ?? null])).toEqual([
+      ["new-overworld", null], // World maps (P7): works with any map type
       ["edit-world-types", "space"], // only while Space is on
       ["convert-world-types", null], // whenever there's something to convert
     ]);
-    expect(moduleFolderSettings().map((d) => [d.id, d.key])).toEqual([["Settings.worldTypesFolder", "worldTypesFolder"]]);
+    expect(moduleFolderSettings().map((d) => [d.id, d.key])).toEqual([
+      ["Settings.biomesFolder", "biomesFolder"],
+      ["Settings.biomePoolsFolder", "biomePoolsFolder"],
+      ["Settings.worldTypesFolder", "worldTypesFolder"],
+    ]);
     expect(typeof space.stores).toBe("function");
     expect(typeof space.onEnabled).toBe("function");
     // Every command and setting key a module adds is one it says it owns.

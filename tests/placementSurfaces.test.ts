@@ -13,10 +13,10 @@ import { PLACEMENT, layerOf, type Layer } from "../src/ui/placement";
 import { PlacedMenu, type MenuLike } from "../src/ui/placedMenu";
 import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "obsidian";
 import { groupAgrees } from "../src/ui/placeGroup";
-import { NEW_MAP_OPTION_IDS, newMapOptionId } from "../src/worldgen/newMapOptionIds";
-import { ORBITS_ID, ORBITS_OPTIONS } from "../src/worldgen/procedural/orbits";
+import { newMapOptionIds, newMapOptionId } from "../src/worldgen/newMapOptionIds";
+import { ORBITS_ID, ORBITS_OPTIONS } from "../src/space/orbits";
 import { OVERLAND_ID, OVERLAND_OPTIONS, PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, REGION_DETAIL_ID, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
-import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/starScatter";
+import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS } from "../src/space/starScatter";
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS } from "../src/overworld/worldBiomes";
 import { ORBIT_TYPE_KEY, ROUTE_TYPE_KEY } from "../src/worldgen/generatorPathTypes";
 import { LIST_REFRESH_MS, DETAIL_REFRESH_MS, ListSignatures, listSignature, touchesList } from "../src/random-tables/listRefresh";
@@ -107,7 +107,7 @@ describe("dropped controls are gone", () => {
   });
 
   it("Biome form: the typed weight box (the slider stays)", () => {
-    const src = read("src", "hex-map", "BiomeLibraryModal.ts");
+    const src = read("src", "overworld", "BiomeLibraryModal.ts");
     expect(src).not.toMatch(/weight value/);
     expect(src).toMatch(/type: "range"[^\n]*weight/);
   });
@@ -135,7 +135,8 @@ describe("New map form: generator options by inventory id", () => {
   };
 
   it("every mapped option is a real option of its generator", () => {
-    for (const [kind, keys] of Object.entries(NEW_MAP_OPTION_IDS)) {
+    expect(Object.keys(newMapOptionIds()).sort()).toEqual(Object.keys(optionKeys).sort());
+    for (const [kind, keys] of Object.entries(newMapOptionIds())) {
       for (const key of Object.keys(keys)) expect(optionKeys[kind]).toContain(key);
     }
   });

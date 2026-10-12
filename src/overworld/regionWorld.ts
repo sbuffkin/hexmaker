@@ -34,10 +34,9 @@ export interface GridRules {
   stagger: Stagger;
 }
 
-/** Footprints placed in the shared grid today (hex flowers: phase 2b). */
-export function meshes(s: Pick<RegionSettings, "footprint"> | undefined): boolean {
-  return s?.footprint === "rect";
-}
+/** Footprints placed in the shared grid today (the core's, src/maps/submaps.ts). */
+import { meshes } from "../maps/submaps";
+export { meshes };
 
 /** The regions' tiling for an overworld, or undefined when it has no region settings. */
 export function regionLayoutOf(parent: Pick<MapData, "staggerOffset" | "regions"> | undefined, rules: GridRules): RegionLayout | undefined {
@@ -105,14 +104,9 @@ export function slotProblem(
 
 // ── neighbours ───────────────────────────────────────────────────────────
 
-const BEARINGS = ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"];
-
-/** Compass word for a direction in screen space (y down): 8 sectors. */
-export function bearingWord(dx: number, dy: number): string {
-  const a = Math.atan2(dy, dx); // 0 = east, π/2 = south
-  const i = ((Math.round(a / (Math.PI / 4)) % 8) + 8) % 8;
-  return BEARINGS[i];
-}
+/** Compass word for a direction (the core's, src/maps/compass.ts). */
+import { bearingWord } from "../maps/compass";
+export { bearingWord };
 
 export interface RegionNeighbour<T> {
   map: T;

@@ -23,7 +23,10 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { GeneratedPath, TerrainGeneratorKind } from "../worldgen/registry";
 import type { GridSpec } from "../worldgen/generators";
 import type { ProcGrid } from "../worldgen/procedural/common";
-import type { MapPath } from "../types";
+import type { MapData, MapPath, TerrainColor } from "../types";
+import type { LatticeGrid, Pt } from "../paths/pathGeometry";
+import type { TableSource } from "../worldgen/tableRoles";
+import type { WorldMapsApi } from "./world-maps/api";
 import type { TAbstractFile } from "obsidian";
 
 /** A map type id ("world", "space"). Stable, never reused. */
@@ -175,6 +178,31 @@ export interface EngineDef {
   label: string;
 }
 
+/**
+ * A kind of map a first map can be ("What are you mapping?" in the setup
+ * wizard): Overland, Biomes, a space sector or system, a planet. Each
+ * brings its default size and palette and the generators that fit it;
+ * the wizard lists Blank first, then these.
+ */
+export interface MapScaleDef {
+  id: string;
+  label: string;
+  /** One line under the label. */
+  description: string;
+  /** Shown only while this map type is on (Settings → Map types). */
+  kind: KindId;
+  /** The grid size it starts at (and resets to). */
+  size: { cols: number; rows: number };
+  /** The palette (preset or installed) it starts on. */
+  palette: string;
+  /** Generator ids that fit it, in list order (Blank is always first and isn't listed). */
+  generators: readonly string[];
+  /** Also list generators of its map type that no scale lists (learned ones). */
+  otherGenerators?: boolean;
+  /** A palette a generator wants instead (Orbits: Space - System). */
+  generatorPalettes?: Readonly<Record<string, string>>;
+}
+
 export interface HexmakerModule {
   /** Stable id: "world", "world-maps", "space". Never reused. */
   id: string;
@@ -189,6 +217,8 @@ export interface HexmakerModule {
   palettes?: readonly PalettePreset[];
   /** Table roles of the engines this module's generators run. */
   tableRoles?: readonly EngineRoleDef[];
+  /** The folder under the tables folder its role tables live in ("space"): listed first in role pickers. */
+  tablesFolder?: string;
   /** Table notes it ships (starter tables, role tables): data, never code. */
   tables?: readonly ShippedTableDef[];
   /**
@@ -203,11 +233,28 @@ export interface HexmakerModule {
   engines?: readonly EngineDef[];
   /** Generator path roles: role id → option label ("routes" → "Path type for routes"). */
   pathRoles?: Readonly<Record<string, string>>;
+  /** Kinds of map a first map can be (setup wizard). */
+  mapScales?: readonly MapScaleDef[];
+  /**
+   * Fields this module added to the shipped path types after palettes
+   * copied them (World maps: River's Carves), set once where a palette never
+   * set them (src/palettes/presetUpdates.ts). A build without the module
+   * runs no such upgrade.
+   */
+  addedPresetPathFields?: readonly { pathType: string; field: "carves" | "carveWidth" }[];
+  /** Generator ids a palette's Submap defaults name (listed in the palette note's help line). */
+  submapGeneratorIds?: readonly string[];
   /** Data the module owns (release slicing derives its lists from these). */
   owns: {
     settingsKeys: readonly string[];
     mapNoteKeys: readonly string[];
     commands: readonly string[];
+    /**
+     * Text only this module puts in main.js (names, ids, headings). A build
+     * with its slice off must contain none of them (npm run check:release),
+     * and the full build all of them (so the check can't pass by accident).
+     */
+    strings?: readonly string[];
   };
 }
 
@@ -285,6 +332,72 @@ export interface RefLinker {
 }
 
 /**
+ * A map overlay a module draws over the terrain, under the paths (Space:
+ * moon tethers). The map view and the PNG export both draw `segments()`
+ * in lattice units (× the hex radius), so the two always match.
+ */
+export interface MapOverlayDef {
+  id: string;
+  /** CSS class of each on-screen line; its colour and opacity live in styles.css. */
+  cls: string;
+  /** How a line looks, in lattice units; the PNG export draws all four from here. */
+  style: { color: string; opacity: number; width: number; dash: readonly number[] };
+  /**
+   * Every segment on a map. `include` drops segments whose ends aren't
+   * both drawn (an export of part of the map).
+   */
+  segments(
+    terrainAt: ReadonlyMap<string, string>,
+    palette: readonly TerrainColor[],
+    grid: LatticeGrid,
+    include?: (hexKey: string) => boolean,
+  ): [Pt, Pt][];
+}
+
+/**
+ * A section of the Map properties modal a module adds (Space: Generator
+ * tables). `render` draws nothing when it doesn't apply to `map`.
+ */
+export interface MapPropertiesSection {
+  id: string;
+  render(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void;
+}
+
+/** What a New map setup extra knows about the form (see NewMapSetupExtra). */
+export interface NewMapSetupContext {
+  plugin: HexmakerPlugin;
+  /** The generator the form shows. */
+  generatorId: string;
+  /** The map the new one is made from (a parent hex's map), when there is one. */
+  originMap?: string;
+}
+
+/**
+ * Something a module adds to New map setup for some generators (Space:
+ * "Edit world types…" beside the World types option of Star scatter and
+ * Orbits).
+ */
+export interface NewMapSetupExtra {
+  /** The generator ids it shows for. */
+  forGenerators: readonly string[];
+  /** The option row it joins when that option is on the form; else a row of its own… */
+  optionKey: string;
+  /** …with this label. */
+  label: string;
+  render(row: HTMLElement, ctx: NewMapSetupContext): void;
+}
+
+/** What a module adds when a place is made on arrival (GM4). */
+export interface ArrivalHooks {
+  /**
+   * The table source the arrival rolls its new place's details on, for a
+   * map with `terrains` (Space: the World types tables). The first module
+   * that answers wins.
+   */
+  tableSourceFor?(plugin: HexmakerPlugin, terrains: string[], mapName: string): TableSource | undefined;
+}
+
+/**
  * The runtime half of a module (see the top of this file): host-bound
  * pieces, read only by the plugin and its services (src/modules/runtime.ts).
  */
@@ -300,4 +413,40 @@ export interface ModuleRuntime {
   refLinkers?(plugin: HexmakerPlugin): RefLinker[];
   /** The module's map type was just turned on (setup or Settings): install its shipped content once. */
   onEnabled?(plugin: HexmakerPlugin): Promise<void>;
+  /** Overlays drawn over the terrain, under the paths (map view and PNG export). */
+  overlays?: readonly MapOverlayDef[];
+  /** Sections of the Map properties modal. */
+  mapProperties?: readonly MapPropertiesSection[];
+  /** Additions to New map setup. */
+  newMapSetup?: readonly NewMapSetupExtra[];
+  /** Hooks for places made on arrival. */
+  arrival?: ArrivalHooks;
+  /**
+   * UI inventory ids of its generators' New map options (generator id →
+   * option key → id), so the placement map places each one.
+   */
+  newMapOptionIds?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * After the core's stores and this module's own have loaded: its
+   * one-time data upgrades (World maps: the Biome columns, BC1).
+   */
+  afterStoresReady?(plugin: HexmakerPlugin): Promise<unknown>;
+  /** More folders of this module's notes (left out of template-note rules), besides its stores'. */
+  folders?(plugin: HexmakerPlugin): string[];
+  /** Sandbox-only helpers for dev scripts, offered when the vault has the sandbox marker. */
+  devTools?(plugin: HexmakerPlugin): Record<string, (...args: never[]) => unknown>;
+  /**
+   * A map scale was picked in the setup wizard (or starts picked): get its
+   * content ready (World maps' Biomes: the shipped biome notes, as opening
+   * New overworld… does, DJ-Q4).
+   */
+  onScalePicked?(plugin: HexmakerPlugin, scaleId: string): Promise<void>;
+  /** Map types were just turned on (any of them): install what this module needs for them. */
+  onKindsEnabled?(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void>;
+  /**
+   * World maps' hooks into the core's map surfaces (overworlds, regions,
+   * biomes, walking). Named, not generic: the core reaches them through
+   * src/modules/runtime.ts worldMaps() and `import type` only.
+   */
+  worldMaps?(): WorldMapsApi;
 }

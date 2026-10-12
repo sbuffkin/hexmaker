@@ -27,7 +27,8 @@ const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\
 
 describe("README command names", () => {
 	it("finds the registered commands, the modules' too", () => {
-		expect(fromModules).toEqual(["Edit world types…", "Convert world types to tables"]);
+		// Read per module folder, in name order (space, world, world-maps).
+		expect(fromModules).toEqual(["Edit world types…", "Convert world types to tables", "New overworld…"]);
 		expect(registered.length).toBeGreaterThan(5);
 		expect(registered).toContain("Export current map…");
 	});

@@ -19,12 +19,9 @@ import { addGeneratedPaths, pathColors } from "./generators";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { IMAGE_EXTENSIONS, attachImageDropZone, getIconUrl, importBinaryFileToVault, mapBgImportFolder, selectAllOnFocus, slugify } from "../utils";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
-import { WorldTypesModal } from "../space/WorldTypesModal";
-import { WORLD_TYPES_KEY } from "../space/worldTypesSource";
 import { attrsForTerrain } from "./tableSources";
 import { rowSubmapDefault } from "../arrival/arrival";
-import { STAR_SCATTER_ID } from "./procedural/starScatter";
-import { ORBITS_ID } from "./procedural/orbits";
+import { moduleArrivalTables, moduleNewMapSetup } from "../modules/runtime";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
@@ -162,7 +159,7 @@ export class NewMapSetupModal extends HexmakerModal {
       this.saved = plugin.submapDefaultFor(origin.map, this.originTerrain);
       this.context = buildSubmapContext(plugin, origin.map, origin.x, origin.y);
       if (this.originTerrain) {
-        const source = plugin.worldTypeStore.sourceFor(undefined, plugin.getMapPalette(origin.map).map((t) => t.name), origin.map).source;
+        const source = moduleArrivalTables(plugin, plugin.getMapPalette(origin.map).map((t) => t.name), origin.map);
         this.rowStart = rowSubmapDefault(attrsForTerrain(source, this.originTerrain));
       }
       const d: SubmapDefault | undefined = this.rowStart || this.saved ? { ...this.rowStart, ...this.saved } : undefined;
@@ -611,7 +608,8 @@ export class NewMapSetupModal extends HexmakerModal {
         this.options.sea = seaHint.side;
         this.seaFromNeighbour = true;
       }
-      let worldTypesRow: HTMLElement | undefined;
+      // Each option's row, for the modules' extras that join one.
+      const optionRows = new Map<string, HTMLElement>();
       // Options off the main form go in their own box: first in Advanced,
       // after the title in Debug.
       for (const b of optBoxes.values()) b.remove();
@@ -631,7 +629,7 @@ export class NewMapSetupModal extends HexmakerModal {
         const host = optionHost(newMapOptionId(kind?.id ?? "", opt.key));
         if (!host) continue;
         const r = this.row(host, opt.label);
-        if (opt.key === WORLD_TYPES_KEY) worldTypesRow = r;
+        optionRows.set(opt.key, r);
         const sel = this.labelled(r, r.createEl("select"));
         for (const c of opt.choices) sel.createEl("option", { value: c.value, text: c.label });
         sel.value = this.options[opt.key] ?? opt.default;
@@ -649,14 +647,11 @@ export class NewMapSetupModal extends HexmakerModal {
           refresh();
         });
       }
-      // Space generators: the worlds they place come from a world types table
-      // (the World types option picks it; this edits it).
-      if (kind && (kind.id === STAR_SCATTER_ID || kind.id === ORBITS_ID)) {
-        const r = worldTypesRow ?? this.row(optsBox, "World types");
-        const btn = r.createEl("button", { text: "Edit world types…" });
-        btn.addEventListener("click", () => {
-          new WorldTypesModal(this.app, this.plugin, this.origin?.map, undefined, kind.id === ORBITS_ID ? "system" : "sector").open();
-        });
+      // Modules' extras for this generator (Space: Edit world types… beside
+      // the World types option of Star scatter and Orbits).
+      for (const extra of kind ? moduleNewMapSetup(kind.id) : []) {
+        const r = optionRows.get(extra.optionKey) ?? this.row(optsBox, extra.label);
+        extra.render(r, { plugin: this.plugin, generatorId: kind!.id, originMap: this.origin?.map });
       }
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
     };

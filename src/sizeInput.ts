@@ -20,3 +20,40 @@ export function sizeFromInput(
 
 /** How long typing in a size field waits before the preview redraws. */
 export const LIVE_PREVIEW_DELAY_MS = 300;
+
+/**
+ * One mouse-wheel step on a size field: up adds one, down takes one,
+ * clamped into range. A field that isn't a number starts from `min`.
+ */
+export function wheelSize(raw: string, deltaY: number, min: number, max: number): number {
+	const n = Math.floor(Number(raw));
+	const base = raw.trim() !== "" && Number.isFinite(n) ? n : min;
+	if (!deltaY) return Math.max(min, Math.min(max, base));
+	return Math.max(min, Math.min(max, base + (deltaY < 0 ? 1 : -1)));
+}
+
+/** What a size field needs for wheelStep (an HTMLInputElement, or a stand-in in tests). */
+export interface WheelField {
+	value: string;
+	matches(selector: string): boolean;
+	addEventListener(type: "wheel", fn: (e: { deltaY: number; preventDefault(): void }) => void, opts: { passive: boolean }): void;
+	dispatchEvent(e: Event): boolean;
+}
+
+/**
+ * Let the mouse wheel step a size field while it's hovered or focused
+ * (owner: "grid size on onboarding should be scroll adjustable"). Anywhere
+ * else the wheel scrolls the page as usual. Each step commits like typing
+ * a value and leaving the field (a `change` event).
+ */
+export function wheelStep(input: WheelField, min: number, max: number, isFocused: () => boolean): void {
+	input.addEventListener("wheel", (e) => {
+		if (!isFocused() && !input.matches(":hover")) return;
+		if (!e.deltaY) return;
+		e.preventDefault();
+		const next = String(wheelSize(input.value, e.deltaY, min, max));
+		if (next === input.value) return;
+		input.value = next;
+		input.dispatchEvent(new Event("change"));
+	}, { passive: false });
+}

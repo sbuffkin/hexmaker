@@ -12,7 +12,7 @@
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { applyBlend, blendLock, blendTarget, planBlend, previewBlend, type BlendPlan, type BlendTarget } from "../worldgen/regionGenerator";
+import { applyBlend, blendLock, blendTarget, planBlend, previewBlend, type BlendPlan, type BlendTarget } from "./regionGenerator";
 import { mapStagger } from "../worldgen/generators";
 import { drawPreview } from "../worldgen/preview";
 import { openMakeGenerator } from "./MakeGeneratorModal";
