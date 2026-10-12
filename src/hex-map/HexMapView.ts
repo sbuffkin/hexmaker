@@ -2450,6 +2450,12 @@ export class HexMapView extends ItemView {
     this.updateToolbarButtonStates();
   }
 
+  /** Is overworld hex "x_y" on the open map's grid (an empty brick there can take a biome)? */
+  private emptySlotOnMap(hex: string): boolean {
+    const [px, py] = hex.split("_").map(Number);
+    return !!this.wm?.inOverworldGrid(this.getActiveMap(), px, py);
+  }
+
   /** The overworld hex under a point: the brick's parent hex in the Regions view, else the hex there. */
   private overworldHexKeyAt(target: EventTarget | null, clientX: number, clientY: number): string | null {
     const view = this.owView(this.getActiveMap());
@@ -4424,6 +4430,7 @@ export class HexMapView extends ItemView {
           const cell = this.overworldLayer?.cellAt(gridContainer, e.clientX, e.clientY) ?? null;
           const tip = !cell ? ""
             : cell.region ? `${this.plugin.mapLabel(cell.region)}: click to go there`
+            : !this.emptySlotOnMap(cell.parentHex) ? ""
             : `No region yet (hex ${cell.parentHex.replace("_", ", ")})` + (canAdd(this.getActiveMap()) ? ": click to set its biome" : "");
           if (gridContainer.title !== tip) gridContainer.title = tip;
         });
@@ -5114,6 +5121,8 @@ export class HexMapView extends ItemView {
       // The brick under the pointer in the Regions view, else the hex clicked.
       const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
       const region = cell ? cell.region : regionMapAt(this.plugin.settings.maps, this.activeMapName, `${x}_${y}`)?.name;
+      // Past the overworld's edge (the gap beside the bricks): nothing to set there.
+      if (!region && cell && !this.emptySlotOnMap(cell.parentHex)) return;
       const act = wm.overworldLeftClick(this.getActiveMap(), !!region);
       if (act.kind === "enter" && region) {
         if (cell) this.enterRegionAt(region, cell.x, cell.y);

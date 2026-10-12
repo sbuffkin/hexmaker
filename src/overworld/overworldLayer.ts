@@ -22,7 +22,7 @@ import type { MapData } from "../types";
 import { hexCenter } from "../../packages/hex-wfc/src/grid";
 import { regionsOf } from "../maps/submaps";
 import { biomeInfo } from "./biomes";
-import { parentOf, regionCells, type RegionLayout } from "./layout";
+import { regionCells, type RegionLayout } from "./layout";
 import {
   affineScale,
   applyAffine,
@@ -33,8 +33,7 @@ import {
   drawRiver,
   fitAffine,
   hexPath,
-  invertAffine,
-  nearestChildCell,
+  cellAtGridPoint,
   RegionBitmapCache,
   type Affine,
   type RegionCell,
@@ -174,9 +173,9 @@ export class OverworldLayer {
     const g = grid.getBoundingClientRect();
     const sx = grid.offsetWidth ? g.width / grid.offsetWidth : 1;
     const sy = grid.offsetHeight ? g.height / grid.offsetHeight : 1;
-    const [cx, cy] = applyAffine(invertAffine(geom.c2g), (clientX - g.left) / sx, (clientY - g.top) / sy);
-    const [x, y] = nearestChildCell(geom.layout, cx, cy);
-    const parentHex = parentOf(geom.layout, x, y).join("_");
+    // A zoom bake since render changed the grid's font size: scale back to the measured em.
+    const emNow = parseFloat(getComputedStyle(grid).fontSize) || geom.em;
+    const { x, y, parentHex } = cellAtGridPoint(geom.layout, geom.c2g, geom.em, emNow, (clientX - g.left) / sx, (clientY - g.top) / sy);
     const region = regionsOf(this.plugin.settings.maps, geom.map).find((r) => r.parent?.hex === parentHex);
     return { x, y, region: region?.name, parentHex };
   }

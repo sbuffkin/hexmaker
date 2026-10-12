@@ -368,6 +368,9 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   if (!opts.arrival && !canAdd(parent)) return { error: ADD_REGION_LOCKED_HINT };
   if (!parent?.regions) return { error: "Set up this map's regions first." };
   if (!meshes(parent.regions)) return { error: "Hex-flower regions don't join up yet: make this one from the new-map form." };
+  // A region always has its hex on the overworld (walkIntoHex grows the map first). One
+  // past the edge has no neighbours to blend with and is drawn apart from the rest.
+  if (!inOverworldGrid(parent, px, py)) return { error: OUTSIDE_OVERWORLD_HINT };
   const hex = `${px}_${py}`;
   const existing = regionMapAt(plugin.settings.maps, parentName, hex);
   if (existing) return { error: `This hex's region is ${plugin.mapLabel(existing.name)}.` };
@@ -543,6 +546,7 @@ export async function setBiomeAt(
 ): Promise<{ name: string } | { error: string }> {
   const parent = plugin.getMap(parentName);
   if (!parent) return { error: "Map not found." };
+  if (!inOverworldGrid(parent, px, py)) return { error: OUTSIDE_OVERWORLD_HINT };
   // A blank biome paints no terrain on the overworld: its hex is blank, named by the Biome column.
   const blank = isBlankBiome(biome);
   const terrain = blank ? undefined : representativeTerrain(biome, plugin.getMapPalette(parentName));
@@ -586,6 +590,9 @@ export async function paintBiomeHex(plugin: HexmakerPlugin, parentName: string, 
 }
 
 // ── walking into new land ────────────────────────────────────────────────
+
+/** Why a region can't be made past the overworld's edge. */
+export const OUTSIDE_OVERWORLD_HINT = "That hex is outside the overworld. Walk into it from a region next to it, or grow the map first.";
 
 /** Is overworld hex (px, py) inside the overworld's grid? */
 export function inOverworldGrid(map: Pick<MapData, "gridOffset" | "gridSize">, px: number, py: number): boolean {

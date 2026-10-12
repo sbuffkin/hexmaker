@@ -108,6 +108,27 @@ export function childToParentPlane(layout: RegionLayout): Affine {
   return fitAffine(pairs);
 }
 
+/**
+ * A grid-px point (measured now) → the child plane, through `c2g` measured
+ * when the grid's font size was `emThen`. The grid is sized in em, so a
+ * zoom bake (which changes the font size, not a transform) grows every grid
+ * px by emNow / emThen: undo that before inverting, or the point lands
+ * that many times too far from the grid's corner (owner bug 2026-10-12: a
+ * click on a top-right brick made the region of hex 7, 0, and hovering
+ * drawn regions said "No region yet").
+ */
+export function gridPointToChild(c2g: Affine, emThen: number, emNow: number, gx: number, gy: number): [number, number] {
+  const k = emThen > 0 && emNow > 0 ? emThen / emNow : 1;
+  return applyAffine(invertAffine(c2g), gx * k, gy * k);
+}
+
+/** The child cell under a grid-px point and its region's parent hex ("x_y"): the layer's hit test (see gridPointToChild). */
+export function cellAtGridPoint(layout: RegionLayout, c2g: Affine, emThen: number, emNow: number, gx: number, gy: number): { x: number; y: number; parentHex: string } {
+  const [cx, cy] = gridPointToChild(c2g, emThen, emNow, gx, gy);
+  const [x, y] = nearestChildCell(layout, cx, cy);
+  return { x: x || 0, y: y || 0, parentHex: parentOf(layout, x, y).join("_") };
+}
+
 /** The child cell whose centre is nearest a child-plane point. */
 export function nearestChildCell(layout: RegionLayout, x: number, y: number): [number, number] {
   const r3 = Math.sqrt(3);
