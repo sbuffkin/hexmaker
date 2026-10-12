@@ -54,3 +54,36 @@ export function sliceModules(sliceIds) {
 export function stripSliceMarkers(text, off) {
 	return text.replace(/<!-- slice:([a-z-]+) -->([\s\S]*?)<!-- \/slice -->/g, (_m, id, body) => (off.has(id) ? "" : body));
 }
+
+/**
+ * The README a build ships (release candidate artifact): README.md with
+ * the blocks of slices built off removed and the markers dropped, and the
+ * blank lines a removed paragraph leaves folded to one.
+ */
+export function releaseReadme(text, off) {
+	return stripSliceMarkers(text, off).replace(/(\r?\n)(?:[ \t]*\r?\n){2,}/g, "$1$1");
+}
+
+/** Where a build writes its release README: README.md in a `dist` folder beside main.js. */
+export function releaseReadmePath(outFile) {
+	return join(dirname(outFile), "dist", "README.md");
+}
+
+/**
+ * The text of slice `id`'s blocks in `text` (README.md): each non-blank
+ * line of each block, trimmed, of at least `min` characters, leaving out
+ * any that also shows outside the slice's blocks (shared wording). A
+ * release README with the slice off must contain none of them.
+ */
+export function sliceBlockText(text, id, min = 16) {
+	const without = stripSliceMarkers(text, new Set([id]));
+	const out = new Set();
+	for (const m of text.matchAll(/<!-- slice:([a-z-]+) -->([\s\S]*?)<!-- \/slice -->/g)) {
+		if (m[1] !== id) continue;
+		for (const raw of m[2].split(/\r?\n/)) {
+			const line = raw.trim();
+			if (line.length >= min && !without.includes(line)) out.add(line);
+		}
+	}
+	return [...out];
+}
