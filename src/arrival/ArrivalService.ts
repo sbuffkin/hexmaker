@@ -254,7 +254,9 @@ export class ArrivalService {
       return null;
     }
 
-    const label = defaultSubmapLabel(plugin.mapStore.get(mapName, key)?.name, plugin.mapLabel(mapName), x, y, {
+    // The hex's own name, else one rolled on the Names table (seeded), else terrain and coordinates.
+    const named = plugin.mapStore.get(mapName, key)?.name?.trim() || plugin.rolledMapName(mapName, key, arrivalSeed(pseed, key, "name", 0));
+    const label = defaultSubmapLabel(named, plugin.mapLabel(mapName), x, y, {
       terrain,
       taken: plugin.settings.maps.map((m) => plugin.mapLabel(m.name)),
     });

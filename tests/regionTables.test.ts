@@ -5,11 +5,9 @@ import {
   mapSectionTable,
   pickSectionTable,
   starterTablePath,
-  STARTER_RUMORS,
-  STARTER_WEATHER,
 } from "../src/regionTables";
+import { registry } from "../src/modules";
 import { appendSectionText, joinSectionText, replaceSectionText, sectionText } from "../src/sections";
-import { makeTableTemplate } from "../src/utils";
 import { parseRandomTable } from "../src/random-tables/randomTable";
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import { ROLLED_TEXT_SECTIONS } from "../src/types";
@@ -47,10 +45,12 @@ describe("region weather / rumours tables (E2)", () => {
     expect(isRolledSection("description")).toBe(false);
   });
 
-  it("starter tables are real, rollable tables", () => {
-    for (const rows of [STARTER_WEATHER, STARTER_RUMORS]) {
-      const table = parseRandomTable(makeTableTemplate(20, { "table-type": "weather" }, undefined, rows));
-      expect(table.entries.map((e) => e.result)).toEqual(rows.map(([r]) => r));
+  it("starter tables are real, rollable tables (shipped as data: tests/shippedTables.test.ts)", () => {
+    for (const path of ["weather.md", "rumors.md"]) {
+      const shipped = registry.shippedTables(["world"]).find((t) => t.path === path)!;
+      const table = parseRandomTable(shipped.text);
+      expect(table.entries.length).toBeGreaterThan(5);
+      expect(starterTablePath("", path === "weather.md" ? "weather" : "hooks & rumors")).toBe(path);
     }
   });
 

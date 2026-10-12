@@ -45,21 +45,26 @@ export function renderArrivalSetting(el: HTMLElement, plugin: HexmakerPlugin, ma
 
 /**
  * "Generator tables": the table each generator role rolls on for this map
- * and the maps under it. Blank follows the map above, else the World types
- * picked when generating. Shown on maps of a type whose generators roll on
- * tables (Space), or wherever a table is set.
+ * and the maps under it. Blank follows the map above, else the role's own
+ * default (the World types picked when generating; a shipped table; for
+ * Names, the hex's terrain and coordinates). Names shows on every map; a
+ * module's roles on maps of its type (Space), or wherever one is set.
  */
 export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void {
   const own = map.roleTables ?? {};
   const inherited = plugin.roleTablesFor(map.name);
-  const anySet = Object.keys(inherited).length > 0;
   const context = plugin.contextKinds(map.name);
-  if (!anySet && !registry.kindsWithTableRoles().some((k) => context.has(k))) return;
+  const moduleKinds = new Set(registry.kindsWithTableRoles().filter((k) => context.has(k)));
+  // A module role shows on its type's maps, or when it's set here or above.
+  const moduleRoles = new Set(registry.tableRoles().map((r) => r.id));
+  const kindOfRole = new Map(registry.modules.flatMap((m) => (m.tableRoles ?? []).map((r) => [r.id, m.kind?.id] as const)));
+  const roles = ENGINE_ROLES.filter((r) => !moduleRoles.has(r.id) || inherited[r.id] || moduleKinds.has(kindOfRole.get(r.id) ?? ""));
+  if (!roles.length) return;
 
   el.createEl("h4", { text: "Generator tables" });
   el.createDiv({
     cls: "duckmage-map-origin-desc",
-    text: "The random tables Star scatter and Orbits roll on, for this map and every map made under it. Unset: the map above's, else the World types picked when generating.",
+    text: "The random tables used here and on every map made under it: Names for new maps, and what generators roll on. Unset: the map above's, else the default shown.",
   });
   const tablesFolder = contentFolder(plugin.settings, "tablesFolder");
   const all = plugin.tableNotes.tables();
@@ -71,14 +76,14 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
     else delete map.roleTables;
     void plugin.saveSettings().then(rerender);
   };
-  for (const role of ENGINE_ROLES) {
+  for (const role of roles) {
     const row = el.createDiv({ cls: "duckmage-role-table-row" });
     row.createSpan({ text: role.name, attr: { title: role.help } });
     const select = row.createEl("select", { attr: { "aria-label": `${role.name} table` } });
     const above = map.parent ? plugin.roleTablesFor(map.parent.map)[role.id] : undefined;
     select.createEl("option", {
       value: "",
-      text: above ? `${noteName(above.link)} (from ${plugin.mapLabel(above.from)})` : "World types (as picked)",
+      text: above ? `${noteName(above.link)} (from ${plugin.mapLabel(above.from)})` : (role.unsetLabel ?? "World types (as picked)"),
     });
     const choices = fittingRoleTables(all, role.id, `${tablesFolder}/${SPACE_TABLES_FOLDER}`);
     const current = own[role.id];
@@ -98,7 +103,7 @@ export function renderRoleTables(el: HTMLElement, plugin: HexmakerPlugin, map: M
       new FileLinkSuggestModal(plugin.app, plugin, (file) => save(role.id, file.path), tablesFolder, ["md"]).open();
     });
   }
-  if (plugin.worldTypeStore.list().some((t) => !plugin.worldTypeStore.isConverted(t.name))) {
+  if (roles.some((r) => moduleRoles.has(r.id)) && plugin.worldTypeStore.list().some((t) => !plugin.worldTypeStore.isConverted(t.name))) {
     const btn = el.createEl("button", { text: "Convert world types to tables…", attr: { title: "Write each world types table as random tables under the tables folder (backed up first; the old notes are kept)" } });
     btn.addEventListener("click", () => void plugin.runModuleCommand("convert-world-types").then(rerender));
   }

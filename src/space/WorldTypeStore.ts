@@ -56,7 +56,7 @@ import type { ModuleStore } from "../modules/types";
 
 /** The World types store's id among the modules' stores. */
 export const WORLD_TYPES_STORE = "world-types";
-import { layeredSource, notesTableSource } from "../worldgen/tableSources";
+import { layeredSource, notesTableSource, withShippedRoleTables } from "../worldgen/tableSources";
 import { convertWorldTypes, isConverted, markConverted, readRoleTables } from "./spaceTables";
 import { contentFolder } from "../notePickers";
 import { PALETTE_PRESETS } from "../palettes/presets";
@@ -209,7 +209,8 @@ export class WorldTypeStore implements ModuleStore {
     // The map's own Tables (and its ancestors') win over the setup's.
     const own = mapName ? this.plugin.roleTablesFor(mapName) : {};
     const overrides = Object.fromEntries(Object.entries(own).flatMap(([r, p]) => (p ? [[r, p.link]] : [])));
-    const source = layeredSource(base, overrides, notes, terrains);
+    // Roles nothing names roll on their shipped table's installed copy, when there is one (T12).
+    const source = withShippedRoleTables(layeredSource(base, overrides, notes, terrains), notes, terrains, contentFolder(this.plugin.settings, "tablesFolder"));
     return { ...(source ? { source } : {}), ...(missing ? { missing } : {}) };
   }
 

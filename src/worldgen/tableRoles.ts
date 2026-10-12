@@ -21,7 +21,7 @@
  */
 
 import type { RandomTable } from "../random-tables/randomTable";
-import { resolveOdds, resolveRoll, skippedRows, type ResolveContext, type TableLookup } from "../random-tables/resolve";
+import { layeredLookup, notesLookup, resolveEach, resolveOdds, resolveRoll, skippedRows, type Resolved, type ResolvedOdds, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import type { ConditionContext } from "../random-tables/tableConditions";
 import type { OrbitZone } from "../space/worldTypes";
 import type { OnceTracker } from "../arrival/eventsLedger";
@@ -35,11 +35,29 @@ export type RoleId = string;
 export type EngineRole = EngineRoleDef;
 
 /**
- * The engine role schema: every module's roles (src/modules; Space brings
- * Star scatter's and Orbits'). Roles are only added by engines
- * (tests/generatorRoles.test.ts checks coverage).
+ * Names (plan-tables-everywhere phase 6, F14): the core's own role, for
+ * every map type. A map made from a hex of this map (a submap, a region,
+ * a place found on arrival) takes its name from this table, rolled with the
+ * hex's terrain and type as When context. A hex's own name still wins; with
+ * no table the name is the hex's terrain and coordinates, as before.
  */
-export const ENGINE_ROLES: readonly EngineRole[] = registry.tableRoles();
+export const NAMES_ROLE: EngineRole = {
+  id: "names",
+  engine: "maps",
+  name: "Names",
+  rows: "text",
+  terrainTypes: [],
+  help: "Names for maps made from a hex of this map (submaps, regions, places found on arrival). A When column can fit names to the hex (type: forest, terrain: ocean world).",
+  fallback: "the hex's terrain and coordinates",
+  unsetLabel: "None (terrain and coordinates)",
+};
+
+/**
+ * The engine role schema: every module's roles (src/modules; Space brings
+ * Star scatter's and Orbits'), then the core's (Names). Roles are only
+ * added by engines (tests/generatorRoles.test.ts checks coverage).
+ */
+export const ENGINE_ROLES: readonly EngineRole[] = [...registry.tableRoles(), NAMES_ROLE];
 
 export const ZONE_ROLES: Record<OrbitZone, RoleId> = {
   inner: "inner-orbits",
@@ -202,4 +220,82 @@ export function roleOdds(source: TableSource | undefined, role: RoleId, ctx: Con
     .filter((o) => o.kind === "terrain" || o.kind === "nothing")
     .map((o) => ({ terrain: o.kind === "nothing" ? "" : o.value, odds: o.odds }));
   return { odds, from: link && source ? source.label : "equal odds", notes };
+}
+
+// ── roles whose rows aren't terrains to place (Moons, System extras, Names) ──
+
+let shippedCache: TableLookup | undefined;
+
+/** Every module's shipped tables, in memory, by their path under the tables folder (and note name). */
+export function shippedTablesLookup(): TableLookup {
+  shippedCache ??= notesLookup(Object.fromEntries(registry.shippedTables().map((t) => [t.path, t.text])));
+  return shippedCache;
+}
+
+/**
+ * The table a role rolls on and how to read it: the source's (a map's or
+ * the setup's), else the role's shipped default (its installed copy is
+ * named by the source, see tableSources.ts withShippedRoleTables; else the
+ * shipped text). Undefined: no table at all.
+ */
+export function roleTable(source: TableSource | undefined, role: RoleId): { link: string; lookup: TableLookup; shipped: boolean } | undefined {
+  const own = source?.tableFor(role);
+  if (own && source?.lookup.table(own)) return { link: own, lookup: layeredLookup(source.lookup, shippedTablesLookup()), shipped: false };
+  const def = engineRole(role).defaultTable;
+  if (def && shippedTablesLookup().table(def)) return { link: def, lookup: shippedTablesLookup(), shipped: true };
+  return undefined;
+}
+
+/** What a role's roll needs: the conditions it knows, and its random stream. */
+export type RoleValueContext = ConditionContext & { rand: () => number; where?: string };
+
+/**
+ * Roll a role whose rows are values, not terrains to place (Moons: a count;
+ * Names: a name): one row through the resolver. Undefined when the role
+ * has no table, or nothing could come up.
+ */
+export function rollRoleValue(source: TableSource | undefined, role: RoleId, ctx: RoleValueContext): Resolved | undefined {
+  const t = roleTable(source, role);
+  if (!t) return undefined;
+  const { rand, where, ...cond } = ctx;
+  const once = source?.once;
+  const r = resolveRoll(t.link, t.lookup, { ...cond, rand, ...(once ? { isUsed: once.isUsed } : {}) });
+  once?.fire(r.onces, where);
+  return r.kind === "empty" || r.kind === "loop" ? undefined : r;
+}
+
+/** The odds of each value a role can give here (empty: no table). */
+export function roleValueOdds(source: TableSource | undefined, role: RoleId, ctx: ConditionContext): ResolvedOdds[] {
+  const t = roleTable(source, role);
+  return t ? resolveOdds(t.link, t.lookup, ctx) : [];
+}
+
+/**
+ * Roll a role "for each line" (System extras: a `pick: each` table, every
+ * row on its own Chance). Empty when the role has no table.
+ */
+export function rollRoleEach(source: TableSource | undefined, role: RoleId, ctx: RoleValueContext): Resolved[] {
+  const t = roleTable(source, role);
+  if (!t) return [];
+  const { rand, where, ...cond } = ctx;
+  const once = source?.once;
+  const out = resolveEach(t.link, t.lookup, { ...cond, rand, ...(once ? { isUsed: once.isUsed } : {}) });
+  for (const r of out) once?.fire(r.onces, where);
+  return out.filter((r) => r.kind !== "empty" && r.kind !== "loop");
+}
+
+const COUNT_WORDS: Record<string, number> = { zero: 0, none: 0, no: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6 };
+
+/**
+ * A count read from a rolled value ("none", "2", "two moons", "(nothing)"
+ * → 0, 2, 2, 0). Undefined when it isn't one.
+ */
+export function readCount(r: Pick<Resolved, "kind" | "value"> | undefined): number | undefined {
+  if (!r || r.kind === "nothing") return 0;
+  const t = r.value.trim().toLowerCase().replace(/^.*\//, "").replace(/\.md$/, "");
+  if (t === "" || /^\(?(?:none|nothing)\)?$/.test(t)) return 0;
+  const n = /^(\d+)/.exec(t);
+  if (n) return Number(n[1]);
+  const w = /^([a-z]+)/.exec(t)?.[1];
+  return w !== undefined && w in COUNT_WORDS ? COUNT_WORDS[w] : undefined;
 }

@@ -44,6 +44,7 @@ import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { applyConfirmedPaths } from "./overworldPaths";
 import { biomePaintStep, type BiomePaintResult } from "./biomePainter";
 import { cellEdits, type CellEdit } from "../undoBook";
+import { hashSeed } from "../arrival/arrival";
 
 export function gridRulesOf(plugin: HexmakerPlugin): GridRules {
   return { orientation: plugin.settings.hexOrientation, stagger: plugin.settings.staggerOffset ?? "odd" };
@@ -368,7 +369,10 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   const plan = planned;
   const paletteName = settings.palette ?? parent.paletteName;
   const taken = (n: string) => plugin.settings.maps.some((m) => m.name === slugify(n));
-  const name = opts.name?.trim() || defaultRegionName(plugin.mapLabel(parentName), px, py, plugin.mapStore.get(parentName, hex)?.name, taken);
+  // The hex's own name, else one rolled on the Names table (seeded with the region's seed when it has one), else coordinates.
+  const hexName = plugin.mapStore.get(parentName, hex)?.name?.trim()
+    || plugin.rolledMapName(parentName, hex, opts.seed !== undefined ? hashSeed(opts.seed, hex, "name") : undefined);
+  const name = opts.name?.trim() || defaultRegionName(plugin.mapLabel(parentName), px, py, hexName, taken);
   const res = await plugin.createNewMap(name, slot.cols, slot.rows, paletteName, slot.offset.x, slot.offset.y, slot.stagger, undefined, plan?.cells, {
     parent: { map: parentName, hex },
     quiet: true,

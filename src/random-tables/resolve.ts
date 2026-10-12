@@ -254,6 +254,44 @@ class Resolver {
     });
   }
 
+  /** A `pick: each` table: every fitting row on its own Chance, in table order. */
+  each(link: string, rand: () => number): Resolved[] {
+    const t = this.lookup.table(link);
+    if (!t) return [];
+    const { table, key } = t;
+    const out: Resolved[] = [];
+    table.entries.forEach((entry, index) => {
+      const info = rowInfoOf(table, index);
+      if (!conditionsFit(info.when, this.ctx)) return;
+      if (info.once && this.ctx.isUsed?.(key, index, entry, info.once)) return;
+      // A Chance cell that can't be read never comes up (reported by the parser).
+      const typed = Object.keys(info.attrs ?? {}).some((h) => h.trim().toLowerCase() === "chance");
+      const chance = info.chance ?? (typed ? 0 : 1);
+      if (chance <= 0) return;
+      if (chance < 1 && rand() >= chance) return;
+      const step: ResolveStep = { table: key, index, result: entry.result };
+      const attrs = { ...(info.attrs ?? {}) };
+      const once = info.once ? { table: key, index, scope: info.once } : undefined;
+      const hit: OnceHit | undefined = info.once
+        ? { table: key, index, scope: info.once, result: entry.result, link: entryLink(table, entry) !== undefined }
+        : undefined;
+      const { kind, value } = cellKind(table, entry, this.lookup, this.ctx);
+      if (kind === "table") {
+        const inner = this.roll(value, rand, [key], [step], attrs);
+        if (inner.kind === "empty" || inner.kind === "loop") { out.push(inner); return; }
+        if (!inner.once && once) inner.once = once;
+        if (hit) inner.onces = [hit, ...(inner.onces ?? [])];
+        out.push(inner);
+        return;
+      }
+      const r: Resolved = { kind, value, attrs, chain: [step] };
+      if (once) r.once = once;
+      if (hit) r.onces = [hit];
+      out.push(r);
+    });
+    return out;
+  }
+
   /** Rows left out here, in this table and the tables it links (loop-guarded). */
   skippedRows(link: string, visited: string[] = []): RowSkip[] {
     const t = this.lookup.table(link);
@@ -295,6 +333,22 @@ function streamOf(ctx: ResolveContext): () => number {
  */
 export function resolveRoll(link: string, lookup: TableLookup, ctx: ResolveContext = {}): Resolved {
   return new Resolver(lookup, ctx).roll(link, streamOf(ctx), [], [], {});
+}
+
+/**
+ * Roll a table "for each line": with `pick: each`, every row whose When
+ * fits (and isn't used up) comes up on its own Chance (no Chance column:
+ * always), in table order, each rolled through like resolveRoll. Any other
+ * table gives its one row (nothing when it has none).
+ */
+export function resolveEach(link: string, lookup: TableLookup, ctx: ResolveContext = {}): Resolved[] {
+  const t = lookup.table(link);
+  if (!t) return [];
+  if (t.table.pick !== "each") {
+    const r = resolveRoll(link, lookup, ctx);
+    return r.kind === "empty" ? [] : [r];
+  }
+  return new Resolver(lookup, ctx).each(link, streamOf(ctx));
 }
 
 export interface ResolvedOdds {
@@ -489,6 +543,27 @@ export function notesLookup(notes: Record<string, string>): TableLookup {
       const path = find(split(link).target);
       if (!path) return "missing";
       return noteKind(notes[path]) === "generator" ? "generator" : "note";
+    },
+  };
+}
+
+/** Several lookups as one: the first that knows a link answers. */
+export function layeredLookup(...lookups: (TableLookup | undefined)[]): TableLookup {
+  const ls = lookups.filter((l): l is TableLookup => !!l);
+  return {
+    table: (link) => {
+      for (const l of ls) {
+        const t = l.table(link);
+        if (t) return t;
+      }
+      return undefined;
+    },
+    kindOf: (link) => {
+      for (const l of ls) {
+        const k = l.kindOf?.(link);
+        if (k && k !== "missing") return k;
+      }
+      return "missing";
     },
   };
 }

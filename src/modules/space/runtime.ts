@@ -157,6 +157,10 @@ export const spaceRuntime: ModuleRuntime = {
     folder: () => normalizeFolder(plugin.worldTypeStore.folder()),
     rewrite: (text, links) => (WORLD_TYPES_NOTE.test(text) ? linkWorldTypePalettes(text, links) : undefined),
   }],
-  // Space turned on (setup or Settings): the shipped "Default space" table, once.
-  onEnabled: (plugin) => plugin.worldTypeStore.ensureDefault(),
+  // Space turned on (setup or Settings): the shipped "Default space" table,
+  // once, and Orbits' shipped Moons and System extras tables (when missing).
+  onEnabled: async (plugin) => {
+    await plugin.worldTypeStore.ensureDefault();
+    await plugin.installShippedTables(["space"]);
+  },
 };
