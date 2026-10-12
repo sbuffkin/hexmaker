@@ -1,6 +1,7 @@
 import { App, TFile, parseYaml } from "obsidian";
 import type { TokenEntry, TokenShape, TokenSize } from "./types";
 import type { ModeAction } from "./workMode";
+import { canDo } from "./modeGate";
 import { mapNameFromRef, mapNoteLink, noteLink, noteRefTarget } from "./noteFormats";
 import {
   type OverlayPatternKey,
@@ -155,13 +156,22 @@ export function getTerrainFromFile(app: App, path: string): string | null {
   return fm ? terrainFromFm(fm) : pendingTerrainOf(path);
 }
 
+/**
+ * Write a hex's terrain. `generated`: written by a generator, not by hand,
+ * so it's still gated by the work mode but isn't a hand edit (it never
+ * locks a new place, modeGate.noteHandEdit).
+ */
 export async function setTerrainInFile(
   app: App,
   path: string,
   terrainKey: string | null,
+  generated = false,
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) return hexSource!.set(loc.map, loc.key, { terrain: terrainKey }, "paint-terrain");
+  if (loc) {
+    if (!generated) return hexSource!.set(loc.map, loc.key, { terrain: terrainKey }, "paint-terrain");
+    return canDo(loc.map, "paint-terrain") && hexSource!.set(loc.map, loc.key, { terrain: terrainKey });
+  }
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {

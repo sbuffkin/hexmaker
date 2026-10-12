@@ -25,6 +25,7 @@ import { editRegionPlan, overworldMenu } from "../src/overworld/overworldInput";
 import { representativeTerrain } from "../src/overworld/biomes";
 import { layerOf } from "../src/ui/placement";
 import { MapStore } from "../src/maps/MapStore";
+import { setHexDataSource, setTerrainInFile } from "../src/frontmatter";
 import { MemVault } from "./helpers/memVault";
 import { DEFAULT_TERRAIN_PALETTE, DEFAULT_PATH_TYPES } from "../src/constants";
 import type { MapData, PathType, TerrainColor } from "../src/types";
@@ -233,6 +234,31 @@ describe("an open region locks on the first hand edit", () => {
 		expect(w.plugin.mapStore.set(r.name, "4_4", { terrain: "grass" }, "paint-terrain")).toBe(false);
 		await tick();
 		expect(w.regionOf("1_1")!.arrival).toBe("open");
+	});
+
+	it("terrain written by a generator (Fill / Regenerate terrain) isn't a hand edit; painted terrain is", async () => {
+		const heard: string[] = [];
+		const cells = new Map<string, Record<string, unknown>>();
+		setHandEditListener((n, a) => heard.push(`${n}:${a}`));
+		setHexDataSource({
+			isReady: () => true,
+			resolve: (path) => ({ map: "r", key: path }),
+			get: () => undefined,
+			set: (map, key, patch, action) => {
+				if (action && !guardWrite(map, action)) return false;
+				cells.set(key, patch);
+				return true;
+			},
+		});
+		try {
+			expect(await setTerrainInFile({} as never, "1_1", "forest", true)).toBe(true);
+			expect(heard).toEqual([]);
+			expect(await setTerrainInFile({} as never, "1_2", "forest")).toBe(true);
+			expect(heard).toEqual(["r:paint-terrain"]);
+			expect(cells.size).toBe(2);
+		} finally {
+			setHexDataSource(null);
+		}
 	});
 
 	it("the real map store: a hand edit (set with an action) is heard, bulk generated writes (setMany) are not", async () => {
