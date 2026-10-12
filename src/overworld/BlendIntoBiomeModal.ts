@@ -4,7 +4,7 @@
  * is learned and merged into that generator; without one, the map's mix,
  * terrain split, land share and smoothing are blended into the biome's own
  * settings (src/worldgen/regionGenerator.ts planBlend / applyBlend). A
- * weight slider says how much the map counts, with a live preview of a
+ * weight (the shared zero-sum sliders: this map vs what's there) says how much the map counts, with a live preview of a
  * fresh region. Opened from Edit region and the Maps window's right-click
  * menu, next to "Make generator…" (both Advanced). Needs Build or God.
  */
@@ -16,15 +16,10 @@ import { applyBlend, blendLock, blendTarget, planBlend, previewBlend, type Blend
 import { mapStagger } from "../worldgen/generators";
 import { drawPreview } from "../worldgen/preview";
 import { openMakeGenerator } from "./MakeGeneratorModal";
+import { renderShareSliders } from "../ui/shareSliders";
 
 /** The default share of the map in a blend. */
 export const DEFAULT_BLEND_WEIGHT = 0.25;
-
-/** "25% this map · 75% Coast" */
-export function blendWeightText(w: number, into: string): string {
-  const p = Math.round(w * 100);
-  return `${p}% this map · ${100 - p}% ${into}`;
-}
 
 /** The menu label for a map's blend action, or undefined when the map wasn't made from a biome. */
 export async function blendMenuLabel(plugin: HexmakerPlugin, mapName: string): Promise<string | undefined> {
@@ -77,15 +72,21 @@ export class BlendIntoBiomeModal extends HexmakerModal {
     const lock = blendLock(plugin, this.mapName);
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
 
-    const row = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    row.createSpan({ text: "Weight", cls: "duckmage-map-origin-label" });
-    const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5", "aria-label": "Weight of this map" } });
-    slider.value = String(Math.round(this.weight * 100));
-    const label = row.createSpan({ text: blendWeightText(this.weight, this.into()) });
-    slider.addEventListener("input", () => {
-      this.weight = Number(slider.value) / 100;
-      label.setText(blendWeightText(this.weight, this.into()));
-      this.schedule(canvas, status);
+    // How much this map counts against what's there: the shared zero-sum sliders (always 100%).
+    const weightBox = contentEl.createDiv({ cls: "duckmage-wfc-influence" });
+    weightBox.createEl("label", { text: "Weight", cls: "duckmage-map-field-label" });
+    renderShareSliders(weightBox, {
+      items: [{ label: "This map", title: plugin.mapLabel(this.mapName) }, { label: this.into() }],
+      weights: [this.weight, 1 - this.weight],
+      ariaLabel: (item) => `Weight of ${item.label === "This map" ? "this map" : item.label}`,
+      onInput: (shares) => {
+        this.weight = shares[0] / 100;
+        this.schedule(canvas, status);
+      },
+      onChange: (_shares, percents) => {
+        this.weight = percents[0] / 100;
+        this.schedule(canvas, status);
+      },
     });
 
     const box = contentEl.createDiv({ cls: "duckmage-wfc-section" });

@@ -36,8 +36,9 @@ import {
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl, linkLabel } from "../utils";
-import { makeScrubbable, wheelValue } from "./scrub";
-import { rebalance, toPercents } from "./regionWeights";
+import { makeScrubbable } from "./scrub";
+import { toPercents } from "./regionWeights";
+import { renderShareSliders } from "../ui/shareSliders";
 import { suggestImpassable } from "./impassableHint";
 import { isImpassable } from "../impassable";
 import { SIDES, hexRangeText, type Side } from "./world";
@@ -465,43 +466,40 @@ export class GeneratorPanel {
       const box = el.createDiv({ cls: "duckmage-wfc-influence" });
       box.createEl("label", { text: isBlend ? "Blend" : "Map influence", cls: "duckmage-map-field-label" });
       const stored = sourceInfluenceOf(model);
-      let weights = toPercents(stored ?? (isBlend ? sources.map(() => 1) : regionSizes(this.plugin, sources)));
       let dirs: Compass[] = sourceDirectionsOf(model) ?? sources.map((): Compass => "C");
       const arrows: Record<Compass, string> = { NW: "↖", N: "↑", NE: "↗", W: "←", C: "•", E: "→", SW: "↙", S: "↓", SE: "↘" };
       const names: Record<Compass, string> = {
         NW: "north-west", N: "north", NE: "north-east", W: "west", C: "everywhere", E: "east", SW: "south-west", S: "south", SE: "south-east",
       };
-      const rows = sources.map((name, i) => {
-        const row = box.createDiv({ cls: "duckmage-wfc-influence-row" });
-        row.createSpan({ text: sourceLabel(name), cls: "duckmage-wfc-influence-name", attr: { title: sourceLabel(name) } });
-        const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${sourceLabel(name)} influence` } });
-        const value = row.createSpan({ cls: "duckmage-wfc-influence-value" });
-        // Compass: which side of the map this source leans toward.
-        const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${sourceLabel(name)} direction` } });
-        const points = COMPASS.map((d) => {
-          const b = compass.createEl("button", {
-            text: arrows[d],
-            cls: "duckmage-wfc-compass-point",
-            attr: { title: d === "C" ? `${sourceLabel(name)}: everywhere (no direction)` : `${sourceLabel(name)}: lean ${names[d]}`, "aria-label": names[d] },
+      // The shared zero-sum sliders (src/ui/shareSliders.ts), each row
+      // ending in its compass: which side of the map the source leans toward.
+      const compasses: { d: Compass; b: HTMLButtonElement }[][] = [];
+      const sliders = renderShareSliders(box, {
+        items: sources.map((name) => ({ label: sourceLabel(name) })),
+        weights: toPercents(stored ?? (isBlend ? sources.map(() => 1) : regionSizes(this.plugin, sources))),
+        ariaLabel: (item) => `${item.label} influence`,
+        extra: (row, i) => {
+          const name = sources[i];
+          const compass = row.createDiv({ cls: "duckmage-wfc-compass", attr: { role: "group", "aria-label": `${sourceLabel(name)} direction` } });
+          compasses[i] = COMPASS.map((d) => {
+            const b = compass.createEl("button", {
+              text: arrows[d],
+              cls: "duckmage-wfc-compass-point",
+              attr: { title: d === "C" ? `${sourceLabel(name)}: everywhere (no direction)` : `${sourceLabel(name)}: lean ${names[d]}`, "aria-label": names[d] },
+            });
+            b.addEventListener("click", () => {
+              if (dirs[i] === d) return;
+              dirs = dirs.map((x, j) => (j === i ? d : x));
+              showDirs();
+              // A direction alone keeps a by-size mix by size.
+              remake(stored || isBlend ? sliders.percents() : undefined, dirs);
+            });
+            return { d, b };
           });
-          b.addEventListener("click", () => {
-            if (dirs[i] === d) return;
-            dirs = dirs.map((x, j) => (j === i ? d : x));
-            showDirs();
-            // A direction alone keeps a by-size mix by size.
-            remake(stored || isBlend ? weights : undefined, dirs);
-          });
-          return { d, b };
-        });
-        return { slider, value, points };
+        },
+        onChange: (_shares, percents) => remake(percents, dirs),
       });
-      const showWeights = () =>
-        rows.forEach((r, i) => {
-          r.slider.value = String(weights[i]);
-          r.value.setText(`${weights[i]}%`);
-        });
-      const showDirs = () => rows.forEach((r, i) => r.points.forEach((p) => p.b.toggleClass("is-active", p.d === dirs[i])));
-      showWeights();
+      const showDirs = () => compasses.forEach((points, i) => points.forEach((p) => p.b.toggleClass("is-active", p.d === dirs[i])));
       showDirs();
       const note = box.createEl("p", {
         text: (stored || isBlend
@@ -512,32 +510,14 @@ export class GeneratorPanel {
       });
       const remake = (next: number[] | null | undefined, nextDirs: Compass[]) => {
         note.setText(isBlend ? "Blending…" : "Re-learning…");
-        for (const r of rows) {
-          r.slider.disabled = true;
-          for (const p of r.points) p.b.disabled = true;
-        }
+        sliders.setDisabled(true);
+        for (const points of compasses) for (const p of points) p.b.disabled = true;
         void (saved ? relearnGenerator(this.plugin, saved, next, nextDirs) : remakeBlend(this.plugin, model, next, nextDirs)).then((res) => {
           if ("error" in res) new Notice(res.error);
           else if (!saved) GeneratorPanel.draft = res.model;
           this.host.rerender();
         });
       };
-      let wheelTimer: number | null = null;
-      rows.forEach((r, i) => {
-        r.slider.addEventListener("input", () => {
-          weights = rebalance(weights, i, Number(r.slider.value));
-          showWeights();
-        });
-        r.slider.addEventListener("change", () => remake(weights, dirs));
-        // Scroll to nudge by 5%; re-make once the wheel stops.
-        r.slider.addEventListener("wheel", (e) => {
-          e.preventDefault();
-          weights = rebalance(weights, i, wheelValue(weights[i], e.deltaY, { min: 0, max: 100, step: 5 }));
-          showWeights();
-          if (wheelTimer !== null) window.clearTimeout(wheelTimer);
-          wheelTimer = window.setTimeout(() => remake(weights, dirs), 500);
-        }, { passive: false });
-      });
       if (stored && !isBlend) {
         const bySize = box.createEl("button", { text: "Back to map size", attr: { title: "Let each map count by how many hexes it has painted" } });
         bySize.addEventListener("click", () => remake(null, dirs));

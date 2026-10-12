@@ -30,6 +30,7 @@
 import { TUNING_PARAMS, clampTuning, cleanTuning, tunedOrUnset, type BiomeTuning } from "./biomeTuning";
 import { mixShares, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
 import { typesInGroup } from "../terrainTypes";
+import { percentsToWeights, toPercents } from "../ui/shares";
 
 export interface BiomePart {
   id: string;
@@ -79,6 +80,30 @@ export function comboParts(id: string): BiomePart[] {
 /** The heaviest part (the first listed on a tie). */
 export function dominantPart(id: string): string | undefined {
   return normalizeParts(comboParts(id))[0]?.id;
+}
+
+/**
+ * A mix as set on the zero-sum sliders (shares, any scale) → parts to store:
+ * small whole weights that read back as the same whole percentages
+ * (67% / 33% → Alpine 2 + Taiga 1; 50/50 → Alpine + Taiga; 70/30 → 7 and 3).
+ * A part at 0% is left out. When the sliders show what `was` (the stored
+ * mix) shows, the stored weights are kept as written ("Alpine 1.5 + Taiga").
+ */
+export function mixToParts(parts: readonly BiomePart[], was?: readonly BiomePart[]): BiomePart[] {
+  if (!parts.length) return [];
+  const now = toPercents(parts.map((p) => p.weight));
+  if (was && was.length === parts.length && was.every((p, i) => p.id === parts[i].id)) {
+    const before = toPercents(was.map((p) => p.weight));
+    if (before.every((v, i) => v === now[i])) return was.map((p) => ({ ...p }));
+  }
+  const w = percentsToWeights(now);
+  return parts.map((p, i) => ({ id: p.id, weight: w[i] })).filter((p) => p.weight > 0);
+}
+
+/** A biome added to a mix gets an equal share: 1/(n+1) of it, the others scaled down. */
+export function newPartWeight(parts: readonly BiomePart[]): number {
+  const total = parts.reduce((s, p) => s + (Number.isFinite(p.weight) && p.weight > 0 ? p.weight : 0), 0);
+  return parts.length && total > 0 ? total / parts.length : 1;
 }
 
 const WEIGHT_AT_END = /^(.*?)\s*(?:[x×*]\s*)?\(?\s*(\d+(?:\.\d+)?)\s*\)?\s*%?$/i;

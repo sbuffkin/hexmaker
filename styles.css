@@ -6195,7 +6195,9 @@ button.duckmage-wfc-library-tab.is-active {
     margin: 0.5em 0;
 }
 
-.duckmage-wfc-influence-row {
+/* The shared zero-sum sliders (src/ui/shareSliders.ts): name, slider,
+   % readout, then the caller's own cells. Always add up to 100%. */
+.duckmage-share-sliders-row {
     display: grid;
     grid-template-columns: minmax(6em, 10em) 1fr 3.5em auto;
     align-items: center;
@@ -6203,17 +6205,36 @@ button.duckmage-wfc-library-tab.is-active {
     margin: 0.2em 0;
 }
 
-.duckmage-wfc-influence-name {
+.duckmage-share-sliders-row.is-head {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-share-sliders-row.is-missing .duckmage-share-sliders-name {
+    color: var(--text-faint);
+    font-style: italic;
+}
+
+.duckmage-share-sliders-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.duckmage-wfc-influence-row input[type="range"] {
+.duckmage-share-sliders-name > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duckmage-share-sliders-row input[type="range"] {
     width: 100%;
 }
 
-.duckmage-wfc-influence-value {
+.duckmage-share-sliders-value {
     text-align: right;
     font-variant-numeric: tabular-nums;
 }
@@ -8131,23 +8152,6 @@ button.duckmage-terrain-legend-chip {
     display: grid;
     gap: 4px;
     margin-bottom: 0.4em;
-}
-.duckmage-edit-region-mix-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-.duckmage-edit-region-mix-name {
-    flex: 1;
-}
-.duckmage-edit-region-mix-weight {
-    width: 4.5em;
-}
-.duckmage-edit-region-mix-share {
-    width: 3em;
-    text-align: right;
-    color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
 }
 .duckmage-biome-swatch {
     width: 1em;

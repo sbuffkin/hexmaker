@@ -20,7 +20,8 @@ import { profileFromFields } from "../src/overworld/biomes";
 import { addBlendOfRow, updateGeneratorNote } from "../src/worldgen/generatorNoteUpdate";
 import { foldMapIntoModel, generatorText } from "../src/worldgen/generators";
 import { applyBlend, type BlendTarget } from "../src/overworld/regionGenerator";
-import { blendWeightText } from "../src/overworld/BlendIntoBiomeModal";
+import { DEFAULT_BLEND_WEIGHT } from "../src/overworld/BlendIntoBiomeModal";
+import { ShareState } from "../src/ui/shares";
 import { learnModel, parseModelMarkdown, weightShares, type HexWfcModel } from "../packages/hex-wfc/src";
 import { MODELS } from "./overworldFixtures";
 import { EXPORT_FIELDS, formatPlan, planExport, shippedBiomesSource } from "../dev/biomes/exportTuned.mjs";
@@ -115,8 +116,11 @@ describe("Blend into a biome's generator: learned and merged at the weight", () 
 		expect(w25.settings).toEqual(existing.settings);
 	});
 
-	it("the weight reads as this map vs the rest", () => {
-		expect(blendWeightText(0.25, "Coast")).toBe("25% this map · 75% Coast");
+	it("the weight is this map vs the rest on the shared zero-sum sliders", () => {
+		const s = new ShareState([DEFAULT_BLEND_WEIGHT, 1 - DEFAULT_BLEND_WEIGHT]);
+		expect(s.percents()).toEqual([25, 75]);
+		s.set(1, 40);
+		expect(s.percents()).toEqual([60, 40]);
 	});
 });
 
