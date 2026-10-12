@@ -34,4 +34,7 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
 export const worldMapsRuntime: ModuleRuntime = {
   id: "world-maps",
   generators,
+  newMapOptionIds: {
+    [WORLD_BIOMES_ID]: { climate: "NewMap.worldBiomesClimate", water: "NewMap.worldBiomesWater", land: "NewMap.worldBiomesLand", north: "NewMap.worldBiomesNorth" },
+  },
 };

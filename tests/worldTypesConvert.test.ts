@@ -15,7 +15,7 @@ import { notesLookup, resolveOdds } from "../src/random-tables/resolve";
 import { parseRandomTableWithReport } from "../src/random-tables/randomTable";
 import { ENGINE_ROLES, roleOdds, rollRole, type RoleId } from "../src/worldgen/tableRoles";
 import { notesTableSource } from "../src/worldgen/tableSources";
-import { starScatter, starScatterRoles } from "../src/worldgen/procedural/starScatter";
+import { starScatter, starScatterRoles } from "../src/space/starScatter";
 import { mulberry32 } from "../packages/hex-wfc/src/rng";
 import type { OrbitZone } from "../src/space/worldTypes";
 

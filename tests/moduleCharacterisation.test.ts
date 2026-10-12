@@ -32,7 +32,7 @@ import {
 } from "../src/worldgen/registry";
 import { ENGINE_ROLES } from "../src/worldgen/tableRoles";
 import { defaultPathTypeFor } from "../src/worldgen/generatorPathTypes";
-import { moonPlanetLinks } from "../src/hex-map/moonLinks";
+import { moonPlanetLinks } from "../src/space/moonLinks";
 import type { MapData, TerrainColor, TerrainPalette } from "../src/types";
 
 /**

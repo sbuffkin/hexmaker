@@ -48,6 +48,7 @@ import {
   type TerrainGeneratorKind,
 } from "../worldgen/registry";
 import { attrsForTerrain } from "../worldgen/tableSources";
+import { moduleArrivalTables } from "../modules/runtime";
 import { canRerollPlace, REROLL_PLACE_LOCKED_HINT, workModeOf, type ModeAction } from "../workMode";
 import { lockedNotice } from "../hex-map/godOffer";
 import {
@@ -129,7 +130,7 @@ export class ArrivalService {
   private lookupFor(mapName: string): { lookup: TableLookup; terrains: string[] } {
     const { plugin } = this;
     const terrains = plugin.getMapPalette(mapName).map((t) => t.name);
-    const source = plugin.worldTypeStore.sourceFor(undefined, terrains, mapName).source;
+    const source = moduleArrivalTables(plugin, terrains, mapName);
     const notes = plugin.tableNotes.lookup();
     if (!source) return { lookup: notes, terrains };
     return {
@@ -231,7 +232,7 @@ export class ArrivalService {
       return null;
     }
     const terrain = plugin.mapStore.get(mapName, key)?.terrain ?? parent.baseTerrain;
-    const source = plugin.worldTypeStore.sourceFor(undefined, plugin.getMapPalette(mapName).map((t) => t.name), mapName).source;
+    const source = moduleArrivalTables(plugin, plugin.getMapPalette(mapName).map((t) => t.name), mapName);
     const attrs = resolution?.kind === "terrain" ? resolution.attrs : terrain ? attrsForTerrain(source, terrain) : undefined;
     const seed = arrivalSeed(pseed, key, "submap", 0);
     const { setup, kind, terrains, note } = await this.plan(mapName, x, y, terrain, attrs, seed);
@@ -318,7 +319,7 @@ export class ArrivalService {
     // The old landscape's once-only events go with it.
     await plugin.events.forgetMap(mapName);
     const terrain = plugin.mapStore.get(parentName, hex)?.terrain ?? plugin.getMap(parentName)?.baseTerrain;
-    const source = plugin.worldTypeStore.sourceFor(undefined, plugin.getMapPalette(parentName).map((t) => t.name), parentName).source;
+    const source = moduleArrivalTables(plugin, plugin.getMapPalette(parentName).map((t) => t.name), parentName);
     const attrs = terrain ? attrsForTerrain(source, terrain) : undefined;
     const planned = await this.plan(parentName, x, y, terrain, attrs, seed);
     // The place keeps its palette and size; only the landscape is made again.

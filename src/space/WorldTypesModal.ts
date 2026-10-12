@@ -42,8 +42,8 @@ import {
 } from "./worldTypes";
 import { worldTypesSource } from "./worldTypesSource";
 import { ZONE_ROLES, roleOdds, rollRole, type RoleId } from "../worldgen/tableRoles";
-import { starScatterOffered, starScatterRoles } from "../worldgen/procedural/starScatter";
-import { orbitRoles, orbitsFits } from "../worldgen/procedural/orbits";
+import { starScatterOffered, starScatterRoles } from "./starScatter";
+import { orbitRoles, orbitsFits } from "./orbits";
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import type { TerrainColor } from "../types";
 import { TAB_ORDER, WorldTypesDraft, type WorldTypesTab } from "./worldTypesDraft";

@@ -13,10 +13,14 @@ import type {
   FolderSettingContribution,
   GeneratorContribution,
   GeneratorHelpers,
+  MapOverlayDef,
+  MapPropertiesSection,
+  NewMapSetupExtra,
   ModuleRuntime,
   ModuleStore,
   RefLinker,
 } from "./types";
+import type { TableSource } from "../worldgen/tableRoles";
 import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
@@ -60,4 +64,33 @@ export async function runOnEnabled(plugin: HexmakerPlugin, kinds: readonly strin
     const kind = registry.module(m.id)?.kind?.id;
     if (kind && kinds.includes(kind)) await m.onEnabled?.(plugin);
   }
+}
+
+/** Every module's map overlays, in module order (map view and PNG export). */
+export function moduleOverlays(): MapOverlayDef[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.overlays ?? [])]);
+}
+
+/** Every module's Map properties sections, in module order. */
+export function moduleMapProperties(): MapPropertiesSection[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.mapProperties ?? [])]);
+}
+
+/** The New map setup extras for generator `generatorId`, in module order. */
+export function moduleNewMapSetup(generatorId: string): NewMapSetupExtra[] {
+  return MODULE_RUNTIMES.flatMap((m) => (m.newMapSetup ?? []).filter((x) => x.forGenerators.includes(generatorId)));
+}
+
+/** The table source for rolls on arrival: the first module that answers. */
+export function moduleArrivalTables(plugin: HexmakerPlugin, terrains: string[], mapName: string): TableSource | undefined {
+  for (const m of MODULE_RUNTIMES) {
+    const source = m.arrival?.tableSourceFor?.(plugin, terrains, mapName);
+    if (source) return source;
+  }
+  return undefined;
+}
+
+/** Every module's New map option inventory ids: generator id → option key → id. */
+export function moduleNewMapOptionIds(): Record<string, Readonly<Record<string, string>>> {
+  return Object.assign({}, ...MODULE_RUNTIMES.map((m) => m.newMapOptionIds ?? {})) as Record<string, Readonly<Record<string, string>>>;
 }

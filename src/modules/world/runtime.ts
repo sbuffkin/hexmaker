@@ -62,4 +62,8 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
 export const worldRuntime: ModuleRuntime = {
   id: "world",
   generators,
+  newMapOptionIds: {
+    [OVERLAND_ID]: { water: "NewMap.overlandWater", climate: "NewMap.overlandClimate", relief: "NewMap.overlandRelief", sea: "NewMap.overlandSea" },
+    [REGION_DETAIL_ID]: { edges: "NewMap.regionDetailInfluence", variety: "NewMap.regionDetailVariety" },
+  },
 };

@@ -22,7 +22,7 @@ import { convertWorldTypes } from "../src/space/spaceTables";
 import { notesLookup } from "../src/random-tables/resolve";
 import { notesTableSource } from "../src/worldgen/tableSources";
 import { withOnce } from "../src/worldgen/tableRoles";
-import { starScatter } from "../src/worldgen/procedural/starScatter";
+import { starScatter } from "../src/space/starScatter";
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
 import { getPreset } from "../src/palettes/presets";
 import { slugify } from "../src/utils";

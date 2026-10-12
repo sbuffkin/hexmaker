@@ -1,5 +1,5 @@
-import { hexCenter, mulberry32 } from "../../../packages/hex-wfc/src";
-import type { TerrainColor } from "../../types";
+import { hexCenter, mulberry32 } from "../../packages/hex-wfc/src";
+import type { TerrainColor } from "../types";
 import {
   cellKey,
   centerHex,
@@ -11,9 +11,9 @@ import {
   type ProcOption,
   type ProcPath,
   type ProcResult,
-} from "./common";
-import { ZONE_ROLES, roleOdds, rollRole, type TableSource } from "../tableRoles";
-import { ORBIT_ZONES, orbitZone } from "../../space/worldTypes";
+} from "../worldgen/procedural/common";
+import { ZONE_ROLES, roleOdds, rollRole, type TableSource } from "../worldgen/tableRoles";
+import { ORBIT_ZONES, orbitZone } from "./worldTypes";
 
 /**
  * Star-system "orbits": a star at the centre, then one body per orbit ring

@@ -7,6 +7,7 @@
  * Pure: no Obsidian imports.
  */
 import type { TerrainColor } from "../types";
+import type { MapOverlayDef } from "../modules/types";
 import { effectiveTerrainType } from "../terrainTypes";
 import { hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import { latticeCenter, type LatticeGrid, type Pt } from "../paths/pathGeometry";
@@ -72,3 +73,15 @@ export function moonTethers(
     .filter(([moon, planet]) => include(moon) && include(planet))
     .map(([moon, planet]) => tether(latticeCenter(moon, grid), latticeCenter(planet, grid)));
 }
+
+/**
+ * Moon tethers as a map overlay (plan-code-modules P5): the Space module
+ * contributes it, and the map view and the PNG export draw every module's
+ * overlays the same way (registry.overlays()).
+ */
+export const MOON_TETHER_OVERLAY: MapOverlayDef = {
+  id: "moon-tethers",
+  cls: "duckmage-moon-link",
+  style: MOON_TETHER_STYLE,
+  segments: moonTethers,
+};

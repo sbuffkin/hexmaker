@@ -7,8 +7,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import { ENGINE_ROLES, ZONE_ROLES, engineRole, roleOdds, rolesOf, type RoleId } from "../src/worldgen/tableRoles";
-import { STAR_SCATTER_ID, starScatterRoles } from "../src/worldgen/procedural/starScatter";
-import { ORBITS_ID, orbitRoles } from "../src/worldgen/procedural/orbits";
+import { STAR_SCATTER_ID, starScatterRoles } from "../src/space/starScatter";
+import { ORBITS_ID, orbitRoles } from "../src/space/orbits";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import {
 	WORLD_TYPES_DEFAULT,
@@ -77,7 +77,7 @@ describe("the engine role schema", () => {
 	});
 
 	it("the engines hold no terrain names and no built-in weights any more (no special defaults)", () => {
-		for (const f of ["src/worldgen/procedural/starScatter.ts", "src/worldgen/procedural/orbits.ts"]) {
+		for (const f of ["src/space/starScatter.ts", "src/space/orbits.ts"]) {
 			const code = readFileSync(f, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
 			for (const name of ["garden", "ocean", "desert", "barren", "molten", "red dwarf", "yellow star", "black hole", "deep-space", "terrestrial", "rocky", "ice giant"]) {
 				expect({ f, name, found: code.toLowerCase().includes(name) }).toEqual({ f, name, found: false });

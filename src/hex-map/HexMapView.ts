@@ -71,7 +71,7 @@ import {
   type LatticeAffine,
   type LatticeGrid,
 } from "../paths/pathGeometry";
-import { MOON_TETHER_STYLE, moonTethers } from "./moonLinks";
+import { moduleOverlays } from "../modules/runtime";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
@@ -6583,18 +6583,22 @@ export class HexMapView extends ItemView {
         dash: s.dash.map((d) => fmt(d * scale)).join(" "),
       };
     });
-    // Moons tied to their planet (S11): a faint tether across the edge they
-    // share, by terrain type (src/hex-map/moonLinks.ts). Under the paths.
-    const moonLines: { d: string; width: string; dash: string }[] = [];
-    if (calib) {
+    // Module overlays (Space: moons tied to their planet, S11): faint lines
+    // by terrain type, under the paths. The same segments the PNG export
+    // draws (overlay.segments, src/modules/runtime.ts moduleOverlays).
+    const overlayLines: { cls: string; d: string; width: string; dash: string }[] = [];
+    const overlays = calib ? moduleOverlays() : [];
+    if (calib && overlays.length) {
       const terrain = new Map<string, string>();
       for (const [k, h] of this.plugin.mapStore.all(region.name)) if (h.terrain) terrain.set(k, h.terrain);
-      // The same segments the PNG export draws (moonTethers).
-      const width = fmt(MOON_TETHER_STYLE.width * scale);
-      const dash = MOON_TETHER_STYLE.dash.map((d) => fmt(d * scale)).join(" ");
-      for (const seg of moonTethers(terrain, this.plugin.getMapPalette(region.name), calib.lattice)) {
-        const [a, b] = em(seg);
-        moonLines.push({ d: `M${fmt(a.cx)} ${fmt(a.cy)}L${fmt(b.cx)} ${fmt(b.cy)}`, width, dash });
+      const palette = this.plugin.getMapPalette(region.name);
+      for (const overlay of overlays) {
+        const width = fmt(overlay.style.width * scale);
+        const dash = overlay.style.dash.map((d) => fmt(d * scale)).join(" ");
+        for (const seg of overlay.segments(terrain, palette, calib.lattice)) {
+          const [a, b] = em(seg);
+          overlayLines.push({ cls: overlay.cls, d: `M${fmt(a.cx)} ${fmt(a.cy)}L${fmt(b.cx)} ${fmt(b.cy)}`, width, dash });
+        }
       }
     }
     // The path tool: the selected path highlighted, its anchor handles
@@ -6628,10 +6632,10 @@ export class HexMapView extends ItemView {
     const selected = tool?.selected ?? null;
     // On an overworld, paths not yet confirmed into their regions are drafts (drawn faded).
     const drafts = draftPathNames(this.plugin, region.name);
-    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color, drafts.has(l.s.path)]), dot, handles, selected, moonLines]);
+    const key = JSON.stringify([lines.map((l) => [l.s.path, l.s.branch, l.d, l.width, l.dash, l.s.color, drafts.has(l.s.path)]), dot, handles, selected, overlayLines]);
     const existing = gridContainer.querySelector("svg.duckmage-path-svg");
     const existingHandles = gridContainer.querySelector("svg.duckmage-path-handles-svg");
-    const wantLines = lines.length > 0 || moonLines.length > 0;
+    const wantLines = lines.length > 0 || overlayLines.length > 0;
     const wantHandles = !!dot || handles.length > 0;
 
     // ── Writes ──
@@ -6651,9 +6655,9 @@ export class HexMapView extends ItemView {
       };
       if (wantLines) {
         const svg = emSvg("duckmage-path-svg");
-        for (const m of moonLines) {
+        for (const m of overlayLines) {
           const tie = activeDocument.createElementNS(svgNS, "path");
-          tie.setAttribute("class", "duckmage-svg-path-line duckmage-moon-link");
+          tie.setAttribute("class", `duckmage-svg-path-line ${m.cls}`);
           tie.setAttribute("d", m.d);
           tie.setAttribute("stroke-width", m.width);
           tie.setAttribute("stroke-dasharray", m.dash);

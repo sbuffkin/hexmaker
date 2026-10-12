@@ -137,15 +137,18 @@ export const ICON_PACK_LABELS: Record<IconPack, string> = {
 	custom: "Custom",
 };
 
-/** The Places pack (World module): its sub-groups and pack order, when it's there. */
-const PLACES = registry.iconPacks().find((p) => p.id === "places");
+/**
+ * A pack's sub-groups, shown as chips on its tab (World's Places pack:
+ * Settlements, Castles…), in display order: [id, label]. Empty for a pack
+ * without any (and for All, Terrain and Custom).
+ */
+export function iconSubgroups(pack: IconPack): readonly (readonly [string, string])[] {
+	return registry.iconPacks().find((p) => p.id === pack)?.subgroups ?? [];
+}
 
-/** Sub-groups of the Places pack (Settlements, Castles…), in display order: [id, label]. */
-export const PLACE_ICON_KINDS: readonly (readonly [string, string])[] = PLACES?.subgroups ?? [];
-
-/** The Places sub-group a bundled place icon belongs to (undefined for other icons). */
-export function placeIconKind(icon: string): string | undefined {
-	return PLACES?.subgroupOf?.get(icon);
+/** The sub-group a bundled icon belongs to in its pack (undefined for icons without one). */
+export function iconSubgroup(icon: string): string | undefined {
+	return registry.iconPackOf(icon)?.subgroupOf?.get(icon);
 }
 
 /** Packs that keep their own order: icon → its sort key (prefix + index). */

@@ -1,13 +1,13 @@
 import { App, Modal } from "obsidian";
-import { iconLabel, iconPack, iconPackTabs, placeIconKind, PLACE_ICON_KINDS, type IconPack } from "./utils";
+import { ICON_PACK_LABELS, iconLabel, iconPack, iconPackTabs, iconSubgroup, iconSubgroups, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 import { Disclosure, type IsSet, type SectionName } from "./ui/disclosure";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | undefined;
 
-/** Last Places sub-group picked (Settlements, Castles…); "" = all places. */
-let lastPlaceKind = "";
+/** Last pack sub-group picked (Places: Settlements, Castles…); "" = the whole pack. */
+let lastSubgroup = "";
 
 /** The tab a filter opens on until the user picks one (see setIconPackDefault). */
 let iconPackDefault: () => IconPack = () => "all";
@@ -83,10 +83,10 @@ export class HexmakerModal extends Modal {
 			attr: { placeholder: "Filter icons…", "aria-label": "Filter icons" },
 		});
 		const tabs = bar.createDiv({ cls: "duckmage-icon-filter-tabs" });
-		// Sub-groups of the Places tab (Settlements, Castles…), shown only on it.
+		// Sub-groups of the open tab's pack (Places: Settlements, Castles…),
+		// shown only on a pack that has them.
 		const kinds = bar.createDiv({ cls: "duckmage-icon-filter-kinds" });
-		const kindLabel = new Map(PLACE_ICON_KINDS);
-		let placeKind = lastPlaceKind;
+		let subgroup = lastSubgroup;
 		const empty = createDiv({ cls: "duckmage-icon-filter-empty", text: "No icons match." });
 		const NO_CUSTOM = "No custom icons yet. Put your own images (a castle, a village…) in the icons folder set in Hexmaker settings.";
 		grid.after(empty);
@@ -109,14 +109,15 @@ export class HexmakerModal extends Modal {
 			for (const tile of tiles()) {
 				const icon = tile.dataset["icon"] ?? "";
 				if (!icon) continue;
-				const kind = vaultIcons.has(icon) ? undefined : placeIconKind(icon);
+				const kind = vaultIcons.has(icon) ? undefined : iconSubgroup(icon);
+				const kindText = kind === undefined ? "" : (new Map(iconSubgroups(iconPack(icon, vaultIcons))).get(kind) ?? "");
 				const match =
 					(pack === "all" || iconPack(icon, vaultIcons) === pack) &&
-					(pack !== "places" || !placeKind || kind === placeKind) &&
+					(!iconSubgroups(pack).length || !subgroup || kind === subgroup) &&
 					(!query ||
 						iconLabel(icon).includes(query) ||
 						icon.toLowerCase().includes(query) ||
-						(kind !== undefined && (kindLabel.get(kind) ?? "").toLowerCase().includes(query)));
+						(kind !== undefined && kindText.toLowerCase().includes(query)));
 				tile.toggle(match);
 				if (match) shown++;
 			}
@@ -159,20 +160,21 @@ export class HexmakerModal extends Modal {
 			const counts = new Map<string, number>();
 			for (const tile of tiles()) {
 				const icon = tile.dataset["icon"];
-				const kind = icon && !vaultIcons.has(icon) ? placeIconKind(icon) : undefined;
+				const kind = icon && !vaultIcons.has(icon) && iconPack(icon, vaultIcons) === pack ? iconSubgroup(icon) : undefined;
 				if (kind) counts.set(kind, (counts.get(kind) ?? 0) + 1);
 			}
-			if (!counts.get(placeKind)) placeKind = "";
-			kinds.toggle(pack === "places" && counts.size > 0);
-			const entries: (readonly [string, string])[] =[["", "All places"], ...PLACE_ICON_KINDS.filter(([id]) => counts.get(id))];
+			if (!counts.get(subgroup)) subgroup = "";
+			const groups = iconSubgroups(pack);
+			kinds.toggle(groups.length > 0 && counts.size > 0);
+			const entries: (readonly [string, string])[] = [["", `All ${(ICON_PACK_LABELS[pack] ?? pack).toLowerCase()}`], ...groups.filter(([id]) => counts.get(id))];
 			for (const [id, label] of entries) {
 				const chip = kinds.createEl("button", {
-					cls: `duckmage-icon-filter-kind${placeKind === id ? " is-active" : ""}`,
+					cls: `duckmage-icon-filter-kind${subgroup === id ? " is-active" : ""}`,
 					text: label,
 				});
 				chip.addEventListener("click", () => {
-					placeKind = id;
-					lastPlaceKind = id;
+					subgroup = id;
+					lastSubgroup = id;
 					renderKinds();
 					apply();
 				});

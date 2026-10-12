@@ -1,7 +1,7 @@
-import { mulberry32 } from "../../../packages/hex-wfc/src";
+import { mulberry32 } from "../../packages/hex-wfc/src";
 import { orbitsFits } from "./orbits";
-import { roleOdds, rollRole, type TableSource } from "../tableRoles";
-import type { TerrainColor } from "../../types";
+import { roleOdds, rollRole, type TableSource } from "../worldgen/tableRoles";
+import type { TerrainColor } from "../types";
 import {
   cellKey,
   distance,
@@ -12,7 +12,7 @@ import {
   type ProcOption,
   type ProcPath,
   type ProcResult,
-} from "./common";
+} from "../worldgen/procedural/common";
 
 /**
  * Sector "star scatter": the classic subsector roll. Each hex holds a star

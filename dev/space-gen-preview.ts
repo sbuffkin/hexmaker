@@ -5,8 +5,8 @@
  * Serve: npm run sandbox → /dev/space-gen-preview.html
  */
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS, SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/modules/space/presets";
-import { starScatter, STAR_SCATTER_OPTIONS } from "../src/worldgen/procedural/starScatter";
-import { orbits, orbitsOptions } from "../src/worldgen/procedural/orbits";
+import { starScatter, STAR_SCATTER_OPTIONS } from "../src/space/starScatter";
+import { orbits, orbitsOptions } from "../src/space/orbits";
 import type { GenerationContext, ProcGrid, ProcOption, Side } from "../src/worldgen/procedural/common";
 import { planetSurface, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
 import { DEFAULT_TERRAIN_PALETTE, DEFAULT_PATH_TYPES } from "../src/constants";

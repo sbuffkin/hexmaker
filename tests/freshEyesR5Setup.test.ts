@@ -18,7 +18,7 @@ import {
 	type TerrainGeneratorKind,
 } from "../src/worldgen/registry";
 import { OVERLAND_ID, PLANET_SURFACE_ID, REGION_DETAIL_ID } from "../src/worldgen/procedural/planetSurface";
-import { STAR_SCATTER_ID } from "../src/worldgen/procedural/starScatter";
+import { STAR_SCATTER_ID } from "../src/space/starScatter";
 import { slugHint } from "../src/wizardText";
 import { mapExportFileNames, mapExportStem, mapExportSuffix } from "../src/export/exportNames";
 import { defaultIconPack } from "../src/utils";

@@ -23,7 +23,9 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { GeneratedPath, TerrainGeneratorKind } from "../worldgen/registry";
 import type { GridSpec } from "../worldgen/generators";
 import type { ProcGrid } from "../worldgen/procedural/common";
-import type { MapPath } from "../types";
+import type { MapData, MapPath, TerrainColor } from "../types";
+import type { LatticeGrid, Pt } from "../paths/pathGeometry";
+import type { TableSource } from "../worldgen/tableRoles";
 import type { TAbstractFile } from "obsidian";
 
 /** A map type id ("world", "space"). Stable, never reused. */
@@ -260,6 +262,72 @@ export interface RefLinker {
 }
 
 /**
+ * A map overlay a module draws over the terrain, under the paths (Space:
+ * moon tethers). The map view and the PNG export both draw `segments()`
+ * in lattice units (× the hex radius), so the two always match.
+ */
+export interface MapOverlayDef {
+  id: string;
+  /** CSS class of each on-screen line; its colour and opacity live in styles.css. */
+  cls: string;
+  /** How a line looks, in lattice units; the PNG export draws all four from here. */
+  style: { color: string; opacity: number; width: number; dash: readonly number[] };
+  /**
+   * Every segment on a map. `include` drops segments whose ends aren't
+   * both drawn (an export of part of the map).
+   */
+  segments(
+    terrainAt: ReadonlyMap<string, string>,
+    palette: readonly TerrainColor[],
+    grid: LatticeGrid,
+    include?: (hexKey: string) => boolean,
+  ): [Pt, Pt][];
+}
+
+/**
+ * A section of the Map properties modal a module adds (Space: Generator
+ * tables). `render` draws nothing when it doesn't apply to `map`.
+ */
+export interface MapPropertiesSection {
+  id: string;
+  render(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void;
+}
+
+/** What a New map setup extra knows about the form (see NewMapSetupExtra). */
+export interface NewMapSetupContext {
+  plugin: HexmakerPlugin;
+  /** The generator the form shows. */
+  generatorId: string;
+  /** The map the new one is made from (a parent hex's map), when there is one. */
+  originMap?: string;
+}
+
+/**
+ * Something a module adds to New map setup for some generators (Space:
+ * "Edit world types…" beside the World types option of Star scatter and
+ * Orbits).
+ */
+export interface NewMapSetupExtra {
+  /** The generator ids it shows for. */
+  forGenerators: readonly string[];
+  /** The option row it joins when that option is on the form; else a row of its own… */
+  optionKey: string;
+  /** …with this label. */
+  label: string;
+  render(row: HTMLElement, ctx: NewMapSetupContext): void;
+}
+
+/** What a module adds when a place is made on arrival (GM4). */
+export interface ArrivalHooks {
+  /**
+   * The table source the arrival rolls its new place's details on, for a
+   * map with `terrains` (Space: the World types tables). The first module
+   * that answers wins.
+   */
+  tableSourceFor?(plugin: HexmakerPlugin, terrains: string[], mapName: string): TableSource | undefined;
+}
+
+/**
  * The runtime half of a module (see the top of this file): host-bound
  * pieces, read only by the plugin and its services (src/modules/runtime.ts).
  */
@@ -275,4 +343,17 @@ export interface ModuleRuntime {
   refLinkers?(plugin: HexmakerPlugin): RefLinker[];
   /** The module's map type was just turned on (setup or Settings): install its shipped content once. */
   onEnabled?(plugin: HexmakerPlugin): Promise<void>;
+  /** Overlays drawn over the terrain, under the paths (map view and PNG export). */
+  overlays?: readonly MapOverlayDef[];
+  /** Sections of the Map properties modal. */
+  mapProperties?: readonly MapPropertiesSection[];
+  /** Additions to New map setup. */
+  newMapSetup?: readonly NewMapSetupExtra[];
+  /** Hooks for places made on arrival. */
+  arrival?: ArrivalHooks;
+  /**
+   * UI inventory ids of its generators' New map options (generator id →
+   * option key → id), so the placement map places each one.
+   */
+  newMapOptionIds?: Readonly<Record<string, Readonly<Record<string, string>>>>;
 }

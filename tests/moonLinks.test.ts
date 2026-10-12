@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { MOON_TETHER_STYLE, moonPlanetLinks, moonTethers, tether } from "../src/hex-map/moonLinks";
+import { MOON_TETHER_OVERLAY, MOON_TETHER_STYLE, moonPlanetLinks, moonTethers, tether } from "../src/space/moonLinks";
+import { moduleOverlays } from "../src/modules/runtime";
 import { latticeCenter } from "../src/paths/pathGeometry";
 import type { TerrainColor } from "../src/types";
 
@@ -52,19 +53,31 @@ describe("moon tethers: the same segments on screen and in the PNG export", () =
 		expect(moonTethers(t, palette, grid, () => false)).toEqual([]);
 	});
 
-	it("the map view and the PNG export both draw moonTethers with MOON_TETHER_STYLE", () => {
+	it("is the Space module's overlay contribution (P5): moonTethers with MOON_TETHER_STYLE", () => {
+		expect(moduleOverlays()).toContain(MOON_TETHER_OVERLAY);
+		expect(MOON_TETHER_OVERLAY.segments).toBe(moonTethers);
+		expect(MOON_TETHER_OVERLAY.style).toBe(MOON_TETHER_STYLE);
+		expect(MOON_TETHER_OVERLAY.cls).toBe("duckmage-moon-link");
+	});
+
+	it("the map view and the PNG export both draw every module overlay's segments with its style", () => {
 		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8");
 		const png = readFileSync(path.join(process.cwd(), "src", "export", "mapPngRenderer.ts"), "utf8");
 		for (const src of [view, png]) {
-			expect(src).toMatch(/moonTethers\(/);
-			expect(src).toMatch(/MOON_TETHER_STYLE\.width \* /);
+			expect(src).toMatch(/moduleOverlays\(\)/);
+			expect(src).toMatch(/overlay\.segments\(/);
+			expect(src).toMatch(/style\.width \* /);
+			// Neither names the Space overlay.
+			expect(src).not.toMatch(/moonTethers|MOON_TETHER/);
 		}
 		// The export draws them only with the paths.
 		const showPaths = png.indexOf("if (showPaths) {");
 		expect(showPaths).toBeGreaterThan(-1);
-		expect(png.indexOf("moonTethers(", showPaths)).toBeGreaterThan(showPaths);
-		expect(png).toMatch(/MOON_TETHER_STYLE\.color/);
-		expect(png).toMatch(/globalAlpha = MOON_TETHER_STYLE\.opacity/);
+		expect(png.indexOf("overlay.segments(", showPaths)).toBeGreaterThan(showPaths);
+		expect(png).toMatch(/style\.color/);
+		expect(png).toMatch(/globalAlpha = style\.opacity/);
+		// The view tags each line with the overlay's class (its colour lives in styles.css).
+		expect(view).toMatch(/overlayLines\.push\(\{ cls: overlay\.cls/);
 	});
 
 	it("styles.css paints the on-screen tether in the export's colour and opacity", () => {
