@@ -18,7 +18,7 @@ export const worldMapsModule: HexmakerModule = {
   mapScales: [{
     id: "biomes",
     label: "Biomes",
-    description: "An overworld: one biome per hex, each opening into a region map.",
+    description: "A world map of biomes, one per hex, laid out by climate.",
     kind: "world",
     size: { cols: 16, rows: 12 },
     palette: "Expanded",

@@ -408,6 +408,12 @@ export interface ModuleRuntime {
   folders?(plugin: HexmakerPlugin): string[];
   /** Sandbox-only helpers for dev scripts, offered when the vault has the sandbox marker. */
   devTools?(plugin: HexmakerPlugin): Record<string, (...args: never[]) => unknown>;
+  /**
+   * A map scale was picked in the setup wizard (or starts picked): get its
+   * content ready (World maps' Biomes: the shipped biome notes, as opening
+   * New overworld… does, DJ-Q4).
+   */
+  onScalePicked?(plugin: HexmakerPlugin, scaleId: string): Promise<void>;
   /** Map types were just turned on (any of them): install what this module needs for them. */
   onKindsEnabled?(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void>;
   /**

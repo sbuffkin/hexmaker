@@ -132,6 +132,11 @@ export function moduleDevTools(plugin: HexmakerPlugin): Record<string, (...args:
   return Object.assign({}, ...MODULE_RUNTIMES.map((m) => m.devTools?.(plugin) ?? {})) as Record<string, (...args: never[]) => unknown>;
 }
 
+/** Tell every module a map scale was picked (setup wizard), in module order. */
+export async function runOnScalePicked(plugin: HexmakerPlugin, scaleId: string): Promise<void> {
+  for (const m of MODULE_RUNTIMES) await m.onScalePicked?.(plugin, scaleId);
+}
+
 /** Tell every module that map types were just turned on, in module order. */
 export async function runOnKindsEnabled(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void> {
   for (const m of MODULE_RUNTIMES) await m.onKindsEnabled?.(plugin, kinds);

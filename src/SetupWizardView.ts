@@ -24,6 +24,7 @@ import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput, wheelStep } from "./sizeInput";
 import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
+import { runOnScalePicked } from "./modules/runtime";
 import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, tuningText, wizardOptionId } from "./wizardText";
 import { tuneKey } from "./worldgen/procedural/common";
 import { Disclosure } from "./ui/disclosure";
@@ -471,6 +472,12 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				renderGenerators();
 				refresh();
 				cb.onUpdate();
+				// The scale's module gets its content ready (Biomes: the biome notes), then the list again.
+				void runOnScalePicked(plugin, s.id).then(() => {
+					if (ctx.scaleId !== s.id) return;
+					renderGenerators();
+					refresh();
+				});
 			};
 			for (const s of scales) {
 				const card = scaleCardsEl.createDiv({ cls: "duckmage-wizard-orient-btn duckmage-wizard-scale-btn", attr: { role: "radio", "data-scale": s.id } });

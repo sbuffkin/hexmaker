@@ -13,6 +13,7 @@ import {
   moduleNewMapSetup,
   moduleOverlays,
   runOnKindsEnabled,
+  runOnScalePicked,
   worldMaps,
 } from "../src/modules/runtime";
 import { MOON_TETHER_OVERLAY } from "../src/space/moonLinks";
@@ -82,6 +83,16 @@ describe("P7: World maps through its contributions", () => {
     expect(calls).toEqual(["biomes true"]);
     const src = read("src", "HexmakerPlugin.ts");
     expect(src).toMatch(/await runOnKindsEnabled\(this, plan\.newKinds\);\n\s+await runOnEnabled\(this, plan\.newKinds\);/);
+  });
+
+  it("picking the Biomes scale in the setup wizard writes the shipped biome notes (as New overworld… does); other scales don't", async () => {
+    const calls: string[] = [];
+    const plugin = { ensureOverworldBiomes: async () => { calls.push("biomes"); } } as never;
+    await runOnScalePicked(plugin, "overland");
+    await runOnScalePicked(plugin, "planet");
+    expect(calls).toEqual([]);
+    await runOnScalePicked(plugin, "biomes");
+    expect(calls).toEqual(["biomes"]);
   });
 
   it("offers the sandbox dev helpers (only the plugin decides when: the sandbox marker)", () => {

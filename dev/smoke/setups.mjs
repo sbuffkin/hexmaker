@@ -366,7 +366,8 @@ async function wizardMapStepChecks(ctx) {
     // Another scale (Biomes when World maps is built); a build with one scale only checks the size.
     const other = scales.find((c) => c.dataset.scale === "biomes") ?? scales.find((c) => c.dataset.scale !== first.scale);
     other?.click();
-    if (other) await until(() => gens()[1] !== first.gens[1]);
+    // Biomes gets its biome notes when picked, then lists World biomes.
+    if (other) await until(() => gens()[1] !== first.gens[1] && (other.dataset.scale !== "biomes" || gens().includes("World biomes")));
     const second = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
     colsAt.biomes = cols.value;
     cols.focus();
@@ -393,7 +394,7 @@ async function wizardMapStepChecks(ctx) {
   })());
   if (r.error) return [{ check: "F1-wizard-scales", ok: false, detail: r.error }];
   return [
-    { check: "F1-wizard-scales", ok: r.first.gens[0] === "Blank" && (r.single ? r.scaleLabels.length === 1 : r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens)),
+    { check: "F1-wizard-scales", ok: r.first.gens[0] === "Blank" && (r.single ? r.scaleLabels.length === 1 : r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens) && (r.second.scale !== "biomes" || r.second.gens.includes("World biomes"))),
       detail: `scales ${r.scaleLabels.join(", ")}; ${r.first.scale}: ${r.first.gens.join(", ")}; ${r.second.scale}: ${r.second.gens.join(", ")}` },
     { check: "F1-wizard-size", ok: (r.single || r.colsAt.biomes !== r.colsAt.start) && Number(r.colsAt.wheel) === Number(r.colsAt.biomes) + 1 && r.colsAt.reset === r.colsAt.biomes,
       detail: `columns: start ${r.colsAt.start}, ${r.single ? "same scale" : r.second.scale} ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel} (focused ${r.colsAt.focused}), reset ${r.colsAt.reset}` },
