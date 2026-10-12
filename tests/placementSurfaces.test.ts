@@ -40,7 +40,16 @@ const TIER: Record<string, Layer | "drop"> = { keep: "main", simple: "main", adv
  * stays simple), so its "Pick image…" isn't Advanced.
  */
 // Round 10 (owner 2026-10-12): the export dialog's lone Advanced item moved to the basic options.
-const OVERRIDES: Record<string, Layer> = { "MapProps.backgroundImagePicker": "main", "MapExport.showRegionOverlay": "main" };
+// Owner 2026-10-12 (as the setup wizard): New map's generator options are above the fold; its Advanced holds the tuning sliders.
+const NEW_MAP_OPTIONS_MAIN = [
+  "NewMap.overlandWater", "NewMap.overlandClimate", "NewMap.overlandRelief", "NewMap.overlandSea", "NewMap.planetRelief",
+  "NewMap.regionDetailInfluence", "NewMap.regionDetailVariety", "NewMap.starRouteType", "NewMap.orbitsPathType",
+];
+const OVERRIDES: Record<string, Layer> = {
+  "MapProps.backgroundImagePicker": "main",
+  "MapExport.showRegionOverlay": "main",
+  ...Object.fromEntries(NEW_MAP_OPTIONS_MAIN.map((id) => [id, "main" as Layer])),
+};
 
 const resolved = (JSON.parse(readFileSync(join("dev", "ui-inventory", "inputs-tags-resolved.json"), "utf8")) as Resolved[])
   .filter((x) => SURFACES.includes(x.group));
@@ -141,12 +150,15 @@ describe("New map form: generator options by inventory id", () => {
     }
   });
 
-  it("Overland's options and the path types are Advanced; Planet surface's water and climate stay main", () => {
-    for (const k of ["water", "climate", "relief", "sea"]) expect(layerOf(newMapOptionId(OVERLAND_ID, k)!)).toBe("advanced");
-    expect(layerOf(newMapOptionId(PLANET_SURFACE_ID, "water")!)).toBe("main");
-    expect(layerOf(newMapOptionId(PLANET_SURFACE_ID, "relief")!)).toBe("advanced");
-    expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("advanced");
-    expect(layerOf(newMapOptionId(ORBITS_ID, ORBIT_TYPE_KEY)!)).toBe("advanced");
+  it("every generator option is main (owner 2026-10-12, as the wizard); the tuning sliders and Make every region now are Advanced", () => {
+    for (const [kind, keys] of Object.entries(newMapOptionIds())) {
+      for (const key of Object.keys(keys)) expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, "main"]);
+    }
+    expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("main");
+    expect(layerOf(newMapOptionId(ORBITS_ID, ORBIT_TYPE_KEY)!)).toBe("main");
+    expect(layerOf("NewMap.tuning")).toBe("advanced");
+    expect(layerOf("NewMap.makeAllRegions")).toBe("advanced");
+    expect(layerOf("Wizard.makeAllRegions")).toBe("advanced");
     expect(newMapOptionId("nope", "water")).toBeUndefined();
   });
 });

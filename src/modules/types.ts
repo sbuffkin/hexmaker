@@ -387,6 +387,50 @@ export interface NewMapSetupExtra {
   render(row: HTMLElement, ctx: NewMapSetupContext): void;
 }
 
+/**
+ * A yes/no choice a map scale adds beside its generator on the setup
+ * wizard's first map and New map (World maps' Biomes: "Make every region
+ * now"). Each surface places it by its own id (src/ui/placement.ts).
+ */
+export interface ScaleChoice {
+  key: string;
+  label: string;
+  /** One line under it. */
+  desc: string;
+  default: boolean;
+  /** Placement ids: the setup wizard's and New map's. */
+  ids: { Wizard: string; NewMap: string };
+  /** Only shown with these generators (unset: any). */
+  forGenerators?: readonly string[];
+}
+
+/** A map just made on a scale (the setup wizard's first map, or New map). */
+export interface ScaleMapMade {
+  mapName: string;
+  /** The generator it was made with (Blank too). */
+  generatorId: string;
+  /** The options the run used (optionsWithTuning). */
+  options: Record<string, string>;
+  seed: number;
+  grid: GridSpec;
+  paletteName: string;
+  /** The scale's choices as set on the form. */
+  choices: Record<string, boolean>;
+  onProgress(message: string): void;
+}
+
+/**
+ * What a module does for one of its map scales beyond the generator's
+ * terrain (World maps' Biomes: region settings, the Biome column and,
+ * when asked, every region, so the map is an overworld like the one Maps →
+ * New overworld makes).
+ */
+export interface ScaleSetup {
+  scaleId: string;
+  choices?: readonly ScaleChoice[];
+  afterCreate(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<void>;
+}
+
 /** What a module adds when a place is made on arrival (GM4). */
 export interface ArrivalHooks {
   /**
@@ -441,6 +485,8 @@ export interface ModuleRuntime {
    * New overworld… does, DJ-Q4).
    */
   onScalePicked?(plugin: HexmakerPlugin, scaleId: string): Promise<void>;
+  /** Its map scales' choices and what it does once a map is made on one. */
+  scaleSetup?: readonly ScaleSetup[];
   /** Map types were just turned on (any of them): install what this module needs for them. */
   onKindsEnabled?(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void>;
   /**

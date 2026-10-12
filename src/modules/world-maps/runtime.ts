@@ -18,6 +18,7 @@ import { openNewOverworld } from "../../overworld/mapModalParts";
 import { buildBenchWorld, buildDemoWorld } from "../../overworld/demoWorld";
 import { VIEW_TYPE_HEX_MAP } from "../../constants";
 import { worldMapsApi } from "./api";
+import { BIOMES_SCALE_ID, MAKE_ALL_REGIONS_CHOICE, makeScaleOverworld } from "../../overworld/scaleOverworld";
 
 function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHelpers): GeneratorContribution[] {
   return [
@@ -87,8 +88,10 @@ export const worldMapsRuntime: ModuleRuntime = {
   // Biomes picked in the setup wizard: World biomes needs the shipped biome
   // notes, written now as opening New overworld… does (DJ-Q4).
   onScalePicked: async (plugin, scaleId) => {
-    if (scaleId === "biomes") await plugin.ensureOverworldBiomes();
+    if (scaleId === BIOMES_SCALE_ID) await plugin.ensureOverworldBiomes();
   },
+  // A Biomes map (setup wizard or New map) is an overworld, as New overworld… makes one.
+  scaleSetup: [{ scaleId: BIOMES_SCALE_ID, choices: [MAKE_ALL_REGIONS_CHOICE], afterCreate: makeScaleOverworld }],
   // A map type turned on (setup or Settings): its shipped biome notes.
   onKindsEnabled: (plugin) => plugin.biomeStore.seedShipped(true),
   devTools: (plugin) => ({

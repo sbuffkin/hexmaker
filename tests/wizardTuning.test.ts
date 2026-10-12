@@ -44,10 +44,16 @@ describe("the wizard's generator options are above the fold; Advanced is the tun
 	});
 
 	it("the wizard places each slider in Advanced with an isSet, so the header counts the moved ones", () => {
-		const src = readFileSync(path.join(process.cwd(), "src", "SetupWizardView.ts"), "utf8");
-		expect(src).toContain("disclosure.place(WIZARD_TUNING_ID, row, isSet)");
-		expect(src).toContain("disclosure.refreshSet()");
-		expect(src).toMatch(/if \(v === t\.default\) delete ctx\.generatorOptions\[key\];/);
+		const read = (...p: string[]) => readFileSync(path.join(process.cwd(), "src", ...p), "utf8");
+		// One slider renderer, shared by the wizard and New map (src/ui/mapScaleForm.ts).
+		const shared = read("ui", "mapScaleForm.ts");
+		expect(shared).toContain("disclosure.place(placementId, row, isSet)");
+		expect(shared).toContain("disclosure.refreshSet()");
+		expect(shared).toMatch(/if \(v === t\.default\) delete options\[key\];/);
+		expect(read("SetupWizardView.ts")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, ctx\.generatorOptions, optsDisclosure, WIZARD_TUNING_ID,/);
+		expect(read("worldgen", "NewMapSetupModal.ts")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, this\.options, disclosure, NEW_MAP_TUNING_ID,/);
+		// Neither form keeps a slider loop of its own.
+		for (const f of [read("SetupWizardView.ts"), read("worldgen", "NewMapSetupModal.ts")]) expect(f).not.toContain("duckmage-wizard-tuning");
 	});
 });
 

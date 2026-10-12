@@ -34,9 +34,11 @@ import { BIOME_PRESETS } from "./biomePresets";
 import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeRef, isBlankBiome, type BiomeId } from "./biomes";
 import { regionGenerator } from "./biomeForm";
 import { biomeColumnFills, firstPassWrites } from "./overworldPass";
-import { formatBiomeRiver, regionOrder } from "./regionWorld";
+import { formatBiomeRiver, regionOrder, withMeshFields } from "./regionWorld";
 import { createRegion, hexBiomeAt, overworldBiomeHexes, overworldOf, regenerateRegion } from "./regionsVault";
-import { unclimatedText, worldBiomes, type WorldBiomesOptions, type WorldBiomesResult } from "./worldBiomes";
+import { unclimatedText, worldBiomes, type Unclimated, type WorldBiomesOptions, type WorldBiomesResult } from "./worldBiomes";
+import { newWorldId } from "../worldgen/world";
+import type { MapData, RegionSettings } from "../types";
 
 /** Hint shown where regenerating a whole overworld is locked. */
 export const REGENERATE_LOCKED_HINT = "Switch to God to regenerate the whole overworld.";
@@ -174,6 +176,68 @@ export async function writeOverworldBiomes(plugin: HexmakerPlugin, mapName: stri
   for (const [k, patch] of cells) plugin.mapStore.set(mapName, k, patch);
   await plugin.mapStore.flush();
   return { written: cells.length, kept };
+}
+
+/**
+ * New overworld…'s starting region settings: each hex opens into an 8 × 8
+ * region, normal blend, every region made at once, pool biomes without a
+ * climate fill the gaps. The setup wizard's and New map's Biomes maps use
+ * the same (with "Make every region now" off: the step stays simple).
+ */
+export const NEW_OVERWORLD_DEFAULTS: { regionSize: number; blend: NonNullable<RegionSettings["blend"]>; makeAll: boolean; unclimated: Unclimated } = {
+  regionSize: 8,
+  blend: "normal",
+  makeAll: true,
+  unclimated: "fill",
+};
+
+/** What makes a new map an overworld. */
+export interface NewOverworldSetup {
+  regionSize: number;
+  blend: NonNullable<RegionSettings["blend"]>;
+  /** Palette every region uses (the overworld's). */
+  palette: string;
+  stagger: "odd" | "even";
+  seed: number;
+  unclimated: Unclimated;
+  /** The biome pool note it was laid out from (unset: every biome with a climate). */
+  poolPath?: string;
+  /** The layout's river (biome data, not a path). */
+  river?: readonly string[];
+}
+
+/** The map-note fields of a new overworld (its region settings, river, pool, seed, gaps rule). Pure. */
+export function newOverworldFields(s: NewOverworldSetup, makeId: () => string = newWorldId): Pick<MapData, "regions" | "biomeRiver" | "biomePool" | "seed" | "biomeGaps"> {
+  return {
+    regions: withMeshFields({ footprint: "rect", size: s.regionSize, blend: s.blend, palette: s.palette }, s.stagger, makeId),
+    ...(s.river && s.river.length > 1 ? { biomeRiver: formatBiomeRiver([...s.river]) } : {}),
+    ...(s.poolPath ? { biomePool: s.poolPath } : {}),
+    // Saved with the map (`seed:`), so its layout can be made again.
+    seed: s.seed,
+    biomeGaps: unclimatedText(s.unclimated),
+  };
+}
+
+/**
+ * Make a just-created map an overworld (New overworld…, and a Biomes map
+ * from the setup wizard or New map): its region settings and the rest of
+ * newOverworldFields, every hex's biome in the Biome column (BC1; blank
+ * hexes get no terrain), then, with `makeAll`, every region.
+ */
+export async function finishNewOverworld(
+  plugin: HexmakerPlugin,
+  mapName: string,
+  result: WorldBiomesResult | undefined,
+  setup: NewOverworldSetup & { makeAll: boolean; cells: [number, number][] } & RegionPassHooks,
+): Promise<{ made: string[]; errors: string[] } | undefined> {
+  const map = plugin.getMap(mapName);
+  if (!map) return undefined;
+  Object.assign(map, newOverworldFields({ ...setup, river: setup.river ?? result?.river }));
+  await plugin.saveSettings();
+  if (result) await writeOverworldBiomes(plugin, mapName, result);
+  if (!setup.makeAll) return undefined;
+  const r = await regionPass(plugin, mapName, setup.cells, { remake: false, onProgress: setup.onProgress, cancelled: setup.cancelled });
+  return { made: r.made, errors: r.errors };
 }
 
 export interface RegionPassHooks {

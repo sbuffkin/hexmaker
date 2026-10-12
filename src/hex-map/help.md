@@ -210,7 +210,7 @@ A road or river that ends on the edge of a region, next to where the neighbour's
 
 With generators on, new maps can also use the built-in **biomes and presets** (Grassland, Taiga, Swamp, Archipelago, Volcanic and more). They place terrain by type, so they work with any palette whose terrains have types.
 
-**New map…** (in Maps) is one form: generator cards with a live preview, Next to and stagger. Its **Advanced** dropdown has the starting coordinates, a background image (pick one from the vault, or drop one from your computer), the generator's finer options and the "Use this … for new submaps" boxes. A new map starts on Overland; pick Blank to paint by hand.
+**New map…** (in Maps) is one form: **What are you mapping?** (as in the setup wizard; not for submaps, regions or a map placed next to another), then that scale's generator cards with a live preview, Blank first, the generator's options under them, Next to and stagger. Its **Advanced** dropdown has the starting coordinates, a background image (pick one from the vault, or drop one from your computer), the generator's tuning sliders and the "Use this … for new submaps" boxes. A new map starts on Overland; pick Blank to paint by hand.<!-- slice:worldmaps --> A **Biomes** map (here or in the setup wizard) is an overworld, as **New overworld…** makes: its regions are made when you first go to a hex, or all at once with **Make every region now** (Advanced).<!-- /slice -->
 
 Pickers that link notes (to hexes, tokens, sections) never offer template notes (the hex template, workflow templates, a Templates folder); pickers for choosing a template do. Notes starting with `_` are never offered.
 

@@ -362,6 +362,20 @@ export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">,
 }
 
 /**
+ * The options a run uses: each option (picked, else its default) plus the
+ * tuning sliders that were moved (`tune.<key>`; unset ones leave the
+ * engine as it is). The setup wizard and New map both run with these.
+ */
+export function optionsWithTuning(kind: Pick<TerrainGeneratorKind, "options" | "tuning">, chosen: Record<string, string> = {}): Record<string, string> {
+  const out = optionsWithDefaults(kind, chosen);
+  for (const t of kind.tuning ?? []) {
+    const v = chosen[tuneKey(t.key)];
+    if (v !== undefined) out[tuneKey(t.key)] = v;
+  }
+  return out;
+}
+
+/**
  * Generators to offer: those whose map type is on, those of a type offered
  * in context (Space) on a map with that type in context (`context`, contextKindsOf), and
  * the current/saved choice (`selectedId`).
