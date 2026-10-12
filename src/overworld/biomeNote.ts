@@ -51,6 +51,9 @@
  * - `blank: yes`: its regions start blank (nothing generated) and are
  *   painted by hand (the shipped "Custom (blank)" biome). Never placed by
  *   World biomes; its Mix may be empty.
+ * - `layer: underground`: a biome below the surface (caverns, mines). World
+ *   biomes never places it (even from a pool); the pickers list it under
+ *   Underground. Unset (or `surface`) is the surface.
  *
  * Reading is forgiving: columns by header name in any order, `colour` or
  * `color`, weights like `40` or `40%`. Rows that can't be read are reported
@@ -154,7 +157,19 @@ export interface BiomeNoteFields {
   blank?: boolean;
   /** Generator tuning (the optional Tuning table, biomeTuning.ts): only values that differ from the defaults. */
   tuning?: BiomeTuning;
+  /**
+   * `layer: underground`: a biome below the surface (caverns, the
+   * Underdark). Never placed by World biomes, even in a pool; offered by
+   * hand under Underground in the biome pickers. Unset = surface.
+   */
+  layer?: BiomeLayer;
 }
+
+export type BiomeLayer = "surface" | "underground";
+export const BIOME_LAYERS: readonly BiomeLayer[] = ["surface", "underground"];
+
+/** Whether a biome lies underground (`layer: underground`). */
+export const isUnderground = (b: Pick<BiomeNoteFields, "layer"> | undefined): boolean => b?.layer === "underground";
 
 export interface BiomeNoteProblem {
   /** "settings" (frontmatter), "Mix" or "Transitions". */
@@ -181,7 +196,7 @@ export function biomeFileName(label: string): string {
 
 export const BIOME_HELP = [
   "> [!info] Biome",
-  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Terrain weights** (optional): how a type's share is split between its terrains, like Pine forest 3 and Oak forest 1 (terrains not listed count 1). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `blank: yes` makes its regions start blank, to paint by hand; `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
+  "> A biome for overworld regions. **Mix**: how much of each terrain *type* its regions get (weights, any scale; an optional *Min patches* column asks for at least that many separate patches of the type). **Terrain weights** (optional): how a type's share is split between its terrains, like Pine forest 3 and Oak forest 1 (terrains not listed count 1). **Transitions**: biomes it shouldn't touch, and the biome put between. In the frontmatter, `blend` is narrow, normal or wide; `land-share` (like `60%`) and `min-islands` are for watery biomes; `shore: yes` puts a region's land on the side of its land neighbours and its water on the other; `blank: yes` makes its regions start blank, to paint by hand; `layer: underground` marks a biome below the surface (never placed on generated overworlds, listed under Underground); `generator` links a generator note. For generated overworlds (optional): `temperature` (cold, cool, mild, warm, hot, or 0.2–0.5), `moisture` (dry, moderate, wet), `elevation` (sea, low, mid, high, mouth), `coastal: yes`, `chance` (like 50%) and `rare: yes`; without them the biome is only placed by hand. Delete a row to drop it.",
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
@@ -261,6 +276,14 @@ function readYesNo(raw: string): boolean | undefined {
   return undefined;
 }
 
+/** `layer:` as written: "underground" (or "below", "cave", "subterranean") and "surface" (or "above", "overland"). */
+function readLayer(raw: string): BiomeLayer | undefined {
+  const t = raw.trim().toLowerCase();
+  if (["underground", "below", "under", "subterranean", "cave", "caves"].includes(t)) return "underground";
+  if (["surface", "above", "overland", "overground"].includes(t)) return "surface";
+  return undefined;
+}
+
 /** "40", "40%", "0.4" → a number, or NaN. */
 const num = (raw: string) => Number(raw.trim().replace(/%$/, "").trim());
 
@@ -337,6 +360,12 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
     const v = readYesNo(blank);
     if (v === true) fields.blank = true;
     else if (v === undefined) problems.push({ where: "settings", text: `blank should be yes or no, not "${blank}"` });
+  }
+  const layer = fm.get("layer")?.trim().toLowerCase();
+  if (layer) {
+    const v = readLayer(layer);
+    if (v) fields.layer = v;
+    else problems.push({ where: "settings", text: `layer should be surface or underground, not "${layer}"` });
   }
   const climate = readClimate(fm);
   if (climate.climate) fields.climate = climate.climate;
@@ -451,6 +480,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
     ["shore", f.shore ? "yes" : undefined],
     ["blank", f.blank ? "yes" : undefined],
+    ["layer", f.layer],
     ["generator", f.generator ? `"[[${f.generator}]]"` : undefined],
     ["parent", f.parent ? quote(f.parent) : undefined],
     ...climateKeyValues(f.climate),
@@ -534,6 +564,7 @@ function sameValue(key: string, cur: string, want: string): boolean {
   if (key === "generator" || key === "parent") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
   if (key === "shore" || key === "blank") return readYesNo(cur) === readYesNo(w);
+  if (key === "layer") return readLayer(cur) === readLayer(w);
   if (CLIMATE_KEY_SET.has(key)) return sameClimateValue(key, cur, w);
   return cur.trim() === w.trim();
 }

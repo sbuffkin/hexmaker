@@ -21,7 +21,7 @@
 
 import { hexDistance, hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import type { MapData, RegionBiome, RegionSettings, TerrainColor } from "../types";
-import { biomeForTerrain, biomeGeneratorId, ecotoneBetween, type BiomeId, type BiomeProfile } from "./biomes";
+import { biomeForTerrain, biomeGeneratorId, biomeParts, biomeRef, ecotoneBetween, isComboId, type BiomeId, type BiomeProfile } from "./biomes";
 import { BlendField, REGION_WARP, type BlendWidth } from "./blendField";
 import { regionBox, regionCells, regionCentrePoint, type RegionLayout } from "./layout";
 import { generateRegion } from "./regionGen";
@@ -248,6 +248,8 @@ export function planRegion(input: RegionPlanInput): RegionPlan {
     seed: input.worldSeed,
     warpScale: tuned(t, "wiggle-scale"),
     reach: tuned(t, "reach"),
+    // A mixed biome draws from its parts by zone (biomeCombo.ts).
+    expand: (b) => (isComboId(b) ? biomeParts(b) : undefined),
   });
   const cells = generateRegion({
     layout: input.layout,
@@ -263,8 +265,10 @@ export function planRegion(input: RegionPlanInput): RegionPlan {
   const own = input.biomes.get(`${input.parent[0]}_${input.parent[1]}`) ?? ranked[0]?.[0];
   let biome: RegionBiome | undefined;
   if (own) {
-    const from = ranked.filter(([b, v]) => b !== own && v >= FROM_SHARE).map(([b]) => b);
-    biome = { generator: biomeGeneratorId(own) ?? own, ...(from.length ? { from } : {}) };
+    // A combined biome is written readably ("Alpine 2 + Taiga"), in `from` too.
+    const named = (b: BiomeId) => (isComboId(b) ? biomeRef(b) : b);
+    const from = ranked.filter(([b, v]) => b !== own && v >= FROM_SHARE).map(([b]) => named(b));
+    biome = { generator: biomeGeneratorId(own) ?? named(own), ...(from.length ? { from } : {}) };
   }
   return { cells, biome, mix };
 }

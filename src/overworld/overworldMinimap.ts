@@ -10,7 +10,7 @@ import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { regionMapAt } from "../maps/submaps";
-import { biomeInfo, biomeNoteOf } from "./biomes";
+import { biomeNoteOf, biomeShortLabel } from "./biomes";
 import { drawMiniOverworld, miniHexAt, miniLayout, type MiniHex } from "./overworldRender";
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
 import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "./regionsVault";
@@ -100,7 +100,7 @@ export class OverworldMinimap {
       const [x, y] = k.split("_").map(Number);
       const b = biomes.get(k);
       const terr = terrain.get(k);
-      hexes.push({ x, y, color: (terr ? colour.get(terr) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeInfo(b)?.label : undefined, ecotone: eco.has(k) });
+      hexes.push({ x, y, color: (terr ? colour.get(terr) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeShortLabel(b) : undefined, ecotone: eco.has(k) });
     }
     if (!hexes.length) { box.remove(); this.el = null; return; }
     const canvas = box.createEl("canvas", { cls: "duckmage-ow-minimap-canvas" });

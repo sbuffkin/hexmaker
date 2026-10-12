@@ -25,7 +25,7 @@ import {
 } from "../../packages/hex-wfc/src";
 import type { PathType, TerrainColor } from "../types";
 import { DEFAULT_TERRAIN_PALETTE } from "../constants";
-import { effectiveTerrainType, inferTerrainType } from "../terrainTypes";
+import { effectiveTerrainType, inferTerrainType, TERRAIN_TYPES } from "../terrainTypes";
 
 import biomeAlpine from "./builtin/biome-alpine.md";
 import biomeBadlands from "./builtin/biome-badlands.md";
@@ -137,6 +137,8 @@ export const TYPE_FALLBACKS: Record<string, string[]> = {
   badlands: ["desert", "hills"],
   volcanic: ["mountains", "badlands", "hills"],
   settlement: [],
+  // A module's types bring their own (World: a cave floor falls back to hills, …).
+  ...Object.fromEntries(TERRAIN_TYPES.filter((t) => t.fallbacks?.length).map((t) => [t.id, [...t.fallbacks!]])),
 };
 
 /** A palette terrain's type: its Type column only (untyped terrains are

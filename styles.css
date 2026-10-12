@@ -8098,6 +8098,53 @@ button.duckmage-terrain-legend-chip {
 .duckmage-biome-option.is-active {
     outline: 2px solid var(--interactive-accent);
 }
+/* Biome pickers: group headings (Surface, Mountains, …) and the filter box. */
+.duckmage-biome-group-head {
+    flex-basis: 100%;
+    grid-column: 1 / -1;
+    margin: 0.3em 0 0;
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.duckmage-biome-group-head:first-child {
+    margin-top: 0;
+}
+.duckmage-biome-filter {
+    width: 100%;
+    margin-bottom: 0.4em;
+}
+/* Edit region…: mixing several biomes. */
+.duckmage-edit-region-mix-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin-bottom: 0.4em;
+}
+.duckmage-edit-region-mix {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 0.4em;
+}
+.duckmage-edit-region-mix-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-edit-region-mix-name {
+    flex: 1;
+}
+.duckmage-edit-region-mix-weight {
+    width: 4.5em;
+}
+.duckmage-edit-region-mix-share {
+    width: 3em;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
 .duckmage-biome-swatch {
     width: 1em;
     height: 1em;

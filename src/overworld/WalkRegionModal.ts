@@ -6,10 +6,12 @@ import { generatorFitsPalette, listGenerators, paletteColors, pathColors, type G
 import { createWalkRegion, planWalk, previewWalk, regionBiome, type WalkPlan } from "../worldgen/neighbours";
 import { drawPreview } from "../worldgen/preview";
 import type { Side } from "../worldgen/world";
-import { biomeInfo, representativeTerrain } from "./biomes";
+import { biomeInfo, isComboId, representativeTerrain } from "./biomes";
+import { fillBiomeSelect } from "./biomeChooser";
 import { inOverworldGrid, planRegionAt, planRegionWithGenerator, walkFromBiome, walkIntoHex, walkLock } from "./regionsVault";
 import { defaultRegionName, rollBiome } from "./regionWorld";
-import { drawRegionPlan, lockButton, paintableBiomes } from "./BiomeModals";
+import { drawRegionPlan, groupOfBiome, lockButton, paintableBiomes } from "./BiomeModals";
+import { dominantPart } from "./biomeCombo";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 import { slugify } from "../utils";
 import { isContextOnlyTag } from "../mapKinds";
@@ -96,8 +98,10 @@ export class WalkRegionModal extends HexmakerModal {
     const row = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     row.createSpan({ text: "Biome", cls: "duckmage-map-origin-label" });
     const select = row.createEl("select", { attr: { "aria-label": "Biome" } });
-    for (const b of biomes) select.createEl("option", { value: b.id, text: b.id === here ? `${b.label} (same as here)` : b.label });
-    let biome = biomes.some((b) => b.id === here) ? here! : biomes[0].id;
+    fillBiomeSelect(select, biomes, (b) => (b.id === here ? `${b.label} (same as here)` : b.label));
+    // A combined biome here (Edit region…) is offered as it is.
+    if (here && isComboId(here)) select.createEl("option", { value: here, text: `${biomeInfo(here)?.label ?? here} (same as here)` });
+    let biome = biomes.some((b) => b.id === here) || (here && isComboId(here)) ? here! : biomes[0].id;
     select.value = biome;
     const roll = row.createEl("button", { text: "Roll", attr: { title: "Roll a biome from a new seed (a different one from here, if there is one)" } });
 
@@ -162,8 +166,12 @@ export class WalkRegionModal extends HexmakerModal {
     roll.addEventListener("click", () => {
       this.seed = randomSeed();
       seedInput.value = String(this.seed);
-      // A roll never lands on a blank biome (pick it by hand).
-      biome = rollBiome(biomes.filter((b) => b.terrain).map((b) => b.id), this.seed, here) ?? biome;
+      // A roll never lands on a blank biome (pick it by hand), and stays on
+      // this side of the ground: from a cave, more caves; from the surface, surface.
+      const below = (id: string | undefined) => !!id && groupOfBiome(id) === "underground";
+      const hereBelow = below(here && isComboId(here) ? dominantPart(here) : here);
+      biome = rollBiome(biomes.filter((b) => b.terrain && (b.group === "underground") === hereBelow).map((b) => b.id), this.seed, here)
+        ?? rollBiome(biomes.filter((b) => b.terrain).map((b) => b.id), this.seed, here) ?? biome;
       select.value = biome;
       rolled = `Rolled ${labelOf(biome)} (seed ${this.seed}).`;
       refresh();

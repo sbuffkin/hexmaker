@@ -109,15 +109,17 @@ import { effectiveTerrainType, TERRAIN_TYPES, terrainTypeGroup, typesInGroup } f
 
 describe("impassable by type group (PA4)", () => {
 	it("the whole water group is impassable by default, and nothing else", () => {
-		expect(typesInGroup("water")).toEqual(["deep-water", "water", "shallows"]);
-		expect([...IMPASSABLE_BY_DEFAULT_TYPES].sort()).toEqual(["deep-water", "shallows", "water"]);
+		expect(typesInGroup("water")).toEqual(["deep-water", "water", "shallows", "underground-water"]);
+		expect([...IMPASSABLE_BY_DEFAULT_TYPES].sort()).toEqual(["deep-water", "shallows", "underground-water", "water"]);
 		for (const t of TERRAIN_TYPES) {
 			expect(isImpassable({ type: t.id })).toBe(t.group === "water");
 		}
 	});
 
 	it("every type has a group; coast is land, space types are space", () => {
-		for (const t of TERRAIN_TYPES) expect(["water", "land", "space"]).toContain(t.group);
+		for (const t of TERRAIN_TYPES) expect(["water", "land", "underground", "space"]).toContain(t.group);
+		expect(terrainTypeGroup("cave")).toBe("underground");
+		expect(terrainTypeGroup("chasm")).toBe("land");
 		expect(terrainTypeGroup("coast")).toBe("land");
 		expect(terrainTypeGroup("nebula")).toBe("space");
 		expect(terrainTypeGroup(undefined)).toBeUndefined();

@@ -115,7 +115,8 @@ describe("biome climate: reading and writing", () => {
 	});
 
 	it("the shipped lowland boxes give the old lowland table's biome", () => {
-		const low = placementPool().tryOrder.filter((c) => c.elevation === "low" && !c.coastal);
+		// The old table's biomes (the 2026-10-12 lowland biomes take parts of these boxes on purpose).
+		const low = placementPool(BIOME_PRESETS.filter((p) => BIOMES.some((b) => b.id === p.id))).tryOrder.filter((c) => c.elevation === "low" && !c.coastal);
 		for (let t = 0.005; t < 1; t += 0.01) {
 			for (let m = 0.005; m < 1; m += 0.01) {
 				const hit = low.find((c) => (!c.temperature || (t >= c.temperature.lo && t < c.temperature.hi + (c.temperature.hi >= 1 ? 1e-9 : 0)))
@@ -188,7 +189,8 @@ describe("World biomes from climates", () => {
 	 *   repairs can shift, so ≥ 90% of hexes keep their old biome.
 	 * Existing overworlds only change when they're regenerated.
 	 */
-	const OLD_SET = BIOME_PRESETS.filter((p) => p.id !== "coast");
+	// The biomes the old generator knew (the BIOMES table): note-only ones (Coast, the 2026-10-12 additions) aren't placeable without their notes.
+	const OLD_SET = BIOME_PRESETS.filter((p) => BIOMES.some((b) => b.id === p.id));
 	const inlandCoastal = (r: { biomes: Map<string, string>; sea: Set<string> }) => [...r.biomes].filter(([k, b]) => {
 		if (!BIOME_PRESETS.find((p) => p.id === b)?.climate?.coastal || r.sea.has(k)) return false;
 		const [x, y] = k.split("_").map(Number);

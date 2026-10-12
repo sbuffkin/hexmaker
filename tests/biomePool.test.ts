@@ -65,10 +65,11 @@ describe("biome pool notes", () => {
 		expect(parseBiomePool("no table here").problems.length).toBe(1);
 	});
 
-	it("ships one pool with every built-in biome (blank ones are placed by hand, not pooled)", () => {
+	it("ships one pool with every built-in biome (blank and underground ones are placed by hand, not pooled)", () => {
 		const rows = allBiomesPool(BIOME_PRESETS);
-		const pooled = BIOME_PRESETS.filter((p) => !p.blank);
-		expect(pooled.length).toBe(BIOME_PRESETS.length - 1);
+		const pooled = BIOME_PRESETS.filter((p) => !p.blank && p.layer !== "underground");
+		expect(pooled.length).toBe(BIOME_PRESETS.length - 1 - BIOME_PRESETS.filter((p) => p.layer === "underground").length);
+		expect(rows.map((r) => r.biome)).not.toContain("Caverns");
 		expect(ALL_BIOMES_POOL).toBe("All biomes");
 		expect(rows.map((r) => r.biome)).toEqual(pooled.map((p) => biomeFileName(p.label)));
 		const { biomes, unknown } = poolBiomes(parseBiomePool(buildBiomePool(ALL_BIOMES_POOL, rows)).rows, finder([...BIOME_PRESETS]));

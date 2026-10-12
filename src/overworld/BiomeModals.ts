@@ -16,7 +16,10 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
-import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, representableBiomes, representativeTerrain, type BiomeId } from "./biomes";
+import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, isComboId, representableBiomes, representativeTerrain, type BiomeId } from "./biomes";
+import { BIOME_PRESETS } from "./biomePresets";
+import { biomeGroupOf, groupBiomes, type BiomeGroup } from "./biomeGroups";
+import { fillBiomeSelect } from "./biomeChooser";
 import { REGION_WARP, type BlendWidth } from "./blendField";
 import { regionCells } from "./layout";
 import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "./overworldRender";
@@ -102,6 +105,8 @@ export interface PaintableBiome {
   /** Overworld terrain it paints; undefined for a blank biome (its hex stays blank). */
   terrain?: string;
   color: string;
+  /** Its heading in the pickers (biomeGroups.ts). */
+  group: BiomeGroup;
 }
 
 /** The biomes this overworld's palette can paint (with the terrain each paints), and every blank biome. */
@@ -111,12 +116,19 @@ export function paintableBiomes(plugin: HexmakerPlugin, parentName: string): Pai
   const out: PaintableBiome[] = [];
   for (const id of allBiomeIds()) {
     const label = biomeInfo(id)?.label ?? id;
-    if (isBlankBiome(id)) { out.push({ id, label, color: biomeNoteOf(id)?.color ?? "#a8a29e" }); continue; }
+    const group = groupOfBiome(id);
+    if (isBlankBiome(id)) { out.push({ id, label, color: biomeNoteOf(id)?.color ?? "#a8a29e", group }); continue; }
     if (!shown.has(id)) continue;
     const terrain = representativeTerrain(id, palette)!;
-    out.push({ id, label, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888" });
+    out.push({ id, label, terrain, color: palette.find((t) => t.name === terrain)?.color ?? "#888", group });
   }
   return out;
+}
+
+/** A biome's picker group: from its note, else its shipped preset (before the notes load). */
+export function groupOfBiome(id: BiomeId): BiomeGroup {
+  const f = biomeNoteOf(id) ?? BIOME_PRESETS.find((p) => p.id === id);
+  return f ? biomeGroupOf(f) : "surface";
 }
 
 /** A biome tile's tooltip: what it paints. */
@@ -147,19 +159,23 @@ export class BiomePickerModal extends HexmakerModal {
     });
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
     const grid = contentEl.createDiv({ cls: "duckmage-biome-grid" });
-    for (const b of paintableBiomes(plugin, this.parentName)) {
-      const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: biomeTileTitle(b) } });
-      btn.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color });
-      btn.createSpan({ text: b.label });
-      // With a region, its current biome stays clickable (a no-op); with
-      // none yet, every biome would make one, so all are locked.
-      if (lock && (b.id !== current || !region)) lockButton(btn, lock);
-      btn.addEventListener("click", () => {
-        if (b.id === current && region) return;
-        if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
-        this.close();
-        void this.apply(b.id);
-      });
+    const groups = groupBiomes(paintableBiomes(plugin, this.parentName), (b) => b.group);
+    for (const g of groups) {
+      if (groups.length > 1) grid.createDiv({ cls: "duckmage-biome-group-head", text: g.label });
+      for (const b of g.items) {
+        const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: biomeTileTitle(b) } });
+        btn.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color });
+        btn.createSpan({ text: b.label });
+        // With a region, its current biome stays clickable (a no-op); with
+        // none yet, every biome would make one, so all are locked.
+        if (lock && (b.id !== current || !region)) lockButton(btn, lock);
+        btn.addEventListener("click", () => {
+          if (b.id === current && region) return;
+          if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
+          this.close();
+          void this.apply(b.id);
+        });
+      }
     }
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     if (region) {
@@ -233,7 +249,9 @@ export class RegionGenModal extends HexmakerModal {
       return row;
     };
     const biomeSel = field("Biome").createEl("select", { attr: { "aria-label": "Biome" } });
-    for (const b of paintableBiomes(plugin, this.parentName)) biomeSel.createEl("option", { text: b.label, value: b.id });
+    fillBiomeSelect(biomeSel, paintableBiomes(plugin, this.parentName));
+    // A combined biome (set in Edit region…) is kept as it is unless another is picked.
+    if (this.opts.biome && isComboId(this.opts.biome)) biomeSel.createEl("option", { text: biomeInfo(this.opts.biome)?.label ?? this.opts.biome, value: this.opts.biome });
     if (this.opts.biome) biomeSel.value = this.opts.biome;
     biomeSel.addEventListener("change", () => { this.opts.biome = biomeSel.value; this.redraw(); });
     const status = region ? regionBiomeStatus(plugin, region.name) : undefined;

@@ -32,6 +32,7 @@ import {
   biomeFileName,
   biomeSlug,
   buildBiomeNote,
+  isUnderground,
   parseBiomeNote,
   updateBiomeNote,
   type BiomeNoteFields,
@@ -41,6 +42,8 @@ import {
 import { BIOME_PRESETS, biomePreset } from "./biomePresets";
 import { setBiomeSource } from "./biomes";
 import { biomeSeedingOn } from "../kindContent";
+import { ALL_BIOMES_POOL, appendPoolRows } from "./biomePool";
+import { biomePoolsFolder } from "./overworldGen";
 
 interface Entry {
   path: string;
@@ -389,9 +392,26 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
           console.error("Hexmaker: couldn't write biome note", path, e);
         }
       }
+      // A biome shipped after the "All biomes" pool was written joins it
+      // (once: it's written once). Underground and blank ones are never placed.
+      if (seeded.length) await this.addToShippedPool(plan.write.filter((p) => !p.blank && !isUnderground(p)).map((p) => biomeFileName(p.label)));
     }
     s.biomesSeeded = [...seeded, ...plan.done];
     await this.plugin.saveSettings();
+  }
+
+  /** Add rows for `names` (biome note names) to the shipped "All biomes" pool, when it's there (appendPoolRows). */
+  private async addToShippedPool(names: string[]): Promise<void> {
+    if (!names.length || !this.plugin.settings.biomePoolSeeded) return;
+    const f = this.plugin.app.vault.getAbstractFileByPath(`${biomePoolsFolder(this.plugin)}/${ALL_BIOMES_POOL}.md`);
+    if (!(f instanceof TFile)) return;
+    try {
+      const content = await this.plugin.app.vault.read(f);
+      const next = appendPoolRows(content, names);
+      if (next !== content) await this.plugin.app.vault.modify(f, next);
+    } catch (e) {
+      console.error("Hexmaker: couldn't add new biomes to the biome pool", f.path, e);
+    }
   }
 
   /** Add the shipped climates to built-in notes written before climates existed (climatesToAdd). */

@@ -47,6 +47,17 @@ export const WARP_SCALE = 1.4;
 
 export type BiomeMix = Map<BiomeId, number>;
 
+/** Zones of a mixed biome's parts: noise bumps per region spacing, and how sharply a zone belongs to one part. */
+export const ZONE_SCALE = 2.2;
+export const ZONE_SHARPNESS = 14;
+
+/** A part's zone noise seed: from its id and the world's warp seed (position-only, so seams agree). */
+function zoneSeed(id: string, seed: number): number {
+  let h = 0x811c9dc5 ^ seed;
+  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 0x01000193) >>> 0;
+  return h >>> 0;
+}
+
 export class BlendField {
   readonly k: number;
   /** Region spacing D, child-plane units. */
@@ -61,6 +72,9 @@ export class BlendField {
   /** Influence cut-off, in region spacings. */
   readonly reach: number;
   private ring: number;
+  /** A mixed biome's parts (biomeCombo.ts), for zoned(); undefined for a plain biome. */
+  private readonly expand?: (id: BiomeId) => readonly { id: BiomeId; weight: number }[] | undefined;
+  private zoneCache = new Map<string, BiomeMix>();
 
   /**
    * @param biomes overworld hex key ("px_py") → its biome. Hexes without a
@@ -74,8 +88,9 @@ export class BlendField {
     readonly layout: RegionLayout,
     readonly biomes: ReadonlyMap<string, BiomeId>,
     width: BlendWidth | number = "normal",
-    opts: { warp?: number; seed?: number; warpScale?: number; reach?: number } = {},
+    opts: { warp?: number; seed?: number; warpScale?: number; reach?: number; expand?: (id: BiomeId) => readonly { id: BiomeId; weight: number }[] | undefined } = {},
   ) {
+    this.expand = opts.expand;
     this.k = blendK(width);
     this.spacing = regionSpacing(layout);
     this.warp = Math.max(0, opts.warp ?? 0);
@@ -141,6 +156,40 @@ export class BlendField {
     if (total > 0) for (const [b, w] of mix) mix.set(b, w / total);
     this.cache.set(ck, mix);
     return mix;
+  }
+
+  /**
+   * Φ with each mixed biome (Alpine 2 + Taiga) split into its parts by
+   * zone: smooth noise per part, weighted by the part's weight, so each part
+   * holds patches of ground (alpine ridges, taiga woods) rather than a
+   * salt-and-pepper mix that smoothing would wash into the heaviest type.
+   * A function of position only, so both sides of a seam agree. The very
+   * same map as at() when no mixed biome is near (single biomes: no change).
+   */
+  zoned(x: number, y: number): BiomeMix {
+    const phi = this.at(x, y);
+    if (!this.expand) return phi;
+    const ck = `${x}_${y}`;
+    const hit = this.zoneCache.get(ck);
+    if (hit) return hit;
+    let out: BiomeMix | undefined;
+    for (const [b, f] of phi) {
+      const parts = this.expand(b);
+      if (!parts || parts.length < 2) continue;
+      out ??= new Map();
+      const [cx, cy] = this.point(x, y);
+      const fr = ZONE_SCALE / this.spacing;
+      const score = parts.map((p) => Math.log(Math.max(1e-9, p.weight)) + ZONE_SHARPNESS * (fbm(zoneSeed(p.id, this.warpSeed), cx * fr, cy * fr, 2) - 0.5));
+      const top = Math.max(...score);
+      const z = score.map((s) => Math.exp(s - top));
+      const sum = z.reduce((s, v) => s + v, 0);
+      parts.forEach((p, i) => out!.set(p.id, (out!.get(p.id) ?? 0) + (f * z[i]) / sum));
+    }
+    if (!out) { this.zoneCache.set(ck, phi); return phi; }
+    // Plain biomes keep their share (in Φ's order, after the parts).
+    for (const [b, f] of phi) if ((this.expand(b)?.length ?? 0) < 2) out.set(b, (out.get(b) ?? 0) + f);
+    this.zoneCache.set(ck, out);
+    return out;
   }
 
   /** Mean Φ over a set of cells (a region's own mix: its biome + "from"). */

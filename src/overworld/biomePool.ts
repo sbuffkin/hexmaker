@@ -36,7 +36,7 @@
  * Pure: no Obsidian imports.
  */
 
-import { biomeFileName, linkTarget, type BiomeNoteFields } from "./biomeNote";
+import { biomeFileName, isUnderground, linkTarget, type BiomeNoteFields } from "./biomeNote";
 
 export const BIOME_POOL_MARKER = "hexmaker-biome-pool";
 export const BIOME_POOL_FORMAT = 1;
@@ -183,9 +183,28 @@ export function updateBiomePool(content: string, rows: BiomePoolRow[]): string {
 
 const key = (r: BiomePoolRow) => [r.biome.toLowerCase(), r.weight ?? 1, r.notes ?? ""];
 
+/**
+ * The note with rows for `biomes` (note names) added at the end of its
+ * table, for those it doesn't list yet (by link target, any case). Every
+ * other line stays exactly as written. Same string when there's nothing to
+ * add or the note has no pool table.
+ */
+export function appendPoolRows(content: string, biomes: readonly string[]): string {
+  const eol = content.includes("\r\n") ? "\r\n" : "\n";
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const t = findTable(lines);
+  if (!t) return content;
+  const listed = new Set(parseBiomePool(content).rows.map((r) => r.biome.toLowerCase().split("/").pop()!));
+  const add = [...new Set(biomes)].filter((b) => !listed.has(b.toLowerCase()));
+  if (!add.length) return content;
+  const rows = poolTable(add.map((biome) => ({ biome }))).slice(2);
+  return [...lines.slice(0, t.end), ...rows, ...lines.slice(t.end)].join(eol);
+}
+
 /** The shipped pool: every built-in biome, linked by its note's name (blank biomes left out: they're placed by hand). */
 export function allBiomesPool(presets: readonly BiomeNoteFields[]): BiomePoolRow[] {
-  return presets.filter((p) => !p.blank).map((p) => ({ biome: biomeFileName(p.label) }));
+  // Underground biomes are never placed on a generated overworld: not listed.
+  return presets.filter((p) => !p.blank && !isUnderground(p)).map((p) => ({ biome: biomeFileName(p.label) }));
 }
 
 /**

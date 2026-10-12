@@ -33,6 +33,7 @@ import {
 } from "./biomeNote";
 import { formTypes } from "./biomeForm";
 import { OPEN_SEA, profileFromFields, type BiomeId } from "./biomes";
+import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { profilesForPalette } from "./regionsVault";
 import { paletteTypeOf, planRegion } from "./regionWorld";
 import { neighbourRegions, regionBox, type RegionLayout } from "./layout";
@@ -178,10 +179,12 @@ export class BiomePanel {
     const head = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     head.createSpan({ text: "Biome", cls: "duckmage-map-origin-label" });
     const pick = head.createEl("select", { attr: { "aria-label": "Biome" } });
-    for (const b of plugin.biomeStore.list()) {
-      if (b.blank) continue;
+    // Grouped (Surface, Mountains, …) as option groups.
+    const groups = groupBiomes(plugin.biomeStore.list().filter((b) => !b.blank), biomeGroupOf);
+    for (const g of groups) {
+      const parent = groups.length > 1 ? pick.createEl("optgroup", { attr: { label: g.label } }) : pick;
       // Generator biomes too: their mix still blends into neighbours, and Debug › Engine tunes their generator.
-      pick.createEl("option", { text: b.generator ? `${b.label} (generator)` : b.label, value: b.id });
+      for (const b of g.items) parent.createEl("option", { text: b.generator ? `${b.label} (generator)` : b.label, value: b.id });
     }
     pick.value = this.id;
     pick.addEventListener("change", () => {

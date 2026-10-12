@@ -42,7 +42,7 @@ import {
   type BiomeInfo,
 } from "./biomes";
 import { climateArea, inClimateRange, isPlaceable, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
-import type { BiomeNoteFields } from "./biomeNote";
+import { isUnderground, type BiomeNoteFields } from "./biomeNote";
 import { BIOME_PRESETS } from "./biomePresets";
 
 export type Climate = "cold" | "temperate" | "warm" | "varied";
@@ -544,7 +544,8 @@ export interface PlacementPool {
 /**
  * The biomes World biomes may place. With `list` (a biome pool) only those,
  * and the pool's biomes without a climate fill hexes no climate biome fits
- * (`unclimated` "fill"; "never" leaves them out). Blank biomes never.
+ * (`unclimated` "fill"; "never" leaves them out). Blank and underground
+ * biomes never.
  * Without one: every biome note with a climate (the shipped presets before
  * the notes load); biomes without a climate are never placed.
  */
@@ -560,8 +561,9 @@ export function placementPool(list?: readonly BiomeNoteFields[], unclimated: Unc
   for (const b of notes) {
     if (seen.has(b.id)) continue;
     seen.add(b.id);
-    // Blank biomes (regions painted by hand) are never placed.
-    if (b.blank) continue;
+    // Blank biomes (regions painted by hand) and underground ones (`layer:
+    // underground`: below the surface this map shows) are never placed.
+    if (b.blank || isUnderground(b)) continue;
     const c = b.climate;
     if (!c || !isPlaceable(c)) {
       if (list && unclimated === "fill") fallback.push({ id: b.id, sea: biomeInfo(b.id)?.zone === "sea" || (b.landShare !== undefined && b.landShare < 0.5) });

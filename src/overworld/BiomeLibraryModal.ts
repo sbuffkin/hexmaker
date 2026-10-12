@@ -18,6 +18,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { canAdd } from "../workMode";
 import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "./biomeNote";
+import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { fieldsFromForm, formFromFields, formProblem, formTypes, generatorName, routeNote, type BiomeFormState, type ClimateFormState } from "./biomeForm";
 import type { RegionPlan } from "./regionWorld";
 import { BiomeRegionError } from "../worldgen/biomeRegion";
@@ -78,7 +79,11 @@ export class BiomeLibraryModal extends HexmakerModal {
     contentEl.createEl("p", { cls: "setting-item-description", text: `Each biome is a note in ${plugin.biomeStore.folder()}. Edit it here or as text.` });
     if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
     const list = contentEl.createDiv({ cls: "duckmage-biome-list" });
-    for (const b of plugin.biomeStore.list()) {
+    // Grouped like the pickers (Surface, Mountains, Water, Underground, Blank).
+    const groups = groupBiomes(plugin.biomeStore.list(), biomeGroupOf);
+    for (const b of groups.flatMap((g) => g.items)) {
+      const g = groups.find((x) => x.items[0] === b);
+      if (g && groups.length > 1) list.createDiv({ cls: "duckmage-biome-group-head", text: g.label });
       const row = list.createDiv({ cls: "duckmage-biome-row" });
       row.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color ?? "" });
       const text = row.createDiv({ cls: "duckmage-biome-row-text" });

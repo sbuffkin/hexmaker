@@ -14,7 +14,7 @@ import { App, Notice, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexDistance } from "../../packages/hex-wfc/src/grid";
-import { biomeInfo, biomeNoteOf } from "./biomes";
+import { biomeNoteOf, biomeShortLabel } from "./biomes";
 import { drawMiniOverworld, miniLayout, type MiniHex } from "./overworldRender";
 import { generateMissingRegions } from "./regionsVault";
 import { parseUnclimated, UNCLIMATED_CHOICES, type Climate, type LandShape, type NorthIs, type Unclimated, type WorldBiomesResult } from "./worldBiomes";
@@ -479,7 +479,7 @@ export class NewOverworldModal extends HexmakerModal {
       }
       const b = this.result!.biomes.get(k);
       const t = this.result!.terrain.get(k);
-      return { x, y, color: (t ? colour.get(t) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeInfo(b)?.label : undefined, ecotone: eco.has(k) };
+      return { x, y, color: (t ? colour.get(t) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeShortLabel(b) : undefined, ecotone: eco.has(k) };
     });
     drawMiniOverworld(ctx, miniLayout(hexes, o, s, this.canvas.width, this.canvas.height), hexes, this.result.river);
   }

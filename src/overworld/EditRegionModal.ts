@@ -23,19 +23,20 @@ import { regionMapAt, regionSettingsLabel } from "../maps/submaps";
 import { terrainCounts } from "../maps/mapNote";
 import { readNotesSection, writeNotesSection } from "../maps/mapNoteNotes";
 import { flowerPetals } from "../maps/mapNav";
-import { biomeInfo, type BiomeId } from "./biomes";
-import { hexBiomeAt, overworldOf, regionBiomeStatus, setBiomeAt } from "./regionsVault";
+import { biomeInfo, biomeParts, biomeRef, combinedBiome, isComboId, representativeTerrain, type BiomeId } from "./biomes";
+import type { BiomePart } from "./biomeCombo";
+import { hexBiomeAt, overworldOf, planRegionAt, planRegionWithGenerator, regionBiomeStatus, setBiomeAt } from "./regionsVault";
+import { renderBiomeTiles } from "./biomeChooser";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { editRegionPlan, terrainCountsText } from "./overworldInput";
-import { biomeTileTitle, drawRegionNow, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost } from "./BiomeModals";
+import { biomeTileTitle, drawRegionNow, drawRegionPlan, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost, type PaintableBiome } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
 import { addGodOffer } from "../hex-map/godOffer";
 import { WORK_MODE_TEXT } from "../workMode";
-import { createIconEl, getIconUrl } from "../utils";
 
 export interface EditRegionHost extends BiomeHost {
   /** The overworld hex's Locations list. */
@@ -52,6 +53,11 @@ export class EditRegionModal extends HexmakerModal {
   private notesStatus: HTMLElement | null = null;
   /** The next render follows a Reroll: its preview is marked new. */
   private justRerolled = false;
+  /** The biomes being mixed (Mix biomes…), or null when picking one; undefined until the first render. */
+  private mix: BiomePart[] | null | undefined = undefined;
+  /** The biome section's preview canvas (the mix's live preview draws into it). */
+  private preview: HTMLCanvasElement | null = null;
+  private mixToken = 0;
 
   constructor(private host: EditRegionHost, private overworld: string, private px: number, private py: number) {
     super(host.app);
@@ -136,7 +142,8 @@ export class EditRegionModal extends HexmakerModal {
       biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: `Unknown biome: ${status.unknown} (its note is gone). The region keeps its terrain.` });
     }
     const editGenerator = (row: HTMLElement) => {
-      if (current) {
+      // A mix has no generator of its own: each part's is edited on its biome.
+      if (current && !isComboId(current)) {
         row.createEl("button", { text: "Edit generator…", attr: { title: "Tune how this biome's regions are made" } }).addEventListener("click", () => {
           this.close();
           void openBiomeGenerator(plugin, current);
@@ -159,27 +166,42 @@ export class EditRegionModal extends HexmakerModal {
       }
     };
     const biomes = paintableBiomes(plugin, this.overworld);
+    // Mixing several biomes: starts on when the region already is a mix.
+    if (this.mix === undefined) this.mix = current && isComboId(current) ? biomeParts(current) : null;
+    const mixing = plan.biome === "pick" && this.mix !== null;
     if (plan.biome === "pick") {
-      const grid = biomeSec.createDiv({ cls: "duckmage-terrain-picker duckmage-edit-region-biomes" });
-      for (const b of biomes) {
-        const tile = grid.createDiv({
-          cls: `duckmage-terrain-option${b.id === current ? " is-selected" : ""}`,
-          attr: { title: biomeTileTitle(b), "data-biome": b.id, role: "button", tabindex: "0" },
-        });
-        const preview = tile.createDiv({ cls: "duckmage-terrain-preview" });
-        preview.setCssProps({ "--duckmage-bg": b.color });
-        const entry = palette.find((t) => t.name === b.terrain);
-        if (entry?.icon) createIconEl(preview, getIconUrl(plugin, entry.icon), b.label, entry.iconColor, "duckmage-terrain-preview-icon");
-        tile.createSpan({ text: b.label, cls: "duckmage-terrain-option-name" });
-        const pick = () => {
+      const head = biomeSec.createDiv({ cls: "duckmage-edit-region-mix-toggle" });
+      const toggle = head.createEl("button", {
+        text: mixing ? "One biome" : "Mix biomes…",
+        attr: { title: mixing ? "Go back to picking one biome (nothing changes until you pick one)" : "Pick more than one biome for this region, with a weight each" },
+      });
+      toggle.addEventListener("click", () => {
+        this.mix = mixing ? null : (current ? biomeParts(current) : []);
+        this.render();
+      });
+      if (mixing) head.createSpan({ cls: "setting-item-description", text: "Click biomes to add or remove them; weights say how much of each." });
+      // Blank biomes start empty: there's nothing of them to mix.
+      const offered = mixing ? biomes.filter((b) => b.terrain) : biomes;
+      const parts = new Set((this.mix ?? []).map((p) => p.id));
+      const grid = renderBiomeTiles(biomeSec, plugin, palette, offered, {
+        cls: "duckmage-terrain-picker duckmage-edit-region-biomes",
+        isSelected: (id) => (mixing ? parts.has(id) : id === current),
+        title: biomeTileTitle,
+        onPick: (b) => {
+          if (this.mix) {
+            const i = this.mix.findIndex((p) => p.id === b.id);
+            if (i >= 0) this.mix.splice(i, 1);
+            else this.mix.push({ id: b.id, weight: 1 });
+            grid.querySelector<HTMLElement>(`[data-biome="${b.id}"]`)?.toggleClass("is-selected", i < 0);
+            this.renderMix(mixPanel, plugin, offered, current);
+            return;
+          }
           if (b.id === current) return;
           void this.setBiome(b.id);
-        };
-        tile.addEventListener("click", pick);
-        tile.addEventListener("keydown", (e: KeyboardEvent) => {
-          if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
-        });
-      }
+        },
+      });
+      const mixPanel = biomeSec.createDiv({ cls: "duckmage-edit-region-mix" });
+      if (mixing) this.renderMix(mixPanel, plugin, offered, current);
       // Scroll the current biome into the strip's view (it may be past row two).
       window.requestAnimationFrame(() => {
         const sel = grid.querySelector<HTMLElement>(".is-selected");
@@ -201,11 +223,12 @@ export class EditRegionModal extends HexmakerModal {
       if (plan.lock) this.addLock(row, name);
       editGenerator(row);
     } else {
-      const shown = biomes.find((b) => b.id === current);
+      // A mix shows as its parts with their weights ("Alpine 2 + Taiga"), in its dominant part's colour.
+      const shown = biomes.find((b) => b.id === (current && isComboId(current) ? biomeParts(current)[0]?.id : current));
       const row = biomeSec.createDiv({ cls: "duckmage-edit-region-biome-show" });
       const swatch = row.createSpan({ cls: "duckmage-biome-swatch" });
       if (shown) swatch.setCssProps({ "--duckmage-biome-color": shown.color });
-      row.createSpan({ text: shown?.label ?? (current ? biomeInfo(current)?.label ?? current : terrain ?? "None") });
+      row.createSpan({ text: current && isComboId(current) ? biomeRef(current) : shown?.label ?? (current ? biomeInfo(current)?.label ?? current : terrain ?? "None") });
       if (plan.hint) {
         const hint = biomeSec.createEl("p", { cls: "duckmage-locked-hint", text: plan.hint });
         // Changing a placed biome is God's: offer the switch right here (godOffer.ts).
@@ -223,7 +246,10 @@ export class EditRegionModal extends HexmakerModal {
     });
     preview.width = 240;
     preview.height = 150;
-    drawRegionNow(preview, plugin, this.overworld, this.px, this.py);
+    this.preview = preview;
+    // While mixing, it previews the mix instead (live, as Settings… does).
+    if (mixing && (this.mix?.length ?? 0) > 0) this.drawMixPreview();
+    else drawRegionNow(preview, plugin, this.overworld, this.px, this.py);
     if (this.justRerolled) {
       preview.addClass("is-new");
       this.justRerolled = false;
@@ -318,6 +344,62 @@ export class EditRegionModal extends HexmakerModal {
     // The simple job first (UI worksheet: name, enter, notes are Simple):
     // notes sit right under the header, above the biome and the facts.
     head.after(notesSec);
+  }
+
+  /**
+   * The mix's rows (biome, weight, share, remove) and its Apply button,
+   * then the live preview. Changes nothing until Apply.
+   */
+  private renderMix(panel: HTMLElement, plugin: EditRegionHost["plugin"], offered: PaintableBiome[], current: BiomeId | undefined): void {
+    panel.empty();
+    const parts = this.mix ?? [];
+    const total = parts.reduce((s, p) => s + p.weight, 0);
+    if (!parts.length) panel.createEl("p", { cls: "setting-item-description", text: "No biomes picked yet: click the ones to mix." });
+    for (const p of parts) {
+      const b = offered.find((x) => x.id === p.id);
+      const label = b?.label ?? biomeInfo(p.id)?.label ?? p.id;
+      const row = panel.createDiv({ cls: "duckmage-edit-region-mix-row" });
+      row.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b?.color ?? "#888" });
+      row.createSpan({ cls: "duckmage-edit-region-mix-name", text: label });
+      const weight = row.createEl("input", { type: "number", cls: "duckmage-edit-region-mix-weight", attr: { min: "0.1", step: "1", "aria-label": `Weight of ${label}` } });
+      weight.value = String(p.weight);
+      row.createSpan({ cls: "duckmage-edit-region-mix-share", text: total > 0 ? `${Math.round((p.weight / total) * 100)}%` : "" });
+      weight.addEventListener("change", () => {
+        const n = Number(weight.value);
+        p.weight = Number.isFinite(n) && n > 0 ? n : 1;
+        this.renderMix(panel, plugin, offered, current);
+      });
+      const remove = row.createEl("button", { text: "×", cls: "clickable-icon", attr: { "aria-label": `Remove ${label}`, title: `Remove ${label}` } });
+      remove.addEventListener("click", () => {
+        this.mix = parts.filter((x) => x !== p);
+        panel.parentElement?.querySelector<HTMLElement>(`[data-biome="${p.id}"]`)?.removeClass("is-selected");
+        this.renderMix(panel, plugin, offered, current);
+      });
+    }
+    const want = parts.length ? combinedBiome(parts) : undefined;
+    const actions = panel.createDiv({ cls: "duckmage-token-modal-buttons" });
+    const apply = actions.createEl("button", { text: parts.length === 1 ? "Use this biome" : "Apply mix", cls: "mod-cta" });
+    apply.disabled = !want || want === current;
+    apply.setAttr("title", !want ? "Pick a biome first" : want === current ? "This is the region's biome now" : `Remake the region from ${biomeRef(want)} (hand-painted hexes stay)`);
+    apply.addEventListener("click", () => {
+      if (want && want !== current) void this.setBiome(want);
+    });
+    this.drawMixPreview();
+  }
+
+  /** Preview the mix on the region (its own seed, so Apply makes what's shown). */
+  private drawMixPreview(): void {
+    const canvas = this.preview;
+    if (!canvas || !this.mix?.length) return;
+    const { plugin } = this.host;
+    const biome = combinedBiome(this.mix);
+    const token = ++this.mixToken;
+    const opts = { biome, hexTerrain: representativeTerrain(biome, plugin.getMapPalette(this.overworld)) };
+    void planRegionWithGenerator(plugin, this.overworld, this.px, this.py, opts)
+      .catch(() => planRegionAt(plugin, this.overworld, this.px, this.py, opts))
+      .then((plan) => {
+        if (token === this.mixToken) drawRegionPlan(canvas, plugin, this.overworld, this.px, this.py, plan);
+      });
   }
 
   /** Write typed notes into the region map note's Notes section. */

@@ -74,7 +74,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence"));
   /** Name odds within a type at a cell: the field's, leaning to the names the context uses near it. */
   const namesAt = (x: number, y: number, type: string) => {
-    const nu = namesWithinType(field.at(x, y), profiles, type, sharp);
+    const nu = namesWithinType(field.zoned(x, y), profiles, type, sharp);
     return ctx ? ctx.leanNames(x, y, type, nu) : nu;
   };
 
@@ -82,7 +82,8 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   //    the odds lean toward the types (and names) it has there.
   const types = new Map<string, Map<string, number>>();
   const draw = (x: number, y: number): string | undefined => {
-    const phi = field.at(x, y);
+    // Mixed biomes (Alpine 2 + Taiga) draw from their parts' zones (BlendField.zoned).
+    const phi = field.zoned(x, y);
     const base = typeMix(phi, profiles);
     const tau = ctx ? ctx.leanTypes(x, y, base) : base;
     types.set(`${x}_${y}`, tau);
@@ -951,7 +952,7 @@ export function placeShore(input: ShoreInput): void {
   const shoreSet = new Set(SHORE_TYPES);
   const nameFor = (k: string, wantLand: boolean): string | undefined => {
     const [x, y] = k.split("_").map(Number);
-    const phi = field.at(x, y);
+    const phi = field.zoned(x, y);
     const ok = (t: string) => t !== "settlement" && !shoreSet.has(t) && (wantLand ? !water.has(t) : water.has(t));
     let odds = new Map([...typeMix(phi, profiles)].filter(([t]) => ok(t)));
     if (!odds.size) odds = new Map([...profile.types].filter(([t]) => ok(t)));

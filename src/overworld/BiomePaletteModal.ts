@@ -8,7 +8,7 @@
 import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { createIconEl, getIconUrl } from "../utils";
+import { renderBiomeTiles } from "./biomeChooser";
 import { biomeTileTitle, paintableBiomes } from "./BiomeModals";
 import { BiomeLibraryModal } from "./BiomeLibraryModal";
 
@@ -37,27 +37,17 @@ export class BiomePaletteModal extends HexmakerModal {
     });
     const palette = this.plugin.getMapPalette(this.overworld);
     const biomes = paintableBiomes(this.plugin, this.overworld);
-    const grid = contentEl.createDiv({ cls: "duckmage-terrain-picker duckmage-terrain-picker-full duckmage-biome-palette" });
-    if (!biomes.length) grid.createEl("p", { cls: "setting-item-description", text: "This overworld's palette has no terrain that stands for a biome." });
-    for (const b of biomes) {
-      const tile = grid.createDiv({
-        cls: `duckmage-terrain-option${b.id === this.current ? " is-selected" : ""}`,
-        attr: { title: biomeTileTitle(b), "data-biome": b.id, role: "button", tabindex: "0" },
-      });
-      const preview = tile.createDiv({ cls: "duckmage-terrain-preview" + (b.terrain ? "" : " duckmage-biome-blank-preview") });
-      preview.setCssProps({ "--duckmage-bg": b.color });
-      const entry = b.terrain ? palette.find((t) => t.name === b.terrain) : undefined;
-      if (entry?.icon) createIconEl(preview, getIconUrl(this.plugin, entry.icon), b.label, entry.iconColor, "duckmage-terrain-preview-icon");
-      tile.createSpan({ text: b.label, cls: "duckmage-terrain-option-name" });
-      const pick = () => {
+    if (!biomes.length) contentEl.createEl("p", { cls: "setting-item-description", text: "This overworld's palette has no terrain that stands for a biome." });
+    // Grouped (Surface, Mountains, Water, Underground, Blank), with a filter box when long.
+    renderBiomeTiles(contentEl, this.plugin, palette, biomes, {
+      cls: "duckmage-terrain-picker duckmage-terrain-picker-full duckmage-biome-palette",
+      isSelected: (id) => id === this.current,
+      title: biomeTileTitle,
+      onPick: (b) => {
         this.close();
         this.onPick(b.id);
-      };
-      tile.addEventListener("click", pick);
-      tile.addEventListener("keydown", (e: KeyboardEvent) => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); }
-      });
-    }
+      },
+    });
     const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
     row.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
       this.close();

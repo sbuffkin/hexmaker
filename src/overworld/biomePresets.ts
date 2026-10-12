@@ -20,6 +20,17 @@
  * start empty for painting by hand (BC1); it has no mix and no climate and
  * is never placed by World biomes.
  *
+ * Added 2026-10-12 (owner: "we definitely want more biomes … more
+ * mountainous terrain, or one implying underground caves"): Highlands,
+ * Volcanic peaks, Glacier, Canyon and Mesa (mountains), Steppe, Desert,
+ * Wasteland and Blighted lands (lowlands), Reef (sea), each with a climate
+ * so World biomes places it; and Caverns, Underdark, Fungal forest,
+ * Underground lake, Mines and halls and Magma caves, marked `layer:
+ * underground`: World biomes never places those, they're picked by hand.
+ * The underground ones paint with World's own terrain types (cave floor,
+ * solid rock, fungus…; src/modules/world/terrainTypes.ts). Like any new
+ * shipped biome, an existing vault gets each note once (BiomeStore seed).
+ *
  * Pure: no Obsidian imports.
  */
 
@@ -49,6 +60,8 @@ export function biomePreset(id: string): BiomeNoteFields | undefined {
   if (!p) return undefined;
   const { kind: _kind, ...fields } = p;
   const out: BiomeNoteFields = { ...fields, mix: p.mix.map((r) => ({ ...r })), transitions: p.transitions.map((t) => ({ ...t })) };
+  if (p.terrainWeights) out.terrainWeights = p.terrainWeights.map((w) => ({ ...w }));
+  if (p.tuning) out.tuning = { ...p.tuning };
   const climate = copyClimate(p.climate);
   if (climate) out.climate = climate;
   else delete out.climate;

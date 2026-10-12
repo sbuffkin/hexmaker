@@ -19,6 +19,7 @@ import type { TerrainColor } from "../types";
 import { typesInGroup } from "../terrainTypes";
 import { climateCentre, isPlaceable, type BiomeClimate, type ClimateElevation, type ClimateRange } from "./biomeClimate";
 import { BIOME_PRESETS } from "./biomePresets";
+import { combineBiomeFields, comboId, comboParts, dominantPart, formatComboRef, isComboId, normalizeParts, parseComboRef, type BiomePart } from "./biomeCombo";
 
 export type BiomeId = string;
 export const OPEN_SEA = "open-sea";
@@ -178,6 +179,11 @@ export function biomeForTerrain(terrain: string, palette: TerrainColor[]): Biome
  * the biome's preferred type first.
  */
 export function representativeTerrain(biome: BiomeId, palette: TerrainColor[]): string | undefined {
+  // A combined biome paints its dominant part's terrain (biomeCombo.ts).
+  if (isComboId(biome)) {
+    const lead = dominantPart(biome);
+    return lead ? representativeTerrain(lead, palette) : undefined;
+  }
   if (!BY_ID.has(biome)) return noteBiomeTerrain(biome, palette);
   const map = biomesOf(palette);
   const cands = palette.filter((t) => map.get(t.name) === biome);
@@ -384,6 +390,7 @@ export function climateIdeal(id: BiomeId, c: BiomeClimate): [number, number] {
 /** Load (or, with undefined, drop) the biomes read from notes. */
 export function setBiomeSource(list: readonly BiomeNoteFields[] | undefined): void {
   sourceVersion++;
+  combos.clear();
   if (!list) { source = undefined; return; }
   const biomes = new Map<BiomeId, BiomeNoteFields>();
   const names = new Map<string, BiomeId>();
@@ -429,12 +436,84 @@ export function allBiomeIds(): BiomeId[] {
   return source ? [...source.biomes.keys()] : BIOMES.map((b) => b.id);
 }
 
-/** A biome's note fields (with a source). */
-export const biomeNoteOf = (id: BiomeId): BiomeNoteFields | undefined => source?.biomes.get(id);
+/** A biome's note fields (with a source); a combined biome's are worked out from its parts (combineBiomeFields). */
+export const biomeNoteOf = (id: BiomeId): BiomeNoteFields | undefined => (isComboId(id) ? combo(id)?.fields : source?.biomes.get(id));
 
-/** The biome a reference names (its id, label or note name), when it's a known biome note. */
+/**
+ * The biome a reference names (its id, label or note name), when it's a
+ * known biome note; or a combination of known biomes ("Alpine 2 + Taiga",
+ * biomeCombo.ts), as its combined id.
+ */
 export function biomeByRef(ref: string | undefined): BiomeId | undefined {
-  return ref && source ? source.names.get(biomeSlug(ref)) : undefined;
+  if (!ref || !source) return undefined;
+  const one = source.names.get(biomeSlug(ref));
+  if (one) return one;
+  const parts = parseComboRef(ref, (n) => source?.names.get(biomeSlug(n)) ?? (source?.biomes.has(n) ? n : undefined));
+  return parts ? comboId(parts) || undefined : undefined;
+}
+
+// ── combined biomes (biomeCombo.ts) ──────────────────────────────────────
+
+interface Combo { parts: BiomePart[]; fields: BiomeNoteFields; info: BiomeInfo }
+const combos = new Map<BiomeId, Combo | null>();
+
+/** A combined biome, when every part is a known biome note (cached until the notes change). */
+function combo(id: BiomeId): Combo | undefined {
+  if (!source || !isComboId(id)) return undefined;
+  if (combos.has(id)) return combos.get(id) ?? undefined;
+  const parts = normalizeParts(comboParts(id));
+  const notes = parts.map((p) => source!.biomes.get(p.id));
+  let out: Combo | null = null;
+  if (parts.length > 1 && notes.every((n) => n && !n.blank)) {
+    const label = formatComboRef(parts.map((p) => ({ id: p.id, weight: 1 })), (b) => source!.biomes.get(b)?.label ?? b);
+    const fields = combineBiomeFields(id, label, parts.map((p, i) => ({ fields: notes[i]!, weight: p.weight })));
+    const lead = noteBiomeInfo(parts[0].id) ?? BY_ID.get(parts[0].id);
+    const info: BiomeInfo = { id, label, temp: lead?.temp ?? 0.5, moist: lead?.moist ?? 0.5, zone: lead?.zone ?? "low" };
+    if (fields.landShare !== undefined) info.landShare = fields.landShare;
+    if (fields.minIslands !== undefined) info.minIslands = fields.minIslands;
+    out = { parts, fields, info };
+  }
+  combos.set(id, out);
+  return out ?? undefined;
+}
+
+/** A biome's parts: a combined biome's (heaviest first), else just itself. */
+export function biomeParts(id: BiomeId): BiomePart[] {
+  return isComboId(id) ? normalizeParts(comboParts(id)) : [{ id, weight: 1 }];
+}
+
+/** The combined biome of these parts (ids and weights): its id, or the one biome's id. */
+export const combinedBiome = (parts: readonly BiomePart[]): BiomeId => comboId(parts);
+
+/** Whether an id is a combination of biomes. */
+export { isComboId };
+
+/**
+ * A short name for a tight spot (the minimap): a biome's label, or a
+ * combined biome's dominant part with a "+" ("Alpine+").
+ */
+export function biomeShortLabel(id: BiomeId): string {
+  if (!isComboId(id)) return biomeInfo(id)?.label ?? id;
+  const lead = dominantPart(id);
+  return lead ? `${biomeInfo(lead)?.label ?? lead}+` : id;
+}
+
+/**
+ * `profiles` with a profile for every combined biome among `ids` (its
+ * combined fields fitted to the palette). The same map when there's none.
+ */
+export function withComboProfiles(profiles: ReadonlyMap<BiomeId, BiomeProfile>, ids: Iterable<BiomeId>, palette: TerrainColor[]): Map<BiomeId, BiomeProfile> {
+  let out: Map<BiomeId, BiomeProfile> | undefined;
+  for (const id of ids) {
+    if (!isComboId(id) || profiles.has(id) || out?.has(id)) continue;
+    const f = combo(id)?.fields;
+    if (!f) continue;
+    const p = profileFromFields(f, palette);
+    if (!p.types.size) continue;
+    out ??= new Map(profiles);
+    out.set(id, p);
+  }
+  return out ?? (profiles as Map<BiomeId, BiomeProfile>);
 }
 
 /**
@@ -443,6 +522,8 @@ export function biomeByRef(ref: string | undefined): BiomeId | undefined {
  * sharing a label, or no notes loaded).
  */
 export function biomeRef(id: BiomeId): string {
+  // A combined biome: its parts' refs with weights ("Alpine 2 + Taiga").
+  if (isComboId(id)) return formatComboRef(comboParts(id), biomeRef);
   const label = source?.biomes.get(id)?.label;
   return label && biomeByRef(label) === id ? label : id;
 }
@@ -453,7 +534,7 @@ export function isBlankBiome(id: BiomeId | undefined): boolean {
 }
 
 function noteBiomeInfo(id: BiomeId): BiomeInfo | undefined {
-  return source?.infos.get(id);
+  return isComboId(id) ? combo(id)?.info : source?.infos.get(id);
 }
 
 /** A note biome's terrain types, heaviest first, then each one's fallbacks. */

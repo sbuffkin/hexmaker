@@ -132,9 +132,13 @@ describe("biome note format", () => {
 
 // ── presets ──────────────────────────────────────────────────────────────
 
+/** Shipped biomes with no row in the old BIOMES table: their notes are all there is. */
+const NOTE_ONLY = ["coast", "custom", "highlands", "volcanic-peaks", "glacier", "canyon", "mesa", "steppe", "desert", "wasteland", "blighted-lands", "reef", "caverns", "underdark", "fungal-forest", "underground-lake", "mines", "magma-caves"];
+
 describe("shipped biome presets", () => {
-	it("cover every built-in biome with the same label (Coast and Custom (blank) are note-only)", () => {
-		expect(BIOME_PRESETS.map((b) => b.id).filter((id) => id !== "coast" && id !== "custom")).toEqual(BIOMES.map((b) => b.id));
+	it("cover every built-in biome with the same label (Coast, Custom (blank) and the 2026-10-12 biomes are note-only)", () => {
+		expect(BIOME_PRESETS.map((b) => b.id).filter((id) => !NOTE_ONLY.includes(id))).toEqual(BIOMES.map((b) => b.id));
+		expect(BIOME_PRESETS.filter((b) => !BIOMES.some((x) => x.id === b.id)).map((b) => b.id).sort()).toEqual([...NOTE_ONLY].sort());
 		expect(BIOME_PRESETS.find((p) => p.id === "custom")!.blank).toBe(true);
 		for (const b of BIOMES) expect(BIOME_PRESETS.find((p) => p.id === b.id)!.label).toBe(b.label);
 		expect(BIOME_PRESETS.find((p) => p.id === "coast")!.shore).toBe(true);
@@ -174,7 +178,8 @@ describe("shipped biome presets", () => {
 		const before = representableBiomes(DEFAULT_TERRAIN_PALETTE);
 		setBiomeSource(BIOME_PRESETS);
 		try {
-			expect(representableBiomes(DEFAULT_TERRAIN_PALETTE)).toEqual(new Set([...before, "coast"]));
+			// The note-only biomes too (all but the blank one: it paints nothing).
+			expect(representableBiomes(DEFAULT_TERRAIN_PALETTE)).toEqual(new Set([...before, ...NOTE_ONLY.filter((id) => id !== "custom")]));
 		} finally {
 			setBiomeSource(undefined);
 		}

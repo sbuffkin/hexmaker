@@ -11,7 +11,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } from "../src/constants";
 import { BIOME_PRESETS } from "../src/overworld/biomePresets";
-import { profileFromFields, type BiomeProfile } from "../src/overworld/biomes";
+import { BIOMES, profileFromFields, type BiomeProfile } from "../src/overworld/biomes";
 import type { BiomeNoteFields } from "../src/overworld/biomeNote";
 import type { RegionLayout } from "../src/overworld/layout";
 import { paletteTypeOf, planRegion, regionOrder, worldSeed } from "../src/overworld/regionWorld";
@@ -37,9 +37,16 @@ export const SCENARIOS: ParityScenario[] = [
 	{ name: "flower-models", layout: { footprint: "hex", size: 3, orientation: "flat", parentStagger: "odd", childStagger: "odd" }, palette: DEFAULT_TERRAIN_PALETTE, profiles: "models", cols: 4, rows: 4 },
 ];
 
-/** Every shipped biome with a mix, as its note says it. */
+/**
+ * The shipped biomes the snapshots were taken with (before the 2026-10-12
+ * additions): the old BIOMES table's and Coast. Pinned, so adding a shipped
+ * biome doesn't move every scenario's layout.
+ */
+const SNAPSHOT_BIOMES = new Set([...BIOMES.map((b) => b.id), "coast"]);
+
+/** Every snapshot-era shipped biome with a mix, as its note says it. */
 export function presetFields(): BiomeNoteFields[] {
-	return BIOME_PRESETS.filter((p) => p.mix.length).map(({ kind: _k, ...f }) => f as BiomeNoteFields);
+	return BIOME_PRESETS.filter((p) => p.mix.length && SNAPSHOT_BIOMES.has(p.id)).map(({ kind: _k, ...f }) => f as BiomeNoteFields);
 }
 
 /** Profiles for a scenario; `edit` may change a biome's fields first (tuning). */

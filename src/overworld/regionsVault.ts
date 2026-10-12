@@ -25,7 +25,7 @@ import { slugify } from "../utils";
 import { newWorldId } from "../worldgen/world";
 import { BUILTIN_GENERATORS, builtinModel } from "../worldgen/builtinGenerators";
 import { regionMapAt } from "../maps/submaps";
-import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeProfiles, biomeRef, biomeSourceVersion, isBlankBiome, noteBiomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
+import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeProfiles, biomeRef, biomeSourceVersion, isBlankBiome, noteBiomeProfiles, representativeTerrain, withComboProfiles, type BiomeId, type BiomeProfile } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
 import { ADD_REGION_LOCKED_HINT, canAdd, canChangeRegion, PLACE_LOCKED_HINT, regionChangeHint } from "../workMode";
@@ -260,7 +260,8 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
     layout: ow.layout,
     parent: [px, py],
     biomes,
-    profiles: profilesForPalette(palette),
+    // Combined biomes (Edit region…'s mix) get a profile of their own (biomeCombo.ts).
+    profiles: withComboProfiles(profilesForPalette(palette), biomes.values(), palette),
     pinned,
     typeOf: paletteTypeOf(palette),
     worldSeed: ws,

@@ -20,6 +20,7 @@ export type TerrainGroup = string;
 export const TERRAIN_GROUPS: { id: TerrainGroup; label: string }[] = [
   { id: "water", label: "Water" },
   { id: "land", label: "Land" },
+  { id: "underground", label: "Underground" },
   ...registry.terrainGroups(),
 ];
 
@@ -31,6 +32,12 @@ export interface TerrainTypeInfo {
   group: TerrainGroup;
   /** Lower-case words that suggest this type in a terrain's name. */
   keywords: string[];
+  /**
+   * Types a palette without this one paints it with, in order (the newer
+   * types carry theirs here; the older ones' are in
+   * worldgen/builtinGenerators.ts TYPE_FALLBACKS).
+   */
+  fallbacks?: readonly string[];
 }
 
 type TypeDef = Omit<TerrainTypeInfo, "group"> & { group?: TerrainGroup };
@@ -59,6 +66,19 @@ const CORE_TYPE_DEFS: TypeDef[] = [
   { id: "badlands", label: "Badlands", kind: "world", keywords: ["badland", "brokenland", "waste", "canyon", "mesa"] },
   { id: "volcanic", label: "Volcanic", kind: "world", keywords: ["volcan", "lava", "ash", "magma"] },
   { id: "settlement", label: "Settlement", kind: "world", keywords: ["urban", "city", "town", "village", "ruin"] },
+  // Underground and blighted land (2026-10-12: caves, the Underdark, mines,
+  // haunted lands). Shared like the rest, so a palette holding them (Expanded)
+  // still says nothing about its map type. Each names the types a palette
+  // without it is painted with (a cave floor on Limited: hills).
+  { id: "cave", label: "Cave floor", kind: "world", group: "underground", keywords: ["cave", "cavern", "tunnel", "grotto"], fallbacks: ["hills", "mountains"] },
+  { id: "cave-wall", label: "Solid rock", kind: "world", group: "underground", keywords: ["solid rock", "bedrock", "cave wall", "rock wall"], fallbacks: ["mountains", "peaks"] },
+  { id: "underground-water", label: "Underground water", kind: "world", group: "water", keywords: ["underground lake", "underground river", "sunless sea", "cave lake"], fallbacks: ["water", "shallows"] },
+  { id: "fungus", label: "Fungus", kind: "world", group: "underground", keywords: ["fung", "mushroom", "mycel", "spore"], fallbacks: ["jungle", "forest", "wetland"] },
+  { id: "crystal", label: "Crystal", kind: "world", group: "underground", keywords: ["crystal", "geode", "gem"], fallbacks: ["mountains", "hills"] },
+  { id: "mine", label: "Mine / hall", kind: "world", group: "underground", keywords: ["mine", "delve", "shaft", "dwarven hall", "underhall"], fallbacks: ["cave", "hills"] },
+  { id: "chasm", label: "Chasm", kind: "world", keywords: ["chasm", "ravine", "crevasse", "sinkhole", "gorge"], fallbacks: ["badlands", "mountains"] },
+  { id: "lava", label: "Lava", kind: "world", keywords: ["lava flow", "lava lake", "lava field", "magma pool"], fallbacks: ["volcanic", "badlands"] },
+  { id: "blight", label: "Blight", kind: "world", keywords: ["blight", "dead forest", "haunted", "cursed", "withered"], fallbacks: ["badlands", "wetland"] },
 ];
 
 /** Every type: the core's (land unless said otherwise), then each module's. */

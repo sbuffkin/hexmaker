@@ -317,12 +317,29 @@ export const DEFAULT_TERRAIN_PALETTE: TerrainColor[] = [
   // them once (src/palettes/presetUpdates.ts, ADDED_PRESET_TERRAINS).
   { name: "savanna", type: "grassland", color: "#c4b25c", icon: "bw-grassland.png", category: "lowlands" },
   { name: "river delta", type: "wetland", color: "#5f9a7a", icon: "bw-marsh.png", category: "bog" },
+  // Added after release (2026-10-12): the underground and blighted-land
+  // biomes paint with these. Each has a type of its own (World's, see
+  // src/modules/world/terrainTypes.ts), so none of the older biomes' mixes
+  // pick them up. Existing Expanded palettes get them once (ADDED_PRESET_TERRAINS).
+  { name: "cave floor", type: "cave", color: "#8a7d70", category: "underground" },
+  { name: "solid rock", type: "cave-wall", color: "#3d3833", category: "underground", impassable: true },
+  { name: "chasm", type: "chasm", color: "#2b211c", icon: "bw-brokenlands.png", iconColor: "#e7e5e4", category: "underground", impassable: true },
+  { name: "underground lake", type: "underground-water", color: "#1f3b57", category: "underground" },
+  { name: "fungal forest", type: "fungus", color: "#6d4c8a", icon: "bw-jungle.png", iconColor: "#f3e8ff", category: "underground" },
+  { name: "crystal cave", type: "crystal", color: "#6cc3d5", icon: "place-crystal-shrine.svg", iconColor: "#0e3a46", category: "underground" },
+  { name: "lava flow", type: "lava", color: "#e2531d", category: "underground", impassable: true },
+  { name: "mine shaft", type: "mine", color: "#7a6a58", icon: "place-mine-wagon.svg", category: "underground" },
+  { name: "dwarven hall", type: "mine", color: "#a08f74", icon: "place-dungeon-gate.svg", category: "underground" },
+  { name: "blighted land", type: "blight", color: "#5a5248", icon: "bw-brokenlands.png", iconColor: "#e7e5e4", category: "blight" },
+  { name: "dead forest", type: "blight", color: "#4b4339", icon: "bw-forest.png", iconColor: "#d6d3d1", category: "blight" },
 ];
 
 /** Terrains added to a bundled palette after it shipped: offered once to installed copies. */
 export const ADDED_PRESET_TERRAINS: { preset: string; terrain: string }[] = [
   { preset: EXPANDED_PALETTE_NAME, terrain: "savanna" },
   { preset: EXPANDED_PALETTE_NAME, terrain: "river delta" },
+  ...["cave floor", "solid rock", "chasm", "underground lake", "fungal forest", "crystal cave", "lava flow", "mine shaft", "dwarven hall", "blighted land", "dead forest"]
+    .map((terrain) => ({ preset: EXPANDED_PALETTE_NAME, terrain })),
 ];
 
 export const LIMITED_TERRAIN_PALETTE: TerrainColor[] = [

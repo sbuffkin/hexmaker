@@ -32,9 +32,10 @@ describe("terrains added to a bundled palette (OW8)", () => {
     const pal = oldExpanded();
     const plan = planPresetTerrains([pal], ADDED_PRESET_TERRAINS, new Set(), presetTerrains);
     expect(plan.add).toHaveLength(1);
-    expect(plan.add[0].terrains.map((t) => t.name)).toEqual(["savanna", "river delta"]);
+    const added = ADDED_PRESET_TERRAINS.map((a) => a.terrain);
+    expect(plan.add[0].terrains.map((t) => t.name)).toEqual(added);
     applyPresetTerrains(plan);
-    expect(pal.terrains.slice(-2).map((t) => t.name)).toEqual(["savanna", "river delta"]);
+    expect(pal.terrains.slice(-added.length).map((t) => t.name)).toEqual(added);
     expect(plan.done).toEqual(ADDED_PRESET_TERRAINS.map(addedKey));
     // Next start: already done, nothing more.
     const again = planPresetTerrains([pal], ADDED_PRESET_TERRAINS, new Set(plan.done), presetTerrains);
@@ -60,8 +61,41 @@ describe("terrains added to a bundled palette (OW8)", () => {
     const impostor: TerrainPalette = { name: EXPANDED_PALETTE_NAME, terrains: [{ name: "lava sea", color: "#f00" }] };
     const plan = planPresetTerrains([limited, impostor], ADDED_PRESET_TERRAINS, new Set(), presetTerrains);
     expect(plan.add).toHaveLength(0);
-    expect(plan.done).toHaveLength(2); // offered; not installed as a copy, so never again
+    expect(plan.done).toHaveLength(ADDED_PRESET_TERRAINS.length); // offered; not installed as a copy, so never again
     expect(impostor.terrains).toHaveLength(1);
+  });
+
+  it("ships the underground and blight terrains (2026-10-12) in Expanded, each with its own type", () => {
+    const want: Record<string, string> = {
+      "cave floor": "cave", "solid rock": "cave-wall", chasm: "chasm", "underground lake": "underground-water", "fungal forest": "fungus",
+      "crystal cave": "crystal", "lava flow": "lava", "mine shaft": "mine", "dwarven hall": "mine", "blighted land": "blight", "dead forest": "blight",
+    };
+    for (const [name, type] of Object.entries(want)) {
+      expect(DEFAULT_TERRAIN_PALETTE.find((t) => t.name === name)).toMatchObject({ type });
+      expect(NEW.has(name)).toBe(true);
+    }
+    // New types only: no older biome's mix picks them up.
+    const older = new Set(DEFAULT_TERRAIN_PALETTE.filter((t) => !NEW.has(t.name)).map((t) => t.type));
+    for (const type of Object.values(want)) expect(older.has(type)).toBe(false);
+    // Limited stays minimal (G7).
+    expect(LIMITED_TERRAIN_PALETTE.some((t) => t.name in want)).toBe(false);
+  });
+
+  it("adds the underground terrains once, beside the user's own, and never over a terrain they made", () => {
+    const pal = oldExpanded();
+    // Their own "Chasm" (a different colour and type) and no savanna (deleted long ago, done).
+    pal.terrains.push({ name: "Chasm", color: "#123456", type: "badlands" });
+    const done = new Set(["expanded/savanna", "expanded/river delta"]);
+    const plan = planPresetTerrains([pal], ADDED_PRESET_TERRAINS, done, presetTerrains);
+    applyPresetTerrains(plan);
+    expect(pal.terrains.filter((t) => t.name.toLowerCase() === "chasm")).toEqual([{ name: "Chasm", color: "#123456", type: "badlands" }]);
+    expect(pal.terrains.some((t) => t.name === "savanna")).toBe(false);
+    expect(pal.terrains.find((t) => t.name === "cave floor")).toMatchObject({ type: "cave" });
+    // Recorded once: a later start adds nothing, even after the user deletes one.
+    pal.terrains = pal.terrains.filter((t) => t.name !== "cave floor");
+    const later = planPresetTerrains([pal], ADDED_PRESET_TERRAINS, new Set([...done, ...plan.done]), presetTerrains);
+    expect(later.add).toHaveLength(0);
+    expect(later.done).toHaveLength(0);
   });
 
   it("works for an empty or custom palette list (nothing installed: nothing to add)", () => {
