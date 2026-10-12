@@ -73,6 +73,7 @@ import type {
 } from "./types";
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
+import { writeJsonBackup } from "./backup";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { setModeMapLookup } from "./modeGate";
@@ -209,6 +210,8 @@ export default class HexmakerPlugin extends Plugin {
       // BC1, once per vault: every overworld hex's biome in its Biome column.
       void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
       void storesReady.then(() => this.ensureTablesForNewTerrains());
+      // Terrains renamed in a palette note while Obsidian was closed: offer "Rename everywhere".
+      void storesReady.then(() => this.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
       // generator and modules' notes (world types) in the new note formats (backed up first).
       void Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
@@ -1416,7 +1419,11 @@ export default class HexmakerPlugin extends Plugin {
    * exists). Awaiting it waits for the files.
    */
   ensureTablesForNewTerrains(): Promise<void> {
-    const terrains = this.tableTerrains();
+    // A name a terrain was just renamed to by hand waits for the answer to
+    // "Rename everywhere" (its old tables may move to it), and names typed
+    // on the way there ("w", "wo"…) never get tables.
+    const held = this.paletteStore?.heldTerrainNames() ?? new Set<string>();
+    const terrains = this.tableTerrains().filter((t) => !held.has(t.name));
     const known = this.tableTerrainNames;
     this.tableTerrainNames = new Set(terrains.map((t) => t.name));
     const added = known ? newTerrains(known, terrains) : [];
@@ -1730,11 +1737,14 @@ export default class HexmakerPlugin extends Plugin {
   async renameTerrainInHexes(
     oldName: string,
     newName: string,
+    paletteName?: string,
   ): Promise<Map<string, string>> {
     // Terrain lives in map notes: rename it there (in memory now, notes
-    // follow). Hex notes no longer carry terrain.
+    // follow). Hex notes no longer carry terrain. Only maps drawn with
+    // `paletteName` (when given): another palette's terrain of the same
+    // name is a different terrain.
     const overrides = new Map<string, string>();
-    for (const m of this.settings.maps) {
+    for (const m of paletteName === undefined ? this.settings.maps : this.mapsOnPalette(paletteName)) {
       for (const [key, h] of this.mapStore.all(m.name)) {
         if (h.terrain !== oldName) continue;
         this.mapStore.set(m.name, key, { terrain: newName });
@@ -1756,7 +1766,10 @@ export default class HexmakerPlugin extends Plugin {
   async renameTerrain(entry: TerrainColor, newName: string): Promise<void> {
     const oldName = entry.name;
     if (!newName || newName === oldName) return;
-    const overrides = await this.renameTerrainInHexes(oldName, newName);
+    // The palette the entry is in (an entry in none, e.g. a stray copy,
+    // renames on every map as before).
+    const palette = this.settings.terrainPalettes.find((p) => p.terrains.includes(entry))?.name;
+    const overrides = await this.renameTerrainInHexes(oldName, newName, palette);
     // Another palette still has a terrain of the old name: its tables stay
     // and the renamed one gets a copy.
     const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t !== entry && t.name === oldName));
@@ -1765,6 +1778,49 @@ export default class HexmakerPlugin extends Plugin {
     await this.saveSettings();
     this.refreshHexMapWithOverrides(overrides);
     this.refreshHexTableTerrainRename(oldName, newName);
+  }
+
+  /** The terrain table files of a name that exist (description, encounters). */
+  terrainTableFiles(name: string): TFile[] {
+    return (["description", "encounters"] as const)
+      .map((type) => this.app.vault.getAbstractFileByPath(this.terrainTablePath(name, type)))
+      .filter((f): f is TFile => f instanceof TFile);
+  }
+
+  /**
+   * "Rename everywhere" for a terrain already renamed in its palette (by
+   * hand in the palette note): the hexes and base terrains of that
+   * palette's maps, and the terrain's tables, follow it. The map notes and
+   * tables it changes are backed up first; nothing changes when the backup
+   * can't be saved. Returns the backup path, or null when it failed.
+   */
+  async renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> {
+    const maps = this.mapsOnPalette(paletteName);
+    const notes: Record<string, string> = {};
+    let where: string;
+    try {
+      for (const m of maps) {
+        const text = await this.mapStore.readNoteText(m.name);
+        if (text !== null) notes[this.mapStore.notePath(m.name)] = text;
+      }
+      for (const f of this.terrainTableFiles(oldName)) notes[f.path] = await this.app.vault.read(f);
+      const dir = `${this.manifest.dir}/backups/terrain-rename-${new Date().toISOString().slice(0, 10)}`;
+      const json = JSON.stringify({ kind: "terrain-rename", palette: paletteName, from: oldName, to: newName, savedAt: new Date().toISOString(), notes });
+      where = await writeJsonBackup(this.app.vault.adapter, dir, "before-rename", json);
+    } catch (e) {
+      console.error("Hexmap World Creator: couldn't back up before renaming a terrain; nothing was changed", e);
+      new Notice(`Couldn't save a backup, so "${oldName}" wasn't renamed. Nothing was changed.`, 10000);
+      return null;
+    }
+    const overrides = await this.renameTerrainInHexes(oldName, newName, paletteName);
+    // A palette that still has a terrain of the old name keeps its tables
+    // (the renamed one gets a copy); otherwise they move.
+    const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t.name === oldName));
+    await this.renameTerrainTables(oldName, newName, shared);
+    await this.saveSettings();
+    this.refreshHexMapWithOverrides(overrides);
+    this.refreshHexTableTerrainRename(oldName, newName);
+    return where;
   }
 
   private terrainTablePath(name: string, type: "description" | "encounters"): string {

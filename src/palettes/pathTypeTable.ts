@@ -1,7 +1,7 @@
 import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../types";
 import { parseImpassableCell } from "../impassable";
 import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTypeLegacy";
-import { colorCell, parseColorCell, wrapColorCellsInRows } from "./colorCell";
+import { colorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
@@ -219,7 +219,7 @@ export function parsePathTypes(content: string, opts: ParsePathTypesOptions = {}
     const avoidImpassable = avoid ?? (opts.legacy ? legacyAvoidsImpassable(name) : true);
     const t: PathType = {
       name,
-      color: parseColorCell(row.color) || "#888888",
+      ...readColor(row.color),
       width: parseWidth(row.width),
       lineStyle: parseStyle(row.style),
       routing: routing ?? (opts.legacy ? legacyRouting(name) : "through"),
@@ -254,7 +254,7 @@ export function serializePathTypes(
     const avoid = t.avoidImpassable === false ? "no" : "yes";
     const carves = t.carves?.trim() || "none";
     const carveCells = carving ? [carves, String(t.carveWidth === 1 ? 1 : 0)] : [];
-    const cells = [t.name, colorCell(t.color), String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...carveCells, ...extraHeaders.map((h) => own[h])];
+    const cells = [t.name, colorCell(writtenColor(t)), String(t.width), t.lineStyle, t.routing, avoid, t.autoRoute ?? "direct", ...carveCells, ...extraHeaders.map((h) => own[h])];
     lines.push(`| ${cells.map(escapeCell).join(" | ")} |`);
   }
   return lines.join("\n");
@@ -262,7 +262,7 @@ export function serializePathTypes(
 
 /** Order-sensitive comparison key (order is the picker's order). */
 export function pathTypesKey(types: PathType[] | undefined): string {
-  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null, t.autoRoute ?? null, t.carves?.trim() || null, t.carveWidth === 1 ? 1 : 0]));
+  return JSON.stringify((types ?? []).map((t) => [t.name, t.color, t.unreadColor ?? null, t.width, t.lineStyle, t.routing, t.avoidImpassable ?? null, t.autoRoute ?? null, t.carves?.trim() || null, t.carveWidth === 1 ? 1 : 0]));
 }
 
 /**
