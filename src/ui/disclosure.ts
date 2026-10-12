@@ -220,7 +220,38 @@ export class Disclosure {
     return body;
   }
 
+  /**
+   * One item isn't worth a dropdown (owner, round 10): a sub-section holding
+   * a single control folds into plain Advanced, and an Advanced dropdown
+   * left holding a single control (and no Debug) shows it inline instead.
+   * Runs once the surface has finished building (queued from build()).
+   */
+  settle(): void {
+    if (!this.details?.isConnected || !this.items || !this.subsEl) return;
+    for (const [name, body] of [...this.subs]) {
+      if (!body.isConnected || body.childElementCount !== 1) continue;
+      this.items.appendChild(body.firstElementChild!);
+      body.parentElement?.remove();
+      this.subs.delete(name);
+      this.subSummaries.delete(name);
+      for (const r of this.reporters) if (r.where === name) r.where = null;
+    }
+    const hasDebug = !!this.debug?.isConnected;
+    const subsLeft = [...this.subs.values()].some((b) => b.isConnected && b.childElementCount > 0);
+    if (hasDebug || subsLeft || this.items.childElementCount !== 1) {
+      this.refreshSet();
+      return;
+    }
+    const only = this.items.firstElementChild!;
+    this.details.parentElement?.insertBefore(only, this.details);
+    this.details.remove();
+    this.details = null;
+    this.summary = null;
+    this.reporters = [];
+  }
+
   private build(): void {
+    queueMicrotask(() => this.settle());
     const details = this.host().createEl("details", { cls: "duckmage-disclosure" });
     this.summary = details.createEl("summary", { cls: "duckmage-disclosure-summary", text: "Advanced" });
     details.open = disclosureOpen(this.store, this.surface);
