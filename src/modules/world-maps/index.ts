@@ -38,6 +38,9 @@ export const worldMapsModule: HexmakerModule = {
       "Generate overworld…",
       "Make the missing regions",
       "hexmaker-biome",
+      // Biome tuning and Blend into <biome> (owner 2026-10-12).
+      "Coastline raggedness",
+      "Make a generator instead…",
     ],
   },
 };

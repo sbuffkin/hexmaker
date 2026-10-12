@@ -66,8 +66,9 @@ describe("placement map", () => {
     // The setup tools are in the README's manual setup, so Advanced, not Debug.
     expect(idsOn("advanced")).toEqual(expect.arrayContaining(["Settings.generateFolders", "Settings.generateWorldData", "GenPage.scatter", "GenPage.mixStrength"]));
     expect(idsOn("debug")).toEqual(expect.arrayContaining(["Settings.biomesFolder", "Settings.biomePoolsFolder", "Settings.worldTypesFolder"]));
-    // Nothing on the generator page needs debug mode (owner).
-    expect(idsOn("debug").filter((id) => /^(GenPage|BiomePage)./.test(id))).toEqual([]);
+    // Nothing on the generator page needs debug mode (owner), except the biome
+    // view's per-biome tuning, which the owner asked for in Debug (2026-10-12).
+    expect(idsOn("debug").filter((id) => /^(GenPage|BiomePage)./.test(id) && !id.startsWith("BiomePage.tune."))).toEqual([]);
     // Customisation is not "advanced" (rule 5): the custom icons folder stays main.
     expect(layerOf("Settings.iconsFolder")).toBe("main");
   });

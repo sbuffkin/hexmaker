@@ -83,7 +83,12 @@ export interface TuningParam {
  * Every tunable parameter. Defaults are the constants generation used
  * before tuning (file:line in the comments).
  */
-export const TUNING_PARAMS: readonly TuningParam[] = [
+export const TUNING_PARAMS: readonly TuningParam[] = /* @__PURE__ */ makeParams();
+
+// A function (called once above, marked pure) so a build that never reads the
+// params, such as one without World maps, drops them (npm run check:release).
+function makeParams(): TuningParam[] {
+  return [
   // ── Layout: how the influence field spreads (blendField.ts) ──
   { key: "reach", label: "Influence reach", section: "Layout", default: 2, min: 1, max: 4, step: 0.25, help: "How far a biome's influence reaches, in regions (blendField CUTOFF)." },
   { key: "wiggle-scale", label: "Wiggle scale", section: "Layout", default: 1.4, min: 0.25, max: 5, step: 0.05, help: "Bumps per region in the border wiggle (higher: tighter wiggles)." },
@@ -116,7 +121,8 @@ export const TUNING_PARAMS: readonly TuningParam[] = [
   { key: "keep-rare", label: "Keep rare", section: "Engine", default: DEFAULT_SETTINGS.keepRare, min: 0, max: 0.2, step: 0.01, inherits: true, engine: "keepRare", help: "Terrains rarer than this share are never smoothed away." },
   { key: "edge-strength", label: "Edge strength", section: "Engine", default: DEFAULT_SETTINGS.edgeStrength, min: 0, max: 1, step: 0.05, inherits: true, engine: "edgeStrength", help: "How strongly the border follows the learned edge terrain." },
   { key: "directional-bias", label: "Directional bias", section: "Engine", default: DEFAULT_SETTINGS.directionalBias, min: 0, max: 1, step: 0.05, inherits: true, engine: "directionalBias", help: "Keep terrain where it sat in the example." },
-];
+  ];
+}
 
 /**
  * The value a param has when unset, for showing: its default, except the
@@ -131,15 +137,21 @@ export function shownDefault(p: TuningParam, blend?: string): number {
 export type BiomeTuning = Record<string, number>;
 
 const squash = (s: string) => s.trim().toLowerCase().replace(/[\s_-]+/g, "");
-const BY_NAME = new Map<string, TuningParam>();
-for (const p of TUNING_PARAMS) {
-  BY_NAME.set(squash(p.key), p);
-  BY_NAME.set(squash(p.label), p);
-}
+// Built on first use, never at import time: the space module imports
+// biomeNote (biomeFileName), and a top-level loop here would keep these
+// params in a build without World maps (npm run check:release).
+let byName: Map<string, TuningParam> | undefined;
 
 /** A param by key or label (any case, spaces or dashes). */
 export function tuningParam(name: string): TuningParam | undefined {
-  return BY_NAME.get(squash(name));
+  if (!byName) {
+    byName = new Map();
+    for (const p of TUNING_PARAMS) {
+      byName.set(squash(p.key), p);
+      byName.set(squash(p.label), p);
+    }
+  }
+  return byName.get(squash(name));
 }
 
 export const paramsIn = (section: TuningSection): TuningParam[] => TUNING_PARAMS.filter((p) => p.section === section);

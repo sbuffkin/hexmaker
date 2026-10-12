@@ -115,7 +115,8 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
 
   it("every placement entry for these surfaces comes from a worksheet row (no stray ids)", () => {
     const known = new Set(ALL.map((r) => r.id));
-    for (const id of Object.keys(PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k))) {
+    // BiomePage.tune.* came from an owner request (2026-10-12), not the worksheet.
+    for (const id of Object.keys(PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k) && !k.startsWith("BiomePage.tune."))) {
       expect([id, known.has(id)]).toEqual([id, true]);
     }
   });
@@ -210,7 +211,9 @@ describe("Advanced sub-sections", () => {
     expect(parsePlacement("advanced/")).toEqual({ layer: "advanced" });
     expect(parsePlacement("advanced")).toEqual({ layer: "advanced" });
     expect(parsePlacement("debug")).toEqual({ layer: "debug" });
-    expect(parsePlacement("debug/Engine")).toBeNull();
+    // Debug sub-sections (biome tuning, owner 2026-10-12).
+    expect(parsePlacement("debug/Engine")).toEqual({ layer: "debug", sub: "Engine" });
+    expect(parsePlacement("debug/")).toEqual({ layer: "debug" });
     expect(parsePlacement(3)).toBeNull();
   });
 
@@ -377,7 +380,8 @@ describe("generator page and wizard place their controls by id", () => {
   it("the generator page's Advanced has Engine tuning, Paths and Seed, and no Debug", () => {
     const subs = new Set(Object.keys(PLACEMENT).filter((id) => id.startsWith("GenPage.")).map((id) => subSectionOf(id)));
     expect([...subs].sort()).toEqual(["Engine tuning", "Paths", "Seed"]);
-    expect(Object.keys(PLACEMENT).filter((id) => /^(GenPage|BiomePage)\./.test(id) && layerOf(id) === "debug")).toEqual([]);
+    // Except the biome view's per-biome tuning, which the owner asked for in Debug (2026-10-12).
+    expect(Object.keys(PLACEMENT).filter((id) => /^(GenPage|BiomePage)\./.test(id) && layerOf(id) === "debug" && !id.startsWith("BiomePage.tune."))).toEqual([]);
   });
 
   it("the earlier proof placements are undone: Symmetry, Edge style and the guarantees are main (keep)", () => {
