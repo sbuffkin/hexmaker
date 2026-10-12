@@ -363,9 +363,10 @@ async function wizardMapStepChecks(ctx) {
     const first = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
     const cols = root.querySelector('input[aria-label="Columns"]');
     const colsAt = { start: cols.value };
-    const biomes = scales.find((c) => c.dataset.scale === "biomes");
-    biomes?.click();
-    await until(() => gens()[1] !== first.gens[1]);
+    // Another scale (Biomes when World maps is built); a build with one scale only checks the size.
+    const other = scales.find((c) => c.dataset.scale === "biomes") ?? scales.find((c) => c.dataset.scale !== first.scale);
+    other?.click();
+    if (other) await until(() => gens()[1] !== first.gens[1]);
     const second = { scale: root.querySelector(".duckmage-wizard-scale-btn.is-active")?.dataset.scale, gens: gens() };
     colsAt.biomes = cols.value;
     cols.focus();
@@ -388,14 +389,14 @@ async function wizardMapStepChecks(ctx) {
     const after = summary();
     sliders[0]?.querySelector(".duckmage-wizard-tuning-reset")?.click();
     const reset = summary();
-    return { scaleLabels, first, second, colsAt, opts: opts.length, optsInAdvanced, sliders: sliders.length, slidersInAdvanced, before, after, reset };
+    return { single: !other, scaleLabels, first, second, colsAt, opts: opts.length, optsInAdvanced, sliders: sliders.length, slidersInAdvanced, before, after, reset };
   })());
   if (r.error) return [{ check: "F1-wizard-scales", ok: false, detail: r.error }];
   return [
-    { check: "F1-wizard-scales", ok: r.scaleLabels.length >= 2 && r.first.gens[0] === "Blank" && r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens),
+    { check: "F1-wizard-scales", ok: r.first.gens[0] === "Blank" && (r.single ? r.scaleLabels.length === 1 : r.second.gens[0] === "Blank" && r.first.scale !== r.second.scale && JSON.stringify(r.first.gens) !== JSON.stringify(r.second.gens)),
       detail: `scales ${r.scaleLabels.join(", ")}; ${r.first.scale}: ${r.first.gens.join(", ")}; ${r.second.scale}: ${r.second.gens.join(", ")}` },
-    { check: "F1-wizard-size", ok: r.colsAt.biomes !== r.colsAt.start && Number(r.colsAt.wheel) === Number(r.colsAt.biomes) + 1 && r.colsAt.reset === r.colsAt.biomes,
-      detail: `columns: start ${r.colsAt.start}, Biomes ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel} (focused ${r.colsAt.focused}), reset ${r.colsAt.reset}` },
+    { check: "F1-wizard-size", ok: (r.single || r.colsAt.biomes !== r.colsAt.start) && Number(r.colsAt.wheel) === Number(r.colsAt.biomes) + 1 && r.colsAt.reset === r.colsAt.biomes,
+      detail: `columns: start ${r.colsAt.start}, ${r.single ? "same scale" : r.second.scale} ${r.colsAt.biomes}, wheel up ${r.colsAt.wheel} (focused ${r.colsAt.focused}), reset ${r.colsAt.reset}` },
     { check: "F1-wizard-advanced", ok: r.opts > 0 && r.optsInAdvanced === 0 && r.sliders >= 5 && r.sliders <= 10 && r.slidersInAdvanced === r.sliders && /· 1 set/.test(r.after) && !/set/.test(r.reset),
       detail: `options ${r.opts} (${r.optsInAdvanced} in Advanced); sliders ${r.sliders} (${r.slidersInAdvanced} in Advanced); header "${r.before}" → "${r.after}" → "${r.reset}"` },
   ];
