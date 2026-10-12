@@ -195,10 +195,12 @@ export class RegionGenModal extends HexmakerModal {
     if (!ow) { this.close(); return; }
     const hex = `${this.px}_${this.py}`;
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
+    const biome = hexBiomeAt(plugin, this.parentName, hex);
     this.opts = {
-      biome: hexBiomeAt(plugin, this.parentName, hex),
+      biome,
       blend: ow.settings.blend ?? "normal",
-      warp: REGION_WARP,
+      // Starts at the biome's tuned border wiggle (its Tuning table), else the default.
+      warp: (biome ? biomeNoteOf(biome)?.tuning?.wiggle : undefined) ?? REGION_WARP,
       seed: region?.regionSeed ?? newSeed(),
     };
     this.titleEl.setText(region ? `Region settings: ${plugin.mapLabel(region.name)}` : `New region: hex ${this.px}, ${this.py}`);

@@ -148,6 +148,8 @@ Every feature is always there: there's no Simple or Advanced level to switch. Ea
 
 **Debug mode** shows backend controls, such as storage folder settings, in a **Debug** section inside each Advanced dropdown, and offers the maintenance commands (Add roll ranges to tables, Check tables, the map data commands) in the command palette. Turn it on with **Settings → Debug mode**, at the very bottom; the first time, it asks to make sure. While it's on, **Debug** shows in the status bar: click it to turn debug mode off. It's kept per device and never synced.
 
+<!-- slice:worldmaps -->**Biome tuning (Debug).** On the generator page's **Biome (blend field)** view, debug mode adds every generator setting of that biome under Debug, in five sections: **Layout** (influence reach, wiggle scale, edge look-ahead), **Borders & transitions** (blend falloff, border wiggle, terrain pick sharpness), **Water & islands** (largest island, islands at the edge, beach cover, coast band width, shore lean, coastline raggedness), **Patches & detail** (smoothing passes, field hold, min patch size, largest patch, patches at the edge) and **Engine** (clumping, mix strength and the other engine settings, for a biome that links a generator). Each has a slider, a box, **Reset** and the live preview, and counts toward **· N set**. They're saved in the biome's note as a **Tuning** table (only values that differ from the default); with nothing set, regions are exactly as before.<!-- /slice -->
+
 **Menus and toolbars** have no dropdown, so their rarer items sit behind an **Advanced ▸** item at the end, which opens them as a second menu in the same spot (debug items in **Debug ▸** inside it, only in debug mode). It too says when one is on (**Advanced · 1 set ▸**). A menu with nothing else in it shows its Advanced items directly, and one Advanced item is never worth a dropdown or submenu: it's shown inline (so are one-item sub-sections inside Advanced). On the map's other surfaces: the drawing panel's link tools, the hex table's X / Y ranges (Refresh is in Debug), and the hex editor's weather and rumours table choice are in that surface's **Advanced** dropdown; a path type's Carve width and the terrain picker's **Refresh all encounter table links** are in Debug.
 
 Where things are on each page:
@@ -231,6 +233,8 @@ If a map's folder and map note were deleted outside the plugin, the map isn't re
 ## Make a generator from a region
 
 <!-- slice:worldmaps -->**Edit region… → Make generator…** (or right-click a map in **Maps**) learns a generator from the region as you painted it. Choose **New generator** or **Overwrite existing**; the list puts the region's own biome's generator and its parent biomes' first. Overwriting keeps a backup. A new generator gets a biome that copies the region's biome (climate, islands, transitions, shore, mix).
+
+**Blend into <biome>…** (in Edit region's and the Maps right-click menu's Advanced) folds a region you edited by hand back into the biome it was made from. Set how much the map counts (25% this map, 75% the rest, by default) and check the preview of a fresh region. With a generator linked, the map is learned and merged into that generator; without one, its terrain mix, terrain split, land share and smoothing are blended into the biome's own settings (or choose **Make a generator instead…**). The old note is backed up first, only its tables and settings change, and a **Blend of** table records the map, its weight and the date. Needs Build or God.
 
 <!-- /slice -->## Palettes
 

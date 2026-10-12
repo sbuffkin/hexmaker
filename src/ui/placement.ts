@@ -17,6 +17,10 @@
  *              so write it as plain UI text.
  * - `debug`    in the "Debug" subsection inside Advanced, shown only while
  *              debug mode is on (src/ui/debugMode.ts).
+ * - `debug/<Sub-section>`
+ *              inside a collapsible sub-section of Debug (same rules as an
+ *              Advanced sub-section; a sub-section left with one control
+ *              folds into plain Debug).
  * - `hidden`   not rendered at all.
  *
  * Keys are UI item ids from the owner's UI inventory worksheet
@@ -42,12 +46,14 @@
 export type Layer = "main" | "more" | "advanced" | "debug" | "hidden";
 
 /** A layer, or a named sub-section of Advanced (`advanced/<Sub-section>`). */
-export type Placement = Layer | `advanced/${string}`;
+export type Placement = Layer | `advanced/${string}` | `debug/${string}`;
 
 export const LAYERS: readonly Layer[] = ["main", "more", "advanced", "debug", "hidden"];
 
 /** Prefix of an Advanced sub-section placement. */
 const SUB_PREFIX = "advanced/";
+/** Prefix of a Debug sub-section placement. */
+const DEBUG_SUB_PREFIX = "debug/";
 
 // Round 10 (owner 2026-10-12): one-item Advanced sections moved to the basic options:
 // path bar Cross impassable, layers Region overlay, terrain-filter type rows, token
@@ -172,6 +178,37 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "GenPage.seed": "advanced/Seed",
   "GenPage.seedLock": "advanced/Seed",
   "BiomePage.seed": "advanced",
+  // Biome tuning (owner 2026-10-12): every generator constant of a biome, in
+  // Debug sub-sections (src/overworld/biomeTuning.ts TUNING_PARAMS; one id per
+  // param, `BiomePage.tune.<camelCase key>`). Engine only shows for a biome
+  // that links a generator.
+  "BiomePage.tune.reach": "debug/Layout",
+  "BiomePage.tune.wiggleScale": "debug/Layout",
+  "BiomePage.tune.halo": "debug/Layout",
+  "BiomePage.tune.blendK": "debug/Borders & transitions",
+  "BiomePage.tune.wiggle": "debug/Borders & transitions",
+  "BiomePage.tune.nameSharpness": "debug/Borders & transitions",
+  "BiomePage.tune.islandMax": "debug/Water & islands",
+  "BiomePage.tune.islandEdge": "debug/Water & islands",
+  "BiomePage.tune.beach": "debug/Water & islands",
+  "BiomePage.tune.coastWidth": "debug/Water & islands",
+  "BiomePage.tune.shoreLean": "debug/Water & islands",
+  "BiomePage.tune.shoreRagged": "debug/Water & islands",
+  "BiomePage.tune.smoothing": "debug/Patches & detail",
+  "BiomePage.tune.fieldHold": "debug/Patches & detail",
+  "BiomePage.tune.patchSize": "debug/Patches & detail",
+  "BiomePage.tune.patchMax": "debug/Patches & detail",
+  "BiomePage.tune.patchEdge": "debug/Patches & detail",
+  "BiomePage.tune.clumping": "debug/Engine",
+  "BiomePage.tune.mixStrength": "debug/Engine",
+  "BiomePage.tune.featureSize": "debug/Engine",
+  "BiomePage.tune.scatter": "debug/Engine",
+  "BiomePage.tune.randomness": "debug/Engine",
+  "BiomePage.tune.edgeSmoothing": "debug/Engine",
+  "BiomePage.tune.speckSize": "debug/Engine",
+  "BiomePage.tune.keepRare": "debug/Engine",
+  "BiomePage.tune.edgeStrength": "debug/Engine",
+  "BiomePage.tune.directionalBias": "debug/Engine",
   // ── Owner worksheet 2026-10-11 (dev/ui-inventory/inputs-tags-resolved.json):
   // maps, new maps, regions/overworlds/biomes, world types, palette editor,
   // random tables, workflows, export. simple = main, advanced = advanced,
@@ -179,6 +216,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // Maps modal › Maps list
   "MapModal.mapRowContextGenerator": "advanced",
   "MapModal.mapRowContextMakeGenerator": "advanced",
+  // Fold a hand-edited region back into its biome (owner 2026-10-12).
+  "MapModal.mapRowContextBlendIntoBiome": "advanced",
   // Maps modal › Properties
   "MapProps.sectionTablePicker": "advanced",
   "MapModal.propsFolderName": "debug",
@@ -237,6 +276,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "EditRegion.openMapNote": "main",
   "EditRegion.locationsList": "main",
   "EditRegion.notes": "main",
+  "EditRegion.blendIntoBiome": "advanced",
   // Space: world types › Worlds tab
   "WorldTypes.worldGenerator": "debug",
   "WorldTypes.worldOptions": "debug",
@@ -291,6 +331,10 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
 /** Read a placement value: its layer and, for `advanced/<Sub>`, the sub-section. Null when it isn't one. */
 export function parsePlacement(value: unknown): { layer: Layer; sub?: string } | null {
   if (typeof value !== "string") return null;
+  if (value.startsWith(DEBUG_SUB_PREFIX)) {
+    const sub = value.slice(DEBUG_SUB_PREFIX.length).trim();
+    return sub ? { layer: "debug", sub } : { layer: "debug" };
+  }
   if (value.startsWith(SUB_PREFIX)) {
     const sub = value.slice(SUB_PREFIX.length).trim();
     return sub ? { layer: "advanced", sub } : { layer: "advanced" };

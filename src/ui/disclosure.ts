@@ -86,8 +86,24 @@ export function countSet(reporters: readonly SetReporter[]): { total: number; by
   return { total, by };
 }
 
-/** Where a section call puts things: plain Advanced, a sub-section of it, or Debug. */
-export type SectionName = "advanced" | "debug" | `advanced/${string}`;
+/** Where a section call puts things: plain Advanced, a sub-section of it, Debug, or a sub-section of Debug. */
+export type SectionName = "advanced" | "debug" | `advanced/${string}` | `debug/${string}`;
+
+/** Reporter `where` of Debug sub-section `sub` (counted in Debug's header and its own). */
+const debugWhere = (sub: string) => `debug/${sub}`;
+
+/** The section a looked-up placement goes in. */
+function sectionOf(layer: Layer, sub: string | undefined): SectionName {
+  if (layer === "advanced" && sub) return `advanced/${sub}`;
+  if (layer === "debug" && sub) return `debug/${sub}`;
+  return layer === "debug" ? "debug" : "advanced";
+}
+
+/** The reporter `where` of a looked-up placement. */
+function whereOf(layer: Layer, sub: string | undefined): string | null {
+  if (layer === "debug") return sub ? debugWhere(sub) : "debug";
+  return sub ?? null;
+}
 
 export class Disclosure {
   private details: HTMLDetailsElement | null = null;
@@ -98,6 +114,8 @@ export class Disclosure {
   private subSummaries = new Map<string, HTMLElement>();
   private debug: HTMLElement | null = null;
   private debugTitle: HTMLElement | null = null;
+  private debugSubs = new Map<string, HTMLElement>();
+  private debugSubSummaries = new Map<string, HTMLElement>();
   private reporters: SetReporter[] = [];
 
   /**
@@ -121,9 +139,13 @@ export class Disclosure {
    * (`advanced/<Sub-section>`), or Debug's (null while debug mode is off).
    */
   section(layer: SectionName): HTMLElement | null {
-    if (layer === "debug" && !this.debugMode) return null;
+    if ((layer === "debug" || layer.startsWith("debug/")) && !this.debugMode) return null;
     if (!this.details?.isConnected) this.build();
     if (layer === "advanced") return this.items;
+    if (layer.startsWith("debug/")) {
+      const debug = this.section("debug")!;
+      return this.debugSubSection(debug, layer.slice("debug/".length).trim() || "Debug");
+    }
     if (layer !== "debug") {
       const sub = parsePlacement(layer)?.sub;
       return sub ? this.subSection(sub) : this.items;
@@ -144,8 +166,8 @@ export class Disclosure {
     const { layer, sub } = this.lookup(id);
     if (layer === "main" || layer === "more") return here;
     if (layer === "hidden") return null;
-    const to = this.section(layer === "advanced" && sub ? `advanced/${sub}` : layer);
-    if (to && isSet) this.addReporter(layer === "debug" ? "debug" : (sub ?? null), isSet);
+    const to = this.section(sectionOf(layer, sub));
+    if (to && isSet) this.addReporter(whereOf(layer, sub), isSet);
     return to;
   }
 
@@ -174,8 +196,8 @@ export class Disclosure {
   track(id: string, isSet: IsSet): void {
     const { layer, sub } = this.lookup(id);
     if (layer !== "advanced" && layer !== "debug") return;
-    if (!this.section(layer === "advanced" && sub ? `advanced/${sub}` : layer)) return;
-    this.addReporter(layer === "debug" ? "debug" : (sub ?? null), isSet);
+    if (!this.section(sectionOf(layer, sub))) return;
+    this.addReporter(whereOf(layer, sub), isSet);
   }
 
   /** Re-count the set controls and update the headers. */
@@ -184,7 +206,11 @@ export class Disclosure {
     const { total, by } = countSet(this.reporters);
     this.summary.setText(setLabel("Advanced", total));
     for (const [name, el] of this.subSummaries) el.setText(setLabel(name, by.get(name) ?? 0));
-    this.debugTitle?.setText(setLabel("Debug", by.get("debug") ?? 0));
+    for (const [name, el] of this.debugSubSummaries) el.setText(setLabel(name, by.get(debugWhere(name)) ?? 0));
+    // Debug's header counts its own controls and its sub-sections'.
+    let debugSet = by.get("debug") ?? 0;
+    for (const [w, n] of by) if (w.startsWith("debug/")) debugSet += n;
+    this.debugTitle?.setText(setLabel("Debug", debugSet));
   }
 
   private addReporter(where: string | null, isSet: IsSet): void {
@@ -220,6 +246,20 @@ export class Disclosure {
     return body;
   }
 
+  /** A collapsible sub-section of Debug (`debug/<Sub-section>`), closed at first, its open state remembered. */
+  private debugSubSection(debug: HTMLElement, name: string): HTMLElement {
+    const have = this.debugSubs.get(name);
+    if (have?.isConnected) return have;
+    const sub = debug.createEl("details", { cls: "duckmage-disclosure-sub duckmage-disclosure-debug-sub" });
+    this.debugSubSummaries.set(name, sub.createEl("summary", { cls: "duckmage-disclosure-sub-summary", text: name }));
+    const key = subSectionKey(this.surface, debugWhere(name));
+    sub.open = disclosureOpen(this.store, key);
+    sub.addEventListener("toggle", () => setDisclosureOpen(this.store, key, sub.open));
+    const body = sub.createDiv({ cls: "duckmage-disclosure-sub-body" });
+    this.debugSubs.set(name, body);
+    return body;
+  }
+
   /**
    * One item isn't worth a dropdown (owner, round 10): a sub-section holding
    * a single control folds into plain Advanced, and an Advanced dropdown
@@ -235,6 +275,16 @@ export class Disclosure {
       this.subs.delete(name);
       this.subSummaries.delete(name);
       for (const r of this.reporters) if (r.where === name) r.where = null;
+    }
+    // Likewise a Debug sub-section with one control folds into plain Debug.
+    for (const [name, body] of [...this.debugSubs]) {
+      if (!body.isConnected || body.childElementCount !== 1 || !this.debug) continue;
+      const details = body.parentElement;
+      this.debug.insertBefore(body.firstElementChild!, details);
+      details?.remove();
+      this.debugSubs.delete(name);
+      this.debugSubSummaries.delete(name);
+      for (const r of this.reporters) if (r.where === debugWhere(name)) r.where = "debug";
     }
     const hasDebug = !!this.debug?.isConnected;
     const subsLeft = [...this.subs.values()].some((b) => b.isConnected && b.childElementCount > 0);
@@ -265,6 +315,8 @@ export class Disclosure {
     this.subSummaries.clear();
     this.debug = null;
     this.debugTitle = null;
+    this.debugSubs.clear();
+    this.debugSubSummaries.clear();
     this.reporters = [];
   }
 }

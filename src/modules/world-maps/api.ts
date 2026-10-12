@@ -56,6 +56,7 @@ import { overworldRefreshFor } from "../../overworld/overworldChanges";
 import { parentOf } from "../../overworld/layout";
 import { addNewOverworldTab, openNewOverworld, renderOverworldRegionRows } from "../../overworld/mapModalParts";
 import { openMakeGenerator } from "../../overworld/MakeGeneratorModal";
+import { blendMenuLabel, openBlendIntoBiome } from "../../overworld/BlendIntoBiomeModal";
 import { BiomePanel } from "../../overworld/BiomePanel";
 
 /** An overworld hex's biome for its Map data callout: its label, and its biome note when it has one. */
@@ -118,6 +119,9 @@ function makeApi() {
   WalkRegionModal,
   RegionGenModal,
   openMakeGenerator,
+  // "Blend into <biome>…" (the Maps right-click menu).
+  blendMenuLabel,
+  openBlendIntoBiome,
   // The generator page's biome view.
   BiomePanel,
   };

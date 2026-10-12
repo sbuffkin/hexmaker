@@ -45,6 +45,7 @@ import {
 } from "../../packages/hex-wfc/src";
 import { generatorMetaLinks, generatorMetaNames, type GeneratorRefNotes } from "./generatorRefs";
 import { pathLink } from "../noteFormats";
+import { updateGeneratorNote } from "./generatorNoteUpdate";
 
 /** Frontmatter key that keeps a hex's terrain when a map is regenerated. */
 export const LOCK_KEY = "locked";
@@ -688,8 +689,34 @@ export async function relearnGenerator(
   if ("error" in learned) return learned;
   const { model } = learned;
   keepSettings(model, g.model, dirs);
-  await plugin.app.vault.modify(g.file, generatorText(plugin, model));
+  await writeGeneratorInPlace(plugin, g.file, model);
   return { model };
+}
+
+/**
+ * Write a re-made generator into its note: only its frontmatter keys and
+ * tables change (generatorNoteUpdate.ts), so headings, help and the user's
+ * own text stay.
+ */
+export async function writeGeneratorInPlace(plugin: HexmakerPlugin, file: TFile, model: HexWfcModel, also?: (text: string) => string): Promise<void> {
+  const fresh = generatorText(plugin, model);
+  await plugin.app.vault.process(file, (old) => {
+    const next = updateGeneratorNote(old, fresh);
+    return also ? also(next) : next;
+  });
+}
+
+/**
+ * Fold a model learned from a map into an existing generator ("Blend into
+ * <biome>"): `w` of the map, 1 − w of the generator as it is, merged the
+ * same way a combined generator is (mergeModels by influence). Keeps the
+ * generator's name, meta and settings. Pure.
+ */
+export function foldMapIntoModel(existing: HexWfcModel, learned: HexWfcModel, w: number): HexWfcModel {
+  const weight = Math.min(1, Math.max(0, w));
+  const model = mergeModels([existing, learned], existing.name, { ...existing.meta }, [(1 - weight) * 100, weight * 100]);
+  keepSettings(model, existing, undefined);
+  return model;
 }
 
 /** Record directions in meta, or drop the key when none lean anywhere. */
@@ -808,6 +835,6 @@ export async function reblendGenerator(
   directions?: Compass[],
 ): Promise<{ model: HexWfcModel } | { error: string }> {
   const r = await remakeBlend(plugin, g.model, influence, directions);
-  if ("model" in r) await plugin.app.vault.modify(g.file, generatorText(plugin, r.model));
+  if ("model" in r) await writeGeneratorInPlace(plugin, g.file, r.model);
   return r;
 }

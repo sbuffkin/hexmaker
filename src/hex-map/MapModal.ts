@@ -327,7 +327,7 @@ export class MapModal extends HexmakerModal {
         const at = { x: e.clientX, y: e.clientY };
         // A region that already has a generator opens it; learning another
         // stays available below.
-        void listGenerators(this.plugin).then((all) => {
+        void Promise.all([listGenerators(this.plugin), worldMaps()?.blendMenuLabel(this.plugin, map.name)]).then(([all, blendLabel]) => {
           const existing = generatorsForRegion(all, map.name)[0];
           const menu = new Menu();
           // Generators are Advanced (placement map). Nothing else is in this
@@ -349,6 +349,17 @@ export class MapModal extends HexmakerModal {
               onClick: () => {
                 this.close();
                 wmake.openMakeGenerator(this.app, this.plugin, map.name);
+              },
+            });
+          }
+          // Fold the map, as hand-edited, back into the biome it was made from (World maps).
+          if (wmake && blendLabel) {
+            layers.add("MapModal.mapRowContextBlendIntoBiome", {
+              label: blendLabel,
+              icon: "combine",
+              onClick: () => {
+                this.close();
+                void wmake.openBlendIntoBiome(this.app, this.plugin, map.name);
               },
             });
           }

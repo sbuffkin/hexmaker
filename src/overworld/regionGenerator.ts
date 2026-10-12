@@ -19,8 +19,12 @@ import type { TerrainColor } from "../types";
 import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
 import { copyClimate } from "./biomeClimate";
 import { SIMILAR } from "./biomes";
-import { hexBiomeAt, regionBiomeStatus } from "./regionsVault";
-import { generatorText, learnGeneratorFromMap, listGenerators, saveGeneratorFromMap, sourceMapsOf, type GeneratorFile } from "../worldgen/generators";
+import { blendBiomeFields, hexBiomeAt, measureMap, planBiomePreview, regionBiomeStatus, regionHome, regionPalette } from "./regionsVault";
+import { foldMapIntoModel, learnGeneratorFromMap, listGenerators, mapStagger, saveGeneratorFromMap, sourceMapsOf, writeGeneratorInPlace, type GeneratorFile } from "../worldgen/generators";
+import { addBlendOfRow } from "../worldgen/generatorNoteUpdate";
+import { mapAllows, lockedHint } from "../workMode";
+import { mapNoteLink } from "../noteFormats";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
 
 export type OverwriteReason = "own" | "parent" | "learned" | "related" | "other";
 
@@ -270,7 +274,8 @@ export async function makeRegionGenerator(plugin: HexmakerPlugin, mapName: strin
       console.error("Hexmap World Creator: couldn't back up the generator before overwriting it", e);
       return { error: `Couldn't back up ${f.path}, so it wasn't overwritten.` };
     }
-    await plugin.app.vault.modify(f, generatorText(plugin, learned.model));
+    // Tables and keys only: the note's own text stays.
+    await writeGeneratorInPlace(plugin, f, learned.model);
     file = f;
   }
   const link = file.path.replace(/\.md$/i, "");
@@ -292,4 +297,111 @@ function uniqueBiomeLabel(plugin: HexmakerPlugin, want: string): string {
   let label = want;
   for (let n = 2; taken.has(biomeSlug(label)); n++) label = `${want} ${n}`;
   return label;
+}
+
+// ── Blend into <biome> (owner request 2026-10-12) ───────────────────────
+
+/** What "Blend into <biome>" folds a map into. */
+export interface BlendTarget {
+  /** The biome the map was made from. */
+  biome: BiomeNoteFields;
+  /** Its generator, when it links one that resolves. */
+  generator?: GeneratorFile;
+  /** A generator link that doesn't resolve (shown as a problem; nothing is written). */
+  missing?: string;
+  /** The overworld the map's region belongs to (for previews), if it is a region. */
+  overworld?: string;
+}
+
+/** The biome (and generator) a map folds into, or undefined when the map wasn't made from a biome. */
+export async function blendTarget(plugin: HexmakerPlugin, mapName: string): Promise<BlendTarget | undefined> {
+  const biome = regionSourceBiome(plugin, mapName);
+  if (!biome || biome.blank) return undefined;
+  const overworld = regionHome(plugin, mapName)?.overworld.name;
+  if (!biome.generator) return { biome, overworld };
+  const path = resolveGeneratorLink(plugin, biome.generator);
+  const generator = path ? (await listGenerators(plugin)).find((g) => g.file.path === path) : undefined;
+  return generator ? { biome, generator, overworld } : { biome, missing: biome.generator, overworld };
+}
+
+/** Why the map can't be blended in its work mode (Build or God), or undefined. */
+export function blendLock(plugin: HexmakerPlugin, mapName: string): string | undefined {
+  return mapAllows(plugin.getMap(mapName), "edit-biomes") ? undefined : lockedHint("edit-biomes");
+}
+
+/** What a blend at weight `w` (of the map) would make: the folded generator, or the biome's new fields. */
+export interface BlendPlan {
+  weight: number;
+  /** Generator path: the merged model (not saved). */
+  model?: HexWfcModel;
+  /** No-generator path: the biome's note fields after the blend. */
+  fields?: BiomeNoteFields;
+}
+
+/** Work out a blend (nothing is written). */
+export function planBlend(plugin: HexmakerPlugin, mapName: string, target: BlendTarget, w: number): BlendPlan | { error: string } {
+  const weight = Math.min(1, Math.max(0, w));
+  if (target.generator) {
+    const learned = learnGeneratorFromMap(plugin, mapName, target.generator.model.name);
+    if ("error" in learned) return learned;
+    return { weight, model: foldMapIntoModel(target.generator.model, learned.model, weight) };
+  }
+  if (target.missing) return { error: `${target.biome.label}'s generator (${target.missing}) wasn't found.` };
+  const cells = new Map<string, string>();
+  for (const [k, h] of plugin.mapStore.all(mapName)) if (h.terrain) cells.set(k, h.terrain);
+  if (cells.size < 2) return { error: "Paint some terrain on this map first." };
+  const home = regionHome(plugin, mapName);
+  const palette = home ? regionPalette(plugin, home.overworld) : plugin.getMapPalette(mapName);
+  const stats = measureMap(cells, palette, plugin.settings.hexOrientation, mapStagger(plugin, mapName));
+  const sample = home ? { ...home.layout, footprint: "rect" as const, size: Math.min(10, Math.max(4, home.layout.size)) } : undefined;
+  const patch = blendBiomeFields(target.biome, stats, palette, weight, sample);
+  return { weight, fields: { ...target.biome, ...patch } };
+}
+
+/** A fresh sample region of the blended biome (the modal's live preview). */
+export async function previewBlend(plugin: HexmakerPlugin, target: BlendTarget, plan: BlendPlan, seed: number): Promise<Map<string, string> | { error: string }> {
+  if (!target.overworld) return { error: "This map isn't a region of an overworld, so there's no sample to show." };
+  try {
+    const fields = plan.fields ?? target.biome;
+    const out = await planBiomePreview(plugin, target.overworld, plan.model ? fields : { ...fields, generator: undefined }, seed, plan.model);
+    return out?.cells ?? { error: "Nothing to preview." };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * Fold the map into its biome: the generator's tables and keys, or the
+ * biome note's Mix, Terrain weights, land-share and Tuning (prose kept
+ * either way). The old note is backed up first, and a Blend of row
+ * records the map, its weight and the date.
+ */
+export async function applyBlend(plugin: HexmakerPlugin, mapName: string, target: BlendTarget, plan: BlendPlan): Promise<{ wrote: string; backup?: string } | { error: string }> {
+  const lock = blendLock(plugin, mapName);
+  if (lock) return { error: lock };
+  const row = {
+    map: plugin.mapStore.notePath?.(mapName) && plugin.app.vault.getAbstractFileByPath(plugin.mapStore.notePath(mapName)) ? mapNoteLink(mapName) : plugin.mapLabel(mapName),
+    weight: plan.weight,
+    date: new Date().toISOString().slice(0, 10),
+  };
+  if (plan.model && target.generator) {
+    const f = target.generator.file;
+    let backup: string;
+    try {
+      backup = await backupText(plugin, f.basename, await plugin.app.vault.read(f));
+    } catch (e) {
+      console.error("Hexmap World Creator: couldn't back up the generator before blending into it", e);
+      return { error: `Couldn't back up ${f.path}, so nothing was changed.` };
+    }
+    await writeGeneratorInPlace(plugin, f, plan.model, (text) => addBlendOfRow(text, row));
+    return { wrote: f.path, backup };
+  }
+  if (!plan.fields) return { error: "Nothing to blend." };
+  const { mix, terrainWeights, landShare, tuning } = plan.fields;
+  const ok = await plugin.biomeStore.update(target.biome.id, { mix, terrainWeights, landShare, tuning }, { backup: true });
+  if (!ok) return { error: `Couldn't write ${target.biome.label}'s note.` };
+  const path = plugin.biomeStore.pathOf(target.biome.id);
+  const file = path ? plugin.app.vault.getAbstractFileByPath(path) : null;
+  if (file instanceof TFile) await plugin.app.vault.process(file, (text) => addBlendOfRow(text, row));
+  return { wrote: path ?? target.biome.label };
 }

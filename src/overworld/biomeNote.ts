@@ -46,6 +46,8 @@
  *   are for watery biomes. All optional.
  * - `generator`: a generator note this biome's regions come from (once
  *   generator regions land); without one it mixes with the blend field.
+ * - *Tuning* (optional, `| Setting | Value | Default |`): per-biome
+ *   generator settings (biomeTuning.ts), only those off their default.
  * - `blank: yes`: its regions start blank (nothing generated) and are
  *   painted by hand (the shipped "Custom (blank)" biome). Never placed by
  *   World biomes; its Mix may be empty.
@@ -61,6 +63,28 @@
  */
 
 import { climateKeyValues, readClimate, sameClimateValue, type BiomeClimate } from "./biomeClimate";
+import { cleanTuning, isTuningHeader, readTuningRows, tuningTable, type BiomeTuning } from "./biomeTuning";
+
+// The tuning API, for callers that read biome notes (one import for both).
+export {
+  TUNING_PARAMS,
+  TUNING_SECTIONS,
+  blendTuning,
+  cleanTuning,
+  clampTuning,
+  engineOverrides,
+  isDefaultValue,
+  paramsIn,
+  shownDefault,
+  tuningControlId,
+  tuned,
+  tunedOrUnset,
+  tuningCount,
+  tuningParam,
+  type BiomeTuning,
+  type TuningParam,
+  type TuningSection,
+} from "./biomeTuning";
 
 /** Frontmatter key written into every biome note (the format version). */
 export const BIOME_NOTE_MARKER = "hexmaker-biome";
@@ -128,6 +152,8 @@ export interface BiomeNoteFields {
   parent?: string;
   /** `blank: yes`: its regions start blank, to paint by hand (no generation, never placed by World biomes). */
   blank?: boolean;
+  /** Generator tuning (the optional Tuning table, biomeTuning.ts): only values that differ from the defaults. */
+  tuning?: BiomeTuning;
 }
 
 export interface BiomeNoteProblem {
@@ -196,6 +222,7 @@ function findTable(lines: string[], want: (headers: string[]) => boolean): Span 
 
 const isMix = (h: string[]) => h.includes("type") && (h.includes("weight") || h.includes("share"));
 const isTerrainWeights = (h: string[]) => h.includes("terrain") && !h.includes("type") && (h.includes("weight") || h.includes("share"));
+const isTuning = (h: string[]) => isTuningHeader(h);
 const isTransitions = (h: string[]) => (h.includes("next to") || h.includes("biome")) && (h.includes("put between") || h.includes("between") || h.includes("transition"));
 
 /** The frontmatter span (line indices: the opening and closing `---`), or null. */
@@ -373,6 +400,14 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
       fields.transitions.push({ next, between });
     }
   }
+  const tu = findTable(lines, isTuning);
+  if (tu) {
+    const rows: { cells: string[]; line: string; n: number }[] = [];
+    for (let i = tu.start + 2; i < tu.end; i++) rows.push({ cells: splitRow(lines[i]), line: lines[i], n: i + 1 });
+    const read = readTuningRows(rows, tu.headers);
+    if (read.tuning) fields.tuning = read.tuning;
+    for (const p of read.problems) problems.push({ where: "Tuning", text: p });
+  }
   return { fields, problems };
 }
 
@@ -436,6 +471,7 @@ export function buildBiomeNote(f: BiomeNoteFields): string {
     ...(f.terrainWeights?.length ? ["## Terrain weights", "", ...terrainWeightsTable(f.terrainWeights), ""] : []),
     "## Transitions", "",
     ...transitionsTable(f.transitions), "",
+    ...(cleanTuning(f.tuning) ? ["## Tuning", "", ...tuningTable(f.tuning), ""] : []),
   ].join("\n");
 }
 
@@ -478,6 +514,13 @@ export function updateBiomeNote(content: string, f: BiomeNoteFields): string {
   // Only written when there are weights, or the note already has the table.
   if (f.terrainWeights?.length || findTable(lines, isTerrainWeights)) lines = putTable(lines, isTerrainWeights, terrainWeightsTable(f.terrainWeights ?? []), "## Terrain weights");
   lines = putTable(lines, isTransitions, transitionsTable(f.transitions), "## Transitions");
+  // Only written when something is tuned, or the note already has the table
+  // (rows that name no setting are kept as written).
+  const tu = findTable(lines, isTuning);
+  if (cleanTuning(f.tuning) || tu) {
+    const kept = tu ? readTuningRows(lines.slice(tu.start + 2, tu.end).map((l, i) => ({ cells: splitRow(l), line: l, n: tu.start + 3 + i })), tu.headers).unknownRows : [];
+    lines = putTable(lines, isTuning, tuningTable(f.tuning, kept), "## Tuning");
+  }
   const out = lines.join(eol);
   return out === content.replace(/\r\n?/g, "\n").split("\n").join(eol) ? content : out;
 }
@@ -533,7 +576,7 @@ export interface BiomeStoreApi {
   /** Every biome, in note-name order. */
   list(): BiomeNoteFields[];
   /** Write a change to a biome's note (user prose kept). False when there's no such biome or its note doesn't read. */
-  update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>): Promise<boolean>;
+  update(name: string, patch: Partial<Omit<BiomeNoteFields, "id">>, opts?: { backup?: boolean }): Promise<boolean>;
   /** Rewrite a shipped biome's note from its preset data (the old note is backed up). False for user biomes. */
   restoreDefault(name: string): Promise<boolean>;
   /** Whether a biome has shipped preset data (Restore default applies). */
