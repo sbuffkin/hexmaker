@@ -30,6 +30,9 @@ import { inferTerrainType, refinedTerrainType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 import { TerrainRenameOffers } from "./renameOffer";
 
+/** Local storage key (per device): what was last said about each palette note's colours. */
+const COLOR_REPORTED_KEY = "hexmaker-palette-colors-reported";
+
 /**
  * Fill in missing terrain types: a same-named terrain in a preset wins,
  * else the type is inferred from the name/category. Returns how many
@@ -229,6 +232,7 @@ export class PaletteStore {
   private pendingReview = new Map<string, string>();
   /** What was last said about each note's colours (said again only when it changes). */
   private colorReported = new Map<string, string>();
+  private colorReportedLoaded = false;
   /** Terrains renamed by hand: the "Rename everywhere" offers. */
   readonly renames: TerrainRenameOffers;
 
@@ -248,8 +252,16 @@ export class PaletteStore {
   private reportColors(path: string, name: string, content: string): void {
     const issues = paletteColorIssues(content);
     const sig = JSON.stringify(issues);
+    // Remembered per device across restarts (local storage, never data.json):
+    // the same unreadable colours aren't reported again on every start.
+    if (!this.colorReportedLoaded) {
+      this.colorReportedLoaded = true;
+      const saved: unknown = this.plugin.app.loadLocalStorage?.(COLOR_REPORTED_KEY);
+      if (saved && typeof saved === "object") for (const [p, s] of Object.entries(saved as Record<string, unknown>)) if (typeof s === "string") this.colorReported.set(p, s);
+    }
     if ((this.colorReported.get(path) ?? "[]") === sig) return;
     this.colorReported.set(path, sig);
+    this.plugin.app.saveLocalStorage?.(COLOR_REPORTED_KEY, Object.fromEntries(this.colorReported));
     const bad = issues.filter((i) => !i.fixed);
     const fixed = issues.filter((i) => i.fixed);
     const lines: string[] = [];

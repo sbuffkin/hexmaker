@@ -167,6 +167,30 @@ describe("PaletteStore: colours it can't read", () => {
     expect(Notice.shown.filter((n) => n.msg.includes("can't read"))).toHaveLength(0);
   });
 
+  it("a restart with the same unreadable colour stays quiet (remembered per device, never in data.json)", async () => {
+    const h = harness();
+    const local = new Map<string, unknown>();
+    const app = h.store["plugin"].app as Record<string, unknown>;
+    app.loadLocalStorage = (k: string) => local.get(k) ?? null;
+    app.saveLocalStorage = (k: string, v: unknown) => { local.set(k, v); };
+    await h.store.init();
+    const path = h.store.notePathOf(h.settings.terrainPalettes[0].name)!;
+    const first = h.settings.terrainPalettes[0].terrains[0].name;
+    const text = h.vault.files.get(path)!;
+    const row = text.split("\n").find((l) => l.startsWith(`| ${first} |`))!;
+    h.vault.files.set(path, text.replace(row, row.replace(/`#[0-9a-f]+`/, "blu")));
+    Notice.shown = [];
+    h.store.onModify(h.file(path));
+    await h.store.sync();
+    expect(Notice.shown.filter((n) => n.msg.includes("can't read"))).toHaveLength(1);
+    // A new store on the same device and vault (a restart): nothing new to say.
+    const again = new PaletteStore(h.store["plugin"] as never);
+    Notice.shown = [];
+    await again.init();
+    expect(Notice.shown.filter((n) => n.msg.includes("can't read"))).toHaveLength(0);
+    expect(JSON.stringify(h.settings)).not.toContain("colors-reported");
+  });
+
   it("a safe fix is said and written back", async () => {
     const h = harness();
     await h.store.init();
