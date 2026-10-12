@@ -71,7 +71,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   // The neighbours' hexes already made (and the region's locked ones), as
   // fixed context every stage reads ("super-region", owner 2026-10-12).
   // None, or influence 0: exactly the generation from before.
-  const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence"));
+  const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence"), tuned(tuning, "neighbour-fade"));
   /** Name odds within a type at a cell: the field's, leaning to the names the context uses near it. */
   const namesAt = (x: number, y: number, type: string) => {
     const nu = namesWithinType(field.zoned(x, y), profiles, type, sharp);
@@ -219,6 +219,10 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     for (const [k, v] of next) work.set(k, v);
   }
 
+  // With made neighbours: the own cells next to them (the seam band).
+  const band = ctx ? seamBand(layout, cells, pinned) : undefined;
+  /** Cells placeIslands painted (keepMix leaves them alone). */
+  const islandCells = new Set<string>();
   // 3. Islands for watery biomes (landShare / minIslands), after smoothing:
   //    smoothing pulls every cell toward the majority type, so scattered
   //    land in a mostly water biome would otherwise vanish.
@@ -241,6 +245,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       context: ctx,
     });
   } else if (ownBiome && profile && (profile.minIslands || profile.landShare)) {
+    const was = new Map(work);
     placeIslands({
       layout,
       cells,
@@ -249,8 +254,10 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       typeOf,
       profile,
       influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
+      ...(band ? { seamBand: band } : {}),
       rng: mulberry32(cellSeed(input.seed ^ 0x6a09e667, input.parent[0], input.parent[1])),
     });
+    for (const k of own) if (work.get(k) !== was.get(k)) islandCells.add(k);
   }
 
   // 4. Min patches (the Mix table's column), after smoothing and islands:
@@ -264,9 +271,34 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       typeOf,
       profile,
       influence: (x, y) => field.at(x, y).get(ownBiome) ?? 0,
-      // A patch type the neighbours have next door starts near it (a ridge carries on).
-      ...(ctx ? { affinity: (type: string, x: number, y: number) => ctx.typeNear(x, y, type) } : {}),
+      // A patch type the neighbours have next door starts near it (a ridge carries on),
+      // and a type the context pushed over its Mix share may be painted over.
+      // The seam band keeps its land or water.
+      ...(ctx ? { affinity: (type: string, x: number, y: number) => ctx.typeNear(x, y, type), overShare: true, ...(band ? { seamBand: band } : {}) } : {}),
       rng: mulberry32(cellSeed(input.seed ^ 0x3c6ef372, input.parent[0], input.parent[1])),
+    });
+  }
+
+  // 5. The region keeps its own biome (owner 2026-10-12): next to made
+  //    regions, its type shares are brought back toward its Mix, changing
+  //    the cells farthest from the seams first; the seam band keeps its
+  //    land and water and half its continued terrain. Shore biomes (their
+  //    land follows the neighbours) are left as placed. No context:
+  //    nothing changes.
+  const keep = tuned(tuning, "keep-mix");
+  if (ctx && profile && !profile.shore && keep > 0) {
+    keepMix({
+      layout,
+      cells,
+      work,
+      terrainAt,
+      typeOf,
+      profile,
+      pinned,
+      strength: keep,
+      fixed: islandCells,
+      namesAt,
+      rng: mulberry32(cellSeed(input.seed ^ 0x510e527f, input.parent[0], input.parent[1])),
     });
   }
 
@@ -311,8 +343,10 @@ interface ContextCell {
  *
  * - the type and name odds of a cell lean toward the context near it,
  *   W·Σk / (1 + W·Σk) of the way (W the biome's "neighbour influence", k
- *   falling by e per step from 1 by the seam), so a forest, a coast or the
- *   sea carries on across the seam, fading a few cells in;
+ *   falling by e per step from 1 by the seam, and all of it fading by e
+ *   every "neighbour-fade" steps the cell is from the seam), so a forest, a
+ *   coast or the sea carries on across the seam, fading a cell or two in
+ *   (then keepMix brings the region back to its own Mix);
  * - smoothing reads the seam cells as neighbours (as before) and keeps the
  *   context's types where the leaned odds allow them;
  * - a shore biome reads each made neighbour's land near each cell (sideLand)
@@ -325,7 +359,8 @@ export class NeighbourContext {
   private near = new Map<string, [ContextCell, number][]>();
   private byRegion = new Map<string, ContextCell[]>();
 
-  constructor(readonly layout: RegionLayout, readonly cells: ContextCell[], readonly influence: number) {
+  /** `fade`: steps per e of the seam fade (around); 0: no fade. */
+  constructor(readonly layout: RegionLayout, readonly cells: ContextCell[], readonly influence: number, readonly fade = 0) {
     for (const c of cells) {
       const list = this.byRegion.get(c.region);
       if (list) list.push(c);
@@ -333,16 +368,29 @@ export class NeighbourContext {
     }
   }
 
-  /** Context cells near (x, y) with their weights. */
+  /**
+   * Context cells near (x, y) with their weights. Every weight also fades
+   * with the cell's distance from the seam (its nearest context cell), by e
+   * every `fade` steps past the first: right by the seam the context counts
+   * in full, a few cells in the region's own biome governs (owner
+   * 2026-10-12: the region must still clearly be its own biome).
+   */
   private around(x: number, y: number): [ContextCell, number][] {
     const key = `${x}_${y}`;
     let hit = this.near.get(key);
     if (hit) return hit;
     const [ax, ay] = childPoint(this.layout, x, y);
-    hit = [];
+    const all: [ContextCell, number][] = [];
+    let dmin = Infinity;
     for (const c of this.cells) {
       const d = Math.hypot(c.px - ax, c.py - ay) / STEP;
-      const k = Math.exp(-Math.max(0, d - 1) / CONTEXT_FALLOFF);
+      if (d < dmin) dmin = d;
+      all.push([c, d]);
+    }
+    const seam = this.fade > 0 ? Math.exp(-Math.max(0, dmin - 1) / this.fade) : 1;
+    hit = [];
+    for (const [c, d] of all) {
+      const k = Math.exp(-Math.max(0, d - 1) / CONTEXT_FALLOFF) * seam;
       if (k >= CONTEXT_MIN) hit.push([c, k]);
     }
     this.near.set(key, hit);
@@ -443,6 +491,8 @@ export function neighbourContext(
   typeOf: (terrain: string) => string | undefined,
   depth: number,
   influence: number,
+  /** The seam fade (NeighbourContext.around): steps per e; 0, none. */
+  fade = 0,
 ): NeighbourContext | undefined {
   if (!(depth > 0) || !(influence > 0) || !pinned.size || !cells.length) return undefined;
   const water = new Set(WATER_TYPES);
@@ -466,7 +516,7 @@ export function neighbourContext(
     }
     ring = next;
   }
-  return out.length ? new NeighbourContext(layout, out, influence) : undefined;
+  return out.length ? new NeighbourContext(layout, out, influence, fade) : undefined;
 }
 
 export interface SeamContinuity {
@@ -528,6 +578,8 @@ interface IslandInput {
   profile: BiomeProfile;
   /** The region biome's share of the field at a cell (islands go where it is strongest). */
   influence: (x: number, y: number) => number;
+  /** Own cells next to a made neighbour: no island (or its shore) is put there, the seam carries the neighbour on. */
+  seamBand?: ReadonlySet<string>;
   rng: () => number;
 }
 
@@ -607,7 +659,9 @@ export function placeIslands(input: IslandInput): void {
     landRings++;
   }
   const taken = new Set<string>();
-  const free = (k: string) => own.has(k) && !taken.has(k) && !isLand(k);
+  // The seam band is kept clear, unless the region is all band (a tiny one).
+  const band = input.seamBand && ownList.some((k) => !input.seamBand!.has(k)) ? input.seamBand : undefined;
+  const free = (k: string) => own.has(k) && !taken.has(k) && !isLand(k) && !band?.has(k);
   /** Land an island will cover once its land shore rings are on (own cells only). */
   const footprint = (island: Set<string>): number => {
     const all = new Set(island);
@@ -681,6 +735,10 @@ interface PatchInput {
   influence: (x: number, y: number) => number;
   /** Extra seed score for a type at a cell: how much of it the neighbours' context has nearby. */
   affinity?: (type: string, x: number, y: number) => number;
+  /** A cell of a type with its own minimum may be painted over while that type is over its Mix share. */
+  overShare?: boolean;
+  /** Own cells next to a pinned cell: a patch never turns one from land into water or back (a coastline carries on). */
+  seamBand?: ReadonlySet<string>;
   rng: () => number;
 }
 
@@ -693,7 +751,9 @@ interface PatchInput {
  * touching that type) until there are enough. A patch is about the type's
  * share of the region split between its patches, never over a quarter of
  * it. Only the region's own cells change; cells of a type that has its
- * own minimum are never painted over. Deterministic for a seed.
+ * own minimum are never painted over, unless `overShare` and that type
+ * has more of the region than its Mix share (neighbours' forest filling an
+ * Alpine region leaves its peaks room). Deterministic for a seed.
  */
 export function placePatches(input: PatchInput): void {
   const { layout, work, terrainAt, typeOf, profile, rng } = input;
@@ -708,6 +768,7 @@ export function placePatches(input: PatchInput): void {
   const n = ownList.length;
   if (!n) return;
   const protectedTypes = new Set(wants.map(([t]) => t));
+  const water = new Set(WATER_TYPES);
   const nbrs = (k: string): string[] => {
     const [x, y] = k.split("_").map(Number);
     return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
@@ -717,6 +778,21 @@ export function placePatches(input: PatchInput): void {
     return t ? typeOf(t) : undefined;
   };
   const taken = new Set<string>();
+  // Own cells per type, kept current, for `overShare`.
+  const count = new Map<string, number>();
+  if (input.overShare) for (const k of ownList) { const ty = typeAt(k); if (ty) count.set(ty, (count.get(ty) ?? 0) + 1); }
+  let mixTotal = 0;
+  for (const v of profile.types.values()) mixTotal += v;
+  const over = (ty: string) => !!input.overShare && mixTotal > 0 && (count.get(ty) ?? 0) - 1 >= ((profile.types.get(ty) ?? 0) / mixTotal) * n;
+  const paint = (k: string, name: string) => {
+    if (input.overShare) {
+      const was = typeAt(k);
+      if (was) count.set(was, (count.get(was) ?? 0) - 1);
+      const now = typeOf(name);
+      if (now) count.set(now, (count.get(now) ?? 0) + 1);
+    }
+    work.set(k, name);
+  };
   for (const [type, min] of wants) {
     // Patches of this type already in the region (own cells only).
     const seen = new Set<string>();
@@ -732,7 +808,12 @@ export function placePatches(input: PatchInput): void {
         }
       }
     }
-    const free = (k: string) => own.has(k) && !taken.has(k) && !protectedTypes.has(typeAt(k) ?? "");
+    const free = (k: string) => {
+      if (!own.has(k) || taken.has(k)) return false;
+      const ty = typeAt(k) ?? "";
+      if (input.seamBand?.has(k) && water.has(ty) !== water.has(type)) return false;
+      return !protectedTypes.has(ty) || (ty !== type && over(ty));
+    };
     const share = profile.types.get(type) ?? 0;
     const size = Math.max(1, Math.min(Math.round(((share * n) / min) * sizeMul), Math.floor((n * maxShare) / min)));
     const names = profile.names.get(type)!;
@@ -752,7 +833,7 @@ export function placePatches(input: PatchInput): void {
       if (!start) break;
       const patch = new Set<string>();
       const add = (k: string) => {
-        work.set(k, pick(names, rng())!);
+        paint(k, pick(names, rng())!);
         patch.add(k);
         taken.add(k);
       };
@@ -765,6 +846,183 @@ export function placePatches(input: PatchInput): void {
       }
       have++;
     }
+  }
+}
+
+interface KeepMixInput {
+  layout: RegionLayout;
+  /** The region's own (unpinned) cells: the only cells changed. */
+  cells: [number, number][];
+  work: Map<string, string>;
+  terrainAt: (key: string) => string | undefined;
+  typeOf: (terrain: string) => string | undefined;
+  /** The region's own biome: its Mix (types), names and min patches. */
+  profile: BiomeProfile;
+  /** Made neighbours' cells and locked own cells: the seam is next to them. */
+  pinned: ReadonlyMap<string, string>;
+  /** Cells never changed (the islands placeIslands made). */
+  fixed?: ReadonlySet<string>;
+  /** 0..1: how far toward the Mix (tuned "keep-mix"). */
+  strength: number;
+  /** Name odds within a type at a cell (the field's, leaned to the context's names). */
+  namesAt: (x: number, y: number, type: string) => Map<string, number>;
+  rng: () => number;
+}
+
+/** Own cells next to a pinned cell (a made neighbour's, or a locked own one): the seam band. */
+function seamBand(layout: RegionLayout, cells: [number, number][], pinned: ReadonlyMap<string, string>): Set<string> {
+  const out = new Set<string>();
+  for (const [x, y] of cells) if (childNeighbours(layout, x, y).some(([a, b]) => pinned.has(`${a}_${b}`))) out.add(`${x}_${y}`);
+  return out;
+}
+
+/** Share of the seam band keepMix leaves carrying on the type across the seam. */
+const BAND_KEEP = 0.5;
+
+/**
+ * Bring a region's terrain-type shares back toward its biome's Mix after
+ * the neighbours' context leaned on it (owner 2026-10-12: "new regions mesh
+ * with their neighbours at the seams, but the region must still clearly be
+ * its own biome"). Each type's target is its Mix share (land and water
+ * split by the biome's land share when it has one), moved `strength` of
+ * the way from what the region has. Then, one cell at a time, the type
+ * most under its target takes a cell of a type over its target, the one
+ * farthest from the seams and next to that type already (so it grows in
+ * clumps). Never: a `fixed` cell (islands), a coast or shallows cell, the
+ * last cell of a min-patches patch; land into water or back on the
+ * region's edge (a coastline carries on across the seam, and the edges not
+ * made yet keep theirs for later); new land in an island biome; and the
+ * seam band (own cells next to a pinned one) keeps at least BAND_KEEP of
+ * its cells on the type across the seam, so the neighbours' terrain still
+ * runs in. Deterministic for a seed.
+ */
+export function keepMix(input: KeepMixInput): void {
+  const { layout, work, typeOf, profile, pinned, rng } = input;
+  const strength = Math.min(1, Math.max(0, input.strength));
+  if (!strength) return;
+  const water = new Set(WATER_TYPES);
+  const shore = new Set(SHORE_TYPES);
+  const ownList = input.cells.map(([x, y]) => `${x}_${y}`).sort();
+  const own = new Set(ownList);
+  const nbrs = (k: string): string[] => {
+    const [x, y] = k.split("_").map(Number);
+    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
+  };
+  const typeAt = (k: string) => {
+    const t = input.terrainAt(k);
+    return t ? typeOf(t) : undefined;
+  };
+  // Steps from the seam, through own cells: 1 next to a pinned cell.
+  const dist = new Map<string, number>();
+  let ring = ownList.filter((k) => nbrs(k).some((m) => pinned.has(m)));
+  for (const k of ring) dist.set(k, 1);
+  for (let d = 2; ring.length; d++) {
+    const next: string[] = [];
+    for (const k of ring) for (const m of nbrs(k)) if (own.has(m) && !dist.has(m)) { dist.set(m, d); next.push(m); }
+    ring = next;
+  }
+  const FAR = 8;
+  const distOf = (k: string) => Math.min(FAR, dist.get(k) ?? FAR);
+  // The seam band: each band cell's type across the seam (the pinned
+  // neighbours' most common). At least BAND_KEEP of the band keeps
+  // matching it, so the neighbours' terrain still runs in at the seam.
+  const across = new Map<string, string>();
+  for (const k of ownList) {
+    if (dist.get(k) !== 1) continue;
+    const by = new Map<string, number>();
+    for (const m of nbrs(k)) {
+      const t = pinned.get(m);
+      const ty = t ? typeOf(t) : undefined;
+      if (ty) by.set(ty, (by.get(ty) ?? 0) + 1);
+    }
+    const top = [...by].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0];
+    if (top) across.set(k, top[0]);
+  }
+  let bandMatch = 0;
+  for (const [k, ty] of across) if (typeAt(k) === ty) bandMatch++;
+  const bandFloor = Math.ceil(across.size * BAND_KEEP);
+
+  // Counts and targets, land and water apart. Shore types and untyped or
+  // non-Mix-side cells (settlements) aren't counted and never change.
+  const counts = new Map<string, number>();
+  const sideN = [0, 0];
+  const side = (ty: string) => (water.has(ty) ? 1 : 0);
+  const counted = (ty: string | undefined): ty is string => ty !== undefined && !shore.has(ty) && ty !== "settlement";
+  for (const k of ownList) {
+    const ty = typeAt(k);
+    if (!counted(ty)) continue;
+    counts.set(ty, (counts.get(ty) ?? 0) + 1);
+    sideN[side(ty)]++;
+  }
+  const sideMix = [0, 0];
+  for (const [ty, v] of profile.types) if (counted(ty)) sideMix[side(ty)] += v;
+  if (!sideMix[0] && !sideMix[1]) return;
+  // How many cells each side wants: the biome's land share (islands), else
+  // its Mix's. A land share with no Mix type on one side keeps the sides.
+  const total = sideN[0] + sideN[1];
+  const land = profile.landShare ?? sideMix[0] / (sideMix[0] + sideMix[1]);
+  const keepSides = profile.landShare !== undefined && (!sideMix[0] || !sideMix[1]);
+  const sideWant = keepSides ? sideN : [total * land, total * (1 - land)];
+  const target = new Map<string, number>();
+  for (const ty of new Set([...counts.keys(), ...profile.types.keys()])) {
+    if (!counted(ty)) continue;
+    const s = side(ty);
+    const full = sideMix[s] > 0 ? (sideWant[s] * (profile.types.get(ty) ?? 0)) / sideMix[s] : 0;
+    const now = counts.get(ty) ?? 0;
+    target.set(ty, now + strength * (full - now));
+  }
+  const surplus = (ty: string) => (counts.get(ty) ?? 0) - (target.get(ty) ?? 0);
+  // Island biomes: their islands are placeIslands' (never added or taken here).
+  const islandy = profile.landShare !== undefined || !!profile.minIslands;
+  const blocked = new Set<string>();
+  for (let guard = 0; guard < ownList.length * 2; guard++) {
+    const under = [...target.keys()]
+      .filter((ty) => !blocked.has(ty) && profile.names.get(ty)?.size && -surplus(ty) >= 0.5)
+      .sort((a, b) => surplus(a) - surplus(b) || (a < b ? -1 : 1));
+    const u = under[0];
+    if (u === undefined) break;
+    let best: string | undefined, bestScore = -Infinity;
+    for (const k of ownList) {
+      if (input.fixed?.has(k)) continue;
+      const ty = typeAt(k);
+      if (!counted(ty) || ty === u || surplus(ty) < 0.5) continue;
+      if (side(ty) !== side(u)) {
+        // Only a cell inside the region turns land into water or back: the
+        // seam band keeps carrying a coastline on, and the region's other
+        // edges keep theirs for the regions made next to them later.
+        if (!nbrs(k).every((m) => own.has(m))) continue;
+        // An island biome gets no new land here: only land run in from the neighbours may turn to water.
+        if (islandy && side(ty) !== 0) continue;
+      }
+      // A band cell that carries on its neighbour's type only while the band keeps enough of those.
+      if (across.get(k) === ty && bandMatch <= bandFloor) continue;
+      const around = nbrs(k);
+      // The last cell of a patch of a min-patches type stays.
+      if (profile.minPatches?.get(ty) && !around.some((m) => own.has(m) && typeAt(m) === ty)) continue;
+      const next = around.filter((m) => typeAt(m) === u).length;
+      const score = 2 * next + distOf(k) + 0.5 * rng();
+      if (score > bestScore) { bestScore = score; best = k; }
+    }
+    if (!best) { blocked.add(u); continue; }
+    // The name the neighbouring cells of that type use, else one the field (or the Mix) gives.
+    const byName = new Map<string, number>();
+    for (const m of nbrs(best)) {
+      const t = input.terrainAt(m);
+      if (t && typeOf(t) === u) byName.set(t, (byName.get(t) ?? 0) + 1);
+    }
+    const [x, y] = best.split("_").map(Number);
+    let name = byName.size ? [...byName].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0] : undefined;
+    if (!name) {
+      const field = input.namesAt(x, y, u);
+      name = pick(field.size ? field : profile.names.get(u)!, rng());
+    }
+    if (!name) { blocked.add(u); continue; }
+    const was = typeAt(best)!;
+    if (across.get(best) === was) bandMatch--;
+    else if (across.get(best) === u) bandMatch++;
+    counts.set(was, (counts.get(was) ?? 0) - 1);
+    counts.set(u, (counts.get(u) ?? 0) + 1);
+    work.set(best, name);
   }
 }
 
@@ -1098,6 +1356,28 @@ export function seamStats(layout: RegionLayout, cells: ReadonlyMap<string, strin
     const [a, b] = id.split("|");
     return { a, b, pairs: s.pairs, typeAgreement: s.type / s.pairs, nameAgreement: s.name / s.pairs };
   }).sort((p, q) => (p.a + p.b < q.a + q.b ? -1 : 1));
+}
+
+/**
+ * A region's biome identity: how far its terrain-type shares are from its
+ * biome's Mix, as half the summed share differences (0: exactly the Mix,
+ * 1: no type in common). Untyped cells don't count.
+ */
+export function mixDistance(cells: ReadonlyMap<string, string>, profile: BiomeProfile, typeOf: (t: string) => string | undefined): number {
+  const n = new Map<string, number>();
+  let all = 0;
+  for (const t of cells.values()) {
+    const ty = typeOf(t);
+    if (!ty) continue;
+    n.set(ty, (n.get(ty) ?? 0) + 1);
+    all++;
+  }
+  let mix = 0;
+  for (const v of profile.types.values()) mix += v;
+  if (!all || !mix) return 0;
+  let d = 0;
+  for (const ty of new Set([...n.keys(), ...profile.types.keys()])) d += Math.abs((n.get(ty) ?? 0) / all - (profile.types.get(ty) ?? 0) / mix);
+  return d / 2;
 }
 
 /** Type agreement between neighbouring cells INSIDE regions, the baseline a seam should match. */

@@ -190,6 +190,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "BiomePage.tune.nameSharpness": "debug/Borders & transitions",
   "BiomePage.tune.neighbourInfluence": "debug/Borders & transitions",
   "BiomePage.tune.contextDepth": "debug/Borders & transitions",
+  "BiomePage.tune.neighbourFade": "debug/Borders & transitions",
+  "BiomePage.tune.keepMix": "debug/Borders & transitions",
   "BiomePage.tune.islandMax": "debug/Water & islands",
   "BiomePage.tune.islandEdge": "debug/Water & islands",
   "BiomePage.tune.beach": "debug/Water & islands",

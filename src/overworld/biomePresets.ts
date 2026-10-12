@@ -29,9 +29,10 @@
  * underground`: World biomes never places those, they're picked by hand.
  * The underground ones paint with World's own terrain types (cave floor,
  * solid rock, fungus…; core terrain types). They're enclosed: a narrow
- * blend, and their Tuning turns off the lean toward the made regions next
- * door (neighbour influence 0, as before super-region), or a cave amid
- * forests reads as forest. Like any new
+ * blend. Among surface regions they keep their ground the way every biome
+ * does (regionGen keepMix: the neighbours' lean fades from the seam and
+ * the Mix is kept), so they need no tuning of their own for it. Magma
+ * caves leads with lava, so its overworld hex reads as lava. Like any new
  * shipped biome, an existing vault gets each note once (BiomeStore seed).
  *
  * Pure: no Obsidian imports.

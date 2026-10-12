@@ -72,17 +72,19 @@ describe("super-region: the owner's coast (demo world, region 4, 0)", () => {
 });
 
 describe("super-region: seam continuity rises across the owner's demo world", () => {
-	it("the four regions the owner added: from 32 of 49 edge hexes to at least 44", () => {
+	// Before: the whole world made without neighbour context (influence 0 everywhere; the
+	// owner's own vault, with the world around made at the defaults then, matched 32).
+	it("the four regions the owner added: from 38 of 49 edge hexes without context to at least 46", () => {
 		const sum = (run: ReturnType<typeof ownerRun>) => {
 			let edge = 0, matched = 0;
 			for (const c of ownerContinuity(run).values()) { edge += c.edge; matched += c.matched; }
 			return { edge, matched };
 		};
-		const b = sum(ownerRun({ "neighbour-influence": 0 }));
+		const b = sum(ownerRun({ "neighbour-influence": 0 }, { addedOnly: false }));
 		const a = sum(ownerRun());
-		expect(b).toEqual({ edge: 49, matched: 32 });
+		expect(b).toEqual({ edge: 49, matched: 38 });
 		expect(a.edge).toBe(49);
-		expect(a.matched).toBeGreaterThanOrEqual(44);
+		expect(a.matched).toBeGreaterThanOrEqual(46);
 	});
 
 	it("every parity world: land/water continuity at the seams goes up", () => {

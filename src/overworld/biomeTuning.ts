@@ -98,6 +98,8 @@ function makeParams(): TuningParam[] {
   { key: "wiggle", label: "Border wiggle", section: "Borders & transitions", default: 0.2, min: 0, max: 0.6, step: 0.05, help: "How far borders between biomes wander, in regions (0: straight seams)." },
   { key: "neighbour-influence", label: "Neighbour influence", section: "Borders & transitions", default: 1, min: 0, max: 4, step: 0.1, help: "How strongly the hexes of regions already made steer a new region near them (0: only the seam cells, as before)." },
   { key: "context-depth", label: "Neighbour context depth", section: "Borders & transitions", default: 3, min: 0, max: 6, step: 1, integer: true, help: "How many rows of each neighbouring region a new region reads as fixed context (0: none)." },
+  { key: "neighbour-fade", label: "Neighbour fade", section: "Borders & transitions", default: 1, min: 0, max: 6, step: 0.25, help: "How far in from the seam the neighbours' lean reaches, in cells (higher: further; 0: no fade)." },
+  { key: "keep-mix", label: "Keep the mix", section: "Borders & transitions", default: 1, min: 0, max: 1, step: 0.05, help: "Next to made regions: how far the region's terrain is brought back to its own Mix, away from the seam first (0: not at all)." },
   { key: "name-sharpness", label: "Terrain pick sharpness", section: "Borders & transitions", default: 2, min: 0.5, max: 6, step: 0.5, help: "Where biomes mix, how strongly the main biome picks which terrain of a type is used." },
   // ── Water & islands (regionGen.ts placeIslands / placeShore) ──
   { key: "island-max", label: "Largest island", section: "Water & islands", default: 0.25, min: 0.02, max: 1, step: 0.01, help: "Largest share of the region one island may cover (split between min islands)." },

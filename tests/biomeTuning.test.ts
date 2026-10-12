@@ -74,7 +74,9 @@ describe("biome tuning: same seed and defaults give today's regions", () => {
 describe("biome tuning: each parameter changes generation", () => {
 	// The mixed overworld, plus one region of each biome ringed by another
 	// (the island, shore and patch params only act on their own biome's region).
-	const rings: [string, string][] = [["archipelago", "open-sea"], ["coast", "grassland"], ["alpine", "valley"], ["volcanic", "badlands"], ["tundra", "taiga"]];
+	// An archipelago amid archipelagos too: in the worlds, the made neighbours' land now reaches every
+	// edge cell of the one region where islands might start at the edge, so it no longer shows Islands at the edge.
+	const rings: [string, string][] = [["archipelago", "open-sea"], ["archipelago", "archipelago"], ["coast", "grassland"], ["alpine", "valley"], ["volcanic", "badlands"], ["tundra", "taiga"]];
 	const ringLayout: RegionLayout = { footprint: "rect", size: 10, orientation: "flat", parentStagger: "odd", childStagger: "odd" };
 	const ringed = (centre: string, around: string, profiles: Map<string, BiomeProfile>) => {
 		const biomes = new Map<string, string>([["0_0", centre]]);
