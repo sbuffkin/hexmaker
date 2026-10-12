@@ -149,45 +149,8 @@ export function paintTargets(
   return { targets, missed };
 }
 
-/**
- * Hexes whose shown terrain differs from the map's data now, for a view
- * showing a map that's being painted elsewhere (the overworld brush): only
- * those are repainted. `null`: no terrain.
- */
-export function terrainDiff(shown: ReadonlyMap<string, string | null>, now: (key: string) => string | undefined): [string, string | null][] {
-  const out: [string, string | null][] = [];
-  for (const [key, was] of shown) {
-    const t = now(key) ?? null;
-    if (t !== was) out.push([key, t]);
-  }
-  return out;
-}
+/** Shown-vs-now terrain (the core's, src/hex-map/terrainDiff.ts). */
+export { terrainDiff } from "../hex-map/terrainDiff";
 
-/**
- * Run a job at most once per animation frame: repeated requests within a
- * frame coalesce into one run (the last job wins). Unlike a trailing
- * debounce it keeps firing during a continuous stroke.
- */
-export class FrameThrottle {
-  private pending: (() => void) | null = null;
-  private scheduled = false;
-
-  constructor(private raf: (cb: () => void) => unknown) {}
-
-  request(job: () => void): void {
-    this.pending = job;
-    if (this.scheduled) return;
-    this.scheduled = true;
-    this.raf(() => {
-      this.scheduled = false;
-      const run = this.pending;
-      this.pending = null;
-      run?.();
-    });
-  }
-
-  /** Is a run waiting for the next frame? */
-  get waiting(): boolean {
-    return this.scheduled;
-  }
-}
+/** Once-per-frame runs (the core's, src/frameThrottle.ts). */
+export { FrameThrottle } from "../frameThrottle";

@@ -13,7 +13,7 @@ import { learnModel, mergeModels, modelToMarkdown, type HexWfcModel } from "../p
 import { DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { parseBuiltin } from "../src/worldgen/builtinGenerators";
 import { BiomeRegionError, generateBiomeRegion, type BiomeRegionRequest, type GeneratorRef } from "../src/worldgen/biomeRegion";
-import { biomePagePatch, biomeSamplePlan, setMixRow } from "../src/worldgen/BiomePanel";
+import { biomePagePatch, biomeSamplePlan, setMixRow } from "../src/overworld/BiomePanel";
 import { buildBiomeNote, parseBiomeNote, updateBiomeNote, type BiomeNoteFields } from "../src/overworld/biomeNote";
 import { BIOME_PRESETS, biomePreset } from "../src/overworld/biomePresets";
 import { BiomeStore } from "../src/overworld/BiomeStore";

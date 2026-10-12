@@ -106,7 +106,7 @@ describe("dropped controls are gone", () => {
   });
 
   it("Biome form: the typed weight box (the slider stays)", () => {
-    const src = read("src", "hex-map", "BiomeLibraryModal.ts");
+    const src = read("src", "overworld", "BiomeLibraryModal.ts");
     expect(src).not.toMatch(/weight value/);
     expect(src).toMatch(/type: "range"[^\n]*weight/);
   });

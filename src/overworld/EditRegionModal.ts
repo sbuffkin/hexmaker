@@ -22,16 +22,16 @@ import { regionMapAt, regionSettingsLabel } from "../maps/submaps";
 import { terrainCounts } from "../maps/mapNote";
 import { readNotesSection, writeNotesSection } from "../maps/mapNoteNotes";
 import { flowerPetals } from "../maps/mapNav";
-import { biomeInfo, type BiomeId } from "../overworld/biomes";
-import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "../overworld/regionsVault";
+import { biomeInfo, type BiomeId } from "./biomes";
+import { hexBiomeAt, overworldOf, regenerateRegion, regionBiomeStatus, setBiomeAt } from "./regionsVault";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
-import { editRegionPlan, terrainCountsText } from "../overworld/overworldInput";
+import { editRegionPlan, terrainCountsText } from "./overworldInput";
 import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
-import { confirmOverworldPath, overworldPathsAt } from "../overworld/overworldPaths";
+import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
-import { addGodOffer } from "./godOffer";
+import { addGodOffer } from "../hex-map/godOffer";
 import { createIconEl, getIconUrl } from "../utils";
 
 export interface EditRegionHost extends BiomeHost {

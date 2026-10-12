@@ -7,8 +7,7 @@ import { HexExportModal } from "./hex-map/HexExportModal";
 import { MapExportModal } from "./export/MapExportModal";
 import { WorkflowExportModal } from "./random-tables/WorkflowExportModal";
 import { HexMapView } from "./hex-map/HexMapView";
-import { NewOverworldModal } from "./hex-map/OverworldModals";
-import { SANDBOX_MARKER, buildBenchWorld, buildDemoWorld } from "./overworld/demoWorld";
+import { SANDBOX_MARKER } from "./sandbox";
 import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
@@ -32,13 +31,12 @@ import {
   VIEW_TYPE_PALETTE_EDITOR,
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
-import { BiomeStore } from "./overworld/BiomeStore";
-import { biomePoolsFolder, fillBiomeColumns } from "./overworld/overworldGen";
+import type { BiomeStore } from "./overworld/BiomeStore";
 import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleRefLinkers, runOnEnabled } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
@@ -103,8 +101,6 @@ import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapD
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
 import { runNoteFormatUpgrades } from "./noteFormatUpgrade";
-import { hexBiomeAt, overworldOf } from "./overworld/regionsVault";
-import { BIOMES, biomeNoteOf } from "./overworld/biomes";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
@@ -125,13 +121,15 @@ export default class HexmakerPlugin extends Plugin {
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
   paletteStore = new PaletteStore(this);
-  /** Overworld biome notes (#50). */
-  biomeStore = new BiomeStore(this);
   /** Each module's note stores (src/modules/runtime.ts), made once with the plugin. */
   readonly moduleStores: ModuleStore[] = createModuleStores(this);
   /** A module's store by id. */
   moduleStore(id: string): ModuleStore | undefined {
     return this.moduleStores.find((s) => s.id === id);
+  }
+  /** Overworld biome notes (#50; the World maps module's store). Module code only: undefined without World maps. */
+  get biomeStore(): BiomeStore {
+    return this.moduleStore("biomes") as BiomeStore;
   }
   /** World types tables for the space generators (the Space module's store). */
   get worldTypeStore(): WorldTypeStore {
@@ -200,12 +198,15 @@ export default class HexmakerPlugin extends Plugin {
       this.loadAvailableIcons();
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
-      const biomesReady = this.biomeStore.init();
+      // Modules' note stores (biomes, world types) start first, as the
+      // biome store always did; then the tables and the core's stores.
+      const storeReady = new Map(this.moduleStores.map((st) => [st, st.init()] as const));
+      const moduleStoresReady = Promise.all(storeReady.values());
       void this.tableNotes.init();
-      const moduleStoresReady = Promise.all(this.moduleStores.map((st) => st.init()));
       const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
-      // BC1, once per vault: every overworld hex's biome in its Biome column.
-      void Promise.all([biomesReady, storesReady]).then(() => fillBiomeColumns(this)).catch((e) => console.error("Hexmaker: filling Biome columns", e));
+      // Each module's one-time upgrades once its stores and the core's are in
+      // (World maps, BC1: every overworld hex's biome in its Biome column).
+      runAfterStoresReady(this, storesReady, this.moduleStores, storeReady);
       void storesReady.then(() => this.ensureTablesForNewTerrains());
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
       // generator and modules' notes (world types) in the new note formats (backed up first).
@@ -213,11 +214,7 @@ export default class HexmakerPlugin extends Plugin {
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
-        this.devTools = {
-          buildDemoWorld: (o) => buildDemoWorld(this, o),
-          buildBenchWorld: (o) => buildBenchWorld(this, o),
-          overworldStats: () => this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => (l.view instanceof HexMapView ? l.view.overworldStats() : null)),
-        };
+        this.devTools = moduleDevTools(this);
       });
       void this.autoRegisterMapsFromVault();
       // Hand edits to table notes (ranges, die, weights) are imported.
@@ -246,7 +243,6 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("create", (f) => {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.paletteStore.onModify(f);
-        this.biomeStore.onModify(f);
         for (const st of this.moduleStores) st.onCreate?.(f);
         this.mapStore.onCreate(f);
       }),
@@ -256,7 +252,6 @@ export default class HexmakerPlugin extends Plugin {
         if (isIconFile(f.path)) this.loadAvailableIcons();
         this.mapStore.onDelete(f);
         this.paletteStore.onDelete(f);
-        this.biomeStore.onDelete(f);
         for (const st of this.moduleStores) st.onDelete?.(f);
         this.calloutMemory.forget(f.path);
       }),
@@ -265,7 +260,6 @@ export default class HexmakerPlugin extends Plugin {
       this.app.vault.on("rename", (f, oldPath) => {
         if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
         this.paletteStore.onRename(f, oldPath);
-        this.biomeStore.onRename(f, oldPath);
         for (const st of this.moduleStores) st.onRename?.(f, oldPath);
         this.calloutMemory.rename(oldPath, f.path);
         if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
@@ -282,7 +276,6 @@ export default class HexmakerPlugin extends Plugin {
     this.registerEvent(
       this.app.vault.on("modify", (f) => {
         this.paletteStore.onModify(f);
-        this.biomeStore.onModify(f);
         for (const st of this.moduleStores) st.onModify?.(f);
         this.mapStore.onModify(f);
       }),
@@ -353,11 +346,6 @@ export default class HexmakerPlugin extends Plugin {
       if (command.placementId) addPlaced(command.placementId, cmd);
       else this.addCommand(cmd);
     }
-    addPlaced("Plugin.cmd.newOverworld", {
-      id: "new-overworld",
-      name: "New overworld…",
-      callback: () => this.openNewOverworld(),
-    });
     addPlaced("Plugin.cmd.mapGoUp", {
       id: "map-go-up",
       name: "Go up to parent map",
@@ -736,7 +724,7 @@ export default class HexmakerPlugin extends Plugin {
       GeneratorPanel.biome = "";
     }
     if (select.biome) {
-      const b = this.biomeStore.get(select.biome);
+      const b = (this.moduleStore("biomes") as BiomeStore | undefined)?.get(select.biome);
       const file = b?.generator ? this.app.vault.getAbstractFileByPath(`${b.generator}.md`) ?? this.app.vault.getAbstractFileByPath(b.generator) ?? this.app.metadataCache.getFirstLinkpathDest(b.generator, "") : null;
       if (b && file) {
         GeneratorPanel.selectedPath = file.path;
@@ -752,11 +740,6 @@ export default class HexmakerPlugin extends Plugin {
     await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true });
   }
 
-  /** "New overworld…": a World biomes map with its region settings (and its regions). */
-  openNewOverworld(): void {
-    // The form picks biomes from the notes: the shipped ones go in first (DJ-Q4).
-    void this.ensureOverworldBiomes().then(() => new NewOverworldModal(this.app, this, (name) => void this.showMap(name)).open());
-  }
 
   /**
    * DJ-Q4: the shipped biome notes are written when the first overworld or
@@ -765,19 +748,14 @@ export default class HexmakerPlugin extends Plugin {
    * so a deleted one stays deleted; later calls only top up new shipped ones.
    */
   async ensureOverworldBiomes(): Promise<void> {
-    await this.biomeStore.seedShipped(true);
+    await (this.moduleStore("biomes") as BiomeStore | undefined)?.seedShipped(true);
   }
 
   /**
    * Sandbox-only helpers for dev/demo-world.mjs (OW7): set only when the
    * vault root holds the `.hexmaker-sandbox` marker. No command, no UI.
    */
-  devTools?: {
-    buildDemoWorld(opts?: { seed?: number }): Promise<unknown>;
-    buildBenchWorld(opts?: { seed?: number; side?: number }): Promise<unknown>;
-    /** The open map view's overworld layer timings. */
-    overworldStats(): unknown;
-  };
+  devTools?: Record<string, (...args: never[]) => unknown>;
 
   /** Show a map in the hex map view, opening the view if it isn't open. */
   async showMap(name: string): Promise<void> {
@@ -1182,9 +1160,8 @@ export default class HexmakerPlugin extends Plugin {
     const templater = loose.plugins?.plugins?.["templater-obsidian"]?.settings?.templates_folder;
     return templateNoteRules(this.settings, [coreFolder, templater], [
       this.paletteStore.folder(),
-      this.biomeStore.folder(),
-      biomePoolsFolder(this),
       ...this.moduleStores.flatMap((st) => (st.folder ? [st.folder()] : [])),
+      ...moduleFolders(this),
       generatorsFolder(this),
     ]);
   }
@@ -1993,13 +1970,9 @@ export default class HexmakerPlugin extends Plugin {
     };
   }
 
-  /** An overworld hex's biome for its Map data callout: its label, and its biome note when it has one. */
+  /** An overworld hex's biome for its Map data callout (World maps), else nothing. */
   private hexBiomeRef(mapName: string, key: string): { label: string; note?: string } | undefined {
-    if (!overworldOf(this, mapName)) return undefined;
-    const id = hexBiomeAt(this, mapName, key);
-    if (!id) return undefined;
-    const label = biomeNoteOf(id)?.label ?? BIOMES.find((b) => b.id === id)?.label ?? id;
-    return { label, note: this.biomeStore.pathOf(id) };
+    return worldMaps()?.hexBiomeRef(this, mapName, key);
   }
 
   /**
@@ -2571,7 +2544,7 @@ export default class HexmakerPlugin extends Plugin {
     s.kindContent = plan.done;
     await this.saveSettings();
     if (plan.newKinds.length) {
-      await this.biomeStore.seedShipped(true);
+      await runOnKindsEnabled(this, plan.newKinds);
       await runOnEnabled(this, plan.newKinds);
     }
     this.onMapKindsChanged();

@@ -52,6 +52,12 @@ function build(off, full, dir) {
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** A string as written, or as esbuild writes it in main.js (non-ASCII as a \u escape). */
+const inBundle = (s) => {
+	const js = s.replace(/[^\x00-\x7f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+	return js === s ? escape(s) : `${escape(s)}|${escape(js)}`;
+};
+
 /** Every place a module's owned text would show in a bundle. */
 function needles(mod) {
 	const o = mod.owns;
@@ -60,7 +66,7 @@ function needles(mod) {
 		// A settings key read or written (settings.x / "x"), not a placement id ("Settings.x").
 		...o.settingsKeys.map((k) => ({ what: `settings key ${k}`, re: new RegExp(`(?<!"Settings\\.)\\b${escape(k)}\\b`) })),
 		...o.mapNoteKeys.map((k) => ({ what: `map-note key ${k}`, re: new RegExp(`["'\`]${escape(k)}["'\`]`) })),
-		...(o.strings ?? []).map((s) => ({ what: `string "${s}"`, re: new RegExp(escape(s)) })),
+		...(o.strings ?? []).map((s) => ({ what: `string "${s}"`, re: new RegExp(inBundle(s)) })),
 	];
 }
 

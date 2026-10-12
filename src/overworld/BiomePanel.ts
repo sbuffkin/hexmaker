@@ -17,17 +17,17 @@
 import { Notice, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "../overworld/biomeNote";
-import { formTypes } from "../overworld/biomeForm";
-import { OPEN_SEA, profileFromFields, type BiomeId } from "../overworld/biomes";
-import { profilesForPalette } from "../overworld/regionsVault";
-import { paletteTypeOf, planRegion } from "../overworld/regionWorld";
-import { neighbourRegions, regionBox, type RegionLayout } from "../overworld/layout";
-import { drawPreview } from "./preview";
+import { BIOME_BLENDS, type BiomeBlend, type BiomeNoteFields } from "./biomeNote";
+import { formTypes } from "./biomeForm";
+import { OPEN_SEA, profileFromFields, type BiomeId } from "./biomes";
+import { profilesForPalette } from "./regionsVault";
+import { paletteTypeOf, planRegion } from "./regionWorld";
+import { neighbourRegions, regionBox, type RegionLayout } from "./layout";
+import { drawPreview } from "../worldgen/preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl } from "../utils";
 import { Disclosure } from "../ui/disclosure";
-import { randomSeed } from "../../packages/hex-wfc/src";
+import { randomSeed } from "../../packages/hex-wfc/src/index";
 
 export interface BiomePanelHost {
   rerender(): void;

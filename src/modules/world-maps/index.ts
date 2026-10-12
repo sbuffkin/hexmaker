@@ -13,6 +13,8 @@ export const worldMapsModule: HexmakerModule = {
   id: "world-maps",
   slice: "worldmaps",
   tableConditions: WORLD_MAPS_TABLE_CONDITIONS,
+  // River carves its overworld path's cells into water (overworld paths).
+  addedPresetPathFields: [{ pathType: "River", field: "carves" }],
   mapScales: [{
     id: "biomes",
     label: "Biomes",
@@ -22,5 +24,20 @@ export const worldMapsModule: HexmakerModule = {
     palette: "Expanded",
     generators: ["procedural:world-biomes"],
   }],
-  owns: { settingsKeys: [], mapNoteKeys: [], commands: [] },
+  owns: {
+    settingsKeys: ["biomesFolder", "biomePoolsFolder", "biomesSeeded", "biomeClimatesSeeded", "biomeColumnsFilled"],
+    mapNoteKeys: [],
+    commands: ["new-overworld"],
+    strings: [
+      "New overworld…",
+      "World biomes",
+      "procedural:world-biomes",
+      "Biomes folder",
+      "Biome pools folder",
+      "Edit region…",
+      "Generate overworld…",
+      "Make the missing regions",
+      "hexmaker-biome",
+    ],
+  },
 };

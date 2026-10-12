@@ -53,9 +53,7 @@ import { HexExportModal } from "./HexExportModal";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { resolveHex, type Side } from "../worldgen/world";
 import { neighbourSpec } from "../worldgen/neighbours";
-import { WalkRegionModal } from "../worldgen/WalkRegionModal";
-import { regionHome, walkLock } from "../overworld/regionsVault";
-import { parentOf } from "../overworld/layout";
+import { worldMaps } from "../modules/runtime";
 import { flowerPetals, neighbourButton } from "../maps/mapNav";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
@@ -563,6 +561,9 @@ export class HexEditorModal extends HexmakerModal {
           { l: 34, t: 35, nx: notShifted(y) ? x : x + 1, ny: y + 1 }, // SE
         ];
 
+    // World maps' walking (regions of an overworld, new land next door);
+    // undefined in a build without it.
+    const wm = worldMaps();
     for (const { l, t, nx, ny } of defs) {
       const onMap = this.isOnMap(nx, ny);
       const tile = widget.createDiv({
@@ -604,15 +605,15 @@ export class HexEditorModal extends HexmakerModal {
               this.options.onCrossToRegion?.(target.map, target.x, target.y);
             }).open();
           });
-        } else if (here && regionHome(this.plugin, this.mapName)) {
+        } else if (here && wm?.regionHome(this.plugin, this.mapName)) {
           // A region of an overworld: past the edge is the overworld hex
           // next door, with no region yet. Same walk as the map toolbar's
           // region flower (pick or roll its biome; Build and God only).
-          const home = regionHome(this.plugin, this.mapName)!;
-          const [px, py] = parentOf(home.layout, nx, ny);
+          const home = wm.regionHome(this.plugin, this.mapName)!;
+          const [px, py] = wm.parentOf(home.layout, nx, ny);
           const bearing = flowerPetals(home.layout.orientation, home.layout.parentStagger, home.px, home.py)
             .find((p) => p.hex[0] === px && p.hex[1] === py)?.bearing ?? offMapSide(here, nx, ny);
-          const lock = walkLock(this.plugin, this.mapName, home.overworld.name);
+          const lock = wm.walkLock(this.plugin, this.mapName, home.overworld.name);
           const b = neighbourButton(bearing, undefined, { canMake: true, canAdd: !lock, lockedHint: lock ?? "" });
           tile.addClass("duckmage-neighbor-tile-new");
           tile.removeClass("duckmage-neighbor-tile-offmap");
@@ -620,20 +621,20 @@ export class HexEditorModal extends HexmakerModal {
           tile.title = b.title;
           if (b.action.kind === "new") {
             tile.addEventListener("click", () => {
-              new WalkRegionModal(this.app, this.plugin, this.mapName, { overworld: home.overworld.name, px, py, bearing }, (name) => {
+              new wm.WalkRegionModal(this.app, this.plugin, this.mapName, { overworld: home.overworld.name, px, py, bearing }, (name) => {
                 this.close();
                 this.options.onCrossToRegion?.(name, nx, ny);
               }).open();
             });
           }
-        } else if (here && neighbourSpec(this.plugin, this.mapName, offMapSide(here, nx, ny)).ok) {
+        } else if (here && wm && neighbourSpec(this.plugin, this.mapName, offMapSide(here, nx, ny)).ok) {
           // Nothing there yet: walk into new land (pick or roll its biome).
           const side = offMapSide(here, nx, ny);
           tile.addClass("duckmage-neighbor-tile-new");
           tile.removeClass("duckmage-neighbor-tile-offmap");
           tile.title = `New land to the ${side}…`;
           tile.addEventListener("click", () => {
-            new WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
+            new wm.WalkRegionModal(this.app, this.plugin, this.mapName, side, () => {
               const now = this.plugin.getMap(this.mapName);
               const arrived = now ? resolveHex(this.plugin.settings.maps, now, nx, ny) : null;
               if (!arrived || arrived.map.name === this.mapName) return;

@@ -38,12 +38,6 @@ const NAME_SIZE_TEXT: Record<HexNameSize, string> = { small: "Small", medium: "M
 const PALETTES_FOLDER_DESC =
   "Vault-relative folder for terrain palette notes (one note per palette — edit as text, copy between vaults to share). Defaults to a palettes folder inside the world folder.";
 
-const BIOMES_FOLDER_DESC =
-  "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
-
-const BIOME_POOLS_FOLDER_DESC =
-  "Vault-relative folder for biome pool notes (each lists the biomes a generated overworld may use). Defaults to a biome-pools folder inside the world folder.";
-
 // ---------------------------------------------------------------------------
 // Obsidian 1.13 declarative settings API — local structural types.
 //
@@ -158,8 +152,6 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "workflowsFolder",
   "templatesFolder",
   "palettesFolder",
-  "biomesFolder",
-  "biomePoolsFolder",
 ]);
 
 /** A folder-path key: the core's, or a module's folder setting (Space: World types folder). */
@@ -469,8 +461,6 @@ export class HexmakerSettingTab extends PluginSettingTab {
           T("Settings.workflowsFolder", folderText("Workflows folder", "workflowsFolder", "World/workflows", "Vault-relative folder for workflow notes. Browsable from the random tables view via the workflows tab.")),
           T("Settings.templatesFolder", folderText("Templates folder", "templatesFolder", "World/templates", TEMPLATES_FOLDER_DESC)),
           T("Settings.palettesFolder", folderText("Palettes folder", "palettesFolder", "World/palettes", PALETTES_FOLDER_DESC)),
-          T("Settings.biomesFolder", folderText("Biomes folder", "biomesFolder", "World/biomes", BIOMES_FOLDER_DESC)),
-          T("Settings.biomePoolsFolder", folderText("Biome pools folder", "biomePoolsFolder", "World/biome-pools", BIOME_POOLS_FOLDER_DESC)),
           // Each module's folder settings.
           ...moduleFolderSettings().map((d) => T(d.id, folderText(d.name, d.key, d.placeholder, d.desc))),
         ],
@@ -558,7 +548,6 @@ export class HexmakerSettingTab extends PluginSettingTab {
     }
     return this.plugin.saveSettings().then(() => {
       if (MAP_REFRESH_KEYS.has(key)) this.plugin.refreshHexMap();
-      if (key === "biomesFolder") void this.plugin.biomeStore.reload();
       moduleFolderSettings().find((d) => d.key === key)?.changed?.(this.plugin);
       if (key === "iconsFolder") this.plugin.loadAvailableIcons();
     });

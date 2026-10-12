@@ -16,7 +16,7 @@ import { worldBiomes } from "./worldBiomes";
 import { seamStats, interiorAgreement } from "./regionGen";
 import { newWorldId } from "../worldgen/world";
 
-export const SANDBOX_MARKER = ".hexmaker-sandbox";
+export { SANDBOX_MARKER } from "../sandbox";
 
 export interface DemoWorldReport {
   overworld: string;

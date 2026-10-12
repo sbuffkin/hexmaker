@@ -24,6 +24,7 @@
 
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import type { ModuleStore } from "../modules/types";
 import { normalizeFolder } from "../utils";
 import { writeJsonBackup } from "../backup";
 import {
@@ -89,7 +90,9 @@ export function climatesToAdd(
   return { add, done: now };
 }
 
-export class BiomeStore implements BiomeStoreApi {
+export class BiomeStore implements BiomeStoreApi, ModuleStore {
+  /** Its id among the modules' stores (src/modules/types.ts ModuleStore). */
+  readonly id = "biomes";
   private entries = new Map<string, Entry>();
   private lastContent = new Map<string, string>();
   private reported = new Map<string, string>();
@@ -236,6 +239,11 @@ export class BiomeStore implements BiomeStoreApi {
   }
 
   // ── vault events ───────────────────────────────────────────────────────
+
+  /** A new file reads like a changed one. */
+  onCreate(f: TAbstractFile): void {
+    this.onModify(f);
+  }
 
   onModify(f: TAbstractFile): void {
     if (!this.isBiomeFile(f)) return;

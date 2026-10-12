@@ -20,7 +20,7 @@ import type { MapPath, PathType, TerrainColor } from "../types";
 import { generatedToMapPaths } from "../paths/fromGenerated";
 import { pathTypeStyleFor } from "../paths/mapContext";
 import type { RouteContext } from "../paths/router";
-import { ownerOf } from "../overworld/pathProjection";
+import { ownerOf } from "../paths/pathColumns";
 import type { StyleFor } from "../paths/resolve";
 import {
   learnModel,

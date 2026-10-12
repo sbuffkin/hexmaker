@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { ADDED_PRESET_PATH_FIELDS, ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE, EXPANDED_PALETTE_NAME, LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES, DEFAULT_TERRAIN_PALETTE, EXPANDED_PALETTE_NAME, LIMITED_TERRAIN_PALETTE } from "../src/constants";
+import { registry } from "../src/modules";
+
+// The World maps module's one-time path-type field (River carves, P7).
+const ADDED_PRESET_PATH_FIELDS = registry.addedPresetPathFields();
 import { PALETTE_PRESETS } from "../src/palettes/presets";
 import { addedKey, applyPresetPathFields, applyPresetTerrains, pathFieldKey, planPresetPathFields, planPresetTerrains } from "../src/palettes/presetUpdates";
 import { pathTableHasColumn } from "../src/palettes/pathTypeTable";

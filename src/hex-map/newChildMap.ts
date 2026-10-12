@@ -3,10 +3,9 @@ import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { RegionSettings, SubmapKind } from "../types";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
-import { DEFAULT_REGION_SETTINGS, regionMapAt } from "../maps/submaps";
+import { DEFAULT_REGION_SETTINGS, meshes, regionMapAt } from "../maps/submaps";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
-import { meshes } from "../overworld/regionWorld";
-import { RegionGenModal } from "./BiomeModals";
+import { worldMaps } from "../modules/runtime";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 import { registry } from "../modules";
 
@@ -67,8 +66,9 @@ export function startNewRegion(host: NewChildMapHost, parentMap: string, x: numb
   const go = (settings: RegionSettings) => {
     // Rectangles join their neighbours: the region form (biome, blend, seed,
     // live preview) makes it in its slot of the shared grid.
-    if (meshes(settings)) {
-      new RegionGenModal({
+    const wm = worldMaps();
+    if (wm && meshes(settings)) {
+      new wm.RegionGenModal({
         app: host.app,
         plugin: host.plugin,
         enter: (name) => host.onEnter?.(name),

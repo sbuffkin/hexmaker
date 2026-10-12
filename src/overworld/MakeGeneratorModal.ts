@@ -10,7 +10,7 @@
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { makeRegionGenerator, overwriteTargets, type OverwriteCandidate } from "../worldgen/regionGenerator";
+import { makeRegionGenerator, overwriteTargets, type OverwriteCandidate } from "./regionGenerator";
 import { slugify } from "../utils";
 
 /** Open the "Make generator from this map" dialog. */

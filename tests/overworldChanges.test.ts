@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { overworldRefreshFor } from "../src/overworld/overworldChanges";
-import { blankSlots } from "../src/hex-map/overworldLayer";
+import { blankSlots } from "../src/overworld/overworldLayer";
 import { RegionBitmapCache } from "../src/overworld/overworldRender";
 
 const region = { name: "ow-2-2", submapKind: "region", parent: { map: "ow", hex: "2_2" } };

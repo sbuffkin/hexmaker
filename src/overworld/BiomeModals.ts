@@ -16,10 +16,10 @@ import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
-import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, representableBiomes, representativeTerrain, type BiomeId } from "../overworld/biomes";
-import { REGION_WARP, type BlendWidth } from "../overworld/blendField";
-import { regionCells } from "../overworld/layout";
-import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "../overworld/overworldRender";
+import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, representableBiomes, representativeTerrain, type BiomeId } from "./biomes";
+import { REGION_WARP, type BlendWidth } from "./blendField";
+import { regionCells } from "./layout";
+import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "./overworldRender";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { BiomeLibraryModal, openBiomeGenerator } from "./BiomeLibraryModal";
 import {
@@ -33,7 +33,7 @@ import {
   reshapeLock,
   setBiomeAt,
   type RegionGenOptions,
-} from "../overworld/regionsVault";
+} from "./regionsVault";
 
 export interface BiomeHost {
   app: App;

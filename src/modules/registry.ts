@@ -127,6 +127,11 @@ export class ModuleRegistry {
     return this.modules.flatMap((m) => [...(m.tableConditions ?? [])]);
   }
 
+  /** Path-type fields the modules added to the shipped path types (one-time upgrade), in registry order. */
+  addedPresetPathFields(): { pathType: string; field: "carves" | "carveWidth" }[] {
+    return this.modules.flatMap((m) => [...(m.addedPresetPathFields ?? [])]);
+  }
+
   /** Generator ids palettes' Submap defaults name, in registry order. */
   submapGeneratorIds(): string[] {
     return this.modules.flatMap((m) => [...(m.submapGeneratorIds ?? [])]);

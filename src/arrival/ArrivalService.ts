@@ -30,8 +30,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { randomSeed } from "../../packages/hex-wfc/src/rng";
 import { chainLabel, resolveRoll, type ResolvedOdds, type TableLookup } from "../random-tables/resolve";
 import { hexChildMaps, regionMapAt } from "../maps/submaps";
-import { createRegion, hexBiomeAt, inOverworldGrid, overworldOf, regenerateRegion } from "../overworld/regionsVault";
-import { biomeNoteOf } from "../overworld/biomes";
 import { OnceTracker, type FiredEvent } from "./eventsLedger";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { buildSubmapContext } from "../worldgen/submapContext";
@@ -48,7 +46,7 @@ import {
   type TerrainGeneratorKind,
 } from "../worldgen/registry";
 import { attrsForTerrain } from "../worldgen/tableSources";
-import { moduleArrivalTables } from "../modules/runtime";
+import { moduleArrivalTables, worldMaps } from "../modules/runtime";
 import { canRerollPlace, REROLL_PLACE_LOCKED_HINT, workModeOf, type ModeAction } from "../workMode";
 import { lockedNotice } from "../hex-map/godOffer";
 import {
@@ -97,11 +95,12 @@ export class ArrivalService {
     const key = keyOf(x, y);
     const h = plugin.mapStore.get(mapName, key);
     if (h?.locked) return "This hex is locked.";
-    if (this.isOverworld(mapName)) {
+    const wm = worldMaps();
+    if (wm && this.isOverworld(mapName)) {
       // An overworld's hexes are regions: arriving makes the region.
       if (regionMapAt(plugin.settings.maps, mapName, key)) return "This hex already has a region.";
-      if (!inOverworldGrid(plugin.getMap(mapName)!, x, y)) return "This hex is off the map.";
-      if (!h?.onArrival && !hexBiomeAt(plugin, mapName, key)) return "This hex has no biome yet.";
+      if (!wm.inOverworldGrid(plugin.getMap(mapName)!, x, y)) return "This hex is off the map.";
+      if (!h?.onArrival && !wm.hexBiomeAt(plugin, mapName, key)) return "This hex has no biome yet.";
       return null;
     }
     if (hexChildMaps(h).some((m) => !!plugin.getMap(m))) return "This hex already has a map.";
@@ -110,7 +109,7 @@ export class ArrivalService {
 
   /** A map whose regions join up (an overworld): arrival makes regions there. */
   isOverworld(mapName: string): boolean {
-    return !!overworldOf(this.plugin, mapName);
+    return !!worldMaps()?.overworldOf(this.plugin, mapName);
   }
 
   /** Whether "Go there" makes a place at hex (x, y). */
@@ -366,7 +365,7 @@ export class ArrivalService {
 
   /** A biome's name as written. */
   private biomeText(id: string): string {
-    return biomeNoteOf(id)?.label ?? id;
+    return worldMaps()?.biomeNoteOf(id)?.label ?? id;
   }
 
   /**
@@ -377,6 +376,8 @@ export class ArrivalService {
    */
   private async arriveRegion(mapName: string, x: number, y: number): Promise<string | null> {
     const { plugin } = this;
+    const wm = worldMaps();
+    if (!wm) return null;
     const parent = plugin.getMap(mapName)!;
     const key = keyOf(x, y);
     const pseed = this.seedOf(mapName);
@@ -387,7 +388,7 @@ export class ArrivalService {
       plugin.refreshHexMap();
       return null;
     }
-    const biome = hexBiomeAt(plugin, mapName, key);
+    const biome = wm.hexBiomeAt(plugin, mapName, key);
     if (!biome) {
       await plugin.saveSettings();
       new Notice(`Nothing to make at ${hexText(key)}: the hex has no biome.`);
@@ -395,7 +396,7 @@ export class ArrivalService {
       return null;
     }
     const seed = arrivalSeed(pseed, key, "submap", 0);
-    const res = await createRegion(plugin, mapName, x, y, { fill: "match", biome, seed, arrival: true });
+    const res = await wm.createRegion(plugin, mapName, x, y, { fill: "match", biome, seed, arrival: true });
     if ("error" in res) {
       await plugin.saveSettings();
       new Notice(res.error);
@@ -427,16 +428,18 @@ export class ArrivalService {
   /** Make a region made on arrival again: the next seed, its biome as the overworld has it now. Locked cells stay. */
   private async rerollRegion(mapName: string): Promise<boolean> {
     const { plugin } = this;
+    const wm = worldMaps();
+    if (!wm) return false;
     const map = plugin.getMap(mapName)!;
     const { map: parentName, hex } = map.parent!;
     const n = (map.arrivalRerolls ?? 0) + 1;
     const seed = arrivalSeed(this.seedOf(parentName), hex, "submap", n);
     await plugin.events.forgetMap(mapName);
-    await regenerateRegion(plugin, mapName, { seed, arrival: true });
+    await wm.regenerateRegion(plugin, mapName, { seed, arrival: true });
     map.arrivalRerolls = n;
     await plugin.saveSettings();
     await plugin.mapStore.flush();
-    const biome = hexBiomeAt(plugin, parentName, hex);
+    const biome = wm.hexBiomeAt(plugin, parentName, hex);
     await plugin.mapStore.editNoteText(mapName, (c) => restateArrival(c, {
       made: { generator: `the ${biome ? this.biomeText(biome) : "region's"} biome`, palette: map.paletteName, cols: map.gridSize.cols, rows: map.gridSize.rows, seed },
       rerolls: n,

@@ -16,11 +16,11 @@
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
-import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "../overworld/biomeNote";
-import { copyClimate } from "../overworld/biomeClimate";
-import { SIMILAR } from "../overworld/biomes";
-import { hexBiomeAt, regionBiomeStatus } from "../overworld/regionsVault";
-import { generatorText, learnGeneratorFromMap, listGenerators, saveGeneratorFromMap, sourceMapsOf, type GeneratorFile } from "./generators";
+import { biomeSlug, type BiomeMixRow, type BiomeNoteFields, type BiomeTerrainWeight } from "./biomeNote";
+import { copyClimate } from "./biomeClimate";
+import { SIMILAR } from "./biomes";
+import { hexBiomeAt, regionBiomeStatus } from "./regionsVault";
+import { generatorText, learnGeneratorFromMap, listGenerators, saveGeneratorFromMap, sourceMapsOf, type GeneratorFile } from "../worldgen/generators";
 
 export type OverwriteReason = "own" | "parent" | "learned" | "related" | "other";
 

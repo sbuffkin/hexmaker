@@ -21,20 +21,15 @@ import {
 } from "../worldgen/neighbours";
 import { regionsOf, removeMapPatch } from "../maps/submaps";
 import { RegionSettingsModal } from "./newChildMap";
-import { openMakeGenerator } from "./MakeGeneratorModal";
-import { GenerateRegionsModal, NewOverworldModal } from "./OverworldModals";
-import { REGENERATE_LOCKED_HINT } from "../overworld/overworldGen";
-import { canReshape, lockedHint } from "../workMode";
+import { lockedHint } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { addGodOffer } from "./godOffer";
-import { meshes } from "../overworld/regionWorld";
-import { missingRegionHexes } from "../overworld/regionsVault";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 import { renderArrivalSetting } from "./mapTablesForm";
-import { moduleMapProperties } from "../modules/runtime";
+import { moduleMapProperties, worldMaps } from "../modules/runtime";
 import { PlacedMenu } from "../ui/placedMenu";
 import { Disclosure } from "../ui/disclosure";
 import { isDebugMode } from "../ui/debugMode";
@@ -128,11 +123,8 @@ export class MapModal extends HexmakerModal {
       if (tab === "Properties") {
         tabBar.createEl("button", { text: "New map…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn" })
           .addEventListener("click", () => this.openNewMap());
-        tabBar.createEl("button", { text: "New overworld…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn", attr: { title: "A map of biomes whose hexes open into regions that join up" } })
-          .addEventListener("click", () => {
-            this.close();
-            this.plugin.openNewOverworld();
-          });
+        // World maps' New overworld… (a build without World maps has none).
+        worldMaps()?.addNewOverworldTab(tabBar, this.plugin, () => this.close());
       }
       btn.addEventListener("click", () => {
         this.activeTab = tab;
@@ -183,28 +175,14 @@ export class MapModal extends HexmakerModal {
       locked,
       onChange: (s) => void this.plugin.setRegionSettings(map.name, s),
     });
-    if (meshes(map.regions)) {
-      const missing = missingRegionHexes(this.plugin, map.name).length;
-      const row = el.createDiv({ cls: "duckmage-region-row" });
-      const btn = row.createEl("button", { text: missing ? `Make the missing regions (${missing})…` : "Every painted hex has a region" });
-      btn.disabled = !missing;
-      row.createSpan({ cls: "duckmage-map-origin-desc", text: "One region per painted hex, each blending with its neighbours." });
-      btn.addEventListener("click", () => {
-        new GenerateRegionsModal(this.app, this.plugin, map.name, () => {
-          this.render();
-          this.onChanged();
-        }).open();
-      });
-      // The first pass again, over the whole map (God only; locked hexes kept).
-      const genRow = el.createDiv({ cls: "duckmage-region-row" });
-      const gen = genRow.createEl("button", { text: "Generate overworld…" });
-      const genDesc = genRow.createSpan({ cls: "duckmage-map-origin-desc", text: canReshape(map) ? "Lay out biomes from a pool again and remake the regions. Locked hexes stay." : REGENERATE_LOCKED_HINT });
-      if (!canReshape(map)) addGodOffer(genDesc, this.plugin, map.name, REGENERATE_LOCKED_HINT, () => this.render());
-      gen.addEventListener("click", () => {
-        this.close();
-        new NewOverworldModal(this.app, this.plugin, () => this.onChanged(), map.name).open();
-      });
-    }
+    // World maps: make the missing regions, generate the overworld again.
+    worldMaps()?.renderOverworldRegionRows(el, {
+      app: this.app,
+      plugin: this.plugin,
+      render: () => this.render(),
+      changed: () => this.onChanged(),
+      close: () => this.close(),
+    }, map);
     if (!regions.length) return;
     el.createEl("h4", { text: `Regions (${regions.length})` });
     const list = el.createEl("ul", { cls: "duckmage-region-list" });
@@ -362,15 +340,18 @@ export class MapModal extends HexmakerModal {
               onClick: () => void this.openGenerator(map.name, existing),
             });
           }
-          // New, or over an existing one (the region's biome's and its parents' first), PR1.
-          layers.add("MapModal.mapRowContextMakeGenerator", {
-            label: `Make generator from ${this.plugin.mapLabel(map.name)}…`,
-            icon: existing ? "plus" : "wand-sparkles",
-            onClick: () => {
-              this.close();
-              openMakeGenerator(this.app, this.plugin, map.name);
-            },
-          });
+          // New, or over an existing one (the region's biome's and its parents' first), PR1 (World maps).
+          const wmake = worldMaps();
+          if (wmake) {
+            layers.add("MapModal.mapRowContextMakeGenerator", {
+              label: `Make generator from ${this.plugin.mapLabel(map.name)}…`,
+              icon: existing ? "plus" : "wand-sparkles",
+              onClick: () => {
+                this.close();
+                wmake.openMakeGenerator(this.app, this.plugin, map.name);
+              },
+            });
+          }
           layers.finish(() => at);
           menu.showAtPosition(at);
         });

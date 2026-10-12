@@ -26,6 +26,7 @@ import type { ProcGrid } from "../worldgen/procedural/common";
 import type { MapData, MapPath, TerrainColor } from "../types";
 import type { LatticeGrid, Pt } from "../paths/pathGeometry";
 import type { TableSource } from "../worldgen/tableRoles";
+import type { WorldMapsApi } from "./world-maps/api";
 import type { TAbstractFile } from "obsidian";
 
 /** A map type id ("world", "space"). Stable, never reused. */
@@ -207,6 +208,13 @@ export interface HexmakerModule {
   pathRoles?: Readonly<Record<string, string>>;
   /** Kinds of map a first map can be (setup wizard). */
   mapScales?: readonly MapScaleDef[];
+  /**
+   * Fields this module added to the shipped path types after palettes
+   * copied them (World maps: River's Carves), set once where a palette never
+   * set them (src/palettes/presetUpdates.ts). A build without the module
+   * runs no such upgrade.
+   */
+  addedPresetPathFields?: readonly { pathType: string; field: "carves" | "carveWidth" }[];
   /** Generator ids a palette's Submap defaults name (listed in the palette note's help line). */
   submapGeneratorIds?: readonly string[];
   /** Data the module owns (release slicing derives its lists from these). */
@@ -391,4 +399,21 @@ export interface ModuleRuntime {
    * option key → id), so the placement map places each one.
    */
   newMapOptionIds?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  /**
+   * After the core's stores and this module's own have loaded: its
+   * one-time data upgrades (World maps: the Biome columns, BC1).
+   */
+  afterStoresReady?(plugin: HexmakerPlugin): Promise<unknown>;
+  /** More folders of this module's notes (left out of template-note rules), besides its stores'. */
+  folders?(plugin: HexmakerPlugin): string[];
+  /** Sandbox-only helpers for dev scripts, offered when the vault has the sandbox marker. */
+  devTools?(plugin: HexmakerPlugin): Record<string, (...args: never[]) => unknown>;
+  /** Map types were just turned on (any of them): install what this module needs for them. */
+  onKindsEnabled?(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void>;
+  /**
+   * World maps' hooks into the core's map surfaces (overworlds, regions,
+   * biomes, walking). Named, not generic: the core reaches them through
+   * src/modules/runtime.ts worldMaps() and `import type` only.
+   */
+  worldMaps?(): WorldMapsApi;
 }

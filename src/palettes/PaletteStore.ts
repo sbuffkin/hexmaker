@@ -22,7 +22,8 @@ import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } fr
 import { clonePathTypes, parsePathTypes, pathTableHasColumn, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
 import { writeJsonBackup } from "../backup";
 import { fillLegacyPathTypes } from "./pathTypeLegacy";
-import { ADDED_PRESET_PATH_FIELDS, ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
+import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
+import { registry } from "../modules";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
 import { inferTerrainType, refinedTerrainType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
@@ -638,7 +639,7 @@ export class PaletteStore {
       const path = this.boundPath.get(pal);
       return path === undefined ? undefined : this.lastContent.get(path);
     };
-    const plan = planPresetPathFields(settings.terrainPalettes, ADDED_PRESET_PATH_FIELDS, done, DEFAULT_PATH_TYPES, (pal, field) => {
+    const plan = planPresetPathFields(settings.terrainPalettes, registry.addedPresetPathFields(), done, DEFAULT_PATH_TYPES, (pal, field) => {
       const content = noteOf(pal);
       return content !== undefined && !pathTableHasColumn(content, field);
     });
