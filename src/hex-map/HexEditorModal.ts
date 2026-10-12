@@ -1,3 +1,4 @@
+import { effectiveTerrainType } from "../terrainTypes";
 import { App, Notice, TFile } from "obsidian";
 import { canDo } from "../modeGate";
 import { lockedHint, workModeOf, type ModeAction } from "../workMode";
@@ -1612,8 +1613,13 @@ export class HexEditorModal extends HexmakerModal {
   private rollTarget(defaultSection: string): RollHexTarget {
     const hx = this.x;
     const hy = this.y;
+    // The hex's terrain and its type: When context for the roll (hexRoll.ts).
+    const terrain = getTerrainFromFile(this.app, this.plugin.hexPath(hx, hy, this.mapName)) ?? undefined;
+    const entry = terrain ? this.plugin.getMapPalette(this.mapName).find((t) => t.name === terrain) : undefined;
+    const type = entry ? effectiveTerrainType(entry) : undefined;
     return {
       label: `hex ${hx}, ${hy}`,
+      context: { ...(terrain ? { terrain } : {}), ...(type ? { type } : {}) },
       sections: [...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
       defaultSection,
       add: async (key, text) => {

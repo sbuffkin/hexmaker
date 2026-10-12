@@ -891,7 +891,10 @@
     "star|procedural:orbits|Star|star",
     "inner-orbits|procedural:orbits|Inner orbits|world,gas-giant,asteroids",
     "habitable-orbits|procedural:orbits|Habitable orbits|world,gas-giant,asteroids",
-    "outer-orbits|procedural:orbits|Outer orbits|world,gas-giant,asteroids"
+    "outer-orbits|procedural:orbits|Outer orbits|world,gas-giant,asteroids",
+    "moons|procedural:orbits|Moons|moon",
+    "system-extras|procedural:orbits|System extras|starport,station,jump-point,comet",
+    "names|maps|Names|"
   ],
   "defaultPathTypeFor": {
     "routes": "Jump route",

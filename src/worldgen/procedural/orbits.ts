@@ -1,5 +1,6 @@
 import { hexCenter, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
+import { effectiveTerrainType, normalizeTerrainType } from "../../terrainTypes";
 import {
   cellKey,
   centerHex,
@@ -12,7 +13,7 @@ import {
   type ProcPath,
   type ProcResult,
 } from "./common";
-import { ZONE_ROLES, roleOdds, rollRole, type TableSource } from "../tableRoles";
+import { ZONE_ROLES, readCount, roleOdds, roleValueOdds, rollRole, rollRoleEach, rollRoleValue, type TableSource } from "../tableRoles";
 import { ORBIT_ZONES, orbitZone } from "../../space/worldTypes";
 
 /**
@@ -34,6 +35,13 @@ import { ORBIT_ZONES, orbitZone } from "../../space/worldTypes";
  * table when one is given, else equal odds over the palette's stars and
  * bodies. The sector hex's row says which body is the mainworld (its
  * Mainworld column). No terrain name is special.
+ *
+ * How many moons each planet gets, and the system's extras (starport,
+ * station, jump point, comet), are rolled on the Moons and System extras
+ * roles: the shipped tables (src/modules/space/tables, today's odds) unless
+ * a map or setup names its own (T12). An extra's Result is a terrain or a
+ * terrain type (the palette's first terrain of that type), so the shipped
+ * table works on any palette.
  */
 
 export const ORBITS_ID = "procedural:orbits";
@@ -140,6 +148,7 @@ export function orbits(
     return { cells: new Map(), paths: [], warnings: ["This palette has no void, star, or planet terrains."] };
   }
   const rand = mulberry32(seed);
+  const bodyType = new Map(terrains.map((t) => [t.name, effectiveTerrainType(t)]));
   const hexes = gridKeys(grid);
   const center = centerHex(grid);
   const cells = new Map<string, string>();
@@ -227,12 +236,13 @@ export function orbits(
     planets.push({ pos, body });
     if (d === mainRing) mainworld = pos;
     else if (zone === "habitable" && !mainworld && mainRing < 0) mainworld = pos;
-    // Moons sit on free hexes next to their planet: giants often have one
-    // or two, rocky worlds sometimes one.
+    // Moons sit on free hexes next to their planet, as many as the Moons
+    // table says for the planet's type (shipped: giants often one or two,
+    // rocky worlds sometimes one).
     if (roles.moon) {
-      const giant = roles.giants.includes(body);
-      let moons = rand() < (giant ? 0.7 : 0.3) ? 1 : 0;
-      if (giant && moons && rand() < 0.35) moons++;
+      const rolled = rollRoleValue(tables, "moons", { rand, type: bodyType.get(body), zone, ring: d, star });
+      let moons = readCount(rolled) ?? 0;
+      if (rolled && readCount(rolled) === undefined) notes.add(`Moons: "${rolled.value}" isn't a number of moons, so none.`);
       const free = hexes.filter((h) => distance(h, pos, grid) === 1 && isFree(h));
       for (; moons > 0 && free.length; moons--) {
         set(free.splice(Math.floor(rand() * free.length), 1)[0], roles.moon);
@@ -242,9 +252,12 @@ export function orbits(
   }
 
   // The description promises moons: a system with a planet always gets at
-  // least one (round 7: a generated system had none). Giants first, then
-  // the other planets, in a seeded order; the first with a free neighbour.
-  if (roles.moon && moonCount === 0 && planets.length) {
+  // least one (round 7: a generated system had none), unless the Moons
+  // table never gives one to any planet here. Giants first, then the other
+  // planets, in a seeded order; the first with a free neighbour.
+  const canHaveMoons = (body: string) => roleValueOdds(tables, "moons", { type: bodyType.get(body), star })
+    .some((o) => o.odds > 0 && (readCount(o) ?? 0) > 0);
+  if (roles.moon && moonCount === 0 && planets.length && planets.some((p) => canHaveMoons(p.body))) {
     const giants = planets.filter((p) => roles.giants.includes(p.body));
     const pool = giants.length ? giants : planets;
     const start = Math.floor(rand() * pool.length);
@@ -258,25 +271,52 @@ export function orbits(
     }
   }
 
-  // Installations beside the mainworld (or the first body if none was habitable).
+  // System extras, each on its own Chance: beside the mainworld (or the
+  // first body if none was habitable), or out past the last orbit.
   const anchor = mainworld ?? hexes.find((h) => roles.bodies.includes(cells.get(cellKey(h[0], h[1]))!));
-  if (anchor) {
-    const free = hexes.filter((h) => distance(h, anchor, grid) === 1
-      && cells.get(cellKey(h[0], h[1])) === roles.background);
-    const pickFree = () => free.splice(Math.floor(rand() * free.length), 1)[0];
-    if (roles.starport && free.length) set(pickFree(), roles.starport);
-    if (roles.station && free.length && rand() < 0.5) set(pickFree(), roles.station);
+  const isBackground = (h: [number, number]) => cells.get(cellKey(h[0], h[1])) === roles.background;
+  const spots = {
+    beside: () => (anchor ? hexes.filter((h) => distance(h, anchor, grid) === 1 && isBackground(h)) : []),
+    outside: () => hexes.filter((h) => (dist.get(cellKey(h[0], h[1])) ?? 0) > last && isBackground(h)),
+  };
+  for (const extra of rollRoleEach(tables, "system-extras", { rand, star })) {
+    if (extra.kind === "nothing") continue;
+    const terrain = terrainOrType(extra.value, terrains);
+    if (!terrain) {
+      // A terrain type the palette has no terrain of is skipped quietly (no comets on this palette).
+      if (!normalizeTerrainType(extra.value)) notes.add(`System extras: "${extra.value}" isn't a terrain or terrain type of this palette, so it isn't placed.`);
+      continue;
+    }
+    const where = extraWhere(extra.attrs);
+    if (!where) notes.add(`System extras: Where "${extra.attrs.Where ?? ""}" should be beside mainworld or outside; ${terrain} goes outside.`);
+    const free = spots[where ?? "outside"]();
+    if (free.length) set(free[Math.floor(rand() * free.length)], terrain);
+    else if ((where ?? "outside") === "outside" && maxD > last + 1) warnings.push(`No room outside the orbits for ${terrain}.`);
   }
-
-  // Out past the last orbit: a jump point and maybe a comet.
-  const outer = hexes.filter((h) => (dist.get(cellKey(h[0], h[1])) ?? 0) > last
-    && cells.get(cellKey(h[0], h[1])) === roles.background);
-  const takeOuter = () => outer.splice(Math.floor(rand() * outer.length), 1)[0];
-  if (roles.jumpPoint && outer.length) set(takeOuter(), roles.jumpPoint);
-  if (roles.comet && outer.length && rand() < 0.6) set(takeOuter(), roles.comet);
-  if (maxD > last + 1 && outer.length === 0) warnings.push("No room outside the orbits for a jump point.");
+  for (const n of notes) if (!warnings.includes(n)) warnings.push(n);
 
   return { cells, paths, warnings };
+}
+
+/**
+ * A System extras result as a palette terrain: a terrain of that name (any
+ * case), else the first terrain of the terrain type it names ("jump point"
+ * → the palette's jump-point terrain). Undefined when neither.
+ */
+export function terrainOrType(value: string, terrains: readonly TerrainColor[]): string | undefined {
+  const v = value.trim().toLowerCase();
+  const named = terrains.find((t) => t.name.trim().toLowerCase() === v);
+  if (named) return named.name;
+  const type = normalizeTerrainType(value);
+  return type ? terrains.find((t) => effectiveTerrainType(t) === type)?.name : undefined;
+}
+
+/** Where a System extras row goes: its Where cell (blank: outside); undefined when it can't be read. */
+export function extraWhere(attrs: Record<string, string>): "beside" | "outside" | undefined {
+  const raw = Object.entries(attrs).find(([k]) => k.trim().toLowerCase() === "where")?.[1]?.trim().toLowerCase() ?? "";
+  if (raw === "" || /\b(?:outside|outer|past|beyond|edge)\b/.test(raw)) return "outside";
+  if (/\b(?:mainworld|beside|near|next)\b/.test(raw)) return "beside";
+  return undefined;
 }
 
 /** Order hexes on a ring by angle around the centre, so arcs are contiguous. */

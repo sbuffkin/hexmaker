@@ -3,7 +3,9 @@ import { handRollLabel } from "../arrival/eventsLedger";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, rollTable, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
+import { parseRandomTable, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
+import { rollForHex } from "./hexRoll";
+import { layeredLookup, notesLookup } from "./resolve";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { groupTableFiles } from "./tablePickerGroups";
@@ -22,6 +24,8 @@ export interface RollHexTarget {
   sections: readonly { key: string; label: string }[];
   defaultSection: string;
   add: (sectionKey: string, text: string) => Promise<void> | void;
+  /** The hex's terrain and terrain type: a table row's When can ask for them. */
+  context?: { terrain?: string; type?: string };
 }
 
 /**
@@ -371,17 +375,26 @@ export class RandomTableModal extends HexmakerModal {
     });
 
     rollBtn.disabled = false;
+    // The roll goes through the shared resolver (hexRoll.ts): a row that
+    // links another table is rolled through, and the hex's terrain is the
+    // When context. This note's own text wins over the tables folder's copy.
+    const lookup = layeredLookup(notesLookup({ [file.path]: content }), this.plugin.tableNotes.lookup());
     rollBtn.onclick = () => {
-      const outcome = rollTable(table);
-      if (!outcome) return;
+      const roll = rollForHex(file.path, lookup, this.hexTarget?.context ?? {});
+      if (!roll.results.length) return;
+      const taken = new Set(roll.rows.map(String));
       tbody.querySelectorAll("tr").forEach((tr) => {
-        tr.toggleClass("is-rolled", tr.dataset.index === String(outcome.index));
+        tr.toggleClass("is-rolled", taken.has(tr.dataset.index ?? ""));
       });
       resultBox.el.show();
-      const face = handRollLabel(table, outcome);
+      const first = roll.rows.length === 1 ? roll.rows[0] : undefined;
+      const face = [
+        first !== undefined ? handRollLabel(table, { entry: table.entries[first], index: first, ...(roll.face !== undefined ? { face: roll.face } : {}) }) : "",
+        ...roll.chains,
+      ].filter(Boolean).join(" · ");
       resultBox.face.setText(face);
       resultBox.face.toggle(!!face);
-      resultBox.textarea.value = outcome.entry.result;
+      resultBox.textarea.value = roll.text;
     };
   }
 

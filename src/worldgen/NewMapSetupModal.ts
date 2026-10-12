@@ -240,9 +240,11 @@ export class NewMapSetupModal extends HexmakerModal {
     // Submaps start on a short readable name: the hex's name, else its
     // terrain and coordinates, unique among the maps (NAV2, F14). The first
     // click selects it all, so typing replaces it.
+    // A Names table on the parent map (or above it) gives the name when the hex has none.
     nameInput.value = this.origin
       ? defaultSubmapLabel(
-          this.plugin.mapStore.get(this.origin.map, `${this.origin.x}_${this.origin.y}`)?.name,
+          this.plugin.mapStore.get(this.origin.map, `${this.origin.x}_${this.origin.y}`)?.name?.trim()
+            || this.plugin.rolledMapName(this.origin.map, `${this.origin.x}_${this.origin.y}`),
           this.plugin.mapLabel(this.origin.map),
           this.origin.x,
           this.origin.y,

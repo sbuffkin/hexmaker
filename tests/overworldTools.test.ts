@@ -71,6 +71,8 @@ function world(mode?: string) {
 	const plugin = {
 		settings: { maps, hexOrientation: "flat", staggerOffset: "odd" } as Record<string, unknown>,
 		getMap: (n: string) => maps.find((m) => m.name === n),
+
+		rolledMapName: () => undefined,
 		getMapPalette: () => PAL,
 		getPaletteOrPresetTerrains: () => PAL,
 		getPaletteByName: () => undefined,

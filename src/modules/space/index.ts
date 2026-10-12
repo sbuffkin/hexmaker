@@ -12,6 +12,7 @@ import { SPACE_PRESETS } from "./presets";
 import { BUNDLED_SPACE_ICONS } from "./spaceIcons";
 import { SPACE_TABLE_ROLES } from "./tableRoles";
 import { SPACE_TABLE_CONDITIONS } from "./tableConditions";
+import { SPACE_TABLES } from "./shippedTables";
 
 export const spaceModule: HexmakerModule = {
   id: "space",
@@ -47,6 +48,7 @@ export const spaceModule: HexmakerModule = {
   iconPack: { id: "space", label: "Space", prefix: "space-", icons: BUNDLED_SPACE_ICONS },
   palettes: SPACE_PRESETS,
   tableRoles: SPACE_TABLE_ROLES,
+  tables: SPACE_TABLES,
   tableConditions: SPACE_TABLE_CONDITIONS,
   engines: [
     { id: "procedural:star-scatter", label: "Star scatter" },

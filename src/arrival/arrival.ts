@@ -69,7 +69,7 @@ export function hashSeed(...parts: (string | number)[]): number {
   return h >>> 0;
 }
 
-export type SeedPurpose = "arrival" | "submap" | "place";
+export type SeedPurpose = "arrival" | "submap" | "place" | "name";
 
 /**
  * The seed of something under hex `hex` of a map whose seed is

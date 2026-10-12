@@ -32,6 +32,9 @@
  *   attribute, returned with the roll ({column → cell}). Four of them mean
  *   the same everywhere: Roll (`now` or `on arrival`), Shown as, Once
  *   (`per world` or `per map`) and When (tableConditions.ts).
+ * - frontmatter `pick: each`: every row is rolled on its own `Chance`
+ *   column (`always`, `1 in 2`, `60%`), not one row by weight ("roll for
+ *   each line"); see resolveEach in resolve.ts.
  * - `parseRandomTableWithReport(content, { heading })` reads the table
  *   under a heading (a link like `[[Tundra#Mix]]`).
  *
@@ -70,6 +73,8 @@ export interface RowInfo {
   once?: "world" | "map";
   /** When column: the row only fits these contexts. */
   when?: TableCondition[];
+  /** Chance column of a `pick: each` table (0..1). */
+  chance?: number;
 }
 
 export interface RandomTable {
@@ -84,6 +89,8 @@ export interface RandomTable {
   terrainTypes?: string[];
   /** `shown-as:`: the default for the Shown as column. */
   shownAs?: string;
+  /** `pick: each`: every row rolls its own Chance (absent: one row by weight). */
+  pick?: "each";
   /** Per entry (same order): its other columns. Absent when no row has any. */
   rowInfo?: RowInfo[];
 }
@@ -110,6 +117,8 @@ export type TableIssueCode =
   | "roll-unknown"
   | "once-unknown"
   | "when-unknown"
+  | "pick-unknown"
+  | "chance-unknown"
   | "heading-missing";
 
 export interface TableIssue {
@@ -449,6 +458,7 @@ export function parseRandomTableWithReport(content: string, opts: ParseOptions =
   let rows: RowType | undefined;
   let terrainTypes: string[] | undefined;
   let shownAs: string | undefined;
+  let pick: "each" | undefined;
   const fm = frontmatterOf(content);
   let fmDice = 0;
   if (fm) {
@@ -472,6 +482,9 @@ export function parseRandomTableWithReport(content: string, opts: ParseOptions =
     if (tt) terrainTypes = tt.replace(/^\[|\]$/g, "").split(/\s*,\s*/).map((s) => s.trim().toLowerCase()).filter((s) => s !== "");
     const sa = fmValue(fm.body, "shown-as");
     if (sa) shownAs = sa;
+    const pk = fmValue(fm.body, "pick");
+    if (pk && /^(?:each|every|all|each row)$/i.test(pk)) pick = "each";
+    else if (pk && !/^(?:one|weight|weighted)$/i.test(pk)) issues.push({ code: "pick-unknown", message: `"pick: ${pk}" should be each or one; rolling one row.` });
   }
   dice = fmDice;
 
@@ -497,6 +510,7 @@ export function parseRandomTableWithReport(content: string, opts: ParseOptions =
     if (rows) t.rows = rows;
     if (terrainTypes?.length) t.terrainTypes = terrainTypes;
     if (shownAs) t.shownAs = shownAs;
+    if (pick) t.pick = pick;
     return t;
   };
 
@@ -541,7 +555,7 @@ export function parseRandomTableWithReport(content: string, opts: ParseOptions =
         issues.push({ code: "weight-unreadable", row: entries.length + 1, message: `Row ${entries.length + 1} ("${result}"): weight "${w}" isn't a number; counting it as 1.` });
       }
     }
-    info.push(readExtras(result, block.extra.map((i): [string, string] => [block.header[i].trim(), (cells[i] ?? "").trim()]), entries.length + 1, issues));
+    info.push(readExtras(result, block.extra.map((i): [string, string] => [block.header[i].trim(), (cells[i] ?? "").trim()]), entries.length + 1, issues, pick === "each"));
     entries.push(entry);
     block.entryRows.push(rowIdx);
   });
@@ -563,7 +577,7 @@ export function parseRandomTableWithReport(content: string, opts: ParseOptions =
 }
 
 /** A row's other columns: attributes, and the shared Roll / Shown as / Once / When. */
-function readExtras(result: string, cells: [string, string][], rowNo: number, issues: TableIssue[]): RowInfo {
+function readExtras(result: string, cells: [string, string][], rowNo: number, issues: TableIssue[], each = false): RowInfo {
   const entry: RowInfo = {};
   const name = `Row ${rowNo} ("${result}")`;
   for (const [header, cell] of cells) {
@@ -587,6 +601,10 @@ function readExtras(result: string, cells: [string, string][], rowNo: number, is
       } else {
         issues.push({ code: "once-unknown", row: rowNo, message: `${name}: Once "${cell}" should be per world or per map; the row can repeat.` });
       }
+    } else if (key === "chance" && each) {
+      const c = readChance(cell);
+      if (c !== undefined) entry.chance = c;
+      else issues.push({ code: "chance-unknown", row: rowNo, message: `${name}: can't read Chance "${cell}" (like always, 1 in 2 or 60%), so the row never comes up.` });
     } else if (key === "when") {
       const when = parseWhen(cell);
       if (when.length) entry.when = when;
@@ -595,6 +613,26 @@ function readExtras(result: string, cells: [string, string][], rowNo: number, is
     }
   }
   return entry;
+}
+
+/**
+ * A Chance cell (`pick: each` tables) → 0..1: `always`/`yes` 1, `never`/`no`
+ * 0, `1 in 2` or `1/2`, `60%`, or a fraction like `0.6`. Undefined when it
+ * can't be read.
+ */
+export function readChance(raw: string): number | undefined {
+  const t = raw.trim().toLowerCase();
+  if (/^(?:always|yes|every time)$/.test(t)) return 1;
+  if (/^(?:never|no)$/.test(t)) return 0;
+  const inM = /^(\d+(?:\.\d+)?)\s*(?:in|\/|out of)\s*(\d+(?:\.\d+)?)$/.exec(t);
+  if (inM) {
+    const n = Number(inM[1]), d = Number(inM[2]);
+    return d > 0 && n <= d ? n / d : undefined;
+  }
+  const pct = /^(\d+(?:\.\d+)?)\s*%$/.exec(t);
+  if (pct) return Number(pct[1]) <= 100 ? Number(pct[1]) / 100 : undefined;
+  if (/^(?:0|1|0?\.\d+)$/.test(t)) return Number(t);
+  return undefined;
 }
 
 // ── Ranges ──────────────────────────────────────────────────────────────────

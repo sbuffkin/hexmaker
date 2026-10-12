@@ -59,7 +59,7 @@ import {
 } from "./palettes/presets";
 import { clonePathTypes } from "./palettes/pathTypeTable";
 import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons } from "./utils";
-import { STARTER_RUMORS, STARTER_WEATHER, starterTablePath } from "./regionTables";
+import { shippedTablesToInstall } from "./random-tables/shippedTables";
 import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
@@ -82,7 +82,9 @@ import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
 import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
-import type { RoleId } from "./worldgen/tableRoles";
+import { NAMES_ROLE, type RoleId } from "./worldgen/tableRoles";
+import { rollMapName } from "./maps/mapNames";
+import { effectiveTerrainType } from "./terrainTypes";
 import { ArrivalService } from "./arrival/ArrivalService";
 import { EventsService } from "./arrival/EventsService";
 import type { FiredEvent } from "./arrival/eventsLedger";
@@ -1255,6 +1257,35 @@ export default class HexmakerPlugin extends Plugin {
     return changed;
   }
 
+  /**
+   * Write the shipped table notes of the modules of `kinds` (default: the
+   * map types that are on) that the tables folder doesn't have yet
+   * (plan-tables-everywhere phase 6). A note that's there, edited or not,
+   * is never touched; nothing is written when every one is there.
+   * Returns the paths written.
+   */
+  async installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> {
+    const plan = shippedTablesToInstall(registry.shippedTables(kinds), normalizeFolder(this.settings.tablesFolder), (p) => !!this.app.vault.getAbstractFileByPath(p));
+    const written: string[] = [];
+    for (const t of plan) {
+      const parts = t.path.split("/").slice(0, -1);
+      for (let i = 1; i <= parts.length; i++) {
+        const dir = parts.slice(0, i).join("/");
+        if (!this.app.vault.getAbstractFileByPath(dir)) {
+          try { await this.app.vault.createFolder(dir); } catch { /* made meanwhile */ }
+        }
+      }
+      try {
+        await this.app.vault.create(t.path, t.text);
+        this.tableNotes.put(t.path, t.text);
+        written.push(t.path);
+      } catch {
+        /* made meanwhile */
+      }
+    }
+    return written;
+  }
+
   /** Add roller blocks to the table notes in the tables folder that lack one. */
   async ensureAllRollerLinks(): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
@@ -1282,6 +1313,7 @@ export default class HexmakerPlugin extends Plugin {
    */
   async ensureTerrainTables(
     terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)),
+    kinds: Iterable<string> = enabledKinds(this.settings),
   ): Promise<void> {
     const folder = normalizeFolder(this.settings.tablesFolder);
 
@@ -1315,29 +1347,11 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
 
-    // Starter weather and rumours tables (E2): rolled from the hex editor
-    // when the map and hex don't name their own.
-    for (const [section, rows] of [["weather", STARTER_WEATHER], ["hooks & rumors", STARTER_RUMORS]] as const) {
-      const path = starterTablePath(folder, section);
-      if (this.app.vault.getAbstractFileByPath(path)) continue;
-      try {
-        await this.app.vault.create(
-          path,
-          makeTableTemplate(
-            this.settings.defaultTableDice,
-            {
-              "table-type": section === "weather" ? "weather" : "rumors",
-              "roll-filter": false,
-              "encounter-filter": false,
-            },
-            this.buildRollerLink(),
-            rows,
-          ),
-        );
-      } catch {
-        /* ignore */
-      }
-    }
+    // The modules' shipped tables: the starter weather and rumours tables
+    // (E2, rolled from the hex editor when the map and hex don't name their
+    // own) and the space generators' optional role tables. Data, never
+    // written over a note that's there.
+    await this.installShippedTables([...kinds]);
 
     // Terrain-specific tables
     const subfolder = folder ? `${folder}/terrain` : "terrain";
@@ -2760,6 +2774,25 @@ export default class HexmakerPlugin extends Plugin {
    */
   roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> {
     return inheritedRoleTables(mapName, (m) => this.getMap(m)?.roleTables, (m) => this.parentOf(m)?.map);
+  }
+
+  /**
+   * A name for a map made from hex `hexKey` of `parentMap`, rolled on the
+   * Names table set there or on a map above it (the Names role), with the
+   * hex's terrain and type as When context. Undefined with no table (the
+   * caller uses the hex's terrain and coordinates). Seeded with `seed`.
+   */
+  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined {
+    const link = this.roleTablesFor(parentMap)[NAMES_ROLE.id]?.link;
+    if (!link) return undefined;
+    const terrain = this.mapStore.get(parentMap, hexKey)?.terrain ?? this.getMap(parentMap)?.baseTerrain;
+    const entry = terrain ? this.getMapPalette(parentMap).find((t) => t.name === terrain) : undefined;
+    const type = entry ? effectiveTerrainType(entry) : undefined;
+    return rollMapName(link, this.tableNotes.lookup(), {
+      ...(terrain ? { terrain } : {}),
+      ...(type ? { type } : {}),
+      ...(seed !== undefined ? { seed } : {}),
+    });
   }
 
   /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */

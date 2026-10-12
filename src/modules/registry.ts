@@ -15,6 +15,7 @@ import type {
   IconPackDef,
   KindId,
   KindInfo,
+  ShippedTableDef,
   TableConditionDef,
   TerrainGroupDef,
   TerrainTypeDef,
@@ -115,6 +116,17 @@ export class ModuleRegistry {
 
   tableRoles(): EngineRoleDef[] {
     return this.modules.flatMap((m) => [...(m.tableRoles ?? [])]);
+  }
+
+  /**
+   * The table notes the modules ship, each with its module and map type
+   * (undefined: the module isn't a map type). With `kinds`, only those of
+   * modules whose type is in it (or that are no type).
+   */
+  shippedTables(kinds?: readonly KindId[]): (ShippedTableDef & { module: string; kind?: KindId })[] {
+    return this.modules
+      .filter((m) => !kinds || !m.kind || kinds.includes(m.kind.id))
+      .flatMap((m) => (m.tables ?? []).map((t) => ({ ...t, module: m.id, ...(m.kind ? { kind: m.kind.id } : {}) })));
   }
 
   /** Engines the modules' generators run, in registry order. */

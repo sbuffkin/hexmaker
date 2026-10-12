@@ -120,6 +120,8 @@ describe("walkIntoHex: making the next region", () => {
 		const plugin = {
 			settings: { maps, hexOrientation: "flat", staggerOffset: "odd" },
 			getMap: (n: string) => maps.find((m) => m.name === n),
+
+			rolledMapName: () => undefined,
 			getMapPalette: () => DEFAULT_TERRAIN_PALETTE,
 			getPaletteOrPresetTerrains: () => DEFAULT_TERRAIN_PALETTE,
 			mapLabel: (n: string) => n,
