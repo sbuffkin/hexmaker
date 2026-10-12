@@ -6,10 +6,11 @@
  *
  * - header: the region's name (editable, as Map properties' Name) and the
  *   overworld hex it sits on; Enter region, Open map note;
- * - biome: God shows a scrolling picker like the hex editor's terrain
+ * - biome: where the region may be changed (Build while it's new, God
+ *   once it's locked) a scrolling picker like the hex editor's terrain
  *   strip, with Reroll and Settings… (RegionGenModal: options, blend, seed,
- *   live preview). Build and Play show it read-only with one line saying
- *   how to change it (editRegionPlan);
+ *   live preview), and Lock while it's new. Elsewhere it's read-only with
+ *   one line saying how to change it (editRegionPlan);
  * - facts: size and shape, palette, terrain counts (the map note Summary's
  *   counts), neighbouring regions (the nav flower's), locations;
  * - notes: the region map note's `## Notes` section, editable in every
@@ -33,6 +34,7 @@ import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
 import { addGodOffer } from "../hex-map/godOffer";
+import { WORK_MODE_TEXT } from "../workMode";
 import { createIconEl, getIconUrl } from "../utils";
 
 export interface EditRegionHost extends BiomeHost {
@@ -76,7 +78,7 @@ export class EditRegionModal extends HexmakerModal {
       return;
     }
     const overworld = plugin.getMap(this.overworld);
-    const plan = editRegionPlan(overworld);
+    const plan = editRegionPlan(overworld, region);
 
     // ── header: name, where it is, enter / open note ─────────────────────
     const head = contentEl.createDiv({ cls: "duckmage-edit-region-head" });
@@ -194,6 +196,7 @@ export class EditRegionModal extends HexmakerModal {
           new RegionGenModal(this.host, this.overworld, this.px, this.py).open();
         });
       }
+      if (plan.lock) this.addLock(row, name);
       editGenerator(row);
     } else {
       const shown = biomes.find((b) => b.id === current);
@@ -206,7 +209,9 @@ export class EditRegionModal extends HexmakerModal {
         // Changing a placed biome is God's: offer the switch right here (godOffer.ts).
         addGodOffer(hint, plugin, this.overworld, plan.hint, () => this.render());
       }
-      editGenerator(biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" }));
+      const genRow = biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" });
+      if (plan.lock) this.addLock(genRow, name);
+      editGenerator(genRow);
     }
 
     // ── facts ─────────────────────────────────────────────────────────────
@@ -330,6 +335,15 @@ export class EditRegionModal extends HexmakerModal {
     this.host.changed();
     await this.saveNotes();
     this.render();
+  }
+
+  /** Lock: keep this new region as it is (changing it then needs God; GM4's lock, ArrivalService.lock). */
+  private addLock(row: HTMLElement, name: string): void {
+    row.createEl("button", { text: "Lock", attr: { title: `Keep this region as it is (changing or rerolling it then needs ${WORK_MODE_TEXT.god.label} mode)` } })
+      .addEventListener("click", () => void this.host.plugin.arrival.lock(name).then(() => {
+        this.host.changed();
+        this.render();
+      }));
   }
 
   private async reroll(name: string): Promise<void> {

@@ -20,7 +20,7 @@
  */
 
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
-import { canAdd, canReshape, PLACE_LOCKED_HINT } from "../workMode";
+import { canAdd, canChangeRegion, CHANGE_OPEN_REGION_HINT, isOpenPlace, PLACE_LOCKED_HINT } from "../workMode";
 import { parentOf, type RegionLayout } from "./layout";
 
 /** The line under a region's biome in "Edit region…" outside God (shown read-only there). */
@@ -80,24 +80,28 @@ export function overworldMenu(map: Mode, hasRegion: boolean, locations = 0): Ove
 }
 
 /**
- * What "Edit region…" offers in this mode. God: the biome as a picker,
- * with Reroll and Settings… (generator options, live preview). Build and
- * Play: the biome shown read-only with one line saying how to change it,
- * never a wall of disabled buttons. Name and notes are editable in every
- * mode (note text is never locked, WM2).
+ * What "Edit region…" offers in this mode, for this region. A new region
+ * (open, `arrival: open`) may be changed in Build: the biome as a picker,
+ * Reroll, Settings… (generator options, live preview) and Lock. Once
+ * locked, only God may change it. Where it can't be changed: the biome
+ * shown read-only with one line saying how to change it, never a wall of
+ * disabled buttons. Name and notes are editable in every mode (note text
+ * is never locked, WM2). The rule is the policy table's (canChangeRegion).
  */
 export interface EditRegionPlan {
   biome: "pick" | "show";
   reroll: boolean;
   settings: boolean;
+  /** Offer Lock: the region is still open. */
+  lock: boolean;
   /** Shown under a read-only biome. */
   hint?: string;
 }
 
-export function editRegionPlan(map: Mode): EditRegionPlan {
-  return canReshape(map)
-    ? { biome: "pick", reroll: true, settings: true }
-    : { biome: "show", reroll: false, settings: false, hint: BIOME_LOCKED_HINT };
+export function editRegionPlan(map: Mode, region?: { arrival?: string }): EditRegionPlan {
+  const lock = isOpenPlace(region);
+  if (canChangeRegion(map, region)) return { biome: "pick", reroll: true, settings: true, lock };
+  return { biome: "show", reroll: false, settings: false, lock, hint: lock ? CHANGE_OPEN_REGION_HINT : BIOME_LOCKED_HINT };
 }
 
 /**

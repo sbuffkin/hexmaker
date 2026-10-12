@@ -28,7 +28,7 @@ import { regionMapAt } from "../maps/submaps";
 import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeProfiles, biomeRef, biomeSourceVersion, isBlankBiome, noteBiomeProfiles, representativeTerrain, type BiomeId, type BiomeProfile } from "./biomes";
 import { regionCells, type RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
-import { ADD_REGION_LOCKED_HINT, canAdd, canReshape, PLACE_LOCKED_HINT, RESHAPE_LOCKED_HINT } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, canAdd, canChangeRegion, PLACE_LOCKED_HINT, regionChangeHint } from "../workMode";
 import {
   defaultRegionName,
   dominantTerrain,
@@ -393,6 +393,8 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   if ("error" in res) return res;
   const child = plugin.getMap(res.name)!;
   child.world = slot.world;
+  // Every new region starts open: rerollable in Build until it's locked (as a place made on arrival, GM4).
+  child.arrival = "open";
   if (plan?.biome) child.biome = plan.biome;
   if (opts.seed !== undefined) child.regionSeed = opts.seed;
   if (plan?.paths?.length) addGeneratedPaths(plugin, res.name, plan.paths);
@@ -481,13 +483,15 @@ export function regionBlockKeys(layout: RegionLayout, px: number, py: number): s
  * Why setting hex (px, py)'s biome (first placement, or swapping it,
  * rerolling, regenerating, applying region settings) is locked right now,
  * or undefined when it may go ahead. A first placement (no region yet)
- * needs Build or God; changing a region that's already there needs God
- * (src/workMode.ts). No confirm: the mode is the safety catch.
+ * needs Build or God; changing a region that's already there needs Build
+ * while it's new (open) and God once it's locked (canChangeRegion,
+ * src/workMode.ts). No confirm: the mode is the safety catch.
  */
 export function reshapeLock(plugin: HexmakerPlugin, parentName: string, px: number, py: number): string | undefined {
   const map = plugin.getMap(parentName);
-  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return canAdd(map) ? undefined : PLACE_LOCKED_HINT;
-  return canReshape(map) ? undefined : RESHAPE_LOCKED_HINT;
+  const region = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  if (!region) return canAdd(map) ? undefined : PLACE_LOCKED_HINT;
+  return canChangeRegion(map, region) ? undefined : regionChangeHint(region);
 }
 
 /** reshapeLock as a yes/no. */
@@ -503,7 +507,7 @@ export function reshapeGate(plugin: HexmakerPlugin, parentName: string, px: numb
 export async function regenerateRegion(plugin: HexmakerPlugin, regionName: string, opts: RegionGenOptions = {}): Promise<number> {
   const region = plugin.getMap(regionName);
   if (region?.submapKind !== "region" || !region.parent) return 0;
-  if (!opts.arrival && !canReshape(plugin.getMap(region.parent.map))) return 0; // see reshapeGate
+  if (!opts.arrival && !canChangeRegion(plugin.getMap(region.parent.map), region)) return 0; // see reshapeGate
   const [px, py] = region.parent.hex.split("_").map(Number);
   const planned = await planOrError(plugin, region.parent.map, px, py, opts);
   if (planned && "error" in planned) {
@@ -578,7 +582,7 @@ export async function paintBiomeHex(plugin: HexmakerPlugin, parentName: string, 
   if (!map || !inOverworldGrid(map, px, py)) return { step: "skip" };
   const hex = `${px}_${py}`;
   const region = regionMapAt(plugin.settings.maps, parentName, hex);
-  const step = biomePaintStep(map, !!region, hexBiomeAt(plugin, parentName, hex), biome);
+  const step = biomePaintStep(map, !!region, hexBiomeAt(plugin, parentName, hex), biome, region);
   if (step.kind === "skip") return { step: "skip" };
   if (step.kind === "locked") return { step: "locked", hint: step.hint };
   if (step.kind === "place") {

@@ -17,7 +17,7 @@
  * Pure: no Obsidian imports.
  */
 
-import { canAdd, canReshape, PLACE_LOCKED_HINT, RESHAPE_LOCKED_HINT } from "../workMode";
+import { canAdd, canChangeRegion, PLACE_LOCKED_HINT, regionChangeHint } from "../workMode";
 import type { BiomeId } from "./biomes";
 
 export type BiomePaintStep =
@@ -25,16 +25,16 @@ export type BiomePaintStep =
   | { kind: "skip" }
   /** First placement: set the biome, make the region (Build, God). */
   | { kind: "place" }
-  /** A different biome on a placed region: set it, remake the region (God). */
+  /** A different biome on a placed region: set it, remake the region (God; Build while the region is new, see canChangeRegion). */
   | { kind: "reshape" }
   /** The map's mode doesn't allow it. */
   | { kind: "locked"; hint: string };
 
-/** What painting `painter` onto a hex does, in this map's mode. */
-export function biomePaintStep(map: { workMode?: string } | undefined, hasRegion: boolean, current: BiomeId | undefined, painter: BiomeId): BiomePaintStep {
+/** What painting `painter` onto a hex does, in this map's mode (`region`: the hex's region, for whether it's still open). */
+export function biomePaintStep(map: { workMode?: string } | undefined, hasRegion: boolean, current: BiomeId | undefined, painter: BiomeId, region?: { arrival?: string }): BiomePaintStep {
   if (hasRegion) {
     if (current === painter) return { kind: "skip" };
-    return canReshape(map) ? { kind: "reshape" } : { kind: "locked", hint: RESHAPE_LOCKED_HINT };
+    return canChangeRegion(map, region) ? { kind: "reshape" } : { kind: "locked", hint: regionChangeHint(region) };
   }
   return canAdd(map) ? { kind: "place" } : { kind: "locked", hint: PLACE_LOCKED_HINT };
 }

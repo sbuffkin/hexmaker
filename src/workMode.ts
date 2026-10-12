@@ -308,9 +308,41 @@ export const REROLL_PLACE_LOCKED_HINT = "This place is locked. Switch to God to 
  * arrival follows the usual reshape rule.
  */
 export function canRerollPlace(map: { workMode?: string; arrival?: string } | undefined): boolean {
-  if (map?.arrival?.trim().toLowerCase() === "open") return true;
+  if (isOpenPlace(map)) return true;
   return mapAllows(map, "reshape");
 }
+
+/**
+ * Is this place still open (`arrival: open`): new and not locked yet?
+ * Places made on arrival and every new region start open (owner
+ * 2026-10-12: "reroll should be enabled for the newest sector when build
+ * is on"). A map with no `arrival` key (made before) counts as locked.
+ */
+export function isOpenPlace(place: { arrival?: string } | undefined): boolean {
+  return place?.arrival?.trim().toLowerCase() === "open";
+}
+
+/**
+ * What changing a region (its biome, a reroll, its settings) counts as on
+ * its overworld: while the region is open, placing it (Build); once
+ * locked, reshaping (God).
+ */
+export function regionChangeAction(region: { arrival?: string } | undefined): ModeAction {
+  return isOpenPlace(region) ? "place-biome" : "reshape";
+}
+
+/** May `region` of `overworld` be changed (biome, reroll, settings) in the overworld's mode? */
+export function canChangeRegion(overworld: { workMode?: string } | undefined, region: { arrival?: string } | undefined): boolean {
+  return mapAllows(overworld, regionChangeAction(region));
+}
+
+/** The hint when a region can't be changed in this mode: Build for an open one, God once locked. */
+export function regionChangeHint(region: { arrival?: string } | undefined): string {
+  return isOpenPlace(region) ? CHANGE_OPEN_REGION_HINT : RESHAPE_LOCKED_HINT;
+}
+
+/** Changing a new (open) region needs Build. */
+export const CHANGE_OPEN_REGION_HINT = "Switch to Build to change this new region.";
 
 /** May new things be added to this map (a first biome, a new region)? Build and God; not Play. */
 export function canAdd(map: { workMode?: string } | undefined): boolean {

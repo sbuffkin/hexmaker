@@ -12,12 +12,12 @@ const m = (mode: string | undefined) => ({ workMode: mode });
 
 describe("Edit region: sections per work mode", () => {
 	it("God shows the biome picker with Reroll and Settings…", () => {
-		expect(editRegionPlan(m("god"))).toEqual({ biome: "pick", reroll: true, settings: true });
+		expect(editRegionPlan(m("god"))).toEqual({ biome: "pick", reroll: true, settings: true, lock: false });
 	});
 
 	it("Build and Play show the biome read-only with one line, no buttons", () => {
 		for (const mode of ["build", "play", undefined]) {
-			expect(editRegionPlan(m(mode))).toEqual({ biome: "show", reroll: false, settings: false, hint: BIOME_LOCKED_HINT });
+			expect(editRegionPlan(m(mode))).toEqual({ biome: "show", reroll: false, settings: false, lock: false, hint: BIOME_LOCKED_HINT });
 		}
 		expect(BIOME_LOCKED_HINT).toBe("Switch to God to change it.");
 	});
