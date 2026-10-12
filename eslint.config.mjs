@@ -18,6 +18,9 @@ export default defineConfig([
         // Obsidian-injected globals for popout-window-aware code
         activeDocument: "readonly",
         activeWindow: "readonly",
+        // Release slice flags (esbuild define; src/slices.d.ts).
+        __SLICE_WORLDMAPS__: "readonly",
+        __SLICE_SPACE__: "readonly",
       },
       parser: tsparser,
       parserOptions: { project: "./tsconfig.json" },

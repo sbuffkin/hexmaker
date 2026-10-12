@@ -127,6 +127,11 @@ export class ModuleRegistry {
     return this.modules.flatMap((m) => [...(m.tableConditions ?? [])]);
   }
 
+  /** Generator ids palettes' Submap defaults name, in registry order. */
+  submapGeneratorIds(): string[] {
+    return this.modules.flatMap((m) => [...(m.submapGeneratorIds ?? [])]);
+  }
+
   /** Every module's map scales, in registry order. */
   mapScales(): MapScaleDef[] {
     return this.modules.flatMap((m) => [...(m.mapScales ?? [])]);

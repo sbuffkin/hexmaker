@@ -11,7 +11,7 @@ import { BUNDLED_PLACE_ICONS, PLACE_KINDS } from "./placeIcons";
 
 export const worldModule: HexmakerModule = {
   id: "world",
-  slice: "F",
+  slice: "foundation",
   kind: {
     id: "world",
     label: "World / fantasy overland",

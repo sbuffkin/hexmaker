@@ -11,7 +11,7 @@ import { WORLD_MAPS_TABLE_CONDITIONS } from "./tableConditions";
 
 export const worldMapsModule: HexmakerModule = {
   id: "world-maps",
-  slice: "W",
+  slice: "worldmaps",
   tableConditions: WORLD_MAPS_TABLE_CONDITIONS,
   mapScales: [{
     id: "biomes",

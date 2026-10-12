@@ -207,11 +207,19 @@ export interface HexmakerModule {
   pathRoles?: Readonly<Record<string, string>>;
   /** Kinds of map a first map can be (setup wizard). */
   mapScales?: readonly MapScaleDef[];
+  /** Generator ids a palette's Submap defaults name (listed in the palette note's help line). */
+  submapGeneratorIds?: readonly string[];
   /** Data the module owns (release slicing derives its lists from these). */
   owns: {
     settingsKeys: readonly string[];
     mapNoteKeys: readonly string[];
     commands: readonly string[];
+    /**
+     * Text only this module puts in main.js (names, ids, headings). A build
+     * with its slice off must contain none of them (npm run check:release),
+     * and the full build all of them (so the check can't pass by accident).
+     */
+    strings?: readonly string[];
   };
 }
 

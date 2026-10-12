@@ -15,7 +15,7 @@ import { SPACE_TABLE_CONDITIONS } from "./tableConditions";
 
 export const spaceModule: HexmakerModule = {
   id: "space",
-  slice: "S",
+  slice: "space",
   kind: {
     id: "space",
     label: "Space",
@@ -53,6 +53,7 @@ export const spaceModule: HexmakerModule = {
     { id: "procedural:orbits", label: "Orbits" },
   ],
   pathRoles: { routes: "Path type for routes", orbits: "Path type for orbits" },
+  submapGeneratorIds: ["procedural:star-scatter", "procedural:orbits", "procedural:planet-surface"],
   mapScales: [
     {
       id: "space-worlds",
@@ -79,5 +80,22 @@ export const spaceModule: HexmakerModule = {
     settingsKeys: ["worldTypesFolder", "worldTypesSeeded"],
     mapNoteKeys: [],
     commands: ["edit-world-types", "convert-world-types"],
+    strings: [
+      "Star scatter",
+      "procedural:star-scatter",
+      "procedural:orbits",
+      "Edit world types",
+      "World types folder",
+      "Convert world types to tables",
+      "Space - Sector",
+      "Space - System",
+      "Space - Planet",
+      "Generator tables",
+      "duckmage-moon-link",
+      "Sector or system",
+      "space-worlds",
+      "Points of Interest",
+      "hexmaker-world-types",
+    ],
   },
 };

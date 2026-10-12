@@ -471,7 +471,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           T("Settings.palettesFolder", folderText("Palettes folder", "palettesFolder", "World/palettes", PALETTES_FOLDER_DESC)),
           T("Settings.biomesFolder", folderText("Biomes folder", "biomesFolder", "World/biomes", BIOMES_FOLDER_DESC)),
           T("Settings.biomePoolsFolder", folderText("Biome pools folder", "biomePoolsFolder", "World/biome-pools", BIOME_POOLS_FOLDER_DESC)),
-          // Each module's folder settings (Space: World types folder).
+          // Each module's folder settings.
           ...moduleFolderSettings().map((d) => T(d.id, folderText(d.name, d.key, d.placeholder, d.desc))),
         ],
       },

@@ -26,7 +26,11 @@ import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 
-export const MODULE_RUNTIMES: readonly ModuleRuntime[] = [worldRuntime, worldMapsRuntime, spaceRuntime];
+/** The runtime halves, by the same slice flags as ./index.ts. */
+const compiled: ModuleRuntime[] = [worldRuntime];
+if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
+if (__SLICE_SPACE__) compiled.push(spaceRuntime);
+export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 
 /** Every module's built-in generators, in list order. */
 export function moduleGenerators(plugin: HexmakerPlugin, helpers: GeneratorHelpers): GeneratorContribution[] {

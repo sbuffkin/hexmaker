@@ -206,8 +206,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
       toPaths,
     },
-    // Each module's built-in generators (Star scatter, Orbits, Region detail,
-    // Overland, World biomes, Planet surface), in their list order.
+    // Each module's built-in generators, in their list order.
     ...moduleGenerators(plugin, { toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
   ];
   // Every generator, tagged with its map type: callers filter with

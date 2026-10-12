@@ -408,7 +408,9 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   palettesFolder: "",
   biomesFolder: "",
   biomePoolsFolder: "",
-  worldTypesFolder: "",
+  // Modules' own settings (a module's folder) have no default here:
+  // they're written only once set, so a build without the module never
+  // writes them (plan-code-modules rule 4). Readers use `?? ""`.
   palettesMigrated: false,
   // Space is opt-in (setup wizard / settings → Map types). Upgrades without
   // the setting get space too if they already have space palettes
