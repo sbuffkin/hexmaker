@@ -296,6 +296,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
       profile,
       pinned,
       strength: keep,
+      bandKeep: tuned(tuning, "band-keep"),
       fixed: islandCells,
       namesAt,
       rng: mulberry32(cellSeed(input.seed ^ 0x510e527f, input.parent[0], input.parent[1])),
@@ -864,6 +865,8 @@ interface KeepMixInput {
   fixed?: ReadonlySet<string>;
   /** 0..1: how far toward the Mix (tuned "keep-mix"). */
   strength: number;
+  /** 0..1: share of the seam band kept on the type across the seam (tuned "band-keep"; default BAND_KEEP). */
+  bandKeep?: number;
   /** Name odds within a type at a cell (the field's, leaned to the context's names). */
   namesAt: (x: number, y: number, type: string) => Map<string, number>;
   rng: () => number;
@@ -876,7 +879,7 @@ function seamBand(layout: RegionLayout, cells: [number, number][], pinned: Reado
   return out;
 }
 
-/** Share of the seam band keepMix leaves carrying on the type across the seam. */
+/** Share of the seam band keepMix leaves carrying on the type across the seam, unless tuned ("band-keep"). */
 const BAND_KEEP = 0.5;
 
 /**
@@ -940,7 +943,8 @@ export function keepMix(input: KeepMixInput): void {
   }
   let bandMatch = 0;
   for (const [k, ty] of across) if (typeAt(k) === ty) bandMatch++;
-  const bandFloor = Math.ceil(across.size * BAND_KEEP);
+  const bandKeep = Math.min(1, Math.max(0, input.bandKeep ?? BAND_KEEP));
+  const bandFloor = Math.ceil(across.size * bandKeep);
 
   // Counts and targets, land and water apart. Shore types and untyped or
   // non-Mix-side cells (settlements) aren't counted and never change.

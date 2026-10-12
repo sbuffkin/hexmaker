@@ -17,6 +17,7 @@ import { BIOME_PRESETS, biomePreset } from "../src/overworld/biomePresets";
 import { profileFromFields, representativeTerrain, setBiomeSource, type BiomeProfile } from "../src/overworld/biomes";
 import { childNeighbours, regionCells, type RegionLayout } from "../src/overworld/layout";
 import { keepMix, mixDistance, placePatches, seamContinuity } from "../src/overworld/regionGen";
+import { TUNING_PARAMS } from "../src/overworld/biomeTuning";
 import { dominantTerrain, paletteTypeOf, planRegion, regionOrder, worldSeed } from "../src/overworld/regionWorld";
 import { mulberry32 } from "../packages/hex-wfc/src/rng";
 import { SCENARIOS, scenarioBiomes, scenarioProfiles } from "./biomeParityFixtures";
@@ -212,5 +213,64 @@ describe("worlds: regions with neighbours keep closer to their biome", () => {
 			const now = measure(), old = measure(OLD);
 			expect({ name: s.name, closer: now.identity < old.identity - 0.05, continuity: now.continuity >= 0.92 }).toEqual({ name: s.name, closer: true, continuity: true });
 		}
+	});
+});
+
+describe("Seam band keeps neighbours (tuning band-keep)", () => {
+	/** Share of the seam band (own cells next to a made neighbour) on the neighbours' type. */
+	const bandShare = (w: ReturnType<typeof ringCase>, ty: string) => {
+		const band = [...w.cells].filter(([k]) => {
+			const [x, y] = k.split("_").map(Number);
+			return childNeighbours(w.layout, x, y).some(([a, b]) => w.pinned.has(`${a}_${b}`));
+		});
+		return band.filter(([, t]) => typeOf(t) === ty).length / band.length;
+	};
+
+	it("is a Borders & transitions param, 0–1, defaulting to the old constant (0.5)", () => {
+		const p = TUNING_PARAMS.find((x) => x.key === "band-keep")!;
+		expect({ label: p.label, section: p.section, default: p.default, min: p.min, max: p.max }).toEqual({
+			label: "Seam band keeps neighbours", section: "Borders & transitions", default: 0.5, min: 0, max: 1,
+		});
+	});
+
+	it("parity: unset and set to its default make the same region", () => {
+		for (const around of ["temperate-forest", "taiga"]) {
+			const unset = ringCase("alpine", around);
+			const atDefault = ringCase("alpine", around, { tuning: { "band-keep": 0.5 } });
+			expect([...atDefault.cells]).toEqual([...unset.cells]);
+		}
+	});
+
+	it("higher keeps more of the neighbours' terrain at the seam; lower keeps more of the region's own Mix", () => {
+		const low = ringCase("alpine", "temperate-forest", { tuning: { "band-keep": 0 } });
+		const mid = ringCase("alpine", "temperate-forest");
+		const high = ringCase("alpine", "temperate-forest", { tuning: { "band-keep": 1 } });
+		const [l, m, h] = [low, mid, high].map((w) => bandShare(w, "forest"));
+		expect(l).toBeLessThanOrEqual(m);
+		expect(m).toBeLessThanOrEqual(h);
+		expect(h).toBeGreaterThan(l + 0.3);
+		expect(h).toBeGreaterThanOrEqual(0.75);
+		const [dl, dh] = [low, high].map((w) => mixDistance(w.cells, w.profile, typeOf));
+		expect(dl).toBeLessThan(dh);
+	});
+
+	it("keepMix directly: 1 keeps the whole band on the neighbours' type, lower lets more of it go", () => {
+		const layout: RegionLayout = { footprint: "rect", size: 6, orientation: "flat", parentStagger: "odd", childStagger: "odd" };
+		const cells = regionCells(layout, 1, 0);
+		const left = Math.min(...cells.map(([x]) => x));
+		const pinned = new Map<string, string>(cells.filter(([x]) => x === left).map(([, y]) => [`${left - 1}_${y}`, "forest"]));
+		const alpine = profile("alpine");
+		const bandForest = (bandKeep?: number) => {
+			const work = new Map(cells.map(([x, y]) => [`${x}_${y}`, "forest"] as [string, string]));
+			keepMix({ layout, cells, work, terrainAt: (k) => work.get(k) ?? pinned.get(k), typeOf, profile: alpine, pinned, strength: 1, bandKeep,
+				namesAt: (_x, _y, t) => alpine.names.get(t) ?? new Map(), rng: mulberry32(5) });
+			const band = cells.filter(([x]) => x === left).map(([x, y]) => work.get(`${x}_${y}`)!);
+			return { share: band.filter((t) => typeOf(t) === "forest").length / band.length, work: [...work] };
+		};
+		expect(bandForest(1).share).toBe(1);
+		expect(bandForest(1).share).toBeGreaterThan(bandForest(0.5).share);
+		expect(bandForest(0).share).toBeLessThanOrEqual(bandForest(0.5).share);
+		// Default parity: omitted is exactly 0.5.
+		expect(bandForest(undefined).work).toEqual(bandForest(0.5).work);
 	});
 });
