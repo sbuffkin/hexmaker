@@ -5,13 +5,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Development (watch mode with inline sourcemaps) — use with Hot Reload (see below)
+# Development (watch mode with inline sourcemaps, every release slice built) — use with Hot Reload (see below)
 npm run dev
 
-# Production build (type-checks then bundles)
+# Release build (type-checks then bundles the slices marked released in release-slices.json)
 npm run build
 
-# Run tests (vitest)
+# Full build: every slice, released or not (owner and test vaults)
+npm run build:full
+
+# Prove a slice built off leaves no trace in main.js (builds each slice off, then all off)
+npm run check:release        # or: node dev/release/check-release.mjs --off space
+
+# Run tests (node:test via tsx; every slice on)
 npm test
 
 # Bump version (updates manifest.json and versions.json, stages both)
@@ -50,6 +56,8 @@ Each coding session:
 The plugin source is split across `main.ts` (entry point re-export) and modules under `src/`. esbuild bundles everything into `main.js`, which Obsidian loads directly.
 
 See `ARCHITECTURE.md` for a full overview of the system.
+
+**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, or World maps' hooks via `worldMaps()` (undefined without the slice; type-only imports). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
 
 ### Source layout
 
