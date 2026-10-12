@@ -30,6 +30,11 @@ export type PathAutoRoute = "direct" | "winding";
 export interface PathType {
 	name: string;
 	color: string;
+	/** A colour typed in the palette note that can't be read: `color` is the
+	 *  grey it's drawn with (UNREAD_GREY) and this is the text as typed,
+	 *  written back to the note while `color` is still that grey, so the
+	 *  plugin's rewrites never lose it. Set only by the note reader. */
+	unreadColor?: string;
 	width: number;            // 1–10, direct SVG stroke-width
 	lineStyle: PathLineStyle;
 	/** How the line is drawn: "through" = smooth curve through hex centres;
@@ -314,6 +319,11 @@ export interface SubmapDefault {
 export interface TerrainColor {
 	name: string;
 	color: string;
+	/** A colour typed in the palette note that can't be read: `color` is the
+	 *  grey it's drawn with (UNREAD_GREY) and this is the text as typed,
+	 *  written back to the note while `color` is still that grey, so the
+	 *  plugin's rewrites never lose it. Set only by the note reader. */
+	unreadColor?: string;
 	icon?: string;
 	iconColor?: string; // CSS colour to tint the icon; undefined = no tint (render as-is)
 	category?: string;
