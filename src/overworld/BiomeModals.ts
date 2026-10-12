@@ -77,7 +77,14 @@ export async function rerollRegionAt(host: BiomeHost, parentName: string, px: nu
   if (!region || !mayReshape(host, parentName, px, py)) return false;
   await reshapeUndoable(host.plugin, parentName, px, py, () => regenerateRegion(host.plugin, region.name, { seed: newSeed() }));
   host.changed();
+  // Say so: the change may be off screen, or under the dialog that asked for it.
+  new Notice(rerolledNotice(host.plugin.mapLabel(region.name)));
   return true;
+}
+
+/** The notice after a reroll (Edit region…, the overworld menu, the biome picker). */
+export function rerolledNotice(label: string): string {
+  return `Rerolled ${label}.`;
 }
 
 /** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
@@ -162,7 +169,7 @@ export class BiomePickerModal extends HexmakerModal {
       reroll.addEventListener("click", () => {
         if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
         this.close();
-        void reshapeUndoable(plugin, this.parentName, this.px, this.py, () => regenerateRegion(plugin, region.name, { seed: newSeed() })).then(() => this.host.changed());
+        void rerollRegionAt(this.host, this.parentName, this.px, this.py);
       });
     }
     row.createEl("button", { text: "Settings…" }).addEventListener("click", () => {
@@ -322,6 +329,18 @@ export class RegionGenModal extends HexmakerModal {
   onClose(): void {
     this.contentEl.empty();
   }
+}
+
+/**
+ * Draw the region of hex (px, py) as it is now (its painted cells), with
+ * the regions around it dimmed: Edit region…'s preview, so a Reroll
+ * shows its result while the dialog covers the map.
+ */
+export function drawRegionNow(canvas: HTMLCanvasElement, plugin: HexmakerPlugin, parentName: string, px: number, py: number): void {
+  const region = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  const cells = new Map<string, string>();
+  if (region) for (const [k, h] of plugin.mapStore.all(region.name)) if (h.terrain) cells.set(k, h.terrain);
+  drawRegionPlan(canvas, plugin, parentName, px, py, { cells, mix: new Map() });
 }
 
 /**

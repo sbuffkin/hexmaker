@@ -6,8 +6,8 @@ import { generatorFitsPalette, listGenerators, paletteColors, pathColors, type G
 import { createWalkRegion, planWalk, previewWalk, regionBiome, type WalkPlan } from "../worldgen/neighbours";
 import { drawPreview } from "../worldgen/preview";
 import type { Side } from "../worldgen/world";
-import { biomeForTerrain, biomeInfo, representativeTerrain } from "./biomes";
-import { regionHome, inOverworldGrid, planRegionAt, planRegionWithGenerator, walkIntoHex, walkLock } from "./regionsVault";
+import { biomeInfo, representativeTerrain } from "./biomes";
+import { inOverworldGrid, planRegionAt, planRegionWithGenerator, walkFromBiome, walkIntoHex, walkLock } from "./regionsVault";
 import { defaultRegionName, rollBiome } from "./regionWorld";
 import { drawRegionPlan, lockButton, paintableBiomes } from "./BiomeModals";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
@@ -84,9 +84,8 @@ export class WalkRegionModal extends HexmakerModal {
       contentEl.createEl("p", { text: "This overworld's palette has no terrain that stands for a biome, so there's nothing to make the new land from.", cls: "duckmage-map-origin-desc" });
       return;
     }
-    const home = regionHome(plugin, this.fromMap);
-    const hereTerrain = home ? plugin.mapStore.get(walk.overworld, `${home.px}_${home.py}`)?.terrain : undefined;
-    const here = hereTerrain ? biomeForTerrain(hereTerrain, owPalette) : undefined;
+    // The region's own biome, never one it was blended from (walkFromBiome).
+    const here = walkFromBiome(plugin, this.fromMap);
     const grows = !inOverworldGrid(ow, px, py);
     contentEl.createEl("p", {
       text: `Nothing lies ${walk.bearing} of ${plugin.mapLabel(this.fromMap)} yet. Pick what's out there, or roll for it. If it's a different biome, the new region is the border country in between.`

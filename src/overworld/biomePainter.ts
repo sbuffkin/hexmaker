@@ -61,6 +61,7 @@ export class BiomeStroke<E> {
   private edits: E[] = [];
   private made: string[] = [];
   private changed = 0;
+  private remade = 0;
   private hints = new Set<string>();
   private errors: string[] = [];
 
@@ -76,6 +77,7 @@ export class BiomeStroke<E> {
         if (r.edits?.length) this.edits.push(...r.edits);
         if (r.made) this.made.push(r.made);
         if (r.step === "place" || r.step === "reshape") this.changed++;
+        if (r.step === "reshape" && !r.error) this.remade++;
         if (r.hint) this.hints.add(r.hint);
         if (r.error) this.errors.push(r.error);
       } catch (e) {
@@ -86,8 +88,24 @@ export class BiomeStroke<E> {
   }
 
   /** Wait for the queue; what the stroke did. */
-  async finish(): Promise<{ edits: E[]; made: string[]; changed: number; hints: string[]; errors: string[] }> {
+  async finish(): Promise<{ edits: E[]; made: string[]; changed: number; remade: number; hints: string[]; errors: string[] }> {
     await this.chain;
-    return { edits: [...this.edits], made: [...this.made], changed: this.changed, hints: [...this.hints], errors: [...this.errors] };
+    return { edits: [...this.edits], made: [...this.made], changed: this.changed, remade: this.remade, hints: [...this.hints], errors: [...this.errors] };
   }
+}
+
+/**
+ * The one notice after a painter stroke that made or remade regions
+ * ("Made Demo Bricks 2, 4.", "Made 3 regions, remade 1 region."), or null when it
+ * changed nothing. Once per stroke, like the locked hint.
+ */
+export function strokeNotice(r: { made: string[]; remade: number }, label: (name: string) => string): string | null {
+  const made = r.made.length;
+  const remade = r.remade;
+  if (!made && !remade) return null;
+  const regions = (n: number) => (n === 1 ? "1 region" : `${n} regions`);
+  const parts: string[] = [];
+  if (made) parts.push(made === 1 ? `Made ${label(r.made[0])}` : `Made ${regions(made)}`);
+  if (remade) parts.push(made ? `remade ${regions(remade)}` : `Remade ${regions(remade)}`);
+  return parts.join(", ") + ".";
 }

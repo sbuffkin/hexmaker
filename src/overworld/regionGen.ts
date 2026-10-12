@@ -164,6 +164,60 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     for (const [k, v] of next) work.set(k, v);
   }
 
+  // 2b. The seam (super-region): an own cell whose made neighbours across the
+  //    seam are clearly the other class (land vs water) takes that class, so
+  //    a coastline carries on instead of stepping one cell sideways (user
+  //    test 2026-10-12: a region below a fjord's ragged edge matched 5 of 8).
+  //    Only types the cell's (context-leaned) odds allow; none, or influence
+  //    0: nothing changes. Before islands and patches, which are placed on
+  //    purpose (a small archipelago ringed by sea keeps its islands).
+  if (ctx) {
+    const home = `${input.parent[0]}_${input.parent[1]}`;
+    const water = new Set(WATER_TYPES);
+    const classOf = (t: string | undefined): number | undefined => {
+      const ty = t ? typeOf(t) : undefined;
+      return ty === undefined ? undefined : water.has(ty) ? 0 : 1;
+    };
+    const next = new Map<string, string>();
+    for (const [x, y] of cells) {
+      const k = `${x}_${y}`;
+      const mine = classOf(work.get(k));
+      if (mine === undefined) continue;
+      let land = 0, wet = 0;
+      const byType = new Map<string, Map<string, number>>();
+      for (const [a, b] of childNeighbours(layout, x, y)) {
+        const nk = `${a}_${b}`;
+        const t = terrainAt(nk);
+        const ty = t ? typeOf(t) : undefined;
+        if (t && ty) {
+          const m = byType.get(ty) ?? new Map<string, number>();
+          m.set(t, (m.get(t) ?? 0) + 1);
+          byType.set(ty, m);
+        }
+        if (!pinned.has(nk) || parentOf(layout, a, b).join("_") === home) continue;
+        const c = classOf(t);
+        if (c === 1) land++;
+        else if (c === 0) wet++;
+      }
+      const want = land > wet ? 1 : wet > land ? 0 : undefined;
+      if (want === undefined || want === mine) continue;
+      const tau = types.get(k);
+      let bestType: string | undefined, best = -1;
+      for (const [ty, p] of [...(tau ?? [])].sort((a, b) => (a[0] < b[0] ? -1 : 1))) {
+        if (p <= 0 || water.has(ty) !== (want === 0)) continue;
+        let n = 0;
+        for (const c of byType.get(ty)?.values() ?? []) n += c;
+        const s = n + hold * 6 * p;
+        if (s > best + 1e-9) { best = s; bestType = ty; }
+      }
+      if (!bestType) continue;
+      const nm = byType.get(bestType);
+      const name = nm?.size ? [...nm].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0] : argmax(namesAt(x, y, bestType));
+      if (name) next.set(k, name);
+    }
+    for (const [k, v] of next) work.set(k, v);
+  }
+
   // 3. Islands for watery biomes (landShare / minIslands), after smoothing:
   //    smoothing pulls every cell toward the majority type, so scattered
   //    land in a mostly water biome would otherwise vanish.

@@ -36,7 +36,7 @@ import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
-import { flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
+import { flowerLayout, flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
 import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
@@ -50,7 +50,7 @@ import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type 
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
-import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "./hexHover";
+import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom, regionsViewTip } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
 import { resolveNameFont } from "./hexNameFont";
 import { whenSized } from "./whenSized";
@@ -821,8 +821,13 @@ export class HexMapView extends ItemView {
    * side-panel buttons and lets the crumbs shrink (each with an ellipsis
    * and its full name in the tooltip); when they don't fit whole, the
    * middle ones fold into "…"; when the row still reaches the centred
-   * +/− buttons, those move to the second row's right side. Classes are
-   * reset first, then read.
+   * +/− buttons, those move to the second row's right side; when the row
+   * is still cramped there (its buttons overflow, or a crumb or the map
+   * button is squeezed below its own size: "Dem…", "D…"), it wraps onto a
+   * second line (user test 2026-10-12: the Build button covered the region
+   * flower). Nothing in the row ever overlaps. Whatever sits below the row
+   * starts at its measured bottom (--duckmage-top-band-bottom). Classes are
+   * reset first, then read; the one write comes last.
    */
   private fitTopBar(): void {
     const crumbs = this.crumbsEl;
@@ -831,22 +836,41 @@ export class HexMapView extends ItemView {
     if (!crumbs || !nav || !controls) return;
     const top = controls.querySelector(":scope > .duckmage-expand-group-top");
     const cut = (el: Element) => el.scrollWidth > el.clientWidth + 1;
+    // Cut short by the row, not by its own max-width (a long name's ellipsis is fine).
+    const squeezed = (el: Element) => {
+      if (!el.instanceOf(HTMLElement) || el.clientWidth === 0 || !cut(el)) return false;
+      const max = parseFloat(activeWindow.getComputedStyle(el).maxWidth);
+      return !(Number.isFinite(max) && el.offsetWidth >= max - 1);
+    };
+    const cramped = () =>
+      cut(nav) || squeezed(crumbs) || Array.from(crumbs.children).some(squeezed) || (!!this.mapBtn && squeezed(this.mapBtn));
     const fold = () => {
       crumbs.removeClass("is-folded");
       // Folded as soon as the crumbs don't fit whole (one is cut short or the row overflows).
       if (crumbs.querySelector(".duckmage-map-crumb-mid") && (cut(crumbs) || Array.from(crumbs.children).some(cut))) crumbs.addClass("is-folded");
     };
+    const band = () => {
+      const b = nav.getBoundingClientRect().bottom - controls.getBoundingClientRect().top;
+      controls.setCssProps({ "--duckmage-top-band-bottom": `${Math.max(42, Math.ceil(b) + 6)}px` });
+    };
     // First try: the row stops short of the centred +/- buttons.
+    nav.removeClass("is-wrapped");
     nav.addClass("is-centred");
     controls.removeClass("duckmage-top-crowded");
     if (!nav.isConnected || nav.clientWidth === 0 || !top) { fold(); return; }
     fold();
     const right = Math.max(...Array.from(nav.children).map((c) => c.getBoundingClientRect().right));
-    if (!cut(nav) && right + 8 <= top.getBoundingClientRect().left) return;
+    if (!cramped() && right + 8 <= top.getBoundingClientRect().left) { band(); return; }
     // The row's own buttons don't fit there: it takes the width and the +/- move down.
     nav.removeClass("is-centred");
     controls.addClass("duckmage-top-crowded");
     fold();
+    // Still cramped with the width: the row wraps.
+    if (cramped()) {
+      nav.addClass("is-wrapped");
+      fold();
+    }
+    band();
   }
 
   /**
@@ -1015,7 +1039,9 @@ export class HexMapView extends ItemView {
       const petals = flowerPetals(home.layout.orientation, home.layout.parentStagger, home.px, home.py);
       const palette = this.plugin.getMapPalette(home.overworld.name);
       const flower = el.createDiv({ cls: "duckmage-region-flower", attr: { role: "group", "aria-label": "Neighbouring regions" } });
-      const R = 12; // px from the middle to a petal's centre
+      // 22px petals, spaced so none touch (flowerLayout); the card is sized to fit them.
+      const fl = flowerLayout(petals);
+      flower.setCssProps({ "--duckmage-flower-w": `${fl.width}px`, "--duckmage-flower-h": `${fl.height}px` });
       // The centre petal is this region: click it to edit the region.
       const here = flower.createEl("button", {
         cls: "duckmage-region-flower-petal is-here",
@@ -1024,7 +1050,7 @@ export class HexMapView extends ItemView {
       here.setCssProps({ "--duckmage-petal-x": "0px", "--duckmage-petal-y": "0px" });
       here.addEventListener("click", () => this.openEditRegion(home.px, home.py, home.overworld.name));
       const lock = wm.walkLock(this.plugin, this.activeMapName, home.overworld.name);
-      for (const p of petals) {
+      petals.forEach((p, i) => {
         const key = `${p.hex[0]}_${p.hex[1]}`;
         const region = regionMapAt(maps, home.overworld.name, key);
         const terrain = this.plugin.mapStore.get(home.overworld.name, key)?.terrain;
@@ -1041,7 +1067,7 @@ export class HexMapView extends ItemView {
           text: b.plus ? "+" : "",
           attr: { title: b.title, "aria-label": b.title, "data-side": p.bearing, "data-hex": key },
         });
-        petal.setCssProps({ "--duckmage-petal-x": `${(p.dx * R).toFixed(1)}px`, "--duckmage-petal-y": `${(p.dy * R).toFixed(1)}px` });
+        petal.setCssProps({ "--duckmage-petal-x": `${fl.at[i].x}px`, "--duckmage-petal-y": `${fl.at[i].y}px` });
         if (colour && region) petal.setCssProps({ "--duckmage-petal-bg": colour });
         petal.disabled = b.disabled;
         const action = b.action;
@@ -1049,7 +1075,7 @@ export class HexMapView extends ItemView {
         else if (action.kind === "new") {
           petal.addEventListener("click", () => this.openWalk({ overworld: home.overworld.name, px: p.hex[0], py: p.hex[1], bearing: p.bearing }));
         }
-      }
+      });
       el.show();
       return;
     }
@@ -2512,6 +2538,9 @@ export class HexMapView extends ItemView {
     // A placed biome is God's to change: that hint offers the switch.
     for (const h of r.hints) lockedNotice(this.plugin, map, h);
     if (r.errors.length) new Notice(r.errors[0]);
+    // One notice per stroke for what it made ("Made Demo Bricks 2, 4.").
+    const said = this.wm?.strokeNotice(r, (n) => this.plugin.mapLabel(n));
+    if (said) new Notice(said);
     if ((r.changed || r.made.length) && this.activeMapName === map) this.renderGrid();
   }
 
@@ -4425,21 +4454,24 @@ export class HexMapView extends ItemView {
     const regionsView = owView === "regions";
     if (regionsView) {
       gridContainer.addClass("duckmage-ow-regions");
-      // The region's name on hover, nothing drawn on the map.
-      let pending = false;
+      // The region's name on hover, nothing drawn on the map. Once a frame,
+      // read at the LAST pointer position (the first one of the frame left
+      // a region's name up after the pointer had moved off it), and cleared
+      // when the pointer leaves the grid.
+      const hover = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
+      const setTip = (tip: string) => { if (gridContainer.title !== tip) gridContainer.title = tip; };
       gridContainer.addEventListener("mousemove", (e) => {
-        if (pending) return;
-        pending = true;
-        window.requestAnimationFrame(() => {
-          pending = false;
-          const cell = this.overworldLayer?.cellAt(gridContainer, e.clientX, e.clientY) ?? null;
-          const tip = !cell ? ""
-            : cell.region ? `${this.plugin.mapLabel(cell.region)}: click to go there`
-            : !this.emptySlotOnMap(cell.parentHex) ? ""
-            : `No region yet (hex ${cell.parentHex.replace("_", ", ")})` + (canAdd(this.getActiveMap()) ? ": click to set its biome" : "");
-          if (gridContainer.title !== tip) gridContainer.title = tip;
+        const { clientX, clientY } = e;
+        hover.request(() => {
+          const cell = this.overworldLayer?.cellAt(gridContainer, clientX, clientY) ?? null;
+          setTip(regionsViewTip(cell, {
+            label: (r) => this.plugin.mapLabel(r),
+            emptySlot: (h) => this.emptySlotOnMap(h),
+            canAdd: canAdd(this.getActiveMap()),
+          }));
         });
       });
+      gridContainer.addEventListener("mouseleave", () => hover.request(() => setTip("")));
     } else if (owView === "biomes") gridContainer.addClass("duckmage-ow-biomes");
 
     // Apply optional independent grid transform (used for bg-image calibration).

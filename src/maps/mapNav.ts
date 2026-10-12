@@ -112,6 +112,29 @@ export function flowerPetals(orientation: Orientation, stagger: Stagger, px: num
   return out.map(({ bearing, hex, dx, dy }) => ({ bearing, hex, dx, dy }));
 }
 
+/** A flower petal's side in px: big enough to hit (user test 2026-10-12: 10px petals were too small). */
+export const PETAL_SIZE = 22;
+
+/**
+ * Where the toolbar flower's petals sit (px from the middle) and the box
+ * they need: petals `size` across, centres `size + gap` apart, so no two
+ * touch and each is a whole `size` × `size` target.
+ */
+export function flowerLayout(
+  petals: readonly Pick<FlowerPetal, "dx" | "dy">[],
+  size = PETAL_SIZE,
+  gap = 1,
+): { at: { x: number; y: number }[]; width: number; height: number } {
+  const r = size + gap;
+  const at = petals.map((p) => ({ x: Math.round(p.dx * r * 10) / 10, y: Math.round(p.dy * r * 10) / 10 }));
+  const reach = (v: number[]) => Math.max(0, ...v.map(Math.abs));
+  return {
+    at,
+    width: Math.ceil(2 * reach(at.map((a) => a.x)) + size),
+    height: Math.ceil(2 * reach(at.map((a) => a.y)) + size),
+  };
+}
+
 /**
  * What one neighbour button (a flower petal or a d-pad side) does:
  * - go: a map is there, click to go to it;

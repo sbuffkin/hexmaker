@@ -18,7 +18,7 @@ import { OverworldLayer } from "../../overworld/overworldLayer";
 import { OverworldMinimap } from "../../overworld/overworldMinimap";
 import { BiomePickerModal, RegionGenModal, rerollRegionAt } from "../../overworld/BiomeModals";
 import { BiomePaletteModal } from "../../overworld/BiomePaletteModal";
-import { BiomeStroke } from "../../overworld/biomePainter";
+import { BiomeStroke, strokeNotice } from "../../overworld/biomePainter";
 import { BIOMES, biomeInfo, biomeNoteOf } from "../../overworld/biomes";
 import { EditRegionModal } from "../../overworld/EditRegionModal";
 import {
@@ -89,6 +89,7 @@ function makeApi() {
   biomeNoteOf,
   paintBiomeHex,
   BiomeStroke,
+  strokeNotice,
   // Overworld paths confirmed into regions.
   applyProjectionUndo,
   confirmOverworldPath,

@@ -162,6 +162,17 @@ export function hexBiomeAt(plugin: HexmakerPlugin, overworldName: string, hex: s
 }
 
 /**
+ * The biome of the region you walk from ("same as here" in New land):
+ * its overworld hex's own biome (hexBiomeAt). Never read from the hex's
+ * terrain alone, which can stand for a biome the region was only blended
+ * from (a Coast region on a beach hex reads as Coastal fjord).
+ */
+export function walkFromBiome(plugin: HexmakerPlugin, regionName: string): BiomeId | undefined {
+  const home = regionHome(plugin, regionName);
+  return home ? hexBiomeAt(plugin, home.overworld.name, `${home.px}_${home.py}`) : undefined;
+}
+
+/**
  * What a region says it was made from: its biome's id, or `unknown` (the
  * name it recorded) when that biome's note is gone. Undefined when it
  * recorded none, or a shipped generator (`builtin:…`).

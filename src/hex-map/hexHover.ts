@@ -55,3 +55,19 @@ export function overlayClosed(removed: Iterable<Node>): boolean {
 export function pointerMovedFrom(at: { x: number; y: number } | null, x: number, y: number): boolean {
   return at !== null && (at.x !== x || at.y !== y);
 }
+
+/**
+ * Hover text on an overworld's Regions view: the region under the pointer,
+ * or an empty slot ("brick") of the overworld, or nothing (blank map area,
+ * off the bricks). `cell` is the layer's hit (null off the grid);
+ * `emptySlot` says whether its slot is an empty one on the map.
+ */
+export function regionsViewTip(
+  cell: { region?: string; parentHex: string } | null,
+  opts: { label: (region: string) => string; emptySlot: (parentHex: string) => boolean; canAdd: boolean },
+): string {
+  if (!cell) return "";
+  if (cell.region) return `${opts.label(cell.region)}: click to go there`;
+  if (!opts.emptySlot(cell.parentHex)) return "";
+  return `No region yet (hex ${hexKeyCoords(cell.parentHex)})` + (opts.canAdd ? ": click to set its biome" : "");
+}

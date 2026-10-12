@@ -680,14 +680,14 @@ div.duckmage-hex-terrain-icon {
 /* ── Neighbour hex preview widget ──────────────────────────────────── */
 .duckmage-neighbor-widget {
     position: relative;
-    width: 60px;
-    height: 51px;
+    width: var(--duckmage-nb-w, 80px);
+    height: var(--duckmage-nb-h, 77px);
     flex-shrink: 0;
 }
 .duckmage-neighbor-tile {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background-color: var(--duckmage-bg, var(--background-modifier-border));
     cursor: pointer;
@@ -700,7 +700,8 @@ div.duckmage-hex-terrain-icon {
 }
 .duckmage-neighbor-tile:hover {
     border-color: var(--interactive-accent);
-    transform: scale(1.25);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+    transform: scale(1.1);
     z-index: 1;
 }
 .duckmage-neighbor-tile-offmap {
@@ -710,8 +711,8 @@ div.duckmage-hex-terrain-icon {
 }
 .duckmage-neighbor-centre {
     position: absolute;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--background-modifier-border);
     box-sizing: border-box;
@@ -8297,19 +8298,26 @@ button.duckmage-terrain-legend-chip {
     cursor: default;
 }
 
-/* A region's neighbours: a small hex flower, each petal in its direction. */
+/* A region's neighbours: a hex flower, each petal in its direction (its
+   offsets from mapNav.flowerLayout). Petals are 22px with a hover ring, on
+   an opaque card so the map never shows through or draws over it. */
 .duckmage-region-flower {
     position: relative;
-    width: 36px;
-    height: 34px;
+    box-sizing: content-box;
+    width: var(--duckmage-flower-w, 60px);
+    height: var(--duckmage-flower-h, 66px);
+    padding: 2px;
     flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
 }
 .duckmage-region-flower-petal {
     position: absolute;
-    left: calc(50% - 5px + var(--duckmage-petal-x, 0px));
-    top: calc(50% - 5px + var(--duckmage-petal-y, 0px));
-    width: 10px;
-    height: 10px;
+    left: calc(50% - 11px + var(--duckmage-petal-x, 0px));
+    top: calc(50% - 11px + var(--duckmage-petal-y, 0px));
+    width: 22px;
+    height: 22px;
     min-height: 0;
     padding: 0;
     border-radius: 50%;
@@ -8317,10 +8325,14 @@ button.duckmage-terrain-legend-chip {
     border: 1px solid var(--text-faint);
     background: var(--duckmage-petal-bg, var(--background-secondary-alt));
     cursor: pointer;
+    transition:
+        border-color 0.1s ease,
+        box-shadow 0.1s ease;
 }
-.duckmage-region-flower-petal:hover:not(:disabled) {
+.duckmage-region-flower-petal:hover:not(:disabled),
+.duckmage-region-flower-petal:focus-visible {
     border-color: var(--interactive-accent);
-    transform: scale(1.3);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
     z-index: 1;
 }
 .duckmage-region-flower-petal.is-here {
@@ -8329,9 +8341,8 @@ button.duckmage-terrain-legend-chip {
     cursor: pointer;
 }
 .duckmage-region-flower-petal.is-empty {
-    background: transparent;
+    background: var(--background-primary);
     border-style: dashed;
-    opacity: 0.6;
     cursor: default;
 }
 /* An empty petal is new land: a "+" that opens the walk (pick or roll a biome). */
@@ -8339,19 +8350,37 @@ button.duckmage-terrain-legend-chip {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 9px;
+    font-size: 14px;
     font-weight: 700;
     line-height: 1;
     color: var(--text-muted);
-    opacity: 0.85;
     cursor: pointer;
 }
 .duckmage-region-flower-petal.is-new:hover:not(:disabled) {
     color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
 }
 .duckmage-region-flower-petal.is-new.is-locked {
-    opacity: 0.4;
+    opacity: 0.45;
     cursor: default;
+}
+
+/* Edit region…: the region as it is now (a Reroll shows here; the dialog covers the map). */
+.duckmage-edit-region-preview {
+    display: block;
+    width: 240px;
+    height: 150px;
+    margin-top: 6px;
+    border-radius: 6px;
+    background: var(--background-secondary);
+}
+.duckmage-edit-region-preview.is-new {
+    animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
+}
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-edit-region-preview.is-new {
+        animation: none;
+    }
 }
 .duckmage-region-nav input.duckmage-walk-seed {
     width: 9em;
@@ -9004,10 +9033,40 @@ textarea.duckmage-edit-region-notes-input {
     display: none;
 }
 .duckmage-top-crowded > .duckmage-expand-group-top {
-    top: 44px;
+    top: var(--duckmage-top-band-bottom, 44px);
     left: auto;
     right: 112px;
     transform: none;
+}
+
+/* User test 2026-10-12 (the flower's "+" couldn't be clicked with the file
+   sidebar open): nothing in the toolbar row ever overlaps.
+   - Items keep their size and hang from the top of the row (a region's
+     flower is taller than the buttons); the neighbour box never shrinks
+     or clips (it hid the flower behind the next button).
+   - When the row doesn't fit even with the crumbs folded, it wraps
+     (is-wrapped, HexMapView.fitTopBar) onto a second line.
+   - Whatever sits under the row (the mode bar, the moved +/-) starts at
+     --duckmage-top-band-bottom, the row's measured bottom. */
+.duckmage-map-nav-group {
+    align-items: flex-start;
+}
+.duckmage-map-nav-group.is-wrapped {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs {
+    flex: none;
+    min-width: auto;
+    max-width: none;
+    overflow: visible;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs:has(> .duckmage-region-flower) {
+    background: none;
+    border: none;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar {
+    top: var(--duckmage-top-band-bottom, 42px);
 }
 
 /* Table pickers: the terrain and region tables the map made, grouped
@@ -9209,7 +9268,7 @@ textarea.duckmage-edit-region-notes-input {
 button.duckmage-neighbor-centre {
     padding: 0;
     min-height: 0;
-    height: 12px;
+    height: 16px;
     box-shadow: none;
 }
 

@@ -31,7 +31,7 @@ import {
 } from "./biomePool";
 import { biomeFileName, type BiomeNoteFields } from "./biomeNote";
 import { BIOME_PRESETS } from "./biomePresets";
-import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeRef, isBlankBiome, type BiomeId } from "./biomes";
+import { biomeNoteOf, biomeRef, isBlankBiome } from "./biomes";
 import { regionGenerator } from "./biomeForm";
 import { biomeColumnFills, firstPassWrites } from "./overworldPass";
 import { formatBiomeRiver, regionOrder, withMeshFields } from "./regionWorld";
@@ -266,7 +266,8 @@ export async function regionPass(
     const hex = `${px}_${py}`;
     const terrain = plugin.mapStore.get(mapName, hex)?.terrain;
     const existing = regionMapAt(plugin.settings.maps, mapName, hex);
-    const biome = biomeOfHex(plugin, mapName, hex, terrain);
+    // The hex's own biome: its Biome cell, else its region's, else its terrain's.
+    const biome = hexBiomeAt(plugin, mapName, hex);
     // The routing point: every region of every biome goes through here.
     const route = regionGenerator(biome ? biomeNoteOf(biome) : undefined);
     if (route.kind === "generator" && !route.ready) out.waiting++;
@@ -285,12 +286,6 @@ export async function regionPass(
     opts.onProgress?.(++done, order.length, name);
   }
   return out;
-}
-
-function biomeOfHex(plugin: HexmakerPlugin, mapName: string, hex: string, terrain: string | undefined): BiomeId | undefined {
-  const own = biomeByRef(plugin.mapStore.get(mapName, hex)?.biome);
-  if (own) return own;
-  return terrain ? biomeForTerrain(terrain, plugin.getMapPalette(mapName)) : undefined;
 }
 
 /**

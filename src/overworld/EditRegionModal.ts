@@ -29,7 +29,7 @@ import { openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { editRegionPlan, terrainCountsText } from "./overworldInput";
-import { biomeTileTitle, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost } from "./BiomeModals";
+import { biomeTileTitle, drawRegionNow, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
@@ -50,6 +50,8 @@ export class EditRegionModal extends HexmakerModal {
   /** Notes typed and not written yet (null: nothing pending). */
   private pendingNotes: string | null = null;
   private notesStatus: HTMLElement | null = null;
+  /** The next render follows a Reroll: its preview is marked new. */
+  private justRerolled = false;
 
   constructor(private host: EditRegionHost, private overworld: string, private px: number, private py: number) {
     super(host.app);
@@ -213,6 +215,19 @@ export class EditRegionModal extends HexmakerModal {
       if (plan.lock) this.addLock(genRow, name);
       editGenerator(genRow);
     }
+    // The region as it is now, its neighbours dimmed: this dialog covers
+    // most of the map, so a Reroll (or a new biome) shows its result here.
+    const preview = biomeSec.createEl("canvas", {
+      cls: "duckmage-edit-region-preview",
+      attr: { role: "img", "aria-label": `${plugin.mapLabel(name)} as it is now` },
+    });
+    preview.width = 240;
+    preview.height = 150;
+    drawRegionNow(preview, plugin, this.overworld, this.px, this.py);
+    if (this.justRerolled) {
+      preview.addClass("is-new");
+      this.justRerolled = false;
+    }
 
     // ── facts ─────────────────────────────────────────────────────────────
     const facts = contentEl.createDiv({ cls: "duckmage-editor-section duckmage-edit-region-facts" });
@@ -349,6 +364,7 @@ export class EditRegionModal extends HexmakerModal {
   private async reroll(): Promise<void> {
     if (!(await rerollRegionAt(this.host, this.overworld, this.px, this.py))) return;
     await this.saveNotes();
+    this.justRerolled = true;
     this.render();
   }
 

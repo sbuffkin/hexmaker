@@ -55,7 +55,7 @@ import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { resolveHex, type Side } from "../worldgen/world";
 import { neighbourSpec } from "../worldgen/neighbours";
 import { worldMaps } from "../modules/runtime";
-import { flowerPetals, neighbourButton } from "../maps/mapNav";
+import { flowerPetals, neighbourButton, PETAL_SIZE } from "../maps/mapNav";
 import type { MapData } from "../types";
 import { RegionNavigateModal } from "./RegionNavigateModal";
 import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
@@ -565,12 +565,19 @@ export class HexEditorModal extends HexmakerModal {
     // World maps' walking (regions of an overworld, new land next door);
     // undefined in a build without it.
     const wm = worldMaps();
+    // Tiles were laid out at 16px; drawn at the toolbar flower's 22px (user test
+    // 2026-10-12: too small to hit), so every offset scales with them.
+    const S = PETAL_SIZE / 16;
+    widget.setCssProps({
+      "--duckmage-nb-w": `${Math.ceil(Math.max(...defs.map((d) => d.l)) * S + PETAL_SIZE)}px`,
+      "--duckmage-nb-h": `${Math.ceil(Math.max(...defs.map((d) => d.t)) * S + PETAL_SIZE)}px`,
+    });
     for (const { l, t, nx, ny } of defs) {
       const onMap = this.isOnMap(nx, ny);
       const tile = widget.createDiv({
         cls: `duckmage-neighbor-tile${onMap ? "" : " duckmage-neighbor-tile-offmap"}`,
       });
-      tile.setCssProps({ left: `${l}px`, top: `${t}px` });
+      tile.setCssProps({ left: `${(l * S).toFixed(1)}px`, top: `${(t * S).toFixed(1)}px` });
 
       if (onMap) {
         tile.title = `Hex ${nx}, ${ny}`;
@@ -656,8 +663,8 @@ export class HexEditorModal extends HexmakerModal {
       cls: "duckmage-neighbor-centre duckmage-neighbor-centre--linked duckmage-neighbor-centre--copy",
       attr: { title: "Copy link to this hex (opens the map centred here)", "aria-label": "Copy link to this hex" },
     });
-    // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
-    centre.setCssProps({ left: "24px", top: `${isFlat ? 24 : 20}px` });
+    // Flower centre at 16px scale: flat-top (30,30), pointy-top (30,26); the dot is 16×16.
+    centre.setCssProps({ left: `${(30 * S - 8).toFixed(1)}px`, top: `${((isFlat ? 30 : 26) * S - 8).toFixed(1)}px` });
     const own = getTerrainFromFile(this.app, this.plugin.hexPath(x, y, this.mapName));
     const ownColor = own ? paletteMap.get(own)?.color : undefined;
     if (ownColor) centre.setCssProps({ "--duckmage-bg": ownColor });
