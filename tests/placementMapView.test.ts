@@ -42,7 +42,13 @@ const mine = resolved.filter((r) => SURFACES.includes(r.group));
 const TIER: Record<Resolved["choice"], Layer> = { keep: "main", simple: "main", advanced: "advanced", overkill: "debug", drop: "hidden" };
 /** Owner notes that override a tag: the centre dot now copies a hex link, so it stays (main). */
 // God goes back in the mode menu's list (owner 2026-10-12: "don't put god mode in advanced").
-const OVERRIDES: Record<string, Layer> = { "HexEditor.neighborCentreDot": "main", "WorkModeMenu.god": "main" };
+// Round 10 (owner 2026-10-12): one-item Advanced sections moved to the basic options.
+const ROUND10_MAIN = ["ModeBar.crossImpassable", "PathMenu.splitHere", "PathMenu.reverse", "LayersMenu.regionOverlay", "TerrainFilter.typeRow", "Token.description", "PathPicker.pathsOnMap", "PathType.carves"];
+const OVERRIDES: Record<string, Layer> = {
+  "HexEditor.neighborCentreDot": "main",
+  "WorkModeMenu.god": "main",
+  ...Object.fromEntries(ROUND10_MAIN.map((id) => [id, "main" as Layer])),
+};
 
 function sources(dir: string): string[] {
   const out: string[] = [];
@@ -94,19 +100,23 @@ describe("menus and toolbars: Advanced ▸ and Debug ▸ submenus", () => {
   const branchy = { name: "Road", branches: [{}, {}] } as unknown as MapPath;
   const acts = { split: noop, deleteBranch: noop, deletePath: noop, rename: noop, changeType: noop, reverse: noop };
 
-  it("path menu: simple items first, Split here and Reverse in Advanced ▸ at the end of the path items", () => {
+  it("path menu: Split here and Reverse are in the menu itself, no Advanced ▸ (round 10)", () => {
     const rows = painterMenuEntries(pathMenuItems(branchy, 1, acts), noop, "Switch path type", noop, [{ label: "Erase mode", onClick: noop }]);
-    expect(rows.map((r) => ("separator" in r ? "---" : r.label))).toEqual([
-      "Rename…", "Delete path: Road", "Change type…", "Delete this fork", ADVANCED_SUBMENU, "---", "Switch path type", "Exit tool", "Erase mode",
-    ]);
+    const labels = rows.map((r) => ("separator" in r ? "---" : r.label));
+    expect(labels).toEqual(expect.arrayContaining(["Rename…", "Split here", "Reverse"]));
+    expect(labels).not.toContain(ADVANCED_SUBMENU);
   });
 
-  it("Advanced ▸ opens the advanced rows", () => {
+  it("one Advanced row is shown inline; two or more make an Advanced ▸ submenu (round 10)", () => {
+    const map = { "T.a": "advanced", "T.b": "advanced" } as const;
+    const one = placedRows([{ id: "T.a", label: "a", onClick: noop }, { label: "plain", onClick: noop }], false, 0, map);
+    expect(one.shown.map((r) => r.label)).toEqual(["plain", "a"]);
+    expect(one.advanced).toEqual([]);
+    const two = placedRows([{ id: "T.a", label: "a", onClick: noop }, { id: "T.b", label: "b", onClick: noop }, { label: "plain", onClick: noop }], false, 0, map);
+    expect(two.shown.map((r) => r.label)).toEqual(["plain"]);
     let opened: string[] = [];
-    const rows = painterMenuEntries(pathMenuItems(branchy, 0, acts), null, "", noop, [], (sub) => { opened = sub.map((r) => r.label); });
-    const adv = rows.find((r) => !("separator" in r) && r.label === ADVANCED_SUBMENU);
-    (adv as { onClick: () => void }).onClick();
-    expect(opened).toEqual(["Split here", "Reverse"]);
+    submenuRows(two, (sub) => { opened = sub.map((r) => r.label); })[0].onClick();
+    expect(opened).toEqual(["a", "b"]);
   });
 
   it("Debug ▸ exists only in debug mode; hidden rows are left out", () => {
@@ -131,10 +141,11 @@ describe("menus and toolbars: Advanced ▸ and Debug ▸ submenus", () => {
     for (const m of WORK_MODES) expect(WORK_MODE_TEXT[m].short.split(/\s+/)).toHaveLength(3);
   });
 
-  it("the path tool's Cross impassable stays an Advanced ▸ button (the bar has other buttons) and says when it's on", () => {
+  it("the path tool's Cross impassable is a plain button on the bar (round 10)", () => {
     const row = { id: "ModeBar.crossImpassable", label: "Cross impassable", onClick: noop };
-    expect(placedRows([{ ...row, checked: false }], false, 1).advanced).toHaveLength(1);
-    expect(submenuRows(placedRows([{ ...row, checked: true }], false, 1), noop)[0].label).toBe("Advanced · 1 set ▸");
+    const split = placedRows([{ ...row, checked: false }], false, 1);
+    expect(split.shown.map((r) => r.label)).toEqual(["Cross impassable"]);
+    expect(split.advanced).toEqual([]);
   });
 
   it("the hex and overworld right-click menus copy a link to the hex, right after Center on this hex", () => {

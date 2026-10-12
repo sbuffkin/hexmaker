@@ -81,10 +81,13 @@ export function placedRows<T extends PlacedRow>(
   debugMode: boolean,
   othersShown = 0,
   map?: Readonly<Record<string, Placement>>,
+  singleInline = true,
 ): MenuSplit<T> {
   const p = partition(rows.map((r) => ({ id: r.id ?? "", item: r })), debugMode, map);
   const shown = [...p.main, ...p.more];
   if (!shown.length && !othersShown) return { shown: p.advanced, advanced: [], debug: p.debug };
+  // One Advanced item isn't worth a submenu (owner, round 10): show it inline.
+  if (singleInline && p.advanced.length === 1) return { shown: [...shown, ...p.advanced], advanced: [], debug: p.debug };
   return { shown, advanced: p.advanced, debug: p.debug };
 }
 
@@ -173,7 +176,8 @@ export class PlacedMenu {
   /** Add placed row `id`. */
   add(id: string | undefined, row: Omit<PlacedRow, "id">): void {
     const r: PlacedRow = { ...row, id };
-    const split = placedRows([r], this.debugMode, 1, this.map);
+    // One row at a time: whether a lone Advanced row goes inline is decided in finish().
+    const split = placedRows([r], this.debugMode, 1, this.map, false);
     if (split.shown.length) {
       addRows(this.menu, split.shown);
       this.shownCount++;
