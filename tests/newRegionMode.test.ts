@@ -268,6 +268,9 @@ describe("every entry point opens Edit region in new-region mode", () => {
 		const modal = read("src", "overworld", "EditRegionModal.ts");
 		expect(modal.match(/createFromDraft\(/g)?.length).toBe(1);
 		expect(modal).toMatch(/private async create\([^)]*\): Promise<void> \{[\s\S]*?createFromDraft\(/);
-		expect(modal).toMatch(/\{ text: "Cancel" \}\)\.addEventListener\("click", \(\) => this\.close\(\)\)/);
+		// The footer helper: Create is the primary; Cancel only closes.
+		expect(modal).toMatch(/this\.footer\(\{\s*primary: \{ text: createText,[^\n]*this\.create\(fresh, createText\) \},\s*cancel: \(\) => this\.close\(\),/);
+		// Neighbour influence is the shared labelled slider.
+		expect(modal).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
 	});
 });

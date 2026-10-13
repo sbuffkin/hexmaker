@@ -74,7 +74,6 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
       const resultBtns = resultBox.createDiv({ cls: "duckmage-roll-result-btns" });
       const copyBtn = resultBtns.createEl("button", {
         text: "Copy",
-        cls: "mod-cta",
       });
       copyBtn.addEventListener("click", () => {
         void navigator.clipboard.writeText(resultTextarea.value);

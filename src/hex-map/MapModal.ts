@@ -27,6 +27,8 @@ import { addGodOffer } from "./godOffer";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
 import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
+import { armButton } from "../ui/footer";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
 import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
 import { moduleMapProperties, worldMaps } from "../modules/runtime";
@@ -51,25 +53,21 @@ export function renderMissingActions(el: HTMLElement, plugin: HexmakerPlugin, na
     void plugin.restoreMissingMap(name).then(done);
   });
   const remove = box.createEl("button", { text: "Remove", attr: { title: "Drop it from the map list (no files are deleted)" } });
-  let armed = false;
-  remove.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (!armed) {
-      armed = true;
-      remove.setText("Remove from list?");
-      remove.addClass("mod-warning");
-      return;
-    }
-    remove.disabled = true;
-    void plugin.removeMapEntry(name).then(() => {
-      new Notice(`Removed "${plugin.mapLabel(name)}" from the map list.`);
-      done();
-    });
+  // The shared two-click guard (src/ui/footer.ts armButton).
+  remove.addEventListener("click", (e) => e.stopPropagation());
+  armButton(remove, {
+    armedText: "Click again to remove",
+    onConfirm: () => {
+      remove.disabled = true;
+      void plugin.removeMapEntry(name).then(() => {
+        new Notice(`Removed "${plugin.mapLabel(name)}" from the map list.`);
+        done();
+      });
+    },
   });
 }
 
 export class MapModal extends HexmakerModal {
-  private confirmingDelete: string | null = null;
   private stopKeepInViewport?: () => void;
   private activeTab: ModalTab = "Maps";
 
@@ -422,7 +420,7 @@ export class MapModal extends HexmakerModal {
       value: this.plugin.mapLabel(this.view.activeMapName),
       attr: { "aria-label": "Map name" },
     });
-    const nameBtn = nameRow.createEl("button", { text: "Save name", cls: "mod-cta" });
+    // Saves when you leave the box or press Enter (audit C3: no Save button).
     const saveName = () => {
       const typed = nameInput.value.trim();
       if (!typed || typed === this.plugin.mapLabel(this.view.activeMapName)) return;
@@ -432,9 +430,9 @@ export class MapModal extends HexmakerModal {
         this.render();
       });
     };
-    nameBtn.addEventListener("click", saveName);
+    nameInput.addEventListener("change", saveName);
     nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") saveName();
+      if (e.key === "Enter") nameInput.blur();
     });
     el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Shown everywhere. Its folder stays put." });
 
@@ -605,23 +603,23 @@ export class MapModal extends HexmakerModal {
 
     if (currentMap?.backgroundImage) {
       const bg = currentMap.backgroundImage;
-      const opacityRow = el.createDiv({ cls: "duckmage-region-row" });
-      opacityRow.createSpan({ text: "Opacity", cls: "duckmage-map-field-label" });
-      const opacitySlider = opacityRow.createEl("input", { type: "range" });
-      opacitySlider.min = "0.1";
-      opacitySlider.max = "1";
-      opacitySlider.step = "0.05";
-      opacitySlider.value = String(bg.opacity ?? 1);
-      opacitySlider.addEventListener("input", () => {
+      // Preview on input, save on change (audit S5).
+      const setOpacity = (v: number) => {
         const map = this.plugin.getMap(this.view.activeMapName);
-        if (!map?.backgroundImage) return;
-        map.backgroundImage.opacity = parseFloat(opacitySlider.value);
-        void this.plugin.saveSettings().then(() => this.onChanged());
+        if (!map?.backgroundImage) return false;
+        map.backgroundImage.opacity = v;
+        return true;
+      };
+      renderLabeledSlider(el, {
+        label: "Opacity", min: 0.1, max: 1, step: 0.05, value: bg.opacity ?? 1,
+        format: sliderFormat.fraction,
+        reset: { value: 1 },
+        onInput: (v) => { if (setOpacity(v)) this.onChanged(); },
+        onChange: (v) => { if (setOpacity(v)) void this.plugin.saveSettings().then(() => this.onChanged()); },
       });
 
       const calibrateBtn = el.createEl("button", {
         text: "Calibrate position & scale",
-        cls: "mod-cta",
       });
       calibrateBtn.addEventListener("click", () => {
         this.close();
@@ -683,28 +681,13 @@ export class MapModal extends HexmakerModal {
       return;
     }
     const box = el.createDiv({ cls: "duckmage-map-delete-block" });
-    if (this.confirmingDelete !== name) {
-      box.createEl("p", {
-        text: `Moves "${this.plugin.mapLabel(name)}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
-        cls: "duckmage-map-origin-desc",
-      });
-      box.createEl("button", { text: `Delete "${this.plugin.mapLabel(name)}"…` }).addEventListener("click", () => {
-        this.confirmingDelete = name;
-        this.render();
-      });
-      return;
-    }
-    box.addClass("duckmage-map-item-confirming");
-    box.createSpan({
-      cls: "duckmage-map-delete-warning",
-      text: `Delete "${this.plugin.mapLabel(name)}"? This will trash all its hex notes.`,
+    box.createEl("p", {
+      text: `Moves "${this.plugin.mapLabel(name)}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
+      cls: "duckmage-map-origin-desc",
     });
-    box.createEl("button", { text: "Delete", cls: "mod-warning duckmage-map-confirm-btn" })
-      .addEventListener("click", () => void this.deleteMap(name));
-    box.createEl("button", { text: "Cancel", cls: "duckmage-map-cancel-btn" }).addEventListener("click", () => {
-      this.confirmingDelete = null;
-      this.render();
-    });
+    // Two clicks, no dialog (owner Q6): the button asks once more for a few seconds.
+    const del = box.createEl("button", { text: `Delete "${this.plugin.mapLabel(name)}"`, cls: "mod-warning duckmage-map-delete-map" });
+    armButton(del, { armedText: "Click again to delete", onConfirm: () => void this.deleteMap(name) });
   }
 
   /**
@@ -842,7 +825,6 @@ export class MapModal extends HexmakerModal {
         await this.app.fileManager.trashFile(folder);
       } catch (e) {
         new Notice(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
-        this.confirmingDelete = null;
         this.render();
         return;
       }
@@ -877,7 +859,6 @@ export class MapModal extends HexmakerModal {
       }
     }
 
-    this.confirmingDelete = null;
     await this.plugin.saveSettings();
     this.onChanged();
     this.render();

@@ -44,13 +44,10 @@ export class RegionNavigateModal extends HexmakerModal {
         { mark: `${x}_${y}` },
       );
     }
-    const row = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const go = row.createEl("button", { text: `Go to ${label}`, cls: "mod-cta" });
-    go.addEventListener("click", () => {
-      this.close();
-      this.onGo();
-    });
-    row.createEl("button", { text: "Stay" }).addEventListener("click", () => this.close());
+    const go = this.footer({
+      primary: { text: `Go to ${label}`, onClick: () => { this.close(); this.onGo(); } },
+      cancel: { text: "Stay", onClick: () => this.close() },
+    }).primary!;
     this.scope.register([], "Enter", () => {
       this.close();
       this.onGo();

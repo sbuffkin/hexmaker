@@ -139,7 +139,7 @@ export function formatComboRef(parts: readonly BiomePart[], label: (id: string) 
 }
 
 /** Share of a mix that's land (not a water type): a land biome's own land share. */
-function landOf(mix: readonly BiomeMixRow[]): number {
+export function landOf(mix: readonly BiomeMixRow[]): number {
   let land = 0;
   const water = new Set(typesInGroup("water"));
   for (const [type, share] of mixShares([...mix])) if (!water.has(type)) land += share;

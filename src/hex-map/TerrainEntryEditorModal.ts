@@ -1,5 +1,6 @@
 import { App, Notice, Setting } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { TerrainColor } from "../types";
 import { ICON_PACK_LABELS, iconLabel, iconPack, type IconPack } from "../utils";
@@ -175,36 +176,19 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 			}
 		}
 
-		const btnRow = contentEl.createDiv({ cls: "duckmage-tee-buttons" });
-
-		const saveBtn = btnRow.createEl("button", { cls: "mod-cta", text: "Save" });
-		saveBtn.addEventListener("click", () => {
-			const nameChanged = this.pendingName !== this.originalName;
-			if (nameChanged && this.palette.some(e => e !== this.entry && e.name === this.pendingName)) {
-				new Notice(`A terrain named "${this.pendingName}" already exists in this palette.`);
-				return;
-			}
-			this.savedOrDeleted = true;
-			saveBtn.disabled = true;
-			saveBtn.setText(nameChanged ? "Updating hexes…" : "Saving…");
-			void this.doSave().then(() => this.close());
-		});
-
-		btnRow.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
-			this.savedOrDeleted = true;
-			this.close();
-		});
-
-		const deleteBtn = btnRow.createEl("button", { cls: "duckmage-btn-danger", text: "Delete" });
-		deleteBtn.addEventListener("click", () => {
-			void (async () => {
-				this.savedOrDeleted = true;
-				const idx = this.palette.indexOf(this.entry);
-				if (idx >= 0) this.palette.splice(idx, 1);
-				await this.plugin.saveSettings();
-				this.onDelete();
-				this.close();
-			})();
+		// Autosaves (owner Q5, audit C6): × closes and saves; no Save or Cancel.
+		renderSaveStatusLine(contentEl, { title: "Saves when you close this (×). There is no Save button." });
+		this.footer({
+			destructive: { text: "Delete", onClick: () => {
+				void (async () => {
+					this.savedOrDeleted = true;
+					const idx = this.palette.indexOf(this.entry);
+					if (idx >= 0) this.palette.splice(idx, 1);
+					await this.plugin.saveSettings();
+					this.onDelete();
+					this.close();
+				})();
+			} },
 		});
 
 		this.makeDraggable();
@@ -212,6 +196,11 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 
 	onClose(): void {
 		if (!this.savedOrDeleted) {
+			// A name another terrain already has can't be saved: keep the old one.
+			if (this.pendingName !== this.originalName && this.palette.some(e => e !== this.entry && e.name === this.pendingName)) {
+				new Notice(`A terrain named "${this.pendingName}" already exists in this palette, so the name stays "${this.originalName}".`);
+				this.pendingName = this.originalName;
+			}
 			void this.doSave();
 		}
 		this.contentEl.empty();

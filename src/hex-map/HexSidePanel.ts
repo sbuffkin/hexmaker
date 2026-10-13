@@ -3,6 +3,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
 import { Disclosure } from "../ui/disclosure";
+import { renderResetButton } from "../ui/sliders";
 import { NAME_FAMILIES, NAME_SIZES, nameStyleId, resolveNameFont, type HexNameSize, type ResolvedNameFont } from "./hexNameFont";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
@@ -391,18 +392,18 @@ export class OverlayPanel extends HexSidePanel {
     this.nameBoldBtn = styleBtn("B", "Bold", "duckmage-overlay-font-bold", (f) => ({ ...f, bold: !f.bold }));
     this.nameItalicBtn = styleBtn("I", "Italic", "duckmage-overlay-font-italic", (f) => ({ ...f, italic: !f.italic }));
 
-    const reset = row.createEl("button", {
-      cls: "clickable-icon duckmage-overlay-font-reset",
-      attr: { "aria-label": "Use the default name font (settings)" },
-    });
-    setIcon(reset, "rotate-ccw");
-    reset.addEventListener("click", () => {
-      const map = this.getActiveMap();
-      delete map.hexNameFont;
-      delete map.hexNameSize;
-      delete map.hexNameStyle;
-      changed();
-    });
+    // The one reset button (src/ui/sliders.ts).
+    renderResetButton(row, {
+      what: "the name font",
+      defaultText: "the settings' font",
+      onReset: () => {
+        const map = this.getActiveMap();
+        delete map.hexNameFont;
+        delete map.hexNameSize;
+        delete map.hexNameStyle;
+        changed();
+      },
+    }).el.addClass("duckmage-overlay-font-reset");
   }
 
   /** Name-font controls ← the current map's font. */

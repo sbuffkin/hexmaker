@@ -2,6 +2,7 @@ import { App, Modal } from "obsidian";
 import { ICON_PACK_LABELS, iconLabel, iconPack, iconPackTabs, iconSubgroup, iconSubgroups, type IconPack } from "./utils";
 import { wheelDeltaPx, wheelTarget } from "./wheelChain";
 import { Disclosure, type IsSet, type SectionName } from "./ui/disclosure";
+import { renderFooter, type Footer, type FooterOptions } from "./ui/footer";
 
 /** Last pack tab picked in any icon filter — remembered for the session. */
 let lastIconPack: IconPack | undefined;
@@ -59,6 +60,20 @@ export class HexmakerModal extends Modal {
 	 */
 	protected place(id: string, el: HTMLElement, isSet?: IsSet): boolean {
 		return this.disclosure.place(id, el, isSet);
+	}
+
+	/** Forget the Advanced dropdown (the content was emptied to be drawn again). */
+	protected resetDisclosure(): void {
+		this.disclosureState = undefined;
+	}
+
+	/**
+	 * The modal's button row (src/ui/footer.ts): primary first and the only
+	 * mod-cta, then secondary, destructive and Cancel. Autosaving editors
+	 * have none (× closes). Added at the end of the content by default.
+	 */
+	protected footer(opts: FooterOptions, parent: HTMLElement = this.contentEl): Footer {
+		return renderFooter(parent, opts);
 	}
 
 	/**

@@ -1,10 +1,12 @@
-import { App, Setting } from "obsidian";
+import { App, Notice, Setting } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathAutoRoute, PathType, PathLineStyle, PathRouting } from "../types";
 import { buildPathPreviewSvg } from "./PathPickerModal";
 import { pathAvoidsImpassable, pathMeanders } from "../impassable";
 import { countPathsOfType, removePathTypeFromChains, renamePathTypeInChains } from "../paths/typeRefs";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 
 /** One line on what auto-route does with a type (the preview can't show it). */
 export function pathBehaviourSummary(pt: Pick<PathType, "avoidImpassable" | "autoRoute">): string {
@@ -98,17 +100,14 @@ export class PathTypeEditorModal extends HexmakerModal {
 					}),
 			);
 
-		new Setting(contentEl)
-			.setName("Width")
-			.addSlider(slider =>
-				slider
-					.setLimits(1, 10, 1)
-					.setValue(this.pendingWidth)
-					.onChange(value => {
-						this.pendingWidth = value;
-						redrawPreview();
-					}),
-			);
+		renderLabeledSlider(new Setting(contentEl).setName("Width").controlEl, {
+			label: "", ariaLabel: "Width", min: 1, max: 10, step: 1, value: this.pendingWidth,
+			format: sliderFormat.px,
+			onInput: value => {
+				this.pendingWidth = value;
+				redrawPreview();
+			},
+		});
 
 		new Setting(contentEl)
 			.setName("Line style")
@@ -186,44 +185,16 @@ export class PathTypeEditorModal extends HexmakerModal {
 			);
 		this.place("PathType.carveWidth", carveWidth.settingEl);
 
-		// Save button
-		const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-editor-actions" });
-		btnRow.createEl("button", { text: "Save", cls: "mod-cta" }).addEventListener("click", () => {
-			void (async () => {
-				await this.doSave();
-				this.close();
-			})();
-		});
-
-		// Delete button with confirm
-		const deleteBtn = btnRow.createEl("button", { text: "Delete", cls: "mod-warning" });
-		let confirmDiv: HTMLElement | null = null;
-		deleteBtn.addEventListener("click", () => {
-			if (confirmDiv) { confirmDiv.remove(); confirmDiv = null; return; }
-
-			const pathCount = this.plugin.mapsOnPalette(this.paletteName).reduce(
-				(sum, r) => sum + countPathsOfType(this.plugin.paths.storedPaths(r), this.originalName),
-				0,
-			);
-			confirmDiv = contentEl.createDiv({ cls: "duckmage-terrain-editor-confirm" });
-			if (pathCount > 0) {
-				confirmDiv.createEl("p", {
-					text: `This type is used by ${pathCount} path(s). Deleting it will remove those paths. Continue?`,
-					cls: "duckmage-terrain-editor-confirm-msg",
-				});
-			} else {
-				confirmDiv.createEl("p", { text: "Delete this path type?", cls: "duckmage-terrain-editor-confirm-msg" });
-			}
-			confirmDiv.createEl("button", { text: "Yes, delete", cls: "mod-warning" }).addEventListener("click", () => {
+		// Autosaves (owner Q5): × closes and saves, no Save button; the shared status line says so.
+		renderSaveStatusLine(contentEl, { title: "Saves when you close this (×). There is no Save button." });
+		// Delete: no confirm (owner Q6); the notice offers Undo.
+		this.footer({
+			destructive: { text: "Delete", onClick: () => {
 				void (async () => {
 					await this.doDelete();
 					this.close();
 				})();
-			});
-			confirmDiv.createEl("button", { text: "Cancel" }).addEventListener("click", () => {
-				confirmDiv?.remove();
-				confirmDiv = null;
-			});
+			} },
 		});
 	}
 
@@ -268,18 +239,40 @@ export class PathTypeEditorModal extends HexmakerModal {
 		if (this.savedOrDeleted) return;
 		this.savedOrDeleted = true;
 
+		const pathCount = this.plugin.mapsOnPalette(this.paletteName).reduce(
+			(sum, r) => sum + countPathsOfType(this.plugin.paths.storedPaths(r), this.originalName),
+			0,
+		);
+
 		// Remove from the palette's path types
 		const list = this.plugin.getPathTypes(this.paletteName);
-		const idx = list.indexOf(this.entry);
+		const entry = this.entry;
+		const idx = list.indexOf(entry);
 		if (idx !== -1) list.splice(idx, 1);
 
 		// Remove the paths of this type on maps that use this palette.
 		// PHASE-3: then removePathTypeFromPaths(map.paths, …).
-		for (const region of this.plugin.mapsOnPalette(this.paletteName)) {
+		const before = this.plugin.mapsOnPalette(this.paletteName).map((region) => ({ region, chains: region.pathChains }));
+		for (const { region } of before) {
 			region.pathChains = removePathTypeFromChains(region.pathChains, this.originalName);
 		}
 
 		await this.plugin.saveSettings();
 		this.onDelete();
+
+		// The safety catch instead of a confirm: Undo puts the type and its paths back.
+		const plugin = this.plugin;
+		const onDelete = this.onDelete;
+		const msg = createFragment((frag) => {
+			frag.appendText(`Deleted path type "${this.originalName}"${pathCount ? ` and its ${pathCount} path${pathCount === 1 ? "" : "s"}` : ""}. `);
+			frag.createEl("button", { text: "Undo" }).addEventListener("click", () => {
+				const now = plugin.getPathTypes(this.paletteName);
+				if (!now.includes(entry)) now.splice(Math.min(Math.max(0, idx), now.length), 0, entry);
+				for (const { region, chains } of before) region.pathChains = chains;
+				void plugin.saveSettings().then(() => onDelete());
+				notice.hide();
+			});
+		});
+		const notice = new Notice(msg, 10000);
 	}
 }

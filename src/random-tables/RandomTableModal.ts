@@ -273,9 +273,9 @@ export class RandomTableModal extends HexmakerModal {
     });
 
     if (this.onInsert) {
+      // Plain: Roll is this surface's one primary.
       const useBtn = resultBtns.createEl("button", {
         text: "Use result",
-        cls: "mod-cta",
       });
       useBtn.addEventListener("click", () => {
         this.onInsert!(resultTextarea.value);
@@ -286,14 +286,13 @@ export class RandomTableModal extends HexmakerModal {
     const target = this.hexTarget;
     if (target) {
       renderAddToHex(resultBtns, target, () => resultTextarea.value, {
-        cta: !this.onInsert,
+        cta: false, // Roll is the one primary here
         onAdded: () => this.close(),
       });
     }
 
     const copyBtn = resultBtns.createEl("button", {
       text: "Copy",
-      cls: this.onInsert || target ? "" : "mod-cta",
     });
     copyBtn.addEventListener("click", () => {
       void navigator.clipboard.writeText(resultTextarea.value);
@@ -320,7 +319,7 @@ export class RandomTableModal extends HexmakerModal {
     if (table.entries.length === 0) {
       const empty = tableContainer.createDiv({ cls: "duckmage-rt-empty-state" });
       empty.createDiv({ text: emptyTableMessage(content), cls: "duckmage-rt-empty" });
-      const addBtn = empty.createEl("button", { text: "Add entries", cls: "mod-cta" });
+      const addBtn = empty.createEl("button", { text: "Add entries" });
       addBtn.addEventListener("click", () => {
         new RandomTableEditorModal(
           this.app,

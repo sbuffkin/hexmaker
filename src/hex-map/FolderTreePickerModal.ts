@@ -1,4 +1,5 @@
-import { App, Modal, Notice, TFile, TFolder } from "obsidian";
+import { App, Notice, TFile, TFolder } from "obsidian";
+import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/FolderTree";
@@ -9,7 +10,7 @@ import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/Fol
  * - `onChoose`       — called when the user selects an existing file.
  * - `onTableCreated` — if provided, called after a new table is created (e.g. to open it in RT view).
  */
-export class FolderTreePickerModal extends Modal {
+export class FolderTreePickerModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,

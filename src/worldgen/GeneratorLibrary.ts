@@ -9,7 +9,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
-import { ConfirmModal } from "./ConfirmModal";
 
 export interface LibraryHost {
   /** The generator shown below the list. */
@@ -159,22 +158,15 @@ export class GeneratorLibrary {
         this.host.changed();
       })();
     });
+    // No confirm (owner Q6): it goes to the trash, and saves keep a copy.
     del.addEventListener("click", () => {
       const names = selected.map((g) => g.model.name);
       const what = names.length === 1 ? `"${names[0]}"` : `${names.length} generators`;
-      new ConfirmModal(
-        this.app,
-        names.length === 1 ? "Delete generator" : "Delete generators",
-        `Move ${what} to the trash?${names.length > 1 ? ` (${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""})` : ""} Saves made from ${names.length === 1 ? "it keep a copy of it, so they" : "them keep a copy, so they"} can still be loaded.`,
-        "Delete",
-        () => {
-          void deleteGenerators(this.plugin, selected.map((g) => g.file)).then(() => {
-            for (const g of selected) checked.delete(g.file.path);
-            new Notice(`Deleted ${what}.`);
-            this.host.changed();
-          });
-        },
-      ).open();
+      void deleteGenerators(this.plugin, selected.map((g) => g.file)).then(() => {
+        for (const g of selected) checked.delete(g.file.path);
+        new Notice(`Moved ${what} to the trash. Saves made from ${names.length === 1 ? "it" : "them"} keep a copy.`);
+        this.host.changed();
+      });
     });
   }
 

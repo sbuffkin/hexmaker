@@ -80,10 +80,10 @@ export class MakeGeneratorModal extends HexmakerModal {
       choice.createEl("p", { cls: "setting-item-description", text: "The old generator is backed up first. Biomes that use it keep using it." });
     }
 
-    const buttons = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const go = buttons.createEl("button", { text: this.mode === "new" ? "Make generator" : "Overwrite", cls: this.mode === "new" ? "mod-cta" : "mod-warning" });
-    go.addEventListener("click", () => void this.make(go));
-    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    // Overwriting replaces a generator (backed up first): the destructive style, not the primary.
+    const act = { text: this.mode === "new" ? "Make generator" : "Overwrite", onClick: () => void this.make(go) };
+    const foot = this.footer(this.mode === "new" ? { primary: act, cancel: () => this.close() } : { destructive: act, cancel: () => this.close() });
+    const go: HTMLButtonElement = foot.buttons.get(act.text)!;
   }
 
   private renderList(el: HTMLElement, candidates: OverwriteCandidate[]): void {

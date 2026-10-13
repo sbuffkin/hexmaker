@@ -30,6 +30,7 @@ import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
 import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
 import { Disclosure } from "../ui/disclosure";
+import { makeScrubbable } from "../ui/scrub";
 import { groupId } from "../ui/placeGroup";
 import { newMapOptionId } from "./newMapOptionIds";
 import {
@@ -314,6 +315,8 @@ export class NewMapSetupModal extends HexmakerModal {
     const colsInput = this.labelled(sizeRow, custom.createEl("input", { type: "number", value: String(this.cols), attr: { min: "1", max: "200", "aria-label": "Columns" } }));
     custom.createSpan({ text: "×" });
     const rowsInput = custom.createEl("input", { type: "number", value: String(this.rows), attr: { min: "1", max: "200", "aria-label": "Rows" } });
+    // The number-field standard: drag or scroll to change (clamped on commit below).
+    for (const input of [colsInput, rowsInput]) makeScrubbable(input, { min: 1, max: 200, pxPerStep: 4 });
     const presets = this.origin ? SUBMAP_SIZE_PRESETS : SIZE_PRESETS;
     const presetBtns: HTMLButtonElement[] = [];
     const syncPresetBtns = () => presets.forEach((p, i) =>
