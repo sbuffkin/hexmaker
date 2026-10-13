@@ -50,6 +50,7 @@ import { TAB_ORDER, WorldTypesDraft, type WorldTypesTab } from "./worldTypesDraf
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SaveTracker, type SaveState } from "../hex-map/saveStatus";
 import { isDebugMode } from "../ui/debugMode";
 import { isShown, layerOf } from "../ui/placement";
+import { oddsText, readOddsWeight } from "../ui/odds";
 
 /** Why world types can't be edited from this map now, or undefined. */
 export function worldTypesEditLock(plugin: HexmakerPlugin, mapName: string | undefined): string | undefined {
@@ -318,10 +319,7 @@ export class WorldTypesModal extends HexmakerModal {
     this.rowsEl = contentEl.createDiv({ cls: "duckmage-world-types-rows" });
     this.renderRows();
 
-    const buttons = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const add = buttons.createEl("button", { text: "Add row" });
-    if (lock) lockButton(add, lock);
-    add.addEventListener("click", () => {
+    const foot = this.footer({ secondary: [{ text: "Add row", onClick: () => {
       if (this.lock()) return;
       const blank = TABS[this.tab].columns.map(() => "");
       if (this.tab === "worlds" && this.preview.map) blank[col("Map")] = this.preview.map;
@@ -330,7 +328,10 @@ export class WorldTypesModal extends HexmakerModal {
       // The new row is at the bottom of the list: show it and put the
       // cursor in its first field (F9: it appeared off-screen).
       this.renderRows({ row: this.cells[this.tab].length - 1, target: "first" });
-    });
+    } }] });
+    const buttons = foot.el;
+    const add = foot.buttons.get("Add row")!;
+    if (lock) lockButton(add, lock);
     // Rows that can't be read yet, and the autosave status (as in the hex editor).
     this.incompleteEl = buttons.createSpan({ cls: "duckmage-world-types-incomplete" });
     this.statusEl = undefined;
@@ -503,6 +504,7 @@ export class WorldTypesModal extends HexmakerModal {
       el.addEventListener("mouseleave", () => spacer.remove(), { once: true });
     }
     el.scrollTop = scrollTop;
+    this.refreshOdds();
 
     if (!focus) return;
     const rowEl = el.querySelectorAll<HTMLElement>(".duckmage-world-types-row")[focus.row];
@@ -531,7 +533,21 @@ export class WorldTypesModal extends HexmakerModal {
     const input = wrap.createEl("input", { type: "text", value: cells[i] ?? "", attr: { placeholder: PLACEHOLDERS[c] ?? "", "aria-label": c } });
     if (list) input.setAttr("list", list);
     input.disabled = locked;
-    input.addEventListener("input", () => { cells[i] = input.value; this.cellChanged(cells, row); });
+    // Weights stay free; a % beside each says its share (owner Q1), live.
+    if (c === "Weight") wrap.createSpan({ cls: "duckmage-odds-percent", attr: { title: "Its share of the weights in this tab (among only the rows that fit a map, it's more)" } });
+    input.addEventListener("input", () => {
+      cells[i] = input.value;
+      this.cellChanged(cells, row);
+      if (c === "Weight") this.refreshOdds();
+    });
+  }
+
+  /** Every row's % beside its weight, from the weights as typed (blank = 1). */
+  private refreshOdds(): void {
+    const w = TABS[this.tab].columns.indexOf("Weight");
+    if (w < 0 || !this.rowsEl) return;
+    const odds = oddsText(this.cells[this.tab].map((cells) => readOddsWeight(cells[w] ?? "")));
+    this.rowsEl.querySelectorAll<HTMLElement>(".duckmage-world-types-cell.is-weight .duckmage-odds-percent").forEach((el, i) => el.setText(odds[i] ?? "–"));
   }
 
   private cellChanged(cells: string[], row: HTMLElement): void {

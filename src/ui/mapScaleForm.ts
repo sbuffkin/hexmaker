@@ -9,9 +9,9 @@
 import type { MapScaleDef } from "../mapScales";
 import type { ScaleChoice } from "../modules/types";
 import { tuneKey, type TuningDef } from "../worldgen/procedural/common";
-import { linkLabel } from "../utils";
 import { tuningText } from "../wizardText";
 import type { Disclosure } from "./disclosure";
+import { renderLabeledSlider } from "./sliders";
 
 /**
  * "What are you mapping?": a radio group of scale cards in `parent`
@@ -78,44 +78,39 @@ export function renderTuningSliders(
 	const rows: HTMLElement[] = [];
 	for (const t of defs ?? []) {
 		const key = tuneKey(t.key);
-		const row = host.createDiv({ cls: "duckmage-wizard-tuning" });
-		rows.push(row);
 		const isMoved = () => options[key] !== undefined;
+		// The shared slider (value shown, reset to the default, dimmed while at it).
+		const slider = renderLabeledSlider(host, {
+			label: t.label,
+			title: t.help,
+			help: `${t.help} Default ${tuningText(t.default)}.`,
+			min: t.min,
+			max: t.max,
+			step: t.step,
+			value: isMoved() ? Number(options[key]) : t.default,
+			format: tuningText,
+			layout: "stacked",
+			cls: "duckmage-wizard-tuning",
+			reset: {
+				value: t.default,
+				onReset: () => {
+					delete options[key];
+					disclosure.refreshSet();
+					changed();
+				},
+			},
+			isSet: isMoved,
+			onInput: (v) => {
+				if (v === t.default) delete options[key];
+				else options[key] = String(v);
+				disclosure.refreshSet();
+				changed();
+			},
+		});
+		const row = slider.el;
+		rows.push(row);
 		// A row taken off the form (generator changed) no longer counts.
 		const isSet = () => row.isConnected && isMoved();
-		const value = () => (isMoved() ? Number(options[key]) : t.default);
-		const head = row.createDiv({ cls: "duckmage-wizard-tuning-head" });
-		const label = head.createEl("label", { text: t.label, attr: { title: t.help } });
-		const shown = head.createSpan({ cls: "duckmage-wizard-tuning-value" });
-		const reset = head.createEl("button", {
-			cls: "duckmage-wizard-tuning-reset",
-			text: "↺",
-			attr: { "aria-label": `Reset ${t.label} to ${tuningText(t.default)}`, title: `Reset to ${tuningText(t.default)}` },
-		});
-		const slider = row.createEl("input", { type: "range", attr: { min: String(t.min), max: String(t.max), step: String(t.step) } });
-		linkLabel(label, slider);
-		row.createDiv({ cls: "setting-item-description", text: `${t.help} Default ${tuningText(t.default)}.` });
-		const sync = () => {
-			slider.value = String(value());
-			shown.setText(tuningText(value()));
-			reset.disabled = !isMoved();
-		};
-		const moved = () => {
-			sync();
-			disclosure.refreshSet();
-			changed();
-		};
-		slider.addEventListener("input", () => {
-			const v = Number(slider.value);
-			if (v === t.default) delete options[key];
-			else options[key] = slider.value;
-			moved();
-		});
-		reset.addEventListener("click", () => {
-			delete options[key];
-			moved();
-		});
-		sync();
 		disclosure.place(placementId, row, isSet);
 	}
 	return rows;

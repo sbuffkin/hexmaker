@@ -1,5 +1,6 @@
 import { App, TFile, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { WorkflowExportModal } from "./WorkflowExportModal";
@@ -638,8 +639,6 @@ export class WorkflowEditorModal extends HexmakerModal {
     renderSteps();
     updateValidation();
 
-    // ── Footer ────────────────────────────────────────────────────────
-    const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
 
     this.flushAndSave = async () => {
       const wfFolder = normalizeFolder(this.plugin.settings.workflowsFolder);
@@ -690,15 +689,11 @@ export class WorkflowEditorModal extends HexmakerModal {
       }
     };
 
-    footer
-      .createEl("button", { text: "Export…", cls: "mod-cta" })
-      .addEventListener("click", () => {
-        new WorkflowExportModal(this.app, this.plugin, this.file).open();
-      });
-
-    footer
-      .createEl("button", { text: "Close", cls: "mod-cta" })
-      .addEventListener("click", () => this.close());
+    // Footer: Export… only (owner Q5: no Close; × closes and saves), with the autosave line.
+    const foot = this.footer({
+      secondary: [{ text: "Export…", onClick: () => new WorkflowExportModal(this.app, this.plugin, this.file).open() }],
+    });
+    foot.el.prepend(renderSaveStatusLine(foot.el, { title: "Saves when you close this (×). There is no Save button." }).el);
 
     this.makeDraggable();
   }

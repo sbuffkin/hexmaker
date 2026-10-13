@@ -1,5 +1,6 @@
 import { App, Notice, Setting, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import {
@@ -96,48 +97,49 @@ class FactionEditorModal extends HexmakerModal {
       this.plugin.settings.hexOrientation,
     );
 
-    // ── Buttons ───────────────────────────────────────────────────────────────
-    const btnRow = contentEl.createDiv({ cls: "duckmage-faction-editor-btns" });
-
-    const saveBtn = btnRow.createEl("button", {
-      text: "Save",
-      cls: "mod-cta duckmage-faction-editor-save",
-    });
-    saveBtn.addEventListener("click", () => {
-      void (async () => {
-        // Rename first so this.file.path is updated before the color write
-        let newBasename = this.file.basename;
-        if (pendingName && pendingName !== this.file.basename) {
-          const folder = this.file.parent?.path ?? "";
-          const newPath = folder
-            ? `${folder}/${pendingName}.md`
-            : `${pendingName}.md`;
-          await this.app.fileManager.renameFile(this.file, newPath);
-          newBasename = pendingName;
-        }
-        // this.file.path is updated in-place by Obsidian after rename
-        await setFactionColorInFile(this.app, this.file.path, pendingColor);
-        await setFactionStyleInFile(this.app, this.file.path, styleState);
-        this.onSaved(pendingColor, newBasename, styleState);
-        this.close();
-      })();
-    });
-
-    const clearBtn = btnRow.createEl("button", {
-      text: "Clear color",
-      cls: "duckmage-faction-editor-clear",
-    });
-    if (!this.initialColor) clearBtn.disabled = true;
-    clearBtn.addEventListener("click", () => {
-      void (async () => {
-        await setFactionColorInFile(this.app, this.file.path, null);
-        this.onSaved(null, this.file.basename, styleState);
-        this.close();
-      })();
+    // Autosaves (owner Q5, audit C3): × closes and saves what changed; no Save button.
+    const startStyle = JSON.stringify(styleState);
+    this.commit = async () => {
+      const renamed = !!pendingName && pendingName !== this.file.basename;
+      const changed = renamed || pendingColor !== (this.initialColor ?? "#888888") || JSON.stringify(styleState) !== startStyle;
+      if (!changed) return;
+      // Rename first so this.file.path is updated before the color write
+      let newBasename = this.file.basename;
+      if (renamed) {
+        const folder = this.file.parent?.path ?? "";
+        const newPath = folder ? `${folder}/${pendingName}.md` : `${pendingName}.md`;
+        await this.app.fileManager.renameFile(this.file, newPath);
+        newBasename = pendingName;
+      }
+      // this.file.path is updated in-place by Obsidian after rename
+      await setFactionColorInFile(this.app, this.file.path, pendingColor);
+      await setFactionStyleInFile(this.app, this.file.path, styleState);
+      this.onSaved(pendingColor, newBasename, styleState);
+    };
+    renderSaveStatusLine(contentEl, { title: "Saves when you close this (×). There is no Save button." });
+    this.footer({
+      secondary: [{
+        text: "Clear color",
+        cls: "duckmage-faction-editor-clear",
+        disabled: !this.initialColor,
+        onClick: () => {
+          this.commit = null;
+          void (async () => {
+            await setFactionColorInFile(this.app, this.file.path, null);
+            this.onSaved(null, this.file.basename, styleState);
+            this.close();
+          })();
+        },
+      }],
     });
   }
 
+  /** The autosave run on close (null once Clear color has written). */
+  private commit: (() => Promise<void>) | null = null;
+
   onClose(): void {
+    void this.commit?.();
+    this.commit = null;
     this.contentEl.empty();
   }
 }

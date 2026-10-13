@@ -111,21 +111,13 @@ export class SubmapPickerModal extends HexmakerModal {
 
   /** Bottom button row: Remove link / Link existing / Cancel. */
   private renderButtons(contentEl: HTMLElement, hasMaps: boolean, selected: () => string): void {
-    const bottomRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    if (hasMaps) {
-      if (this.current && this.onUnlink) {
-        const unlink = this.onUnlink;
-        bottomRow.createEl("button", { text: "Remove link", cls: "mod-warning" })
-          .addEventListener("click", () => { this.close(); unlink(); });
-      }
-      bottomRow.createEl("button", { text: "Link", cls: "mod-cta" })
-        .addEventListener("click", () => {
-          this.close();
-          this.onLink(selected());
-        });
-    }
-    bottomRow.createEl("button", { text: "Cancel" })
-      .addEventListener("click", () => this.close());
+    // Primary first; Remove link is plain (it removes a link, it destroys nothing: audit B4).
+    const unlink = hasMaps && this.current ? this.onUnlink : undefined;
+    this.footer({
+      primary: hasMaps ? { text: "Link", onClick: () => { this.close(); this.onLink(selected()); } } : undefined,
+      secondary: [unlink && { text: "Remove link", onClick: () => { this.close(); unlink(); } }],
+      cancel: () => this.close(),
+    });
   }
 
   onClose(): void {

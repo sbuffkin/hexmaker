@@ -49,6 +49,7 @@ import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
+import { setNumberBoxDebug } from "./ui/numberBoxes";
 import { addPlacedMenuItems, placeCommand } from "./ui/commandPlacement";
 import {
   getPreset,
@@ -188,6 +189,8 @@ export default class HexmakerPlugin extends Plugin {
     this.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
     // Icon pickers open on the Space tab for space-only setups.
     setIconPackDefault(() => defaultIconPack(this.settings));
+    // Number boxes beside sliders follow debug mode (src/ui/numberBoxes.ts).
+    setNumberBoxDebug(() => isDebugMode(this.app));
     // Palette pickers preview the picked palette's terrains (E4).
     setPaletteTerrainSource((name) => this.getPaletteOrPresetTerrains(name));
     setHexDataSource(this.mapStore);
@@ -452,15 +455,8 @@ export default class HexmakerPlugin extends Plugin {
           ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
         const mapName = open?.activeMapName;
         if (!mapName || !this.getMap(mapName)) return false;
-        if (!checking) {
-          new ConfirmModal(
-            this.app,
-            "Add map data to hex notes",
-            `Every hex note of "${this.mapLabel(mapName)}" gets a Map data box under its title showing its terrain, region and name from the map, kept up to date when you open the hex. Nothing else in the notes changes.`,
-            "Add map data",
-            () => void this.addMapDataToHexNotes(mapName).then((n) => new Notice(`Map data added or updated in ${n} hex note${n === 1 ? "" : "s"}.`)),
-          ).open();
-        }
+        // No confirm (owner Q6): it only adds a Map data box; the notice says what it did.
+        if (!checking) void this.addMapDataToHexNotes(mapName).then((n) => new Notice(`Map data added or updated in ${n} hex note${n === 1 ? "" : "s"} of "${this.mapLabel(mapName)}" (a box under each title; nothing else changed).`));
         return true;
       },
     });
@@ -471,15 +467,8 @@ export default class HexmakerPlugin extends Plugin {
       name: "Update map data in region and faction notes",
       checkCallback: (checking) => {
         if (!this.regionAndFactionNotes().length) return false;
-        if (!checking) {
-          new ConfirmModal(
-            this.app,
-            "Update map data in region and faction notes",
-            "Every region and faction note gets a Map data box under its title listing the maps that use it (with hex counts) and, for regions, the encounter table. It is kept up to date when you open the note. Nothing else in the notes changes.",
-            "Update map data",
-            () => void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} note${n === 1 ? "" : "s"}.`)),
-          ).open();
-        }
+        // No confirm (owner Q6): it only adds or refreshes a Map data box; the notice says what it did.
+        if (!checking) void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} region and faction note${n === 1 ? "" : "s"} (a box under each title; nothing else changed).`));
         return true;
       },
     });

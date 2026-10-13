@@ -29,6 +29,7 @@ import { moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValue
 import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } from "./wizardText";
 import { Disclosure } from "./ui/disclosure";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "./ui/mapScaleForm";
+import { renderResetButton } from "./ui/sliders";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -489,11 +490,9 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			rowsInput.max = "200";
 			sizeInputs.createSpan({ text: " rows", cls: "duckmage-wizard-size-sep" });
 			// Back to the scale's size in one click.
-			const resetBtn = sizeInputs.createEl("button", {
-				cls: "duckmage-wizard-size-reset",
-				text: "↺",
-				attr: { "aria-label": "Reset to the default size", title: "Reset to the default size" },
-			});
+			// The one reset button (src/ui/sliders.ts): a rotate icon.
+			const resetBtn = renderResetButton(sizeInputs, { what: "the size", defaultText: "this scale's size", onReset: () => {} }).el;
+			resetBtn.addClass("duckmage-wizard-size-reset");
 			placeMap.place("Wizard.gridSizeReset", resetBtn);
 
 			const noteCount = sizeRow.createEl("p", { cls: "duckmage-wizard-note-count" });

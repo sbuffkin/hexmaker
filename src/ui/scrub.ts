@@ -108,3 +108,61 @@ export function makeScrubbable(input: HTMLInputElement, opts: ScrubOptions): voi
     { passive: false },
   );
 }
+
+/**
+ * A typed number, committed (blur / Enter): blank is "not set" (undefined)
+ * when `blank` allows it, else `fallback` (or `min`); anything else is
+ * clamped into range and, with `whole`, rounded. The number-field standard
+ * (UI consistency audit S6): scrub to change, clamp on commit.
+ */
+export function commitNumber(
+  raw: string,
+  opts: { min: number; max: number; whole?: boolean; blank?: boolean; fallback?: number },
+): number | undefined {
+  const n = Number(raw);
+  if (raw.trim() === "" || !Number.isFinite(n)) return opts.blank ? undefined : (opts.fallback ?? opts.min);
+  const v = Math.max(opts.min, Math.min(opts.max, n));
+  return opts.whole ? Math.round(v) : v;
+}
+
+export interface NumberFieldOptions extends ScrubOptions {
+  value?: number;
+  ariaLabel: string;
+  placeholder?: string;
+  cls?: string;
+  /** Rounded to whole numbers on commit. */
+  whole?: boolean;
+  /** Blank means "not set" (undefined); else blank commits `fallback` (or min). */
+  blank?: boolean;
+  fallback?: number;
+  /** Every scrub step (live previews). */
+  onInput?: (value: number | undefined) => void;
+  /** Committed: typed and left, Enter, a drag or a wheel burst ended. */
+  onChange: (value: number | undefined) => void;
+}
+
+/**
+ * The shared number field: a number box you can drag or scroll to change
+ * (makeScrubbable), clamped into range when committed. Every free number
+ * input (counts, sizes) uses it.
+ */
+export function numberField(parent: HTMLElement, opts: NumberFieldOptions): HTMLInputElement {
+  const input = parent.createEl("input", {
+    type: "number",
+    cls: "duckmage-wfc-num" + (opts.cls ? ` ${opts.cls}` : ""),
+    attr: { min: String(opts.min), max: String(opts.max), step: String(opts.step ?? 1), "aria-label": opts.ariaLabel, ...(opts.placeholder ? { placeholder: opts.placeholder } : {}) },
+  });
+  input.value = opts.value === undefined ? "" : String(opts.value);
+  makeScrubbable(input, opts);
+  input.addEventListener("input", () => {
+    if (!opts.onInput) return;
+    const n = Number(input.value);
+    opts.onInput(input.value.trim() === "" || !Number.isFinite(n) ? undefined : Math.max(opts.min, Math.min(opts.max, n)));
+  });
+  input.addEventListener("change", () => {
+    const v = commitNumber(input.value, opts);
+    input.value = v === undefined ? "" : String(v);
+    opts.onChange(v);
+  });
+  return input;
+}

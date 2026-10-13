@@ -17,7 +17,7 @@
  * it too (the standard, UI consistency audit 2026-10-12).
  */
 
-import { wheelValue } from "../worldgen/scrub";
+import { wheelValue } from "./scrub";
 import { shareText, ShareState, type EmptyOthers } from "./shares";
 
 export interface ShareItem {

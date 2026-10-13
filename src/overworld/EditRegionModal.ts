@@ -26,6 +26,7 @@ import { flowerPetals } from "../maps/mapNav";
 import { biomeInfo, biomeParts, biomeRef, combinedBiome, isComboId, representativeTerrain, type BiomeId } from "./biomes";
 import { mixToParts, newPartWeight, type BiomePart } from "./biomeCombo";
 import { renderShareSliders } from "../ui/shareSliders";
+import { renderSaveStatusLine, type SaveStatusLine } from "../ui/saveStatusLine";
 import { hexBiomeAt, overworldOf, planRegionAt, planRegionWithGenerator, regionBiomeStatus, setBiomeAt } from "./regionsVault";
 import { renderBiomeTiles } from "./biomeChooser";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
@@ -53,7 +54,8 @@ export class EditRegionModal extends HexmakerModal {
   private notesTimer: number | null = null;
   /** Notes typed and not written yet (null: nothing pending). */
   private pendingNotes: string | null = null;
-  private notesStatus: HTMLElement | null = null;
+  /** The shared autosave line beside the notes. */
+  private notesStatus: SaveStatusLine | null = null;
   /** The next render follows a Reroll: its preview is marked new. */
   private justRerolled = false;
   /** The biomes being mixed (Mix biomes…), or null when picking one; undefined until the first render. */
@@ -117,7 +119,7 @@ export class EditRegionModal extends HexmakerModal {
       cls: "duckmage-map-origin-desc",
       text: `Hex ${this.px}, ${this.py} of ${plugin.mapLabel(this.overworld)}.`,
     });
-    const actions = head.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-actions" });
+    const actions = head.createDiv({ cls: "duckmage-action-row duckmage-edit-region-actions" });
     const enter = actions.createEl("button", { text: "Enter region", cls: "mod-cta" });
     enter.addEventListener("click", () => {
       this.close();
@@ -213,7 +215,7 @@ export class EditRegionModal extends HexmakerModal {
         const g = grid.getBoundingClientRect(), r = sel.getBoundingClientRect();
         if (r.bottom > g.bottom || r.top < g.top) grid.scrollTop += r.top - g.top - 4;
       });
-      const row = biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" });
+      const row = biomeSec.createDiv({ cls: "duckmage-action-row duckmage-edit-region-gen" });
       if (plan.reroll) {
         row.createEl("button", { text: "Reroll", attr: { title: "Remake the region with a new seed (hand-painted hexes stay)" } })
           .addEventListener("click", () => void this.reroll());
@@ -238,7 +240,7 @@ export class EditRegionModal extends HexmakerModal {
         // Changing a placed biome is God's: offer the switch right here (godOffer.ts).
         addGodOffer(hint, plugin, this.overworld, plan.hint, () => this.render());
       }
-      const genRow = biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" });
+      const genRow = biomeSec.createDiv({ cls: "duckmage-action-row duckmage-edit-region-gen" });
       if (plan.lock) this.addLock(genRow, name);
       editGenerator(genRow);
     }
@@ -328,7 +330,7 @@ export class EditRegionModal extends HexmakerModal {
     const notesSec = contentEl.createDiv({ cls: "duckmage-editor-section duckmage-edit-region-notes" });
     const notesHead = notesSec.createDiv({ cls: "duckmage-edit-region-notes-head" });
     notesHead.createEl("h4", { text: "Notes" });
-    this.notesStatus = notesHead.createSpan({ cls: "duckmage-edit-region-notes-status" });
+    this.notesStatus = renderSaveStatusLine(notesHead, { cls: "duckmage-edit-region-notes-status", title: "Saves a moment after you stop typing, and when you close this. There is no Save button." });
     const notes = notesSec.createEl("textarea", {
       cls: "duckmage-edit-region-notes-input",
       attr: { rows: "4", placeholder: "What's this region like? Kept in its map note.", "aria-label": "Region notes" },
@@ -340,7 +342,7 @@ export class EditRegionModal extends HexmakerModal {
     });
     notes.addEventListener("input", () => {
       this.pendingNotes = notes.value;
-      this.notesStatus?.setText("");
+      this.notesStatus?.pending();
       if (this.notesTimer !== null) window.clearTimeout(this.notesTimer);
       this.notesTimer = window.setTimeout(() => void this.saveNotes(), NOTES_SAVE_MS);
     });
@@ -388,8 +390,9 @@ export class EditRegionModal extends HexmakerModal {
         },
       });
     }
-    const actions = panel.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const apply = actions.createEl("button", { text: parts.length === 1 ? "Use this biome" : "Apply mix", cls: "mod-cta" });
+    const actions = panel.createDiv({ cls: "duckmage-action-row" });
+    // Plain: Enter region is this surface's one primary.
+    const apply = actions.createEl("button", { text: parts.length === 1 ? "Use this biome" : "Apply mix" });
     let want: BiomeId | undefined;
     const showApply = () => {
       want = this.mixBiome();
@@ -441,9 +444,13 @@ export class EditRegionModal extends HexmakerModal {
     const name = this.regionName;
     if (text === null || !name) return;
     this.pendingNotes = null;
-    const ok = await this.host.plugin.mapStore.editNoteText(name, (c) => writeNotesSection(c, text));
-    if (!ok) new Notice("This region's map note isn't written yet; notes not saved.");
-    else this.notesStatus?.setText("Saved");
+    const work = this.host.plugin.mapStore.editNoteText(name, (c) => writeNotesSection(c, text)).then((ok) => {
+      if (ok) return;
+      new Notice("This region's map note isn't written yet; notes not saved.");
+      throw new Error("region note not written");
+    });
+    if (this.notesStatus) await this.notesStatus.track(work);
+    else await work.catch(() => {});
   }
 
   private async setBiome(biome: BiomeId): Promise<void> {

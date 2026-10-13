@@ -255,14 +255,13 @@ export class TableRangesModal extends HexmakerModal {
         text: `${this.survey.skipped.length} table${this.survey.skipped.length === 1 ? "" : "s"} would be left as they are (no die, too many rows for the die, or something that can't be read). They're listed in the report afterwards.`,
       });
     }
-    const row = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const go = row.createEl("button", { text: "Add ranges (a backup is made first)", cls: "mod-cta" });
-    go.disabled = n === 0;
-    go.addEventListener("click", () => {
-      this.close();
-      void runMigration(this.plugin);
+    this.footer({
+      primary: { text: "Add ranges (a backup is made first)", disabled: n === 0, onClick: () => {
+        this.close();
+        void runMigration(this.plugin);
+      } },
+      cancel: () => this.close(),
     });
-    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
   }
 
   onClose(): void {

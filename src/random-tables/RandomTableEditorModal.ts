@@ -8,6 +8,7 @@ import {
   resolveTable,
   dieLabel,
   readTableWeight,
+  rowOdds,
   type RandomTableEntry,
   type TableWrite,
 } from "./randomTable";
@@ -17,6 +18,8 @@ import { processTableNote } from "./TableStore";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { escapeRegex } from "../textUtils";
+import { oddsText } from "../ui/odds";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
 
 /** How the editor writes the die column: ranges are redone when weights or rows change. */
 export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
@@ -24,14 +27,32 @@ export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["rang
 }
 
 /**
+ * Each row's % as the editor shows it: from the note's own roll ranges
+ * while the rows and weights are as written, else from the weights (the
+ * ranges are redone from them on save). Owner Q1: a % column beside the
+ * free weights, always up to date.
+ */
+export function editorOdds(dice: number, entries: readonly RandomTableEntry[], rowsOrWeightsChanged: boolean): string[] {
+  if (!rowsOrWeightsChanged) return rowOdds({ dice, entries: [...entries] });
+  return oddsText(entries.map((e) => e.weight));
+}
+
+/**
  * Modal editor for a random table file.
  * Shows existing entries as editable rows and allows adding new ones.
- * Saves back to the file, preserving frontmatter.
+ * Autosaves when closed (× only, no footer button: owner Q5), preserving
+ * frontmatter; a hand edit to the note while nothing was changed here
+ * redraws it from the note.
  */
 export class RandomTableEditorModal extends HexmakerModal {
   protected surfaceId = "TableEditor";
   // Held so onClose can flush a pending "add row" entry and save it
   private flushAndSave: (() => Promise<void>) | null = null;
+  /** Something was changed here (a hand edit to the note then doesn't redraw over it). */
+  private touched = false;
+  private modifyRef: ReturnType<App["vault"]["on"]> | null = null;
+  /** The note text the editor was drawn from. */
+  private shownContent = "";
 
   constructor(
     app: App,
@@ -50,6 +71,25 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     const rawContent =
       this.initialContent ?? (await this.app.vault.read(this.file));
+    this.touched = false;
+    // Any typing or picking here counts as a change.
+    contentEl.addEventListener("input", () => { this.touched = true; });
+    contentEl.addEventListener("change", () => { this.touched = true; });
+    // A hand edit to the note while nothing changed here: redraw from it (its % column too).
+    if (!this.modifyRef) {
+      this.modifyRef = this.app.vault.on("modify", (f) => {
+        if (f !== this.file || this.touched) return;
+        void this.app.vault.read(this.file).then((text) => {
+          if (this.touched || text === this.shownContent) return;
+          this.initialContent = text;
+          contentEl.empty();
+          this.resetDisclosure();
+          this.flushAndSave = null;
+          void this.onOpen();
+        });
+      });
+    }
+    this.shownContent = rawContent;
     const report = parseRandomTableWithReport(rawContent);
     const table = report.table;
     const frontmatter = this.extractFrontmatter(rawContent);
@@ -99,6 +139,8 @@ export class RandomTableEditorModal extends HexmakerModal {
       cls: "duckmage-table-editor-name-input",
     });
     nameInput.value = this.file.basename;
+    // The shared autosave line (no Close button: × closes and saves).
+    renderSaveStatusLine(contentEl, { title: "Saves when you close this (×). There is no Save button." });
 
     const doRename = async () => {
       const newName = nameInput.value.trim();
@@ -251,17 +293,27 @@ export class RandomTableEditorModal extends HexmakerModal {
       entries.some((e, i) => entrySource.get(e) !== i || e.weight !== table.entries[i].weight);
     // Each row's roll range, as it will be written.
     let rangeEls: HTMLElement[] = [];
+    // Each row's % (owner Q1), next to its weight.
+    let oddsEls: HTMLElement[] = [];
     const onWeightsChanged = (): void => {
+      const changed = rowsOrWeightsChanged();
+      const odds = editorOdds(table.dice, entries, changed);
+      oddsEls.forEach((el, i) => el.setText(odds[i] ?? "–"));
       if (table.dice <= 0) return;
-      const labels = rowsOrWeightsChanged()
+      const labels = changed
         ? rangeCellTexts(table.dice, entries, "regenerate")
         : resolveTable({ dice: table.dice, entries }).labels;
       rangeEls.forEach((el, i) => el.setText(labels[i] || "—"));
     };
 
+    let drawn = false;
     const renderRows = () => {
+      // Every redraw after the first is a change made here (sort, ±1, add, remove, move).
+      if (drawn) this.touched = true;
+      drawn = true;
       rowsEl.empty();
       rangeEls = [];
+      oddsEls = [];
       if (entries.length === 0) {
         rowsEl.createSpan({
           text: "No entries yet.",
@@ -319,6 +371,7 @@ export class RandomTableEditorModal extends HexmakerModal {
           entries[i].weight = readWeight(weightInput.value);
           onWeightsChanged();
         });
+        oddsEls.push(row.createSpan({ cls: "duckmage-odds-percent duckmage-table-editor-odds", attr: { title: "This row's share of the rolls" } }));
 
         const delBtn = row.createEl("button", {
           text: "×",
@@ -653,13 +706,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       }
     });
 
-    // ── Footer: Close (auto-saves on close) ───────────────────────────
-    const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
-
-    footer
-      .createEl("button", { text: "Close", cls: "mod-cta" })
-      .addEventListener("click", () => this.close());
-
+    // No footer (owner Q5): × closes, and closing saves.
     this.makeDraggable();
   }
 
@@ -753,6 +800,8 @@ export class RandomTableEditorModal extends HexmakerModal {
   }
 
   onClose(): void {
+    if (this.modifyRef) this.app.vault.offref(this.modifyRef);
+    this.modifyRef = null;
     // If the user typed something in "Add row" and closed without clicking Add,
     // flush it and save so the entry isn't lost.
     void this.flushAndSave?.();

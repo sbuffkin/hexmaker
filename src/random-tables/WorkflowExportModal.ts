@@ -101,8 +101,8 @@ export class WorkflowExportModal extends HexmakerModal {
     });
 
     const actions = contentEl.createDiv({ cls: "duckmage-export-tab-actions" });
+    // A list of export choices: plain buttons (audit B1).
     const pdfBtn = actions.createEl("button", {
-      cls: "mod-cta",
       text: "Export PDF",
     });
     pdfBtn.addEventListener("click", () => {
@@ -110,7 +110,6 @@ export class WorkflowExportModal extends HexmakerModal {
       this.close();
     });
     const mdBtn = actions.createEl("button", {
-      cls: "mod-cta",
       text: "Export Markdown",
     });
     mdBtn.addEventListener("click", () => {

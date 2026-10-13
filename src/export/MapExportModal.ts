@@ -230,19 +230,19 @@ export function renderMapExportForm(
   });
 
   const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });
-  actions.createEl("button", { cls: "mod-cta", text: "Export PNG" }).addEventListener("click", () => {
+  actions.createEl("button", { text: "Export PNG" }).addEventListener("click", () => {
     remember();
     void exportMapAsPng(plugin, mapName, collectOpts());
     form.onExport?.();
   });
-  actions.createEl("button", { cls: "mod-cta", text: "Export PDF with reference table" }).addEventListener("click", () => {
+  actions.createEl("button", { text: "Export PDF with reference table" }).addEventListener("click", () => {
     remember();
     void exportMapAsPdf(plugin, mapName, collectOpts());
     form.onExport?.();
   });
   // A printable gazetteer: legend, encounter tables, keyed hexes by
   // section, index. Uses its own print styling and hex numbering.
-  actions.createEl("button", { cls: "mod-cta", text: "Export hexcrawl manual (PDF)" }).addEventListener("click", () => {
+  actions.createEl("button", { text: "Export hexcrawl manual (PDF)" }).addEventListener("click", () => {
     const o = collectOpts();
     remember();
     void exportMapAsManual(plugin, mapName, {

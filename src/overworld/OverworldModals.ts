@@ -12,6 +12,8 @@
 
 import { App, Notice, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { renderLabeledSlider, renderMultiplierSlider, sliderFormat } from "../ui/sliders";
+import { numberField } from "../ui/scrub";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexDistance } from "../../packages/hex-wfc/src/grid";
 import { biomeNoteOf, biomeShortLabel } from "./biomes";
@@ -56,9 +58,16 @@ export class GenerateRegionsModal extends HexmakerModal {
       text: "One region per painted hex of this map that has none, starting in the middle. Each blends with the overworld around it and lines up with the regions already made.",
     });
     const status = contentEl.createEl("p", { cls: "duckmage-ow-progress", text: "Ready." });
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const cancel = row.createEl("button", { text: "Cancel" });
-    const go = row.createEl("button", { text: "Make them", cls: "mod-cta" });
+    // Primary first (the footer helper); Cancel turns into Stop while running.
+    let cancel!: HTMLButtonElement;
+    const foot = this.footer({
+      primary: { text: "Make them", onClick: () => {} },
+      cancel: { text: "Cancel", onClick: () => {
+        if (this.running) { this.stop = true; cancel.setText("Stopping…"); } else this.close();
+      } },
+    });
+    const go = foot.primary!;
+    cancel = foot.buttons.get("Cancel")!;
     if (!canAdd(this.plugin.getMap(this.mapName))) {
       go.disabled = true;
       go.addClass("is-locked");
@@ -66,10 +75,8 @@ export class GenerateRegionsModal extends HexmakerModal {
       status.setText(ADD_REGION_LOCKED_HINT);
       status.addClass("duckmage-locked-hint");
     }
-    cancel.addEventListener("click", () => {
-      if (this.running) { this.stop = true; cancel.setText("Stopping…"); } else this.close();
-    });
     go.addEventListener("click", () => {
+      if (this.running) return;
       go.disabled = true;
       cancel.setText("Stop");
       this.running = true;
@@ -194,16 +201,10 @@ export class NewOverworldModal extends HexmakerModal {
           r.value = String(this.radius);
           r.addEventListener("change", () => { this.radius = Number(r.value); this.regen(); });
         } else {
-          const c = sizeBox.createEl("input", { type: "number", value: String(this.cols), attr: { min: "2", max: "60", "aria-label": "Columns" } });
+          // Shared number fields: drag or scroll to change, clamped on commit.
+          numberField(sizeBox, { min: 2, max: 60, whole: true, value: this.cols, ariaLabel: "Columns", onChange: (v) => { this.cols = v ?? 2; this.regen(); } });
           sizeBox.createSpan({ text: " × " });
-          const rr = sizeBox.createEl("input", { type: "number", value: String(this.rows), attr: { min: "2", max: "60", "aria-label": "Rows" } });
-          const upd = () => {
-            this.cols = Math.max(2, Math.min(60, Math.round(Number(c.value) || 2)));
-            this.rows = Math.max(2, Math.min(60, Math.round(Number(rr.value) || 2)));
-            this.regen();
-          };
-          c.addEventListener("change", upd);
-          rr.addEventListener("change", upd);
+          numberField(sizeBox, { min: 2, max: 60, whole: true, value: this.rows, ariaLabel: "Rows", onChange: (v) => { this.rows = v ?? 2; this.regen(); } });
         }
       };
       shapeSel.addEventListener("change", () => { this.shape = shapeSel.value as "rect" | "hex"; drawSize(); this.regen(); });
@@ -289,17 +290,19 @@ export class NewOverworldModal extends HexmakerModal {
     sel<Climate>("Climate", [["varied", "Varied"], ["cold", "Cold"], ["temperate", "Temperate"], ["warm", "Warm"]], () => this.climate, (v) => { this.climate = v; });
     sel<LandShape>("Land", [["one", "One continent"], ["two", "Two"], ["islands", "Islands"]], () => this.land, (v) => { this.land = v; });
     sel<NorthIs>("North is", [["colder", "Colder"], ["warmer", "Warmer"], ["none", "No gradient"]], () => this.north, (v) => { this.north = v; });
-    const waterRow = field("Water", knobs);
-    const water = waterRow.createEl("input", { type: "range", attr: { min: "0", max: "60", step: "5", "aria-label": "Water" } });
-    water.value = String(this.water);
-    const wv = waterRow.createSpan({ text: `${this.water}%` });
-    water.addEventListener("input", () => wv.setText(`${water.value}%`));
-    water.addEventListener("change", () => { this.water = Number(water.value); this.regen(); });
+    renderLabeledSlider(field("Water", knobs), {
+      label: "", ariaLabel: "Water", min: 0, max: 60, step: 5, value: this.water, format: sliderFormat.percent,
+      onChange: (v) => { this.water = v; this.regen(); },
+    });
     // Blank hexes (new overworlds): blank-biome hexes, regions painted by hand.
     if (!regen) {
       const blanks = this.plugin.biomeStore.list().filter((b) => b.blank);
       const blankRow = field("Blank hexes");
-      const count = blankRow.createEl("input", { type: "number", value: String(this.blankCount), attr: { min: "0", step: "1", "aria-label": "Blank hexes", title: "Hexes left blank (a blank biome): their regions start empty, to paint by hand" } });
+      const count = numberField(blankRow, {
+        min: 0, max: 999, whole: true, value: this.blankCount, ariaLabel: "Blank hexes",
+        onChange: (v) => { this.blankCount = v ?? 0; this.regen(); },
+      });
+      count.title = "Hexes left blank (a blank biome): their regions start empty, to paint by hand";
       this.blankBiome = blanks[0]?.id ?? "";
       if (blanks.length > 1) {
         const which = blankRow.createEl("select", { attr: { "aria-label": "Blank biome" } });
@@ -310,11 +313,6 @@ export class NewOverworldModal extends HexmakerModal {
         count.disabled = true;
         blankRow.createSpan({ cls: "setting-item-description", text: "No blank biome: tick 'Regions start blank' on one in Biomes…" });
       }
-      count.addEventListener("change", () => {
-        this.blankCount = Math.max(0, Math.round(Number(count.value) || 0));
-        count.value = String(this.blankCount);
-        this.regen();
-      });
     }
     // Reroll stays in reach; the seed itself is Debug (placed below the buttons).
     const seedRow = createDiv({ cls: "duckmage-region-gen-row" });
@@ -350,9 +348,7 @@ export class NewOverworldModal extends HexmakerModal {
     all.addEventListener("change", () => { this.makeAll = all.checked; });
 
     const status = contentEl.createEl("p", { cls: "duckmage-ow-progress" });
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    const create = row.createEl("button", { text: regen ? "Regenerate" : "Create", cls: "mod-cta" });
+    const create = this.footer({ primary: { text: regen ? "Regenerate" : "Create", onClick: () => {} }, cancel: () => this.close() }).primary!;
     contentEl.appendChild(seedRow);
     this.place("NewOverworld.seed", seedRow);
     if (regen && !canReshape(regen)) {
@@ -396,13 +392,19 @@ export class NewOverworldModal extends HexmakerModal {
       if (b && !b.climate) tags.push(this.unclimated === "fill" ? "fills gaps" : "by hand only");
       if (b?.generator) tags.push("generator");
       if (tags.length) item.createSpan({ cls: "duckmage-ow-pool-tag", text: tags.join(", "), attr: { title: b && !b.climate ? (this.unclimated === "fill" ? "No climate: only placed where no other biome in the pool fits." : "No climate: never placed by the generator (see Biomes without a climate).") : "Its regions are made by its generator, joined to their neighbours." } });
-      const w = item.createEl("input", { type: "number", cls: "duckmage-biome-weight", attr: { min: "0", step: "0.5", placeholder: "1", "aria-label": `${b?.label ?? r.biome} weight`, title: "Weight: how often it's chosen where it fits (1 = as its note says)" } });
-      w.value = r.weight !== undefined ? String(r.weight) : "";
-      w.addEventListener("change", () => {
-        const v = Number(w.value);
-        if (w.value.trim() === "" || !Number.isFinite(v) || v < 0) delete r.weight; else r.weight = v;
-        this.onPoolChanged();
-        this.regen();
+      // A multiplier like the generator's Bias (owner Q3): ×1 = as its note says.
+      renderMultiplierSlider(item, {
+        label: "",
+        ariaLabel: `${b?.label ?? r.biome} weight`,
+        title: "How often it's chosen where it fits (×1 = as its note says)",
+        cls: "duckmage-ow-pool-weight",
+        value: r.weight,
+        max: Math.max(3, Math.ceil(r.weight ?? 0)),
+        onChange: (v) => {
+          if (v === undefined) delete r.weight; else r.weight = v;
+          this.onPoolChanged();
+          this.regen();
+        },
       });
       const rm = item.createEl("button", { cls: "clickable-icon", attr: { "aria-label": `Remove ${b?.label ?? r.biome}` } });
       setIcon(rm, "x");
@@ -537,15 +539,12 @@ class PoolNameModal extends HexmakerModal {
     this.makeDraggable();
     this.titleEl.setText("Save pool as");
     const input = this.contentEl.createEl("input", { type: "text", attr: { "aria-label": "Pool name", placeholder: "Cold north" } });
-    const row = this.contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    const ok = row.createEl("button", { text: "Save", cls: "mod-cta" });
     const go = () => {
       if (!input.value.trim()) return;
       this.onName(input.value.trim());
       this.close();
     };
-    ok.addEventListener("click", go);
+    this.footer({ primary: { text: "Save", onClick: go }, cancel: () => this.close() });
     input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
     input.focus();
   }
