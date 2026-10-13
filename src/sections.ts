@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { splitGuidance } from "./hexGuidance";
+import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "./types";
 
 /**
  * Other names people give the plugin's sections. A note's own heading is
@@ -32,6 +33,18 @@ export function canonicalSection(heading: string): string {
 	return ALIAS_TO_SECTION.get(h) ?? h;
 }
 
+/** The plugin's own sections (link and text), canonical keys. */
+const PLUGIN_SECTIONS = new Set([
+	...LINK_SECTIONS.map((s) => s.toLowerCase()),
+	...TEXT_SECTIONS.map((s) => s.key),
+	...ROLLED_TEXT_SECTIONS.map((s) => s.key),
+]);
+
+/** Whether a heading names one of the plugin's sections (by name or alias). */
+export function isPluginSection(heading: string): boolean {
+	return PLUGIN_SECTIONS.has(canonicalSection(heading));
+}
+
 const HEADING = /^(#{2,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/gm;
 
 interface HeadingMatch {
@@ -41,36 +54,77 @@ interface HeadingMatch {
 	end: number;
 	/** The heading as written. */
 	text: string;
+	/** Heading level (2 for ##, 3 for ###, ...). */
+	level: number;
 }
+
+/**
+ * The level the plugin (and its hex template) writes its sections at.
+ * Released 1.5.x read and wrote only "###" sections, so a "###" heading
+ * always wins over the same section at another level: a note with a
+ * hand-written "## Towns" above the plugin's "### Towns" reads exactly as
+ * it did in 1.5.6 (fresh-eyes 2026-10-13 F1, Slattville).
+ */
+export const PLUGIN_SECTION_LEVEL = 3;
 
 /** Every section heading in the note (## to ######), in order. */
 export function sectionHeadings(content: string): HeadingMatch[] {
 	const out: HeadingMatch[] = [];
 	const re = new RegExp(HEADING.source, "gm");
 	let m: RegExpExecArray | null;
-	while ((m = re.exec(content)) !== null) out.push({ index: m.index, end: m.index + m[0].length, text: m[2] });
+	while ((m = re.exec(content)) !== null) out.push({ index: m.index, end: m.index + m[0].length, text: m[2], level: m[1].length });
 	return out;
+}
+
+/**
+ * How well a heading names `section` (lower is better), or null when it
+ * doesn't name it at all. Order: the heading exactly as asked for (an
+ * aliased section shown under its own name), then the section's own name,
+ * then an alias; within each, the plugin's own level (###) first, then
+ * document order. Shared by the note parser here and the metadata-cache
+ * readers (link badges) so the editor and the hover always agree.
+ */
+export function sectionHeadingRank(headingText: string, level: number, section: string): number | null {
+	const want = canonicalSection(section);
+	if (canonicalSection(headingText) !== want) return null;
+	const h = normalizeHeading(headingText);
+	const name = h === normalizeHeading(section) ? 0 : h === want ? 1 : 2;
+	return name * 2 + (level === PLUGIN_SECTION_LEVEL ? 0 : 1);
+}
+
+/** The best-ranked of `headings` for `section` (first in order on a tie), or null. */
+export function pickSectionHeading<T>(
+	headings: readonly T[],
+	section: string,
+	textOf: (h: T) => string,
+	levelOf: (h: T) => number,
+): T | null {
+	let best: T | null = null;
+	let bestRank = Infinity;
+	for (const h of headings) {
+		const r = sectionHeadingRank(textOf(h), levelOf(h), section);
+		if (r !== null && r < bestRank) { best = h; bestRank = r; }
+	}
+	return best;
 }
 
 /**
  * The heading naming `section` (see canonicalSection), or null. A heading
  * with the section's own name wins over an alias: a note with both an old
  * template's "### encounters" and the plugin's "### Encounters Table" reads
- * and writes the latter (the former shows as a section of its own).
+ * and writes the latter (the former shows as a section of its own). At the
+ * same name, "###" wins over other levels (see PLUGIN_SECTION_LEVEL).
  */
 export function findSectionHeading(content: string, section: string): HeadingMatch | null {
-	const want = canonicalSection(section);
-	const asWritten = normalizeHeading(section);
-	const matches = sectionHeadings(content).filter((h) => canonicalSection(h.text) === want);
-	// The heading exactly as asked for (an aliased section shown under its own
-	// name), then the section's own name, then the first alias.
-	return matches.find((h) => normalizeHeading(h.text) === asWritten)
-		?? matches.find((h) => normalizeHeading(h.text) === want)
-		?? matches[0]
-		?? null;
+	return pickSectionHeading(sectionHeadings(content), section, (h) => h.text, (h) => h.level);
 }
 
-/** Where a section's body ends: the next heading of any level, a --- rule, or the end. */
+/**
+ * Where a section's body ends: the next heading of any level, a --- rule, or
+ * the end. This is 1.5.6's rule, kept on purpose: a "## Dungeons" never
+ * swallows the "###" sections below it, and a section write never replaces
+ * a "####" subsection someone wrote inside it.
+ */
 function sectionEndAfter(content: string, afterHeading: number): number {
 	const next = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 	return next ? afterHeading + next.index : content.length;
@@ -216,14 +270,19 @@ export async function getAllSectionData(
 	// Per section, the heading the plugin reads and writes (findSectionHeading's
 	// choice); other headings that alias it are kept under their own names.
 	const primary = new Map<string, HeadingMatch>();
-	for (const h of all) {
-		const key = canonicalSection(h.text);
-		const cur = primary.get(key);
-		if (!cur || (normalizeHeading(cur.text) !== key && normalizeHeading(h.text) === key)) primary.set(key, h);
+	for (const key of new Set(all.map((h) => canonicalSection(h.text)))) {
+		const best = pickSectionHeading(all, key, (h) => h.text, (h) => h.level);
+		if (best) primary.set(key, best);
 	}
 	for (const h of all) {
 		const canon = canonicalSection(h.text);
-		const name = primary.get(canon) === h ? canon : normalizeHeading(h.text);
+		const isPrimary = primary.get(canon) === h;
+		// A second heading with the section's own name (a hand-written
+		// "## Towns" beside the plugin's "### Towns") isn't shown: it would
+		// read and write the primary one. 1.5.6 didn't show it either; the
+		// note text is left as it is.
+		if (!isPrimary && normalizeHeading(h.text) === canon) continue;
+		const name = isPrimary ? canon : normalizeHeading(h.text);
 		if (headings.has(name)) continue;
 		const body = content.slice(h.end, sectionEndAfter(content, h.end));
 		const sectionLinks: string[] = [];

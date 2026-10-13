@@ -1,5 +1,6 @@
 import { setIcon } from "obsidian";
 import type { SectionWordsFn } from "../mapKinds";
+import { isPluginSection, pickSectionHeading } from "../sections";
 
 /**
  * Link badges: a small marker per link type (town, dungeon, feature, quest,
@@ -111,14 +112,21 @@ export function linksBySection(cache: LinkCacheLike | null | undefined): Map<Bad
   const links = cache?.links ?? [];
   const found = new Map<BadgeSection, string[]>();
   if (!headings.length || !links.length) return found;
-  for (let i = 0; i < headings.length; i++) {
-    const h = headings[i];
-    const name = BADGE_SECTIONS.find((s) => s.toLowerCase() === h.heading.trim().toLowerCase());
-    if (!name || found.has(name)) continue;
+  // Body headings only (# is the note's title), like the note parser.
+  const body = headings.filter((h) => h.level >= 2);
+  for (const name of BADGE_SECTIONS) {
+    // The same heading the hex editor reads: "###" wins over a hand-written
+    // "## Towns" (fresh-eyes 2026-10-13 F1).
+    const h = pickSectionHeading(body, name, (x) => x.heading, (x) => x.level);
+    if (!h) continue;
+    const i = headings.indexOf(h);
     const start = h.position.start.offset;
+    // A section runs to the next heading of the same or a higher level, or
+    // to the next of the plugin's own sections at any level, so a "##
+    // Dungeons" never takes in the "### Towns" below it.
     let end = Infinity;
     for (let j = i + 1; j < headings.length; j++) {
-      if (headings[j].level <= h.level) { end = headings[j].position.start.offset; break; }
+      if (headings[j].level <= h.level || isPluginSection(headings[j].heading)) { end = headings[j].position.start.offset; break; }
     }
     const inside = links.filter((l) => l.position.start.offset > start && l.position.start.offset < end);
     if (inside.length) found.set(name, inside.map(linkLabel));
