@@ -396,6 +396,8 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   // "region" or "location": this map's role under its parent hex.
   ["submapKind", "submap-kind", "str"],
   ["regionSeed", "region-seed", "num"],
+  // Edit region's "Neighbour influence" (a weight on the biome's tuning), only when not 1.
+  ["neighbourInfluence", "neighbour-influence", "num"],
   // Places made on arrival (plan-tables-everywhere phase 4).
   ["seed", "seed", "num"],
   ["arrivalMode", "on-arrival", "str"],

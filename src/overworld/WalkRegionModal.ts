@@ -6,14 +6,8 @@ import { generatorFitsPalette, listGenerators, paletteColors, pathColors, type G
 import { createWalkRegion, planWalk, previewWalk, regionBiome, type WalkPlan } from "../worldgen/neighbours";
 import { drawPreview } from "../worldgen/preview";
 import type { Side } from "../worldgen/world";
-import { biomeInfo, isComboId, representativeTerrain } from "./biomes";
-import { fillBiomeSelect } from "./biomeChooser";
-import { inOverworldGrid, planRegionAt, planRegionWithGenerator, walkFromBiome, walkIntoHex, walkLock } from "./regionsVault";
-import { defaultRegionName, rollBiome } from "./regionWorld";
-import { drawRegionPlan, groupOfBiome, lockButton, paintableBiomes } from "./BiomeModals";
-import { dominantPart } from "./biomeCombo";
+import { rollBiome } from "./regionWorld";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
-import { slugify } from "../utils";
 import { isContextOnlyTag } from "../mapKinds";
 
 /** Walking from a region of an overworld into the empty overworld hex (px, py), which lies `bearing` of it. */
@@ -26,183 +20,36 @@ export interface OverworldWalk {
 }
 
 /**
- * "New land to the east": stepping off a map's edge where no region is yet.
- * Pick (or roll) the biome that lies beyond; the new region is blended with
- * its neighbours, so a different biome arrives through a transition region.
- * Creates the region and hands back its name.
+ * "New land to the east" on an older side-by-side world: stepping off a
+ * map's edge where no map is yet. Pick (or roll) the terrain generator that
+ * lies beyond; the new map is blended with its neighbours (planWalk).
+ * Creates it and hands back its name.
  *
- * One flow for both entry points (the hex editor's neighbour flower and the
- * map toolbar's region flower / d-pad), in two flavours:
- * - a region of an overworld (`to` is an OverworldWalk): the biome is one
- *   the overworld's palette can paint; the region is made in that hex's
- *   slot by the blend field, pinned to every region around it, and the
- *   overworld grows to take the hex in when it lies past its grid
- *   (walkIntoHex). Build and God only (src/workMode.ts).
- * - a map on an older side-by-side world (`to` is a side): the biome is a
- *   terrain generator, blended with the neighbours (planWalk).
+ * A region of an overworld (an OverworldWalk) walks into new land through
+ * Edit region's new-region mode instead (EditRegionModal, newRegion.ts;
+ * owner 2026-10-13): the full suite and a preview, then Create and go.
  */
 export class WalkRegionModal extends HexmakerModal {
   protected surfaceId = "WalkOW";
   private seed = randomSeed();
-  private side: Side = "east";
-  private walk: OverworldWalk | null = null;
 
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
     private fromMap: string,
-    to: Side | OverworldWalk,
+    private side: Side,
     private onCreated: (name: string) => void,
   ) {
     super(app);
-    if (typeof to === "string") this.side = to;
-    else this.walk = to;
   }
 
   onOpen(): void {
     this.makeDraggable();
-    this.titleEl.setText(`New land to the ${this.walk?.bearing ?? this.side}`);
+    this.titleEl.setText(`New land to the ${this.side}`);
     const { contentEl } = this;
     contentEl.addClass("duckmage-region-nav");
-    if (this.walk) {
-      this.renderOverworld(this.walk);
-      return;
-    }
     contentEl.createEl("p", { text: "Loading generators…", cls: "duckmage-map-origin-desc" });
     void listGenerators(this.plugin).then((generators) => this.render(generators));
-  }
-
-  /** The overworld flavour: pick or roll a biome, preview the blended region, create it. */
-  private renderOverworld(walk: OverworldWalk): void {
-    const { contentEl, plugin } = this;
-    contentEl.empty();
-    const ow = plugin.getMap(walk.overworld);
-    if (!ow) return;
-    const { px, py } = walk;
-    const hex = `${px}_${py}`;
-    const owPalette = plugin.getMapPalette(walk.overworld);
-    const biomes = paintableBiomes(plugin, walk.overworld);
-    if (!biomes.length) {
-      contentEl.createEl("p", { text: "This overworld's palette has no terrain that stands for a biome, so there's nothing to make the new land from.", cls: "duckmage-map-origin-desc" });
-      return;
-    }
-    // The region's own biome, never one it was blended from (walkFromBiome).
-    const here = walkFromBiome(plugin, this.fromMap);
-    const grows = !inOverworldGrid(ow, px, py);
-    contentEl.createEl("p", {
-      text: `Nothing lies ${walk.bearing} of ${plugin.mapLabel(this.fromMap)} yet. Pick what's out there, or roll for it. If it's a different biome, the new region is the border country in between.`
-        + (grows ? " The overworld grows by a hex to fit it." : ""),
-      cls: "duckmage-map-origin-desc",
-    });
-
-    const row = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    row.createSpan({ text: "Biome", cls: "duckmage-map-origin-label" });
-    const select = row.createEl("select", { attr: { "aria-label": "Biome" } });
-    fillBiomeSelect(select, biomes, (b) => (b.id === here ? `${b.label} (same as here)` : b.label));
-    // A combined biome here (Edit region…) is offered as it is.
-    if (here && isComboId(here)) select.createEl("option", { value: here, text: `${biomeInfo(here)?.label ?? here} (same as here)` });
-    let biome = biomes.some((b) => b.id === here) || (here && isComboId(here)) ? here! : biomes[0].id;
-    select.value = biome;
-    const roll = row.createEl("button", { text: "Roll", attr: { title: "Roll a biome from a new seed (a different one from here, if there is one)" } });
-
-    const reroll = row.createEl("button", { text: "Re-roll terrain", attr: { title: "Same biome, new seed" } });
-    // The seed itself is a Debug control (placed after the buttons, below).
-    const seedRow = createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
-    const seedInput = seedRow.createEl("input", { type: "number", cls: "duckmage-walk-seed", attr: { "aria-label": "Seed" } });
-    seedInput.value = String(this.seed);
-
-    const note = contentEl.createEl("p", { cls: "duckmage-map-origin-desc" });
-    const canvas = contentEl.createEl("canvas", { cls: "duckmage-region-gen-preview" });
-    canvas.width = 360;
-    canvas.height = 300;
-
-    const nameRow = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
-    const taken = (n: string) => plugin.settings.maps.some((m) => m.name === slugify(n));
-    const nameInput = nameRow.createEl("input", {
-      type: "text",
-      attr: { placeholder: defaultRegionName(plugin.mapLabel(walk.overworld), px, py, plugin.mapStore.get(walk.overworld, hex)?.name, taken) },
-    });
-
-    const create = this.footer({ primary: { text: "Create and go", onClick: () => {} }, cancel: () => this.close() }).primary!;
-    contentEl.appendChild(seedRow);
-    this.place("WalkOW.seed", seedRow);
-    const lock = walkLock(plugin, this.fromMap, walk.overworld);
-    const locked = !!lock;
-    if (lock) {
-      lockButton(create, lock);
-      contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
-    }
-
-    const labelOf = (id: string) => biomeInfo(id)?.label ?? id;
-    let rolled = "";
-    let token = 0;
-    const refresh = () => {
-      const mine = ++token;
-      const opts = { seed: this.seed, hexTerrain: representativeTerrain(biome, owPalette), biome };
-      void planRegionWithGenerator(plugin, walk.overworld, px, py, opts)
-        .catch(() => planRegionAt(plugin, walk.overworld, px, py, opts))
-        .then((plan) => { if (mine === token) show(plan); });
-    };
-    const show = (plan: ReturnType<typeof planRegionAt>) => {
-      drawRegionPlan(canvas, plugin, walk.overworld, px, py, plan);
-      // The biomes it blends from: the field's, plus the one walked from.
-      const fromIds = new Set((plan?.biome?.from ?? []).filter((b) => b !== biome));
-      if (here && here !== biome) fromIds.add(here);
-      const from = [...fromIds].map(labelOf);
-      note.setText(
-        (rolled ? `${rolled} ` : "")
-        + (from.length ? `Border country: ${from.join(" + ")} turning into ${labelOf(biome)}.` : `${labelOf(biome)} carries on from here.`),
-      );
-    };
-    select.addEventListener("change", () => {
-      biome = select.value;
-      rolled = "";
-      refresh();
-    });
-    roll.addEventListener("click", () => {
-      this.seed = randomSeed();
-      seedInput.value = String(this.seed);
-      // A roll never lands on a blank biome (pick it by hand), and stays on
-      // this side of the ground: from a cave, more caves; from the surface, surface.
-      const below = (id: string | undefined) => !!id && groupOfBiome(id) === "underground";
-      const hereBelow = below(here && isComboId(here) ? dominantPart(here) : here);
-      biome = rollBiome(biomes.filter((b) => b.terrain && (b.group === "underground") === hereBelow).map((b) => b.id), this.seed, here)
-        ?? rollBiome(biomes.filter((b) => b.terrain).map((b) => b.id), this.seed, here) ?? biome;
-      select.value = biome;
-      rolled = `Rolled ${labelOf(biome)} (seed ${this.seed}).`;
-      refresh();
-    });
-    reroll.addEventListener("click", () => {
-      this.seed = randomSeed();
-      seedInput.value = String(this.seed);
-      rolled = "";
-      refresh();
-    });
-    seedInput.addEventListener("change", () => {
-      const n = Number(seedInput.value);
-      if (!Number.isFinite(n)) return;
-      this.seed = Math.trunc(n) >>> 0;
-      rolled = "";
-      refresh();
-    });
-    create.addEventListener("click", () => {
-      if (locked) return;
-      create.disabled = true;
-      create.setText("Creating…");
-      void walkIntoHex(plugin, walk.overworld, px, py, biome, { seed: this.seed, name: nameInput.value.trim() || undefined, from: this.fromMap }).then((r) => {
-        if ("error" in r) {
-          new Notice(r.error);
-          create.disabled = false;
-          create.setText("Create and go");
-          return;
-        }
-        this.close();
-        this.onCreated(r.name);
-      });
-    });
-    refresh();
   }
 
   private render(generators: GeneratorFile[]): void {

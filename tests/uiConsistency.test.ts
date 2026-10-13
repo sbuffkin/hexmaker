@@ -66,7 +66,7 @@ export function primariesByClass(text: string): Map<string, number> {
  */
 const PRIMARY_ALLOW: Record<string, [number, string]> = {
   "hex-map/SubmapPickerModal.ts#SubmapPickerModal": [2, "New location… is the primary only when there are no maps, and then there is no Link"],
-  "overworld/WalkRegionModal.ts#WalkRegionModal": [2, "two render paths (overworld walk, generator walk); one footer each"],
+  "overworld/EditRegionModal.ts#EditRegionModal": [2, "normal Edit (Enter region) and new-region mode (Create) are never shown together"],
   "random-tables/RandomTableView.ts#RandomTableView": [2, "Tables and Workflows modes: Roll and Roll workflow are never shown together"],
   "random-tables/RandomTableModal.ts#RandomTableModal": [2, "the picker mode and the direct-roll mode each have one Roll"],
 };

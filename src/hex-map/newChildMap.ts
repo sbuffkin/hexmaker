@@ -64,17 +64,17 @@ export function startNewRegion(host: NewChildMapHost, parentMap: string, x: numb
   // Play mode: making a region is locked (the Region card says so too).
   if (!canAdd(parent)) { new Notice(ADD_REGION_LOCKED_HINT); return; }
   const go = (settings: RegionSettings) => {
-    // Rectangles join their neighbours: the region form (biome, blend, seed,
-    // live preview) makes it in its slot of the shared grid.
+    // Rectangles join their neighbours: Edit region's new-region mode (biome,
+    // mix, reroll, blend, live preview, Create) makes it in its slot of the shared grid.
     const wm = worldMaps();
     if (wm && meshes(settings)) {
-      new wm.RegionGenModal({
+      new wm.EditRegionModal({
         app: host.app,
         plugin: host.plugin,
         enter: (name) => host.onEnter?.(name),
         changed: () => {},
-        made: (name) => host.onCreated(name, "region"),
-      }, parentMap, x, y).open();
+        openLocations: () => undefined,
+      }, parentMap, x, y, { after: "close", onCreated: (name) => host.onCreated(name, "region") }).open();
       return;
     }
     new NewMapSetupModal(host.app, host.plugin, ({ name }) => {

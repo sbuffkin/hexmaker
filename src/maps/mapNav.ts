@@ -139,7 +139,7 @@ export function flowerLayout(
  * What one neighbour button (a flower petal or a d-pad side) does:
  * - go: a map is there, click to go to it;
  * - new: nothing there yet, a "+" that walks into new land (pick or roll
- *   its biome, see WalkRegionModal); `grows` when the overworld must grow
+ *   its biome: Edit region's new-region mode); `grows` when the overworld must grow
  *   by that hex first;
  * - locked: the "+" is there but the map's work mode is Play;
  * - none: nothing there and nothing can be made (shown disabled).

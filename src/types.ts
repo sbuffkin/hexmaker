@@ -225,6 +225,8 @@ export interface MapData {
 	biome?: RegionBiome;
 	/** Region maps: the seed its terrain was last generated with (Reroll picks a new one). */
 	regionSeed?: number;
+	/** Region maps: weight on its biome's neighbour influence (`neighbour-influence:`, 0–2; unset = 1, the biome's tuning as-is). */
+	neighbourInfluence?: number;
 	/** The map's own seed (`seed:`): places made on arrival from its hexes
 	 *  are seeded from it, so they don't depend on the map's name. */
 	seed?: number;

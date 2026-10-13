@@ -17,7 +17,7 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import { OverworldLayer, REGION_PATHS_ROW } from "../../overworld/overworldLayer";
 import type { LayerRow } from "../../hex-map/HexSidePanel";
 import { OverworldMinimap } from "../../overworld/overworldMinimap";
-import { BiomePickerModal, RegionGenModal, rerollRegionAt } from "../../overworld/BiomeModals";
+import { RegionGenModal, rerollRegionAt } from "../../overworld/BiomeModals";
 import { BiomePaletteModal } from "../../overworld/BiomePaletteModal";
 import { BiomeStroke, strokeNotice } from "../../overworld/biomePainter";
 import { BIOMES, biomeInfo, biomeNoteOf } from "../../overworld/biomes";
@@ -122,7 +122,6 @@ function makeApi() {
   addNewOverworldTab,
   renderOverworldRegionRows,
   // Dialogs.
-  BiomePickerModal,
   BiomePaletteModal,
   EditRegionModal,
   WalkRegionModal,

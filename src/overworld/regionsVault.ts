@@ -225,7 +225,21 @@ export interface RegionGenOptions {
    * map's work mode doesn't stop it here.
    */
   arrival?: boolean;
+  /**
+   * Weight on the own biome's neighbour influence (Edit region's slider,
+   * 0–2); default the region's stored `neighbour-influence`, else 1.
+   */
+  neighbourWeight?: number;
+  /**
+   * Preview only: read the overworld as if its grid were this (a walk past
+   * the edge grows it on Create), so the preview is what Create makes.
+   */
+  previewGrid?: { offset: { x: number; y: number }; size: { cols: number; rows: number } };
 }
+
+// A region's Neighbour influence weight (Edit region's slider).
+export { clampNeighbourWeight, NEIGHBOUR_WEIGHT, storeNeighbourWeight } from "./neighbourWeight";
+import { clampNeighbourWeight, storeNeighbourWeight } from "./neighbourWeight";
 
 /**
  * What the region of hex (px, py) would be: its terrain and biome. When the
@@ -242,7 +256,8 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
   if (!ow) return undefined;
   const palette = regionPalette(plugin, ow.map);
   const owPalette = plugin.getMapPalette(ow.map.name);
-  const terrain = overworldTerrain(plugin, ow.map);
+  const grid = opts.previewGrid ? { ...ow.map, gridOffset: opts.previewGrid.offset, gridSize: opts.previewGrid.size } : ow.map;
+  const terrain = overworldTerrain(plugin, grid);
   if (opts.hexTerrain) terrain.set(`${px}_${py}`, opts.hexTerrain);
   const placed = placedBiomes(plugin, parentName);
   if (opts.biome) placed.set(`${px}_${py}`, opts.biome);
@@ -269,6 +284,7 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
     // The biome's tuned falloff (Tuning "blend-k") is a finer Blend width.
     blend: opts.blend ?? (ownNote ? tunedOrUnset(ownNote.tuning, "blend-k") ?? ownNote.blend : undefined) ?? ow.settings.blend,
     warp: opts.warp,
+    neighbourWeight: clampNeighbourWeight(opts.neighbourWeight ?? own?.neighbourInfluence),
   });
   return { ow, palette, ownBiome, pinned, seed, plan };
 }
@@ -409,6 +425,7 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   child.arrival = "open";
   if (plan?.biome) child.biome = plan.biome;
   if (opts.seed !== undefined) child.regionSeed = opts.seed;
+  if (opts.neighbourWeight !== undefined) storeNeighbourWeight(child, opts.neighbourWeight);
   if (plan?.paths?.length) addGeneratedPaths(plugin, res.name, plan.paths);
   if (plan?.note) new Notice(`${plugin.mapLabel(res.name)}: ${plan.note}`);
   await plugin.linkRegion(parentName, px, py, res.name);
@@ -541,6 +558,7 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
   if (plan.note) new Notice(`${plugin.mapLabel(regionName)}: ${plan.note}`);
   if (plan.biome) region.biome = plan.biome;
   if (opts.seed !== undefined) region.regionSeed = opts.seed;
+  if (opts.neighbourWeight !== undefined) storeNeighbourWeight(region, opts.neighbourWeight);
   await plugin.saveSettings();
   await plugin.mapStore.flush();
   return cells.length;
