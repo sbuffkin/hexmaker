@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { scrubValue } from "../src/worldgen/scrub";
+import { scrubValue } from "../src/ui/scrub";
 
 describe("scrubValue", () => {
   const opts = { min: 2, max: 200, pxPerStep: 4 };

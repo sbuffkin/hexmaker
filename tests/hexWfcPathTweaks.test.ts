@@ -19,7 +19,7 @@ import {
   type SolveOptions,
 } from "../packages/hex-wfc/src";
 import { drawnPathType } from "../src/worldgen/generators";
-import { wheelValue } from "../src/worldgen/scrub";
+import { wheelValue } from "../src/ui/scrub";
 
 /**
  * Per-route path settings on the generator page: on/off, exact count,
