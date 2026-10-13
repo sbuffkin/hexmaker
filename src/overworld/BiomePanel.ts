@@ -590,7 +590,7 @@ export class BiomePanel {
         const parent = disclosure.target(id, main, () => f.tuning?.[p.key] !== undefined);
         if (!parent) continue;
         // The shared slider: value shown, dimmed at the default, the one
-        // reset, and a number box per the switch in src/ui/numberBoxes.ts.
+        // reset, and (debug mode) a number box.
         const def = shownDefault(p, f.blend);
         const slider = renderLabeledSlider(parent, {
           label: p.label,
@@ -599,7 +599,6 @@ export class BiomePanel {
           max: p.max,
           step: p.step,
           value: f.tuning?.[p.key] ?? def,
-          kind: "tuning",
           cls: "duckmage-biome-tune-row",
           isSet: () => f.tuning?.[p.key] !== undefined,
           reset: {

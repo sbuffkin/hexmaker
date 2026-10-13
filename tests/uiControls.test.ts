@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
-import { NUMBER_BOX_RULE, numberBoxShown, setNumberBoxDebug, showNumberBox } from "../src/ui/numberBoxes";
+import { numberBoxShown, setNumberBoxDebug } from "../src/ui/numberBoxes";
 import { multiplierValue, renderLabeledSlider, renderMultiplierSlider, renderResetButton, sliderFormat } from "../src/ui/sliders";
 import { armButton, ARM_MS, renderFooter } from "../src/ui/footer";
 import { commitNumber, numberField } from "../src/ui/scrub";
@@ -19,7 +19,7 @@ import type { BiomeNoteFields } from "../src/overworld/biomeNote";
 /**
  * The shared controls and saving of the UI consistency fix plan (audit
  * 2026-10-12, owner answers 2026-10-13): LabeledSlider / MultiplierSlider /
- * ResetButton, the number-box switch (Q13), number fields, the footer and
+ * ResetButton, number boxes in debug mode (Q13), number fields, the footer and
  * two-click guard (Q6, Q7), the save-status line (Q5), the % column (Q1)
  * and the one biome editor (Q14).
  */
@@ -28,22 +28,7 @@ const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url),
 const rangeOf = (root: FakeEl) => root.inputs("range")[0];
 const valueOf = (root: FakeEl) => root.find("duckmage-labeled-slider-value")!.text;
 
-describe("number boxes beside sliders (Q13): one switch", () => {
-  it("the rule: none outside debug mode; every slider or only tuning rows in debug mode", () => {
-    for (const kind of ["slider", "tuning"] as const) {
-      expect(showNumberBox("debug-every-slider", kind, false)).toBe(false);
-      expect(showNumberBox("debug-tuning-only", kind, false)).toBe(false);
-      expect(showNumberBox("debug-every-slider", kind, true)).toBe(true);
-    }
-    expect(showNumberBox("debug-tuning-only", "tuning", true)).toBe(true);
-    expect(showNumberBox("debug-tuning-only", "slider", true)).toBe(false);
-  });
-
-  it("defaults to the owner's note (every slider, debug only) and is a one-line switch", () => {
-    expect(NUMBER_BOX_RULE).toBe("debug-every-slider");
-    expect(src("ui/numberBoxes.ts").match(/^export const NUMBER_BOX_RULE: NumberBoxRule = "[a-z-]+";$/gm)).toHaveLength(1);
-  });
-
+describe("number boxes beside sliders (Q13, confirmed): every slider, debug mode only", () => {
   it("follows debug mode: a slider shows its box only while it's on", () => {
     setNumberBoxDebug(() => false);
     const off = fakeRoot();

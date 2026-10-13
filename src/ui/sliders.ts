@@ -19,7 +19,7 @@
 
 import { setIcon } from "obsidian";
 import { wheelValue } from "./scrub";
-import { numberBoxShown, type SliderKind } from "./numberBoxes";
+import { numberBoxShown } from "./numberBoxes";
 
 // ── value formatters (audit S2: one per kind of value) ─────────────────────
 
@@ -92,8 +92,6 @@ export interface LabeledSliderOptions {
   layout?: "row" | "stacked";
   /** Wheel step (default: `step`). */
   wheelStep?: number;
-  /** Ordinary slider, or a Debug tuning row (for the number-box switch). */
-  kind?: SliderKind;
   /**
    * A reset to `value` (the default or inherited value), with its text
    * ("×1", "50%"; default: the formatted value). The reset fires `onReset`
@@ -145,7 +143,7 @@ export function renderLabeledSlider(parent: HTMLElement, opts: LabeledSliderOpti
   else if (opts.title) el.setAttr("title", opts.title);
   const inline = stacked ? null : range(el);
   const shown = head.createSpan({ cls: "duckmage-labeled-slider-value" });
-  const box = numberBoxShown(opts.kind ?? "slider")
+  const box = numberBoxShown()
     ? head.createEl("input", {
       type: "number",
       cls: "duckmage-wfc-num duckmage-labeled-slider-box",

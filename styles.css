@@ -1089,25 +1089,6 @@ input.duckmage-input-error {
     background: var(--background-modifier-error);
 }
 
-/* ── Terrain entry editor modal buttons ──────────────────────────── */
-.duckmage-tee-buttons {
-    display: flex;
-    gap: 0.5em;
-    flex-wrap: wrap;
-    margin-top: 1.25em;
-    padding-top: 0.75em;
-    border-top: 1px solid var(--background-modifier-border);
-}
-.duckmage-btn-danger {
-    color: var(--text-error);
-    border-color: var(--background-modifier-border);
-    margin-left: auto;
-}
-.duckmage-btn-danger:hover {
-    background: var(--background-modifier-error);
-    border-color: var(--text-error);
-}
-
 /* Link sections */
 .duckmage-editor-link-section {
     margin-bottom: 0.85em;
@@ -3787,13 +3768,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     font-variant-numeric: tabular-nums;
 }
-.duckmage-table-editor-footer {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 14px;
-    padding-top: 10px;
-    border-top: 1px solid var(--background-modifier-border);
-}
 
 /* ── Random table editor — name row ────────────────────────────────────────── */
 
@@ -3930,13 +3904,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     width: 100%;
     font-size: 0.85em;
     margin-top: 6px;
-}
-
-/* Confirm delete modal */
-.duckmage-confirm-btn-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
 }
 
 /* ── Region button & modal ────────────────────────────────────────────────── */
@@ -4272,30 +4239,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     line-height: 1;
     flex-shrink: 0;
     color: var(--text-muted);
-}
-
-/* Inline delete confirmation row */
-.duckmage-map-item-confirming {
-    cursor: default;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 7px 10px;
-}
-
-.duckmage-map-delete-warning {
-    flex: 1 1 100%;
-    font-size: 0.85em;
-    color: var(--text-muted);
-}
-
-.duckmage-map-confirm-btn {
-    padding: 3px 10px;
-    font-size: 0.82em;
-}
-
-.duckmage-map-cancel-btn {
-    padding: 3px 10px;
-    font-size: 0.82em;
 }
 
 .duckmage-region-row {
@@ -4774,13 +4717,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     white-space: pre-wrap;
 }
 
-.duckmage-faction-editor-btns {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    justify-content: flex-end;
-}
-
 .duckmage-pattern-preview-wrap {
     display: flex;
     align-items: center;
@@ -5179,32 +5115,9 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     margin-left: 4px;
 }
 
-/* Setup wizard Advanced: engine tuning sliders (owner 2026-10-12). */
+/* Setup wizard Advanced: engine tuning sliders (owner 2026-10-12), on the shared LabeledSlider. */
 .duckmage-wizard-tuning {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
     margin-bottom: 8px;
-}
-
-.duckmage-wizard-tuning-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.duckmage-wizard-tuning-value {
-    margin-left: auto;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-muted);
-}
-
-.duckmage-wizard-tuning-reset {
-    padding: 0 6px;
-}
-
-.duckmage-wizard-tuning input[type="range"] {
-    width: 100%;
 }
 
 /* A map scale's own choice (Biomes: Make every region now), wizard and New map. */
@@ -5562,8 +5475,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     width: 100%;
 }
 
-/* Token modal styles */
-.duckmage-token-modal-buttons {
+/* A row of action buttons inside a modal's content (not its footer: src/ui/footer.ts). */
+.duckmage-action-row {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
@@ -7761,7 +7674,7 @@ button.duckmage-terrain-legend-chip {
 .duckmage-token-note-status {
     min-height: 1.4em;
 }
-.duckmage-token-modal .duckmage-token-modal-buttons {
+.duckmage-token-modal .duckmage-modal-footer {
     position: sticky;
     bottom: 0;
     z-index: 2;
@@ -8495,7 +8408,7 @@ button.duckmage-terrain-legend-chip {
 
 /* A reshape action locked by the work mode, and the line saying how to unlock it. */
 .duckmage-biome-option.is-locked,
-.duckmage-token-modal-buttons button.is-locked {
+.duckmage-action-row button.is-locked {
     opacity: 0.45;
     cursor: not-allowed;
 }
@@ -8504,7 +8417,8 @@ button.duckmage-terrain-legend-chip {
     color: var(--text-muted);
     margin: 0 0 0.6em;
 }
-.duckmage-token-modal-buttons .duckmage-locked-hint {
+.duckmage-action-row .duckmage-locked-hint,
+.duckmage-modal-footer .duckmage-locked-hint {
     margin: 0;
     align-self: center;
 }
@@ -8543,7 +8457,7 @@ button.duckmage-terrain-legend-chip {
 .duckmage-edit-region-modal .duckmage-map-origin-desc {
     margin: 0.3em 0;
 }
-.duckmage-edit-region-modal .duckmage-token-modal-buttons {
+.duckmage-edit-region-modal .duckmage-action-row {
     justify-content: flex-start;
     flex-wrap: wrap;
 }
@@ -8609,17 +8523,6 @@ textarea.duckmage-edit-region-notes-input {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
 }
-.duckmage-biome-mix,
-.duckmage-biome-transitions {
-    display: grid;
-    gap: 4px;
-}
-.duckmage-biome-mix .duckmage-region-gen-row.is-missing .duckmage-region-gen-label {
-    font-style: italic;
-}
-.duckmage-biome-weight {
-    width: 4em;
-}
 .duckmage-biome-mix-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(16em, 1fr));
@@ -8631,15 +8534,6 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-biome-mix-grid input[type="range"] {
     flex: 1 1 auto;
     min-width: 3em;
-}
-.duckmage-biome-islands,
-.duckmage-biome-climate {
-    display: grid;
-    gap: 4px;
-}
-.duckmage-biome-climate input[type="text"] {
-    flex: 1 1 auto;
-    min-width: 6em;
 }
 /* Generate overworld: the biome pool list (compact, scrolls when long). */
 .duckmage-ow-pool-list {
@@ -8674,30 +8568,21 @@ textarea.duckmage-edit-region-notes-input {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
 }
-.duckmage-ow-pool-item .duckmage-biome-weight {
-    width: 3.5em;
+/* Biome pool weight: the shared multiplier slider, compact in the row. */
+.duckmage-ow-pool-item .duckmage-ow-pool-weight {
+    flex: 0 1 12em;
+    flex-wrap: nowrap;
+    margin: 0;
 }
-/* Generator page: Biome (blend field) type mix. */
-.duckmage-biome-page-mix {
-    display: grid;
-    /* Type, Weight, Min patches */
-    grid-template-columns: minmax(6em, max-content) minmax(6em, 1fr) 6em;
-    gap: 2px 8px;
-    align-items: center;
+/* Biome page: Type mix on the shared share sliders, plus a Min patches column. */
+.duckmage-biome-page-mix .duckmage-share-sliders-row {
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em 5em;
 }
-.duckmage-biome-page-row {
-    display: contents;
-}
-.duckmage-biome-page-row input[type="range"] {
-    width: 100%;
-}
-.duckmage-biome-page-row.is-head span {
+/* Biome page: Terrain weights, one set of share sliders per type. */
+.duckmage-biome-terrain-weights-type {
+    margin-top: 0.5em;
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-}
-.duckmage-biome-page-row.is-missing > span:first-child {
-    color: var(--text-faint);
-    font-style: italic;
 }
 .duckmage-wfc-used-by {
     font-style: italic;
@@ -9358,4 +9243,137 @@ button.duckmage-neighbor-centre {
 /* Status bar: "Debug" while debug mode is on (click to turn it off). */
 .duckmage-debug-status {
     color: var(--text-warning);
+}
+
+/* ── Shared controls (src/ui/sliders.ts, footer.ts, saveStatusLine.ts) ────── */
+
+/* LabeledSlider: label, slider, value always shown, [number box], [reset]. */
+.duckmage-labeled-slider {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0.2em 0;
+}
+
+.duckmage-labeled-slider > input[type="range"] {
+    flex: 1 1 8em;
+    min-width: 6em;
+}
+
+.duckmage-labeled-slider.is-stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+}
+
+.duckmage-labeled-slider.is-stacked > input[type="range"] {
+    width: 100%;
+    flex: none;
+}
+
+.duckmage-labeled-slider-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-labeled-slider-label {
+    min-width: 6em;
+}
+
+.duckmage-labeled-slider-value {
+    min-width: 3.2em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.duckmage-labeled-slider.is-stacked .duckmage-labeled-slider-value {
+    margin-left: auto;
+}
+
+.duckmage-labeled-slider-box {
+    width: 5em;
+}
+
+.duckmage-biome-tune-row .duckmage-labeled-slider-label {
+    min-width: 13em;
+}
+
+.duckmage-labeled-slider-help {
+    flex-basis: 100%;
+}
+
+/* An optional / inherited value: dimmed until set; the reset brings it back. */
+.duckmage-labeled-slider.is-inherited > input[type="range"],
+.duckmage-labeled-slider.is-inherited .duckmage-labeled-slider-value {
+    opacity: 0.55;
+}
+
+.duckmage-labeled-slider.is-disabled {
+    opacity: 0.5;
+}
+
+/* In a table cell (generator Bias, path knobs): no wrap, compact. */
+.duckmage-wfc-mix .duckmage-labeled-slider,
+.duckmage-wfc-terrain-row .duckmage-labeled-slider {
+    flex-wrap: nowrap;
+    margin: 0;
+    gap: 0.3em;
+}
+
+.duckmage-wfc-mix .duckmage-labeled-slider-label {
+    min-width: 0;
+}
+
+/* ResetButton: one rotate icon, disabled at the default. */
+.duckmage-reset-btn {
+    padding: 2px;
+}
+
+.duckmage-reset-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* The one modal footer: primary first, right-aligned. */
+.duckmage-modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 16px;
+}
+
+.duckmage-modal-footer button.is-locked {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Two-click delete: armed for a few seconds. */
+button.is-armed {
+    color: var(--text-on-accent);
+    background-color: var(--background-modifier-error);
+}
+
+/* The autosave line on editors with no Save button. */
+.duckmage-save-status-line {
+    align-self: flex-start;
+    margin: 0.4em 0;
+}
+
+/* % column beside free weights (random tables, world types). */
+.duckmage-odds-percent {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.duckmage-table-editor-odds {
+    flex: 0 0 3em;
+    align-self: center;
 }
