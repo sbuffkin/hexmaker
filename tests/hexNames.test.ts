@@ -166,9 +166,9 @@ describe("X1: handout options", () => {
 			index: [{ category: "Named hexes", entries: [{ name: "Lone Oak", hexes: ["0101"] }] }],
 		};
 		const full = buildManualHtml(d);
-		for (const s of ["Map legend", "Random encounter tables", "Factions and regions", "Index of locations"]) expect(full).toContain(s);
+		for (const s of ["Map legend", "Random encounter tables", "Factions and areas", "Index of locations"]) expect(full).toContain(s);
 		const handout = buildManualHtml({ ...d, omit: ["legend", "tables", "factions", "index"] });
-		for (const s of ["Map legend", "Random encounter tables", "Factions and regions", "Index of locations"]) expect(handout).not.toContain(s);
+		for (const s of ["Map legend", "Random encounter tables", "Factions and areas", "Index of locations"]) expect(handout).not.toContain(s);
 		expect(handout).toContain("Lone Oak");
 	});
 });

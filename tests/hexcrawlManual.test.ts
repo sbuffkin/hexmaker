@@ -99,7 +99,7 @@ describe("manual document", () => {
 
   it("has the manual's parts in order", () => {
     const html = buildManualHtml(data(false));
-    const order = ["A hexcrawl gazetteer", "Contents", "How to use this book", "Map legend", "Random encounter tables", "Factions and regions", "Hex key", "Index of locations"];
+    const order = ["A hexcrawl gazetteer", "Contents", "How to use this book", "Map legend", "Random encounter tables", "Factions and areas", "Hex key", "Index of locations"];
     const at = order.map((s) => html.indexOf(s));
     expect(at.every((i) => i >= 0)).toBe(true);
     expect([...at].sort((a, b) => a - b)).toEqual(at);

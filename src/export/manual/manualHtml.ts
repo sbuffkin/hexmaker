@@ -53,7 +53,7 @@ function contents(d: ManualData): string {
     "How to use this book",
     includes(d, "legend") ? "Map legend" : "",
     d.tables.length && includes(d, "tables") ? "Random encounter tables" : "",
-    (d.factions.length || d.regions.length) && includes(d, "factions") ? "Factions and regions" : "",
+    (d.factions.length || d.regions.length) && includes(d, "factions") ? "Factions and areas" : "",
     `Hex key (${plural(d.sections.length, "section")})`,
     d.index.some((c) => c.entries.length) && includes(d, "index") ? "Index of locations" : "",
   ].filter(Boolean);
@@ -117,18 +117,18 @@ function tables(d: ManualData): string {
 function factionsAndRegions(d: ManualData): string {
   if (!d.factions.length && !d.regions.length) return "";
   const factions = d.factions.length
-    ? `<h3>Factions</h3><table class="hx-table hx-wide"><thead><tr><th>Faction</th><th>Hexes</th><th>Regions</th></tr></thead><tbody>${d.factions
+    ? `<h3>Factions</h3><table class="hx-table hx-wide"><thead><tr><th>Faction</th><th>Hexes</th><th>Areas</th></tr></thead><tbody>${d.factions
         .map((f) => `<tr><td>${esc(f.name)}</td><td class="hx-roll">${f.hexCount}</td><td>${esc(f.regions.join(", "))}</td></tr>`)
         .join("")}</tbody></table>`
     : "";
   const regions = d.regions.length
-    ? `<h3>Regions</h3><table class="hx-table hx-wide"><thead><tr><th>Region</th><th>Hexes</th></tr></thead><tbody>${d.regions
+    ? `<h3>Areas</h3><table class="hx-table hx-wide"><thead><tr><th>Area</th><th>Hexes</th></tr></thead><tbody>${d.regions
         .map((r) => `<tr><td>${esc(r.name)}</td><td class="hx-roll">${r.hexCount}</td></tr>`)
         .join("")}</tbody></table>`
     : "";
   return `
 <section class="hx-page">
-  <h2>Factions and regions</h2>
+  <h2>Factions and areas</h2>
   ${factions}
   ${regions}
 </section>`;

@@ -111,6 +111,6 @@ export type ManualPart = "legend" | "tables" | "factions" | "index";
 export const MANUAL_PARTS: { key: ManualPart; label: string }[] = [
   { key: "legend", label: "Map legend" },
   { key: "tables", label: "Encounter tables" },
-  { key: "factions", label: "Factions and regions" },
+  { key: "factions", label: "Factions and areas" },
   { key: "index", label: "Index" },
 ];
