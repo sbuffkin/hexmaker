@@ -11,9 +11,10 @@ import {
   type OverlayStyle,
 } from "../frontmatter";
 import { addOverlayPatternControls, renderHexPreview } from "./overlayPatternControls";
+import { addPickerFilter, emptyState, filterText } from "../ui/pickers";
 import { REGION_AREAS_TOOL } from "./toolMode";
 
-// ── Region editor sub-modal ───────────────────────────────────────────────────
+// ── Area editor sub-modal (painted area notes; "Area" in the UI, owner Q8) ──────
 
 class GeoRegionEditorModal extends HexmakerModal {
   constructor(
@@ -138,7 +139,7 @@ class GeoRegionEditorModal extends HexmakerModal {
   }
 }
 
-// ── Region palette picker ─────────────────────────────────────────────────────
+// ── Area palette picker ───────────────────────────────────────────────────────
 
 export class GeoRegionPickerModal extends HexmakerModal {
   private pendingColorOverrides = new Map<string, string>();
@@ -166,10 +167,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
     const folder = normalizeFolder(this.plugin.settings.regionsFolder);
 
     if (!folder) {
-      contentEl.createEl("p", {
-        text: "No regions folder configured.",
-        cls: "duckmage-faction-picker-empty",
-      });
+      emptyState(contentEl, "No areas folder set yet.");
       return;
     }
 
@@ -179,10 +177,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
       .sort((a, b) => a.basename.localeCompare(b.basename));
 
     if (files.length === 0) {
-      contentEl.createEl("p", {
-        text: `No region notes found in "${folder}".`,
-        cls: "duckmage-faction-picker-empty",
-      });
+      emptyState(contentEl, `No area notes in "${folder}" yet.`);
     } else {
       const grid = contentEl.createDiv({ cls: "duckmage-faction-palette" });
 
@@ -215,7 +210,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
 
         const editBtn = tile.createEl("button", {
           cls: "duckmage-faction-tile-edit",
-          attr: { title: "Edit region" },
+          attr: { title: "Edit area" },
         });
         editBtn.setText("✏");
 
@@ -223,6 +218,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
           text: file.basename,
           cls: "duckmage-faction-tile-name",
         });
+        filterText(tile, file.basename);
 
         editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -247,6 +243,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
                 preview.addClass("duckmage-faction-tile-preview-empty");
               }
               nameEl.setText(newBasename);
+              filterText(tile, newBasename);
             },
           ).open();
         });
@@ -256,13 +253,15 @@ export class GeoRegionPickerModal extends HexmakerModal {
           this.close();
         });
       }
+      // The shared picker filter (src/ui/pickers.ts), once the list is long.
+      addPickerFilter(grid, { things: "areas", count: files.length });
     }
 
     // ── New region row ────────────────────────────────────────────────────────
     const addRow = contentEl.createDiv({ cls: "duckmage-faction-picker-add" });
     const nameInput = addRow.createEl("input", {
       cls: "duckmage-faction-picker-add-input",
-      attr: { type: "text", placeholder: "New region name…" },
+      attr: { type: "text", placeholder: "New area name…" },
     });
     const createBtn = addRow.createEl("button", {
       text: "Create",
@@ -282,7 +281,7 @@ export class GeoRegionPickerModal extends HexmakerModal {
     const filePath = `${folder}/${name}.md`;
 
     if (this.app.vault.getAbstractFileByPath(filePath)) {
-      new Notice(`A region note named "${name}" already exists.`);
+      new Notice(`An area note named "${name}" already exists.`);
       return;
     }
 

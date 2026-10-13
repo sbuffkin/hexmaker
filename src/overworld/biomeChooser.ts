@@ -10,9 +10,7 @@ import type { TerrainColor } from "../types";
 import { createIconEl, getIconUrl } from "../utils";
 import { groupBiomes } from "./biomeGroups";
 import type { PaintableBiome } from "./BiomeModals";
-
-/** Show the filter box from this many biomes up. */
-export const FILTER_FROM = 9;
+import { addPickerFilter, filterText } from "../ui/pickers";
 
 export interface BiomeTilesOptions {
   /** Classes of the tile grid (it scrolls, or not, as these say). */
@@ -28,22 +26,18 @@ export interface BiomeTilesOptions {
  * box above them when there are many. Returns the grid.
  */
 export function renderBiomeTiles(parent: HTMLElement, plugin: HexmakerPlugin, palette: TerrainColor[], biomes: PaintableBiome[], o: BiomeTilesOptions): HTMLElement {
-  const search = biomes.length >= FILTER_FROM ? parent.createEl("input", {
-    type: "search",
-    cls: "duckmage-biome-filter",
-    attr: { placeholder: "Filter biomes…", "aria-label": "Filter biomes" },
-  }) : null;
   const grid = parent.createDiv({ cls: o.cls });
   const groups = groupBiomes(biomes, (b) => b.group);
   // Headings only help when there's more than one group.
   const heads = groups.length > 1;
   for (const g of groups) {
-    if (heads) grid.createDiv({ cls: "duckmage-biome-group-head", text: g.label, attr: { "data-group": g.id } });
+    if (heads) grid.createDiv({ cls: "duckmage-biome-group-head", text: g.label, attr: { "data-filter-head": g.id } });
     for (const b of g.items) {
       const tile = grid.createDiv({
         cls: `duckmage-terrain-option${o.isSelected(b.id) ? " is-selected" : ""}`,
-        attr: { title: o.title(b), "data-biome": b.id, "data-group": g.id, "data-label": b.label.toLowerCase(), role: "button", tabindex: "0" },
+        attr: { title: o.title(b), "data-biome": b.id, "data-filter-group": g.id, role: "button", tabindex: "0" },
       });
+      filterText(tile, b.label, g.id, g.label);
       const preview = tile.createDiv({ cls: "duckmage-terrain-preview" + (b.terrain ? "" : " duckmage-biome-blank-preview") });
       preview.setCssProps({ "--duckmage-bg": b.color });
       const entry = b.terrain ? palette.find((t) => t.name === b.terrain) : undefined;
@@ -55,21 +49,8 @@ export function renderBiomeTiles(parent: HTMLElement, plugin: HexmakerPlugin, pa
       });
     }
   }
-  if (search) {
-    const empty = parent.createEl("p", { cls: "duckmage-biome-filter-empty setting-item-description", text: "No biomes match." });
-    empty.toggle(false);
-    search.addEventListener("input", () => {
-      const q = search.value.trim().toLowerCase();
-      const shown = new Set<string>();
-      for (const tile of Array.from(grid.querySelectorAll<HTMLElement>("[data-biome]"))) {
-        const hit = !q || (tile.dataset["label"] ?? "").includes(q) || (tile.dataset["group"] ?? "").includes(q);
-        tile.toggle(hit);
-        if (hit) shown.add(tile.dataset["group"] ?? "");
-      }
-      for (const head of Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-biome-group-head"))) head.toggle(shown.has(head.dataset["group"] ?? ""));
-      empty.toggle(shown.size === 0);
-    });
-  }
+  // The shared picker filter (src/ui/pickers.ts), once the list is long.
+  addPickerFilter(grid, { things: "biomes", count: biomes.length });
   return grid;
 }
 

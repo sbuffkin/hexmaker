@@ -2,6 +2,7 @@ import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type { TerrainColor } from "../types";
 import { groupPaletteByType } from "./terrainTypeFilter";
+import { addPickerFilter, filterText } from "../ui/pickers";
 
 /** Mutable include/exclude sets for terrain names and type ids. */
 export interface TerrainFilterSets {
@@ -82,6 +83,7 @@ export class TerrainFilterModal extends HexmakerModal {
         if (color) swatch.setCssProps({ "--duckmage-swatch-color": color });
       }
       lbl.createSpan({ text: label });
+      filterText(lbl, label);
 
       const refresh = () => {
         cb.checked = include.has(key);
@@ -215,6 +217,9 @@ export class TerrainFilterModal extends HexmakerModal {
         addTerrainRow(entry.name, entry.name, entry.color, true);
       }
     }
+
+    // The shared picker filter (src/ui/pickers.ts), once the palette is long.
+    addPickerFilter(list, { things: "terrains", count: this.palette.length });
 
     // Buttons last, below the Advanced dropdown.
     const btnRow = contentEl.createDiv({ cls: "duckmage-terrain-filter-btns" });

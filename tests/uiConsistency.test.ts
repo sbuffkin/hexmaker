@@ -14,7 +14,15 @@ import { fileURLToPath } from "node:url";
  * 2. puts more than one primary (mod-cta) button on a surface;
  * 3. adds a modal that skips the shared base class (HexmakerModal);
  * 4. builds a footer row by hand instead of the footer helper
- *    (HexmakerModal.footer / renderFooter, src/ui/footer.ts).
+ *    (HexmakerModal.footer / renderFooter, src/ui/footer.ts);
+ * 5. uses a word the owner retired (2026-10-13: Q4, Q8, Q9/R1, Q11, Q12):
+ *    "colour", "Re-roll", "Place" as a kind of submap, "Region areas" /
+ *    "region overlay" for painted areas, "Blend (built-in mixing)";
+ * 6. builds a fold by hand instead of the shared Fold (src/ui/disclosure.ts);
+ * 7. builds a picker's filter, empty state, drag grip or edit toggle by
+ *    hand instead of src/ui/pickers.ts;
+ * 8. writes the plugin's name onto a notice by hand (src/ui/notify.ts:
+ *    noticeBackground, for background notices only).
  *
  * Fix the code, not this test. An allow-list entry needs a reason a
  * reviewer would accept (two surfaces in one class, never shown together).
@@ -31,6 +39,12 @@ function tsFiles(dir: string): string[] {
 }
 
 const FILES = tsFiles(SRC).map((p) => ({ path: relative(SRC, p).replace(/\\/g, "/"), text: readFileSync(p, "utf8") }));
+
+/** The user docs: the README and the in-app help. */
+const DOCS = [
+  { path: "README.md", text: readFileSync(fileURLToPath(new URL("../README.md", import.meta.url)), "utf8") },
+  { path: "src/hex-map/help.md", text: readFileSync(join(SRC, "hex-map", "help.md"), "utf8") },
+];
 
 // ── 1. sliders ─────────────────────────────────────────────────────────────
 
@@ -89,6 +103,93 @@ const MODAL_ALLOW: Record<string, string> = {
 /** Hand-built footer rows the footer helper replaced. */
 const OLD_FOOTERS = /duckmage-token-modal-buttons|duckmage-confirm-btn-row|modal-button-container|duckmage-table-editor-footer|duckmage-tee-buttons|duckmage-faction-editor-btns|duckmage-terrain-editor-actions/;
 
+// ── 5. words ───────────────────────────────────────────────────────────────
+
+/** The string literals on a line ('…', "…" and `…` without their quotes); comment lines are skipped. */
+export function stringLiterals(line: string): string[] {
+  if (/^\s*(\/\/|\*|\/\*)/.test(line)) return [];
+  return [...line.matchAll(/"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`((?:[^`\\]|\\.)*)`/g)].map((m) => m[1] ?? m[2] ?? m[3] ?? "");
+}
+
+/**
+ * Retired words in user-visible text, and why. A string literal counts as
+ * user-visible text when it has a space or a capital letter (bare data
+ * keys like "colour" or "region" don't).
+ */
+export const RETIRED_WORDS: { re: RegExp; why: string }[] = [
+  { re: /\bcolours?\b|\bcoloured\b|\brecolour/i, why: "Q11: spell it color" },
+  { re: /\bre-roll/i, why: "Q4: Reroll (a new seed) or Regenerate (same seed)" },
+  { re: /\b(new|locked|this|the) place\b|^Place$/i, why: "Q9/R1: a submap is a Region or a Location, never a Place" },
+  { re: /\bregion areas?\b|\bregion overlay\b|\bregions folder\b/i, why: "Q8: painted areas are Areas" },
+  { re: /\bBlend \(built-in mixing\)/, why: "Q12: the generator option is Built-in mixing" },
+];
+
+/** Retired words in one source text (or a doc, every line): "line: word (why)". */
+export function retiredWords(text: string, isDoc = false): string[] {
+  const out: string[] = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    const pieces = isDoc ? [line] : stringLiterals(line).filter((s) => /\s|[A-Z]/.test(s));
+    for (const s of pieces) {
+      for (const { re, why } of RETIRED_WORDS) {
+        const m = s.match(re);
+        if (m) out.push(`${i + 1}: ${m[0]} (${why})`);
+      }
+    }
+  });
+  return out;
+}
+
+/**
+ * Data, not UI: a stored key or value that keeps the old word so notes
+ * written before still read (the parsers accept both).
+ */
+const WORD_ALLOW: Record<string, RegExp> = {
+  "palettes/paletteNote.ts": /"icon colour"/, // palette note column header, read as an alias of "Icon color"
+  "palettes/PaletteStore.ts": /backups\/palette-colours-/, // backup folder name of the one-time colour conversion
+};
+
+/** The text with allowed lines blanked (line numbers kept). */
+function withoutAllowed(text: string, allow: RegExp | undefined): string {
+  return allow ? text.split(/\r?\n/).map((l) => (allow.test(l) ? "" : l)).join("\n") : text;
+}
+
+// ── 6. folds ───────────────────────────────────────────────────────────────
+
+/** Lines that build a `<details>` / `<summary>` by hand. */
+export function rawFolds(text: string): number[] {
+  const out: number[] = [];
+  text.split(/\r?\n/).forEach((line, i) => {
+    if (/createEl\(\s*["'`](details|summary)["'`]/.test(line)) out.push(i + 1);
+  });
+  return out;
+}
+
+// ── 7. pickers ─────────────────────────────────────────────────────────────
+
+/** Picker parts built by hand that src/ui/pickers.ts replaced. */
+const OLD_PICKER_PARTS = /duckmage-(icon-filter|biome-filter|terrain-filter|faction-picker|picker-list|wfc-library)-empty|"⋮⋮"|text: "⠿"|"← Done"|"✏ Edit"|"Manage icons"|"← pick icons"|placeholder: "(Find|Search) (a )?(map|location|terrain)/;
+
+/** Pickers that must use the shared filter (addPickerFilter). */
+const FILTERED_PICKERS = [
+  "hex-map/TerrainPickerModal.ts",
+  "hex-table/HexTerrainPickerModal.ts",
+  "hex-table/TerrainFilterModal.ts",
+  "hex-map/FactionPickerModal.ts",
+  "hex-map/GeoRegionPickerModal.ts",
+  "hex-map/HexEditorModal.ts",
+  "overworld/biomeChooser.ts",
+  "overworld/BiomeLibraryModal.ts",
+];
+
+// ── 8. notices ─────────────────────────────────────────────────────────────
+
+/** Lines where a notice writes the plugin's name by hand ("Hexmap World Creator: …", "Hexmaker: …"). */
+export function prefixedNotices(text: string): number[] {
+  const flat = text.replace(/\r\n/g, "\n");
+  const re = /new Notice\(\s*[`"'](?:Hexmap World Creator|Hexmaker)\b|(?:setMessage|lines\.push)\(\s*[`"'](?:Hexmap World Creator|Hexmaker):/g;
+  return [...flat.matchAll(re)].map((m) => flat.slice(0, m.index).split("\n").length);
+}
+
 describe("UI consistency drift guard", () => {
   it("sliders come from the shared kit: no range input outside src/ui/", () => {
     const found = FILES.filter((f) => !f.path.startsWith("ui/")).flatMap((f) => sliderSites(f.text).map((line) => `${f.path}:${line}`));
@@ -136,7 +237,53 @@ describe("UI consistency drift guard", () => {
     expect(found).toEqual([]);
   });
 
+  it("retired words stay out of user-visible text and the docs (Q4, Q8, Q9/R1, Q11, Q12)", () => {
+    const found: string[] = [];
+    for (const f of FILES) for (const hit of retiredWords(withoutAllowed(f.text, WORD_ALLOW[f.path]))) found.push(`${f.path}:${hit}`);
+    for (const d of DOCS) for (const hit of retiredWords(d.text, true)) found.push(`${d.path}:${hit}`);
+    expect(found).toEqual([]);
+  });
+
+  it("folds come from the shared Fold: no <details> built outside src/ui/disclosure.ts", () => {
+    const found = FILES.filter((f) => f.path !== "ui/disclosure.ts").flatMap((f) => rawFolds(f.text).map((l) => `${f.path}:${l}`));
+    // Use new Fold(parent, { title, store, surface }) (src/ui/disclosure.ts).
+    expect(found).toEqual([]);
+  });
+
+  it("pickers use the shared parts: filter, empty state, drag grip and edit toggle", () => {
+    expect(FILES.filter((f) => f.path !== "ui/pickers.ts" && OLD_PICKER_PARTS.test(f.text)).map((f) => f.path)).toEqual([]);
+    const missing = FILTERED_PICKERS.filter((p) => !FILES.find((f) => f.path === p)?.text.includes("addPickerFilter("));
+    expect(missing).toEqual([]);
+    // Every filter box is a search box ("Filter <things>…"), not a text box.
+    const textFilters = FILES.flatMap((f) => {
+      const flat = f.text.replace(/\r\n/g, "\n");
+      return [...flat.matchAll(/type: "text",[^}]{0,120}?placeholder: "Filter/g)].map((m) => `${f.path}:${flat.slice(0, m.index).split("\n").length}`);
+    });
+    // The map link combo (pattern-filterable-combo) is a text input by design.
+    expect(textFilters.filter((s) => !s.startsWith("hex-map/MapLinkModal.ts"))).toEqual([]);
+  });
+
+  it("only background notices carry the plugin's name, through noticeBackground", () => {
+    const found = FILES.filter((f) => f.path !== "ui/notify.ts").flatMap((f) => prefixedNotices(f.text).map((l) => `${f.path}:${l}`));
+    expect(found).toEqual([]);
+  });
+
   // The checks themselves catch what they should.
+  it("self-check: the word, fold and notice scanners flag what they should", () => {
+    expect(retiredWords(`el.createEl("button", { text: "Re-roll" });`)).toHaveLength(1);
+    expect(retiredWords(`setName("Colour")`)).toHaveLength(1);
+    expect(retiredWords(`fm.get("colour") ?? fm.get("color")`)).toEqual([]);
+    expect(retiredWords(`setName("Color")`)).toEqual([]);
+    expect(retiredWords(`text: open ? "New place" : "Locked place"`)).toHaveLength(2);
+    expect(retiredWords(`const what = kind === "region" ? "Region" : "Place";`)).toHaveLength(1);
+    expect(retiredWords(`"Revealed only through actions. True nature of a place."`)).toEqual([]);
+    expect(retiredWords(`export const TOOL = "Region areas";`)).toHaveLength(1);
+    expect(retiredWords(`// the region overlay: a comment`)).toEqual([]);
+    expect(retiredWords("**Region areas** paints a colour", true)).toHaveLength(2);
+    expect(rawFolds(`const d = el.createEl("details", { cls: "x" });\nd.createEl("summary", { text: "T" });\nnew Fold(el, { title: "T" });`)).toEqual([1, 2]);
+    expect(prefixedNotices(`new Notice("Hexmaker: palette");\nnew Notice(\n  \`Hexmap World Creator: moved\`);\nnew Notice("Saved.");\nnoticeBackground("moved");`)).toEqual([1, 2]);
+  });
+
   it("self-check: the scanners flag a one-off slider, a second primary and a raw modal", () => {
     expect(sliderSites(`const s = row.createEl("input", { type: "range" });\nnew Setting(el).addSlider((s) => s);\nx.type = "range";`)).toEqual([1, 2, 3]);
     expect(sliderSites(`renderLabeledSlider(el, { label: "Width" });`)).toEqual([]);

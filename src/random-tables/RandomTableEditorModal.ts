@@ -1,5 +1,6 @@
 import { App, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip } from "../ui/pickers";
 import {
   parseRandomTableWithReport,
   parseMarkdownListItems,
@@ -326,10 +327,7 @@ export class RandomTableEditorModal extends HexmakerModal {
         const row = rowsEl.createDiv({ cls: "duckmage-table-editor-row" });
         row.draggable = true;
 
-        const handle = row.createSpan({
-          cls: "duckmage-table-editor-drag-handle",
-          text: "⠿",
-        });
+        const handle = dragGrip(row, "duckmage-table-editor-drag-handle");
         handle.title = "Drag to reorder";
         if (table.dice > 0) {
           const rangeEl = row.createSpan({ cls: "duckmage-table-editor-range" });

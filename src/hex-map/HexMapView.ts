@@ -86,7 +86,7 @@ import { TokenModal } from "./TokenModal";
 import { SubmapPickerModal } from "./SubmapPickerModal";
 import { LocationsModal } from "./LocationsModal";
 import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
-import { hexChildMaps, newMapItemTitle, parentHexTerrain, regionMapAt, submapMenuPlan } from "../maps/submaps";
+import { hexChildMaps, newMapItemTitle, parentHexTerrain, regionMapAt, submapKindLabel, submapMenuPlan } from "../maps/submaps";
 // World maps (overworlds, regions, biomes, walking) through its hooks,
 // typed only: worldMaps() is undefined in a build without it.
 import type { OverworldLayer } from "../overworld/overworldLayer";
@@ -661,14 +661,17 @@ export class HexMapView extends ItemView {
     // A locked place shows the bar only where it can still be rerolled (God).
     if (!open && !canRerollPlace(map)) { hide(); return; }
     el.show();
-    el.createSpan({ cls: "duckmage-arrival-bar-label", text: open ? "New place" : "Locked place" });
+    // "New location" / "Locked region" (owner Q9/R1: never "place").
+    const kind = submapKindLabel(map);
+    const word = kind.toLowerCase();
+    el.createSpan({ cls: "duckmage-arrival-bar-label", text: open ? `New ${word}` : `Locked ${word}` });
     const reroll = el.createEl("button", {
       text: "Reroll",
-      attr: { title: open ? "Make this place again (its terrain and paths are replaced)" : "Make this locked place again (God mode)" },
+      attr: { title: open ? `Make this ${word} again with a new seed (its terrain and paths are replaced)` : `Make this locked ${word} again with a new seed (God mode)` },
     });
     reroll.addEventListener("click", () => void this.plugin.arrival.reroll(map.name).then(() => { this.refreshArrivalBar(); this.renderGrid(); }));
     if (open) {
-      const lock = el.createEl("button", { text: "Lock", attr: { title: `Keep this place as it is (rerolling it then needs ${WORK_MODE_TEXT.god.label} mode)` } });
+      const lock = el.createEl("button", { text: "Lock", attr: { title: `Keep this ${word} as it is (rerolling it then needs ${WORK_MODE_TEXT.god.label} mode)` } });
       lock.addEventListener("click", () => void this.plugin.arrival.lock(map.name).then(() => this.refreshArrivalBar()));
     }
     this.fitTopBar();
@@ -3149,7 +3152,7 @@ export class HexMapView extends ItemView {
     // Region link button label
     if (this.regionLinkBtnLabel) {
       if (this.drawingMode === "regionLink" && this.paintRegionPath) {
-        const name = this.paintRegionPath.split("/").pop()?.replace(/.md$/, "") ?? "Region";
+        const name = this.paintRegionPath.split("/").pop()?.replace(/.md$/, "") ?? "Area";
         this.regionLinkBtnLabel.setText(erasing ? "Erase: " + name : "Paint: " + name);
       } else {
         this.regionLinkBtnLabel.setText(REGION_AREAS_TOOL);

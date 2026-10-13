@@ -47,7 +47,7 @@ export const NAMES_ROLE: EngineRole = {
   name: "Names",
   rows: "text",
   terrainTypes: [],
-  help: "Names for maps made from a hex of this map (submaps, regions, places found on arrival). A When column can fit names to the hex (type: forest, terrain: ocean world).",
+  help: "Names for maps made from a hex of this map (regions, locations, and submaps made on arrival). A When column can fit names to the hex (type: forest, terrain: ocean world).",
   fallback: "the hex's terrain and coordinates",
   unsetLabel: "None (terrain and coordinates)",
 };

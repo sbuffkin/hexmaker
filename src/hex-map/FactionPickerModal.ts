@@ -11,6 +11,7 @@ import {
   type OverlayStyle,
 } from "../frontmatter";
 import { addOverlayPatternControls, renderHexPreview } from "./overlayPatternControls";
+import { addPickerFilter, emptyState, filterText } from "../ui/pickers";
 
 // ── Faction editor sub-modal ─────────────────────────────────────────────────
 
@@ -172,10 +173,7 @@ export class FactionPickerModal extends HexmakerModal {
     const folder = normalizeFolder(this.plugin.settings.factionsFolder);
 
     if (!folder) {
-      contentEl.createEl("p", {
-        text: "No factions folder configured.",
-        cls: "duckmage-faction-picker-empty",
-      });
+      emptyState(contentEl, "No factions folder set yet.");
       return;
     }
 
@@ -185,10 +183,7 @@ export class FactionPickerModal extends HexmakerModal {
       .sort((a, b) => a.basename.localeCompare(b.basename));
 
     if (files.length === 0) {
-      contentEl.createEl("p", {
-        text: `No faction notes found in "${folder}".`,
-        cls: "duckmage-faction-picker-empty",
-      });
+      emptyState(contentEl, `No faction notes found in "${folder}".`);
     } else {
       const grid = contentEl.createDiv({ cls: "duckmage-faction-palette" });
 
@@ -231,6 +226,7 @@ export class FactionPickerModal extends HexmakerModal {
           text: file.basename,
           cls: "duckmage-faction-tile-name",
         });
+        filterText(tile, file.basename);
 
         editBtn.addEventListener("click", (e) => {
           e.stopPropagation();
@@ -255,6 +251,7 @@ export class FactionPickerModal extends HexmakerModal {
                 preview.addClass("duckmage-faction-tile-preview-empty");
               }
               nameEl.setText(newBasename);
+              filterText(tile, newBasename);
             },
           ).open();
         });
@@ -265,6 +262,8 @@ export class FactionPickerModal extends HexmakerModal {
           this.close();
         });
       }
+      // The shared picker filter (src/ui/pickers.ts), once the list is long.
+      addPickerFilter(grid, { things: "factions", count: files.length });
     }
 
     // ── New faction row ───────────────────────────────────────────────────────

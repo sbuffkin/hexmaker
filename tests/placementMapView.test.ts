@@ -170,7 +170,7 @@ describe("the God offer: only where an action needs God", () => {
     for (const h of [PLACE_LOCKED_HINT, ADD_REGION_LOCKED_HINT, PAINT_LOCKED_HINT, CONFIRM_LOCKED_HINT, PATH_EDIT_LOCKED_HINT, null, undefined, ""]) {
       expect(godOfferText(h)).toBeNull();
     }
-    expect(godOfferText(REROLL_PLACE_LOCKED_HINT)).toBe("This place is locked. Switch to God for this map to reroll it");
+    expect(godOfferText(REROLL_PLACE_LOCKED_HINT)).toBe("This submap is locked. Switch to God for this map to reroll it");
   });
 
   it("a menu offers it only when God is the lowest mode that unlocks what it left out", () => {

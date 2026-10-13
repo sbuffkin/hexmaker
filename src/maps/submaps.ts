@@ -19,6 +19,16 @@ export function submapKindOf(map: Pick<MapData, "parent" | "submapKind"> | undef
   return map.parent ? "location" : map.submapKind;
 }
 
+/**
+ * The UI word for a submap's kind (owner Q9/R1): "Submap" is the umbrella,
+ * "Region" and "Location" its two kinds; never "Place". A map that isn't a
+ * submap reads "Map".
+ */
+export function submapKindLabel(map: Pick<MapData, "parent" | "submapKind"> | undefined): "Region" | "Location" | "Map" {
+  const kind = submapKindOf(map);
+  return kind === "region" ? "Region" : kind === "location" ? "Location" : "Map";
+}
+
 /** Every map a hex opens into: its region first, then its locations. */
 export function hexChildMaps(h: Pick<HexData, "regionMap" | "locations"> | undefined): string[] {
   if (!h) return [];

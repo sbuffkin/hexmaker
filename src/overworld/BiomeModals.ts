@@ -187,8 +187,8 @@ export class RegionGenModal extends HexmakerModal {
       void openBiomeGenerator(plugin, this.opts.biome);
     });
 
-    const blendSel = field("Blend with neighbours").createEl("select", { attr: { "aria-label": "Blend" } });
-    for (const w of ["narrow", "normal", "wide"] as BlendWidth[]) blendSel.createEl("option", { text: w, value: w });
+    const blendSel = field("Blend width").createEl("select", { attr: { "aria-label": "Blend width" } });
+    for (const w of ["narrow", "normal", "wide"] as BlendWidth[]) blendSel.createEl("option", { text: w[0].toUpperCase() + w.slice(1), value: w });
     blendSel.value = this.opts.blend as string;
     blendSel.addEventListener("change", () => { this.opts.blend = blendSel.value as BlendWidth; this.redraw(); });
 

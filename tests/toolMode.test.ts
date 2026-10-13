@@ -103,7 +103,7 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · drag a point to move it · Esc to finish · not next to the end, so the gap was routed");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathSelected: "King's Road", pathSummary: "Road, 2 forks" })).toBe("King's Road (Road, 2 forks): drag to reshape · right-click a point to delete it · click an end to continue, the line to fork");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNew: true })).toBe("New Road: click where it starts");
-		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting region area: Kerrigan");
+		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting area: Kerrigan");
 		expect(toolModeLabel({ mode: "factionLink", erasing: true })).toBe("Erasing factions");
 		expect(toolModeLabel({ mode: "tableLink", erasing: false, tablePath: "world/tables/ocean.md" })).toBe("Linking table: ocean");
 		expect(toolModeLabel({ mode: "submapLink", erasing: false, submapName: "deep" })).toBe("Linking submap: deep");

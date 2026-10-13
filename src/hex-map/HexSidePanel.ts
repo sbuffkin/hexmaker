@@ -281,7 +281,7 @@ export class OverlayPanel extends HexSidePanel {
     this.regionOverlayCb = regionCb;
 
     const regionLabel = regionRow.createSpan({
-      text: "Show region overlay",
+      text: "Show area overlay",
       cls: "duckmage-overlay-label",
     });
 

@@ -4,8 +4,12 @@
  * click does is pathClickOutcome in pathTool.ts.
  */
 
-/** The drawing-panel tool that paints region notes (the region overlay). Not "Regions": that's the overworld view. */
-export const REGION_AREAS_TOOL = "Region areas";
+/**
+ * The drawing-panel tool that paints area notes (the area overlay; notes
+ * in the regionsFolder setting). "Area" in the UI (owner Q8): "Region" is a
+ * kind of submap.
+ */
+export const REGION_AREAS_TOOL = "Areas";
 
 export type DrawingMode =
   | "path"
@@ -101,7 +105,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
     case "factionLink":
       return erasing ? "Erasing factions" : `Painting faction: ${baseName(s.factionPath) || "…"}`;
     case "regionLink":
-      return erasing ? "Erasing region areas" : `Painting region area: ${baseName(s.regionPath) || "…"}`;
+      return erasing ? "Erasing areas" : `Painting area: ${baseName(s.regionPath) || "…"}`;
     case "swap":
       return "Swapping hexes: click two hexes";
     case "placeToken":

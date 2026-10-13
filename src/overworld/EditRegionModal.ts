@@ -662,12 +662,12 @@ export class EditRegionModal extends HexmakerModal {
       new BiomeLibraryModal(this.app, plugin, this.overworld).open();
     });
 
-    // Blend with neighbours (the region settings' Blend): unset = the biome's own.
+    // Blend width with the neighbours (the region settings' Blend width): unset = the biome's own.
     const blendRow = biomeSec.createDiv({ cls: "duckmage-region-gen-row" });
-    blendRow.createSpan({ cls: "duckmage-region-gen-label", text: "Blend with neighbours" });
-    const blendSel = blendRow.createEl("select", { attr: { "aria-label": "Blend" } });
+    blendRow.createSpan({ cls: "duckmage-region-gen-label", text: "Blend width" });
+    const blendSel = blendRow.createEl("select", { attr: { "aria-label": "Blend width" } });
     blendSel.createEl("option", { text: "Biome's default", value: "" });
-    for (const w of BLEND_WIDTHS) blendSel.createEl("option", { text: w, value: w });
+    for (const w of BLEND_WIDTHS) blendSel.createEl("option", { text: w[0].toUpperCase() + w.slice(1), value: w });
     blendSel.value = draft.blend ?? "";
     blendSel.addEventListener("change", () => {
       draft.blend = (blendSel.value || undefined) as BlendWidth | undefined;

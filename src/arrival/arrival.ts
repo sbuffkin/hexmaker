@@ -28,8 +28,8 @@ export const ARRIVAL_MODE_WORDS: Record<ArrivalMode, string> = { off: "off", mak
 
 /** The choices as shown in Map properties. */
 export const ARRIVAL_MODE_TEXT: Record<ArrivalMode, string> = {
-  off: "Do nothing (make places in Build)",
-  make: "Make the place, in any mode",
+  off: "Do nothing (make submaps in Build)",
+  make: "Make the submap, in any mode",
 };
 
 /** `on-arrival:` read forgivingly ("make places", "make", "generate", "yes" / "off", "no", "nothing"); unknown → undefined. */

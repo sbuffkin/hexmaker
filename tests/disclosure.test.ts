@@ -13,7 +13,7 @@ import {
   setDebugMode,
   type LocalStore,
 } from "../src/ui/debugMode";
-import { DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen, subSectionKey } from "../src/ui/disclosure";
+import { DISCLOSURE_OPEN_KEY, FOLD_STATE_KEY, disclosureOpen, foldOpen, setDisclosureOpen, setFoldOpen, subSectionKey } from "../src/ui/disclosure";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 
@@ -155,6 +155,37 @@ describe("Advanced dropdown open state", () => {
     expect(disclosureOpen(store, "GenPage")).toBe(true);
     setDisclosureOpen(store, "GenPage", false);
     expect(store.data.has(DISCLOSURE_OPEN_KEY)).toBe(false);
+  });
+});
+
+describe("Fold open state (audit D1–D3)", () => {
+  it("opens as its default until the user folds it, then is remembered per key", () => {
+    const store = new FakeStore();
+    expect(foldOpen(store, "GenPage/Shape", true)).toBe(true);
+    expect(foldOpen(store, "MapExport/Hexcrawl manual", false)).toBe(false);
+    setFoldOpen(store, "GenPage/Shape", false);
+    setFoldOpen(store, "MapExport/Hexcrawl manual", true);
+    expect(foldOpen(store, "GenPage/Shape", true)).toBe(false);
+    expect(foldOpen(store, "MapExport/Hexcrawl manual", false)).toBe(true);
+    // Other folds keep their defaults.
+    expect(foldOpen(store, "GenPage/Paths", true)).toBe(true);
+    expect(store.data.get(FOLD_STATE_KEY)).toEqual({ "GenPage/Shape": false, "MapExport/Hexcrawl manual": true });
+  });
+
+  it("reads a damaged stored value as unset", () => {
+    const store = new FakeStore();
+    store.saveLocalStorage(FOLD_STATE_KEY, ["not", "a", "map"]);
+    expect(foldOpen(store, "GenPage/Shape", true)).toBe(true);
+    store.saveLocalStorage(FOLD_STATE_KEY, { "GenPage/Shape": "yes" });
+    expect(foldOpen(store, "GenPage/Shape", false)).toBe(false);
+    setFoldOpen(store, "GenPage/Paths", false);
+    expect(store.data.get(FOLD_STATE_KEY)).toEqual({ "GenPage/Paths": false });
+  });
+
+  it("GeneratorPanel's sections are shared Folds (no session-only static set)", () => {
+    const src = readFileSync(join("src", "worldgen", "GeneratorPanel.ts"), "utf8");
+    expect(src).not.toMatch(/static collapsed|static openPathTypes/);
+    expect(src).toMatch(/section\(el: HTMLElement, text: string\): HTMLElement \{[\s\S]{0,200}new Fold\(/);
   });
 });
 

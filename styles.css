@@ -1793,11 +1793,7 @@ input.duckmage-input-error {
     color: var(--text-normal);
 }
 
-.duckmage-icon-filter-empty {
-    color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
-    margin: -0.25em 0 0.5em;
-}
+
 
 /* ── Add palette modal ──────────────────────────────────────────────── */
 .duckmage-add-palette-list {
@@ -3090,11 +3086,7 @@ tr.duckmage-row-hidden {
     border-radius: 6px;
     margin-bottom: 8px;
 }
-.duckmage-picker-list-empty {
-    padding: 8px 12px;
-    color: var(--text-muted);
-    font-size: var(--font-ui-small);
-}
+
 
 .duckmage-rt-list-item {
     padding: 5px 12px;
@@ -4565,11 +4557,7 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     min-width: 320px;
 }
 
-.duckmage-faction-picker-empty {
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 8px 0;
-}
+
 
 /* Hidden native color picker — triggered via .click() */
 .duckmage-faction-color-input {
@@ -5728,36 +5716,9 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     border-bottom: 1px solid var(--background-modifier-border);
 }
 
-/* Collapsible setting sections: click the title to fold the body away. */
-.duckmage-wfc-heading.is-collapsible {
-    display: flex;
-    align-items: center;
-    gap: 0.35em;
-    cursor: pointer;
-    user-select: none;
-}
-
-.duckmage-wfc-heading.is-collapsible:hover {
-    color: var(--text-accent);
-}
-
-.duckmage-wfc-fold {
-    display: inline-flex;
-    color: var(--text-muted);
-    transition: transform 120ms ease;
-}
-
-.duckmage-wfc-fold svg {
-    width: 1em;
-    height: 1em;
-}
-
-.duckmage-wfc-group.is-collapsed .duckmage-wfc-fold {
-    transform: rotate(-90deg);
-}
-
-.duckmage-wfc-group.is-collapsed .duckmage-wfc-group-body {
-    display: none;
+/* The page's sections are shared Folds (src/ui/disclosure.ts): a heading look. */
+.duckmage-fold > .duckmage-wfc-heading {
+    font-weight: var(--font-semibold);
 }
 
 .duckmage-wfc-seed {
@@ -6066,10 +6027,7 @@ button.duckmage-wfc-library-tab.is-active {
     font-weight: 600;
 }
 
-.duckmage-wfc-library-empty {
-    padding: 0.6em;
-    color: var(--text-muted);
-}
+
 
 .duckmage-wfc-library-actions {
     margin: 0;
@@ -6308,20 +6266,12 @@ button.duckmage-wfc-library-tab.is-active {
     margin: 0;
 }
 
-.duckmage-wfc-path-group-title .duckmage-wfc-fold {
-    padding: 0.15em;
-    height: auto;
-}
-
-.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-title .duckmage-wfc-fold {
-    transform: rotate(-90deg);
-}
-
-.duckmage-wfc-path-group.is-collapsed .duckmage-wfc-path-group-body {
-    display: none;
+.duckmage-wfc-path-group-title .duckmage-fold-title {
+    font-weight: 600;
 }
 
 .duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-knobs,
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-fold-title,
 .duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
     opacity: 0.45;
 }
@@ -7015,11 +6965,7 @@ button.duckmage-wfc-library-tab.is-active {
     width: 100%;
     margin-bottom: 0.5em;
 }
-.duckmage-terrain-filter-empty {
-    color: var(--text-muted);
-    font-size: var(--font-ui-small);
-    margin-bottom: 0.75em;
-}
+
 .duckmage-terrain-change-hint {
     margin-left: 0.5em;
     font-size: var(--font-ui-smaller);
@@ -8065,10 +8011,7 @@ button.duckmage-terrain-legend-chip {
 .duckmage-terrain-picker.duckmage-edit-region-biomes {
     max-height: 15em;
 }
-.duckmage-biome-filter {
-    width: 100%;
-    margin-bottom: 0.4em;
-}
+
 /* Edit region…: mixing several biomes. */
 .duckmage-edit-region-mix-toggle {
     display: flex;
@@ -9401,4 +9344,56 @@ button.is-armed {
 .duckmage-table-editor-odds {
     flex: 0 0 3em;
     align-self: center;
+}
+
+/* ── Fold (src/ui/disclosure.ts): a titled group that folds away ──────────
+   A chevron that points right when closed and down when open. */
+.duckmage-fold > .duckmage-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+
+.duckmage-fold > .duckmage-fold-summary::-webkit-details-marker {
+    display: none;
+}
+
+.duckmage-fold > .duckmage-fold-summary:hover {
+    color: var(--text-accent);
+}
+
+.duckmage-fold-chevron {
+    display: inline-flex;
+    color: var(--text-muted);
+    transition: transform 120ms ease;
+}
+
+.duckmage-fold-chevron svg {
+    width: 1em;
+    height: 1em;
+}
+
+.duckmage-fold[open] > .duckmage-fold-summary .duckmage-fold-chevron {
+    transform: rotate(90deg);
+}
+
+/* ── Picker standard (src/ui/pickers.ts): filter box, empty state, grip ─── */
+.duckmage-picker-filter {
+    width: 100%;
+    margin-bottom: 0.4em;
+}
+
+.duckmage-empty-state {
+    padding: 0.5em 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.duckmage-drag-grip {
+    cursor: grab;
+    color: var(--text-faint);
+    user-select: none;
 }

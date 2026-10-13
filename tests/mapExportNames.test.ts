@@ -19,8 +19,8 @@ describe("map export file names", () => {
 
 	it("adds overlay suffixes to the PNG and PDF, faction before region", () => {
 		const n = mapExportFileNames({ base: "kerrigan", mapName: "kerrigan", showRegionOverlay: true, showFactionOverlay: true });
-		expect(n.png).toBe("kerrigan-faction-region.png");
-		expect(n.pdf).toBe("kerrigan-faction-region.pdf");
+		expect(n.png).toBe("kerrigan-faction-area.png");
+		expect(n.pdf).toBe("kerrigan-faction-area.pdf");
 		// The manual keeps the plain name.
 		expect(n.manual).toBe("kerrigan manual.pdf");
 	});

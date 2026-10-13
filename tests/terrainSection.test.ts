@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "../src/hex-map/terrainSection";
+import { terrainStartsCollapsed } from "../src/hex-map/terrainSection";
+import { FILTER_FROM, filterMatches } from "../src/ui/pickers";
 
 describe("hex editor Terrain section (fresh-eyes round 5)", () => {
 	it("a hex with a terrain opens collapsed to its summary; a bare hex opens expanded", () => {
@@ -18,11 +19,11 @@ describe("hex editor Terrain section (fresh-eyes round 5)", () => {
 	});
 
 	it("the filter matches names case-insensitively; blank shows all", () => {
-		expect(terrainMatches("Forested Hills", "hill")).toBe(true);
-		expect(terrainMatches("Forested Hills", "  FOREST ")).toBe(true);
-		expect(terrainMatches("cliffs", "ocean")).toBe(false);
-		expect(terrainMatches("cliffs", "")).toBe(true);
-		expect(TERRAIN_FILTER_MIN).toBeLessThan(50);
+		expect(filterMatches("hill", "Forested Hills")).toBe(true);
+		expect(filterMatches("  FOREST ", "Forested Hills")).toBe(true);
+		expect(filterMatches("ocean", "cliffs")).toBe(false);
+		expect(filterMatches("", "cliffs")).toBe(true);
+		expect(FILTER_FROM).toBeLessThan(50);
 	});
 
 	const modal = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexEditorModal.ts"), "utf8").replace(/\r\n/g, "\n");
@@ -36,7 +37,7 @@ describe("hex editor Terrain section (fresh-eyes round 5)", () => {
 	});
 
 	it("long palettes get a filter box and the grid grows instead of scrolling in a small box", () => {
-		expect(modal).toMatch(/palette\.length > TERRAIN_FILTER_MIN[\s\S]{0,200}placeholder: "Filter terrains…"/);
+		expect(modal).toMatch(/addPickerFilter\(grid, \{\s*things: "terrains",\s*count: palette\.length/);
 		expect(modal).toMatch(/cls: "duckmage-terrain-picker duckmage-terrain-picker-grow"/);
 		expect(r5).toMatch(/\.duckmage-hex-editor \.duckmage-terrain-picker\.duckmage-terrain-picker-grow \{\s*max-height: none;\s*overflow-y: visible;/);
 	});

@@ -44,7 +44,7 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
 }
 
 const BIOMES_FOLDER_DESC =
-  "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, colour and transitions). Defaults to a biomes folder inside the world folder.";
+  "Vault-relative folder for overworld biome notes (one note per biome: its mix of terrain types, color and transitions). Defaults to a biomes folder inside the world folder.";
 
 const BIOME_POOLS_FOLDER_DESC =
   "Vault-relative folder for biome pool notes (each lists the biomes a generated overworld may use). Defaults to a biome-pools folder inside the world folder.";

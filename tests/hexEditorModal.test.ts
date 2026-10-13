@@ -197,10 +197,12 @@ describe("HexEditorModal section start-collapsed settings", () => {
 			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive },
 		) as any;
 		const states = new Map<string, boolean>();
+		// Just enough of an element for a Fold (src/ui/disclosure.ts) built in the body.
+		const stub = (): any => ({ createEl: () => stub(), createSpan: () => stub(), createDiv: () => stub(), addEventListener: () => {}, setText: () => {} });
 		modal.makeCollapsible = (_c: unknown, label: string, flag: string) => {
 			states.set(label, (plugin.settings as any)[flag] ?? false);
 			return {
-				body: { addClass: () => {}, isShown: () => true, createEl: () => ({ createEl: () => ({}) }), createDiv: () => ({ dataset: {}, setText: () => {}, toggleClass: () => {} }) },
+				body: { addClass: () => {}, isShown: () => true, createEl: () => stub(), createDiv: () => ({ dataset: {}, setText: () => {}, toggleClass: () => {} }) },
 				header: { createSpan: () => ({ toggle: () => {} }), addEventListener: () => {} },
 			};
 		};

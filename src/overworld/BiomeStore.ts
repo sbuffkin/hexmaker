@@ -23,6 +23,7 @@
  */
 
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { noticeBackground } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { ModuleStore } from "../modules/types";
 import { normalizeFolder } from "../utils";
@@ -355,14 +356,14 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
     this.lastContent.set(path, content);
     this.report(path, fields.label, problems);
     const dup = [...this.entries.values()].find((e) => e.path !== path && e.fields.id === fields.id);
-    if (dup && this.ready) new Notice(`Biome notes ${dup.path} and ${path} have the same id (${fields.id}); the first is used. Change one note's id.`);
+    if (dup && this.ready) noticeBackground(`Biome notes ${dup.path} and ${path} have the same id (${fields.id}); the first is used. Change one note's id.`);
   }
 
   private report(path: string, label: string, problems: BiomeNoteProblem[]): void {
     const key = problems.map((p) => `${p.where}: ${p.text}`).join("; ");
     if (this.reported.get(path) === key) return;
     this.reported.set(path, key);
-    if (key && this.ready) new Notice(`Biome ${label}: couldn't read ${key}. Those rows are left as written.`, 8000);
+    if (key && this.ready) noticeBackground(`Biome ${label}: couldn't read ${key}. Those rows are left as written.`, 8000);
   }
 
   private async seed(explicit = false): Promise<void> {

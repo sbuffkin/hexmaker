@@ -29,7 +29,7 @@ import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { randomSeed } from "../../packages/hex-wfc/src/rng";
 import { chainLabel, resolveRoll, type ResolvedOdds, type TableLookup } from "../random-tables/resolve";
-import { hexChildMaps, regionMapAt } from "../maps/submaps";
+import { hexChildMaps, regionMapAt, submapKindLabel } from "../maps/submaps";
 import { OnceTracker, type FiredEvent } from "./eventsLedger";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { buildSubmapContext } from "../worldgen/submapContext";
@@ -249,7 +249,7 @@ export class ArrivalService {
     });
     if (!outcome.ok) {
       await plugin.saveSettings();
-      new Notice(`Couldn't make the place: ${outcome.message}`);
+      new Notice(`Couldn't make the submap: ${outcome.message}`);
       plugin.refreshHexMap();
       return null;
     }
@@ -467,7 +467,7 @@ export class ArrivalService {
     const map = plugin.getMap(mapName);
     if (!handEditLocks(map)) return;
     map!.arrival = "locked";
-    const what = map!.submapKind === "region" ? "Region" : "Place";
+    const what = submapKindLabel(map);
     void (async () => {
       await plugin.saveSettings();
       await plugin.mapStore.editNoteText(mapName, (c) => restateArrival(c, { rerolls: map!.arrivalRerolls ?? 0, locked: true }));

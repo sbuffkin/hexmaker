@@ -1,5 +1,6 @@
 import { App, TFile, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip } from "../ui/pickers";
 import { renderSaveStatusLine } from "../ui/saveStatusLine";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
@@ -360,10 +361,7 @@ export class WorkflowEditorModal extends HexmakerModal {
         const row = stepsEl.createDiv({ cls: "duckmage-wf-editor-step-row" });
         row.draggable = true;
 
-        const handle = row.createSpan({
-          cls: "duckmage-table-editor-drag-handle",
-          text: "⠿",
-        });
+        const handle = dragGrip(row, "duckmage-table-editor-drag-handle");
         handle.title = "Drag to reorder";
 
         // Kind badge

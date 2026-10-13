@@ -36,7 +36,7 @@ export function mapExportStem(o: MapExportNameOptions): string {
  * agree (fresh-eyes r5).
  */
 export function mapExportSuffix(o: Pick<MapExportNameOptions, "showFactionOverlay" | "showRegionOverlay">): string {
-  return (o.showFactionOverlay ? "-faction" : "") + (o.showRegionOverlay ? "-region" : "");
+  return (o.showFactionOverlay ? "-faction" : "") + (o.showRegionOverlay ? "-area" : "");
 }
 
 /** Every file a map export can write, as written to the export folder. */

@@ -291,14 +291,14 @@ export class BiomePanel {
       f.label = name.value.trim();
       this.save();
     });
-    const colour = field(el, "Colour").createEl("input", { type: "color", attr: { "aria-label": "Colour" } });
+    const colour = field(el, "Color").createEl("input", { type: "color", attr: { "aria-label": "Color" } });
     colour.value = /^#[0-9a-f]{6}$/i.test(f.color ?? "") ? f.color! : "#7a9a5a";
     colour.addEventListener("change", () => {
       f.color = colour.value.toLowerCase();
       this.save();
     });
     const gen = field(el, "Made by").createEl("select", { attr: { "aria-label": "Made by" } });
-    gen.createEl("option", { text: "Blend (built-in mixing)", value: "" });
+    gen.createEl("option", { text: "Built-in mixing", value: "" });
     if (f.generator) gen.createEl("option", { text: generatorName(f.generator), value: f.generator });
     gen.value = f.generator ?? "";
     void listGenerators(plugin).catch(() => []).then((gens) => {
@@ -536,12 +536,12 @@ export class BiomePanel {
     const legend = box.createDiv();
     const status = box.createEl("p", { cls: "duckmage-map-origin-desc" });
     const seedRow = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
-    // The seed itself is in Advanced → Seed (placed at the end); Re-roll stays here.
+    // The seed itself is in Advanced → Seed (placed at the end); Reroll stays here.
     const seedBox = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     seedBox.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
     const seed = seedBox.createEl("input", { type: "number", cls: "duckmage-wfc-seed", value: String(BiomePanel.seed), attr: { "aria-label": "Seed" } });
     seed.addEventListener("change", () => { BiomePanel.seed = Number(seed.value) >>> 0; this.drawPreview(canvas, legend, status, side); });
-    seedRow.createEl("button", { text: "Re-roll" }).addEventListener("click", () => {
+    seedRow.createEl("button", { text: "Reroll", attr: { title: "Preview with a new seed" } }).addEventListener("click", () => {
       BiomePanel.seed = randomSeed();
       seed.value = String(BiomePanel.seed);
       this.drawPreview(canvas, legend, status, side);

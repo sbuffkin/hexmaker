@@ -22,6 +22,7 @@ import type { BiomeNoteFields } from "./biomeNote";
 import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { biomeNameProblem, generatorName, routeNote } from "./biomeForm";
 import { lockButton } from "./BiomeModals";
+import { addPickerFilter, filterText } from "../ui/pickers";
 
 /** Why biomes can't be added or edited from this overworld now, or undefined. */
 export function biomeEditLock(plugin: HexmakerPlugin, overworldName: string): string | undefined {
@@ -78,12 +79,13 @@ export class BiomeLibraryModal extends HexmakerModal {
     const groups = groupBiomes(plugin.biomeStore.list(), biomeGroupOf);
     for (const b of groups.flatMap((g) => g.items)) {
       const g = groups.find((x) => x.items[0] === b);
-      if (g && groups.length > 1) list.createDiv({ cls: "duckmage-biome-group-head", text: g.label });
-      const row = list.createDiv({ cls: "duckmage-biome-row" });
+      if (g && groups.length > 1) list.createDiv({ cls: "duckmage-biome-group-head", text: g.label, attr: { "data-filter-head": g.id } });
+      const row = list.createDiv({ cls: "duckmage-biome-row", attr: { "data-filter-group": biomeGroupOf(b) } });
+      filterText(row, b.label, biomeGroupOf(b));
       row.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color ?? "" });
       const text = row.createDiv({ cls: "duckmage-biome-row-text" });
       text.createSpan({ cls: "duckmage-biome-row-name", text: b.label });
-      text.createSpan({ cls: "duckmage-biome-row-note", text: routeNote(b) ?? "Blend (built-in mixing)" });
+      text.createSpan({ cls: "duckmage-biome-row-note", text: routeNote(b) ?? "Built-in mixing" });
       // Edit… opens the biome page, the one biome editor (it autosaves).
       const edit = row.createEl("button", { text: "Edit…" });
       if (lock) lockButton(edit, lock);
@@ -99,6 +101,8 @@ export class BiomeLibraryModal extends HexmakerModal {
         });
       }
     }
+    // The shared picker filter (src/ui/pickers.ts), once the list is long.
+    addPickerFilter(list, { things: "biomes", count: plugin.biomeStore.list().length });
     const add = this.footer({
       primary: { text: "New biome…", onClick: () => {
         if (biomeEditLock(plugin, this.overworldName)) return;
@@ -153,7 +157,7 @@ export class NewBiomeModal extends HexmakerModal {
       return row;
     };
     const name = field("Name").createEl("input", { type: "text", attr: { "aria-label": "Name", placeholder: "Glass wastes" } });
-    const colour = field("Colour").createEl("input", { type: "color", attr: { "aria-label": "Colour" } });
+    const colour = field("Color").createEl("input", { type: "color", attr: { "aria-label": "Color" } });
     colour.value = "#7a9a5a";
     const from = field("Start from").createEl("select", { attr: { "aria-label": "Start from" } });
     from.createEl("option", { text: "Nothing (set its mix next)", value: START_EMPTY });

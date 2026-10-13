@@ -14,6 +14,7 @@ import { App, Notice, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import { renderLabeledSlider, renderMultiplierSlider, sliderFormat } from "../ui/sliders";
 import { numberField } from "../ui/scrub";
+import { Fold } from "../ui/disclosure";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexDistance } from "../../packages/hex-wfc/src/grid";
 import { biomeNoteOf, biomeShortLabel } from "./biomes";
@@ -149,7 +150,7 @@ export class NewOverworldModal extends HexmakerModal {
   private poolPath: string | undefined;
   private poolRows: BiomePoolRow[] = [];
   private poolDirty = false;
-  private poolBox!: HTMLDetailsElement;
+  private poolBox!: Fold;
   private poolNote!: HTMLElement;
 
   constructor(app: App, private plugin: HexmakerPlugin, private onCreated: (name: string) => void, private regenerate?: string) {
@@ -233,7 +234,7 @@ export class NewOverworldModal extends HexmakerModal {
       : "Pool biomes with no climate are never placed here: set them by hand with the Biome tool.");
     showGaps();
     gaps.addEventListener("change", () => { this.unclimated = gaps.value as Unclimated; showGaps(); this.drawPool(); this.regen(); });
-    this.poolBox = top.createEl("details", { cls: "duckmage-ow-pool" });
+    this.poolBox = new Fold(top, { title: "Biomes in the pool", key: "pool", open: false, store: this.app, surface: "NewOverworld", cls: "duckmage-ow-pool" });
     this.poolNote = top.createEl("p", { cls: "setting-item-description" });
     const fillPools = () => {
       poolSel.empty();
@@ -336,8 +337,8 @@ export class NewOverworldModal extends HexmakerModal {
       for (const n of RECT_SIDES) size.createEl("option", { value: String(n), text: `${n} × ${n} hexes` });
       size.value = String(this.regionSize);
       size.addEventListener("change", () => { this.regionSize = Number(size.value); });
-      const blend = field("Blend").createEl("select", { attr: { "aria-label": "Blend" } });
-      for (const b of ["narrow", "normal", "wide"]) blend.createEl("option", { value: b, text: b });
+      const blend = field("Blend width").createEl("select", { attr: { "aria-label": "Blend width" } });
+      for (const b of ["narrow", "normal", "wide"]) blend.createEl("option", { value: b, text: b[0].toUpperCase() + b.slice(1) });
       blend.value = this.blend;
       blend.addEventListener("change", () => { this.blend = blend.value as typeof this.blend; });
     }
@@ -377,11 +378,10 @@ export class NewOverworldModal extends HexmakerModal {
 
   /** The pool's biomes: each row with its weight and remove button, then "Add". */
   private drawPool(): void {
-    const box = this.poolBox;
-    const wasOpen = box.open;
+    const box = this.poolBox.body;
     box.empty();
     const { biomes, unknown } = resolvePool(this.plugin, this.poolRows);
-    box.createEl("summary", { text: `Biomes in the pool (${biomes.length})` });
+    this.poolBox.setTitle(`Biomes in the pool (${biomes.length})`);
     const list = box.createDiv({ cls: "duckmage-ow-pool-list" });
     this.poolRows.forEach((r, i) => {
       const b = this.plugin.biomeStore.get(r.biome) ?? this.plugin.biomeStore.get(r.biome.slice(r.biome.lastIndexOf("/") + 1));
@@ -431,7 +431,6 @@ export class NewOverworldModal extends HexmakerModal {
       this.drawPool();
       this.regen();
     });
-    box.open = wasOpen;
     const placeable = biomes.filter((b) => b.climate).length;
     this.poolNote.setText([
       unknown.length ? `Not found: ${unknown.join(", ")}.` : "",

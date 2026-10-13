@@ -1,4 +1,5 @@
 import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
+import { noticeBackground } from "./ui/notify";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -468,7 +469,7 @@ export default class HexmakerPlugin extends Plugin {
       checkCallback: (checking) => {
         if (!this.regionAndFactionNotes().length) return false;
         // No confirm (owner Q6): it only adds or refreshes a Map data box; the notice says what it did.
-        if (!checking) void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} region and faction note${n === 1 ? "" : "s"} (a box under each title; nothing else changed).`));
+        if (!checking) void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} area and faction note${n === 1 ? "" : "s"} (a box under each title; nothing else changed).`));
         return true;
       },
     });
@@ -1135,8 +1136,8 @@ export default class HexmakerPlugin extends Plugin {
       this.settings.defaultMap = added[0];
     }
     await this.saveSettings();
-    new Notice(
-      `Hexmap World Creator: auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
+    noticeBackground(
+      `auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
     );
   }
 
@@ -1701,7 +1702,7 @@ export default class HexmakerPlugin extends Plugin {
     }
 
     new Notice(
-      `Linked region encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
+      `Linked area encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
     );
   }
 
@@ -3047,8 +3048,8 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
     if (moved > 0)
-      new Notice(
-        `Hexmap World Creator: migrated ${moved} hex file(s) to "default" region.`,
+      noticeBackground(
+        `migrated ${moved} hex file(s) to "default" region.`,
       );
   }
 }

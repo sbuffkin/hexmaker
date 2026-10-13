@@ -219,7 +219,7 @@ export class MapModal extends HexmakerModal {
       const search = el.createEl("input", {
         type: "search",
         cls: "duckmage-map-tree-search",
-        attr: { placeholder: "Find a map…", "aria-label": "Find a map" },
+        attr: { placeholder: "Filter maps…", "aria-label": "Filter maps" },
       });
       search.value = query;
       search.addEventListener("input", () => {

@@ -108,10 +108,10 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   "switch-mode": { modes: ALL, verb: "switch modes" },
   "new-top-map": { modes: ALL, verb: "make a map" },
   discover: { modes: ALL, verb: "go somewhere new" },
-  "lock-place": { modes: ALL, verb: "lock a new place" },
+  "lock-place": { modes: ALL, verb: "lock a new submap" },
   "paint-terrain": { modes: BUILD, verb: "paint terrain" },
   "paint-icon": { modes: BUILD, verb: "change icons" },
-  "paint-region-area": { modes: BUILD, verb: "paint region areas" },
+  "paint-region-area": { modes: BUILD, verb: "paint areas" },
   "link-map": { modes: BUILD, verb: "link maps to hexes" },
   "edit-path": { modes: BUILD, verb: "change paths" },
   "grow-map": { modes: BUILD, verb: "grow the map" },
@@ -303,7 +303,7 @@ export function canReshape(map: { workMode?: string } | undefined): boolean {
 }
 
 /** The hint when a locked place can't be rerolled. */
-export const REROLL_PLACE_LOCKED_HINT = "This place is locked. Switch to God to reroll it.";
+export const REROLL_PLACE_LOCKED_HINT = "This submap is locked. Switch to God to reroll it.";
 
 /**
  * May a place made on arrival be rerolled? Until it's locked (`arrival:

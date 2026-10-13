@@ -117,7 +117,7 @@ export function renderRegionSettingsForm(
 
   // ── Blend ──
   const blendRow = form.createDiv({ cls: "duckmage-region-settings-row" });
-  blendRow.createSpan({ cls: "duckmage-region-settings-label", text: "Blend" });
+  blendRow.createSpan({ cls: "duckmage-region-settings-label", text: "Blend width" });
   const blend = blendRow.createEl("select", { attr: { "aria-label": "How far neighbouring regions blend" } });
   for (const b of BLENDS) blend.createEl("option", { value: b.id, text: b.label });
   blend.value = s.blend ?? "normal";

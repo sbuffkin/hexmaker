@@ -9,6 +9,7 @@ import { copyHexLink } from "./copyHexLink";
 import { isShown } from "../ui/placement";
 import { isDebugMode } from "../ui/debugMode";
 import { HexmakerModal } from "../HexmakerModal";
+import { Fold } from "../ui/disclosure";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   getIconUrl,
@@ -62,7 +63,8 @@ import { displayedEncounterLinks, linkDisplayName } from "../encounterLinks";
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { contentFolder } from "../notePickers";
-import { TERRAIN_FILTER_MIN, terrainMatches, terrainStartsCollapsed } from "./terrainSection";
+import { terrainStartsCollapsed } from "./terrainSection";
+import { addPickerFilter, filterText } from "../ui/pickers";
 import { withRepairHint } from "../ui/repairHint";
 
 /** Typing pause after which a text section autosaves. */
@@ -319,11 +321,13 @@ export class HexEditorModal extends HexmakerModal {
     }
     // Weather and Hooks & Rumors (E2): rolled from the region's tables,
     // folded away unless the hex already has some.
-    const rolled = notesBody.createEl("details", { cls: "duckmage-editor-rolled-sections" });
-    rolled.open = ROLLED_TEXT_SECTIONS.some(({ key }) => !!(allText.get(key) ?? "").trim());
-    rolled.createEl("summary", { text: ROLLED_TEXT_SECTIONS.map((s) => s.label).join(" · ") });
+    const rolled = new Fold(notesBody, {
+      title: ROLLED_TEXT_SECTIONS.map((s) => s.label).join(" · "),
+      open: ROLLED_TEXT_SECTIONS.some(({ key }) => !!(allText.get(key) ?? "").trim()),
+      cls: "duckmage-editor-rolled-sections",
+    });
     for (const { key, label } of ROLLED_TEXT_SECTIONS) {
-      this.renderTextSection(rolled, path, key, label, allText.get(key) ?? "");
+      this.renderTextSection(rolled.body, path, key, label, allText.get(key) ?? "");
     }
     // Sections in this note the editor has no field for (the user's own, or
     // an older template's): shown and editable under their own headings, so
@@ -335,10 +339,12 @@ export class HexEditorModal extends HexmakerModal {
     ]);
     const others = [...this.allHeadings].filter(([key]) => !known.has(key));
     if (others.length) {
-      const more = notesBody.createEl("details", { cls: "duckmage-editor-other-sections" });
-      more.open = others.some(([key]) => !!(allText.get(key) ?? "").trim());
-      more.createEl("summary", { text: `More in this note (${others.length})` });
-      for (const [key, heading] of others) this.renderTextSection(more, path, heading, heading.replace(/[:：]+$/, ""), allText.get(key) ?? "");
+      const more = new Fold(notesBody, {
+        title: `More in this note (${others.length})`,
+        open: others.some(([key]) => !!(allText.get(key) ?? "").trim()),
+        cls: "duckmage-editor-other-sections",
+      });
+      for (const [key, heading] of others) this.renderTextSection(more.body, path, heading, heading.replace(/[:：]+$/, ""), allText.get(key) ?? "");
     }
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
@@ -820,19 +826,11 @@ export class HexEditorModal extends HexmakerModal {
 
     const section = container.createDiv({ cls: "duckmage-editor-section" });
 
-    // Long palettes get a filter; the grid grows with the modal instead of
-    // scrolling in its own small box (round 5: only the first two rows of a
-    // 50-terrain palette were practically reachable).
-    const filter = palette.length > TERRAIN_FILTER_MIN
-      ? section.createEl("input", {
-          type: "search",
-          cls: "duckmage-terrain-filter",
-          attr: { placeholder: "Filter terrains…", "aria-label": "Filter terrains" },
-        })
-      : null;
+    // Long palettes get the shared picker filter (added below the tiles);
+    // the grid grows with the modal instead of scrolling in its own small
+    // box (round 5: only the first two rows of a 50-terrain palette were
+    // practically reachable).
     const grid = section.createDiv({ cls: "duckmage-terrain-picker duckmage-terrain-picker-grow" });
-    const noMatch = section.createDiv({ cls: "duckmage-terrain-filter-empty", text: "No terrains match." });
-    noMatch.hide();
 
     // Picking a terrain keeps the editor open (E1): the map repaints via
     // onChanged, and the selection/header update in place here.
@@ -889,6 +887,7 @@ export class HexEditorModal extends HexmakerModal {
       }
 
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
+      filterText(btn, entry.name, entry.type, entry.category);
 
       btn.addEventListener("click", () => {
         if (entry.name === selectedTerrain) return;
@@ -896,20 +895,13 @@ export class HexEditorModal extends HexmakerModal {
       });
     }
 
-    if (filter) {
-      filter.addEventListener("input", () => {
-        const query = filter.value;
-        let shown = 0;
-        grid.querySelectorAll<HTMLElement>(".duckmage-terrain-option[data-terrain]").forEach((el) => {
-          const match = terrainMatches(el.dataset["terrain"] ?? "", query);
-          el.toggle(match);
-          if (match) shown++;
-        });
-        // "Clear" only alongside the full list (and only when there's a terrain).
-        clearBtn.toggle(query.trim() === "" && selectedTerrain !== null);
-        noMatch.toggle(shown === 0);
-      });
-    }
+    const filter = addPickerFilter(grid, {
+      things: "terrains",
+      count: palette.length,
+      cls: "duckmage-terrain-filter",
+      // "Clear" only alongside the full list (and only when there's a terrain).
+      onFilter: () => clearBtn.toggle(!filter.input?.value.trim() && selectedTerrain !== null),
+    });
   }
 
   /** Icon override + (GM layer) game master icon pickers. */

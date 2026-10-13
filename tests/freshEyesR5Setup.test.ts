@@ -199,7 +199,7 @@ describe("5. Export: the File name box and the Writes line agree", () => {
 				expect(mapExportStem(o)).toBe(`kerrigan-system${mapExportSuffix(o)}`);
 				expect(mapExportFileNames(o).png).toBe(`kerrigan-system${mapExportSuffix(o)}.png`);
 			}
-		expect(mapExportSuffix({ showRegionOverlay: true })).toBe("-region");
+		expect(mapExportSuffix({ showRegionOverlay: true })).toBe("-area");
 		expect(mapExportSuffix({})).toBe("");
 	});
 

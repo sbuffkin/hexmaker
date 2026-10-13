@@ -27,6 +27,7 @@
  * fresh dropdown in it.
  */
 
+import { setIcon } from "obsidian";
 import { isDebugMode, type LocalStore } from "./debugMode";
 import { parsePlacement, PLACEMENT, type Layer } from "./placement";
 
@@ -318,5 +319,116 @@ export class Disclosure {
     this.debugSubs.clear();
     this.debugSubSummaries.clear();
     this.reporters = [];
+  }
+}
+
+// ── Fold: a titled group that folds away (not Advanced) ────────────────────
+
+/** Local-storage key: each fold's open state, by key (`{ "<key>": true|false }`). */
+export const FOLD_STATE_KEY = "hexmaker-fold-state";
+
+/** Whether fold `key` is open on this device: its remembered state, else `dflt`. */
+export function foldOpen(store: LocalStore, key: string, dflt: boolean): boolean {
+  const v = store.loadLocalStorage(FOLD_STATE_KEY);
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const s = (v as Record<string, unknown>)[key];
+    if (typeof s === "boolean") return s;
+  }
+  return dflt;
+}
+
+/** Remember fold `key` open or closed on this device. */
+export function setFoldOpen(store: LocalStore, key: string, open: boolean): void {
+  const v = store.loadLocalStorage(FOLD_STATE_KEY);
+  const state: Record<string, boolean> = {};
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    for (const [k, s] of Object.entries(v as Record<string, unknown>)) if (typeof s === "boolean") state[k] = s;
+  }
+  state[key] = open;
+  store.saveLocalStorage(FOLD_STATE_KEY, state);
+}
+
+export interface FoldOptions {
+  /** The header text ("Terrain mix"); "· N set" is added while tracked controls are on. */
+  title: string;
+  /** Open at first (before the user has folded it on this device). Default true. */
+  open?: boolean;
+  /**
+   * Remember the open state on this device under `<surface>/<title>` (or
+   * `key`). Without a store the fold opens as `open` says every time.
+   */
+  store?: LocalStore;
+  /** Stable surface id for the remembered state ("GenPage"). */
+  surface?: string;
+  /** The remembered state's key, when the title changes (a count in it). Default: the title. */
+  key?: string;
+  /** Extra classes on the fold, its header and its body (to keep a surface's own spacing). */
+  cls?: string;
+  summaryCls?: string;
+  bodyCls?: string;
+  /** Called after the user opens or closes it. */
+  onToggle?: (open: boolean) => void;
+}
+
+/**
+ * A titled group of controls the user can fold away (audit D1–D3): every
+ * fold that isn't the Advanced dropdown. A `<details>` with a chevron that
+ * points right when closed and down when open; its open state is
+ * remembered per surface on this device, like Disclosure's; and its header
+ * counts the tracked controls that are on ("Terrain mix · 2 set").
+ */
+export class Fold {
+  readonly el: HTMLDetailsElement;
+  readonly summary: HTMLElement;
+  readonly body: HTMLElement;
+  readonly titleEl: HTMLElement;
+  private title: string;
+  private reporters: IsSet[] = [];
+
+  constructor(parent: HTMLElement, private o: FoldOptions) {
+    this.title = o.title;
+    this.el = parent.createEl("details", { cls: `duckmage-fold${o.cls ? ` ${o.cls}` : ""}` });
+    this.summary = this.el.createEl("summary", { cls: `duckmage-fold-summary${o.summaryCls ? ` ${o.summaryCls}` : ""}` });
+    setIcon(this.summary.createSpan({ cls: "duckmage-fold-chevron" }), "chevron-right");
+    this.titleEl = this.summary.createSpan({ cls: "duckmage-fold-title", text: o.title });
+    this.body = this.el.createDiv({ cls: `duckmage-fold-body${o.bodyCls ? ` ${o.bodyCls}` : ""}` });
+    const key = this.storeKey();
+    this.el.open = o.store && key ? foldOpen(o.store, key, o.open ?? true) : (o.open ?? true);
+    this.el.addEventListener("toggle", () => {
+      if (o.store && key) setFoldOpen(o.store, key, this.el.open);
+      o.onToggle?.(this.el.open);
+    });
+    for (const type of ["input", "change", "click"]) this.body.addEventListener(type, () => this.refreshSet());
+  }
+
+  private storeKey(): string | null {
+    if (!this.o.store) return null;
+    return subSectionKey(this.o.surface ?? "fold", this.o.key ?? this.o.title);
+  }
+
+  get open(): boolean {
+    return this.el.open;
+  }
+
+  set open(v: boolean) {
+    this.el.open = v;
+  }
+
+  /** Change the header text (a count in it). */
+  setTitle(title: string): void {
+    this.title = title;
+    this.refreshSet();
+  }
+
+  /** Count a control in the header ("· N set") while `isSet()`. */
+  track(isSet: IsSet): void {
+    this.reporters.push(isSet);
+    this.refreshSet();
+  }
+
+  /** Re-count the set controls and update the header. */
+  refreshSet(): void {
+    const { total } = countSet(this.reporters.map((isSet) => ({ where: null, isSet })));
+    this.titleEl.setText(setLabel(this.title, total));
   }
 }

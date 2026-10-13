@@ -102,7 +102,7 @@ export class HexmakerModal extends Modal {
 		// shown only on a pack that has them.
 		const kinds = bar.createDiv({ cls: "duckmage-icon-filter-kinds" });
 		let subgroup = lastSubgroup;
-		const empty = createDiv({ cls: "duckmage-icon-filter-empty", text: "No icons match." });
+		const empty = createDiv({ cls: "duckmage-empty-state", text: "No icons match." });
 		const NO_CUSTOM = "No custom icons yet. Put your own images (a castle, a village…) in the icons folder set in Hexmaker settings.";
 		grid.after(empty);
 

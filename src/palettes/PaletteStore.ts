@@ -1,4 +1,5 @@
-import { MarkdownView, Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { MarkdownView, TAbstractFile, TFile, TFolder } from "obsidian";
+import { noticeBackground } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
@@ -267,10 +268,10 @@ export class PaletteStore {
     const fixed = issues.filter((i) => i.fixed);
     const lines: string[] = [];
     if (bad.length) {
-      lines.push(`Hexmaker: palette "${name}" has ${bad.length === 1 ? "a colour" : `${bad.length} colours`} it can't read, drawn grey until fixed in the note (your text is kept): ${colorIssuesText(bad)}.`);
+      lines.push(`palette "${name}" has ${bad.length === 1 ? "a color" : `${bad.length} colors`} it can't read, drawn grey until fixed in the note (your text is kept): ${colorIssuesText(bad)}.`);
     }
-    if (fixed.length) lines.push(`${bad.length ? "Read" : `Hexmaker: in palette "${name}", read`} ${colorIssuesText(fixed)}.`);
-    if (lines.length) new Notice(lines.join(" "), 15000);
+    if (fixed.length) lines.push(`${bad.length ? "Read" : `in palette "${name}", read`} ${colorIssuesText(fixed)}.`);
+    if (lines.length) noticeBackground(lines.join(" "), 15000);
   }
 
   /**
@@ -457,7 +458,7 @@ export class PaletteStore {
       }
       if (!settings.palettesMigrated) {
         settings.palettesMigrated = true;
-        new Notice(`Hexmap World Creator: terrain palettes are now notes in "${this.folder()}".`);
+        noticeBackground(`terrain palettes are now notes in "${this.folder()}".`);
       }
       dirty = true;
     }
@@ -575,8 +576,8 @@ export class PaletteStore {
       if (path) this.stash.set(path, { pal, index });
     }
     settings.terrainPalettes = settings.terrainPalettes.filter((p) => !gone.includes(p));
-    new Notice(
-      `Hexmap World Creator: the palette note${gone.length === 1 ? "" : "s"} of ${gone.map((p) => p.name).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted, so ${gone.length === 1 ? "that palette is" : "those palettes are"} gone too. A copy is in ${where}.` +
+    noticeBackground(
+      `the palette note${gone.length === 1 ? "" : "s"} of ${gone.map((p) => p.name).join(", ")} ${gone.length === 1 ? "was" : "were"} deleted, so ${gone.length === 1 ? "that palette is" : "those palettes are"} gone too. A copy is in ${where}.` +
         (settings.terrainPalettes.length ? "" : " Add palettes, or the defaults, in Settings → Terrain palettes."),
       15000,
     );
@@ -603,8 +604,8 @@ export class PaletteStore {
       await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
       return true;
     } catch (e) {
-      console.error("Hexmaker: couldn't back up palette notes; their colours weren't converted", e);
-      new Notice("Hexmaker: couldn't save a backup of the palette notes, so their colours weren't converted yet. It will try again next time.", 10000);
+      console.error("Hexmaker: couldn't back up palette notes; their colors weren't converted", e);
+      noticeBackground("couldn't save a backup of the palette notes, so their colors weren't converted yet. It will try again next time.", 10000);
       return false;
     }
   }
@@ -694,7 +695,7 @@ export class PaletteStore {
       }
       applyPresetTerrains(plan);
       const what = plan.add.map(({ palette, terrains }) => `${terrains.map((t) => t.name).join(", ")} to "${palette.name}"`).join("; ");
-      new Notice(`Hexmap World Creator: added ${what}.`);
+      noticeBackground(`added ${what}.`);
     }
     settings.presetTerrainsAdded = [...done, ...plan.done];
     return true;
@@ -736,7 +737,7 @@ export class PaletteStore {
       applyPresetPathFields(plan);
       const pals = [...new Set(plan.set.map((s) => s.palette.name))].map((n) => `"${n}"`).join(", ");
       const what = [...new Set(plan.set.map((s) => `${s.pathType.name} ${s.field === "carves" ? "carves" : "carve width"}: ${s.value}`))].join("; ");
-      new Notice(`Hexmap World Creator: path types updated in ${pals} (${what}).`);
+      noticeBackground(`path types updated in ${pals} (${what}).`);
     }
     settings.presetPathFieldsAdded = [...done, ...plan.done];
     return true;
@@ -898,8 +899,8 @@ export class PaletteStore {
   private markBroken(path: string): void {
     if (this.broken.has(path)) return;
     this.broken.add(path);
-    new Notice(
-      `Hexmaker: can't read the terrain table in ${path}. It needs a header row with Terrain and Color columns, then a --- row. ` +
+    noticeBackground(
+      `can't read the terrain table in ${path}. It needs a header row with Terrain and Color columns, then a --- row. ` +
         "The note won't be changed until it reads again; the palette keeps its last working terrains.",
       0,
     );
@@ -930,10 +931,10 @@ export class PaletteStore {
         this.markBroken(file.path);
         return;
       }
-      if (this.broken.delete(file.path)) new Notice(`Hexmaker: palette "${file.basename}" reads fine again.`);
+      if (this.broken.delete(file.path)) noticeBackground(`palette "${file.basename}" reads fine again.`);
       const skipped = parsePathTypes(content)?.skipped ?? [];
       if (skipped.length) {
-        new Notice(`Hexmaker: ${skipped.length} path type row${skipped.length === 1 ? "" : "s"} in "${file.basename}" ${skipped.length === 1 ? "has" : "have"} no name (or repeat${skipped.length === 1 ? "s" : ""} one), so ${skipped.length === 1 ? "it was" : "they were"} skipped: ${skipped.join("  ")}`, 10000);
+        noticeBackground(`${skipped.length} path type row${skipped.length === 1 ? "" : "s"} in "${file.basename}" ${skipped.length === 1 ? "has" : "have"} no name (or repeat${skipped.length === 1 ? "s" : ""} one), so ${skipped.length === 1 ? "it was" : "they were"} skipped: ${skipped.join("  ")}`, 10000);
       }
       this.lastContent.set(file.path, content);
       let pal = this.paletteBoundTo(file.path)

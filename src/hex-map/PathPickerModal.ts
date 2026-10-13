@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip, editToggle } from "../ui/pickers";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType } from "../types";
 import { PathTypeEditorModal } from "./PathTypeEditorModal";
@@ -157,14 +158,10 @@ export class PathPickerModal extends HexmakerModal {
         cls: "duckmage-map-origin-desc",
       });
     }
-    const toggleBtn = header.createEl("button", {
-      cls: "duckmage-tpe-edit-btn",
-      text: this.editMode ? "← Done" : "✏ Edit",
-    });
-    toggleBtn.addEventListener("click", () => {
+    editToggle(header, this.editMode, () => {
       this.editMode = !this.editMode;
       this.render();
-    });
+    }, "duckmage-tpe-edit-btn");
 
     if (this.editMode) {
       this.renderEditMode();
@@ -268,7 +265,7 @@ export class PathPickerModal extends HexmakerModal {
         });
         tile.draggable = true;
 
-        tile.createSpan({ cls: "duckmage-terrain-edit-grip", text: "⠿" });
+        dragGrip(tile, "duckmage-terrain-edit-grip");
         tile.createSpan({ cls: "duckmage-terrain-edit-pencil", text: "✏" });
 
         tile.addEventListener("click", () => {

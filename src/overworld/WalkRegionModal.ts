@@ -86,7 +86,7 @@ export class WalkRegionModal extends HexmakerModal {
     const note = contentEl.createEl("p", { cls: "duckmage-map-origin-desc" });
     const canvas = contentEl.createEl("canvas", { cls: "duckmage-region-nav-preview" });
     const seedRow = contentEl.createDiv({ cls: "duckmage-region-row" });
-    const reroll = seedRow.createEl("button", { text: "Re-roll terrain" });
+    const reroll = seedRow.createEl("button", { text: "Reroll", attr: { title: "Same biome, new seed" } });
 
     const nameRow = contentEl.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });

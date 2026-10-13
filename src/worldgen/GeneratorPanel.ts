@@ -47,7 +47,7 @@ import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEI
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { worldMaps } from "../modules/runtime";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
-import { Disclosure } from "../ui/disclosure";
+import { Disclosure, Fold } from "../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
@@ -116,10 +116,6 @@ export class GeneratorPanel {
   static connect: { anchor: string; side: Side } | null = null;
   /** When connected: blend toward the neighbours' terrain (see blendFromNeighbours). */
   static leanToNeighbours = true;
-  /** Titles of the setting sections folded away. */
-  static collapsed = new Set<string>();
-  /** Path types whose routes are shown (groups start folded). */
-  static openPathTypes = new Set<string>();
   /**
    * The save last loaded. While the page still shows its generator, seed and
    * size (and no setting has changed), the preview and Create map use the
@@ -689,7 +685,8 @@ export class GeneratorPanel {
       lockBtn.toggleClass("is-active", locked);
       lockBtn.setAttr("aria-pressed", String(locked));
       lockBtn.setAttr("aria-label", locked ? "Seed locked: regenerate keeps it" : "Lock the seed");
-      rerollBtn.setText(locked ? "Regenerate" : "Re-roll");
+      // Owner Q4: Reroll = a new seed; Regenerate = remake on the same seed after a settings change.
+      rerollBtn.setText(locked ? "Regenerate" : "Reroll");
     };
     lockBtn.addEventListener("click", () => {
       GeneratorPanel.seedLocked = !GeneratorPanel.seedLocked;
@@ -853,7 +850,7 @@ export class GeneratorPanel {
       if (Number(colsInput.value) * Number(rowsInput.value) > PREVIEW_AUTO_LIMIT) {
         status.setText(GeneratorPanel.seedLocked
           ? "Large map: press Regenerate to see your changes on this seed."
-          : "Large map: re-roll to preview it, or lock the seed (Advanced → Seed) to compare settings.");
+          : "Large map: press Reroll to preview it, or lock the seed (Advanced → Seed) to compare settings.");
         return;
       }
       this.previewTimer = window.setTimeout(() => {
@@ -863,7 +860,7 @@ export class GeneratorPanel {
     };
     saveBtn.addEventListener("click", () => {
       if (!shown) {
-        new Notice("Generate a preview first (re-roll or regenerate).");
+        new Notice("Generate a preview first: reroll it, or lock the seed and regenerate.");
         return;
       }
       const grid = previewGrid();
@@ -1295,22 +1292,6 @@ export class GeneratorPanel {
         // default), moved to Advanced → Paths with everything in it.
         const detail = table.createDiv({ cls: "duckmage-wfc-paths duckmage-wfc-path-group duckmage-wfc-path-routes" });
         routeLists.push(detail);
-        const open = () => GeneratorPanel.openPathTypes.has(type);
-        detail.toggleClass("is-collapsed", !open());
-        const detailHead = detail.createDiv({ cls: "duckmage-wfc-path-group-title" });
-        const fold = detailHead.createEl("button", { cls: "clickable-icon duckmage-wfc-fold", attr: { "aria-label": `Show ${type} routes` } });
-        setIcon(fold, "chevron-down");
-        fold.setAttr("aria-expanded", String(open()));
-        const detailName = detailHead.createSpan({ cls: "duckmage-wfc-terrain-name" });
-        swatchFor(detailName, type);
-        detailName.createSpan({ text: `${type} routes` });
-        const toggleOpen = () => {
-          if (!GeneratorPanel.openPathTypes.delete(type)) GeneratorPanel.openPathTypes.add(type);
-          detail.toggleClass("is-collapsed", !open());
-          fold.setAttr("aria-expanded", String(open()));
-        };
-        fold.addEventListener("click", toggleOpen);
-        detailName.addEventListener("click", toggleOpen);
         // Guarantee: never over impassable terrain (on unless turned off).
         const impassableList = s().impassable;
         const avoid = detail.createEl("label", {
@@ -1326,7 +1307,18 @@ export class GeneratorPanel {
         avoid.createSpan({ text: `${type}: avoid impassable terrain and the map border` });
         avoidBox.addEventListener("change", () => saveType(type, { crossImpassable: avoidBox.checked ? undefined : true }));
 
-        const body = detail.createDiv({ cls: "duckmage-wfc-path-group-body" });
+        // The shared Fold (src/ui/disclosure.ts), closed until opened; remembered on this device.
+        const fold = new Fold(detail, {
+          title: `${type} routes`,
+          open: false,
+          store: this.plugin.app,
+          surface: "GenPage/routes",
+          summaryCls: "duckmage-wfc-path-group-title",
+          bodyCls: "duckmage-wfc-path-group-body",
+        });
+        swatchFor(fold.summary, type);
+        fold.summary.insertBefore(fold.summary.lastElementChild!, fold.titleEl);
+        const body = fold.body;
         body.createEl("p", {
           text: "Count is how many to draw (blank = the learned amount for this map size; drag or scroll on it). Hover a route to highlight it on the preview.",
           cls: "duckmage-map-origin-desc",
@@ -1444,28 +1436,15 @@ export class GeneratorPanel {
    * sections stay folded across re-renders. Returns the section's body.
    */
   section(el: HTMLElement, text: string): HTMLElement {
-    const box = el.createDiv({ cls: "duckmage-wfc-group" });
-    const title = box.createEl("h5", { cls: "duckmage-wfc-heading is-collapsible", attr: { role: "button", tabindex: "0" } });
-    setIcon(title.createSpan({ cls: "duckmage-wfc-fold" }), "chevron-down");
-    title.createSpan({ text });
-    const body = box.createDiv({ cls: "duckmage-wfc-group-body" });
-    const show = () => {
-      const folded = GeneratorPanel.collapsed.has(text);
-      box.toggleClass("is-collapsed", folded);
-      title.setAttr("aria-expanded", String(!folded));
-    };
-    const toggle = () => {
-      if (!GeneratorPanel.collapsed.delete(text)) GeneratorPanel.collapsed.add(text);
-      show();
-    };
-    title.addEventListener("click", toggle);
-    title.addEventListener("keydown", (e) => {
-      if (e.key !== "Enter" && e.key !== " ") return;
-      e.preventDefault();
-      toggle();
-    });
-    show();
-    return body;
+    // The shared Fold (src/ui/disclosure.ts): open at first, remembered on this device.
+    return new Fold(el, {
+      title: text,
+      store: this.plugin.app,
+      surface: "GenPage",
+      cls: "duckmage-wfc-group",
+      summaryCls: "duckmage-wfc-heading",
+      bodyCls: "duckmage-wfc-group-body",
+    }).body;
   }
 
   private slider(
@@ -1527,7 +1506,7 @@ export class GeneratorPanel {
     const labelEl = el.createEl("label", { text: label, cls: "duckmage-map-field-label" });
     const chosen = new Set(selected.filter((t) => terrains.includes(t)));
     const chips = el.createDiv({ cls: "duckmage-wfc-chips" });
-    const search = el.createEl("input", { type: "search", cls: "duckmage-wfc-filter", attr: { placeholder: "Search terrain to add…" } });
+    const search = el.createEl("input", { type: "search", cls: "duckmage-wfc-filter", attr: { placeholder: "Filter terrains to add…", "aria-label": "Filter terrains to add" } });
     linkLabel(labelEl, search);
     const matches = el.createDiv({ cls: "duckmage-wfc-chips duckmage-wfc-matches" });
     const swatch = (parent: HTMLElement, t: string) =>

@@ -16,6 +16,7 @@ import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
 import { PathTypeEditorModal } from "../hex-map/PathTypeEditorModal";
 import { isDebugMode, onDebugModeChange } from "../ui/debugMode";
 import { isShown } from "../ui/placement";
+import { dragGrip } from "../ui/pickers";
 
 /**
  * Palette editor page: the "advanced view" of palette editing. One row per
@@ -274,7 +275,8 @@ export class PaletteEditorView extends ItemView {
     const tr = body.createEl("tr", { attr: { "data-name": t.name, "data-index": String(index) } });
     tr.draggable = true;
 
-    const handle = tr.createEl("td", { cls: "duckmage-pe-handle", text: "⠿", attr: { title: "Drag to reorder" } });
+    const handle = tr.createEl("td", { cls: "duckmage-pe-handle", attr: { title: "Drag to reorder" } });
+    dragGrip(handle);
     handle.setAttr("aria-label", "Drag to reorder");
     tr.addEventListener("dragstart", (e) => { setDrag(index); tr.addClass("is-dragging"); e.dataTransfer?.setData("text/plain", String(index)); });
     tr.addEventListener("dragend", () => tr.removeClass("is-dragging"));

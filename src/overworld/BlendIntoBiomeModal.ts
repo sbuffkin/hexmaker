@@ -92,7 +92,7 @@ export class BlendIntoBiomeModal extends HexmakerModal {
     const box = contentEl.createDiv({ cls: "duckmage-wfc-section" });
     const canvas = box.createEl("canvas", { cls: "duckmage-wfc-preview" });
     const status = box.createEl("p", { cls: "duckmage-map-origin-desc" });
-    box.createEl("button", { text: "Re-roll preview" }).addEventListener("click", () => {
+    box.createEl("button", { text: "Reroll", attr: { title: "Preview with a new seed" } }).addEventListener("click", () => {
       this.seed = Math.floor(Math.random() * 1e9);
       void this.redraw(canvas, status);
     });

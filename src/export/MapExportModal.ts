@@ -14,7 +14,7 @@ import {
   type ExportLayerKey,
   type MapExportPrefs,
 } from "./exportNames";
-import { Disclosure } from "../ui/disclosure";
+import { Disclosure, Fold } from "../ui/disclosure";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -128,8 +128,8 @@ export function renderMapExportForm(
   // Region overlay is Advanced (placement map): its own row in the dropdown.
   const regionHost = disclosure.target("MapExport.showRegionOverlay", layerRow);
   const regionRow = regionHost === layerRow ? layerRow : (regionHost ?? createDiv()).createDiv({ cls: "duckmage-export-inline" });
-  const showRegionOverlay = inlineCheck(regionRow, "Region overlay", regionHost ? ticks.showRegionOverlay : false,
-    "Tints hexes by region and labels each region by name.");
+  const showRegionOverlay = inlineCheck(regionRow, "Area overlay", regionHost ? ticks.showRegionOverlay : false,
+    "Tints hexes by area and labels each area by name.");
   // "Advanced · 1 set" while it's ticked.
   if (regionHost && regionHost !== layerRow) disclosure.track("MapExport.showRegionOverlay", () => showRegionOverlay.checked);
   const layerChecks: Record<ExportLayerKey, HTMLInputElement> = {
@@ -137,17 +137,19 @@ export function renderMapExportForm(
   };
 
   // What goes into the PDF's reference table.
-  const columnsBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
-  columnsBox.createEl("summary", { text: "PDF table columns" });
-  const columnsRow = columnsBox.createDiv({ cls: "duckmage-export-inline" });
+  // Shared Folds (src/ui/disclosure.ts): closed at first, remembered; "· N set" counts what differs from the default.
+  const columnsBox = new Fold(optsForm, { title: "PDF table columns", open: false, store: plugin.app, surface: "MapExport", cls: "duckmage-export-group" });
+  const columnsRow = columnsBox.body.createDiv({ cls: "duckmage-export-inline" });
   const columnChecks = HANDOUT_COLUMNS.map((c) => ({ key: c.key, cb: inlineCheck(columnsRow, handoutColumnLabel(c, plugin.sectionWordsFor(mapName)), true) }));
+  for (const { cb } of columnChecks) columnsBox.track(() => !cb.checked);
 
   // The hexcrawl manual's edition and optional parts.
-  const manualBox = optsForm.createEl("details", { cls: "duckmage-export-group" });
-  manualBox.createEl("summary", { text: "Hexcrawl manual" });
-  const playerEdition = checkbox(manualBox, "Player version (leave out the hidden and secret sections)", false);
-  const partsRow = manualBox.createDiv({ cls: "duckmage-export-inline" });
+  const manualBox = new Fold(optsForm, { title: "Hexcrawl manual", open: false, store: plugin.app, surface: "MapExport", cls: "duckmage-export-group" });
+  const playerEdition = checkbox(manualBox.body, "Player version (leave out the hidden and secret sections)", false);
+  const partsRow = manualBox.body.createDiv({ cls: "duckmage-export-inline" });
   const partChecks = MANUAL_PARTS.map((p) => ({ key: p.key, cb: inlineCheck(partsRow, p.label, true) }));
+  manualBox.track(() => playerEdition.checked);
+  for (const { cb } of partChecks) manualBox.track(() => !cb.checked);
 
   // Output size: presets of hex radius (the image size also depends on the grid).
   const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
@@ -265,7 +267,7 @@ export function renderMapExportForm(
   included.createDiv({ cls: "duckmage-export-included-title", text: "What's in each file" });
   const list = included.createEl("ul");
   list.createEl("li", {
-    text: "PNG: the map with what you tick under On the map (the faction and region overlays print their names). " +
+    text: "PNG: the map with what you tick under On the map (the faction and area overlays print their names). " +
       "Never game master icons, hidden tokens or any note text (description, hidden, secret), so it's safe to hand to players.",
   });
   list.createEl("li", {

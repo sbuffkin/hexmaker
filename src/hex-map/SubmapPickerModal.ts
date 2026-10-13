@@ -49,7 +49,7 @@ export class SubmapPickerModal extends HexmakerModal {
       contentEl.createEl("h4", { text: "Link existing map" });
 
       const filterInput = contentEl.createEl("input", {
-        type: "text",
+        type: "search",
         cls: "duckmage-rt-search",
         attr: { placeholder: "Filter maps…" },
       });
@@ -61,7 +61,7 @@ export class SubmapPickerModal extends HexmakerModal {
         const q = query.trim().toLowerCase();
         const matches = maps.filter((m) => !q || m.name.toLowerCase().includes(q) || this.plugin.mapLabel(m.name).toLowerCase().includes(q));
         if (matches.length === 0) {
-          listEl.createDiv({ cls: "duckmage-picker-list-empty", text: "No matching maps" });
+          listEl.createDiv({ cls: "duckmage-empty-state", text: "No maps match." });
           return;
         }
         for (const m of matches) {

@@ -188,7 +188,7 @@ export class RandomTableView extends ItemView {
     });
 
     const searchInput = leftCol.createEl("input", {
-      type: "text",
+      type: "search",
       cls: "duckmage-rt-search",
     });
     searchInput.placeholder = "Filter tables…";

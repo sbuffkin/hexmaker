@@ -173,7 +173,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "GenPage.routeWiggle": "advanced/Paths",
   "GenPage.routeLength": "advanced/Paths",
   "GenPage.routeFollow": "advanced/Paths",
-  // The seed is saved with every save and shown in the saves list; Re-roll
+  // The seed is saved with every save and shown in the saves list; Reroll
   // stays by the preview.
   "GenPage.seed": "advanced/Seed",
   "GenPage.seedLock": "advanced/Seed",

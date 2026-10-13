@@ -99,7 +99,7 @@ const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
 	{ key: "questsFolder",    label: "Quests",     suffix: "quests" },
 	{ key: "featuresFolder",  label: "Features",   suffix: "features" },
 	{ key: "factionsFolder",  label: "Factions",   suffix: "factions" },
-	{ key: "regionsFolder",   label: "Regions",    suffix: "regions" },
+	{ key: "regionsFolder",   label: "Areas",      suffix: "regions" },
 	{ key: "tablesFolder",    label: "Tables",     suffix: "tables" },
 	{ key: "workflowsFolder", label: "Workflows",  suffix: "workflows" },
 	{ key: "templatesFolder", label: "Templates",  suffix: "templates" },
@@ -624,11 +624,11 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			const optsBox = genSide.createDiv({ cls: "duckmage-wizard-generator-options" });
 			const previewBox = genBody.createDiv({ cls: "duckmage-wizard-generator-preview" });
 			const canvas = previewBox.createEl("canvas", { cls: "duckmage-setup-canvas" });
-			const rerollBtn = previewBox.createEl("button", { text: "🎲 Re-roll", attr: { title: "Generate again with a new random seed" } });
+			const rerollBtn = previewBox.createEl("button", { text: "🎲 Reroll", attr: { title: "Generate again with a new random seed" } });
 			const status = previewBox.createDiv({ cls: "duckmage-setup-status" });
 			const exactNote = previewBox.createDiv({
 				cls: "duckmage-wizard-preview-exact",
-				text: "Next creates exactly this map. Re-roll for another.",
+				text: "Next creates exactly this map. Reroll for another.",
 			});
 			rerollBtn.addEventListener("click", () => { ctx.seed = randomSeed(); refresh(); });
 			/** Overland's "One side (random)": say which side this seed picked. */
@@ -1063,7 +1063,8 @@ export class SetupWizardView extends ItemView {
 					else if (navProgressEl) navProgressEl.setText(msg);
 				});
 			} catch (e) {
-				new Notice(`Hexmap World Creator setup error: ${e instanceof Error ? e.message : String(e)}`);
+				// Direct feedback to Next: no plugin-name prefix (owner Q10).
+				new Notice(`Couldn't finish this step: ${e instanceof Error ? e.message : String(e)}`);
 				nextBtn.setText("Next →");
 				nextBtn.disabled = false;
 				backBtn.disabled = false;

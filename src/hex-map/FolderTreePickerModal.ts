@@ -31,7 +31,7 @@ export class FolderTreePickerModal extends HexmakerModal {
 
     // ── Filter input ─────────────────────────────────────────────────────
     const filterInput = contentEl.createEl("input", {
-      type: "text",
+      type: "search",
       cls: "duckmage-rt-search",
     });
     filterInput.placeholder = this.filterPlaceholder;
@@ -71,7 +71,7 @@ export class FolderTreePickerModal extends HexmakerModal {
       const files = getFiles(trimmed);
 
       if (files.length === 0) {
-        listEl.createDiv({ cls: "duckmage-picker-list-empty", text: this.emptyMessage });
+        listEl.createDiv({ cls: "duckmage-empty-state", text: this.emptyMessage });
         return;
       }
 

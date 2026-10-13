@@ -125,7 +125,7 @@ export class TerrainEntryEditorModal extends HexmakerModal {
 		let tintToggle: import("obsidian").ToggleComponent | undefined;
 		new Setting(contentEl)
 			.setName("Icon tint")
-			.setDesc("Apply a solid colour to the icon shape (works best with monochrome icons).")
+			.setDesc("Apply a solid color to the icon shape (works best with monochrome icons).")
 			.addToggle(toggle => {
 				tintToggle = toggle;
 				toggle

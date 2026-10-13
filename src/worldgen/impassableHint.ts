@@ -100,7 +100,7 @@ export function suggestImpassable(
     const blue = !!hs && hs.h >= 185 && hs.h <= 250 && hs.s >= 0.25;
     const marked = paletteImpassable.has(c.name);
     if (!blue && !marked) continue;
-    const why = [marked ? "the palette marks it impassable" : "", blue ? "its colour looks like water" : ""].filter(Boolean).join(" and ");
+    const why = [marked ? "the palette marks it impassable" : "", blue ? "its color looks like water" : ""].filter(Boolean).join(" and ");
     out.push({
       terrain: c.name,
       reason: `${why}, and it covers ${pct(c.share)}; there are no paths to tell for sure`,

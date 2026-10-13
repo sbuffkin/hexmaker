@@ -1,5 +1,6 @@
 import { App, TFile, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip, editToggle } from "../ui/pickers";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { getIconUrl, iconLabel, normalizeFolder } from "../utils";
 
@@ -54,14 +55,10 @@ export class IconPickerModal extends HexmakerModal {
       applyGm();
     });
 
-    const manageBtn = headerRight.createEl("button", {
-      cls: "duckmage-icon-manage-btn",
-      text: this.manageMode ? "← pick icons" : "Manage icons",
-    });
-    manageBtn.addEventListener("click", () => {
+    editToggle(headerRight, this.manageMode, () => {
       this.manageMode = !this.manageMode;
       this.render();
-    });
+    }, "duckmage-icon-manage-btn");
 
     // ── Add section (manage mode only) ────────────────────────────────────
     if (this.manageMode) {
@@ -127,7 +124,7 @@ export class IconPickerModal extends HexmakerModal {
       btn.draggable = true;
 
       // Grip handle
-      btn.createSpan({ cls: "duckmage-terrain-edit-grip", text: "⠿" });
+      dragGrip(btn, "duckmage-terrain-edit-grip");
 
       const preview = btn.createDiv({ cls: "duckmage-icon-preview" });
       const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });

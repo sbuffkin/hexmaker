@@ -1,6 +1,7 @@
 import { App, Notice, TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
+import { Fold } from "../ui/disclosure";
 import { normalizeFolder } from "../utils";
 import { addLinkToSection, addBacklinkToFile } from "../sections";
 import type { LinkSection } from "../types";
@@ -53,9 +54,15 @@ export class LinkPickerModal extends HexmakerModal {
       });
       if (own.length) addItems(contentEl.createEl("ul", { cls: "duckmage-link-picker-list" }), own);
       if (mapMade.length) {
-        const group = contentEl.createEl("details", { cls: "duckmage-link-picker-map-made" });
-        group.createEl("summary", { text: `${MAP_MADE_GROUP_LABEL} (${mapMade.length})` });
-        addItems(group.createEl("ul", { cls: "duckmage-link-picker-list" }), mapMade);
+        const group = new Fold(contentEl, {
+          title: `${MAP_MADE_GROUP_LABEL} (${mapMade.length})`,
+          key: MAP_MADE_GROUP_LABEL,
+          open: false,
+          store: this.app,
+          surface: "LinkPicker",
+          cls: "duckmage-link-picker-map-made",
+        });
+        addItems(group.body.createEl("ul", { cls: "duckmage-link-picker-list" }), mapMade);
       }
     }
 

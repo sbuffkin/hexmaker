@@ -49,7 +49,7 @@ export class GeneratorLibrary {
     const filter = top.createEl("input", {
       type: "search",
       cls: "duckmage-wfc-library-filter",
-      attr: { placeholder: "Filter…" },
+      attr: { placeholder: "Filter generators…", "aria-label": "Filter generators" },
       value: GeneratorLibrary.query,
     });
     const list = box.createDiv({ cls: "duckmage-wfc-library-list" });
@@ -76,6 +76,9 @@ export class GeneratorLibrary {
         btn.toggleClass("is-active", on);
         btn.setAttr("aria-selected", String(on));
       }
+      const things = GeneratorLibrary.tab === "generators" ? "generators" : "maps";
+      filter.placeholder = `Filter ${things}…`;
+      filter.setAttr("aria-label", `Filter ${things}`);
       list.empty();
       actions.empty();
       if (GeneratorLibrary.tab === "generators") this.drawGenerators(list, actions, draw);
@@ -117,7 +120,7 @@ export class GeneratorLibrary {
         redraw();
       });
     }
-    if (!rows.length) list.createDiv({ text: this.generators.length ? "No generator matches." : "No generators yet. Learn one on the Maps tab.", cls: "duckmage-wfc-library-empty" });
+    if (!rows.length) list.createDiv({ text: this.generators.length ? "No generators match." : "No generators yet. Learn one on the Maps tab.", cls: "duckmage-empty-state" });
 
     const selected = this.generators.filter((g) => checked.has(g.file.path));
     actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick generators to act on them", cls: "duckmage-map-origin-desc" });
@@ -191,7 +194,7 @@ export class GeneratorLibrary {
         redraw();
       });
     }
-    if (!rows.length) list.createDiv({ text: "No map matches.", cls: "duckmage-wfc-library-empty" });
+    if (!rows.length) list.createDiv({ text: "No maps match.", cls: "duckmage-empty-state" });
 
     // Keep the order the regions were ticked in; it names the generator.
     const picked = [...checked];

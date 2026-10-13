@@ -1,4 +1,5 @@
 import { Notice, TAbstractFile, TFile, TFolder, parseYaml } from "obsidian";
+import { backgroundText, noticeBackground } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapData, MapPath, PathChain, PathType, TerrainColor } from "../types";
 import { normalizeFolder } from "../utils";
@@ -895,7 +896,7 @@ export class MapStore {
     if (!dropsPaths && !dropsHexes) return false;
     const what = droppedWhat(dropsPaths ? disk.paths.length : 0, dropsHexes ? disk.hexes.size : 0);
     console.error(`Hexmap World Creator: a save of ${path} would have removed ${what}, but nothing was deleted, so the note's copy was kept.`, { map: map.name, paths: map.paths, hexes: data.hexes.size });
-    new Notice(`Hexmap World Creator: a save of ${path} would have removed ${what}. Nothing was deleted, so the note's copy was kept. If you meant to remove it, delete again.`, 15000);
+    noticeBackground(`a save of ${path} would have removed ${what}. Nothing was deleted, so the note's copy was kept. If you meant to remove it, delete again.`, 15000);
     if (dropsHexes) this.hexes.set(map.name, this.matchCase(map, disk.hexes));
     if (dropsPaths) {
       this.views.delete(map.name);
@@ -1040,10 +1041,10 @@ export class MapStore {
   private markBroken(map: string, path: string, reason: string, newer?: number): void {
     if (this.broken.has(map)) return;
     this.broken.add(map);
-    this.brokenNotices.set(map, new Notice(
+    this.brokenNotices.set(map, noticeBackground(
       newer
-        ? `Hexmap World Creator: the map note ${path} is in map-note format ${newer}, from a newer version of the plugin. Update Hexmap World Creator to use this map; until then changes to it aren't saved.`
-        : `Hexmap World Creator: can't read the map note ${path}: ${reason}. Changes to this map aren't saved until it's fixed; fix it in the note and the map reloads from it.`,
+        ? `the map note ${path} is in map-note format ${newer}, from a newer version of the plugin. Update Hexmap World Creator to use this map; until then changes to it aren't saved.`
+        : `can't read the map note ${path}: ${reason}. Changes to this map aren't saved until it's fixed; fix it in the note and the map reloads from it.`,
       0,
     ));
   }
@@ -1129,7 +1130,7 @@ export class MapStore {
     if (!problems.length) return;
     const n = problems.length;
     const first = problems.slice(0, 2).map((p) => `"${p.text.length > 40 ? p.text.slice(0, 40) + "…" : p.text}" (${p.reason})`).join("; ");
-    new Notice(`Hexmap World Creator: ${n === 1 ? "a line" : `${n} lines`} in ${path} couldn't be read: ${first}${n > 2 ? "; …" : ""}. ${n === 1 ? "It's" : "They're"} kept as written; the warning box in the note lists ${n === 1 ? "it" : "them"}.`, 10000);
+    noticeBackground(`${n === 1 ? "a line" : `${n} lines`} in ${path} couldn't be read: ${first}${n > 2 ? "; …" : ""}. ${n === 1 ? "It's" : "They're"} kept as written; the warning box in the note lists ${n === 1 ? "it" : "them"}.`, 10000);
   }
 
   /** Copy a format-1 map note's text before its first rewrite. Never overwrites. */
@@ -1247,7 +1248,7 @@ export class MapStore {
       this.reportConversions();
       if (gone.length) {
         const names = gone.map((m) => (this.plugin as { mapLabel?: (n: string) => string }).mapLabel?.call(this.plugin, m.name) ?? m.name);
-        new Notice(`Hexmap World Creator: the map note${gone.length === 1 ? " of" : "s of"} ${names.join(", ")} ${gone.length === 1 ? "is" : "are"} gone. ${gone.length === 1 ? "It's" : "They're"} marked missing in the map list: Restore puts the last saved copy back, Remove drops the map.`, 15000);
+        noticeBackground(`the map note${gone.length === 1 ? " of" : "s of"} ${names.join(", ")} ${gone.length === 1 ? "is" : "are"} gone. ${gone.length === 1 ? "It's" : "They're"} marked missing in the map list: Restore puts the last saved copy back, Remove drops the map.`, 15000);
       }
       this.plugin.refreshHexMap();
     });
@@ -1261,8 +1262,8 @@ export class MapStore {
     const sum = (f: (r: CompactReport) => number) => done.reduce((n, c) => n + f(c.report), 0);
     const chains = sum((r) => r.pathsIn), paths = sum((r) => r.pathsOut), singles = sum((r) => r.singlesDropped.length);
     const merged = sum((r) => r.merged.length), inexact = sum((r) => r.inexact.length);
-    new Notice(
-      `Hexmap World Creator: paths on ${done.length} map${done.length === 1 ? "" : "s"} moved to the new format: ${chains} old path${chains === 1 ? "" : "s"} became ${paths}` +
+    noticeBackground(
+      `paths on ${done.length} map${done.length === 1 ? "" : "s"} moved to the new format: ${chains} old path${chains === 1 ? "" : "s"} became ${paths}` +
         (merged ? ` (${merged} joined from touching pieces)` : "") +
         (singles ? `; ${singles} one-hex leftover${singles === 1 ? " was" : "s were"} dropped` : "") +
         (inexact ? `; ${inexact} kept every hex as written` : "") +
@@ -1288,7 +1289,7 @@ export class MapStore {
   }
 
   private async migrate(maps: MapData[]): Promise<void> {
-    const notice = new Notice(`Hexmap World Creator: moving map data into map notes (0/${maps.length} maps)…`, 0);
+    const notice = noticeBackground(`moving map data into map notes (0/${maps.length} maps)…`, 0);
     const backupDir = this.backupDir();
     const adapter = this.plugin.app.vault.adapter;
     let done = 0;
@@ -1325,13 +1326,13 @@ export class MapStore {
       }
       await this.cleanHexNotes([map], true);
       done++;
-      notice.setMessage(`Hexmap World Creator: moving map data into map notes (${done}/${maps.length} maps)…`);
+      notice.setMessage(backgroundText(`moving map data into map notes (${done}/${maps.length} maps)…`));
     }
     notice.hide();
     if (failed.length) {
-      new Notice(`Hexmap World Creator: couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
+      noticeBackground(`couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
     } else {
-      new Notice(`Hexmap World Creator: map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
+      noticeBackground(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
     }
     await this.plugin.saveData(this.plugin.settings);
   }

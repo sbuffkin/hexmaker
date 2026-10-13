@@ -22,11 +22,3 @@ export function terrainStartsCollapsed(hasTerrain: boolean, collapsedFlag: boole
   return hasTerrain;
 }
 
-/** Palettes longer than this get a filter box above the swatches. */
-export const TERRAIN_FILTER_MIN = 12;
-
-/** Whether a terrain name matches the filter text (case-insensitive substring; blank matches all). */
-export function terrainMatches(name: string, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  return q === "" || name.toLowerCase().includes(q);
-}

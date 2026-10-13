@@ -56,7 +56,7 @@ describe("impassable suggestions", () => {
     expect(suggestImpassable(m, colors).map((h) => h.terrain)).toEqual(["deepblue"]);
     const hints = suggestImpassable(m, colors, [], new Set(["Glass"]));
     expect(hints.map((h) => h.terrain)).toEqual(["deepblue", "Glass"]);
-    expect(hints[0].reason).toContain("colour");
+    expect(hints[0].reason).toContain("color");
     expect(hints[1].reason).toContain("palette marks it impassable");
   });
 });

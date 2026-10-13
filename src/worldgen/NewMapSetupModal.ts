@@ -574,7 +574,7 @@ export class NewMapSetupModal extends HexmakerModal {
     const canvas = chip("C").createEl("canvas", { cls: "duckmage-setup-canvas" });
     (["E", "SW", "S", "SE"] as const).forEach((s) => chip(s));
     const seedRow = side.createDiv({ cls: "duckmage-setup-seed-row" });
-    const rerollBtn = seedRow.createEl("button", { text: "🎲 Re-roll", attr: { title: "New random seed" } });
+    const rerollBtn = seedRow.createEl("button", { text: "🎲 Reroll", attr: { title: "New random seed" } });
     const seedLabel = seedRow.createSpan({ cls: "duckmage-setup-seed" });
     const legendBox = side.createDiv();
     const seamNote = side.createDiv({ cls: "setting-item-description duckmage-setup-seam-note" });

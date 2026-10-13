@@ -1,5 +1,6 @@
 import { App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { dragGrip } from "../ui/pickers";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { filterByQuery, moveItem } from "../maps/submaps";
 import { canDo } from "../modeGate";
@@ -45,7 +46,7 @@ export class LocationsModal extends HexmakerModal {
     const search = this.contentEl.createEl("input", {
       type: "search",
       cls: "duckmage-rt-search duckmage-locations-search",
-      attr: { placeholder: "Find a location…", "aria-label": "Find a location" },
+      attr: { placeholder: "Filter locations…", "aria-label": "Filter locations" },
     });
     search.addEventListener("input", () => {
       this.query = search.value;
@@ -78,8 +79,8 @@ export class LocationsModal extends HexmakerModal {
     const all = this.locations();
     const items = all.map((name, index) => ({ name, label: this.plugin.mapLabel(name), index }));
     const shown = filterByQuery(items, this.query);
-    if (!all.length) list.createDiv({ cls: "duckmage-picker-list-empty", text: "No locations yet." });
-    else if (!shown.length) list.createDiv({ cls: "duckmage-picker-list-empty", text: "No location matches." });
+    if (!all.length) list.createDiv({ cls: "duckmage-empty-state", text: "No locations yet." });
+    else if (!shown.length) list.createDiv({ cls: "duckmage-empty-state", text: "No locations match." });
     // Reordering only makes sense on the whole list.
     const editable = canDo(this.mapName, "link-map");
     const canDrag = editable && !this.query.trim() && all.length > 1;
@@ -88,7 +89,7 @@ export class LocationsModal extends HexmakerModal {
       const row = list.createDiv({ cls: "duckmage-locations-row" });
       if (canDrag) {
         row.draggable = true;
-        row.createSpan({ cls: "duckmage-locations-grip", text: "⋮⋮", attr: { "aria-hidden": "true" } });
+        dragGrip(row, "duckmage-locations-grip");
         row.addEventListener("dragstart", () => { this.dragFrom = it.index; row.addClass("is-dragging"); });
         row.addEventListener("dragend", () => row.removeClass("is-dragging"));
         row.addEventListener("dragover", (e) => { e.preventDefault(); row.addClass("is-drop-target"); });

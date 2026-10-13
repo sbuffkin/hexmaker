@@ -4,6 +4,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { getIconUrl, normalizeFolder, createIconEl } from "../utils";
 import { setTerrainInFile } from "../frontmatter";
+import { addPickerFilter, filterText } from "../ui/pickers";
 
 export class HexTerrainPickerModal extends HexmakerModal {
   constructor(
@@ -31,11 +32,12 @@ export class HexTerrainPickerModal extends HexmakerModal {
         cls: `duckmage-terrain-option${entry.name === this.currentTerrain ? " is-selected" : ""}`,
       });
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.style.backgroundColor = entry.color;
+      preview.setCssProps({ "--duckmage-bg": entry.color });
       if (entry.icon) {
         createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
+      filterText(btn, entry.name, entry.type, entry.category);
       btn.addEventListener("click", () => {
         void (async () => {
           if (!this.plugin.mapStore.isReady() && !this.app.vault.getAbstractFileByPath(this.hexPath)) {
@@ -55,6 +57,9 @@ export class HexTerrainPickerModal extends HexmakerModal {
         })();
       });
     }
+
+    // The shared picker filter (src/ui/pickers.ts), once the palette is long.
+    addPickerFilter(grid, { things: "terrains", count: this.palette.length });
 
     if (this.currentTerrain) {
       const clearBtn = contentEl.createEl("button", {

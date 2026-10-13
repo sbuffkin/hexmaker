@@ -18,12 +18,12 @@ import { ARRIVAL_MODE_TEXT, ARRIVAL_MODE_WORDS, parseArrivalMode, type ArrivalMo
 const noteName = (path: string) => path.replace(/\.md$/i, "").replace(/^.*\//, "");
 const withMd = (p: string) => (/\.md$/i.test(p) ? p : `${p}.md`);
 
-/** "Arriving somewhere new": make places, or not; blank follows the map above. */
+/** "Arriving somewhere new": make submaps, or not; blank follows the map above. */
 export function renderArrivalSetting(el: HTMLElement, plugin: HexmakerPlugin, map: MapData, rerender: () => void): void {
   el.createEl("h4", { text: "Arriving somewhere new" });
   el.createDiv({
     cls: "duckmage-map-origin-desc",
-    text: "Going into a hex that has no map yet (Go there in the hex menu, or Ctrl+click). Making the place works in Play too; the new place can be rerolled until you lock it. Maps under this one do the same unless they set their own.",
+    text: "Going into a hex that has no map yet (Go there in the hex menu, or Ctrl+click). Making the submap works in Play too; the new submap can be rerolled until you lock it. Maps under this one do the same unless they set their own.",
   });
   const row = el.createDiv({ cls: "duckmage-region-row" });
   const select = row.createEl("select", { attr: { "aria-label": "Arriving somewhere new" } });

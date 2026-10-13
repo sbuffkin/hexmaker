@@ -26,7 +26,8 @@
  * (the record goes into data.json once). Readers accept the old forms
  * forever, so a note synced from an older device still works.
  */
-import { Notice, TFile, type App } from "obsidian";
+import { TFile, type App } from "obsidian";
+import { noticeBackground } from "./ui/notify";
 import { writeJsonBackup } from "./backup";
 import { mapDataLines, moveBodyFieldsIntoMapData, shownValues, type HexMapDataView, type MapDataShown } from "./hexMapData";
 import { linkFrontmatterKey, linkFrontmatterList, linkNotePathKey, linkTokenMap, mapNoteLink, pathLink, renameHexMapKey } from "./noteFormats";
@@ -300,7 +301,7 @@ export function upgradeMessage(results: UpgradeResult[]): string | null {
       parts.push(`left as they were: ${shown}${r.skipped.length > 5 ? `; and ${r.skipped.length - 5} more (see the console)` : ""}`);
     }
   }
-  return parts.length ? `Hexmap World Creator updated note formats. ${parts.join(". ")}.` : null;
+  return parts.length ? `updated note formats. ${parts.join(". ")}.` : null;
 }
 
 /**
@@ -331,6 +332,6 @@ export async function runNoteFormatUpgrades(host: NoteFormatHost): Promise<Upgra
     await host.saveSettings();
   }
   const msg = upgradeMessage(results);
-  if (msg) new Notice(msg, 15000);
+  if (msg) noticeBackground(msg, 15000);
   return results;
 }
