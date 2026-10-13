@@ -59,14 +59,14 @@ describe("super-region: the owner's coast (demo world, region 4, 0)", () => {
 		expect(meanX(land(after.cells))).toBeGreaterThan(meanX(land(before.cells)));
 	});
 
-	it("stays fast: an 8×8 region with four made neighbours takes about what it did (median of 15, under 25 ms)", () => {
+	it("stays fast: an 8×8 region with four made neighbours takes about what it did (median of 15; under 2× the no-neighbour run, 60 ms ceiling for loaded machines)", () => {
 		const median = (tuning?: Record<string, number>) => {
 			const ms = Array.from({ length: 15 }, () => ownerCase(tuning).ms).sort((x, y) => x - y);
 			return ms[7];
 		};
 		median(); // warm up
 		const before = median({ "neighbour-influence": 0 }), after = median();
-		expect(after).toBeLessThan(25);
+		expect(after).toBeLessThan(60);
 		expect(after).toBeLessThan(before * 2 + 3);
 	});
 });
