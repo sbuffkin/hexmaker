@@ -30,16 +30,27 @@ export const OVERLAY_GAP = 6;
 /**
  * Insets from the clip box's edges: `topBand` boxes (toolbar rows, mode bar)
  * push the top edge down to below the lowest of them; `rightBand` boxes (an
- * open side panel) push the right edge left of the leftmost. Boxes are in
- * the same (screen) coordinates as `clip`; empty boxes are ignored.
+ * open side panel) push the right edge left of the leftmost; `leftBand`
+ * boxes (the legend, pinned bottom-left) push the left edge right of the
+ * rightmost (fresh-eyes F11: the legend covered the map's west column on
+ * first open). Boxes are in the same (screen) coordinates as `clip`; empty
+ * boxes are ignored.
  */
-export function overlayInsets(clip: Box, topBand: readonly Box[], rightBand: readonly Box[], gap = OVERLAY_GAP): Insets {
+export function overlayInsets(
+  clip: Box,
+  topBand: readonly Box[],
+  rightBand: readonly Box[],
+  gap = OVERLAY_GAP,
+  leftBand: readonly Box[] = [],
+): Insets {
   const real = (b: Box) => b.right > b.left && b.bottom > b.top;
   let top = 0;
   for (const b of topBand) if (real(b)) top = Math.max(top, b.bottom - clip.top + gap);
   let right = 0;
   for (const b of rightBand) if (real(b)) right = Math.max(right, clip.right - b.left + gap);
-  return { top: Math.max(0, top), right: Math.max(0, right), bottom: 0, left: 0 };
+  let left = 0;
+  for (const b of leftBand) if (real(b)) left = Math.max(left, b.right - clip.left + gap);
+  return { top: Math.max(0, top), right: Math.max(0, right), bottom: 0, left: Math.max(0, left) };
 }
 
 /** The usable insets for a view of this size: an inset that would leave

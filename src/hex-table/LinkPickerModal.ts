@@ -108,7 +108,7 @@ export class LinkPickerModal extends HexmakerModal {
         if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
           await this.app.vault.createFolder(folder);
         }
-        // Towns start from the town template (PA3) unless the caller gave one.
+        // Notes start from their section's template (PA3, F17) unless the caller gave one.
         // Places made from a hex say where they are (a Location line, R3).
         const content = this.createTemplate
           ? (LOCATION_SECTIONS.includes(this.linkSection) ? this.plugin.withHexLocation(this.createTemplate, this.hexPath) : this.createTemplate)

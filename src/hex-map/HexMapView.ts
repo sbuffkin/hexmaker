@@ -1,7 +1,7 @@
 import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { COPY_HEX_LINK_TITLE, copyHexLink } from "./copyHexLink";
-import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
+import { normalizeFolder, getIconUrl, createIconEl, iconLabel } from "../utils";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -36,7 +36,7 @@ import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
-import { flowerLayout, flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES } from "../maps/mapNav";
+import { flowerLayout, flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES, padButtonText } from "../maps/mapNav";
 import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
@@ -49,7 +49,7 @@ import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
-import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement } from "./tokenDefaults";
+import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom, regionsViewTip } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
 import { resolveNameFont } from "./hexNameFont";
@@ -1110,7 +1110,7 @@ export class HexMapView extends ItemView {
       const title = c && via ? `${s[0].toUpperCase() + s.slice(1)} of ${this.plugin.mapLabel(via)}: ${this.plugin.mapLabel(c.name)}` : b.title;
       const btn = pad.createEl("button", {
         cls: `duckmage-map-pad-btn is-${s}` + (b.plus ? " is-new" : "") + (b.action.kind === "locked" ? " is-locked" : ""),
-        text: b.plus ? "+" : glyph,
+        text: padButtonText(glyph, b.plus),
         attr: { title, "aria-label": title, "data-side": s },
       });
       btn.disabled = b.disabled;
@@ -1150,6 +1150,8 @@ export class HexMapView extends ItemView {
   }
 
   onOpen(): Promise<void> {
+    // A map opened during a fresh setup: its stores must start (F19).
+    this.plugin.releaseStartupWrites();
     // Initialise to the configured default map (falls back to first map or "default")
     this.activeMapName =
       this.plugin.settings.defaultMap ||
@@ -2571,7 +2573,9 @@ export class HexMapView extends ItemView {
 
   private handleIconButton(): void {
     if (this.drawingMode !== "icon" && !this.modeAllows(TOOL_ACTIONS.icon)) return;
-    if (this.drawingMode === "icon") { this.exitIconMode(); return; }
+    // Like Terrain: the button always opens the picker, even with the tool
+    // on, to switch icons; closing it without a pick keeps the tool as it
+    // was. Esc, ✕ or right-click → Exit tool leave it (fresh-eyes F6).
     this.openIconPicker();
   }
 
@@ -3176,7 +3180,8 @@ export class HexMapView extends ItemView {
       terrainName: this.paintTerrainName,
       terrainPick: this.terrainPickMode,
       regionHexes: this.owView(this.getActiveMap()) === "regions",
-      iconName: this.paintIconName,
+      // The icon's name as the picker shows it ("village", not "place-village": F6).
+      iconName: this.paintIconName ? iconLabel(this.paintIconName) : this.paintIconName,
       iconGmOnly: this.paintIconGmOnly,
       pathTypeName: this.pathTool.currentType(),
       pathAuto: this.pathTool.autoRoute,
@@ -4158,8 +4163,8 @@ export class HexMapView extends ItemView {
   }
 
   /**
-   * How far the toolbar rows (with the mode bar) and an open side panel
-   * reach into the map view, in px from the clip's edges. Reads only.
+   * How far the toolbar rows (with the mode bar), an open side panel and
+   * the legend reach into the map view, in px from the clip's edges. Reads only.
    */
   private measureOverlayInsets(): Insets {
     const clipEl = this.viewportEl?.parentElement;
@@ -4171,7 +4176,9 @@ export class HexMapView extends ItemView {
     const right = [this.toolsPanel, this.overlayPanel]
       .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
       .map((p) => box(p.element));
-    return overlayInsets(clip, top, right);
+    // The legend, pinned bottom-left over the map.
+    const left = Array.from(this.controlsEl?.querySelectorAll<HTMLElement>(":scope > .duckmage-terrain-legend") ?? []).map(box);
+    return overlayInsets(clip, top, right, undefined, left);
   }
 
   private flushPendingZoom(): void {
@@ -8061,6 +8068,8 @@ export class HexMapView extends ItemView {
       byHex.get(token.hex)!.push(token);
     }
 
+    // Names go on the side away from the hex coordinate (F4).
+    const nameSide = tokenNameSide(this.plugin.settings.coordPlacement);
     for (const [hexKey, tokens] of byHex) {
       const center = centerMap.get(hexKey)!;
       const offsets = tokenGroupOffsets(tokens.length);
@@ -8093,9 +8102,9 @@ export class HexMapView extends ItemView {
         // tokens clip their children. Hidden by the "Token names" toggle
         // except while the token is hovered (CSS). Tokens sharing a hex
         // list their names one per line under the group (no overlap).
-        const place = tokenNamePlacement(offsets, i);
+        const place = tokenNamePlacement(offsets, i, nameSide);
         const nameEl = layer.createDiv({
-          cls: `duckmage-token-name duckmage-token-name-${tokens.length > 1 ? groupSize(tokens) : size}`,
+          cls: `duckmage-token-name duckmage-token-name-${tokens.length > 1 ? groupSize(tokens) : size} is-${nameSide}`,
           text: token.title,
         });
         nameEl.setCssProps({

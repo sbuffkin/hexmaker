@@ -723,7 +723,12 @@ export class PathTool {
     this.host.refreshBar();
   }
 
-  /** Esc: cancel a drag, else finish the branch, else deselect. False when there was nothing to step out of. */
+  /**
+   * Esc: cancel a drag in progress. False otherwise, and the map then leaves
+   * the tool, as Esc does for every drawing tool (fresh-eyes F13: stepping
+   * out a level at a time left the tool on after Done). Leaving keeps every
+   * point already placed.
+   */
   escape(): boolean {
     if (this.drag) {
       this.cancelDrag();
@@ -731,10 +736,6 @@ export class PathTool {
     }
     if (this.drawDrag) {
       this.cancelDrawDrag();
-      return true;
-    }
-    if (this.isDrawing() || this.forceNew || this.selected !== null) {
-      this.done();
       return true;
     }
     return false;
@@ -1495,7 +1496,7 @@ export class PathTool {
       const done = el.createEl("button", {
         cls: "duckmage-mode-bar-route-toggle",
         text: "Done",
-        attr: { title: this.isDrawing() ? "Finish this branch (Esc)" : "Deselect the path (Esc)" },
+        attr: { title: this.isDrawing() ? "Finish this branch" : "Deselect the path" },
       });
       done.addEventListener("click", () => this.done());
     }

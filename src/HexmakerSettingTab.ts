@@ -125,7 +125,7 @@ type LocalSettingDefinitionItem =
 
 /** The Templates folder setting's description. */
 const TEMPLATES_FOLDER_DESC =
-  "Vault-relative folder for the plugin's note templates: the hex template (unless Template path points elsewhere) and the town template. Edit them there; new notes use them. Blank = \"templates\" in the world folder. Workflow templates stay with their workflows.";
+  "Vault-relative folder for the plugin's note templates: the hex template (unless Template path points elsewhere) and one per kind of linked note (town.md, dungeon.md, feature.md, quest.md, faction.md). Edit them there; new notes use them. Blank = \"templates\" in the world folder. Workflow templates stay with their workflows.";
 
 /** "Add default palettes": deleted palettes stay deleted until asked. */
 const ADD_DEFAULTS_DESC = "Put the built-in palettes back. Palettes you delete stay deleted; they only come back from here.";

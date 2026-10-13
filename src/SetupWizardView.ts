@@ -22,7 +22,8 @@ import {
 } from "./worldgen/registry";
 import { PLACEHOLDER_MAP_NAME, isUnusedPlaceholderMap } from "./setupPlaceholder";
 import { OVERLAND_ID, resolveSeaSide } from "./worldgen/procedural/planetSurface";
-import { LIVE_PREVIEW_DELAY_MS, sizeFromInput, wheelStep } from "./sizeInput";
+import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput, wheelStep } from "./sizeInput";
+import { keepScroll } from "./ui/keepScroll";
 import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
 import { moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
@@ -63,6 +64,8 @@ interface WizardContext {
 	 *  default for the map types and palette (firstMapGenerator). */
 	generatorId?: string;
 	generatorOptions: Record<string, string>;
+	/** The user typed a size: picking another scale keeps it (critic C9). */
+	sizeChosen?: boolean;
 	/** The scale's own choices changed from their default (World maps' Biomes: Make every region now). */
 	scaleChoices: Record<string, boolean>;
 	seed: number;
@@ -240,15 +243,10 @@ function makeWelcomeStep(): WizardStep {
 		},
 		canProceed: (ctx) => ctx.mapKinds.length > 0,
 		async onNext(ctx, plugin) {
+			// Only remembered here: the content is installed once the world
+			// folder is confirmed on the next step, so nothing is written to
+			// a folder the user hasn't agreed to yet (fresh-eyes F19).
 			plugin.settings.mapKinds = [...ctx.mapKinds];
-			// What the setup installs follows the map types picked (SP3):
-			// space only → space palettes, no biome notes or fantasy
-			// palettes, "Palette for new maps" on Space - Sector.
-			await plugin.applyKindContent({ fromSetup: true });
-			// Start the first map on a palette of a chosen map type.
-			if (!ctx.mapKinds.includes(plugin.getPaletteOrPresetKind(ctx.paletteName))) {
-				ctx.paletteName = defaultPaletteFor(plugin.settings);
-			}
 		},
 	};
 }
@@ -388,7 +386,20 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 				await ensureFolder(plugin.app, path);
 			}
 			await plugin.saveSettings();
-			// Create the note templates (hex, town) if they don't already exist
+			// The folder is confirmed: the stores may write now (F19), and
+			// the content below goes in once they're in.
+			plugin.releaseStartupWrites();
+			await plugin.storesStarted;
+			// What the setup installs follows the map types picked (SP3):
+			// space only → space palettes, no biome notes or fantasy
+			// palettes, "Palette for new maps" on Space - Sector. It goes in
+			// the folder just confirmed.
+			await plugin.applyKindContent({ fromSetup: true });
+			// Start the first map on a palette of a chosen map type.
+			if (!ctx.mapKinds.includes(plugin.getPaletteOrPresetKind(ctx.paletteName))) {
+				ctx.paletteName = defaultPaletteFor(plugin.settings);
+			}
+			// Create the note templates (hex and the linked-note ones) if they don't already exist
 			await plugin.ensureTemplates();
 		},
 	};
@@ -450,7 +461,9 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				ctx.generatorId = undefined;
 				ctx.generatorOptions = {};
 				ctx.scaleChoices = {};
-				setSize(s.size.cols, s.size.rows);
+				// A size the user typed is kept (critic C9); else the scale's own.
+				const size = sizeForScalePick(ctx.sizeChosen ? { cols: ctx.mapCols, rows: ctx.mapRows } : null, s.size);
+				setSize(size.cols, size.rows, false);
 				usePalette(scalePalette(s, undefined));
 				scaleCards.sync();
 				renderGenerators();
@@ -506,12 +519,13 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// once the field loses focus; a half-typed value waits. Blur / Enter
 			// commits (clamped) at once.
 			let sizeTimer: number | undefined;
-			const applySize = (committed: boolean) => {
+			const applySize = (committed: boolean, byUser = true) => {
 				const cols = sizeFromInput(colsInput.value, { min: 2, max: 200, fallback: 20, committed });
 				const rows = sizeFromInput(rowsInput.value, { min: 2, max: 200, fallback: 16, committed });
 				if (committed) { colsInput.value = String(cols); rowsInput.value = String(rows); }
 				const next = { cols: cols ?? ctx.mapCols, rows: rows ?? ctx.mapRows };
 				if (next.cols === ctx.mapCols && next.rows === ctx.mapRows) return;
+				if (byUser) ctx.sizeChosen = true;
 				ctx.mapCols = next.cols;
 				ctx.mapRows = next.rows;
 				updateCount();
@@ -531,14 +545,16 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				wheelStep(input, 2, 200, () => activeDocument.activeElement === input);
 			}
 			/** Set both fields and apply them (a scale picked, reset). */
-			function setSize(cols: number, rows: number): void {
+			function setSize(cols: number, rows: number, byUser: boolean): void {
 				colsInput.value = String(cols);
 				rowsInput.value = String(rows);
-				applySize(true);
+				applySize(true, byUser);
 			}
 			resetBtn.addEventListener("click", () => {
 				const s = wizardScale(ctx);
-				setSize(s?.size.cols ?? 20, s?.size.rows ?? 16);
+				// Back to the scale's size, which then follows the scale again.
+				ctx.sizeChosen = false;
+				setSize(s?.size.cols ?? 20, s?.size.rows ?? 16, false);
 			});
 
 			// Hex orientation
@@ -660,8 +676,11 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 						// A generator that wants its own palette (Orbits: Space - System).
 						const s = wizardScale(ctx);
 						if (s) usePalette(scalePalette(s, k.id));
-						renderGenerators();
-						refresh();
+						// The page stays where it was, the picked card in view (C8).
+						keepScroll(genList, () => {
+							renderGenerators();
+							refresh();
+						}, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
 					});
 				}
 				optsBox.empty();
@@ -953,6 +972,8 @@ export class SetupWizardView extends ItemView {
 	}
 
 	async onClose() {
+		// Setup put off or done: the stores go ahead either way (F19).
+		this.plugin.releaseStartupWrites();
 		this.contentEl.empty();
 	}
 
@@ -1018,7 +1039,9 @@ export class SetupWizardView extends ItemView {
 			nextBtn.addEventListener("click", () => void this.handleNext(nextBtn, backBtn));
 		}
 
-		// Footer: dismiss links (every step)
+		// Footer: dismiss links, until setup is done. The final step has
+		// nothing left to put off (fresh-eyes F11).
+		if (isFinal) return;
 		const footer = contentEl.createDiv({ cls: "duckmage-wizard-footer" });
 		const remindBtn = footer.createEl("button", {
 			text: "Remind me later",
@@ -1079,12 +1102,19 @@ export class SetupWizardView extends ItemView {
 	private async complete(openMap: boolean) {
 		this.plugin.settings.setupComplete = true;
 		await this.plugin.saveSettings();
-		if (openMap) {
-			const leaf = this.app.workspace.getLeaf("tab");
-			await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
-			// A blank map starts in the terrain picker; a generated one is shown as is.
-			if (!this.ctx.generatedWith) (leaf.view as HexMapView).openTerrainPicker();
+		const blank = !this.ctx.generatedWith;
+		const wizardLeaf = this.leaf;
+		if (!openMap) {
+			wizardLeaf.detach();
+			return;
 		}
-		this.leaf.detach();
+		const leaf = this.app.workspace.getLeaf("tab");
+		const opening = leaf.setViewState({ type: VIEW_TYPE_HEX_MAP, active: true });
+		// The wizard closes as the map opens, whatever the map does next
+		// (critic C16: the finished wizard stayed open as a tab).
+		wizardLeaf.detach();
+		await opening;
+		// A blank map starts in the terrain picker; a generated one is shown as is.
+		if (blank) (leaf.view as HexMapView).openTerrainPicker();
 	}
 }

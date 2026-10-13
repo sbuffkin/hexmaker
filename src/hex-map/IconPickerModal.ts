@@ -67,7 +67,8 @@ export class IconPickerModal extends HexmakerModal {
 
     // ── Icon grid ─────────────────────────────────────────────────────────
     const section = contentEl.createDiv({ cls: "duckmage-editor-section" });
-    const grid = section.createDiv({ cls: "duckmage-icon-picker" });
+    // Whole tiles only, names wrapped, not cut (fresh-eyes F6; CSS).
+    const grid = section.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-full" });
 
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
 

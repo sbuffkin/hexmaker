@@ -459,7 +459,7 @@ export function mountainQuantile(relief: string, flavor: "planet" | "overland"):
  */
 export function overlandDescription(terrains: TerrainColor[]): string {
   const r = planetRoles(terrains);
-  const tail = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.";
+  const tail = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge. It draws no rivers or roads.";
   if (!r) return `A region from noise. ${tail}`;
   const parts = [
     r.sea && "sea",

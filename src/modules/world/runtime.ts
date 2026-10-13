@@ -43,7 +43,7 @@ function generators(_plugin: HexmakerPlugin, { toPaths, procGrid }: GeneratorHel
       // Planet surface's noise generator under a world name, so world-only
       // users get a procedural map without seeing space options.
       mapKind: "world",
-      description: "A region from noise: sea, land and high ground from whatever terrains your palette has. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge.",
+      description: "A region from noise: sea, land and high ground from whatever terrains your palette has. One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge. It draws no rivers or roads.",
       describe: overlandDescription,
       source: "built-in",
       continuesNeighbours: true,

@@ -21,6 +21,7 @@ import { normalizeFolder } from "../utils";
 import { escapeRegex } from "../textUtils";
 import { oddsText } from "../ui/odds";
 import { renderSaveStatusLine } from "../ui/saveStatusLine";
+import { tableTitle } from "../encounterLinks";
 
 /** How the editor writes the die column: ranges are redone when weights or rows change. */
 export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
@@ -66,7 +67,7 @@ export class RandomTableEditorModal extends HexmakerModal {
   }
 
   async onOpen(): Promise<void> {
-    this.titleEl.setText(`Edit: ${this.file.basename}`);
+    this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`);
     const { contentEl } = this;
     contentEl.addClass("duckmage-table-editor");
 
@@ -153,7 +154,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       const newPath = dir + newName + ".md";
       try {
         await this.app.fileManager.renameFile(this.file, newPath);
-        this.titleEl.setText(`Edit: ${this.file.basename}`);
+        this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`);
         this.onSaved?.();
       } catch {
         nameInput.value = this.file.basename; // revert on error
@@ -322,6 +323,15 @@ export class RandomTableEditorModal extends HexmakerModal {
         });
         return;
       }
+      // Column headers, laid out like the rows (fresh-eyes F16 / C12: the
+      // weight column had no name).
+      const cols = rowsEl.createDiv({ cls: "duckmage-table-editor-row duckmage-table-editor-cols", attr: { "aria-hidden": "true" } });
+      dragGrip(cols, "duckmage-table-editor-drag-handle duckmage-table-editor-col-spacer");
+      if (table.dice > 0) cols.createSpan({ cls: "duckmage-table-editor-range", text: "Roll" });
+      cols.createSpan({ cls: "duckmage-table-editor-col-result", text: "Result" });
+      cols.createSpan({ cls: "duckmage-table-editor-weight duckmage-table-editor-col-weight", text: "Weight" });
+      cols.createSpan({ cls: "duckmage-odds-percent duckmage-table-editor-odds", text: "Odds" });
+      cols.createSpan({ cls: "duckmage-table-editor-del duckmage-table-editor-col-spacer", text: "×" });
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         const row = rowsEl.createDiv({ cls: "duckmage-table-editor-row" });
@@ -341,6 +351,7 @@ export class RandomTableEditorModal extends HexmakerModal {
         // Show [[path]] for link entries so the user can see and edit the link format
         resultInput.value = entry.isLink ? `[[${entry.result}]]` : entry.result;
         resultInput.placeholder = "Result…";
+        resultInput.setAttr("aria-label", "Result");
         resultInput.rows = 1;
         // Size to content immediately, then keep in sync as the user types
         window.requestAnimationFrame(() => autoResize(resultInput));
@@ -365,6 +376,7 @@ export class RandomTableEditorModal extends HexmakerModal {
         weightInput.min = "0";
         weightInput.step = "any";
         weightInput.title = "Weight (0 = never rolled)";
+        weightInput.setAttr("aria-label", "Weight");
         weightInput.addEventListener("input", () => {
           entries[i].weight = readWeight(weightInput.value);
           onWeightsChanged();
@@ -432,11 +444,17 @@ export class RandomTableEditorModal extends HexmakerModal {
       cls: "duckmage-table-editor-result",
     });
     newResult.placeholder = "New result…";
+    newResult.setAttr("aria-label", "New result");
     newResult.rows = 1;
 
-    const newWeight = addRow.createEl("input", {
+    // The weight box is labelled (fresh-eyes F16: a bare "1" beside the result).
+    const newWeightLabel = addRow.createEl("label", { cls: "duckmage-table-editor-add-weight" });
+    newWeightLabel.createSpan({ text: "Weight", cls: "duckmage-table-editor-add-weight-text" });
+
+    const newWeight = newWeightLabel.createEl("input", {
       type: "number",
       cls: "duckmage-table-editor-weight",
+      attr: { title: "Weight (0 = never rolled)" },
     });
     newWeight.value = "1";
     newWeight.min = "0";
@@ -706,6 +724,13 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     // No footer (owner Q5): × closes, and closing saves.
     this.makeDraggable();
+    // Typing on open goes to a new row, never the table's name (fresh-eyes
+    // C12: stray keys renamed the table). After Obsidian's own focus on
+    // open, which takes the first field.
+    newResult.focus();
+    window.setTimeout(() => {
+      if (newResult.isConnected && activeDocument.activeElement === nameInput) newResult.focus();
+    }, 0);
   }
 
   /** Sync entries ↔ notes in linkedFolder. Mutates entries in-place. */

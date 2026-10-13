@@ -35,7 +35,7 @@ import { SetupWizardView } from "./SetupWizardView";
 import type { BiomeStore } from "./overworld/BiomeStore";
 import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
-import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
+import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
 import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { ModuleStore, RefLinker } from "./modules/types";
@@ -120,7 +120,7 @@ import {
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
-import { DEFAULT_TOWN_TEMPLATE, fillNoteTemplate, hexTemplatePathFor, LOCATION_SECTIONS, noteTemplateFor, templatesFolderFor, townTemplatePathFor, withLocationLine } from "./noteTemplates";
+import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
@@ -180,6 +180,11 @@ export default class HexmakerPlugin extends Plugin {
   /** Undo/redo, one queue per map per work mode, for as long as the vault is open (WM6). */
   undoBook = new UndoBook<UndoItem>();
 
+  /** The palette and map stores have started (see startupWritesWait). */
+  storesStarted: Promise<void> = Promise.resolve();
+  /** Let the stores start writing now (the world folder is confirmed, or setup was put off). */
+  releaseStartupWrites: () => void = () => {};
+
   async onload() {
     await this.loadSettings();
     this.tableNotes = TableNotes.register(this);
@@ -212,7 +217,17 @@ export default class HexmakerPlugin extends Plugin {
       const storeReady = new Map(this.moduleStores.map((st) => [st, st.init()] as const));
       const moduleStoresReady = Promise.all(storeReady.values());
       void this.tableNotes.init();
-      const storesReady = this.paletteStore.init().then(() => this.mapStore.init());
+      // A fresh install with the setup wizard about to open: the stores'
+      // first writes (palette notes, the placeholder map's note) wait until
+      // the wizard confirms the world folder, or closes, or a map opens, so
+      // nothing appears in a folder the user hasn't agreed to (fresh-eyes F19).
+      const gate = startupWritesWait(this.settings, (p) => !!this.app.vault.getAbstractFileByPath(p));
+      this.releaseStartupWrites = gate.release;
+      // A fresh install has no older palettes to move into notes: its
+      // palettes are simply written, without the "now notes" notice.
+      if (gate.held) this.settings.palettesMigrated = true;
+      const storesReady = gate.wait.then(() => this.paletteStore.init()).then(() => this.mapStore.init());
+      this.storesStarted = storesReady;
       // Each module's one-time upgrades once its stores and the core's are in
       // (World maps, BC1: every overworld hex's biome in its Biome column).
       runAfterStoresReady(this, storesReady, this.moduleStores, storeReady);
@@ -2262,29 +2277,33 @@ export default class HexmakerPlugin extends Plugin {
 
   /**
    * Make sure the templates folder holds every plugin note template: the
-   * hex template (unless the user points templatePath elsewhere) and the
-   * town template. Existing files are never overwritten.
+   * hex template (unless the user points templatePath elsewhere) and each
+   * link section's note template. Existing files are never overwritten.
    */
   async ensureTemplates(): Promise<void> {
     await this.ensureHexTemplate();
-    await this.ensureTemplateFile(townTemplatePathFor(this.settings), DEFAULT_TOWN_TEMPLATE);
+    for (const section of Object.keys(LINK_NOTE_TEMPLATES)) {
+      const path = linkNoteTemplatePathFor(this.settings, section);
+      if (path) await this.ensureTemplateFile(path, LINK_NOTE_TEMPLATES[section].starter);
+    }
   }
 
   /**
-   * Starting text for a note made from a link section's "create new" (towns
-   * get the town template, written to the templates folder on first use;
-   * encounter tables get a table). `title` fills {{title}}.
+   * Starting text for a note made from a link section's "create new": the
+   * section's note template (LINK_NOTE_TEMPLATES, written to the templates
+   * folder on first use); encounter tables get a table. `title` fills {{title}}.
    */
   async newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> {
     if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
     // Made from a hex: a place says where it is (R3).
     const located = (content: string) =>
       fromHex && LOCATION_SECTIONS.includes(section) ? this.withHexLocation(content, fromHex) : content;
-    if (noteTemplateFor(section) !== "town") return located("");
-    const path = townTemplatePathFor(this.settings);
-    await this.ensureTemplateFile(path, DEFAULT_TOWN_TEMPLATE);
+    const tpl = linkNoteTemplate(section);
+    const path = linkNoteTemplatePathFor(this.settings, section);
+    if (!tpl || !path) return located("");
+    await this.ensureTemplateFile(path, tpl.starter);
     const file = this.app.vault.getAbstractFileByPath(path);
-    let template = DEFAULT_TOWN_TEMPLATE;
+    let template = tpl.starter;
     if (file instanceof TFile) {
       try {
         template = await this.app.vault.read(file);

@@ -57,3 +57,16 @@ export function wheelStep(input: WheelField, min: number, max: number, isFocused
 		input.dispatchEvent(new Event("change"));
 	}, { passive: false });
 }
+
+/**
+ * The size after another map scale is picked (Overland ↔ Biomes): the
+ * scale's own size, unless the user chose one (typed it, a preset): that
+ * is kept (critic C9: switching scale threw a typed 40 columns away). The
+ * size's reset button still goes back to the scale's size.
+ */
+export function sizeForScalePick(
+	chosen: { cols: number; rows: number } | null,
+	scaleSize: { cols: number; rows: number },
+): { cols: number; rows: number } {
+	return chosen ? { cols: chosen.cols, rows: chosen.rows } : { cols: scaleSize.cols, rows: scaleSize.rows };
+}

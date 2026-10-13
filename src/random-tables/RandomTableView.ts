@@ -50,6 +50,7 @@ import { Disclosure } from "../ui/disclosure";
 import { isDebugMode } from "../ui/debugMode";
 import { PlacedMenu } from "../ui/placedMenu";
 import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touchesList, type ListFolders } from "./listRefresh";
+import { tableTitle } from "../encounterLinks";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
 const MAP_MADE_KEY = "map-made:";
@@ -101,7 +102,7 @@ export class RandomTableView extends ItemView {
   }
   getDisplayText() {
     return this.activeFile
-      ? `Random tables · ${this.activeFile.basename}`
+      ? `Random tables · ${tableTitle(this.activeFile.path)}`
       : "Random tables";
   }
   getIcon() {
@@ -122,8 +123,7 @@ export class RandomTableView extends ItemView {
       if (file instanceof TFile) {
         if (this.isInWorkflowsFolder(file.path)) {
           this.viewMode = "workflows";
-          this.tablesBtn?.removeClass("is-active");
-          this.workflowsBtn?.addClass("is-active");
+          this.markModeTabs("workflows");
           this.loadList();
           await this.loadWorkflow(file);
         } else {
@@ -152,12 +152,13 @@ export class RandomTableView extends ItemView {
     const modeTabs = leftCol.createDiv({ cls: "duckmage-rt-mode-tabs" });
     this.tablesBtn = modeTabs.createEl("button", {
       text: "Tables",
-      cls: "duckmage-rt-mode-tab is-active",
+      cls: "duckmage-rt-mode-tab",
     });
     this.workflowsBtn = modeTabs.createEl("button", {
       text: "Workflows",
       cls: "duckmage-rt-mode-tab",
     });
+    this.markModeTabs(this.viewMode);
     this.tablesBtn.addEventListener("click", () => this.setViewMode("tables"));
     this.workflowsBtn.addEventListener("click", () =>
       this.setViewMode("workflows"),
@@ -590,10 +591,17 @@ export class RandomTableView extends ItemView {
     return !!folder && filePath.startsWith(folder + "/");
   }
 
+  /** The shown mode's tab is the selected one (is-active + aria-pressed). */
+  private markModeTabs(mode: "tables" | "workflows"): void {
+    for (const [btn, m] of [[this.tablesBtn, "tables"], [this.workflowsBtn, "workflows"]] as const) {
+      btn?.toggleClass("is-active", mode === m);
+      btn?.setAttr("aria-pressed", String(mode === m));
+    }
+  }
+
   private setViewMode(mode: "tables" | "workflows"): void {
     this.viewMode = mode;
-    this.tablesBtn?.toggleClass("is-active", mode === "tables");
-    this.workflowsBtn?.toggleClass("is-active", mode === "workflows");
+    this.markModeTabs(mode);
     if (this.tableFooterEl) {
       if (mode === "tables") this.tableFooterEl.show();
       else this.tableFooterEl.hide();
@@ -959,7 +967,7 @@ export class RandomTableView extends ItemView {
       cls: "duckmage-rt-detail-header",
     });
     header.createEl("h3", {
-      text: file.basename,
+      text: tableTitle(file.path),
       cls: "duckmage-rt-detail-title",
     });
 

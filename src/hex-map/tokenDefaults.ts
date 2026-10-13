@@ -86,17 +86,29 @@ export function tokenGroupOffsets(n: number): [number, number][] {
 }
 
 /**
- * Where a token's name label goes, as unit offsets like tokenGroupOffsets
- * plus a line number. A lone token's name sits under it; tokens sharing a
- * hex list their names one per line under the whole group, since names
- * side by side overlap.
+ * Which side of its token a name goes: away from the hex's coordinate, so
+ * the name never hides it (fresh-eyes F4: the name sat on the hex number
+ * with coordinates at the bottom, the default). Coordinates at the bottom:
+ * above the token; at the top or middle: below it.
  */
-export function tokenNamePlacement(offsets: [number, number][], i: number): { dx: number; dy: number; line: number } {
+export function tokenNameSide(coordPlacement: "top" | "middle" | "bottom" | undefined): "above" | "below" {
+  return (coordPlacement ?? "bottom") === "bottom" ? "above" : "below";
+}
+
+/**
+ * Where a token's name label goes, as unit offsets like tokenGroupOffsets
+ * plus a line number. A lone token's name sits under it (or over it, with
+ * side "above"); tokens sharing a hex list their names one per line under
+ * (over) the whole group, since names side by side overlap.
+ */
+export function tokenNamePlacement(offsets: [number, number][], i: number, side: "above" | "below" = "below"): { dx: number; dy: number; line: number } {
   if (offsets.length <= 1) {
     const [dx, dy] = offsets[0] ?? [0, 0];
     return { dx, dy, line: 0 };
   }
-  return { dx: 0, dy: Math.max(...offsets.map(([, dy]) => dy)), line: i };
+  const ys = offsets.map(([, dy]) => dy);
+  if (side === "above") return { dx: 0, dy: Math.min(...ys), line: offsets.length - 1 - i };
+  return { dx: 0, dy: Math.max(...ys), line: i };
 }
 
 /** The largest size among tokens sharing a hex (where their name list starts). */

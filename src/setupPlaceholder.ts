@@ -38,3 +38,24 @@ export function isUnusedPlaceholderMap(
   if (storedMapPaths(map).length > 0 || map.parent || map.world || map.backgroundImage) return false;
   return usage.folderEntries.every((n) => n === `_${PLACEHOLDER_MAP_NAME}.md`);
 }
+
+/**
+ * When the stores may start (and so write their first notes). A fresh
+ * install that is about to show the setup wizard, with no world folder on
+ * disk yet, waits until `release()`: the wizard's folder step (once the
+ * user confirms the folder), the wizard closing for any reason, or a map
+ * view opening. Before this, the palette notes and the placeholder map's
+ * note appeared in `world/` while the wizard was still asking where the
+ * world should live (fresh-eyes F19). Anything else starts at once.
+ */
+export function startupWritesWait(
+  settings: { setupComplete?: boolean; setupDismissed?: boolean; worldFolder?: string },
+  exists: (path: string) => boolean,
+): { wait: Promise<void>; release: () => void; held: boolean } {
+  const world = (settings.worldFolder ?? "").trim().replace(/^\/+|\/+$/g, "") || "world";
+  const fresh = !settings.setupComplete && !settings.setupDismissed && !exists(world);
+  if (!fresh) return { wait: Promise.resolve(), release: () => {}, held: false };
+  let release = () => {};
+  const wait = new Promise<void>((resolve) => { release = resolve; });
+  return { wait, release: () => release(), held: true };
+}

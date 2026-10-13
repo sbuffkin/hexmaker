@@ -99,8 +99,8 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 		expect(toolModeLabel({ mode: "path", erasing: true })).toMatch(/^Erasing paths: click a path to split it/);
 		expect(toolModeLabel({ mode: "path", erasing: true, pathTypeName: "Road" })).toBe("Erasing paths: click a Road to split it there");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNote: "switch to River to edit Glass River" })).toMatch(/ · switch to River to edit Glass River$/);
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathDrawing: true, pathSelected: "King's Road" })).toBe("King's Road: click to add (auto-routes) · drag a point to move it · Esc to finish");
-		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · drag a point to move it · Esc to finish · not next to the end, so the gap was routed");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathAuto: true, pathDrawing: true, pathSelected: "King's Road" })).toBe("King's Road: click to add (auto-routes) · drag a point to move it · click the end again or Done to finish");
+		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathDrawing: true, pathNote: "not next to the end, so the gap was routed" })).toBe("New Road: click to add (hex by hex) · drag a point to move it · click the end again or Done to finish · not next to the end, so the gap was routed");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathSelected: "King's Road", pathSummary: "Road, 2 forks" })).toBe("King's Road (Road, 2 forks): drag to reshape · right-click a point to delete it · click an end to continue, the line to fork");
 		expect(toolModeLabel({ mode: "path", erasing: false, pathTypeName: "Road", pathNew: true })).toBe("New Road: click where it starts");
 		expect(toolModeLabel({ mode: "regionLink", erasing: false, regionPath: "world/regions/Kerrigan.md" })).toBe("Painting area: Kerrigan");
@@ -162,9 +162,10 @@ describe("Path tool upkeep (anchored paths)", () => {
 		expect(toolMethod("drawTarget")).not.toMatch(/commit\(/);
 	});
 
-	it("Esc steps out one level (drag → branch → selection) before leaving the tool; Backspace deletes an anchor", () => {
+	it("Esc cancels a drag, else leaves the tool as it does every tool (fresh-eyes F13); Backspace deletes an anchor", () => {
 		expect(viewSrc).toMatch(/this\.drawingMode === "path" && !this\.isErasingMode && this\.pathTool\.escape\(\)\) return false;\s*this\.exitCurrentMode\(\);/);
-		expect(toolMethod("escape")).toMatch(/this\.drag[\s\S]*cancelDrag[\s\S]*this\.done\(\)/);
+		expect(toolMethod("escape")).toMatch(/this\.drag[\s\S]*cancelDrag/);
+		expect(toolMethod("escape")).not.toMatch(/this\.done\(\)/);
 		expect(viewSrc).toMatch(/for \(const key of \["Backspace", "Delete"\]\)[\s\S]{0,200}this\.pathTool\.deleteKey\(\)/);
 	});
 
