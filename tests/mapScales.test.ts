@@ -145,8 +145,9 @@ describe("grid size: mouse wheel and reset", () => {
 	it("the wizard wires the wheel to both size fields, resets to the scale's size, and a scale sets it", () => {
 		const src = readFileSync(path.join(process.cwd(), "src", "SetupWizardView.ts"), "utf8").replace(/\r\n/g, "\n");
 		expect(src).toMatch(/for \(const input of \[colsInput, rowsInput\]\) \{[\s\S]*?wheelStep\(input, 2, 200,/);
-		expect(src).toMatch(/resetBtn\.addEventListener\("click", \(\) => \{\n\s+const s = wizardScale\(ctx\);\n\s+setSize\(s\?\.size\.cols/);
-		expect(src).toMatch(/const pickScale = [\s\S]*?setSize\(s\.size\.cols, s\.size\.rows\);/);
+		expect(src).toMatch(/resetBtn\.addEventListener\("click", \(\) => \{\n\s+const s = wizardScale\(ctx\);[\s\S]*?setSize\(s\?\.size\.cols/);
+		// A scale sets the size, unless the user typed one (critic C9: kept).
+		expect(src).toMatch(/const pickScale = [\s\S]*?sizeForScalePick\([^;]*, s\.size\);\s*setSize\(size\.cols, size\.rows, false\);/);
 		expect(src).toContain(`placeMap.place("Wizard.mapScale", scaleRow)`);
 		expect(src).toContain(`placeMap.place("Wizard.gridSizeReset", resetBtn)`);
 	});

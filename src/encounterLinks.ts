@@ -28,6 +28,15 @@ const KIND_FOLDERS = new Set(["encounters", "descriptions", "description", "weat
  * wins; a terrain table keeps its kind ("grass encounters"), since a bare
  * "grass" could be the description table too.
  */
+/**
+ * A table's title, wherever it is shown: the roll dialog, the table editor,
+ * the roller view. The same rule as its links (fresh-eyes F21: the link said
+ * "mixed forest heavy encounters" and the table it opened "mixed forest heavy").
+ */
+export function tableTitle(path: string): string {
+  return linkDisplayName(path.split("|").join(" "));
+}
+
 export function linkDisplayName(link: string): string {
   const [target, alias] = link.split("|");
   if (alias?.trim()) return alias.trim();

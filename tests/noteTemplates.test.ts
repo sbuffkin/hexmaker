@@ -5,6 +5,9 @@ import {
 	DEFAULT_TOWN_TEMPLATE,
 	fillNoteTemplate,
 	hexTemplatePathFor,
+	LINK_NOTE_TEMPLATES,
+	linkNoteTemplate,
+	linkNoteTemplatePathFor,
 	noteTemplateFor,
 	templatesFolderFor,
 	townTemplatePathFor,
@@ -39,9 +42,27 @@ describe("templates folder (PA3)", () => {
 		expect(fillNoteTemplate(DEFAULT_TOWN_TEMPLATE, "Gullmouth")).toMatch(/^# Gullmouth\n/);
 	});
 
-	it("only Towns get a note template from the link sections", () => {
+	it("every place-like link section gets its own note template, the same way (F17)", () => {
 		expect(noteTemplateFor("Towns")).toBe("town");
-		for (const s of ["Dungeons", "Features", "Quests", "Factions", "Encounters Table"]) expect(noteTemplateFor(s)).toBeNull();
+		expect(noteTemplateFor("Dungeons")).toBe("dungeon");
+		expect(noteTemplateFor("features")).toBe("feature");
+		expect(noteTemplateFor("Quests")).toBe("quest");
+		expect(noteTemplateFor("Factions")).toBe("faction");
+		// A new encounter table is a table, not a note template.
+		expect(noteTemplateFor("Encounters Table")).toBeNull();
+		expect(linkNoteTemplatePathFor({ worldFolder: "w" }, "Dungeons")).toBe("w/templates/dungeon.md");
+		expect(linkNoteTemplatePathFor({ worldFolder: "w", templatesFolder: "T" }, "Towns")).toBe("T/town.md");
+		expect(linkNoteTemplatePathFor({ worldFolder: "w" }, "Encounters Table")).toBeNull();
+		for (const [section, t] of Object.entries(LINK_NOTE_TEMPLATES)) {
+			expect(fillNoteTemplate(t.starter, "X")).toMatch(/^# X\n/);
+			expect(t.starter).not.toMatch(/^###/m);
+			expect(linkNoteTemplate(section)).toBe(t);
+		}
+		// No branch on a section name: the plugin looks the template up.
+		const plugin = readFileSync("src/HexmakerPlugin.ts", "utf8");
+		const body = plugin.slice(plugin.indexOf("async newLinkedNoteContent("), plugin.indexOf("withHexLocation(content: string"));
+		expect(body).toContain("linkNoteTemplate(section)");
+		expect(body).not.toMatch(/"Towns"|"Dungeons"/);
 	});
 
 	it("notes in the templates folder are never offered for linking", () => {

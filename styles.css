@@ -1704,6 +1704,45 @@ input.duckmage-input-error {
     max-width: 54px;
 }
 
+/* The Paint icon picker: whole tiles only (fresh-eyes F6: names cut to
+   "evergree…" and a half-hidden last row took a click). Fixed-size tiles
+   in a grid whose height is a whole number of rows, snapping row by row
+   as it scrolls, so no row is ever cut at the edge; names wrap like the
+   token picker's (full name on hover). */
+.duckmage-icon-picker.duckmage-icon-picker-full {
+    --duckmage-icon-tile-w: 88px;
+    --duckmage-icon-tile-h: 86px;
+    --duckmage-icon-tile-gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--duckmage-icon-tile-w));
+    grid-auto-rows: var(--duckmage-icon-tile-h);
+    gap: var(--duckmage-icon-tile-gap);
+    height: calc(5 * var(--duckmage-icon-tile-h) + 4 * var(--duckmage-icon-tile-gap));
+    max-height: none;
+    padding: 0;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+}
+.duckmage-icon-picker-full .duckmage-icon-option {
+    width: var(--duckmage-icon-tile-w);
+    min-width: 0;
+    height: var(--duckmage-icon-tile-h);
+    box-sizing: border-box;
+    justify-content: flex-start;
+    scroll-snap-align: start;
+}
+.duckmage-icon-picker-full .duckmage-icon-option-name {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+    text-overflow: clip;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
 /* Selected state */
 .duckmage-icon-option.is-selected {
     border-color: var(--interactive-accent);
@@ -1903,13 +1942,14 @@ input.duckmage-input-error {
     width: 4.5em;
 }
 
+/* The list grows to its content: no scroller inside the scrolling form
+   (fresh-eyes F8 / critic C8: biome generators were missed in a 15em
+   box, and the picked card scrolled out of sight). */
 .duckmage-setup-generators {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(12em, 1fr));
     gap: 0.4em;
     width: 100%;
-    max-height: 15em;
-    overflow-y: auto;
 }
 
 .duckmage-setup-gen {
@@ -3712,6 +3752,31 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 .duckmage-table-editor-weight {
     width: 64px;
 }
+/* Column headers above the entries: laid out like a row. */
+.duckmage-table-editor-cols {
+    align-items: baseline;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-table-editor-cols .duckmage-table-editor-range {
+    font-size: inherit;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-result {
+    flex: 1;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-weight {
+    flex-shrink: 0;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-spacer {
+    visibility: hidden;
+}
+.duckmage-table-editor-add-weight {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
 .duckmage-table-editor-del {
     background: none;
     border: none;
@@ -3731,6 +3796,18 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     color: var(--text-error);
     font-size: 0.85em;
     margin-top: 4px;
+}
+/* A problem with one form field, said under it (src/ui/fieldError.ts). */
+.duckmage-field-error {
+    flex-basis: 100%;
+    color: var(--text-error);
+    font-size: var(--font-ui-smaller);
+    margin-top: 4px;
+}
+input.duckmage-field-invalid,
+input.duckmage-field-invalid:focus {
+    border-color: var(--text-error);
+    box-shadow: 0 0 0 1px var(--text-error);
 }
 .duckmage-table-editor-warning,
 .duckmage-rt-banner {
@@ -4286,20 +4363,18 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     padding: 4px 8px;
     border-bottom: 1px solid var(--background-modifier-border);
 }
-.duckmage-rt-mode-tab {
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 4px;
+/* Same look as the icon pickers' pack tabs: the shown mode has the accent
+   fill. (The old plain style lost to Obsidian's button fill, so the mode
+   NOT shown looked selected: fresh-eyes F12.) */
+.duckmage-rt-mode-tabs .duckmage-rt-mode-tab {
     padding: 2px 10px;
     font-size: 0.85em;
-    color: var(--text-muted);
+    height: auto;
     cursor: pointer;
-    box-shadow: none;
 }
-.duckmage-rt-mode-tab.is-active {
-    border-color: var(--background-modifier-border);
-    color: var(--text-normal);
-    background: var(--background-secondary);
+.duckmage-rt-mode-tabs .duckmage-rt-mode-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
 }
 
 /* Workflow list item */
@@ -6453,7 +6528,10 @@ button.duckmage-wfc-library-tab.is-active {
     color: var(--text-muted);
 }
 
+/* Stays in view beside a long generator list. */
 .duckmage-wizard-generator-preview {
+    position: sticky;
+    top: 0;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
@@ -7561,6 +7639,11 @@ button.duckmage-terrain-legend-chip {
     margin-right: 0.25em;
     border-radius: 50%;
     background: var(--token-color, #4a90e2);
+}
+/* Above the token instead, away from coordinates at the bottom (fresh-eyes
+   F4: the name hid the hex number); later lines stack upward. */
+.duckmage-token-name.is-above {
+    transform: translate(-50%, calc(-100% - var(--duckmage-token-name-drop, 1.47em) - var(--duckmage-token-name-line, 0) * 1.15em));
 }
 .duckmage-token-name-sm { --duckmage-token-name-drop: 1.13em; }
 .duckmage-token-name-md { --duckmage-token-name-drop: 1.47em; }

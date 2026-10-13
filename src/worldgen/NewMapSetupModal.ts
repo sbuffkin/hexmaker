@@ -28,7 +28,9 @@ import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "../ui
 import { NEW_MAP_TUNING_ID } from "../wizardText";
 import { SIZE_PRESETS, type SizePreset } from "./sizePresets";
 import { NO_LEDGERS, type Ledgers } from "../arrival/eventsLedger";
-import { LIVE_PREVIEW_DELAY_MS, sizeFromInput } from "../sizeInput";
+import { LIVE_PREVIEW_DELAY_MS, sizeForScalePick, sizeFromInput } from "../sizeInput";
+import { showFieldError } from "../ui/fieldError";
+import { keepScroll } from "../ui/keepScroll";
 import { Disclosure } from "../ui/disclosure";
 import { makeScrubbable } from "../ui/scrub";
 import { groupId } from "../ui/placeGroup";
@@ -116,6 +118,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private context: GenerationContext | undefined;
   /** "Next to" placement in a world of neighbouring regions (top-level maps). */
   private placement: NewRegion | undefined;
+  /** The user picked the size (typed, a preset): another scale keeps it (critic C9). */
+  private sizeChosen = false;
   /** "Use for new submaps of <terrain> hexes" checkboxes, one per option row. */
   private remember = { palette: false, size: false, generator: false, base: false };
   private stopKeepInViewport?: () => void;
@@ -128,6 +132,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private seaFromNeighbour = false;
   /** The folder name (slug) to create the map under; set by render(). */
   private folderSlug: () => string = () => "";
+  /** The Name field: a problem with the name is said there (critic C10). */
+  private nameInputEl: HTMLInputElement | undefined;
   /** Top-level maps (not placed next to another): where numbering starts,
    *  the stagger, and an optional background image (under "More"). */
   private originX = 0;
@@ -265,6 +271,7 @@ export class NewMapSetupModal extends HexmakerModal {
         )
       : (this.prefill?.name ?? "");
     nameInput.placeholder = "Map name";
+    this.nameInputEl = nameInput;
     selectAllOnFocus(nameInput);
     // Folder name (slug): follows the name until edited in "More".
     const takenSlugs = this.plugin.settings.maps.map((m) => m.name);
@@ -324,6 +331,7 @@ export class NewMapSetupModal extends HexmakerModal {
     for (const p of presets) {
       const b = presetBox.createEl("button", { text: p.label, attr: { title: `${p.cols} × ${p.rows}` } });
       b.addEventListener("click", () => {
+        this.sizeChosen = true;
         this.cols = p.cols; this.rows = p.rows;
         colsInput.value = String(p.cols); rowsInput.value = String(p.rows);
         syncPresetBtns();
@@ -339,6 +347,7 @@ export class NewMapSetupModal extends HexmakerModal {
       const cols = sizeFromInput(colsInput.value, { min: 1, max: 200, fallback: 1, committed });
       const rows = sizeFromInput(rowsInput.value, { min: 1, max: 200, fallback: 1, committed });
       if (cols === undefined && rows === undefined) return;
+      if ((cols ?? this.cols) !== this.cols || (rows ?? this.rows) !== this.rows) this.sizeChosen = true;
       this.cols = cols ?? this.cols;
       this.rows = rows ?? this.rows;
       syncPresetBtns();
@@ -382,10 +391,11 @@ export class NewMapSetupModal extends HexmakerModal {
       this.pickedKind = false;
       this.options = {};
       this.scaleChoices = {};
-      this.cols = s.size.cols;
-      this.rows = s.size.rows;
-      colsInput.value = String(s.size.cols);
-      rowsInput.value = String(s.size.rows);
+      const size = sizeForScalePick(this.sizeChosen ? { cols: this.cols, rows: this.rows } : null, s.size);
+      this.cols = size.cols;
+      this.rows = size.rows;
+      colsInput.value = String(size.cols);
+      rowsInput.value = String(size.rows);
       syncPresetBtns();
       usePalette(scalePalette(s, undefined));
       scaleCards?.sync();
@@ -546,10 +556,22 @@ export class NewMapSetupModal extends HexmakerModal {
       const bgEl = disclosure.target(groupId(["NewMap.bgPick", "NewMap.bgClear", "NewMapSetup.backgroundImagePicker"]), form);
       if (bgEl) this.renderBackgroundRow(bgEl);
       // Next to a map, its neighbour decides the numbering and stagger.
+      // The locked fields show what the neighbour decided, as the summary
+      // does (fresh-eyes F7: they kept saying 0, 0 beside "Hexes 18, 0 to …").
       lockMore = (locked) => {
-        if (xIn) xIn.disabled = locked;
-        if (yIn) yIn.disabled = locked;
-        if (stagSel) stagSel.disabled = locked;
+        const p = locked ? this.placement : undefined;
+        if (xIn) {
+          xIn.disabled = locked;
+          xIn.value = String(p ? p.offset.x : this.originX);
+        }
+        if (yIn) {
+          yIn.disabled = locked;
+          yIn.value = String(p ? p.offset.y : this.originY);
+        }
+        if (stagSel) {
+          stagSel.disabled = locked;
+          stagSel.value = p ? p.stagger : this.stagger;
+        }
       };
     }
 
@@ -653,8 +675,8 @@ export class NewMapSetupModal extends HexmakerModal {
           card.createDiv({
             cls: `duckmage-setup-gen-seam${k.continuesNeighbours ? " is-continues" : ""}`,
             text: k.continuesNeighbours
-              ? `Continues ${anchor ?? "the neighbour"}'s edge`
-              : `Ignores ${anchor ?? "the neighbour"}'s edge`,
+              ? `Continues ${anchor ? this.plugin.mapLabel(anchor) : "the neighbour"}'s edge`
+              : `Ignores ${anchor ? this.plugin.mapLabel(anchor) : "the neighbour"}'s edge`,
           });
         }
         card.addEventListener("click", () => {
@@ -665,9 +687,12 @@ export class NewMapSetupModal extends HexmakerModal {
           const s = this.activeScale();
           const palette = paletteSelect.value;
           if (s) usePalette(scalePalette(s, k.id));
-          renderGenerators();
-          if (paletteSelect.value !== palette) renderBase();
-          refresh();
+          // The form stays where it was, the picked card in view (C8).
+          keepScroll(genList, () => {
+            renderGenerators();
+            if (paletteSelect.value !== palette) renderBase();
+            refresh();
+          }, () => genList.querySelector<HTMLElement>(".duckmage-setup-gen.is-active"));
         });
       }
       const hidden = pool.length - fitting.length;
@@ -717,7 +742,7 @@ export class NewMapSetupModal extends HexmakerModal {
         // A saved choice this palette doesn't offer (a star it hasn't got).
         if (sel.selectedIndex < 0) sel.value = opt.default;
         const hint = opt.key === "sea" && seaHint && this.seaFromNeighbour
-          ? r.createDiv({ cls: "setting-item-description duckmage-setup-sea-hint", text: neighbourSeaText(seaHint, anchor ?? "the neighbouring map") })
+          ? r.createDiv({ cls: "setting-item-description duckmage-setup-sea-hint", text: neighbourSeaText(seaHint, anchor ? this.plugin.mapLabel(anchor) : "the neighbouring map") })
           : undefined;
         sel.addEventListener("change", () => {
           this.options[opt.key] = sel.value;
@@ -801,7 +826,8 @@ export class NewMapSetupModal extends HexmakerModal {
       }
       rerollBtn.toggle(!!kind && kind.id !== BLANK_ID);
       const shadow = this.shadow?.size ? this.shadow : undefined;
-      const anchor = this.placement?.anchor ?? "the neighbouring map";
+      // The map's name, not its slug (fresh-eyes F20).
+      const anchor = this.placement?.anchor ? this.plugin.mapLabel(this.placement.anchor) : "the neighbouring map";
       seamNote.setText(!shadow ? "" : !kind || kind.id === BLANK_ID
         ? `Faded hexes: ${anchor}'s edge, where this map joins it.`
         : kind.continuesNeighbours
@@ -842,6 +868,12 @@ export class NewMapSetupModal extends HexmakerModal {
     disclosure.toEnd();
     nameInput.focus();
     nameInput.select();
+  }
+
+  /** A problem with the map's name, said at the Name field (scrolled to and focused). */
+  private nameProblem(message: string): void {
+    if (this.nameInputEl?.isConnected) showFieldError(this.nameInputEl, message);
+    else new Notice(message);
   }
 
   /**
@@ -995,6 +1027,11 @@ export class NewMapSetupModal extends HexmakerModal {
     openGenerator: boolean,
     ...buttons: HTMLButtonElement[]
   ): Promise<void> {
+    // No name: say so at the field, before any work (critic C10).
+    if (!rawName.trim()) {
+      this.nameProblem("Enter a map name.");
+      return;
+    }
     const kind = this.kind();
     const terrains = this.terrains(paletteName);
     let outcome: GenerateOutcome | undefined;
@@ -1034,7 +1071,7 @@ export class NewMapSetupModal extends HexmakerModal {
       },
     );
     if ("error" in result) {
-      new Notice(result.error);
+      this.nameProblem(result.error);
       for (const b of buttons) b.disabled = false;
       goBtn.setText(label);
       return;

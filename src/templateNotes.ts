@@ -31,7 +31,7 @@ export function templateNoteRules(
   const folders: string[] = [];
   const wf = trimSlashes(settings.workflowsFolder ?? "");
   folders.push(wf ? `${wf}/templates` : "templates");
-  // The plugin's own templates folder (PA3: hex and town templates).
+  // The plugin's own templates folder (PA3: the hex and link-section note templates).
   folders.push(templatesFolderFor(settings));
   for (const f of [...extraFolders, ...dataFolders]) {
     const t = trimSlashes(f ?? "");

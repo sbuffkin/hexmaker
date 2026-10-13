@@ -178,6 +178,15 @@ export function neighbourButton(
   return { action: { kind: "new", grows: opts.inGrid === false }, plus: true, disabled: false, title };
 }
 
+/**
+ * A d-pad button's text: its direction arrow, with a plain "+" after it
+ * when it makes new land there ("▲+"). Every button says which way it goes
+ * (fresh-eyes F18 / C11: "◀ + + +" didn't say which "+" was which side).
+ */
+export function padButtonText(glyph: string, plus: boolean): string {
+  return plus ? `${glyph}+` : glyph;
+}
+
 /** The four sides of a world-grid map, always in this order (a d-pad: ◀ ▲ ▼ ▶). */
 export const PAD_SIDES = [
   { side: "west", glyph: "◀" },

@@ -307,6 +307,9 @@ async function freshExtra(ctx) {
   const out = [];
   const st = ctx.state;
   out.push({ check: "F1-wizard", ok: st.wizardOpen > 0, detail: `setup wizard leaves: ${st.wizardOpen}` });
+  // F19: nothing is written while the wizard still asks where the world goes.
+  const held = await ctx.ev(() => window.__smoke.held ?? null);
+  out.push({ check: "F1-nothing-before-folder", ok: !!held?.held && held.writes.length === 0, detail: held ? `held; wrote ${held.writes.join(", ") || "nothing"} meanwhile` : "stores were not held" });
   // Create a map + paint through the API: only the map note may be written.
   const r = await ctx.ev((id) => (async () => {
     const app = window.app, p = app.plugins.plugins[id];

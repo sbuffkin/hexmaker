@@ -5,8 +5,10 @@
  *
  * - Hex: a `templatePath` the user already set always wins (existing setups
  *   keep working); blank = `hex.md` in the templates folder.
- * - Town: `town.md` in the templates folder, written from the built-in
- *   default the first time a town note is made (or by "Generate folders").
+ * - Link-section notes (towns, dungeons, features, quests, factions): one
+ *   template per section in the templates folder (`town.md`, `dungeon.md`…),
+ *   written from its built-in starter the first time such a note is made (or
+ *   by "Generate folders"). Every section works the same way: LINK_NOTE_TEMPLATES.
  * - Workflow templates stay beside their workflows ({workflowsFolder}/
  *   templates): each belongs to one workflow, which records its path.
  *
@@ -61,6 +63,68 @@ export function townTemplatePathFor(s: TemplateSettings): string {
   return `${templatesFolderFor(s)}/${TOWN_TEMPLATE_FILE}`;
 }
 
+/** A link section's note template: its file in the templates folder and the built-in starter written there. */
+export interface LinkNoteTemplate {
+  file: string;
+  starter: string;
+}
+
+/**
+ * Every link section whose new notes start from a template, one entry each
+ * (fresh-eyes F17: a dungeon note started blank while a town got headings).
+ * The starters are a few open headings, nothing prescriptive; the user edits
+ * the files. Encounter tables aren't here: a new one is a table.
+ */
+export const LINK_NOTE_TEMPLATES: Readonly<Record<string, LinkNoteTemplate>> = {
+  Towns: { file: TOWN_TEMPLATE_FILE, starter: DEFAULT_TOWN_TEMPLATE },
+  Dungeons: { file: "dungeon.md", starter: `# {{title}}
+
+## Description
+
+## Rooms
+
+## Inhabitants
+
+## Treasure
+
+## Rumours
+` },
+  Features: { file: "feature.md", starter: `# {{title}}
+
+## Description
+
+## Rumours
+` },
+  Quests: { file: "quest.md", starter: `# {{title}}
+
+## Goal
+
+## Leads
+
+## Reward
+` },
+  Factions: { file: "faction.md", starter: `# {{title}}
+
+## Goals
+
+## Members
+
+## Rumours
+` },
+};
+
+/** The template a new note in link section `section` starts from (any case), or null. */
+export function linkNoteTemplate(section: string): LinkNoteTemplate | null {
+  const key = Object.keys(LINK_NOTE_TEMPLATES).find((k) => k.toLowerCase() === section.toLowerCase());
+  return key ? LINK_NOTE_TEMPLATES[key] : null;
+}
+
+/** Where link section `section`'s note template is, or null when it has none. */
+export function linkNoteTemplatePathFor(s: TemplateSettings, section: string): string | null {
+  const t = linkNoteTemplate(section);
+  return t ? `${templatesFolderFor(s)}/${t.file}` : null;
+}
+
 /** Fill a note template's `{{title}}` placeholders. */
 export function fillNoteTemplate(template: string, title: string): string {
   return template.replace(/\{\{title\}\}/g, title);
@@ -97,7 +161,7 @@ export function withLocationLine(content: string, hexPath: string, label: string
   return lines.join(eol);
 }
 
-/** Which note template a new note in this link section starts from, if any. */
-export function noteTemplateFor(section: string): "town" | null {
-  return section === "Towns" ? "town" : null;
+/** Which note template a new note in this link section starts from (its file name without .md), if any. */
+export function noteTemplateFor(section: string): string | null {
+  return linkNoteTemplate(section)?.file.replace(/.md$/i, "") ?? null;
 }

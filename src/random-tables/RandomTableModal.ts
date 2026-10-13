@@ -11,6 +11,7 @@ import { RandomTableEditorModal } from "./RandomTableEditorModal";
 import { groupTableFiles } from "./tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "./resolve";
 import { withRepairHint } from "../ui/repairHint";
+import { tableTitle } from "../encounterLinks";
 
 /**
  * "Add to this hex" target for a roll made from a hex (P2): which sections
@@ -128,11 +129,11 @@ export class RandomTableModal extends HexmakerModal {
     // The user's tables first; any the map made (when not filtered out) grouped after them.
     const { own, mapMade } = groupTableFiles(this.app, files);
     for (const file of own) {
-      select.createEl("option", { value: file.path, text: file.basename });
+      select.createEl("option", { value: file.path, text: tableTitle(file.path) });
     }
     if (mapMade.length) {
       const group = select.createEl("optgroup", { attr: { label: MAP_MADE_GROUP_LABEL } });
-      for (const file of mapMade) group.createEl("option", { value: file.path, text: file.basename });
+      for (const file of mapMade) group.createEl("option", { value: file.path, text: tableTitle(file.path) });
     }
 
     // "Open in roller" link — hidden until a table is selected
@@ -194,7 +195,7 @@ export class RandomTableModal extends HexmakerModal {
     const headerRow = contentEl.createDiv({
       cls: "duckmage-roll-modal-header-row",
     });
-    headerRow.createEl("strong", { text: file.basename });
+    headerRow.createEl("strong", { text: tableTitle(file.path) });
     const editLink = headerRow.createEl("a", {
       text: "Edit",
       cls: "duckmage-roll-modal-edit-link",

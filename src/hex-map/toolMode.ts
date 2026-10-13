@@ -90,7 +90,7 @@ export function toolModeLabel(s: ToolModeState): string | null {
       if (s.pathNew) return `New ${type}: click where it starts`;
       if (s.pathDrawing) {
         const name = s.pathSelected ?? `New ${type}`;
-        return `${name}: click to add (${how}) · drag a point to move it · Esc to finish${note}`;
+        return `${name}: click to add (${how}) · drag a point to move it · click the end again or Done to finish${note}`;
       }
       if (s.pathSelected) {
         const what = s.pathSummary && s.pathSummary !== s.pathSelected ? ` (${s.pathSummary})` : "";

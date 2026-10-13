@@ -264,4 +264,22 @@ describe("hex-by-hex press-and-drag (#48)", () => {
     expect(map.paths).toEqual([]);
     expect(listeners.get("mousemove")?.size ?? 0).toBe(0);
   });
+
+  it("Esc with no drag leaves the tool, mid-branch or after Done; the points stay (fresh-eyes F13)", () => {
+    const { map, tool, drag } = rig();
+    drag(["2_2", "3_2", "4_2"]);
+    expect(tool.isDrawing()).toBe(true);
+    expect(tool.escape()).toBe(false);
+    tool.done();
+    expect(tool.selected).toBe("Road");
+    expect(tool.escape()).toBe(false);
+    expect(map.paths![0].branches[0].anchors).toEqual(["2_2", "3_2", "4_2"]);
+  });
+
+  it("the map view leaves any tool on Esc once the path tool says there's no drag to cancel", () => {
+    const src = readFileSync(path.join(process.cwd(), "src/hex-map/HexMapView.ts"), "utf8");
+    const esc = src.slice(src.indexOf('this.scope.register([], "Escape"'), src.indexOf('for (const key of ["Backspace", "Delete"])'));
+    expect(esc).toContain("this.pathTool.escape()");
+    expect(esc).toContain("this.exitCurrentMode();");
+  });
 });

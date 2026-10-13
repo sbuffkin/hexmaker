@@ -34,7 +34,7 @@ Hexes with locations show a small ring at the top, with a count once there are t
 | **→** / **Alt+→** | Forward again after going back |
 | Breadcrumb (top left) | Jump to any map above this one; it ends with what this map's hex is on the parent ("from: barren world") |
 <!-- slice:worldmaps -->| Hex flower after the arrows (a region of an overworld) | The six regions around this one, each in its direction. Hover a petal for its name, click to go there. An empty petal's **+** makes the region there (pick or roll its biome; the list starts on this region's own biome). A narrow toolbar wraps onto a second line |
-<!-- /slice -->| **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name.<!-- slice:worldmaps --> **+** on an empty side makes new land there.<!-- /slice --> Inside a submap they go to its parent's neighbours |
+<!-- /slice -->| **◀ ▲ ▼ ▶** after the arrows (neighbouring maps) | Go to the map on that side; hover for its name.<!-- slice:worldmaps --> An arrow with **+** (**▲+**) on an empty side makes new land there.<!-- /slice --> Inside a submap they go to its parent's neighbours |
 
 The arrows are always ← ↑ → in that order; one that doesn't apply right now is greyed out. Hover any of them for the map it goes to.
 
@@ -73,7 +73,7 @@ Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** fir
 
 There's no separate edit mode. While the tool is on a type (say Road), every Road on the map shows its points as handles (the bigger ones are ends), and you can work on any of them straight away. Paths of other types are left alone: clicking on a river starts a new road there, and hovering one says which type to switch to. Right-click it for **Switch to River**.
 
-- **Draw:** click empty ground to start, then keep clicking. Each click adds a point and the path finds its way there from the end, around impassable terrain, so you can click far away. In hex-by-hex mode, click neighbouring hexes (a click further away is routed too, and the bar says so), or press and drag: every hex you pass becomes a point, and going back a hex takes the last one away. The whole drag is one undo step. Click the end again, press **Esc** or **Done** to finish.
+- **Draw:** click empty ground to start, then keep clicking. Each click adds a point and the path finds its way there from the end, around impassable terrain, so you can click far away. In hex-by-hex mode, click neighbouring hexes (a click further away is routed too, and the bar says so), or press and drag: every hex you pass becomes a point, and going back a hex takes the last one away. The whole drag is one undo step. Click the end again or press **Done** to finish the branch; **Esc** leaves the tool (every point placed stays).
 - **Move a point:** drag it. The new route shows as you drag; let go to keep it (one undo step), or drop it back where it was to cancel. This works while drawing too.
 - **Reshape the line:** drag the line itself: a new point is added where you grabbed it, and moves with the pointer.
 - **Delete a point:** right-click it, or hover it and press **Backspace**. A branch left with one point goes, and so does a path; the map says so and undo brings it back. Backspace while drawing removes the last point.
@@ -81,7 +81,7 @@ There's no separate edit mode. While the tool is on a type (say Road), every Roa
 - **Select and fork:** click a path's line to select it (it's highlighted and its name shows in the bar; click the name to rename it). Click the selected path's line again to start a fork there. A path and its forks are one path in the map note. Forks stay attached: drag the point a fork leaves from and the fork comes along; delete it and the fork joins the nearest point that is left. If a main line goes, its forks become paths of their own (one undo step).
 - **New path:** click empty ground. **Alt-click**, or **New path** in the bar, starts a new path even on top of a path of the same type (a crossroads of two roads).
 - **Path menu:** right-click a path's line, or **Shift**+right-click a point: its own items come first (**Rename…**, **Delete path**, **Change type…**, **Delete this fork**, and **Advanced ▸** with **Split here** and **Reverse**), then the tool's. In erase mode (the picker's ✕), click a path of the tool's type to split it there.
-- **Esc** steps out one level: finish the branch, then deselect, then leave the tool. **Ctrl/Cmd+Z** undoes each change.
+- **Esc** leaves the tool, as it does for every tool (mid-drag it cancels the drag first). **Ctrl/Cmd+Z** undoes each change.
 
 Mark terrains impassable in the palette editor (every water-type terrain is impassable by default). Each path type chooses whether it goes around them (roads do, rivers don't) and whether it winds. Turn on **Cross impassable** under **Advanced ▸** in the bar to let the next legs go through. If painting terrain, changing the palette, resizing the map or changing a type's routing would move an existing path, it keeps its route (points are added to hold it) and a notice offers **Reroute instead**; undoing the paint stroke undoes that too. The same goes for terrain or size typed into the map note by hand. Points you type into **Path routes** are yours: when one edit types new points and new terrain, the stretches that were already drawn keep their route and the new stretches find their way on the map as it is now.
 
@@ -92,7 +92,7 @@ Opens a palette of biomes, like the terrain palette. Pick one, then click or dra
 Opens the terrain palette. Select a color/icon to enter paint mode, then left-click hexes to apply that terrain. Use **Pick** (⌖) to sample terrain from an existing hex. Use **Clear** to erase terrain from hexes. Right-click the terrain button to open the palette editor where you can reorder, rename, recolor, and add terrain types.
 
 ### Icon
-Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). Useful for marking notable locations. Every icon list (here, in the token editor, and in the hex editor) has a filter box and **All / Terrain / Places<!-- slice:space --> / Space<!-- /slice --> / Custom** tabs<!-- slice:space --> (Space only when space maps are on)<!-- /slice -->. **Places** holds settlement, castle, tower, ruin, temple, camp and cave icons, with a row of chips to narrow it down (Settlements, Castles…); drag the bottom edge of an inline icon list to make it taller.
+Opens the icon palette. Select an icon to enter paint mode, then left-click hexes to apply a custom icon override (independent of the terrain icon). The bar names the icon as the palette does ("village"). Click **Icon** again to switch icons, as with Terrain. Useful for marking notable locations. Every icon list (here, in the token editor, and in the hex editor) has a filter box and **All / Terrain / Places<!-- slice:space --> / Space<!-- /slice --> / Custom** tabs<!-- slice:space --> (Space only when space maps are on)<!-- /slice -->. **Places** holds settlement, castle, tower, ruin, temple, camp and cave icons, with a row of chips to narrow it down (Settlements, Castles…); drag the bottom edge of an inline icon list to make it taller.
 
 ### Link table
 Opens a folder-tree picker scoped to your Tables folder. Select a random-encounter table, then left-click hexes to link that table into each hex's **Encounters Table** section.
@@ -138,7 +138,7 @@ Opening the layers panel or the drawing tools never moves the map.
 
 Name a hex in the **Name** box at the top of the hex editor. The name shows on the map, in the hover text and in the hex table. If the hex has a note, the name is added to the note's aliases, so the quick switcher finds it. Hex notes also get their map name and coordinates as an alias ("Gloomwood 3, 4"), so you can find a hex by typing them.
 
-Tokens show their name underneath. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Hex names never get smaller than readable on screen: a long name shrinks and wraps at spaces (never mid-word) to fit inside the hex, clear of its badges, and spills past the hex when it can't fit at a readable size. **Aa** beside the Labels heading picks this map's hex-name font, size, bold and italic (the default is in settings); the PNG export uses it too. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
+Tokens show their name on the side away from the hex coordinates (above the token while coordinates are at the bottom), so the hex number stays readable. The layers panel's **Labels** group turns coordinates, hex names and token names on and off; a hidden token name still shows on hover. Hex names never get smaller than readable on screen: a long name shrinks and wraps at spaces (never mid-word) to fit inside the hex, clear of its badges, and spills past the hex when it can't fit at a readable size. **Aa** beside the Labels heading picks this map's hex-name font, size, bold and italic (the default is in settings); the PNG export uses it too. **Export** can include hex names, tokens, link badges and a legend, and lets you pick the PDF table's columns and the manual's parts for a handout. It starts from what the map shows and remembers your choices per map.
 
 ---
 
@@ -236,7 +236,7 @@ Every new terrain (from the terrain tool, the palette editor, a new palette or a
 
 **Deep maps.** When the breadcrumb doesn't fit beside the top **+** / **−** buttons, its middle maps fold into **…** (hover to see them, click to go one level up from the last one shown).
 
-**Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes and `town.md` for new towns made from the hex editor. Edit them there and new notes follow.
+**Templates**: the plugin keeps its note templates in one folder (**Settings → Templates folder**, `templates` in the world folder by default): `hex.md` for hex notes, and one for each kind of linked note made from the hex editor: `town.md`, `dungeon.md`, `feature.md`, `quest.md` and `faction.md`. Edit them there and new notes follow.
 
 ## Missing maps
 

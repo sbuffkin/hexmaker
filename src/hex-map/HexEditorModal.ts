@@ -1276,7 +1276,7 @@ export class HexEditorModal extends HexmakerModal {
         const createItem = dropdown.createDiv({
           cls: "duckmage-link-combo-item duckmage-link-combo-create",
         });
-        createItem.textContent = `＋ Create "${trimmed}"`;
+        createItem.textContent = `+ Create "${trimmed}"`;
         createItem.addEventListener("mousedown", (e) => {
           e.preventDefault();
           void createAndLink(trimmed);
@@ -1333,7 +1333,7 @@ export class HexEditorModal extends HexmakerModal {
           if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
             await this.app.vault.createFolder(folder);
           }
-          // Towns start from the town template (PA3), tables from a table.
+          // Each link section's notes start from its template (PA3, F17), tables from a table.
           // Places made here say where they are (a Location line, R3).
           file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent(section, name, path));
         } catch (err) {
