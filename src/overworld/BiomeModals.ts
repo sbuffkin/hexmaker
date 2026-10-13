@@ -2,11 +2,9 @@
  * Overworld biome tools (owner, 2026-10-10): on an overworld you set a
  * hex's BIOME, one hex at a time, and its region is made or remade from it.
  *
- * - BiomePickerModal: click an overworld hex (biomes view) → pick a biome.
- *   On a hex with no region yet that makes the region (Build and God; in
- *   Play the picker is greyed). On a hex whose region exists it remakes
- *   it: God mode only (reshapeLock, src/workMode.ts), with no confirm.
- *   Locked buttons are disabled and say how to unlock them. Reroll and Settings… live here too.
+ * - An empty hex (an empty brick, Set biome…) opens Edit region in new-region
+ *   mode (EditRegionModal, newRegion.ts): preview, mix, reroll, then Create.
+ *   Changing a placed region is Edit region's too (God once it's locked).
  * - RegionGenModal: a small generator editor for one region (biome, blend,
  *   variation, seed) with a live preview drawn like the overworld preview
  *   page; Apply makes or remakes the region.
@@ -18,13 +16,13 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
 import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, isComboId, representableBiomes, representativeTerrain, type BiomeId } from "./biomes";
 import { BIOME_PRESETS } from "./biomePresets";
-import { biomeGroupOf, groupBiomes, type BiomeGroup } from "./biomeGroups";
+import { biomeGroupOf, type BiomeGroup } from "./biomeGroups";
 import { fillBiomeSelect } from "./biomeChooser";
 import { REGION_WARP, type BlendWidth } from "./blendField";
 import { regionCells } from "./layout";
 import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "./overworldRender";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
-import { BiomeLibraryModal, openBiomeGenerator } from "./BiomeLibraryModal";
+import { openBiomeGenerator } from "./BiomeLibraryModal";
 import {
   createRegion,
   hexBiomeAt,
@@ -134,81 +132,6 @@ export function groupOfBiome(id: BiomeId): BiomeGroup {
 /** A biome tile's tooltip: what it paints. */
 export function biomeTileTitle(b: PaintableBiome): string {
   return b.terrain ? `${b.label}: paints ${b.terrain}` : `${b.label}: a blank region, to paint by hand`;
-}
-
-export class BiomePickerModal extends HexmakerModal {
-  constructor(private host: BiomeHost, private parentName: string, private px: number, private py: number) {
-    super(host.app);
-  }
-
-  onOpen(): void {
-    this.makeDraggable();
-    this.modalEl.addClass("duckmage-biome-modal");
-    const { plugin } = this.host;
-    const hex = `${this.px}_${this.py}`;
-    const current = hexBiomeAt(plugin, this.parentName, hex);
-    const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
-    this.titleEl.setText(`Hex ${this.px}, ${this.py}`);
-    const { contentEl } = this;
-    const lock = biomeLock(this.host, this.parentName, this.px, this.py);
-    contentEl.createEl("p", {
-      cls: "setting-item-description",
-      text: !region ? (lock ? "No region yet." : "No region yet. Pick a biome and its region is made, blending with its neighbours.")
-        : lock ? `Region: ${plugin.mapLabel(region.name)}.`
-        : `Region: ${plugin.mapLabel(region.name)}. Picking another biome remakes it (hand-painted hexes stay).`,
-    });
-    if (lock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: lock });
-    const grid = contentEl.createDiv({ cls: "duckmage-biome-grid" });
-    const groups = groupBiomes(paintableBiomes(plugin, this.parentName), (b) => b.group);
-    for (const g of groups) {
-      if (groups.length > 1) grid.createDiv({ cls: "duckmage-biome-group-head", text: g.label });
-      for (const b of g.items) {
-        const btn = grid.createEl("button", { cls: "duckmage-biome-option" + (b.id === current ? " is-active" : ""), attr: { title: biomeTileTitle(b) } });
-        btn.createSpan({ cls: "duckmage-biome-swatch" }).setCssProps({ "--duckmage-biome-color": b.color });
-        btn.createSpan({ text: b.label });
-        // With a region, its current biome stays clickable (a no-op); with
-        // none yet, every biome would make one, so all are locked.
-        if (lock && (b.id !== current || !region)) lockButton(btn, lock);
-        btn.addEventListener("click", () => {
-          if (b.id === current && region) return;
-          if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
-          this.close();
-          void this.apply(b.id);
-        });
-      }
-    }
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    if (region) {
-      row.createEl("button", { text: "Enter region" }).addEventListener("click", () => { this.close(); this.host.enter(region.name); });
-      const reroll = row.createEl("button", { text: "Reroll" });
-      if (lock) lockButton(reroll, lock);
-      reroll.addEventListener("click", () => {
-        if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
-        this.close();
-        void rerollRegionAt(this.host, this.parentName, this.px, this.py);
-      });
-    }
-    row.createEl("button", { text: "Settings…" }).addEventListener("click", () => {
-      this.close();
-      new RegionGenModal(this.host, this.parentName, this.px, this.py).open();
-    });
-    row.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
-      this.close();
-      new BiomeLibraryModal(this.app, plugin, this.parentName).open();
-    });
-  }
-
-  private async apply(biome: BiomeId): Promise<void> {
-    const notice = new Notice("Making the region…", 0);
-    const res = await reshapeUndoable(this.host.plugin, this.parentName, this.px, this.py, () => setBiomeAt(this.host.plugin, this.parentName, this.px, this.py, biome));
-    notice.hide();
-    if ("error" in res) new Notice(res.error);
-    this.host.changed();
-  }
-
-  onClose(): void {
-    this.contentEl.empty();
-  }
 }
 
 const newSeed = () => Math.floor(Math.random() * 1e9);

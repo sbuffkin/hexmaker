@@ -224,6 +224,8 @@ export interface RegionPlanInput {
   blend?: BlendWidth | number;
   /** Domain warp in region spacings; default the own biome's tuned "wiggle" (REGION_WARP). */
   warp?: number;
+  /** This region's weight on its biome's neighbour influence (default 1). */
+  neighbourWeight?: number;
 }
 
 export interface RegionPlan {
@@ -259,6 +261,7 @@ export function planRegion(input: RegionPlanInput): RegionPlan {
     pinned: input.pinned,
     typeOf: input.typeOf,
     seed: input.seed ?? input.worldSeed,
+    neighbourWeight: input.neighbourWeight,
   });
   const mix = field.mean(regionCells(input.layout, input.parent[0], input.parent[1]));
   const ranked = [...mix].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));

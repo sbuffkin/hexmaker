@@ -1121,16 +1121,24 @@ export class HexMapView extends ItemView {
   /**
    * Walk into new land from the open map (a "+" on the region flower or the
    * d-pad): pick or roll its biome, preview, create, then go there. The same
-   * flow as the hex editor's neighbour flower (WalkRegionModal).
+   * flow as the hex editor's neighbour flower: on an overworld, Edit
+   * region's new-region mode; on an older side-by-side world, WalkRegionModal.
    */
   private openWalk(to: Side | OverworldWalk): void {
     const wm = this.wm;
     if (!wm) return;
     const from = this.activeMapName;
-    new wm.WalkRegionModal(this.app, this.plugin, from, to, (name) => {
+    const done = (name: string) => {
       if (this.activeMapName === from) this.navigateToMap(name);
       else this.refreshSideCrumbs();
-    }).open();
+    };
+    // A region of an overworld: Edit region's new-region mode (direction label, grows the overworld, Create and go).
+    if (typeof to !== "string") {
+      const host = { ...this.biomeHost(), openLocations: () => undefined };
+      new wm.EditRegionModal(host, to.overworld, to.px, to.py, { walk: { from, bearing: to.bearing }, onCreated: done }).open();
+      return;
+    }
+    new wm.WalkRegionModal(this.app, this.plugin, from, to, done).open();
   }
 
   /** Change maps from a dialog. `offerModule`: picked on purpose (see navigateToMap). */
@@ -5094,7 +5102,7 @@ export class HexMapView extends ItemView {
         } else if (it.id === "edit-region") this.openEditRegion(px, py);
         else if (it.id === "reroll") void wm.rerollRegionAt(this.biomeHost(), this.activeMapName, px, py);
         else if (it.id === "lock" && region) void this.plugin.arrival.lock(region).then(() => this.renderGrid());
-        else if (it.id === "set-biome") new wm.BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
+        else if (it.id === "set-biome") this.openNewRegion(px, py);
         else if (it.id === "center") this.centerOnHex(px, py);
         else if (it.id === "locations") this.openLocationsList(px, py);
       }, { disabled: !it.enabled, ...(places[it.id] ? { place: places[it.id] } : {}) });
@@ -5102,6 +5110,16 @@ export class HexMapView extends ItemView {
     menu.add("ow.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, px, py));
     // Mark the party (or anything) on the overworld: tokens sit on its hexes.
     menu.add("ow.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(px, py));
+  }
+
+  /**
+   * An empty hex of the open overworld (an empty brick, Set biome…): Edit
+   * region in new-region mode. Nothing is made until its Create.
+   */
+  private openNewRegion(px: number, py: number): void {
+    const wm = this.wm;
+    if (!wm) return;
+    new wm.EditRegionModal({ ...this.biomeHost(), openLocations: (hx, hy) => this.openLocationsList(hx, hy) }, this.activeMapName, px, py, {}).open();
   }
 
   /** Edit the region on hex (px, py) of `overworld` (default the open map; from inside a region, its overworld). */
@@ -5172,7 +5190,7 @@ export class HexMapView extends ItemView {
       } else if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
         // Arrival on: going there makes the region from its biome (GM4).
         await this.arriveAt(px, py);
-      } else if (act.kind === "place") new wm.BiomePickerModal(this.biomeHost(), this.activeMapName, px, py).open();
+      } else if (act.kind === "place") this.openNewRegion(px, py);
       else if (act.kind === "hint") lockedNotice(this.plugin, this.activeMapName, act.hint);
       return;
     }

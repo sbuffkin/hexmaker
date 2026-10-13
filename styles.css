@@ -8432,6 +8432,16 @@ button.duckmage-terrain-legend-chip {
 .duckmage-edit-region-preview.is-new {
     animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
 }
+/* New-region mode: the preview is what Create makes, so it's bigger. */
+.duckmage-edit-region-preview.duckmage-edit-region-preview-new {
+    width: 360px;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 2;
+}
+.duckmage-edit-region-draft-note {
+    min-height: 1.4em;
+}
 @media (prefers-reduced-motion: reduce) {
     .duckmage-edit-region-preview.is-new {
         animation: none;

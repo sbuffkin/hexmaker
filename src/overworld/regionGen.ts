@@ -52,6 +52,8 @@ export interface RegionGenInput {
   fieldHold?: number;
   /** Name-within-type sharpness (blendField.namesWithinType; default: tuned "name-sharpness", 2). */
   sharpness?: number;
+  /** This region's weight on its biome's neighbour influence (Edit region's slider; default 1: the tuning as-is). */
+  neighbourWeight?: number;
 }
 
 /** Child key → terrain for the region's own cells (except pinned ones, which are left alone). */
@@ -71,7 +73,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   // The neighbours' hexes already made (and the region's locked ones), as
   // fixed context every stage reads ("super-region", owner 2026-10-12).
   // None, or influence 0: exactly the generation from before.
-  const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence"), tuned(tuning, "neighbour-fade"));
+  const ctx = neighbourContext(layout, cells, pinned, typeOf, tuned(tuning, "context-depth"), tuned(tuning, "neighbour-influence") * (input.neighbourWeight ?? 1), tuned(tuning, "neighbour-fade"));
   /** Name odds within a type at a cell: the field's, leaning to the names the context uses near it. */
   const namesAt = (x: number, y: number, type: string) => {
     const nu = namesWithinType(field.zoned(x, y), profiles, type, sharp);

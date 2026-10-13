@@ -15,6 +15,17 @@
  *   counts), neighbouring regions (the nav flower's), locations;
  * - notes: the region map note's `## Notes` section, editable in every
  *   mode (note text is never locked).
+ * - Neighbour influence: a weight on the biome's neighbour influence for
+ *   this region only (0–2, 1 = as tuned), kept in its map note
+ *   (`neighbour-influence:`) and used by every reroll and regenerate.
+ *
+ * New-region mode (owner 2026-10-13, newRegion.ts): opened on an empty hex
+ * (an empty brick, Set biome…, New region, walking into new land) with
+ * nothing written. The full suite (biome tiles, Mix biomes, Reroll, Blend,
+ * borders, seed, Neighbour influence) edits a draft drawn live against
+ * the made neighbours; Create makes exactly that. Cancel or × writes
+ * nothing. After Create the dialog carries on as Edit region for the new
+ * (open) region; a walk closes and goes there ("Create and go").
  */
 
 import { Notice, TFile } from "obsidian";
@@ -23,21 +34,57 @@ import { regionMapAt, regionSettingsLabel } from "../maps/submaps";
 import { terrainCounts } from "../maps/mapNote";
 import { readNotesSection, writeNotesSection } from "../maps/mapNoteNotes";
 import { flowerPetals } from "../maps/mapNav";
-import { biomeInfo, biomeParts, biomeRef, combinedBiome, isComboId, representativeTerrain, type BiomeId } from "./biomes";
-import { mixToParts, newPartWeight, type BiomePart } from "./biomeCombo";
+import { biomeInfo, biomeNoteOf, biomeParts, biomeRef, combinedBiome, isComboId, representativeTerrain, type BiomeId } from "./biomes";
+import { dominantPart, mixToParts, newPartWeight, type BiomePart } from "./biomeCombo";
 import { renderShareSliders } from "../ui/shareSliders";
-import { hexBiomeAt, overworldOf, planRegionAt, planRegionWithGenerator, regionBiomeStatus, setBiomeAt } from "./regionsVault";
+import { clampNeighbourWeight, NEIGHBOUR_WEIGHT } from "./neighbourWeight";
+import { hexBiomeAt, overworldOf, planRegionAt, planRegionWithGenerator, regenerateRegion, regionBiomeStatus, setBiomeAt } from "./regionsVault";
 import { renderBiomeTiles } from "./biomeChooser";
-import { openBiomeGenerator } from "./BiomeLibraryModal";
+import { BiomeLibraryModal, openBiomeGenerator } from "./BiomeLibraryModal";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { openBlendIntoBiome } from "./BlendIntoBiomeModal";
 import { editRegionPlan, terrainCountsText } from "./overworldInput";
-import { biomeTileTitle, drawRegionNow, drawRegionPlan, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost, type PaintableBiome } from "./BiomeModals";
+import { biomeTileTitle, drawRegionNow, drawRegionPlan, groupOfBiome, lockButton, mayReshape, paintableBiomes, RegionGenModal, rerollRegionAt, reshapeUndoable, type BiomeHost, type PaintableBiome } from "./BiomeModals";
 import { openNoteFocused } from "../openNote";
 import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
 import { addGodOffer } from "../hex-map/godOffer";
 import { WORK_MODE_TEXT } from "../workMode";
+import { renderTuningSliders } from "../ui/mapScaleForm";
+import { tuneKey, type TuningDef } from "../worldgen/procedural/common";
+import { REGION_WARP, type BlendWidth } from "./blendField";
+import { rollBiome } from "./regionWorld";
+import { createFromDraft, draftGrowth, draftLock, draftMix, newDraft, newDraftSeed, previewDraft, startBiome, type NewRegionDraft, type NewRegionWalk } from "./newRegion";
+
+/** How Edit region opens on an empty hex: new-region mode (newRegion.ts). */
+export interface NewRegionMode {
+  /** Walking into new land from a region: its direction label and "Create and go". */
+  walk?: NewRegionWalk;
+  /** After Create: carry on as Edit region (default; a walk always closes and goes). */
+  after?: "edit" | "close";
+  /** Told the new region's name after Create (a walk goes there). */
+  onCreated?: (name: string) => void;
+}
+
+/** The Neighbour influence slider (the shared tuning slider), a weight on the biome's tuning. */
+export const NEIGHBOUR_SLIDER: TuningDef = {
+  key: "neighbour-influence",
+  label: "Neighbour influence",
+  help: "How strongly the regions already made around it steer this one: 1 is as its biome is tuned, 0 only the seams, 2 twice as much.",
+  min: NEIGHBOUR_WEIGHT.min,
+  max: NEIGHBOUR_WEIGHT.max,
+  step: NEIGHBOUR_WEIGHT.step,
+  default: NEIGHBOUR_WEIGHT.default,
+};
+const NEIGHBOUR_ID = "EditRegion.neighbourInfluence";
+/** The weight a slider's options hold (1 when unmoved). */
+const weightIn = (o: Record<string, string>): number => {
+  const v = o[tuneKey(NEIGHBOUR_SLIDER.key)];
+  return clampNeighbourWeight(v === undefined ? undefined : Number(v));
+};
+/** Normal Edit: the region is remade this long after the slider stops. */
+const WEIGHT_APPLY_MS = 400;
+const BLEND_WIDTHS: BlendWidth[] = ["narrow", "normal", "wide"];
 
 export interface EditRegionHost extends BiomeHost {
   /** The overworld hex's Locations list. */
@@ -62,9 +109,26 @@ export class EditRegionModal extends HexmakerModal {
   private preview: HTMLCanvasElement | null = null;
   private mixToken = 0;
   private mixTimer: number | null = null;
+  private weightTimer: number | null = null;
+  /** Normal Edit: the neighbour weight waiting to be applied (run on close too). */
+  private pendingWeight: (() => void) | null = null;
+  /** New-region mode's draft (null in normal Edit). */
+  private draft: NewRegionDraft | null = null;
+  /** New-region mode: the line under the preview (border country, a roll). */
+  private draftNote: HTMLElement | null = null;
+  private rolled = "";
 
-  constructor(private host: EditRegionHost, private overworld: string, private px: number, private py: number) {
+  /**
+   * `fresh`: open in new-region mode (the hex has no region yet). Without
+   * it, or once the hex has a region, this is the normal Edit region.
+   */
+  constructor(private host: EditRegionHost, private overworld: string, private px: number, private py: number, private fresh: NewRegionMode | null = null) {
     super(host.app);
+  }
+
+  /** In new-region mode (the hex has no region yet)? */
+  get isNewRegion(): boolean {
+    return !!this.fresh && !this.regionName;
   }
 
   private get regionName(): string | undefined {
@@ -82,6 +146,13 @@ export class EditRegionModal extends HexmakerModal {
     const { plugin } = this.host;
     const name = this.regionName;
     const region = name ? plugin.getMap(name) : undefined;
+    if (this.isNewRegion) {
+      this.renderNew(this.fresh!);
+      return;
+    }
+    this.fresh = null;
+    this.draft = null;
+    this.draftNote = null;
     const { contentEl } = this;
     contentEl.empty();
     this.titleEl.setText("Edit region");
@@ -124,7 +195,7 @@ export class EditRegionModal extends HexmakerModal {
       this.host.enter(name);
     });
     // Focus the primary action, not the name box (a stray key would rename).
-    window.setTimeout(() => enter.focus(), 0);
+    window.setTimeout(() => enter.focus({ preventScroll: true }), 0);
     actions.createEl("button", { text: "Open map note" }).addEventListener("click", () => {
       const file = plugin.app.vault.getAbstractFileByPath(plugin.mapStore.notePath(name));
       if (!(file instanceof TFile)) {
@@ -226,6 +297,15 @@ export class EditRegionModal extends HexmakerModal {
       }
       if (plan.lock) this.addLock(row, name);
       editGenerator(row);
+      // A weight on the biome's neighbour influence, for this region (remade when the slider stops).
+      const weight: Record<string, string> = {};
+      const stored = clampNeighbourWeight(region.neighbourInfluence);
+      if (stored !== NEIGHBOUR_WEIGHT.default) weight[tuneKey(NEIGHBOUR_SLIDER.key)] = String(stored);
+      renderTuningSliders(biomeSec, [NEIGHBOUR_SLIDER], weight, this.disclosure, NEIGHBOUR_ID, () => {
+        if (this.weightTimer !== null) window.clearTimeout(this.weightTimer);
+        this.pendingWeight = () => void this.applyWeight(name, weightIn(weight));
+        this.weightTimer = window.setTimeout(() => this.flushWeight(), WEIGHT_APPLY_MS);
+      });
     } else {
       // A mix shows as its parts with their weights ("Alpine 2 + Taiga"), in its dominant part's colour.
       const shown = biomes.find((b) => b.id === (current && isComboId(current) ? biomeParts(current)[0]?.id : current));
@@ -378,34 +458,44 @@ export class EditRegionModal extends HexmakerModal {
         },
         onInput: (shares) => {
           shares.forEach((s, i) => (parts[i].weight = s));
-          showApply();
+          mixChanged();
           this.scheduleMixPreview();
         },
         onChange: (shares) => {
           shares.forEach((s, i) => (parts[i].weight = s));
-          showApply();
+          mixChanged();
           this.scheduleMixPreview();
         },
       });
     }
-    const actions = panel.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const apply = actions.createEl("button", { text: parts.length === 1 ? "Use this biome" : "Apply mix", cls: "mod-cta" });
-    let want: BiomeId | undefined;
-    const showApply = () => {
-      want = this.mixBiome();
-      apply.disabled = !want || want === current;
-      apply.setAttr("title", !want ? "Pick a biome first" : want === current ? "This is the region's biome now" : `Remake the region from ${biomeRef(want)} (hand-painted hexes stay)`);
-    };
-    showApply();
-    apply.addEventListener("click", () => {
-      if (want && want !== current) void this.setBiome(want);
-    });
+    let mixChanged: () => void;
+    if (this.draft) {
+      // New-region mode: the mix is the draft's biome (Create makes it; no Apply).
+      mixChanged = () => {
+        if (!this.draft) return;
+        this.draft.biome = this.mixBiome();
+        this.syncCreate();
+      };
+    } else {
+      const actions = panel.createDiv({ cls: "duckmage-token-modal-buttons" });
+      const apply = actions.createEl("button", { text: parts.length === 1 ? "Use this biome" : "Apply mix", cls: "mod-cta" });
+      let want: BiomeId | undefined;
+      mixChanged = () => {
+        want = this.mixBiome();
+        apply.disabled = !want || want === current;
+        apply.setAttr("title", !want ? "Pick a biome first" : want === current ? "This is the region's biome now" : `Remake the region from ${biomeRef(want)} (hand-painted hexes stay)`);
+      };
+      apply.addEventListener("click", () => {
+        if (want && want !== current) void this.setBiome(want);
+      });
+    }
+    mixChanged();
     this.drawMixPreview();
   }
 
   /** The mix as a biome id, its shares stored as small whole weights ("Alpine 2 + Taiga 1"). */
   private mixBiome(): BiomeId | undefined {
-    const current = hexBiomeAt(this.host.plugin, this.overworld, `${this.px}_${this.py}`);
+    const current = this.draft ? undefined : hexBiomeAt(this.host.plugin, this.overworld, `${this.px}_${this.py}`);
     const parts = mixToParts(this.mix ?? [], current ? biomeParts(current) : undefined);
     return parts.length ? combinedBiome(parts) : undefined;
   }
@@ -421,6 +511,10 @@ export class EditRegionModal extends HexmakerModal {
 
   /** Preview the mix on the region (its own seed, so Apply makes what's shown). */
   private drawMixPreview(): void {
+    if (this.draft) {
+      this.drawDraftPreview();
+      return;
+    }
     const canvas = this.preview;
     const biome = this.mixBiome();
     if (!canvas || !biome) return;
@@ -432,6 +526,298 @@ export class EditRegionModal extends HexmakerModal {
       .then((plan) => {
         if (token === this.mixToken) drawRegionPlan(canvas, plugin, this.overworld, this.px, this.py, plan);
       });
+  }
+
+  // ── new-region mode ─────────────────────────────────────────────────────
+
+  private createBtn: HTMLButtonElement | null = null;
+  private createLock: string | undefined;
+
+  /**
+   * New-region mode: the draft's name, biome tiles and Mix biomes, Reroll,
+   * the settings inline (Blend, Neighbour influence; borders and seed in
+   * Debug), a live preview against the made neighbours, then Create.
+   */
+  private renderNew(fresh: NewRegionMode): void {
+    const { plugin } = this.host;
+    const { contentEl } = this;
+    contentEl.empty();
+    const walk = fresh.walk;
+    this.titleEl.setText(walk ? `New land to the ${walk.bearing}` : "New region");
+    this.modalEl.addClass("duckmage-edit-region-new");
+    const ow = plugin.getMap(this.overworld);
+    const biomes = paintableBiomes(plugin, this.overworld);
+    if (!ow || !biomes.length) {
+      contentEl.createEl("p", { cls: "duckmage-map-origin-desc", text: "This overworld's palette has no terrain that stands for a biome, so there's nothing to make the region from." });
+      return;
+    }
+    if (!this.draft) {
+      const d = newDraft(plugin, this.overworld, this.px, this.py, walk);
+      // The start biome: the hex's (or the one walked from) when it's offered, else the first.
+      if (!d.biome || (!isComboId(d.biome) && !biomes.some((b) => b.id === d.biome))) d.biome = (biomes.find((b) => b.terrain) ?? biomes[0]).id;
+      this.draft = d;
+      this.mix = draftMix(d);
+    }
+    const draft = this.draft;
+    const hex = `${this.px}_${this.py}`;
+    const palette = plugin.getMapPalette(this.overworld);
+
+    // ── header: name, where it is ────────────────────────────────────────
+    const head = contentEl.createDiv({ cls: "duckmage-edit-region-head" });
+    const nameRow = head.createDiv({ cls: "duckmage-region-row" });
+    const nameInput = nameRow.createEl("input", {
+      type: "text",
+      cls: "duckmage-edit-region-name",
+      value: draft.name ?? "",
+      attr: { "aria-label": "Region name", placeholder: plugin.mapStore.get(this.overworld, hex)?.name?.trim() || "Name (blank: one is picked)" },
+    });
+    nameInput.addEventListener("input", () => (draft.name = nameInput.value));
+    const grows = !!draftGrowth(plugin, this.overworld, this.px, this.py);
+    head.createEl("p", {
+      cls: "duckmage-map-origin-desc",
+      text: walk
+        ? `Nothing lies ${walk.bearing} of ${plugin.mapLabel(walk.from)} yet. Pick what's out there; if it's a different biome, the new region is the border country in between.`
+          + (grows ? " The overworld grows by a hex to fit it." : "")
+        : `Hex ${this.px}, ${this.py} of ${plugin.mapLabel(this.overworld)}. Nothing is made until you press Create.`,
+    });
+
+    // ── biome: tiles, Mix biomes, Reroll, settings ──────────────────────
+    const biomeSec = contentEl.createDiv({ cls: "duckmage-editor-section duckmage-edit-region-biome" });
+    biomeSec.createEl("h4", { text: "Biome" });
+    const mixing = this.mix !== null && this.mix !== undefined;
+    const toggleRow = biomeSec.createDiv({ cls: "duckmage-edit-region-mix-toggle" });
+    const toggle = toggleRow.createEl("button", {
+      text: mixing ? "One biome" : "Mix biomes…",
+      attr: { title: mixing ? "Go back to one biome" : "Pick more than one biome for this region, with a share each" },
+    });
+    toggle.addEventListener("click", () => {
+      if (mixing) {
+        // Back to one biome: the mix's biggest part.
+        const top = draft.biome && isComboId(draft.biome) ? dominantPart(draft.biome) : draft.biome;
+        draft.biome = top ?? draft.biome;
+        this.mix = null;
+      } else {
+        const one = draft.biome && biomes.some((b) => b.id === draft.biome && b.terrain) ? [{ id: draft.biome, weight: 1 }] : [];
+        this.mix = draft.biome && isComboId(draft.biome) ? biomeParts(draft.biome) : one;
+      }
+      this.renderNew(fresh);
+    });
+    if (mixing) toggleRow.createSpan({ cls: "setting-item-description", text: "Click biomes to add or remove them; the sliders say how much of each." });
+    const offered = mixing ? biomes.filter((b) => b.terrain) : biomes;
+    const parts = new Set((this.mix ?? []).map((p) => p.id));
+    const grid = renderBiomeTiles(biomeSec, plugin, palette, offered, {
+      cls: "duckmage-terrain-picker duckmage-edit-region-biomes",
+      isSelected: (id) => (mixing ? parts.has(id) : id === draft.biome),
+      title: biomeTileTitle,
+      onPick: (b) => {
+        if (this.mix) {
+          const i = this.mix.findIndex((p) => p.id === b.id);
+          if (i >= 0) this.mix.splice(i, 1);
+          else this.mix.push({ id: b.id, weight: newPartWeight(this.mix) });
+          grid.querySelector<HTMLElement>(`[data-biome="${b.id}"]`)?.toggleClass("is-selected", i < 0);
+          this.renderMix(mixPanel, plugin, offered, undefined);
+          return;
+        }
+        draft.biome = b.id;
+        this.rolled = "";
+        grid.querySelectorAll(".is-selected").forEach((el) => el.removeClass("is-selected"));
+        grid.querySelector<HTMLElement>(`[data-biome="${b.id}"]`)?.addClass("is-selected");
+        this.syncCreate();
+        this.drawDraftPreview();
+      },
+    });
+    const mixPanel = biomeSec.createDiv({ cls: "duckmage-edit-region-mix" });
+    window.requestAnimationFrame(() => {
+      const sel = grid.querySelector<HTMLElement>(".is-selected");
+      if (!sel) return;
+      const g = grid.getBoundingClientRect(), r = sel.getBoundingClientRect();
+      if (r.bottom > g.bottom || r.top < g.top) grid.scrollTop += r.top - g.top - 4;
+    });
+
+    const row = biomeSec.createDiv({ cls: "duckmage-token-modal-buttons duckmage-edit-region-gen" });
+    const seedInput = createEl("input", { type: "number", cls: "duckmage-walk-seed", attr: { "aria-label": "Seed" } });
+    seedInput.value = String(draft.seed);
+    row.createEl("button", { text: "Reroll", attr: { title: "Same biome, new seed: a new look in the preview (nothing is made yet)" } }).addEventListener("click", () => {
+      draft.seed = newDraftSeed();
+      seedInput.value = String(draft.seed);
+      this.rolled = "";
+      this.justRerolled = true;
+      this.drawDraftPreview();
+    });
+    if (walk) {
+      row.createEl("button", { text: "Roll biome", attr: { title: "Roll what's out there (a different biome from here, if there is one) with a new seed" } }).addEventListener("click", () => {
+        this.rollDraftBiome(biomes, walk);
+        this.renderNew(fresh);
+      });
+    }
+    row.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
+      this.close();
+      new BiomeLibraryModal(this.app, plugin, this.overworld).open();
+    });
+
+    // Blend with neighbours (the region settings' Blend): unset = the biome's own.
+    const blendRow = biomeSec.createDiv({ cls: "duckmage-region-gen-row" });
+    blendRow.createSpan({ cls: "duckmage-region-gen-label", text: "Blend with neighbours" });
+    const blendSel = blendRow.createEl("select", { attr: { "aria-label": "Blend" } });
+    blendSel.createEl("option", { text: "Biome's default", value: "" });
+    for (const w of BLEND_WIDTHS) blendSel.createEl("option", { text: w, value: w });
+    blendSel.value = draft.blend ?? "";
+    blendSel.addEventListener("change", () => {
+      draft.blend = (blendSel.value || undefined) as BlendWidth | undefined;
+      this.drawDraftPreview();
+    });
+
+    // Neighbour influence: the shared tuning slider (always shows its value).
+    const weight: Record<string, string> = {};
+    if (draft.neighbourWeight !== NEIGHBOUR_WEIGHT.default) weight[tuneKey(NEIGHBOUR_SLIDER.key)] = String(draft.neighbourWeight);
+    renderTuningSliders(biomeSec, [NEIGHBOUR_SLIDER], weight, this.disclosure, NEIGHBOUR_ID, () => {
+      draft.neighbourWeight = weightIn(weight);
+      this.scheduleMixPreview();
+    });
+
+    // ── preview ──────────────────────────────────────────────────────────
+    const preview = biomeSec.createEl("canvas", {
+      cls: "duckmage-edit-region-preview duckmage-edit-region-preview-new",
+      attr: { role: "img", "aria-label": "The new region, its made neighbours dimmed" },
+    });
+    preview.width = 360;
+    preview.height = 240;
+    this.preview = preview;
+    this.draftNote = biomeSec.createEl("p", { cls: "duckmage-map-origin-desc duckmage-edit-region-draft-note" });
+    if (mixing) this.renderMix(mixPanel, plugin, offered, undefined);
+
+    // Border wiggle and the seed: Debug (as in Region settings).
+    const warpDef: TuningDef = {
+      key: "wiggle",
+      label: "Wiggly borders",
+      help: "How far borders between biomes wander (0: straight seams).",
+      min: 0,
+      max: 0.6,
+      step: 0.05,
+      default: (draft.biome && !isComboId(draft.biome) ? biomeNoteOf(draft.biome)?.tuning?.wiggle : undefined) ?? REGION_WARP,
+    };
+    const warp: Record<string, string> = {};
+    if (draft.warp !== undefined && draft.warp !== warpDef.default) warp[tuneKey(warpDef.key)] = String(draft.warp);
+    const warpHost = createDiv();
+    renderTuningSliders(warpHost, [warpDef], warp, this.disclosure, "RegionGen.wigglyBorders", () => {
+      const v = warp[tuneKey(warpDef.key)];
+      draft.warp = v === undefined ? undefined : Number(v);
+      this.scheduleMixPreview();
+    });
+    const seedRow = createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    seedRow.createSpan({ text: "Seed", cls: "duckmage-map-origin-label" });
+    seedRow.appendChild(seedInput);
+    seedInput.addEventListener("change", () => {
+      const n = Number(seedInput.value);
+      if (!Number.isFinite(n)) return;
+      draft.seed = Math.trunc(n) >>> 0;
+      this.rolled = "";
+      this.drawDraftPreview();
+    });
+    this.place(walk ? "WalkOW.seed" : "RegionGen.seed", seedRow);
+
+    // ── Create / Cancel ──────────────────────────────────────────────────
+    this.createLock = draftLock(plugin, this.overworld, walk);
+    if (this.createLock) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: this.createLock });
+    const buttons = contentEl.createDiv({ cls: "duckmage-confirm-btn-row duckmage-edit-region-create" });
+    const createText = walk ? "Create and go" : "Create";
+    const create = buttons.createEl("button", { text: createText, cls: "mod-cta" });
+    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    this.createBtn = create;
+    if (this.createLock) lockButton(create, this.createLock);
+    else create.setAttr("title", "Make this region as the preview shows it");
+    create.addEventListener("click", () => void this.create(fresh, createText));
+    this.syncCreate();
+    window.setTimeout(() => { if (!create.disabled) create.focus({ preventScroll: true }); }, 0);
+    this.drawDraftPreview();
+  }
+
+  /** Create is on while there's a biome and the mode allows it. */
+  private syncCreate(): void {
+    if (!this.createBtn || this.createLock) return;
+    this.createBtn.disabled = !this.draft?.biome;
+  }
+
+  /** Walks: roll the biome beyond (never a blank one; this side of the ground: from a cave, more caves). */
+  private rollDraftBiome(biomes: PaintableBiome[], walk: NewRegionWalk): void {
+    const draft = this.draft;
+    if (!draft) return;
+    const { plugin } = this.host;
+    draft.seed = newDraftSeed();
+    const here = startBiome(plugin, this.overworld, this.px, this.py, walk);
+    const below = (id: string | undefined) => !!id && groupOfBiome(id) === "underground";
+    const hereBelow = below(here && isComboId(here) ? dominantPart(here) : here);
+    draft.biome = rollBiome(biomes.filter((b) => b.terrain && (b.group === "underground") === hereBelow).map((b) => b.id), draft.seed, here)
+      ?? rollBiome(biomes.filter((b) => b.terrain).map((b) => b.id), draft.seed, here) ?? draft.biome;
+    this.mix = null;
+    this.rolled = `Rolled ${draft.biome ? biomeInfo(draft.biome)?.label ?? draft.biome : "nothing"} (seed ${draft.seed}).`;
+  }
+
+  /** Draw the draft (newRegion.previewDraft) and say what it blends from. */
+  private drawDraftPreview(): void {
+    const canvas = this.preview;
+    const draft = this.draft;
+    if (!canvas || !draft) return;
+    const { plugin } = this.host;
+    const token = ++this.mixToken;
+    const fresh = this.fresh;
+    if (this.justRerolled) {
+      canvas.removeClass("is-new");
+      window.requestAnimationFrame(() => canvas.addClass("is-new"));
+      this.justRerolled = false;
+    }
+    if (!draft.biome) {
+      canvas.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+      this.draftNote?.setText("Pick a biome.");
+      return;
+    }
+    const biome = draft.biome;
+    void previewDraft(plugin, this.overworld, this.px, this.py, { ...draft }).then((plan) => {
+      if (token !== this.mixToken) return;
+      drawRegionPlan(canvas, plugin, this.overworld, this.px, this.py, plan);
+      const labelOf = (id: string) => biomeInfo(id)?.label ?? id;
+      const fromIds = new Set((plan?.biome?.from ?? []).filter((b) => b !== biome));
+      const walk = fresh?.walk;
+      const here = walk ? startBiome(plugin, this.overworld, this.px, this.py, walk) : undefined;
+      if (here && here !== biome) fromIds.add(here);
+      const from = [...fromIds].map(labelOf);
+      this.draftNote?.setText(
+        (this.rolled ? `${this.rolled} ` : "")
+        + (from.length ? `Border country: ${from.join(" + ")} turning into ${labelOf(biome)}.` : walk ? `${labelOf(biome)} carries on from here.` : ""),
+      );
+    });
+  }
+
+  /** Create: make the region exactly as previewed, then carry on as Edit region (a walk goes there). */
+  private async create(fresh: NewRegionMode, idleText: string): Promise<void> {
+    const draft = this.draft;
+    const btn = this.createBtn;
+    if (!draft || !btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.setText("Creating…");
+    const notice = new Notice("Making the region…", 0);
+    const res = await createFromDraft(this.host.plugin, this.overworld, this.px, this.py, { ...draft }, fresh.walk);
+    notice.hide();
+    if ("error" in res) {
+      new Notice(res.error);
+      btn.disabled = false;
+      btn.setText(idleText);
+      return;
+    }
+    this.host.changed();
+    if (fresh.walk || fresh.after === "close") {
+      this.close();
+      fresh.onCreated?.(res.name);
+      return;
+    }
+    fresh.onCreated?.(res.name);
+    // Carry on as Edit region for the new (open) region: Reroll, Lock, notes, Enter.
+    this.fresh = null;
+    this.draft = null;
+    this.mix = undefined;
+    this.justRerolled = true;
+    this.modalEl.removeClass("duckmage-edit-region-new");
+    this.render();
   }
 
   /** Write typed notes into the region map note's Notes section. */
@@ -475,6 +861,24 @@ export class EditRegionModal extends HexmakerModal {
       }));
   }
 
+  private flushWeight(): void {
+    if (this.weightTimer !== null) { window.clearTimeout(this.weightTimer); this.weightTimer = null; }
+    const run = this.pendingWeight;
+    this.pendingWeight = null;
+    run?.();
+  }
+
+  /** Normal Edit: store the region's neighbour weight and remake it with its seed (undoable). */
+  private async applyWeight(name: string, w: number): Promise<void> {
+    const { plugin } = this.host;
+    const region = plugin.getMap(name);
+    if (!region || clampNeighbourWeight(region.neighbourInfluence) === w) return;
+    if (!mayReshape(this.host, this.overworld, this.px, this.py)) return;
+    await reshapeUndoable(plugin, this.overworld, this.px, this.py, () => regenerateRegion(plugin, name, { neighbourWeight: w }));
+    this.host.changed();
+    if (this.preview?.isConnected) drawRegionNow(this.preview, plugin, this.overworld, this.px, this.py);
+  }
+
   private async reroll(): Promise<void> {
     if (!(await rerollRegionAt(this.host, this.overworld, this.px, this.py))) return;
     await this.saveNotes();
@@ -484,6 +888,7 @@ export class EditRegionModal extends HexmakerModal {
 
   onClose(): void {
     if (this.mixTimer !== null) { window.clearTimeout(this.mixTimer); this.mixTimer = null; }
+    this.flushWeight();
     void this.saveNotes();
     this.stopKeepInViewport?.();
     this.stopKeepInViewport = null;

@@ -629,9 +629,20 @@ export class HexEditorModal extends HexmakerModal {
           tile.title = b.title;
           if (b.action.kind === "new") {
             tile.addEventListener("click", () => {
-              new wm.WalkRegionModal(this.app, this.plugin, this.mapName, { overworld: home.overworld.name, px, py, bearing }, (name) => {
-                this.close();
-                this.options.onCrossToRegion?.(name, nx, ny);
+              // Edit region's new-region mode: preview, mix, reroll, then Create and go.
+              const host = {
+                app: this.app,
+                plugin: this.plugin,
+                enter: (name: string) => this.options.onCrossToRegion?.(name, nx, ny),
+                changed: () => this.plugin.refreshHexMap(),
+                openLocations: () => undefined,
+              };
+              new wm.EditRegionModal(host, home.overworld.name, px, py, {
+                walk: { from: this.mapName, bearing },
+                onCreated: (name) => {
+                  this.close();
+                  this.options.onCrossToRegion?.(name, nx, ny);
+                },
               }).open();
             });
           }
