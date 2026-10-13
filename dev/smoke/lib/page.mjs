@@ -22,6 +22,14 @@ export async function waitReady(id, timeoutMs) {
   }
   while (Date.now() - t0 < timeoutMs) {
     const p = app.plugins.plugins[id];
+    // A fresh install holds its stores' first writes until the setup wizard
+    // confirms the world folder (F19). Note what was written meanwhile
+    // (should be nothing), then go on as a user confirming would.
+    if (app.workspace.layoutReady && p?.startupWritesHeld) {
+      await sleep(1500);
+      window.__smoke.held = { held: true, writes: window.__smoke.writes.map((w) => w.path) };
+      p.releaseStartupWrites();
+    }
     if (app.workspace.layoutReady && p?.mapStore?.isReady?.() && p.paletteStore?.isReady?.()) {
       return { ready: true, ms: Date.now() - t0 };
     }

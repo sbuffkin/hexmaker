@@ -182,6 +182,8 @@ export default class HexmakerPlugin extends Plugin {
 
   /** The palette and map stores have started (see startupWritesWait). */
   storesStarted: Promise<void> = Promise.resolve();
+  /** A fresh install's stores are waiting for the setup wizard (F19). */
+  startupWritesHeld = false;
   /** Let the stores start writing now (the world folder is confirmed, or setup was put off). */
   releaseStartupWrites: () => void = () => {};
 
@@ -222,7 +224,11 @@ export default class HexmakerPlugin extends Plugin {
       // the wizard confirms the world folder, or closes, or a map opens, so
       // nothing appears in a folder the user hasn't agreed to (fresh-eyes F19).
       const gate = startupWritesWait(this.settings, (p) => !!this.app.vault.getAbstractFileByPath(p));
-      this.releaseStartupWrites = gate.release;
+      this.startupWritesHeld = gate.held;
+      this.releaseStartupWrites = () => {
+        this.startupWritesHeld = false;
+        gate.release();
+      };
       // A fresh install has no older palettes to move into notes: its
       // palettes are simply written, without the "now notes" notice.
       if (gate.held) this.settings.palettesMigrated = true;
