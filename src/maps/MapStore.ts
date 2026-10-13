@@ -1,5 +1,5 @@
 import { Notice, TAbstractFile, TFile, TFolder, parseYaml } from "obsidian";
-import { backgroundText, noticeBackground } from "../ui/notify";
+import { backgroundText, noticeBackground, noticeUpgrade } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapData, MapPath, PathChain, PathType, TerrainColor } from "../types";
 import { normalizeFolder } from "../utils";
@@ -37,6 +37,7 @@ import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { mapRouteContext, pathTypeStyleFor } from "../paths/mapContext";
 import { buildView, emptyView, reconcile, type PathView } from "../paths/chainView";
+import { uniqueMapsByName } from "./mapTree";
 
 /** One hex changed during MapStore.record: its data before and after. */
 export interface HexCellChange {
@@ -750,8 +751,7 @@ export class MapStore {
    * can hold two maps with the same name; both share one folder and note.
    */
   private uniqueMaps(): MapData[] {
-    const seen = new Set<string>();
-    return this.plugin.settings.maps.filter((m) => !seen.has(m.name) && !!seen.add(m.name));
+    return uniqueMapsByName(this.plugin.settings.maps);
   }
 
   /**
@@ -1262,13 +1262,14 @@ export class MapStore {
     const sum = (f: (r: CompactReport) => number) => done.reduce((n, c) => n + f(c.report), 0);
     const chains = sum((r) => r.pathsIn), paths = sum((r) => r.pathsOut), singles = sum((r) => r.singlesDropped.length);
     const merged = sum((r) => r.merged.length), inexact = sum((r) => r.inexact.length);
-    noticeBackground(
+    noticeUpgrade(
       `paths on ${done.length} map${done.length === 1 ? "" : "s"} moved to the new format: ${chains} old path${chains === 1 ? "" : "s"} became ${paths}` +
         (merged ? ` (${merged} joined from touching pieces)` : "") +
-        (singles ? `; ${singles} one-hex leftover${singles === 1 ? " was" : "s were"} dropped` : "") +
         (inexact ? `; ${inexact} kept every hex as written` : "") +
+        // 1.5.x never drew a path one hex long (fresh-eyes 2026-10-13 F5):
+        // say so, so this doesn't read as lost roads.
+        (singles ? `. ${oneHexPiecesText(singles)}` : "") +
         `. The old notes and a report per map are in ${this.backupDir()}.`,
-      15000,
     );
   }
 
@@ -1332,7 +1333,7 @@ export class MapStore {
     if (failed.length) {
       noticeBackground(`couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
     } else {
-      noticeBackground(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
+      noticeUpgrade(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${backupDir}.`);
     }
     await this.plugin.saveData(this.plugin.settings);
   }
@@ -1488,6 +1489,18 @@ export function pathRouteStats(paths: readonly MapPath[], resolved: readonly Res
   return out;
 }
 
+/**
+ * The upgrade notice's line for one-hex path pieces left out of the
+ * conversion. 1.5.x never drew a path one hex long (it skipped chains
+ * under two hexes), so these were never on the map: say that plainly so
+ * it doesn't read as lost roads (fresh-eyes 2026-10-13 F5).
+ */
+export function oneHexPiecesText(n: number): string {
+  return n === 1
+    ? "1 path piece only one hex long was left out. Older versions never drew a path that short, so nothing on the map is gone"
+    : `${n} path pieces only one hex long were left out. Older versions never drew a path that short, so nothing on the map is gone`;
+}
+
 /** A map's path-conversion report, as a note next to its backup. */
 export function pathReportText(map: string, r: CompactReport): string {
   const lines = [
@@ -1501,6 +1514,7 @@ export function pathReportText(map: string, r: CompactReport): string {
     `- Kept with every hex as an anchor (couldn't be shortened exactly): ${r.inexact.length}`,
     "",
     "Every new path draws exactly the steps of the old ones it came from. The old paths are in the backup next to this report.",
+    "One-hex leftovers were never drawn: older versions skipped any path shorter than two hexes, so leaving them out changes nothing on the map.",
     "Below, old paths are named by their type and their place among the old paths of that type (Road, Road 2, Road 3…); the new paths are named the same way, so a name here may now be a different path.",
   ];
   if (r.merged.length) lines.push("", "## Joined", "", ...r.merged.map((m) => `- ${m.name}: ${m.from.join(", ")}`));

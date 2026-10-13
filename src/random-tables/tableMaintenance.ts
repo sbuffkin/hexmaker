@@ -18,6 +18,7 @@ import { writeJsonBackup } from "../backup";
 import { parseRandomTableWithReport, type TableIssue } from "./randomTable";
 import { isTableNotePath, planTableMigration } from "./tableMigration";
 import { processTableNote } from "./TableStore";
+import { noticeUpgrade } from "../ui/notify";
 
 export const TABLE_CHECK_NOTE = "_table-check.md";
 
@@ -283,6 +284,12 @@ export async function openTableRangesModal(plugin: HexmakerPlugin): Promise<void
   new TableRangesModal(plugin.app, plugin, survey).open();
 }
 
+/** The one-time upgrade's notice: how many tables, and where the originals are (fresh-eyes 2026-10-13 F2). */
+export function tableRangesNoticeText(n: number, backup: string | undefined): string {
+  const what = `added roll ranges to ${n} table${n === 1 ? "" : "s"}.`;
+  return backup ? `${what} The originals are backed up in ${backup}.` : what;
+}
+
 /** What the one-time upgrade needs from the plugin (tests pass a fake). */
 export interface TableRangesHost {
   app: App;
@@ -312,6 +319,6 @@ export async function upgradeTableRangesOnce(host: TableRangesHost): Promise<Mig
   host.settings.tableRangesUpgraded = true;
   await host.saveSettings();
   const n = result.changed.length;
-  if (n) new Notice(`Added roll ranges to ${n} table${n === 1 ? "" : "s"} (backed up).`);
+  if (n) noticeUpgrade(tableRangesNoticeText(n, result.backup));
   return result;
 }

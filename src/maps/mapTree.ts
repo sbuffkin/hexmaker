@@ -32,6 +32,19 @@ export function displayNameFor(typed: string, slug: string): string | undefined 
   return t && t !== slug ? t : undefined;
 }
 
+/**
+ * The maps by unique name, first wins. Old data.json files can hold two
+ * entries with the same name (the fresh-eyes seed had two "asdf"); every
+ * lookup by name has always used the first (1.5.6's getMap too), and both
+ * share one folder and one map note, so the later one is never a map of
+ * its own. Every list or count of maps goes through this, so the Maps list,
+ * the hex table's map filter and the rest agree.
+ */
+export function uniqueMapsByName<T extends { name: string }>(maps: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return maps.filter((m) => !seen.has(m.name) && !!seen.add(m.name));
+}
+
 export type MapTreeNode =
   | { kind: "map"; name: string; label: string; children: MapTreeNode[] }
   | { kind: "world"; id: string; label: string; children: MapTreeNode[] }

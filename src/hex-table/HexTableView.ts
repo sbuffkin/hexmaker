@@ -24,6 +24,7 @@ import {
   resolveTerrainType,
   terrainTypeLabel,
 } from "./terrainTypeFilter";
+import { uniqueMapsByName } from "../maps/mapTree";
 
 type SortMode = "x" | "y" | "type";
 const SORT_LABELS: Record<SortMode, string> = {
@@ -120,7 +121,7 @@ export class HexTableView extends ItemView {
    */
   private sectionWords(): SectionWordsFn {
     if (this.mapFilter !== "all") return this.plugin.sectionWordsFor(this.mapFilter);
-    const all = this.plugin.settings.maps.map((m) => this.plugin.sectionWordsFor(m.name));
+    const all = uniqueMapsByName(this.plugin.settings.maps).map((m) => this.plugin.sectionWordsFor(m.name));
     const sig = (w: SectionWordsFn) => LINK_SECTIONS.map((s) => w(s).label).join("|");
     if (all.length && all.every((w) => sig(w) === sig(all[0]))) return all[0];
     return this.plugin.sectionWordsFor(undefined);
@@ -275,7 +276,7 @@ export class HexTableView extends ItemView {
     });
     this.mapSelectEl = regionSelect;
     regionSelect.createEl("option", { value: "all", text: "All maps" });
-    for (const r of this.plugin.settings.maps) {
+    for (const r of uniqueMapsByName(this.plugin.settings.maps)) {
       regionSelect.createEl("option", { value: r.name, text: this.plugin.mapLabel(r.name) });
     }
     // Default to active map view's map
@@ -470,7 +471,7 @@ export class HexTableView extends ItemView {
     // Hexes with map data (terrain, region, …) but no note yet — notes are
     // created on use, so the map note is the other half of the list.
     const seen = new Set(files.map((f) => f.path));
-    for (const m of this.plugin.settings.maps) {
+    for (const m of uniqueMapsByName(this.plugin.settings.maps)) {
       for (const key of this.plugin.mapStore.all(m.name).keys()) {
         const [x, y] = key.split("_").map(Number);
         const path = this.plugin.hexPath(x, y, m.name);

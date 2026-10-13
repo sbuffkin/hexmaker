@@ -1,5 +1,5 @@
 import { MarkdownView, TAbstractFile, TFile, TFolder } from "obsidian";
-import { noticeBackground } from "../ui/notify";
+import { noticeBackground, noticeUpgrade } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType, TerrainPalette } from "../types";
 import { normalizeFolder } from "../utils";
@@ -458,7 +458,7 @@ export class PaletteStore {
       }
       if (!settings.palettesMigrated) {
         settings.palettesMigrated = true;
-        noticeBackground(`terrain palettes are now notes in "${this.folder()}".`);
+        noticeUpgrade(`terrain palettes are now notes in "${this.folder()}".`);
       }
       dirty = true;
     }
@@ -695,7 +695,7 @@ export class PaletteStore {
       }
       applyPresetTerrains(plan);
       const what = plan.add.map(({ palette, terrains }) => `${terrains.map((t) => t.name).join(", ")} to "${palette.name}"`).join("; ");
-      noticeBackground(`added ${what}.`);
+      noticeUpgrade(`added ${what}.`);
     }
     settings.presetTerrainsAdded = [...done, ...plan.done];
     return true;
@@ -737,7 +737,7 @@ export class PaletteStore {
       applyPresetPathFields(plan);
       const pals = [...new Set(plan.set.map((s) => s.palette.name))].map((n) => `"${n}"`).join(", ");
       const what = [...new Set(plan.set.map((s) => `${s.pathType.name} ${s.field === "carves" ? "carves" : "carve width"}: ${s.value}`))].join("; ");
-      noticeBackground(`path types updated in ${pals} (${what}).`);
+      noticeUpgrade(`path types updated in ${pals} (${what}).`);
     }
     settings.presetPathFieldsAdded = [...done, ...plan.done];
     return true;

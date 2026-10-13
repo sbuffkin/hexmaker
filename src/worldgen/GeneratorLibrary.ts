@@ -9,6 +9,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
+import { uniqueMapsByName } from "../maps/mapTree";
 
 export interface LibraryHost {
   /** The generator shown below the list. */
@@ -67,7 +68,7 @@ export class GeneratorLibrary {
     };
     const tabBtns = [
       tabBtn("generators", "Generators", this.generators.length),
-      tabBtn("regions", "Maps", this.plugin.settings.maps.length),
+      tabBtn("regions", "Maps", uniqueMapsByName(this.plugin.settings.maps).length),
     ];
 
     const draw = () => {
@@ -178,7 +179,7 @@ export class GeneratorLibrary {
   private drawRegions(list: HTMLElement, actions: HTMLElement, redraw: () => void): void {
     const checked = GeneratorLibrary.checkedRegions;
     const rows: RegionRow[] = regionRows(
-      this.plugin.settings.maps.map((m) => ({ name: m.name, cols: m.gridSize.cols, rows: m.gridSize.rows, palette: m.paletteName })),
+      uniqueMapsByName(this.plugin.settings.maps).map((m) => ({ name: m.name, cols: m.gridSize.cols, rows: m.gridSize.rows, palette: m.paletteName })),
       this.generators.map((g) => ({ path: g.file.path, name: g.model.name, sources: sourceMapsOf(g.model), terrains: g.model.terrains.length })),
       GeneratorLibrary.query,
     );

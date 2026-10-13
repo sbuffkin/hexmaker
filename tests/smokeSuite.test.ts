@@ -103,7 +103,7 @@ describe("smoke suite findings stay fixed", () => {
 
   it("C5: startup saves wait for the map notes to load", () => {
     const src = read("src", "HexmakerPlugin.ts");
-    expect(src).toMatch(/void storesReady\.then\(\(\) => upgradeTableRangesOnce\(this\)\);/);
+    expect(src).toMatch(/rangesDone = storesReady\.then\(\(\) => upgradeTableRangesOnce\(this\)\);/);
   });
 });
 

@@ -1,5 +1,5 @@
 import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
-import { noticeBackground } from "./ui/notify";
+import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade } from "./ui/notify";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -205,6 +205,9 @@ export default class HexmakerPlugin extends Plugin {
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      // The one-time upgrades below report in ONE notice once they're all
+      // done, not a stack over the map's toolbar (fresh-eyes 2026-10-13 F2).
+      beginNoticeBatch();
       // Palettes first (maps reference them), then map notes — which may
       // migrate per-hex data out of hex notes on the first run.
       // Modules' note stores (biomes, world types) start first, as the
@@ -221,22 +224,24 @@ export default class HexmakerPlugin extends Plugin {
       void storesReady.then(() => this.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
       // generator and modules' notes (world types) in the new note formats (backed up first).
-      void Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
+      const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
         this.devTools = moduleDevTools(this);
       });
-      void this.autoRegisterMapsFromVault();
+      const registered = this.autoRegisterMapsFromVault();
       // Hand edits to table notes (ranges, die, weights) are imported.
       TableStore.register(this);
+      let rangesDone: Promise<unknown> = Promise.resolve();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
       } else {
         // Once after updating: add roll ranges to older tables, silently,
         // after a backup (DJ-Q6). After the stores load, for the same reason.
-        void storesReady.then(() => upgradeTableRangesOnce(this));
+        rangesDone = storesReady.then(() => upgradeTableRangesOnce(this));
       }
+      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => endNoticeBatch());
     });
 
     // Live-refresh the icon list when image files appear in / leave the
@@ -698,6 +703,7 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   onunload() {
+    closeNoticeBatch();
     this.pathPins.detach();
     void this.calloutMemory.save();
     clearPendingTerrain();
@@ -1136,7 +1142,7 @@ export default class HexmakerPlugin extends Plugin {
       this.settings.defaultMap = added[0];
     }
     await this.saveSettings();
-    noticeBackground(
+    noticeUpgrade(
       `auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
     );
   }

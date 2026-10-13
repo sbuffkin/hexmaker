@@ -214,7 +214,9 @@ describe("silent one-time roll-ranges upgrade (DJ-Q6: no prompt)", () => {
     expect([...v.binaries.keys()][0]).toMatch(/^plugin\/backups\/table-ranges-/);
     expect(v.files.get("tables/beach.md")).toBe(LEGACY_MIGRATED);
     expect(h.settings.tableRangesUpgraded).toBe(true);
-    expect(Notice.shown.map((n) => n.msg)).toEqual(["Added roll ranges to 1 table (backed up)."]);
+    // Says where the originals are (fresh-eyes 2026-10-13 F2).
+    const backup = [...v.binaries.keys()][0];
+    expect(Notice.shown.map((n) => n.msg)).toEqual([`Hexmap World Creator: added roll ranges to 1 table. The originals are backed up in ${backup}.`]);
   });
 
   it("runs once: after a recorded run, the next start does nothing", async () => {

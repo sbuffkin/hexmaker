@@ -283,6 +283,11 @@ export class HexmakerModal extends Modal {
 	/** Make this modal draggable by its title-bar area. Safe to call multiple times. */
 	protected makeDraggable(): void {
 		const modalEl = this.modalEl;
+		// Every modal stays inside the window as it grows (fresh-eyes
+		// 2026-10-13 F6: on a 900px window a tall modal's bottom controls sat
+		// past the edge, and a click there landed on the map and closed it).
+		// Its content scrolls inside (CSS: .duckmage-editor-modal-drag).
+		this.viewportClamp ??= this.clampToViewport();
 		if (modalEl.dataset.draggable) return;
 		modalEl.dataset.draggable = "1";
 		modalEl.addClass("duckmage-editor-modal-drag");
@@ -342,16 +347,44 @@ export class HexmakerModal extends Modal {
 	 * Returns a stop function: call it from onClose.
 	 */
 	protected keepInViewport(): () => void {
+		this.viewportClamp ??= this.clampToViewport();
+		return () => {
+			this.viewportClamp?.();
+			this.viewportClamp = null;
+		};
+	}
+
+	/** Stops the viewport clamp (see clampToViewport); null when none runs. */
+	private viewportClamp: (() => void) | null = null;
+
+	/**
+	 * Move the modal up whenever it would run past the window's bottom edge
+	 * (it grew, or the window shrank), never above the top padding; its CSS
+	 * max-height caps the rest and the content scrolls. Stops by itself once
+	 * the modal leaves the page. Returns a stop function.
+	 */
+	private clampToViewport(): () => void {
 		const modalEl = this.modalEl;
 		const win = modalEl.ownerDocument.defaultView ?? window;
 		const PADDING = 8;
-		const observer = new win.ResizeObserver(() => {
+		const fit = () => {
+			if (!modalEl.isConnected) { stop(); return; }
 			const r = modalEl.getBoundingClientRect();
 			const overflow = r.bottom - (win.innerHeight - PADDING);
 			if (overflow > 0) modalEl.setCssProps({ top: `${Math.max(PADDING, r.top - overflow)}px` });
-		});
+		};
+		const observer = new win.ResizeObserver(fit);
 		observer.observe(modalEl);
-		return () => observer.disconnect();
+		win.addEventListener("resize", fit);
+		let stopped = false;
+		const stop = () => {
+			if (stopped) return;
+			stopped = true;
+			observer.disconnect();
+			win.removeEventListener("resize", fit);
+			if (this.viewportClamp === stop) this.viewportClamp = null;
+		};
+		return stop;
 	}
 
 	/**

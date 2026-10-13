@@ -27,7 +27,7 @@
  * forever, so a note synced from an older device still works.
  */
 import { TFile, type App } from "obsidian";
-import { noticeBackground } from "./ui/notify";
+import { noticeUpgrade } from "./ui/notify";
 import { writeJsonBackup } from "./backup";
 import { mapDataLines, moveBodyFieldsIntoMapData, shownValues, type HexMapDataView, type MapDataShown } from "./hexMapData";
 import { linkFrontmatterKey, linkFrontmatterList, linkNotePathKey, linkTokenMap, mapNoteLink, pathLink, renameHexMapKey } from "./noteFormats";
@@ -332,6 +332,6 @@ export async function runNoteFormatUpgrades(host: NoteFormatHost): Promise<Upgra
     await host.saveSettings();
   }
   const msg = upgradeMessage(results);
-  if (msg) noticeBackground(msg, 15000);
+  if (msg) noticeUpgrade(msg);
   return results;
 }

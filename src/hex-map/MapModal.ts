@@ -26,7 +26,7 @@ import { canDo, guardWrite } from "../modeGate";
 import { addGodOffer } from "./godOffer";
 import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
-import { buildMapTree, filterMapTree, nodeKey, treeContains, type MapTreeNode } from "../maps/mapTree";
+import { buildMapTree, filterMapTree, nodeKey, treeContains, uniqueMapsByName, type MapTreeNode } from "../maps/mapTree";
 import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
 import { armButton } from "../ui/footer";
 import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
@@ -211,7 +211,7 @@ export class MapModal extends HexmakerModal {
    * and its branch kept open; a search box appears once the list is long.
    */
   private renderMapsTab(el: HTMLElement): void {
-    const maps = this.plugin.settings.maps;
+    const maps = uniqueMapsByName(this.plugin.settings.maps);
     const tree = buildMapTree(maps, (n) => this.plugin.parentOf(n)?.map);
     const long = maps.length > MapModal.SEARCH_FROM;
     let query = MapModal.lastQuery;

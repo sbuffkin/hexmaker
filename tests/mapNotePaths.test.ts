@@ -331,7 +331,7 @@ describe("migration from every-hex chains (section 6 tests a–c)", () => {
     expect(report).toContain("- One-hex leftovers dropped (no notes): 1");
     expect(report).toContain("- Road 3 (Road) at 12, 2");
     expect(report).toContain("- Road: Road, Road 2");
-    expect(Notice.shown.some((n) => n.msg.includes("moved to the new format") && n.msg.includes("one-hex leftover"))).toBe(true);
+    expect(Notice.shown.some((n) => n.msg.includes("moved to the new format") && n.msg.includes("1 path piece only one hex long was left out"))).toBe(true);
     // a restart rewrites nothing
     v.writes = [];
     await boot(v, [fixtureMap()]);

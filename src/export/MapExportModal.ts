@@ -15,6 +15,7 @@ import {
   type MapExportPrefs,
 } from "./exportNames";
 import { Disclosure, Fold } from "../ui/disclosure";
+import { uniqueMapsByName } from "../maps/mapTree";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -84,7 +85,7 @@ export function renderMapExportForm(
     const id = `duckmage-export-field-${nextFieldId++}`;
     mapRow.createEl("label", { text: "Map", cls: "duckmage-export-tab-label", attr: { for: id } });
     const mapSelect = mapRow.createEl("select", { cls: "duckmage-export-tab-select", attr: { id } });
-    for (const m of plugin.settings.maps) mapSelect.createEl("option", { value: m.name, text: plugin.mapLabel(m.name) });
+    for (const m of uniqueMapsByName(plugin.settings.maps)) mapSelect.createEl("option", { value: m.name, text: plugin.mapLabel(m.name) });
     mapSelect.value = mapName;
     // Another map: the form again, with that map's choices.
     mapSelect.addEventListener("change", () => renderMapExportForm(el, plugin, mapSelect.value, form));

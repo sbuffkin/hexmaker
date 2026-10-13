@@ -735,12 +735,18 @@ div.duckmage-hex-terrain-icon {
     max-height: min(90vh, 860px);
     max-width: none;
     min-width: 320px;
-    min-height: 420px;
+    min-height: min(420px, calc(100vh - 16px));
+    /* A flex column whose content may shrink: the content scrolls inside
+       the modal, and the modal stays inside the window (fresh-eyes
+       2026-10-13 F6; HexmakerModal.clampToViewport keeps its top in reach). */
+    display: flex;
+    flex-direction: column;
 }
 .duckmage-editor-modal-drag .modal-content {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 .duckmage-editor-title-drag {
     cursor: move;
@@ -6512,6 +6518,13 @@ button.duckmage-wfc-library-tab.is-active {
 .duckmage-hex-editor .duckmage-terrain-picker {
     max-height: 164px;
 }
+/* The full palette (Paint terrain) grows with its modal, which scrolls as
+   one: no short inner scroll box whose last row sits cut off at its edge
+   (fresh-eyes 2026-10-13 F6). */
+.duckmage-hex-editor .duckmage-terrain-picker.duckmage-terrain-picker-full {
+    max-height: none;
+    overflow-y: visible;
+}
 
 /* Random tables with nothing to roll yet: message + a way to fill them (E6). */
 .duckmage-rt-empty-state {
@@ -9396,4 +9409,35 @@ button.is-armed {
     cursor: grab;
     color: var(--text-faint);
     user-select: none;
+}
+
+/* ── Background notices (src/ui/notify.ts): clicks pass through to the
+   map toolbar under Obsidian's notice corner; only the × catches them ── */
+.notice.duckmage-bg-notice {
+    pointer-events: none;
+    position: relative;
+    padding-inline-end: 2em;
+}
+
+.duckmage-bg-notice .duckmage-bg-notice-close {
+    pointer-events: auto;
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
+    padding: 0 6px;
+    height: auto;
+    min-height: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.duckmage-bg-notice ul {
+    margin: 0.3em 0 0;
+    padding-inline-start: 1.2em;
+}
+
+.duckmage-bg-notice p {
+    margin: 0;
 }

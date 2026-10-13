@@ -91,7 +91,7 @@ An interactive hex grid rendered as an Obsidian panel.
 - **Pan** by clicking and dragging with the left or middle mouse button.
 - **Zoom** with the scroll wheel.
 - **Expand** the grid with the `+`/`−` buttons at the map edges.
-- **Go to hex** (`⌖` button in the toolbar) — enter coordinates to centre the view on a specific hex.
+- **Center hex** (in the drawing tools panel, the pencil on the map's right edge) — enter coordinates to centre the view on a specific hex. For a hex you can see, right-click it → **Center on this hex**.
 - **Undo / Redo** (`↩` / `↪` buttons, Ctrl/Cmd+Z) — step back or forward through this map's changes made in its current work mode (one queue per map per mode; see **Work modes** below).
 
 ### Maps
@@ -276,6 +276,7 @@ Click the **pencil** icon on the right edge of the map to open the drawing tools
 | **Factions** | Paint a faction color (drag to paint multiple hexes) | Erase faction from hex |
 | **Areas** | Paint an area note's color (a named area like a basin or a kingdom, not a region submap) | Erase the area from the hex |
 | **Token** | Open the token creator, then click a hex to place the new token | Cancel placement |
+| **Center hex** | Asks for X, Y and centres the view on that hex (not a tool mode) | — |
 
 **Terrain painter extras:**
 - Clicking the Terrain button always reopens the palette so you can switch colors mid-session.

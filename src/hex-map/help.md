@@ -66,7 +66,7 @@ The **+** buttons at the edges of the map grow the grid one column or row in tha
 
 ## Drawing tools
 
-The everyday tools come first in the panel; **Link table**, **Link submap** and **Areas** are in its **Advanced** dropdown.
+The everyday tools come first in the panel; **Link table**, **Link submap** and **Areas** are in its **Advanced** dropdown. **Center hex** asks for X, Y and centres the view on that hex.
 
 ### Paths
 Pick a path type in the path picker (choose **Hex by hex** or **Auto-route** first; switch either way later from the bar at the top). Every path has a name and shows up under **Paths on this map** in the picker's **Advanced** dropdown, with its ends, forks and size; click one there to select it (the tool switches to its type).
@@ -123,7 +123,6 @@ Create a note-backed token (icon, shape, size, colors, description) and place it
 |--------|--------|
 | **⊞** | Open the Hex Table — a spreadsheet view of all hex notes with filters and sorting |
 | **🎲** | Open the Random Tables browser — roll on any table, view odds, edit entries |
-| **⌖** | Go to a specific hex by entering X, Y coordinates |
 
 ## Badges and legend
 
