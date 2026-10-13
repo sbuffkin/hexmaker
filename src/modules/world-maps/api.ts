@@ -14,7 +14,8 @@
  */
 
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { OverworldLayer } from "../../overworld/overworldLayer";
+import { OverworldLayer, REGION_PATHS_ROW } from "../../overworld/overworldLayer";
+import type { LayerRow } from "../../hex-map/HexSidePanel";
 import { OverworldMinimap } from "../../overworld/overworldMinimap";
 import { BiomePickerModal, RegionGenModal, rerollRegionAt } from "../../overworld/BiomeModals";
 import { BiomePaletteModal } from "../../overworld/BiomePaletteModal";
@@ -68,6 +69,11 @@ function hexBiomeRef(plugin: HexmakerPlugin, mapName: string, key: string): { la
   return { label, note: plugin.biomeStore.pathOf(id) };
 }
 
+/** The layers-menu rows World maps adds: paths between regions, on overworlds. */
+function layerRows(plugin: HexmakerPlugin): LayerRow[] {
+  return [{ ...REGION_PATHS_ROW, shows: (map) => REGION_PATHS_ROW.shows(plugin, map) }];
+}
+
 /** The hooks, made on first use (never at import time: the overworld code imports the core, which reaches here through the runtime). */
 function makeApi() {
   return {
@@ -102,6 +108,7 @@ function makeApi() {
   // The map view on an overworld: its layer, minimap, clicks and brush.
   OverworldLayer,
   OverworldMinimap,
+  layerRows,
   overworldRefreshFor,
   overworldLeftClick,
   overworldMenu,

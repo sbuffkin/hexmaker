@@ -247,6 +247,8 @@ export interface MapData {
 	overworldView?: "regions" | "biomes";
 	/** Overworlds and their regions: the small overworld panel. Unset = shown. */
 	showMinimap?: boolean;
+	/** Overworlds, Regions view: region paths that cross region seams. Unset = shown. */
+	showRegionPaths?: boolean;
 	/** Work mode (Play / Build / God, src/workMode.ts), as written in the
 	 *  map note (`mode: god`). Unset = Build. */
 	workMode?: string;

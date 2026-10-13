@@ -41,6 +41,8 @@ export const worldMapsModule: HexmakerModule = {
       // Biome tuning and Blend into <biome> (owner 2026-10-12).
       "Coastline raggedness",
       "Make a generator instead…",
+      // Paths between regions on an overworld (owner 2026-10-13).
+      "Paths between regions",
     ],
   },
 };

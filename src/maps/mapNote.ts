@@ -403,6 +403,7 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["arrivalRerolls", "arrival-rerolls", "num"],
   ["overworldView", "overworld-view", "str"],
   ["showMinimap", "show-minimap", "bool"],
+  ["showRegionPaths", "show-region-paths", "bool"],
   // Work mode: play, build or god (src/workMode.ts).
   ["workMode", "mode", "str"],
   ["biomeRiver", "biome-river", "str"],
