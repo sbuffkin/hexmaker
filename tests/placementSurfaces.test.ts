@@ -115,10 +115,10 @@ describe("dropped controls are gone", () => {
     expect(SRC).not.toMatch(/renderNewMapFields/);
   });
 
-  it("Biome form: the typed weight box (the slider stays)", () => {
+  it("Biome form: the typed weight box is gone (New biome only asks for the basics; the biome page has the share sliders)", () => {
     const src = read("src", "overworld", "BiomeLibraryModal.ts");
-    expect(src).not.toMatch(/weight value/);
-    expect(src).toMatch(/type: "range"[^\n]*weight/);
+    expect(src).not.toMatch(/weight value|type: "range"/);
+    expect(read("src", "overworld", "BiomePanel.ts")).toMatch(/renderShareSliders\(/);
   });
 
   it("Table picker: Open tables view", () => {

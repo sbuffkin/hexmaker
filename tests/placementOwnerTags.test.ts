@@ -402,11 +402,11 @@ describe("generator page and wizard place their controls by id", () => {
 });
 
 describe("dropped controls are gone", () => {
-  it("the biome page's typed weight box (BiomePage.weightNumber) is removed; the slider stays", () => {
+  it("the biome page's typed weight box (BiomePage.weightNumber) is removed; the shared share sliders stay", () => {
     const biome = read("src", "overworld", "BiomePanel.ts");
     expect(biome).not.toContain("weight value");
-    expect(biome).toContain("weight` } });");
-    expect(read("styles.css")).toMatch(/\.duckmage-biome-page-mix \{[^}]*grid-template-columns: minmax\(6em, max-content\) minmax\(6em, 1fr\) 6em;/);
+    expect(biome).toContain("renderShareSliders(el, {");
+    expect(read("styles.css")).toMatch(/\.duckmage-biome-page-mix \.duckmage-share-sliders-row \{[^}]*grid-template-columns:/);
   });
 
   it("no drop-tagged id on these surfaces has a placement entry", () => {

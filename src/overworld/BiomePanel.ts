@@ -1,17 +1,21 @@
 /**
- * The generator page for a blend-field biome (#50): "Biome (blend field)".
- * Opened with `plugin.openTerrainGenerator({ biome })` (the biome form's
- * and Edit region's "Edit generator…"). Tunes what the biome's note says,
- * with a live preview of a sample region made by the blend field
- * (regionWorld.planRegion):
+ * The biome page (#50): "Biome (blend field)", THE biome editor (owner Q14,
+ * 2026-10-13: one editor; Biomes… › New biome… only asks for the basics and
+ * opens this page). Opened with `plugin.openTerrainGenerator({ biome })`
+ * (Biomes… › Edit…, Edit region's "Edit generator…"). Edits everything the
+ * biome's note says, with a live preview of a sample region made by the
+ * blend field (regionWorld.planRegion):
  *
- * - the type mix (weights) and min patches per type;
- * - blend width, land share, min islands and shore;
- * - transitions.
+ * - name, colour, what makes its regions (Made by) and Regions start blank;
+ * - the type mix (ShareSliders: shares adding up to 100%) and min patches;
+ * - terrain weights within a type (ShareSliders);
+ * - blend width, land share (inherited from the mix until set), min islands, shore;
+ * - climate; transitions; Debug tuning.
  *
- * Every change is written through `biomeStore.update` (the note's prose is
- * kept); "Restore default" calls `restoreDefault` for shipped biomes. A
- * hand edit to the note while the page is open re-renders it.
+ * Autosaves: every change is written through `biomeStore.update` (the
+ * note's prose is kept), with the shared save-status line; no Save button.
+ * "Restore default" calls `restoreDefault` for shipped biomes. A hand edit
+ * to the note while the page is open re-renders it.
  */
 
 import { Notice, TFile } from "obsidian";
@@ -31,7 +35,15 @@ import {
   type BiomeNoteFields,
   type TuningParam,
 } from "./biomeNote";
-import { formTypes } from "./biomeForm";
+import { biomeNameProblem, climateFormFrom, climateFromForm, formTypes, generatorName, routeNote, type ClimateFormState } from "./biomeForm";
+import { landOf } from "./biomeCombo";
+import { withinTypeWeights } from "./biomes";
+import { listGenerators } from "../worldgen/generators";
+import { renderShareSliders } from "../ui/shareSliders";
+import { percentsToWeights } from "../ui/shares";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
+import { numberField } from "../ui/scrub";
+import { renderSaveStatusLine, type SaveStatusLine } from "../ui/saveStatusLine";
 import { OPEN_SEA, profileFromFields, type BiomeId } from "./biomes";
 import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { profilesForPalette } from "./regionsVault";
@@ -55,9 +67,15 @@ export interface BiomePanelHost {
 /** What the preview puts around the sample region. */
 export type PreviewSurround = "same" | "land-west";
 
-/** The note fields the page edits (everything but id, label, colour and generator). */
+/** The note fields the page edits (everything but the id). */
 export function biomePagePatch(f: BiomeNoteFields): Partial<Omit<BiomeNoteFields, "id">> {
   return {
+    label: f.label,
+    color: f.color,
+    generator: f.generator,
+    blank: f.blank ? true : undefined,
+    climate: f.climate,
+    terrainWeights: f.terrainWeights?.length ? f.terrainWeights.map((w) => ({ ...w })) : undefined,
     mix: f.mix.map((r) => ({ ...r })),
     transitions: f.transitions.map((t) => ({ ...t })),
     blend: f.blend,
@@ -94,6 +112,42 @@ export function setMixRow(f: BiomeNoteFields, type: string, change: { weight?: n
     if (change.minPatches === null || !(change.minPatches > 0)) delete row.minPatches;
     else row.minPatches = Math.round(change.minPatches);
   }
+}
+
+/**
+ * The type mix from the share sliders: whole percentages (adding up to
+ * 100) as each type's weight; 0% drops the type. A type's min patches
+ * survive it dipping to 0% mid-drag (`kept`). Pure.
+ */
+export function setMixShares(f: BiomeNoteFields, types: readonly string[], percents: readonly number[], kept: ReadonlyMap<string, number> = new Map()): void {
+  types.forEach((type, i) => {
+    setMixRow(f, type, { weight: percents[i] ?? 0 });
+    const row = f.mix.find((r) => r.type === type);
+    if (row && row.minPatches === undefined && kept.has(type)) row.minPatches = kept.get(type);
+  });
+}
+
+/**
+ * One type's terrain weights from its share sliders (`names`: the
+ * palette's terrains of that type): stored as small whole weights that read
+ * back as the same percentages, a terrain at 1 left out (1 is the default);
+ * an even split stores nothing. Other types' weights are kept. Pure.
+ */
+export function setTypeTerrainWeights(f: BiomeNoteFields, names: readonly string[], percents: readonly number[]): void {
+  const mine = new Set(names.map((n) => n.trim().toLowerCase()));
+  const rest = (f.terrainWeights ?? []).filter((w) => !mine.has(w.terrain.trim().toLowerCase()));
+  const weights = percentsToWeights(percents);
+  const even = weights.every((w) => w === weights[0]);
+  const own = even ? [] : names.map((terrain, i) => ({ terrain, weight: weights[i] })).filter((w) => w.weight !== 1);
+  const all = [...rest, ...own];
+  if (all.length) f.terrainWeights = all;
+  else delete f.terrainWeights;
+}
+
+/** Each terrain's share of its type (fractions, for the sliders). */
+export function typeTerrainShares(f: Pick<BiomeNoteFields, "terrainWeights">, names: readonly string[]): number[] {
+  const within = withinTypeWeights(names, f.terrainWeights);
+  return names.map((n) => within.get(n) ?? 0);
 }
 
 /**
@@ -142,6 +196,10 @@ export class BiomePanel {
   private writing = 0;
   private writeTimer: number | null = null;
   private drawTimer: number | null = null;
+  /** The shared autosave line (set by render). */
+  private status: SaveStatusLine | null = null;
+  /** Where the Terrain weights sliders go (set by render). */
+  private weightsBox: HTMLElement | null = null;
 
   constructor(
     private plugin: HexmakerPlugin,
@@ -173,14 +231,16 @@ export class BiomePanel {
       if (!now) { this.host.back(); return; }
       if (JSON.stringify(biomePagePatch(now)) !== JSON.stringify(biomePagePatch(this.fields))) this.host.rerender();
     });
+    // The page's Advanced dropdown (src/ui/placement.ts); made up front so controls can be placed into it.
+    const disclosure = new Disclosure(plugin.app, "BiomePage", () => main);
 
-    // Header: which biome, its note, restore, back.
+    // Header: which biome, its note, restore, back, and the autosave line.
     let el = this.host.section(main, "Biome (blend field)");
     const head = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     head.createSpan({ text: "Biome", cls: "duckmage-map-origin-label" });
     const pick = head.createEl("select", { attr: { "aria-label": "Biome" } });
     // Grouped (Surface, Mountains, …) as option groups.
-    const groups = groupBiomes(plugin.biomeStore.list().filter((b) => !b.blank), biomeGroupOf);
+    const groups = groupBiomes(plugin.biomeStore.list().filter((b) => !b.blank || b.id === this.id), biomeGroupOf);
     for (const g of groups) {
       const parent = groups.length > 1 ? pick.createEl("optgroup", { attr: { label: g.label } }) : pick;
       // Generator biomes too: their mix still blends into neighbours, and Debug › Engine tunes their generator.
@@ -209,53 +269,126 @@ export class BiomePanel {
       cls: "duckmage-map-origin-desc",
       text: `${f.label}'s regions mix these terrain types and blend into the biomes next to them. Changes are saved to its note${path ? ` (${path})` : ""}.`,
     });
+    // The shared autosave line (no Save button: the page saves as you go).
+    this.status = renderSaveStatusLine(el);
 
-    // Type mix.
-    el = this.host.section(main, "Type mix");
-    const palette = this.palette();
-    const present = new Set(palette.map((t) => t.type));
-    const grid = el.createDiv({ cls: "duckmage-biome-page-mix" });
-    const headRow = grid.createDiv({ cls: "duckmage-biome-page-row is-head" });
-    for (const h of ["Type", "Weight", "Min patches"]) headRow.createSpan({ text: h });
-    for (const type of formTypes(palette, f)) {
-      const row = grid.createDiv({ cls: "duckmage-biome-page-row" });
-      if (!present.has(type)) row.addClass("is-missing");
-      row.createSpan({ text: type, attr: { title: present.has(type) ? type : `${type}: not in this palette` } });
-      const cur = () => f.mix.find((r) => r.type === type);
-      const slider = row.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "1", "aria-label": `${type} weight` } });
-      const patches = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", step: "1", placeholder: "—", "aria-label": `${type} min patches` } });
-      const show = () => {
-        const r = cur();
-        slider.value = String(Math.min(100, r?.weight ?? 0));
-        slider.title = String(r?.weight ?? 0);
-        patches.value = r?.minPatches !== undefined ? String(r.minPatches) : "";
-        patches.disabled = !r;
-      };
-      show();
-      slider.addEventListener("input", () => {
-        setMixRow(f, type, { weight: Number(slider.value) });
-        slider.title = slider.value;
-        patches.disabled = !cur();
-        this.schedulePreview();
-      });
-      slider.addEventListener("change", () => this.save());
-      patches.addEventListener("change", () => {
-        setMixRow(f, type, { minPatches: patches.value.trim() === "" ? null : Number(patches.value) });
-        show();
-        this.schedulePreview();
-        this.save();
-      });
-    }
-    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Weights are relative (any scale). Min patches: the fewest separate patches of that type a region gets, so a sprinkle (peaks, a volcano) isn't smoothed away." });
-
-    // Blend, land and shore.
-    el = this.host.section(main, "Blend and land");
-    const field = (label: string) => {
-      const row = el.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
+    const field = (parent: HTMLElement, label: string) => {
+      const row = parent.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
       row.createSpan({ text: label, cls: "duckmage-map-origin-label" });
       return row;
     };
-    const blend = field("Blend width").createEl("select", { attr: { "aria-label": "Blend width" } });
+
+    // Name, colour, what makes its regions (the one biome editor, owner Q14).
+    const nameRow = field(el, "Name");
+    const name = nameRow.createEl("input", { type: "text", attr: { "aria-label": "Name", placeholder: "Glass wastes" } });
+    name.value = f.label;
+    const nameProblem = el.createEl("p", { cls: "duckmage-locked-hint" });
+    name.addEventListener("change", () => {
+      const others = plugin.biomeStore.list().filter((b) => b.id !== this.id);
+      const problem = biomeNameProblem(name.value, others);
+      nameProblem.setText(problem ?? "");
+      if (problem) return;
+      f.label = name.value.trim();
+      this.save();
+    });
+    const colour = field(el, "Colour").createEl("input", { type: "color", attr: { "aria-label": "Colour" } });
+    colour.value = /^#[0-9a-f]{6}$/i.test(f.color ?? "") ? f.color! : "#7a9a5a";
+    colour.addEventListener("change", () => {
+      f.color = colour.value.toLowerCase();
+      this.save();
+    });
+    const gen = field(el, "Made by").createEl("select", { attr: { "aria-label": "Made by" } });
+    gen.createEl("option", { text: "Blend (built-in mixing)", value: "" });
+    if (f.generator) gen.createEl("option", { text: generatorName(f.generator), value: f.generator });
+    gen.value = f.generator ?? "";
+    void listGenerators(plugin).catch(() => []).then((gens) => {
+      for (const g of gens) {
+        const value = g.file.path.replace(/\.md$/, "");
+        if (value !== f.generator) gen.createEl("option", { text: g.model.name || g.file.basename, value });
+      }
+    });
+    const genNote = el.createEl("p", { cls: "duckmage-map-origin-desc", text: routeNote(f) ?? "Blend mixes the terrain types below, and blends into the biomes next to it." });
+    gen.addEventListener("change", () => {
+      if (gen.value) f.generator = gen.value;
+      else delete f.generator;
+      genNote.setText(routeNote(f) ?? "");
+      this.save();
+      // Debug › Engine shows only for a biome with a generator.
+      this.host.rerender();
+    });
+    const blankRow = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
+    const blankBox = blankRow.createEl("input", { type: "checkbox", attr: { "aria-label": "Regions start blank" } });
+    blankBox.checked = !!f.blank;
+    blankRow.createSpan({ text: "Regions start blank (painted by hand; never placed by the generator)" });
+    blankBox.addEventListener("change", () => {
+      if (blankBox.checked) f.blank = true;
+      else delete f.blank;
+      this.save();
+    });
+
+    // Type mix: the shared zero-sum sliders (src/ui/shareSliders.ts), each
+    // type's share of the mix, always adding up to 100%; 0 = not in it.
+    el = this.host.section(main, "Type mix");
+    const palette = this.palette();
+    const present = new Set(palette.map((t) => t.type));
+    const types = formTypes(palette, f);
+    const cur = (type: string) => f.mix.find((r) => r.type === type);
+    // Min patches survive a type dipping to 0% mid-drag (setMixRow drops the row).
+    const keptPatches = new Map(f.mix.filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!]));
+    const patchBoxes: HTMLInputElement[] = [];
+    const showPatches = () => types.forEach((type, i) => {
+      const r = cur(type);
+      patchBoxes[i].value = r?.minPatches !== undefined ? String(r.minPatches) : "";
+      patchBoxes[i].disabled = !r;
+    });
+    const setShares = (percents: number[]) => {
+      setMixShares(f, types, percents, keptPatches);
+      showPatches();
+    };
+    renderShareSliders(el, {
+      empty: "hold",
+      cls: "duckmage-biome-page-mix",
+      head: ["Type", "", "Share", "Min patches"],
+      items: types.map((type) => ({ label: type, title: present.has(type) ? type : `${type}: not in this palette`, cls: present.has(type) ? undefined : "is-missing" })),
+      weights: types.map((type) => cur(type)?.weight ?? 0),
+      extra: (row, i) => {
+        const type = types[i];
+        patchBoxes[i] = numberField(row, {
+          min: 0, max: 99, whole: true, blank: true, placeholder: "—", ariaLabel: `${type} min patches`,
+          value: cur(type)?.minPatches,
+          onChange: (v) => {
+            setMixRow(f, type, { minPatches: v ?? null });
+            if (v !== undefined && v > 0) keptPatches.set(type, v);
+            else keptPatches.delete(type);
+            showPatches();
+            this.schedulePreview();
+            this.save();
+          },
+        });
+      },
+      onInput: (_shares, percents) => {
+        setShares(percents);
+        this.schedulePreview();
+      },
+      onChange: (_shares, percents) => {
+        setShares(percents);
+        this.schedulePreview();
+        this.save();
+        this.renderTerrainWeights();
+      },
+    });
+    showPatches();
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Each type's share of the mix (they always add up to 100%; 0% = not in it). Min patches: the fewest separate patches of that type a region gets, so a sprinkle (peaks, a volcano) isn't smoothed away." });
+
+    // Terrain weights: within a type, how its palette terrains share it (also zero-sum).
+    el = this.host.section(main, "Terrain weights");
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "For a type with more than one terrain in the palette: how its share splits between them. Even unless you move them." });
+    this.weightsBox = el.createDiv({ cls: "duckmage-biome-terrain-weights" });
+    this.renderTerrainWeights();
+
+    // Blend, land and shore.
+    el = this.host.section(main, "Blend and land");
+    const blend = field(el, "Blend width").createEl("select", { attr: { "aria-label": "Blend width" } });
     blend.createEl("option", { text: "Overworld setting", value: "" });
     for (const b of BIOME_BLENDS) blend.createEl("option", { text: b, value: b });
     blend.value = f.blend ?? "";
@@ -265,35 +398,37 @@ export class BiomePanel {
       this.schedulePreview();
       this.save();
     });
-    const landRow = field("Land share");
-    const landOn = landRow.createEl("input", { type: "checkbox", attr: { "aria-label": "Set a land share" } });
-    const land = landRow.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5", "aria-label": "Land share" } });
-    const landVal = landRow.createSpan();
-    const showLand = () => {
-      landOn.checked = f.landShare !== undefined;
-      land.disabled = f.landShare === undefined;
-      land.value = String(Math.round((f.landShare ?? 0.5) * 100));
-      landVal.setText(f.landShare !== undefined ? `${Math.round(f.landShare * 100)}%` : "Not set");
-    };
-    showLand();
-    landOn.addEventListener("change", () => {
-      if (landOn.checked) f.landShare = Number(land.value) / 100;
-      else delete f.landShare;
-      showLand();
-      this.schedulePreview();
-      this.save();
+    // Land share: unset shows the land share its type mix gives, dimmed, with a reset (audit S7).
+    const land = renderLabeledSlider(el, {
+      label: "Land share",
+      min: 0, max: 100, step: 1, wheelStep: 5,
+      value: Math.round((f.landShare ?? landOf(f.mix)) * 100),
+      format: sliderFormat.percent,
+      isSet: () => f.landShare !== undefined,
+      reset: {
+        value: Math.round(landOf(f.mix) * 100),
+        text: "from the type mix",
+        onReset: () => {
+          delete f.landShare;
+          land.set(Math.round(landOf(f.mix) * 100));
+          this.schedulePreview();
+          this.save();
+        },
+      },
+      onInput: (v) => { f.landShare = v / 100; this.schedulePreview(); },
+      onChange: (v) => { f.landShare = v / 100; this.save(); },
     });
-    land.addEventListener("input", () => { f.landShare = Number(land.value) / 100; showLand(); this.schedulePreview(); });
-    land.addEventListener("change", () => this.save());
-    const isl = field("Min islands").createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", step: "1", placeholder: "—", "aria-label": "Min islands" } });
-    isl.value = f.minIslands !== undefined ? String(f.minIslands) : "";
-    isl.addEventListener("change", () => {
-      if (isl.value.trim() === "") delete f.minIslands;
-      else f.minIslands = Math.max(0, Math.round(Number(isl.value) || 0));
-      this.schedulePreview();
-      this.save();
+    numberField(field(el, "Min islands"), {
+      min: 0, max: 99, whole: true, blank: true, placeholder: "—", ariaLabel: "Min islands",
+      value: f.minIslands,
+      onChange: (v) => {
+        if (v === undefined) delete f.minIslands;
+        else f.minIslands = v;
+        this.schedulePreview();
+        this.save();
+      },
     });
-    const shoreRow = field("Shore");
+    const shoreRow = field(el, "Shore");
     const shore = shoreRow.createEl("input", { type: "checkbox", attr: { "aria-label": "Shore" } });
     shore.checked = !!f.shore;
     shoreRow.createSpan({ cls: "duckmage-map-origin-desc", text: "Land faces the land-heavy neighbours, water the rest, with a coast between." });
@@ -304,6 +439,51 @@ export class BiomePanel {
       this.save();
     });
     el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Land share and min islands are for watery biomes (islands), or with shore on, how much of a region is land." });
+
+    // Climate (optional): where World biomes may place it.
+    el = this.host.section(main, "Climate");
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "When set, the overworld generator can place this biome where the climate fits, like a built-in one. Left blank, it's only placed by hand. Temperature: cold, cool, mild, warm, hot; moisture: dry, moderate, wet; or numbers from 0 to 1." });
+    const cl = climateFormFrom(f.climate);
+    const climateProblem = el.createEl("p", { cls: "duckmage-locked-hint" });
+    const climateChanged = () => {
+      const r = climateFromForm(cl);
+      climateProblem.setText(r.problems.length ? `Climate: ${r.problems[0]}.` : "");
+      if (r.problems.length) return;
+      if (r.climate) f.climate = r.climate;
+      else delete f.climate;
+      this.save();
+    };
+    const text = (label: string, value: string, placeholder: string, set: (v: string) => void) => {
+      const input = field(el, label).createEl("input", { type: "text", attr: { "aria-label": label, placeholder } });
+      input.value = value;
+      input.addEventListener("change", () => { set(input.value); climateChanged(); });
+    };
+    text("Temperature", cl.temperature, "Any (e.g. cold–mild)", (v) => { cl.temperature = v; });
+    text("Moisture", cl.moisture, "Any (e.g. wet, 0.2–0.5)", (v) => { cl.moisture = v; });
+    const elev = field(el, "Height").createEl("select", { attr: { "aria-label": "Height" } });
+    for (const [v, t] of [["", "Not set (low)"], ["low", "Low"], ["mid", "Mid (hills)"], ["high", "High (peaks)"], ["sea", "Sea"], ["mouth", "River mouth"]] as const) elev.createEl("option", { value: v, text: t });
+    elev.value = cl.elevation;
+    elev.addEventListener("change", () => { cl.elevation = elev.value as ClimateFormState["elevation"]; climateChanged(); });
+    const tick = (label: string, on: boolean, set: (v: boolean) => void) => {
+      const row = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
+      const box = row.createEl("input", { type: "checkbox" });
+      box.checked = on;
+      row.createSpan({ text: label });
+      box.addEventListener("change", () => { set(box.checked); climateChanged(); });
+    };
+    tick("Coast only", cl.coastal, (v) => { cl.coastal = v; });
+    tick("Rare", cl.rare, (v) => { cl.rare = v; });
+    // Chance %: a Debug control (the id it had on the old biome form).
+    const chance = renderLabeledSlider(el, {
+      label: "Chance",
+      min: 0, max: 100, step: 5,
+      value: cl.chancePercent ?? 100,
+      format: sliderFormat.percent,
+      isSet: () => cl.chancePercent !== undefined,
+      reset: { value: 100, text: "every fitting hex", onReset: () => { cl.chancePercent = undefined; climateChanged(); } },
+      onChange: (v) => { cl.chancePercent = v; climateChanged(); },
+    });
+    disclosure.place("BiomeForm.chance", chance.el, () => cl.chancePercent !== undefined);
 
     // Transitions.
     el = this.host.section(main, "Transitions");
@@ -347,7 +527,6 @@ export class BiomePanel {
     renderTr();
 
     // Debug (debug mode only): every generator constant, per biome (biomeTuning.ts).
-    const disclosure = new Disclosure(plugin.app, "BiomePage", () => main);
     this.renderTuning(disclosure, main);
 
     // Preview (sticky side column).
@@ -368,11 +547,12 @@ export class BiomePanel {
       this.drawPreview(canvas, legend, status, side);
     });
     seedRow.createSpan({ text: "Size", cls: "duckmage-map-origin-label" });
-    const size = seedRow.createEl("input", { type: "number", cls: "duckmage-wfc-num", value: String(BiomePanel.size), attr: { min: "2", max: "32", "aria-label": "Region size" } });
-    size.addEventListener("change", () => {
-      BiomePanel.size = Math.max(2, Math.min(32, Math.round(Number(size.value) || 10)));
-      size.value = String(BiomePanel.size);
-      this.drawPreview(canvas, legend, status, side);
+    numberField(seedRow, {
+      min: 2, max: 32, whole: true, fallback: 10, value: BiomePanel.size, ariaLabel: "Region size",
+      onChange: (v) => {
+        BiomePanel.size = v ?? 10;
+        this.drawPreview(canvas, legend, status, side);
+      },
     });
     const aroundRow = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row" });
     aroundRow.createSpan({ text: "Around it", cls: "duckmage-map-origin-label" });
@@ -409,41 +589,40 @@ export class BiomePanel {
         const id = tuningControlId(p.key);
         const parent = disclosure.target(id, main, () => f.tuning?.[p.key] !== undefined);
         if (!parent) continue;
-        const row = parent.createDiv({ cls: "duckmage-region-row duckmage-wfc-map-row duckmage-biome-tune-row" });
-        row.createSpan({ text: p.label, cls: "duckmage-map-origin-label", attr: { title: p.help } });
-        const range = row.createEl("input", { type: "range", attr: { min: String(p.min), max: String(p.max), step: String(p.step), "aria-label": p.label } });
-        const box = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: String(p.min), max: String(p.max), step: String(p.step), "aria-label": `${p.label} value` } });
-        const reset = row.createEl("button", { text: "Reset", cls: "duckmage-biome-tune-reset" });
-        const show = () => {
-          const def = shownDefault(p, f.blend);
-          const v = f.tuning?.[p.key] ?? def;
-          range.value = String(v);
-          box.value = String(v);
-          const set = f.tuning?.[p.key] !== undefined;
-          row.toggleClass("is-set", set);
-          reset.disabled = !set;
-          reset.title = p.inherits && p.engine ? "Back to the generator's own setting" : `Back to the default (${def})`;
-        };
-        show();
-        range.addEventListener("input", () => {
-          setTuningValue(f, p, Number(range.value));
-          box.value = range.value;
-          row.toggleClass("is-set", f.tuning?.[p.key] !== undefined);
-          this.schedulePreview();
-        });
-        range.addEventListener("change", () => { show(); this.save(); });
-        box.addEventListener("change", () => {
-          setTuningValue(f, p, box.value.trim() === "" ? null : Number(box.value));
-          show();
-          this.schedulePreview();
-          this.save();
-        });
-        reset.addEventListener("click", () => {
-          setTuningValue(f, p, null);
-          show();
-          this.schedulePreview();
-          this.save();
-          disclosure.refreshSet();
+        // The shared slider: value shown, dimmed at the default, the one
+        // reset, and a number box per the switch in src/ui/numberBoxes.ts.
+        const def = shownDefault(p, f.blend);
+        const slider = renderLabeledSlider(parent, {
+          label: p.label,
+          title: p.help,
+          min: p.min,
+          max: p.max,
+          step: p.step,
+          value: f.tuning?.[p.key] ?? def,
+          kind: "tuning",
+          cls: "duckmage-biome-tune-row",
+          isSet: () => f.tuning?.[p.key] !== undefined,
+          reset: {
+            value: def,
+            text: p.inherits && p.engine ? "the generator's own setting" : undefined,
+            onReset: () => {
+              setTuningValue(f, p, null);
+              slider.set(def);
+              this.schedulePreview();
+              this.save();
+              disclosure.refreshSet();
+            },
+          },
+          onInput: (v) => {
+            setTuningValue(f, p, v);
+            this.schedulePreview();
+          },
+          onChange: (v) => {
+            setTuningValue(f, p, v);
+            slider.refresh();
+            this.save();
+            disclosure.refreshSet();
+          },
         });
       }
     }
@@ -521,17 +700,54 @@ export class BiomePanel {
     }
   }
 
-  /** Write the page's fields to the biome's note (debounced). */
+  /** The Terrain weights sliders: one set per type in the mix with more than one palette terrain. */
+  private renderTerrainWeights(): void {
+    const box = this.weightsBox;
+    if (!box) return;
+    box.empty();
+    const f = this.fields;
+    const palette = this.palette();
+    let shown = 0;
+    for (const r of f.mix) {
+      const terrains = palette.filter((t) => t.type === r.type);
+      if (terrains.length < 2) continue;
+      shown++;
+      const names = terrains.map((t) => t.name);
+      box.createDiv({ cls: "duckmage-biome-terrain-weights-type", text: r.type });
+      renderShareSliders(box, {
+        empty: "hold",
+        items: terrains.map((t) => ({ label: t.name, color: t.color })),
+        weights: typeTerrainShares(f, names),
+        ariaLabel: (item) => `${item.label} share of ${r.type}`,
+        onInput: (_s, percents) => {
+          setTypeTerrainWeights(f, names, percents);
+          this.schedulePreview();
+        },
+        onChange: (_s, percents) => {
+          setTypeTerrainWeights(f, names, percents);
+          this.schedulePreview();
+          this.save();
+        },
+      });
+    }
+    if (!shown) box.createEl("p", { cls: "duckmage-map-origin-desc", text: "No type in the mix has more than one terrain in this palette." });
+  }
+
+  /** Write the page's fields to the biome's note (debounced), shown on the save-status line. */
   private save(): void {
     if (this.writeTimer !== null) window.clearTimeout(this.writeTimer);
+    this.status?.pending();
     this.writeTimer = window.setTimeout(() => {
       this.writeTimer = null;
       this.writing++;
-      void this.plugin.biomeStore.update(this.id, biomePagePatch(this.fields))
+      const work = this.plugin.biomeStore.update(this.id, biomePagePatch(this.fields))
         .then((ok) => {
           if (ok) this.plugin.refreshHexMap();
+          else throw new Error("not saved");
         })
         .finally(() => { this.writing--; });
+      if (this.status) void this.status.track(work);
+      else void work.catch(() => {});
     }, 300);
   }
 }
