@@ -10,6 +10,7 @@ import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { disclosureOpen, setDisclosureOpen, subSectionKey } from "./ui/disclosure";
 import { layerOf, partitionSections } from "./ui/placement";
 import { GENERATE_WORLD_DATA_NAME } from "./ui/repairHint";
+import { renderLabeledSlider } from "./ui/sliders";
 import {
   DEBUG_CONFIRM_TEXT,
   debugModeConfirmed,
@@ -415,7 +416,6 @@ export class HexmakerSettingTab extends PluginSettingTab {
               setting.addButton((btn) =>
                 btn
                   .setButtonText("Generate")
-                  .setCta()
                   .onClick(async () => {
                     btn.setDisabled(true);
                     btn.setButtonText("Generating…");
@@ -701,7 +701,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
           })();
         });
         rowEl.createSpan({ cls: "duckmage-palette-mgmt-badge", text: `(${usedBy} map${usedBy !== 1 ? "s" : ""})` });
-        rowEl.createEl("button", { text: "Edit", cls: "mod-cta" }).addEventListener("click", () => {
+        rowEl.createEl("button", { text: "Edit" }).addEventListener("click", () => {
           void this.plugin.openPaletteEditor(pal.name);
         });
         const deleteBtn = rowEl.createEl("button", { text: "Delete" });
@@ -962,13 +962,13 @@ export class HexmakerSettingTab extends PluginSettingTab {
       const setting = new Setting(container);
       if (def.name) setting.setName(def.name);
       if (def.desc) setting.setDesc(def.desc);
-      if (def.control) this.renderControl(setting, def.control);
+      if (def.control) this.renderControl(setting, def.control, def.name);
       def.render?.(setting);
     }
   }
 
   /** One bound control (pre-1.13 page), read and written like the declarative ones. */
-  private renderControl(setting: Setting, c: LocalSettingControl): void {
+  private renderControl(setting: Setting, c: LocalSettingControl, name = ""): void {
     const value = this.getControlValue(c.key);
     const save = (v: unknown) => void this.setControlValue(c.key, v);
     switch (c.type) {
@@ -994,13 +994,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
       case "slider": {
         const start = typeof value === "number" ? value : (c.defaultValue ?? c.min);
         const format = c.displayFormat ?? ((v: number) => String(v));
-        const valueEl = setting.controlEl.createSpan({ cls: "duckmage-slider-value", text: format(start) });
-        setting.addSlider((s) =>
-          s.setLimits(c.min, c.max, c.step).setValue(start).onChange((v) => {
-            valueEl.setText(format(v));
-            save(v);
-          }),
-        );
+        // The shared slider (value always shown; src/ui/sliders.ts).
+        renderLabeledSlider(setting.controlEl, {
+          label: "", ariaLabel: name, min: c.min, max: c.max, step: c.step, value: start, format,
+          reset: c.defaultValue !== undefined ? { value: c.defaultValue } : undefined,
+          onChange: (v) => save(v),
+        });
         break;
       }
       case "color":

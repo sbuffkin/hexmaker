@@ -388,7 +388,7 @@ async function wizardMapStepChecks(ctx) {
     const range = sliders[0]?.querySelector('input[type="range"]');
     if (range) { range.value = String(Number(range.max)); range.dispatchEvent(new Event("input", { bubbles: true })); }
     const after = summary();
-    sliders[0]?.querySelector(".duckmage-wizard-tuning-reset")?.click();
+    sliders[0]?.querySelector(".duckmage-reset-btn")?.click();
     const reset = summary();
     return { single: !other, scaleLabels, first, second, colsAt, opts: opts.length, optsInAdvanced, sliders: sliders.length, slidersInAdvanced, before, after, reset };
   })());

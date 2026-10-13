@@ -97,17 +97,14 @@ export class BlendIntoBiomeModal extends HexmakerModal {
       void this.redraw(canvas, status);
     });
 
-    const buttons = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    const go = buttons.createEl("button", { text: `Blend into ${target.biome.label}`, cls: "mod-cta" });
-    go.disabled = !!lock || !!target.missing;
-    go.addEventListener("click", () => void this.apply(go));
-    if (!target.generator) {
-      buttons.createEl("button", { text: "Make a generator instead…", attr: { title: "Learn a generator from this map instead" } }).addEventListener("click", () => {
+    const go: HTMLButtonElement = this.footer({
+      primary: { text: `Blend into ${target.biome.label}`, disabled: !!lock || !!target.missing, onClick: () => void this.apply(go) },
+      secondary: [!target.generator && { text: "Make a generator instead…", title: "Learn a generator from this map instead", onClick: () => {
         this.close();
         openMakeGenerator(this.app, plugin, this.mapName);
-      });
-    }
-    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+      } }],
+      cancel: () => this.close(),
+    }).primary!;
     void this.redraw(canvas, status);
   }
 

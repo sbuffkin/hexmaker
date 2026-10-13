@@ -162,13 +162,20 @@ export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields 
   return f;
 }
 
-/** Why the form can't be saved, or undefined. `others`: the labels and ids of the other biomes. */
-export function formProblem(s: BiomeFormState, others: { id: string; label: string }[]): string | undefined {
-  const label = s.label.trim();
+/** Why a biome can't have this name, or undefined. `others`: the labels and ids of the other biomes. */
+export function biomeNameProblem(name: string, others: readonly { id: string; label: string }[]): string | undefined {
+  const label = name.trim();
   if (!label) return "Give the biome a name.";
   const k = biomeSlug(label);
   if (!k) return "Use some letters or numbers in the name.";
   if (others.some((o) => o.id === k || biomeSlug(o.label) === k)) return `There's already a biome called ${label}.`;
+  return undefined;
+}
+
+/** Why the form can't be saved, or undefined. `others`: the labels and ids of the other biomes. */
+export function formProblem(s: BiomeFormState, others: { id: string; label: string }[]): string | undefined {
+  const named = biomeNameProblem(s.label, others);
+  if (named) return named;
   if (!s.blank && ![...s.mix.values()].some((w) => w > 0)) return "Give at least one terrain type a weight.";
   const climate = s.climate ? climateFromForm(s.climate).problems : [];
   if (climate.length) return `Climate: ${climate[0]}.`;

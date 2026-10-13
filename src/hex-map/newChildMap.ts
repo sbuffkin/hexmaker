@@ -179,16 +179,17 @@ export class RegionSettingsModal extends HexmakerModal {
       cls: "duckmage-region-settings-footer",
       text: "These are fixed once the first region exists, so every region lines up. They stay visible in the map menu, on the regions tab.",
     });
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    row.createEl("button", { text: "Save and continue", cls: "mod-cta" }).addEventListener("click", () => {
-      const s = form.get();
-      const problem = form.problem();
-      if (problem) { new Notice(problem); return; }
-      void this.plugin.setRegionSettings(this.mapName, s).then(() => {
-        this.close();
-        this.onSaved(s);
-      });
+    this.footer({
+      primary: { text: "Save and continue", onClick: () => {
+        const s = form.get();
+        const problem = form.problem();
+        if (problem) { new Notice(problem); return; }
+        void this.plugin.setRegionSettings(this.mapName, s).then(() => {
+          this.close();
+          this.onSaved(s);
+        });
+      } },
+      cancel: () => this.close(),
     });
   }
 

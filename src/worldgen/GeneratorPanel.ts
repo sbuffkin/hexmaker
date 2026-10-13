@@ -36,7 +36,8 @@ import {
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./preview";
 import { renderPreviewLegend } from "../hex-map/terrainLegend";
 import { getIconUrl, linkLabel } from "../utils";
-import { makeScrubbable } from "./scrub";
+import { makeScrubbable } from "../ui/scrub";
+import { renderLabeledSlider, renderMultiplierSlider, sliderFormat, type SliderFormat } from "../ui/sliders";
 import { toPercents } from "./regionWeights";
 import { renderShareSliders } from "../ui/shareSliders";
 import { suggestImpassable } from "./impassableHint";
@@ -50,7 +51,6 @@ import { Disclosure } from "../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
 import { sizePresets } from "./sizePresets";
 import { listSaves, writeSave, readSave, applySave, renameGenerator } from "./saves";
-import { ConfirmModal } from "./ConfirmModal";
 import { SAVE_FORMAT, type GeneratorSave } from "./saveFormat";
 import { compareVersions, pluginVersion, VERSION_KEY } from "../compat";
 import { exampleShares, formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "./shares";
@@ -349,7 +349,8 @@ export class GeneratorPanel {
         text: "Not saved: this blend lives only on this page. Try it out, then save it to keep it in your generator list.",
         cls: "duckmage-map-origin-desc",
       });
-      const keep = draftRow.createEl("button", { text: "Save generator", cls: "mod-cta" });
+      // Plain: Create map is this page's one primary.
+      const keep = draftRow.createEl("button", { text: "Save generator" });
       keep.addEventListener("click", () => {
         keep.disabled = true;
         void saveGeneratorModel(this.plugin, model).then((r) => {
@@ -534,14 +535,24 @@ export class GeneratorPanel {
     el.createEl("p", { text: info.join(" · "), cls: "duckmage-map-origin-desc" });
     const resetRow = el.createDiv({ cls: "duckmage-region-row" });
     const resetBtn = resetRow.createEl("button", { text: "Reset settings to defaults", attr: { title: "Clear every generating setting on this page back to its default" } });
+    // No confirm (owner Q6): the reset says so, with an Undo that puts every setting back.
     resetBtn.addEventListener("click", () => {
-      new ConfirmModal(this.app, "Reset settings", `Reset all of "${model.name}"'s settings to their defaults?`, "Reset", () => {
-        const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
-        for (const k of Object.keys(model.settings ?? {})) cleared[k as keyof GeneratorSettings] = undefined;
-        // Re-render once written, or the page re-reads the old settings.
-        save(cleared);
-        void lastWrite.then(() => this.host.rerender());
-      }).open();
+      const before: Record<string, unknown> = { ...(model.settings ?? {}) };
+      const cleared: Partial<Record<keyof GeneratorSettings, unknown>> = {};
+      for (const k of Object.keys(before)) cleared[k as keyof GeneratorSettings] = undefined;
+      if (!Object.keys(cleared).length) { new Notice("These settings are already the defaults."); return; }
+      // Re-render once written, or the page re-reads the old settings.
+      save(cleared);
+      void lastWrite.then(() => this.host.rerender());
+      const msg = createFragment((frag) => {
+        frag.appendText(`${model.name}'s settings are back to their defaults. `);
+        frag.createEl("button", { text: "Undo" }).addEventListener("click", () => {
+          save(before);
+          void lastWrite.then(() => this.host.rerender());
+          notice.hide();
+        });
+      });
+      const notice = new Notice(msg, 10000);
     });
 
     // Preview (in the sticky side column), with the map's seed, size and
@@ -748,7 +759,7 @@ export class GeneratorPanel {
         cell.change.setText(change);
         cell.change.toggleClass("is-up", change.startsWith("+"));
         cell.change.toggleClass("is-down", change.startsWith("−"));
-        cell.change.setAttr("title", change ? `${formatShare(b)} without its mix and min/max settings` : "");
+        cell.change.setAttr("title", change ? `${formatShare(b)} without its bias and min/max settings` : "");
       }
     };
     // Path rows (filled in further down) and the last drawn preview, so
@@ -1008,37 +1019,37 @@ export class GeneratorPanel {
 
     // Shape
     el = this.section(main, "Shape");
-    this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }));
+    this.slider(el, "Feature size", "Size of each terrain's patches relative to the map. 1 = like the example; lower = more, smaller patches; 0 = no growth.", 0, 3, 0.25, s().featureSize, (v) => save({ featureSize: v }), sliderFormat.multiplier);
     place("GenPage.clumping", this.slider(el, "Clumping", "How strongly each hex follows its neighbours. 0 gives speckled noise.", 0, 6, 0.5, s().neighbourInfluence, (v) => save({ neighbourInfluence: v })));
     if (model.terrains.some((t) => t.shape === "line")) {
       const learnedWidth = Math.max(1, Math.round(Math.max(...model.terrains.filter((t) => t.shape === "line").map((t) => t.width ?? 1))));
-      this.slider(el, "Line width", "Thickness of line-shaped terrain, in hexes.", 1, 3, 1, s().lineWidth > 0 ? s().lineWidth : learnedWidth, (v) => save({ lineWidth: v }));
+      this.slider(el, "Line width", "Thickness of line-shaped terrain, in hexes.", 1, 3, 1, s().lineWidth > 0 ? s().lineWidth : learnedWidth, (v) => save({ lineWidth: v }), sliderFormat.count);
     }
     // Clean-up after generating. Older generators only have one "smoothing"
     // value; the sliders start from what it meant, and any change replaces it.
     const cleanup = cleanupStrengths(s());
     place("GenPage.edgeSmoothing", this.slider(el, "Edge smoothing", "Trim one-hex bumps and notches along the edges of patches. Lone hexes are left alone.", 0, 1, 0.1, cleanup.edges,
-      (v) => save({ edgeSmoothing: v, speckSize: cleanupStrengths(s()).speckSize, smoothing: undefined })));
+      (v) => save({ edgeSmoothing: v, speckSize: cleanupStrengths(s()).speckSize, smoothing: undefined }), sliderFormat.fraction));
     place("GenPage.removeSmallPatches", this.slider(el, "Remove small patches", "Fill in patches of this many hexes or fewer with the terrain around them. 0 = keep all.", 0, 6, 1, cleanup.speckSize,
-      (v) => save({ speckSize: v, edgeSmoothing: cleanupStrengths(s()).edges, smoothing: undefined })));
+      (v) => save({ speckSize: v, edgeSmoothing: cleanupStrengths(s()).edges, smoothing: undefined }), sliderFormat.count));
     place("GenPage.keepRare", this.slider(el, "Keep rare terrain", "Terrains under this share of the example (%) are never smoothed or removed, so the odd rare hex survives.", 0, 20, 1,
-      Math.round(s().keepRare * 100), (v) => save({ keepRare: v / 100 })));
+      Math.round(s().keepRare * 100), (v) => save({ keepRare: v / 100 }), sliderFormat.percent));
     place("GenPage.symmetry", this.select(el, "Symmetry", "Mirror the map. Symmetric wherever the rules allow.",
       SYMMETRIES.map((v) => [v, SYMMETRY_LABELS[v]]), s().symmetry, (v) => save({ symmetry: v })));
     place("GenPage.edgeStyle", this.select(el, "Edge style", "What the map border prefers: a terrain of your choice, or the example's border.",
       [["", "As in the example"], ...model.terrains.map((t): [string, string] => [t.name, t.name])],
       s().edgeTerrain, (v) => save({ edgeTerrain: v || undefined })));
-    place("GenPage.edgeStrength", this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v })));
+    place("GenPage.edgeStrength", this.slider(el, "Edge strength", "How strongly the border follows the edge style. 0 = off.", 0, 1, 0.05, s().edgeStrength, (v) => save({ edgeStrength: v }), sliderFormat.fraction));
     dropIfEmpty(el);
 
     // Placement
     el = this.section(main, "Placement");
-    place("GenPage.directionalBias", this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v })));
+    place("GenPage.directionalBias", this.slider(el, "Directional bias", "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", 0, 1, 0.05, s().directionalBias, (v) => save({ directionalBias: v }), sliderFormat.fraction));
     place("GenPage.scatter", this.slider(el, "Scatter", "Randomness in where patches start. Too low and one terrain can take over the map.", 0, 6, 0.5, s().scatter, (v) => save({ scatter: v })));
     if (model.terrains.some((t) => t.shape === "scatter")) {
-      place("GenPage.spacing", this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v })));
+      place("GenPage.spacing", this.slider(el, "Spacing", "How far apart single-hex terrain stays, relative to the example. 0 = no spacing.", 0, 3, 0.25, s().spacing, (v) => save({ spacing: v }), sliderFormat.multiplier));
     }
-    place("GenPage.randomness", this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v })));
+    place("GenPage.randomness", this.slider(el, "Randomness", "Share of hexes chosen by chance, ignoring neighbours, so rare terrain turns up here and there.", 0, 1, 0.05, s().randomness, (v) => save({ randomness: v }), sliderFormat.fraction));
     dropIfEmpty(el);
 
     // Guarantees
@@ -1084,18 +1095,18 @@ export class GeneratorPanel {
     // Terrain mix: per-terrain controls and what they do to the preview
     el = this.section(main, "Terrain mix");
     el.createEl("p", {
-      text: "Mix scales how common each terrain is. Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your mix and min/max make to it.",
+      text: "Bias makes a terrain more or less common than it was learned (×1 = as learned). Min and max limit how many separate patches it forms; leave blank for no limit. Example is each terrain's share of the map it was learned from; Map is its share of the preview, with the change your bias and min/max make to it.",
       cls: "duckmage-map-origin-desc",
     });
     const table = el.createDiv({ cls: "duckmage-wfc-terrains" });
     const head = table.createDiv({ cls: "duckmage-wfc-terrain-row duckmage-wfc-terrain-head" });
     const headings: [string, string][] = [
       ["Terrain", ""],
-      ["Mix", ""],
+      ["Bias", "More or less of this terrain than it was learned (×1 = as learned)"],
       ["Min", "Fewest separate patches"],
       ["Max", "Most separate patches"],
       ["Example", "Share of the map this generator was learned from"],
-      ["Map", "Share of the preview; the change is what mix and min/max add or remove (same seed)"],
+      ["Map", "Share of the preview; the change is what bias and min/max add or remove (same seed)"],
     ];
     for (const [h, title] of headings) head.createSpan({ text: h, attr: title ? { title } : {} });
     const example = exampleShares(model);
@@ -1116,25 +1127,23 @@ export class GeneratorPanel {
       // Guaranteed line features are laid down before the solver runs, so
       // mix barely changes how much of them there is.
       const isFeature = model.features?.some((f) => f.terrain === t.name) ?? false;
-      const title = `${t.name} (${t.shape ?? "no"} shape)` + (isFeature ? ". Placed as a guaranteed feature, so mix has little effect." : "");
+      const title = `${t.name} (${t.shape ?? "no"} shape)` + (isFeature ? ". Placed as a guaranteed feature, so bias has little effect." : "");
       const nameCell = row.createSpan({ cls: "duckmage-wfc-terrain-name", attr: { title } });
       const swatch = nameCell.createSpan({ cls: "duckmage-wfc-swatch" });
       swatch.setCssProps({ "--duckmage-wfc-swatch": colors.get(t.name) ?? "var(--background-modifier-border)" });
       nameCell.createSpan({ text: t.name });
       if (isFeature) nameCell.createSpan({ text: "feature", cls: "duckmage-wfc-tag" });
+      // Bias (owner Q2): the shared multiplier, ×1 = as learned; the Map column shows the share it gives.
       const mixCell = row.createSpan({ cls: "duckmage-wfc-mix" });
-      const mixSlider = mixCell.createEl("input", { type: "range" });
-      mixSlider.min = "0";
-      mixSlider.max = "3";
-      mixSlider.step = "0.25";
-      mixSlider.value = String(mix[t.name] ?? 1);
-      const mixLabel = mixCell.createSpan({ text: `×${mixSlider.value}` });
-      mixSlider.addEventListener("input", () => mixLabel.setText(`×${mixSlider.value}`));
-      mixSlider.addEventListener("change", () => {
-        const v = Number(mixSlider.value);
-        if (v === 1) delete mix[t.name];
-        else mix[t.name] = v;
-        save({ mix: Object.keys(mix).length ? { ...mix } : undefined });
+      renderMultiplierSlider(mixCell, {
+        label: "",
+        ariaLabel: `${t.name} bias`,
+        value: mix[t.name],
+        onChange: (v) => {
+          if (v === undefined) delete mix[t.name];
+          else mix[t.name] = v;
+          save({ mix: Object.keys(mix).length ? { ...mix } : undefined });
+        },
       });
       for (const bound of ["min", "max"] as const) {
         const input = row.createEl("input", { type: "number", cls: "duckmage-wfc-num", attr: { min: "0", placeholder: "–" } });
@@ -1265,23 +1274,18 @@ export class GeneratorPanel {
         // Settings for the whole type: how many of its routes, and multipliers
         // on every route's own wiggle, length and terrain following.
         const knobs = head.createDiv({ cls: "duckmage-wfc-path-knobs duckmage-wfc-path-group-knobs" });
-        const amountCell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title: `How many of the ${type} routes to draw. Lower turns off the ones the example had least of.` } });
-        amountCell.createSpan({ text: "Amount", cls: "duckmage-map-origin-label" });
-        const amount = amountCell.createEl("input", { type: "range", attr: { min: "0", max: "100", step: "5" } });
-        amount.value = String(Math.round((types[type]?.keep ?? 1) * 100));
-        const amountLabel = amountCell.createSpan();
-        const showAmount = () => amountLabel.setText(amount.value === "100" ? "All" : `${amount.value}%`);
-        showAmount();
-        amount.addEventListener("input", showAmount);
-        amount.addEventListener("change", () => saveType(type, { keep: amount.value === "100" ? undefined : Number(amount.value) / 100 }));
+        const amountCell = knobs.createSpan({ cls: "duckmage-wfc-mix" });
+        renderLabeledSlider(amountCell, {
+          label: "Amount", ariaLabel: `${type} amount`,
+          title: `How many of the ${type} routes to draw. Lower turns off the ones the example had least of.`,
+          min: 0, max: 100, step: 5, value: Math.round((types[type]?.keep ?? 1) * 100),
+          format: (v) => (v === 100 ? "All" : `${Math.round(v)}%`),
+          reset: { value: 100, text: "All" },
+          onChange: (v) => saveType(type, { keep: v === 100 ? undefined : v / 100 }),
+        });
         const typeKnob = (label: string, key: "wiggle" | "length" | "follow", title: string) => {
-          const cell = knobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
-          cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
-          const slider = cell.createEl("input", { type: "range", attr: { min: "0", max: "3", step: "0.25" } });
-          slider.value = String(types[type]?.[key] ?? 1);
-          const valueLabel = cell.createSpan({ text: `×${slider.value}` });
-          slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
-          slider.addEventListener("change", () => saveType(type, { [key]: Number(slider.value) === 1 ? undefined : Number(slider.value) }));
+          const cell = knobs.createSpan({ cls: "duckmage-wfc-mix" });
+          renderMultiplierSlider(cell, { label, ariaLabel: `${type} ${label.toLowerCase()}`, title, value: types[type]?.[key], onChange: (v) => saveType(type, { [key]: v }) });
         };
         typeKnob("Wiggle", "wiggle", `Multiplies every ${type} route's wiggle.`);
         if (routes.some((f) => f.to === "none" || f.to === "edge")) typeKnob("Length", "length", `Multiplies every ${type} route's length.`);
@@ -1387,19 +1391,8 @@ export class GeneratorPanel {
           // Line 2: shape of the route
           const routeKnobs = row.createDiv({ cls: "duckmage-wfc-path-knobs" });
           const knob = (label: string, title: string, key: "wiggle" | "length" | "follow", max: number) => {
-            const cell = routeKnobs.createSpan({ cls: "duckmage-wfc-mix", attr: { title } });
-            cell.createSpan({ text: label, cls: "duckmage-map-origin-label" });
-            const slider = cell.createEl("input", { type: "range" });
-            slider.min = "0";
-            slider.max = String(max);
-            slider.step = "0.25";
-            slider.value = String(tw[key] ?? 1);
-            const valueLabel = cell.createSpan({ text: `×${slider.value}` });
-            slider.addEventListener("input", () => valueLabel.setText(`×${slider.value}`));
-            slider.addEventListener("change", () => {
-              const v = Number(slider.value);
-              saveTweak(route, { [key]: v === 1 ? undefined : v });
-            });
+            const cell = routeKnobs.createSpan({ cls: "duckmage-wfc-mix" });
+            renderMultiplierSlider(cell, { label, ariaLabel: `${route} ${label.toLowerCase()}`, title, max, value: tw[key], onChange: (v) => saveTweak(route, { [key]: v }) });
           };
           knob("Wiggle", "How much it meanders, on top of the type's. 0 = as straight as the terrain allows.", "wiggle", 3);
           if (f.to === "none" || f.to === "edge") knob("Length", "How long it runs, relative to the example.", "length", 3);
@@ -1484,22 +1477,10 @@ export class GeneratorPanel {
     step: number,
     value: number,
     onChange: (v: number) => void,
+    format: SliderFormat = sliderFormat.plain,
   ): HTMLElement {
-    // One box per control, so the placement map can move it as a whole.
-    const box = el.createDiv({ cls: "duckmage-wfc-control" });
-    const labelEl = box.createEl("label", { text: label, cls: "duckmage-map-field-label" });
-    const row = box.createDiv({ cls: "duckmage-region-row" });
-    const input = row.createEl("input", { type: "range" });
-    linkLabel(labelEl, input);
-    input.min = String(min);
-    input.max = String(max);
-    input.step = String(step);
-    input.value = String(value);
-    const valueEl = row.createSpan({ text: String(value) });
-    box.createEl("p", { text: hint, cls: "duckmage-map-origin-desc" });
-    input.addEventListener("input", () => valueEl.setText(input.value));
-    input.addEventListener("change", () => onChange(Number(input.value)));
-    return box;
+    // The shared slider; one box per control, so the placement map can move it as a whole.
+    return renderLabeledSlider(el, { label, help: hint, min, max, step, value, format, layout: "stacked", cls: "duckmage-wfc-control", onChange }).el;
   }
 
   private select<T extends string>(

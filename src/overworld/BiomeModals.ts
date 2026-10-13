@@ -14,6 +14,7 @@
 
 import { App, Notice } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { regionMapAt } from "../maps/submaps";
 import { allBiomeIds, biomeInfo, biomeNoteOf, isBlankBiome, isComboId, representableBiomes, representativeTerrain, type BiomeId } from "./biomes";
@@ -177,7 +178,7 @@ export class BiomePickerModal extends HexmakerModal {
         });
       }
     }
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
+    const row = this.footer({}).el;
     if (region) {
       row.createEl("button", { text: "Enter region" }).addEventListener("click", () => { this.close(); this.host.enter(region.name); });
       const reroll = row.createEl("button", { text: "Reroll" });
@@ -270,11 +271,10 @@ export class RegionGenModal extends HexmakerModal {
 
     // Wiggly borders and the seed are Debug; Reroll stays in reach.
     const warpRow = field("Wiggly borders");
-    const warp = warpRow.createEl("input", { type: "range", attr: { min: "0", max: "0.5", step: "0.05", "aria-label": "Wiggly borders" } });
-    warp.value = String(this.opts.warp);
-    const warpVal = warpRow.createSpan({ text: String(this.opts.warp) });
-    warp.addEventListener("input", () => { warpVal.setText(warp.value); });
-    warp.addEventListener("change", () => { this.opts.warp = Number(warp.value); this.redraw(); });
+    renderLabeledSlider(warpRow, {
+      label: "", ariaLabel: "Wiggly borders", min: 0, max: 0.5, step: 0.05, value: this.opts.warp ?? REGION_WARP, format: sliderFormat.fraction,
+      onChange: (v) => { this.opts.warp = v; this.redraw(); },
+    });
 
     const seedRow = field("Seed");
     const seed = seedRow.createEl("input", { type: "number", attr: { "aria-label": "Seed" } });
@@ -291,19 +291,19 @@ export class RegionGenModal extends HexmakerModal {
     this.canvas.height = 300;
     contentEl.createEl("p", { cls: "setting-item-description", text: "Preview: this region bright, its painted neighbours dimmed." });
 
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    row.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
-    const apply = row.createEl("button", { text: region ? "Apply" : "Make region", cls: "mod-cta" });
+    const foot = this.footer({
+      primary: { text: region ? "Apply" : "Make region", onClick: () => {
+        if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
+        this.close();
+        void this.apply();
+      } },
+      cancel: () => this.close(),
+    });
     const lock = biomeLock(this.host, this.parentName, this.px, this.py);
     if (lock) {
-      lockButton(apply, lock);
-      row.createSpan({ cls: "duckmage-locked-hint", text: lock });
+      lockButton(foot.primary!, lock);
+      foot.el.createSpan({ cls: "duckmage-locked-hint", text: lock });
     }
-    apply.addEventListener("click", () => {
-      if (!mayReshape(this.host, this.parentName, this.px, this.py)) return;
-      this.close();
-      void this.apply();
-    });
     this.place("RegionGen.wigglyBorders", warpRow);
     this.place("RegionGen.seed", seedRow);
     this.redraw();

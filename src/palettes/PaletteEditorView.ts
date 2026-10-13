@@ -3,6 +3,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { SubmapDefault, TerrainColor, TerrainPalette } from "../types";
 import { VIEW_TYPE_PALETTE_EDITOR } from "../constants";
 import { createIconEl, getIconUrl, iconLabel } from "../utils";
+import { commitNumber, makeScrubbable } from "../ui/scrub";
 import { IconPickerModal } from "../hex-map/IconPickerModal";
 import { fillTerrainTypeSelect } from "../terrainTypeSelect";
 import { inferTerrainType, terrainTypeInfo } from "../terrainTypes";
@@ -437,6 +438,14 @@ export class PaletteEditorView extends ItemView {
       const rows = sizeTd.createEl("input", { type: "number", attr: { min: "1", max: "200", placeholder: "—", "aria-label": "Rows" } });
       cols.value = d.cols ? String(d.cols) : "";
       rows.value = d.rows ? String(d.rows) : "";
+      // The number-field standard: drag or scroll to change, clamped on commit.
+      for (const input of [cols, rows]) {
+        makeScrubbable(input, { min: 1, max: 200, pxPerStep: 4 });
+        input.addEventListener("change", () => {
+          const v = commitNumber(input.value, { min: 1, max: 200, whole: true, blank: true });
+          input.value = v === undefined ? "" : String(v);
+        });
+      }
       const onSize = () => update(terrain, (x) => {
         const c = Number(cols.value), r = Number(rows.value);
         if (c > 0 && r > 0) { x.cols = c; x.rows = r; } else { delete x.cols; delete x.rows; }

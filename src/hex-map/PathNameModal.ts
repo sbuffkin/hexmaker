@@ -44,9 +44,7 @@ export class PathNameModal extends HexmakerModal {
     });
     const input = contentEl.createEl("input", { type: "text", value: this.current, cls: "duckmage-path-name-input" });
     const problem = contentEl.createDiv({ cls: "duckmage-path-name-problem mod-warning" });
-    const row = contentEl.createDiv({ cls: "modal-button-container" });
-    const save = row.createEl("button", { text: "Save", cls: "mod-cta" });
-    const cancel = row.createEl("button", { text: "Cancel" });
+    const save = this.footer({ primary: { text: "Save", onClick: () => {} }, cancel: () => this.close() }).primary!;
     const validate = (): string | null => {
       const { name, problem: msg } = pathNameState(input.value, this.current, this.check);
       problem.setText(msg ?? "");
@@ -71,7 +69,6 @@ export class PathNameModal extends HexmakerModal {
       }
     });
     save.addEventListener("click", submit);
-    cancel.addEventListener("click", () => this.close());
     validate();
     input.focus();
     input.select();

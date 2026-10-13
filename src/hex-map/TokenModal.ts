@@ -338,20 +338,8 @@ export class TokenModal extends HexmakerModal {
     this.place("Token.description", descSetting.settingEl, () => !!descInput?.value.trim());
 
     // Buttons
-    const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-
-    if (isEdit && this.onDelete) {
-      btnRow.createEl("button", { text: "Remove token", cls: "mod-warning" })
-        .addEventListener("click", () => {
-          this.close();
-          this.onDelete!();
-        });
-    }
-
-    btnRow.createEl("button", {
-      text: isEdit ? "Save" : this.saveLabel ?? "Next: place on map",
-      cls: "mod-cta",
-    }).addEventListener("click", () => {
+    const onDelete = isEdit ? this.onDelete : undefined;
+    const commit = () => {
       if (!isEdit && !this.pendingNoteTitle) {
         new Notice("Please enter a note name.");
         return;
@@ -378,10 +366,13 @@ export class TokenModal extends HexmakerModal {
           description: this.pendingDescription,
         });
       })();
+    };
+    // Primary first, then Remove token, then Cancel (the shared footer).
+    this.footer({
+      primary: { text: isEdit ? "Save" : this.saveLabel ?? "Next: place on map", onClick: commit },
+      destructive: onDelete && { text: "Remove token", onClick: () => { this.close(); onDelete(); } },
+      cancel: () => this.close(),
     });
-
-    btnRow.createEl("button", { text: "Cancel" })
-      .addEventListener("click", () => this.close());
   }
 
   /** Notes a token can stand for: characters and ships (the tokens folder),

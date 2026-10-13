@@ -20,7 +20,6 @@ import {
 import { dieLabel, parseRandomTable, rollTable } from "./randomTable";
 import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
 import { resolveStepTable, resolveWorkflowTemplate } from "./workflowFiles";
-import { ConfirmModal } from "../worldgen/ConfirmModal";
 import { localIsoDateTime } from "../provenance";
 import { withRepairHint } from "../ui/repairHint";
 
@@ -46,6 +45,15 @@ function rowLinkTarget(result: string, isLink?: boolean, linkedFolder?: string):
   // A linked-folder table lists its notes by name.
   if (linkedFolder) return `${normalizeFolder(linkedFolder)}/${result.replace(/\.md$/i, "")}`;
   return /^\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]$/.exec(result.trim())?.[1];
+}
+
+/**
+ * A note name that isn't taken: the name itself, else "Name 2", "Name 3", …
+ * (owner Q6: auto-rename instead of asking to replace). Pure.
+ */
+export function freeNoteName(name: string, taken: (name: string) => boolean): string {
+  if (!taken(name)) return name;
+  for (let n = 2; ; n++) if (!taken(`${name} ${n}`)) return `${name} ${n}`;
 }
 
 export class WorkflowWizardModal extends HexmakerModal {
@@ -148,7 +156,6 @@ export class WorkflowWizardModal extends HexmakerModal {
 
     const rollAllBtn = header.createEl("button", {
       text: "Roll all",
-      cls: "mod-cta",
     });
     rollAllBtn.title = "Roll all unfilled slots";
     rollAllBtn.addEventListener("click", () => { void this.rollAll(false); });
@@ -518,18 +525,13 @@ export class WorkflowWizardModal extends HexmakerModal {
   private saveAsNote(): Promise<void> {
     const noteName = this.saveNoteNameInput.value.trim();
     const folder = normalizeFolder(this.saveResultsFolderInput.value.trim());
-    const notePath = folder ? `${folder}/${noteName}.md` : `${noteName}.md`;
-    // Ask before writing over a note that's already there.
-    if (noteName && this.app.vault.getAbstractFileByPath(notePath) instanceof TFile) {
-      return new Promise((resolve) => {
-        new ConfirmModal(
-          this.app,
-          "Replace note?",
-          `"${notePath}" already exists. Replace it with this result?`,
-          "Replace",
-          () => void this.writeNote().then(resolve),
-        ).open();
-      });
+    // No "Replace note?" (owner Q6): a name that's taken gets a number ("Name 2").
+    if (noteName) {
+      const free = freeNoteName(noteName, (n) => !!this.app.vault.getAbstractFileByPath(folder ? `${folder}/${n}.md` : `${n}.md`));
+      if (free !== noteName) {
+        this.saveNoteNameInput.value = free;
+        new Notice(`"${noteName}" already exists, so this was saved as "${free}".`);
+      }
     }
     return this.writeNote();
   }
@@ -560,14 +562,8 @@ export class WorkflowWizardModal extends HexmakerModal {
     );
 
     try {
-      let savedFile: TFile;
-      const existing = this.app.vault.getAbstractFileByPath(notePath);
-      if (existing instanceof TFile) {
-        await this.app.vault.process(existing, () => noteContent);
-        savedFile = existing;
-      } else {
-        savedFile = await this.app.vault.create(notePath, noteContent);
-      }
+      // saveAsNote picked a free name, so this never writes over a note.
+      const savedFile: TFile = await this.app.vault.create(notePath, noteContent);
       this.close();
       await this.app.workspace.getLeaf("tab").openFile(savedFile);
     } catch (err) {

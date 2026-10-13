@@ -48,10 +48,11 @@ export class BiomePaletteModal extends HexmakerModal {
         this.onPick(b.id);
       },
     });
-    const row = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    row.createEl("button", { text: "Biomes…", attr: { title: "Add your own biomes, or edit these" } }).addEventListener("click", () => {
-      this.close();
-      new BiomeLibraryModal(this.app, this.plugin, this.overworld).open();
+    this.footer({
+      secondary: [{ text: "Biomes…", title: "Add your own biomes, or edit these", onClick: () => {
+        this.close();
+        new BiomeLibraryModal(this.app, this.plugin, this.overworld).open();
+      } }],
     });
   }
 

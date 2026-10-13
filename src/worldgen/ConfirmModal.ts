@@ -10,7 +10,11 @@ export interface ConfirmOptions {
   offer?: boolean;
 }
 
-/** Asks before doing something that can't be taken back from the page. */
+/**
+ * Asks before doing something. Only two are left (owner Q6, 2026-10-13):
+ * the offer to turn on a module for a map, and the debug-mode confirm.
+ * Everything else relies on the work mode plus trash, backup or undo.
+ */
 export class ConfirmModal extends HexmakerModal {
   private confirmed = false;
 
@@ -30,14 +34,14 @@ export class ConfirmModal extends HexmakerModal {
     this.titleEl.setText(this.heading);
     const { contentEl } = this;
     contentEl.createEl("p", { text: this.message });
-    const row = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const confirm = row.createEl("button", { text: this.confirmText, cls: this.options.offer ? "mod-cta" : "mod-warning" });
-    confirm.addEventListener("click", () => {
+    const act = { text: this.confirmText, onClick: () => {
       this.confirmed = true;
       this.close();
       this.onConfirm();
-    });
-    row.createEl("button", { text: this.options.cancelText ?? "Cancel" }).addEventListener("click", () => this.close());
+    } };
+    const cancel = { text: this.options.cancelText ?? "Cancel", onClick: () => this.close() };
+    // An offer's button is the primary; a warning's is destructive. Either way it comes first.
+    this.footer(this.options.offer ? { primary: act, cancel } : { destructive: act, cancel });
   }
 
   onClose(): void {

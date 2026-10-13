@@ -125,9 +125,7 @@ export class WalkRegionModal extends HexmakerModal {
       attr: { placeholder: defaultRegionName(plugin.mapLabel(walk.overworld), px, py, plugin.mapStore.get(walk.overworld, hex)?.name, taken) },
     });
 
-    const buttons = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const create = buttons.createEl("button", { text: "Create and go", cls: "mod-cta" });
-    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    const create = this.footer({ primary: { text: "Create and go", onClick: () => {} }, cancel: () => this.close() }).primary!;
     contentEl.appendChild(seedRow);
     this.place("WalkOW.seed", seedRow);
     const lock = walkLock(plugin, this.fromMap, walk.overworld);
@@ -247,9 +245,7 @@ export class WalkRegionModal extends HexmakerModal {
     nameRow.createSpan({ text: "Name", cls: "duckmage-map-origin-label" });
     const nameInput = nameRow.createEl("input", { type: "text", attr: { placeholder: "Region name" } });
 
-    const buttons = contentEl.createDiv({ cls: "duckmage-confirm-btn-row" });
-    const create = buttons.createEl("button", { text: "Create and go", cls: "mod-cta" });
-    buttons.createEl("button", { text: "Cancel" }).addEventListener("click", () => this.close());
+    const create = this.footer({ primary: { text: "Create and go", onClick: () => {} }, cancel: () => this.close() }).primary!;
     const locked = !canAdd(from);
     if (locked) contentEl.createEl("p", { cls: "duckmage-locked-hint", text: ADD_REGION_LOCKED_HINT });
 

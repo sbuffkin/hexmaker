@@ -125,9 +125,8 @@ export class MapLinkModal extends HexmakerModal {
       });
 
     // ── Buttons ───────────────────────────────────────────────────────────
-    const btnRow = contentEl.createDiv({ cls: "duckmage-token-modal-buttons" });
-    btnRow.createEl("button", { text: "Insert", cls: "mod-cta" })
-      .addEventListener("click", () => {
+    this.footer({
+      primary: { text: "Insert", onClick: () => {
         const typed = mapInput.value.trim();
         // The box shows display names; link the slug.
         const lc = typed.toLowerCase();
@@ -138,9 +137,9 @@ export class MapLinkModal extends HexmakerModal {
         const text = linkTextInput.value.trim() || this.plugin.mapLabel(map);
         this.close();
         this.onInsert(map, text);
-      });
-    btnRow.createEl("button", { text: "Cancel" })
-      .addEventListener("click", () => this.close());
+      } },
+      cancel: () => this.close(),
+    });
   }
 
   onClose(): void {

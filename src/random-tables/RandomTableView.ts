@@ -42,7 +42,6 @@ import { parseWorkflow, generateDefaultTemplate } from "./workflow";
 import { resolveWorkflowTemplate } from "./workflowFiles";
 import { Frontmatter } from "../frontmatter";
 import { buildTree, renderFolderTree, type TreeNode } from "./FolderTree";
-import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import {
   exportRandomTableAsPdf,
   exportRandomTableAsMarkdown,
@@ -871,20 +870,25 @@ export class RandomTableView extends ItemView {
             menuItem.setTitle("Delete workflow");
             menuItem.setIcon("trash");
             menuItem.onClick(() => {
-              new ConfirmDeleteModal(this.app, file.basename, async () => {
-                await this.app.fileManager.trashFile(file);
-                if (this.activeFile === file) {
-                  this.activeFile = null;
-                  this.detailEl?.empty();
-                }
-                this.loadList();
-              }).open();
+              // No confirm (owner Q6): it goes to the trash.
+              void this.trashAndForget(file);
             });
           });
           menu.showAtMouseEvent(e);
         });
       },
     });
+  }
+
+  /** Move a table or workflow note to the trash (no confirm: owner Q6) and say so. */
+  private async trashAndForget(file: TFile): Promise<void> {
+    await this.app.fileManager.trashFile(file);
+    if (this.activeFile === file) {
+      this.activeFile = null;
+      this.detailEl?.empty();
+    }
+    this.loadList();
+    new Notice(`Moved "${file.basename}" to the trash.`);
   }
 
   private async createWorkflow(initialTablePath?: string): Promise<void> {
@@ -1312,14 +1316,8 @@ export class RandomTableView extends ItemView {
         item.setTitle("Delete table");
         item.setIcon("trash");
         item.onClick(() => {
-          new ConfirmDeleteModal(this.app, file.basename, async () => {
-            await this.app.fileManager.trashFile(file);
-            if (this.activeFile === file) {
-              this.activeFile = null;
-              this.detailEl?.empty();
-            }
-            this.loadList();
-          }).open();
+          // No confirm (owner Q6): it goes to the trash.
+          void this.trashAndForget(file);
         });
       });
     }
@@ -1661,7 +1659,7 @@ export class RandomTableView extends ItemView {
     if (table.entries.length === 0) {
       const empty = tableBody.createDiv({ cls: "duckmage-rt-empty-state" });
       empty.createDiv({ cls: "duckmage-rt-empty", text: emptyTableMessage(content) });
-      const addBtn = empty.createEl("button", { text: "Add entries", cls: "mod-cta" });
+      const addBtn = empty.createEl("button", { text: "Add entries" });
       addBtn.addEventListener("click", () => {
         new RandomTableEditorModal(
           this.app,
