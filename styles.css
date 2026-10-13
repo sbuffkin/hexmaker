@@ -7964,6 +7964,21 @@ button.duckmage-terrain-legend-chip {
     z-index: 2; /* above the hexes, below the region (3), faction (4) and path (5) layers */
 }
 
+/* Region paths that cross region seams (Regions view): one user unit = 1em
+   of the grid, like the path layer. Over the region bitmaps (later in the
+   DOM, same z-index), under the overworld's own paths (5). */
+.duckmage-ow-paths-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 2;
+}
+.duckmage-hide-paths .duckmage-ow-paths-svg {
+    display: none;
+}
+
 /* The overworld minimap and the Regions / Biomes switch: bottom-right,
    clear of Obsidian's status bar. */
 .duckmage-ow-minimap {

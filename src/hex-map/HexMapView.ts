@@ -408,7 +408,7 @@ export class HexMapView extends ItemView {
   }
 
   /** Timings of the overworld region layer's last draw (dev tools, bench). */
-  overworldStats(): { ms: number; builds: number; regions: number; cells: number } {
+  overworldStats(): Record<string, number> {
     return { ...(this.overworldLayer?.lastStats ?? { ms: 0, builds: 0, regions: 0, cells: 0 }) };
   }
 
@@ -1778,6 +1778,9 @@ export class HexMapView extends ItemView {
           const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
           if (grid && !this.cancelMeasuredLayers) this.drawHexNames(grid, true);
         },
+        // Rows the modules add.
+        rows: this.wm?.layerRows(this.plugin) ?? [],
+        onRowChange: () => this.overworldLayer?.scheduleRedraw(),
       },
     );
     toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
@@ -4464,10 +4467,12 @@ export class HexMapView extends ItemView {
         const { clientX, clientY } = e;
         hover.request(() => {
           const cell = this.overworldLayer?.cellAt(gridContainer, clientX, clientY) ?? null;
+          const line = this.overworldLayer?.pathAt(gridContainer, clientX, clientY) ?? null;
           setTip(regionsViewTip(cell, {
             label: (r) => this.plugin.mapLabel(r),
             emptySlot: (h) => this.emptySlotOnMap(h),
             canAdd: canAdd(this.getActiveMap()),
+            path: line?.names.join(", "),
           }));
         });
       });

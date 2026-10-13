@@ -124,6 +124,21 @@ export interface OverlayPanelExtras {
   onBadgesChange?: () => void;
   /** The map's hex-name font changed (redraw the names). */
   onHexNameFontChange?: () => void;
+  /** Rows a module adds after "Show paths" (shown only on maps they apply to). */
+  rows?: readonly LayerRow[];
+  /** A module row was toggled (the map already holds the new value). */
+  onRowChange?: (id: string) => void;
+}
+
+/** A layers-menu row a module adds: a per-map on/off. */
+export interface LayerRow {
+  /** UI inventory id (placement map). */
+  id: string;
+  label: string;
+  /** Is the row offered on this map. */
+  shows(map: MapData): boolean;
+  value(map: MapData): boolean;
+  set(map: MapData, on: boolean): void;
 }
 
 export class OverlayPanel extends HexSidePanel {
@@ -150,6 +165,7 @@ export class OverlayPanel extends HexSidePanel {
   private nameBoldBtn: HTMLButtonElement | null = null;
   private nameItalicBtn: HTMLButtonElement | null = null;
   private extras: OverlayPanelExtras;
+  private moduleRows: { row: LayerRow; el: HTMLElement; cb: HTMLInputElement }[] = [];
 
   constructor(
     container: HTMLElement,
@@ -175,6 +191,9 @@ export class OverlayPanel extends HexSidePanel {
   }
 
   protected buildPanel(panel: HTMLDivElement): void {
+    // The layers menu's Advanced dropdown (placement map; built only when something goes in it).
+    const disclosure = new Disclosure(this.plugin.app, "LayersMenu", () => panel);
+    this.layersDisclosure = disclosure;
     // The Labels group comes first: one heading, its toggles side by side.
     const labelGroup = panel.createDiv({ cls: "duckmage-overlay-group" });
     const labelTitle = labelGroup.createDiv({ cls: "duckmage-overlay-group-title" });
@@ -204,6 +223,7 @@ export class OverlayPanel extends HexSidePanel {
         cb.checked = !cb.checked;
         apply();
       });
+      if (opt.key === "showPaths") this.buildModuleRows(panel, disclosure);
     }
 
     // Show tokens — default on
@@ -279,8 +299,6 @@ export class OverlayPanel extends HexSidePanel {
     });
     // The region overlay is Advanced (placement: LayersMenu.regionOverlay):
     // in a collapsed dropdown at the end of the menu, so it doesn't grow.
-    const disclosure = new Disclosure(this.plugin.app, "LayersMenu", () => panel);
-    this.layersDisclosure = disclosure;
     // "Advanced · 1 set" while the overlay is on.
     disclosure.place("LayersMenu.regionOverlay", regionRow, () => regionCb.checked);
 
@@ -515,6 +533,28 @@ export class OverlayPanel extends HexSidePanel {
     for (const s of BADGE_SECTIONS) vp.toggleClass(badgeHideClass(s), hidden.has(s));
   }
 
+  /** The modules' rows, each placed by its id; hidden on maps it doesn't apply to (syncToRegion). */
+  private buildModuleRows(panel: HTMLDivElement, disclosure: Disclosure): void {
+    for (const row of this.extras.rows ?? []) {
+      const el = panel.createDiv({ cls: "duckmage-overlay-row" });
+      const cb = el.createEl("input", { type: "checkbox" });
+      const label = el.createSpan({ text: row.label, cls: "duckmage-overlay-label" });
+      const apply = () => {
+        row.set(this.getActiveMap(), cb.checked);
+        void this.plugin.saveSettings();
+        this.extras.onRowChange?.(row.id);
+        this.layersDisclosure?.refreshSet();
+      };
+      cb.addEventListener("change", apply);
+      label.addEventListener("click", () => {
+        cb.checked = !cb.checked;
+        apply();
+      });
+      if (!disclosure.place(row.id, el, () => !cb.checked)) continue;
+      this.moduleRows.push({ row, el, cb });
+    }
+  }
+
   /** Read the current map's saved state and apply it to the viewport + checkboxes. */
   syncToRegion(): void {
     const map = this.getActiveMap();
@@ -550,6 +590,10 @@ export class OverlayPanel extends HexSidePanel {
       const show = map.showTokens ?? true;
       this.tokensCb.checked = show;
       this.onTokensChange(show);
+    }
+    for (const { row, el, cb } of this.moduleRows) {
+      el.toggle(row.shows(map));
+      cb.checked = row.value(map);
     }
     this.applyBadgeClasses(map);
     this.syncNameFont();

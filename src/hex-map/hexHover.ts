@@ -60,9 +60,20 @@ export function pointerMovedFrom(at: { x: number; y: number } | null, x: number,
  * Hover text on an overworld's Regions view: the region under the pointer,
  * or an empty slot ("brick") of the overworld, or nothing (blank map area,
  * off the bricks). `cell` is the layer's hit (null off the grid);
- * `emptySlot` says whether its slot is an empty one on the map.
+ * `emptySlot` says whether its slot is an empty one on the map. `path`:
+ * the name of a path line under the pointer, shown first.
  */
 export function regionsViewTip(
+  cell: { region?: string; parentHex: string } | null,
+  opts: { label: (region: string) => string; emptySlot: (parentHex: string) => boolean; canAdd: boolean; path?: string },
+): string {
+  const base = regionTip(cell, opts);
+  if (!opts.path) return base;
+  return base ? `${opts.path}
+${base}` : opts.path;
+}
+
+function regionTip(
   cell: { region?: string; parentHex: string } | null,
   opts: { label: (region: string) => string; emptySlot: (parentHex: string) => boolean; canAdd: boolean },
 ): string {

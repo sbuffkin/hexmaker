@@ -41,6 +41,25 @@ import {
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
 import { overworldOf, overworldTerrain, placedBiomes } from "./regionsVault";
 import { FrameThrottle } from "./overworldInput";
+import { CrossRegionPaths, pathAtGridPoint, type OverworldPathLine, type RegionPathSource } from "./regionPaths";
+import { UNKNOWN_PATH_TYPE } from "../constants";
+import { SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
+import { sharpPath, smoothPath } from "../hex-map/hexGeometry";
+
+/** Layers-menu row: paths between regions, on overworlds (unset = shown). */
+export const REGION_PATHS_ROW = {
+  id: "LayersMenu.regionPaths",
+  label: "Paths between regions",
+  shows: (plugin: HexmakerPlugin, map: MapData): boolean => !!overworldOf(plugin, map.name),
+  value: (map: Pick<MapData, "showRegionPaths">): boolean => map.showRegionPaths !== false,
+  set: (map: Pick<MapData, "showRegionPaths">, on: boolean): void => {
+    if (on) delete map.showRegionPaths;
+    else map.showRegionPaths = false;
+  },
+};
+
+
+
 
 interface Geometry {
   map: string;
@@ -85,10 +104,18 @@ export class OverworldLayer {
   readonly cache = new RegionBitmapCache<RegionBitmap>();
   private geom: Geometry | null = null;
   private canvas: HTMLCanvasElement | null = null;
+  /** Region paths that cross seams, joined (cached per overworld; see regionPaths.ts). */
+  readonly paths = new CrossRegionPaths();
+  private pathsOf = "";
+  private pathSvg: SVGSVGElement | null = null;
+  /** What the path layer was last drawn from (skip rebuilding the same SVG). */
+  private pathSvgFrom: { lines: OverworldPathLine[]; geom: Geometry } | null = null;
+  /** The lines on screen now, for the hover hit test. */
+  private shownLines: OverworldPathLine[] = [];
   /** Redraws coalesce to one per animation frame, and keep coming during a brush stroke. */
   private redraws = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
-  /** Timings of the last draw (ms) and how many region bitmaps it built. */
-  lastStats = { ms: 0, builds: 0, regions: 0, cells: 0 };
+  /** Timings of the last draw (ms) and how many region bitmaps it built; paths: ms and lines drawn. */
+  lastStats = { ms: 0, builds: 0, regions: 0, cells: 0, pathMs: 0, pathLines: 0, pathJoins: 0 };
 
   constructor(private plugin: HexmakerPlugin) {}
 
@@ -109,6 +136,14 @@ export class OverworldLayer {
     this.canvas?.remove();
     this.canvas = null;
     this.geom = null;
+    this.removePathSvg();
+  }
+
+  private removePathSvg(): void {
+    this.pathSvg?.remove();
+    this.pathSvg = null;
+    this.pathSvgFrom = null;
+    this.shownLines = [];
   }
 
   /** Draw the layer for `map` into `grid` (call after the hexes are laid out). */
@@ -116,6 +151,7 @@ export class OverworldLayer {
     this.canvas?.remove();
     this.canvas = null;
     this.geom = null;
+    this.removePathSvg();
     const view = OverworldLayer.viewOf(this.plugin, map);
     const ow = overworldOf(this.plugin, map.name);
     if (!view || !ow) return;
@@ -146,9 +182,10 @@ export class OverworldLayer {
     this.draw();
   }
 
-  /** A region's map changed: rebuild its bitmap on the next draw (callers redraw when it's on screen). */
+  /** A region's map changed: rebuild its bitmap (and its paths) on the next draw (callers redraw when it's on screen). */
   invalidate(regionName: string): void {
     this.cache.invalidate(regionName);
+    this.paths.invalidate(regionName);
   }
 
   /**
@@ -180,6 +217,21 @@ export class OverworldLayer {
     return { x, y, region: region?.name, parentHex };
   }
 
+  /**
+   * The path line under a screen point (Regions view): tested in the child
+   * plane the lines are built in, the pointer brought back to the em the
+   * layer was measured at (a zoom bake since then grows grid px).
+   */
+  pathAt(grid: HTMLElement, clientX: number, clientY: number): OverworldPathLine | null {
+    const geom = this.geom;
+    if (!geom || !this.shownLines.length || !grid.isConnected) return null;
+    const g = grid.getBoundingClientRect();
+    const sx = grid.offsetWidth ? g.width / grid.offsetWidth : 1;
+    const sy = grid.offsetHeight ? g.height / grid.offsetHeight : 1;
+    const emNow = parseFloat(getComputedStyle(grid).fontSize) || geom.em;
+    return pathAtGridPoint(this.shownLines, geom.c2g, geom.p2g, geom.em, emNow, sx, (clientX - g.left) / sx, (clientY - g.top) / sy);
+  }
+
   // ── drawing ────────────────────────────────────────────────────────────
 
   private draw(): void {
@@ -193,6 +245,80 @@ export class OverworldLayer {
     else this.drawBiomes(canvas, geom, map);
     this.lastStats.ms = Math.round((performance.now() - t0) * 10) / 10;
     this.lastStats.builds = this.cache.builds - builds0;
+    const t1 = performance.now();
+    // Region paths across seams: the Regions view only (the Biomes view
+    // shows the overworld's own hexes, where region detail would crowd
+    // its labels; its own paths are drawn by the map as usual).
+    if (view === "regions" && REGION_PATHS_ROW.value(map)) this.drawPaths(canvas.parentElement, geom, map);
+    else this.removePathSvg();
+    this.lastStats.pathMs = Math.round((performance.now() - t1) * 10) / 10;
+    this.lastStats.pathLines = this.shownLines.length;
+    this.lastStats.pathJoins = this.paths.joins;
+  }
+
+  /** Where the region paths come from: the paths service and map store, per region. */
+  private pathSource(map: MapData): RegionPathSource {
+    const p = this.plugin;
+    return {
+      regions: () => regionsOf(p.settings.maps, map.name),
+      ready: (r) => p.mapStore.isReady() && p.paletteStore.isReady() && p.paths.isReady(r),
+      resolved: (r) => p.paths.resolved(r),
+      stored: (r) => p.mapStore.paths(r),
+      types: (r) => p.getMapPathTypes(r),
+      overworldPaths: () => p.mapStore.paths(map.name).map((x) => x.name),
+      unknownType: UNKNOWN_PATH_TYPE,
+    };
+  }
+
+  /**
+   * The joined region paths as one SVG over the region bitmaps, placed in
+   * em (one user unit = 1em of the grid) so zoom bakes keep it. Built from
+   * the cached geometry only: no layout reads here.
+   */
+  private drawPaths(grid: HTMLElement | null, geom: Geometry, map: MapData): void {
+    if (!grid) return;
+    if (this.pathsOf !== map.name) {
+      this.paths.clear();
+      this.pathsOf = map.name;
+    }
+    const lines = this.paths.lines(geom.layout, this.pathSource(map));
+    if (this.pathSvg?.isConnected && this.pathSvgFrom?.lines === lines && this.pathSvgFrom.geom === geom) return;
+    this.removePathSvg();
+    this.shownLines = lines;
+    if (!lines.length) return;
+    // Overworld hex radius in em: widths are px at the default zoom of a SCREEN_HEX_RADIUS hex.
+    const unit = affineScale(geom.p2g) / geom.em / SCREEN_HEX_RADIUS;
+    const fmt = (n: number) => String(Math.round(n * 1e4) / 1e4);
+    const at = (x: number, y: number) => {
+      const [gx, gy] = applyAffine(geom.c2g, x, y);
+      return { cx: Number(fmt(gx / geom.em)), cy: Number(fmt(gy / geom.em)) };
+    };
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = activeDocument.createElementNS(svgNS, "svg");
+    svg.classList.add("duckmage-ow-paths-svg");
+    svg.setAttribute("width", "1em");
+    svg.setAttribute("height", "1em");
+    svg.setAttribute("viewBox", "0 0 1 1");
+    for (const l of lines) {
+      const pts = l.pts.map(([x, y]) => at(x, y));
+      const d = pts.length === 1 ? `M ${pts[0].cx} ${pts[0].cy} l 0 0` : l.smooth ? smoothPath(pts) : sharpPath(pts);
+      const el = activeDocument.createElementNS(svgNS, "path");
+      el.setAttribute("class", "duckmage-ow-path-line");
+      el.setAttribute("d", d);
+      el.setAttribute("stroke", l.color);
+      el.setAttribute("stroke-width", fmt(l.width * unit));
+      if (l.dash.length) el.setAttribute("stroke-dasharray", l.dash.map((n) => fmt(n * unit)).join(" "));
+      el.setAttribute("stroke-linecap", "round");
+      el.setAttribute("stroke-linejoin", "round");
+      el.setAttribute("fill", "none");
+      el.setAttribute("data-path", l.names.join(", "));
+      svg.appendChild(el);
+    }
+    // Over the region bitmaps, under the overworld's own paths (z-index in styles.css).
+    if (this.canvas?.nextSibling) grid.insertBefore(svg, this.canvas.nextSibling);
+    else grid.appendChild(svg);
+    this.pathSvg = svg;
+    this.pathSvgFrom = { lines, geom };
   }
 
   /** Size and place the composite canvas over a grid-px box; returns its 2D context. */

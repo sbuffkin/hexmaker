@@ -131,6 +131,7 @@ The layers button (top right) turns these on and off.
 
 - **Link badges**: a coloured icon badge at a hex's right side for each kind of link in its note (towns, dungeons, features, quests, factions). **S / M / L** beside the toggle sets their size for this map. Hover the hex to see what it links. Click ▸ to pick which kinds show.
 - **Legend**: the terrains used on this map and the badge kinds shown, at the bottom left, by full name (only very long names are cut; hover one for the full name). **S / M / L** sets its size, **–** folds it to a small **Legend** button, **×** hides it.
+<!-- slice:worldmaps -->- **Paths between regions** (overworlds, Regions view; on by default): roads and rivers drawn in regions that run on across a seam into the next region, as one thin line in their type's colour (half the type's width; types of width 2 or less are left out). Paths that stay in one region aren't drawn, nor region copies of a confirmed overworld path (that path already shows). Hover a line for its name. **Show paths** off hides them too.<!-- /slice -->
 
 Opening the layers panel or the drawing tools never moves the map.
 

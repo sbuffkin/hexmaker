@@ -276,7 +276,7 @@ export function joinForkStart(
 // ── Strokes ──────────────────────────────────────────────────────────────────
 
 /** Stroke dash patterns in px at the default zoom (as the map always drew them). */
-const DASH_PX: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
+export const DASH_PX: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
 
 /** The end dot of the path being drawn: radius and outline, px at the default zoom. */
 export const END_DOT_PX = { r: 5, stroke: 1.5 };
