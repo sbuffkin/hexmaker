@@ -29,6 +29,7 @@ import type { LatticeGrid, Pt } from "../paths/pathGeometry";
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
 import type { TAbstractFile } from "obsidian";
+import type { PackKind } from "../packs/packKinds";
 
 /** A map type id ("world", "space"). Stable, never reused. */
 export type KindId = string;
@@ -478,6 +479,8 @@ export interface ModuleRuntime {
    * one-time data upgrades (World maps: the Biome columns, BC1).
    */
   afterStoresReady?(plugin: HexmakerPlugin): Promise<unknown>;
+  /** The kinds of notes it adds to content packs (each a folder; src/packs/packKinds.ts). */
+  packKinds?(plugin: HexmakerPlugin): PackKind[];
   /** More folders of this module's notes (left out of template-note rules), besides its stores'. */
   folders?(plugin: HexmakerPlugin): string[];
   /** Sandbox-only helpers for dev scripts, offered when the vault has the sandbox marker. */

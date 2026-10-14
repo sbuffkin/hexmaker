@@ -77,6 +77,10 @@ export const worldMapsRuntime: ModuleRuntime = {
     },
   ],
   folders: (plugin) => [biomePoolsFolder(plugin)],
+  packKinds: (plugin) => [
+    { id: "biomes", label: "Biomes", folder: plugin.biomeStore.folder() },
+    { id: "biome-pools", label: "Biome pools", folder: biomePoolsFolder(plugin) },
+  ],
   commands: [
     {
       id: "new-overworld",

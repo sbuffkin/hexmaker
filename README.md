@@ -369,6 +369,14 @@ Export a map for printing or for your players.
 - **What players see:** the PNG never includes GM-layer icons, hidden tokens or any note text (Description, Landmark, Hidden, Secret), so it is safe as a handout. The faction and area overlays show their names when ticked; leave them off if those are secret. The PDF's table has no Hidden or Secret text. The hexcrawl manual is the full GM book unless you tick **player version**, which leaves out Hidden and Secret.
 - A single note or hex can also be exported: **Hexmap World Creator: Export current note to PDF**, **… to Markdown**, **Export current hex (structured PDF / Markdown)**, or the **Export** link in the hex editor.
 
+### Content packs
+Share your own content between vaults: random tables, workflows (with their templates), note templates, towns, dungeons, features, quests, factions, areas, palettes and path types, generators<!-- slice:worldmaps -->, biomes and biome pools<!-- /slice --><!-- slice:space -->, world types<!-- /slice -->. Nothing comes pre-made: a pack holds what you made.
+
+- **Export:** **Hexmap World Creator: Export content pack…**, or **Export content pack…** at the end of the map export form. Name the pack, add a description if you like, and tick what goes in: each kind has a tick for all of it, a count, and its notes to tick one by one (**All** / **None** for everything). The pack is written to the export folder as `<name>.zip`.
+- **What's in the zip:** your notes exactly as they are, each kind in its own folder (`tables/…`, `towns/…`, subfolders kept), and a `pack.md` you can read: name, description, the version that made it, the date, a table of what's inside (with the folder each kind came from) and the list of files. Notes starting with `_` are left out.
+- **Import:** **Hexmap World Creator: Import content pack…**, or **Import a content pack…** on the last step of the setup wizard. Pick a .zip, a folder (an unzipped pack), or one of the .zip files already in the vault. You see what goes where first: each kind goes into this vault's folder for it, whatever it's called here. A note that's already here and the same is left alone; for one that's different, pick **Keep both** (the pack's copy is added as "Name 2"; the default), **Skip** or **Replace** (one choice for all, or per note). Replaced notes are backed up first, in the plugin's `backups/pack-import-<date>` folder. Nothing is ever deleted.
+- **Checks:** only Markdown notes are imported; a file that isn't readable text, has an unsafe path, or is in a folder this vault has no place for is skipped and listed. Tables keep their rows and weights as written; an old "open in roller" link (which named the table's old path) becomes the roller block. Links written with a folder path (`[[world/tables/Weather]]`) are pointed at this vault's folder. A folder without a `pack.md` is read by its folder names.
+
 ### Commands
 Every command, as it appears in the command palette:
 
@@ -388,6 +396,8 @@ Every command, as it appears in the command palette:
 | **Hexmap World Creator: Add map data to this map's hex notes** | Debug mode only. Adds a Map data box (terrain, region, name, from the map) under the title of every hex note of the open map, kept up to date when you open a hex. It runs at once (no confirm box) and says how many notes it changed. New hex notes from the built-in template already have one. Edits you typed into existing boxes are put on the map first (see Map data in hex notes). |
 | **Hexmap World Creator: Update map data in region and faction notes** | Debug mode only. Adds or updates a Map data box under the title of every region and faction note: the maps that use it (with hex counts) and, for regions, the encounter table. Kept up to date when you open the note. It runs at once (no confirm box) and says how many notes it changed. |
 | **Hexmap World Creator: Export current map…** | Opens the map export form (PNG, PDF, hexcrawl manual). |
+| **Hexmap World Creator: Export content pack…** | Packs the notes you pick (tables, workflows, templates, towns…) into a .zip in the export folder. See Content packs. |
+| **Hexmap World Creator: Import content pack…** | Brings a content pack (.zip or folder) into this vault's folders, with a preview first. See Content packs. |
 | **Hexmap World Creator: Open today's play log** | Opens today's note in the play log folder (made if missing). |
 | **Hexmap World Creator: Export current note to PDF** | Exports the open note as a PDF. |
 | **Hexmap World Creator: Export current note to Markdown** | Exports the open note as Markdown. |
@@ -580,6 +590,12 @@ src/
     WorkflowWizardModal.ts            ← execute a workflow
     randomTable.ts                    ← parse/roll/odds utilities
     workflow.ts                       ← workflow parse/serialize utilities
+  packs/
+    packKinds.ts                      ← what a content pack carries: kind → folder, mapping between vaults
+    packManifest.ts                   ← pack.md read/write
+    packPlan.ts / packIO.ts           ← import plan (conflicts, checks) and export/import through hosts
+    zip.ts                            ← small .zip writer/reader (no dependency)
+    PackExportModal.ts / PackImportModal.ts ← the two dialogs
 ```
 
 ### Troubleshooting
