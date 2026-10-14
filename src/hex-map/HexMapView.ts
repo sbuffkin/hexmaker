@@ -34,12 +34,11 @@ import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { watchBiomesPathHover } from "./biomesPathHover";
 import { mayAutoPan, revealDelta, usableInsets } from "./safeArea";
-import { wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenCoordShift, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
 import { markVisited, parseVisited, partyClick, unmarkVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
 import { PlayLogModal } from "../play/PlayLogModal";
-import { hexHoverLabel, hexKeyCoords, overlayClosed, pathFirst, pointerMovedFrom, regionsViewTip } from "./hexHover";
+import { hexHoverLabel, hexKeyCoords, pathFirst, regionsViewTip } from "./hexHover";
 import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
@@ -76,7 +75,7 @@ import {
   removeTokenFrontmatter,
   setTokenHex,
 } from "../frontmatter";
-import { PainterContextMenu, type PainterContextMenuOption } from "./PainterContextMenu";
+import { PainterContextMenu } from "./PainterContextMenu";
 
 import { BackgroundCalibration } from "./view/backgroundCalibration";
 import { MapViewport } from "./view/mapViewport";
@@ -87,6 +86,7 @@ import { parseGmIconsDataset, PathOverlay } from "./view/pathOverlay";
 import { GridLabels } from "./view/gridLabels";
 import { NeighbourShadow } from "./view/neighbourShadow";
 import { MapToolbar } from "./view/mapToolbar";
+import { MapInput } from "./view/mapInput";
 import type { DrawingMode } from "./toolMode";
 import type { IconUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
@@ -98,6 +98,8 @@ export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
   /** Pan / zoom (view/mapViewport.ts). */
   private viewport: MapViewport;
+  /** Pointer input (view/mapInput.ts). */
+  private input: MapInput;
   /** The neighbour strip and seam joins (view/neighbourShadow.ts). */
   private shadow: NeighbourShadow;
 
@@ -353,6 +355,45 @@ export class HexMapView extends ItemView {
       showOverworldRegions: () => this.showOverworldRegions(),
       nextTokenFill: () => this.nextTokenFill(),
       renderGrid: () => this.renderGrid(),
+    });
+    // The input handlers read the view live, and call its hex handlers
+    // through it (the smoke suite wraps view.onHexClick).
+    this.input = new MapInput({
+      registerDomEvent: this.registerDomEvent.bind(this),
+      register: this.register.bind(this),
+      viewportEl: () => this.viewportEl,
+      drawingMode: () => this.drawingMode,
+      isErasingMode: () => this.isErasingMode,
+      paintIconName: () => this.paintIconName,
+      paintIconGmOnly: () => this.paintIconGmOnly,
+      resetSubStrokeHint: () => { this.subStrokeMissHinted = false; },
+      biomeStroke: () => this.biomeStroke,
+      calibration: () => this.calibration,
+      viewport: () => this.viewport,
+      undos: () => this.undos,
+      areas: () => this.areas,
+      toolbar: () => this.toolbar,
+      pathTool: () => this.pathTool,
+      overworldLayer: () => this.overworldLayer,
+      wm: () => this.wm,
+      getActiveMap: () => this.getActiveMap(),
+      owView: (map) => this.owView(map),
+      modeAllows: (action) => this.modeAllows(action),
+      exitCurrentMode: () => this.exitCurrentMode(),
+      exitTerrainMode: () => this.exitTerrainMode(),
+      hexElAt: (t, x, y) => this.hexElAt(t, x, y),
+      labelHex: (el) => this.labelHex(el),
+      updateBrushHighlight: (x, y) => this.updateBrushHighlight(x, y),
+      onHexClick: (x, y, e) => this.onHexClick(x, y, e),
+      onHexContextMenu: (e, x, y) => this.onHexContextMenu(e, x, y),
+      onHexPaintClick: (x, y) => this.onHexPaintClick(x, y),
+      onHexIconClick: (x, y) => this.onHexIconClick(x, y),
+      removeOneGmIconFromHex: (el, x, y, icon) => this.removeOneGmIconFromHex(el, x, y, icon),
+      overworldHexKeyAt: (t, x, y) => this.overworldHexKeyAt(t, x, y),
+      startBiomeStroke: () => this.startBiomeStroke(),
+      finishBiomeStroke: () => this.finishBiomeStroke(),
+      subHexKeyAt: (x, y) => this.subHexKeyAt(x, y),
+      paintSubHexAt: (x, y) => this.paintSubHexAt(x, y),
     });
     this.calibration = new BackgroundCalibration({
       plugin: this.plugin,
@@ -1155,379 +1196,8 @@ export class HexMapView extends ItemView {
     this.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
     this.factionTooltipEl.hide();
 
-    this.registerDomEvent(clipEl, "mouseleave", () => {
-      this.updateBrushHighlight(null, null);
-    });
-
-    // A modal or menu closing over the map leaves the hex under the unmoved
-    // pointer lit as if hovered (round 5: a stray highlight after Create
-    // token). Pause the hover highlight until the pointer really moves.
-    const doc = contentEl.ownerDocument;
-    let lastPointer = { x: -1, y: -1 };
-    let hoverPausedAt: { x: number; y: number } | null = null;
-    this.registerDomEvent(doc, "mousemove", (e: MouseEvent) => {
-      lastPointer = { x: e.clientX, y: e.clientY };
-      if (!pointerMovedFrom(hoverPausedAt, e.clientX, e.clientY)) return;
-      hoverPausedAt = null;
-      this.viewportEl?.removeClass("duckmage-hover-paused");
-    });
-    const overlayWatch = new MutationObserver((records) => {
-      if (!records.some((r) => overlayClosed(Array.from(r.removedNodes)))) return;
-      hoverPausedAt = { ...lastPointer };
-      this.viewportEl?.addClass("duckmage-hover-paused");
-    });
-    overlayWatch.observe(doc.body, { childList: true });
-    this.register(() => overlayWatch.disconnect());
-
-    // Hover info: a hex's terrain + coords as its tooltip / accessible name.
-    // One delegated listener, filled in on first hover of each hex — no
-    // per-hex listeners or per-render work on big maps, and always the
-    // current terrain (painting doesn't re-render the grid).
-    this.registerDomEvent(clipEl, "mouseover", (e: MouseEvent) => {
-      const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
-      // Regions view: the grid's own tooltip names the region under the pointer.
-      if (hexEl && !hexEl.closest(".duckmage-ow-regions")) this.labelHex(hexEl);
-    });
-
-    // ── Zoom (scroll wheel, no modifier required) ──────────────────────────
-    // Delta-aware + rAF-batched (see wheelZoom.ts). Mouse notch (deltaY=100)
-    // → ~1.16× per event. Trackpads (deltaY≈2-10) → tiny per-event factors
-    // that look smooth because many events fire per frame and the rAF tick
-    // applies them as one update. NO easing tail — the visual lands exactly
-    // at the cumulative wheel delta and stops the frame after the last event.
-    this.registerDomEvent(
-      contentEl,
-      "wheel",
-      (e: WheelEvent) => {
-        // Over the toolbar panels/menus the wheel scrolls them; with a modal
-        // open it belongs to the modal (fresh-eyes round 3: "scroll-to-zoom
-        // when I meant to scroll the modal").
-        const overMap = e.target instanceof Node && clipEl.contains(e.target);
-        const modalOpen = !!contentEl.ownerDocument.body.querySelector(":scope > .modal-container");
-        if (!wheelZoomsMap(overMap, modalOpen)) {
-          if (modalOpen) e.preventDefault();
-          return;
-        }
-        // Calibration mode: image/grid wheel handlers own plain-wheel scaling
-        // (they stopPropagation), so this only fires for Ctrl/Cmd+wheel
-        // (which the layer handlers explicitly let through) or wheels outside
-        // both layers. Treat both as a viewport zoom.
-        e.preventDefault();
-        const rect = contentEl.getBoundingClientRect();
-        this.viewport.queueWheelZoom(e, rect);
-      },
-      { passive: false },
-    );
-
-    // ── Pan (click-drag) & Terrain drag-paint ─────────────────────────────
-    let isDragging = false;
-    let hasDragged = false;
-    let dragStartX = 0,
-      dragStartY = 0,
-      panStartX = 0,
-      panStartY = 0;
-    let isTerrainPainting = false;
-    let lastPaintedKey: string | null = null;
-    let isRightDragging = false;
-    let rightDragMoved = false;
-
-    this.registerDomEvent(contentEl, "mousedown", (e: MouseEvent) => {
-      // Calibration mode owns left-click drag (image + grid handlers manage it)
-      if (this.calibration.active && e.button === 0) return;
-      // Middle click: always pan
-      if (e.button === 1) {
-        e.preventDefault(); // suppress auto-scroll cursor
-        isDragging = true;
-        hasDragged = false;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        panStartX = this.viewport.panX;
-        panStartY = this.viewport.panY;
-        this.viewportEl?.addClass("is-dragging");
-        beginDrag();
-        return;
-      }
-      // Right click with no active tool: pan (contextmenu suppressed if drag occurs)
-      if (e.button === 2 && this.drawingMode === null) {
-        isRightDragging = true;
-        rightDragMoved = false;
-        isDragging = true;
-        hasDragged = false;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
-        panStartX = this.viewport.panX;
-        panStartY = this.viewport.panY;
-        this.viewportEl?.addClass("is-dragging");
-        beginDrag();
-        return;
-      }
-      if (e.button !== 0) return;
-      // The map's work mode may lock the active tool: say so once, put it down.
-      if (this.drawingMode && !this.modeAllows(TOOL_ACTIONS[this.drawingMode])) {
-        this.exitCurrentMode();
-        hasDragged = true;
-        return;
-      }
-      // The biome brush: each overworld hex crossed gets the biome (and its region).
-      if (this.drawingMode === "biome") {
-        const key = this.overworldHexKeyAt(e.target, e.clientX, e.clientY);
-        this.startBiomeStroke();
-        if (key) this.biomeStroke?.add(key);
-        isTerrainPainting = true;
-        lastPaintedKey = key;
-        hasDragged = true;
-        beginDrag();
-        return;
-      }
-      // Overworld Biomes view: biomes only (MM1), the terrain tool is off there.
-      if (this.drawingMode === "terrain" && this.owView(this.getActiveMap()) === "biomes") {
-        new Notice(this.wm!.TERRAIN_IN_BIOMES_HINT);
-        this.exitTerrainMode();
-        hasDragged = true;
-        return;
-      }
-      if (this.drawingMode === "terrain" && this.overworldLayer?.showsRegions(this.getActiveMap())) {
-        if (!canAdd(this.getActiveMap())) {
-          new Notice(this.wm!.PAINT_LOCKED_HINT);
-          hasDragged = true;
-          return;
-        }
-        this.subStrokeMissHinted = false;
-        isTerrainPainting = true;
-        lastPaintedKey = null;
-        this.undos.currentTerrainStroke = new Map();
-        this.undos.currentSubStroke = new Map();
-        lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
-        hasDragged = true;
-        beginDrag();
-        return;
-      }
-      if (this.drawingMode === "terrain" || this.drawingMode === "icon" || this.drawingMode === "factionLink" || this.drawingMode === "regionLink") {
-        isTerrainPainting = true;
-        lastPaintedKey = null;
-        if (this.drawingMode === "terrain") {
-          this.undos.currentTerrainStroke = new Map();
-          this.undos.strokePins = [];
-        }
-        else if (this.drawingMode === "icon")
-          this.undos.currentIconStroke = new Map();
-        else if (this.drawingMode === "factionLink")
-          this.undos.currentFactionStroke = new Map();
-        else if (this.drawingMode === "regionLink")
-          this.undos.currentRegionStroke = new Map();
-        // Paint the hex under the cursor immediately (or the nearest one
-        // when the press landed in the gap between hexes).
-        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
-        if (hexEl) {
-          const x = Number(hexEl.dataset.x);
-          const y = Number(hexEl.dataset.y);
-          lastPaintedKey = `${x}_${y}`;
-          if (this.drawingMode === "terrain") this.onHexPaintClick(x, y);
-          else if (this.drawingMode === "icon") this.onHexIconClick(x, y);
-          else if (this.drawingMode === "factionLink") void this.areas.onHexFactionPaintClick(x, y);
-          else void this.areas.onHexRegionPaintClick(x, y);
-          hasDragged = true; // suppress the subsequent click event
-        }
-        beginDrag();
-        return; // skip pan setup
-      }
-      // The path tool takes a press on a point or line of its type (drag to reshape).
-      if (this.drawingMode === "path" && this.pathTool.pointerDown(e, this.isErasingMode)) return;
-      // Any other active tool (road, river, tableLink, swap):
-      // let the click event handle it — don't set up drag/pan so hasDragged
-      // never swallows the click.
-      if (this.drawingMode !== null) return;
-      isDragging = true;
-      hasDragged = false;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      panStartX = this.viewport.panX;
-      panStartY = this.viewport.panY;
-      this.viewportEl?.addClass("is-dragging");
-      beginDrag();
-    });
-
-    // Hover brush highlight (no button held) — element-level so it keeps
-    // working after "Move to new window" re-parents the view into a popout
-    // document (issue #32). Stroke-time highlight is owned by onDragMove.
-    this.registerDomEvent(contentEl, "mousemove", (e: MouseEvent) => {
-      if (isTerrainPainting) return;
-      if (this.drawingMode === "path" && e.buttons === 0) this.pathTool.pointerMove(e, this.isErasingMode);
-      if (this.drawingMode === "terrain" || this.drawingMode === "icon") {
-        const hexEl = (e.target as HTMLElement | null)?.closest<HTMLElement>(
-          ".duckmage-hex",
-        );
-        if (hexEl) {
-          this.updateBrushHighlight(
-            Number(hexEl.dataset.x),
-            Number(hexEl.dataset.y),
-          );
-        } else {
-          this.updateBrushHighlight(null, null);
-        }
-      }
-    });
-
-    // Pan / paint-stroke tracking. Document-level listeners are attached to
-    // the document that owns the view AT DRAG START and removed on mouseup.
-    // A fixed onOpen-time `activeDocument` registration goes stale when the
-    // tab is moved to a popout window — the listeners stay on the main
-    // window's document and drags silently die (issue #32).
-    let dragDoc: Document | null = null;
-    const onDragMove = (e: MouseEvent) => {
-      if (isTerrainPainting && this.drawingMode === "biome") {
-        const key = this.overworldHexKeyAt(dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null, e.clientX, e.clientY);
-        if (key && key !== lastPaintedKey) {
-          lastPaintedKey = key;
-          this.biomeStroke?.add(key);
-        }
-        return;
-      }
-      if (isTerrainPainting && this.undos.currentSubStroke) {
-        const key = this.subHexKeyAt(e.clientX, e.clientY);
-        if (key && key !== lastPaintedKey) lastPaintedKey = this.paintSubHexAt(e.clientX, e.clientY);
-        return;
-      }
-      if (isTerrainPainting) {
-        const el = dragDoc?.elementFromPoint(e.clientX, e.clientY) ?? null;
-        const hexEl = this.hexElAt(el, e.clientX, e.clientY);
-        if (hexEl) {
-          const x = Number(hexEl.dataset.x);
-          const y = Number(hexEl.dataset.y);
-          const key = `${x}_${y}`;
-          if (key !== lastPaintedKey) {
-            lastPaintedKey = key;
-            if (this.drawingMode === "terrain") this.onHexPaintClick(x, y);
-            else if (this.drawingMode === "icon") this.onHexIconClick(x, y);
-            else if (this.drawingMode === "factionLink") void this.areas.onHexFactionPaintClick(x, y);
-            else void this.areas.onHexRegionPaintClick(x, y);
-          }
-          this.updateBrushHighlight(x, y);
-        } else {
-          this.updateBrushHighlight(null, null);
-        }
-        return;
-      }
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      if (!hasDragged && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
-        hasDragged = true;
-        if (isRightDragging) rightDragMoved = true;
-      }
-      if (hasDragged) {
-        this.viewport.panX = panStartX + dx;
-        this.viewport.panY = panStartY + dy;
-        this.viewport.applyTransform();
-      }
-    };
-    const onDragUp = () => {
-      if (isTerrainPainting) {
-        if (this.drawingMode === "biome") void this.finishBiomeStroke();
-        else if (this.drawingMode === "terrain") this.undos.commitTerrainStroke();
-        else if (this.drawingMode === "icon") this.undos.commitIconStroke();
-        else if (this.drawingMode === "factionLink") this.undos.commitFactionStroke();
-        else if (this.drawingMode === "regionLink") this.undos.commitRegionStroke();
-      }
-      isTerrainPainting = false;
-      lastPaintedKey = null;
-      isDragging = false;
-      isRightDragging = false;
-      this.viewportEl?.removeClass("is-dragging");
-      endDrag();
-    };
-    const beginDrag = () => {
-      endDrag(); // defensive: never stack a second registration
-      dragDoc = contentEl.ownerDocument;
-      dragDoc.addEventListener("mousemove", onDragMove);
-      dragDoc.addEventListener("mouseup", onDragUp);
-    };
-    const endDrag = () => {
-      if (!dragDoc) return;
-      dragDoc.removeEventListener("mousemove", onDragMove);
-      dragDoc.removeEventListener("mouseup", onDragUp);
-      dragDoc = null;
-    };
-    this.register(endDrag); // don't leak listeners if the view closes mid-drag
-
-    // Swallow clicks that ended a drag so hex click-handlers don't fire
-    this.registerDomEvent(
-      contentEl,
-      "click",
-      (e: MouseEvent) => {
-        if (hasDragged) {
-          e.stopPropagation();
-          hasDragged = false;
-        }
-      },
-      { capture: true },
-    );
-
-    // When any tool is active, right-click shows the painter context menu.
-    // EXCEPTION: in GM-only paint mode, right-click on a hex REMOVES one
-    // of the currently-selected icon from that hex's GM stack (inverse
-    // of the additive left-click) — that's the symmetric multi-icon UX
-    // requested in hexmaker#28. Right-click off-hex still shows the
-    // painter menu so the user can change tools etc.
-    this.registerDomEvent(
-      contentEl,
-      "contextmenu",
-      (e: MouseEvent) => {
-        if (rightDragMoved) {
-          e.preventDefault();
-          e.stopPropagation();
-          rightDragMoved = false;
-          return;
-        }
-        if (this.drawingMode === null) return;
-        e.preventDefault();
-        e.stopPropagation();
-        const hexEl = this.hexElAt(e.target, e.clientX, e.clientY);
-        const hexX = hexEl ? Number(hexEl.dataset.x) : null;
-        const hexY = hexEl ? Number(hexEl.dataset.y) : null;
-        if (
-          this.drawingMode === "icon" &&
-          this.paintIconGmOnly &&
-          !this.isErasingMode &&
-          this.paintIconName &&
-          hexEl && hexX !== null && hexY !== null
-        ) {
-          this.removeOneGmIconFromHex(hexEl, hexX, hexY, this.paintIconName);
-          return;
-        }
-        // Path tool: right-click an anchor of a path of the tool's type
-        // deletes it; on such a path (or Shift on an anchor), the menu adds
-        // that path's actions; on another type's path, "Switch to <type>".
-        let pathItems: PainterContextMenuOption[] = [];
-        if (this.drawingMode === "path" && !this.isErasingMode) {
-          const r = this.pathTool.contextMenu(e);
-          if (r && "handled" in r) return;
-          if (r) pathItems = [...r.items, ...this.toolbar.overworldPathItems(this.pathTool.labelState().selected)];
-        }
-        this.toolbar.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY, pathItems);
-      },
-      { capture: true },
-    );
-
-    // A click or right-click in the gap between hexes (or on a hex's clipped
-    // corner) lands on the column box, not a hex: send it to the nearest
-    // hex (round 5: "two dead clicks before the first hex editor opened").
-    // Hexes, tokens and the neighbour strip handle their own clicks.
-    const onGap = (e: MouseEvent): { x: number; y: number } | null => {
-      const t = e.target instanceof HTMLElement ? e.target : null;
-      if (!t || t.closest(".duckmage-hex, .duckmage-token, .duckmage-region-shadow-hex")) return null;
-      const hexEl = this.hexElAt(t, e.clientX, e.clientY);
-      return hexEl ? { x: Number(hexEl.dataset.x), y: Number(hexEl.dataset.y) } : null;
-    };
-    this.registerDomEvent(clipEl, "click", (e: MouseEvent) => {
-      const hex = onGap(e);
-      if (hex) void this.onHexClick(hex.x, hex.y, e);
-    });
-    this.registerDomEvent(clipEl, "contextmenu", (e: MouseEvent) => {
-      if (this.drawingMode !== null) return; // the tool menu (capture) owns it
-      const hex = onGap(e);
-      if (hex) this.onHexContextMenu(e, hex.x, hex.y);
-    });
+    // Pointer input: hover, wheel zoom, pan, paint strokes, tool menus (view/mapInput.ts).
+    this.input.attach(contentEl, clipEl);
 
     // Expand buttons and view buttons — always visible (not collapsible)
     this.createExpandButtons(controlsEl);

@@ -26,9 +26,9 @@ describe("clicks between hexes go to the nearest hex (fresh-eyes round 5)", () =
 
 	it("the map view routes gap clicks, right-clicks and paint strokes through it", () => {
 		const view = readSurface("map-view");
-		expect(view).toMatch(/this\.registerDomEvent\(clipEl, "click", \(e: MouseEvent\) => \{\n\s+const hex = onGap\(e\);\n\s+if \(hex\) void this\.onHexClick\(hex\.x, hex\.y, e\);/);
-		expect(view).toMatch(/this\.registerDomEvent\(clipEl, "contextmenu"[\s\S]{0,200}this\.onHexContextMenu\(e, hex\.x, hex\.y\)/);
-		expect(view).toMatch(/Paint the hex under the cursor[\s\S]{0,120}this\.hexElAt\(e\.target, e\.clientX, e\.clientY\)/);
+		expect(view).toMatch(/this\.(?:host\.)?registerDomEvent\(clipEl, "click", \(e: MouseEvent\) => \{\n\s+const hex = onGap\(e\);\n\s+if \(hex\) void this\.(?:host\.)?onHexClick\(hex\.x, hex\.y, e\);/);
+		expect(view).toMatch(/this\.(?:host\.)?registerDomEvent\(clipEl, "contextmenu"[\s\S]{0,200}this\.(?:host\.)?onHexContextMenu\(e, hex\.x, hex\.y\)/);
+		expect(view).toMatch(/Paint the hex under the cursor[\s\S]{0,120}this\.(?:host\.)?hexElAt\(e\.target, e\.clientX, e\.clientY\)/);
 		expect(view).toMatch(/private hexElAt[\s\S]{0,1400}nearestHex\(clientX, clientY, boxes\)/);
 	});
 });
