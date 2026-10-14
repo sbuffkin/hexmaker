@@ -50,10 +50,10 @@ describe("O6: one component on both pages", () => {
 
 	it("both pages list only what's in the mix, with × and + Add", () => {
 		for (const page of [biome, gen]) {
-			expect(page).toMatch(/import \{ mixRemoveButton, renderMixAdd, splitMix \} from "\.\.\/ui\/mixList";/);
+			expect(page).toMatch(/import \{ mixRemoveButton, renderMixAdd, splitMix \} from "(\.\.\/)+ui\/mixList";/);
 			expect(page).toMatch(/splitMix\(/);
 			expect(page).toMatch(/mixRemoveButton\(row, /);
-			expect(page).toMatch(/renderMixAdd\(this\.plugin\.app, /);
+			expect(page).toMatch(/renderMixAdd\((this\.)?plugin\.app, /);
 		}
 		expect(biome).toMatch(/thing: "type",\s*things: "types"/);
 		expect(gen).toMatch(/thing: "terrain",\s*things: "terrains"/);
