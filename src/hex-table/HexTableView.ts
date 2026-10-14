@@ -3,8 +3,9 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
-  VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
+import type { HexMapView } from "../hex-map/HexMapView";
+import { activeMapView, openTableInView } from "../workspace/views";
 import { LINK_SECTIONS, type TerrainColor } from "../types";
 import type { SectionWordsFn } from "../mapKinds";
 import { getAllSectionData } from "../sections";
@@ -280,14 +281,8 @@ export class HexTableView extends ItemView {
       regionSelect.createEl("option", { value: r.name, text: this.plugin.mapLabel(r.name) });
     }
     // Default to active map view's map
-    interface WithActiveMapName {
-      activeMapName: string;
-    }
-    const mapLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-    if (mapLeaves.length > 0) {
-      const mapView = mapLeaves[0].view as unknown as WithActiveMapName;
-      this.mapFilter = mapView.activeMapName;
-    }
+    const mapView = activeMapView(this.app.workspace);
+    if (mapView) this.mapFilter = mapView.activeMapName;
     regionSelect.value = this.mapFilter;
     regionSelect.addEventListener("change", () => {
       this.mapFilter = regionSelect.value;
@@ -797,23 +792,16 @@ export class HexTableView extends ItemView {
     jumpBtn.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
-        interface WithCenterOnHex {
-          centerOnHex(x: number, y: number): void;
-        }
-        const existingLeaves =
-          this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-        if (existingLeaves.length > 0) {
-          void this.app.workspace.revealLeaf(existingLeaves[0]);
-          (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(
-            x,
-            y,
-          );
+        const mapView = activeMapView(this.app.workspace);
+        if (mapView) {
+          void this.app.workspace.revealLeaf(mapView.leaf);
+          mapView.centerOnHex(x, y);
         } else {
           const leaf = this.app.workspace.getLeaf("tab");
           await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
           // Wait one frame for the view to render before centering
           window.setTimeout(
-            () => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y),
+            () => (leaf.view as unknown as HexMapView).centerOnHex(x, y),
             100,
           );
         }
@@ -933,16 +921,7 @@ export class HexTableView extends ItemView {
                 path,
               );
               if (!(file instanceof TFile)) return;
-              interface WithOpenTable {
-                openTable(path: string): void;
-              }
-              const leaf = this.app.workspace.getLeaf("tab");
-              await leaf.setViewState({
-                type: VIEW_TYPE_RANDOM_TABLES,
-                active: true,
-              });
-              void this.app.workspace.revealLeaf(leaf);
-              (leaf.view as unknown as WithOpenTable).openTable(file.path);
+              await openTableInView(this.app.workspace, file.path, { newTab: true });
             })();
           });
           td.addEventListener("click", () => {
@@ -966,24 +945,7 @@ export class HexTableView extends ItemView {
                     path,
                   );
                   if (file instanceof TFile) {
-                    interface WithOpenTable {
-                      openTable(path: string): void;
-                    }
-                    const leaves = this.app.workspace.getLeavesOfType(
-                      VIEW_TYPE_RANDOM_TABLES,
-                    );
-                    const leaf =
-                      leaves.length > 0
-                        ? leaves[0]
-                        : this.app.workspace.getLeaf("tab");
-                    await leaf.setViewState({
-                      type: VIEW_TYPE_RANDOM_TABLES,
-                      active: true,
-                    });
-                    void this.app.workspace.revealLeaf(leaf);
-                    (leaf.view as unknown as WithOpenTable).openTable(
-                      file.path,
-                    );
+                    await openTableInView(this.app.workspace, file.path);
                   }
                 } else {
                   const file = this.app.metadataCache.getFirstLinkpathDest(
