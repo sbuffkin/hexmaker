@@ -497,6 +497,8 @@ export interface GeneratorPageHost {
   show(): void;
   /** The palette the page is on. */
   paletteName(): string;
+  /** The map the page is on ("" for none). */
+  mapName(): string;
 }
 
 /**

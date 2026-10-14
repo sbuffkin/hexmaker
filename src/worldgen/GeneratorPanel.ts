@@ -47,6 +47,7 @@ import { SIDES, hexRangeText, type Side } from "./world";
 import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEIGHBOUR_SHARE, occupiedSides, placeNewRegion, regionNameAt, regionNeighbourNames, type NewRegion } from "./neighbours";
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { worldMaps } from "../modules/runtime";
+import { showModuleTab } from "./genPage/moduleTabs";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
 import { Disclosure, Fold } from "../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
@@ -191,9 +192,11 @@ export class GeneratorPanel {
         ? GeneratorPanel.draft ? { file: null, model: GeneratorPanel.draft, warnings: [] } : undefined
         : generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
 
+    const page = { rerender: () => this.host.rerender(), show: () => show(), paletteName: () => GeneratorPanel.paletteName, mapName: () => this.mapName }; // a module tab's host (genPage/moduleTabs.ts)
     const show = () => {
       body.empty();
       side.empty();
+      if (showModuleTab(this.plugin, GeneratorLibrary.tab, body, side, page)) return;
       // World maps: a blend-field biome shown instead of a generator (BiomePanel).
       const wm = worldMaps();
       wm?.BiomePanel.dispose();
@@ -252,6 +255,7 @@ export class GeneratorPanel {
       libraryEl.empty();
       new GeneratorLibrary(this.app, this.plugin, generators, {
         selectedPath: () => GeneratorPanel.selectedPath,
+        page,
         load: choose,
         loadDraft: (draft) => {
           GeneratorPanel.biome = "";
@@ -264,12 +268,8 @@ export class GeneratorPanel {
           this.host.rerender();
         },
       }).render(libraryEl);
-      if (hiddenBySpace > 0) {
-        libraryEl.createEl("p", {
-          text: `${hiddenBySpace} space generator${hiddenBySpace === 1 ? "" : "s"} hidden — space maps are off (settings → map types).`,
-          cls: "duckmage-map-origin-desc",
-        });
-      }
+      const hidden = `${hiddenBySpace} space generator${hiddenBySpace === 1 ? "" : "s"} hidden — space maps are off (settings → map types).`;
+      if (hiddenBySpace > 0) libraryEl.createEl("p", { text: hidden, cls: "duckmage-map-origin-desc" });
       show();
     });
   }

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { MODULES, registry } from "../src/modules";
-import { MODULE_RUNTIMES, moduleHexMenu, moduleUnchartedKeys, runPartyEntered } from "../src/modules/runtime";
+import { MODULE_RUNTIMES, moduleGeneratorTabs, moduleHexMenu, moduleUnchartedKeys, runPartyEntered } from "../src/modules/runtime";
 import { buildMapNote, parseMapNote, type MapNoteData } from "../src/maps/mapNote";
 import { scaleGenerators } from "../src/mapScales";
 import { scaleStarter } from "../src/wizardKinds";
@@ -71,5 +71,6 @@ describe("runtime seams", () => {
 		expect(moduleHexMenu(plugin, "nope", "1_1")).toEqual([]);
 		expect(moduleUnchartedKeys(plugin, "nope")).toEqual([]);
 		expect(await runPartyEntered(plugin, { map: "nope", from: "0_0", to: "1_0" })).toEqual([]);
+		expect(moduleGeneratorTabs().map((t) => t.id)).toEqual(["hex-flowers"]);
 	});
 });

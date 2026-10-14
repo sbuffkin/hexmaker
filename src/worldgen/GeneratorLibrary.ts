@@ -10,6 +10,9 @@ import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, sa
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
 import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
 import { uniqueMapsByName } from "../maps/mapTree";
+import type { GeneratorPageHost } from "../modules/types";
+import { moduleGeneratorTabs } from "../modules/runtime";
+import { moduleTab } from "./genPage/moduleTabs";
 
 export interface LibraryHost {
   /** The generator shown below the list. */
@@ -20,9 +23,12 @@ export interface LibraryHost {
   loadDraft(model: HexWfcModel): void;
   /** Files changed (learned, re-learned, deleted): reload the page. */
   changed(selectPath?: string): void;
+  /** The page, for a module's tab (its own list and page). */
+  page: GeneratorPageHost;
 }
 
-type Tab = "generators" | "regions";
+/** "generators", "regions" (Maps) or a module's tab id. */
+type Tab = string;
 
 export class GeneratorLibrary {
   /** Kept across re-renders of the page. */
@@ -61,14 +67,18 @@ export class GeneratorLibrary {
       btn.createSpan({ text: label });
       btn.createSpan({ text: String(count), cls: "duckmage-wfc-library-count" });
       btn.addEventListener("click", () => {
+        const page = !!moduleTab(tab) || !!moduleTab(GeneratorLibrary.tab);
         GeneratorLibrary.tab = tab;
         draw();
+        // A module's tab has its own page below the list.
+        if (page) this.host.page.show();
       });
       return { tab, btn };
     };
     const tabBtns = [
       tabBtn("generators", "Generators", this.generators.length),
       tabBtn("regions", "Maps", uniqueMapsByName(this.plugin.settings.maps).length),
+      ...moduleGeneratorTabs().map((t) => tabBtn(t.id, t.label, t.count(this.plugin))),
     ];
 
     const draw = () => {
@@ -77,12 +87,14 @@ export class GeneratorLibrary {
         btn.toggleClass("is-active", on);
         btn.setAttr("aria-selected", String(on));
       }
-      const things = GeneratorLibrary.tab === "generators" ? "generators" : "maps";
+      const mod = moduleTab(GeneratorLibrary.tab);
+      const things = mod ? mod.label.toLowerCase() : GeneratorLibrary.tab === "generators" ? "generators" : "maps";
       filter.placeholder = `Filter ${things}…`;
       filter.setAttr("aria-label", `Filter ${things}`);
       list.empty();
       actions.empty();
-      if (GeneratorLibrary.tab === "generators") this.drawGenerators(list, actions, draw);
+      if (mod) mod.drawList(this.plugin, list, actions, { query: GeneratorLibrary.query, redraw: draw, host: this.host.page });
+      else if (GeneratorLibrary.tab === "generators") this.drawGenerators(list, actions, draw);
       else this.drawRegions(list, actions, draw);
     };
     filter.addEventListener("input", () => {

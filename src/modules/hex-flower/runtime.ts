@@ -11,6 +11,7 @@ import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
 import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../hexflower/context";
 import { ExploreService } from "../../hexflower/ExploreService";
 import { exploreFrontier, exploreHexMenu, exploreStep } from "../../hexflower/exploreHooks";
+import { drawFlowerList, renderFlowerPanel } from "../../hexflower/FlowerPanel";
 import { drawFlower } from "../../hexflower/flowerView";
 
 function stores(plugin: HexmakerPlugin): ModuleStore[] {
@@ -34,6 +35,14 @@ export const hexFlowerRuntime: ModuleRuntime = {
   play: { onEnter: exploreStep },
   hexMenu: exploreHexMenu,
   unchartedKeys: exploreFrontier,
+  // The generator page's third library tab: the flowers and their editor.
+  generatorPage: [{
+    id: "hex-flowers",
+    label: "Hex flowers",
+    count: (plugin) => flowerStoreOf(plugin)?.list().length ?? 0,
+    drawList: drawFlowerList,
+    renderPanel: renderFlowerPanel,
+  }],
   folderSettings: [{
     id: "Settings.hexFlowersFolder",
     key: "hexFlowersFolder",
