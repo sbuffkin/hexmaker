@@ -9,6 +9,7 @@ import { MAP_KINDS, enabledKinds, terrainsForTables, type MapKind } from "./mapK
 import { randomSeed } from "../packages/hex-wfc/src";
 import { drawPreview, PREVIEW_AUTO_LIMIT } from "./worldgen/preview";
 import { addGeneratedPaths, pathColors } from "./worldgen/generators";
+import { markFreshMap } from "./worldgen/freshMap";
 import {
 	BLANK_ID,
 	describeKind,
@@ -843,6 +844,11 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				onProgress,
 			});
 			ctx.generatedWith = outcome?.ok ? kind?.label : undefined;
+			// A generated first map is open for Reroll / Lock until its first
+			// hand edit, as New map's (SF7); a map with its own rerolls is left alone.
+			if (outcome?.ok && kind && !plugin.arrival.isOverworld(result.name)) {
+				markFreshMap(plugin, result.name, { generator: kind.id, options: resolvedOptions(kind, ctx), seed: ctx.seed });
+			}
 			plugin.settings.defaultMap = result.name;
 			// The shipped "default" map is clutter now that there's a real one.
 			await removeUnusedPlaceholder(plugin, result.name);

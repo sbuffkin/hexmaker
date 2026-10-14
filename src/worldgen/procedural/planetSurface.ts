@@ -1,6 +1,7 @@
 import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/src";
 import type { TerrainColor } from "../../types";
 import { isTerrainType } from "../../terrainTypes";
+import { edgeAlpha, edgeReach } from "../neighbourWeight";
 import {
   SIDES,
   SIDE_VECTORS,
@@ -452,6 +453,9 @@ export function mountainQuantile(relief: string, flavor: "planet" | "overland"):
   return flavor === "overland" ? 0.93 : 0.87;
 }
 
+/** The end of Overland's card text (SF8: it draws the palette's path types). */
+export const OVERLAND_TAIL = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge. It draws your path types too (roads, rivers…): set how many of each.";
+
 /**
  * Overland's generator card text for a palette: only the kinds of terrain
  * this palette can actually give (the Limited palette has no coast terrain,
@@ -459,7 +463,7 @@ export function mountainQuantile(relief: string, flavor: "planet" | "overland"):
  */
 export function overlandDescription(terrains: TerrainColor[]): string {
   const r = planetRoles(terrains);
-  const tail = "One climate across the map; set water %, climate and which side the sea is on. Next to another map, it carries on from that map's edge. It draws no rivers or roads.";
+  const tail = OVERLAND_TAIL;
   if (!r) return `A region from noise. ${tail}`;
   const parts = [
     r.sea && "sea",
@@ -596,7 +600,7 @@ export function planetSurface(
   let seaMask: boolean[] | undefined;
   // Overland next to an existing region: its border hexes pull this map's
   // edge toward them, so terrain carries on across the seam.
-  const pulls = flavor === "overland" && context?.edgeCells?.size ? edgePulls(grid, hexes, context.edgeCells) : undefined;
+  const pulls = flavor === "overland" && context?.edgeCells?.size ? edgePulls(grid, hexes, context.edgeCells, context.neighbourWeight) : undefined;
   if (context && flavor !== "overland") {
     ({ elev, moist: moistArr, temp: tempArr, sideEdges } = regionField(grid, hexes, centers, noiseE, noiseM, context, options));
     lv = { sea: 0.33, deep: 0.08, shelf: 0.27, hill: 0.64, mountain: 0.79, peak: 0.92 };
@@ -806,9 +810,6 @@ interface EdgePull {
   moist: number;
 }
 
-/** How far into the map a neighbour's border reaches, and how hard (by steps). */
-const EDGE_REACH = 3;
-const EDGE_ALPHA = [0, 0.85, 0.55, 0.25];
 
 function elevClass(type: string): number {
   switch (type) {
@@ -823,14 +824,17 @@ function elevClass(type: string): number {
 
 /**
  * Per hex, the pull of a neighbouring region's border hexes (context
- * `edgeCells`, just outside the grid) within EDGE_REACH steps; undefined
- * where none reach. Border hexes of unknown type are ignored.
+ * `edgeCells`, just outside the grid) within edgeReach steps; undefined
+ * where none reach. Border hexes of unknown type are ignored. `weight` is
+ * the map's Neighbour influence (neighbourWeight.ts; 1 = 3 hexes in).
  */
 export function edgePulls(
   grid: ProcGrid,
   hexes: [number, number][],
   edgeCells: Map<string, ContextTerrain>,
+  weight = 1,
 ): (EdgePull | undefined)[] {
+  const reach = edgeReach(weight);
   const cells = [...edgeCells]
     .map(([k, c]) => {
       const type = isTerrainType(c.type) ? c.type : undefined;
@@ -842,9 +846,9 @@ export function edgePulls(
     const classWeights = [0, 0, 0, 0, 0, 0];
     for (const c of cells) {
       const d = distance(h, c.at, grid);
-      if (d < 1 || d > EDGE_REACH) continue;
+      if (d < 1 || d > reach) continue;
       near = Math.min(near, d);
-      const w = EDGE_REACH + 1 - d;
+      const w = reach + 1 - d;
       wsum += w;
       const cls = elevClass(c.type);
       classWeights[cls] += w;
@@ -854,7 +858,7 @@ export function edgePulls(
     if (!wsum) return undefined;
     return {
       near,
-      alpha: EDGE_ALPHA[near] ?? 0,
+      alpha: edgeAlpha(near, weight),
       wet: wet / wsum,
       classWeights: classWeights.map((w) => w / wsum),
       moist: moist / wsum,

@@ -37,7 +37,8 @@ import { flowerPetals } from "../maps/mapNav";
 import { biomeInfo, biomeNoteOf, biomeParts, biomeRef, combinedBiome, isComboId, representativeTerrain, type BiomeId } from "./biomes";
 import { dominantPart, mixToParts, newPartWeight, type BiomePart } from "./biomeCombo";
 import { renderShareSliders } from "../ui/shareSliders";
-import { clampNeighbourWeight, NEIGHBOUR_WEIGHT } from "./neighbourWeight";
+import { clampNeighbourWeight } from "../worldgen/neighbourWeight";
+import { renderNeighbourSlider } from "../ui/neighbourSlider";
 import { renderSaveStatusLine, type SaveStatusLine } from "../ui/saveStatusLine";
 import { hexBiomeAt, overworldOf, planRegionAt, planRegionWithGenerator, regenerateRegion, regionBiomeStatus, setBiomeAt } from "./regionsVault";
 import { renderBiomeTiles } from "./biomeChooser";
@@ -51,7 +52,7 @@ import { confirmOverworldPath, overworldPathsAt } from "./overworldPaths";
 import { canDo } from "../modeGate";
 import { addGodOffer } from "../hex-map/godOffer";
 import { WORK_MODE_TEXT } from "../workMode";
-import { renderLabeledSlider, sliderFormat, type LabeledSlider } from "../ui/sliders";
+import { renderLabeledSlider } from "../ui/sliders";
 import { REGION_WARP, type BlendWidth } from "./blendField";
 import { rollBiome } from "./regionWorld";
 import { createFromDraft, draftGrowth, draftLock, draftMix, newDraft, newDraftSeed, previewDraft, startBiome, type NewRegionDraft, type NewRegionWalk } from "./newRegion";
@@ -68,25 +69,6 @@ export interface NewRegionMode {
 
 const NEIGHBOUR_ID = "EditRegion.neighbourInfluence";
 
-/**
- * The Neighbour influence slider: the shared labelled slider (value always
- * shown, reset to ×1), a weight on the biome's tuning for this region.
- */
-function renderNeighbourSlider(parent: HTMLElement, value: number, on: { input?: (v: number) => void; change?: (v: number) => void }): LabeledSlider {
-  return renderLabeledSlider(parent, {
-    label: "Neighbour influence",
-    help: "How strongly the regions already made around it steer this one: ×1 is as its biome is tuned, ×0 only the seams, ×2 twice as much.",
-    min: NEIGHBOUR_WEIGHT.min,
-    max: NEIGHBOUR_WEIGHT.max,
-    step: NEIGHBOUR_WEIGHT.step,
-    value: clampNeighbourWeight(value),
-    format: sliderFormat.multiplier,
-    reset: { value: NEIGHBOUR_WEIGHT.default },
-    cls: "duckmage-edit-region-neighbour-weight",
-    onInput: (v) => on.input?.(clampNeighbourWeight(v)),
-    onChange: (v) => on.change?.(clampNeighbourWeight(v)),
-  });
-}
 /** Normal Edit: the region is remade this long after the slider stops. */
 const WEIGHT_APPLY_MS = 400;
 const BLEND_WIDTHS: BlendWidth[] = ["narrow", "normal", "wide"];

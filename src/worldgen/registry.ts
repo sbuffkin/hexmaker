@@ -11,8 +11,11 @@ import {
 import { ofType, SIDES, tuneKey, type GenerationContext, type ProcGrid, type ProcOption, type Side, type TuningDef } from "./procedural/common";
 import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
 import { routeContextPaths } from "./procedural/contextPaths";
+import { PATH_ROW_PREFIX } from "./procedural/pathRows";
 import { registry } from "../modules";
-import { generateConnected, type NewRegion } from "./neighbours";
+import { blendFromNeighbours, generateConnected, regionNeighbourNames, type NewRegion } from "./neighbours";
+import { neighbourShare } from "./neighbourWeight";
+import type { GeneratorFile } from "./generators";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
 import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
@@ -58,6 +61,12 @@ export interface GenerateRequest {
   /** A new region placed next to existing ones: learned generators solve
    *  against the neighbours' edges (generateConnected). */
   region?: NewRegion;
+  /**
+   * Neighbour influence next to a neighbour (New map → Next to, SF6;
+   * worldgen/neighbourWeight.ts): 1 = as tuned, 0 = the seam only, 2 =
+   * twice as much. Unset = 1.
+   */
+  neighbourWeight?: number;
   /**
    * The map whose generator tables apply (Map properties → Tables, T11):
    * the map being made's parent, or the map itself. Its own and its
@@ -221,7 +230,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
   for (const def of BUILTIN_GENERATORS) {
     const model = builtinModel(def.slug);
     if (!model || learnedNames.has(def.slug)) continue;
-    kinds.push(builtinKind(plugin, def.slug, def.label, def.description, model));
+    kinds.push(builtinKind(plugin, def.slug, def.label, def.description, model, learned));
   }
 
   for (const g of learned) {
@@ -240,7 +249,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
         const names = req.terrains.map((t) => t.name);
         const model = withWfcTuning(g.model, req.options);
         const res = req.region
-          ? generateConnected(plugin, model, names, req.region, req.seed)
+          ? generateConnected(plugin, leanToNeighbours(plugin, model, req, learned), names, req.region, req.seed)
           : generateTerrain(plugin, model, names, req.grid, req.seed);
         if (!res.ok) return { ok: false, message: res.message };
         return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
@@ -285,6 +294,18 @@ export function withWfcTuning<M extends Pick<HexWfcModel, "settings">>(model: M,
 }
 
 /**
+ * A learned generator next to a neighbour (SF6): the neighbours' character
+ * blended in by the map's Neighbour influence (neighbourShare: 20% at ×1,
+ * 40% at ×2, none at ×0, when only the seam is matched). Each neighbour
+ * leans toward its own side (blendFromNeighbours).
+ */
+function leanToNeighbours(plugin: HexmakerPlugin, model: HexWfcModel, req: GenerateRequest, generators: GeneratorFile[]): HexWfcModel {
+  const share = neighbourShare(req.neighbourWeight);
+  if (!req.region || share <= 0) return model;
+  return blendFromNeighbours(plugin, model, regionNeighbourNames(plugin, req.region), share, generators);
+}
+
+/**
  * A shipped biome / preset generator as a generator kind (World type).
  */
 export function builtinKind(
@@ -293,6 +314,7 @@ export function builtinKind(
   label: string,
   description: string,
   model: HexWfcModel,
+  generators: GeneratorFile[] = [],
 ): TerrainGeneratorKind {
   // The last fitted model, for drawing its paths (route keys follow the palette).
   let fitted: HexWfcModel = model;
@@ -313,7 +335,7 @@ export function builtinKind(
       const names = req.terrains.map((t) => t.name);
       const tunedFit = withWfcTuning(fit, req.options);
       const res = req.region
-        ? generateConnected(plugin, tunedFit, names, req.region, req.seed)
+        ? generateConnected(plugin, leanToNeighbours(plugin, tunedFit, req, generators), names, req.region, req.seed)
         : generateTerrain(plugin, tunedFit, names, req.grid, req.seed);
       if (!res.ok) return { ok: false, message: res.message };
       return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
@@ -354,10 +376,15 @@ export function kindOptions(
   return kind.optionsFor?.(terrains, pathTypes) ?? kind.options;
 }
 
-/** A generator's options at their defaults, overridden by `chosen`. */
+/**
+ * A generator's options at their defaults, overridden by `chosen`. The
+ * path-type rows (`paths.<type>`, SF8) depend on the palette, so they
+ * aren't in the static list: a chosen one is kept as chosen (unset = Auto).
+ */
 export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">, chosen: Record<string, string> = {}): Record<string, string> {
   const out: Record<string, string> = {};
   for (const o of kind.options) out[o.key] = chosen[o.key] ?? o.default;
+  for (const [k, v] of Object.entries(chosen)) if (k.startsWith(PATH_ROW_PREFIX) && v !== undefined) out[k] = v;
   return out;
 }
 

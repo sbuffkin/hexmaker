@@ -302,6 +302,8 @@ export function canReshape(map: { workMode?: string } | undefined): boolean {
 
 /** The hint when a locked place can't be rerolled. */
 export const REROLL_PLACE_LOCKED_HINT = "This submap is locked. Switch to God to reroll it.";
+/** The same for a map made by New map → Generate (SF7). */
+export const REROLL_MAP_LOCKED_HINT = "This map is locked. Switch to God to reroll it.";
 
 /**
  * May a place made on arrival be rerolled? Until it's locked (`arrival:
@@ -326,12 +328,13 @@ export function isOpenPlace(place: { arrival?: string } | undefined): boolean {
 /**
  * Does a hand edit (painting, a path drawn by hand: modeGate's
  * HAND_EDIT_ACTIONS) lock this place? Only an open place made from a hex
- * (a new region, a place made on arrival): the user's own work goes in, so
- * rerolling it would throw that away. Navigating in, viewing and rerolling
- * never lock (owner 2026-10-12).
+ * (a new region, a place made on arrival) or a fresh map made by New map →
+ * Generate (it keeps its `generator:`, SF7): the user's own work goes in,
+ * so rerolling it would throw that away. Navigating in, viewing and
+ * rerolling never lock (owner 2026-10-12).
  */
-export function handEditLocks(place: { arrival?: string; parent?: unknown } | undefined): boolean {
-  return !!place?.parent && isOpenPlace(place);
+export function handEditLocks(place: { arrival?: string; parent?: unknown; generator?: string } | undefined): boolean {
+  return (!!place?.parent || !!place?.generator?.trim()) && isOpenPlace(place);
 }
 
 /**

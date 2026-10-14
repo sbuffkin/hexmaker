@@ -58,6 +58,8 @@ export interface GenerationContext {
   parent?: ContextTerrain;
   sides?: Partial<Record<Side, ContextTerrain>>;
   edgeCells?: Map<string, ContextTerrain>;
+  /** Neighbour influence on `edgeCells` (worldgen/neighbourWeight.ts): 1 = as tuned, 0 = the seam only, 2 = twice as far in. */
+  neighbourWeight?: number;
   /** Paths (roads, rivers…) crossing the parent hex, so they continue
    *  across the submap from the side they enter to the side they leave. */
   paths?: ContextPath[];

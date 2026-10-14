@@ -270,7 +270,8 @@ describe("every entry point opens Edit region in new-region mode", () => {
 		expect(modal).toMatch(/private async create\([^)]*\): Promise<void> \{[\s\S]*?createFromDraft\(/);
 		// The footer helper: Create is the primary; Cancel only closes.
 		expect(modal).toMatch(/this\.footer\(\{\s*primary: \{ text: createText,[^\n]*this\.create\(fresh, createText\) \},\s*cancel: \(\) => this\.close\(\),/);
-		// Neighbour influence is the shared labelled slider.
-		expect(modal).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
+		// Neighbour influence is the shared labelled slider (one control with New map → Next to, SF6).
+		expect(modal).toMatch(/renderNeighbourSlider\(biomeSec, /);
+		expect(read("src", "ui", "neighbourSlider.ts")).toMatch(/renderLabeledSlider\(parent, \{\s*label: "Neighbour influence"/);
 	});
 });

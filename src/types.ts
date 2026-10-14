@@ -243,6 +243,13 @@ export interface MapData {
 	arrival?: string;
 	/** How often a place made on arrival was rerolled (`arrival-rerolls:`). */
 	arrivalRerolls?: number;
+	/** A map made by New map → Generate (SF7, worldgen/freshMap.ts): the
+	 *  generator's id (`generator:`), its options as "key=value, …"
+	 *  (`generator-options:`) and seed (`generator-seed:`), so Reroll can
+	 *  make it again while it's open. */
+	generator?: string;
+	generatorOptions?: string;
+	generatorSeed?: number;
 	/** Overworlds: "regions" shows every region's hexes stitched together on
 	 *  the map (the full view); "biomes" shows the overworld's own hexes, one
 	 *  biome each. Unset = regions once the map has any. */

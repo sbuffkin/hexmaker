@@ -238,8 +238,8 @@ export interface RegionGenOptions {
 }
 
 // A region's Neighbour influence weight (Edit region's slider).
-export { clampNeighbourWeight, NEIGHBOUR_WEIGHT, storeNeighbourWeight } from "./neighbourWeight";
-import { clampNeighbourWeight, storeNeighbourWeight } from "./neighbourWeight";
+export { clampNeighbourWeight, NEIGHBOUR_WEIGHT, storeNeighbourWeight } from "../worldgen/neighbourWeight";
+import { clampNeighbourWeight, storeNeighbourWeight } from "../worldgen/neighbourWeight";
 
 /**
  * What the region of hex (px, py) would be: its terrain and biome. When the

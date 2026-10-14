@@ -212,10 +212,10 @@ describe("F12: the Tables / Workflows toggle shows which is selected", () => {
 	});
 });
 
-describe("F14: the Overland card says it draws no rivers or roads", () => {
+describe("F14 → SF8: the Overland card says it draws the palette's path types", () => {
 	it("in its palette-aware description and the static one", () => {
-		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/It draws no rivers or roads\.$/);
-		expect(read("src/modules/world/runtime.ts")).toContain("It draws no rivers or roads.");
+		expect(overlandDescription(DEFAULT_TERRAIN_PALETTE)).toMatch(/It draws your path types too \(roads, rivers…\): set how many of each\.$/);
+		expect(read("src/modules/world/runtime.ts")).toContain("${OVERLAND_TAIL}");
 	});
 });
 

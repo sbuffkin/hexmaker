@@ -87,6 +87,7 @@ import { SubmapPickerModal } from "./SubmapPickerModal";
 import { LocationsModal } from "./LocationsModal";
 import { startNewChildMap, startNewLocation, type NewChildMapHost } from "./newChildMap";
 import { hexChildMaps, newMapItemTitle, parentHexTerrain, regionMapAt, submapKindLabel, submapMenuPlan } from "../maps/submaps";
+import { recipeOf } from "../worldgen/freshMap";
 // World maps (overworlds, regions, biomes, walking) through its hooks,
 // typed only: worldMaps() is undefined in a build without it.
 import type { OverworldLayer } from "../overworld/overworldLayer";
@@ -656,13 +657,15 @@ export class HexMapView extends ItemView {
     const wasShown = el.isShown();
     // The toolbar row fits itself to what it holds (fitTopBar).
     const hide = () => { el.hide(); if (wasShown) this.fitTopBar(); };
-    if (!map || (state !== "open" && state !== "locked") || !map.parent) { hide(); return; }
+    // Places made from a hex, and fresh maps made by New map → Generate (SF7: their recipe).
+    const fresh = !map?.parent && !!recipeOf(map);
+    if (!map || (state !== "open" && state !== "locked") || (!map.parent && !fresh)) { hide(); return; }
     const open = state === "open";
     // A locked place shows the bar only where it can still be rerolled (God).
     if (!open && !canRerollPlace(map)) { hide(); return; }
     el.show();
     // "New location" / "Locked region" (owner Q9/R1: never "place").
-    const kind = submapKindLabel(map);
+    const kind = fresh ? "Map" : submapKindLabel(map);
     const word = kind.toLowerCase();
     el.createSpan({ cls: "duckmage-arrival-bar-label", text: open ? `New ${word}` : `Locked ${word}` });
     const reroll = el.createEl("button", {
