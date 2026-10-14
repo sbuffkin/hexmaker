@@ -81,6 +81,7 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "Settings.biomesFolder": "debug",
   "Settings.biomePoolsFolder": "debug",
   "Settings.worldTypesFolder": "debug",
+  "Settings.hexFlowersFolder": "debug",
   // Overkill in the worksheet, but the README's manual setup uses it and
   // the "table not found" messages point here (repairHint.ts), so it sits
   // at the top of Advanced, not in a sub-section or Debug.

@@ -1,9 +1,39 @@
 /**
- * The Hex flower module's runtime (plan-hex-flower).
+ * The Hex flower module's runtime (plan-hex-flower): the flower notes'
+ * store and folder setting, and the code block that draws a flower in its
+ * note.
  */
 
-import type { ModuleRuntime } from "../types";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import type { ModuleRuntime, ModuleStore } from "../types";
+import { FlowerStore } from "../../hexflower/FlowerStore";
+import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
+import { flowerStoreOf, setFlowerStore, terrainColors } from "../../hexflower/context";
+import { drawFlower } from "../../hexflower/flowerView";
+
+function stores(plugin: HexmakerPlugin): ModuleStore[] {
+  // The flower drawn where its note says ```duckmage-hex-flower``` (registered when the store starts).
+  const store = new FlowerStore(plugin, undefined, () => plugin.registerMarkdownCodeBlockProcessor(FLOWER_BLOCK, (_source, el, ctx) => {
+    const entry = flowerStoreOf(plugin)?.get(ctx.sourcePath);
+    if (!entry) {
+      el.createDiv({ cls: "duckmage-flower-missing", text: "This hex flower is drawn once its note is in the hex flowers folder." });
+      return;
+    }
+    drawFlower(el, entry.flower, { colors: terrainColors(plugin, entry.flower.palette), cls: "is-note" });
+  }));
+  setFlowerStore(plugin, store);
+  return [store];
+}
 
 export const hexFlowerRuntime: ModuleRuntime = {
   id: "hex-flower",
+  stores,
+  folderSettings: [{
+    id: "Settings.hexFlowersFolder",
+    key: "hexFlowersFolder",
+    name: "Hex flowers folder",
+    placeholder: "World/hex flowers",
+    desc: "Where hex flower notes live (blank: the world folder's hex flowers).",
+    changed: (plugin) => void flowerStoreOf(plugin)?.reload(),
+  }],
 };
