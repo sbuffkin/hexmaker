@@ -232,9 +232,9 @@ describe("one-time note-format rewrite", () => {
 		const { vault, host, saves, memory } = vaultHost(before);
 		const results = await runNoteFormatUpgrades(host);
 		expect(results.map((r) => [r.id, r.changed.length, r.error])).toEqual([
-			["hex-map-key", 1, undefined], ["hex-body-lines", 1, undefined], ["note-links", 3, undefined], ["ref-links", 0, undefined], ["area-line", 0, undefined],
+			["hex-map-key", 1, undefined], ["hex-body-lines", 1, undefined], ["note-links", 3, undefined], ["ref-links", 0, undefined], ["area-line", 0, undefined], ["hex-properties", 0, undefined],
 		]);
-		expect(host.settings.noteFormatUpgrades).toEqual(["hex-map-key", "hex-body-lines", "note-links", "ref-links", "area-line"]);
+		expect(host.settings.noteFormatUpgrades).toEqual(["hex-map-key", "hex-body-lines", "note-links", "ref-links", "area-line", "hex-properties"]);
 		expect(saves()).toBe(1);
 
 		const hex = vault.files.get(`${HEX}/the-coast/0_1.md`)!;
@@ -308,7 +308,7 @@ describe("one-time note-format rewrite", () => {
 		expect(results.filter((r) => r.error).map((r) => r.id)).toEqual(["hex-map-key", "hex-body-lines", "note-links"]);
 		expect(new Map(vault.files)).toEqual(new Map(Object.entries(before)));
 		// Only the upgrades with nothing to change here (no palettes; Map data boxes already say Area) are recorded.
-		expect(host.settings.noteFormatUpgrades).toEqual(["ref-links", "area-line"]);
+		expect(host.settings.noteFormatUpgrades).toEqual(["ref-links", "area-line", "hex-properties"]);
 		expect(saves()).toBe(1);
 	});
 
@@ -320,6 +320,6 @@ describe("one-time note-format rewrite", () => {
 		expect(r.changed).toEqual([]);
 		expect(r.skipped.map((s) => s.path)).toEqual([`${HEX}/the-coast/0_1.md`]);
 		expect(vault.files.get(`${HEX}/the-coast/0_1.md`)).toContain("**Terrain:** mountain");
-		expect(host.settings.noteFormatUpgrades).toEqual(["from-a-newer-build", "hex-map-key", "note-links", "hex-body-lines", "ref-links", "area-line"]);
+		expect(host.settings.noteFormatUpgrades).toEqual(["from-a-newer-build", "hex-map-key", "note-links", "hex-body-lines", "ref-links", "area-line", "hex-properties"]);
 	});
 });

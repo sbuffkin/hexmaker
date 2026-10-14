@@ -56,6 +56,7 @@ named in each file; settings, notes and tables run from `registry.ts`.
 | notes | `v1.5-note-links` | 1.5.x → 1.6 | `noteFormatUpgrades: note-links` |
 | notes | `v1.5-ref-links` | 1.5.x → 1.6 | `noteFormatUpgrades: ref-links` |
 | notes | `unreleased-hex-callout-area-line` | unreleased → 1.6 | `noteFormatUpgrades: area-line` |
+| notes | `unreleased-hex-note-properties` | unreleased → 1.6 | `noteFormatUpgrades: hex-properties` |
 | tables | `v1.0-flat-terrain-tables-to-subfolders` | 0.x → 1.0 | every terrain-table check |
 | tables | `v1.5-table-roll-ranges` | 1.5.x → 1.6 | `tableRangesUpgraded` |
 
@@ -99,7 +100,11 @@ newer one (owner MG7, option B), data.json carries a plain number next to
   `{hexFolder}/{map}/_{map}.md`, whose frontmatter starts
   `hexmaker-map: <map note format>` (6 now); palettes in palette notes
   (`hexmaker-palette: 1`); hex notes link their map note under
-  `map: "[[_{map}]]"`.
+  `map: "[[_{map}]]"` and (unless turned off) carry copies of their hex's
+  `terrain:`, `area:`, `icon:` and `name:` as properties (MG4,
+  `src/maps/hexProps.ts`). A note with the map link is never read as 1.5
+  map data: its copies sync both ways with the map note, which wins a
+  conflict.
 
 How a build reads it: `dataFormat` greater than the highest format it knows
 means "written by a newer version" (`savedWith` names it). This build shows

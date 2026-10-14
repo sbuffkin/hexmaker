@@ -430,6 +430,8 @@ export interface HexmakerPluginSettings {
 	biomeColumnsFilled?: boolean;
 	/** One-time note-format rewrites already done in this vault (src/migrations/ (noteRewrites.ts and the v1.5-*.ts note steps): NF1–NF3). */
 	noteFormatUpgrades?: string[];
+	/** Hex notes carry their hex's terrain, area, icon and name as properties (MG4; src/maps/hexProps.ts). Unset = on. */
+	hexNoteProperties?: boolean;
 	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
 	worldTypesFolder?: string;
 	/** True once the shipped "Default space" world types note was written (once, so a deleted one stays deleted). */

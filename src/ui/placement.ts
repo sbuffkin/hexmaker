@@ -85,6 +85,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   // the "table not found" messages point here (repairHint.ts), so it sits
   // at the top of Advanced, not in a sub-section or Debug.
   "Settings.generateWorldData": "advanced",
+  // MG4: on by default; turning it off is for people who don't want the copies.
+  "Settings.hexNoteProperties": "advanced",
   "Settings.defaultNewMapCols": "advanced/New map sizes",
   "Settings.defaultNewMapRows": "advanced/New map sizes",
   "Settings.defaultSubmapCols": "advanced/New map sizes",

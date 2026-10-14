@@ -119,7 +119,9 @@ import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
-import { cleanHexName, coordAlias, syncHexAliases } from "./maps/hexNames";
+import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from "./maps/hexNames";
+import { HexPropsSync } from "./maps/hexPropsSync";
+import { registerHexPropsEvents } from "./plugin/hexPropsEvents";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -174,6 +176,8 @@ export default class HexmakerPlugin extends Plugin {
   mapStore = new MapStore(this);
   /** What each hex note's Map data callout last showed (phase 2: tells a hand edit from a stale copy). */
   calloutMemory = new CalloutMemory(() => this.app.vault.adapter, () => this.manifest.dir ?? "");
+  /** Hex notes' terrain/area/icon/name properties, both ways (MG4, src/maps/hexPropsSync.ts). */
+  hexProps = new HexPropsSync(this);
   /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
   private tableTerrainNames: Set<string> | null = null;
   /** Table creation runs one batch at a time; awaiting any call waits for those before it. */
@@ -228,6 +232,7 @@ export default class HexmakerPlugin extends Plugin {
     setHandEditListener((name) => this.arrival.lockOnHandEdit(name));
     // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
     this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
+    registerHexPropsEvents(this, this.hexProps);
     // Defer until vault metadata cache is ready; calling before layout-ready
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
@@ -268,6 +273,8 @@ export default class HexmakerPlugin extends Plugin {
       // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
       // generator and modules' notes (world types) in the new note formats (backed up first).
       const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
+      // Hex-note properties follow the map once the notes are in their new formats (MG4).
+      void formatsDone.then(() => this.hexProps.start());
       // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
       void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
         if (!sandbox) return;
@@ -768,6 +775,8 @@ export default class HexmakerPlugin extends Plugin {
     closeNoticeBatch();
     this.pathPins.detach();
     void this.calloutMemory.save();
+    this.hexProps.stop();
+    void this.hexProps.memory.save();
     clearPendingTerrain();
   }
 
@@ -2015,24 +2024,9 @@ export default class HexmakerPlugin extends Plugin {
     return coordAlias(this.mapLabel(mapName), x, y);
   }
 
-  /**
-   * A map's display name changed from `oldLabel` to its current one: swap
-   * the "<map> x, y" alias on every hex note of the map. User aliases stay;
-   * a note without the old alias gets the new one.
-   */
+  /** A map's display name changed from `oldLabel`: swap the "<map> x, y" alias on its hex notes (hexNames.ts). */
   async syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> {
-    const newLabel = this.mapLabel(mapName);
-    if (newLabel === oldLabel) return;
-    const folder = this.app.vault.getAbstractFileByPath(this.mapStore.mapFolder(mapName));
-    if (!(folder instanceof TFolder)) return;
-    for (const child of folder.children) {
-      if (!(child instanceof TFile)) continue;
-      const m = /^(-?\d+)_(-?\d+)$/.exec(child.basename);
-      if (!m || child.extension !== "md") continue;
-      await syncHexAliases(this.app, child.path, [
-        { from: coordAlias(oldLabel, m[1], m[2]), to: coordAlias(newLabel, m[1], m[2]) },
-      ]);
-    }
+    await swapMapCoordAliases(this.app, this.mapStore.mapFolder(mapName), oldLabel, this.mapLabel(mapName));
   }
 
   /** Create a hex note from the configured template (or the built-in default). */
@@ -2061,6 +2055,8 @@ export default class HexmakerPlugin extends Plugin {
     // carrying (possibly stale) terrain/region fields.
     content = withMapLink(content, mapName);
     if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
+    // Its terrain, area, icon and name as properties (MG4).
+    content = this.hexProps.withProps(content, mapName, x, y, path);
     // The template's Map data callout shows what the map has for this hex.
     const mapDataView = this.hexMapDataView(mapName, x, y);
     const withMapData = setMapData(content, mapDataView);

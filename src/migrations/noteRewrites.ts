@@ -20,6 +20,8 @@ import { TFile, type App } from "obsidian";
 import { noticeUpgrade } from "../ui/notify";
 import { writeJsonBackup } from "../backup";
 import type { HexMapDataView, MapDataShown } from "../hexMapData";
+import type { HexData } from "../maps/mapNote";
+import type { HexProps } from "../maps/hexProps";
 import type { RefLinker } from "../modules/types";
 import type { MigrationInfo } from "./types";
 
@@ -33,8 +35,10 @@ export interface NoteFormatHost {
     worldFolder?: string;
     maps: { name: string }[];
     noteFormatUpgrades?: string[];
+    /** Hex-note properties (MG4); false: not added. */
+    hexNoteProperties?: boolean;
   };
-  mapStore: { isReady(map?: string): boolean; resolve(path: string): { map: string; key: string } | null; notePath?(map: string): string };
+  mapStore: { isReady(map?: string): boolean; resolve(path: string): { map: string; key: string } | null; notePath?(map: string): string; get?(map: string, key: string): HexData | undefined };
   /** Palette notes ("ref-links"); without it no palette name is linked. */
   paletteStore?: { notePathOf(name: string): string | undefined; folder(): string };
   /** Each module's rewriters for its own notes ("ref-links"; Space: World types tables). */
@@ -43,6 +47,8 @@ export interface NoteFormatHost {
   moduleNoteRewrites?: NoteRewrite[];
   hexMapDataView(map: string, x: number, y: number): HexMapDataView;
   calloutMemory?: { set(path: string, values: MapDataShown): void };
+  /** Remembers the hex-note properties a rewrite wrote (src/maps/hexPropsSync.ts). */
+  hexProps?: { remember(path: string, props: HexProps): void };
   saveSettings(): Promise<void>;
 }
 

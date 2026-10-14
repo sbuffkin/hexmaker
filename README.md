@@ -464,19 +464,25 @@ Hand edits are forgiving. Each setting is one plain property (the parent map and
 
 Map notes written by earlier builds (with JSON values such as `parent: {"map":…}`) still load; the first start of this version converts them once, after saving a copy in the plugin folder's `backups/`.
 
-Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `map:` link to the map note. Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault first.
+Older versions kept terrain and the rest in each hex note's frontmatter. The first time this version starts, it moves that data into map notes, keeps a JSON backup in the plugin folder's `backups/`, and replaces those frontmatter fields with a `map:` link to the map note. `terrain:` and `icon:` stay, as copies (see Hex notes; `region:` becomes `area:`). Note text is never changed or deleted. Older plugin versions on other devices don't read map notes, so update every device that shares the vault first.
 
 **After updating.** The first start of a new version that changes your notes leaves a note **Hexmaker upgrade <date>** in the world folder. Its first line is the reminder to update every device that shares the vault; then it lists what changed, every backup and where it is, things to check (a checkbox each), and what's new since the version you came from. The one notice the upgrade shows links to it. Backups stay in the plugin's folder (`.obsidian/plugins/hexmaker/backups/`, hidden in Obsidian's file list): **Open backups folder** opens it, and **Restore from upgrade backup…** puts notes back as they were, after backing up how they are now (so a restore can be undone the same way). `data.json` carries `"dataFormat": 2`, which tells an older version that the vault was updated by a newer one. Maps that are each other's submaps (a loop of parents) are left as they are: they're links like any other, and the breadcrumb and Maps list show each map once.
 
 ## Hex notes
 
-Each hex note lives at `{hexFolder}/{map}/{x}_{y}.md` (e.g. `RPG/world/hexes/Overworld/3_7.md`). Hex notes hold descriptions and links, and are created when a hex first gets some (you open it, write in the editor, or link something); painting terrain doesn't create one. Its frontmatter links to the map note:
+Each hex note lives at `{hexFolder}/{map}/{x}_{y}.md` (e.g. `RPG/world/hexes/Overworld/3_7.md`). Hex notes hold descriptions and links, and are created when a hex first gets some (you open it, write in the editor, or link something); painting terrain doesn't create one. Its frontmatter links to the map note and shows the hex's terrain, area, icon and name as properties:
 
 ```yaml
 ---
 map: "[[_Overworld]]"
+terrain: forest
+area: Basin
+icon: castle.png
+name: Glass Wastes
 ---
 ```
+
+**Properties for Dataview, Bases and search.** The properties are copies: the map note holds the data. The plugin writes them whenever the hex changes (painting, generators, rerolls, undo, renaming a terrain or area, editing the map note), only into hex notes that exist, and only the ones that changed. Edit one (in the Properties panel or as text) and the map follows, as one undo step, like painting it: the map's mode must allow it (Play can't paint terrain, areas or icons), the terrain must be in the map's palette and the icon one the plugin has. Otherwise the property is put back and a notice says why. While the note is open, a value that can't be used is left as you typed it until you leave the note. If the map and the note change the same value at the same time, the map wins. `region:` (what older versions wrote for the area) is read as `area:` and rewritten as `area:`. The plugin keeps what it last wrote in `hex-properties-shown.json` in its folder, to tell your edits from an old copy; a note it has no record of only fills in what the map doesn't have. **Settings → Advanced → Map data as hex note properties** turns them off: the plugin stops writing them and removes them from hex notes, after a backup.
 
 Older notes say `hexmaker-map: "[[_Overworld]]"` (map notes use `hexmaker-map:` for their format number). Both are read. A note that already uses `map:` for something of its own keeps it, and its link stays under `hexmaker-map:`.
 
@@ -486,6 +492,7 @@ Older notes say `hexmaker-map: "[[_Overworld]]"` (map notes use `hexmaker-map:` 
 |---|---|---|
 | Hex notes: link to the map note | `hexmaker-map: "[[_coast]]"` | `map: "[[_coast]]"` |
 | Hex notes: hand-filled terrain / region lines | `**Terrain:** forest` in the text | `> Old terrain: forest` in the Map data box |
+| Hex notes: the hex's map data as properties (notes upgraded by a test build had none) | `map: "[[_coast]]"` | `map: "[[_coast]]"`, `terrain: forest`, `area: Basin`… |
 | Token notes: the map a token is on | `token-map: coast` | `token-map: "[[_coast]]"` |
 | Second tokens for a note: the note they stand for | `token-link: world/npcs/Ana.md` | `token-link: "[[world/npcs/Ana]]"` |
 | Workflows: their template | `template-file: world/workflows/templates/npc.md` | `template-file: "[[world/workflows/templates/npc]]"` |
