@@ -38,7 +38,7 @@ describe("a token doesn't shrink its hex's click target (fresh-eyes round 5)", (
 	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
 
 	it("a plain left-click on a token opens its hex, like clicking the hex (a party token in Play is picked up instead, SF5)", () => {
-		expect(view).toMatch(/this\.startTokenDrag\(snapToken, tokenEl, e, centerMap, \(\) => \{\n\s+\/\/ Play: clicking the party[^\n]*\n\s+if \(snapToken\.party && this\.currentWorkMode\(\) === "play"\) \{[\s\S]{0,200}?return;\n\s+\}\n\s+const \[hx, hy\] = snapToken\.hex\.split\("_"\)\.map\(Number\);\n\s+if \(Number\.isFinite\(hx\) && Number\.isFinite\(hy\)\) void this\.onHexClick\(hx, hy, e\);/);
+		expect(view).toMatch(/this\.startTokenDrag\(snapToken, tokenEl, e, centerMap, \(\) => \{\n\s+\/\/ Play: clicking the party[^\n]*\n\s+if \(snapToken\.party && this\.(?:undos\.)?currentWorkMode\(\) === "play"\) \{[\s\S]{0,200}?return;\n\s+\}\n\s+const \[hx, hy\] = snapToken\.hex\.split\("_"\)\.map\(Number\);\n\s+if \(Number\.isFinite\(hx\) && Number\.isFinite\(hy\)\) void this\.onHexClick\(hx, hy, e\);/);
 	});
 
 	it("the info card moved to the token's right-click menu", () => {
