@@ -25,7 +25,7 @@ import { defaultIconPack } from "../src/utils";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
 import type { GeneratorHelpers } from "../src/modules/types";
-import { readSurface } from "./helpers/source";
+import { readSource, readSurface } from "./helpers/source";
 
 /** Fresh-eyes round 5 (new submap / new map dialogs, wizard, export modal, icon pickers). */
 
@@ -224,6 +224,7 @@ describe("6. Icon pickers open on the Space tab for space-only setups", () => {
 
 	it("a tab picked this session still wins; the plugin wires the default", () => {
 		expect(readSurface("modal-base")).toMatch(/let pack: IconPack = lastIconPack \?\? iconPackDefault\(\);/);
-		expect(readSurface("plugin")).toMatch(/setIconPackDefault\(\(\) => defaultIconPack\(this\.settings\)\);/);
+		expect(readSource("src", "ports.ts")).toMatch(/setIconPackDefault\(\(\) => defaultIconPack\(plugin\.settings\)\);/);
+		expect(readSurface("plugin")).toMatch(/bindPorts\(this\);/);
 	});
 });

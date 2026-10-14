@@ -1080,25 +1080,22 @@ export class NewMapSetupModal extends HexmakerModal {
     const goBtn = buttons[0];
     const label = goBtn.getText();
     goBtn.setText("Creating…");
-    const result = await this.plugin.createNewMap(
-      rawName.trim(),
-      this.cols,
-      this.rows,
-      paletteName,
-      this.grid().offset.x,
-      this.grid().offset.y,
-      this.grid().stagger,
-      (done, total) => goBtn.setText(`Creating ${done} / ${total}…`),
-      outcome?.ok ? outcome.cells : undefined,
-      {
-        baseTerrain: this.baseTerrain,
-        parent: this.origin ? { map: this.origin.map, hex: `${this.origin.x}_${this.origin.y}` } : undefined,
-        quiet: true,
-        slug: this.folderSlug(),
-        ...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
-        ...(outcome?.ok && outcome.events ? { events: outcome.events } : {}),
-      },
-    );
+    const result = await this.plugin.createNewMap({
+      name: rawName.trim(),
+      cols: this.cols,
+      rows: this.rows,
+      palette: paletteName,
+      offset: this.grid().offset,
+      stagger: this.grid().stagger,
+      onProgress: (done, total) => goBtn.setText(`Creating ${done} / ${total}…`),
+      terrain: outcome?.ok ? outcome.cells : undefined,
+      baseTerrain: this.baseTerrain,
+      parent: this.origin ? { map: this.origin.map, hex: `${this.origin.x}_${this.origin.y}` } : undefined,
+      quiet: true,
+      slug: this.folderSlug(),
+      ...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
+      ...(outcome?.ok && outcome.events ? { events: outcome.events } : {}),
+    });
     if ("error" in result) {
       this.nameProblem(result.error);
       for (const b of buttons) b.disabled = false;

@@ -414,7 +414,8 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   const hexName = plugin.mapStore.get(parentName, hex)?.name?.trim()
     || plugin.rolledMapName(parentName, hex, opts.seed !== undefined ? hashSeed(opts.seed, hex, "name") : undefined);
   const name = opts.name?.trim() || defaultRegionName(plugin.mapLabel(parentName), px, py, hexName, taken);
-  const res = await plugin.createNewMap(name, slot.cols, slot.rows, paletteName, slot.offset.x, slot.offset.y, slot.stagger, undefined, plan?.cells, {
+  const res = await plugin.createNewMap({
+    name, cols: slot.cols, rows: slot.rows, palette: paletteName, offset: slot.offset, stagger: slot.stagger, terrain: plan?.cells,
     parent: { map: parentName, hex },
     quiet: true,
   });

@@ -21,6 +21,7 @@ import { createRegion, OUTSIDE_OVERWORLD_HINT, setBiomeAt } from "../src/overwor
 import { representativeTerrain } from "../src/overworld/biomes";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import type { MapData } from "../src/types";
+import type { NewMapOptions } from "../src/services/MapsService";
 
 const layout: RegionLayout = { footprint: "rect", size: 8, orientation: "flat", parentStagger: "odd", childStagger: "odd" };
 // Parent plane → grid px, as fitted from laid-out hexes (the demo's numbers, rounded).
@@ -84,7 +85,7 @@ describe("no region past the overworld's edge", () => {
         flush: async () => {},
       },
       saveSettings: async () => {},
-      createNewMap: async (name: string) => {
+      createNewMap: async ({ name }: NewMapOptions) => {
         made.push(name);
         return { name };
       },

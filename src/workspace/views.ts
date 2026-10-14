@@ -61,3 +61,24 @@ export async function openTableInView(workspace: ViewWorkspace, path: string, op
 export async function openWorkflowInView(workspace: ViewWorkspace, path: string, opts: OpenInViewOptions = {}): Promise<void> {
   await showInTablesView(workspace, opts, (view) => view.openWorkflow(path));
 }
+
+/**
+ * Show a table (or, in "workflows" mode, a workflow) note from an
+ * obsidian:// link: the first open tables view is revealed and shows it;
+ * with none open, a new tab opens on it (the view reads the note from
+ * its state).
+ */
+export function openRandomTablesAt(workspace: ViewWorkspace, filePath: string, mode: "tables" | "workflows"): void {
+  const leaves = workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
+  if (leaves.length > 0) {
+    void workspace.revealLeaf(leaves[0]);
+    const view = leaves[0].view as unknown as Partial<Pick<RandomTableView, "openTable" | "openWorkflow">>;
+    if (mode === "workflows") void view.openWorkflow?.(filePath);
+    else void view.openTable?.(filePath);
+  } else {
+    void workspace.getLeaf("tab").setViewState({
+      type: VIEW_TYPE_RANDOM_TABLES,
+      state: mode === "workflows" ? { filePath, mode: "workflows" } : { filePath },
+    });
+  }
+}

@@ -571,7 +571,7 @@ describe("hex back-links are path-qualified (round 6 S2)", () => {
 	it("new maps start with the GM layer off (round 6 S7)", () => {
 		const src = readSurface("plugin");
 		const at = src.indexOf("async createNewMap(");
-		const body = src.slice(at, src.indexOf("await this.saveSettings();", at));
+		const body = src.slice(at, src.indexOf("saveSettings();", at));
 		expect(body).toContain("showGmLayer: false");
 	});
 });

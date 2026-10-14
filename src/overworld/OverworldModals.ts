@@ -491,7 +491,7 @@ export class NewOverworldModal extends HexmakerModal {
     const { cols, rows } = overworldShapeCells(this.shape, this.cols, this.rows, this.radius, this.plugin);
     const stagger = this.plugin.settings.staggerOffset ?? "odd";
     status.setText("Creating the overworld…");
-    const res = await this.plugin.createNewMap(this.name.trim() || "Overworld", cols, rows, this.palette, 0, 0, stagger, undefined, this.result.terrain, { quiet: true });
+    const res = await this.plugin.createNewMap({ name: this.name.trim() || "Overworld", cols, rows, palette: this.palette, stagger, terrain: this.result.terrain, quiet: true });
     if ("error" in res) { status.setText(res.error); return; }
     // Region settings, river, pool, seed and the Biome column (blank hexes
     // get no terrain); then every region when asked.

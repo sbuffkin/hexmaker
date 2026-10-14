@@ -378,12 +378,12 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     const usedConnect = generatorPageState.connect;
     createBtn.disabled = true;
     void plugin
-      .createNewMap(
-        newNameInput.value.trim() || `${model.name}-${seed}`,
-        grid.cols, grid.rows, generatorPageState.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
-        (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
-        r.cells,
-      )
+      .createNewMap({
+        name: newNameInput.value.trim() || `${model.name}-${seed}`,
+        cols: grid.cols, rows: grid.rows, palette: generatorPageState.paletteName, offset: grid.offset, stagger: grid.stagger,
+        onProgress: (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
+        terrain: r.cells,
+      })
       .then(async (result) => {
         createBtn.disabled = false;
         createBtn.setText("Create map");

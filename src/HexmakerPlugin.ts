@@ -1,29 +1,12 @@
-import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
-import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade, type NoticeLink } from "./ui/notify";
-import {
-  exportSingleNoteAsPdf,
-  exportSingleNoteAsMarkdown,
-} from "./export/exporters/singleNote";
-import { HexExportModal } from "./hex-map/HexExportModal";
-import { MapExportModal } from "./export/MapExportModal";
-import { WorkflowExportModal } from "./random-tables/WorkflowExportModal";
+import { Plugin, TFile, TFolder } from "obsidian";
+import { closeNoticeBatch } from "./ui/notify";
 import { HexMapView } from "./hex-map/HexMapView";
-import { SANDBOX_MARKER } from "./sandbox";
 import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
-import { fillLegacyPathTypes } from "./migrations/v1.5-path-types-explicit";
-import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
-import { processTableNote, TableStore } from "./random-tables/TableStore";
-import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
-import { MapLinkModal } from "./hex-map/MapLinkModal";
 import {
-  DEFAULT_PALETTE_NAME,
-  DEFAULT_PATH_TYPES,
-  DEFAULT_SETTINGS,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
@@ -33,37 +16,27 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import type { BiomeStore } from "./overworld/BiomeStore";
-import { generatorsFolder } from "./worldgen/generators";
-import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
-import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
+import { planKindContent } from "./kindContent";
+import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
-import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
-import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
+import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
-import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
-import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
+import { enabledKinds, isIconHiddenByKind, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
+import { defaultPaletteFor } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
-import { setNumberBoxDebug } from "./ui/numberBoxes";
-import { addPlacedMenuItems, placeCommand } from "./ui/commandPlacement";
 import {
   getPreset,
   presetToPalette,
-  uniquePaletteName,
 } from "./palettes/presets";
-import { clonePathTypes } from "./palettes/pathTypeTable";
-import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons } from "./utils";
-import { shippedTablesToInstall } from "./random-tables/shippedTables";
-import { setIconPackDefault } from "./HexmakerModal";
+import { normalizeFolder, sortIcons } from "./utils";
 import { BUNDLED_ICONS } from "./bundledIcons";
-import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
   HexmakerPluginSettings,
   MapData,
@@ -72,72 +45,52 @@ import type {
   TerrainColor,
   TerrainPalette,
 } from "./types";
-import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
-import { migrateMapData, pluginVersion } from "./compat";
-import { writeJsonBackup } from "./backup";
-import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
-import { MapStore, withoutNotePaths } from "./maps/MapStore";
-import { setHandEditListener, setModeMapLookup } from "./modeGate";
+import { clearPendingTerrain } from "./frontmatter";
+import { MapStore } from "./maps/MapStore";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
-import { mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
 import { TableNotes } from "./random-tables/TableNotes";
-import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
-import { NAMES_ROLE, type RoleId } from "./worldgen/tableRoles";
-import { rollMapName } from "./maps/mapNames";
-import { effectiveTerrainType } from "./terrainTypes";
+import { type RoleTablePick } from "./worldgen/tableSources";
+import { type RoleId } from "./worldgen/tableRoles";
 import { ArrivalService } from "./arrival/ArrivalService";
 import { EventsService } from "./arrival/EventsService";
-import type { FiredEvent } from "./arrival/eventsLedger";
-import { effectiveArrivalMode, type ArrivalMode } from "./arrival/arrival";
-import { withMapLink } from "./maps/mapNote";
-import {
-  addLocationPatch,
-  applyRegionSettingsEdit,
-  hexChildMaps,
-  regionMapAt,
-  regionsLocked,
-  removeMapPatch,
-  renameMapPatch,
-  setRegionPatch,
-} from "./maps/submaps";
+import { type ArrivalMode } from "./arrival/arrival";
 import type { RegionSettings } from "./types";
-import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
+import { type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
-import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
-import { recordMigrationRun, runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
-import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
-import { takeUpgradeReport } from "./migrations/upgradeReport";
+import { type CalloutSyncResult } from "./maps/calloutSync";
 import type { NoteRewrite } from "./migrations/noteRewrites";
-import { RestoreBackupModal, openBackupsFolder } from "./BackupsModal";
-import { writeUpgradeNote } from "./migrations/upgradeNote";
-import changelog from "../CHANGELOG.md";
-import { migrate as migrateFlatHexNotes } from "./migrations/v1.0-flat-hex-notes-to-default-map";
-import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
-import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
-import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
+import { type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
-import { displayNameFor, mapLabel } from "./maps/mapTree";
-import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from "./maps/hexNames";
 import { HexPropsSync } from "./maps/hexPropsSync";
-import { registerHexPropsEvents } from "./plugin/hexPropsEvents";
-import {
-  addLinkToSection,
-  getLinksInSection,
-  removeLinkFromSection,
-  insertLinkInSection,
-  appendSectionText,
-} from "./sections";
+import { registerVaultEvents } from "./plugin/vaultEvents";
+import { bindPorts } from "./ports";
+import { migrateHexFilesToDefaultRegion, startOnLayoutReady } from "./plugin/startup";
+import { registerCommands, registerEditorMenu } from "./plugin/commands";
+import { registerProtocolHandlers } from "./plugin/protocolHandlers";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { generatorPageState } from "./worldgen/generatorPageState";
-import { openNoteFocused } from "./openNote";
-import { ensureLogNote } from "./play/playLogWriter";
-import { logFolderFor } from "./play/playLog";
-import { packCommands } from "./packs/packCommands";
-import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
-import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
+import { type NotePickPurpose } from "./templateNotes";
+import { MapsService, type NewMapOptions } from "./services/MapsService";
+import { PaletteQueries } from "./services/PaletteQueries";
+import { TemplatesService } from "./services/TemplatesService";
+import { HexNotesService } from "./services/HexNotesService";
+import { SettingsPersistence } from "./plugin/settingsPersistence";
+import { TerrainTablesService } from "./services/TerrainTablesService";
 export default class HexmakerPlugin extends Plugin {
+  /** The map list: create, link, rename, restore (src/services/MapsService.ts). */
+  readonly maps = new MapsService(this);
+  /** Palette lookups and installs (src/services/PaletteQueries.ts). */
+  readonly palettes = new PaletteQueries(this);
+  /** Hex notes, their Map data callouts, and region / faction notes (src/services/HexNotesService.ts). */
+  readonly hexNotes = new HexNotesService(this);
+  /** Note templates and which notes pickers offer (src/services/TemplatesService.ts). */
+  readonly templates = new TemplatesService(this);
+  /** Terrain and area tables, roller blocks, terrain renames (src/services/TerrainTablesService.ts). */
+  readonly terrainTables = new TerrainTablesService(this);
+  /** data.json: load, save, own-write echoes, outside changes (src/plugin/settingsPersistence.ts). */
+  readonly settingsIO = new SettingsPersistence(this, (data) => super.saveData(data));
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
@@ -178,10 +131,6 @@ export default class HexmakerPlugin extends Plugin {
   calloutMemory = new CalloutMemory(() => this.app.vault.adapter, () => this.manifest.dir ?? "");
   /** Hex notes' terrain/area/icon/name properties, both ways (MG4, src/maps/hexPropsSync.ts). */
   hexProps = new HexPropsSync(this);
-  /** Terrain names that have (or were offered) tables; new ones get theirs (HG5). */
-  private tableTerrainNames: Set<string> | null = null;
-  /** Table creation runs one batch at a time; awaiting any call waits for those before it. */
-  private terrainTablesQueue: Promise<void> = Promise.resolve();
   /**
    * Every map's paths resolved to hex chains (one resolver, a route cache
    * per map). Readers use `paths.resolvedPathChains(map)`; nothing is
@@ -218,139 +167,16 @@ export default class HexmakerPlugin extends Plugin {
     // Terrains known now (data.json's copy of the palettes). Any a palette
     // note adds while Obsidian was closed get their tables once the notes
     // are read (HG5).
-    this.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
-    // Icon pickers open on the Space tab for space-only setups.
-    setIconPackDefault(() => defaultIconPack(this.settings));
-    // Number boxes beside sliders follow debug mode (src/ui/numberBoxes.ts).
-    setNumberBoxDebug(() => isDebugMode(this.app));
-    // Palette pickers preview the picked palette's terrains (E4).
-    setPaletteTerrainSource((name) => this.getPaletteOrPresetTerrains(name));
-    setHexDataSource(this.mapStore);
-    setPathEditMapLookup((name) => this.getMap(name));
-    setModeMapLookup((name) => this.getMap(name));
-    // The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
-    setHandEditListener((name) => this.arrival.lockOnHandEdit(name));
-    // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
-    this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
-    registerHexPropsEvents(this, this.hexProps);
-    // Defer until vault metadata cache is ready; calling before layout-ready
-    // returns null for all vault paths so custom icons are silently dropped.
-    this.app.workspace.onLayoutReady(() => {
-      this.loadAvailableIcons();
-      // data.json was written by a newer version (its data stamp, MG7): say so, and stay.
-      if (this.newerData) noticeBackground(this.newerData, 0);
-      // The one-time upgrades below report in ONE notice once they're all
-      // done, not a stack over the map's toolbar (fresh-eyes 2026-10-13 F2).
-      beginNoticeBatch();
-      // Palettes first (maps reference them), then map notes — which may
-      // migrate per-hex data out of hex notes on the first run.
-      // Modules' note stores (biomes, world types) start first, as the
-      // biome store always did; then the tables and the core's stores.
-      const storeReady = new Map(this.moduleStores.map((st) => [st, st.init()] as const));
-      const moduleStoresReady = Promise.all(storeReady.values());
-      void this.tableNotes.init();
-      // A fresh install with the setup wizard about to open: the stores'
-      // first writes (palette notes, the placeholder map's note) wait until
-      // the wizard confirms the world folder, or closes, or a map opens, so
-      // nothing appears in a folder the user hasn't agreed to (fresh-eyes F19).
-      const gate = startupWritesWait(this.settings, (p) => !!this.app.vault.getAbstractFileByPath(p));
-      this.startupWritesHeld = gate.held;
-      this.releaseStartupWrites = () => {
-        this.startupWritesHeld = false;
-        gate.release();
-      };
-      // A fresh install has no older palettes to move into notes: its
-      // palettes are simply written, without the "now notes" notice.
-      if (gate.held) this.settings.palettesMigrated = true;
-      const storesReady = gate.wait.then(() => this.paletteStore.init()).then(() => this.mapStore.init());
-      this.storesStarted = storesReady;
-      // Each module's one-time upgrades once its stores and the core's are in
-      // (World maps, BC1: every overworld hex's biome in its Biome column).
-      runAfterStoresReady(this, storesReady, this.moduleStores, storeReady);
-      void storesReady.then(() => this.ensureTablesForNewTerrains());
-      // Terrains renamed in a palette note while Obsidian was closed: offer "Rename everywhere".
-      void storesReady.then(() => this.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
-      // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
-      // generator and modules' notes (world types) in the new note formats (backed up first).
-      const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
-      // Hex-note properties follow the map once the notes are in their new formats (MG4).
-      void formatsDone.then(() => this.hexProps.start());
-      // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
-      void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
-        if (!sandbox) return;
-        this.devTools = moduleDevTools(this);
-      });
-      const registered = this.autoRegisterMapsFromVault();
-      // Hand edits to table notes (ranges, die, weights) are imported.
-      TableStore.register(this);
-      let rangesDone: Promise<unknown> = Promise.resolve();
-      if (!this.settings.setupComplete && !this.settings.setupDismissed) {
-        this.openSetupWizard();
-      } else {
-        // Once after updating: add roll ranges to older tables, silently,
-        // after a backup (DJ-Q6). After the stores load, for the same reason.
-        rangesDone = storesReady.then(() => upgradeTableRangesOnce(this));
-      }
-      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => this.finishStartupUpgrades());
-    });
+    this.terrainTables.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
+    // The module-level ports (icon pickers, number boxes, palette previews,
+    // hex data, the work-mode gates): src/ports.ts, same order as ever.
+    bindPorts(this);
+    // One handler per vault / workspace event, in the order they always ran (src/plugin/vaultEvents.ts).
+    registerVaultEvents(this);
+    // The rest of start-up waits for the layout (src/plugin/startup.ts).
+    this.app.workspace.onLayoutReady(() => startOnLayoutReady(this, this.settingsIO.newerData, () => this.finishStartupUpgrades()));
 
-    // Live-refresh the icon list when image files appear in / leave the
-    // icons folder. Without this, icons dropped in via the OS file explorer
-    // needed an Obsidian restart to show up in the pickers (forum report).
-    const isIconFile = (path: string): boolean => {
-      const folder = normalizeFolder(this.settings.iconsFolder ?? "");
-      if (!folder) return false;
-      return (
-        path.startsWith(folder + "/") &&
-        /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(path)
-      );
-    };
-    this.registerEvent(
-      this.app.vault.on("create", (f) => {
-        if (isIconFile(f.path)) this.loadAvailableIcons();
-        this.paletteStore.onModify(f);
-        for (const st of this.moduleStores) st.onCreate?.(f);
-        this.mapStore.onCreate(f);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (f) => {
-        if (isIconFile(f.path)) this.loadAvailableIcons();
-        this.mapStore.onDelete(f);
-        this.paletteStore.onDelete(f);
-        for (const st of this.moduleStores) st.onDelete?.(f);
-        this.calloutMemory.forget(f.path);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("rename", (f, oldPath) => {
-        if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
-        this.paletteStore.onRename(f, oldPath);
-        for (const st of this.moduleStores) st.onRename?.(f, oldPath);
-        this.calloutMemory.rename(oldPath, f.path);
-        if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
-      }),
-    );
-    // A region or faction note's Map data callout is refreshed when it's opened (R1).
-    this.registerEvent(
-      this.app.workspace.on("file-open", (file) => {
-        if (file && this.regionOrFactionKind(file)) void this.refreshRegionMapData(file);
-        this.onHexNoteFocus(file);
-      }),
-    );
-    // Palette notes edited by hand (or by sync) flow back into the palettes.
-    this.registerEvent(
-      this.app.vault.on("modify", (f) => {
-        this.paletteStore.onModify(f);
-        for (const st of this.moduleStores) st.onModify?.(f);
-        this.mapStore.onModify(f);
-      }),
-    );
-    // A hand-edited palette note's derived cells ("(yes)", "(mountains)")
-    // are refreshed once the user stops editing it.
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.paletteStore.flushPendingDerived()));
-
-    await this.migrateHexFilesToDefaultRegion();
+    await migrateHexFilesToDefaultRegion(this);
 
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
@@ -364,214 +190,8 @@ export default class HexmakerPlugin extends Plugin {
       VIEW_TYPE_RANDOM_TABLES,
       (leaf) => new RandomTableView(leaf, this),
     );
-    this.addRibbonIcon("map", "Open hex map", () =>
-      this.openHexMap(),
-    );
-    // Commands are placed by id like every other control (src/ui/placement.ts):
-    // Debug ones are offered only in debug mode (src/ui/commandPlacement.ts).
-    const addPlaced = (id: string, cmd: Command) => {
-      const placed = placeCommand(id, cmd, () => isDebugMode(this.app));
-      if (placed) this.addCommand(placed);
-    };
-    addPlaced("Plugin.cmd.openHexMap", {
-      id: "open-hex-map",
-      name: "Open hex map",
-      callback: () => this.openHexMap(),
-    });
-    addPlaced("Plugin.cmd.openHexTable", {
-      id: "open-hex-table",
-      name: "Open hex table",
-      callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
-    });
-    addPlaced("Plugin.cmd.openTerrainGenerator", {
-      id: "open-terrain-generator",
-      name: "Open terrain generator",
-      callback: () => void this.openTerrainGenerator(),
-    });
-    addPlaced("Plugin.cmd.openPaletteEditor", {
-      id: "open-palette-editor",
-      name: "Open palette editor",
-      callback: () => void this.openPaletteEditor(),
-    });
-    // Each module's commands (Space: Edit world types…, Convert world types to tables),
-    // placed by their placement id when they have one.
-    for (const { command, kind } of moduleCommands()) {
-      const cmd: Command = {
-        id: command.id,
-        name: command.name,
-        checkCallback: (checking) => {
-          if (kind !== undefined && !enabledKinds(this.settings).has(kind)) return false;
-          if (command.available && !command.available(this)) return false;
-          if (!checking) void command.run(this);
-          return true;
-        },
-      };
-      if (command.placementId) addPlaced(command.placementId, cmd);
-      else this.addCommand(cmd);
-    }
-    addPlaced("Plugin.cmd.mapGoUp", {
-      id: "map-go-up",
-      name: "Go up to parent map",
-      checkCallback: (checking) => {
-        const view = this.app.workspace.getActiveViewOfType(HexMapView);
-        if (!view?.canNavigateUp()) return false;
-        if (!checking) view.navigateUp();
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.mapGoBack", {
-      id: "map-go-back",
-      name: "Go back to previous map",
-      checkCallback: (checking) => {
-        const view = this.app.workspace.getActiveViewOfType(HexMapView);
-        if (!view?.canNavigateBack()) return false;
-        if (!checking) view.navigateBack();
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.mapGoForward", {
-      id: "map-go-forward",
-      name: "Go forward to the next map",
-      checkCallback: (checking) => {
-        const view = this.app.workspace.getActiveViewOfType(HexMapView);
-        if (!view?.canNavigateForward()) return false;
-        if (!checking) view.navigateForward();
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.openRandomTables", {
-      id: "open-random-tables",
-      name: "Open random tables",
-      callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
-    });
-    // Content packs (SF1): export notes to a .zip, import one into this vault.
-    const packs = packCommands(this);
-    addPlaced("Plugin.cmd.exportContentPack", { id: "export-content-pack", name: "Export content pack…", callback: packs.exportPack });
-    addPlaced("Plugin.cmd.importContentPack", { id: "import-content-pack", name: "Import content pack…", callback: packs.importPack });
-    addPlaced("Plugin.cmd.addRollRanges", {
-      id: "add-roll-ranges",
-      name: "Add roll ranges to tables",
-      callback: () => void openTableRangesModal(this),
-    });
-    addPlaced("Plugin.cmd.checkTables", {
-      id: "check-tables",
-      name: "Check tables",
-      callback: () => void runTableCheck(this),
-    });
-    // Backups stay in the plugin's folder; these reach them (owner MG2).
-    addPlaced("Plugin.cmd.openBackupsFolder", {
-      id: "open-backups-folder",
-      name: "Open backups folder",
-      callback: () => void openBackupsFolder(this),
-    });
-    addPlaced("Plugin.cmd.restoreFromBackup", {
-      id: "restore-from-upgrade-backup",
-      name: "Restore from upgrade backup…",
-      callback: () => new RestoreBackupModal(this.app, this).open(),
-    });
-    addPlaced("Plugin.cmd.exportNotePdf", {
-      id: "export-current-note-pdf",
-      name: "Export current note to PDF",
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file) return false;
-        if (!checking) void exportSingleNoteAsPdf(this, file);
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.exportNoteMarkdown", {
-      id: "export-current-note-markdown",
-      name: "Export current note to Markdown",
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file) return false;
-        if (!checking) void exportSingleNoteAsMarkdown(this, file);
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.exportCurrentHex", {
-      id: "export-current-hex",
-      name: "Export current hex (structured PDF / Markdown)",
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file || !this.isHexFile(file)) return false;
-        if (!checking) new HexExportModal(this.app, this, file).open();
-        return true;
-      },
-    });
-    addPlaced("Plugin.cmd.exportCurrentWorkflow", {
-      id: "export-current-workflow",
-      name: "Export current workflow with rolled samples",
-      checkCallback: (checking) => {
-        const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file || !this.isWorkflowFile(file)) return false;
-        if (!checking) new WorkflowExportModal(this.app, this, file).open();
-        return true;
-      },
-    });
-    // Map export (PNG / PDF / hexcrawl manual): the same form as Maps →
-    // Map data callouts (src/hexMapData.ts) in the open map's hex notes: an
-    // opt-in for notes made before the template had one.
-    addPlaced("Plugin.cmd.addMapDataToHexNotes", {
-      id: "add-map-data-to-hex-notes",
-      name: "Add map data to this map's hex notes",
-      checkCallback: (checking) => {
-        const open = this.app.workspace.getActiveViewOfType(HexMapView)
-          ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
-        const mapName = open?.activeMapName;
-        if (!mapName || !this.getMap(mapName)) return false;
-        // No confirm (owner Q6): it only adds a Map data box; the notice says what it did.
-        if (!checking) void this.addMapDataToHexNotes(mapName).then((n) => new Notice(`Map data added or updated in ${n} hex note${n === 1 ? "" : "s"} of "${this.mapLabel(mapName)}" (a box under each title; nothing else changed).`));
-        return true;
-      },
-    });
-    // Map data callouts in region and faction notes (R1): which maps use
-    // them, with hex counts. Adds the callout where it's missing.
-    addPlaced("Plugin.cmd.updateRegionFactionMapData", {
-      id: "update-region-faction-map-data",
-      name: "Update map data in region and faction notes",
-      checkCallback: (checking) => {
-        if (!this.regionAndFactionNotes().length) return false;
-        // No confirm (owner Q6): it only adds or refreshes a Map data box; the notice says what it did.
-        if (!checking) void this.updateRegionFactionMapData().then((n) => new Notice(`Map data added or updated in ${n} area and faction note${n === 1 ? "" : "s"} (a box under each title; nothing else changed).`));
-        return true;
-      },
-    });
-    // Export, for the map open in the hex map view (else the default map).
-    addPlaced("Plugin.cmd.exportCurrentMap", {
-      id: "export-current-map",
-      name: "Export current map…",
-      checkCallback: (checking) => {
-        const open = this.app.workspace.getActiveViewOfType(HexMapView)
-          ?? this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).map((l) => l.view).find((v): v is HexMapView => v instanceof HexMapView);
-        const mapName = [open?.activeMapName, this.settings.defaultMap, this.settings.maps[0]?.name]
-          .find((n): n is string => !!n && !!this.getMap(n));
-        if (!mapName) return false;
-        if (!checking) new MapExportModal(this.app, this, mapName).open();
-        return true;
-      },
-    });
-    // Solo play (SF3): today's play log note, made if missing.
-    addPlaced("Plugin.cmd.openPlayLog", {
-      id: "open-play-log",
-      name: "Open today's play log",
-      callback: () => {
-        void ensureLogNote(this.app, logFolderFor(this.settings))
-          .then((file) => openNoteFocused(this.app, file))
-          .catch((err) => new Notice(`Could not open the play log: ${String(err)}`));
-      },
-    });
-    // File-menu items: right-click any markdown file → Export to PDF /
-    // Markdown. Placed by id: Advanced ones go in one "Export note" submenu.
-    this.registerEvent(
-      this.app.workspace.on("file-menu", (menu, file) => {
-        if (!(file instanceof TFile) || file.extension !== "md") return;
-        addPlacedMenuItems(menu, "Export note", "file-down", [
-          { id: "Plugin.fileMenuExportPdf", title: "Export to PDF", short: "PDF", icon: "file-down", run: () => void exportSingleNoteAsPdf(this, file) },
-          { id: "Plugin.fileMenuExportMarkdown", title: "Export to Markdown", short: "Markdown", icon: "file-text", run: () => void exportSingleNoteAsMarkdown(this, file) },
-        ], isDebugMode(this.app));
-      }),
-    );
+    // Ribbon icon, commands and the file menu (src/plugin/commands.ts).
+    registerCommands(this);
     this.addSettingTab(new HexmakerSettingTab(this.app, this));
     // Debug mode (per device, src/ui/debugMode.ts): "Debug" in the status
     // bar while it's on; clicking it turns it off. Pages with a Debug
@@ -590,185 +210,11 @@ export default class HexmakerPlugin extends Plugin {
     // path-style previews beside the table text.
     registerPaletteReadingView(this);
 
-    // Right-click "Insert table roller" in any editor.
-    // "editor-menu" is a valid Obsidian workspace event not yet in the official types.
-    interface WorkspaceWithEditorMenu {
-      on(name: "editor-menu", callback: (menu: Menu, editor: Editor) => void): EventRef;
-    }
-    this.registerEvent(
-      (this.app.workspace as unknown as WorkspaceWithEditorMenu).on(
-        "editor-menu",
-        (menu: Menu, editor: Editor) => {
-          menu.addItem((item) =>
-            item
-              .setTitle("Insert table roller")
-              .setIcon("dice")
-              .setSection("insert")
-              .onClick(() => {
-                new FileLinkSuggestModal(
-                  this.app,
-                  this,
-                  (file) => {
-                    const block = `\`\`\`duckmage-roller\n${file.path}\n\`\`\``;
-                    editor.replaceSelection(block);
-                  },
-                  normalizeFolder(this.settings.tablesFolder),
-                ).open();
-              }),
-          );
-          menu.addItem((item) =>
-            item
-              .setTitle("Insert map link")
-              .setIcon("map")
-              .setSection("insert")
-              .onClick(() => {
-                new MapLinkModal(this.app, this, (mapName, linkText) => {
-                  editor.replaceSelection(`[${linkText}](${mapLinkUri(this.app.vault.getName(), { map: mapName })})`);
-                }).open();
-              }),
-          );
-        },
-      ),
-    );
+    // Right-click "Insert table roller" / "Insert map link" in any editor.
+    registerEditorMenu(this);
 
-    interface WithOpenTable {
-      openTable?(path: string): void;
-    }
-    this.registerObsidianProtocolHandler("duckmage-roll", (params) => {
-      const filePath = params["file"];
-      if (!filePath) return;
-      const leaves = this.app.workspace.getLeavesOfType(
-        VIEW_TYPE_RANDOM_TABLES,
-      );
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenTable).openTable?.(filePath);
-      } else {
-        void this.app.workspace.getLeaf("tab").setViewState({
-          type: VIEW_TYPE_RANDOM_TABLES,
-          state: { filePath },
-        });
-      }
-    });
-
-    interface WithOpenWorkflow {
-      openWorkflow?(path: string): void;
-    }
-    this.registerObsidianProtocolHandler("duckmage-workflow", (params) => {
-      const filePath = params["file"];
-      if (!filePath) return;
-      const leaves = this.app.workspace.getLeavesOfType(
-        VIEW_TYPE_RANDOM_TABLES,
-      );
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenWorkflow).openWorkflow?.(
-          filePath,
-        );
-      } else {
-        void this.app.workspace.getLeaf("tab").setViewState({
-          type: VIEW_TYPE_RANDOM_TABLES,
-          state: { filePath, mode: "workflows" },
-        });
-      }
-    });
-
-    // A map link (`map=`), or a hex link (`map=&x=&y=`: the map centred on
-    // that hex, e.g. copied from the hex editor's centre dot). src/hexLink.ts.
-    this.registerObsidianProtocolHandler(OPEN_MAP_ACTION, (params) => {
-      const target = parseMapLinkParams(params);
-      if (!target) return;
-      const go = (view: HexMapView, record: boolean) => {
-        if (target.hex) view.goToHex(target.map, target.hex.x, target.hex.y, { recordHistory: record });
-        else view.navigateToMap(target.map, { recordHistory: record });
-      };
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      if (leaves.length > 0) {
-        // Revealing loads a deferred (restored, never shown) tab first.
-        void this.app.workspace.revealLeaf(leaves[0]).then(() => {
-          if (leaves[0].view instanceof HexMapView) go(leaves[0].view, true);
-        });
-      } else {
-        void this.app.workspace.getLeaf("tab")
-          .setViewState({ type: VIEW_TYPE_HEX_MAP })
-          .then(() => {
-            const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view;
-            if (view instanceof HexMapView) go(view, false);
-          });
-      }
-    });
-
-    // Keep linkedFolder frontmatter in sync when a folder is renamed
-    this.registerEvent(
-      this.app.vault.on("rename", async (abstractFile, oldPath) => {
-        if (!(abstractFile instanceof TFolder)) return;
-        const oldFolder = normalizeFolder(oldPath);
-        const newFolder = normalizeFolder(abstractFile.path);
-        if (oldFolder === newFolder) return;
-
-        const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
-        const tableFiles = this.app.vault
-          .getMarkdownFiles()
-          .filter(
-            (f) => !tablesPrefix || f.path.startsWith(tablesPrefix + "/"),
-          );
-
-        for (const tableFile of tableFiles) {
-          const fm = this.app.metadataCache.getFileCache(tableFile)?.frontmatter;
-          const lf: unknown = fm?.["linkedFolder"] ?? fm?.["linked-folder"];
-          if (!lf || typeof lf !== "string") continue;
-          const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
-          const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
-          const lfNorm = normalizeFolder(lfClean);
-          if (lfNorm !== oldFolder && !lfNorm.startsWith(oldFolder + "/"))
-            continue;
-          const updatedLf = newFolder + lfNorm.slice(oldFolder.length);
-          await this.app.vault.process(tableFile, (content) =>
-            content.replace(
-              /^((?:linkedFolder|linked-folder):\s*).*$/m,
-              `$1"[[${updatedLf}]]"`,
-            ),
-          );
-        }
-      }),
-    );
-
-    // Remove workflow steps that reference a deleted table file
-    this.registerEvent(
-      this.app.vault.on("delete", async (abstractFile: TAbstractFile) => {
-        if (!(abstractFile instanceof TFile)) return;
-        const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
-        if (tablesPrefix && !abstractFile.path.startsWith(tablesPrefix + "/"))
-          return;
-
-        // The table path stored in workflows has no .md extension
-        const deletedTablePath = abstractFile.path.slice(0, -3);
-
-        const wfPrefix = normalizeFolder(this.settings.workflowsFolder);
-        const templatesPath = wfPrefix ? `${wfPrefix}/templates` : "templates";
-        const workflowFiles = this.app.vault
-          .getMarkdownFiles()
-          .filter(
-            (f) =>
-              (!wfPrefix || f.path.startsWith(wfPrefix + "/")) &&
-              !f.path.startsWith(templatesPath + "/") &&
-              !f.basename.startsWith("_"),
-          );
-
-        for (const wfFile of workflowFiles) {
-          await this.app.vault.process(wfFile, (content) => {
-            const workflow = parseWorkflow(content, wfFile.basename);
-            const filtered = workflow.steps.filter(
-              (s) => s.tablePath !== deletedTablePath,
-            );
-            if (filtered.length === workflow.steps.length) return content;
-            workflow.steps = filtered;
-            // Everything else in the note (other columns, text after the table) stays.
-            return buildWorkflowContent(workflow, { existing: content });
-          });
-        }
-      }),
-    );
+    // obsidian:// actions: tables, workflows, map and hex links (src/plugin/protocolHandlers.ts).
+    registerProtocolHandlers(this);
   }
 
   onunload() {
@@ -780,7 +226,7 @@ export default class HexmakerPlugin extends Plugin {
     clearPendingTerrain();
   }
 
-  private openHexMap(): void {
+  openHexMap(): void {
     void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_MAP });
   }
 
@@ -814,7 +260,6 @@ export default class HexmakerPlugin extends Plugin {
     await this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_GENERATOR, active: true });
   }
 
-
   /**
    * DJ-Q4: the shipped biome notes are written when the first overworld or
    * region is made (New overworld, a map given region settings, a region
@@ -831,293 +276,13 @@ export default class HexmakerPlugin extends Plugin {
    */
   devTools?: Record<string, (...args: never[]) => unknown>;
 
-  /** Show a map in the hex map view, opening the view if it isn't open. */
-  async showMap(name: string): Promise<void> {
-    let leaf = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0];
-    if (!leaf) {
-      leaf = this.app.workspace.getLeaf("tab");
-      await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP, active: true });
-    }
-    await this.app.workspace.revealLeaf(leaf);
-    // Revealing loads a deferred tab, so this is the map view by now.
-    if (leaf.view instanceof HexMapView) leaf.view.switchMapFromModal(name);
-  }
-
-  /**
-   * Switch a map's work mode (saved as `mode:` in its map note). An open map
-   * view showing it switches through its own setWorkMode (puts a locked tool
-   * down, refreshes its bars); otherwise the map is just saved.
-   */
-  setMapWorkMode(mapName: string, mode: WorkMode): void {
-    const map = this.getMap(mapName);
-    if (!map) return;
-    let viaView = false;
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)) {
-      if (leaf.view instanceof HexMapView && leaf.view.activeMapName === mapName) {
-        leaf.view.setWorkMode(mode);
-        viaView = true;
-      }
-    }
-    if (viaView || workModeOf(map) === mode) return;
-    map.workMode = mode;
-    void this.saveSettings();
-  }
-
   openSetupWizard(): void {
     void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_SETUP_WIZARD });
-  }
-
-  async loadSettings() {
-    // The settings-phase migrations (src/migrations) run on the raw data
-    // BEFORE Object.assign, so a moved key wins over DEFAULT_SETTINGS.
-    // One read only: nothing may await between swapping in the new
-    // settings and handing their maps to the map store (adoptAll below), or a
-    // save in between would see maps without their paths (incident
-    // 2026-10-10). rawData is an untouched copy for the "fresh install?" checks.
-    const loaded = (await this.loadData()) as Record<string, unknown> | null;
-    const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
-    this.onDisk = loaded ? JSON.stringify(loaded) : null;
-    // An existing vault (not a fresh install): the version that last saved it, for the upgrade note.
-    this.upgradeFrom = rawData ? { version: typeof rawData["savedWith"] === "string" ? rawData["savedWith"] : undefined } : null;
-    const data = loaded ?? {};
-    // Written by a newer build (its data stamp is newer than this build knows): say so once loaded.
-    this.newerData = writtenByNewer(data) ? newerDataText(data["savedWith"], dataFormatOf(data)) : null;
-    this.settingsMigrationsRan = runSettingsMigrations(data);
-
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
-    // The data stamp (src/migrations/stamp.ts): written with the next save, never lowered.
-    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
-    // Own copy: the default is a shared constant, and editors push into lists.
-    // (Kept only as the fallback palettes are filled from; see getPathTypes.)
-    this.settings.pathTypes = clonePathTypes(this.settings.pathTypes ?? DEFAULT_PATH_TYPES);
-
-    // Deep-clone the maps array so mutations to settings.maps never alias DEFAULT_SETTINGS.maps.
-    // Object.assign does a shallow copy, so on first run (data===null) settings.maps IS
-    // DEFAULT_SETTINGS.maps – pushing/mutating it would corrupt the constant for the session.
-    this.settings.maps = Array.isArray(this.settings.maps)
-      ? this.settings.maps
-      : [];
-
-    this.settings.maps = this.settings.maps.map((r) => migrateMapData(r, DEFAULT_PALETTE_NAME));
-    // Reloaded (onExternalSettingsChange): data.json doesn't hold the paths
-    // of maps whose note does, so the fresh map objects take the store's at
-    // once. Missing paths mean "not loaded", never "no paths".
-    this.mapStore.adoptAll();
-    // Ensure terrainPalettes is valid. An empty list is the user's (every
-    // palette deleted, SM-DEL): it stays empty; "Add default palettes" in
-    // settings puts the defaults back on request.
-    this.settings.terrainPalettes = palettesOnLoad(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes);
-    // PA5: path types saved before every behaviour was an explicit option get
-    // them filled in from the old name rules (once), so no map changes look.
-    // Notes are migrated by PaletteStore on attach.
-    if (!this.settings.pathTypesExplicit) fillLegacyPathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
-    if (!this.settings.hexOrientation) this.settings.hexOrientation = "pointy";
-    if (!this.settings.tablesFolder)
-      this.settings.tablesFolder = "world/tables";
-    if (!this.settings.defaultTableDice) this.settings.defaultTableDice = 100;
-    if (this.settings.questsFolder === undefined)
-      this.settings.questsFolder = "";
-    if (this.settings.featuresFolder === undefined)
-      this.settings.featuresFolder = "";
-    if (this.settings.factionsFolder === undefined)
-      this.settings.factionsFolder = "";
-    if (this.settings.hexEditorTerrainCollapsed === undefined)
-      this.settings.hexEditorTerrainCollapsed = false;
-    if (this.settings.hexEditorFeaturesCollapsed === undefined)
-      this.settings.hexEditorFeaturesCollapsed = false;
-    if (this.settings.hexEditorNotesCollapsed === undefined)
-      this.settings.hexEditorNotesCollapsed = false;
-    if (!Array.isArray(this.settings.rollTableExcludedFolders))
-      this.settings.rollTableExcludedFolders = ["terrain"];
-    if (!Array.isArray(this.settings.encounterTableExcludedFolders))
-      this.settings.encounterTableExcludedFolders = ["terrain"];
-    if (!this.settings.defaultMap) {
-      this.settings.defaultMap = this.settings.maps[0]?.name ?? "default";
-    }
-    // Own copy (never alias DEFAULT_SETTINGS). Read from the raw data: unset
-    // (new install / older data) = world, plus space if a palette has space
-    // terrains already.
-    this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
-    // Shipped content per map type (SP3): an update has its types' content
-    // already; a fresh install writes none until its setup picks the types.
-    // Setup over without a pick: inferred, nothing installed (saved with the next save).
-    this.settings.kindContent = inferKindContent({ ...this.settings, kindContent: resolveKindContent(rawData, this.settings.mapKinds) });
-    // New maps default to Expanded on fresh installs only (GEN1): decided
-    // once from the raw data, and saved with it.
-    this.settings.expandedByDefault = resolveExpandedDefault(rawData);
-    const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
-    // "Palette for new maps": seeded once from the above, then the user's.
-    this.settings.defaultPalette = resolveDefaultPalette(rawData);
-    const firstDefaultPalette = typeof rawData?.["defaultPalette"] !== "string";
-    const firstKindContent = rawData?.["kindContent"] === undefined;
-    if (firstKindContent || firstExpanded || firstDefaultPalette) await this.saveData(this.settings);
-  }
-
-  /**
-   * Settings go to data.json without the paths of maps whose note holds them
-   * (MapStore.holdsPaths): each map's roads and rivers live only in its map
-   * note, which a person can read and edit. Maps not yet in a note keep them.
-   */
-  async saveData(data: unknown): Promise<void> {
-    const ready = !!this.mapStore?.isReady();
-    const out = data !== this.settings ? data : withoutNotePaths(this.settings, (name) => ready && this.mapStore.holdsPaths(name));
-    // Same as what data.json holds (last loaded or written): don't touch the
-    // file. Startup saves that change nothing then leave it alone (smoke C5).
-    let text: string | null = null;
-    try { text = JSON.stringify(out); } catch { /* not JSON-able: write it */ }
-    if (text !== null && text === this.onDisk) return;
-    this.rememberWrite(out);
-    await super.saveData(out);
-    this.onDisk = text;
-  }
-
-  /** Set when data.json was written by a newer build: the notice to show (see stamp.ts). */
-  private newerData: string | null = null;
-  /** Settings-phase migrations that changed data.json on this load (recorded once settings exist). */
-  private settingsMigrationsRan: string[] = [];
-  /** Set for an existing vault: the version that last saved data.json (null: a fresh install). */
-  private upgradeFrom: { version: string | undefined } | null = null;
-
-  /**
-   * After the start-up upgrades (MG1): record which migrations changed the
-   * vault (data.json's migrationsRun), write the "Hexmaker upgrade <date>"
-   * note when an existing vault was upgraded, and show the one combined
-   * notice, linking the note. A fresh install gets no note.
-   */
-  private async finishStartupUpgrades(): Promise<void> {
-    const entries = takeUpgradeReport();
-    let recorded = false;
-    for (const id of [...this.settingsMigrationsRan, ...entries.flatMap((e) => e.ids ?? [])]) {
-      if (recordMigrationRun(this.settings, id)) recorded = true;
-    }
-    this.settingsMigrationsRan = [];
-    let link: NoticeLink | undefined;
-    const now = pluginVersion(this);
-    const upgraded = !!this.upgradeFrom && entries.length > 0 && (entries.some((e) => e.ids?.length) || this.upgradeFrom.version !== now);
-    if (upgraded) {
-      try {
-        const path = await writeUpgradeNote(this.app, normalizeFolder(this.settings.worldFolder ?? ""), {
-          date: new Date(),
-          from: this.upgradeFrom?.version,
-          to: now,
-          entries,
-          backupsFolder: this.backupsFolder(),
-          changelog,
-          pluginName: this.manifest.name ?? "Hexmap World Creator",
-        });
-        const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
-        link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
-      } catch (e) {
-        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
-      }
-    }
-    endNoticeBatch(link);
-    // Only data.json: the record must not make a fresh install write notes (F19).
-    if (recorded && this.upgradeFrom) await this.saveData(this.settings);
   }
 
   /** The plugin's backups folder (vault-relative, under the config folder). */
   backupsFolder(): string {
     return `${this.manifest.dir ?? ""}/backups`;
-  }
-
-  /** Open a vault note in a new tab. */
-  private async openVaultNote(path: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
-  }
-
-  /** data.json's content as last loaded or written by this session (compact JSON). */
-  private onDisk: string | null = null;
-
-  /** What we wrote to data.json lately (compact JSON), to tell our own writes from outside changes. */
-  private recentWrites: string[] = [];
-
-  private rememberWrite(data: unknown): void {
-    try {
-      this.recentWrites.push(JSON.stringify(data));
-      if (this.recentWrites.length > 20) this.recentWrites.shift();
-    } catch { /* not JSON-able: never matches */ }
-  }
-
-  /** data.json holds exactly something this session wrote (an echo of our own save). */
-  private isOwnWrite(disk: unknown): boolean {
-    if (disk === null || disk === undefined) return false;
-    const text = JSON.stringify(disk);
-    return this.recentWrites.includes(text);
-  }
-
-  async saveSettings() {
-    this.settings.savedWith = pluginVersion(this);
-    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
-    // The setup just finished or was turned off without picking map types
-    // (e.g. "Don't show again", a recipe): record its types, install nothing.
-    this.settings.kindContent = inferKindContent(this.settings);
-    await this.saveData(this.settings);
-    // Mirror palette edits (from any editor) into the palette notes.
-    void this.paletteStore.sync();
-    // A terrain added anywhere (palette editor, terrain editor, a new or
-    // imported palette) gets its empty tables (HG5).
-    void this.ensureTablesForNewTerrains();
-    void this.mapStore.sync();
-    // Settings hold map-level state (paths, palette, grid size, overlays).
-    // A save made from one view/window leaves sibling map views stale —
-    // flag them so they re-render on next activation (issue #32). The
-    // active map view (the one making the change) is skipped inside
-    // markStaleFromExternal.
-    this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      if (leaf.view instanceof HexMapView) leaf.view.markStaleFromExternal();
-    });
-  }
-
-  // Called by Obsidian Sync when it delivers a new data.json from another device.
-  // Reloads settings into memory and refreshes all open views so the user sees
-  // the synced state without a manual Obsidian restart.
-  async onExternalSettingsChange(): Promise<void> {
-    // Obsidian also fires this for our own saves when several land close
-    // together (its watcher sees a write it hasn't recorded yet). Reloading
-    // our own data would at best do nothing and at worst roll back changes
-    // made since that save, so ignore anything we wrote ourselves.
-    const disk = (await this.loadData()) as unknown;
-    if (this.isOwnWrite(disk)) {
-      this.onDisk = JSON.stringify(disk);
-      return;
-    }
-    await this.loadSettings();
-    // Map notes hold paths and map settings; the new data.json doesn't win.
-    // Queued before any sync, so nothing writes the bare copy over a note.
-    void this.mapStore.reloadFromNotes();
-    // data.json carries a cached copy of the palettes; the notes win.
-    await this.paletteStore.reload();
-    this.loadAvailableIcons();
-    this.refreshHexMap();
-    this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
-      if (leaf.view instanceof HexTableView) void leaf.view.loadTable();
-    });
-  }
-
-  /**
-   * Filter a list of table files using a two-tier system:
-   *  1. Per-file frontmatter (`filterKey: false` excludes, `filterKey: true` forces include)
-   *  2. Folder-level exclusion list (paths relative to tablesFolder)
-   */
-  filterTableFiles(
-    files: TFile[],
-    filterKey: "roll-filter" | "encounter-filter",
-    excludedFolders: string[],
-  ): TFile[] {
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const prefix = folder ? folder + "/" : "";
-    return files.filter((f) => {
-      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
-      if (fm != null) {
-        const val: unknown = fm[filterKey];
-        if (val === false) return false;
-        if (val === true) return true;
-      }
-      const rel = prefix ? f.path.slice(prefix.length) : f.path;
-      return !excludedFolders.some((exc) => rel.startsWith(exc + "/"));
-    });
   }
 
   /** Open (or focus) the palette editor page, optionally on one palette. */
@@ -1217,90 +382,6 @@ export default class HexmakerPlugin extends Plugin {
     this.availableIcons = [...ordered, ...rest];
   }
 
-  async autoRegisterMapsFromVault(): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    if (!hexFolder) return;
-    const root = this.app.vault.getAbstractFileByPath(hexFolder);
-    if (!(root instanceof TFolder)) return;
-
-    const registered = new Set(this.settings.maps.map((m) => m.name));
-    const added: string[] = [];
-
-    for (const child of root.children) {
-      if (!(child instanceof TFolder)) continue;
-      if (registered.has(child.name)) continue;
-
-      // Infer grid bounds from hex note filenames (pattern: x_y.md)
-      let minX = Infinity, maxX = -Infinity;
-      let minY = Infinity, maxY = -Infinity;
-      for (const file of child.children) {
-        if (!(file instanceof TFile)) continue;
-        const m = file.basename.match(/^(-?\d+)_(-?\d+)$/);
-        if (!m) continue;
-        const x = parseInt(m[1]), y = parseInt(m[2]);
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-
-      const cols = isFinite(maxX) ? maxX - minX + 1 : 20;
-      const rows = isFinite(maxY) ? maxY - minY + 1 : 16;
-      const offsetX = isFinite(minX) ? minX : 0;
-      const offsetY = isFinite(minY) ? minY : 0;
-      const paletteName =
-        this.settings.terrainPalettes[0]?.name ?? DEFAULT_PALETTE_NAME;
-
-      this.settings.maps.push({
-        name: child.name,
-        paletteName,
-        gridSize: { cols, rows },
-        gridOffset: { x: offsetX, y: offsetY },
-        pathChains: [],
-      });
-      added.push(child.name);
-    }
-
-    if (added.length === 0) return;
-
-    if (!this.settings.defaultMap || !registered.has(this.settings.defaultMap)) {
-      this.settings.defaultMap = added[0];
-    }
-    await this.saveSettings();
-    noticeUpgrade(
-      `auto-registered ${added.length} map${added.length > 1 ? "s" : ""} from vault: ${added.join(", ")}`,
-    );
-  }
-
-  /**
-   * Whether a note may be offered in a note picker: never `_`-prefixed;
-   * templates (the hex template, workflow templates, the core Templates or
-   * Templater folder) only when the picker is for choosing a template
-   * (`purpose` "template"). Use in every note picker.
-   */
-  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean {
-    return isLinkableNotePath(file.path, file.basename, this.templateRules(), purpose);
-  }
-
-  private templateRules(): TemplateNoteRules {
-    type Loose = {
-      internalPlugins?: {
-        getPluginById?(id: string): { enabled?: boolean; instance?: { options?: { folder?: string } } } | null;
-      };
-      plugins?: { plugins?: Record<string, { settings?: { templates_folder?: string } } | undefined> };
-    };
-    const loose = this.app as unknown as Loose;
-    const core = loose.internalPlugins?.getPluginById?.("templates");
-    const coreFolder = core?.enabled ? core.instance?.options?.folder : undefined;
-    const templater = loose.plugins?.plugins?.["templater-obsidian"]?.settings?.templates_folder;
-    return templateNoteRules(this.settings, [coreFolder, templater], [
-      this.paletteStore.folder(),
-      ...this.moduleStores.flatMap((st) => (st.folder ? [st.folder()] : [])),
-      ...moduleFolders(this),
-      generatorsFolder(this),
-    ]);
-  }
-
   /**
    * Check whether a TFile is a workflow note (lives under the configured
    * workflows folder). Used to gate the workflow export command.
@@ -1309,663 +390,6 @@ export default class HexmakerPlugin extends Plugin {
     const folder = normalizeFolder(this.settings.workflowsFolder ?? "");
     if (!folder) return false;
     return file.path.startsWith(folder + "/") && !file.basename.startsWith("_");
-  }
-
-  /**
-   * Check whether a TFile is a hex note (lives under the configured hex
-   * folder, basename matches the `x_y` coord pattern). Used to gate the
-   * structured hex export command.
-   */
-  isHexFile(file: TFile): boolean {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    if (hexFolder && !file.path.startsWith(hexFolder + "/")) return false;
-    return /^-?\d+_-?\d+$/.test(file.basename);
-  }
-
-  hexPath(x: number, y: number, mapName: string): string {
-    const folder = normalizeFolder(this.settings.hexFolder);
-    return folder
-      ? `${folder}/${mapName}/${x}_${y}.md`
-      : `${mapName}/${x}_${y}.md`;
-  }
-
-  /** A map was renamed: every hex's Region map / Locations link to it follows. */
-  async updateSubmapReferences(oldName: string, newName: string): Promise<void> {
-    for (const m of this.settings.maps) {
-      for (const [key, h] of [...this.mapStore.all(m.name)]) {
-        const patch = renameMapPatch(h, oldName, newName);
-        if (patch) this.mapStore.set(m.name, key, patch);
-      }
-    }
-    this.noParentMaps.clear();
-    // Children of the renamed map keep their breadcrumb.
-    for (const m of this.settings.maps) {
-      if (m.parent?.map === oldName) m.parent.map = newName;
-    }
-  }
-
-  /** Build an embedded roller code block (path-less — reads the current file). */
-  buildRollerLink(): string {
-    return "```duckmage-roller\n```";
-  }
-
-  /**
-   * Give a table note the roller block, replacing an old
-   * obsidian://duckmage-roll link. Never touches "_" notes or notes with no
-   * roll table. Returns true when the note changed.
-   */
-  async ensureRollerLink(filePath: string): Promise<boolean> {
-    const file = this.app.vault.getAbstractFileByPath(filePath);
-    if (!(file instanceof TFile) || file.basename.startsWith("_")) return false;
-    let changed = false;
-    await processTableNote(this.app, file, (content) => {
-      if (!locateRollTable(content)?.recognized) return content;
-      const next = withRollerBlock(content);
-      changed = next !== content;
-      return next;
-    });
-    return changed;
-  }
-
-  /**
-   * Write the shipped table notes of the modules of `kinds` (default: the
-   * map types that are on) that the tables folder doesn't have yet
-   * (plan-tables-everywhere phase 6). A note that's there, edited or not,
-   * is never touched; nothing is written when every one is there.
-   * Returns the paths written.
-   */
-  async installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> {
-    const plan = shippedTablesToInstall(registry.shippedTables(kinds), normalizeFolder(this.settings.tablesFolder), (p) => !!this.app.vault.getAbstractFileByPath(p));
-    const written: string[] = [];
-    for (const t of plan) {
-      const parts = t.path.split("/").slice(0, -1);
-      for (let i = 1; i <= parts.length; i++) {
-        const dir = parts.slice(0, i).join("/");
-        if (!this.app.vault.getAbstractFileByPath(dir)) {
-          try { await this.app.vault.createFolder(dir); } catch { /* made meanwhile */ }
-        }
-      }
-      try {
-        await this.app.vault.create(t.path, t.text);
-        this.tableNotes.put(t.path, t.text);
-        written.push(t.path);
-      } catch {
-        /* made meanwhile */
-      }
-    }
-    return written;
-  }
-
-  /** Add roller blocks to the table notes in the tables folder that lack one. */
-  async ensureAllRollerLinks(): Promise<void> {
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const prefix = folder ? folder + "/" : "";
-    const files = this.app.vault
-      .getMarkdownFiles()
-      .filter((f) => !prefix || f.path.startsWith(prefix));
-
-    let count = 0;
-    for (const file of files) {
-      if (await this.ensureRollerLink(file.path)) count++;
-    }
-    // Nothing to report when every table already had its link (the setup
-    // wizard runs this right after creating tables that include one).
-    if (count > 0)
-      new Notice(
-        `Added roller links to ${count} table${count !== 1 ? "s" : ""}.`,
-      );
-  }
-
-  /**
-   * Create missing description/encounters table files for every terrain
-   * (`terrains`, default: those of the enabled map types — a Space-only
-   * vault gets none for the fantasy palettes; see terrainsForTables).
-   */
-  async ensureTerrainTables(
-    terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)),
-    kinds: Iterable<string> = enabledKinds(this.settings),
-  ): Promise<void> {
-    const folder = normalizeFolder(this.settings.tablesFolder);
-
-    // Generic section tables (landmark, hidden, secret) at the root of the tables folder
-    for (const sectionType of ["landmark", "hidden", "secret"] as const) {
-      const path = folder ? `${folder}/${sectionType}.md` : `${sectionType}.md`;
-      if (!this.app.vault.getAbstractFileByPath(path)) {
-        if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-          try {
-            await this.app.vault.createFolder(folder);
-          } catch {
-            /* may already exist */
-          }
-        }
-        try {
-          await this.app.vault.create(
-            path,
-            makeTableTemplate(
-              this.settings.defaultTableDice,
-              {
-                "table-type": sectionType,
-                "roll-filter": false,
-                "encounter-filter": false,
-              },
-              this.buildRollerLink(),
-            ),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-
-    // The modules' shipped tables: the starter weather and rumours tables
-    // (E2, rolled from the hex editor when the map and hex don't name their
-    // own) and the space generators' optional role tables. Data, never
-    // written over a note that's there.
-    await this.installShippedTables([...kinds]);
-
-    // Terrain-specific tables
-    const subfolder = folder ? `${folder}/terrain` : "terrain";
-    if (!this.app.vault.getAbstractFileByPath(subfolder)) {
-      try {
-        await this.app.vault.createFolder(subfolder);
-      } catch {
-        /* may already exist */
-      }
-    }
-
-    // Ensure type subfolders exist
-    for (const tableType of ["description", "encounters"] as const) {
-      const typeSubfolder = `${subfolder}/${tableType}`;
-      if (!this.app.vault.getAbstractFileByPath(typeSubfolder)) {
-        try {
-          await this.app.vault.createFolder(typeSubfolder);
-        } catch {
-          /* may already exist */
-        }
-      }
-    }
-
-    // Old flat-named tables ({name} - {type}.md) move into the type folders.
-    await migrateFlatTerrainTables(this.app, subfolder, this.getAllTerrains().map((t) => t.name));
-
-    // Create any still-missing table files
-    await this.createTerrainTableFiles(terrains);
-  }
-
-  /**
-   * Terrains whose description / encounter tables the vault keeps: those of
-   * the enabled map types' palettes (terrainsForTables), plus every palette
-   * a map uses.
-   */
-  tableTerrains(): TerrainColor[] {
-    const inUse = this.settings.maps.map((m) => m.paletteName).filter((n): n is string => !!n);
-    return terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings), inUse);
-  }
-
-  /**
-   * Give terrains created since the last check their tables (HG5): a new
-   * terrain in any palette in use, from any editor, an imported palette or
-   * a palette note edited by hand. The tables start empty (the usual
-   * template, no rows). Only when the vault keeps tables (the tables folder
-   * exists). Awaiting it waits for the files.
-   */
-  ensureTablesForNewTerrains(): Promise<void> {
-    // A name a terrain was just renamed to by hand waits for the answer to
-    // "Rename everywhere" (its old tables may move to it), and names typed
-    // on the way there ("w", "wo"…) never get tables.
-    const held = this.paletteStore?.heldTerrainNames() ?? new Set<string>();
-    const terrains = this.tableTerrains().filter((t) => !held.has(t.name));
-    const known = this.tableTerrainNames;
-    this.tableTerrainNames = new Set(terrains.map((t) => t.name));
-    const added = known ? newTerrains(known, terrains) : [];
-    if (added.length) {
-      this.terrainTablesQueue = this.terrainTablesQueue.then(async () => {
-        const folder = normalizeFolder(this.settings.tablesFolder);
-        if (folder && !this.app.vault.getAbstractFileByPath(folder)) return;
-        await this.createTerrainTableFiles(added);
-      }).catch((e) => console.error("Hexmaker: terrain tables", e));
-    }
-    return this.terrainTablesQueue;
-  }
-
-  /** Create each terrain's missing description / encounter table (empty). */
-  private async createTerrainTableFiles(terrains: readonly TerrainColor[]): Promise<void> {
-    if (!terrains.length) return;
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = folder ? `${folder}/terrain` : "terrain";
-    for (const dir of [subfolder, `${subfolder}/description`, `${subfolder}/encounters`]) {
-      if (this.app.vault.getAbstractFileByPath(dir)) continue;
-      try {
-        await this.app.vault.createFolder(dir);
-      } catch {
-        /* may already exist */
-      }
-    }
-    for (const entry of terrains) {
-      for (const tableType of ["description", "encounters"] as const) {
-        const path = this.terrainTablePath(entry.name, tableType);
-        if (this.app.vault.getAbstractFileByPath(path)) continue;
-        try {
-          await this.app.vault.create(
-            path,
-            makeTableTemplate(
-              this.settings.defaultTableDice,
-              // No `terrain:` key (T2): the table's path
-              // ({tables}/terrain/{type}/{terrain}.md) links it to its terrain.
-              {
-                "table-type": tableType,
-                "roll-filter": false,
-                "encounter-filter": false,
-              },
-              this.buildRollerLink(),
-            ),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-  }
-
-  /**
-   * For every hex note that has a terrain set, link its terrain's encounters table into
-   * the hex's "Encounters Table" section (if not already linked).
-   */
-  async backfillTerrainLinks(): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    const tablesFolder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
-
-    const hexFiles = this.app.vault.getMarkdownFiles().filter((f) => {
-      if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
-      return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
-    });
-
-    let linked = 0;
-    for (const file of hexFiles) {
-      const terrain = getTerrainFromFile(this.app, file.path);
-      if (!terrain) continue;
-      const tablePath = `${subfolder}/encounters/${terrain}.md`;
-      const tableFile = this.app.vault.getAbstractFileByPath(tablePath);
-      if (!(tableFile instanceof TFile)) continue;
-
-      const target = this.app.metadataCache.fileToLinktext(
-        tableFile,
-        file.path,
-      );
-      const linkText = `[[${target}]]`;
-      const existing = await getLinksInSection(
-        this.app,
-        file.path,
-        "Encounters Table",
-      );
-      if (existing.includes(target)) continue;
-
-      await addLinkToSection(this.app, file.path, "Encounters Table", linkText);
-      linked++;
-    }
-    new Notice(
-      `Linked encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
-    );
-  }
-
-  /**
-   * Replace the terrain encounters-table link in a single hex's "Encounters Table" section.
-   * Removes any existing link that resolves to a file in the terrain subfolder, then adds
-   * the correct link for the new terrain (if non-null and the table file exists).
-   */
-  /** Whether `{tablesFolder}/terrain/encounters/{terrain}.md` exists. */
-  hasTerrainEncounterTable(terrain: string): boolean {
-    return this.terrainEncounterTable(terrain) !== null;
-  }
-
-  /** The terrain's encounters table file, if it has one. */
-  terrainEncounterTable(terrain: string): TFile | null {
-    const tablesFolder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
-    const file = this.app.vault.getAbstractFileByPath(`${subfolder}/encounters/${terrain}.md`);
-    return file instanceof TFile ? file : null;
-  }
-
-  /**
-   * Link text (relative to `sourcePath`) of the encounters table for the
-   * hex's own terrain in the map note, or null. createHexNote links exactly
-   * this, and views show it for hexes that have no note yet
-   * (see displayedEncounterLinks).
-   */
-  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null {
-    const terrain = this.mapStore.get(mapName, `${x}_${y}`)?.terrain;
-    const table = terrain ? this.terrainEncounterTable(terrain) : null;
-    return table ? this.app.metadataCache.fileToLinktext(table, sourcePath) : null;
-  }
-
-  /** The encounters table of the area hex (x, y) is in (`{tables}/regions/<area>.md`), if it has one. */
-  areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null {
-    const area = this.mapStore.get(mapName, `${x}_${y}`)?.region;
-    if (!area) return null;
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const file = this.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${area}.md`);
-    return file instanceof TFile ? file : null;
-  }
-
-  async syncHexEncounterTableLink(
-    hexFilePath: string,
-    terrain: string | null,
-  ): Promise<void> {
-    // The link lives in the hex note's body; a hex without a note gets it
-    // when its note is created (createHexNote adds it).
-    if (!(this.app.vault.getAbstractFileByPath(hexFilePath) instanceof TFile)) return;
-    const tablesFolder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
-
-    // Remove any links that point to a terrain encounters table
-    const existing = await getLinksInSection(
-      this.app,
-      hexFilePath,
-      "Encounters Table",
-    );
-    for (const linkTarget of existing) {
-      const resolved = this.app.metadataCache.getFirstLinkpathDest(
-        linkTarget,
-        hexFilePath,
-      );
-      if (resolved && resolved.path.startsWith(subfolder + "/encounters/")) {
-        await removeLinkFromSection(
-          this.app,
-          hexFilePath,
-          "Encounters Table",
-          linkTarget,
-        );
-      }
-    }
-
-    if (!terrain) return;
-
-    const tablePath = `${subfolder}/encounters/${terrain}.md`;
-    const tableFile = this.app.vault.getAbstractFileByPath(tablePath);
-    if (!(tableFile instanceof TFile)) return;
-    const linkText = `[[${this.app.metadataCache.fileToLinktext(tableFile, hexFilePath)}]]`;
-    await addLinkToSection(this.app, hexFilePath, "Encounters Table", linkText);
-  }
-
-  /**
-   * For every hex note on the map, replace its terrain encounters-table link with the
-   * one matching its current terrain.  Intended as a one-shot repair tool.
-   */
-  async refreshAllTerrainEncounterLinks(): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    const hexFiles = this.app.vault.getMarkdownFiles().filter((f) => {
-      if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
-      return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
-    });
-
-    for (const file of hexFiles) {
-      const terrain = getTerrainFromFile(this.app, file.path) ?? null;
-      await this.syncHexEncounterTableLink(file.path, terrain);
-    }
-    new Notice(
-      `Refreshed encounter links for ${hexFiles.length} hex${hexFiles.length !== 1 ? "es" : ""}.`,
-    );
-  }
-
-  // ── Region encounter tables ────────────────────────────────────────────────
-
-  /** Create a region encounters table file if it does not already exist. */
-  async ensureRegionTable(regionName: string): Promise<void> {
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = folder ? `${folder}/regions` : "regions";
-
-    if (!this.app.vault.getAbstractFileByPath(subfolder)) {
-      try {
-        await this.app.vault.createFolder(subfolder);
-      } catch {
-        /* may already exist */
-      }
-    }
-
-    const path = `${subfolder}/${regionName}.md`;
-    if (!this.app.vault.getAbstractFileByPath(path)) {
-      try {
-        await this.app.vault.create(
-          path,
-          makeTableTemplate(
-            this.settings.defaultTableDice,
-            {
-              region: regionName,
-              "table-type": "encounters",
-              "roll-filter": false,
-              "encounter-filter": false,
-            },
-            this.buildRollerLink(),
-          ),
-        );
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-
-  /**
-   * Add the region's encounters table link to a hex's "Encounters Table" section,
-   * or remove it when regionName is null (hex removed from region).
-   * Any existing link pointing into the regions subfolder is replaced.
-   */
-  async syncHexRegionTableLink(
-    hexFilePath: string,
-    regionName: string | null,
-  ): Promise<void> {
-    const tablesFolder = normalizeFolder(this.settings.tablesFolder);
-    const subfolder = tablesFolder ? `${tablesFolder}/regions` : "regions";
-
-    // Remove any existing region table link
-    const existing = await getLinksInSection(
-      this.app,
-      hexFilePath,
-      "Encounters Table",
-    );
-    for (const linkTarget of existing) {
-      const resolved = this.app.metadataCache.getFirstLinkpathDest(
-        linkTarget,
-        hexFilePath,
-      );
-      if (resolved && resolved.path.startsWith(subfolder + "/")) {
-        await removeLinkFromSection(
-          this.app,
-          hexFilePath,
-          "Encounters Table",
-          linkTarget,
-        );
-      }
-    }
-
-    if (!regionName) return;
-
-    const tablePath = `${subfolder}/${regionName}.md`;
-    const tableFile = this.app.vault.getAbstractFileByPath(tablePath);
-    if (!(tableFile instanceof TFile)) return;
-
-    const linkText = `[[${this.app.metadataCache.fileToLinktext(tableFile, hexFilePath)}]]`;
-    await addLinkToSection(this.app, hexFilePath, "Encounters Table", linkText);
-  }
-
-  /**
-   * For every region note in the regions folder, ensure its encounters table exists.
-   * For every hex note that has a `region` frontmatter key, ensure the region table
-   * link is present in its "Encounters Table" section.
-   */
-  async backfillRegionLinks(): Promise<void> {
-    const regionsFolder = normalizeFolder(this.settings.regionsFolder);
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-
-    // Ensure tables for all region notes (even unpainted ones)
-    if (regionsFolder) {
-      const regionFiles = this.app.vault
-        .getMarkdownFiles()
-        .filter(
-          (f) =>
-            !f.basename.startsWith("_") &&
-            f.path.startsWith(regionsFolder + "/"),
-        );
-      for (const f of regionFiles) {
-        await this.ensureRegionTable(f.basename);
-      }
-    }
-
-    // Sync hex → region table links
-    const hexFiles = this.app.vault.getMarkdownFiles().filter((f) => {
-      if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
-      return /^(-?\d+)_(-?\d+)\.md$/.test(f.name);
-    });
-
-    let linked = 0;
-    for (const file of hexFiles) {
-      const region = getHexRegionFromFile(this.app, file.path);
-      if (!region) continue;
-      await this.syncHexRegionTableLink(file.path, region);
-      linked++;
-    }
-
-    new Notice(
-      `Linked area encounter tables for ${linked} hex${linked !== 1 ? "es" : ""}.`,
-    );
-  }
-
-  /** Update every hex note whose terrain matches oldName to newName.
-   *  Reads file content directly (not the metadata cache) so successive renames
-   *  don't miss hexes whose cache entry hasn't refreshed yet.
-   *  Returns a Map of filePath → newName for use as terrain overrides when re-rendering. */
-  async renameTerrainInHexes(
-    oldName: string,
-    newName: string,
-    paletteName?: string,
-  ): Promise<Map<string, string>> {
-    // Terrain lives in map notes: rename it there (in memory now, notes
-    // follow). Hex notes no longer carry terrain. Only maps drawn with
-    // `paletteName` (when given): another palette's terrain of the same
-    // name is a different terrain.
-    const overrides = new Map<string, string>();
-    for (const m of paletteName === undefined ? this.settings.maps : this.mapsOnPalette(paletteName)) {
-      for (const [key, h] of this.mapStore.all(m.name)) {
-        if (h.terrain !== oldName) continue;
-        this.mapStore.set(m.name, key, { terrain: newName });
-        const [x, y] = key.split("_").map(Number);
-        overrides.set(this.hexPath(x, y, m.name), newName);
-      }
-      if (m.baseTerrain === oldName) m.baseTerrain = newName;
-    }
-    await this.mapStore.flush();
-    return overrides;
-  }
-
-  /** Re-render all open hex map views, passing terrain overrides to bypass the stale metadata cache. */
-  /**
-   * Rename a palette terrain everywhere: hex notes using it, its terrain
-   * table files, then the entry itself (saved). Used by the terrain entry
-   * editor and the palette editor page.
-   */
-  async renameTerrain(entry: TerrainColor, newName: string): Promise<void> {
-    const oldName = entry.name;
-    if (!newName || newName === oldName) return;
-    // The palette the entry is in (an entry in none, e.g. a stray copy,
-    // renames on every map as before).
-    const palette = this.settings.terrainPalettes.find((p) => p.terrains.includes(entry))?.name;
-    const overrides = await this.renameTerrainInHexes(oldName, newName, palette);
-    // Another palette still has a terrain of the old name: its tables stay
-    // and the renamed one gets a copy.
-    const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t !== entry && t.name === oldName));
-    await this.renameTerrainTables(oldName, newName, shared);
-    entry.name = newName;
-    await this.saveSettings();
-    this.refreshHexMapWithOverrides(overrides);
-    this.refreshHexTableTerrainRename(oldName, newName);
-  }
-
-  /** The terrain table files of a name that exist (description, encounters). */
-  terrainTableFiles(name: string): TFile[] {
-    return (["description", "encounters"] as const)
-      .map((type) => this.app.vault.getAbstractFileByPath(this.terrainTablePath(name, type)))
-      .filter((f): f is TFile => f instanceof TFile);
-  }
-
-  /**
-   * "Rename everywhere" for a terrain already renamed in its palette (by
-   * hand in the palette note): the hexes and base terrains of that
-   * palette's maps, and the terrain's tables, follow it. The map notes and
-   * tables it changes are backed up first; nothing changes when the backup
-   * can't be saved. Returns the backup path, or null when it failed.
-   */
-  async renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> {
-    const maps = this.mapsOnPalette(paletteName);
-    const notes: Record<string, string> = {};
-    let where: string;
-    try {
-      for (const m of maps) {
-        const text = await this.mapStore.readNoteText(m.name);
-        if (text !== null) notes[this.mapStore.notePath(m.name)] = text;
-      }
-      for (const f of this.terrainTableFiles(oldName)) notes[f.path] = await this.app.vault.read(f);
-      const dir = `${this.manifest.dir}/backups/terrain-rename-${new Date().toISOString().slice(0, 10)}`;
-      const json = JSON.stringify({ kind: "terrain-rename", palette: paletteName, from: oldName, to: newName, savedAt: new Date().toISOString(), notes });
-      where = await writeJsonBackup(this.app.vault.adapter, dir, "before-rename", json);
-    } catch (e) {
-      console.error("Hexmap World Creator: couldn't back up before renaming a terrain; nothing was changed", e);
-      new Notice(`Couldn't save a backup, so "${oldName}" wasn't renamed. Nothing was changed.`, 10000);
-      return null;
-    }
-    const overrides = await this.renameTerrainInHexes(oldName, newName, paletteName);
-    // A palette that still has a terrain of the old name keeps its tables
-    // (the renamed one gets a copy); otherwise they move.
-    const shared = this.settings.terrainPalettes.some((p) => p.terrains.some((t) => t.name === oldName));
-    await this.renameTerrainTables(oldName, newName, shared);
-    await this.saveSettings();
-    this.refreshHexMapWithOverrides(overrides);
-    this.refreshHexTableTerrainRename(oldName, newName);
-    return where;
-  }
-
-  private terrainTablePath(name: string, type: "description" | "encounters"): string {
-    const folder = normalizeFolder(this.settings.tablesFolder);
-    const sub = folder ? `${folder}/terrain` : "terrain";
-    return `${sub}/${type}/${name}.md`;
-  }
-
-  /**
-   * A renamed terrain's tables follow it (HG5): moved when no other terrain
-   * has the old name (links to them are updated), copied when one does.
-   * When there are none, the new name gets empty ones (via the save).
-   */
-  private async renameTerrainTables(oldName: string, newName: string, keepOld = true): Promise<void> {
-    // Tables still being made for the old name (a just-added terrain) first.
-    await this.terrainTablesQueue;
-    for (const type of ["description", "encounters"] as const) {
-      const oldPath = this.terrainTablePath(oldName, type);
-      const newPath = this.terrainTablePath(newName, type);
-      // Don't overwrite if the new terrain already has its own tables
-      if (this.app.vault.getAbstractFileByPath(newPath)) continue;
-      const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
-      if (!(oldFile instanceof TFile)) continue;
-      if (!keepOld) {
-        try {
-          await this.app.fileManager.renameFile(oldFile, newPath);
-          await this.app.vault.process(oldFile, (content) =>
-            content
-              .replace(/^terrain:[ \t].+$/m, `terrain: ${newName}`)
-              .replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, ""),
-          );
-          await this.ensureRollerLink(newPath);
-        } catch { /* ignore */ }
-        continue;
-      }
-      try {
-        let content = await this.app.vault.read(oldFile);
-        // Update the terrain frontmatter property to the new name
-        content = content.replace(/^terrain:[ \t].+$/m, `terrain: ${newName}`);
-        // Strip the old roller link so ensureRollerLink can add one with the correct path
-        content = content.replace(/^.*obsidian:\/\/duckmage-roll.*$\n?/m, "");
-        await this.app.vault.create(newPath, content);
-        await this.ensureRollerLink(newPath);
-      } catch { /* ignore */ }
-    }
   }
 
   refreshHexMapWithOverrides(
@@ -1983,11 +407,6 @@ export default class HexmakerPlugin extends Plugin {
     });
   }
 
-  /**
-   * Name (or rename, or with "" unname) a hex. The name lives in the map
-   * note; a hex that has a note also gets it as an alias, replacing the
-   * previous name's alias and keeping any the user added.
-   */
   /** Record an action done on `mapName` in its current work mode (WM6). */
   pushUndo(mapName: string, item: UndoItem): void {
     this.undoBook.push(mapName, workModeOf(this.getMap(mapName)), item);
@@ -2003,713 +422,6 @@ export default class HexmakerPlugin extends Plugin {
     const edits = cellEdits(cells);
     if (edits.length) this.pushUndo(mapName, { kind: "cells", edits });
     return result;
-  }
-
-  async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
-    const key = `${x}_${y}`;
-    const name = cleanHexName(raw);
-    const old = this.mapStore.get(mapName, key)?.name;
-    if ((old ?? "") === name) return;
-    this.mapStore.set(mapName, key, { name: name || null }, "edit-note");
-    // The "<map> x, y" alias rides along (added if the note lacks it).
-    const coord = this.hexCoordAlias(mapName, x, y);
-    await syncHexAliases(this.app, this.hexPath(x, y, mapName), [
-      { from: old, to: name },
-      { from: coord, to: coord },
-    ]);
-  }
-
-  /** A hex note's "<map display name> x, y" alias (NM2). */
-  hexCoordAlias(mapName: string, x: number | string, y: number | string): string {
-    return coordAlias(this.mapLabel(mapName), x, y);
-  }
-
-  /** A map's display name changed from `oldLabel`: swap the "<map> x, y" alias on its hex notes (hexNames.ts). */
-  async syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> {
-    await swapMapCoordAliases(this.app, this.mapStore.mapFolder(mapName), oldLabel, this.mapLabel(mapName));
-  }
-
-  /** Create a hex note from the configured template (or the built-in default). */
-  async createHexNote(
-    x: number,
-    y: number,
-    mapName: string,
-    preloadedTemplate?: string,
-    terrain?: string,
-  ): Promise<TFile | null> {
-    const path = this.hexPath(x, y, mapName);
-    let content: string;
-
-    if (preloadedTemplate !== undefined) {
-      content = preloadedTemplate;
-    } else {
-      content = await this.loadHexTemplate();
-    }
-
-    content = content
-      .replace(/\{\{x\}\}/g, String(x))
-      .replace(/\{\{y\}\}/g, String(y))
-      .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`)
-      .replace(/\{\{map\}\}/g, mapName);
-    // Map data lives in the map note: the hex note links there instead of
-    // carrying (possibly stale) terrain/region fields.
-    content = withMapLink(content, mapName);
-    if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
-    // Its terrain, area, icon and name as properties (MG4).
-    content = this.hexProps.withProps(content, mapName, x, y, path);
-    // The template's Map data callout shows what the map has for this hex.
-    const mapDataView = this.hexMapDataView(mapName, x, y);
-    const withMapData = setMapData(content, mapDataView);
-    // Remember what it shows, so a later hand edit is told from a stale copy.
-    if (withMapData !== content) this.calloutMemory.set(path, shownValues(mapDataLines(mapDataView)));
-    content = withMapData;
-    // The hex's terrain (just set, or painted before it had a note) gets
-    // its encounter-table link now rather than patched in later.
-    const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
-    if (encounterLink) {
-      content = insertLinkInSection(content, "Encounters Table", `[[${encounterLink}]]`);
-    }
-    // Likewise its area's table (painted before the hex had a note), so the
-    // hex editor's Encounters list doesn't lose it when the note is made.
-    const areaTable = this.areaEncounterTableFor(mapName, x, y);
-    if (areaTable) {
-      content = insertLinkInSection(content, "Encounters Table", `[[${this.app.metadataCache.fileToLinktext(areaTable, path)}]]`);
-    }
-
-    const hexBase = normalizeFolder(this.settings.hexFolder);
-    const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
-    if (!this.app.vault.getAbstractFileByPath(mapFolder)) {
-      // Wrap in try/catch: a concurrent worker may have already created the folder.
-      try {
-        await this.app.vault.createFolder(mapFolder);
-      } catch {
-        /* exists */
-      }
-    }
-
-    try {
-      const file = await this.app.vault.create(path, content);
-      // A named hex's note gets its name as an alias (X4), and every hex
-      // note gets "<map> x, y" (NM2).
-      const name = this.mapStore.get(mapName, `${x}_${y}`)?.name;
-      await syncHexAliases(this.app, path, [
-        { from: undefined, to: name },
-        { from: undefined, to: this.hexCoordAlias(mapName, x, y) },
-      ]);
-      return file;
-    } catch {
-      // A concurrent worker may have created this file between our existence check and
-      // this create call.  If the file now exists, use it rather than treating it as an error.
-      const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof TFile) return existing;
-      new Notice("Could not create note at " + path);
-      return null;
-    }
-  }
-
-  /**
-   * Append text to a section of a hex's note, creating the note first if
-   * the hex has none (P2 "Add to this hex").
-   */
-  async appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> {
-    const path = this.hexPath(x, y, mapName);
-    let file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) file = await this.createHexNote(x, y, mapName);
-    if (!(file instanceof TFile)) throw new Error(`Could not create the note for hex ${x}, ${y}`);
-    await this.app.vault.process(file, (content) => appendSectionText(content, section, text));
-  }
-
-  /** Read the hex template once (used by bulk generation to avoid N redundant reads). */
-  /** The hex note last opened in an editor (its callout is synced when another file opens). */
-  private focusedHexNote: string | null = null;
-
-  /**
-   * A file opened in an editor: a hex note left behind has its Map data
-   * callout synced (hand edits made in it go to the map), and a hex note
-   * being opened gets its callout brought up to date before it's edited.
-   * Not while the user is still in the note: rewriting it mid-typing would
-   * fight the editor.
-   */
-  private onHexNoteFocus(file: TFile | null): void {
-    const sync = (path: string) => {
-      const loc = this.mapStore.isReady() ? this.mapStore.resolve(path) : null;
-      if (!loc || !this.getMap(loc.map)) return;
-      const [x, y] = loc.key.split("_").map(Number);
-      void this.syncHexMapData(loc.map, x, y);
-    };
-    const prev = this.focusedHexNote;
-    const next = file && this.mapStore.isReady() && this.mapStore.resolve(file.path) ? file.path : null;
-    if (prev && prev !== file?.path) sync(prev);
-    if (next && next !== prev) sync(next);
-    this.focusedHexNote = next;
-  }
-
-  /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
-  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
-    const h = this.mapStore.get(mapName, `${x}_${y}`) ?? {};
-    const ref = (m: string) => ({ map: m, label: this.mapLabel(m) });
-    return {
-      map: mapName, mapLabel: this.mapLabel(mapName), x, y, terrain: h.terrain, region: h.region, name: h.name,
-      regionMap: h.regionMap ? ref(h.regionMap) : undefined,
-      locations: h.locations?.length ? h.locations.map(ref) : undefined,
-      biome: this.hexBiomeRef(mapName, `${x}_${y}`),
-    };
-  }
-
-  /** An overworld hex's biome for its Map data callout (World maps), else nothing. */
-  private hexBiomeRef(mapName: string, key: string): { label: string; note?: string } | undefined {
-    return worldMaps()?.hexBiomeRef(this, mapName, key);
-  }
-
-  /**
-   * Bring a hex note's Map data callout up to date with the map (or add one
-   * when `insert`). Hand edits made inside the callout go to the map first
-   * (phase 2, see `syncHexMapData`). Only writes when something changed; a
-   * note without a callout is left alone unless `insert`. Returns whether
-   * it wrote.
-   */
-  async refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> {
-    return (await this.syncHexMapData(mapName, x, y, { insert })).wrote;
-  }
-
-  /**
-   * A hex note's Map data callout, both ways (phase 2): hand edits to
-   * Terrain, Region or Name made since the plugin last wrote it go to the
-   * map (through the work-mode gate, as one undo step), unless the map has
-   * changed them since (the map is newer); then the callout is rewritten
-   * to show the map. Edits that weren't applied stay in the callout as
-   * "Not applied:" lines and lines it can't read as "Not read:" lines, and
-   * a notice says so (unless `quiet`).
-   */
-  async syncHexMapData(
-    mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {},
-  ): Promise<CalloutSyncResult> {
-    return syncHexMapDataWith(this, mapName, x, y, opts);
-  }
-
-  /** Add (or update) the Map data callout in every hex note of a map. Returns how many notes changed. */
-  async addMapDataToHexNotes(mapName: string): Promise<number> {
-    const hexBase = normalizeFolder(this.settings.hexFolder);
-    const folder = this.app.vault.getAbstractFileByPath(hexBase ? `${hexBase}/${mapName}` : mapName);
-    if (!(folder instanceof TFolder)) return 0;
-    let n = 0;
-    const totals = { applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
-    for (const f of folder.children) {
-      if (!(f instanceof TFile)) continue;
-      const m = /^(-?\d+)_(-?\d+)\.md$/.exec(f.name);
-      if (!m) continue;
-      const r = await this.syncHexMapData(mapName, Number(m[1]), Number(m[2]), { insert: true, quiet: true });
-      if (r.wrote) n++;
-      totals.applied.push(...r.applied);
-      totals.notApplied.push(...r.notApplied);
-      totals.unreadable.push(...r.unreadable);
-    }
-    const msg = mapDataSyncMessage(this.mapLabel(mapName), totals);
-    if (msg) new Notice(msg, 8000);
-    return n;
-  }
-
-  // ── Region and faction notes (R1, R2) ────────────────────────────────────
-
-  /** "region" / "faction" for a note in the regions / factions folder ("_" notes aren't). */
-  regionOrFactionKind(file: TFile): "region" | "faction" | null {
-    if (file.extension !== "md" || file.basename.startsWith("_")) return null;
-    const inFolder = (setting: string) => {
-      const folder = normalizeFolder(setting ?? "");
-      return !!folder && file.path.startsWith(folder + "/");
-    };
-    if (inFolder(this.settings.regionsFolder)) return "region";
-    if (inFolder(this.settings.factionsFolder)) return "faction";
-    return null;
-  }
-
-  /** Every region and faction note. */
-  regionAndFactionNotes(): TFile[] {
-    return this.app.vault.getMarkdownFiles().filter((f) => this.regionOrFactionKind(f) !== null);
-  }
-
-  /** The maps that use a region or faction note, for its Map data callout. */
-  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView {
-    const maps = this.settings.maps.map((m) => ({ name: m.name, label: this.mapLabel(m.name) }));
-    if (kind === "region") {
-      const folder = normalizeFolder(this.settings.tablesFolder);
-      const table = this.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${file.basename}.md`);
-      return {
-        kind,
-        maps: regionUse(file.basename, maps, (m) => this.mapStore.all(m).values()),
-        encounterTable: table instanceof TFile ? this.app.metadataCache.fileToLinktext(table, file.path) : undefined,
-      };
-    }
-    // Factions: hex notes that link the faction note, per map.
-    const counts = new Map<string, number>();
-    for (const [source, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
-      if (!targets[file.path]) continue;
-      const loc = this.mapStore.resolve(source);
-      if (loc) counts.set(loc.map, (counts.get(loc.map) ?? 0) + 1);
-    }
-    return {
-      kind,
-      maps: maps
-        .filter((m, i) => counts.get(m.name) && maps.findIndex((o) => o.name === m.name) === i)
-        .map((m) => ({ map: m.name, label: m.label, hexes: counts.get(m.name) ?? 0 })),
-    };
-  }
-
-  /**
-   * Bring a region or faction note's Map data callout up to date (or add
-   * one when `insert`). Only writes when something changed. Returns
-   * whether it wrote.
-   */
-  async refreshRegionMapData(file: TFile, insert = false): Promise<boolean> {
-    const kind = this.regionOrFactionKind(file);
-    if (!kind || !this.mapStore.isReady()) return false;
-    const current = await this.app.vault.read(file);
-    if (!insert && !hasRegionMapData(current)) return false;
-    const view = this.regionMapDataView(file, kind);
-    // Read first: most notes need nothing, and a no-op process() still writes.
-    if (setRegionMapData(current, view, insert) === current) return false;
-    let wrote = false;
-    await this.app.vault.process(file, (content) => {
-      const next = setRegionMapData(content, view, insert);
-      wrote = next !== content;
-      return next;
-    });
-    return wrote;
-  }
-
-  /** Add or update the Map data callout in every region and faction note. Returns how many changed. */
-  async updateRegionFactionMapData(): Promise<number> {
-    await this.mapStore.flush();
-    let n = 0;
-    for (const f of this.regionAndFactionNotes()) {
-      if (await this.refreshRegionMapData(f, true)) n++;
-    }
-    return n;
-  }
-
-  /**
-   * A region note was renamed: hexes whose Region named it follow, through
-   * the map store (the map notes are rewritten from it). Returns how many
-   * hexes changed.
-   */
-  renameRegionInMaps(oldName: string, newName: string): number {
-    return renameRegionInStore(this.mapStore, this.settings.maps.map((m) => m.name), oldName, newName);
-  }
-
-  /**
-   * A note in the regions folder was renamed (R2): its hexes keep their
-   * region, and its encounter table follows the name (unless the new name
-   * already has one).
-   */
-  private async onRegionNoteRenamed(file: TFile, oldPath: string): Promise<void> {
-    const folder = normalizeFolder(this.settings.regionsFolder ?? "");
-    if (!folder || !oldPath.startsWith(folder + "/") || !/\.md$/i.test(oldPath)) return;
-    const oldName = oldPath.slice(oldPath.lastIndexOf("/") + 1).replace(/\.md$/i, "");
-    const newName = file.basename;
-    if (oldName === newName || oldName.startsWith("_") || !this.mapStore.isReady()) return;
-    const n = this.renameRegionInMaps(oldName, newName);
-    const tables = normalizeFolder(this.settings.tablesFolder);
-    const sub = tables ? `${tables}/regions` : "regions";
-    const table = this.app.vault.getAbstractFileByPath(`${sub}/${oldName}.md`);
-    if (table instanceof TFile && !this.app.vault.getAbstractFileByPath(`${sub}/${newName}.md`)) {
-      try {
-        await this.app.fileManager.renameFile(table, `${sub}/${newName}.md`);
-      } catch { /* the hexes still keep their region */ }
-    }
-    if (n) new Notice(`Region renamed: ${n} hex${n === 1 ? "" : "es"} now in "${newName}".`);
-  }
-
-  /** A map was renamed: tokens placed on it (`token-map`) follow. Returns how many notes changed. */
-  async updateTokenMapReferences(oldName: string, newName: string): Promise<number> {
-    let n = 0;
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename.startsWith("_")) continue;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      if (!fm || renamedTokenMap(fm["token-map"], oldName, newName) === null) continue;
-      await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
-        const next = renamedTokenMap(front["token-map"], oldName, newName);
-        // An old plain name becomes a link to the map note (NF3); a link keeps its form.
-        if (next !== null) front["token-map"] = next === newName ? tokenMapValue(newName) : next;
-      });
-      n++;
-    }
-    return n;
-  }
-
-  private async loadHexTemplate(): Promise<string> {
-    const templatePath = normalizeFolder(this.settings.templatePath ?? "");
-    if (templatePath) {
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      if (templateFile instanceof TFile) {
-        try {
-          return await this.app.vault.read(templateFile);
-        } catch { /* fall through */ }
-      }
-      new Notice(`Hex template not found at "${templatePath}" — using built-in default.`);
-      return DEFAULT_HEX_TEMPLATE;
-    }
-    // No path set: hex.md in the templates folder, if there is one (PA3).
-    const inFolder = this.app.vault.getAbstractFileByPath(hexTemplatePathFor(this.settings));
-    if (inFolder instanceof TFile) {
-      try {
-        return await this.app.vault.read(inFolder);
-      } catch { /* fall through */ }
-    }
-    return DEFAULT_HEX_TEMPLATE;
-  }
-
-  /** The plugin's templates folder (PA3; see src/noteTemplates.ts). */
-  templatesFolder(): string {
-    return templatesFolderFor(this.settings);
-  }
-
-  /** Create a note template file from its built-in default if it's missing. */
-  private async ensureTemplateFile(path: string, content: string): Promise<void> {
-    if (this.app.vault.getAbstractFileByPath(path)) return;
-    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-      try {
-        await this.app.vault.createFolder(folder);
-      } catch { /* exists */ }
-    }
-    try {
-      await this.app.vault.create(path, content);
-    } catch { /* created concurrently — fine */ }
-  }
-
-  /**
-   * Make sure the templates folder holds every plugin note template: the
-   * hex template (unless the user points templatePath elsewhere) and each
-   * link section's note template. Existing files are never overwritten.
-   */
-  async ensureTemplates(): Promise<void> {
-    await this.ensureHexTemplate();
-    for (const section of Object.keys(LINK_NOTE_TEMPLATES)) {
-      const path = linkNoteTemplatePathFor(this.settings, section);
-      if (path) await this.ensureTemplateFile(path, LINK_NOTE_TEMPLATES[section].starter);
-    }
-  }
-
-  /**
-   * Open a note template to edit it (SX1: easy to find and edit), making
-   * it from its built-in starter first if it isn't there yet.
-   */
-  async openNoteTemplate(path: string): Promise<void> {
-    await this.ensureTemplates();
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
-    else new Notice(`No template at ${path}.`);
-  }
-
-  /**
-   * Starting text for a note made from a link section's "create new": the
-   * section's note template (LINK_NOTE_TEMPLATES, written to the templates
-   * folder on first use); encounter tables get a table. `title` fills {{title}}.
-   */
-  async newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> {
-    if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
-    // Made from a hex: a place says where it is (R3).
-    const located = (content: string) =>
-      fromHex && LOCATION_SECTIONS.includes(section) ? this.withHexLocation(content, fromHex) : content;
-    const tpl = linkNoteTemplate(section);
-    const path = linkNoteTemplatePathFor(this.settings, section);
-    if (!tpl || !path) return located("");
-    await this.ensureTemplateFile(path, tpl.starter);
-    const file = this.app.vault.getAbstractFileByPath(path);
-    let template = tpl.starter;
-    if (file instanceof TFile) {
-      try {
-        template = await this.app.vault.read(file);
-      } catch { /* use the default */ }
-    }
-    return located(fillNoteTemplate(template, title));
-  }
-
-  /** `content` with a `Location: [[hex|<map> x, y]]` line under its title (R3). */
-  withHexLocation(content: string, hexPath: string): string {
-    const loc = this.mapStore.resolve(hexPath);
-    const [x, y] = loc ? loc.key.split("_") : [];
-    const label = loc ? this.hexCoordAlias(loc.map, x, y) : this.hexLinkAlias(hexPath);
-    return withLocationLine(content, hexPath, label);
-  }
-
-  /**
-   * Ensure a hex template file exists on disk.
-   * - If templatePath is set and the file exists: no-op.
-   * - If templatePath is set but the file is missing: create it from the built-in default.
-   * - If templatePath is blank: create hex.md in the templates folder (PA3)
-   *   and persist the path.
-   */
-  async ensureHexTemplate(): Promise<void> {
-    let templatePath = normalizeFolder(this.settings.templatePath ?? "");
-    if (!templatePath) {
-      templatePath = hexTemplatePathFor(this.settings);
-      this.settings.templatePath = templatePath;
-      await this.saveSettings();
-    }
-    await this.ensureTemplateFile(templatePath, DEFAULT_HEX_TEMPLATE);
-  }
-
-  /**
-   * Create hex notes for every (x, y) in the cartesian product of xs × ys,
-   * skipping any that already exist on disk.  Returns the number of notes created.
-   */
-  /**
-   * Restore a missing map (SM-DEL): its note is written back from the last
-   * saved copy (see MapStore.restoreMissing). Says what it did.
-   */
-  async restoreMissingMap(name: string): Promise<boolean> {
-    const r = await this.mapStore.restoreMissing(name);
-    if ("error" in r) {
-      new Notice(r.error);
-      return false;
-    }
-    const how = r.source === "settings" ? " from its settings (no saved copy of its hexes was found)" : r.source === "note" ? " (its note was back)" : "";
-    new Notice(`Restored map "${this.mapLabel(name)}"${how}.`);
-    this.refreshHexMap();
-    return true;
-  }
-
-  /**
-   * Remove a map from the map list without touching files (a missing map's
-   * folder is already gone). Links to it in other maps are dropped and its
-   * regions and locations become top-level maps, as when deleting a map.
-   */
-  async removeMapEntry(name: string): Promise<void> {
-    this.settings.maps = this.settings.maps.filter((m) => m.name !== name);
-    if (this.settings.defaultMap === name) this.settings.defaultMap = this.settings.maps[0]?.name ?? "";
-    this.mapStore.forgetMap(name);
-    this.undoBook.forgetMap(name);
-    for (const m of this.settings.maps) {
-      for (const [key, h] of [...this.mapStore.all(m.name)]) {
-        const patch = removeMapPatch(h, name);
-        if (Object.keys(patch).length) this.mapStore.set(m.name, key, patch);
-      }
-      if (m.parent?.map === name) {
-        delete m.parent;
-        delete m.submapKind;
-      }
-    }
-    for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)) {
-      if (leaf.view instanceof HexMapView && leaf.view.activeMapName === name) leaf.view.activeMapName = this.settings.maps[0]?.name ?? "";
-    }
-    await this.saveSettings();
-    this.refreshHexMap();
-  }
-
-  async createNewMap(
-    rawName: string,
-    cols: number,
-    rows: number,
-    paletteName: string,
-    initialX = 0,
-    initialY = 0,
-    staggerOffset?: "odd" | "even",
-    onProgress?: (done: number, total: number) => void,
-    /** Optional generated terrain per hex, keyed "x_y". */
-    terrainAt?: Map<string, string>,
-    extra: {
-      /** Terrain shown on unpainted hexes. Cells equal to it aren't
-       *  written to the map note. Hex notes are created on use either way. */
-      baseTerrain?: string;
-      parent?: { map: string; hex: string };
-      /** Silence the "generated N notes" notice (caller reports instead). */
-      quiet?: boolean;
-      /** Folder name (slug) to use instead of one made from rawName (NAV2). */
-      slug?: string;
-      /** Hexes left to roll on arrival ("x_y" → table link), for the On arrival column. */
-      arrivals?: Map<string, string>;
-      /** Once rows the generator fired (SP6), written to the Events ledgers once the map exists. */
-      events?: FiredEvent[];
-    } = {},
-  ): Promise<{ name: string } | { error: string }> {
-    if (!rawName.trim()) return { error: "Enter a map name." };
-    const name = slugify(extra.slug?.trim() || rawName);
-    if (!name) return { error: extra.slug ? "Enter a folder name." : "Enter a map name." };
-    if (this.settings.maps.some((r) => r.name === name))
-      return { error: `Map "${name}" already exists.` };
-
-    await this.ensurePaletteInstalled(paletteName);
-
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
-    if (!this.app.vault.getAbstractFileByPath(folderPath)) {
-      try {
-        await this.app.vault.createFolder(folderPath);
-      } catch { /* already exists */ }
-    }
-
-    // The slug names the folder; the name as typed is what the UI shows.
-    const displayName = displayNameFor(rawName, name);
-    this.settings.maps.push({
-      name,
-      ...(displayName ? { displayName } : {}),
-      paletteName,
-      gridSize: { cols, rows },
-      gridOffset: { x: initialX, y: initialY },
-      pathChains: [],
-      staggerOffset,
-      createdWith: pluginVersion(this),
-      // The GM layer starts off on a new map (round 6 S7: it was on for a
-      // tester who never turned it on). Maps without the key keep the old
-      // "on" default, so existing maps don't change.
-      showGmLayer: false,
-      ...(extra.baseTerrain ? { baseTerrain: extra.baseTerrain } : {}),
-      ...(extra.parent ? { parent: extra.parent } : {}),
-    });
-    await this.saveSettings();
-
-    // Notes on use: a new map writes no hex notes — terrain goes into the
-    // map note, and a hex note appears when the hex first gets content.
-    const cells: [string, { terrain?: string; onArrival?: string }][] = [...(terrainAt ?? new Map<string, string>())]
-      .filter(([, t]) => t && t !== extra.baseTerrain)
-      .map(([k, t]): [string, { terrain?: string; onArrival?: string }] => [k, { terrain: t }]);
-    for (const [k, table] of extra.arrivals ?? []) {
-      const c = cells.find(([key]) => key === k);
-      if (c) c[1].onArrival = table;
-      else cells.push([k, { onArrival: table }]);
-    }
-    this.mapStore.setMany(name, cells);
-    onProgress?.(cols * rows, cols * rows);
-    await this.mapStore.flush();
-    await this.events.record(name, extra.events);
-    if (!extra.quiet) new Notice(`Created map "${displayName ?? name}".`);
-
-    return { name };
-  }
-
-  /**
-   * Set terrain for specific hexes ("x_y" → terrain). With map notes this
-   * writes map data only — hex notes are created when a hex gets content —
-   * so it returns 0 notes created. Falls back to creating notes only if the
-   * map store isn't ready yet.
-   */
-  async generateHexNotesAt(
-    mapName: string,
-    cells: [string, string][],
-    onProgress?: (done: number) => void,
-  ): Promise<number> {
-    if (this.mapStore.isReady()) {
-      this.mapStore.setMany(mapName, cells.filter(([, t]) => t).map(([k, t]) => [k, { terrain: t }]));
-      onProgress?.(cells.length);
-      await this.mapStore.flush();
-      return 0;
-    }
-    const template = await this.loadHexTemplate();
-    if (template === null) return 0;
-    let created = 0;
-    let done = 0;
-    const CHUNK = 20;
-    for (let i = 0; i < cells.length; i += CHUNK) {
-      await Promise.all(
-        cells.slice(i, i + CHUNK).map(async ([key, terrain]) => {
-          const [x, y] = key.split("_").map(Number);
-          if (!this.app.vault.getAbstractFileByPath(this.hexPath(x, y, mapName))) {
-            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
-          }
-          done++;
-        }),
-      );
-      onProgress?.(done);
-    }
-    return created;
-  }
-
-  async generateHexNotes(
-    mapName: string,
-    xs: number[],
-    ys: number[],
-    onProgress?: (done: number) => void,
-    terrainAt?: Map<string, string>,
-  ): Promise<number> {
-    if (this.mapStore.isReady()) {
-      const cells: [string, string][] = [];
-      for (const x of xs) for (const y of ys) {
-        const t = terrainAt?.get(`${x}_${y}`);
-        if (t) cells.push([`${x}_${y}`, t]);
-      }
-      if (cells.length) return this.generateHexNotesAt(mapName, cells);
-      onProgress?.(xs.length * ys.length);
-      return 0;
-    }
-    // Read template once — avoids N vault reads for the same file
-    const template = await this.loadHexTemplate();
-    if (template === null) return 0;
-
-    let created = 0;
-    let done = 0;
-    const CHUNK = 20;
-    const pairs: [number, number][] = [];
-    for (const x of xs) for (const y of ys) pairs.push([x, y]);
-    for (let i = 0; i < pairs.length; i += CHUNK) {
-      await Promise.all(
-        pairs.slice(i, i + CHUNK).map(async ([x, y]) => {
-          const path = this.hexPath(x, y, mapName);
-          if (!this.app.vault.getAbstractFileByPath(path)) {
-            const terrain = terrainAt?.get(`${x}_${y}`);
-            // createHexNote writes the terrain and its encounter link in one go.
-            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
-          }
-          done++;
-        }),
-      );
-      onProgress?.(done);
-    }
-    return created;
-  }
-
-  getMap(name: string): MapData | undefined {
-    return this.settings.maps.find((r) => r.name === name);
-  }
-
-  /** A map's name for the UI: its display name, else its slug (or `name` itself if unknown). */
-  mapLabel(name: string): string {
-    return mapLabel(this.getMap(name), name);
-  }
-
-  /**
-   * How a back-link to a hex note reads: the hex's name, else
-   * "<map> x, y" (round 6 S2). Paths outside the hex folder fall back to
-   * the note's name.
-   */
-  hexLinkAlias(hexPath: string): string {
-    const folder = normalizeFolder(this.settings.hexFolder);
-    const rel = folder && hexPath.startsWith(folder + "/") ? hexPath.slice(folder.length + 1) : hexPath;
-    const m = /^(.+)\/(-?\d+)_(-?\d+)\.md$/.exec(rel);
-    if (!m) return rel.replace(/^.*\//, "").replace(/\.md$/i, "");
-    const [, map, x, y] = m;
-    const name = this.mapStore.get(map, `${x}_${y}`)?.name?.trim();
-    return name || `${this.mapLabel(map)} ${x}, ${y}`;
-  }
-
-  /**
-   * Rename a map for display only: the folder, map note and every
-   * reference keep the slug. Blank (or the slug itself) clears it.
-   */
-  async setMapDisplayName(name: string, typed: string): Promise<void> {
-    const map = this.getMap(name);
-    if (!map) return;
-    const oldLabel = this.mapLabel(name);
-    map.displayName = displayNameFor(typed, name);
-    await this.saveSettings();
-    await this.syncMapCoordAliases(name, oldLabel);
-  }
-
-  getPaletteByName(name: string): TerrainPalette | undefined {
-    return this.settings.terrainPalettes.find((p) => p.name === name);
-  }
-
-  /**
-   * Terrains for an installed palette, or for a built-in preset that isn't
-   * installed yet (lets new-map dropdowns preview presets before install).
-   */
-  getPaletteOrPresetTerrains(name: string): TerrainColor[] {
-    return this.getPaletteByName(name)?.terrains ?? getPreset(name)?.terrains ?? [];
-  }
-
-  /** The map type of a palette (or a preset not installed yet): see paletteKind. */
-  getPaletteOrPresetKind(name: string): MapKind {
-    return paletteKind(this.getPaletteByName(name) ?? getPreset(name));
   }
 
   /**
@@ -2749,215 +461,6 @@ export default class HexmakerPlugin extends Plugin {
       await runOnEnabled(this, plan.newKinds);
     }
     this.onMapKindsChanged();
-  }
-
-  /**
-   * Path types maps on this palette can draw, in picker order: the palette's
-   * own list (the live array, so editors can change it in place), a preset's
-   * when it isn't installed, else the old plugin-wide list or Road and River.
-   */
-  getPathTypes(paletteName: string | undefined): PathType[] {
-    const pal = paletteName ? this.getPaletteByName(paletteName) : this.settings.terrainPalettes[0];
-    const fallback = this.settings.pathTypes?.length ? this.settings.pathTypes : DEFAULT_PATH_TYPES;
-    if (pal) return (pal.pathTypes ??= clonePathTypes(fallback));
-    return (paletteName ? getPreset(paletteName)?.pathTypes : undefined) ?? fallback;
-  }
-
-  /** The palette a map actually uses: its own when installed, else the first. */
-  mapPaletteName(mapName: string | undefined): string {
-    const map = mapName ? this.getMap(mapName) : undefined;
-    if (map?.paletteName && this.getPaletteByName(map.paletteName)) return map.paletteName;
-    return this.settings.terrainPalettes[0]?.name ?? "";
-  }
-
-  /** Path types for a map: its palette's (see getPathTypes). */
-  getMapPathTypes(mapName: string | undefined): PathType[] {
-    return this.getPathTypes(this.mapPaletteName(mapName));
-  }
-
-  /** Maps whose palette is `paletteName` (see mapPaletteName). */
-  mapsOnPalette(paletteName: string): MapData[] {
-    return this.settings.maps.filter((m) => this.mapPaletteName(m.name) === paletteName);
-  }
-
-  /**
-   * Add a copy of a built-in preset as a new palette (a unique name is chosen
-   * if the preset's name is taken), with the preset's path types. Saves;
-   * the palette note is written by the sync that follows. Returns the new
-   * palette's name.
-   */
-  async installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> {
-    const preset = getPreset(presetName);
-    if (!preset) return undefined;
-    const name = uniquePaletteName(
-      asName ?? preset.name,
-      this.settings.terrainPalettes.map((p) => p.name),
-    );
-    const palette = presetToPalette(preset, name);
-    this.settings.terrainPalettes.push(palette);
-    await this.saveSettings();
-    // Give the new terrains their description/encounters tables when the
-    // vault uses terrain tables, so a submap's hexes get an encounters
-    // table like the parent's (round 7: a system map installed "Space -
-    // System" and its "ice planet" hex showed Encounters Table "None").
-    await this.ensureTablesForNewTerrains();
-    // Installed on first use by a new map: expected, so no notice (F12).
-    if (!opts.quiet) new Notice(`Added palette "${name}".`);
-    return name;
-  }
-
-  /**
-   * Palette to pre-select for a new submap of `parentMap`: the parent
-   * palette's `childPalette` (its note's `child-palette`; the preset's only
-   * while that preset isn't installed), else the parent's own palette, else
-   * the palette for new maps. An installed palette is never topped up from
-   * a same-named preset: clearing its child palette means none.
-   */
-  childPaletteFor(parentMap: string): string {
-    const parentPaletteName = this.getMap(parentMap)?.paletteName;
-    const parentPalette = parentPaletteName ? this.getPaletteByName(parentPaletteName) : undefined;
-    const child = parentPalette
-      ? parentPalette.childPalette
-      : parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined;
-    if (child && (this.getPaletteByName(child) || getPreset(child))) return child;
-    if (parentPalette) return parentPalette.name;
-    return defaultPaletteFor(this.settings);
-  }
-
-  /**
-   * Add `childMap` to the Locations of hex (x, y) on `parentMap` (K7: any
-   * number per hex) and record the parent on the child map (first link
-   * wins, so linking a shared map from a second hex doesn't move its
-   * breadcrumb).
-   */
-  async linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> {
-    if (childMap === parentMap) return;
-    const key = `${x}_${y}`;
-    const patch = addLocationPatch(this.mapStore.get(parentMap, key), childMap);
-    if (patch.locations && !this.mapStore.set(parentMap, key, patch, action)) return;
-    this.noParentMaps.clear();
-    const child = this.getMap(childMap);
-    if (child && !child.parent) {
-      child.parent = { map: parentMap, hex: key };
-      child.submapKind = "location";
-      await this.saveSettings();
-    }
-  }
-
-  /**
-   * Make `childMap` the Region map of hex (x, y) on `parentMap`: the child
-   * becomes a region of it (its record is the truth; the hex mirrors it).
-   * Refused when the hex already has another region (one per hex).
-   */
-  async linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> {
-    const key = `${x}_${y}`;
-    const other = regionMapAt(this.settings.maps, parentMap, key);
-    if (childMap === parentMap || (other && other.name !== childMap)) return false;
-    const child = this.getMap(childMap);
-    if (!child) return false;
-    child.parent = { map: parentMap, hex: key };
-    child.submapKind = "region";
-    this.mapStore.set(parentMap, key, setRegionPatch(this.mapStore.get(parentMap, key), childMap));
-    this.noParentMaps.clear();
-    await this.saveSettings();
-    return true;
-  }
-
-  /**
-   * Unlink `childMap` (or, without one, every map) from hex (x, y): its
-   * region and/or locations. A child whose parent was this hex loses it.
-   */
-  async unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> {
-    const key = `${x}_${y}`;
-    const h = this.mapStore.get(parentMap, key);
-    const names = childMap ? [childMap] : hexChildMaps(h);
-    let changed = false;
-    for (const n of names) {
-      const patch = removeMapPatch(this.mapStore.get(parentMap, key), n);
-      if (Object.keys(patch).length && !this.mapStore.set(parentMap, key, patch, "link-map")) continue;
-      const child = this.getMap(n);
-      if (child?.parent?.map === parentMap && child.parent.hex === key) {
-        delete child.parent;
-        // A region without its hex is just a map (it keeps its world slot).
-        delete child.submapKind;
-        changed = true;
-      }
-    }
-    this.noParentMaps.clear();
-    if (changed) await this.saveSettings();
-  }
-
-  /** Reorder the Locations of hex (x, y). */
-  setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void {
-    this.mapStore.set(parentMap, `${x}_${y}`, { locations: locations.length ? locations : null }, "link-map");
-  }
-
-  /** Save region settings on `mapName` (fixed fields stay put while it has regions). */
-  async setRegionSettings(mapName: string, next: RegionSettings): Promise<void> {
-    const map = this.getMap(mapName);
-    if (!map) return;
-    const locked = regionsLocked(this.settings.maps, mapName);
-    const first = !map.regions;
-    map.regions = map.regions ? applyRegionSettingsEdit(map.regions, next, locked) : next;
-    await this.saveSettings();
-    // The first overworld: its biomes need the shipped biome notes (DJ-Q4).
-    if (first) await this.ensureOverworldBiomes();
-  }
-
-  /**
-   * The map `mapName` was opened from (as a region or location). Uses the
-   * stored parent; for maps linked before parents were stored, scans the
-   * hexes' Region map and Locations for it and remembers the first hit.
-   */
-  parentOf(mapName: string): { map: string; hex: string } | undefined {
-    const map = this.getMap(mapName);
-    if (!map) return undefined;
-    if (map.parent && this.getMap(map.parent.map)) return map.parent;
-    // Root maps have no parent; don't rescan the hex notes on every switch.
-    if (this.noParentMaps.has(mapName)) return undefined;
-    for (const m of this.settings.maps) {
-      if (m.name === mapName) continue;
-      for (const [key, h] of this.mapStore.all(m.name)) {
-        if (h.regionMap !== mapName && !h.locations?.includes(mapName)) continue;
-        map.parent = { map: m.name, hex: key };
-        void this.saveSettings();
-        return map.parent;
-      }
-    }
-    this.noParentMaps.add(mapName);
-    return undefined;
-  }
-
-  /**
-   * Each generator role's table set on `mapName` or the nearest map above
-   * it (Map properties → Tables, T11), with the map that set it.
-   */
-  roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> {
-    return inheritedRoleTables(mapName, (m) => this.getMap(m)?.roleTables, (m) => this.parentOf(m)?.map);
-  }
-
-  /**
-   * A name for a map made from hex `hexKey` of `parentMap`, rolled on the
-   * Names table set there or on a map above it (the Names role), with the
-   * hex's terrain and type as When context. Undefined with no table (the
-   * caller uses the hex's terrain and coordinates). Seeded with `seed`.
-   */
-  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined {
-    const link = this.roleTablesFor(parentMap)[NAMES_ROLE.id]?.link;
-    if (!link) return undefined;
-    const terrain = this.mapStore.get(parentMap, hexKey)?.terrain ?? this.getMap(parentMap)?.baseTerrain;
-    const entry = terrain ? this.getMapPalette(parentMap).find((t) => t.name === terrain) : undefined;
-    const type = entry ? effectiveTerrainType(entry) : undefined;
-    return rollMapName(link, this.tableNotes.lookup(), {
-      ...(terrain ? { terrain } : {}),
-      ...(type ? { type } : {}),
-      ...(seed !== undefined ? { seed } : {}),
-    });
-  }
-
-  /** "When you arrive somewhere new" for `mapName`: its own setting, else the nearest map above it's, else off. */
-  arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } {
-    return effectiveArrivalMode(mapName, (m) => this.getMap(m)?.arrivalMode, (m) => this.parentOf(m)?.map);
   }
 
   /**
@@ -3005,91 +508,6 @@ export default class HexmakerPlugin extends Plugin {
     await hit.command.run(this);
   }
 
-  /** Maps whose parent scan came up empty this session (cleared on any link change). */
-  private noParentMaps = new Set<string>();
-
-  /**
-   * Saved setup for a new submap made from a `terrain` hex on `parentMap`:
-   * the parent palette's Submap defaults row for that terrain (from its
-   * note). Only a preset that isn't installed answers from its own rows;
-   * palettes installed before their preset gained defaults got the rows
-   * copied in once (PaletteStore, `paletteDataUpgraded`), so a row the user
-   * deletes stays deleted.
-   */
-  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined {
-    if (!terrain) return undefined;
-    const paletteName = this.getMap(parentMap)?.paletteName;
-    if (!paletteName) return undefined;
-    const pal = this.getPaletteByName(paletteName);
-    if (pal) return pal.submapDefaults?.[terrain];
-    return getPreset(paletteName)?.submapDefaults?.[terrain];
-  }
-
-  /**
-   * Remember (or forget) choices for new submaps of `terrain` on the parent
-   * map's palette. `set` fields are stored; `clear` fields are removed.
-   * Saved into the palette note's Submap defaults table by the sync.
-   */
-  async saveSubmapDefault(
-    parentMap: string,
-    terrain: string,
-    set: SubmapDefault,
-    clear: (keyof SubmapDefault)[],
-  ): Promise<void> {
-    const paletteName = this.getMap(parentMap)?.paletteName;
-    const pal = paletteName ? this.getPaletteByName(paletteName) : undefined;
-    if (!pal) return;
-    // Start from what the user currently sees (see submapDefaultFor).
-    const current: SubmapDefault = { ...(this.submapDefaultFor(parentMap, terrain) ?? {}) };
-    for (const k of clear) delete current[k];
-    Object.assign(current, set);
-    const defaults = { ...(pal.submapDefaults ?? {}) };
-    if (Object.keys(current).length) defaults[terrain] = current;
-    else delete defaults[terrain];
-    if (Object.keys(defaults).length) pal.submapDefaults = defaults;
-    else delete pal.submapDefaults;
-    await this.saveSettings();
-  }
-
-  /** The built-in default palettes (a fresh install's) that aren't in the palette list. */
-  missingDefaultPalettes(): string[] {
-    return missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes).map((p) => p.name);
-  }
-
-  /**
-   * Put back the default palettes that aren't there (only ever on request:
-   * palettes the user deleted stay deleted). Returns the names added.
-   */
-  async addDefaultPalettes(): Promise<string[]> {
-    const add = this.missingDefaultPalettes();
-    for (const p of missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes)) {
-      this.settings.terrainPalettes.push(clonePalette(p));
-    }
-    if (!add.length) return add;
-    // Same as a fresh install's: path types from the shipped list.
-    fillPalettePathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
-    await this.saveSettings();
-    await this.ensureTablesForNewTerrains();
-    new Notice(`Added ${add.join(" and ")}.`);
-    return add;
-  }
-
-  /** Install `name` from the presets if no palette by that name exists yet. */
-  async ensurePaletteInstalled(name: string): Promise<void> {
-    if (this.getPaletteByName(name) || !getPreset(name)) return;
-    // A new map installing its palette is expected: no notice (F12).
-    await this.installPalettePreset(name, undefined, { quiet: true });
-  }
-
-  getMapPalette(mapName: string): TerrainColor[] {
-    const map = this.getMap(mapName);
-    return (
-      this.getPaletteByName(map?.paletteName ?? "")?.terrains ??
-      this.settings.terrainPalettes[0]?.terrains ??
-      []
-    );
-  }
-
   /**
    * The map types in context on `mapName`: its palette's and every
    * ancestor map's (a planet submap of a star system is in space). A type
@@ -3117,41 +535,110 @@ export default class HexmakerPlugin extends Plugin {
     return sectionWordsIn(this, mapName);
   }
 
-  getAllTerrains(): TerrainColor[] {
-    const seen = new Set<string>();
-    const result: TerrainColor[] = [];
-    for (const pal of this.settings.terrainPalettes) {
-      for (const t of pal.terrains) {
-        if (!seen.has(t.name)) {
-          seen.add(t.name);
-          result.push(t);
-        }
-      }
-    }
-    return result;
-  }
+  // One-line delegations: the code lives in the services; callers, tests and
+  // module code keep calling the plugin.
 
-  getOrCreateMap(name: string): MapData {
-    let r = this.getMap(name);
-    if (!r) {
-      r = {
-        name,
-        paletteName: defaultPaletteFor(this.settings),
-        gridSize: { cols: 20, rows: 16 },
-        gridOffset: { x: 0, y: 0 },
-        pathChains: [],
-      };
-      this.settings.maps.push(r);
-    }
-    return r;
-  }
+  // ── Settings on disk (src/plugin/settingsPersistence.ts) ──
+  loadSettings(): Promise<void> { return this.settingsIO.loadSettings(); }
+  async saveData(data: unknown): Promise<void> { return this.settingsIO.saveData(data); }
+  private finishStartupUpgrades(): Promise<void> { return this.settingsIO.finishStartupUpgrades(); }
+  saveSettings(): Promise<void> { return this.settingsIO.saveSettings(); }
+  onExternalSettingsChange(): Promise<void> { return this.settingsIO.onExternalSettingsChange(); }
 
-  /** Pre-1.0 hex notes loose in the hexes folder move into the "default" map's folder. */
-  private async migrateHexFilesToDefaultRegion(): Promise<void> {
-    const moved = await migrateFlatHexNotes(this.app, this.settings.hexFolder);
-    if (moved > 0)
-      noticeBackground(
-        `migrated ${moved} hex file(s) to "default" region.`,
-      );
-  }
+  // ── Maps (src/services/MapsService.ts) ──
+  showMap(name: string): Promise<void> { return this.maps.showMap(name); }
+  setMapWorkMode(mapName: string, mode: WorkMode): void { return this.maps.setMapWorkMode(mapName, mode); }
+  autoRegisterMapsFromVault(): Promise<void> { return this.maps.autoRegisterMapsFromVault(); }
+  updateSubmapReferences(oldName: string, newName: string): Promise<void> { return this.maps.updateSubmapReferences(oldName, newName); }
+  restoreMissingMap(name: string): Promise<boolean> { return this.maps.restoreMissingMap(name); }
+  removeMapEntry(name: string): Promise<void> { return this.maps.removeMapEntry(name); }
+  createNewMap(opts: NewMapOptions): Promise<{ name: string } | { error: string }> { return this.maps.createNewMap(opts); }
+  getMap(name: string): MapData | undefined { return this.maps.getMap(name); }
+  mapLabel(name: string): string { return this.maps.mapLabel(name); }
+  setMapDisplayName(name: string, typed: string): Promise<void> { return this.maps.setMapDisplayName(name, typed); }
+  linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> { return this.maps.linkSubmap(parentMap, x, y, childMap, action); }
+  linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> { return this.maps.linkRegion(parentMap, x, y, childMap); }
+  unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> { return this.maps.unlinkSubmap(parentMap, x, y, childMap); }
+  setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void { return this.maps.setHexLocations(parentMap, x, y, locations); }
+  setRegionSettings(mapName: string, next: RegionSettings): Promise<void> { return this.maps.setRegionSettings(mapName, next); }
+  parentOf(mapName: string): { map: string; hex: string } | undefined { return this.maps.parentOf(mapName); }
+  roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> { return this.maps.roleTablesFor(mapName); }
+  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined { return this.maps.rolledMapName(parentMap, hexKey, seed); }
+  arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } { return this.maps.arrivalModeFor(mapName); }
+  getOrCreateMap(name: string): MapData { return this.maps.getOrCreateMap(name); }
+
+  // ── Palettes (src/services/PaletteQueries.ts) ──
+  getPaletteByName(name: string): TerrainPalette | undefined { return this.palettes.getPaletteByName(name); }
+  getPaletteOrPresetTerrains(name: string): TerrainColor[] { return this.palettes.getPaletteOrPresetTerrains(name); }
+  getPaletteOrPresetKind(name: string): MapKind { return this.palettes.getPaletteOrPresetKind(name); }
+  getPathTypes(paletteName: string | undefined): PathType[] { return this.palettes.getPathTypes(paletteName); }
+  mapPaletteName(mapName: string | undefined): string { return this.palettes.mapPaletteName(mapName); }
+  getMapPathTypes(mapName: string | undefined): PathType[] { return this.palettes.getMapPathTypes(mapName); }
+  mapsOnPalette(paletteName: string): MapData[] { return this.palettes.mapsOnPalette(paletteName); }
+  installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> { return this.palettes.installPalettePreset(presetName, asName, opts); }
+  childPaletteFor(parentMap: string): string { return this.palettes.childPaletteFor(parentMap); }
+  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined { return this.palettes.submapDefaultFor(parentMap, terrain); }
+  saveSubmapDefault(parentMap: string, terrain: string, set: SubmapDefault, clear: (keyof SubmapDefault)[]): Promise<void> { return this.palettes.saveSubmapDefault(parentMap, terrain, set, clear); }
+  missingDefaultPalettes(): string[] { return this.palettes.missingDefaultPalettes(); }
+  addDefaultPalettes(): Promise<string[]> { return this.palettes.addDefaultPalettes(); }
+  ensurePaletteInstalled(name: string): Promise<void> { return this.palettes.ensurePaletteInstalled(name); }
+  getMapPalette(mapName: string): TerrainColor[] { return this.palettes.getMapPalette(mapName); }
+  getAllTerrains(): TerrainColor[] { return this.palettes.getAllTerrains(); }
+
+  // ── Hex, region and faction notes (src/services/HexNotesService.ts) ──
+  isHexFile(file: TFile): boolean { return this.hexNotes.isHexFile(file); }
+  hexPath(x: number, y: number, mapName: string): string { return this.hexNotes.hexPath(x, y, mapName); }
+  setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> { return this.hexNotes.setHexName(mapName, x, y, raw); }
+  hexCoordAlias(mapName: string, x: number | string, y: number | string): string { return this.hexNotes.hexCoordAlias(mapName, x, y); }
+  syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> { return this.hexNotes.syncMapCoordAliases(mapName, oldLabel); }
+  createHexNote(x: number, y: number, mapName: string, preloadedTemplate?: string, terrain?: string): Promise<TFile | null> { return this.hexNotes.createHexNote(x, y, mapName, preloadedTemplate, terrain); }
+  appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> { return this.hexNotes.appendToHexSection(x, y, mapName, section, text); }
+  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView { return this.hexNotes.hexMapDataView(mapName, x, y); }
+  refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> { return this.hexNotes.refreshHexMapData(mapName, x, y, insert); }
+  syncHexMapData(mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {}): Promise<CalloutSyncResult> { return this.hexNotes.syncHexMapData(mapName, x, y, opts); }
+  addMapDataToHexNotes(mapName: string): Promise<number> { return this.hexNotes.addMapDataToHexNotes(mapName); }
+  regionOrFactionKind(file: TFile): "region" | "faction" | null { return this.hexNotes.regionOrFactionKind(file); }
+  regionAndFactionNotes(): TFile[] { return this.hexNotes.regionAndFactionNotes(); }
+  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView { return this.hexNotes.regionMapDataView(file, kind); }
+  refreshRegionMapData(file: TFile, insert = false): Promise<boolean> { return this.hexNotes.refreshRegionMapData(file, insert); }
+  updateRegionFactionMapData(): Promise<number> { return this.hexNotes.updateRegionFactionMapData(); }
+  renameRegionInMaps(oldName: string, newName: string): number { return this.hexNotes.renameRegionInMaps(oldName, newName); }
+  updateTokenMapReferences(oldName: string, newName: string): Promise<number> { return this.hexNotes.updateTokenMapReferences(oldName, newName); }
+  generateHexNotesAt(mapName: string, cells: [string, string][], onProgress?: (done: number) => void): Promise<number> { return this.hexNotes.generateHexNotesAt(mapName, cells, onProgress); }
+  generateHexNotes(mapName: string, xs: number[], ys: number[], onProgress?: (done: number) => void, terrainAt?: Map<string, string>): Promise<number> { return this.hexNotes.generateHexNotes(mapName, xs, ys, onProgress, terrainAt); }
+  hexLinkAlias(hexPath: string): string { return this.hexNotes.hexLinkAlias(hexPath); }
+
+  // ── Note templates (src/services/TemplatesService.ts) ──
+  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean { return this.templates.isLinkableNote(file, purpose); }
+  loadHexTemplate(): Promise<string> { return this.templates.loadHexTemplate(); }
+  templatesFolder(): string { return this.templates.templatesFolder(); }
+  ensureTemplates(): Promise<void> { return this.templates.ensureTemplates(); }
+  openNoteTemplate(path: string): Promise<void> { return this.templates.openNoteTemplate(path); }
+  newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> { return this.templates.newLinkedNoteContent(section, title, fromHex); }
+  withHexLocation(content: string, hexPath: string): string { return this.templates.withHexLocation(content, hexPath); }
+  ensureHexTemplate(): Promise<void> { return this.templates.ensureHexTemplate(); }
+
+  // ── Terrain and area tables (src/services/TerrainTablesService.ts) ──
+  filterTableFiles(files: TFile[], filterKey: "roll-filter" | "encounter-filter", excludedFolders: string[]): TFile[] { return this.terrainTables.filterTableFiles(files, filterKey, excludedFolders); }
+  buildRollerLink(): string { return this.terrainTables.buildRollerLink(); }
+  ensureRollerLink(filePath: string): Promise<boolean> { return this.terrainTables.ensureRollerLink(filePath); }
+  installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> { return this.terrainTables.installShippedTables(kinds); }
+  ensureAllRollerLinks(): Promise<void> { return this.terrainTables.ensureAllRollerLinks(); }
+  ensureTerrainTables(terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)), kinds: Iterable<string> = enabledKinds(this.settings)): Promise<void> { return this.terrainTables.ensureTerrainTables(terrains, kinds); }
+  tableTerrains(): TerrainColor[] { return this.terrainTables.tableTerrains(); }
+  ensureTablesForNewTerrains(): Promise<void> { return this.terrainTables.ensureTablesForNewTerrains(); }
+  backfillTerrainLinks(): Promise<void> { return this.terrainTables.backfillTerrainLinks(); }
+  hasTerrainEncounterTable(terrain: string): boolean { return this.terrainTables.hasTerrainEncounterTable(terrain); }
+  terrainEncounterTable(terrain: string): TFile | null { return this.terrainTables.terrainEncounterTable(terrain); }
+  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null { return this.terrainTables.terrainEncounterLinkFor(mapName, x, y, sourcePath); }
+  areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null { return this.terrainTables.areaEncounterTableFor(mapName, x, y); }
+  syncHexEncounterTableLink(hexFilePath: string, terrain: string | null): Promise<void> { return this.terrainTables.syncHexEncounterTableLink(hexFilePath, terrain); }
+  refreshAllTerrainEncounterLinks(): Promise<void> { return this.terrainTables.refreshAllTerrainEncounterLinks(); }
+  ensureRegionTable(regionName: string): Promise<void> { return this.terrainTables.ensureRegionTable(regionName); }
+  syncHexRegionTableLink(hexFilePath: string, regionName: string | null): Promise<void> { return this.terrainTables.syncHexRegionTableLink(hexFilePath, regionName); }
+  backfillRegionLinks(): Promise<void> { return this.terrainTables.backfillRegionLinks(); }
+  renameTerrainInHexes(oldName: string, newName: string, paletteName?: string): Promise<Map<string, string>> { return this.terrainTables.renameTerrainInHexes(oldName, newName, paletteName); }
+  renameTerrain(entry: TerrainColor, newName: string): Promise<void> { return this.terrainTables.renameTerrain(entry, newName); }
+  terrainTableFiles(name: string): TFile[] { return this.terrainTables.terrainTableFiles(name); }
+  renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> { return this.terrainTables.renameTerrainEverywhere(paletteName, oldName, newName); }
 }

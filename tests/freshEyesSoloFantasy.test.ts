@@ -283,7 +283,7 @@ describe("F19: the wizard writes nothing before the world folder is confirmed", 
 
 	it("the plugin starts its stores through the gate; closing the wizard or opening a map releases it", () => {
 		const plugin = readSurface("plugin");
-		expect(plugin).toContain("const storesReady = gate.wait.then(() => this.paletteStore.init()).then(() => this.mapStore.init());");
+		expect(plugin).toContain("const storesReady = gate.wait.then(() => plugin.paletteStore.init()).then(() => plugin.mapStore.init());");
 		expect(readSurface("setup-wizard")).toMatch(/async onClose\(\) \{\n\t\t\/\/[^\n]*\n\t\tthis\.plugin\.releaseStartupWrites\(\);/);
 		expect(readSurface("map-view")).toMatch(/onOpen\(\): Promise<void> \{\n[^\n]*\n\s+this\.plugin\.releaseStartupWrites\(\);/);
 	});

@@ -143,7 +143,7 @@ export class HexPropsSync {
     else this.memory.forget(path);
   }
 
-  // ── events (wired in src/plugin/hexPropsEvents.ts) ───────────────────
+  // ── events (wired in src/plugin/vaultEvents.ts) ──────────────────────
 
   mapChanged(map: string): void {
     if (!this.running) return;

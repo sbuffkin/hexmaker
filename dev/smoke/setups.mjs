@@ -135,7 +135,7 @@ function recipeSpace(id) {
     const system = has("Space - System") ? "Space - System" : await p.installPalettePreset("Space - System");
     const made = [];
     const mk = async (name, cols, rows, pal, parent) => {
-      const r = await p.createNewMap(name, cols, rows, pal, 0, 0, undefined, undefined, undefined, { quiet: true, ...(parent ? { parent } : {}) });
+      const r = await p.createNewMap({ name, cols, rows, palette: pal, quiet: true, ...(parent ? { parent } : {}) });
       if ("error" in r) throw new Error(r.error);
       made.push(r.name);
       return r.name;
@@ -205,7 +205,7 @@ function recipeNeighbours(id) {
     const slots = [[0, 0], [1, 0], [0, 1], [1, 1]];
     for (const [i, [cx, cy]] of slots.entries()) {
       // Legacy worlds: every map numbers its own hexes from 0 (no shared coordinates).
-      const r = await p.createNewMap(`Shire ${String.fromCharCode(65 + i)}`, 10, 8, pal, 0, 0, "odd", undefined, undefined, { quiet: true });
+      const r = await p.createNewMap({ name: `Shire ${String.fromCharCode(65 + i)}`, cols: 10, rows: 8, palette: pal, stagger: "odd", quiet: true });
       if ("error" in r) throw new Error(r.error);
       p.getMap(r.name).world = { id: wid, cx, cy };
       const terr = p.getMapPalette(r.name).map((t) => t.name);
@@ -250,7 +250,7 @@ function recipeCustomPalette(id) {
     await sleep(1500);
     // The default map from a fresh install (on a default palette) goes too.
     for (const m of [...p.settings.maps]) if (m.paletteName !== "Moorland") p.settings.maps.splice(p.settings.maps.indexOf(m), 1);
-    const r = await p.createNewMap("The Moor", 9, 7, "Moorland", 0, 0, undefined, undefined, undefined, { quiet: true });
+    const r = await p.createNewMap({ name: "The Moor", cols: 9, rows: 7, palette: "Moorland", quiet: true });
     if ("error" in r) throw new Error(r.error);
     p.settings.defaultMap = r.name;
     const terr = ["bog", "crag", "heath", "tarn", "barrow"];
@@ -271,7 +271,7 @@ function recipeDeleted(id) {
     const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
     const made = [];
     for (const n of ["Gone One", "Gone Two"]) {
-      const r = await p.createNewMap(n, 8, 6, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
+      const r = await p.createNewMap({ name: n, cols: 8, rows: 6, palette: pal, quiet: true });
       if ("error" in r) throw new Error(r.error);
       const terr = p.getMapPalette(r.name).map((t) => t.name);
       p.mapStore.setMany(r.name, [["1_1", { terrain: terr[0] }], ["2_2", { terrain: terr[1] }], ["3_3", { terrain: terr[2] }]]);
@@ -297,7 +297,7 @@ function recipeManyMaps(id) {
     const made = [];
     const errors = [];
     const mk = async (raw, parent) => {
-      const r = await p.createNewMap(raw, 6, 5, pal, 0, 0, undefined, undefined, undefined, { quiet: true, ...(parent ? { parent: { map: parent, hex: "2_2" } } : {}) });
+      const r = await p.createNewMap({ name: raw, cols: 6, rows: 5, palette: pal, quiet: true, ...(parent ? { parent: { map: parent, hex: "2_2" } } : {}) });
       if ("error" in r) { errors.push(`${raw}: ${r.error}`); return null; }
       const terr = p.getMapPalette(r.name).map((t) => t.name);
       p.mapStore.setMany(r.name, [["0_0", { terrain: terr[made.length % terr.length] }], ["2_2", { terrain: terr[(made.length + 1) % terr.length] }]]);
@@ -337,7 +337,7 @@ async function freshExtra(ctx) {
     const app = window.app, p = app.plugins.plugins[id];
     const t = Date.now();
     const pal = p.settings.defaultPalette ?? p.settings.terrainPalettes[0].name;
-    const res = await p.createNewMap("Smoke Fresh", 8, 6, pal, 0, 0, undefined, undefined, undefined, { quiet: true });
+    const res = await p.createNewMap({ name: "Smoke Fresh", cols: 8, rows: 6, palette: pal, quiet: true });
     if ("error" in res) return { error: res.error };
     const terr = p.getMapPalette(res.name).map((x) => x.name);
     p.mapStore.set(res.name, "1_1", { terrain: terr[0] });

@@ -132,9 +132,9 @@ for (const held of [false, true]) {
 	describe(`incident 2026-10-14: region fields set after createNewMap reach the note (${when})`, () => {
 		it("createNewMap, then the follow-up settings writes (world slot, kind, arrival)", async () => {
 			await check(held, async (p) => {
-				const make = p.createNewMap as (...a: unknown[]) => Promise<{ name: string }>;
-				const ow = await make.call(p, "Top", 4, 4, "Default", 0, 0, "odd", undefined, undefined, { quiet: true });
-				const child = await make.call(p, "Child", 8, 8, "Default", 0, 0, "odd", undefined, new Map([["1_1", "forest"]]), { quiet: true, parent: { map: ow.name, hex: "1_1" } });
+				const make = p.createNewMap as (opts: Record<string, unknown>) => Promise<{ name: string }>;
+				const ow = await make.call(p, { name: "Top", cols: 4, rows: 4, palette: "Default", stagger: "odd", quiet: true });
+				const child = await make.call(p, { name: "Child", cols: 8, rows: 8, palette: "Default", stagger: "odd", terrain: new Map([["1_1", "forest"]]), quiet: true, parent: { map: ow.name, hex: "1_1" } });
 				const m = p.getMap(child.name)!;
 				m.world = { id: "w1", cx: 1, cy: 1 };
 				m.arrival = "open";

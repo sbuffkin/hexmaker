@@ -67,7 +67,7 @@ describe("S13: installing a palette gives its terrains their tables", () => {
 		const src = readSurface("plugin");
 		const m = /async installPalettePreset[\s\S]*?\n {2}\}/.exec(src);
 		// HG5: the save gives new terrains their tables; the install waits for them.
-		expect(m![0]).toMatch(/await this\.ensureTablesForNewTerrains\(\)/);
+		expect(m![0]).toMatch(/await this\.(plugin\.)?ensureTablesForNewTerrains\(\)/);
 	});
 });
 

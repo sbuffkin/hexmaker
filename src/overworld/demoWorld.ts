@@ -45,7 +45,7 @@ export async function buildOverworld(
   const o = plugin.settings.hexOrientation, s = plugin.settings.staggerOffset ?? "odd";
   const palette = plugin.getPaletteOrPresetTerrains(EXPANDED_PALETTE_NAME);
   const world = worldBiomes(opts.cells, o, s, palette, { seed: opts.seed, climate: "varied", water: opts.water ?? 0.3 });
-  const res = await plugin.createNewMap(opts.name, opts.cols, opts.rows, EXPANDED_PALETTE_NAME, 0, 0, s, undefined, world.terrain, { quiet: true });
+  const res = await plugin.createNewMap({ name: opts.name, cols: opts.cols, rows: opts.rows, palette: EXPANDED_PALETTE_NAME, stagger: s, terrain: world.terrain, quiet: true });
   if ("error" in res) throw new Error(res.error);
   const map = plugin.getMap(res.name)!;
   map.regions = withMeshFields({ footprint: "rect", size: opts.regionSize, blend: "normal", palette: EXPANDED_PALETTE_NAME }, s, newWorldId);
@@ -90,7 +90,7 @@ export async function buildDemoWorld(plugin: HexmakerPlugin, opts: { seed?: numb
   // Locations: three on the centre hex, one more elsewhere (blank stubs: no town/dungeon generators yet).
   const locations: string[] = [];
   const stub = async (name: string, hx: number, hy: number) => {
-    const r = await plugin.createNewMap(name, 6, 6, EXPANDED_PALETTE_NAME, 0, 0, s, undefined, new Map([["2_2", "urban"]]), { quiet: true });
+    const r = await plugin.createNewMap({ name, cols: 6, rows: 6, palette: EXPANDED_PALETTE_NAME, stagger: s, terrain: new Map([["2_2", "urban"]]), quiet: true });
     if ("error" in r) return;
     await plugin.linkSubmap(ow.name, hx, hy, r.name);
     locations.push(r.name);

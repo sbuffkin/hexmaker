@@ -41,7 +41,7 @@ export async function hexFlowerSolo(id) {
   const seed = 4242;
   const gen = kind.generate({ terrains, grid, seed, options });
   if (!gen.ok) return { ok: false, steps: [], problems: ["generate: " + gen.message] };
-  const res = await p.createNewMap("Smoke Flower", 9, 7, pal, 0, 0, undefined, undefined, gen.cells, { quiet: true });
+  const res = await p.createNewMap({ name: "Smoke Flower", cols: 9, rows: 7, palette: pal, terrain: gen.cells, quiet: true });
   if ("error" in res) return { ok: false, steps: [], problems: ["create: " + res.error] };
   const name = res.name;
   await kind.afterCreate(p, { mapName: name, generatorId: kind.id, options, seed, grid, paletteName: pal, choices: {}, onProgress: () => {} });

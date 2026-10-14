@@ -311,7 +311,7 @@ describe("HG5: new terrains get their tables", () => {
 	it("runs after every save and palette-note import, creates empty tables, and moves them on rename", () => {
 		const src = readSurface("plugin");
 		const save = /async saveSettings\(\)[\s\S]*?\n {2}\}/.exec(src)![0];
-		expect(save).toMatch(/void this\.ensureTablesForNewTerrains\(\)/);
+		expect(save).toMatch(/void this\.(plugin\.)?ensureTablesForNewTerrains\(\)/);
 		expect(read("src", "palettes", "PaletteStore.ts")).toMatch(/ensureTablesForNewTerrains\(\)/);
 		const create = /private async createTerrainTableFiles[\s\S]*?\n {2}\}/.exec(src)![0];
 		// The usual template with no rows: makeTableTemplate(dice, fm, link) — no 4th (rows) argument.

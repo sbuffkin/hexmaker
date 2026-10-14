@@ -31,6 +31,7 @@ import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
 import type { GeneratorHelpers } from "../src/modules/types";
 import { Notice } from "obsidian";
 import type { MapData, TerrainColor } from "../src/types";
+import type { NewMapOptions } from "../src/services/MapsService";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
@@ -108,7 +109,9 @@ function world() {
 		saveData: async () => {},
 		refreshHexMap: () => {},
 		saveSettings: async () => { p.saves++; await p.mapStore.sync(); },
-		async createNewMap(raw: string, cols: number, rows: number, paletteName: string, ox: number, oy: number, stagger: "odd" | "even", _prog: unknown, cells: Map<string, string> | undefined, extra: { baseTerrain?: string; parent?: { map: string; hex: string }; slug?: string; arrivals?: Map<string, string> }) {
+		async createNewMap(extra: NewMapOptions) {
+			const { name: raw, cols, rows, palette: paletteName, stagger, terrain: cells } = extra;
+			const ox = extra.offset?.x ?? 0, oy = extra.offset?.y ?? 0;
 			const name = slugify(extra.slug || raw);
 			maps.push({ name, displayName: raw, paletteName, gridSize: { cols, rows }, gridOffset: { x: ox, y: oy }, pathChains: [], staggerOffset: stagger, ...(extra.baseTerrain ? { baseTerrain: extra.baseTerrain } : {}), ...(extra.parent ? { parent: extra.parent } : {}) } as MapData);
 			p.mapStore.setMany(name, [...(cells ?? [])].filter(([, t]) => t !== extra.baseTerrain).map(([k, t]) => [k, { terrain: t }]));

@@ -16,6 +16,7 @@ import { representativeTerrain } from "../src/overworld/biomes";
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import type { MapData } from "../src/types";
+import type { NewMapOptions } from "../src/services/MapsService";
 
 type Hex = { terrain?: string; locked?: boolean; biome?: string };
 
@@ -52,7 +53,9 @@ function world(mode = "build") {
 			flush: async () => {},
 		},
 		saveSettings: async () => {},
-		createNewMap: async (name: string, cols: number, rows: number, _p: string, x: number, y: number, stagger: string, _pr: unknown, cells?: Map<string, string>, extra?: { parent?: { map: string; hex: string } }) => {
+		createNewMap: async (opts: NewMapOptions) => {
+			const { name, cols, rows, stagger, terrain: cells } = opts;
+			const x = opts.offset?.x ?? 0, y = opts.offset?.y ?? 0, extra = opts;
 			const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 			maps.push({ name: slug, paletteName: "Default", gridSize: { cols, rows }, gridOffset: { x, y }, staggerOffset: stagger, parent: extra?.parent, submapKind: "region", pathChains: [] } as unknown as MapData);
 			for (const [k, t] of cells ?? []) hexes(slug).set(k, { terrain: t });

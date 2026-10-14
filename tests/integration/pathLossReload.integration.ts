@@ -162,7 +162,7 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		const { v, plugin } = b;
 		const before = [JSON.stringify(plugin.getMap("coast")!.paths), JSON.stringify(plugin.getMap("north")!.paths)];
 		plugin.getMap("north")!.world = { id: "w2", cx: 1, cy: 0 };
-		const p = plugin as unknown as { isOwnWrite: (d: unknown) => boolean };
+		const p = (plugin as unknown as { settingsIO: { isOwnWrite: (d: unknown) => boolean } }).settingsIO;
 		const own = p.isOwnWrite;
 		p.isOwnWrite = () => false; // as if Obsidian's watcher missed that the write was ours
 		try {

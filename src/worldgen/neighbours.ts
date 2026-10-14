@@ -379,9 +379,9 @@ export async function createWalkRegion(
   const r = previewWalk(plugin, plan, seed);
   if (!r.ok) return { error: `Couldn't generate: ${r.message}` };
   const { region } = plan;
-  const made = await plugin.createNewMap(
-    rawName, region.cols, region.rows, region.paletteName, region.offset.x, region.offset.y, region.stagger, onProgress, r.cells,
-  );
+  const made = await plugin.createNewMap({
+    name: rawName, cols: region.cols, rows: region.rows, palette: region.paletteName, offset: region.offset, stagger: region.stagger, onProgress, terrain: r.cells,
+  });
   if ("error" in made) return made;
   const map = plugin.getMap(made.name);
   if (map) map.biome = { ...plan.biome };

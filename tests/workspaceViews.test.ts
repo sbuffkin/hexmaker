@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { activeMapView, eachMapView, openTableInView, openWorkflowInView, type ViewWorkspace } from "../src/workspace/views";
+import { activeMapView, eachMapView, openRandomTablesAt, openTableInView, openWorkflowInView, type ViewWorkspace } from "../src/workspace/views";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../src/constants";
 
 interface FakeLeaf { id: string; type: string; view: { getViewType(): string; [k: string]: unknown } }
@@ -23,8 +23,8 @@ function fake(open: { id: string; type: string }[]) {
 				openWorkflow: async (p: string) => { log.push(`${leaf.id}.openWorkflow ${p}`); },
 			},
 		};
-		(leaf as unknown as { setViewState(s: { type: string; active?: boolean }): Promise<void> }).setViewState = async (s) => {
-			log.push(`${leaf.id}.setViewState ${s.type}${s.active ? " active" : ""}`);
+		(leaf as unknown as { setViewState(s: { type: string; active?: boolean; state?: unknown }): Promise<void> }).setViewState = async (s) => {
+			log.push(`${leaf.id}.setViewState ${s.type}${s.active ? " active" : ""}${s.state ? ` ${JSON.stringify(s.state)}` : ""}`);
 			leaf.type = s.type;
 		};
 		return leaf;
@@ -82,5 +82,21 @@ describe("workspace views", () => {
 		const { ws, log } = fake([]);
 		await openWorkflowInView(ws, "workflows/w.md");
 		expect(log).toContain("new1.openWorkflow workflows/w.md");
+	});
+
+	it("openRandomTablesAt (obsidian:// roll and workflow links): reveal the open tables view (not awaited) and show the note there", () => {
+		const { ws, log } = fake([{ id: "t", type: VIEW_TYPE_RANDOM_TABLES }]);
+		openRandomTablesAt(ws, "tables/a.md", "tables");
+		openRandomTablesAt(ws, "workflows/w.md", "workflows");
+		expect(log).toEqual(["reveal t", "t.openTable tables/a.md", "reveal t", "t.openWorkflow workflows/w.md"]);
+	});
+
+	it("openRandomTablesAt with no tables view: a new tab whose state names the note (and the Workflows mode)", () => {
+		const table = fake([]);
+		openRandomTablesAt(table.ws, "tables/a.md", "tables");
+		expect(table.log).toEqual(["getLeaf tab", `new1.setViewState ${VIEW_TYPE_RANDOM_TABLES} {"filePath":"tables/a.md"}`]);
+		const workflow = fake([]);
+		openRandomTablesAt(workflow.ws, "workflows/w.md", "workflows");
+		expect(workflow.log).toEqual(["getLeaf tab", `new1.setViewState ${VIEW_TYPE_RANDOM_TABLES} {"filePath":"workflows/w.md","mode":"workflows"}`]);
 	});
 });

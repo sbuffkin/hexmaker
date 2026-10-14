@@ -263,7 +263,8 @@ export class ArrivalService {
       terrain,
       taken: plugin.settings.maps.map((m) => plugin.mapLabel(m.name)),
     });
-    const made = await plugin.createNewMap(label, setup.cols, setup.rows, setup.palette, 0, 0, stagger, undefined, outcome.cells, {
+    const made = await plugin.createNewMap({
+      name: label, cols: setup.cols, rows: setup.rows, palette: setup.palette, stagger, terrain: outcome.cells,
       baseTerrain: setup.baseTerrain,
       parent: { map: mapName, hex: key },
       quiet: true,

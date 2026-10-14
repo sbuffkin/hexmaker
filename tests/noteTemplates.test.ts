@@ -59,7 +59,8 @@ describe("templates folder (PA3)", () => {
 		}
 		// No branch on a section name: the plugin looks the template up.
 		const plugin = readSurface("plugin");
-		const body = plugin.slice(plugin.indexOf("async newLinkedNoteContent("), plugin.indexOf("withHexLocation(content: string"));
+		const at = plugin.indexOf("async newLinkedNoteContent(");
+		const body = plugin.slice(at, plugin.indexOf("withHexLocation(content: string", at));
 		expect(body).toContain("linkNoteTemplate(section)");
 		expect(body).not.toMatch(/"Towns"|"Dungeons"/);
 	});
