@@ -18,7 +18,8 @@ function toolMethod(name: string): string {
 
 /** Source of the HexMapView method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {
-	const m = new RegExp(`\\n  private (?:async )?${name}\\(`).exec(viewSrc);
+	// Private in the view, protected/public on a controller (src/hex-map/view/).
+	const m = new RegExp(`\\n  (?:private |protected )?(?:async )?${name}\\(`).exec(viewSrc);
 	const start = m ? m.index + 1 : -1;
 	expect(start).toBeGreaterThan(-1);
 	return viewSrc.slice(start, viewSrc.indexOf("\n  }\n", start));

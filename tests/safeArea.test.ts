@@ -121,7 +121,9 @@ describe("the map keeps hexes clear of its overlays", () => {
 describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => {
 	const view = readSurface("map-view");
 	const body = (name: string) => {
-		const start = view.indexOf(`private ${name}(`);
+		// The declaration: private in the view, public on a controller (src/hex-map/view/).
+		const m = new RegExp(`\\n  ((?:private )?${name}\\()`).exec(view);
+		const start = m ? m.index + 3 : -1;
 		expect(start).toBeGreaterThan(-1);
 		return view.slice(start, view.indexOf("\n  }\n", start));
 	};

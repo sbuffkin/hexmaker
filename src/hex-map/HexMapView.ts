@@ -1,7 +1,7 @@
 import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { COPY_HEX_LINK_TITLE, copyHexLink } from "./copyHexLink";
-import { normalizeFolder, getIconUrl, createIconEl, iconLabel } from "../utils";
+import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -14,8 +14,6 @@ import {
 } from "../frontmatter";
 import type { CellEdit } from "../undoBook";
 import { HexEditorModal } from "./HexEditorModal";
-import { TerrainPickerModal } from "./TerrainPickerModal";
-import { IconPickerModal } from "./IconPickerModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
 import { getFactionColorFromFile, getSubmapFromFile, getHexMapsFromFile } from "../frontmatter";
 import {
@@ -26,17 +24,12 @@ import {
 import { MapModal, renderMissingActions } from "./MapModal";
 import { mapAncestors } from "./submapNav";
 import { ancestorNeighbourCrumbs, neighbourCrumbs } from "../maps/mapTree";
-import { toolModeLabel } from "./toolMode";
 import { PathTool } from "./pathTool";
-import { pathListSummary } from "./pathTool";
 import { flowerLayout, flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES, padButtonText } from "../maps/mapNav";
-import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type MenuActionId, type ModeAction, type WorkMode } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type MenuActionId, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
 import { lockedNotice } from "./godOffer";
-import { Disclosure } from "../ui/disclosure";
-import { isDebugMode } from "../ui/debugMode";
-import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { watchBiomesPathHover } from "./biomesPathHover";
@@ -50,17 +43,12 @@ import { hexHoverLabel, hexKeyCoords, overlayClosed, pathFirst, pointerMovedFrom
 import { whenSized } from "./whenSized";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
-import { PathPickerModal } from "./PathPickerModal";
-import { impassableNames } from "../impassable";
 import type { MapData, MapPath, TokenEntry } from "../types";
 import { hexNeighbors } from "./hexGeometry";
 import { moduleHexMenu, moduleUnchartedKeys, runPartyEntered, worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
-import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
 import { FolderTreePickerModal } from "./FolderTreePickerModal";
-import { FactionPickerModal } from "./FactionPickerModal";
-import { GeoRegionPickerModal } from "./GeoRegionPickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { renderUnchartedLayer, unchartedKeys } from "./unchartedLayer";
 import { hexKeyFromBasename, linkedNotesText, linksBySection } from "./linkBadges";
@@ -98,6 +86,8 @@ import { AreaOverlay } from "./view/areaOverlay";
 import { parseGmIconsDataset, PathOverlay } from "./view/pathOverlay";
 import { GridLabels } from "./view/gridLabels";
 import { NeighbourShadow } from "./view/neighbourShadow";
+import { MapToolbar } from "./view/mapToolbar";
+import type { DrawingMode } from "./toolMode";
 import type { IconUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
@@ -123,64 +113,46 @@ export class HexMapView extends ItemView {
   private viewportEl: HTMLElement | null = null;
   /** Background-image calibration (view/backgroundCalibration.ts). */
   private calibration: BackgroundCalibration;
-  private drawingMode:
-    | "path"
-    | "terrain"
-    | "icon"
-    | "tableLink"
-    | "submapLink"
-    | "factionLink"
-    | "regionLink"
-    | "swap"
-    | "placeToken"
-    | "biome"
-    | null = null;
-  private isErasingMode = false;
-  /** On-map "which tool is on" bar (fresh-eyes T3); text set in updateModeBar. */
-  private modeBarEl: HTMLElement | null = null;
-  private modeBarTextEl: HTMLElement | null = null;
+  /** The drawing tools: their state, buttons and mode bar (view/mapToolbar.ts, view/toolState.ts). */
+  private toolbar: MapToolbar;
+  // The tool state lives on the toolbar; these keep the view's (and the
+  // smoke suite's) reads and writes of it as they were.
+  private get drawingMode(): DrawingMode | null { return this.toolbar.drawingMode; }
+  private set drawingMode(v: DrawingMode | null) { this.toolbar.drawingMode = v; }
+  private get isErasingMode(): boolean { return this.toolbar.isErasingMode; }
+  private set isErasingMode(v: boolean) { this.toolbar.isErasingMode = v; }
+  private get paintTerrainName(): string | null { return this.toolbar.paintTerrainName; }
+  private set paintTerrainName(v: string | null) { this.toolbar.paintTerrainName = v; }
+  private get paintIconName(): string | null { return this.toolbar.paintIconName; }
+  private get paintIconGmOnly(): boolean { return this.toolbar.paintIconGmOnly; }
+  private get terrainPickMode(): boolean { return this.toolbar.terrainPickMode; }
+  private set terrainPickMode(v: boolean) { this.toolbar.terrainPickMode = v; }
+  private get paintBrushSize(): 1 | 3 | 7 { return this.toolbar.paintBrushSize; }
+  private set paintBrushSize(v: 1 | 3 | 7) { this.toolbar.paintBrushSize = v; }
+  private get paintTablePath(): string | null { return this.toolbar.paintTablePath; }
+  private get paintSubmapName(): string | null { return this.toolbar.paintSubmapName; }
+  private get paintFactionPath(): string | null { return this.toolbar.paintFactionPath; }
+  private get paintRegionPath(): string | null { return this.toolbar.paintRegionPath; }
+  private get paintBiomeId(): string | null { return this.toolbar.paintBiomeId; }
+  private get pendingTokenNotePath(): string | null { return this.toolbar.pendingTokenNotePath; }
+  private get pendingTokenPlaceData(): NonNullable<TokenSnap["look"]> | null { return this.toolbar.pendingTokenPlaceData; }
+  private get swapSource(): { x: number; y: number } | null { return this.toolbar.swapSource; }
+  private set swapSource(v: { x: number; y: number } | null) { this.toolbar.swapSource = v; }
+  private get swapDest(): { x: number; y: number } | null { return this.toolbar.swapDest; }
+  private set swapDest(v: { x: number; y: number } | null) { this.toolbar.swapDest = v; }
+  /** On-map "which tool is on" bar (fresh-eyes T3). */
+  private get modeBarEl(): HTMLElement | null { return this.toolbar.modeBarEl; }
   /** Toolbar rows (and the mode bar) along the top of the map: hexes are
    *  kept out from under them (see safeArea.ts). */
   private topBandEls: HTMLElement[] = [];
   /** The open (or last) right-click tool menu, so Esc can close it first. */
-  private painterMenu: PainterContextMenu | null = null;
-  private pathToolbarBtn: HTMLButtonElement | null = null;
-  private pathBtnSwatch: HTMLElement | null = null;
-  private terrainToolbarBtn: HTMLButtonElement | null = null;
-  private terrainBtnPreview: HTMLSpanElement | null = null;
-  private iconToolbarBtn: HTMLButtonElement | null = null;
-  private iconBtnPreview: HTMLImageElement | null = null;
-  private tableLinkBtn: HTMLButtonElement | null = null;
-  private tableLinkBtnLabel: HTMLSpanElement | null = null;
-  private paintTablePath: string | null = null;
-  private submapLinkBtn: HTMLButtonElement | null = null;
-  private submapLinkBtnLabel: HTMLSpanElement | null = null;
-  private paintSubmapName: string | null = null;
-  private factionLinkBtn: HTMLButtonElement | null = null;
-  private factionLinkBtnLabel: HTMLSpanElement | null = null;
-  private paintFactionPath: string | null = null;
-  private regionLinkBtn: HTMLButtonElement | null = null;
-  private regionLinkBtnLabel: HTMLSpanElement | null = null;
-  private paintRegionPath: string | null = null;
-  private swapBtn: HTMLButtonElement | null = null;
-  /** The biome brush (overworlds only): its button, swatch, biome, and the stroke being painted. */
-  private biomeToolbarBtn: HTMLButtonElement | null = null;
-  private biomeBtnPreview: HTMLSpanElement | null = null;
-  private paintBiomeId: string | null = null;
+  private get painterMenu(): PainterContextMenu | null { return this.toolbar.painterMenu; }
+  /** The biome brush's stroke being painted (overworlds only). */
   private biomeStroke: BiomeStroke<CellEdit> | null = null;
   private overlayPanel: OverlayPanel | null = null;
   private toolsPanel: DrawingToolPanel | null = null;
-  private swapSource: { x: number; y: number } | null = null;
-  private swapDest: { x: number; y: number } | null = null;
   /** The path tool: drawing, selecting, reshaping (src/hex-map/pathTool.ts). */
   private pathTool: PathTool;
-  /** Path tool controls in the mode bar (shown while drawing a path). */
-  private modeBarRouteEl: HTMLElement | null = null;
-  private paintTerrainName: string | null = null;
-  private paintIconName: string | null = null;
-  private paintIconGmOnly = false;
-  private terrainPickMode = false;
-  private paintBrushSize: 1 | 3 | 7 = 1;
   private brushHoverHexes: Array<[number, number]> = [];
   private selectedHex: { x: number; y: number } | null = null;
   /** Paint writes (terrain, icon, GM icons), coalesced per hex (view/hexWrites.ts). */
@@ -231,15 +203,10 @@ export class HexMapView extends ItemView {
   /** Sideways crumbs: the neighbouring regions of the open map. */
   private sideCrumbsEl: HTMLElement | null = null;
   private tokenEntries: TokenEntry[] = [];
-  private pendingTokenNotePath: string | null = null;
-  private pendingTokenPlaceData: NonNullable<TokenSnap["look"]> | null = null;
   /** The party token selected in Play (its note path): a click on a neighbouring hex moves it (SF5). */
   private selectedParty: string | null = null;
   /** Where a party token was just moved, until the metadata cache has the write (path → "x_y"). */
   private partyMoves = new Map<string, string>();
-  private tokenBtn: HTMLButtonElement | null = null;
-  /** The drawing panel's one line naming the mode that unlocks the hidden tools. */
-  private toolsLockedEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: HexmakerPlugin) {
     super(leaf);
@@ -255,16 +222,16 @@ export class HexMapView extends ItemView {
       ownerDocument: () => this.contentEl.ownerDocument,
       pushUndo: (map, before, after) => this.undos.pushPathUndo(map, before, after),
       redraw: () => this.pathLayer.updatePathOverlay(),
-      refreshBar: () => this.updateModeBar(),
+      refreshBar: () => this.toolbar.updateModeBar(),
       setGrabCursor: (on) => this.viewportEl?.toggleClass("duckmage-path-grab", on),
-      typeChanged: () => this.updateToolbarButtonStates(),
+      typeChanged: () => this.toolbar.updateToolbarButtonStates(),
       neighbourStrip: () => this.shadow.strip(this.activeMapName),
       openNeighbour: (map, hex, arm) => {
         const [x, y] = hex.split("_").map(Number);
         this.goToRegionHex(map, x, y);
         this.drawingMode = "path";
         arm();
-        this.updateToolbarButtonStates();
+        this.toolbar.updateToolbarButtonStates();
         this.pathLayer.updatePathOverlay();
       },
     });
@@ -291,7 +258,7 @@ export class HexMapView extends ItemView {
       applyPathSnapshot: (m, p) => this.applyPathSnapshot(m, p),
       applyTokenSnap: (p, snap) => this.applyTokenSnap(p, snap),
       renderGrid: () => this.renderGrid(),
-      updateModeBar: () => this.updateModeBar(),
+      updateModeBar: () => this.toolbar.updateModeBar(),
       updateGmIcons: () => this.pathLayer.updateGmIcons(),
       updatePathOverlay: () => this.pathLayer.updatePathOverlay(),
     });
@@ -363,6 +330,28 @@ export class HexMapView extends ItemView {
         this.areas.updateRegionOverlay();
         this.updateTokenLayer();
       },
+      renderGrid: () => this.renderGrid(),
+    });
+    this.toolbar = new MapToolbar({
+      plugin: this.plugin,
+      activeMapName: () => this.activeMapName,
+      viewportEl: () => this.viewportEl,
+      getActiveMap: () => this.getActiveMap(),
+      wm: () => this.wm,
+      owView: (map) => this.owView(map),
+      modeAllows: (action) => this.modeAllows(action),
+      pathTool: this.pathTool,
+      mapPathTypes: () => this.mapPathTypes(),
+      undos: { commitTerrainStroke: () => this.undos.commitTerrainStroke(), updateUndoButton: () => this.undos.updateUndoButton() },
+      pathLayer: { updatePathOverlay: () => this.pathLayer.updatePathOverlay(), updateGmIcons: () => this.pathLayer.updateGmIcons() },
+      overlayPanel: () => this.overlayPanel,
+      toolsPanel: () => this.toolsPanel,
+      centerOnHex: (x, y) => this.centerOnHex(x, y),
+      applyWorkModeUi: () => this.applyWorkModeUi(),
+      finishBiomeStroke: () => this.finishBiomeStroke(),
+      updateBrushHighlight: (x, y) => this.updateBrushHighlight(x, y),
+      showOverworldRegions: () => this.showOverworldRegions(),
+      nextTokenFill: () => this.nextTokenFill(),
       renderGrid: () => this.renderGrid(),
     });
     this.calibration = new BackgroundCalibration({
@@ -498,7 +487,7 @@ export class HexMapView extends ItemView {
       return;
     }
     this.exitCurrentMode();
-    this.exitPathMode();
+    this.toolbar.exitPathMode();
     if (opts.recordHistory !== false) this.history.visit(this.activeMapName);
     this.switchToMap(name);
     // Each map keeps its own undo queues (WM6): show the new map's.
@@ -922,40 +911,7 @@ export class HexMapView extends ItemView {
     const mode = this.undos.currentWorkMode();
     this.contentEl.removeClass("duckmage-mode-play", "duckmage-mode-build", "duckmage-mode-god");
     this.contentEl.addClass(`duckmage-mode-${mode}`);
-    const tools: [HTMLElement | null, ModeAction][] = [
-      [this.terrainToolbarBtn, TOOL_ACTIONS.terrain],
-      [this.iconToolbarBtn, TOOL_ACTIONS.icon],
-      [this.pathToolbarBtn, TOOL_ACTIONS.path],
-      [this.tableLinkBtn, TOOL_ACTIONS.tableLink],
-      [this.submapLinkBtn, TOOL_ACTIONS.submapLink],
-      [this.factionLinkBtn, TOOL_ACTIONS.factionLink],
-      [this.regionLinkBtn, TOOL_ACTIONS.regionLink],
-      [this.tokenBtn, TOOL_ACTIONS.placeToken],
-    ];
-    const locked: ModeAction[] = [];
-    for (const [btn, action] of tools) {
-      const ok = allows(mode, action);
-      btn?.toggle(ok);
-      if (!ok) locked.push(action);
-    }
-    // Overworlds: the biome brush, and the terrain tool only in the Regions view (MM1).
-    const owView = this.owView(this.getActiveMap());
-    const biomeOk = allows(mode, TOOL_ACTIONS.biome);
-    this.biomeToolbarBtn?.toggle(!!owView && biomeOk);
-    if (owView && !biomeOk) locked.push(TOOL_ACTIONS.biome);
-    if (this.terrainToolbarBtn) {
-      const off = owView === "biomes";
-      this.terrainToolbarBtn.disabled = off;
-      this.terrainToolbarBtn.toggleClass("is-locked", off);
-      this.terrainToolbarBtn.setAttr("title", off ? this.wm!.TERRAIN_IN_BIOMES_HINT : "");
-      if (off && this.drawingMode === "terrain") this.exitTerrainMode();
-    }
-    if (!owView && this.drawingMode === "biome") this.exitBiomeMode();
-    const hint = lockedSummary(locked);
-    if (this.toolsLockedEl) {
-      this.toolsLockedEl.setText(hint ?? "");
-      this.toolsLockedEl.toggle(!!hint);
-    }
+    this.toolbar.applyMode(mode, this.owView(this.getActiveMap()));
     // Shrinking is God's: in Build the − stays clickable and its click
     // offers to switch (modeAllows → lockedNotice), it isn't just greyed out.
     for (const b of this.contentEl.querySelectorAll<HTMLButtonElement>(".duckmage-shrink-btn")) {
@@ -1168,26 +1124,7 @@ export class HexMapView extends ItemView {
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
     this.viewport.applyTransform();
 
-    // Mode bar: paint/draw tools are sticky, so say which one is on and how
-    // to stop it (fresh-eyes T3). Hidden while no tool is active.
-    this.modeBarEl = controlsEl.createDiv({
-      cls: "duckmage-mode-bar",
-      attr: { role: "status", "aria-live": "polite" },
-    });
-    this.modeBarTextEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-text" });
-    this.modeBarRouteEl = this.modeBarEl.createSpan({ cls: "duckmage-mode-bar-route" });
-    this.modeBarRouteEl.hide();
-    this.modeBarEl.createSpan({
-      cls: "duckmage-mode-bar-hint",
-      text: "Right-click: options · Esc: stop",
-    });
-    const modeBarStop = this.modeBarEl.createEl("button", {
-      cls: "duckmage-mode-bar-stop",
-      text: "✕",
-      attr: { title: "Stop this tool", "aria-label": "Stop this tool" },
-    });
-    modeBarStop.addEventListener("click", () => this.exitCurrentMode());
-    this.modeBarEl.hide();
+    this.toolbar.buildModeBar(controlsEl);
 
     // Esc leaves the active tool (modals and menus handle their own Esc first).
     this.scope.register([], "Escape", () => {
@@ -1565,9 +1502,9 @@ export class HexMapView extends ItemView {
         if (this.drawingMode === "path" && !this.isErasingMode) {
           const r = this.pathTool.contextMenu(e);
           if (r && "handled" in r) return;
-          if (r) pathItems = [...r.items, ...this.overworldPathItems(this.pathTool.labelState().selected)];
+          if (r) pathItems = [...r.items, ...this.toolbar.overworldPathItems(this.pathTool.labelState().selected)];
         }
-        this.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY, pathItems);
+        this.toolbar.showPainterContextMenu(e.clientX, e.clientY, hexX, hexY, pathItems);
       },
       { capture: true },
     );
@@ -1664,7 +1601,7 @@ export class HexMapView extends ItemView {
     this.mapBtn.addEventListener("click", () =>
       new MapModal(this.app, this.plugin, this, () => {
         this.exitTerrainMode();
-        this.exitPathMode();
+        this.toolbar.exitPathMode();
         this.undos.updateUndoButton();
         this.updateMapBtnLabel();
         this.refreshMapNav();
@@ -1710,7 +1647,7 @@ export class HexMapView extends ItemView {
 
     // Side panels — drawing tools (pencil) + overlays (layers), mutually exclusive
     this.toolsPanel = new DrawingToolPanel(controlsEl, (panel) =>
-      this.buildDrawingToolbarContent(panel),
+      this.toolbar.buildDrawingToolbarContent(panel),
     );
     const toolsPanel = this.toolsPanel;
     this.overlayPanel = new OverlayPanel(
@@ -2147,301 +2084,6 @@ export class HexMapView extends ItemView {
     return !!cache?.links && cache.links.length > 0;
   }
 
-  /**
-   * The drawing tools panel. The common jobs come first (paint terrain,
-   * icons, paths, tokens), then factions and Center hex; the link tools
-   * (Link table, Link submap, Region areas) sit in the panel's Advanced
-   * dropdown (placement: DrawingPanel.*). The Link table tool's table picker
-   * (MapView.tableLinkToolPicker) is only reached from it, so it goes with it.
-   */
-  private buildDrawingToolbarContent(toolbar: HTMLElement): void {
-    const disclosure = new Disclosure(this.app, "DrawingPanel", () => toolbar);
-
-    this.terrainToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
-    });
-    this.terrainToolbarBtn.createSpan({ text: "Terrain" });
-    this.terrainBtnPreview = this.terrainToolbarBtn.createSpan({
-      cls: "duckmage-terrain-btn-preview",
-    });
-    this.terrainToolbarBtn.addEventListener("click", () =>
-      this.handleTerrainButton(),
-    );
-
-    // Overworlds only (shown by applyWorkModeUi): paint biomes, regions made as you go.
-    this.biomeToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-terrain duckmage-draw-btn-biome",
-    });
-    this.biomeToolbarBtn.createSpan({ text: "Biome" });
-    this.biomeBtnPreview = this.biomeToolbarBtn.createSpan({ cls: "duckmage-terrain-btn-preview" });
-    this.biomeBtnPreview.hide();
-    this.biomeToolbarBtn.addEventListener("click", () => this.handleBiomeButton());
-
-    this.iconToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-terrain",
-    });
-    this.iconToolbarBtn.createSpan({ text: "Icon" });
-    this.iconBtnPreview = this.iconToolbarBtn.createEl("img", {
-      cls: "duckmage-icon-btn-preview",
-    });
-    this.iconToolbarBtn.addEventListener("click", () =>
-      this.handleIconButton(),
-    );
-
-    this.pathToolbarBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-path",
-    });
-    this.pathToolbarBtn.createSpan({ text: "Path" });
-    this.pathBtnSwatch = this.pathToolbarBtn.createSpan({
-      cls: "duckmage-path-btn-swatch",
-    });
-    this.pathToolbarBtn.addEventListener("click", () =>
-      this.handlePathButton(),
-    );
-
-    this.tokenBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-token",
-      text: "Token",
-    });
-    this.tokenBtn.addEventListener("click", () => this.handleTokenButton());
-
-    this.factionLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
-    });
-    this.factionLinkBtnLabel = this.factionLinkBtn.createSpan({
-      text: "Factions",
-    });
-    this.factionLinkBtn.addEventListener("click", () =>
-      this.handleFactionLinkButton(),
-    );
-
-    const centerHexBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-center-hex-btn",
-      text: "Center hex",
-    });
-    centerHexBtn.addEventListener("click", () => {
-      new GotoHexModal(this.app, (x, y) => this.centerOnHex(x, y)).open();
-    });
-
-    // Tools the map's mode locks are hidden; this line says how to get them.
-    this.toolsLockedEl = toolbar.createDiv({ cls: "duckmage-tools-locked" });
-    this.toolsLockedEl.hide();
-
-    this.tableLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
-    });
-    this.tableLinkBtnLabel = this.tableLinkBtn.createSpan({
-      text: "Link table",
-    });
-    this.tableLinkBtn.addEventListener("click", () =>
-      this.handleTableLinkButton(),
-    );
-    disclosure.place("DrawingPanel.linkTable", this.tableLinkBtn);
-
-    this.submapLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
-    });
-    this.submapLinkBtnLabel = this.submapLinkBtn.createSpan({
-      text: "Link submap",
-    });
-    this.submapLinkBtn.addEventListener("click", () =>
-      this.handleSubmapLinkButton(),
-    );
-    disclosure.place("DrawingPanel.linkSubmap", this.submapLinkBtn);
-
-    this.regionLinkBtn = toolbar.createEl("button", {
-      cls: "duckmage-draw-btn duckmage-draw-btn-tablelink",
-    });
-    this.regionLinkBtnLabel = this.regionLinkBtn.createSpan({
-      text: REGION_AREAS_TOOL,
-    });
-    this.regionLinkBtn.addEventListener("click", () =>
-      this.handleRegionLinkButton(),
-    );
-    disclosure.place("DrawingPanel.regionAreas", this.regionLinkBtn);
-
-    this.applyWorkModeUi();
-  }
-
-  private showPainterContextMenu(
-    clientX: number,
-    clientY: number,
-    hexX: number | null,
-    hexY: number | null,
-    pathItems: PainterContextMenuOption[] = [],
-  ): void {
-    const mode = this.drawingMode;
-    let onSwitch: (() => void) | null = null;
-    let switchLabel = "Switch";
-    const extra: { label: string; onClick: () => void }[] = [];
-    const erasing = this.isErasingMode;
-
-    const toggleEraseMode = () => {
-      this.isErasingMode = !erasing;
-      this.updateToolbarButtonStates();
-    };
-
-    if (mode === "terrain") {
-      onSwitch = () => this.handleTerrainButton();
-      switchLabel = "Switch terrain";
-      extra.push({ label: erasing ? "Paint mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "icon") {
-      onSwitch = () => this.openIconPicker();
-      switchLabel = "Switch icon";
-      extra.push({ label: erasing ? "Paint mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "tableLink") {
-      onSwitch = () => this.handleTableLinkButton(true);
-      switchLabel = "Switch table";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "submapLink") {
-      onSwitch = () => this.handleSubmapLinkButton(true);
-      switchLabel = "Switch submap";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "factionLink") {
-      onSwitch = () => this.handleFactionLinkButton();
-      switchLabel = "Switch faction";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "regionLink") {
-      onSwitch = () => this.handleRegionLinkButton();
-      switchLabel = "Switch region";
-      extra.push({ label: erasing ? "Link mode" : "Erase mode", onClick: toggleEraseMode });
-    } else if (mode === "path") {
-      onSwitch = () => this.handlePathButton();
-      switchLabel = "Switch path type";
-      extra.push({ label: erasing ? "Draw mode" : "Erase mode", onClick: toggleEraseMode });
-      // No "New path" here (PainterMenu.newPath, dropped): the mode bar has it.
-    } else if (mode === "placeToken") {
-      onSwitch = () => this.handleTokenButton(true);
-      switchLabel = "Switch token";
-    } else if (mode === "biome") {
-      onSwitch = () => this.handleBiomeButton();
-      switchLabel = "Switch biome";
-    }
-    // swap: no picker → onSwitch stays null, menu shows only "Exit tool"
-
-    this.painterMenu?.close();
-    // The path under the pointer comes first, above a separator (#48).
-    // Its Advanced items (Split here, Reverse) are in an "Advanced ▸" row at its end.
-    this.painterMenu = new PainterContextMenu(onSwitch, () => this.exitCurrentMode(), switchLabel, extra, mode === "path" ? pathItems : [], isDebugMode(this.app));
-    this.painterMenu.open(clientX, clientY);
-  }
-
-  /**
-   * Called when a picker's choice switches to tool `next`: properly leave a
-   * different active tool first (commits its pending stroke). Staying in the
-   * same tool keeps its state.
-   */
-  private leaveOtherToolFor(next: NonNullable<typeof this.drawingMode>): void {
-    if (this.drawingMode !== null && this.drawingMode !== next) this.exitCurrentMode();
-  }
-
-  private exitCurrentMode(): void {
-    this.isErasingMode = false;
-    if (this.drawingMode === "terrain") this.exitTerrainMode();
-    else if (this.drawingMode === "icon") this.exitIconMode();
-    else if (this.drawingMode === "tableLink") this.exitTableLinkMode();
-    else if (this.drawingMode === "submapLink") this.exitSubmapLinkMode();
-    else if (this.drawingMode === "factionLink") this.exitFactionLinkMode();
-    else if (this.drawingMode === "regionLink") this.exitRegionLinkMode();
-    else if (this.drawingMode === "swap") this.exitSwapMode();
-    else if (this.drawingMode === "placeToken") this.exitTokenMode();
-    else if (this.drawingMode === "biome") this.exitBiomeMode();
-    else {
-      if (this.drawingMode === "path") this.exitPathMode();
-      this.drawingMode = null;
-      this.updateToolbarButtonStates();
-      this.pathLayer.updatePathOverlay();
-    }
-  }
-
-  private exitPathMode(): void {
-    this.pathTool.reset();
-  }
-
-  openTerrainPicker(): void {
-    this.toolsPanel?.open();
-    this.handleTerrainButton();
-  }
-
-  private handleTerrainButton(): void {
-    if (this.drawingMode !== "terrain" && !this.modeAllows(TOOL_ACTIONS.terrain)) return;
-    if (this.owView(this.getActiveMap()) === "biomes") {
-      new Notice(this.wm!.TERRAIN_IN_BIOMES_HINT);
-      return;
-    }
-    // Keep the current tool while the picker is open: closing it without a
-    // pick (Escape, clicking away, or after only changing the brush size)
-    // must leave painting exactly as it was. It used to exit terrain mode
-    // here first, so any of those turned the tool off.
-    if (this.drawingMode === "terrain") this.undos.commitTerrainStroke();
-
-    // Show crosshair on the viewport while the picker is open
-    this.viewportEl?.addClass("duckmage-terrain-picking");
-
-    // On an overworld the brush paints its regions' hexes, so it offers
-    // the regions' palette, and picking a terrain shows the Regions view.
-    const wm = this.wm;
-    const owInfo = wm?.overworldOf(this.plugin, this.activeMapName);
-    // Always open the picker — even if already active, so user can switch terrain
-    new TerrainPickerModal(
-      this.app,
-      this.plugin,
-      wm && owInfo ? wm.regionPalette(this.plugin, owInfo.map) : this.plugin.getMapPalette(this.activeMapName),
-      (terrainName: string | null) => {
-        this.viewportEl?.removeClass("duckmage-terrain-picking");
-        this.leaveOtherToolFor("terrain");
-        this.drawingMode = "terrain";
-        this.isErasingMode = false;
-        this.terrainPickMode = false;
-        this.paintTerrainName = terrainName;
-        this.paintIconName = null;
-        this.updateToolbarButtonStates();
-        this.showOverworldRegions();
-      },
-      () => {
-        // Eyedropper: enter terrain mode in pick-from-map state
-        this.viewportEl?.removeClass("duckmage-terrain-picking");
-        this.leaveOtherToolFor("terrain");
-        this.drawingMode = "terrain";
-        this.isErasingMode = false;
-        this.terrainPickMode = true;
-        this.paintTerrainName = null;
-        this.updateToolbarButtonStates();
-        this.showOverworldRegions();
-      },
-      () => {
-        // Dismissed without selecting
-        this.viewportEl?.removeClass("duckmage-terrain-picking");
-      },
-      this.paintBrushSize,
-      (size) => {
-        this.paintBrushSize = size;
-      },
-    ).open();
-  }
-
-  /** The biome brush's button: pick a biome in the palette, then paint overworld hexes. */
-  private handleBiomeButton(): void {
-    const wm = this.wm;
-    if (!wm || !this.owView(this.getActiveMap())) return;
-    if (this.drawingMode !== "biome" && !this.modeAllows(TOOL_ACTIONS.biome)) return;
-    new wm.BiomePaletteModal(this.app, this.plugin, this.activeMapName, this.paintBiomeId, (biome) => {
-      this.leaveOtherToolFor("biome");
-      this.drawingMode = "biome";
-      this.isErasingMode = false;
-      this.paintBiomeId = biome;
-      this.updateToolbarButtonStates();
-    }).open();
-  }
-
-  private exitBiomeMode(): void {
-    if (this.drawingMode !== "biome") return;
-    void this.finishBiomeStroke();
-    this.drawingMode = null;
-    this.paintBiomeId = null;
-    this.updateToolbarButtonStates();
-  }
-
   /** Is overworld hex "x_y" on the open map's grid (an empty brick there can take a biome)? */
   private emptySlotOnMap(hex: string): boolean {
     const [px, py] = hex.split("_").map(Number);
@@ -2505,242 +2147,6 @@ export class HexMapView extends ItemView {
     if ((r.changed || r.made.length) && this.activeMapName === map) this.renderGrid();
   }
 
-  private exitTerrainMode(): void {
-    if (this.drawingMode !== "terrain") return;
-    this.undos.commitTerrainStroke();
-    this.drawingMode = null;
-    this.paintTerrainName = null;
-    this.terrainPickMode = false;
-    this.isErasingMode = false;
-    this.updateBrushHighlight(null, null);
-    this.updateToolbarButtonStates();
-  }
-
-  private handleIconButton(): void {
-    if (this.drawingMode !== "icon" && !this.modeAllows(TOOL_ACTIONS.icon)) return;
-    // Like Terrain: the button always opens the picker, even with the tool
-    // on, to switch icons; closing it without a pick keeps the tool as it
-    // was. Esc, ✕ or right-click → Exit tool leave it (fresh-eyes F6).
-    this.openIconPicker();
-  }
-
-  /**
-   * Pick an icon to paint. Like the terrain picker, the current tool stays
-   * active until an icon is actually picked, so dismissing it changes nothing.
-   */
-  private openIconPicker(): void {
-    new IconPickerModal(
-      this.app,
-      this.plugin,
-      (iconName: string | null, gmOnly: boolean) => {
-        this.leaveOtherToolFor("icon");
-        this.drawingMode = "icon";
-        this.isErasingMode = false;
-        this.paintIconName = iconName;
-        this.paintIconGmOnly = gmOnly;
-        this.paintTerrainName = null;
-        // The terrain brush size is kept: icons always paint one hex
-        // (getBrushHexes), so switching to icons and back doesn't reset it.
-        // Auto-enable the GM layer when the user picks a GM-only paint —
-        // otherwise their painted icons are silently invisible because the
-        // layer is hidden. Mirrors the showFactionOverlay-on-paint
-        // auto-enable in onHexFactionPaintClick.
-        if (gmOnly) {
-          const map = this.getActiveMap();
-          if (!(map.showGmLayer ?? true)) {
-            map.showGmLayer = true;
-            void this.plugin.saveSettings();
-            this.overlayPanel?.syncToRegion();
-            this.pathLayer.updateGmIcons();
-          }
-        }
-        this.updateToolbarButtonStates();
-      },
-      this.paintIconGmOnly,
-    ).open();
-  }
-
-  private exitIconMode(): void {
-    if (this.drawingMode !== "icon") return;
-    this.drawingMode = null;
-    this.paintIconName = null;
-    // NB: do NOT reset paintIconGmOnly here — the user's preference for
-    // GM-vs-regular icon paint persists across mode toggles. Otherwise
-    // every re-open of the icon picker reverts to "regular" and the GM
-    // checkbox starts off, even for a user who's been working in GM
-    // mode for the whole session.
-    this.isErasingMode = false;
-    this.updateBrushHighlight(null, null);
-    this.updateToolbarButtonStates();
-  }
-
-  /** `keep`: opened from the tool's own right-click menu; stay in the tool unless something is picked. */
-  private handleTableLinkButton(keep = false): void {
-    if (this.drawingMode !== "tableLink" && !this.modeAllows(TOOL_ACTIONS.tableLink)) return;
-    if (!keep && this.drawingMode === "tableLink") { this.exitTableLinkMode(); return; }
-    new FolderTreePickerModal(
-      this.app,
-      this.plugin,
-      this.plugin.settings.tablesFolder,
-      "Select table",
-      "Filter tables…",
-      "No tables found.",
-      (file) => {
-        this.leaveOtherToolFor("tableLink");
-        this.drawingMode = "tableLink";
-        this.isErasingMode = false;
-        this.paintTablePath = file.path;
-        this.updateToolbarButtonStates();
-      },
-    ).open();
-  }
-
-  private exitTableLinkMode(): void {
-    if (this.drawingMode !== "tableLink") return;
-    this.drawingMode = null;
-    this.paintTablePath = null;
-    this.isErasingMode = false;
-    this.updateToolbarButtonStates();
-  }
-
-  private handleSubmapLinkButton(keep = false): void {
-    if (this.drawingMode !== "submapLink" && !this.modeAllows(TOOL_ACTIONS.submapLink)) return;
-    if (!keep && this.drawingMode === "submapLink") { this.exitSubmapLinkMode(); return; }
-    new SubmapPickerModal(
-      this.app,
-      this.plugin,
-      undefined,
-      (mapName) => {
-        this.leaveOtherToolFor("submapLink");
-        this.drawingMode = "submapLink";
-        this.isErasingMode = false;
-        this.paintSubmapName = mapName;
-        this.updateToolbarButtonStates();
-      },
-      undefined,
-    ).open();
-  }
-
-  private exitSubmapLinkMode(): void {
-    if (this.drawingMode !== "submapLink") return;
-    this.drawingMode = null;
-    this.paintSubmapName = null;
-    this.isErasingMode = false;
-    this.updateToolbarButtonStates();
-  }
-
-  private handleFactionLinkButton(): void {
-    if (this.drawingMode !== "factionLink" && !this.modeAllows(TOOL_ACTIONS.factionLink)) return;
-    new FactionPickerModal(this.app, this.plugin, (filePath) => {
-      this.leaveOtherToolFor("factionLink");
-      this.drawingMode = "factionLink";
-      this.isErasingMode = false;
-      this.paintFactionPath = filePath;
-      this.updateToolbarButtonStates();
-    }, () => {
-      this.drawingMode = "factionLink";
-      this.isErasingMode = true;
-      this.updateToolbarButtonStates();
-    }).open();
-  }
-
-  private exitFactionLinkMode(): void {
-    if (this.drawingMode !== "factionLink") return;
-    this.drawingMode = null;
-    this.paintFactionPath = null;
-    this.isErasingMode = false;
-    this.updateToolbarButtonStates();
-  }
-
-  private handleRegionLinkButton(): void {
-    if (this.drawingMode !== "regionLink" && !this.modeAllows(TOOL_ACTIONS.regionLink)) return;
-    new GeoRegionPickerModal(this.app, this.plugin, (filePath) => {
-      this.leaveOtherToolFor("regionLink");
-      this.drawingMode = "regionLink";
-      this.isErasingMode = false;
-      this.paintRegionPath = filePath;
-      this.updateToolbarButtonStates();
-      // Auto-enable region overlay when entering paint mode
-      if (!this.getActiveMap().showRegionOverlay) {
-        this.getActiveMap().showRegionOverlay = true;
-        void this.plugin.saveSettings();
-        this.overlayPanel?.syncToRegion();
-      }
-    }, () => {
-      this.drawingMode = "regionLink";
-      this.isErasingMode = true;
-      this.updateToolbarButtonStates();
-    }).open();
-  }
-
-  private exitRegionLinkMode(): void {
-    if (this.drawingMode !== "regionLink") return;
-    this.drawingMode = null;
-    this.paintRegionPath = null;
-    this.isErasingMode = false;
-    this.updateToolbarButtonStates();
-  }
-
-  private handleTokenButton(keep = false): void {
-    if (this.drawingMode !== "placeToken" && !this.modeAllows(TOOL_ACTIONS.placeToken)) return;
-    if (!keep && this.drawingMode === "placeToken") {
-      this.exitTokenMode();
-      return;
-    }
-    new TokenModal(
-      this.app,
-      this.plugin,
-      undefined,
-      "",
-      { color: this.nextTokenFill() },
-      (notePath, data) => {
-        this.leaveOtherToolFor("placeToken");
-        this.pendingTokenNotePath  = notePath;
-        this.pendingTokenPlaceData = { ...data };
-        this.drawingMode = "placeToken";
-        this.isErasingMode = false;
-        this.updateToolbarButtonStates();
-      },
-    ).open();
-  }
-
-  private exitTokenMode(): void {
-    if (this.drawingMode !== "placeToken") return;
-    this.drawingMode = null;
-    this.pendingTokenNotePath = null;
-    this.pendingTokenPlaceData = null;
-    this.updateToolbarButtonStates();
-  }
-
-  private handleSwapButton(): void {
-    if (this.drawingMode !== "swap" && !this.modeAllows(TOOL_ACTIONS.swap)) return;
-    if (this.drawingMode === "swap") {
-      this.exitSwapMode();
-    } else {
-      this.drawingMode = "swap";
-      this.isErasingMode = false;
-      this.swapSource = null;
-      this.swapDest = null;
-      this.updateToolbarButtonStates();
-    }
-  }
-
-  private exitSwapMode(): void {
-    if (this.drawingMode !== "swap") return;
-    this.drawingMode = null;
-    this.clearSwapHighlights();
-    this.swapSource = null;
-    this.swapDest = null;
-    this.updateToolbarButtonStates();
-  }
-
-  // Remove all swap overlay spans from the viewport DOM
-  private clearSwapHighlights(): void {
-    this.viewportEl
-      ?.querySelectorAll(".duckmage-hex-swap-source, .duckmage-hex-swap-dest")
-      .forEach((el) => el.remove());
-  }
-
   // Insert an overlay span INSIDE the hex element so it's shaped by clip-path
   private highlightSwapHex(
     x: number,
@@ -2771,17 +2177,17 @@ export class HexMapView extends ItemView {
     // Clicking the source again: cancel selection
     if (x === this.swapSource.x && y === this.swapSource.y) {
       this.swapSource = null;
-      this.clearSwapHighlights();
+      this.toolbar.clearSwapHighlights();
       return;
     }
 
     // Any other hex: execute swap immediately then deselect tool
     const src = { ...this.swapSource };
-    this.clearSwapHighlights();
+    this.toolbar.clearSwapHighlights();
     this.swapSource = null;
     this.swapDest = null;
     await this.executeHexSwap(src.x, src.y, x, y);
-    this.exitSwapMode();
+    this.toolbar.exitSwapMode();
   }
 
   // Double-click on the destination confirms the swap
@@ -2821,7 +2227,7 @@ export class HexMapView extends ItemView {
   private async onHexTokenPlaceClick(x: number, y: number): Promise<void> {
     if (!this.pendingTokenNotePath || !this.pendingTokenPlaceData) return;
     await this.placeToken(this.pendingTokenNotePath, this.pendingTokenPlaceData, `${x}_${y}`);
-    this.exitTokenMode();
+    this.toolbar.exitTokenMode();
   }
 
   private async performSwap(pathA: string, pathB: string): Promise<void> {
@@ -2932,213 +2338,28 @@ export class HexMapView extends ItemView {
     }
   }
 
-  private updateToolbarButtonStates(): void {
-    const erasing = this.isErasingMode;
-    this.pathToolbarBtn?.toggleClass("is-active", this.drawingMode === "path");
-    this.pathToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "path");
-    // Update path button swatch color to show active type
-    if (this.pathBtnSwatch) {
-      const current = this.pathTool.currentType();
-      const activeType = current
-        ? this.mapPathTypes().find((p) => p.name === current)
-        : this.mapPathTypes()[0];
-      if (activeType) {
-        this.pathBtnSwatch.setCssProps({
-          "--duckmage-bg": activeType.color,
-        });
-        this.pathBtnSwatch.show();
-      } else {
-        this.pathBtnSwatch.hide();
-      }
-    }
-    this.terrainToolbarBtn?.toggleClass(
-      "is-active",
-      this.drawingMode === "terrain",
-    );
-    this.iconToolbarBtn?.toggleClass("is-active", this.drawingMode === "icon");
-    this.tableLinkBtn?.toggleClass(
-      "is-active",
-      this.drawingMode === "tableLink",
-    );
-    this.submapLinkBtn?.toggleClass(
-      "is-active",
-      this.drawingMode === "submapLink",
-    );
-    this.factionLinkBtn?.toggleClass(
-      "is-active",
-      this.drawingMode === "factionLink",
-    );
-    this.regionLinkBtn?.toggleClass(
-      "is-active",
-      this.drawingMode === "regionLink",
-    );
-    this.swapBtn?.toggleClass("is-active", this.drawingMode === "swap");
-    this.tokenBtn?.toggleClass("is-active", this.drawingMode === "placeToken");
-    this.biomeToolbarBtn?.toggleClass("is-active", this.drawingMode === "biome");
-    if (this.biomeBtnPreview) {
-      const colour = this.drawingMode === "biome" && this.paintBiomeId ? this.wm?.biomeNoteOf(this.paintBiomeId)?.color : undefined;
-      if (colour) {
-        this.biomeBtnPreview.setCssProps({ "--duckmage-bg": colour });
-        this.biomeBtnPreview.show();
-      } else this.biomeBtnPreview.hide();
-    }
-    this.viewportEl?.toggleClass(
-      "duckmage-draw-mode",
-      this.drawingMode !== null,
-    );
-    this.viewportEl?.toggleClass(
-      "duckmage-terrain-paint",
-      this.drawingMode === "terrain" && !this.terrainPickMode,
-    );
-
-    // Icon button preview
-    if (this.drawingMode === "icon" && this.paintIconName) {
-      if (this.iconBtnPreview) {
-        this.iconBtnPreview.src = getIconUrl(this.plugin, this.paintIconName);
-        this.iconBtnPreview.show();
-      }
-    } else {
-      if (this.iconBtnPreview) this.iconBtnPreview.hide();
-    }
-    if (this.drawingMode === "terrain") {
-      if (this.terrainPickMode) {
-        // Eyedropper waiting for a click — show ⌖ as the preview
-        this.terrainToolbarBtn?.removeClass("is-terrain-preview");
-        this.terrainToolbarBtn?.addClass("is-eyedropper-active");
-        if (this.terrainBtnPreview) {
-          this.terrainBtnPreview.setCssProps({ "--duckmage-bg": "" });
-          this.terrainBtnPreview.show();
-          this.terrainBtnPreview.textContent = "⌖";
-        }
-      } else {
-        if (this.terrainBtnPreview) this.terrainBtnPreview.textContent = "";
-        this.terrainToolbarBtn?.removeClass("is-eyedropper-active");
-        const entry = this.paintTerrainName
-          ? this.plugin
-              .getMapPalette(this.activeMapName)
-              .find((p) => p.name === this.paintTerrainName)
-          : undefined;
-        if (entry) {
-          if (this.terrainToolbarBtn) {
-            this.terrainToolbarBtn.addClass("is-terrain-preview");
-            this.terrainToolbarBtn.setCssProps({
-              "--duckmage-border-color": entry.color,
-            });
-          }
-          if (this.terrainBtnPreview) {
-            this.terrainBtnPreview.setCssProps({
-              "--duckmage-bg": entry.color,
-            });
-            this.terrainBtnPreview.show();
-          }
-        } else {
-          // Clear mode — show active state without a color
-          this.terrainToolbarBtn?.removeClass("is-terrain-preview");
-          if (this.terrainBtnPreview) {
-            this.terrainBtnPreview.hide();
-          }
-        }
-      }
-    } else {
-      this.terrainToolbarBtn?.removeClass("is-terrain-preview");
-      this.terrainToolbarBtn?.removeClass("is-eyedropper-active");
-      if (this.terrainBtnPreview) {
-        this.terrainBtnPreview.hide();
-      }
-    }
-
-    const prefix = erasing ? "Erase: " : "Link: ";
-
-    // Table link button label
-    if (this.tableLinkBtnLabel) {
-      if (this.drawingMode === "tableLink" && this.paintTablePath) {
-        const name = this.paintTablePath.split("/").pop()?.replace(/.md$/, "") ?? "Table";
-        this.tableLinkBtnLabel.setText(prefix + name);
-      } else {
-        this.tableLinkBtnLabel.setText("Link table");
-      }
-    }
-    this.tableLinkBtn?.toggleClass("is-erase", erasing && this.drawingMode === "tableLink");
-
-    // Submap link button label
-    if (this.submapLinkBtnLabel) {
-      if (this.drawingMode === "submapLink") {
-        this.submapLinkBtnLabel.setText(erasing ? "Erase submap" : (this.paintSubmapName ? "Link: " + this.plugin.mapLabel(this.paintSubmapName) : "Link submap"));
-      } else {
-        this.submapLinkBtnLabel.setText("Link submap");
-      }
-    }
-    this.submapLinkBtn?.toggleClass("is-erase", erasing && this.drawingMode === "submapLink");
-
-    // Faction link button label
-    if (this.factionLinkBtnLabel) {
-      if (this.drawingMode === "factionLink" && this.paintFactionPath) {
-        const name = this.paintFactionPath.split("/").pop()?.replace(/.md$/, "") ?? "Faction";
-        this.factionLinkBtnLabel.setText(erasing ? "Erase: " + name : "Link: " + name);
-      } else {
-        this.factionLinkBtnLabel.setText("Factions");
-      }
-    }
-    this.factionLinkBtn?.toggleClass("is-erase", erasing && this.drawingMode === "factionLink");
-
-    // Region link button label
-    if (this.regionLinkBtnLabel) {
-      if (this.drawingMode === "regionLink" && this.paintRegionPath) {
-        const name = this.paintRegionPath.split("/").pop()?.replace(/.md$/, "") ?? "Area";
-        this.regionLinkBtnLabel.setText(erasing ? "Erase: " + name : "Paint: " + name);
-      } else {
-        this.regionLinkBtnLabel.setText(REGION_AREAS_TOOL);
-      }
-    }
-    this.regionLinkBtn?.toggleClass("is-erase", erasing && this.drawingMode === "regionLink");
-
-    // Terrain / icon erase visual feedback
-    this.terrainToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "terrain");
-    this.iconToolbarBtn?.toggleClass("is-erase", erasing && this.drawingMode === "icon");
-
-    this.updateModeBar();
+  /** Leave a different active tool before switching to `next` (the smoke suite drives this). */
+  private leaveOtherToolFor(next: DrawingMode): void {
+    this.toolbar.leaveOtherToolFor(next);
   }
 
-  /** Show which tool is on (and how to stop it) on the map itself. */
-  private updateModeBar(): void {
-    if (!this.modeBarEl || !this.modeBarTextEl) return;
-    const label = toolModeLabel({
-      mode: this.drawingMode,
-      erasing: this.isErasingMode,
-      terrainName: this.paintTerrainName,
-      terrainPick: this.terrainPickMode,
-      regionHexes: this.owView(this.getActiveMap()) === "regions",
-      // The icon's name as the picker shows it ("village", not "place-village": F6).
-      iconName: this.paintIconName ? iconLabel(this.paintIconName) : this.paintIconName,
-      iconGmOnly: this.paintIconGmOnly,
-      pathTypeName: this.pathTool.currentType(),
-      pathAuto: this.pathTool.autoRoute,
-      pathDrawing: this.pathTool.labelState().drawing,
-      pathSelected: this.pathTool.labelState().selected,
-      pathSummary: this.pathTool.labelState().summary,
-      pathNew: this.pathTool.labelState().forceNew,
-      pathNote: this.pathTool.labelState().note,
-      tablePath: this.paintTablePath,
-      submapName: this.paintSubmapName,
-      factionPath: this.paintFactionPath,
-      regionPath: this.paintRegionPath,
-      biomeName: this.paintBiomeId ? this.wm?.biomeInfo(this.paintBiomeId)?.label ?? this.paintBiomeId : null,
-    });
-    this.renderRouteControls();
-    const changed = this.modeBarTextEl.getText() !== (label ?? "");
-    this.modeBarTextEl.setText(label ?? "");
-    this.modeBarEl.toggle(label !== null);
-    // The path tool says more and has more controls: its text wraps instead of being cut off.
-    this.modeBarEl.toggleClass("is-path", this.drawingMode === "path");
-    this.modeBarTextEl.setAttr("title", label ?? "");
-    if (label === null || !changed) return;
-    // A tool just started or changed: pulse the bar so it's noticed
-    // (round 4: a tester never saw it). The map does NOT move here: a tool
-    // is on now, and a slide under the cursor sends the next click to the
-    // wrong hex (round 5, see mayAutoPan).
-    const bar = this.modeBarEl;
-    bar.removeClass("is-new");
-    window.requestAnimationFrame(() => bar.addClass("is-new"));
+  /** Put the active tool down. */
+  private exitCurrentMode(): void {
+    this.toolbar.exitCurrentMode();
+  }
+
+  private exitTerrainMode(): void {
+    this.toolbar.exitTerrainMode();
+  }
+
+  /** Open the drawing panel and the terrain picker (setup wizard). */
+  openTerrainPicker(): void {
+    this.toolbar.openTerrainPicker();
+  }
+
+  /** Confirm (or remove) an overworld path into its regions. */
+  async runPathProjection(pathName: string, remove: boolean): Promise<void> {
+    await this.toolbar.runPathProjection(pathName, remove);
   }
 
   /** Enter calibration mode for the active map's bg image. No-op if no image. */
@@ -3578,7 +2799,7 @@ export class HexMapView extends ItemView {
     this.overworldLayer?.render(gridContainer, region);
     this.minimap?.render(this.contentEl, region);
     // The view switch or a hand-edited `mode:` may have changed what the bars say.
-    this.updateModeBar();
+    this.toolbar.updateModeBar();
     this.refreshWorkModeBtn();
     this.pathLayer.renderPathOverlay(gridContainer);
     this.areas.renderRegionOverlay(gridContainer);
@@ -3764,7 +2985,7 @@ export class HexMapView extends ItemView {
     });
 
     menu.add("hex.swap", "Swap hex", "arrow-left-right", () => {
-      if (this.drawingMode !== "swap") this.handleSwapButton();
+      if (this.drawingMode !== "swap") this.toolbar.handleSwapButton();
       void this.onHexSwapClick(x, y);
     });
 
@@ -3992,7 +3213,7 @@ export class HexMapView extends ItemView {
       );
       this.terrainPickMode = false;
       this.paintTerrainName = sampled;
-      this.updateToolbarButtonStates();
+      this.toolbar.updateToolbarButtonStates();
       return;
     }
 
@@ -4357,7 +3578,7 @@ export class HexMapView extends ItemView {
       if (!cell.region) return null;
       this.terrainPickMode = false;
       this.paintTerrainName = this.plugin.mapStore.get(cell.region, `${cell.x}_${cell.y}`)?.terrain ?? null;
-      this.updateToolbarButtonStates();
+      this.toolbar.updateToolbarButtonStates();
       return null;
     }
     const terrain = this.isErasingMode ? null : this.paintTerrainName;
@@ -4522,124 +3743,6 @@ export class HexMapView extends ItemView {
         this.savingIndicatorEl.removeClass("is-active");
       }
     }
-  }
-
-  /**
-   * Open the path-type picker. Clicking the Path button while drawing reopens
-   * it (like Terrain) instead of silently turning the tool off (fresh-eyes
-   * T7); leave the tool with right-click → Exit tool, Esc, or the mode bar.
-   */
-  private handlePathButton(): void {
-    if (this.drawingMode !== "path" && !this.modeAllows(TOOL_ACTIONS.path)) return;
-    new PathPickerModal(
-      this.app,
-      this.plugin,
-      this.plugin.mapPaletteName(this.activeMapName),
-      this.pathTool.typeName,
-      (typeName) => {
-        this.leaveOtherToolFor("path");
-        // A new type ends the branch being drawn; re-picking the type keeps it going.
-        if (this.drawingMode !== "path") this.exitPathMode();
-        this.pathTool.setType(typeName);
-        this.drawingMode = "path";
-        this.isErasingMode = false;
-        this.updateToolbarButtonStates();
-        this.pathLayer.updatePathOverlay();
-      },
-      () => {
-        if (this.drawingMode !== "path") this.updateToolbarButtonStates();
-      },
-      () => {
-        this.drawingMode = "path";
-        this.isErasingMode = true;
-        this.updateToolbarButtonStates();
-        this.pathLayer.updatePathOverlay();
-      },
-      {
-        value: this.pathTool.autoRoute,
-        onChange: (on) => this.pathTool.setAutoRoute(on),
-        noImpassable: impassableNames(this.plugin.getMapPalette(this.activeMapName)).length === 0,
-      },
-      {
-        list: (() => {
-          // Ends, forks and size from the resolved routes (#48), so similar
-          // names (Road 2 … Road 6) can be told apart. Names stay the user's.
-          const resolved = this.plugin.paths.resolved(this.activeMapName);
-          const types = this.plugin.getMapPathTypes(this.activeMapName).map((t) => t.name);
-          return this.plugin.mapStore.paths(this.activeMapName).map((p) => ({ name: p.name, typeName: p.typeName, summary: pathListSummary(p, resolved, types) }));
-        })(),
-        selected: this.pathTool.selected,
-        onPick: (name) => {
-          this.leaveOtherToolFor("path");
-          this.drawingMode = "path";
-          this.isErasingMode = false;
-          this.pathTool.selectPath(name);
-          // Show it: the list is for paths that are hard to find on the map.
-          const first = this.plugin.mapStore.paths(this.activeMapName).find((q) => q.name === name)?.branches[0]?.anchors[0];
-          if (first) { const [hx, hy] = first.split("_").map(Number); this.centerOnHex(hx, hy); }
-          this.updateToolbarButtonStates();
-          this.pathLayer.updatePathOverlay();
-        },
-      },
-    ).open();
-  }
-
-  /** The path tool's controls in the mode bar (src/hex-map/pathTool.ts). */
-  private renderRouteControls(): void {
-    const el = this.modeBarRouteEl;
-    if (!el) return;
-    el.empty();
-    const show = this.drawingMode === "path" && !this.isErasingMode;
-    el.toggle(show);
-    if (show) this.pathTool.renderBarControls(el);
-    // An overworld's selected path: confirm it into its regions from the bar too.
-    const selected = show ? this.pathTool.labelState().selected : null;
-    const confirm = this.overworldPathItems(selected)[0];
-    if (confirm) {
-      const btn = el.createEl("button", {
-        text: confirm.label,
-        cls: "duckmage-mode-bar-route-toggle duckmage-path-confirm-btn",
-        attr: { title: "Put this path into every region it crosses, joined at the seams (one undo step)." },
-      });
-      btn.addEventListener("click", confirm.onClick);
-    }
-  }
-
-  /**
-   * An overworld path's region actions (path menu, mode bar): "Confirm into
-   * regions" for a draft, "Update regions" + "Remove from regions" for a
-   * confirmed one. None on other maps, or when the mode doesn't allow it.
-   */
-  private overworldPathItems(pathName: string | null): { label: string; onClick: () => void }[] {
-    const mapName = this.activeMapName;
-    const wm = this.wm;
-    if (!wm || !pathName || !wm.isPathOverworld(this.plugin, mapName) || !canDo(mapName, "edit-path")) return [];
-    const p = this.plugin.mapStore.paths(mapName).find((q) => q.name === pathName);
-    if (!p) return [];
-    const run = (remove: boolean) => () => void this.runPathProjection(pathName, remove);
-    return wm.isApplied(p)
-      ? [{ label: "Update regions", onClick: run(false) }, { label: "Remove from regions", onClick: run(true) }]
-      : [{ label: "Confirm into regions", onClick: run(false) }];
-  }
-
-  /** Confirm (or remove) an overworld path into its regions, and say what happened. */
-  async runPathProjection(pathName: string, remove: boolean): Promise<void> {
-    const mapName = this.activeMapName;
-    const wm = this.wm;
-    if (!wm) return;
-    const res = remove ? await wm.removeOverworldPath(this.plugin, mapName, pathName) : await wm.confirmOverworldPath(this.plugin, mapName, pathName);
-    if ("error" in res) {
-      new Notice(res.error);
-      return;
-    }
-    const n = res.regions.length;
-    const where = n === 1 ? "1 region" : `${n} regions`;
-    const msg = remove ? `${pathName}: taken out of ${where}.` : `${pathName}: ${n ? `in ${where}` : "crosses no regions yet"}.`;
-    const skipped = res.skipped.length ? ` ${res.skipped.length} still loading: confirm again in a moment.` : "";
-    new Notice(msg + skipped);
-    this.undos.updateUndoButton();
-    this.renderGrid();
-    this.updateModeBar();
   }
 
   // ── Token layer ───────────────────────────────────────────────────────────
