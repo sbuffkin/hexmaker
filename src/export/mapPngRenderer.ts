@@ -16,6 +16,7 @@ import { getIcon, Notice, TFile, type App } from "obsidian";
 import { hexCenter, hexPolygonPoints, smoothPath, sharpPath } from "../hex-map/hexGeometry";
 import { applyAffine } from "../paths/pathGeometry";
 import { ensureExportFolder, exportedMessage, openExported } from "./exportFolder";
+import { writeBinaryToVault } from "./vaultWrite";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -127,7 +128,7 @@ export async function renderMapToPngBlob(
   mapName: string,
   opts: MapPngRenderOptions = {},
 ): Promise<Blob> {
-  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const map = plugin.getMap(mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
   // Link badge kinds in the legend use the map type's words (G4b).
   const sectionWords = plugin.sectionWordsFor(mapName);
@@ -1227,7 +1228,7 @@ export async function exportMapAsPng(
     const blob = await renderMapToPngBlob(plugin, mapName, opts);
     const buf = new Uint8Array(await blob.arrayBuffer());
     const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
-    await writeBinaryToVault(plugin, outPath, buf);
+    await writeBinaryToVault(plugin.app, outPath, buf);
     new Notice(exportedMessage(outPath, replaced));
     void openExported(plugin.app, outPath);
   } catch (err) {
@@ -1241,21 +1242,6 @@ export async function exportMapAsPng(
 function sanitiseFilename(name: string): string {
   // Strip vault-illegal characters from the map name when used as a filename.
   return name.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-async function writeBinaryToVault(
-  plugin: HexmakerPlugin,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = plugin.app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await plugin.app.vault.modifyBinary(existing, buf);
-  } else {
-    await plugin.app.vault.createBinary(path, buf);
-  }
 }
 
 // Re-export so the renderer's surface is self-contained.

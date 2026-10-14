@@ -17,7 +17,7 @@
  */
 
 import type { SectionWordsFn } from "../../mapKinds";
-import { Notice, TFile, type App } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { exportToPdfBytes } from "../pdfExporter";
 import { renderMarkdownToHtml } from "../htmlRenderer";
 import { ensureExportFolder } from "../exportFolder";
@@ -30,7 +30,8 @@ import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { mapLabel } from "../../maps/mapTree";
-import { exportedMessage, openExported } from "../exportFolder";
+import { exportedMessage } from "../exportFolder";
+import { openInVault, writeBinaryToVault } from "../vaultWrite";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
   /** Filename stem (no extension). Defaults to mapName. */
@@ -91,7 +92,7 @@ export async function exportMapAsPdf(
 
   const notice = new Notice(`Exporting ${stem}.pdf…`, 0);
   try {
-    const map = plugin.settings.maps.find((m) => m.name === mapName);
+    const map = plugin.getMap(mapName);
     if (!map) throw new Error(`Map "${mapName}" not found`);
 
     // 1. Compute subdivisions
@@ -256,7 +257,7 @@ export async function buildMapPdfMarkdown(
   sectionImageUris: string[],
   columns?: HandoutColumn[],
 ): Promise<string> {
-  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const map = plugin.getMap(mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
 
   const lines: string[] = [];
@@ -346,7 +347,7 @@ async function collectHexRows(
   mapName: string,
   section: MapSection,
 ): Promise<HexRow[]> {
-  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const map = plugin.getMap(mapName);
   if (!map) return [];
 
   const out: HexRow[] = [];
@@ -464,23 +465,4 @@ export async function blobToDataUri(blob: Blob, type: string): Promise<string> {
     parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
   }
   return `data:${type};base64,${btoa(parts.join(""))}`;
-}
-
-export async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-  } else {
-    await app.vault.createBinary(path, buf);
-  }
-}
-
-export async function openInVault(app: App, path: string): Promise<void> {
-  await openExported(app, path);
 }

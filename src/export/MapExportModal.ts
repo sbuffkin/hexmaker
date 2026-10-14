@@ -67,7 +67,7 @@ export function renderMapExportForm(
   el.addClass("duckmage-export-tab");
   const mapName = initialMap;
   // Start from this map's last choices, else from what the map view shows (S9).
-  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const map = plugin.getMap(mapName);
   const prefs: MapExportPrefs = plugin.settings.mapExportPrefs?.[mapName] ?? {};
   const ticks = exportLayerDefaults({ ...map, showLegend: plugin.settings.showTerrainLegend }, prefs);
 

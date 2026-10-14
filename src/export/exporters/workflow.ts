@@ -14,7 +14,7 @@
  *                       breakdown table + the template filled with those values
  */
 
-import { Notice, TFile, type App } from "obsidian";
+import { Notice, TFile } from "obsidian";
 import { exportToPdfBytes } from "../pdfExporter";
 import { renderMarkdownToHtml } from "../htmlRenderer";
 import { ensureExportFolder } from "../exportFolder";
@@ -34,7 +34,8 @@ import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { resolveWorkflowTemplate } from "../../random-tables/workflowFiles";
 import { fillPlaceholders, escapeTableCell } from "../../textUtils";
-import { exportedMessage, openExported, withExportProvenance } from "../exportFolder";
+import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 export interface WorkflowExportOptions {
   /** Filename stem (no extension). Defaults to workflow basename. */
@@ -306,41 +307,6 @@ export function formatRollsBreakdown(
 
 function sanitiseFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<boolean> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-    return true;
-  }
-  await app.vault.createBinary(path, buf);
-  return false;
-}
-
-/** Write the export; true when it replaced an earlier one. */
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<boolean> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-    return true;
-  }
-  await app.vault.create(path, data);
-  return false;
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  await openExported(app, path);
 }
 
 // `normalizeFolder` is imported even though we don't use it yet — keeping the

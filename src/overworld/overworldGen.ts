@@ -17,6 +17,7 @@
 import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
+import { ensureFolderPath } from "../vault/ensureFolder";
 import { canAdd, canReshape } from "../workMode";
 import { regionMapAt } from "../maps/submaps";
 import {
@@ -59,23 +60,13 @@ export interface PoolNote {
   problems: BiomePoolProblem[];
 }
 
-async function ensureFolder(plugin: HexmakerPlugin, folder: string): Promise<void> {
-  const parts = folder.split("/");
-  for (let i = 1; i <= parts.length; i++) {
-    const p = parts.slice(0, i).join("/");
-    if (!plugin.app.vault.getAbstractFileByPath(p)) {
-      try { await plugin.app.vault.createFolder(p); } catch { /* made meanwhile */ }
-    }
-  }
-}
-
 /** Write the shipped "All biomes" pool, once (never over a note, never again once deleted). */
 export async function ensureDefaultPool(plugin: HexmakerPlugin): Promise<void> {
   if (plugin.settings.biomePoolSeeded) return;
   const folder = biomePoolsFolder(plugin);
   const path = `${folder}/${ALL_BIOMES_POOL}.md`;
   if (!plugin.app.vault.getAbstractFileByPath(path)) {
-    await ensureFolder(plugin, folder);
+    await ensureFolderPath(plugin.app.vault, folder);
     try {
       await plugin.app.vault.create(path, buildBiomePool(ALL_BIOMES_POOL, allBiomesPool(BIOME_PRESETS)));
     } catch (e) {
@@ -123,7 +114,7 @@ export async function saveBiomePool(plugin: HexmakerPlugin, target: { path: stri
   const folder = biomePoolsFolder(plugin);
   const path = `${folder}/${name}.md`;
   if (plugin.app.vault.getAbstractFileByPath(path)) return { error: `There's already a pool called ${name}.` };
-  await ensureFolder(plugin, folder);
+  await ensureFolderPath(plugin.app.vault, folder);
   await plugin.app.vault.create(path, buildBiomePool(name, rows));
   return { path };
 }

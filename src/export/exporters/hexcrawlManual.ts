@@ -23,10 +23,9 @@ import {
   blobToDataUri,
   computeSubdivisions,
   enumerateSections,
-  openInVault,
   sanitiseFilename,
-  writeBinaryToVault,
 } from "./mapWithTable";
+import { openInVault, writeBinaryToVault } from "../vaultWrite";
 import { hexNumbering } from "../manual/hexNumber";
 import { pluginVersion } from "../../compat";
 import { mapLabel } from "../../maps/mapTree";
@@ -100,7 +99,7 @@ export async function collectManualData(
   progress: (msg: string) => void = () => {},
 ): Promise<ManualData> {
   const app = plugin.app;
-  const map = plugin.settings.maps.find((m) => m.name === mapName);
+  const map = plugin.getMap(mapName);
   if (!map) throw new Error(`Map "${mapName}" not found`);
   const words = plugin.sectionWordsFor(mapName);
   const player = !!opts.player;
@@ -311,7 +310,7 @@ export async function collectManualData(
 
   const keyedCount = keyedByKey.size;
   return {
-    title: mapLabel(plugin.settings.maps.find((m) => m.name === mapName), mapName),
+    title: mapLabel(plugin.getMap(mapName), mapName),
     version: pluginVersion(plugin),
     date: new Date().toISOString().slice(0, 10),
     hexCount,
