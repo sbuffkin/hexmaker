@@ -19,7 +19,7 @@ import type { RollHexTarget } from "../random-tables/RandomTableModal";
 import { WorkflowWizardModal } from "../random-tables/WorkflowWizardModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { HexExportModal } from "./HexExportModal";
-import { VIEW_TYPE_HEX_MAP } from "../constants";
+import { activeMapView } from "../workspace/views";
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { contentFolder } from "../notePickers";
@@ -210,15 +210,7 @@ export class HexEditorModal extends HexmakerModal {
       title: "Center map on this hex",
     });
     centerBtn.addEventListener("click", () => {
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      interface WithCenterOnHex {
-        centerOnHex?(x: number, y: number): void;
-      }
-      if (leaves.length > 0)
-        (leaves[0].view as unknown as WithCenterOnHex).centerOnHex?.(
-          this.x,
-          this.y,
-        );
+      activeMapView(this.app.workspace)?.centerOnHex(this.x, this.y);
     });
 
     // "Open note" can be determined synchronously from the vault index

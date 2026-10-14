@@ -5,7 +5,7 @@
 		"src/HexmakerPlugin.ts": 3157,
 		"src/maps/mapNote.ts": 2136,
 		"src/random-tables/RandomTableView.ts": 1933,
-		"src/hex-map/HexEditorModal.ts": 639,
+		"src/hex-map/HexEditorModal.ts": 631,
 		"src/worldgen/GeneratorPanel.ts": 1603,
 		"src/maps/MapStore.ts": 1373,
 		"src/hex-map/pathTool.ts": 1496,

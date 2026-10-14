@@ -17,7 +17,7 @@ import { FileLinkSuggestModal } from "../FileLinkSuggestModal";
 import { TABLE_KINDS, choiceKey, initialChoice, rememberChoice, rememberedChoice, tableChoices, type TableChoiceItem, type TableKind } from "../../tableChoice";
 import { TableChoice } from "../../random-tables/TableChoice";
 import { groupTableFiles } from "../../random-tables/tablePickerGroups";
-import { VIEW_TYPE_RANDOM_TABLES } from "../../constants";
+import { openTableInView } from "../../workspace/views";
 import { contentFolder } from "../../notePickers";
 import { addToPlayLog } from "../../play/playLogWriter";
 import { PLAY_LOG_TARGET, rollDefaultSection } from "../../play/playLog";
@@ -195,21 +195,10 @@ export class TableSections extends EditorWritePart<TableSectionsHost> {
     picker.open();
   }
 
-  /** Show a table in the random tables view. */
+  /** Show a table in the random tables view (workspace/views.ts), then close the editor. */
   private openTableInView(tablePath: string): void {
     void (async () => {
-      interface WithOpenTable {
-        openTable?(path: string): void;
-      }
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenTable).openTable?.(tablePath);
-      } else {
-        const leaf = this.app.workspace.getLeaf("tab");
-        await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-        (leaf.view as unknown as WithOpenTable).openTable?.(tablePath);
-      }
+      await openTableInView(this.app.workspace, tablePath);
       this.close();
     })();
   }
