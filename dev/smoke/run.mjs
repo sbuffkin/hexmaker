@@ -336,6 +336,9 @@ async function runSetup(setup) {
         const l = await ev(P.modeLocks, pluginId, target.name);
         rec("C8-mode-locks", l.ok, `${target.name}: ${[...l.steps, ...l.problems].join("; ")}`, { gaps: l.gaps });
         for (const g of l.gaps ?? []) checks.push({ check: "C8-gap", ok: true, gap: true, detail: g });
+        // C9: solo play (party step, visited, play log), cleaned up after.
+        const pp = await ev(P.partyPlay, pluginId, target.name);
+        rec("C9-party-play", pp.ok, `${target.name}: ${[...pp.steps, ...pp.problems].join("; ")}`);
       }
     }
 
