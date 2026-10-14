@@ -2,6 +2,7 @@ import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../typ
 import { parseImpassableCell } from "../impassable";
 import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTypeLegacy";
 import { colorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
+import { splitRow } from "../md/tableRow";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
@@ -57,27 +58,6 @@ function columnFor(header: string): Column | null {
   if (h === "routing" || h === "route" || h === "runs" || h === "drawn" || h === "draw") return "routing";
   if (h.startsWith("avoid")) return "avoid";
   return null;
-}
-
-/** A table row split into cells, honouring `\|` escapes. */
-export function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "\\" && s[i + 1] === "|") {
-      cur += "|";
-      i++;
-    } else if (ch === "|") {
-      cells.push(cur.trim());
-      cur = "";
-    } else cur += ch;
-  }
-  cells.push(cur.trim());
-  return cells;
 }
 
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;

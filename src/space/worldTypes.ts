@@ -90,6 +90,7 @@ import {
   type WorldSizeRange,
 } from "../worldgen/cellReaders";
 import { ORBIT_ZONES, orbitZone, readOrbit, type OrbitZone } from "../modules/space/orbitZones";
+import { splitLinkRow as splitRow } from "../md/tableRow";
 
 export { generatorRefId, readGenerator, readIntRange, readOptions, readSize, ORBIT_ZONES, orbitZone, readOrbit };
 export type { IntRange, OrbitZone, WorldGeneratorRef, WorldSizeRange };
@@ -626,25 +627,6 @@ const FEATURE_ALIASES: Record<string, FeatureColumn> = {
   chance: "Chance", odds: "Chance", "chance per system": "Chance", "per system": "Chance", "chance per system hex": "Chance",
   notes: "Notes", note: "Notes", comment: "Notes",
 };
-
-function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    // A `|` inside [[link|alias]] belongs to the link.
-    if (s[i] === "[" && s[i + 1] === "[") { depth++; cur += "[["; i++; continue; }
-    if (s[i] === "]" && s[i + 1] === "]" && depth) { depth--; cur += "]]"; i++; continue; }
-    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
-    else if (s[i] === "|" && !depth) { cells.push(cur.trim()); cur = ""; }
-    else cur += s[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
 
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 const normHeader = (h: string) => h.trim().toLowerCase().replace(/[*_]/g, "").replace(/\s+/g, " ");

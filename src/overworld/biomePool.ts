@@ -37,6 +37,7 @@
  */
 
 import { biomeFileName, isUnderground, linkTarget, type BiomeNoteFields } from "./biomeNote";
+import { splitLinkRow as splitRow } from "../md/tableRow";
 
 export const BIOME_POOL_MARKER = "hexmaker-biome-pool";
 export const BIOME_POOL_FORMAT = 1;
@@ -64,25 +65,6 @@ export const BIOME_POOL_HELP = [
   "> [!info] Biome pool",
   "> The biomes a generated overworld may use. **Biome** links a biome note. **Weight** (optional, 1 if blank) scales how often it's chosen where its climate fits: 0.5 is half as often, 2 twice (up to always), 0 never. Biomes without a climate are only placed where no other biome in the pool fits. Add or delete rows freely.",
 ];
-
-function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  let depth = 0;
-  for (let i = 0; i < s.length; i++) {
-    // A `|` inside [[link|alias]] belongs to the link.
-    if (s[i] === "[" && s[i + 1] === "[") { depth++; cur += "[["; i++; continue; }
-    if (s[i] === "]" && s[i + 1] === "]" && depth) { depth--; cur += "]]"; i++; continue; }
-    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
-    else if (s[i] === "|" && !depth) { cells.push(cur.trim()); cur = ""; }
-    else cur += s[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
 
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 const norm = (h: string) => h.trim().toLowerCase().replace(/\s+/g, " ");

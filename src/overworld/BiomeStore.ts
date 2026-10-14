@@ -22,12 +22,10 @@
  * Every change is handed to the lookups in biomes.ts (setBiomeSource).
  */
 
-import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
+import { Notice, TAbstractFile, TFile } from "obsidian";
 import { noticeBackground } from "../ui/notify";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import type { ModuleStore } from "../modules/types";
 import { normalizeFolder } from "../utils";
-import { writeJsonBackup } from "../backup";
+import { NoteFolderStore } from "../stores/NoteFolderStore";
 import {
   BIOME_NOTE_MARKER,
   biomeFileName,
@@ -94,33 +92,18 @@ export function climatesToAdd(
   return { add, done: now };
 }
 
-export class BiomeStore implements BiomeStoreApi, ModuleStore {
+export class BiomeStore extends NoteFolderStore<Entry> implements BiomeStoreApi {
   /** Its id among the modules' stores (src/modules/types.ts ModuleStore). */
   readonly id = "biomes";
-  private entries = new Map<string, Entry>();
-  private lastContent = new Map<string, string>();
-  private reported = new Map<string, string>();
-  private listeners = new Set<() => void>();
-  private ready = false;
-  private queue: Promise<void> = Promise.resolve();
-
-  constructor(private plugin: HexmakerPlugin) {}
-
-  isReady(): boolean {
-    return this.ready;
-  }
+  protected readonly logLabel = "biome notes";
+  protected readonly backupFolder = "biome-notes";
+  protected readonly backupLabel = "biome";
 
   folder(): string {
     const configured = normalizeFolder(this.plugin.settings.biomesFolder ?? "");
     if (configured) return configured;
     const world = normalizeFolder(this.plugin.settings.worldFolder ?? "");
     return world ? `${world}/biomes` : "biomes";
-  }
-
-  /** Call `fn` after every change to the biomes. Returns an unsubscribe. */
-  onChange(fn: () => void): () => void {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
   }
 
   async init(): Promise<void> {
@@ -141,16 +124,6 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
   async seedShipped(explicit = false): Promise<void> {
     await this.enqueue(async () => {
       await this.seed(explicit);
-      this.publish();
-    });
-  }
-
-  /** Re-read every note (the folder setting changed). */
-  async reload(): Promise<void> {
-    await this.enqueue(async () => {
-      this.entries.clear();
-      this.lastContent.clear();
-      for (const f of this.files()) await this.load(f);
       this.publish();
     });
   }
@@ -248,32 +221,13 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
 
   // ── vault events ───────────────────────────────────────────────────────
 
-  /** A new file reads like a changed one. */
-  onCreate(f: TAbstractFile): void {
-    this.onModify(f);
-  }
-
-  onModify(f: TAbstractFile): void {
-    if (!this.isBiomeFile(f)) return;
-    void this.enqueue(async () => {
-      if (await this.load(f)) this.publish();
-    });
-  }
-
-  onDelete(f: TAbstractFile): void {
-    if (!this.entries.has(f.path)) return;
-    this.entries.delete(f.path);
-    this.lastContent.delete(f.path);
-    this.publish();
-  }
-
   onRename(f: TAbstractFile, oldPath: string): void {
     const old = this.entries.get(oldPath);
     if (old) {
       this.entries.delete(oldPath);
       this.lastContent.delete(oldPath);
     }
-    if (!this.isBiomeFile(f)) {
+    if (!this.isNoteFile(f)) {
       if (old) this.publish();
       return;
     }
@@ -314,35 +268,21 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
       ?? list.find((e) => biomeSlug(e.path.slice(e.path.lastIndexOf("/") + 1, -3)) === k);
   }
 
-  private publish(): void {
+  protected publish(): void {
     if (this.ready) setBiomeSource(this.list());
-    for (const fn of this.listeners) fn();
+    super.publish();
   }
 
   private inFolder(path: string): boolean {
     return path.startsWith(this.folder() + "/") && path.endsWith(".md");
   }
 
-  private isBiomeFile(f: TAbstractFile): f is TFile {
+  protected isNoteFile(f: TAbstractFile): f is TFile {
     return f instanceof TFile && f.extension === "md" && !f.basename.startsWith("_") && this.inFolder(f.path);
   }
 
-  private files(): TFile[] {
-    const root = this.plugin.app.vault.getAbstractFileByPath(this.folder());
-    if (!(root instanceof TFolder)) return [];
-    const out: TFile[] = [];
-    const walk = (folder: TFolder) => {
-      for (const child of folder.children) {
-        if (child instanceof TFolder) walk(child);
-        else if (child instanceof TFile && child.path.endsWith(".md") && !child.name.startsWith("_")) out.push(child);
-      }
-    };
-    walk(root);
-    return out.sort((a, b) => a.path.localeCompare(b.path));
-  }
-
   /** Read one note. True when what it says changed. */
-  private async load(f: TFile): Promise<boolean> {
+  protected async load(f: TFile): Promise<boolean> {
     const content = await this.plugin.app.vault.read(f);
     if (this.lastContent.get(f.path) === content && this.entries.has(f.path)) return false;
     this.take(f.path, f.basename ?? f.path.slice(f.path.lastIndexOf("/") + 1, -3), content);
@@ -438,32 +378,5 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
     }
     s.biomeClimatesSeeded = [...done, ...plan.done];
     await this.plugin.saveSettings();
-  }
-
-  private async ensureFolder(folder: string): Promise<void> {
-    const vault = this.plugin.app.vault;
-    const parts = folder.split("/");
-    for (let i = 1; i <= parts.length; i++) {
-      const p = parts.slice(0, i).join("/");
-      if (!vault.getAbstractFileByPath(p)) {
-        try { await vault.createFolder(p); } catch { /* made meanwhile */ }
-      }
-    }
-  }
-
-  private async backup(base: string, notes: Record<string, string>): Promise<void> {
-    try {
-      const dir = `${this.plugin.manifest.dir}/backups/biome-notes-${new Date().toISOString().slice(0, 10)}`;
-      await writeJsonBackup(this.plugin.app.vault.adapter, dir, base, JSON.stringify({ savedAt: new Date().toISOString(), notes }));
-    } catch (e) {
-      console.error("Hexmaker: biome backup failed", e);
-    }
-  }
-
-  private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((e) => {
-      console.error("Hexmaker: biome notes", e);
-    });
-    return this.queue;
   }
 }

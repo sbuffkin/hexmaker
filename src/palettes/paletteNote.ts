@@ -2,10 +2,11 @@ import type { SubmapDefault, TerrainColor } from "../types";
 import { impassableNoteCell, parseImpassableCell } from "../impassable";
 import { isDerivedCell, parseTerrainTypeCell, terrainTypeCell } from "../terrainTypes";
 import { colorCell, isCssColor, parseColorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
-import { findPathTypesTable, splitRow as splitPathRow } from "./pathTypeTable";
+import { findPathTypesTable } from "./pathTypeTable";
 import { ALL_MAP_KINDS, type MapKind } from "../mapKinds";
 import { pathLink, refBasename } from "../noteFormats";
 import { registry } from "../modules";
+import { splitRow } from "../md/tableRow";
 
 // Plain-text palette notes.
 //
@@ -65,29 +66,6 @@ export function paletteFileName(name: string): string {
     .trim()
     .replace(/^\.+/, "");
   return cleaned || "Palette";
-}
-
-/** Split a markdown table row into cells, honouring `\|` escapes. */
-function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (ch === "\\" && s[i + 1] === "|") {
-      cur += "|";
-      i++;
-    } else if (ch === "|") {
-      cells.push(cur.trim());
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  cells.push(cur.trim());
-  return cells;
 }
 
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
@@ -539,7 +517,7 @@ export function paletteColorIssues(content: string): PaletteColorIssue[] {
   const paths = findPathTypesTable(lines);
   if (paths && paths.columns.includes("name") && paths.columns.includes("color")) {
     for (let i = paths.start + 2; i < paths.end; i++) {
-      const cells = splitPathRow(lines[i]);
+      const cells = splitRow(lines[i]);
       const name = cells[paths.columns.indexOf("name")]?.trim();
       if (name) check(name, "Color", cells[paths.columns.indexOf("color")]);
     }

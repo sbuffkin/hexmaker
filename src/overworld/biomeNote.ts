@@ -67,6 +67,7 @@
 
 import { climateKeyValues, readClimate, sameClimateValue, type BiomeClimate } from "./biomeClimate";
 import { cleanTuning, isTuningHeader, readTuningRows, tuningTable, type BiomeTuning } from "./biomeTuning";
+import { splitRow } from "../md/tableRow";
 
 // The tuning API, for callers that read biome notes (one import for both).
 export {
@@ -200,21 +201,6 @@ export const BIOME_HELP = [
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
-
-function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
-    else if (s[i] === "|") { cells.push(cur.trim()); cur = ""; }
-    else cur += s[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
 
 const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
