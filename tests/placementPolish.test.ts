@@ -282,7 +282,8 @@ describe("Advanced · N set is wired on the surfaces where it's practical", () =
   const wired: [string[], RegExp][] = [
     [["src", "hex-map", "HexSidePanel.ts"], /disclosure\.place\("LayersMenu\.regionOverlay", regionRow, \(\) => regionCb\.checked\)/],
     [["src", "hex-map", "TokenModal.ts"], /this\.place\("Token\.description", descSetting\.settingEl, \(\) => !!descInput\?\.value\.trim\(\)\)/],
-    [["src", "hex-map", "HexEditorModal.ts"], /this\.place\(placeId, srcWrap, \(\) => !!this\.hexSectionTable\(path, section\)\)/],
+    // (The hex editor's per-section table source left Advanced: owner SF2
+    // made the table choice and "change…" part of the section, tests/tablesSolo.test.ts.)
     [["src", "worldgen", "GeneratorPanel.ts"], /engineTuningIsSet\(id, s\(\)\)/],
     [["src", "export", "MapExportModal.ts"], /disclosure\.track\("MapExport\.showRegionOverlay", \(\) => showRegionOverlay\.checked\)/],
     [["src", "hex-map", "MapModal.ts"], /at\(\["MapModal\.propsTerrainTheme"\], \(\) => !!currentMap\?\.terrainType\)/],

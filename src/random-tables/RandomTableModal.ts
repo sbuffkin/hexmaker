@@ -3,7 +3,8 @@ import { handRollLabel } from "../arrival/eventsLedger";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, resolveTable, rowOdds, dieLabel, emptyTableMessage } from "./randomTable";
+import { parseRandomTable, resolveTable, rowOdds, dieLabel } from "./randomTable";
+import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
 import { rollForHex } from "./hexRoll";
 import { layeredLookup, notesLookup } from "./resolve";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
@@ -318,29 +319,24 @@ export class RandomTableModal extends HexmakerModal {
     const odds = rowOdds(table, resolved);
 
     if (table.entries.length === 0) {
-      const empty = tableContainer.createDiv({ cls: "duckmage-rt-empty-state" });
-      empty.createDiv({ text: emptyTableMessage(content), cls: "duckmage-rt-empty" });
-      const addBtn = empty.createEl("button", { text: "Add entries" });
-      addBtn.addEventListener("click", () => {
-        new RandomTableEditorModal(
-          this.app,
-          this.plugin,
-          file,
-          () => {
-            void (async () => {
-              tableContainer.empty();
-              resultBox.el.hide();
-              rollBtn.disabled = true;
-              await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
-            })();
-          },
-          content,
-        ).open();
+      // SF1: Roll stays disabled; the empty state opens the table editor.
+      setRollEnabled(rollBtn, false);
+      renderEmptyTableState(tableContainer, {
+        app: this.app,
+        plugin: this.plugin,
+        file,
+        content,
+        onSaved: () => {
+          void (async () => {
+            tableContainer.empty();
+            resultBox.el.hide();
+            await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+          })();
+        },
       });
-      rollBtn.title = "Add entries to roll on this table";
       return;
     }
-    rollBtn.removeAttribute("title");
+    setRollEnabled(rollBtn, true);
 
     const tableEl = tableContainer.createEl("table", {
       cls: "duckmage-random-table",

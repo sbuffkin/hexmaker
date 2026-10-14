@@ -106,11 +106,8 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapView.dblRightClickExit": "hidden",
   "MapView.dblClickOffGridExit": "hidden",
 
-  // ── Hex editor: a section's table source is Advanced ──
-  "HexEditor.weatherSource": "advanced",
-  "HexEditor.hooksSource": "advanced",
-  "HexEditor.rolledSetMapTable": "advanced",
-  "HexEditor.rolledSetHexTable": "advanced",
+  // (Hex editor: a section's table choice and "change…" are main since
+  // owner SF2, 2026-10-14; the per-source Advanced items are gone.)
 
   // ── Hex table ──
   "HexTable.refresh": "debug",

@@ -1551,6 +1551,15 @@ export default class HexmakerPlugin extends Plugin {
     return table ? this.app.metadataCache.fileToLinktext(table, sourcePath) : null;
   }
 
+  /** The encounters table of the area hex (x, y) is in (`{tables}/regions/<area>.md`), if it has one. */
+  areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null {
+    const area = this.mapStore.get(mapName, `${x}_${y}`)?.region;
+    if (!area) return null;
+    const folder = normalizeFolder(this.settings.tablesFolder);
+    const file = this.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${area}.md`);
+    return file instanceof TFile ? file : null;
+  }
+
   async syncHexEncounterTableLink(
     hexFilePath: string,
     terrain: string | null,
@@ -1985,6 +1994,12 @@ export default class HexmakerPlugin extends Plugin {
     if (encounterLink) {
       content = insertLinkInSection(content, "Encounters Table", `[[${encounterLink}]]`);
     }
+    // Likewise its area's table (painted before the hex had a note), so the
+    // hex editor's Encounters list doesn't lose it when the note is made.
+    const areaTable = this.areaEncounterTableFor(mapName, x, y);
+    if (areaTable) {
+      content = insertLinkInSection(content, "Encounters Table", `[[${this.app.metadataCache.fileToLinktext(areaTable, path)}]]`);
+    }
 
     const hexBase = normalizeFolder(this.settings.hexFolder);
     const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
@@ -2298,6 +2313,17 @@ export default class HexmakerPlugin extends Plugin {
       const path = linkNoteTemplatePathFor(this.settings, section);
       if (path) await this.ensureTemplateFile(path, LINK_NOTE_TEMPLATES[section].starter);
     }
+  }
+
+  /**
+   * Open a note template to edit it (SX1: easy to find and edit), making
+   * it from its built-in starter first if it isn't there yet.
+   */
+  async openNoteTemplate(path: string): Promise<void> {
+    await this.ensureTemplates();
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
+    else new Notice(`No template at ${path}.`);
   }
 
   /**

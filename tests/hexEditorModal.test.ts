@@ -211,6 +211,7 @@ describe("HexEditorModal section start-collapsed settings", () => {
 		modal.renderIconSections = () => {};
 		modal.renderTextSection = () => {};
 		modal.renderDropdownSection = () => {};
+		modal.renderEncountersSection = () => {};
 		modal.renderBody({ createEl: () => ({}) }, "hex/1_1.md");
 		return states;
 	}
@@ -262,6 +263,7 @@ describe("HexEditorModal GM-layer hint", () => {
 		modal.renderIconSections = () => {};
 		modal.renderTextSection = () => {};
 		modal.renderDropdownSection = () => {};
+		modal.renderEncountersSection = () => {};
 		modal.onOpen = () => {};
 		modal.renderBody(el(), "hex/1_1.md");
 		return { hints, click: () => click?.(), modal };

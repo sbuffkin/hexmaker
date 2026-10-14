@@ -1179,6 +1179,13 @@ input.duckmage-input-error {
     border-top: 1px solid var(--background-modifier-border-focus);
 }
 
+/* "Edit the town template…" at the foot of a link field's list (SX1). */
+.duckmage-link-combo-template {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
 .duckmage-link-combo-empty {
     padding: 5px 8px;
     font-size: var(--font-ui-small);
@@ -9245,12 +9252,46 @@ textarea.duckmage-edit-region-notes-input {
     gap: 4px;
 }
 
-/* Hex editor: a section's table source (⋯) moved into Advanced. */
-.duckmage-section-table-source.is-advanced {
+/* Hex editor: one section per kind of rolled table (SF2,
+   src/random-tables/TableChoice.ts): its tables, Roll and change…. */
+.duckmage-table-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 2px 0 6px;
+    font-size: var(--font-ui-small);
+}
+.duckmage-table-choice-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.duckmage-table-choice-option,
+.duckmage-table-choice-one {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: var(--font-ui-small);
+}
+.duckmage-table-choice-source {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-table-choice-name.is-missing {
+    color: var(--text-error);
+    text-decoration: line-through;
+}
+.duckmage-table-choice-none {
+    color: var(--text-muted);
+}
+.duckmage-table-choice-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.duckmage-rt-empty-state.is-compact {
+    flex-direction: row;
+    align-items: center;
+    margin: 0;
 }
 
 /* The inline God offer (src/hex-map/godOffer.ts). */

@@ -10,6 +10,7 @@ import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { disclosureOpen, setDisclosureOpen, subSectionKey } from "./ui/disclosure";
 import { layerOf, partitionSections } from "./ui/placement";
 import { GENERATE_WORLD_DATA_NAME } from "./ui/repairHint";
+import { noteTemplateEntries } from "./noteTemplates";
 import { renderLabeledSlider } from "./ui/sliders";
 import {
   DEBUG_CONFIRM_TEXT,
@@ -402,6 +403,22 @@ export class HexmakerSettingTab extends PluginSettingTab {
             },
           }),
           T("Settings.worldFolder", folderText("World notes folder", "worldFolder", "World.", "Vault-relative path. Scopes the file search when adding links to hexes.")),
+          // SX1: the starter templates are yours to change; easy to find here.
+          T("Settings.noteTemplates", {
+            name: "Note templates",
+            desc: "New notes start from these. Open one to change what new notes get. They live in the templates folder.",
+            aliases: ["templates", "template", "town template", "hex template"],
+            render: (setting: Setting) => {
+              for (const t of noteTemplateEntries(this.plugin.settings)) {
+                setting.addButton((btn) =>
+                  btn
+                    .setButtonText(t.label)
+                    .setTooltip(`Open ${t.path}`)
+                    .onClick(() => void this.plugin.openNoteTemplate(t.path)),
+                );
+              }
+            },
+          }),
           T("Settings.iconsFolder", folderText(
             "Custom icons folder",
             "iconsFolder",

@@ -7,6 +7,12 @@
 
 /** Hint lines from the plugin's built-in templates, past and present. */
 const BUILT_IN_HINTS = [
+  "What is here at first sight.",
+  "What stands out from a distance.",
+  "What is found by looking closely.",
+  "What is only learned some other way.",
+  "The usual weather, or anything unusual.",
+  "Leads and talk about this hex.",
   "What the party sees and feels. Terrain, atmosphere, any obvious features.",
   "What the party sees and feels. Terrain, atmosphere, any obvious features. One or two sentences or a short paragraph.",
   "The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.",

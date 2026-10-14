@@ -14,6 +14,14 @@
 
 /** The prompts of the built-in template (src/defaultHexTemplate.md), plus older wordings. */
 export const HEX_GUIDANCE = [
+	// Since SX1 (2026-10-14): short and generic, no setting or ruleset lean.
+	"What is here at first sight.",
+	"What stands out from a distance.",
+	"What is found by looking closely.",
+	"What is only learned some other way.",
+	"The usual weather, or anything unusual.",
+	"Leads and talk about this hex.",
+	// Earlier wordings.
 	"What the party sees and feels. Terrain, atmosphere, any obvious features.",
 	"What the party sees and feels. Terrain, atmosphere, any obvious features. One or two sentences or a short paragraph.",
 	"The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.",

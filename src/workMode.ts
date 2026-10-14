@@ -261,12 +261,10 @@ export const MENU_ACTIONS = {
   "token.remove": "token",
   // the mode switch
   "mode.switch": "switch-mode",
-  // hex editor: the maps strip "+" and a section's table source
+  // hex editor: the maps strip "+"
   "editor.new-map": "new-child-map",
   "editor.link-map": "link-map",
   "editor.manage-locations": "link-map",
-  "editor.map-table": "map-properties",
-  "editor.hex-table": "edit-note",
 } as const satisfies Record<string, ModeAction>;
 
 export type MenuActionId = keyof typeof MENU_ACTIONS;

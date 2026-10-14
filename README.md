@@ -208,9 +208,10 @@ A modal for editing a hex note without leaving the map.
 - **Maps strip** — the maps this hex opens into: its region (outlined chip) and its locations. Click a chip to go there; **+** makes a new map from the hex, links an existing one, or opens the locations list.
 - **Copy link to this hex** — click the centre dot of the hex flower (top right), or right-click the hex on the map: it copies a Markdown link to this hex. Paste it in any note; clicking it opens the map centred on the hex.
 - **Towns / Dungeons / Features / Quests / Factions** — link existing notes from their configured folders, or create a new note by name. Linked items are clickable and open in a new tab. Each entry has a remove button.
-- **Encounters Table** — link random table files to a hex. Clicking a linked table opens the Random Tables view with that table pre-selected.
+- **Encounters** — every encounter table that applies to the hex, most specific first: the hex's own, its area's, its terrain's. With more than one, round buttons pick which one **🎲 Roll** uses (it starts on the most specific; the pick lasts the session and writes nothing, so it works in Play). **Change…** picks any table (your own first) or makes a new one, linked to this hex; **×** takes one off. Clicking a table's name opens it in the Random Tables view.
 - **Notes sections** — Description, Landmark, Hidden, Secret — inline text areas; a 📖 button rolls the section's table where one exists.
-- **Weather and Hooks & Rumors** — folded under Notes. 🎲 rolls the map's weather or rumours table (set in **Maps → Properties → Weather and rumours**); to pick a different table (the map's, or one for this hex), use **Weather table** / **Hooks & Rumors table** in the editor's **Advanced** dropdown. With neither set, the starter `weather.md` / `rumors.md` in your tables folder is used.
+- **Weather and Hooks & Rumors** — folded under Notes, each with the same table section as Encounters: the hex's own tables, then the map's (set in **Maps → Properties → Weather and rumours**), then the starter `weather.md` / `rumors.md` in your tables folder. **Change…** links any other table to this hex, so a weather table you made is one pick away.
+- **Empty tables** — tables start empty for you to fill. An empty table's **Roll** is off, with **Add entries** to open it in the table editor; the same everywhere a table is rolled (the roll dialog, the Random Tables view, a note's roller, workflow steps).
 - **Add to this hex** — any roll made from the editor (encounter tables, section tables) can be added to a section of this hex's note, chosen from a list (the section you rolled from comes first). The note is created if the hex has none. **Copy** is always there too.
 - **Run workflow** — the link beside the hex title picks a workflow and runs it for this hex; **Add to this hex** puts the filled-in result into a section (its headings become bold lines so the section stays whole).
 - **Open note** link next to the hex coordinates opens the full note in a new tab.
@@ -390,7 +391,7 @@ Commands marked *Debug mode only* are offered in the command palette only while 
 
 ## Settings
 
-Open **Settings → Hexmap World Creator** to configure the settings below. Everyday ones are at the top: **Terrain palettes** (pick, rename, edit, delete and add palettes), **Map look** (coordinate labels, hex names, spacing) and **Defaults**. Then the ones you set once: **Setup** (setup wizard, world and icons folders) and **Map types**. The collapsed **Advanced** dropdown near the bottom has **Generate terrain tables & hex links** at its top, then its own collapsible sections: **Folders** (Generate folders, the template path and every folder), **New map sizes** and **Palettes** (put the built-in palettes back, open a palette's note). Each stays open or closed as you left it, on this device. <!-- slice:worldmaps -->The Biomes and Biome pools folders are in its **Debug** section. <!-- /slice --><!-- slice:space -->The World types folder is in its **Debug** section. <!-- /slice -->**Debug** shows only while **Debug mode** is on. There's no Simple or Advanced level: every feature is always there.
+Open **Settings → Hexmap World Creator** to configure the settings below. Everyday ones are at the top: **Terrain palettes** (pick, rename, edit, delete and add palettes), **Map look** (coordinate labels, hex names, spacing) and **Defaults**. Then the ones you set once: **Setup** (setup wizard, world folder, note templates, icons folder) and **Map types**. The collapsed **Advanced** dropdown near the bottom has **Generate terrain tables & hex links** at its top, then its own collapsible sections: **Folders** (Generate folders, the template path and every folder), **New map sizes** and **Palettes** (put the built-in palettes back, open a palette's note). Each stays open or closed as you left it, on this device. <!-- slice:worldmaps -->The Biomes and Biome pools folders are in its **Debug** section. <!-- /slice --><!-- slice:space -->The World types folder is in its **Debug** section. <!-- /slice -->**Debug** shows only while **Debug mode** is on. There's no Simple or Advanced level: every feature is always there.
 
 | Setting | Description |
 |---------|-------------|
@@ -403,7 +404,7 @@ Open **Settings → Hexmap World Creator** to configure the settings below. Ever
 | **Areas folder** | Area notes (a basin, a kingdom) painted with the **Areas** tool and shown by the area overlay (default `{world folder}/regions`; the folder name is unchanged so existing vaults keep working). |
 | **Tables folder** | Folder for random table files. Terrain tables are created in a `terrain/` subfolder here. |
 | **Workflows folder** | Folder for workflow definition files and their templates. |
-| **Templates folder** | One folder for the plugin's note templates, so they're easy to find and edit: `hex.md` (the hex note template, unless **Template path** points elsewhere) and one template for each kind of linked note: new notes made from the hex editor or a link picker start from it. `town.md` has Description, People, Places and Rumours headings; `dungeon.md` Description, Rooms, Inhabitants, Treasure and Rumours; `feature.md` Description and Rumours; `quest.md` Goal, Leads and Reward; `faction.md` Goals, Members and Rumours. Shape them as you like. Blank = `templates` in the world folder. Made by **Generate folders** and the setup wizard; Each one also appears the first time you create that kind of note. Workflow templates stay beside their workflows. |
+| **Templates folder** | One folder for the plugin's note templates, so they're easy to find and edit: `hex.md` (the hex note template, unless **Template path** points elsewhere) and one template for each kind of linked note: new notes made from the hex editor or a link picker start from it. Each starts barebones (a title, Description and Notes), with no lean towards any setting or ruleset: make them your own. **Note templates** (under **Setup**) opens each one, and each link field's list in the hex editor ends with **Edit the … template…**. Blank = `templates` in the world folder. Made by **Generate folders** and the setup wizard; Each one also appears the first time you create that kind of note. Workflow templates stay beside their workflows. |
 | **Default die** | Die size used when creating new table files (d4–d100). |
 | **Icons folder** | Folder containing `.png` icon files available as custom terrain/hex icons. |
 | **Template path** | Path to a custom hex note template. Supports `{{x}}`, `{{y}}`, `{{title}}` and `{{map}}` placeholders. Leave blank to use `hex.md` in the templates folder (or the built-in template if there isn't one). A path you already set is kept. |
@@ -480,13 +481,13 @@ Before changing anything, the full text of every note it changes is saved in the
 | `### Features` | Links | Other points of interest |
 | `### Quests` | Links | Active quest links |
 | `### Factions` | Links | Faction links (used by the faction overlay) |
-| `### Encounters Table` | Links | Random table links (linked to terrain by Generate) |
+| `### Encounters Table` | Links | Encounter tables for this hex: your own, plus its area's and terrain's (linked when painted) |
 | `### hidden` | Text | Discoverable with effort |
 | `### secret` | Text | Revealed only through investigation |
 | `### weather` | Text | Weather notes |
 | `### hooks & rumors` | Text | Adventure seeds |
-| `### Weather Table` | Link | Optional: this hex's own weather table (instead of the map's) |
-| `### Rumors Table` | Link | Optional: this hex's own rumours table |
+| `### Weather Table` | Links | Optional: this hex's own weather tables (listed before the map's) |
+| `### Rumors Table` | Links | Optional: this hex's own rumours tables |
 
 You can use your own template (configured in Settings). Any `### Heading` that matches a section name will be picked up automatically.
 

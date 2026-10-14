@@ -32,12 +32,11 @@ describe("templates folder (PA3)", () => {
 		expect(townTemplatePathFor({ worldFolder: "w", templatesFolder: "T" })).toBe("T/town.md");
 	});
 
-	it("the town template is basic and open-ended, with Rumours", () => {
+	it("the town template is barebones and generic (SX1)", () => {
 		expect(DEFAULT_TOWN_TEMPLATE).toMatch(/^# \{\{title\}\}/);
-		expect(DEFAULT_TOWN_TEMPLATE).toMatch(/^## Rumours$/m);
 		expect(DEFAULT_TOWN_TEMPLATE).toMatch(/^## Description$/m);
 		// Few headings, no ### (those are hex-note link sections).
-		expect((DEFAULT_TOWN_TEMPLATE.match(/^#/gm) ?? []).length).toBeLessThanOrEqual(6);
+		expect((DEFAULT_TOWN_TEMPLATE.match(/^#/gm) ?? []).length).toBeLessThanOrEqual(3);
 		expect(DEFAULT_TOWN_TEMPLATE).not.toMatch(/^###/m);
 		expect(fillNoteTemplate(DEFAULT_TOWN_TEMPLATE, "Gullmouth")).toMatch(/^# Gullmouth\n/);
 	});

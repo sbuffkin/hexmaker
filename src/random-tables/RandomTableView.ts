@@ -18,7 +18,6 @@ import { WorkflowWizardModal } from "./WorkflowWizardModal";
 import {
   parseRandomTable,
   parseRandomTableWithReport,
-  emptyTableMessage,
   rollTable,
   resolveTable,
   rowOdds,
@@ -51,6 +50,7 @@ import { isDebugMode } from "../ui/debugMode";
 import { PlacedMenu } from "../ui/placedMenu";
 import { DETAIL_REFRESH_MS, LIST_REFRESH_MS, ListSignatures, listSignature, touchesList, type ListFolders } from "./listRefresh";
 import { tableTitle } from "../encounterLinks";
+import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
 
 /** Collapse key (and key prefix) of the tree's "Made by the map" section. */
 const MAP_MADE_KEY = "map-made:";
@@ -1665,18 +1665,7 @@ export class RandomTableView extends ItemView {
     });
 
     if (table.entries.length === 0) {
-      const empty = tableBody.createDiv({ cls: "duckmage-rt-empty-state" });
-      empty.createDiv({ cls: "duckmage-rt-empty", text: emptyTableMessage(content) });
-      const addBtn = empty.createEl("button", { text: "Add entries" });
-      addBtn.addEventListener("click", () => {
-        new RandomTableEditorModal(
-          this.app,
-          this.plugin,
-          file,
-          () => void this.renderDetail(),
-          content,
-        ).open();
-      });
+      renderEmptyTableState(tableBody, { app: this.app, plugin: this.plugin, file, content, onSaved: () => void this.renderDetail() });
     } else {
       const tableEl = tableBody.createEl("table", {
         cls: "duckmage-random-table",
@@ -1775,10 +1764,7 @@ export class RandomTableView extends ItemView {
       text: "Roll",
       cls: "duckmage-rt-roll-btn mod-cta",
     });
-    if (table.entries.length === 0) {
-      rollBtn.disabled = true;
-      rollBtn.title = "Add entries to roll on this table";
-    }
+    setRollEnabled(rollBtn, table.entries.length > 0);
 
     const resultBox = this.detailEl.createDiv({ cls: "duckmage-roll-result" });
     resultBox.hide();

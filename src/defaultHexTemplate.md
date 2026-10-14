@@ -8,32 +8,32 @@
 
 ---
 ### Description
-*What the party sees and feels. Terrain, atmosphere, any obvious features.*
+*What is here at first sight.*
 
 
 ---
 ### Landmark
-*The visible standout feature — spire, ruin, lighthouse, statue, village — that can be spotted or used for navigation.*
+*What stands out from a distance.*
 
 
 ---
 ### Hidden
-*Discoverable with exploration, tracking, or clues. Hidden lairs, ruins, tombs, camps, shortcuts.*
+*What is found by looking closely.*
 
 
 ---
 ### Secret
-*Revealed only through specific actions, NPCs, or investigation.*
+*What is only learned some other way.*
 
 
 ---
 ### Weather
-*Normal for region, or special (e.g. always pleasant, sandstorms, magic zone effect).*
+*The usual weather, or anything unusual.*
 
 
 ---
 ### Hooks & Rumors
-*Seeds for adventures, things locals might mention, or what finding this hex could lead to.*
+*Leads and talk about this hex.*
 
 
 ---

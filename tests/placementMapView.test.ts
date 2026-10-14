@@ -44,8 +44,12 @@ const TIER: Record<Resolved["choice"], Layer> = { keep: "main", simple: "main", 
 // God goes back in the mode menu's list (owner 2026-10-12: "don't put god mode in advanced").
 // Round 10 (owner 2026-10-12): one-item Advanced sections moved to the basic options.
 const ROUND10_MAIN = ["ModeBar.crossImpassable", "PathMenu.splitHere", "PathMenu.reverse", "LayersMenu.regionOverlay", "TerrainFilter.typeRow", "Token.description", "PathPicker.pathsOnMap", "PathType.carves"];
+// Owner SF2 (2026-10-14): a section's table choice and "change…" sit in the
+// section itself (main); the per-source Advanced items were replaced by it.
+const SF2_MAIN = ["HexEditor.weatherSource", "HexEditor.hooksSource", "HexEditor.rolledSetMapTable", "HexEditor.rolledSetHexTable"];
 const OVERRIDES: Record<string, Layer> = {
   "HexEditor.neighborCentreDot": "main",
+  ...Object.fromEntries(SF2_MAIN.map((id) => [id, "main" as Layer])),
   "WorkModeMenu.god": "main",
   ...Object.fromEntries(ROUND10_MAIN.map((id) => [id, "main" as Layer])),
 };

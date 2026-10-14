@@ -22,6 +22,7 @@ import { renderAddToHex, type RollHexTarget } from "./RandomTableModal";
 import { resolveStepTable, resolveWorkflowTemplate } from "./workflowFiles";
 import { localIsoDateTime } from "../provenance";
 import { withRepairHint } from "../ui/repairHint";
+import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
 
 /** How a slot got its value, for the results note's Rolls table. */
 interface SlotInfo {
@@ -62,6 +63,8 @@ export class WorkflowWizardModal extends HexmakerModal {
   private rolls: (string | null)[][] = [];
   private templateContent = "";
   private stepEntries: PickEntry[][] = []; // [stepIdx] → rows of the table
+  /** [stepIdx] → the step's table while it has no entries (SF1: its Roll is disabled). */
+  private stepEmpty: ({ file: TFile; content: string } | null)[] = [];
   /** slots[stepIdx][rollIdx]: how the value was got. */
   private slots: SlotInfo[][] = [];
   /** Per step: its source (link or formula) and die, for the Rolls table. */
@@ -112,24 +115,7 @@ export class WorkflowWizardModal extends HexmakerModal {
     }));
 
     // Preload table entries for each step (for the manual-pick dropdown; dice steps have no entries)
-    this.stepEntries = await Promise.all(
-      this.workflow.steps.map(async (step: WorkflowStep, si: number): Promise<PickEntry[]> => {
-        if (step.kind === "dice") return [];
-        const tableFile = resolveStepTable(this.app, step, this.workflowFile.path);
-        if (!tableFile) return [];
-        const content = await this.app.vault.read(tableFile);
-        const table = parseRandomTable(content);
-        this.stepSource[si] = {
-          source: `[[${this.app.metadataCache.fileToLinktext(tableFile, this.workflowFile.path)}]]`,
-          die: dieLabel(table.dice),
-        };
-        return table.entries.map((e) => {
-          const target = rowLinkTarget(e.result, e.isLink, table.linkedFolder);
-          if (!target) return { label: e.result };
-          return { label: target.split("/").pop() ?? target, link: this.linkTextFor(target) };
-        });
-      }),
-    );
+    this.stepEntries = await Promise.all(this.workflow.steps.map((step, si) => this.loadStepEntries(step, si)));
 
     // Load the template (however its path was typed), and add any
     // placeholders a step fills that it lacks, for this run.
@@ -144,6 +130,26 @@ export class WorkflowWizardModal extends HexmakerModal {
     this.unfilled = unfilledTokens(this.templateContent, this.workflow.steps);
 
     this.buildUI();
+  }
+
+  /** A step's table rows for the manual-pick list; notes an empty table (SF1). */
+  private async loadStepEntries(step: WorkflowStep, si: number): Promise<PickEntry[]> {
+    this.stepEmpty[si] = null;
+    if (step.kind === "dice") return [];
+    const tableFile = resolveStepTable(this.app, step, this.workflowFile.path);
+    if (!tableFile) return [];
+    const content = await this.app.vault.read(tableFile);
+    const table = parseRandomTable(content);
+    if (!table.entries.length) this.stepEmpty[si] = { file: tableFile, content };
+    this.stepSource[si] = {
+      source: `[[${this.app.metadataCache.fileToLinktext(tableFile, this.workflowFile.path)}]]`,
+      die: dieLabel(table.dice),
+    };
+    return table.entries.map((e) => {
+      const target = rowLinkTarget(e.result, e.isLink, table.linkedFolder);
+      if (!target) return { label: e.result };
+      return { label: target.split("/").pop() ?? target, link: this.linkTextFor(target) };
+    });
   }
 
   private buildUI(): void {
@@ -316,6 +322,25 @@ export class WorkflowWizardModal extends HexmakerModal {
         });
       }
 
+      // An empty table: its Rolls are disabled and the empty state opens
+      // the table editor; after a save the step is reloaded (SF1).
+      const empty = this.stepEmpty[si];
+      if (empty) {
+        renderEmptyTableState(stepEl, {
+          app: this.app,
+          plugin: this.plugin,
+          file: empty.file,
+          content: empty.content,
+          compact: true,
+          onSaved: () => {
+            void this.loadStepEntries(step, si).then((rows) => {
+              this.stepEntries[si] = rows;
+              this.renderSteps();
+            });
+          },
+        });
+      }
+
       for (let ri = 0; ri < step.rolls; ri++) {
         const rollRow = stepEl.createDiv({ cls: "duckmage-wf-step-row" });
 
@@ -368,6 +393,7 @@ export class WorkflowWizardModal extends HexmakerModal {
           text: this.rolls[si][ri] !== null ? "Reroll" : "Roll",
           cls: "duckmage-wf-roll-btn",
         });
+        if (empty) setRollEnabled(rollBtn, false);
         rollBtn.addEventListener("click", () => {
           void (async () => {
             rollBtn.disabled = true;

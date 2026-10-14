@@ -20,20 +20,22 @@ export const HEX_TEMPLATE_FILE = "hex.md";
 export const TOWN_TEMPLATE_FILE = "town.md";
 
 /**
- * Built-in town note: a few open headings, nothing prescriptive. Made
- * from a hex, it gets a "Location: [[hex]]" line under the title.
- * `{{title}}` is the town's name.
+ * The built-in starter for every kind of linked note (owner SX1,
+ * 2026-10-14): really barebones and generic, a heading or two with no lean
+ * towards any setting or ruleset. Players make their own: the files sit in
+ * the templates folder (Settings → Note templates opens them). Made from a
+ * hex, a note gets a "Location: [[hex]]" line under the title. `{{title}}`
+ * is the note's name.
  */
-export const DEFAULT_TOWN_TEMPLATE = `# {{title}}
+export const DEFAULT_NOTE_TEMPLATE = `# {{title}}
 
 ## Description
 
-## People
-
-## Places
-
-## Rumours
+## Notes
 `;
+
+/** The town starter (the same generic one). */
+export const DEFAULT_TOWN_TEMPLATE = DEFAULT_NOTE_TEMPLATE;
 
 /** What the templates helpers need from the settings. */
 export interface TemplateSettings {
@@ -72,45 +74,15 @@ export interface LinkNoteTemplate {
 /**
  * Every link section whose new notes start from a template, one entry each
  * (fresh-eyes F17: a dungeon note started blank while a town got headings).
- * The starters are a few open headings, nothing prescriptive; the user edits
- * the files. Encounter tables aren't here: a new one is a table.
+ * All start from the same generic starter (SX1); the user edits the files.
+ * Encounter tables aren't here: a new one is a table.
  */
 export const LINK_NOTE_TEMPLATES: Readonly<Record<string, LinkNoteTemplate>> = {
-  Towns: { file: TOWN_TEMPLATE_FILE, starter: DEFAULT_TOWN_TEMPLATE },
-  Dungeons: { file: "dungeon.md", starter: `# {{title}}
-
-## Description
-
-## Rooms
-
-## Inhabitants
-
-## Treasure
-
-## Rumours
-` },
-  Features: { file: "feature.md", starter: `# {{title}}
-
-## Description
-
-## Rumours
-` },
-  Quests: { file: "quest.md", starter: `# {{title}}
-
-## Goal
-
-## Leads
-
-## Reward
-` },
-  Factions: { file: "faction.md", starter: `# {{title}}
-
-## Goals
-
-## Members
-
-## Rumours
-` },
+  Towns: { file: TOWN_TEMPLATE_FILE, starter: DEFAULT_NOTE_TEMPLATE },
+  Dungeons: { file: "dungeon.md", starter: DEFAULT_NOTE_TEMPLATE },
+  Features: { file: "feature.md", starter: DEFAULT_NOTE_TEMPLATE },
+  Quests: { file: "quest.md", starter: DEFAULT_NOTE_TEMPLATE },
+  Factions: { file: "faction.md", starter: DEFAULT_NOTE_TEMPLATE },
 };
 
 /** The template a new note in link section `section` starts from (any case), or null. */
@@ -164,4 +136,25 @@ export function withLocationLine(content: string, hexPath: string, label: string
 /** Which note template a new note in this link section starts from (its file name without .md), if any. */
 export function noteTemplateFor(section: string): string | null {
   return linkNoteTemplate(section)?.file.replace(/.md$/i, "") ?? null;
+}
+
+/** One of the plugin's note templates, for the "Note templates" list (SX1). */
+export interface NoteTemplateEntry {
+  /** "Hex", "Town", "Dungeon"… (from the file name). */
+  label: string;
+  path: string;
+  /** The link section whose new notes use it (none for the hex template). */
+  section?: string;
+}
+
+/** Every note template, the hex one first: where to find and edit them (SX1). */
+export function noteTemplateEntries(s: TemplateSettings): NoteTemplateEntry[] {
+  const label = (file: string) => {
+    const base = file.replace(/\.md$/i, "");
+    return base.charAt(0).toUpperCase() + base.slice(1);
+  };
+  return [
+    { label: "Hex", path: hexTemplatePathFor(s) },
+    ...Object.entries(LINK_NOTE_TEMPLATES).map(([section, t]) => ({ label: label(t.file), path: `${templatesFolderFor(s)}/${t.file}`, section })),
+  ];
 }
