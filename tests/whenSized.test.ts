@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { whenSized, type SizedElement } from "../src/hex-map/whenSized";
+import { readSurface } from "./helpers/source";
 
 /**
  * A map rendered while its tab isn't laid out (plugin reload with the map in
@@ -78,8 +79,7 @@ describe("the map forgets the wait once the layers are drawn (round 7)", () => {
 		// whenSized draws synchronously for a laid-out grid; assigning its
 		// return value afterwards left cancelMeasuredLayers set for good, so
 		// later badge-size and name redraws were always skipped.
-		const { readFileSync } = await import("node:fs");
-		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8").replace(/\r\n/g, "\n");
+		const view = readSurface("map-view");
 		expect(view).not.toMatch(/this\.cancelMeasuredLayers = whenSized\(/);
 		expect(view).toMatch(/if \(!drawn\) this\.cancelMeasuredLayers = cancel;/);
 	});

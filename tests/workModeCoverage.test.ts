@@ -3,6 +3,7 @@ import expect from "expect";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readSource } from "./helpers/source";
 import {
 	ACTION_POLICY,
 	allows,
@@ -63,7 +64,7 @@ describe("work mode classification covers every entry point", () => {
 		const files = ["src/hex-map/HexMapView.ts", "src/hex-map/HexEditorModal.ts"];
 		const used = new Set<string>();
 		for (const f of files) {
-			const text = read(f);
+			const text = readSource(f);
 			// A raw Obsidian Menu would bypass the mode table.
 			expect({ file: f, rawMenus: (text.match(/new Menu\(|\.addItem\(/g) ?? []).length }).toEqual({ file: f, rawMenus: 0 });
 			for (const m of text.matchAll(/\bmenu\.add\(\s*"([^"]+)"/g)) used.add(m[1]);

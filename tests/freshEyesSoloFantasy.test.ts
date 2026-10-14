@@ -19,6 +19,7 @@ import { neighbourSeaText } from "../src/worldgen/NewMapSetupModal";
 import { overlandDescription } from "../src/worldgen/procedural/planetSurface";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { startupWritesWait } from "../src/setupPlaceholder";
+import { readSurface, readSource } from "./helpers/source";
 
 const read = (p: string) => readFileSync(path.join(process.cwd(), p), "utf8").replace(/\r\n/g, "\n");
 
@@ -48,7 +49,7 @@ describe("F4: a token's name never hides the hex coordinate", () => {
 	});
 
 	it("the map marks each name with its side, and the CSS lifts .is-above over the token", () => {
-		const view = read("src/hex-map/HexMapView.ts");
+		const view = readSurface("map-view");
 		expect(view).toContain("tokenNameSide(this.plugin.settings.coordPlacement)");
 		expect(view).toContain("is-${nameSide}");
 		const css = read("styles.css");
@@ -61,11 +62,11 @@ describe("F6: the Icon tool", () => {
 		const label = toolModeLabel({ mode: "icon", erasing: false, iconName: iconLabel("place-village.png") });
 		expect(label).toBe("Painting icon: village");
 		expect(iconLabel("bw-desert.png")).toBe("desert");
-		expect(read("src/hex-map/HexMapView.ts")).toContain("iconName: this.paintIconName ? iconLabel(this.paintIconName) : this.paintIconName");
+		expect(readSurface("map-view")).toContain("iconName: this.paintIconName ? iconLabel(this.paintIconName) : this.paintIconName");
 	});
 
 	it("clicking the active Icon button reopens the picker, as Terrain does", () => {
-		const view = read("src/hex-map/HexMapView.ts");
+		const view = readSurface("map-view");
 		const handler = body(view, "  private handleIconButton(");
 		expect(handler).not.toMatch(/exitIconMode\(\)/);
 		expect(handler).toContain("this.openIconPicker()");
@@ -83,7 +84,7 @@ describe("F6: the Icon tool", () => {
 
 describe("F7: New map → Next to: the locked starting coordinates agree with the summary", () => {
 	it("lockMore writes the neighbour's offset and stagger into the locked fields", () => {
-		const modal = read("src/worldgen/NewMapSetupModal.ts");
+		const modal = readSurface("new-map-setup");
 		const lock = modal.slice(modal.indexOf("lockMore = (locked) => {"), modal.indexOf("// ── Preview ──"));
 		expect(lock).toContain("xIn.value = String(p ? p.offset.x : this.originX)");
 		expect(lock).toContain("yIn.value = String(p ? p.offset.y : this.originY)");
@@ -107,7 +108,7 @@ describe("F8 / C8: the generator list isn't a scroller inside the form", () => {
 		keepScroll(list, () => { outer.scrollTop = 0; }, () => card);
 		expect(outer.scrollTop).toBe(340);
 		expect(focused).toEqual([{ preventScroll: true }, { block: "nearest" }]);
-		for (const f of ["src/worldgen/NewMapSetupModal.ts", "src/SetupWizardView.ts"]) expect(read(f)).toContain("keepScroll(genList, ");
+		for (const f of ["src/worldgen/NewMapSetupModal.ts", "src/SetupWizardView.ts"]) expect(readSource(f)).toContain("keepScroll(genList, ");
 	});
 });
 
@@ -118,10 +119,10 @@ describe("C9: switching Overland / Biomes keeps a size the user chose", () => {
 	});
 
 	it("both forms use it; the wizard's reset goes back to following the scale", () => {
-		const wiz = read("src/SetupWizardView.ts");
+		const wiz = readSurface("setup-wizard");
 		expect(wiz).toContain("sizeForScalePick(ctx.sizeChosen ? { cols: ctx.mapCols, rows: ctx.mapRows } : null, s.size)");
 		expect(wiz).toMatch(/resetBtn\.addEventListener\("click", \(\) => \{[\s\S]*?ctx\.sizeChosen = false;/);
-		expect(read("src/worldgen/NewMapSetupModal.ts")).toContain("sizeForScalePick(this.sizeChosen ?");
+		expect(readSurface("new-map-setup")).toContain("sizeForScalePick(this.sizeChosen ?");
 	});
 });
 
@@ -168,7 +169,7 @@ describe("C10: a missing map name is said at the field", () => {
 	});
 
 	it("New map checks the name first and says every name problem at the field", () => {
-		const modal = read("src/worldgen/NewMapSetupModal.ts");
+		const modal = readSurface("new-map-setup");
 		const at = modal.indexOf("  private async create(");
 		const create = modal.slice(at, modal.indexOf("\n  }\n", at));
 		expect(create.indexOf('this.nameProblem("Enter a map name.")')).toBeGreaterThan(-1);
@@ -180,7 +181,7 @@ describe("C10: a missing map name is said at the field", () => {
 
 describe("F11: the finished wizard and the legend", () => {
 	it("the final step has no Remind me later / Don't show again", () => {
-		const wiz = read("src/SetupWizardView.ts");
+		const wiz = readSurface("setup-wizard");
 		const render = wiz.slice(wiz.indexOf("private renderView() {"), wiz.indexOf("private updateNextBtn()"));
 		expect(render.indexOf("if (isFinal) return;")).toBeGreaterThan(-1);
 		expect(render.indexOf("if (isFinal) return;")).toBeLessThan(render.indexOf('"Remind me later"'));
@@ -193,7 +194,7 @@ describe("F11: the finished wizard and the legend", () => {
 		expect(ins.left).toBe(250 - 100 + OVERLAY_GAP);
 		const fit = fitToSafeArea(1000, 800, 600, 600, ins);
 		expect(fit.panX).toBeGreaterThanOrEqual(ins.left);
-		expect(read("src/hex-map/HexMapView.ts")).toContain('querySelectorAll<HTMLElement>(":scope > .duckmage-terrain-legend")');
+		expect(readSurface("map-view")).toContain('querySelectorAll<HTMLElement>(":scope > .duckmage-terrain-legend")');
 	});
 });
 
@@ -206,7 +207,7 @@ describe("F12: the Tables / Workflows toggle shows which is selected", () => {
 	});
 
 	it("both tabs say whether they're pressed, from one helper", () => {
-		const view = read("src/random-tables/RandomTableView.ts");
+		const view = readSurface("table-view");
 		expect(view).toContain('btn?.setAttr("aria-pressed", String(mode === m))');
 		expect(view.match(/toggleClass\("is-active", mode ===/g)?.length).toBe(1);
 	});
@@ -220,7 +221,7 @@ describe("F14: the Overland card says it draws no rivers or roads", () => {
 });
 
 describe("F16 / C12: the table editor", () => {
-	const editor = () => read("src/random-tables/RandomTableEditorModal.ts");
+	const editor = () => readSurface("table-editor");
 	it("entries have column headers laid out like the rows", () => {
 		const src = editor();
 		expect(src).toContain('cls: "duckmage-table-editor-row duckmage-table-editor-cols"');
@@ -244,17 +245,17 @@ describe("F18 / C11: the neighbour pad says which way each button goes", () => {
 	it("an empty side shows its arrow with a plain +", () => {
 		expect(PAD_SIDES.map((s) => padButtonText(s.glyph, true))).toEqual(["◀+", "▲+", "▼+", "▶+"]);
 		expect(padButtonText("◀", false)).toBe("◀");
-		expect(read("src/hex-map/HexMapView.ts")).toContain("text: padButtonText(glyph, b.plus)");
+		expect(readSurface("map-view")).toContain("text: padButtonText(glyph, b.plus)");
 	});
 
 	it("no full-width plus in the link combo's Create item", () => {
-		expect(read("src/hex-map/HexEditorModal.ts")).not.toContain("＋");
+		expect(readSurface("hex-editor")).not.toContain("＋");
 	});
 });
 
 describe("F19: the wizard writes nothing before the world folder is confirmed", () => {
 	it("map-type content is installed in the folder step's Next, after the folder is set", () => {
-		const wiz = read("src/SetupWizardView.ts");
+		const wiz = readSurface("setup-wizard");
 		const welcome = wiz.slice(wiz.indexOf("function makeWelcomeStep"), wiz.indexOf("function makeFolderStep"));
 		expect(welcome).not.toContain("applyKindContent");
 		const folders = wiz.slice(wiz.indexOf("function makeFolderStep"), wiz.indexOf("function makeMapStep"));
@@ -281,10 +282,10 @@ describe("F19: the wizard writes nothing before the world folder is confirmed", 
 	});
 
 	it("the plugin starts its stores through the gate; closing the wizard or opening a map releases it", () => {
-		const plugin = read("src/HexmakerPlugin.ts");
+		const plugin = readSurface("plugin");
 		expect(plugin).toContain("const storesReady = gate.wait.then(() => this.paletteStore.init()).then(() => this.mapStore.init());");
-		expect(read("src/SetupWizardView.ts")).toMatch(/async onClose\(\) \{\n\t\t\/\/[^\n]*\n\t\tthis\.plugin\.releaseStartupWrites\(\);/);
-		expect(read("src/hex-map/HexMapView.ts")).toMatch(/onOpen\(\): Promise<void> \{\n[^\n]*\n\s+this\.plugin\.releaseStartupWrites\(\);/);
+		expect(readSurface("setup-wizard")).toMatch(/async onClose\(\) \{\n\t\t\/\/[^\n]*\n\t\tthis\.plugin\.releaseStartupWrites\(\);/);
+		expect(readSurface("map-view")).toMatch(/onOpen\(\): Promise<void> \{\n[^\n]*\n\s+this\.plugin\.releaseStartupWrites\(\);/);
 	});
 });
 
@@ -294,7 +295,7 @@ describe("F20: explanations name the map, not its folder", () => {
 	});
 
 	it("New map passes the map's label everywhere it names the neighbour", () => {
-		const modal = read("src/worldgen/NewMapSetupModal.ts");
+		const modal = readSurface("new-map-setup");
 		expect(modal).toContain('neighbourSeaText(seaHint, anchor ? this.plugin.mapLabel(anchor) : "the neighbouring map")');
 		expect(modal).toContain('const anchor = this.placement?.anchor ? this.plugin.mapLabel(this.placement.anchor) : "the neighbouring map";');
 		expect(modal).not.toMatch(/\$\{anchor \?\? "the neighbour"\}/);
@@ -310,7 +311,7 @@ describe("F21: a table is titled as its links say", () => {
 
 	it("the roll dialog, table editor and roller view all use it", () => {
 		expect(read("src/random-tables/RandomTableModal.ts")).toContain('headerRow.createEl("strong", { text: tableTitle(file.path) })');
-		expect(read("src/random-tables/RandomTableEditorModal.ts")).toContain("this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`)");
-		expect(read("src/random-tables/RandomTableView.ts")).toContain("text: tableTitle(file.path),");
+		expect(readSurface("table-editor")).toContain("this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`)");
+		expect(readSurface("table-view")).toContain("text: tableTitle(file.path),");
 	});
 });

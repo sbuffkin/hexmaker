@@ -142,7 +142,7 @@ describe("ownership and drafts", () => {
 		expect(isApplied(draftsAfterEdit([p], [{ ...p, typeName: "Road" }])[0])).toBe(false);
 		expect(isApplied(draftsAfterEdit([p], [{ ...p, name: "S" }])[0])).toBe(false);
 		// Other columns stay.
-		const withNotes = withApplied({ ...p, extra: { ...p.extra, Travel: "3 days" } }, false);
+		const withNotes = withApplied({ ...p, extra: { ...(p as { extra?: Record<string, string> }).extra, Travel: "3 days" } }, false);
 		expect(withNotes.extra).toEqual({ Travel: "3 days" });
 	});
 });

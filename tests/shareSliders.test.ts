@@ -5,6 +5,7 @@ import { percentsToWeights, rebalanceShares, shareText, toPercents, toShares, Sh
 import { renderShareSliders } from "../src/ui/shareSliders";
 import { rebalance } from "../src/worldgen/regionWeights";
 import { comboId, comboParts, formatComboRef, mixToParts, newPartWeight, parseComboRef, type BiomePart } from "../src/overworld/biomeCombo";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * The shared zero-sum sliders (owner 2026-10-12: "when mixing the weights
@@ -109,10 +110,10 @@ describe("generator page parity", () => {
   it("the generator page, Edit region's Mix biomes and Blend into all use the shared control", () => {
     const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
     for (const p of ["worldgen/GeneratorPanel.ts", "overworld/EditRegionModal.ts", "overworld/BlendIntoBiomeModal.ts"]) {
-      expect({ p, uses: src(p).includes("renderShareSliders(") }).toEqual({ p, uses: true });
+      expect({ p, uses: readSource("src", p).includes("renderShareSliders(") }).toEqual({ p, uses: true });
     }
     // No one-off influence / weight sliders left behind.
-    expect(src("worldgen/GeneratorPanel.ts")).not.toContain("influence-row");
+    expect(readSurface("generator-page")).not.toContain("influence-row");
     expect(src("overworld/EditRegionModal.ts")).not.toContain("mix-weight");
   });
 });

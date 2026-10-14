@@ -1,7 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 import {
 	fitToSafeArea,
 	mayAutoPan,
@@ -100,10 +99,10 @@ describe("unionBoxes (the map's content box)", () => {
 });
 
 describe("the map keeps hexes clear of its overlays", () => {
-	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const view = readSurface("map-view");
 
 	it("opening or closing a side panel never moves the map (round 7 R9)", () => {
-		const panel = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexSidePanel.ts"), "utf8").replace(/\r\n/g, "\n");
+		const panel = readSurface("side-panel");
 		const open = panel.slice(panel.indexOf("  open(): void {"), panel.indexOf("  get isOpen()"));
 		expect(open).toContain("this.panelEl.show();");
 		expect(open).not.toMatch(/onAfterOpen|this\.pan[XY]|applyTransform/);
@@ -120,7 +119,7 @@ describe("the map keeps hexes clear of its overlays", () => {
 });
 
 describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => {
-	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const view = readSurface("map-view");
 	const body = (name: string) => {
 		const start = view.indexOf(`private ${name}(`);
 		expect(start).toBeGreaterThan(-1);
@@ -164,7 +163,7 @@ describe("crossing into a neighbouring region keeps the zoom (fresh-eyes round 5
 	});
 
 	it("goToRegionHex measures the hex size before leaving and centres with it", () => {
-		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+		const view = readSurface("map-view");
 		expect(view).toMatch(/private goToRegionHex[\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.centerOnHex\(x, y, hexWidth\);/);
 	});
 });

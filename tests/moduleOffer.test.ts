@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText, resetModuleOffers } from "../src/maps/moduleOffer";
+import { readSurface, readSource, ownerFile } from "./helpers/source";
 
 /**
  * Owner call CM6: a map whose module is off still loads; opening it on
@@ -64,7 +65,7 @@ describe("CM6: offered only when a map is opened on purpose", () => {
   const src = sources("src");
 
   it("only the maps picker, the region menu and the hex editor's map chips ask for it", () => {
-    const sites = src.flatMap((f) => read(f).split("\n").flatMap((line, i) => (/offerModule:\s*true/.test(line) ? [`${f}:${line.trim()}`] : [])));
+    const sites = src.flatMap((f) => read(f).split("\n").flatMap((line, i) => (/offerModule:\s*true/.test(line) ? [`${ownerFile(f)}:${line.trim()}`] : [])));
     expect(sites.map((s) => s.split(":")[0]).sort()).toEqual([
       "src/hex-map/HexMapView.ts", // hex menu: Enter region
       "src/hex-map/HexMapView.ts", // hex menu: Open location
@@ -84,24 +85,24 @@ describe("CM6: offered only when a map is opened on purpose", () => {
       "src/overworld/WalkRegionModal.ts",
       "src/SetupWizardView.ts",
     ];
-    for (const f of newFlows) expect({ f, hit: /offerModule|offerModuleFor|enableMapKind/.test(read(f)) }).toEqual({ f, hit: false });
+    for (const f of newFlows) expect({ f, hit: /offerModule|offerModuleFor|enableMapKind/.test(readSource(f)) }).toEqual({ f, hit: false });
     // The New map form in the maps dialog switches without the offer.
-    const modal = read("src/hex-map/MapModal.ts");
+    const modal = readSurface("map-modal");
     const newMap = modal.slice(modal.indexOf("private openNewMap("), modal.indexOf("private openNewMap(") + 400);
     expect(newMap).toMatch(/switchMapFromModal\(name\)/);
     expect(newMap).not.toMatch(/offerModule/);
   });
 
   it("navigating by default never offers; only the opt-in does", () => {
-    const view = read("src/hex-map/HexMapView.ts");
+    const view = readSurface("map-view");
     expect(view).toMatch(/if \(opts\.offerModule\) this\.plugin\.offerModuleFor\(name\);/);
     // Maps made by a New … flow are entered with a plain navigateToMap.
     expect(view).toMatch(/if \(this\.activeMapName === parentMap\) this\.navigateToMap\(name\);/);
   });
 
   it("a module is turned on only through the offer (or Settings → Map types)", () => {
-    const callers = src.filter((f) => /\.enableMapKind\(/.test(read(f)));
+    const callers = [...new Set(src.filter((f) => /\.enableMapKind\(/.test(read(f))).map(ownerFile))];
     expect(callers).toEqual(["src/HexmakerPlugin.ts"]);
-    expect(read("src/HexmakerPlugin.ts")).toMatch(/\(\) => void this\.enableMapKind\(offer\.kind\)/);
+    expect(readSurface("plugin")).toMatch(/\(\) => void this\.enableMapKind\(offer\.kind\)/);
   });
 });

@@ -57,7 +57,7 @@ const HEX_PATTERN = /^(?:.*\/)?(-?\d+)_(-?\d+)\.md$/;
 
 export class HexTableView extends ItemView {
   private scrollEl: HTMLElement | null = null;
-  private updateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private updateTimers = new Map<string, number>();
   private loadGeneration = 0;
   // Memoised name→entry palette maps, keyed by region. fillRow runs once per
   // hex per load (skeleton + fill batch) so rebuilding this Map inline cost

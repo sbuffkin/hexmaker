@@ -7,7 +7,7 @@ import { describe, it, afterEach } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import {
 	buildBiomeNote,
 	parseBiomeNote,

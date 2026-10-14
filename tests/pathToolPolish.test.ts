@@ -7,7 +7,7 @@ import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import type { MapData, MapPath, PathType } from "../src/types";
 import {
   extendBranch,
@@ -22,6 +22,7 @@ import { pathNameState } from "../src/hex-map/PathNameModal";
 import { resolvePaths } from "../src/paths/resolve";
 import type { RouteContext } from "../src/paths/router";
 import { PathsService } from "../src/paths/PathsService";
+import { readSurface } from "./helpers/source";
 
 const ROAD: PathType = { name: "Road", color: "#a33", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" };
 const ctx: RouteContext = { orientation: "flat", stagger: "odd", bounds: { minX: 0, minY: 0, maxX: 19, maxY: 15 }, blocked: new Set() };
@@ -119,7 +120,7 @@ describe("drawing helpers (pure)", () => {
 describe("anchor handles sit over the icon layers (#48)", () => {
   const root = process.cwd();
   const css = readFileSync(path.join(root, "styles.css"), "utf8").replace(/\r\n/g, "\n");
-  const view = readFileSync(path.join(root, "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+  const view = readSurface("map-view");
   const z = (cls: string) => Number(new RegExp(`\\.${cls} \\{[^}]*z-index: (\\d+)`).exec(css)?.[1]);
 
   it("their own layer stacks above the paths and the elevated override / GM icon layer", () => {
@@ -136,7 +137,7 @@ describe("anchor handles sit over the icon layers (#48)", () => {
   });
 
   it("a press the tool takes stops the browser's image drag (a press on a hex icon still drags)", () => {
-    const tool = readFileSync(path.join(root, "src", "hex-map", "pathTool.ts"), "utf8").replace(/\r\n/g, "\n");
+    const tool = readSurface("path-tool");
     const down = tool.slice(tool.indexOf("  pointerDown(e: MouseEvent"), tool.indexOf("  // ── hex-by-hex press-and-drag drawing ──"));
     expect(down.match(/e\.preventDefault\(\);\s*return true;/g)).toHaveLength(2);
   });
@@ -181,6 +182,7 @@ function rig() {
     redraw: () => {},
     refreshBar: () => {},
     setGrabCursor: () => {},
+    typeChanged: () => {},
   });
   tool.typeName = "Road";
   const at = (hex: string) => { const [x, y] = hex.split("_").map(Number); return { clientX: x * 100, clientY: y * 100 }; };
@@ -277,7 +279,7 @@ describe("hex-by-hex press-and-drag (#48)", () => {
   });
 
   it("the map view leaves any tool on Esc once the path tool says there's no drag to cancel", () => {
-    const src = readFileSync(path.join(process.cwd(), "src/hex-map/HexMapView.ts"), "utf8");
+    const src = readSurface("map-view");
     const esc = src.slice(src.indexOf('this.scope.register([], "Escape"'), src.indexOf('for (const key of ["Backspace", "Delete"])'));
     expect(esc).toContain("this.pathTool.escape()");
     expect(esc).toContain("this.exitCurrentMode();");

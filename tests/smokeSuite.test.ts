@@ -9,6 +9,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { gzipSync } from "node:zlib";
 import { JOB_MEM_BYTES, pickJobs, stopUntilGone } from "../dev/smoke/lib/concurrency.mjs";
+import { readSurface } from "./helpers/source";
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
@@ -88,7 +89,7 @@ describe("smoke suite: legacy hex data and palette upgrades", () => {
  */
 describe("smoke suite findings stay fixed", () => {
   it("C6: a terrain stroke remembers the old terrain from the map data, not the hex note's frontmatter", () => {
-    const src = read("src", "hex-map", "HexMapView.ts");
+    const src = readSurface("map-view");
     const start = src.indexOf("  private onHexPaintClick(");
     const body = src.slice(start, src.indexOf("\n  }\n", start));
     expect(body).toMatch(/oldTerrain = pending \? pending\.terrain : getTerrainFromFile\(this\.app, path\)/);
@@ -96,13 +97,13 @@ describe("smoke suite findings stay fixed", () => {
   });
 
   it("C5: views restored as deferred tabs are skipped, never cast and called", () => {
-    const src = read("src", "HexmakerPlugin.ts");
+    const src = readSurface("plugin");
     expect(src).not.toMatch(/\(leaf\.view as Hex(Map|Table)View\)\./);
     expect(src).toMatch(/if \(leaf\.view instanceof HexMapView\) leaf\.view\.renderGrid\(\);/);
   });
 
   it("C5: startup saves wait for the map notes to load", () => {
-    const src = read("src", "HexmakerPlugin.ts");
+    const src = readSurface("plugin");
     expect(src).toMatch(/rangesDone = storesReady\.then\(\(\) => upgradeTableRangesOnce\(this\)\);/);
   });
 });
@@ -111,8 +112,10 @@ describe("smoke suite: concurrency and stopping", () => {
 	const GB = 2 ** 30;
 
 	it("--jobs wins, within 1..4", () => {
+		// @ts-expect-error: --jobs arrives as a CLI string
 		expect(pickJobs({ requested: "2", freeMem: 0.5 * GB, cpuBusy: 0.99, cpuCount: 2 })).toEqual({ jobs: 2, reason: "--jobs" });
 		expect(pickJobs({ requested: 9, freeMem: 64 * GB, cpuCount: 32 }).jobs).toBe(4);
+		// @ts-expect-error: --jobs arrives as a CLI string
 		expect(pickJobs({ requested: "abc", freeMem: 64 * GB, cpuCount: 32 }).reason).not.toBe("--jobs");
 	});
 
@@ -168,7 +171,7 @@ describe("smoke suite: silent table-range upgrade (DJ-Q6) is an allowed, backed-
     writeFileSync(path.join(dir, "tables.json.gz"), gzipSync(JSON.stringify({ kind: "table-ranges", notes: { "tables/beach.md": "| Result | Weight |" } })));
     const tr = tableRangeBackups(vault, "p");
     expect(Object.keys(tr)).toEqual(["tables/beach.md"]);
-    expect(tr["tables/beach.md"]).toMatch(/^[0-9a-f]+$/);
+    expect((tr as Record<string, string>)["tables/beach.md"]).toMatch(/^[0-9a-f]+$/);
     expect(noteFormatBackups(vault, "p")).toEqual({});
   });
 

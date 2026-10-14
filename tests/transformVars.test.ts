@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 /**
  * Drift guard for the pan/zoom perf fix.
@@ -17,7 +18,7 @@ const root = process.cwd();
 const read = (...p: string[]) =>
   readFileSync(path.join(root, ...p), "utf8").replace(/\r\n/g, "\n");
 const stylesCss = read("styles.css");
-const viewSrc = read("src", "hex-map", "HexMapView.ts");
+const viewSrc = readSurface("map-view");
 
 /** Keys of the setCssProps({...}) object literal inside method `name`. */
 function varsWrittenBy(name: string): string[] {

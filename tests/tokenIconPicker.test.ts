@@ -2,14 +2,15 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 // The token form is DOM-heavy (Obsidian Setting/Modal), so these pin the
 // round-4 fixes at the source level.
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("token form icon picker (fresh-eyes round 4)", () => {
-	const token = read("src", "hex-map", "TokenModal.ts");
-	const base = read("src", "HexmakerModal.ts");
+	const token = readSurface("token-modal");
+	const base = readSurface("modal-base");
 	const css = read("styles.css");
 	const r4 = css.slice(css.indexOf("Fresh-eyes r4"));
 

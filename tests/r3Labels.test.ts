@@ -34,6 +34,7 @@ import { buildManualHtml } from "../src/export/manual/manualHtml";
 import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
+import { readSurface } from "./helpers/source";
 
 const read = (...p: string[]) => readFileSync(p.join("/"), "utf8").replace(/\r\n/g, "\n");
 
@@ -133,7 +134,7 @@ describe("NM3: hex names keep a readable size on screen", () => {
 	});
 
 	it("redraws names when the zoom settles (the floor depends on it)", () => {
-		const src = read("src", "hex-map", "HexMapView.ts");
+		const src = readSurface("map-view");
 		expect(src).toMatch(/if \(this\.zoom !== this\.namesZoom\)/);
 		expect(src).toMatch(/renderHexNameLayer\([^)]*font, this\.zoom\)/);
 	});
@@ -185,7 +186,7 @@ describe("NM3: hex-name font options", () => {
 		expect(pngHexNamePx(100)).toBe(27);
 		expect(pngHexNamePx(100, 1.5)).toBe(41);
 		expect(pngHexNamePx(10, 0.85)).toBe(MIN_NAME_SCREEN_PX);
-		const src = read("src", "export", "mapPngRenderer.ts");
+		const src = readSurface("png-renderer");
 		expect(src).toMatch(/resolveNameFont\(map, plugin\.settings\)/);
 		expect(src).toMatch(/pngHexNamePx\(R, nameFont\.scale\)/);
 	});
@@ -211,9 +212,9 @@ describe("NM3: hex-name font options", () => {
 	});
 
 	it("has the font row in the layers menu Labels group, and the default in settings (both paths)", () => {
-		const panel = read("src", "hex-map", "HexSidePanel.ts");
+		const panel = readSurface("side-panel");
 		expect(panel).toMatch(/buildNameFontRow\(labelTitle, labelGroup\)/);
-		const tab = read("src", "HexmakerSettingTab.ts");
+		const tab = readSurface("settings-tab");
 		expect(tab).toMatch(/key: "hexNameFont"/);
 		// The pre-1.13 page draws the same definitions (display → renderDefinitions).
 		expect(tab).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");
@@ -279,10 +280,10 @@ describe("G4b: link section words follow the map type", () => {
 	});
 
 	it("is wired into the hex editor, hex table, badges legend and exports", () => {
-		expect(read("src", "hex-map", "HexEditorModal.ts")).toMatch(/sectionWordsFor\(this\.mapName\)\(section\)/);
-		expect(read("src", "hex-table", "HexTableView.ts")).toMatch(/this\.colLabel\(col\)/);
-		expect(read("src", "hex-map", "HexMapView.ts")).toMatch(/label: words\(s\)\.label/);
-		expect(read("src", "export", "mapPngRenderer.ts")).toMatch(/name: sectionWords\(s\)\.label/);
+		expect(readSurface("hex-editor")).toMatch(/sectionWordsFor\(this\.mapName\)\(section\)/);
+		expect(readSurface("hex-table")).toMatch(/this\.colLabel\(col\)/);
+		expect(readSurface("map-view")).toMatch(/label: words\(s\)\.label/);
+		expect(readSurface("png-renderer")).toMatch(/name: sectionWords\(s\)\.label/);
 		expect(read("src", "export", "exporters", "singleHex.ts")).toMatch(/sectionWordsFor\(/);
 		expect(read("src", "export", "exporters", "hexcrawlManual.ts")).toMatch(/linkLabels:/);
 	});
@@ -308,7 +309,7 @@ describe("HG5: new terrains get their tables", () => {
 	});
 
 	it("runs after every save and palette-note import, creates empty tables, and moves them on rename", () => {
-		const src = read("src", "HexmakerPlugin.ts");
+		const src = readSurface("plugin");
 		const save = /async saveSettings\(\)[\s\S]*?\n {2}\}/.exec(src)![0];
 		expect(save).toMatch(/void this\.ensureTablesForNewTerrains\(\)/);
 		expect(read("src", "palettes", "PaletteStore.ts")).toMatch(/ensureTablesForNewTerrains\(\)/);

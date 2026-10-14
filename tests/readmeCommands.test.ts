@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readSurface } from "./helpers/source";
 
 /**
  * Fresh-eyes round 3: the README named commands that don't exist
@@ -10,7 +11,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
  */
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 const readme = read("../README.md");
-const plugin = read("../src/HexmakerPlugin.ts");
+const plugin = readSurface("plugin");
 const pluginName = (JSON.parse(read("../manifest.json")) as { name: string }).name;
 
 // Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).

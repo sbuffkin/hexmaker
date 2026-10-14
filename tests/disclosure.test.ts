@@ -16,6 +16,7 @@ import {
 import { DISCLOSURE_OPEN_KEY, FOLD_STATE_KEY, disclosureOpen, foldOpen, setDisclosureOpen, setFoldOpen, subSectionKey } from "../src/ui/disclosure";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
+import { readSurface, ownerFile } from "./helpers/source";
 
 /** Obsidian's per-vault local storage, in memory. */
 class FakeStore implements LocalStore {
@@ -135,7 +136,7 @@ describe("debug mode", () => {
       for (const name of readdirSync(dir)) {
         const p = join(dir, name);
         if (statSync(p).isDirectory()) walk(p);
-        else if (p.endsWith(".ts") && /setDebugMode\([^)]*,\s*(true|on)\)/.test(readFileSync(p, "utf8"))) hits.push(p.replace(/\\/g, "/"));
+        else if (p.endsWith(".ts") && /setDebugMode\([^)]*,\s*(true|on)\)/.test(readFileSync(p, "utf8"))) hits.push(ownerFile(p));
       }
     };
     walk("src");
@@ -183,7 +184,7 @@ describe("Fold open state (audit D1–D3)", () => {
   });
 
   it("GeneratorPanel's sections are shared Folds (no session-only static set)", () => {
-    const src = readFileSync(join("src", "worldgen", "GeneratorPanel.ts"), "utf8");
+    const src = readSurface("generator-page");
     expect(src).not.toMatch(/static collapsed|static openPathTypes/);
     expect(src).toMatch(/section\(el: HTMLElement, text: string\): HTMLElement \{[\s\S]{0,200}new Fold\(/);
   });

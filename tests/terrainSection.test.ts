@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { terrainStartsCollapsed } from "../src/hex-map/terrainSection";
 import { FILTER_FROM, filterMatches } from "../src/ui/pickers";
+import { readSurface } from "./helpers/source";
 
 describe("hex editor Terrain section (fresh-eyes round 5)", () => {
 	it("a hex with a terrain opens collapsed to its summary; a bare hex opens expanded", () => {
@@ -26,7 +27,7 @@ describe("hex editor Terrain section (fresh-eyes round 5)", () => {
 		expect(FILTER_FROM).toBeLessThan(50);
 	});
 
-	const modal = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexEditorModal.ts"), "utf8").replace(/\r\n/g, "\n");
+	const modal = readSurface("hex-editor");
 	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
 	const r5 = css.slice(css.indexOf("Fresh-eyes r5 (map view"));
 

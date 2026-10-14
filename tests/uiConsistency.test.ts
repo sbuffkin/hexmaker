@@ -3,6 +3,7 @@ import expect from "expect";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ownerFile, readSource } from "./helpers/source";
 
 /**
  * The UI consistency drift guard (audit 2026-10-12, fix plan step 14;
@@ -38,7 +39,10 @@ function tsFiles(dir: string): string[] {
   });
 }
 
-const FILES = tsFiles(SRC).map((p) => ({ path: relative(SRC, p).replace(/\\/g, "/"), text: readFileSync(p, "utf8") }));
+// A file inside a source surface (tests/helpers/source.ts) is checked under
+// the surface's file, so the allow-lists below survive code moves; surface
+// files come out as their whole surface text.
+const FILES = [...new Set(tsFiles(SRC).map((p) => ownerFile(relative(join(SRC, ".."), p))))].map((rel) => ({ path: rel.replace(/^src\//, ""), text: readSource(rel) }));
 
 /** The user docs: the README and the in-app help. */
 const DOCS = [

@@ -11,7 +11,7 @@
  */
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { MapStore } from "../src/maps/MapStore";
 import { parseMapNote } from "../src/maps/mapNote";
 import { MemVault } from "./helpers/memVault";

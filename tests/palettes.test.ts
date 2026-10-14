@@ -595,7 +595,7 @@ describe("PaletteStore", () => {
 describe("PaletteStore: path types live in palettes", () => {
 	it("first load gives every palette ALL the old plugin-wide path types, written as a table in its note", async () => {
 		const custom = { name: "Trail", color: "#8b5a2b", width: 2, lineStyle: "dashed" as const, routing: "through" as const };
-		const h = makeHarness({ pathTypes: [...DEFAULT_SETTINGS.pathTypes, custom] });
+		const h = makeHarness({ pathTypes: [...DEFAULT_SETTINGS.pathTypes, custom as unknown as PathType] }) // an old path type: no avoidImpassable / autoRoute;
 		await h.store.init();
 		for (const pal of h.settings.terrainPalettes) {
 			expect(pal.pathTypes!.map((x) => x.name)).toEqual(["Road", "River", "Trail"]);

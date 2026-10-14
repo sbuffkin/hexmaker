@@ -5,7 +5,8 @@
  */
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { detectTerrainRenames, foldRenames, renameOfferText, terrainUse } from "../src/palettes/terrainRename";
 import { PaletteStore } from "../src/palettes/PaletteStore";
 import { DEFAULT_SETTINGS } from "../src/constants";

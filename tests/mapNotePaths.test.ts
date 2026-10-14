@@ -9,7 +9,7 @@ import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import {
   buildMapNote,
   MAP_NOTE_FORMAT,

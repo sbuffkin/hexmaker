@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { optionsWithTuning, BLANK_ID } from "../src/worldgen/registry";
 import { tuneKey, gridKeys } from "../src/worldgen/procedural/common";
@@ -14,6 +12,7 @@ import { scaleStarter } from "../src/wizardKinds";
 import { registry } from "../src/modules";
 import type { MapData } from "../src/types";
 import type { GeneratorHelpers } from "../src/modules/types";
+import { readSurface } from "./helpers/source";
 
 /**
  * Owner 2026-10-12 follow-ups: Biomes in "What are you mapping?" makes a
@@ -21,7 +20,6 @@ import type { GeneratorHelpers } from "../src/modules/types";
  * gets the wizard's scale → generator split, sharing its code.
  */
 
-const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 const PALETTE = DEFAULT_TERRAIN_PALETTE.map((t) => ({ ...t }));
 
 describe("one options resolver for the wizard and New map", () => {
@@ -78,7 +76,7 @@ describe("New overworld…'s fields, shared with the Biomes scale", () => {
 	});
 
 	it("New overworld… starts on those defaults and makes its map through the shared function", () => {
-		const src = read("src", "overworld", "OverworldModals.ts");
+		const src = readSurface("overworld-modals");
 		for (const k of ["regionSize", "blend", "makeAll", "unclimated"]) expect(src).toContain(`= NEW_OVERWORLD_DEFAULTS.${k};`);
 		expect(src).toContain("await finishNewOverworld(this.plugin, res.name, this.result, {");
 		expect(src).not.toContain("withMeshFields(");
@@ -146,14 +144,14 @@ describe("a Biomes map from the wizard or New map is an overworld", () => {
 	});
 
 	it("the wizard and New map both run the scale's setup after creating the map", () => {
-		expect(read("src", "SetupWizardView.ts")).toMatch(/await runScaleMapMade\(plugin, scale\?\.id, \{/);
-		expect(read("src", "worldgen", "NewMapSetupModal.ts")).toMatch(/await runScaleMapMade\(this\.plugin, scale\.id, \{/);
+		expect(readSurface("setup-wizard")).toMatch(/await runScaleMapMade\(plugin, scale\?\.id, \{/);
+		expect(readSurface("new-map-setup")).toMatch(/await runScaleMapMade\(this\.plugin, scale\.id, \{/);
 	});
 });
 
 describe("New map: What are you mapping? then the scale's generators (shared with the wizard)", () => {
-	const modal = read("src", "worldgen", "NewMapSetupModal.ts");
-	const wizard = read("src", "SetupWizardView.ts");
+	const modal = readSurface("new-map-setup");
+	const wizard = readSurface("setup-wizard");
 
 	it("both forms draw the scale cards, sliders and choices from src/ui/mapScaleForm.ts", () => {
 		for (const src of [modal, wizard]) {

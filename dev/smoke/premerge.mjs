@@ -3,7 +3,7 @@
  * `npm run premerge`: everything that must pass before merging into
  * feat/region-notes or deploying a build into the live vault (owner
  * decision WM5). Runs, in order, stopping at the first failure:
- *   build, lint, unit tests, integration tests, the smoke vault matrix
+ *   build, lint, test type-check, unit tests, integration tests, the smoke vault matrix
  *   (on the build just made: --no-build).
  * Extra arguments go to the smoke suite (e.g. --only fresh,v155 --jobs 2).
  * Run it where npm works for this repo (WSL; see CLAUDE.md).
@@ -15,6 +15,7 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 const steps = [
   ["build", npm, ["run", "build"]],
   ["lint", npm, ["run", "lint"]],
+  ["test type-check", npm, ["run", "typecheck:tests"]],
   ["unit tests", npm, ["test"]],
   ["integration tests", npm, ["run", "test:integration"]],
   ["smoke vault matrix", process.execPath, ["dev/smoke/cli.mjs", "--no-build", ...smokeArgs]],

@@ -156,7 +156,7 @@ describe("Space - Planet palette", () => {
 			if (d.generator !== "procedural:planet-surface") continue;
 			expect({ terrain, palette: d.palette, base: names.has(d.baseTerrain!) }).toEqual({ terrain, palette: SPACE_PLANET_PALETTE_NAME, base: true });
 		}
-		const surfaces = DEFAULT_WORLD_TYPE_ROWS.filter((r) => r.generator?.id === "procedural:planet-surface");
+		const surfaces = DEFAULT_WORLD_TYPE_ROWS.filter((r) => !!r.generator && "id" in r.generator && r.generator.id === "procedural:planet-surface");
 		expect(surfaces.length).toBeGreaterThan(0);
 		for (const r of surfaces) expect({ world: r.world, palette: r.palette, base: names.has(r.baseTerrain!) }).toEqual({ world: r.world, palette: SPACE_PLANET_PALETTE_NAME, base: true });
 	});

@@ -3,6 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom } from "../src/hex-map/hexHover";
+import { readSurface } from "./helpers/source";
 
 describe("hexHoverLabel", () => {
 	it("names the hex's terrain and coordinates", () => {
@@ -39,17 +40,17 @@ describe("coordinates read \"x, y\" everywhere people see them (fresh-eyes round
 	it("titles, cards and notices don't show x_y or x,y", () => {
 		const read = (...p: string[]) => readFileSync(path.join(process.cwd(), "src", ...p), "utf8");
 		const files = [
-			read("hex-map", "HexMapView.ts"),
+			readSurface("map-view"),
 			read("hex-map", "TokenInfoModal.ts"),
-			read("hex-map", "HexEditorModal.ts"),
-			read("hex-table", "HexTableView.ts"),
+			readSurface("hex-editor"),
+			readSurface("hex-table"),
 		];
 		for (const src of files) {
 			expect(src).not.toMatch(/[Hh]ex \$\{[^}]+\},\$\{/); // "Hex 3,4"
 			expect(src).not.toMatch(/[Hh]ex \$\{[\w.]*\.hex\}/); // "Hex 3_4"
 			expect(src).not.toMatch(/on \$\{x\},\$\{y\}/);
 		}
-		expect(read("hex-table", "HexTableView.ts")).not.toMatch(/`\$\{x\},\$\{y\}/);
+		expect(readSurface("hex-table")).not.toMatch(/`\$\{x\},\$\{y\}/);
 	});
 });
 
@@ -70,7 +71,7 @@ describe("no stray hover highlight after a modal closes (fresh-eyes round 5)", (
 	});
 
 	it("the map pauses hover on close and the CSS hides it meanwhile", () => {
-		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+		const view = readSurface("map-view");
 		const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
 		expect(view).toMatch(/overlayClosed\(Array\.from\(r\.removedNodes\)\)[\s\S]{0,200}addClass\("duckmage-hover-paused"\)/);
 		expect(view).toMatch(/pointerMovedFrom\(hoverPausedAt, e\.clientX, e\.clientY\)[\s\S]{0,120}removeClass\("duckmage-hover-paused"\)/);

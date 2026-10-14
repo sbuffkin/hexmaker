@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { Menu, MenuItem } from "obsidian";
+import { Menu, MenuItem } from "./__mocks__/obsidian"; // the mock records shown menus
 import { layerOf, type Layer } from "../src/ui/placement";
 import { ADVANCED_SUBMENU, DEBUG_SUBMENU, placedRows, submenuRows } from "../src/ui/placedMenu";
 import { painterMenuEntries } from "../src/hex-map/PainterContextMenu";
@@ -28,6 +28,7 @@ import { CONFIRM_LOCKED_HINT } from "../src/overworld/overworldPaths";
 import { PATH_EDIT_LOCKED_HINT } from "../src/paths/editGate";
 import { hexLinkLabel, hexMarkdownLink, mapLinkUri, OPEN_MAP_ACTION, parseMapLinkParams, type MapLinkTarget } from "../src/hexLink";
 import type { MapPath } from "../src/types";
+import { readSurface } from "./helpers/source";
 
 /**
  * The owner's UI worksheet (2026-10-11) for the map surfaces: hex map view,
@@ -81,10 +82,10 @@ describe("map surfaces: every resolved tag is honoured", () => {
 });
 
 describe("dropped controls are gone", () => {
-  const view = read("src/hex-map/HexMapView.ts");
+  const view = readSurface("map-view");
   it("PainterMenu.newPath: no New path in the tool's right-click menu (the mode bar keeps it)", () => {
     expect(view).not.toMatch(/extra\.push\(\{ label: "New path"/);
-    expect(read("src/hex-map/pathTool.ts")).toMatch(/text: "New path"/);
+    expect(readSurface("path-tool")).toMatch(/text: "New path"/);
   });
   it("MapView.dblRightClickExit and dblClickOffGridExit: no double-click exits", () => {
     expect(view).not.toMatch(/lastToolContextMenuAt|isDouble/);
@@ -149,7 +150,7 @@ describe("menus and toolbars: Advanced ▸ and Debug ▸ submenus", () => {
   });
 
   it("the hex and overworld right-click menus copy a link to the hex, right after Center on this hex", () => {
-    const view = read("src/hex-map/HexMapView.ts");
+    const view = readSurface("map-view");
     expect(view).toMatch(/menu\.add\("hex\.center", [^\n]*\n\s*menu\.add\("hex\.copy-link", COPY_HEX_LINK_TITLE, "link-2", \(\) => copyHexLink\(this\.plugin, this\.activeMapName, x, y\)\)/);
     expect(view).toMatch(/menu\.add\("ow\.copy-link", COPY_HEX_LINK_TITLE/);
   });
@@ -245,11 +246,11 @@ describe("hex links round-trip", () => {
   });
 
   it("the hex editor's centre dot copies it, and the handler centres the map", () => {
-    const editor = read("src/hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).toMatch(/centre\.addEventListener\("click", \(\) => this\.copyHexLink\(\)\)/);
     expect(editor).toMatch(/copyHexLink\(this\.plugin, this\.mapName, this\.x, this\.y\)/);
     expect(read("src/hex-map/copyHexLink.ts")).toMatch(/hexMarkdownLink\(/);
-    const plugin = read("src/HexmakerPlugin.ts");
+    const plugin = readSurface("plugin");
     expect(plugin).toMatch(/registerObsidianProtocolHandler\(OPEN_MAP_ACTION/);
     expect(plugin).toMatch(/view\.goToHex\(target\.map, target\.hex\.x, target\.hex\.y/);
   });

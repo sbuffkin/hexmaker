@@ -9,6 +9,7 @@ import { applyAffine, latticeCenter } from "../src/paths/pathGeometry";
 import { hexCenter } from "../src/hex-map/hexGeometry";
 import { countPathsOfType, removePathTypeFromChains, removePathTypeFromPaths, renamePathTypeInChains, renamePathTypeInPaths } from "../src/paths/typeRefs";
 import { legacyChainsToPaths } from "../src/paths/legacy";
+import { readSurface, readSource } from "./helpers/source";
 
 const ROAD: PathType = { name: "Road", color: "#a33", width: 4, lineStyle: "solid", routing: "through", avoidImpassable: true, autoRoute: "direct" };
 const TRAIL: PathType = { name: "Trail", color: "#555", width: 2, lineStyle: "dashed", routing: "meander", avoidImpassable: true, autoRoute: "winding" };
@@ -136,7 +137,7 @@ describe("paths service: style comes from the explicit type fields, in one place
     expect(src).not.toMatch(/pathAvoidsImpassable\(|pathMeanders\(/);
     expect(src).toMatch(/return t && \{ avoid: t\.avoidImpassable, winding: t\.autoRoute === "winding" \};/);
     for (const f of ["src/hex-map/HexMapView.ts", "src/export/mapPngRenderer.ts", "src/paths/pathGeometry.ts"]) {
-      const body = readFileSync(path.join(process.cwd(), f), "utf8");
+      const body = readSource(f);
       // The renderers never route by themselves (the draw tool's own route click aside).
       expect(body).not.toMatch(/resolvePaths\(/);
     }
@@ -145,8 +146,8 @@ describe("paths service: style comes from the explicit type fields, in one place
 
 describe("PNG and screen draw the same polylines", () => {
   it("both take plugin.paths.strokes(...) (lattice units); only the affine differs", () => {
-    const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
-    const png = readFileSync(path.join(process.cwd(), "src", "export", "mapPngRenderer.ts"), "utf8").replace(/\r\n/g, "\n");
+    const view = readSurface("map-view");
+    const png = readSurface("png-renderer");
     const overlay = /private renderPathOverlay[\s\S]*?\n {2}\}\n/.exec(view)![0];
     expect(overlay).toMatch(/this\.plugin\.paths\.strokes\(region\.name, \{\n\s*seamEnd:/);
     expect(png).toMatch(/plugin\.paths\.strokes\(map\.name, \{ laneScale: boldPaths \? PNG_PATH_BOLD : 1 \}\)/);

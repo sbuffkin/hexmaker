@@ -14,6 +14,7 @@ import { parseRandomTableWithReport, rowOdds, resolveTable } from "../src/random
 import { shippedTablesToInstall } from "../src/random-tables/shippedTables";
 import { makeTableTemplate } from "../src/utils";
 import { ENGINE_ROLES } from "../src/worldgen/tableRoles";
+import { readSurface } from "./helpers/source";
 
 // Frozen copies of the rows that were code constants (STARTER_WEATHER / STARTER_RUMORS, now deleted).
 const OLD_WEATHER: [string, number][] = [
@@ -47,7 +48,7 @@ describe("starter weather and rumours: data in the World module", () => {
 	}
 
 	it("no row constants are left in the code", () => {
-		const code = readFileSync("src/regionTables.ts", "utf8") + readFileSync("src/HexmakerPlugin.ts", "utf8");
+		const code = readFileSync("src/regionTables.ts", "utf8") + readSurface("plugin");
 		expect(code).not.toMatch(/STARTER_WEATHER|STARTER_RUMORS|Clear and calm|went missing on the road/);
 	});
 

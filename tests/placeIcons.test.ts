@@ -17,6 +17,7 @@ const PLACE_ICON_KINDS = iconSubgroups("places");
 import { BUNDLED_ICONS } from "../src/bundledIcons";
 import { BUNDLED_PLACE_ICONS } from "../src/modules/world/placeIcons";
 import { isIconHiddenByKind } from "../src/mapKinds";
+import { readSurface } from "./helpers/source";
 
 const root = process.cwd();
 const placeFiles = fs.readdirSync(path.join(root, "icons")).filter((f) => /^place-.*\.svg$/.test(f)).sort();
@@ -80,7 +81,7 @@ describe("Places icon pack (N2b)", () => {
 	it("sub-groups come from the pack, not its name (P5): only packs that declare them have chips", () => {
 		expect(iconSubgroups("places").length).toBeGreaterThan(0);
 		for (const pack of ["all", "terrain", "space", "custom"]) expect(iconSubgroups(pack)).toEqual([]);
-		const modal = fs.readFileSync(path.join(root, "src", "HexmakerModal.ts"), "utf8");
+		const modal = readSurface("modal-base");
 		expect(modal).not.toMatch(/"places"/);
 	});
 

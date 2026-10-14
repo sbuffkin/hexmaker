@@ -103,8 +103,8 @@ describe("Add to this hex (P2)", () => {
 });
 
 // PA2 = A: "Run workflow" in the hex editor; the result goes into a section.
-import { readFileSync } from "node:fs";
 import { workflowResultAsSectionText } from "../src/random-tables/workflow";
+import { readSurface } from "./helpers/source";
 
 describe("Run workflow from a hex (PA2)", () => {
   const filled = "## Settlement\nGullmouth\n\n## Trouble\nPirates\n\n---\n# Notes ##\nbring a boat";
@@ -124,11 +124,11 @@ describe("Run workflow from a hex (PA2)", () => {
   });
 
   it("the hex editor always offers it (no feature switch), and passes this hex as the target", () => {
-    const src = readFileSync("src/hex-map/HexEditorModal.ts", "utf8");
+    const src = readSurface("hex-editor");
     expect(src).toContain('text: "Run workflow"');
     expect(src).not.toMatch(/hasFeature|withFeature/);
     expect(src).toContain("new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget(");
-    const wizard = readFileSync("src/random-tables/WorkflowWizardModal.ts", "utf8");
+    const wizard = readSurface("workflow-wizard");
     expect(wizard).toContain("renderAddToHex(resultBtns, this.hexTarget");
   });
 });

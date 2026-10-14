@@ -18,6 +18,7 @@ import { DEFAULT_SETTINGS, solve } from "../packages/hex-wfc/src";
 import { layerOf } from "../src/ui/placement";
 import { WIZARD_TUNING_ID, tuningText, wizardOptionId } from "../src/wizardText";
 import { countSet, setLabel } from "../src/ui/disclosure";
+import { readSurface } from "./helpers/source";
 
 /** Owner 2026-10-12: generator options above the fold; Advanced = 5–10 layout sliders. */
 
@@ -50,10 +51,10 @@ describe("the wizard's generator options are above the fold; Advanced is the tun
 		expect(shared).toContain("disclosure.place(placementId, row, isSet)");
 		expect(shared).toContain("disclosure.refreshSet()");
 		expect(shared).toMatch(/if \(v === t\.default\) delete options\[key\];/);
-		expect(read("SetupWizardView.ts")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, ctx\.generatorOptions, optsDisclosure, WIZARD_TUNING_ID,/);
-		expect(read("worldgen", "NewMapSetupModal.ts")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, this\.options, disclosure, NEW_MAP_TUNING_ID,/);
+		expect(readSurface("setup-wizard")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, ctx\.generatorOptions, optsDisclosure, WIZARD_TUNING_ID,/);
+		expect(readSurface("new-map-setup")).toMatch(/renderTuningSliders\(optsBox, kind\?\.tuning, this\.options, disclosure, NEW_MAP_TUNING_ID,/);
 		// Neither form keeps a slider loop of its own.
-		for (const f of [read("SetupWizardView.ts"), read("worldgen", "NewMapSetupModal.ts")]) expect(f).not.toContain("duckmage-wizard-tuning");
+		for (const f of [readSurface("setup-wizard"), readSurface("new-map-setup")]) expect(f).not.toContain("duckmage-wizard-tuning");
 	});
 });
 

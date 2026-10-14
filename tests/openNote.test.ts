@@ -1,8 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
 import { leafShowingPath, openNoteFocused } from "../src/openNote";
+import { readSurface, readSource } from "./helpers/source";
 
 const leaf = (file: string | null, deferredFile?: string) => ({
 	view: file === null ? {} : { file: { path: file } },
@@ -54,11 +53,10 @@ describe("openNoteFocused", () => {
 	});
 
 	it("is what every 'Open note' on the map, hex editor and token card uses", () => {
-		const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8");
 		for (const f of [["src", "hex-map", "HexEditorModal.ts"], ["src", "hex-map", "TokenInfoModal.ts"], ["src", "hex-map", "HexMapView.ts"]]) {
-			expect(read(...f)).toMatch(/openNoteFocused\(this\.app, /);
+			expect(readSource(...f)).toMatch(/openNoteFocused\(this\.app, /);
 		}
-		const view = read("src", "hex-map", "HexMapView.ts").replace(/\r\n/g, "\n");
+		const view = readSurface("map-view");
 		// Map menus go through ModeMenu: menu.add(<id>, "Open note", …).
 		const openNoteItems = view.split('"Open note", "file-text"').slice(1).map((s) => s.slice(0, 500));
 		expect(openNoteItems.length).toBeGreaterThan(0);

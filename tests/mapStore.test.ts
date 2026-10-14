@@ -4,13 +4,13 @@ import { MapStore, HEX_DATA_KEYS, droppedWhat, withoutNotePaths } from "../src/m
 import { parseMapNote } from "../src/maps/mapNote";
 import { migrateMapData } from "../src/compat";
 import { MemVault } from "./helpers/memVault";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import type { MapData } from "../src/types";
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
 async function gunzipJson(bytes: Uint8Array) {
-	const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+	const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("gzip"));
 	return JSON.parse(await new Response(stream).text());
 }
 
@@ -266,7 +266,7 @@ describe("map store: odd settings", () => {
 		});
 		const m = [
 			{ name: "asdf", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [{ typeName: "Road", hexes: ["1_1", "2_2"] }] } as MapData,
-			{ name: "asdf", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [] } as MapData,
+			{ name: "asdf", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, pathChains: [] } as unknown as MapData,
 		];
 		const { store } = await boot(v, m);
 		expect(store.get("asdf", "1_1")).toEqual({ terrain: "forest" });

@@ -11,7 +11,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { PLACEMENT, layerOf, type Layer } from "../src/ui/placement";
 import { PlacedMenu, type MenuLike } from "../src/ui/placedMenu";
-import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "obsidian";
+import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "./__mocks__/obsidian"; // the mock records shown menus
+import type { Menu as RealMenu } from "obsidian";
 import { groupAgrees } from "../src/ui/placeGroup";
 import { newMapOptionIds, newMapOptionId } from "../src/worldgen/newMapOptionIds";
 import { ORBITS_ID, ORBITS_OPTIONS } from "../src/space/orbits";
@@ -20,6 +21,7 @@ import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS } from "../src/space/starScatter"
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS } from "../src/overworld/worldBiomes";
 import { ORBIT_TYPE_KEY, ROUTE_TYPE_KEY } from "../src/worldgen/generatorPathTypes";
 import { LIST_REFRESH_MS, DETAIL_REFRESH_MS, ListSignatures, listSignature, touchesList } from "../src/random-tables/listRefresh";
+import { readSurface } from "./helpers/source";
 
 interface Resolved { id: string; group: string; subgroup: string; choice: string }
 
@@ -116,9 +118,9 @@ describe("dropped controls are gone", () => {
   });
 
   it("Biome form: the typed weight box is gone (New biome only asks for the basics; the biome page has the share sliders)", () => {
-    const src = read("src", "overworld", "BiomeLibraryModal.ts");
+    const src = readSurface("biome-library");
     expect(src).not.toMatch(/weight value|type: "range"/);
-    expect(read("src", "overworld", "BiomePanel.ts")).toMatch(/renderShareSliders\(/);
+    expect(readSurface("biome-page")).toMatch(/renderShareSliders\(/);
   });
 
   it("Table picker: Open tables view", () => {
@@ -127,7 +129,7 @@ describe("dropped controls are gone", () => {
   });
 
   it("New map form: the old \"More\" fold is replaced by the Advanced dropdown", () => {
-    const src = read("src", "worldgen", "NewMapSetupModal.ts");
+    const src = readSurface("new-map-setup");
     expect(src).not.toMatch(/duckmage-setup-more|"More: folder name/);
     expect(src).toMatch(/new Disclosure\(this\.app, "NewMap"/);
   });
@@ -167,12 +169,13 @@ describe("New map form: generator options by inventory id", () => {
 class FakeMenu implements MenuLike {
   items: string[] = [];
   clicks: (() => void)[] = [];
-  addSeparator(): this {
+  // Typed as Obsidian's Menu so the fake satisfies MenuLike (Pick<Menu, …>).
+  addSeparator(): RealMenu {
     this.items.push("---");
     this.clicks.push(() => {});
-    return this;
+    return this as unknown as RealMenu;
   }
-  addItem(cb: (item: never) => unknown): this {
+  addItem(cb: (item: never) => unknown): RealMenu {
     let title = "";
     let click: () => void = () => {};
     const item = {
@@ -185,7 +188,7 @@ class FakeMenu implements MenuLike {
     cb(item as never);
     this.items.push(title);
     this.clicks.push(click);
-    return this;
+    return this as unknown as RealMenu;
   }
 }
 
@@ -269,8 +272,8 @@ describe("menus: Advanced ▸ and Debug ▸ submenus (src/ui/placedMenu.ts)", ()
   });
 
   it("the map list's and the tables view's context menus use it", () => {
-    expect(read("src", "hex-map", "MapModal.ts")).toMatch(/layers\.add\("MapModal\.mapRowContextGenerator"/);
-    const rt = read("src", "random-tables", "RandomTableView.ts");
+    expect(readSurface("map-modal")).toMatch(/layers\.add\("MapModal\.mapRowContextGenerator"/);
+    const rt = readSurface("table-view");
     for (const id of ["folderMenuRollPicker", "folderMenuEncounters", "fileMenuRollPicker", "fileMenuEncounters"]) {
       expect(rt).toMatch(new RegExp(`layers\\.add\\("RTView\\.${id}"`));
     }
@@ -324,7 +327,7 @@ describe("random tables list: refresh cadence (the ↺ button is Debug)", () => 
   });
 
   it("the view listens for every change the list depends on, and its manual refreshes are Debug", () => {
-    const src = read("src", "random-tables", "RandomTableView.ts");
+    const src = readSurface("table-view");
     for (const ev of ["create", "delete", "rename"]) {
       expect(src).toMatch(new RegExp(`vault\\.on\\("${ev}", \\(file[^)]*\\) => \\{\\n\\s+(if \\(touchesList|const f = this\\.listFolders|if \\(!touchesList)`));
     }
