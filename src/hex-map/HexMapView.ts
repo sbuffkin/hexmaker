@@ -10,9 +10,6 @@ import {
   pendingTerrainOf,
   iconOverrideFromFm,
   gmIconsFromFm,
-  setGmIconsInFile,
-  setTerrainInFile,
-  setIconOverrideInFile,
   getGmIconsFromFile,
   readTokenPlace,
 } from "../frontmatter";
@@ -117,6 +114,7 @@ import { PainterContextMenu, type PainterContextMenuOption } from "./PainterCont
 import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./view/undoGroup";
 import { BackgroundCalibration } from "./view/backgroundCalibration";
 import { MapViewport } from "./view/mapViewport";
+import { HexWrites } from "./view/hexWrites";
 import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
@@ -271,23 +269,8 @@ export class HexMapView extends ItemView {
   private paintBrushSize: 1 | 3 | 7 = 1;
   private brushHoverHexes: Array<[number, number]> = [];
   private selectedHex: { x: number; y: number } | null = null;
-  // Per-hex write queues: always stores the *latest* desired value so rapid
-  // repaints of the same hex coalesce into at most one queued write.
-  private pendingTerrainWrites = new Map<
-    string,
-    { x: number; y: number; terrain: string | null }
-  >();
-  private pendingIconWrites = new Map<
-    string,
-    { x: number; y: number; icon: string | null }
-  >();
-  // GM icon writes are coalesced per-hex. The value is the full list to
-  // write — multi-add semantics. Empty list means "clear all GM icons."
-  private pendingGmIconWrites = new Map<
-    string,
-    { x: number; y: number; list: string[] }
-  >();
-  private flushing = new Set<string>(); // "t:<path>", "i:<path>", or "g:<path>"
+  /** Paint writes (terrain, icon, GM icons), coalesced per hex (view/hexWrites.ts). */
+  private writes: HexWrites;
   private factionTooltipEl: HTMLElement | null = null;
   // Faction links painted but not yet reflected in the metadata cache
   private pendingFactionLinks = new Map<string, Set<string>>();
@@ -378,6 +361,13 @@ export class HexMapView extends ItemView {
         this.updateToolbarButtonStates();
         this.updatePathOverlay();
       },
+    });
+    this.writes = new HexWrites({
+      plugin: this.plugin,
+      activeMapName: () => this.activeMapName,
+      viewportEl: () => this.viewportEl,
+      renderGrid: () => this.renderGrid(),
+      changed: () => this.updateSavingIndicator(),
     });
     this.viewport = new MapViewport({
       plugin: this.plugin,
@@ -2923,24 +2913,14 @@ export class HexMapView extends ItemView {
     // Discard any pending (not-yet-started) writes for the two paths.
     // Without this the flush loop would find no file after the rename and
     // call createHexNote(), recreating a ghost file at the old position.
-    this.pendingTerrainWrites.delete(pathA);
-    this.pendingTerrainWrites.delete(pathB);
-    this.pendingIconWrites.delete(pathA);
-    this.pendingIconWrites.delete(pathB);
-    this.pendingGmIconWrites.delete(pathA);
-    this.pendingGmIconWrites.delete(pathB);
+    this.writes.discard([pathA, pathB]);
 
     // Wait for any already-in-flight flushes on these paths to finish before
     // renaming files — a flush that completes after the rename would write
     // terrain to the wrong file or recreate a file that was just moved.
-    const flushKeys = [
-      `t:${pathA}`, `t:${pathB}`,
-      `i:${pathA}`, `i:${pathB}`,
-      `g:${pathA}`, `g:${pathB}`,
-    ];
     const deadline = Date.now() + 2000;
     while (
-      flushKeys.some((k) => this.flushing.has(k)) &&
+      this.writes.flushingAny([pathA, pathB]) &&
       Date.now() < deadline
     ) {
       await new Promise<void>((r) => window.setTimeout(r, 30));
@@ -4212,7 +4192,7 @@ export class HexMapView extends ItemView {
           // hex, else the map data (the map note, via the store). Hex-note
           // frontmatter no longer holds terrain, so reading it made undo
           // clear a repainted hex instead of restoring it (smoke suite C6).
-          const pending = this.pendingTerrainWrites.get(path);
+          const pending = this.writes.terrain.peek(path);
           const oldTerrain = pending ? pending.terrain : getTerrainFromFile(this.app, path);
           this.currentTerrainStroke.set(path, {
             x: hx,
@@ -4225,7 +4205,7 @@ export class HexMapView extends ItemView {
           this.currentTerrainStroke.get(path)!.newTerrain = terrain;
         }
       }
-      this.scheduleTerrainWrite(hx, hy, path, terrain);
+      this.writes.terrain.schedule(path, { x: hx, y: hy, terrain });
     }
   }
 
@@ -4266,7 +4246,7 @@ export class HexMapView extends ItemView {
       delete hexEl.dataset.gmIcons;
     }
     this.updateGmIcons();
-    this.scheduleGmIconsListWrite(x, y, path, newList);
+    this.writes.gmIcons.schedule(path, { x, y, list: [...newList] });
   }
 
   private onHexIconClick(x: number, y: number): void {
@@ -4319,7 +4299,7 @@ export class HexMapView extends ItemView {
         }
       }
       this.updateGmIcons();
-      this.scheduleGmIconsListWrite(x, y, path, newList);
+      this.writes.gmIcons.schedule(path, { x, y, list: [...newList] });
     } else {
       // ── Regular icon override ────────────────────────────────────────────
       if (this.currentIconStroke && !this.currentIconStroke.has(path)) {
@@ -4347,7 +4327,7 @@ export class HexMapView extends ItemView {
         if (icon !== null) hexEl.addClass("duckmage-hex-exists");
       }
       this.updatePathOverlay();
-      this.scheduleIconWrite(x, y, path, icon);
+      this.writes.icon.schedule(path, { x, y, icon });
     }
   }
 
@@ -4543,7 +4523,7 @@ export class HexMapView extends ItemView {
     const x = Number(hexEl.dataset.x);
     const y = Number(hexEl.dataset.y);
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
-    const pending = this.pendingTerrainWrites.get(hexPath);
+    const pending = this.writes.terrain.peek(hexPath);
     const own = terrain !== undefined ? terrain : pending ? pending.terrain : getTerrainFromFile(this.app, hexPath);
     // The notes it links (towns, dungeons…), from the metadata cache (S3).
     const note = this.app.vault.getAbstractFileByPath(hexPath);
@@ -4746,7 +4726,7 @@ export class HexMapView extends ItemView {
     const old = getTerrainFromFile(this.app, path);
     if (old === terrain) return;
     this.pushUndo({ kind: "terrain", entries: [{ x, y, path, oldTerrain: old, newTerrain: terrain }] });
-    this.scheduleTerrainWrite(x, y, path, terrain);
+    this.writes.terrain.schedule(path, { x, y, terrain });
     this.renderGrid();
   }
 
@@ -4757,7 +4737,7 @@ export class HexMapView extends ItemView {
     const old = getIconOverrideFromFile(this.app, path);
     if (!old) return;
     this.pushUndo({ kind: "icon", entries: [{ x, y, path, oldIcon: old, newIcon: null, isGm: false }] });
-    this.scheduleIconWrite(x, y, path, null);
+    this.writes.icon.schedule(path, { x, y, icon: null });
     this.renderGrid(undefined, new Map([[path, null]]));
   }
 
@@ -4990,7 +4970,7 @@ export class HexMapView extends ItemView {
 
   /** Wait (briefly) until every queued terrain write has landed in the map store. */
   private async terrainWritesSettled(): Promise<void> {
-    const busy = () => this.pendingTerrainWrites.size > 0 || [...this.flushing].some((k) => k.startsWith("t:"));
+    const busy = () => this.writes.terrain.busy();
     for (let i = 0; i < 100 && busy(); i++) await new Promise<void>((r) => window.setTimeout(r, 50));
   }
 
@@ -5015,7 +4995,7 @@ export class HexMapView extends ItemView {
         );
       }
       try {
-        this.scheduleTerrainWrite(entry.x, entry.y, entry.path, terrain);
+        this.writes.terrain.schedule(entry.path, { x: entry.x, y: entry.y, terrain });
       } catch (err) {
         console.warn(
           `[hexmaker] stroke write scheduling failed for ${entry.path}:`,
@@ -5042,7 +5022,7 @@ export class HexMapView extends ItemView {
           if (list.length > 0) hexEl.dataset.gmIcons = JSON.stringify(list);
           else delete hexEl.dataset.gmIcons;
         }
-        this.scheduleGmIconsListWrite(entry.x, entry.y, entry.path, list);
+        this.writes.gmIcons.schedule(entry.path, { x: entry.x, y: entry.y, list: [...list] });
       } else {
         if (hexEl) {
           hexEl.querySelector(".duckmage-hex-icon")?.remove();
@@ -5059,7 +5039,7 @@ export class HexMapView extends ItemView {
             this.applyTerrainToHexEl(hexEl, terrain);
           }
         }
-        this.scheduleIconWrite(entry.x, entry.y, entry.path, icon);
+        this.writes.icon.schedule(entry.path, { x: entry.x, y: entry.y, icon });
       }
     }
     if (entries.some((e) => e.isGm)) this.updateGmIcons();
@@ -5121,11 +5101,7 @@ export class HexMapView extends ItemView {
   }
 
   private updateSavingIndicator(): void {
-    const count =
-      this.pendingTerrainWrites.size +
-      this.pendingIconWrites.size +
-      this.pendingGmIconWrites.size +
-      this.flushing.size;
+    const count = this.writes.count;
     if (this.savingIndicatorEl) {
       if (count > 0) {
         this.savingIndicatorEl.setText(`${count} updates remaining`);
@@ -5133,211 +5109,6 @@ export class HexMapView extends ItemView {
       } else {
         this.savingIndicatorEl.removeClass("is-active");
       }
-    }
-  }
-
-  private scheduleTerrainWrite(
-    x: number,
-    y: number,
-    path: string,
-    terrain: string | null,
-  ): void {
-    this.pendingTerrainWrites.set(path, { x, y, terrain });
-    this.updateSavingIndicator();
-    if (!this.flushing.has(`t:${path}`)) void this.flushTerrainWrites(path);
-  }
-
-  private async flushTerrainWrites(path: string): Promise<void> {
-    const key = `t:${path}`;
-    this.flushing.add(key);
-    this.updateSavingIndicator();
-    try {
-      while (this.pendingTerrainWrites.has(path)) {
-        const { x, y, terrain } = this.pendingTerrainWrites.get(path)!;
-        this.pendingTerrainWrites.delete(path);
-        let attempt = 0;
-        while (true) {
-          if (attempt > 0)
-            await new Promise<void>((r) =>
-              window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
-            );
-          try {
-            // Map data lives in the map note once the store is ready, so
-            // painting never needs (or creates) a hex note.
-            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
-            if (terrain === null) {
-              if (onDisk) {
-                await setTerrainInFile(this.app, path, null);
-                void this.plugin.syncHexEncounterTableLink(path, null);
-              }
-            } else {
-              if (!onDisk) {
-                if (
-                  !(await this.plugin.createHexNote(
-                    x,
-                    y,
-                    this.activeMapName,
-                  ))
-                ) {
-                  this.renderGrid();
-                  return;
-                }
-                this.viewportEl
-                  ?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`)
-                  ?.addClass("duckmage-hex-exists");
-              }
-              await setTerrainInFile(this.app, path, terrain);
-              void this.plugin.syncHexEncounterTableLink(path, terrain);
-            }
-            break; // success
-          } catch (err) {
-            attempt++;
-            console.warn(
-              `[duckmage] terrain write attempt ${attempt} failed for ${path}:`,
-              err,
-            );
-          }
-        }
-      }
-    } finally {
-      this.flushing.delete(key);
-      this.updateSavingIndicator();
-    }
-  }
-
-  private scheduleIconWrite(
-    x: number,
-    y: number,
-    path: string,
-    icon: string | null,
-  ): void {
-    this.pendingIconWrites.set(path, { x, y, icon });
-    this.updateSavingIndicator();
-    if (!this.flushing.has(`i:${path}`)) void this.flushIconWrites(path);
-  }
-
-  private async flushIconWrites(path: string): Promise<void> {
-    const key = `i:${path}`;
-    this.flushing.add(key);
-    this.updateSavingIndicator();
-    try {
-      while (this.pendingIconWrites.has(path)) {
-        const { x, y, icon } = this.pendingIconWrites.get(path)!;
-        this.pendingIconWrites.delete(path);
-        let attempt = 0;
-        while (true) {
-          if (attempt > 0)
-            await new Promise<void>((r) =>
-              window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
-            );
-          try {
-            // Map data lives in the map note once the store is ready, so
-            // painting never needs (or creates) a hex note.
-            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
-            if (icon === null) {
-              if (onDisk) await setIconOverrideInFile(this.app, path, null);
-            } else {
-              if (!onDisk) {
-                if (
-                  !(await this.plugin.createHexNote(
-                    x,
-                    y,
-                    this.activeMapName,
-                  ))
-                ) {
-                  this.renderGrid();
-                  return;
-                }
-                this.viewportEl
-                  ?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`)
-                  ?.addClass("duckmage-hex-exists");
-              }
-              await setIconOverrideInFile(this.app, path, icon);
-            }
-            break; // success
-          } catch (err) {
-            attempt++;
-            console.warn(
-              `[duckmage] icon write attempt ${attempt} failed for ${path}:`,
-              err,
-            );
-          }
-        }
-      }
-    } finally {
-      this.flushing.delete(key);
-      this.updateSavingIndicator();
-    }
-  }
-
-  /**
-   * Queue a write of the full GM-icon list for a hex (multi-add per
-   * hexmaker#28). Coalesces rapid mutations on the same hex into a
-   * single flush — only the latest list is persisted. Empty list
-   * clears all GM icons on the hex.
-   */
-  private scheduleGmIconsListWrite(
-    x: number,
-    y: number,
-    path: string,
-    list: string[],
-  ): void {
-    this.pendingGmIconWrites.set(path, { x, y, list: [...list] });
-    this.updateSavingIndicator();
-    if (!this.flushing.has(`g:${path}`)) void this.flushGmIconWrites(path);
-  }
-
-  private async flushGmIconWrites(path: string): Promise<void> {
-    const key = `g:${path}`;
-    this.flushing.add(key);
-    this.updateSavingIndicator();
-    try {
-      while (this.pendingGmIconWrites.has(path)) {
-        const { x, y, list } = this.pendingGmIconWrites.get(path)!;
-        this.pendingGmIconWrites.delete(path);
-        let attempt = 0;
-        while (true) {
-          if (attempt > 0)
-            await new Promise<void>((r) =>
-              window.setTimeout(r, Math.min(200 * (1 << (attempt - 1)), 2000)),
-            );
-          try {
-            // Map data lives in the map note once the store is ready, so
-            // painting never needs (or creates) a hex note.
-            const onDisk = this.plugin.mapStore.isReady() || !!this.app.vault.getAbstractFileByPath(path);
-            if (list.length === 0) {
-              if (onDisk) await setGmIconsInFile(this.app, path, []);
-            } else {
-              if (!onDisk) {
-                if (
-                  !(await this.plugin.createHexNote(
-                    x,
-                    y,
-                    this.activeMapName,
-                  ))
-                ) {
-                  this.renderGrid();
-                  return;
-                }
-                this.viewportEl
-                  ?.querySelector<HTMLElement>(`[data-x="${x}"][data-y="${y}"]`)
-                  ?.addClass("duckmage-hex-exists");
-              }
-              await setGmIconsInFile(this.app, path, list);
-            }
-            break; // success
-          } catch (err) {
-            attempt++;
-            console.warn(
-              `[duckmage] gm-icon write attempt ${attempt} failed for ${path}:`,
-              err,
-            );
-          }
-        }
-      }
-    } finally {
-      this.flushing.delete(key);
-      this.updateSavingIndicator();
     }
   }
 
