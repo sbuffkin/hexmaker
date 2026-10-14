@@ -184,6 +184,14 @@ export async function upgradeTableRangesOnce(host: TableRangesHost): Promise<Mig
   host.settings.tableRangesUpgraded = true;
   await host.saveSettings();
   const n = result.changed.length;
-  if (n) noticeUpgrade(tableRangesNoticeText(n, result.backup));
+  if (n) {
+    noticeUpgrade(tableRangesNoticeText(n, result.backup), {
+      ids: [info.id],
+      backups: result.backup ? [result.backup] : [],
+      check: result.skipped.length
+        ? [`${result.skipped.length} table${result.skipped.length === 1 ? " was" : "s were"} left without roll ranges (no die, too many rows, or something that can't be read). "Check tables" in debug mode lists them.`]
+        : [],
+    });
+  }
   return result;
 }

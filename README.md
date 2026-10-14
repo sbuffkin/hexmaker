@@ -383,6 +383,8 @@ Every command, as it appears in the command palette:
 | **Hexmap World Creator: Export current workflow with rolled samples** | Exports the open workflow with example rolls. |
 | **Hexmap World Creator: Add roll ranges to tables** | Debug mode only. Adds a roll column with die ranges (e.g. `1–6`) to older tables, after a backup. Asks first. |
 | **Hexmap World Creator: Check tables** | Debug mode only. Writes `_table-check.md` listing tables whose ranges, weights or columns couldn't be read cleanly. |
+| **Hexmap World Creator: Open backups folder** | Opens the plugin's backups folder (`.obsidian/plugins/hexmaker/backups`, hidden in Obsidian's file list) in your file manager. Every upgrade and bulk change saves the notes it changes there first. |
+| **Hexmap World Creator: Restore from upgrade backup…** | Lists the backups that hold notes, newest first; pick one to see which notes it would put back (changed ones put back, deleted ones made again, unchanged ones left), then **Restore**. The notes as they are just before are backed up first, so a restore can be undone the same way. |
 
 Commands marked *Debug mode only* are offered in the command palette only while **Debug mode** is on (the last setting). Right-click a note in the file list for **Export note → PDF / Markdown**.
 

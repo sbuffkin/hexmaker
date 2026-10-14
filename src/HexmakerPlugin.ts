@@ -1,5 +1,5 @@
 import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
-import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade } from "./ui/notify";
+import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade, type NoticeLink } from "./ui/notify";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -106,7 +106,12 @@ import type { RegionSettings } from "./types";
 import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
-import { runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
+import { recordMigrationRun, runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
+import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
+import { takeUpgradeReport } from "./migrations/upgradeReport";
+import { RestoreBackupModal, openBackupsFolder } from "./BackupsModal";
+import { writeUpgradeNote } from "./migrations/upgradeNote";
+import changelog from "../CHANGELOG.md";
 import { migrate as migrateFlatHexNotes } from "./migrations/v1.0-flat-hex-notes-to-default-map";
 import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
 import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
@@ -216,6 +221,8 @@ export default class HexmakerPlugin extends Plugin {
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      // data.json was written by a newer version (its data stamp, MG7): say so, and stay.
+      if (this.newerData) noticeBackground(this.newerData, 0);
       // The one-time upgrades below report in ONE notice once they're all
       // done, not a stack over the map's toolbar (fresh-eyes 2026-10-13 F2).
       beginNoticeBatch();
@@ -266,7 +273,7 @@ export default class HexmakerPlugin extends Plugin {
         // after a backup (DJ-Q6). After the stores load, for the same reason.
         rangesDone = storesReady.then(() => upgradeTableRangesOnce(this));
       }
-      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => endNoticeBatch());
+      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => this.finishStartupUpgrades());
     });
 
     // Live-refresh the icon list when image files appear in / leave the
@@ -434,6 +441,17 @@ export default class HexmakerPlugin extends Plugin {
       id: "check-tables",
       name: "Check tables",
       callback: () => void runTableCheck(this),
+    });
+    // Backups stay in the plugin's folder; these reach them (owner MG2).
+    addPlaced("Plugin.cmd.openBackupsFolder", {
+      id: "open-backups-folder",
+      name: "Open backups folder",
+      callback: () => void openBackupsFolder(this),
+    });
+    addPlaced("Plugin.cmd.restoreFromBackup", {
+      id: "restore-from-upgrade-backup",
+      name: "Restore from upgrade backup…",
+      callback: () => new RestoreBackupModal(this.app, this).open(),
     });
     addPlaced("Plugin.cmd.exportNotePdf", {
       id: "export-current-note-pdf",
@@ -831,10 +849,16 @@ export default class HexmakerPlugin extends Plugin {
     const loaded = (await this.loadData()) as Record<string, unknown> | null;
     const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
     this.onDisk = loaded ? JSON.stringify(loaded) : null;
+    // An existing vault (not a fresh install): the version that last saved it, for the upgrade note.
+    this.upgradeFrom = rawData ? { version: typeof rawData["savedWith"] === "string" ? rawData["savedWith"] : undefined } : null;
     const data = loaded ?? {};
-    runSettingsMigrations(data);
+    // Written by a newer build (its data stamp is newer than this build knows): say so once loaded.
+    this.newerData = writtenByNewer(data) ? newerDataText(data["savedWith"], dataFormatOf(data)) : null;
+    this.settingsMigrationsRan = runSettingsMigrations(data);
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
+    // The data stamp (src/migrations/stamp.ts): written with the next save, never lowered.
+    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
     // Own copy: the default is a shared constant, and editors push into lists.
     // (Kept only as the fallback palettes are filled from; see getPathTypes.)
     this.settings.pathTypes = clonePathTypes(this.settings.pathTypes ?? DEFAULT_PATH_TYPES);
@@ -919,6 +943,62 @@ export default class HexmakerPlugin extends Plugin {
     this.onDisk = text;
   }
 
+  /** Set when data.json was written by a newer build: the notice to show (see stamp.ts). */
+  private newerData: string | null = null;
+  /** Settings-phase migrations that changed data.json on this load (recorded once settings exist). */
+  private settingsMigrationsRan: string[] = [];
+  /** Set for an existing vault: the version that last saved data.json (null: a fresh install). */
+  private upgradeFrom: { version: string | undefined } | null = null;
+
+  /**
+   * After the start-up upgrades (MG1): record which migrations changed the
+   * vault (data.json's migrationsRun), write the "Hexmaker upgrade <date>"
+   * note when an existing vault was upgraded, and show the one combined
+   * notice, linking the note. A fresh install gets no note.
+   */
+  private async finishStartupUpgrades(): Promise<void> {
+    const entries = takeUpgradeReport();
+    let recorded = false;
+    for (const id of [...this.settingsMigrationsRan, ...entries.flatMap((e) => e.ids ?? [])]) {
+      if (recordMigrationRun(this.settings, id)) recorded = true;
+    }
+    this.settingsMigrationsRan = [];
+    let link: NoticeLink | undefined;
+    const now = pluginVersion(this);
+    const upgraded = !!this.upgradeFrom && entries.length > 0 && (entries.some((e) => e.ids?.length) || this.upgradeFrom.version !== now);
+    if (upgraded) {
+      try {
+        const path = await writeUpgradeNote(this.app, normalizeFolder(this.settings.worldFolder ?? ""), {
+          date: new Date(),
+          from: this.upgradeFrom?.version,
+          to: now,
+          entries,
+          backupsFolder: this.backupsFolder(),
+          changelog,
+          pluginName: this.manifest.name ?? "Hexmap World Creator",
+        });
+        const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+        link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
+      } catch (e) {
+        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
+      }
+    }
+    endNoticeBatch(link);
+    // Only data.json: the record must not make a fresh install write notes (F19).
+    if (recorded && this.upgradeFrom) await this.saveData(this.settings);
+  }
+
+  /** The plugin's backups folder (vault-relative, under the config folder). */
+  backupsFolder(): string {
+    return `${this.manifest.dir ?? ""}/backups`;
+  }
+
+  /** Open a vault note in a new tab. */
+  private async openVaultNote(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
+  }
+
   /** data.json's content as last loaded or written by this session (compact JSON). */
   private onDisk: string | null = null;
 
@@ -941,6 +1021,7 @@ export default class HexmakerPlugin extends Plugin {
 
   async saveSettings() {
     this.settings.savedWith = pluginVersion(this);
+    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
     // The setup just finished or was turned off without picking map types
     // (e.g. "Don't show again", a recipe): record its types, install nothing.
     this.settings.kindContent = inferKindContent(this.settings);

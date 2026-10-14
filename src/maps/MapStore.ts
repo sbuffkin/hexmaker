@@ -40,6 +40,7 @@ import {
   HEX_DATA_KEYS,
   cleanHexNotes,
   conversionNoticeText,
+  info as mapNotesInfo,
   migrateMaps,
   writePathReport,
   type MapNotesMigrationHost,
@@ -1241,7 +1242,7 @@ export class MapStore {
   private reportConversions(): void {
     const text = conversionNoticeText(this.converted, this.backupDir());
     this.converted = [];
-    if (text) noticeUpgrade(text);
+    if (text) noticeUpgrade(text, { ids: [mapNotesInfo.id], backups: [this.backupDir()] });
   }
 
   private hexFiles(map: string): TFile[] {

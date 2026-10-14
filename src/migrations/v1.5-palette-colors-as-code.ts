@@ -7,6 +7,7 @@
  * this step is the backup and the record. Called from PaletteStore.attach.
  */
 import { noticeBackground } from "../ui/notify";
+import { reportUpgrade } from "./upgradeReport";
 import { writeJsonBackup } from "../backup";
 import { parsePaletteNote, wrapPaletteColors } from "../palettes/paletteNote";
 import { wrapPathTypeColors } from "../palettes/pathTypeTable";
@@ -40,7 +41,8 @@ export async function backupBeforeColorConversion(host: Pick<PaletteMigrationHos
   try {
     const dir = `${host.manifest.dir}/backups/palette-colours-${new Date().toISOString().slice(0, 10)}`;
     const json = JSON.stringify({ kind: "palette-colours", savedAt: new Date().toISOString(), notes });
-    await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
+    const where = await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
+    reportUpgrade({ text: info.change, ids: [info.id], backups: [where] });
     return true;
   } catch (e) {
     console.error("Hexmaker: couldn't back up palette notes; their colors weren't converted", e);

@@ -75,7 +75,7 @@ export async function writePaletteNotes(host: PaletteMigrationHost, existing: TF
   }
   if (!settings.palettesMigrated) {
     settings.palettesMigrated = true;
-    noticeUpgrade(`terrain palettes are now notes in "${host.folder()}".`);
+    noticeUpgrade(`terrain palettes are now notes in "${host.folder()}".`, { ids: [info.id] });
   }
   return true;
 }

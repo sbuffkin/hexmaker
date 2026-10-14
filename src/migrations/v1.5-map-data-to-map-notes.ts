@@ -23,6 +23,7 @@
  */
 import { TFile, type App } from "obsidian";
 import { backgroundText, noticeBackground, noticeUpgrade } from "../ui/notify";
+import { reportUpgrade } from "./upgradeReport";
 import type { MapData, MapPath, PathChain } from "../types";
 import { mapNoteKey, parseMapNote, type HexData, type MapNoteData } from "../maps/mapNote";
 import { writeJsonBackup } from "../backup";
@@ -130,8 +131,14 @@ export async function migrateMaps(host: MapNotesMigrationHost, maps: MapData[]):
   notice.hide();
   if (failed.length) {
     noticeBackground(`couldn't move map data for ${failed.join(", ")} — their hex notes were left untouched.`, 0);
+    reportUpgrade({
+      text: `map data for ${done} of ${maps.length} maps now lives in map notes; ${failed.join(", ")} couldn't be moved and keep their data in their hex notes`,
+      ids: done ? [info.id] : [],
+      backups: done ? [dir] : [],
+      check: [`The maps ${failed.join(", ")} couldn't be moved into map notes. Their hex notes are as they were; the next start tries again.`],
+    });
   } else {
-    noticeUpgrade(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${dir}.`);
+    noticeUpgrade(`map data for ${done} map${done === 1 ? "" : "s"} now lives in map notes (_<map>.md). Hex notes keep their text; a full copy of them is in ${dir}.`, { ids: [info.id], backups: [dir] });
   }
   await host.plugin.saveData(host.plugin.settings);
 }

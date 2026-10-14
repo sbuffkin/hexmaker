@@ -24,12 +24,13 @@ import {
 import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
 import { parsePathTypes, pathTableHasColumn, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
 import { writeJsonBackup } from "../backup";
-import { fillLegacyPathTypes } from "../migrations/v1.5-path-types-explicit";
-import { seedTerrainTypes } from "../migrations/v1.5-palette-terrain-types";
+import { fillLegacyPathTypes, info as pathTypesExplicitInfo } from "../migrations/v1.5-path-types-explicit";
+import { reportUpgrade } from "../migrations/upgradeReport";
+import { seedTerrainTypes, info as terrainTypesInfo } from "../migrations/v1.5-palette-terrain-types";
 import { writePaletteNotes, type PaletteMigrationHost } from "../migrations/v1.5-palettes-to-notes";
 import { backupBeforeColorConversion } from "../migrations/v1.5-palette-colors-as-code";
-import { upgradePaletteData } from "../migrations/v1.5-palette-data";
-import { fillPalettePathTypes } from "../migrations/v1.5-palette-path-types";
+import { upgradePaletteData, info as paletteDataInfo } from "../migrations/v1.5-palette-data";
+import { fillPalettePathTypes, info as palettePathTypesInfo } from "../migrations/v1.5-palette-path-types";
 import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
 import { registry } from "../modules";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
@@ -355,7 +356,8 @@ export class PaletteStore {
     let dirty = false;
     // PA5: path types from older builds get explicit behaviour (from the old
     // name rules, once), so nothing changes look.
-    if (!settings.pathTypesExplicit && fillLegacyPathTypes(settings.terrainPalettes, settings.pathTypes)) dirty = true;
+    const legacyFilled = !settings.pathTypesExplicit && fillLegacyPathTypes(settings.terrainPalettes, settings.pathTypes) > 0;
+    if (legacyFilled) dirty = true;
 
     // Migration (and safety net): when the folder holds no palette notes —
     // first run after upgrading, or the folder setting was pointed somewhere
@@ -449,6 +451,16 @@ export class PaletteStore {
       dirty = true;
     }
     if (this.recordNotes()) dirty = true;
+    // The silent palette steps that changed something, for the upgrade note (MG1).
+    if (!blocked) {
+      const steps: { done: boolean; info: { id: string; change: string } }[] = [
+        { done: legacyFilled, info: pathTypesExplicitInfo },
+        { done: filled, info: palettePathTypesInfo },
+        { done: seeded, info: terrainTypesInfo },
+        { done: upgraded, info: paletteDataInfo },
+      ];
+      for (const st of steps) if (st.done) reportUpgrade({ text: st.info.change, ids: [st.info.id] });
+    }
     if (dirty) await this.persist();
   }
 

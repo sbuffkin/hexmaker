@@ -201,6 +201,15 @@ export async function runNoteRewrites(host: NoteFormatHost, steps: readonly Note
     await host.saveSettings();
   }
   const msg = upgradeMessage(results, steps);
-  if (msg) noticeUpgrade(msg);
+  if (msg) {
+    noticeUpgrade(msg, {
+      ids: results.filter((r) => r.changed.length).map((r) => steps.find((s) => s.recordId === r.id)?.info.id ?? r.id),
+      backups: results.map((r) => r.backup).filter((b): b is string => !!b),
+      check: results.flatMap((r) => [
+        ...(r.error ? [`${steps.find((s) => s.recordId === r.id)?.label ?? r.id}: ${r.error} It will be tried again next start.`] : []),
+        ...r.skipped.map((s) => `${s.path} was left as it was: ${s.reason}.`),
+      ]),
+    });
+  }
   return results;
 }

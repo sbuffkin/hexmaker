@@ -72,3 +72,42 @@ Not here, on purpose:
   runtime (the core never imports a module): World maps fills overworlds'
   Biome column once (BC1, `overworld/overworldPass.ts`, `biomeColumnsFilled`);
   Space upgrades World types tables when read (`space/WorldTypeStore.ts`).
+
+## The data stamp (`stamp.ts`)
+
+So a device still on an older build can tell that a vault was updated by a
+newer one (owner MG7, option B), data.json carries a plain number next to
+`savedWith`:
+
+```json
+"dataFormat": 2,
+"savedWith": "1.6.0"
+```
+
+- No `dataFormat` key (or `1`): what 1.5.x and earlier wrote. Map data in
+  hex-note frontmatter (`terrain:`, `region:`…), palettes and paths in
+  data.json.
+- `2`: this version. Map data in one map note per map,
+  `{hexFolder}/{map}/_{map}.md`, whose frontmatter starts
+  `hexmaker-map: <map note format>` (6 now); palettes in palette notes
+  (`hexmaker-palette: 1`); hex notes link their map note under
+  `map: "[[_{map}]]"`.
+
+How a build reads it: `dataFormat` greater than the highest format it knows
+means "written by a newer version" (`savedWith` names it). This build shows
+a notice then and never lowers the number when it saves. A 1.5.x patch
+should treat `dataFormat >= 2` (or a `_<map>.md` note with `hexmaker-map:`
+in a map folder) as "updated by a newer version: update this device", and
+not write map data back into hex notes.
+
+Bump `DATA_FORMAT` (and add a line above) when an older build would misread
+what a new migration writes.
+
+## What ran
+
+Each step that changed something adds its id to data.json's
+`migrationsRun` (in order, once). After the start-up upgrades of an existing
+vault, a note "Hexmaker upgrade <date>" in the world folder lists what
+changed, the backups and anything to check, with the changelog's points
+newer than the version it came from (`upgradeNote.ts`; steps report through
+`noticeUpgrade(text, { ids, backups, check })` or `reportUpgrade`).

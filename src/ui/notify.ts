@@ -10,6 +10,7 @@
  */
 
 import { Notice } from "obsidian";
+import { reportUpgrade, type UpgradeEntry } from "../migrations/upgradeReport";
 
 /** The plugin's name as shown to the user. */
 export const PLUGIN_NAME = "Hexmap World Creator";
@@ -57,19 +58,38 @@ export function beginNoticeBatch(): void {
   batchBackstop = window.setTimeout(() => endNoticeBatch(), BATCH_BACKSTOP_MS);
 }
 
-/** Show what the batch collected (one notice), and stop batching. */
-export function endNoticeBatch(): Notice | null {
+/** A link at the end of the combined notice (the upgrade note, MG1). */
+export interface NoticeLink {
+  text: string;
+  open(): void;
+}
+
+/**
+ * Show what the batch collected (one notice), and stop batching. With
+ * `link` (the upgrade note), the notice ends with it, and it shows even for
+ * a single message.
+ */
+export function endNoticeBatch(link?: NoticeLink): Notice | null {
   if (batchBackstop !== null) window.clearTimeout(batchBackstop);
   batchBackstop = null;
   const msgs = batch ?? [];
   batch = null;
   if (!msgs.length) return null;
-  if (msgs.length === 1) return noticeBackground(msgs[0], UPGRADE_NOTICE_MS);
+  if (msgs.length === 1 && !link) return noticeBackground(msgs[0], UPGRADE_NOTICE_MS);
   const lines = combinedUpgradeLines(msgs);
   const frag = createFragment((f) => {
     f.createEl("p", { text: lines[0] });
     const list = f.createEl("ul");
     for (const l of lines.slice(1)) list.createEl("li", { text: l });
+    if (link) {
+      const p = f.createEl("p");
+      const a = p.createEl("a", { text: link.text, cls: "duckmage-bg-notice-link", href: "#" });
+      a.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        link.open();
+      });
+    }
   });
   return clickThrough(new Notice(frag, combinedTimeout(msgs.length)));
 }
@@ -99,9 +119,12 @@ export function combinedUpgradeLines(msgs: readonly string[]): string[] {
 /**
  * Report a one-time upgrade or migration. During start-up (see
  * beginNoticeBatch) it joins the combined upgrade notice; otherwise it's a
- * background notice of its own.
+ * background notice of its own. Either way it's recorded for the upgrade
+ * note, with `detail` (the migration's id, its backups, things to check).
  */
-export function noticeUpgrade(msg: string): void {
+export function noticeUpgrade(msg: string, detail: Omit<UpgradeEntry, "text"> = {}): void {
+  // Every upgrade also goes into the upgrade note (MG1, src/migrations/upgradeNote.ts).
+  reportUpgrade({ text: msg, ...detail });
   if (batch) batch.push(msg);
   else noticeBackground(msg, UPGRADE_NOTICE_MS);
 }

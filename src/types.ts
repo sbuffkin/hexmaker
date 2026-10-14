@@ -345,6 +345,10 @@ export interface HexmakerPluginSettings {
 	mySetting: string;
 	/** Plugin version that last saved data.json (see src/compat.ts). */
 	savedWith?: string;
+	/** Data format stamp (src/migrations/stamp.ts): 1 or absent = 1.5.x and earlier. */
+	dataFormat?: number;
+	/** Migrations that changed this vault, by id, in the order they ran (src/migrations/registry.ts). */
+	migrationsRun?: string[];
 	worldFolder: string;
 	hexFolder: string;
 	townsFolder: string;
