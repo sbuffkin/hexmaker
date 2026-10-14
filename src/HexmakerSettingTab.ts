@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { normalizeFolder } from "./utils";
+import { newerDataMessage } from "./dataStamp";
 
 // ---------------------------------------------------------------------------
 // Obsidian 1.13 declarative settings API — local structural types.
@@ -131,7 +132,19 @@ export class HexmakerSettingTab extends PluginSettingTab {
   // getSettingDefinitions() below returns a non-empty array and the tab is
   // rendered declaratively from those definitions instead.
   display(): void {
+    if (this.plugin.readOnly) {
+      this.containerEl.empty();
+      new Setting(this.containerEl)
+        .setName("Read-only on this device")
+        .setDesc(this.readOnlyText());
+      return;
+    }
     this.renderSettings();
+  }
+
+  /** Why the settings are hidden (the vault was updated by a newer version). */
+  private readOnlyText(): string {
+    return this.plugin.newerData ? newerDataMessage(this.plugin.newerData) : "";
   }
 
   /**
@@ -145,6 +158,9 @@ export class HexmakerSettingTab extends PluginSettingTab {
    * `render` callbacks with the same handlers.
    */
   getSettingDefinitions(): LocalSettingDefinitionItem[] {
+    if (this.plugin.readOnly) {
+      return [{ name: "Read-only on this device", desc: this.readOnlyText() }];
+    }
     const folderText = (
       name: string,
       key: string,

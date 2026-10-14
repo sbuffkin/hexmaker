@@ -1,4 +1,6 @@
-import { Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
+import { Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { isMapNoteText, newerDataFrom, newerDataMessage, type NewerData } from "./dataStamp";
+import { hasNewerMapNotes, isMapNotePath, SafetyModeView } from "./safetyMode";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -41,13 +43,77 @@ export default class HexmakerPlugin extends Plugin {
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
+  /**
+   * Set when the vault was updated by a newer version (data.json's
+   * `dataFormat` ≥ 2, or a map note in the hex folder). The plugin is then
+   * read-only: data.json is never saved, startup upkeep doesn't run, and the
+   * views are replaced by a notice (see dataStamp.ts, safetyMode.ts).
+   */
+  newerData: NewerData | null = null;
+  private lastRefusal = 0;
+
+  /** True when the plugin must not write anything (see `newerData`). */
+  get readOnly(): boolean {
+    return this.newerData !== null;
+  }
+
+  /**
+   * Refuse a write in read-only mode: says why (at most every few seconds)
+   * and returns true. Returns false when writing is fine.
+   */
+  refuseWrite(): boolean {
+    if (!this.newerData) return false;
+    const now = Date.now();
+    if (now - this.lastRefusal > 4000) {
+      this.lastRefusal = now;
+      new Notice(newerDataMessage(this.newerData), 8000);
+    }
+    return true;
+  }
+
+  /** Never write data.json in read-only mode (it would drop the newer version's data). */
+  async saveData(data: unknown): Promise<void> {
+    if (this.refuseWrite()) return;
+    await super.saveData(data);
+  }
+
+  /** Switch to read-only mode (once): show the notice and swap open views for it. */
+  async enterReadOnly(found: NewerData): Promise<void> {
+    if (this.newerData) return;
+    this.newerData = found;
+    new Notice(newerDataMessage(found), 0);
+    for (const type of [VIEW_TYPE_HEX_MAP, VIEW_TYPE_HEX_TABLE, VIEW_TYPE_RANDOM_TABLES, VIEW_TYPE_SETUP_WIZARD]) {
+      for (const leaf of this.app.workspace.getLeavesOfType(type)) {
+        await leaf.setViewState({ type: "empty" });
+        await leaf.setViewState({ type });
+      }
+    }
+  }
 
   async onload() {
     await this.loadSettings();
+    const hexFolder = normalizeFolder(this.settings.hexFolder);
+    if (!this.newerData && (await hasNewerMapNotes(this.app.vault.adapter, hexFolder))) {
+      this.newerData = { format: 2, savedWith: null, source: "map note" };
+    }
+    if (this.newerData) new Notice(newerDataMessage(this.newerData), 0);
+    // A map note from a newer version arriving by sync while this runs.
+    this.registerEvent(
+      this.app.vault.on("create", (f) => {
+        if (this.readOnly || !(f instanceof TFile)) return;
+        if (!isMapNotePath(f.path, normalizeFolder(this.settings.hexFolder))) return;
+        void this.app.vault.cachedRead(f).then((text) => {
+          if (isMapNoteText(text)) {
+            void this.enterReadOnly({ format: 2, savedWith: null, source: "map note" });
+          }
+        });
+      }),
+    );
     // Defer until vault metadata cache is ready; calling before layout-ready
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      if (this.readOnly) return;
       void this.autoRegisterMapsFromVault();
       if (!this.settings.setupComplete && !this.settings.setupDismissed) {
         this.openSetupWizard();
@@ -81,18 +147,22 @@ export default class HexmakerPlugin extends Plugin {
       }),
     );
 
-    await this.migrateHexFilesToDefaultRegion();
+    if (!this.readOnly) await this.migrateHexFilesToDefaultRegion();
 
-    this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
-    this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
-    this.registerView(
-      VIEW_TYPE_HEX_TABLE,
-      (leaf) => new HexTableView(leaf, this),
-    );
-    this.registerView(
-      VIEW_TYPE_RANDOM_TABLES,
-      (leaf) => new RandomTableView(leaf, this),
-    );
+    // In read-only mode every view is the notice instead (checked when a
+    // view is made, so a switch while running takes effect on reopen).
+    const safeView = (leaf: WorkspaceLeaf, type: string, title: string) =>
+      new SafetyModeView(leaf, type, title, () =>
+        this.newerData ? newerDataMessage(this.newerData) : "",
+      );
+    this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) =>
+      this.readOnly ? safeView(leaf, VIEW_TYPE_SETUP_WIZARD, "Hexmaker setup") : new SetupWizardView(leaf, this));
+    this.registerView(VIEW_TYPE_HEX_MAP, (leaf) =>
+      this.readOnly ? safeView(leaf, VIEW_TYPE_HEX_MAP, "Hex map") : new HexMapView(leaf, this));
+    this.registerView(VIEW_TYPE_HEX_TABLE, (leaf) =>
+      this.readOnly ? safeView(leaf, VIEW_TYPE_HEX_TABLE, "Hex table") : new HexTableView(leaf, this));
+    this.registerView(VIEW_TYPE_RANDOM_TABLES, (leaf) =>
+      this.readOnly ? safeView(leaf, VIEW_TYPE_RANDOM_TABLES, "Random tables") : new RandomTableView(leaf, this));
     this.addRibbonIcon("map", "Hexmaker: open hex map", () =>
       this.openHexMap(),
     );
@@ -122,7 +192,7 @@ export default class HexmakerPlugin extends Plugin {
       name: "Export current note to PDF",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file) return false;
+        if (!file || this.readOnly) return false;
         if (!checking) void exportSingleNoteAsPdf(this, file);
         return true;
       },
@@ -132,7 +202,7 @@ export default class HexmakerPlugin extends Plugin {
       name: "Export current note to Markdown",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file) return false;
+        if (!file || this.readOnly) return false;
         if (!checking) void exportSingleNoteAsMarkdown(this, file);
         return true;
       },
@@ -142,7 +212,7 @@ export default class HexmakerPlugin extends Plugin {
       name: "Export current hex (structured PDF / Markdown)",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file || !this.isHexFile(file)) return false;
+        if (!file || this.readOnly || !this.isHexFile(file)) return false;
         if (!checking) new HexExportModal(this.app, this, file).open();
         return true;
       },
@@ -152,7 +222,7 @@ export default class HexmakerPlugin extends Plugin {
       name: "Export current workflow with rolled samples",
       checkCallback: (checking) => {
         const file = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-        if (!file || !this.isWorkflowFile(file)) return false;
+        if (!file || this.readOnly || !this.isWorkflowFile(file)) return false;
         if (!checking) new WorkflowExportModal(this.app, this, file).open();
         return true;
       },
@@ -160,7 +230,7 @@ export default class HexmakerPlugin extends Plugin {
     // File-menu items: right-click any markdown file → Export to PDF / Markdown
     this.registerEvent(
       this.app.workspace.on("file-menu", (menu, file) => {
-        if (!(file instanceof TFile) || file.extension !== "md") return;
+        if (!(file instanceof TFile) || file.extension !== "md" || this.readOnly) return;
         menu.addItem((item) =>
           item
             .setTitle("Export to PDF")
@@ -233,6 +303,7 @@ export default class HexmakerPlugin extends Plugin {
     this.registerObsidianProtocolHandler("duckmage-roll", (params) => {
       const filePath = params["file"];
       if (!filePath) return;
+      if (this.readOnly) return this.openHexMap();
       const leaves = this.app.workspace.getLeavesOfType(
         VIEW_TYPE_RANDOM_TABLES,
       );
@@ -253,6 +324,7 @@ export default class HexmakerPlugin extends Plugin {
     this.registerObsidianProtocolHandler("duckmage-workflow", (params) => {
       const filePath = params["file"];
       if (!filePath) return;
+      if (this.readOnly) return this.openHexMap();
       const leaves = this.app.workspace.getLeavesOfType(
         VIEW_TYPE_RANDOM_TABLES,
       );
@@ -272,6 +344,7 @@ export default class HexmakerPlugin extends Plugin {
     this.registerObsidianProtocolHandler("duckmage-openmap", (params) => {
       const mapName = params["map"];
       if (!mapName) return;
+      if (this.readOnly) return this.openHexMap();
       const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
       if (leaves.length > 0) {
         void this.app.workspace.revealLeaf(leaves[0]);
@@ -291,7 +364,7 @@ export default class HexmakerPlugin extends Plugin {
     // Keep linkedFolder frontmatter in sync when a folder is renamed
     this.registerEvent(
       this.app.vault.on("rename", async (abstractFile, oldPath) => {
-        if (!(abstractFile instanceof TFolder)) return;
+        if (!(abstractFile instanceof TFolder) || this.readOnly) return;
         const oldFolder = normalizeFolder(oldPath);
         const newFolder = normalizeFolder(abstractFile.path);
         if (oldFolder === newFolder) return;
@@ -328,7 +401,7 @@ export default class HexmakerPlugin extends Plugin {
     // Remove workflow steps that reference a deleted table file
     this.registerEvent(
       this.app.vault.on("delete", async (abstractFile: TAbstractFile) => {
-        if (!(abstractFile instanceof TFile)) return;
+        if (!(abstractFile instanceof TFile) || this.readOnly) return;
         const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
         if (tablesPrefix && !abstractFile.path.startsWith(tablesPrefix + "/"))
           return;
@@ -376,6 +449,10 @@ export default class HexmakerPlugin extends Plugin {
     // One-time migration: rename settings keys "regions" → "maps" and "defaultRegion" → "defaultMap"
     // Must run on raw data BEFORE Object.assign so the migrated key wins over DEFAULT_SETTINGS.
     const data = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+    // Written by a newer version: go read-only (never cleared until reload).
+    // Unknown keys (dataFormat, savedWith, migrationsRun, ...) stay in
+    // this.settings below, so a save never drops them.
+    if (!this.newerData) this.newerData = newerDataFrom(data);
     if (data["regions"] !== undefined && data["maps"] === undefined) {
       data["maps"] = data["regions"];
     }
@@ -452,7 +529,16 @@ export default class HexmakerPlugin extends Plugin {
   // Reloads settings into memory and refreshes all open views so the user sees
   // the synced state without a manual Obsidian restart.
   async onExternalSettingsChange(): Promise<void> {
+    const wasReadOnly = this.readOnly;
     await this.loadSettings();
+    if (this.readOnly) {
+      if (!wasReadOnly && this.newerData) {
+        const found = this.newerData;
+        this.newerData = null;
+        await this.enterReadOnly(found);
+      }
+      return;
+    }
     this.loadAvailableIcons();
     this.refreshHexMap();
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
@@ -486,7 +572,7 @@ export default class HexmakerPlugin extends Plugin {
 
   refreshHexMap(): void {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      (leaf.view as HexMapView).renderGrid();
+      if (leaf.view instanceof HexMapView) leaf.view.renderGrid();
     });
   }
 
@@ -604,6 +690,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Update duckmage-submap frontmatter in all hex notes when a map is renamed. */
   async updateSubmapReferences(oldName: string, newName: string): Promise<void> {
+    if (this.refuseWrite()) return;
     const hexFolder = normalizeFolder(this.settings.hexFolder);
     const files = this.app.vault.getMarkdownFiles().filter(
       (f) => !hexFolder || f.path.startsWith(hexFolder + "/"),
@@ -622,6 +709,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Add a roller link to a table file if it doesn't already have one. */
   async ensureRollerLink(filePath: string): Promise<void> {
+    if (this.refuseWrite()) return;
     const file = this.app.vault.getAbstractFileByPath(filePath);
     if (!(file instanceof TFile)) return;
     const link = this.buildRollerLink();
@@ -641,6 +729,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Add roller blocks to all existing table files in the tables folder that don't have one. */
   async ensureAllRollerLinks(): Promise<void> {
+    if (this.refuseWrite()) return;
     const folder = normalizeFolder(this.settings.tablesFolder);
     const prefix = folder ? folder + "/" : "";
     const files = this.app.vault
@@ -673,6 +762,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Create missing description/encounters table files for every terrain type in the palette. */
   async ensureTerrainTables(): Promise<void> {
+    if (this.refuseWrite()) return;
     const folder = normalizeFolder(this.settings.tablesFolder);
 
     // Generic section tables (landmark, hidden, secret) at the root of the tables folder
@@ -778,6 +868,7 @@ export default class HexmakerPlugin extends Plugin {
    * the hex's "Encounters Table" section (if not already linked).
    */
   async backfillTerrainLinks(): Promise<void> {
+    if (this.refuseWrite()) return;
     const hexFolder = normalizeFolder(this.settings.hexFolder);
     const tablesFolder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
@@ -824,6 +915,7 @@ export default class HexmakerPlugin extends Plugin {
     hexFilePath: string,
     terrain: string | null,
   ): Promise<void> {
+    if (this.refuseWrite()) return;
     const tablesFolder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = tablesFolder ? `${tablesFolder}/terrain` : "terrain";
 
@@ -881,6 +973,7 @@ export default class HexmakerPlugin extends Plugin {
 
   /** Create a region encounters table file if it does not already exist. */
   async ensureRegionTable(regionName: string): Promise<void> {
+    if (this.refuseWrite()) return;
     const folder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = folder ? `${folder}/regions` : "regions";
 
@@ -923,6 +1016,7 @@ export default class HexmakerPlugin extends Plugin {
     hexFilePath: string,
     regionName: string | null,
   ): Promise<void> {
+    if (this.refuseWrite()) return;
     const tablesFolder = normalizeFolder(this.settings.tablesFolder);
     const subfolder = tablesFolder ? `${tablesFolder}/regions` : "regions";
 
@@ -1008,6 +1102,7 @@ export default class HexmakerPlugin extends Plugin {
     oldName: string,
     newName: string,
   ): Promise<Map<string, string>> {
+    if (this.refuseWrite()) return new Map();
     const hexFolder = normalizeFolder(this.settings.hexFolder);
     const candidates = this.app.vault.getMarkdownFiles().filter((f) => {
       if (hexFolder && !f.path.startsWith(hexFolder + "/")) return false;
@@ -1037,14 +1132,14 @@ export default class HexmakerPlugin extends Plugin {
     terrainOverrides: Map<string, string | null>,
   ): void {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      (leaf.view as HexMapView).renderGrid(terrainOverrides);
+      if (leaf.view instanceof HexMapView) leaf.view.renderGrid(terrainOverrides);
     });
   }
 
   /** Update terrain filter sets in all open hex table views after a rename. */
   refreshHexTableTerrainRename(oldName: string, newName: string): void {
     this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
-      (leaf.view as HexTableView).renameTerrainInFilters(oldName, newName);
+      if (leaf.view instanceof HexTableView) leaf.view.renameTerrainInFilters(oldName, newName);
     });
   }
 
@@ -1055,6 +1150,7 @@ export default class HexmakerPlugin extends Plugin {
     mapName: string,
     preloadedTemplate?: string,
   ): Promise<TFile | null> {
+    if (this.refuseWrite()) return null;
     const path = this.hexPath(x, y, mapName);
     let content: string;
 
@@ -1114,6 +1210,7 @@ export default class HexmakerPlugin extends Plugin {
    * - If templatePath is blank: create at {worldFolder}/hextemplate.md and persist the path.
    */
   async ensureHexTemplate(): Promise<void> {
+    if (this.refuseWrite()) return;
     let templatePath = normalizeFolder(this.settings.templatePath ?? "");
     if (!templatePath) {
       const world = normalizeFolder(this.settings.worldFolder) || "world";
@@ -1144,6 +1241,7 @@ export default class HexmakerPlugin extends Plugin {
     staggerOffset?: "odd" | "even",
     onProgress?: (done: number, total: number) => void,
   ): Promise<{ name: string } | { error: string }> {
+    if (this.refuseWrite()) return { error: "This vault was updated by a newer version; this device is read-only." };
     const name = slugify(rawName);
     if (!name) return { error: "Enter a map name." };
     if (this.settings.maps.some((r) => r.name === name))

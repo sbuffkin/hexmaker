@@ -232,6 +232,10 @@ Open **Settings → Hexmap World Creator** to configure:
 | **Terrain palettes** | Named palettes of terrain types. Each palette has a name and a list of terrain entries (name, colour, optional icon and icon tint). Palettes are assigned to maps at creation time. Edit palette contents from the terrain tool on the hex map. |
 | **Generate** | ⚠️ Configure all folders first. Creates missing terrain table files and links each hex's terrain encounters table into the hex note. |
 
+### Vaults updated by a newer version
+
+Newer versions store maps differently. If a synced vault was updated by a newer version on another device, this version goes read-only on this device: it shows a notice, its views and settings only say what happened, and it writes nothing (no settings, no hex notes, no tables). Update the plugin on this device to keep working.
+
 ---
 
 ## Hex notes
