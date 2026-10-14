@@ -69,6 +69,8 @@ export interface TokenSnap {
     border?: string;
     tokenLink?: string;
     description?: string;
+    party?: boolean;
+    logFolder?: string;
   };
 }
 

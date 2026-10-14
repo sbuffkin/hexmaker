@@ -9599,3 +9599,91 @@ button.is-armed {
 .duckmage-bg-notice p {
     margin: 0;
 }
+
+/* ── Solo play (owner calls SF3-SF5, O8) ─────────────────────────────────── */
+
+/* Visited hexes: a small dot at the hex's left (badges sit right, the
+   coordinate top or bottom, the name in the middle). Layers menu ->
+   Labels -> Visited hides them. */
+.duckmage-hex-visited:not(.duckmage-hex-brush-hover)::before {
+    content: "";
+    position: absolute;
+    left: 22%;
+    top: 50%;
+    width: 0.5em;
+    height: 0.5em;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--duckmage-visited-color, #f2c94c);
+    box-shadow: 0 0 0 0.08em rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+    z-index: 2;
+}
+.duckmage-hide-visited .duckmage-hex-visited::before { display: none; }
+
+/* The selected party token, and the hexes it can step to. */
+.duckmage-token.is-party {
+    box-shadow: 0 0 0 2px var(--background-primary), 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.duckmage-token.is-party.is-selected {
+    box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 5px var(--interactive-accent), 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.duckmage-hex.duckmage-party-step::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(120, 200, 255, 0.36);
+    pointer-events: none;
+}
+.duckmage-hex.duckmage-party-step:hover::after {
+    background: rgba(120, 200, 255, 0.5);
+}
+
+/* A name above its token sits close to it: the token is moved up off the
+   hex number, so a wide gap would push the name onto the hex above. */
+.duckmage-token-name-sm.is-above { --duckmage-token-name-drop: 0.85em; }
+.duckmage-token-name-md.is-above { --duckmage-token-name-drop: 1.15em; }
+.duckmage-token-name-lg.is-above { --duckmage-token-name-drop: 1.6em; }
+
+/* Coordinates stay readable over a token (middle placement; tokens are
+   moved off top and bottom coordinates). */
+.duckmage-hex-map-grid > .duckmage-coord-labels-layer {
+    z-index: 11;
+}
+
+/* Hex editor: "Show on map" beside a link section with links (SF4). */
+.duckmage-link-show-on-map {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    margin-top: 0.3em;
+    font-size: var(--font-ui-small);
+}
+.duckmage-link-show-on-map img {
+    width: 1.3em;
+    height: 1.3em;
+    object-fit: contain;
+}
+
+/* Settings: the icon each link section offers. */
+.duckmage-link-icons-row {
+    flex-wrap: wrap;
+    gap: 0.4em;
+}
+.duckmage-link-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+}
+.duckmage-link-icon-btn img {
+    width: 1.3em;
+    height: 1.3em;
+    object-fit: contain;
+}
+
+/* Add to play log. */
+.duckmage-play-log-text {
+    width: 100%;
+    min-height: 5em;
+    resize: vertical;
+}

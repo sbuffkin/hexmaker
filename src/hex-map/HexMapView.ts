@@ -49,7 +49,10 @@ import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
-import { groupSize, pickTokenFill, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
+import { groupSize, pickTokenFill, tokenCoordShift, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
+import { markVisited, parseVisited, partyClick, unmarkVisited } from "../play/partyTravel";
+import { addToPlayLog } from "../play/playLogWriter";
+import { PlayLogModal } from "../play/PlayLogModal";
 import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom, regionsViewTip } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
 import { resolveNameFont } from "./hexNameFont";
@@ -365,7 +368,11 @@ export class HexMapView extends ItemView {
   private viewportReady = false;
   private tokenEntries: TokenEntry[] = [];
   private pendingTokenNotePath: string | null = null;
-  private pendingTokenPlaceData: { icon?: string; shape: import("../types").TokenShape; size: import("../types").TokenSize; color?: string; border?: string; description?: string } | null = null;
+  private pendingTokenPlaceData: NonNullable<TokenSnap["look"]> | null = null;
+  /** The party token selected in Play (its note path): a click on a neighbouring hex moves it (SF5). */
+  private selectedParty: string | null = null;
+  /** Where a party token was just moved, until the metadata cache has the write (path → "x_y"). */
+  private partyMoves = new Map<string, string>();
   private tokenBtn: HTMLButtonElement | null = null;
   /** The drawing panel's one line naming the mode that unlocks the hidden tools. */
   private toolsLockedEl: HTMLElement | null = null;
@@ -1248,7 +1255,11 @@ export class HexMapView extends ItemView {
         this.painterMenu.close();
         return false;
       }
-      if (this.drawingMode === null) return true;
+      if (this.drawingMode === null) {
+        // Esc lets go of a selected party token (SF5).
+        if (this.activeParty()) { this.selectParty(null); return false; }
+        return true;
+      }
       // The path tool steps out one level at a time (finish → deselect → leave).
       if (this.drawingMode === "path" && !this.isErasingMode && this.pathTool.escape()) return false;
       this.exitCurrentMode();
@@ -1777,7 +1788,8 @@ export class HexMapView extends ItemView {
       (show) => { if (show) this.updateFactionOverlay(); else this.clearFactionOverlay(); },
       (show) => { if (show) this.updateRegionOverlay(); else this.clearRegionOverlay(); },
       () => { this.updateGmIcons(); },
-      (show) => { if (show) this.updateTokenLayer(); else this.viewportEl?.querySelector(".duckmage-token-layer")?.remove(); },
+      // Redraw either way: hiding tokens also clears the party's lit steps.
+      () => this.updateTokenLayer(),
       {
         onLegendChange: () => this.refreshTerrainLegend(),
         // Badge size or kinds changed: redraw the badges and the legend.
@@ -2754,7 +2766,7 @@ export class HexMapView extends ItemView {
       (notePath, data) => {
         this.leaveOtherToolFor("placeToken");
         this.pendingTokenNotePath  = notePath;
-        this.pendingTokenPlaceData = { icon: data.icon, shape: data.shape, size: data.size, color: data.color, border: data.border, description: data.description };
+        this.pendingTokenPlaceData = { ...data };
         this.drawingMode = "placeToken";
         this.isErasingMode = false;
         this.updateToolbarButtonStates();
@@ -2859,14 +2871,7 @@ export class HexMapView extends ItemView {
       "",
       { color: this.nextTokenFill() },
       (notePath, data) => {
-        void this.placeToken(notePath, {
-          icon: data.icon,
-          shape: data.shape,
-          size: data.size,
-          color: data.color,
-          border: data.border,
-          description: data.description,
-        }, `${x}_${y}`);
+        void this.placeToken(notePath, { ...data }, `${x}_${y}`);
       },
       undefined,
       "Create token",
@@ -4522,6 +4527,8 @@ export class HexMapView extends ItemView {
       }
     }
 
+    // Hexes the party has stood on (SF5): a mark the layers menu can hide.
+    const visitedHexes = new Set(parseVisited(region.visited));
     const addHex = (parent: HTMLElement, x: number, y: number) => {
       const path = folder ? `${folder}/${x}_${y}.md` : `${x}_${y}.md`;
       const exists = existingHexPaths.has(path);
@@ -4610,6 +4617,7 @@ export class HexMapView extends ItemView {
 
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
+      if (visitedHexes.has(`${x}_${y}`)) hexEl.addClass("duckmage-hex-visited");
 
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
@@ -5038,6 +5046,10 @@ export class HexMapView extends ItemView {
       })();
     });
     menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
+    // Solo play (SF3): what happened here goes to the dated play log.
+    menu.add("hex.log", "Add to play log…", "notebook-pen", () => this.openPlayLog(x, y));
+    const visited = parseVisited(this.getActiveMap().visited).includes(`${x}_${y}`);
+    menu.add("hex.visited", "Visited", "footprints", () => this.setVisited([`${x}_${y}`], !visited), { checked: visited, place: "MapView.hexVisited" });
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
     menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
 
@@ -5188,6 +5200,15 @@ export class HexMapView extends ItemView {
     }
     // The biome brush paints on press (and drag), not on click.
     if (this.drawingMode === "biome") return;
+
+    // Play, a party token selected: a neighbouring hex is a step (SF5).
+    if (!this.drawingMode && this.selectedParty && !e?.ctrlKey && !e?.metaKey && this.owView(this.getActiveMap()) !== "regions") {
+      const party = this.activeParty();
+      if (party && partyClick(party, `${x}_${y}`, this.plugin.settings.hexOrientation, this.getActiveStagger()) === "move") {
+        await this.moveParty(party, `${x}_${y}`);
+        return;
+      }
+    }
 
     // Overworlds: the full view jumps into the region at the clicked hex;
     // the biomes view (or a hex with no region yet) sets the hex's biome.
@@ -6082,6 +6103,8 @@ export class HexMapView extends ItemView {
 
   /** Put a token where a snapshot says (null: it stops being a token). */
   private async applyTokenSnap(path: string, snap: TokenSnap | null): Promise<void> {
+    // Undo/redo says where it is now, not a party step still on its way.
+    this.partyMoves.delete(path);
     if (!snap) await removeTokenFrontmatter(this.app, path);
     else await applyTokenFrontmatter(this.app, path, { ...(snap.look ?? {}), hex: snap.hex, map: snap.map, visible: snap.visible ?? true });
     this.updateTokenLayer();
@@ -8009,6 +8032,12 @@ export class HexMapView extends ItemView {
     for (const file of this.app.vault.getMarkdownFiles()) {
       const entry = getTokenDataFromCache(this.app, file);
       if (entry && entry.map === this.activeMapName) {
+        // A party step not in the cache yet shows where it went.
+        const moved = this.partyMoves.get(entry.filePath);
+        if (moved !== undefined) {
+          if (moved === entry.hex) this.partyMoves.delete(entry.filePath);
+          else entry.hex = moved;
+        }
         this.tokenEntries.push(entry);
       }
     }
@@ -8042,12 +8071,22 @@ export class HexMapView extends ItemView {
   }
 
   private renderTokenLayer(gridContainer: HTMLElement): void {
+    this.drawTokenLayer(gridContainer);
+    // The selected party's steps (SF5), after the tokens are read.
+    this.markPartySteps(gridContainer);
+  }
+
+  private drawTokenLayer(gridContainer: HTMLElement): void {
     this.viewportEl?.querySelector(".duckmage-token-layer")?.remove();
-    if (this.getActiveMap().showTokens === false) return;
+    if (this.getActiveMap().showTokens === false) { this.tokenEntries = []; return; }
     this.loadTokensForMap();
     if (this.tokenEntries.length === 0) return;
 
     const centerMap = this.buildTokenCenterMap(gridContainer);
+    // Read the geometry before any write (no layout thrash).
+    const firstHexEl = gridContainer.querySelector<HTMLElement>(".duckmage-hex");
+    const spread = Math.min(firstHexEl?.offsetWidth ?? 64, firstHexEl?.offsetHeight ?? 64) * 0.28;
+    const emPx = parseFloat(getComputedStyle(gridContainer).fontSize) || 16;
     // Token layer is a child of gridContainer (not viewportEl) so its
     // absolute-positioned tokens use the same coordinate space as
     // `buildTokenCenterMap` returns (which walks up to gridContainer).
@@ -8057,10 +8096,9 @@ export class HexMapView extends ItemView {
     // overlay pattern (1.4.0 fix). Covered by
     // examples/hex-token-alignment/ in the frontend-testing suite.
     const layer = gridContainer.createDiv({ cls: "duckmage-token-layer" });
-
-    // Spread radius: fraction of the hex's short dimension so offsets scale with zoom.
-    const firstHexEl = gridContainer.querySelector<HTMLElement>(".duckmage-hex");
-    const spread = Math.min(firstHexEl?.offsetWidth ?? 64, firstHexEl?.offsetHeight ?? 64) * 0.28;
+    // Spread radius (above): a fraction of the hex's short dimension so offsets scale with zoom.
+    const showCoords = this.getActiveMap().showCoords !== false;
+    const inPlay = this.currentWorkMode() === "play";
 
     // Group visible tokens by hex key, preserving entry order.
     const byHex = new Map<string, TokenEntry[]>();
@@ -8074,8 +8112,17 @@ export class HexMapView extends ItemView {
     // Names go on the side away from the hex coordinate (F4).
     const nameSide = tokenNameSide(this.plugin.settings.coordPlacement);
     for (const [hexKey, tokens] of byHex) {
-      const center = centerMap.get(hexKey)!;
       const offsets = tokenGroupOffsets(tokens.length);
+      // Off the hex's coordinate (SF5: the token hid the hex number).
+      const shift = tokenCoordShift({
+        placement: this.plugin.settings.coordPlacement,
+        showCoords,
+        emPx,
+        coordFontSize: this.plugin.settings.coordFontSize,
+        tokens: tokens.map((t, i) => ({ dy: offsets[i][1] * spread, size: t.size ?? "md" })),
+      });
+      const c0 = centerMap.get(hexKey)!;
+      const center = { cx: c0.cx, cy: c0.cy + shift };
 
       for (let i = 0; i < tokens.length; i++) {
         const token = tokens[i];
@@ -8086,7 +8133,9 @@ export class HexMapView extends ItemView {
         });
         tokenEl.style.left = `${center.cx + odx * spread}px`;
         tokenEl.style.top  = `${center.cy + ody * spread}px`;
-        tokenEl.title      = token.title;
+        tokenEl.title      = token.party ? `${token.title} (party)` : token.title;
+        if (token.party) tokenEl.addClass("is-party");
+        if (token.party && inPlay && this.selectedParty === token.filePath) tokenEl.addClass("is-selected");
         if (token.color)  tokenEl.style.setProperty("--token-color",  token.color);
         if (token.border) tokenEl.style.setProperty("--token-border", token.border);
 
@@ -8136,12 +8185,80 @@ export class HexMapView extends ItemView {
           if (e.button !== 0 || this.drawingMode !== null) return;
           e.stopPropagation();
           this.startTokenDrag(snapToken, tokenEl, e, centerMap, () => {
+            // Play: clicking the party picks it up (or puts it down) (SF5).
+            if (snapToken.party && this.currentWorkMode() === "play") {
+              this.selectParty(this.selectedParty === snapToken.filePath ? null : snapToken.filePath);
+              return;
+            }
             const [hx, hy] = snapToken.hex.split("_").map(Number);
             if (Number.isFinite(hx) && Number.isFinite(hy)) void this.onHexClick(hx, hy, e);
           });
         });
       }
     }
+  }
+
+  /** Select the party token `path` in Play (null: none); its neighbouring hexes light up. */
+  private selectParty(path: string | null): void {
+    this.selectedParty = path;
+    this.updateTokenLayer();
+  }
+
+  /** The selected party token on this map, in Play. */
+  private activeParty(): TokenEntry | undefined {
+    if (!this.selectedParty || this.currentWorkMode() !== "play") return undefined;
+    return this.tokenEntries.find((t) => t.filePath === this.selectedParty && t.party && t.visible);
+  }
+
+  /** Light the hexes the selected party can step to (and nothing else). */
+  private markPartySteps(gridContainer: HTMLElement): void {
+    gridContainer.querySelectorAll(".duckmage-party-step").forEach((el) => el.removeClass("duckmage-party-step"));
+    const party = this.activeParty();
+    if (!party) return;
+    const [px, py] = party.hex.split("_").map(Number);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+    for (const [nx, ny] of hexNeighbors(px, py, this.plugin.settings.hexOrientation, this.getActiveStagger())) {
+      gridContainer.querySelector<HTMLElement>(`.duckmage-hex[data-x="${nx}"][data-y="${ny}"]`)?.addClass("duckmage-party-step");
+    }
+  }
+
+  /** Move the party one step to `hex` (undoable) and mark both hexes visited. */
+  private async moveParty(party: TokenEntry, hex: string): Promise<void> {
+    if (!guardWrite(party.map, "token")) return;
+    const from = party.hex;
+    this.pushTokenUndo(party.filePath, party.map, { hex: from, map: party.map }, { hex, map: party.map });
+    this.partyMoves.set(party.filePath, hex);
+    this.setVisited([from, hex], true);
+    this.updateTokenLayer();
+    await setTokenHex(this.app, party.filePath, hex, party.map);
+  }
+
+  /** Mark hexes of the open map visited (or not), saved in its map note. */
+  private setVisited(keys: string[], on: boolean): void {
+    const map = this.getActiveMap();
+    const before = parseVisited(map.visited);
+    const after = on ? markVisited(before, ...keys) : keys.reduce((l, k) => unmarkVisited(l, k), before);
+    if (after.length === before.length && after.every((k, i) => k === before[i])) return;
+    map.visited = after;
+    void this.plugin.saveSettings();
+    this.applyVisitedMarks();
+  }
+
+  /** Visited marks ← the map's list, without a re-render. */
+  private applyVisitedMarks(): void {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return;
+    const set = new Set(parseVisited(this.getActiveMap().visited));
+    grid.querySelectorAll<HTMLElement>(".duckmage-hex").forEach((el) => {
+      el.toggleClass("duckmage-hex-visited", set.has(`${el.dataset.x}_${el.dataset.y}`));
+    });
+  }
+
+  /** "Add to play log…" for hex (x, y) (SF3). */
+  private openPlayLog(x: number, y: number): void {
+    new PlayLogModal(this.app, `${this.plugin.mapLabel(this.activeMapName)} ${x}, ${y}`, (text) =>
+      addToPlayLog(this.plugin, this.activeMapName, x, y, text),
+    ).open();
   }
 
   private updateTokenLayer(): void {
@@ -8230,6 +8347,11 @@ export class HexMapView extends ItemView {
         }
         if (guardWrite(token.map, "token")) {
           this.pushTokenUndo(token.filePath, token.map, { hex: token.hex, map: token.map }, { hex: closestHex, map: token.map });
+          // Dragging the party still travels: both hexes count as visited (SF5).
+          if (token.party && token.map === this.activeMapName) {
+            this.partyMoves.set(token.filePath, closestHex);
+            this.setVisited([token.hex, closestHex], true);
+          }
           void setTokenHex(this.app, token.filePath, closestHex, token.map);
         }
       } else {
@@ -8251,7 +8373,7 @@ export class HexMapView extends ItemView {
       this.plugin,
       token.filePath,
       token.title,
-      { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, description: token.description },
+      { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, description: token.description, party: token.party, logFolder: token.logFolder },
       (_notePath, data) => {
         void applyTokenFrontmatter(this.app, token.filePath, data)
           .then(() => this.updateTokenLayer());
@@ -8266,7 +8388,7 @@ export class HexMapView extends ItemView {
       hex: token.hex,
       map: token.map,
       visible: token.visible,
-      look: { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, tokenLink: token.tokenLink, description: token.description },
+      look: { icon: token.icon, shape: token.shape, size: token.size, color: token.color, border: token.border, tokenLink: token.tokenLink, description: token.description, party: token.party, logFolder: token.logFolder ?? "" },
     };
   }
 
@@ -8292,6 +8414,11 @@ export class HexMapView extends ItemView {
     const menu = new ModeMenu(this.currentWorkMode(), this.modeMenuOptions());
     menu.add("token.edit", "Edit token", "pencil", () => this.openTokenEditor(token));
     menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
+    // SF5: any token can be the party (moves by clicking a neighbour in Play).
+    menu.add("token.party", "Party token", "users", () => {
+      if (token.party && this.selectedParty === token.filePath) this.selectedParty = null;
+      void applyTokenFrontmatter(this.app, token.filePath, { party: !token.party }).then(() => this.updateTokenLayer());
+    }, { checked: !!token.party });
     menu.add("token.open-note", "Open note", "file-text", () => {
       const file = this.app.vault.getAbstractFileByPath(token.filePath);
       if (file instanceof TFile) void openNoteFocused(this.app, file);

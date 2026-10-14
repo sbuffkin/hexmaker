@@ -396,6 +396,7 @@ export const DEFAULT_SETTINGS: HexmakerPluginSettings = {
   tablesFolder: "world/tables",
   factionsFolder: "",
   regionsFolder: "",
+  logFolder: "",
   defaultTableDice: 100,
   hexEditorTerrainCollapsed: false,
   hexEditorFeaturesCollapsed: false,

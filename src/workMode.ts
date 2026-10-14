@@ -64,6 +64,7 @@ export type ModeAction =
   | "new-top-map" // a new map that isn't made from a hex of another map
   | "discover" // arrival: make a place where nothing exists yet (only when the world is set to make places)
   | "lock-place" // lock a place made on arrival (after that, rerolling it needs God)
+  | "show-place-icon" // "Show on map": a linked note's section icon as the hex's icon (SF4; works where linking works)
   // ── Build and God ──
   | "paint-terrain"
   | "paint-icon" // icon overrides and GM icons
@@ -109,6 +110,7 @@ export const ACTION_POLICY: Record<ModeAction, ActionPolicy> = {
   "new-top-map": { modes: ALL, verb: "make a map" },
   discover: { modes: ALL, verb: "go somewhere new" },
   "lock-place": { modes: ALL, verb: "lock a new submap" },
+  "show-place-icon": { modes: ALL, verb: "show a linked place on the map" },
   "paint-terrain": { modes: BUILD, verb: "paint terrain" },
   "paint-icon": { modes: BUILD, verb: "change icons" },
   "paint-region-area": { modes: BUILD, verb: "paint areas" },
@@ -222,6 +224,7 @@ export const COMMAND_ACTIONS: Record<string, ModeAction> = {
   "add-map-data-to-hex-notes": "edit-note",
   "update-region-faction-map-data": "edit-note",
   "export-current-map": "export",
+  "open-play-log": "edit-note",
 };
 
 /** Every item of the map view's menus (ModeMenu in src/hex-map/modeMenu.ts). */
@@ -240,6 +243,9 @@ export const MENU_ACTIONS = {
   "hex.link-table": "link-note",
   "hex.swap": "swap-hexes",
   "hex.create-token": "token",
+  // Solo play: a line in the play log; a hex visited (or not) by hand.
+  "hex.log": "edit-note",
+  "hex.visited": "token",
   "hex.clear-terrain": "paint-terrain",
   "hex.remove-icon": "paint-icon",
   // overworld hex menu
@@ -259,6 +265,7 @@ export const MENU_ACTIONS = {
   "token.edit": "token",
   "token.open-note": "open-note",
   "token.remove": "token",
+  "token.party": "token",
   // the mode switch
   "mode.switch": "switch-mode",
   // hex editor: the maps strip "+"

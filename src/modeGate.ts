@@ -34,7 +34,7 @@ export function canDo(mapName: string, action: ModeAction): boolean {
  * on it"). Navigating, viewing, notes, tokens and generated writes (reroll,
  * generation, keep-the-route pins) never count.
  */
-export const HAND_EDIT_ACTIONS: ReadonlySet<ModeAction> = new Set<ModeAction>(["paint-terrain", "paint-icon", "paint-region-area", "edit-path", "swap-hexes"]);
+export const HAND_EDIT_ACTIONS: ReadonlySet<ModeAction> = new Set<ModeAction>(["paint-terrain", "paint-icon", "paint-region-area", "edit-path", "swap-hexes", "show-place-icon"]);
 
 type HandEditListener = (mapName: string, action: ModeAction) => void;
 let handEdit: HandEditListener | null = null;

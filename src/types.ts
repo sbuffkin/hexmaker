@@ -16,6 +16,10 @@ export interface TokenEntry {
 	border: string | undefined;  // border/ring color
 	tokenLink: string | undefined;    // proxy → original note path
 	description: string | undefined;  // token-description frontmatter
+	/** The party token (`token-party: true`): click a neighbouring hex to move it in Play; marks hexes visited. */
+	party?: boolean;
+	/** This party's own play log folder (`token-log:`), else the campaign's (src/play/playLog.ts). */
+	logFolder?: string;
 }
 
 export type PathLineStyle = "solid" | "dashed" | "dotted";
@@ -210,6 +214,10 @@ export interface MapData {
 	linkBadgeSize?: string;
 	showHexNames?: boolean;       // undefined = true: hex name labels on the map
 	showTokenNames?: boolean;     // undefined = true: name under each token
+	/** Hexes a party token has stood on, first visit first ("x_y"; `visited:` in the map note). */
+	visited?: string[];
+	/** The visited marks (layers menu → Labels). undefined = true. */
+	showVisited?: boolean;
 	/** Hex-name font (NM3): "theme" | "serif" | "sans" | "handwritten"; unset = the plugin default. */
 	hexNameFont?: string;
 	/** Hex-name size: "small" | "medium" | "large" | "huge" (or a multiplier); unset = the plugin default. */
@@ -370,6 +378,10 @@ export interface HexmakerPluginSettings {
 	tablesFolder: string;
 	factionsFolder: string;
 	regionsFolder: string;
+	/** Play log folder (one dated note per day). Blank = `<world>/log` (src/play/playLog.ts). */
+	logFolder?: string;
+	/** Icon a link section's "Show on map" offers, by section (blank = none). Unset = src/play/linkIcons.ts defaults. */
+	linkSectionIcons?: Partial<Record<string, string>>;
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;
 	/** No longer read (round 6: expanding Terrain is per hex). Kept so old data.json files type-check. */

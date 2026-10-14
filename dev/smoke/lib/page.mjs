@@ -422,6 +422,126 @@ export async function modeLocks(id, name) {
 }
 
 /**
+ * C9 solo play on `name` (SF3/SF5), through the map view's own handlers:
+ * a party token note on a middle hex; in Play, a click on the token picks
+ * it up (its neighbours light up), a click on a lit hex moves it there
+ * (token note and the map note's `visited:` list); "Add to play log…"
+ * writes today's log note and links it from the hex note. Everything it
+ * made is removed again (the map's visited list and mode restored).
+ */
+export async function partyPlay(id, name) {
+  const app = window.app;
+  const p = app.plugins.plugins[id];
+  const store = p.mapStore;
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const waitFor = async (fn, ms = 4000) => { const t0 = performance.now(); while (performance.now() - t0 < ms) { const v = fn(); if (v) return v; await sleep(100); } return fn(); };
+  await p.showMap(name);
+  await sleep(600);
+  const view = app.workspace.getLeavesOfType("duckmage-hex-map")[0]?.view;
+  if (!view || view.activeMapName !== name) return { ok: false, steps: [], problems: ["map view did not open " + name] };
+  const out = { ok: true, steps: [], problems: [] };
+  const fail = (m) => { out.ok = false; out.problems.push(m); };
+  const map = p.getMap(name);
+  const startMode = map.workMode;
+  const visitedBefore = map.visited ? [...map.visited] : undefined;
+  const hexEls = [...view.containerEl.querySelectorAll(".duckmage-hex[data-x]")];
+  const mid = hexEls[Math.floor(hexEls.length / 2)];
+  if (!mid) return { ok: true, steps: ["no hexes: skipped"], problems: [] };
+  const key = `${mid.dataset.x}_${mid.dataset.y}`;
+  const tokPath = "smoke-party-token.md";
+  const made = [tokPath];
+  try {
+    await app.vault.create(tokPath, `---\ntoken: true\ntoken-hex: "${key}"\ntoken-map: "${name}"\ntoken-party: true\n---\n# Smoke party\n`);
+    view.setWorkMode("play");
+    await sleep(300);
+    const tokenEl = await waitFor(() => view.containerEl.querySelector(".duckmage-token.is-party"));
+    if (!tokenEl) { fail("the party token wasn't drawn"); return out; }
+    const press = (el) => {
+      const r = el.getBoundingClientRect();
+      const at = { bubbles: true, cancelable: true, button: 0, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 };
+      el.dispatchEvent(new MouseEvent("mousedown", at));
+      el.ownerDocument.dispatchEvent(new MouseEvent("mouseup", at));
+    };
+    press(tokenEl);
+    // The map may still redraw after the mode switch: let it settle, then
+    // take the lit hex from the grid as it is now (not a detached one).
+    await sleep(800);
+    const step = await waitFor(() => [...view.containerEl.querySelectorAll(".duckmage-hex-map-grid .duckmage-hex.duckmage-party-step")].find((el) => el.isConnected));
+    if (!view.containerEl.querySelector(".duckmage-token.is-party.is-selected")) fail("a click didn't pick the party up");
+    if (!step) { fail("no neighbouring hex lit up"); return out; }
+    const to = `${step.dataset.x}_${step.dataset.y}`;
+    const party = view.activeParty?.();
+    let reached = false;
+    const onHexClick = view.onHexClick;
+    view.onHexClick = function (...a) { reached = true; return onHexClick.apply(this, a); };
+    try {
+      // A real mouseup is always followed by a click; the synthetic strokes
+      // of earlier checks aren't, which leaves the view's "that was a drag,
+      // swallow the next click" flag set. A click on the view's own box
+      // (no hex) clears it.
+      view.contentEl.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+      step.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    } finally { view.onHexClick = onHexClick; }
+    if (!reached || !party) out.problems.push(`(click reached the map: ${reached}; target ${step.className} in ${step.parentElement?.className}; party picked up: ${party ? party.hex : "none"}; mode ${p.getMap(name).workMode})`);
+    const readTok = async () => (await app.vault.adapter.exists(tokPath)) ? app.vault.adapter.read(tokPath) : "";
+    let moved = false;
+    for (let i = 0; i < 40 && !moved; i++) { moved = new RegExp(`^token-hex: "?${to}"?\\s*$`, "m").test(await readTok()); if (!moved) await sleep(100); }
+    if (!moved) fail(`the party didn't move to ${to}`);
+    await store.flush?.();
+    await sleep(300);
+    const visited = p.getMap(name).visited ?? [];
+    if (!visited.includes(key) || !visited.includes(to)) fail(`visited is ${JSON.stringify(visited)}, wanted ${key} and ${to}`);
+    const note = await app.vault.adapter.read(store.notePath(name));
+    if (!/^visited:/m.test(note)) fail("the map note has no visited: line");
+    if (!view.containerEl.querySelector(`.duckmage-hex.duckmage-hex-visited[data-x="${step.dataset.x}"][data-y="${step.dataset.y}"]`)) fail("the new hex has no visited mark");
+    if (out.ok) out.steps.push(`play: party picked up, stepped ${key} → ${to}, both visited`);
+    // The play log.
+    const stepPath = p.hexPath(Number(step.dataset.x), Number(step.dataset.y), name);
+    const hadStepNote = !!app.vault.getAbstractFileByPath(stepPath);
+    view.openPlayLog(Number(step.dataset.x), Number(step.dataset.y));
+    const box = await waitFor(() => document.querySelector(".duckmage-play-log-text"));
+    if (!box) fail("Add to play log didn't open");
+    else {
+      box.value = "Smoke: wolves on the ridge.";
+      box.closest(".modal")?.querySelector("button.mod-cta")?.click();
+      let found = null;
+      for (let i = 0; i < 50 && !found; i++) {
+        await sleep(100);
+        for (const f of app.vault.getMarkdownFiles().filter((f) => /\/log\/\d{4}-\d\d-\d\d\.md$/.test(f.path))) {
+          if ((await app.vault.read(f)).includes("Smoke: wolves on the ridge.")) found = f;
+        }
+      }
+      await sleep(400);
+      if (!found) fail("no log note holds the entry");
+      else {
+        const text = await app.vault.read(found);
+        if (!/\[\[smoke-party-token(\|[^\]]*)?\]\]/.test(text)) fail("the log entry doesn't name the party");
+        const hexNote = app.vault.getAbstractFileByPath(stepPath);
+        const hexText = hexNote ? await app.vault.read(hexNote) : "";
+        if (!/^#{1,6} Log\s*$/m.test(hexText) || !hexText.includes(found.basename)) fail("the hex note has no link to the log day");
+        if (!hadStepNote) made.push(stepPath);
+        // The day's note: remove it only if this check made it (nothing else in it).
+        if (text.split("\n").filter((l) => l.startsWith("- ")).length === 1) made.push(found.path);
+        if (out.ok) out.steps.push(`log: entry in ${found.path}, hex links back`);
+      }
+    }
+  } finally {
+    document.querySelectorAll(".modal-close-button").forEach((b) => b.click());
+    for (const path of made) {
+      const f = app.vault.getAbstractFileByPath(path);
+      if (f) await app.vault.delete(f);
+    }
+    const m = p.getMap(name);
+    if (visitedBefore) m.visited = visitedBefore; else delete m.visited;
+    view.setWorkMode(startMode === "god" || startMode === "play" ? startMode : "build");
+    await p.saveSettings();
+    await store.flush?.();
+    await sleep(300);
+  }
+  return out;
+}
+
+/**
  * Overworld paint lock: in Play, the terrain brush over the Regions view
  * is refused (Notice) and no region's data changes.
  */
