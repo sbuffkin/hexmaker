@@ -405,7 +405,7 @@ describe("dropped controls are gone", () => {
   it("the biome page's typed weight box (BiomePage.weightNumber) is removed; the shared share sliders stay", () => {
     const biome = read("src", "overworld", "BiomePanel.ts");
     expect(biome).not.toContain("weight value");
-    expect(biome).toContain("renderShareSliders(el, {");
+    expect(biome).toContain("renderShareSliders(box, {");
     expect(read("styles.css")).toMatch(/\.duckmage-biome-page-mix \.duckmage-share-sliders-row \{[^}]*grid-template-columns:/);
   });
 

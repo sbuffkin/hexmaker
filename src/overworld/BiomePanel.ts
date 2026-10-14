@@ -40,6 +40,7 @@ import { landOf } from "./biomeCombo";
 import { withinTypeWeights } from "./biomes";
 import { listGenerators } from "../worldgen/generators";
 import { renderShareSliders } from "../ui/shareSliders";
+import { mixRemoveButton, renderMixAdd, splitMix } from "../ui/mixList";
 import { percentsToWeights } from "../ui/shares";
 import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
 import { numberField } from "../ui/scrub";
@@ -112,6 +113,17 @@ export function setMixRow(f: BiomeNoteFields, type: string, change: { weight?: n
     if (change.minPatches === null || !(change.minPatches > 0)) delete row.minPatches;
     else row.minPatches = Math.round(change.minPatches);
   }
+}
+
+/**
+ * The weight a type added to the mix starts with (O6's "+ Add type"): the
+ * mean of the weights already in, so it gets an equal share; 1 for an
+ * empty mix. Pure.
+ */
+export function addedMixWeight(mix: readonly { weight: number }[]): number {
+  const ws = mix.map((r) => r.weight).filter((w) => Number.isFinite(w) && w > 0);
+  if (!ws.length) return 1;
+  return Math.max(1, Math.round(ws.reduce((a, b) => a + b, 0) / ws.length));
 }
 
 /**
@@ -200,6 +212,14 @@ export class BiomePanel {
   private status: SaveStatusLine | null = null;
   /** Where the Terrain weights sliders go (set by render). */
   private weightsBox: HTMLElement | null = null;
+  /** Where the Type mix goes (set by render). */
+  private mixBox: HTMLElement | null = null;
+  /**
+   * The types the Type mix shows (O6): those in the mix when the page
+   * opened, plus any added here. A type slid down to 0% keeps its row while
+   * the page is open (so a drag doesn't make rows vanish); × takes it out.
+   */
+  private mixShown: Set<string> | null = null;
 
   constructor(
     private plugin: HexmakerPlugin,
@@ -326,59 +346,13 @@ export class BiomePanel {
       this.save();
     });
 
-    // Type mix: the shared zero-sum sliders (src/ui/shareSliders.ts), each
-    // type's share of the mix, always adding up to 100%; 0 = not in it.
+    // Type mix (O6): only the types in it, each a shared zero-sum slider
+    // (src/ui/shareSliders.ts) with its min patches and a ×, then
+    // "+ Add type" (src/ui/mixList.ts, shared with the generator page).
     el = this.host.section(main, "Type mix");
-    const palette = this.palette();
-    const present = new Set(palette.map((t) => t.type));
-    const types = formTypes(palette, f);
-    const cur = (type: string) => f.mix.find((r) => r.type === type);
-    // Min patches survive a type dipping to 0% mid-drag (setMixRow drops the row).
-    const keptPatches = new Map(f.mix.filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!]));
-    const patchBoxes: HTMLInputElement[] = [];
-    const showPatches = () => types.forEach((type, i) => {
-      const r = cur(type);
-      patchBoxes[i].value = r?.minPatches !== undefined ? String(r.minPatches) : "";
-      patchBoxes[i].disabled = !r;
-    });
-    const setShares = (percents: number[]) => {
-      setMixShares(f, types, percents, keptPatches);
-      showPatches();
-    };
-    renderShareSliders(el, {
-      empty: "hold",
-      cls: "duckmage-biome-page-mix",
-      head: ["Type", "", "Share", "Min patches"],
-      items: types.map((type) => ({ label: type, title: present.has(type) ? type : `${type}: not in this palette`, cls: present.has(type) ? undefined : "is-missing" })),
-      weights: types.map((type) => cur(type)?.weight ?? 0),
-      extra: (row, i) => {
-        const type = types[i];
-        patchBoxes[i] = numberField(row, {
-          min: 0, max: 99, whole: true, blank: true, placeholder: "—", ariaLabel: `${type} min patches`,
-          value: cur(type)?.minPatches,
-          onChange: (v) => {
-            setMixRow(f, type, { minPatches: v ?? null });
-            if (v !== undefined && v > 0) keptPatches.set(type, v);
-            else keptPatches.delete(type);
-            showPatches();
-            this.schedulePreview();
-            this.save();
-          },
-        });
-      },
-      onInput: (_shares, percents) => {
-        setShares(percents);
-        this.schedulePreview();
-      },
-      onChange: (_shares, percents) => {
-        setShares(percents);
-        this.schedulePreview();
-        this.save();
-        this.renderTerrainWeights();
-      },
-    });
-    showPatches();
-    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Each type's share of the mix (they always add up to 100%; 0% = not in it). Min patches: the fewest separate patches of that type a region gets, so a sprinkle (peaks, a volcano) isn't smoothed away." });
+    this.mixBox = el.createDiv({ cls: "duckmage-biome-mix" });
+    this.renderTypeMix();
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Each type's share of the mix (they always add up to 100%). × takes a type out; the add button under the list puts one in. Min patches: the fewest separate patches of that type a region gets, so a sprinkle (peaks, a volcano) isn't smoothed away." });
 
     // Terrain weights: within a type, how its palette terrains share it (also zero-sum).
     el = this.host.section(main, "Terrain weights");
@@ -697,6 +671,98 @@ export class BiomePanel {
     } catch (e) {
       if (ticket === this.previewTicket) status.setText(e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** The Type mix (O6): only the types in it, with × and "+ Add type" (src/ui/mixList.ts). */
+  private renderTypeMix(): void {
+    const box = this.mixBox;
+    if (!box) return;
+    box.empty();
+    const f = this.fields;
+    const palette = this.palette();
+    const present = new Set(palette.map((t) => t.type));
+    this.mixShown ??= new Set(f.mix.map((r) => r.type));
+    const shownSet = this.mixShown;
+    const colorOf = (type: string) => palette.find((t) => t.type === type)?.color;
+    const all = formTypes(palette, f).map((type) => ({
+      id: type,
+      label: type,
+      color: colorOf(type),
+      title: present.has(type) ? type : `${type}: not in this palette`,
+    }));
+    const { shown, addable } = splitMix(all, (type) => shownSet.has(type) || f.mix.some((r) => r.type === type));
+    const types = shown.map((i) => i.id);
+    const cur = (type: string) => f.mix.find((r) => r.type === type);
+    // Min patches survive a type dipping to 0% mid-drag (setMixRow drops the row).
+    const keptPatches = new Map(f.mix.filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!]));
+    const patchBoxes: HTMLInputElement[] = [];
+    const showPatches = () => types.forEach((type, i) => {
+      const r = cur(type);
+      patchBoxes[i].value = r?.minPatches !== undefined ? String(r.minPatches) : "";
+      patchBoxes[i].disabled = !r;
+    });
+    const setShares = (percents: number[]) => {
+      setMixShares(f, types, percents, keptPatches);
+      showPatches();
+    };
+    const changed = () => {
+      this.schedulePreview();
+      this.save();
+      this.renderTerrainWeights();
+    };
+    if (types.length) {
+      renderShareSliders(box, {
+        empty: "hold",
+        cls: "duckmage-biome-page-mix",
+        head: ["Type", "", "Share", "Min patches", ""],
+        items: shown.map((i) => ({ label: i.label, title: i.title, cls: present.has(i.id) ? undefined : "is-missing" })),
+        weights: types.map((type) => cur(type)?.weight ?? 0),
+        extra: (row, i) => {
+          const type = types[i];
+          patchBoxes[i] = numberField(row, {
+            min: 0, max: 99, whole: true, blank: true, placeholder: "—", ariaLabel: `${type} min patches`,
+            value: cur(type)?.minPatches,
+            onChange: (v) => {
+              setMixRow(f, type, { minPatches: v ?? null });
+              if (v !== undefined && v > 0) keptPatches.set(type, v);
+              else keptPatches.delete(type);
+              showPatches();
+              this.schedulePreview();
+              this.save();
+            },
+          });
+          mixRemoveButton(row, type, () => {
+            setMixRow(f, type, { weight: 0 });
+            shownSet.delete(type);
+            this.renderTypeMix();
+            changed();
+          });
+        },
+        onInput: (_shares, percents) => {
+          setShares(percents);
+          this.schedulePreview();
+        },
+        onChange: (_shares, percents) => {
+          setShares(percents);
+          changed();
+        },
+      });
+      showPatches();
+    } else {
+      box.createEl("p", { cls: "duckmage-empty-state", text: "No types in the mix yet. Add one below." });
+    }
+    renderMixAdd(this.plugin.app, box, {
+      thing: "type",
+      things: "types",
+      addable,
+      onAdd: (type) => {
+        // An equal share with the types already in (the shares stay a whole).
+        setMixRow(f, type, { weight: addedMixWeight(f.mix) });
+        shownSet.add(type);
+        this.renderTypeMix();
+        changed();
+      },
+    });
   }
 
   /** The Terrain weights sliders: one set per type in the mix with more than one palette terrain. */

@@ -7,6 +7,9 @@ import { getTerrainFromFile } from "../frontmatter";
 import { buildSubmapContext } from "./submapContext";
 import { buildRegionContext } from "./regionContext";
 import { neighbourShadow, neighbourSpec, occupiedSides, placeNewRegion, regionNameAt, type NewRegion } from "./neighbours";
+import { NEIGHBOUR_WEIGHT, storeNeighbourWeight } from "./neighbourWeight";
+import { renderNeighbourSlider } from "../ui/neighbourSlider";
+import { markFreshMap } from "./freshMap";
 import { hexRangeText, type Side as WorldSide } from "./world";
 import { OVERLAND_ID, REGION_DETAIL_ID, seaSideFromNeighbours, type NeighbourSea } from "./procedural/planetSurface";
 import type { GenerationContext, Side } from "./procedural/common";
@@ -118,6 +121,8 @@ export class NewMapSetupModal extends HexmakerModal {
   private context: GenerationContext | undefined;
   /** "Next to" placement in a world of neighbouring regions (top-level maps). */
   private placement: NewRegion | undefined;
+  /** Next to a map: how strongly its neighbours steer it (SF6; worldgen/neighbourWeight.ts). */
+  private neighbourWeight: number = NEIGHBOUR_WEIGHT.default;
   /** The user picked the size (typed, a preset): another scale keeps it (critic C9). */
   private sizeChosen = false;
   /** "Use for new submaps of <terrain> hexes" checkboxes, one per option row. */
@@ -416,6 +421,8 @@ export class NewMapSetupModal extends HexmakerModal {
     let applyPrefill: (() => void) | undefined;
     /** Set by the "More" section below: placement locks its fields. */
     let lockMore: ((locked: boolean) => void) | undefined;
+    /** Next to a map: show the Neighbour influence slider when the generator follows the neighbour. */
+    let syncWeight: (() => void) | undefined;
     if (!this.origin && this.plugin.settings.maps.length > 0) {
       const nextRow = this.row(form, "Next to");
       const anchorSel = this.labelled(nextRow, nextRow.createEl("select", { attr: { "aria-label": "Neighbouring map" } }));
@@ -477,6 +484,26 @@ export class NewMapSetupModal extends HexmakerModal {
       anchorSel.addEventListener("change", onPlace);
       sideSel.addEventListener("change", onPlace);
       sideSel.disabled = true;
+      // Neighbour influence (SF6, O4: in plain view): the shared slider
+      // (src/ui/neighbourSlider.ts); the preview follows it live.
+      const weightAt = disclosure.target("NewMap.neighbourInfluence", form);
+      if (weightAt) {
+        const weightRow = weightAt.createDiv({ cls: "duckmage-setup-neighbour-weight" });
+        let weightTimer: number | undefined;
+        renderNeighbourSlider(weightRow, this.neighbourWeight, {
+          input: (w) => {
+            this.neighbourWeight = w;
+            window.clearTimeout(weightTimer);
+            weightTimer = window.setTimeout(refresh, LIVE_PREVIEW_DELAY_MS);
+          },
+          change: (w) => {
+            this.neighbourWeight = w;
+            window.clearTimeout(weightTimer);
+            refresh();
+          },
+        }, "duckmage-setup-neighbour-slider");
+        syncWeight = () => weightRow.toggle(!!this.placement && !!this.kind()?.continuesNeighbours);
+      }
       // Carried over from Maps → New map: start next to that map.
       const pre = this.prefill;
       if (pre?.anchor && this.plugin.getMap(pre.anchor)) {
@@ -772,6 +799,7 @@ export class NewMapSetupModal extends HexmakerModal {
       ];
       disclosure.refreshSet();
       goBtn.setText(this.kindId === BLANK_ID ? (this.origin ? "Create & enter" : "Create") : (this.origin ? "Generate & enter" : "Generate"));
+      syncWeight?.();
     };
 
     const renderBase = () => {
@@ -963,6 +991,7 @@ export class NewMapSetupModal extends HexmakerModal {
   private generate(kind: TerrainGeneratorKind, terrains: TerrainColor[], paletteName: string): GenerateOutcome {
     return runGenerator(this.plugin.settings.hexOrientation, kind, {
       terrains, grid: this.grid(), seed: this.seed, options: this.resolvedOptions(kind), context: this.context, region: this.placement,
+      ...(this.placement ? { neighbourWeight: this.neighbourWeight } : {}),
       pathTypes: this.plugin.getPathTypes(paletteName),
       ...(this.origin ? { tablesFrom: this.origin.map } : {}),
       ledgers: this.ledgers,
@@ -1080,6 +1109,9 @@ export class NewMapSetupModal extends HexmakerModal {
     // Join the world grid next to the chosen neighbour (before the paths:
     // placing sets the map's stagger, which the paths are routed with).
     if (this.placement) await placeNewRegion(this.plugin, result.name, this.placement);
+    // Its Neighbour influence, kept readably in its note (only when not ×1).
+    const made = this.plugin.getMap(result.name);
+    if (made && this.placement) storeNeighbourWeight(made, this.neighbourWeight);
 
     // Generated paths (jump routes, rivers…) become the map's anchored paths.
     if (outcome?.ok && outcome.paths.length && kind) {
@@ -1122,6 +1154,13 @@ export class NewMapSetupModal extends HexmakerModal {
       newMap.backgroundImage = { path: bgPath, offsetX: 0, offsetY: 0, scale: 1, rotation: 0, opacity: 1 };
       await this.plugin.saveSettings();
       backgroundImage = bgPath;
+    }
+    // A fresh generated map (not Blank, not opened in the generator) is open
+    // until its first hand edit: the map's Reroll / Lock bar makes it again
+    // from the same choices with a new seed (SF7, the region rule).
+    if (!openGenerator && kind && kind.id !== BLANK_ID && outcome?.ok && !this.asRegion && !this.plugin.arrival.isOverworld(result.name)) {
+      markFreshMap(this.plugin, result.name, { generator: kind.id, options: this.resolvedOptions(kind), seed: this.seed });
+      await this.plugin.saveSettings();
     }
     await this.saveDefaults(paletteName);
     this.close();

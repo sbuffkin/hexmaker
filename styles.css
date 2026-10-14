@@ -5835,8 +5835,8 @@ input.duckmage-field-invalid:focus {
 
 .duckmage-wfc-terrain-row {
     display: grid;
-    /* Terrain, Mix, Min, Max, Example, Map (Near is under Advanced → Engine tuning) */
-    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em;
+    /* Terrain, Mix, Min, Max, Example, Map, × (Near is under Advanced → Engine tuning) */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em 1.8em;
     align-items: center;
     gap: 0.5em;
 }
@@ -8638,9 +8638,43 @@ textarea.duckmage-edit-region-notes-input {
     flex-wrap: nowrap;
     margin: 0;
 }
-/* Biome page: Type mix on the shared share sliders, plus a Min patches column. */
+/* Biome page: Type mix on the shared share sliders, plus Min patches and × columns. */
 .duckmage-biome-page-mix .duckmage-share-sliders-row {
-    grid-template-columns: minmax(6em, 10em) 1fr 3.5em 5em;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em 5em 1.8em;
+}
+
+/* Mix lists (src/ui/mixList.ts, O6): the × at the end of a row, "+ Add …"
+   under the list, and its picker. Shared by the biome and generator pages. */
+.duckmage-mix-remove {
+    padding: 0 0.3em;
+    color: var(--text-muted);
+}
+
+.duckmage-mix-remove:hover {
+    color: var(--text-error);
+}
+
+.duckmage-mix-add {
+    margin-top: 0.4em;
+}
+
+.duckmage-mix-add-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.duckmage-mix-add-tile {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+/* New map → Next to: the Neighbour influence slider under the row (SF6). */
+.duckmage-setup-neighbour-weight {
+    margin: 0 0 0.6em;
 }
 /* Biome page: Terrain weights, one set of share sliders per type. */
 .duckmage-biome-terrain-weights-type {

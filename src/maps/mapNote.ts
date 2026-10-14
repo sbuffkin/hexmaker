@@ -396,13 +396,17 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   // "region" or "location": this map's role under its parent hex.
   ["submapKind", "submap-kind", "str"],
   ["regionSeed", "region-seed", "num"],
-  // Edit region's "Neighbour influence" (a weight on the biome's tuning), only when not 1.
+  // "Neighbour influence": how strongly neighbouring maps steer this one, only when not 1.
   ["neighbourInfluence", "neighbour-influence", "num"],
   // Places made on arrival (plan-tables-everywhere phase 4).
   ["seed", "seed", "num"],
   ["arrivalMode", "on-arrival", "str"],
   ["arrival", "arrival", "str"],
   ["arrivalRerolls", "arrival-rerolls", "num"],
+  // How a map made by New map → Generate was made (SF7: its Reroll).
+  ["generator", "generator", "str"],
+  ["generatorOptions", "generator-options", "str"],
+  ["generatorSeed", "generator-seed", "num"],
   ["overworldView", "overworld-view", "str"],
   ["showMinimap", "show-minimap", "bool"],
   ["showRegionPaths", "show-region-paths", "bool"],

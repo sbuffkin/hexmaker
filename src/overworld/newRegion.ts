@@ -28,7 +28,7 @@ import {
   type RegionPlanOut,
 } from "./regionsVault";
 import { gridToInclude } from "./regionWorld";
-import { clampNeighbourWeight, NEIGHBOUR_WEIGHT } from "./neighbourWeight";
+import { clampNeighbourWeight, NEIGHBOUR_WEIGHT } from "../worldgen/neighbourWeight";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 
 /** Walking into new land: where from, and which way ("south-east"). */

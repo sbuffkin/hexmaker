@@ -34,6 +34,9 @@ import { OnceTracker, type FiredEvent } from "./eventsLedger";
 import { defaultSubmapLabel, uniqueMapSlug } from "../hex-map/submapNav";
 import { buildSubmapContext } from "../worldgen/submapContext";
 import { addGeneratedPaths } from "../worldgen/generators";
+import { nextRecipeSeed, recipeOf, setRecipe, type MapRecipe } from "../worldgen/freshMap";
+import { buildRegionContext } from "../worldgen/regionContext";
+import type { NewRegion } from "../worldgen/neighbours";
 import {
   BLANK_ID,
   kindsForPalette,
@@ -47,7 +50,7 @@ import {
 } from "../worldgen/registry";
 import { attrsForTerrain } from "../worldgen/tableSources";
 import { moduleArrivalTables, worldMaps } from "../modules/runtime";
-import { canRerollPlace, handEditLocks, REROLL_PLACE_LOCKED_HINT, WORK_MODE_TEXT, workModeOf, type ModeAction } from "../workMode";
+import { canRerollPlace, handEditLocks, REROLL_MAP_LOCKED_HINT, REROLL_PLACE_LOCKED_HINT, WORK_MODE_TEXT, workModeOf, type ModeAction } from "../workMode";
 import { lockedNotice } from "../hex-map/godOffer";
 import {
   arrivalLines,
@@ -309,9 +312,15 @@ export class ArrivalService {
   async reroll(mapName: string): Promise<boolean> {
     const { plugin } = this;
     const map = plugin.getMap(mapName);
-    if (!map?.arrival || !map.parent || !plugin.getMap(map.parent.map)) return false;
+    if (!map?.arrival) return false;
+    // A map made by New map → Generate keeps how it was made (SF7).
+    const recipe = recipeOf(map);
+    if (map.parent && !plugin.getMap(map.parent.map)) return false;
+    if (!recipe && !map.parent) return false;
     // Locked (God only): the Notice offers to switch the map to God.
-    if (!canRerollPlace(map)) { lockedNotice(plugin, mapName, REROLL_PLACE_LOCKED_HINT); return false; }
+    if (!canRerollPlace(map)) { lockedNotice(plugin, mapName, map.parent ? REROLL_PLACE_LOCKED_HINT : REROLL_MAP_LOCKED_HINT); return false; }
+    if (recipe) return this.rerollFromRecipe(mapName, recipe);
+    if (!map.parent) return false;
     if (map.submapKind === "region") return this.rerollRegion(mapName);
     const { map: parentName, hex } = map.parent;
     const [x, y] = hex.split("_").map(Number);
@@ -358,6 +367,58 @@ export class ArrivalService {
       rerolls: n,
       locked: map.arrival === "locked",
     }));
+    plugin.refreshHexMap();
+    new Notice(`Rerolled ${plugin.mapLabel(mapName)}.`);
+    return true;
+  }
+
+  /**
+   * Make a fresh generated map again from its recipe (SF7): the same
+   * generator, options, palette and size, where it sits (next to its
+   * neighbours, with its Neighbour influence, or in its parent hex), and a
+   * new seed. Its terrain, On arrival rolls and paths are replaced.
+   */
+  private async rerollFromRecipe(mapName: string, recipe: MapRecipe): Promise<boolean> {
+    const { plugin } = this;
+    const map = plugin.getMap(mapName)!;
+    const kinds = await listGeneratorKinds(plugin);
+    const kind = kinds.find((k) => k.id === recipe.generator);
+    if (!kind) { new Notice(`Couldn't reroll: the generator ${recipe.generator} isn't there any more.`); return false; }
+    const terrains = plugin.getPaletteOrPresetTerrains(map.paletteName);
+    const stagger = map.staggerOffset ?? plugin.settings.staggerOffset ?? "odd";
+    const grid = { cols: map.gridSize.cols, rows: map.gridSize.rows, offset: { ...map.gridOffset }, stagger };
+    // Next to neighbours (a world slot), or zoomed into a parent hex.
+    const region: NewRegion | undefined = map.world
+      ? { slot: map.world, cols: grid.cols, rows: grid.rows, offset: { ...grid.offset }, stagger, paletteName: map.paletteName }
+      : undefined;
+    const [px, py] = (map.parent?.hex ?? "0_0").split("_").map(Number);
+    const context = region ? buildRegionContext(plugin, region) : map.parent ? buildSubmapContext(plugin, map.parent.map, px, py) : undefined;
+    const seed = nextRecipeSeed(recipe.seed);
+    await plugin.events.forgetMap(mapName);
+    const outcome = runGenerator(plugin.settings.hexOrientation, kind, {
+      terrains,
+      grid,
+      seed,
+      options: recipe.options,
+      ...(context ? { context } : {}),
+      ...(region ? { region, neighbourWeight: map.neighbourInfluence } : {}),
+      pathTypes: plugin.getPathTypes(map.paletteName),
+      tablesFrom: map.parent?.map ?? mapName,
+      ledgers: await plugin.events.ledgersFor({ map: mapName }),
+    });
+    if (!outcome.ok) { new Notice(`Couldn't reroll: ${outcome.message}`); return false; }
+    const n = (map.arrivalRerolls ?? 0) + 1;
+    const cells = new Map<string, { terrain?: string; onArrival?: string }>();
+    for (const k of plugin.mapStore.all(mapName).keys()) cells.set(k, { terrain: undefined, onArrival: undefined });
+    for (const [k, t] of outcome.cells) if (t && t !== map.baseTerrain) cells.set(k, { ...(cells.get(k) ?? {}), terrain: t });
+    for (const [k, table] of outcome.arrivals ?? []) cells.set(k, { ...(cells.get(k) ?? {}), onArrival: table });
+    plugin.mapStore.setMany(mapName, cells);
+    plugin.mapStore.setPaths(mapName, kind.toPaths(outcome.paths, mapName).paths);
+    setRecipe(map, { ...recipe, seed }, false);
+    map.arrivalRerolls = n;
+    await plugin.saveSettings();
+    await plugin.mapStore.flush();
+    await plugin.events.record(mapName, outcome.events);
     plugin.refreshHexMap();
     new Notice(`Rerolled ${plugin.mapLabel(mapName)}.`);
     return true;
