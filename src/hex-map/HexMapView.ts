@@ -48,6 +48,7 @@ import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { drawGhostPaths } from "./ghostPathsSvg";
+import { watchBiomesPathHover } from "./biomesPathHover";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenCoordShift, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
@@ -4515,15 +4516,8 @@ export class HexMapView extends ItemView {
       gridContainer.addEventListener("mouseleave", () => hover.request(() => setTip("")));
     } else if (owView === "biomes") {
       gridContainer.addClass("duckmage-ow-biomes");
-      // A path between regions under the pointer: its name first in the hex's tooltip (O2).
-      const hover = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
-      gridContainer.addEventListener("mousemove", (e) => {
-        const { clientX, clientY, target } = e;
-        hover.request(() => {
-          const hexEl = (target as HTMLElement | null)?.closest<HTMLElement>(".duckmage-hex[data-x]");
-          if (hexEl) this.labelHex(hexEl, undefined, this.overworldLayer?.pathAt(gridContainer, clientX, clientY)?.names.join(", "));
-        });
-      });
+      // A path between regions under the pointer: its name in the tooltip (O2).
+      watchBiomesPathHover(gridContainer, (x, y) => this.overworldLayer?.pathAt(gridContainer, x, y)?.names.join(", "), (el, path) => this.labelHex(el, undefined, path));
     }
 
     // Apply optional independent grid transform (used for bg-image calibration).
