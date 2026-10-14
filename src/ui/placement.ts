@@ -81,6 +81,20 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "Settings.biomesFolder": "debug",
   "Settings.biomePoolsFolder": "debug",
   "Settings.worldTypesFolder": "debug",
+  "Settings.hexFlowersFolder": "debug",
+  // ── Hex flowers (plan-hex-flower): the generator page's Hex flowers tab (its own surface,
+  // FlowerPage) puts dice, walk length and seed in Advanced, the note's read report and the
+  // odds matrix in Debug; the Hex flower generator's Party token and Reveal options are Advanced
+  // on New map and in the setup wizard. ──
+  "FlowerPage.dice": "advanced",
+  "FlowerPage.walkLength": "advanced",
+  "FlowerPage.seed": "advanced",
+  "FlowerPage.report": "debug",
+  "FlowerPage.matrix": "debug",
+  "NewMap.flowerParty": "advanced",
+  "NewMap.flowerReveal": "advanced",
+  "Wizard.flowerParty": "advanced",
+  "Wizard.flowerReveal": "advanced",
   // Overkill in the worksheet, but the README's manual setup uses it and
   // the "table not found" messages point here (repairHint.ts), so it sits
   // at the top of Advanced, not in a sub-section or Debug.

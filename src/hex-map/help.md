@@ -167,7 +167,8 @@ Where things are on each page:
 - **Link submap** only links an existing map; **New location…** makes one. The table picker no longer has its own Open tables view button.
 - **Export**: **Area overlay** is under Advanced; the buttons come right after the options.
 - **Solo play**: the token form's **Party token** switch and **Settings → Play log folder** are on top; a party's own **Log folder** (token form) and marking one hex **Visited** by hand (hex menu) are Advanced, shown inline while each is the only Advanced item there.
-- <!-- slice:space -->**World types** (Debug): a world row's Generator and Options columns and the preview's Map, Orbit, Star and Rolls choices. <!-- /slice -->**Palette editor** (Debug): the submap defaults' Options column.
+<!-- slice:hexflower -->- **Hex flowers**: the generator page's Hex flowers tab has dice, walk length and seed under Advanced, the note's read report and the odds matrix in Debug; the Hex flower card's **Party token** and **Reveal** are Advanced; the hex flowers folder setting is in Debug.
+<!-- /slice -->- <!-- slice:space -->**World types** (Debug): a world row's Generator and Options columns and the preview's Map, Orbit, Star and Rolls choices. <!-- /slice -->**Palette editor** (Debug): the submap defaults' Options column.
 
 **Map types.** What the setup installs follows the map types you pick: World gets the Expanded and Limited palettes<!-- slice:worldmaps --> and the biome notes<!-- /slice --><!-- slice:space -->; Space alone gets Space - Sector, Space - System and Space - Planet and nothing fantasy<!-- /slice -->. Turning a type on later in **Settings → Map types** installs its content then.<!-- slice:space --> Planets and moons open on **Space - Planet**, a land palette for surfaces.<!-- /slice --> Note pickers list only what they're for: the token form's Note list shows the tokens, towns, dungeons, features, quests, factions and areas folders, never biomes, palettes, tables or other plugin notes.
 
@@ -277,6 +278,21 @@ Palette menus (setup, New map, new submap) show the picked palette's terrains as
 **Play log.** What happens goes to a dated note, not into the hex's Description: one note per day (`2026-10-14.md`) in the play log folder (**Settings → Play log folder**, asked in the setup wizard; blank = `log` in the world folder). Each entry is one line: the time, a link to the hex, the party token and what you wrote. The hex's note gets a link to that day under **Log**. Add an entry with **Add to log** in the hex editor's title row, right-click a hex → **Add to play log…**, or **Add to this hex → Play log** after a roll (in Play it's picked first). **Open today's play log** in the command palette opens the day's note. A party can keep its own log: **Log folder** in its token form (an Advanced option; `token-log:` in its note).
 
 **Show on map.** When a hex's town, dungeon or feature section has a link, the hex editor offers **Show on map** with that section's icon under it: one click makes it the hex's icon, in Play too. Which icon each section offers (or none) is in **Settings → Map look → Icons for linked notes**.
+<!-- slice:hexflower -->
+## Exploring with hex flowers
+
+A map can start blank and fill in as the party explores. Each blank hex the party walks into rolls on a **hex flower**: 19 cells, one result each (a terrain of your palette, any text, a `[[note]]`, a `[[table]]` to roll, `(nothing)` or `(blocked)`). Roll 2d6, move one cell on the flower by the Moves table, and the cell you land on fills the hex. The default moves are the published 2d6 navigation hex (2–3 up-right, 4–5 down-right, 6–7 down, 8–9 down-left, 10–11 up-left, 12 up): a walk drifts, so the land changes gradually. Off the edge you come back in on the far side, in line with the move.
+
+**Start a map.** The setup wizard and **New map** offer **Hex flower** right after Blank on every scale. **Flower**: *New from this palette* makes a hex flower note from your own palette (nothing is shipped), or pick one you have. **Start**: *Blank, fill as you explore* (only the middle hex is filled, with a **Party** token on it) or *Fill the whole map now*. Advanced: **Party token** and **Reveal** (the hex entered, or the blank hexes around it too).
+
+**Walk.** In Play, pick up the party and click a neighbour, or drag it (in any mode): a blank hex is filled, and a notice says what came up (`4, 5: hills (8 → down-left from grassland)`) with **Reroll** and **Undo**. Ctrl+Z takes back the step and what it filled together; notes and play log lines stay (a journal). A hex you painted is never changed. Right-click a blank hex for **Roll this hex**, the latest filled one for **Reroll this hex**. A small **?** marks the blank hexes next to explored ones.
+
+**The flower note** lives in `{world folder}/hex flowers` (`hexmaker-hex-flower: 1`, `palette`, `start`, `edges: wrap` or `stay`, `dice`), with a **Cells** table (Cell | Result | Notes) and a **Moves** table (2d6 | Move: up, down, up-right, down-right, up-left, down-left or stay; N, NE, SE, S, SW, NW work too). Edit it by hand: what can't be read is reported once and kept as you wrote it.
+
+**Edit flowers** on the generator page's **Hex flowers** tab: paint cells with a terrain, right-click a cell for **Start here**, **Other result…**, **Nothing**, **Blocked**; each cell shows how often a long walk stands on it. **Fill from palette** lays out patches of your palette's terrains; **Use on this map** makes the page's map explore with it; **Test walk** walks a party across a blank preview. Below: the Moves table, edges and the cell shares. Advanced: dice, walk length and seed; Debug: the note's read report and the odds matrix.
+
+**Map properties → Exploring** lists the map's rules, one per line, rolled top to bottom (`explore-with:` in the map note): `[[Wilds]] -> terrain`, `[[Ruins]] -> Features`, `[[Weather]] -> play log, every step`. Each rule writes only where the hex is still empty; a rule's tables can ask for `from: grassland` in their When column (the hex the party came from). **Fill every blank hex now** fills the rest of the map. The map note also keeps where each walk stands (`hex-flower-at: ["Wilds: 7"]`) and `explore-reveal`.
+<!-- /slice -->
 
 ## Rolling from a hex
 

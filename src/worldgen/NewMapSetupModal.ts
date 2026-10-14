@@ -1124,20 +1124,20 @@ export class NewMapSetupModal extends HexmakerModal {
       // path type on the planet's palette): skip quietly (fresh-eyes F12).
       if (missing.length) console.warn(`[hexmaker] ${result.name}: skipped generated paths with no matching path type: ${missing.join(", ")}`);
     }
-    // What the scale's module adds (Biomes: an overworld with its region settings).
+    // What the scale's module adds (Biomes: an overworld with its region settings), then the generator (a hex flower's note).
     const scale = this.activeScale();
-    if (scale) {
-      await runScaleMapMade(this.plugin, scale.id, {
-        mapName: result.name,
-        generatorId: effective?.id ?? BLANK_ID,
-        options: effective ? this.resolvedOptions(effective) : {},
-        seed: this.seed,
-        grid: this.grid(),
-        paletteName,
-        choices: scaleChoiceValues(moduleScaleChoices(scale.id, effective?.id), this.scaleChoices),
-        onProgress: (message) => { if (message) goBtn.setText(message); },
-      });
-    }
+    const madeWith = {
+      mapName: result.name,
+      generatorId: effective?.id ?? BLANK_ID,
+      options: effective ? this.resolvedOptions(effective) : {},
+      seed: this.seed,
+      grid: this.grid(),
+      paletteName,
+      choices: scale ? scaleChoiceValues(moduleScaleChoices(scale.id, effective?.id), this.scaleChoices) : {},
+      onProgress: (message: string) => { if (message) goBtn.setText(message); },
+    };
+    if (scale) await runScaleMapMade(this.plugin, scale.id, madeWith);
+    if (!openGenerator) await effective?.afterCreate?.(this.plugin, madeWith);
     let backgroundImage: string | undefined;
     let bgPath = this.origin ? null : this.bgPath;
     if (!this.origin && this.bgFile) {
@@ -1158,7 +1158,7 @@ export class NewMapSetupModal extends HexmakerModal {
     // A fresh generated map (not Blank, not opened in the generator) is open
     // until its first hand edit: the map's Reroll / Lock bar makes it again
     // from the same choices with a new seed (SF7, the region rule).
-    if (!openGenerator && kind && kind.id !== BLANK_ID && outcome?.ok && !this.asRegion && !this.plugin.arrival.isOverworld(result.name)) {
+    if (!openGenerator && kind && kind.id !== BLANK_ID && !kind.afterCreate && outcome?.ok && !this.asRegion && !this.plugin.arrival.isOverworld(result.name)) {
       markFreshMap(this.plugin, result.name, { generator: kind.id, options: this.resolvedOptions(kind), seed: this.seed });
       await this.plugin.saveSettings();
     }

@@ -116,8 +116,10 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
 
   it("every placement entry for these surfaces comes from a worksheet row (no stray ids)", () => {
     const known = new Set(ALL.map((r) => r.id));
-    // BiomePage.tune.* came from an owner request (2026-10-12), not the worksheet.
-    for (const id of Object.keys(PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k) && !k.startsWith("BiomePage.tune."))) {
+    // BiomePage.tune.* came from an owner request (2026-10-12), not the worksheet; so did the
+    // hex flower module's (plan-hex-flower, 2026-10-14): its folder setting and wizard options.
+    const later = (k: string) => k.startsWith("BiomePage.tune.") || k === "Settings.hexFlowersFolder" || k.startsWith("Wizard.flower");
+    for (const id of Object.keys(PLACEMENT).filter((k) => /^(Settings|Wizard|Plugin|GenPage|BiomePage|GenLib|MakeGen)\./.test(k) && !later(k))) {
       expect([id, known.has(id)]).toEqual([id, true]);
     }
   });
@@ -396,7 +398,7 @@ describe("generator page and wizard place their controls by id", () => {
     expect(wizardOptionId("sea")).toBe("Wizard.genOptSea");
     expect(wizardOptionId("rivers")).toBe("Wizard.genOptOther");
     for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("main"); // owner override 2026-10-12
-    expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key), row)");
+    expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key, newMapOptionId(kind?.id ?? \"\", opt.key)), row)");
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advRow)');
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advSection)');
   });

@@ -87,7 +87,8 @@ describe("SF7: the region rule on a fresh map", () => {
 
 	it("New map → Generate and the setup wizard mark the map; Open in generator and Blank don't", () => {
 		const modal = readSurface("new-map-setup");
-		expect(modal).toMatch(/if \(!openGenerator && kind && kind\.id !== BLANK_ID && outcome\?\.ok && !this\.asRegion && !this\.plugin\.arrival\.isOverworld\(result\.name\)\) \{\s*markFreshMap\(this\.plugin, result\.name, \{ generator: kind\.id, options: this\.resolvedOptions\(kind\), seed: this\.seed \}\);/);
+		// A generator that sets its map up afterwards (a hex flower's: explored, not rerolled) gets no bar.
+		expect(modal).toMatch(/if \(!openGenerator && kind && kind\.id !== BLANK_ID && !kind\.afterCreate && outcome\?\.ok && !this\.asRegion && !this\.plugin\.arrival\.isOverworld\(result\.name\)\) \{\s*markFreshMap\(this\.plugin, result\.name, \{ generator: kind\.id, options: this\.resolvedOptions\(kind\), seed: this\.seed \}\);/);
 		expect(readSurface("setup-wizard")).toMatch(/markFreshMap\(plugin, result\.name, \{ generator: kind\.id, options: resolvedOptions\(kind, ctx\), seed: ctx\.seed \}\)/);
 	});
 

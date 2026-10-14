@@ -9801,3 +9801,131 @@ button.is-armed {
     align-items: center;
     gap: 6px;
 }
+
+/* Hex flowers (plan-hex-flower): 19 flat-topped cells placed by custom properties. */
+.duckmage-flower {
+    position: relative;
+    width: 100%;
+    max-width: 26em;
+    aspect-ratio: 4 / 4.33;
+    margin: 0.5em auto;
+}
+.duckmage-flower.is-note {
+    max-width: 22em;
+}
+.duckmage-flower-cell {
+    position: absolute;
+    left: var(--duckmage-flower-left, 0);
+    top: var(--duckmage-flower-top, 0);
+    width: 25%;
+    height: 20%;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    background: var(--duckmage-flower-color, var(--background-secondary-alt));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.1;
+    overflow: hidden;
+}
+.duckmage-flower-cell.has-color {
+    color: var(--text-on-accent);
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.duckmage-flower-cell.is-blocked {
+    background: repeating-linear-gradient(45deg, var(--background-modifier-border) 0 4px, var(--background-primary) 4px 8px);
+    color: var(--text-muted);
+}
+.duckmage-flower-cell.is-start .duckmage-flower-num {
+    font-weight: bold;
+    text-decoration: underline;
+}
+.duckmage-flower-cell.is-current {
+    outline: none;
+    box-shadow: inset 0 0 0 3px var(--interactive-accent);
+}
+.duckmage-flower.is-editable .duckmage-flower-cell {
+    cursor: pointer;
+}
+.duckmage-flower.is-editable .duckmage-flower-cell:hover {
+    filter: brightness(1.15);
+}
+.duckmage-flower-num {
+    opacity: 0.75;
+}
+.duckmage-flower-result {
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-flower-under {
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+.duckmage-flower-missing {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.duckmage-wfc-library-table.is-flowers .duckmage-wfc-library-row {
+    /* Name, Palette, Results */
+    grid-template-columns: minmax(8em, 1fr) minmax(6em, 0.8fr) minmax(8em, 2fr);
+}
+/* A big palette's swatches scroll (the flower's own results come first). */
+.duckmage-flower-panel .duckmage-flower-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    margin: 0.4em 0;
+    max-height: 6.2em;
+    overflow-y: auto;
+}
+.duckmage-flower-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+}
+.duckmage-flower-swatch.is-active {
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+.duckmage-flower-swatch-dot {
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 50%;
+    background: var(--duckmage-flower-color, var(--background-modifier-border));
+}
+.duckmage-flower-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 0.5em 0;
+}
+.duckmage-flower-moves td,
+.duckmage-flower-moves th,
+.duckmage-flower-matrix td,
+.duckmage-flower-matrix th {
+    padding: 0.1em 0.4em;
+    text-align: center;
+}
+.duckmage-flower-matrix {
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-flower-walk-log {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    max-height: 8em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+.duckmage-flower-report {
+    font-size: var(--font-ui-smaller);
+    white-space: pre-wrap;
+}
+/* Map properties → Exploring: the explore-with rules, one per line. */
+.duckmage-explore-rules {
+    width: 100%;
+    font-family: var(--font-monospace);
+    resize: vertical;
+}

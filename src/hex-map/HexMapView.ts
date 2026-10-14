@@ -37,7 +37,7 @@ import { PathTool } from "./pathTool";
 import type { PinRecord } from "../paths/routePins";
 import { pathListSummary } from "./pathTool";
 import { flowerLayout, flowerPetals, MapHistory, navArrows, neighbourButton, PAD_SIDES, padButtonText } from "../maps/mapNav";
-import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
+import { ADD_REGION_LOCKED_HINT, allows, canAdd, canRerollPlace, lockedHint, lockedSummary, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type MenuActionId, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
 import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
 import { lockedNotice } from "./godOffer";
@@ -76,7 +76,7 @@ import {
   type LatticeAffine,
   type LatticeGrid,
 } from "../paths/pathGeometry";
-import { moduleOverlays, worldMaps } from "../modules/runtime";
+import { moduleHexMenu, moduleOverlays, moduleUnchartedKeys, runPartyEntered, worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
 import { GotoHexModal } from "./GotoHexModal";
 import { HexHelpModal } from "./HexHelpModal";
@@ -114,6 +114,7 @@ import {
 } from "../frontmatter";
 import { PainterContextMenu, type PainterContextMenuOption } from "./PainterContextMenu";
 
+import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./view/undoGroup";
 import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
@@ -4775,7 +4776,7 @@ export class HexMapView extends ItemView {
     // Badges reuse the hex centres the coord labels just measured.
     this.renderLinkBadges(gridContainer);
     // So does the uncharted marker (no layout reads of its own).
-    renderUnchartedLayer(gridContainer, this.coordPlacements, this.coordGridSize, unchartedKeys(this.plugin.mapStore.all(this.activeMapName)));
+    renderUnchartedLayer(gridContainer, this.coordPlacements, this.coordGridSize, unchartedKeys(this.plugin.mapStore.all(this.activeMapName), moduleUnchartedKeys(this.plugin, this.activeMapName)));
     this.drawHexNames(gridContainer);
     if (this.bgCalibrating) {
       this.renderCalibrationOutlines(gridContainer);
@@ -5036,6 +5037,7 @@ export class HexMapView extends ItemView {
     menu.add("hex.log", "Add to play log…", "notebook-pen", () => this.openPlayLog(x, y));
     const visited = parseVisited(this.getActiveMap().visited).includes(`${x}_${y}`);
     menu.add("hex.visited", "Visited", "footprints", () => this.setVisited([`${x}_${y}`], !visited), { checked: visited, place: "MapView.hexVisited" });
+    for (const it of moduleHexMenu(this.plugin, this.activeMapName, `${x}_${y}`)) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { place: it.placementId });
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
     menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
 
@@ -6037,6 +6039,8 @@ export class HexMapView extends ItemView {
         const place = (t: TokenSnap | null) => (t ? { hex: t.hex, map: t.map } : null);
         return sameValue(now, place(want)) ? item : null;
       }
+      case "group": return prepareGroup(item, dir, (it, d) => this.prepareUndo(it, d));
+      case "map-field": return prepareMapField(this.plugin, item, dir);
     }
   }
 
@@ -6082,7 +6086,9 @@ export class HexMapView extends ItemView {
       void this.plugin.saveSettings();
       this.renderGrid();
       this.updateModeBar();
-    } else {
+    } else if (item.kind === "group") await applyGroup(item, dir, (it, d) => this.applyUndo(it, d));
+    else if (item.kind === "map-field") applyMapField(this.plugin, item, dir);
+    else {
       await this.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);
     }
   }
@@ -8208,15 +8214,19 @@ export class HexMapView extends ItemView {
     }
   }
 
-  /** Move the party one step to `hex` (undoable) and mark both hexes visited. */
-  private async moveParty(party: TokenEntry, hex: string): Promise<void> {
+  /** Move the party one step to `hex` (clicked or dragged) and mark both hexes visited; one undo with what modules filled. */
+  private async moveParty(party: TokenEntry, hex: string, dragged = false): Promise<void> {
     if (!guardWrite(party.map, "token")) return;
-    const from = party.hex;
-    this.pushTokenUndo(party.filePath, party.map, { hex: from, map: party.map }, { hex, map: party.map });
+    const step = { map: party.map, from: party.hex, to: hex, token: party.filePath };
     this.partyMoves.set(party.filePath, hex);
-    this.setVisited([from, hex], true);
-    this.updateTokenLayer();
-    await setTokenHex(this.app, party.filePath, hex, party.map);
+    this.setVisited([step.from, hex], true);
+    if (!dragged) this.updateTokenLayer();
+    const moved = setTokenHex(this.app, party.filePath, hex, party.map);
+    const filled = await runPartyEntered(this.plugin, step);
+    const token: UndoItem = { kind: "token", path: party.filePath, before: { hex: step.from, map: party.map }, after: { hex, map: party.map } };
+    this.pushUndo(filled.length ? { kind: "group", items: [token, ...filled] } : token, party.map);
+    await moved;
+    if (filled.length) this.renderGrid();
   }
 
   /** Mark hexes of the open map visited (or not), saved in its map note. */
@@ -8289,19 +8299,9 @@ export class HexMapView extends ItemView {
         if (dist < bestDist) { bestDist = dist; best = key; }
       }
       if (best !== closestHex) {
-        if (closestHex) {
-          const [px, py] = closestHex.split("_").map(Number);
-          this.viewportEl
-            ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-            ?.removeClass("duckmage-token-drop-target");
-        }
+        if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
         closestHex = best;
-        if (best) {
-          const [px, py] = best.split("_").map(Number);
-          this.viewportEl
-            ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-            ?.addClass("duckmage-token-drop-target");
-        }
+        if (best) { const [px, py] = best.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.addClass("duckmage-token-drop-target"); }
       }
     };
 
@@ -8310,35 +8310,25 @@ export class HexMapView extends ItemView {
       activeDocument.removeEventListener("mouseup", onUp);
       tokenEl.removeClass("duckmage-token-dragging");
 
-      if (closestHex) {
-        const [px, py] = closestHex.split("_").map(Number);
-        this.viewportEl
-          ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-          ?.removeClass("duckmage-token-drop-target");
-      }
+      if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
 
-      if (!isDragging) {
-        onClickInstead();
-        return;
-      }
+      if (!isDragging) { onClickInstead(); return; }
 
       if (closestHex && closestHex !== token.hex) {
-        // Snap to new hex center immediately; the cache `changed` event re-renders the layer
-        // once the write lands. Calling updateTokenLayer() here would render stale cache
-        // data (old hex), then re-render again on the changed event — causing visible flicker.
+        // Snap to the new hex centre now; the cache `changed` event re-renders the layer once the
+        // write lands (updateTokenLayer() here would draw the stale hex, then flicker on `changed`).
         const newCenter = centerMap.get(closestHex);
         if (newCenter) {
           tokenEl.style.left = `${newCenter.cx}px`;
           tokenEl.style.top  = `${newCenter.cy}px`;
         }
         if (guardWrite(token.map, "token")) {
-          this.pushTokenUndo(token.filePath, token.map, { hex: token.hex, map: token.map }, { hex: closestHex, map: token.map });
-          // Dragging the party still travels: both hexes count as visited (SF5).
-          if (token.party && token.map === this.activeMapName) {
-            this.partyMoves.set(token.filePath, closestHex);
-            this.setVisited([token.hex, closestHex], true);
+          // Dragging the party still travels: both hexes count as visited (SF5), and the step explores.
+          if (token.party && token.map === this.activeMapName) void this.moveParty(token, closestHex, true);
+          else {
+            this.pushTokenUndo(token.filePath, token.map, { hex: token.hex, map: token.map }, { hex: closestHex, map: token.map });
+            void setTokenHex(this.app, token.filePath, closestHex, token.map);
           }
-          void setTokenHex(this.app, token.filePath, closestHex, token.map);
         }
       } else {
         const orig = centerMap.get(token.hex);

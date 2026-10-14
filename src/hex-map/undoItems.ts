@@ -90,4 +90,8 @@ export type UndoItem =
   /** An overworld path confirmed into (or taken out of) its regions: paths of several maps and the terrain carved. */
   | ProjectionUndo
   /** A token moved, placed or removed (null: not a token on a map). */
-  | { kind: "token"; path: string; before: TokenSnap | null; after: TokenSnap | null };
+  | { kind: "token"; path: string; before: TokenSnap | null; after: TokenSnap | null }
+  /** A map setting (a map-note key) changed: its value before and after (undefined: not set). */
+  | { kind: "map-field"; mapName: string; field: string; before: unknown; after: unknown }
+  /** Several entries undone and redone as one (a party step and what it filled). */
+  | { kind: "group"; items: UndoItem[] };

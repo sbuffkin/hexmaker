@@ -254,6 +254,9 @@ export const MENU_ACTIONS = {
   "hex.visited": "token",
   "hex.clear-terrain": "paint-terrain",
   "hex.remove-icon": "paint-icon",
+  // modules' hex menu items (ModuleRuntime.hexMenu): rolling an unknown hex
+  "hex.explore-roll": "discover",
+  "hex.explore-reroll": "discover",
   // overworld hex menu
   "ow.enter-region": "navigate",
   "ow.arrive": "discover",

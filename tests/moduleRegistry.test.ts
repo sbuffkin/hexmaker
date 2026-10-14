@@ -33,8 +33,8 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps and space, in that order", () => {
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space"]);
+  it("registers world, world-maps, space and hex-flower, in that order", () => {
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower"]);
     expect(registry.kindIds()).toEqual(["world", "space"]);
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
@@ -196,11 +196,12 @@ describe("generators, engines and table roles through modules (P3)", () => {
     const plugin = { settings: { hexOrientation: "flat" } } as never;
     const gens = moduleGenerators(plugin, { toPaths: () => ({ paths: [], missing: [] }), procGrid: (g) => ({ ...g, orientation: "flat" }) });
     expect(gens.map((g) => g.id)).toEqual([
+      "procedural:hex-flower",
       "procedural:star-scatter", "procedural:orbits", "procedural:region-detail",
       "procedural:overland", "procedural:world-biomes", "procedural:planet-surface",
     ]);
-    // Each generator is tagged with a map type a module provides.
-    for (const g of gens) expect(registry.kindIds()).toContain(g.mapKind);
+    // Each generator is tagged with a map type a module provides (Hex flower: none, it fits any map, on every scale).
+    for (const g of gens) if (!g.everyScale) expect(registry.kindIds()).toContain(g.mapKind);
   });
 
   it("first-map generators and background terrains come from the map types", () => {
@@ -212,7 +213,7 @@ describe("generators, engines and table roles through modules (P3)", () => {
   it("path roles and When keys come from the modules", async () => {
     const { conditionKeys, parseWhen, formatWhen } = await import("../src/random-tables/tableConditions");
     expect(registry.pathRoles()).toEqual({ routes: "Path type for routes", orbits: "Path type for orbits" });
-    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "type", "terrain"]);
+    expect(conditionKeys()).toEqual(["temperature", "zone", "ring", "star", "from", "type", "terrain"]);
     // Aliases read as the module's key.
     expect(formatWhen(parseWhen("orbit: outer; distance: 2-3; temp: cold"))).toBe("zone: outer; ring: 2–3; temperature: 0–0.2");
   });
@@ -231,6 +232,7 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
       ["Settings.biomesFolder", "biomesFolder"],
       ["Settings.biomePoolsFolder", "biomePoolsFolder"],
       ["Settings.worldTypesFolder", "worldTypesFolder"],
+      ["Settings.hexFlowersFolder", "hexFlowersFolder"],
     ]);
     expect(typeof space.stores).toBe("function");
     expect(typeof space.onEnabled).toBe("function");

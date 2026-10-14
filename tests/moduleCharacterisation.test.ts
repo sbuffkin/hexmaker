@@ -107,7 +107,8 @@ function fakePlugin(mapKinds: string[] | undefined): HexmakerPlugin & MapKindHos
       return par ? { map: par.map, hex: par.hex } : undefined;
     },
     getPaletteByName: (n: string) => terrainPalettes.find((p) => p.name === n),
-    moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as unknown as HexmakerPlugin, h); },
+    // The map-type answers only: a generator offered on every scale (Hex flower, any palette) says nothing about map types.
+    moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as unknown as HexmakerPlugin, h).filter((g) => !g.everyScale); },
   } as unknown as HexmakerPlugin & MapKindHost;
 }
 

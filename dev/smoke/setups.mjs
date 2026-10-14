@@ -359,6 +359,9 @@ async function freshExtra(ctx) {
     out.push({ check: "F1-first-hex-note", ok: r.hasLink && r.terrainProp === r.terrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain property ${r.terrainProp} (map: ${r.terrain})` });
   }
   out.push(...(await wizardMapStepChecks(ctx)));
+  // C10: a hex flower map explored in Play (only in a build with the hexflower slice).
+  const hf = await ctx.ev((id) => window.__smokePage.hexFlowerSolo(id), ctx.pluginId);
+  out.push({ check: "C10-hex-flower", ok: hf.ok, detail: hf.skipped ? `skipped: ${hf.skipped}` : [...hf.steps, ...hf.problems].join("; ") });
   return out;
 }
 

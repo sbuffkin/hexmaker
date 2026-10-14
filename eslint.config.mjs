@@ -21,6 +21,7 @@ export default defineConfig([
         // Release slice flags (esbuild define; src/slices.d.ts).
         __SLICE_WORLDMAPS__: "readonly",
         __SLICE_SPACE__: "readonly",
+        __SLICE_HEXFLOWER__: "readonly",
       },
       parser: tsparser,
       parserOptions: { project: "./tsconfig.json" },

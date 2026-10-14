@@ -13,6 +13,9 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type {
   CommandContribution,
   FolderSettingContribution,
+  GeneratorPageTab,
+  HexMenuContribution,
+  PartyStep,
   GeneratorContribution,
   GeneratorHelpers,
   MapOverlayDef,
@@ -27,15 +30,18 @@ import type {
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
 import type { PackKind } from "../packs/packKinds";
+import type { UndoItem } from "../hex-map/undoItems";
 import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
+import { hexFlowerRuntime } from "./hex-flower/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
+if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 
 /** Every module's built-in generators, in list order. */
@@ -173,4 +179,37 @@ export async function runScaleMapMade(plugin: HexmakerPlugin, scaleId: string | 
 /** Tell every module that map types were just turned on, in module order. */
 export async function runOnKindsEnabled(plugin: HexmakerPlugin, kinds: readonly string[]): Promise<void> {
   for (const m of MODULE_RUNTIMES) await m.onKindsEnabled?.(plugin, kinds);
+}
+
+/**
+ * The party entered a hex: each module's Play hook, in module order. The
+ * undo entries of everything they wrote, for the map view to group with
+ * the token's move. A hook that fails is logged and skipped.
+ */
+export async function runPartyEntered(plugin: HexmakerPlugin, step: PartyStep): Promise<UndoItem[]> {
+  const out: UndoItem[] = [];
+  for (const m of MODULE_RUNTIMES) {
+    if (!m.play?.onEnter) continue;
+    try {
+      out.push(...await m.play.onEnter(plugin, step));
+    } catch (e) {
+      logError(`${m.id} party step`, e);
+    }
+  }
+  return out;
+}
+
+/** Every module's items for the right-click menu of hex `hex` on map `map`. */
+export function moduleHexMenu(plugin: HexmakerPlugin, map: string, hex: string): HexMenuContribution[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.hexMenu?.(plugin, map, hex) ?? []);
+}
+
+/** The hexes the modules add to map `map`'s "?" layer. */
+export function moduleUnchartedKeys(plugin: HexmakerPlugin, map: string): string[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.unchartedKeys?.(plugin, map) ?? [])]);
+}
+
+/** Every module's generator page tabs, in module order. */
+export function moduleGeneratorTabs(): GeneratorPageTab[] {
+  return MODULE_RUNTIMES.flatMap((m) => [...(m.generatorPage ?? [])]);
 }

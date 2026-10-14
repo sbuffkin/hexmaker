@@ -642,3 +642,6 @@ export async function overworldPaintLock(id, name) {
   }
   return out;
 }
+
+// C10 hex flower solo lives in its own file (sent to the page with the rest).
+export { hexFlowerSolo } from "./hexFlower.mjs";

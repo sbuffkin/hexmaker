@@ -69,6 +69,10 @@ describe("work mode classification covers every entry point", () => {
 			expect({ file: f, rawMenus: (text.match(/new Menu\(|\.addItem\(/g) ?? []).length }).toEqual({ file: f, rawMenus: 0 });
 			for (const m of text.matchAll(/\bmenu\.add\(\s*"([^"]+)"/g)) used.add(m[1]);
 		}
+		// Modules' hex menu items (ModuleRuntime.hexMenu): `menuId: "hex.<id>"` in their code.
+		for (const f of src.filter((p) => /^src\/(modules|hexflower)\//.test(p))) {
+			for (const m of read(f).matchAll(/menuId:\s*"([^"]+)"/g)) used.add(m[1]);
+		}
 		// The overworld menu's ids come from overworldMenu() as `ow.<id>`.
 		const owIds = /id:\s*("[^;]+?");/.exec(read("src/overworld/overworldInput.ts"))![1];
 		for (const m of owIds.matchAll(/"([^"]+)"/g)) used.add(`ow.${m[1]}`);

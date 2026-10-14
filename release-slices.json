@@ -3,6 +3,7 @@
   "slices": {
     "foundation": { "define": null, "modules": ["world"], "released": true },
     "worldmaps": { "define": "__SLICE_WORLDMAPS__", "modules": ["world-maps"], "released": true },
-    "space": { "define": "__SLICE_SPACE__", "modules": ["space"], "released": true }
+    "space": { "define": "__SLICE_SPACE__", "modules": ["space"], "released": true },
+    "hexflower": { "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false }
   }
 }

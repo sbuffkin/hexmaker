@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 // tests run with every slice on.
 globalThis.__SLICE_WORLDMAPS__ = true;
 globalThis.__SLICE_SPACE__ = true;
+globalThis.__SLICE_HEXFLOWER__ = true;
 
 // Stub .png and .md for CJS mode (tsx CLI uses CJS transforms; without this, tsx's
 // .js fallback handler tries to parse binary/markdown files as TypeScript and crashes).
