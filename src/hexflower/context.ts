@@ -5,9 +5,11 @@
 
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { FlowerStore } from "./FlowerStore";
+import type { ExploreService } from "./ExploreService";
 
 interface Parts {
   store?: FlowerStore;
+  explore?: ExploreService;
 }
 
 const parts = new WeakMap<object, Parts>();
@@ -24,6 +26,14 @@ export function flowerStoreOf(plugin: HexmakerPlugin): FlowerStore | undefined {
 
 export function setFlowerStore(plugin: HexmakerPlugin, store: FlowerStore): void {
   of(plugin).store = store;
+}
+
+export function exploreOf(plugin: HexmakerPlugin): ExploreService | undefined {
+  return parts.get(plugin)?.explore;
+}
+
+export function setExplore(plugin: HexmakerPlugin, explore: ExploreService): void {
+  of(plugin).explore = explore;
 }
 
 /** The palette's terrain colours by name (lower case). */

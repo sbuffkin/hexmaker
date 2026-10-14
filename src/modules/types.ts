@@ -486,7 +486,7 @@ export interface HexMenuContribution {
   icon: string;
   /** Its placement id (src/ui/placement.ts). */
   placementId?: string;
-  run(): void;
+  run: () => void;
 }
 
 /** What a generator page tab can ask of the page. */

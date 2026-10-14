@@ -8,7 +8,9 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { ModuleRuntime, ModuleStore } from "../types";
 import { FlowerStore } from "../../hexflower/FlowerStore";
 import { FLOWER_BLOCK } from "../../hexflower/flowerNote";
-import { flowerStoreOf, setFlowerStore, terrainColors } from "../../hexflower/context";
+import { flowerStoreOf, setExplore, setFlowerStore, terrainColors } from "../../hexflower/context";
+import { ExploreService } from "../../hexflower/ExploreService";
+import { exploreFrontier, exploreHexMenu, exploreStep } from "../../hexflower/exploreHooks";
 import { drawFlower } from "../../hexflower/flowerView";
 
 function stores(plugin: HexmakerPlugin): ModuleStore[] {
@@ -22,12 +24,16 @@ function stores(plugin: HexmakerPlugin): ModuleStore[] {
     drawFlower(el, entry.flower, { colors: terrainColors(plugin, entry.flower.palette), cls: "is-note" });
   }));
   setFlowerStore(plugin, store);
+  setExplore(plugin, new ExploreService(plugin));
   return [store];
 }
 
 export const hexFlowerRuntime: ModuleRuntime = {
   id: "hex-flower",
   stores,
+  play: { onEnter: exploreStep },
+  hexMenu: exploreHexMenu,
+  unchartedKeys: exploreFrontier,
   folderSettings: [{
     id: "Settings.hexFlowersFolder",
     key: "hexFlowersFolder",

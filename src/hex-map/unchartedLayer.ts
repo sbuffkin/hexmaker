@@ -13,9 +13,9 @@ import type { HexData } from "../maps/mapNote";
 
 export const UNCHARTED_LAYER_CLASS = "duckmage-uncharted-layer";
 
-/** Keys ("x_y") of hexes with an On arrival roll still to make. */
-export function unchartedKeys(hexes: ReadonlyMap<string, Pick<HexData, "onArrival">>): Set<string> {
-  const out = new Set<string>();
+/** Keys ("x_y") of hexes with an On arrival roll still to make, plus `more` (modules' own, e.g. an explored map's frontier). */
+export function unchartedKeys(hexes: ReadonlyMap<string, Pick<HexData, "onArrival">>, more: Iterable<string> = []): Set<string> {
+  const out = new Set<string>(more);
   for (const [k, h] of hexes) if (h.onArrival?.trim()) out.add(k);
   return out;
 }

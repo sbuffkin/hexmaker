@@ -8,12 +8,14 @@
  */
 
 import type { HexmakerModule } from "../types";
-import { EXPLORE_FIELDS } from "../../hexflower/exploreFields";
+import { EXPLORE_FIELDS, FROM_CONDITION } from "../../hexflower/exploreFields";
 
 export const hexFlowerModule: HexmakerModule = {
   id: "hex-flower",
   slice: "hexflower",
   mapNoteFields: EXPLORE_FIELDS,
+  // A table's When `from:` (the terrain of the hex the party came from).
+  tableConditions: [FROM_CONDITION],
   owns: {
     settingsKeys: ["hexFlowersFolder"],
     mapNoteKeys: EXPLORE_FIELDS.map((f) => f.key),
