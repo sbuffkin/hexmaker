@@ -7,7 +7,7 @@
 		"src/random-tables/RandomTableView.ts": 1933,
 		"src/hex-map/HexEditorModal.ts": 1764,
 		"src/worldgen/GeneratorPanel.ts": 1603,
-		"src/maps/MapStore.ts": 1381,
+		"src/maps/MapStore.ts": 1373,
 		"src/hex-map/pathTool.ts": 1496,
 		"src/overworld/regionGen.ts": 1405,
 		"src/random-tables/randomTable.ts": 1296,
