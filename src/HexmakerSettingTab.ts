@@ -15,14 +15,8 @@ import { layerOf, partitionSections } from "./ui/placement";
 import { GENERATE_WORLD_DATA_NAME } from "./ui/repairHint";
 import { noteTemplateEntries } from "./noteTemplates";
 import { renderLabeledSlider } from "./ui/sliders";
-import {
-  DEBUG_CONFIRM_TEXT,
-  debugModeConfirmed,
-  isDebugMode,
-  markDebugModeConfirmed,
-  onDebugModeChange,
-  setDebugMode,
-} from "./ui/debugMode";
+import { DEBUG_CONFIRM_TEXT, debugModeConfirmed, isDebugMode, markDebugModeConfirmed, onDebugModeChange, setDebugMode } from "./ui/debugMode";
+import { hexPropsSettingItem } from "./settings/hexPropsSetting";
 
 /** The settings tab's surface id (placement ids are `Settings.<control>`). */
 const SURFACE = "Settings";
@@ -460,6 +454,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
               );
             },
           }),
+          T("Settings.hexNoteProperties", hexPropsSettingItem(this.plugin)),
           T("Settings.generateFolders", {
             name: "Set up folders",
             desc: "Populates any blank folder settings below with defaults under the world folder, then creates those folders in your vault. Only blank fields are affected — manually set values are left untouched.",

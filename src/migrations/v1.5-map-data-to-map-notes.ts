@@ -27,7 +27,8 @@ import { reportUpgrade } from "./upgradeReport";
 import type { MapData, MapPath, PathChain } from "../types";
 import { mapNoteKey, parseMapNote, type HexData, type MapNoteData } from "../maps/mapNote";
 import { writeJsonBackup } from "../backup";
-import { HEX_MAP_KEY, hexNoteMapKey, LEGACY_HEX_MAP_KEY } from "../noteFormats";
+import { HEX_MAP_KEY, hexNoteMapKey, hexNoteMapName, LEGACY_HEX_MAP_KEY } from "../noteFormats";
+import { PROP_KEYS, propsOf, readProps, setPropsInFm, type PropField } from "../maps/hexProps";
 import { legacyChainsToPaths } from "../paths/legacy";
 import type { CompactReport } from "../paths/fromHexes";
 import type { MigrationInfo } from "./types";
@@ -43,6 +44,19 @@ export const info: MigrationInfo = {
 
 /** Hex-note frontmatter keys that hold map data (moved into the map note). */
 export const HEX_DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"] as const;
+
+/**
+ * A hex note as 1.5 left it: map data in its frontmatter and no link to a
+ * map note (a current note's terrain/area/icon are hex-note properties).
+ */
+export function isLegacyHexNote(fm: Record<string, unknown> | null | undefined): boolean {
+  return !!fm && !hexNoteMapName(fm) && HEX_DATA_KEYS.some((k) => k in fm);
+}
+
+/** Hex-note properties are on (the setting; src/maps/hexProps.ts). */
+function hexNotePropsOn(host: MapNotesMigrationHost): boolean {
+  return (host.plugin.settings as { hexNoteProperties?: boolean } | undefined)?.hexNoteProperties !== false;
+}
 
 /** Read map data out of a hex note's frontmatter (pre-migration notes). */
 export function hexDataFromFrontmatter(fm: Record<string, unknown> | null | undefined): HexData {
@@ -151,20 +165,26 @@ export async function migrateMaps(host: MapNotesMigrationHost, maps: MapData[]):
  */
 export async function cleanHexNotes(host: MapNotesMigrationHost, maps: MapData[], trustNote: boolean): Promise<void> {
   const { fileManager } = host.app;
+  const props = hexNotePropsOn(host);
   for (const map of maps) {
     const link = `[[_${map.name}]]`;
-    const toClean: { file: TFile; fm: Record<string, unknown> }[] = [];
+    const toClean: { file: TFile; fm: Record<string, unknown>; keys: readonly string[] }[] = [];
     for (const file of host.hexFiles(map.name)) {
       const fm = await host.frontmatterOf(file);
-      if (fm && HEX_DATA_KEYS.some((k) => k in fm)) toClean.push({ file, fm });
+      if (!fm) continue;
+      // With hex-note properties on, a current note's terrain/region/icon
+      // are its properties (src/maps/hexPropsSync.ts), not old data.
+      const keys = props && hexNoteMapName(fm) ? HEX_DATA_KEYS.filter((k) => !PROP_KEYS.includes(k)) : HEX_DATA_KEYS;
+      if (keys.some((k) => k in fm)) toClean.push({ file, fm, keys });
     }
     if (!toClean.length) continue;
     // processFrontMatter re-serialises the whole frontmatter, so comments
     // and formatting in other keys can change. Keep the full text of every
     // note we're about to touch; if that can't be saved, touch none.
     if (!(await backupHexNotes(host, map.name, toClean.map((c) => c.file)))) continue;
-    for (const { file, fm } of toClean) {
-      const fromNote = hexDataFromFrontmatter(fm);
+    for (const { file, fm, keys } of toClean) {
+      const fromNote = hexDataFromFrontmatter(Object.fromEntries(keys.filter((k) => k in fm).map((k) => [k, fm[k]])));
+      const linked = !!hexNoteMapName(fm);
       const stored = host.get(map.name, file.basename) ?? {};
       if (!trustNote && JSON.stringify(fromNote) !== JSON.stringify(pick(stored, fromNote))) {
         // The hex note disagrees with the map note: take the hex note's
@@ -172,7 +192,13 @@ export async function cleanHexNotes(host: MapNotesMigrationHost, maps: MapData[]
         host.set(map.name, file.basename, fromNote);
       }
       await fileManager.processFrontMatter(file, (f: Record<string, unknown>) => {
-        for (const k of HEX_DATA_KEYS) delete f[k];
+        for (const k of keys) if (!props || !PROP_KEYS.includes(k)) delete f[k];
+        // An old note keeps its terrain and icon as properties, in this
+        // same write (region becomes area); its own values the map lacks stay.
+        if (props && !linked) {
+          const want = propsOf(host.get(map.name, file.basename));
+          setPropsInFm(f, want, (Object.keys(readProps(f).props) as PropField[]).filter((k) => !want[k]));
+        }
         // `map:` (NF1), unless the note uses `map:` for something of its own.
         const key = hexNoteMapKey(f);
         if (key === HEX_MAP_KEY) delete f[LEGACY_HEX_MAP_KEY];

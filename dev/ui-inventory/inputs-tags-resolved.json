@@ -876,6 +876,21 @@
   "note": "but note this might need to be surfaced in the case of debugging etc, we might need to point users to \"all\" if \"health\"/\"repair\" type settings hide there. "
  },
  {
+  "id": "Settings.hexNoteProperties",
+  "group": "Settings",
+  "subgroup": "Maintenance",
+  "label": "Map data as hex note properties",
+  "loc": "src/settings/hexPropsSetting.ts",
+  "suggestion": "advanced",
+  "choice": "advanced",
+  "source": "own",
+  "via": "",
+  "viaSuggested": false,
+  "overrides": "",
+  "twinOf": "",
+  "note": "owner MG4 (2026-10-13): a setting (Advanced) to turn the hex-note property copies off, default on"
+ },
+ {
   "id": "Settings.generateFolders",
   "group": "Settings",
   "subgroup": "Maintenance",

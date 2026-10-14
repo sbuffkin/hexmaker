@@ -21,6 +21,8 @@ const YAML = createRequire(path.join(ROOT, "package.json"))("yaml");
 
 const BUILD_FILES = new Set(["main.js", "manifest.json", "styles.css"]);
 export const DATA_KEYS = ["terrain", "icon", "gm-icons", "gm-icon", "region", "duckmage-submap", "locked"];
+/** Hex-note properties (MG4): copies of the map's data the plugin keeps in hex notes (`region` is read as `area`). */
+export const PROP_KEYS = ["terrain", "area", "icon", "name"];
 const FM = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
 const sha = (buf) => crypto.createHash("sha1").update(buf).digest("hex").slice(0, 16);
 
@@ -142,7 +144,7 @@ function parseNote(text) {
   if (mm) { try { fm = YAML.parse(mm[1]) ?? {}; } catch (e) { err = String(e).slice(0, 80); } }
   const body = mm ? text.slice(mm[0].length) : text;
   const other = {};
-  for (const [k, v] of Object.entries(fm ?? {})) if (!DATA_KEYS.includes(k) && k !== "hexmaker-map" && !(k === "map" && isMapLink(v))) other[k] = v;
+  for (const [k, v] of Object.entries(fm ?? {})) if (!DATA_KEYS.includes(k) && !PROP_KEYS.includes(k) && k !== "hexmaker-map" && !(k === "map" && isMapLink(v))) other[k] = v;
   return { fm, err, body, other };
 }
 
@@ -174,6 +176,20 @@ export function legacyTruth(vault, data) {
 
 /** A wikilink or plain name → the bare name ("[[_chult|Chult]]" → "chult"). */
 const bare = (s) => String(s ?? "").replace(/^\[\[|\]\]$/g, "").split("|")[0].split("/").pop().replace(/^_/, "").replace(/\.md$/, "").trim().toLowerCase();
+
+/** A hex note's properties vs the store's hex (null when they agree). */
+function propDiff(fm, s) {
+  const h = s ?? {};
+  const want = { terrain: h.terrain, area: h.region ? bare(h.region) : undefined, icon: h.icon, name: h.name };
+  const probs = [];
+  for (const k of PROP_KEYS) {
+    const got = fm?.[k] === undefined || fm?.[k] === null ? undefined : k === "area" ? bare(fm[k]) : String(fm[k]);
+    // A value of the note's own the map lacks is left for the sync to take in.
+    if (got !== undefined && want[k] === undefined) continue;
+    if ((got ?? "") !== (want[k] ?? "")) probs.push(`${k} ${got} (map: ${want[k]})`);
+  }
+  return probs.length ? probs.join("; ") : null;
+}
 
 /** Compare one hex: legacy truth vs what the store holds now. Returns a problem string or null. */
 function hexDiff(truth, store) {
@@ -220,9 +236,13 @@ export function verifyMigration(vault, truth, store) {
       if (!n.body.toLowerCase().includes(`> old ${field}: ${value}`.toLowerCase())) problems.push(`old ${field} line not in Map data: ${p}`);
     }
     if (sha(JSON.stringify(n.other)) !== t.other) problems.push(`user frontmatter changed: ${p}`);
-    const left = DATA_KEYS.filter((k) => n.fm && k in n.fm);
+    // Data keys go, except the hex-note properties (MG4), which must say what the map says.
+    const left = DATA_KEYS.filter((k) => n.fm && k in n.fm && !PROP_KEYS.includes(k));
     if (left.length) problems.push(`data keys left: ${p} ${left}`);
-    else if (t.dataKeys.length) {
+    const [m, key] = p.split("/").slice(-2);
+    const propProbs = propDiff(n.fm, store[m]?.[key.replace(/\.md$/, "")]);
+    if (propProbs) problems.push(`properties of ${p}: ${propProbs}`);
+    else if (!left.length && t.dataKeys.length) {
       cleaned++;
       if (!hexNoteMapLink(n.fm)) problems.push(`no map link: ${p}`);
     }

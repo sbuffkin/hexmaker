@@ -931,6 +931,22 @@
   "subgroup": "Maintenance"
  },
  {
+  "id": "Settings.hexNoteProperties",
+  "surface": "Settings tab: Map data as hex note properties",
+  "label": "Map data as hex note properties",
+  "kind": "toggle",
+  "level": "always",
+  "loc": "src/settings/hexPropsSetting.ts",
+  "desc": "Hex notes carry their hex's terrain, area, icon and name as properties (copies of the map note's data), both ways.",
+  "pick": "advanced",
+  "why": "Owner MG4: on by default; off is for people who don't want the copies.",
+  "lists": "",
+  "focused": null,
+  "mix": "",
+  "group": "Settings",
+  "subgroup": "Maintenance"
+ },
+ {
   "id": "Settings.generateFolders",
   "surface": "Settings tab: folders",
   "label": "Generate folders",

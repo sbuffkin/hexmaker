@@ -37,7 +37,7 @@ import { buildView, emptyView, reconcile, type PathView } from "../paths/chainVi
 import { uniqueMapsByName } from "./mapTree";
 import {
   backupDir as mapNotesBackupDir,
-  HEX_DATA_KEYS,
+  isLegacyHexNote,
   cleanHexNotes,
   conversionNoticeText,
   info as mapNotesInfo,
@@ -240,7 +240,7 @@ export class MapStore {
     }
     for (const file of this.hexFiles(map.name)) {
       const fm = await this.frontmatterOf(file);
-      if (fm && HEX_DATA_KEYS.some((k) => k in fm)) return false;
+      if (isLegacyHexNote(fm)) return false;
     }
     return true;
   }

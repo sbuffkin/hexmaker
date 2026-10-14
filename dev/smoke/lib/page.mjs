@@ -271,6 +271,43 @@ export async function paintRoundTrip(id, name) {
     out.steps.push(`painted ${key}: ${t0} → ${t2}, undone → ${back}`);
     if (seeded) { await undo(); out.steps.push("seed undone"); }
   }
+  // (d) hex-note properties (MG4): paint → the note's terrain property; an
+  // edit of the property → the map; undo puts both back.
+  if (p.hexProps?.running) {
+    const fileOf = (el) => app.vault.getAbstractFileByPath(p.hexPath(+el.dataset.x, +el.dataset.y, name));
+    const withNote = hexEls.find((el) => fileOf(el));
+    if (!withNote) out.steps.push("properties: no hex with a note");
+    else {
+      const key = keyOf(withNote);
+      const file = fileOf(withNote);
+      const prop = async () => {
+        const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(await app.vault.read(file))?.[1] ?? "";
+        return /^terrain:[ \t]*(.*)$/m.exec(fm)?.[1].replace(/^"(.*)"$/, "$1").trim() || null;
+      };
+      const settle = async () => { await p.hexProps.flush(); await store.flush(); };
+      const t0 = store.get(name, key)?.terrain ?? null;
+      const t1 = palette.find((t) => t !== t0);
+      await paint(withNote, t1);
+      await settle();
+      if ((await prop()) !== t1) fail(`properties: paint ${key} ${t1}, the note says ${await prop()}`);
+      await undo();
+      await settle();
+      if ((await prop()) !== t0) fail(`properties: undo ${key}, the note says ${await prop()}, wanted ${t0}`);
+      const t2 = palette.find((t) => t !== t0 && t !== t1) ?? t1;
+      await app.vault.process(file, (text) => {
+        const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
+        if (!m) return `---\nterrain: ${JSON.stringify(t2)}\n---\n${text}`;
+        const body = /^terrain:.*$/m.test(m[1]) ? m[1].replace(/^terrain:.*$/m, `terrain: ${JSON.stringify(t2)}`) : `${m[1]}\nterrain: ${JSON.stringify(t2)}`;
+        return text.replace(m[1], body);
+      });
+      for (let i = 0; i < 30 && store.get(name, key)?.terrain !== t2; i++) { await sleep(100); await settle(); }
+      if (store.get(name, key)?.terrain !== t2) fail(`properties: typed terrain ${t2} into ${file.path}, the map has ${store.get(name, key)?.terrain}`);
+      await undo();
+      await settle();
+      if ((store.get(name, key)?.terrain ?? null) !== t0 || (await prop()) !== t0) fail(`properties: undo of the edit: map ${store.get(name, key)?.terrain}, note ${await prop()}, wanted ${t0}`);
+      out.steps.push(`properties ${key}: paint → note, note → map, undo → both ${t0 ?? "(none)"}`);
+    }
+  }
   view.exitTerrainMode?.();
   view.drawingMode = null;
   await store.flush();

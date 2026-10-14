@@ -28,13 +28,14 @@ import { hexBodyLines } from "./v1.5-hex-body-lines";
 import { noteLinks } from "./v1.5-note-links";
 import { refLinks } from "./v1.5-ref-links";
 import { hexCalloutAreaLine } from "./unreleased-hex-callout-area-line";
+import { hexNoteProperties } from "./unreleased-hex-note-properties";
 import * as helpText from "./map-note-1-to-6-help-text";
 import * as areaNames from "./map-note-5-to-6-area-names";
 import * as tableRanges from "./v1.5-table-roll-ranges";
 import { runNoteRewrites, runRewrite, type NoteFormatHost, type NoteRewrite, type UpgradeResult } from "./noteRewrites";
 
 /** The note rewrites (phase "notes"), in the order they run. */
-export const NOTE_REWRITES: readonly NoteRewrite[] = [hexMapKey, hexBodyLines, noteLinks, refLinks, hexCalloutAreaLine];
+export const NOTE_REWRITES: readonly NoteRewrite[] = [hexMapKey, hexBodyLines, noteLinks, refLinks, hexCalloutAreaLine, hexNoteProperties];
 
 /** Every migration, in start-up order (phase, then the order within it). */
 export const MIGRATIONS: readonly MigrationInfo[] = [

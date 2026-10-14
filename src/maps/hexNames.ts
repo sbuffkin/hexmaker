@@ -1,4 +1,4 @@
-import { TFile, type App } from "obsidian";
+import { TFile, TFolder, type App } from "obsidian";
 
 /**
  * Hex names (N1) live in the map note's Hexes table. A hex that has a note
@@ -86,6 +86,25 @@ export async function syncHexAliases(app: App, path: string, swaps: readonly Ali
     if (next.length) fm.aliases = next;
     else delete fm.aliases;
   });
+}
+
+/**
+ * A map's display name changed from `oldLabel` to `newLabel`: swap the
+ * "<map> x, y" alias on every hex note in its folder. User aliases stay;
+ * a note without the old alias gets the new one.
+ */
+export async function swapMapCoordAliases(app: App, mapFolder: string, oldLabel: string, newLabel: string): Promise<void> {
+  if (newLabel === oldLabel) return;
+  const folder = app.vault.getAbstractFileByPath(mapFolder);
+  if (!(folder instanceof TFolder)) return;
+  for (const child of folder.children) {
+    if (!(child instanceof TFile)) continue;
+    const m = /^(-?\d+)_(-?\d+)$/.exec(child.basename);
+    if (!m || child.extension !== "md") continue;
+    await syncHexAliases(app, child.path, [
+      { from: coordAlias(oldLabel, m[1], m[2]), to: coordAlias(newLabel, m[1], m[2]) },
+    ]);
+  }
 }
 
 /** Apply a rename to one note's `aliases`. No-op when nothing changes. */

@@ -20,10 +20,11 @@ export class CalloutMemory {
   private saveTimer: number | null = null;
   private dirty = false;
 
-  constructor(private adapter: () => DataAdapter, private dir: () => string) {}
+  /** `file`: the file in the plugin folder (another copy of this bookkeeping, e.g. the hex-note properties, uses its own). */
+  constructor(private adapter: () => DataAdapter, private dir: () => string, private file = FILE) {}
 
   private get path(): string {
-    return `${this.dir()}/${FILE}`;
+    return `${this.dir()}/${this.file}`;
   }
 
   /** Read the file once (later calls wait for the same read). */
@@ -34,7 +35,7 @@ export class CalloutMemory {
         const raw = JSON.parse(await this.adapter().read(this.path)) as { notes?: Record<string, MapDataShown> };
         for (const [p, v] of Object.entries(raw.notes ?? {})) if (v && typeof v === "object" && !this.shown.has(p)) this.shown.set(p, v);
       } catch (e) {
-        console.warn("[hexmaker] couldn't read map-data-shown.json; callout edits are imported again once notes are refreshed", e);
+        console.warn(`[hexmaker] couldn't read ${this.file}; edits are imported again once notes are refreshed`, e);
       }
     })();
     return this.loading;
@@ -81,7 +82,7 @@ export class CalloutMemory {
     try {
       await this.adapter().write(this.path, JSON.stringify({ version: 1, notes }, null, 1));
     } catch (e) {
-      console.warn("[hexmaker] couldn't save map-data-shown.json", e);
+      console.warn(`[hexmaker] couldn't save ${this.file}`, e);
     }
   }
 }

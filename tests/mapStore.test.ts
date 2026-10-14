@@ -2,6 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
 import { MapStore, droppedWhat, withoutNotePaths } from "../src/maps/MapStore";
 import { HEX_DATA_KEYS } from "../src/migrations/v1.5-map-data-to-map-notes";
+import { PROP_KEYS } from "../src/maps/hexProps";
 import { parseMapNote } from "../src/maps/mapNote";
 import { migrateMapData } from "../src/compat";
 import { MemVault } from "./helpers/memVault";
@@ -29,12 +30,12 @@ function oldVault(): MemVault {
 	});
 }
 
-function plugin(vault: MemVault, maps: MapData[]) {
+function plugin(vault: MemVault, maps: MapData[], hexNoteProperties?: boolean) {
 	const saved: unknown[] = [];
 	const p = {
 		app: vault.app(),
 		manifest: { dir: ".obsidian/plugins/hexmaker" },
-		settings: { hexFolder: "world/hexes", maps },
+		settings: { hexFolder: "world/hexes", maps, ...(hexNoteProperties === undefined ? {} : { hexNoteProperties }) },
 		getMap: (n: string) => maps.find((m) => m.name === n),
 		saveData: async (s: unknown) => { saved.push(s); },
 		refreshHexMap: () => {},
@@ -48,8 +49,8 @@ const maps = (): MapData[] => [
 	{ name: "coast-3-4", gridSize: { cols: 4, rows: 4 }, gridOffset: { x: 0, y: 0 }, parent: { map: "coast", hex: "3_4" } } as MapData,
 ];
 
-async function boot(vault: MemVault, m = maps()) {
-	const p = plugin(vault, m);
+async function boot(vault: MemVault, m = maps(), hexNoteProperties?: boolean) {
+	const p = plugin(vault, m, hexNoteProperties);
 	const store = new MapStore(p as never);
 	await store.init();
 	return { p, store };
@@ -77,12 +78,17 @@ describe("map store: migration from hex-note frontmatter", () => {
 		expect(note.settings.gridSize).toEqual({ cols: 6, rows: 6 });
 	});
 
-	it("cleans hex notes: data keys gone, a link to the map note, bodies untouched", async () => {
+	it("cleans hex notes: data keys gone (terrain, area, icon kept as properties), a link to the map note, bodies untouched", async () => {
 		const before = new Map([...vault.files.keys()].map((p) => [p, vault.body(p)]));
 		await boot(vault);
+		// MG4: the hex-note properties stay, in the same write; region becomes area.
+		expect(vault.frontmatter("world/hexes/coast/1_2.md")).toEqual({ terrain: "ocean", tags: ["sea"], map: "[[_coast]]" });
+		expect(vault.frontmatter("world/hexes/coast/3_4.md")).toEqual({ terrain: "forest", icon: "castle.png", area: "Basin", map: "[[_coast]]" });
+		expect(vault.frontmatter("world/hexes/coast/0_0.md")).toEqual({ map: "[[_coast]]" });
 		for (const p of ["world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md", "world/hexes/coast/0_0.md"]) {
 			const fm = vault.frontmatter(p)!;
-			for (const k of HEX_DATA_KEYS) expect(fm).not.toHaveProperty(k);
+			for (const k of HEX_DATA_KEYS.filter((k) => !PROP_KEYS.includes(k))) expect(fm).not.toHaveProperty(k);
+			expect(fm).not.toHaveProperty("region");
 			// NF1: the link goes under map: (hexmaker-map: in older notes).
 			expect(fm.map).toBe("[[_coast]]");
 			expect(fm).not.toHaveProperty("hexmaker-map");
@@ -95,6 +101,15 @@ describe("map store: migration from hex-note frontmatter", () => {
 		expect(vault.frontmatter("world/hexes/coast/notes.md")!.terrain).toBe("lava");
 		// No note is deleted
 		expect(vault.files.has("world/hexes/coast/5_5.md")).toBe(true);
+	});
+
+	it("with hex-note properties off: every data key goes", async () => {
+		await boot(vault, maps(), false);
+		for (const p of ["world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md", "world/hexes/coast/0_0.md"]) {
+			const fm = vault.frontmatter(p)!;
+			for (const k of [...HEX_DATA_KEYS, ...PROP_KEYS]) expect(fm).not.toHaveProperty(k);
+			expect(fm.map).toBe("[[_coast]]");
+		}
 	});
 
 	it("writes a JSON backup per map before cleaning", async () => {
@@ -145,8 +160,8 @@ describe("map store: migration from hex-note frontmatter", () => {
 		for (const p of ["world/hexes/coast/1_2.md", "world/hexes/coast/3_4.md"]) {
 			expect(vault.files.get(p)).toBe(original.get(p));
 		}
-		// The other map still migrated
-		expect(vault.frontmatter("world/hexes/coast-3-4/0_0.md")!.terrain).toBeUndefined();
+		// The other map still migrated (its terrain stays as a property)
+		expect(vault.frontmatter("world/hexes/coast-3-4/0_0.md")).toEqual({ terrain: "hills", map: "[[_coast-3-4]]" });
 		expect(store.get("coast-3-4", "0_0")).toEqual({ terrain: "hills" });
 	});
 
@@ -165,7 +180,7 @@ describe("map store: migration from hex-note frontmatter", () => {
 		// Crash mid-cleanup: one hex note still carries its (same) data.
 		vault.files.set("world/hexes/coast/1_2.md", HEX("terrain: ocean\ntags: [sea]"));
 		const { store } = await boot(vault, m);
-		expect(vault.frontmatter("world/hexes/coast/1_2.md")!.terrain).toBeUndefined();
+		expect(vault.frontmatter("world/hexes/coast/1_2.md")).toEqual({ terrain: "ocean", tags: ["sea"], map: "[[_coast]]" });
 		expect(store.get("coast", "1_2")).toEqual({ terrain: "ocean" });
 	});
 
@@ -180,7 +195,9 @@ describe("map store: migration from hex-note frontmatter", () => {
 		expect(store.get("coast", "1_2")).toEqual({ terrain: "swamp" });
 		expect(store.get("coast", "0_0")).toEqual({ terrain: "hills", gmIcons: ["trap.png"] });
 		expect(parseMapNote(vault.files.get("world/hexes/coast/_coast.md")!)!.hexes.get("1_2")).toEqual({ terrain: "swamp" });
-		expect(vault.frontmatter("world/hexes/coast/1_2.md")!.terrain).toBeUndefined();
+		// Cleaned: linked to the map note, the terrain kept as its property.
+		expect(vault.frontmatter("world/hexes/coast/1_2.md")).toEqual({ terrain: "swamp", map: "[[_coast]]" });
+		expect(vault.frontmatter("world/hexes/coast/0_0.md")).toEqual({ terrain: "hills", map: "[[_coast]]" });
 	});
 
 	it("a fresh install (no maps, no hex notes) writes nothing", async () => {
