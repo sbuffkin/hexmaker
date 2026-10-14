@@ -6,7 +6,7 @@
  */
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { MapStore } from "../src/maps/MapStore";
 import { MemVault } from "./helpers/memVault";
 import type { MapData, PathChain, PathType, TerrainColor } from "../src/types";
@@ -176,6 +176,7 @@ describe("drawing with the path tool right after the routing context changed", (
       redraw: () => {},
       refreshBar: () => {},
       setGrabCursor: () => {},
+      typeChanged: () => {},
     });
     tool.typeName = "Road";
     const draw = (...hexes: string[]) => {

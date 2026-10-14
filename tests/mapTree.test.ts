@@ -16,7 +16,7 @@ import {
 /** Map names (N6), the map list tree (N4) and sideways crumbs (X3). */
 
 const names = (nodes: MapTreeNode[]): unknown[] =>
-	nodes.map((n) => (n.kind === "map" ? (n.children.length ? [n.name, names(n.children)] : n.name) : { world: n.id, of: names(n.children) }));
+	nodes.map((n) => (n.kind === "map" ? (n.children.length ? [n.name, names(n.children)] : n.name) : { world: n.kind === "world" ? n.id : undefined, of: names(n.children) }));
 
 describe("display names", () => {
 	it("show the name as typed, else the slug", () => {

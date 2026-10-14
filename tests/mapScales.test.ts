@@ -1,7 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { registry } from "../src/modules";
 import { scaleGenerators, scaleOrFirst, scalePalette, scalesFor } from "../src/mapScales";
 import { wizardKinds, wizardScale } from "../src/wizardKinds";
@@ -9,6 +7,7 @@ import { wheelSize, wheelStep, type WheelField } from "../src/sizeInput";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { getPreset } from "../src/palettes/presets";
 import type { TerrainGeneratorKind } from "../src/worldgen/registry";
+import { readSurface } from "./helpers/source";
 
 /** Owner 2026-10-12: "What are you mapping?" then a generator list, Blank first. */
 
@@ -143,7 +142,7 @@ describe("grid size: mouse wheel and reset", () => {
 	});
 
 	it("the wizard wires the wheel to both size fields, resets to the scale's size, and a scale sets it", () => {
-		const src = readFileSync(path.join(process.cwd(), "src", "SetupWizardView.ts"), "utf8").replace(/\r\n/g, "\n");
+		const src = readSurface("setup-wizard");
 		expect(src).toMatch(/for \(const input of \[colsInput, rowsInput\]\) \{[\s\S]*?wheelStep\(input, 2, 200,/);
 		expect(src).toMatch(/resetBtn\.addEventListener\("click", \(\) => \{\n\s+const s = wizardScale\(ctx\);[\s\S]*?setSize\(s\?\.size\.cols/);
 		// A scale sets the size, unless the user typed one (critic C9: kept).

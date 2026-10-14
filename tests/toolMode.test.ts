@@ -3,9 +3,10 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { toolModeLabel, type DrawingMode } from "../src/hex-map/toolMode";
+import { readSurface } from "./helpers/source";
 
-const viewSrc = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
-const toolSrc = readFileSync(path.join(process.cwd(), "src", "hex-map", "pathTool.ts"), "utf8").replace(/\r\n/g, "\n");
+const viewSrc = readSurface("map-view");
+const toolSrc = readSurface("path-tool");
 
 /** Source of the PathTool method `name`. */
 function toolMethod(name: string): string {
@@ -195,7 +196,7 @@ describe("the tool mode bar (round 4)", () => {
 		expect(toolModeLabel({ mode: null, erasing: false })).toBeNull();
 	});
 
-	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const view = readSurface("map-view");
 	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
 	const r4 = css.slice(css.indexOf("Fresh-eyes r4"));
 

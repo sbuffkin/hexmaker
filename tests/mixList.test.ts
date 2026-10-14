@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { splitMix } from "../src/ui/mixList";
 import { addedMixWeight, setMixRow } from "../src/overworld/BiomePanel";
 import type { BiomeNoteFields } from "../src/overworld/biomeNote";
+import { readSurface } from "./helpers/source";
 
 /**
  * O6 (owner 2026-10-14, A + note): the biome page AND the generator page
@@ -43,8 +44,8 @@ describe("O6: adding and removing a type on the biome page", () => {
 });
 
 describe("O6: one component on both pages", () => {
-	const biome = read("src", "overworld", "BiomePanel.ts");
-	const gen = read("src", "worldgen", "GeneratorPanel.ts");
+	const biome = readSurface("biome-page");
+	const gen = readSurface("generator-page");
 	const kit = read("src", "ui", "mixList.ts");
 
 	it("both pages list only what's in the mix, with × and + Add", () => {

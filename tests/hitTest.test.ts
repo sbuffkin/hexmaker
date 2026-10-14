@@ -3,6 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { nearestHex, type HexBox } from "../src/hex-map/hitTest";
+import { readSurface } from "./helpers/source";
 
 // Two flat-top hexes, 40×34 boxes, stacked in one column with a 4px gap.
 const a: HexBox = { x: 4, y: 6, left: 100, top: 100, right: 140, bottom: 134 };
@@ -24,7 +25,7 @@ describe("clicks between hexes go to the nearest hex (fresh-eyes round 5)", () =
 	});
 
 	it("the map view routes gap clicks, right-clicks and paint strokes through it", () => {
-		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+		const view = readSurface("map-view");
 		expect(view).toMatch(/this\.registerDomEvent\(clipEl, "click", \(e: MouseEvent\) => \{\n\s+const hex = onGap\(e\);\n\s+if \(hex\) void this\.onHexClick\(hex\.x, hex\.y, e\);/);
 		expect(view).toMatch(/this\.registerDomEvent\(clipEl, "contextmenu"[\s\S]{0,200}this\.onHexContextMenu\(e, hex\.x, hex\.y\)/);
 		expect(view).toMatch(/Paint the hex under the cursor[\s\S]{0,120}this\.hexElAt\(e\.target, e\.clientX, e\.clientY\)/);
@@ -33,7 +34,7 @@ describe("clicks between hexes go to the nearest hex (fresh-eyes round 5)", () =
 });
 
 describe("a token doesn't shrink its hex's click target (fresh-eyes round 5)", () => {
-	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const view = readSurface("map-view");
 	const css = readFileSync(path.join(process.cwd(), "styles.css"), "utf8").replace(/\r\n/g, "\n");
 
 	it("a plain left-click on a token opens its hex, like clicking the hex (a party token in Play is picked up instead, SF5)", () => {

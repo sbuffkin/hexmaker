@@ -399,7 +399,7 @@ describe("addBacklinkToFile", () => {
 		);
 		await addBacklinkToFile(app, "notes/town.md", "hex/1_1.md");
 		// process should never have been called
-		assert.strictEqual(app.vault.process.mock.callCount(), 0, "process should not have been called");
+		assert.strictEqual((app.vault.process as unknown as { mock: { callCount(): number } }).mock.callCount(), 0, "process should not have been called");
 	});
 
 	it("does not append when a just-made note's Location line links the hex (cache not updated yet)", async () => {
@@ -542,6 +542,7 @@ describe("links above a --- rule stay links", () => {
 
 // ── Round 6 S2: back-links name the map ───────────────────────────────────
 import { hexBacklinkText } from "../src/sections";
+import { readSurface, readSource } from "./helpers/source";
 
 describe("hex back-links are path-qualified (round 6 S2)", () => {
 	it("links the full path, shown as the alias", () => {
@@ -562,13 +563,13 @@ describe("hex back-links are path-qualified (round 6 S2)", () => {
 
 	it("the hex editor and link picker pass an alias", () => {
 		for (const f of ["src/hex-map/HexEditorModal.ts", "src/hex-table/LinkPickerModal.ts"]) {
-			const src = readFileSync(f, "utf8");
+			const src = readSource(f);
 			expect(src).toMatch(/addBacklinkToFile\([^)]*hexLinkAlias\(/);
 		}
 	});
 
 	it("new maps start with the GM layer off (round 6 S7)", () => {
-		const src = readFileSync("src/HexmakerPlugin.ts", "utf8");
+		const src = readSurface("plugin");
 		const at = src.indexOf("async createNewMap(");
 		const body = src.slice(at, src.indexOf("await this.saveSettings();", at));
 		expect(body).toContain("showGmLayer: false");

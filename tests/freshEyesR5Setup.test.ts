@@ -25,6 +25,7 @@ import { defaultIconPack } from "../src/utils";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
 import type { GeneratorHelpers } from "../src/modules/types";
+import { readSurface } from "./helpers/source";
 
 /** Fresh-eyes round 5 (new submap / new map dialogs, wizard, export modal, icon pickers). */
 
@@ -79,7 +80,7 @@ describe("1. New submap: starts on the generator that fits the parent hex", () =
 	});
 
 	it("the setup modal applies it (and only for submaps)", () => {
-		const src = read("src", "worldgen", "NewMapSetupModal.ts");
+		const src = readSurface("new-map-setup");
 		expect(src).toMatch(/if \(where\.parentHex\) \{\n\s+this\.kindId = submapStartKind\(fitting, this\.kindId, \{\n\s+parentTerrain: this\.originTerrain,\n\s+savedGenerator: this\.saved\?\.generator(?: \?\? this\.rowStart\?\.generator)?,\n\s+picked: this\.pickedKind,/);
 	});
 });
@@ -118,7 +119,7 @@ describe("2. Region detail's description", () => {
 	});
 
 	it("the setup modal shows it for submaps", () => {
-		const src = read("src", "worldgen", "NewMapSetupModal.ts");
+		const src = readSurface("new-map-setup");
 		expect(src).toMatch(/k\.id === REGION_DETAIL_ID && this\.origin \? regionDetailDescription\(this\.context\)/);
 	});
 });
@@ -167,7 +168,7 @@ describe("3. Maps → New map: procedural generators in the dropdown", () => {
 	});
 
 	it("round 7: New map is one form, the guided one (preview, options), not a Blank-first quick form", () => {
-		const src = read("src", "hex-map", "MapModal.ts");
+		const src = readSurface("map-modal");
 		expect(src).not.toMatch(/Guided setup…/);
 		expect(src).not.toMatch(/renderNewMapTab/);
 		expect(src).toMatch(/text: "New map…"/);
@@ -185,7 +186,7 @@ describe("4. Setup wizard: the 'Saved as' hint doesn't shift the form", () => {
 	});
 
 	it("the line keeps its space instead of being shown / hidden", () => {
-		const wizard = read("src", "SetupWizardView.ts");
+		const wizard = readSurface("setup-wizard");
 		expect(wizard).toMatch(/duckmage-wizard-slug-note/);
 		expect(wizard).not.toMatch(/slugNote\.toggle\(/);
 		const css = read("styles.css");
@@ -207,7 +208,7 @@ describe("5. Export: the File name box and the Writes line agree", () => {
 	});
 
 	it("the form shows that suffix after the box and keeps it in sync", () => {
-		const src = read("src", "export", "MapExportModal.ts");
+		const src = readSurface("export-modal");
 		expect(src).toMatch(/const suffixEl = nameRow\.createSpan\(\{ cls: "duckmage-export-name-suffix" \}\);/);
 		expect(src).toMatch(/const updatePreview = \(\) => \{\n\s+const n = names\(\);\n\s+const suffix = mapExportSuffix\(/);
 	});
@@ -222,7 +223,7 @@ describe("6. Icon pickers open on the Space tab for space-only setups", () => {
 	});
 
 	it("a tab picked this session still wins; the plugin wires the default", () => {
-		expect(read("src", "HexmakerModal.ts")).toMatch(/let pack: IconPack = lastIconPack \?\? iconPackDefault\(\);/);
-		expect(read("src", "HexmakerPlugin.ts")).toMatch(/setIconPackDefault\(\(\) => defaultIconPack\(this\.settings\)\);/);
+		expect(readSurface("modal-base")).toMatch(/let pack: IconPack = lastIconPack \?\? iconPackDefault\(\);/);
+		expect(readSurface("plugin")).toMatch(/setIconPackDefault\(\(\) => defaultIconPack\(this\.settings\)\);/);
 	});
 });

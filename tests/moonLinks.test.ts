@@ -6,6 +6,7 @@ import { MOON_TETHER_OVERLAY, MOON_TETHER_STYLE, moonPlanetLinks, moonTethers, t
 import { moduleOverlays } from "../src/modules/runtime";
 import { latticeCenter } from "../src/paths/pathGeometry";
 import type { TerrainColor } from "../src/types";
+import { readSurface } from "./helpers/source";
 
 const palette: TerrainColor[] = [
 	{ name: "void", color: "#000000", type: "void" },
@@ -61,8 +62,8 @@ describe("moon tethers: the same segments on screen and in the PNG export", () =
 	});
 
 	it("the map view and the PNG export both draw every module overlay's segments with its style", () => {
-		const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8");
-		const png = readFileSync(path.join(process.cwd(), "src", "export", "mapPngRenderer.ts"), "utf8");
+		const view = readSurface("map-view");
+		const png = readSurface("png-renderer");
 		for (const src of [view, png]) {
 			expect(src).toMatch(/moduleOverlays\(\)/);
 			expect(src).toMatch(/overlay\.segments\(/);

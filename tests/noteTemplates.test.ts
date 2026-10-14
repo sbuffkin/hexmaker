@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import {
 	DEFAULT_TOWN_TEMPLATE,
 	fillNoteTemplate,
@@ -14,6 +13,7 @@ import {
 } from "../src/noteTemplates";
 import { isLinkableNotePath, isTemplateNotePath, templateNoteRules } from "../src/templateNotes";
 import { DEFAULT_SETTINGS } from "../src/constants";
+import { readSurface } from "./helpers/source";
 
 /** PA3 = A + note: all plugin note templates in one user-editable folder. */
 describe("templates folder (PA3)", () => {
@@ -58,7 +58,7 @@ describe("templates folder (PA3)", () => {
 			expect(linkNoteTemplate(section)).toBe(t);
 		}
 		// No branch on a section name: the plugin looks the template up.
-		const plugin = readFileSync("src/HexmakerPlugin.ts", "utf8");
+		const plugin = readSurface("plugin");
 		const body = plugin.slice(plugin.indexOf("async newLinkedNoteContent("), plugin.indexOf("withHexLocation(content: string"));
 		expect(body).toContain("linkNoteTemplate(section)");
 		expect(body).not.toMatch(/"Towns"|"Dungeons"/);
@@ -74,15 +74,15 @@ describe("templates folder (PA3)", () => {
 	});
 
 	it("new town notes from the hex editor and link pickers use the town template", () => {
-		const editor = readFileSync("src/hex-map/HexEditorModal.ts", "utf8");
+		const editor = readSurface("hex-editor");
 		// …and say which hex they're in (a Location line, R3).
 		expect(editor).toContain("this.plugin.newLinkedNoteContent(section, name, path)");
-		const picker = readFileSync("src/hex-table/LinkPickerModal.ts", "utf8");
+		const picker = readSurface("link-picker");
 		expect(picker).toContain("this.plugin.newLinkedNoteContent(this.linkSection, name, this.hexPath)");
 	});
 
 	it("the Templates folder setting is in both settings paths", () => {
-		const tab = readFileSync("src/HexmakerSettingTab.ts", "utf8");
+		const tab = readSurface("settings-tab");
 		expect(tab).toMatch(/folderText\(\s*"Templates folder",\s*"templatesFolder"/);
 		// The pre-1.13 page draws the same definitions (display → renderDefinitions).
 		expect(tab).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");

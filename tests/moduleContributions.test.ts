@@ -19,6 +19,7 @@ import {
 import { MOON_TETHER_OVERLAY } from "../src/space/moonLinks";
 import { ROLE_TABLES_SECTION } from "../src/space/roleTablesSection";
 import { DEFAULT_SETTINGS } from "../src/constants";
+import { readSurface, readSource } from "./helpers/source";
 
 /** P5–P7: the map UI pieces and World maps reach the core only as module contributions. */
 
@@ -30,7 +31,7 @@ describe("P5: map UI pieces are module contributions", () => {
     expect(moduleOverlays()).toEqual([MOON_TETHER_OVERLAY]);
     expect(moduleMapProperties()).toEqual([ROLE_TABLES_SECTION]);
     // Generator tables is the core's (Names is on every map); the modules' sections come after it.
-    const modal = read("src", "hex-map", "MapModal.ts");
+    const modal = readSurface("map-modal");
     expect(modal).toMatch(/renderRoleTables\(el, this\.plugin, currentMap, \(\) => this\.render\(\)\);\n\s+\/\/ Modules' sections[^\n]*\n\s+for \(const section of moduleMapProperties\(\)\) section\.render\(/);
     // The core's form names no module: a role's tables folder is module data.
     const form = read("src", "hex-map", "mapTablesForm.ts");
@@ -45,7 +46,7 @@ describe("P5: map UI pieces are module contributions", () => {
       expect(extras[0]).toMatchObject({ optionKey: "worldTypes", label: "World types" });
     }
     for (const id of ["procedural:overland", "procedural:planet-surface", "procedural:world-biomes", "blank"]) expect(moduleNewMapSetup(id)).toEqual([]);
-    const form = read("src", "worldgen", "NewMapSetupModal.ts");
+    const form = readSurface("new-map-setup");
     expect(form).not.toMatch(/WorldTypesModal|WORLD_TYPES_KEY|STAR_SCATTER_ID|ORBITS_ID/);
     expect(form).toMatch(/for \(const extra of kind \? moduleNewMapSetup\(kind\.id\) : \[\]\)/);
   });
@@ -56,7 +57,7 @@ describe("P5: map UI pieces are module contributions", () => {
     expect(moduleArrivalTables(plugin, ["void"], "sector")).toEqual({ lookup: "x" });
     expect(calls).toEqual([[undefined, ["void"], "sector"]]);
     for (const f of [["src", "arrival", "ArrivalService.ts"], ["src", "worldgen", "NewMapSetupModal.ts"]]) {
-      expect(read(...f)).not.toMatch(/worldTypeStore/);
+      expect(readSource(...f)).not.toMatch(/worldTypeStore/);
     }
   });
 
@@ -84,7 +85,7 @@ describe("P7: World maps through its contributions", () => {
     const plugin = { biomeStore: { seedShipped: async (explicit: boolean) => { calls.push(`biomes ${explicit}`); } } } as never;
     await runOnKindsEnabled(plugin, ["space"]);
     expect(calls).toEqual(["biomes true"]);
-    const src = read("src", "HexmakerPlugin.ts");
+    const src = readSurface("plugin");
     expect(src).toMatch(/await runOnKindsEnabled\(this, plan\.newKinds\);\n\s+await runOnEnabled\(this, plan\.newKinds\);/);
   });
 
@@ -118,7 +119,7 @@ describe("P7: World maps through its contributions", () => {
       ["src", "worldgen", "GeneratorPanel.ts"],
       ["src", "HexmakerPlugin.ts"],
     ]) {
-      const src = read(...f);
+      const src = readSource(...f);
       const valueImports = [...src.matchAll(/^import (?!type )[^;]*from "[./]+overworld\//gm)].map((m) => m[0]);
       expect({ f: f.join("/"), valueImports }).toEqual({ f: f.join("/"), valueImports: [] });
     }

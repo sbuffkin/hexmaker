@@ -5,7 +5,7 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { countSet, Disclosure, setLabel } from "../src/ui/disclosure";
 import { setDebugMode, type LocalStore } from "../src/ui/debugMode";
@@ -13,8 +13,8 @@ import { advancedTitle, placedRows, rowIsSet, submenuRows } from "../src/ui/plac
 import { layerOf, PLACEMENT } from "../src/ui/placement";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "../src/worldgen/engineTuningSet";
 import { DEFAULT_SETTINGS } from "../packages/hex-wfc/src";
+import { readSurface, readSource } from "./helpers/source";
 
-const read = (...p: string[]) => readFileSync(join(...p), "utf8").replace(/\r\n/g, "\n");
 
 class FakeStore implements LocalStore {
   data = new Map<string, unknown>();
@@ -291,11 +291,11 @@ describe("Advanced · N set is wired on the surfaces where it's practical", () =
     [["src", "hex-table", "HexTableView.ts"], /disclosure\.place\(id, wrap, \(\) => input\.value !== ""\)/],
     [["src", "random-tables", "RandomTableEditorModal.ts"], /this\.place\("TableEditor\.excludeEncounters", encFilterRow, \(\) => encFilterCb\.checked\)/],
   ];
-  for (const [file, re] of wired) it(file.join("/"), () => expect(read(...file)).toMatch(re));
+  for (const [file, re] of wired) it(file.join("/"), () => expect(readSource(...file)).toMatch(re));
 
   it("state changed from outside re-counts: the overlay sync and Clear filters", () => {
-    expect(read("src", "hex-map", "HexSidePanel.ts")).toMatch(/this\.onRegionOverlayChange\(show\);\n\s*this\.layersDisclosure\?\.refreshSet\(\);/);
-    expect(read("src", "hex-table", "HexTableView.ts")).toMatch(/this\.toolbarDisclosure\?\.refreshSet\(\);/);
+    expect(readSurface("side-panel")).toMatch(/this\.onRegionOverlayChange\(show\);\n\s*this\.layersDisclosure\?\.refreshSet\(\);/);
+    expect(readSurface("hex-table")).toMatch(/this\.toolbarDisclosure\?\.refreshSet\(\);/);
   });
 });
 
@@ -316,7 +316,7 @@ describe("one menu helper", () => {
       ["src", "hex-map", "MapModal.ts"],
       ["src", "random-tables", "RandomTableView.ts"],
       ["src", "ui", "commandPlacement.ts"],
-    ]) expect([f.join("/"), /from "\.\.?\/(ui\/)?placedMenu"/.test(read(...f))]).toEqual([f.join("/"), true]);
+    ]) expect([f.join("/"), /from "\.\.?\/(ui\/)?placedMenu"/.test(readSource(...f))]).toEqual([f.join("/"), true]);
   });
 
   it("no main items: Advanced is shown directly; with others, it stays a submenu", () => {
@@ -344,7 +344,7 @@ describe("one menu helper", () => {
 // ── 5. Background image row ──────────────────────────────────────────────────
 
 describe("Maps modal: the background image row stays together on the main page", () => {
-  const src = read("src", "hex-map", "MapModal.ts");
+  const src = readSurface("map-modal");
   const body = src.slice(src.indexOf("private renderBackgroundImage("), src.indexOf("private renderBackgroundImage(") + 2500);
 
   it("Pick image… is in the row with the drop zone and Clear (no Advanced copy)", () => {

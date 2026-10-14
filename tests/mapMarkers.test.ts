@@ -292,7 +292,7 @@ describe("badge size (round 7 R8)", () => {
 		const css = readFileSync("styles.css", "utf8");
 		const at = css.indexOf(".duckmage-link-badge {");
 		expect(css.slice(at, css.indexOf("}", at))).toMatch(/width:\s*var\(--duckmage-badge-size/);
-		const panel = readFileSync("src/hex-map/HexSidePanel.ts", "utf8");
+		const panel = readSurface("side-panel");
 		expect(panel).toMatch(/for \(const s of BADGE_SIZES\)/);
 		expect(panel).toContain("map.linkBadgeSize = s;");
 	});
@@ -307,7 +307,7 @@ describe("the live legend lists the badge kinds (round 7 R8)", () => {
 	});
 
 	it("is wired into the map's legend", () => {
-		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8");
+		const view = readSurface("map-view");
 		expect(view).toMatch(/legendBadgeKinds\(this\.badgeKindsOnMap/);
 		expect(view).toMatch(/renderTerrainLegend\(parent, entries, \{\s*badges,/);
 	});
@@ -343,6 +343,7 @@ describe("PNG badges stay inside the hex at every size (round 7 R8)", () => {
 
 // ── MK2: the map legend is small, bottom-left, names cut short, foldable ──
 import { MAP_LEGEND_NAME_MAX, shortLegendName, shortLegendNames } from "../src/hex-map/terrainLegend";
+import { readSurface } from "./helpers/source";
 
 describe("map legend (MK2)", () => {
 	// F13 (fresh-eyes 2026-10-11): initials ("g. world") were unreadable;
@@ -381,7 +382,7 @@ describe("map legend (MK2)", () => {
 	});
 
 	it("the map view passes the cut length and the fold state", () => {
-		const view = readFileSync("src/hex-map/HexMapView.ts", "utf8");
+		const view = readSurface("map-view");
 		expect(view).toContain("maxName: MAP_LEGEND_NAME_MAX");
 		expect(view).toContain("collapsed: settings.terrainLegendCollapsed");
 	});

@@ -199,7 +199,7 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		const expected = [JSON.stringify(plugin.getMap("coast")!.paths), JSON.stringify(plugin.getMap("north")!.paths)];
 		// Restart: a new plugin instance on the same vault.
 		const { default: HexmakerPlugin } = await import("../../src/HexmakerPlugin");
-		const again = new HexmakerPlugin(plugin.app as never, plugin.manifest as never) as unknown as Booted["plugin"] & Record<string, unknown>;
+		const again = new HexmakerPlugin((plugin as unknown as Record<string, unknown>).app as never, (plugin as unknown as Record<string, unknown>).manifest as never) as unknown as Booted["plugin"] & Record<string, unknown>;
 		again.app = (plugin as unknown as Record<string, unknown>).app;
 		again.manifest = (plugin as unknown as Record<string, unknown>).manifest;
 		again.refreshHexMap = () => {};
@@ -218,7 +218,7 @@ describe("#47: a data.json reload mid-save-burst keeps every map's paths (real p
 		await settle(b);
 		const text = v.files.get(DATA);
 		const { default: HexmakerPlugin } = await import("../../src/HexmakerPlugin");
-		const again = new HexmakerPlugin(plugin.app as never, plugin.manifest as never) as unknown as Booted["plugin"] & Record<string, unknown>;
+		const again = new HexmakerPlugin((plugin as unknown as Record<string, unknown>).app as never, (plugin as unknown as Record<string, unknown>).manifest as never) as unknown as Booted["plugin"] & Record<string, unknown>;
 		again.app = (plugin as unknown as Record<string, unknown>).app;
 		again.manifest = (plugin as unknown as Record<string, unknown>).manifest;
 		again.refreshHexMap = () => {};

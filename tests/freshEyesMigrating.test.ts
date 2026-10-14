@@ -22,6 +22,7 @@ import {
 import { oneHexPiecesText } from "../src/maps/MapStore";
 import { tableRangesNoticeText } from "../src/random-tables/tableMaintenance";
 import { uniqueMapsByName } from "../src/maps/mapTree";
+import { readSurface } from "./helpers/source";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
@@ -94,7 +95,7 @@ describe("F2: upgrade notices at start-up are one notice, in order", () => {
 	});
 
 	it("the plugin batches its start-up upgrades and shows them once they're all done", () => {
-		const plugin = read("../src/HexmakerPlugin.ts");
+		const plugin = readSurface("plugin");
 		expect(plugin).toContain("beginNoticeBatch();");
 		expect(plugin).toMatch(/Promise\.allSettled\(\[storesReady, formatsDone, registered, rangesDone\]\)\.then\(\(\) => endNoticeBatch\(\)\)/);
 	});
@@ -118,7 +119,7 @@ describe("F2/F5: upgrade notice wording", () => {
 
 describe("F6: tall modals stay inside the window and scroll inside", () => {
 	it("the shared modal base clamps every modal to the viewport", () => {
-		const base = read("../src/HexmakerModal.ts");
+		const base = readSurface("modal-base");
 		const drag = base.slice(base.indexOf("protected makeDraggable(): void {"));
 		expect(drag.slice(0, 600)).toContain("this.viewportClamp ??= this.clampToViewport();");
 		expect(base).toContain('win.addEventListener("resize", fit);');
@@ -152,7 +153,7 @@ describe("F9: README and help name the Center hex button", () => {
 		expect(help).not.toMatch(/\| \*\*⌖\*\* \|/);
 		expect(readme).toMatch(/\*\*Center hex\*\* \(in the drawing tools panel/);
 		expect(help).toContain("**Center hex** asks for X, Y");
-		expect(read("../src/hex-map/HexMapView.ts")).toContain('text: "Center hex"');
+		expect(readSurface("map-view")).toContain('text: "Center hex"');
 	});
 });
 
@@ -163,9 +164,9 @@ describe("F11: duplicate map names count once", () => {
 	});
 
 	it("the hex table, generator library and export list use it", () => {
-		expect(read("../src/hex-table/HexTableView.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(3);
+		expect(readSurface("hex-table").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(3);
 		expect(read("../src/worldgen/GeneratorLibrary.ts").match(/uniqueMapsByName\(this\.plugin\.settings\.maps\)/g)).toHaveLength(2);
-		expect(read("../src/export/MapExportModal.ts")).toContain("uniqueMapsByName(plugin.settings.maps)");
-		expect(read("../src/hex-map/MapModal.ts")).toContain("const maps = uniqueMapsByName(this.plugin.settings.maps);");
+		expect(readSurface("export-modal")).toContain("uniqueMapsByName(plugin.settings.maps)");
+		expect(readSurface("map-modal")).toContain("const maps = uniqueMapsByName(this.plugin.settings.maps);");
 	});
 });

@@ -5,7 +5,7 @@ import path from "node:path";
 import { MODULES } from "../src/modules";
 import { MODULE_RUNTIMES } from "../src/modules/runtime";
 import { DEFAULT_SETTINGS } from "../src/constants";
-// @ts-expect-error: plain ESM helper shared with esbuild.config.mjs (no types)
+// Plain ESM helper shared with esbuild.config.mjs (types inferred from its JS).
 import { readSlices, releaseReadme, releaseReadmePath, sliceBlockText, sliceFlags, sliceModules, stripSliceMarkers } from "../dev/release/slices.mjs";
 
 /** P6: one module is one release slice (release-slices.json); a slice built off leaves no trace. */
@@ -46,13 +46,13 @@ describe("release-slices.json and the modules agree", () => {
 describe("build flags", () => {
 	it("release = the released slices; full = all; HEXMAKER_SLICES_OFF turns slices off on top", () => {
 		const release = sliceFlags({});
-		for (const s of Object.values(slices)) if (s.define) expect(release.flags[s.define]).toBe(s.released);
+		for (const s of Object.values(slices)) if (s.define) expect((release.flags as Record<string, boolean>)[s.define]).toBe(s.released);
 		const full = sliceFlags({ full: true });
 		expect(Object.values(full.flags).every(Boolean)).toBe(true);
 		expect(full.channel).toBe("full");
 		const noSpace = sliceFlags({ full: true, off: "space" });
-		expect(noSpace.flags.__SLICE_SPACE__).toBe(false);
-		expect(noSpace.flags.__SLICE_WORLDMAPS__).toBe(true);
+		expect((noSpace.flags as Record<string, boolean>).__SLICE_SPACE__).toBe(false);
+		expect((noSpace.flags as Record<string, boolean>).__SLICE_WORLDMAPS__).toBe(true);
 		expect([...noSpace.off]).toEqual(["space"]);
 		expect(sliceModules(noSpace.off)).toEqual(["space"]);
 		expect(() => sliceFlags({ off: "nope" })).toThrow(/no slice "nope"/);

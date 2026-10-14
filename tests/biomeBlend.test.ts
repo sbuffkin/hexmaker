@@ -242,10 +242,14 @@ describe("export-tuned-biomes: shipping the owner's tuning", () => {
 		const f = biomePreset(id)!;
 		return { name: f.label, content: buildBiomeNote(edit(f)) };
 	};
+	// planExport is plain JS (dev/biomes/exportTuned.mjs); this is its documented result.
+	type ExportPlan = { changes: unknown[]; skipped: string[]; next: { id: string; tuning?: unknown }[] };
+	const exportPlan = (notes: { name: string; content: string }[], only?: string[]): ExportPlan =>
+		(planExport as unknown as (...a: unknown[]) => ExportPlan)(notes, shipped, parseBiomeNote, ...(only ? [only] : []));
 
 	it("untouched notes: no changes", () => {
 		const notes = shipped.filter((b) => b.mix.length || b.blank).map((b) => noteOf(b.id));
-		const plan = planExport(notes, shipped, parseBiomeNote);
+		const plan = exportPlan(notes);
 		expect(plan.changes).toEqual([]);
 		expect(formatPlan(plan)).toContain("No changes");
 	});
@@ -255,22 +259,22 @@ describe("export-tuned-biomes: shipping the owner's tuning", () => {
 			noteOf("tundra", (f) => ({ ...f, tuning: { smoothing: 4 }, landShare: 0.2 })),
 			{ name: "Mine", content: buildBiomeNote({ id: "mine", label: "Mine", mix: [{ type: "forest", weight: 1 }], transitions: [] }) },
 		];
-		const plan = planExport(notes, shipped, parseBiomeNote);
+		const plan = exportPlan(notes);
 		expect(plan.changes).toEqual([{ id: "tundra", label: "Tundra", fields: [{ field: "landShare", from: undefined, to: 0.2 }, { field: "tuning", from: undefined, to: { smoothing: 4 } }] }]);
 		expect(plan.skipped[0]).toMatch(/^Mine: not a shipped biome/);
 		const text = formatPlan(plan);
 		expect(text).toContain("Tundra (tundra)\n  landShare:\n    - (none)\n    + 0.2\n  tuning:\n    - (none)\n    + {\"smoothing\":4}");
 		// The shipped list given in isn't touched; the plan's copy has the change.
 		expect(shipped.find((b) => b.id === "tundra")!.tuning).toBeUndefined();
-		expect(plan.next.find((b: { id: string }) => b.id === "tundra").tuning).toEqual({ smoothing: 4 });
-		expect(planExport(notes, shipped, parseBiomeNote, ["taiga"]).changes).toEqual([]);
+		expect(plan.next.find((b: { id: string }) => b.id === "tundra")!.tuning).toEqual({ smoothing: 4 });
+		expect(exportPlan(notes, ["taiga"]).changes).toEqual([]);
 	});
 
 	it("carries generation fields only (not label, colour or the vault's generator link)", () => {
 		expect(EXPORT_FIELDS).not.toContain("label");
 		expect(EXPORT_FIELDS).not.toContain("color");
 		expect(EXPORT_FIELDS).not.toContain("generator");
-		const plan = planExport([noteOf("tundra", (f) => ({ ...f, label: "Frost", color: "#000000", generator: "world/generators/x" }))], shipped, parseBiomeNote);
+		const plan = exportPlan([noteOf("tundra", (f) => ({ ...f, label: "Frost", color: "#000000", generator: "world/generators/x" }))]);
 		expect(plan.changes).toEqual([]);
 	});
 

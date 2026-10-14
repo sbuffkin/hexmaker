@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { mapExportFileNames, mapExportStem, sanitiseFilename } from "../src/export/exportNames";
 
 /**
@@ -46,7 +45,7 @@ describe("PNG export carries no GM-only content", () => {
 	// layer or note sections. Fails loudly if someone adds them. Tokens are
 	// an export option (X1, owner decision 2026-10-10), but hidden ones are
 	// never drawn.
-	const src = readFileSync(new URL("../src/export/mapPngRenderer.ts", import.meta.url), "utf8");
+	const src = readSurface("png-renderer");
 
 	it("never reads GM icons or hidden/secret sections", () => {
 		expect(src).not.toMatch(/gmIcons|gm-icons|getGmIcon/i);
@@ -62,6 +61,7 @@ describe("PNG export carries no GM-only content", () => {
 // ── Round 6 S9/S10: the form starts from the view and remembers ────────────
 import { EXPORT_LAYER_KEYS, exportLayerDefaults } from "../src/export/exportNames";
 import { exportedMessage } from "../src/export/exportFolder";
+import { readSurface, readSource } from "./helpers/source";
 
 describe("export form defaults (round 6 S9)", () => {
 	it("follows the map view's toggles when nothing was saved", () => {
@@ -87,7 +87,7 @@ describe("export form defaults (round 6 S9)", () => {
 	});
 
 	it("offers Link badges and Legend ticks and remembers the choices", () => {
-		const src = readFileSync("src/export/MapExportModal.ts", "utf8");
+		const src = readSurface("export-modal");
 		expect(src).toContain(`"Link badges"`);
 		expect(src).toContain(`"Legend"`);
 		expect(src).toContain("mapExportPrefs");
@@ -102,7 +102,7 @@ describe("re-exporting says so (round 6 S10)", () => {
 
 	it("no exporter opens a fresh leaf without checking for an open one", () => {
 		for (const f of ["mapPngRenderer.ts", "exporters/mapWithTable.ts", "exporters/singleHex.ts", "exporters/singleNote.ts", "exporters/workflow.ts", "exporters/randomTable.ts"]) {
-			expect(readFileSync(`src/export/${f}`, "utf8")).not.toContain("getLeaf(false).openFile");
+			expect(readSource("src/export", f)).not.toContain("getLeaf(false).openFile");
 		}
 	});
 });

@@ -3,6 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { isLinkableNotePath, isTemplateNotePath, templateNoteRules } from "../src/templateNotes";
+import { readSurface, readSource } from "./helpers/source";
 
 const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
@@ -45,13 +46,13 @@ describe("R12: template notes are never offered for linking", () => {
 			["src", "hex-table", "LinkPickerModal.ts"],
 			["src", "hex-map", "AreaNotePickerModal.ts"],
 		]) {
-			expect({ file: p.join("/"), ok: /this\.plugin\.isLinkableNote\(f(, this\.purpose)?\)/.test(read(...p)) }).toEqual({ file: p.join("/"), ok: true });
+			expect({ file: p.join("/"), ok: /this\.plugin\.isLinkableNote\(f(, this\.purpose)?\)/.test(readSource(...p)) }).toEqual({ file: p.join("/"), ok: true });
 		}
 	});
 });
 
 describe("R12: the token form's note list picks the row actually clicked", () => {
-	const src = read("src", "hex-map", "TokenModal.ts");
+	const src = readSurface("token-modal");
 	it("press keeps focus; the pick happens on click, only on the pressed row", () => {
 		expect(src).toMatch(/addEventListener\("mousedown", \(e\) => \{\s*e\.preventDefault\(\);\s*pressed = row;/);
 		expect(src).toMatch(/const ok = e\.detail === 0 \|\| pressed === row;/);
@@ -63,7 +64,7 @@ describe("R12: the token form's note list picks the row actually clicked", () =>
 
 describe("S13: installing a palette gives its terrains their tables", () => {
 	it("installPalettePreset creates terrain tables when the vault uses them", () => {
-		const src = read("src", "HexmakerPlugin.ts");
+		const src = readSurface("plugin");
 		const m = /async installPalettePreset[\s\S]*?\n {2}\}/.exec(src);
 		// HG5: the save gives new terrains their tables; the install waits for them.
 		expect(m![0]).toMatch(/await this\.ensureTablesForNewTerrains\(\)/);
@@ -72,7 +73,7 @@ describe("S13: installing a palette gives its terrains their tables", () => {
 
 describe("U15: a new stand-alone map starts on a generator", () => {
 	it("the guided form picks the setup wizard's first-map generator instead of Blank", () => {
-		const src = read("src", "worldgen", "NewMapSetupModal.ts");
+		const src = readSurface("new-map-setup");
 		expect(src).toMatch(/firstMapGenerator\(fitting, enabledKinds\(this\.plugin\.settings\)\)/);
 		// …but a user's own pick (incl. Blank) stays.
 		expect(src).toMatch(/!this\.origin && !where\.neighbour && !this\.pickedKind && this\.kindId === BLANK_ID/);
@@ -98,7 +99,7 @@ describe("Note pickers say what they're for (template pickers list templates)", 
 	});
 
 	it("the plugin and the general file picker take the purpose explicitly, defaulting to 'link'", () => {
-		expect(read("src", "HexmakerPlugin.ts")).toMatch(/isLinkableNote\(file: TFile, purpose: NotePickPurpose = "link"\)/);
+		expect(readSurface("plugin")).toMatch(/isLinkableNote\(file: TFile, purpose: NotePickPurpose = "link"\)/);
 		const picker = read("src", "hex-map", "FileLinkSuggestModal.ts");
 		expect(picker).toMatch(/private purpose: NotePickPurpose = "link"/);
 		expect(picker).toMatch(/this\.plugin\.isLinkableNote\(f, this\.purpose\)/);
@@ -106,13 +107,13 @@ describe("Note pickers say what they're for (template pickers list templates)", 
 });
 
 describe("New map form: a background image can be dropped from the computer", () => {
-	const src = read("src", "worldgen", "NewMapSetupModal.ts");
+	const src = readSurface("new-map-setup");
 	it("the More section's background row is a drop zone, imported into the map's _bg folder on create", () => {
 		expect(src).toMatch(/attachImageDropZone\(bgRowEl,/);
 		expect(src).toMatch(/importBinaryFileToVault\(this\.plugin, this\.bgFile, mapBgImportFolder\(this\.plugin\.settings\.hexFolder, result\.name\)\)/);
 	});
 	it("Properties uses the same shared drop zone and folder", () => {
-		const modal = read("src", "hex-map", "MapModal.ts");
+		const modal = readSurface("map-modal");
 		expect(modal).toMatch(/attachImageDropZone\(bgRow,/);
 		expect(modal).toMatch(/mapBgImportFolder\(this\.plugin\.settings\.hexFolder, mapName\)/);
 	});

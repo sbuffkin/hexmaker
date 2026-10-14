@@ -23,6 +23,7 @@ import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { ADD_REGION_LOCKED_HINT } from "../src/workMode";
 import type { MapData } from "../src/types";
+import { readSurface } from "./helpers/source";
 
 type Hex = { terrain?: string; locked?: boolean; biome?: string };
 
@@ -234,7 +235,7 @@ describe("unchanged: the Biome painter and arrival stay form-free", () => {
 	});
 
 	it("arrival makes its region with no dialog", () => {
-		const src = read("src", "arrival", "ArrivalService.ts");
+		const src = readSurface("arrival");
 		expect(src).not.toMatch(/EditRegionModal|WalkRegionModal|Modal\(/);
 	});
 });
@@ -242,7 +243,7 @@ describe("unchanged: the Biome painter and arrival stay form-free", () => {
 const read = (...p: string[]) => readFileSync(join(...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("every entry point opens Edit region in new-region mode", () => {
-	const view = read("src", "hex-map", "HexMapView.ts");
+	const view = readSurface("map-view");
 
 	it("an empty brick (Regions or Biomes view) and Set biome… on an empty hex", () => {
 		expect(view).toMatch(/act\.kind === "place"\) this\.openNewRegion\(px, py\)/);
@@ -253,7 +254,7 @@ describe("every entry point opens Edit region in new-region mode", () => {
 
 	it("walking into new land from the map (region flower, d-pad) and from the hex editor's neighbour flower", () => {
 		expect(view).toMatch(/new wm\.EditRegionModal\(host, to\.overworld, to\.px, to\.py, \{ walk: \{ from, bearing: to\.bearing \}/);
-		const editor = read("src", "hex-map", "HexEditorModal.ts");
+		const editor = readSurface("hex-editor");
 		expect(editor).toMatch(/new wm\.EditRegionModal\(host, home\.overworld\.name, px, py, \{\s*walk: \{ from: this\.mapName, bearing \}/);
 		// The old walk form is gone (WalkRegionModal is the side-by-side worlds' only).
 		const walk = read("src", "overworld", "WalkRegionModal.ts");
@@ -261,7 +262,7 @@ describe("every entry point opens Edit region in new-region mode", () => {
 	});
 
 	it("the hex menu's New region card", () => {
-		expect(read("src", "hex-map", "newChildMap.ts")).toMatch(/new wm\.EditRegionModal\([\s\S]*?parentMap, x, y, \{ after: "close"/);
+		expect(readSurface("new-child-map")).toMatch(/new wm\.EditRegionModal\([\s\S]*?parentMap, x, y, \{ after: "close"/);
 	});
 
 	it("only Create writes: Cancel and × just close", () => {

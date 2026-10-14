@@ -7,7 +7,8 @@
  */
 import { describe, it, afterEach } from "node:test";
 import expect from "expect";
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { MemVault } from "./helpers/memVault";
 import { BiomeStore } from "../src/overworld/BiomeStore";
 import { buildBiomeNote } from "../src/overworld/biomeNote";
@@ -16,7 +17,7 @@ import { setBiomeSource } from "../src/overworld/biomes";
 import { WorldTypeStore } from "../src/space/WorldTypeStore";
 import { DEFAULT_WORLD_TYPES, buildWorldTypes } from "../src/space/worldTypes";
 import { DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
-import { ensureFolder, ensureFolderPath } from "../src/vault/ensureFolder";
+import { ensureFolder, ensureFolderPath, type FolderVault } from "../src/vault/ensureFolder";
 
 function file(path: string): TFile {
 	const f = new TFile();
@@ -198,7 +199,7 @@ describe("ensureFolder / ensureFolderPath (src/vault/ensureFolder.ts)", () => {
 		const v = new MemVault();
 		const calls: string[] = [];
 		const app = v.app();
-		const vault = { getAbstractFileByPath: app.vault.getAbstractFileByPath, createFolder: async (p: string) => { calls.push(p); await app.vault.createFolder(p); } };
+		const vault = { getAbstractFileByPath: app.vault.getAbstractFileByPath, createFolder: async (p: string) => { calls.push(p); await app.vault.createFolder(p); } } as unknown as FolderVault;
 		await ensureFolderPath(vault, "a/b/c");
 		expect(calls).toEqual(["a", "a/b", "a/b/c"]);
 		await ensureFolderPath(vault, "a/b/d");

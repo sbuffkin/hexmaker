@@ -11,6 +11,7 @@ import {
 	type RegionMapDataView,
 } from "../src/regionMapData";
 import { LOCATION_SECTIONS, withLocationLine } from "../src/noteTemplates";
+import { readSurface } from "./helpers/source";
 
 const REGION: RegionMapDataView = {
 	kind: "region",
@@ -120,8 +121,7 @@ describe("Location line in notes made from a hex (R3)", () => {
 
 describe("terrain tables (T2)", () => {
 	it("new terrain tables don't get a terrain: key nothing reads", async () => {
-		const { readFileSync } = await import("node:fs");
-		const src = readFileSync("src/HexmakerPlugin.ts", "utf8").replace(/\r\n/g, "\n");
+		const src = readSurface("plugin");
 		const body = src.slice(src.indexOf("// Create any still-missing table files"), src.indexOf("async backfillTerrainLinks"));
 		expect(body).toContain('"table-type": tableType');
 		expect(body).not.toMatch(/^\s*terrain: entry\.name,/m);

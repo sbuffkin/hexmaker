@@ -9,6 +9,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { renderUnchartedLayer, unchartedKeys, UNCHARTED_LAYER_CLASS } from "../src/hex-map/unchartedLayer";
 import { parseMapNote, buildMapNote } from "../src/maps/mapNote";
+import { readSurface } from "./helpers/source";
 
 /** Just enough of an element for the layer: children, classes, text, css props. */
 class FakeEl {
@@ -59,7 +60,7 @@ describe("the uncharted marker", () => {
 			expect(src.includes(`.${read}`) || src.includes(`${read}(`)).toBe(false);
 		}
 		// The view draws it right after the coordinate layer measured the hexes.
-		const view = readFileSync(path.join(__dirname, "../src/hex-map/HexMapView.ts"), "utf8");
+		const view = readSurface("map-view");
 		const body = view.slice(view.indexOf("private renderMeasuredLayers"));
 		expect(body.indexOf("this.renderCoordLabelsLayer(gridContainer)")).toBeLessThan(body.indexOf("renderUnchartedLayer("));
 		expect(body.indexOf("renderUnchartedLayer(gridContainer, this.coordPlacements")).toBeGreaterThan(0);
@@ -69,7 +70,7 @@ describe("the uncharted marker", () => {
 		const note = buildMapNote("drift", { settings: { paletteName: "Space - Sector", gridSize: { cols: 2, rows: 2 }, gridOffset: { x: 0, y: 0 }, showUncharted: false } as never, hexes: new Map(), paths: [] });
 		expect(note).toContain("show-uncharted: false");
 		expect(parseMapNote(note)!.settings.showUncharted).toBe(false);
-		const panel = readFileSync(path.join(__dirname, "../src/hex-map/HexSidePanel.ts"), "utf8");
+		const panel = readSurface("side-panel");
 		expect(panel).toMatch(/key: "showUncharted",\s+label: "Uncharted \(\?\)", cssClass: "duckmage-hide-uncharted",\s+inLabels: true/);
 		const css = readFileSync(path.join(__dirname, "../styles.css"), "utf8");
 		expect(css).toContain(".duckmage-hide-uncharted .duckmage-uncharted-layer { display: none; }");

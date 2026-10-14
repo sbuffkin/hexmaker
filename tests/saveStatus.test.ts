@@ -1,8 +1,7 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
 import { DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SAVED_SHOWN_MS, SaveTracker, type SaveState } from "../src/hex-map/saveStatus";
+import { readSurface } from "./helpers/source";
 
 /** A tracker wired to a log of rendered states and a manual clock. */
 function harness() {
@@ -125,7 +124,7 @@ describe("SaveTracker (fresh-eyes rounds 3-4: no noticeable 'saved' cue)", () =>
 });
 
 describe("HexEditorModal autosave wiring (fresh-eyes round 4)", () => {
-	const src = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexEditorModal.ts"), "utf8").replace(/\r\n/g, "\n");
+	const src = readSurface("hex-editor");
 
 	it("shows the status beside the focused text box and marks typing as pending", () => {
 		expect(src).toMatch(/duckmage-editor-notes-status/);
@@ -181,7 +180,7 @@ describe("DebouncedSave + SaveTracker (fresh-eyes round 7: 'Saving shortly…' s
 	});
 
 	it("the hex editor shows the status in one place and debounces the Name box", () => {
-		const src = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexEditorModal.ts"), "utf8");
+		const src = readSurface("hex-editor");
 		expect(src).not.toMatch(/duckmage-editor-save-status/);
 		expect((src.match(/cls: "duckmage-editor-notes-status"/g) ?? []).length).toBe(1);
 		const m = /private renderNameField[\s\S]*?\n {2}\}/.exec(src.replace(/\r\n/g, "\n"));

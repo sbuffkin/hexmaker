@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { isStep, markVisited, parseVisited, partyClick, partyFor, partyTokens, unmarkVisited } from "../src/play/partyTravel";
 import {
   appendLogEntry,
@@ -22,8 +21,7 @@ import { ACTION_POLICY, MENU_ACTIONS, COMMAND_ACTIONS } from "../src/workMode";
 import { HAND_EDIT_ACTIONS } from "../src/modeGate";
 import { layerOf } from "../src/ui/placement";
 import { LINK_SECTIONS } from "../src/types";
-
-const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
+import { readSurface } from "./helpers/source";
 
 // ── SF5: the party token ────────────────────────────────────────────────────
 
@@ -200,7 +198,7 @@ describe("play log (SF3): one dated note per day, plain bullets", () => {
   });
 
   it("the hex editor offers the log among the targets and writes it through the log writer", () => {
-    const editor = src("hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).toMatch(/sections: \[\{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
     expect(editor).toMatch(/if \(key === PLAY_LOG_TARGET\) \{ await addToPlayLog\(/);
   });
@@ -235,11 +233,11 @@ describe("Show on map (SF4): a per-section option, never by name in code", () =>
   it("works where linking works: every mode, and it counts as the user's own edit", () => {
     expect(ACTION_POLICY["show-place-icon"].modes).toEqual(ACTION_POLICY["link-note"].modes);
     expect(HAND_EDIT_ACTIONS.has("show-place-icon")).toBe(true);
-    expect(src("hex-map/HexEditorModal.ts")).toMatch(/setIconOverrideInFile\(this\.app, path, icon, "show-place-icon"\)/);
+    expect(readSurface("hex-editor")).toMatch(/setIconOverrideInFile\(this\.app, path, icon, "show-place-icon"\)/);
   });
 
   it("the editor never picks the icon by section name", () => {
-    const editor = src("hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).not.toMatch(/place-(village|dungeon-gate|ancient-ruins)/);
   });
 });
@@ -264,11 +262,11 @@ describe("solo play controls: placement and work modes", () => {
   });
 
   it("the setup wizard asks for the play log folder with the other folders", () => {
-    expect(src("SetupWizardView.ts")).toMatch(/\{ key: "logFolder",\s+label: "Play log",\s+suffix: "log" \}/);
+    expect(readSurface("setup-wizard")).toMatch(/\{ key: "logFolder",\s+label: "Play log",\s+suffix: "log" \}/);
   });
 
   it("the layers menu's Labels group has the Visited switch", () => {
-    expect(src("hex-map/HexSidePanel.ts")).toMatch(/key: "showVisited",\s+label: "Visited",\s+cssClass: "duckmage-hide-visited",\s+inLabels: true/);
+    expect(readSurface("side-panel")).toMatch(/key: "showVisited",\s+label: "Visited",\s+cssClass: "duckmage-hide-visited",\s+inLabels: true/);
   });
 });
 
@@ -276,7 +274,7 @@ describe("solo play controls: placement and work modes", () => {
 
 describe("hex editor groups (O8)", () => {
   it("Terrain, Notes, Linked notes and Icons are Folds, not hand-built collapsibles", () => {
-    const editor = src("hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).not.toMatch(/duckmage-editor-collapsible/);
     const body = editor.slice(editor.indexOf("private makeCollapsible("), editor.indexOf("private renderTerrainSection("));
     expect(body).toMatch(/new Fold\(container, \{/);

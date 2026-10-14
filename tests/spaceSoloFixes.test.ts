@@ -10,6 +10,7 @@ import { registry } from "../src/modules";
 
 const SPACE_CHILD_KIND_TEXT = registry.kindInfo("space")!.childKindText!;
 import { allows, MENU_ACTIONS } from "../src/workMode";
+import { readSurface } from "./helpers/source";
 
 const src = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
@@ -52,7 +53,7 @@ describe("F11: the parent hex's terrain, from the parent's map data", () => {
 	});
 
 	it("the map view shows it in the breadcrumb", () => {
-		const view = src("src", "hex-map", "HexMapView.ts");
+		const view = readSurface("map-view");
 		expect(view).toContain("parentHexTerrain(this.plugin, this.activeMapName)");
 		expect(view).toContain("text: `from: ${from.terrain}`");
 	});
@@ -67,8 +68,8 @@ describe("C11: a hex that has a map offers it first, not a re-make", () => {
 	});
 
 	it("the hex editor's + menu and the New map dialog list the existing maps", () => {
-		expect(src("src", "hex-map", "HexEditorModal.ts")).toContain('"editor.new-map", newMapItemTitle(');
-		const dialog = src("src", "hex-map", "newChildMap.ts");
+		expect(readSurface("hex-editor")).toContain('"editor.new-map", newMapItemTitle(');
+		const dialog = readSurface("new-child-map");
 		expect(dialog).toContain("This hex already has:");
 		expect(dialog.indexOf("This hex already has:")).toBeLessThan(dialog.indexOf('card("region", why)'));
 	});
@@ -85,13 +86,13 @@ describe("F10: Region vs Location says which fits on a space map", () => {
 	});
 
 	it("keys off the map's palette (space terrain types), not terrain names", () => {
-		const dialog = src("src", "hex-map", "newChildMap.ts");
+		const dialog = readSurface("new-child-map");
 		expect(dialog).toContain("childKindText(plugin.kindFor(this.parentMap))");
 	});
 });
 
 describe("F8: a token's menu also has its hex's items", () => {
-	const view = src("src", "hex-map", "HexMapView.ts");
+	const view = readSurface("map-view");
 	it("adds the hex's items after the token's, under a label", () => {
 		const at = view.indexOf("private showTokenContextMenu");
 		const body = view.slice(at, view.indexOf("\n  }\n", at));
@@ -113,13 +114,13 @@ describe("C3: Play can enter existing maps; only making new ones needs Build", (
 
 describe("F12: no notices for expected, harmless cases", () => {
 	it("generated paths with no path type on the new map are skipped quietly", () => {
-		const setup = src("src", "worldgen", "NewMapSetupModal.ts");
+		const setup = readSurface("new-map-setup");
 		expect(setup).not.toContain("new Notice(`Skipped paths with no matching path type");
 		expect(setup).toMatch(/if \(missing\.length\) console\.warn\(/);
 	});
 
 	it("a palette installed for a new map is quiet; Add palette still says so", () => {
-		const plugin = src("src", "HexmakerPlugin.ts");
+		const plugin = readSurface("plugin");
 		expect(plugin).toMatch(/async ensurePaletteInstalled[\s\S]*?installPalettePreset\(name, undefined, \{ quiet: true \}\)/);
 		expect(plugin).toContain("if (!opts.quiet) new Notice(`Added palette");
 		expect(src("src", "palettes", "AddPaletteModal.ts")).toMatch(/installPalettePreset\(preset\.name\)/);
@@ -128,7 +129,7 @@ describe("F12: no notices for expected, harmless cases", () => {
 
 describe("F15: the token form doesn't jump when note suggestions close", () => {
 	it("the suggestion list drops down out of flow", () => {
-		expect(src("src", "hex-map", "TokenModal.ts")).toContain('resultsAnchor.createDiv({ cls: "duckmage-note-picker-results is-dropdown" })');
+		expect(readSurface("token-modal")).toContain('resultsAnchor.createDiv({ cls: "duckmage-note-picker-results is-dropdown" })');
 		const css = src("styles.css");
 		expect(css).toMatch(/\.duckmage-note-picker-anchor \{\s*position: relative;\s*height: 0;/);
 		expect(css).toMatch(/\.duckmage-note-picker-results\.is-dropdown \{\s*position: absolute;/);
@@ -145,7 +146,7 @@ describe("F16: the palette editor's title follows the palette shown", () => {
 });
 
 describe("F9: world types rows: a new row shows and takes focus; a delete doesn't shift rows", () => {
-	const modal = src("src", "space", "WorldTypesModal.ts");
+	const modal = readSurface("world-types-modal");
 	it("Add row focuses the new row's first field", () => {
 		expect(modal).toContain('this.renderRows({ row: this.cells[this.tab].length - 1, target: "first" })');
 		expect(modal).toContain('rowEl.scrollIntoView({ block: "nearest" })');

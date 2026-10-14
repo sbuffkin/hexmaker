@@ -25,8 +25,8 @@ import { regionsViewTip } from "../src/hex-map/hexHover";
 import { UNKNOWN_PATH_TYPE } from "../src/constants";
 import type { MapPath, PathType } from "../src/types";
 import { layerOf } from "../src/ui/placement";
-import { readFileSync } from "node:fs";
 import type { ResolvedBranch } from "../src/paths/resolve";
+import { readSurface } from "./helpers/source";
 
 const layouts: RegionLayout[] = [
   { footprint: "rect", size: 6, orientation: "flat", parentStagger: "odd", childStagger: "odd" },
@@ -273,7 +273,7 @@ describe("layers menu toggle", () => {
     expect(REGION_PATHS_ROW.id).toBe("LayersMenu.regionPaths");
     expect(layerOf(REGION_PATHS_ROW.id)).toBe("main");
     // The panel builds module rows right after "Show paths", placed through the disclosure.
-    const panel = readFileSync("src/hex-map/HexSidePanel.ts", "utf8");
+    const panel = readSurface("side-panel");
     expect(panel).toContain('if (opt.key === "showPaths") this.buildModuleRows(panel, disclosure);');
     expect(panel).toContain("disclosure.place(row.id, el,");
   });

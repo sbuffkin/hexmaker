@@ -14,7 +14,7 @@
  */
 import { describe, it, beforeEach, afterEach } from "node:test";
 import expect from "expect";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { ArrivalService } from "../src/arrival/ArrivalService";
 import { EventsService } from "../src/arrival/EventsService";
 import { effectiveArrivalMode } from "../src/arrival/arrival";

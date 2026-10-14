@@ -13,12 +13,13 @@ import { Disclosure, DISCLOSURE_OPEN_KEY, disclosureOpen, setDisclosureOpen, sub
 import { setDebugMode, type LocalStore } from "../src/ui/debugMode";
 import { addPlacedMenuItems, placeCommand } from "../src/ui/commandPlacement";
 import { eventPos } from "../src/ui/placedMenu";
-import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "obsidian";
+import { Menu as ObsidianMenu, type MenuItem as ObsidianMenuItem } from "./__mocks__/obsidian"; // the mock records shown menus
 import { GENERATE_WORLD_DATA_NAME, REPAIR_HINT, withRepairHint } from "../src/ui/repairHint";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 import { wizardOptionId } from "../src/wizardText";
 import { parseSave, serializeSave, type GeneratorSave } from "../src/worldgen/saveFormat";
+import { readSurface, readSource } from "./helpers/source";
 
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
@@ -106,7 +107,7 @@ describe("owner worksheet: every tagged id on these surfaces is honoured", () =>
   }
 
   it("legacy settings twins have no ids of their own any more (one entry places both settings paths)", () => {
-    const tab = read("src", "HexmakerSettingTab.ts");
+    const tab = readSurface("settings-tab");
     for (const r of ROWS.filter((x) => x.id.startsWith("Settings.legacy"))) {
       expect(tab).not.toContain(r.id);
       expect(Object.prototype.hasOwnProperty.call(PLACEMENT, r.id)).toBe(false);
@@ -135,7 +136,7 @@ describe("settings tab rows follow their placement (both settings paths: one set
 
   /** Row names by id, from the source (T("Settings.x", { name: "…" } / folderText("…"). */
   function rowNames(): Map<string, string> {
-    const src = read("src", "HexmakerSettingTab.ts");
+    const src = readSurface("settings-tab");
     const out = new Map<string, string>();
     for (const m of src.matchAll(/T\("(Settings\.[A-Za-z]+)",\s*(?:\{\s*name:\s*("([^"]+)"|GENERATE_WORLD_DATA_NAME)|folderText\(\s*"([^"]+)")/g)) {
       out.set(m[1], m[3] ?? m[4] ?? (m[2] === "GENERATE_WORLD_DATA_NAME" ? GENERATE_WORLD_DATA_NAME : ""));
@@ -144,7 +145,7 @@ describe("settings tab rows follow their placement (both settings paths: one set
   }
 
   it("the display() fallback draws getSettingDefinitions()", () => {
-    expect(read("src", "HexmakerSettingTab.ts")).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");
+    expect(readSurface("settings-tab")).toContain("this.renderDefinitions(containerEl, this.getSettingDefinitions())");
   });
 
   it("main rows above the fold, Advanced rows in Advanced (sub-sections closed until opened), Debug rows in Debug", () => {
@@ -353,9 +354,9 @@ describe("Advanced sub-sections", () => {
 // ── Generator page, biome page, wizard: placed in the code by id ────────────
 
 describe("generator page and wizard place their controls by id", () => {
-  const panel = read("src", "worldgen", "GeneratorPanel.ts");
-  const biome = read("src", "overworld", "BiomePanel.ts");
-  const wizard = read("src", "SetupWizardView.ts");
+  const panel = readSurface("generator-page");
+  const biome = readSurface("biome-page");
+  const wizard = readSurface("setup-wizard");
   /** Controls that move inside another placed control (and so share its placement). */
   const CARRIED: Record<string, string> = {
     "GenPage.seedLock": "GenPage.seed",
@@ -403,7 +404,7 @@ describe("generator page and wizard place their controls by id", () => {
 
 describe("dropped controls are gone", () => {
   it("the biome page's typed weight box (BiomePage.weightNumber) is removed; the shared share sliders stay", () => {
-    const biome = read("src", "overworld", "BiomePanel.ts");
+    const biome = readSurface("biome-page");
     expect(biome).not.toContain("weight value");
     expect(biome).toContain("renderShareSliders(box, {");
     expect(read("styles.css")).toMatch(/\.duckmage-biome-page-mix \.duckmage-share-sliders-row \{[^}]*grid-template-columns:/);
@@ -417,7 +418,7 @@ describe("dropped controls are gone", () => {
 // ── Commands and menus ──────────────────────────────────────────────────────
 
 describe("commands and menus follow their placement", () => {
-  const plugin = read("src", "HexmakerPlugin.ts");
+  const plugin = readSurface("plugin");
 
   it("every tagged command is registered through addPlaced with its id", () => {
     // Modules' commands are placed through their placementId (src/modules/<id>/runtime.ts).
@@ -516,9 +517,9 @@ describe("missing tables point to the repair setting", () => {
   });
 
   it("the settings row is that setting, and the messages that find a missing table use the pointer", () => {
-    expect(read("src", "HexmakerSettingTab.ts")).toContain("name: GENERATE_WORLD_DATA_NAME");
+    expect(readSurface("settings-tab")).toContain("name: GENERATE_WORLD_DATA_NAME");
     for (const f of [["src", "random-tables", "RollerBlock.ts"], ["src", "random-tables", "RandomTableModal.ts"], ["src", "random-tables", "WorkflowWizardModal.ts"], ["src", "hex-map", "HexEditorModal.ts"]])
-      expect([f.join("/"), read(...f).includes("withRepairHint(")]).toEqual([f.join("/"), true]);
+      expect([f.join("/"), readSource(...f).includes("withRepairHint(")]).toEqual([f.join("/"), true]);
   });
 });
 
@@ -535,11 +536,11 @@ describe("seeds are kept with what they made", () => {
     const back = parseSave(text);
     expect("save" in back && back.save.seed).toBe(4242);
     // The saves list shows it.
-    expect(read("src", "worldgen", "GeneratorPanel.ts")).toContain("· seed ${sv.seed} ·");
+    expect(readSurface("generator-page")).toContain("· seed ${sv.seed} ·");
   });
 
   it("a new overworld keeps its seed on the map (seed: in its note), and Generate overworld starts from it", () => {
-    const src = read("src", "overworld", "OverworldModals.ts");
+    const src = readSurface("overworld-modals");
     // Its map-note fields come from newOverworldFields (shared with the Biomes scale), seed included.
     expect(src).toMatch(/finishNewOverworld\(this\.plugin, res\.name, this\.result, \{[\s\S]*?seed: this\.seed,/);
     expect(read("src", "overworld", "overworldGen.ts")).toContain("seed: s.seed,");

@@ -1,6 +1,5 @@
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
 import { numberBoxShown, setNumberBoxDebug } from "../src/ui/numberBoxes";
 import { multiplierValue, renderLabeledSlider, renderMultiplierSlider, renderResetButton, sliderFormat } from "../src/ui/sliders";
@@ -15,6 +14,7 @@ import { newBiomeFields } from "../src/overworld/BiomeLibraryModal";
 import { biomeNameProblem } from "../src/overworld/biomeForm";
 import { landOf } from "../src/overworld/biomeCombo";
 import type { BiomeNoteFields } from "../src/overworld/biomeNote";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * The shared controls and saving of the UI consistency fix plan (audit
@@ -24,7 +24,6 @@ import type { BiomeNoteFields } from "../src/overworld/biomeNote";
  * and the one biome editor (Q14).
  */
 
-const src = (p: string) => readFileSync(new URL(`../src/${p}`, import.meta.url), "utf8");
 const rangeOf = (root: FakeEl) => root.inputs("range")[0];
 const valueOf = (root: FakeEl) => root.find("duckmage-labeled-slider-value")!.text;
 
@@ -287,13 +286,13 @@ describe("% column beside free weights (Q1)", () => {
   });
 
   it("the table editor and world types both show it, and update it live", () => {
-    const editor = src("random-tables/RandomTableEditorModal.ts");
+    const editor = readSurface("table-editor");
     expect(editor).toContain("oddsEls.forEach");
     // Recomputed on every weight input and every redraw of the rows.
     expect(editor).toMatch(/weightInput\.addEventListener\("input", \(\) => \{\s*entries\[i\]\.weight = readWeight\(weightInput\.value\);\s*onWeightsChanged\(\);/);
     // A hand edit to the note redraws the editor (when nothing was changed in it).
     expect(editor).toContain('this.app.vault.on("modify"');
-    const wt = src("space/WorldTypesModal.ts");
+    const wt = readSurface("world-types-modal");
     expect(wt).toContain('if (c === "Weight") this.refreshOdds();');
     expect(wt).toMatch(/el\.scrollTop = scrollTop;\s*this\.refreshOdds\(\);/);
   });
@@ -308,7 +307,7 @@ describe("no confirm dialogs (Q6)", () => {
 
   it("only the module offer and the debug-mode confirm still open a ConfirmModal", () => {
     const users = ["HexmakerPlugin.ts", "HexmakerSettingTab.ts", "random-tables/WorkflowWizardModal.ts", "worldgen/GeneratorLibrary.ts", "worldgen/GeneratorPanel.ts", "random-tables/RandomTableView.ts", "hex-map/MapModal.ts", "hex-map/PathTypeEditorModal.ts"]
-      .map((p) => [p, (src(p).match(/new ConfirmModal\(/g) ?? []).length] as const);
+      .map((p) => [p, (readSource("src", p).match(/new ConfirmModal\(/g) ?? []).length] as const);
     expect(Object.fromEntries(users)).toEqual({
       "HexmakerPlugin.ts": 1, // the module offer
       "HexmakerSettingTab.ts": 1, // debug mode
@@ -319,14 +318,14 @@ describe("no confirm dialogs (Q6)", () => {
       "hex-map/MapModal.ts": 0,
       "hex-map/PathTypeEditorModal.ts": 0,
     });
-    expect(src("hex-map/MapModal.ts")).toContain('armButton(del, { armedText: "Click again to delete"');
+    expect(readSurface("map-modal")).toContain('armButton(del, { armedText: "Click again to delete"');
   });
 });
 
 describe("autosaving editors have no footer button (Q5)", () => {
   it("no Close / Save / Cancel on the table, workflow, path type, terrain, faction and region-area editors", () => {
     for (const p of ["random-tables/RandomTableEditorModal.ts", "random-tables/WorkflowEditorModal.ts", "hex-map/PathTypeEditorModal.ts", "hex-map/TerrainEntryEditorModal.ts", "hex-map/AreaNotePickerModal.ts"]) {
-      const s = src(p);
+      const s = readSource("src", p);
       expect({ p, close: /text: "(Close|Save|Cancel)"/.test(s) }).toEqual({ p, close: false });
       expect({ p, line: s.includes("renderSaveStatusLine(") }).toEqual({ p, line: true });
     }
@@ -398,12 +397,12 @@ describe("the biome page is the one biome editor", () => {
   });
 
   it("the form is gone: Biomes… › Edit… opens the page; New biome… creates and opens it", () => {
-    const lib = src("overworld/BiomeLibraryModal.ts");
+    const lib = readSurface("biome-library");
     expect(lib).not.toMatch(/class BiomeFormModal|type: "range"|"Fewest islands"/);
     expect(lib).toContain("void plugin.openTerrainGenerator({ biome: b.id });");
     expect(lib).toContain("await plugin.openTerrainGenerator({ biome: res.id });");
     expect(lib).toContain('text: "New biome…"');
-    const page = src("overworld/BiomePanel.ts");
+    const page = readSurface("biome-page");
     // One label for the fewest islands; the page's Type mix and Terrain weights on ShareSliders.
     expect(page).toContain('"Min islands"');
     expect(page).not.toContain("Fewest islands");
@@ -414,7 +413,7 @@ describe("the biome page is the one biome editor", () => {
 
 describe("Bias (Q2) and pool weights (Q3)", () => {
   it("the generator's terrain multiplier is called Bias, on the shared MultiplierSlider", () => {
-    const gen = src("worldgen/GeneratorPanel.ts");
+    const gen = readSurface("generator-page");
     expect(gen).toContain('["Bias", ');
     expect(gen).not.toContain('["Mix", ""]');
     expect(gen).toContain("ariaLabel: `${t.name} bias`");
@@ -425,7 +424,7 @@ describe("Bias (Q2) and pool weights (Q3)", () => {
   });
 
   it("biome pool weights are a MultiplierSlider, not a number box", () => {
-    const ow = src("overworld/OverworldModals.ts");
+    const ow = readSurface("overworld-modals");
     expect(ow).toContain("renderMultiplierSlider(item, {");
     expect(ow).not.toMatch(/cls: "duckmage-biome-weight"/);
   });

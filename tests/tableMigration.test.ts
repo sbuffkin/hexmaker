@@ -7,12 +7,12 @@ import { MemVault } from "./helpers/memVault";
 import { parseRandomTable, parseRandomTableWithReport, resolveTable } from "../src/random-tables/randomTable";
 import { isTableNotePath, planTableMigration } from "../src/random-tables/tableMigration";
 import { checkTables, formatTableReport, migrateTables, surveyTableMigration, upgradeTableRangesOnce, writeTableReport } from "../src/random-tables/tableMaintenance";
-import { Notice } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
 
 async function gunzipJson(bytes: Uint8Array) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  const stream = new Blob([bytes as Uint8Array<ArrayBuffer>]).stream().pipeThrough(new DecompressionStream("gzip"));
   return JSON.parse(await new Response(stream).text()) as { notes: Record<string, string> };
 }
 

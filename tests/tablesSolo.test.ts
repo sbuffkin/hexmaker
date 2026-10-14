@@ -20,6 +20,7 @@ import { makeTableTemplate } from "../src/utils";
 import { DEFAULT_NOTE_TEMPLATE, LINK_NOTE_TEMPLATES, noteTemplateEntries } from "../src/noteTemplates";
 import { isGuidanceLine } from "../src/hexGuidance";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
+import { readSurface, readSource } from "./helpers/source";
 
 /**
  * Owner calls 2026-10-14 (SF1, SF2, SX1): tables ship empty and an empty
@@ -131,7 +132,7 @@ describe("one table section per kind (SF2)", () => {
   });
 
   it("the hex editor draws every kind through the one section, and choosing writes nothing", () => {
-    const editor = src("src/hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).toContain(`this.renderTableChoice(encCard, path, "encounters")`);
     expect(editor).toContain("this.renderTableChoice(host, path, section)");
     // The old per-source controls are gone.
@@ -268,7 +269,7 @@ describe("empty tables can't be rolled (SF1)", () => {
       "src/random-tables/WorkflowWizardModal.ts",
       "src/random-tables/TableChoice.ts",
     ]) {
-      const text = src(p);
+      const text = readSource(p);
       expect({ p, uses: text.includes("renderEmptyTableState(") }).toEqual({ p, uses: true });
       expect({ p, disables: /setRollEnabled\(/.test(text) }).toEqual({ p, disables: true });
       // No hand-built "Add entries" button outside the helper.
@@ -277,7 +278,7 @@ describe("empty tables can't be rolled (SF1)", () => {
   });
 
   it("terrain encounter tables are still made empty (players fill them)", () => {
-    const plugin = src("src/HexmakerPlugin.ts");
+    const plugin = readSurface("plugin");
     const body = plugin.slice(plugin.indexOf("private async createTerrainTableFiles("), plugin.indexOf("async backfillTerrainLinks("));
     expect(body).toContain("makeTableTemplate(");
     // No starter rows passed (makeTableTemplate's 4th argument).
@@ -313,12 +314,12 @@ describe("note templates (SX1)", () => {
     const entries = noteTemplateEntries({ worldFolder: "w" });
     expect(entries.map((e) => e.label)).toEqual(["Hex", "Town", "Dungeon", "Feature", "Quest", "Faction"]);
     expect(entries.map((e) => e.path)).toEqual(["w/templates/hex.md", "w/templates/town.md", "w/templates/dungeon.md", "w/templates/feature.md", "w/templates/quest.md", "w/templates/faction.md"]);
-    const tab = src("src/HexmakerSettingTab.ts");
+    const tab = readSurface("settings-tab");
     expect(tab).toContain(`T("Settings.noteTemplates"`);
     expect(tab).toContain("this.plugin.openNoteTemplate(t.path)");
     // Main, not tucked into Advanced: not listed in the placement map.
     expect(src("src/ui/placement.ts")).not.toContain("Settings.noteTemplates");
-    const editor = src("src/hex-map/HexEditorModal.ts");
+    const editor = readSurface("hex-editor");
     expect(editor).toContain("Edit the ${words.noun} template…");
   });
 });

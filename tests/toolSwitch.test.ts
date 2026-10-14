@@ -1,7 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 /**
  * Regression guard: switching terrain (or any tool's choice) must not turn
@@ -12,7 +11,7 @@ import * as path from "node:path";
  * something is picked.
  */
 
-const src = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+const src = readSurface("map-view");
 
 /** Source of the method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {

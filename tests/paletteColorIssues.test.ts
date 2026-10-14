@@ -5,7 +5,8 @@
  */
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { Notice, TFile } from "obsidian";
+import { TFile } from "obsidian";
+import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 import { colorCell, colorUnreadable, isCssColor, parseColorCell, safeColorFix } from "../src/palettes/colorCell";
 import { buildPaletteNote, colorIssuesText, paletteColorIssues, parsePaletteNote, updatePaletteNote, wrapPaletteColors } from "../src/palettes/paletteNote";
 import { PaletteStore } from "../src/palettes/PaletteStore";
@@ -170,7 +171,7 @@ describe("PaletteStore: colours it can't read", () => {
   it("a restart with the same unreadable colour stays quiet (remembered per device, never in data.json)", async () => {
     const h = harness();
     const local = new Map<string, unknown>();
-    const app = h.store["plugin"].app as Record<string, unknown>;
+    const app = h.store["plugin"].app as unknown as Record<string, unknown>;
     app.loadLocalStorage = (k: string) => local.get(k) ?? null;
     app.saveLocalStorage = (k: string, v: unknown) => { local.set(k, v); };
     await h.store.init();

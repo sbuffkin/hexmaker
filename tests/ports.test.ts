@@ -8,6 +8,7 @@ import { canEditPaths } from "../src/paths/editGate";
 import { numberBoxShown } from "../src/ui/numberBoxes";
 import { getTerrainFromFile } from "../src/frontmatter";
 import { DEBUG_MODE_KEY } from "../src/ui/debugMode";
+import { readSurface } from "./helpers/source";
 
 const SETTERS = [
 	"setHexDataSource",
@@ -81,9 +82,9 @@ describe("ports (src/ports.ts)", () => {
 		const ports = read("src", "ports.ts");
 		expect([...new Set(calls(body(ports, "export function resetPorts")))].sort()).toEqual([...SETTERS].sort());
 		// Until the plugin lane switches onload to bindPorts(this): the same setters, same order.
-		const onload = calls(read("src", "HexmakerPlugin.ts"));
+		const onload = calls(readSurface("plugin"));
 		const bound = calls(body(ports, "export function bindPorts"));
 		if (onload.length) expect(bound).toEqual(onload);
-		else expect(read("src", "HexmakerPlugin.ts")).toMatch(/bindPorts\(this\)/);
+		else expect(readSurface("plugin")).toMatch(/bindPorts\(this\)/);
 	});
 });

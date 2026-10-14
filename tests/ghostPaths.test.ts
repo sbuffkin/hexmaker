@@ -1,9 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "../src/hex-map/ghostPaths";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
+import { readSurface } from "./helpers/source";
 
 /**
  * This map: 4×3 at offset 0,0. Its southern neighbour "south" is 4×3 too,
@@ -77,7 +76,7 @@ describe("ghostRunPoints", () => {
 });
 
 describe("HexMapView draws them in the strip", () => {
-	const view = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+	const view = readSurface("map-view");
 	// Path anchors phase 4: the neighbours' chains are their RESOLVED paths
 	// (routed with each neighbour's own terrain and palette by the paths service).
 	it("from the neighbours' resolved path chains, read-only, on the strip layer", () => {

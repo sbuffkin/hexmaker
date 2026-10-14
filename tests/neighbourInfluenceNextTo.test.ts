@@ -8,6 +8,7 @@ import { EDGE_ALPHA, edgeAlpha, edgeReach, neighbourShare, storeNeighbourWeight 
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import type { ContextTerrain, ProcGrid } from "../src/worldgen/procedural/common";
 import type { MapData } from "../src/types";
+import { readSurface } from "./helpers/source";
 
 /**
  * SF6 (owner 2026-10-14, B): New map → Next to gets the same Neighbour
@@ -98,7 +99,7 @@ describe("SF6: the weight on a plain map's neighbour pull", () => {
 });
 
 describe("SF6: New map → Next to wiring (one control, one code path)", () => {
-	const modal = read("src", "worldgen", "NewMapSetupModal.ts");
+	const modal = readSurface("new-map-setup");
 	const shared = read("src", "ui", "neighbourSlider.ts");
 
 	it("the slider is the shared one Edit region uses", () => {

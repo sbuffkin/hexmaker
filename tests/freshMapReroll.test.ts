@@ -1,12 +1,11 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { formatOptions, markFreshMap, nextRecipeSeed, recipeOf, setRecipe } from "../src/worldgen/freshMap";
 import { readOptions } from "../src/worldgen/cellReaders";
 import { canRerollPlace, handEditLocks, isOpenPlace } from "../src/workMode";
 import { buildMapNote, parseMapNote } from "../src/maps/mapNote";
 import type { MapData } from "../src/types";
+import { readSurface } from "./helpers/source";
 
 /**
  * SF7 (owner 2026-10-14, A): a fresh plain map made by New map → Generate
@@ -14,8 +13,6 @@ import type { MapData } from "../src/types";
  * first hand edit. How it was made is kept readably in its note so Reroll
  * can run it again with a new seed.
  */
-
-const read = (...p: string[]) => readFileSync(join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 describe("SF7: a fresh map's recipe", () => {
 	it("writes options readably and reads them back", () => {
@@ -89,15 +86,15 @@ describe("SF7: the region rule on a fresh map", () => {
 	});
 
 	it("New map → Generate and the setup wizard mark the map; Open in generator and Blank don't", () => {
-		const modal = read("src", "worldgen", "NewMapSetupModal.ts");
+		const modal = readSurface("new-map-setup");
 		expect(modal).toMatch(/if \(!openGenerator && kind && kind\.id !== BLANK_ID && outcome\?\.ok && !this\.asRegion && !this\.plugin\.arrival\.isOverworld\(result\.name\)\) \{\s*markFreshMap\(this\.plugin, result\.name, \{ generator: kind\.id, options: this\.resolvedOptions\(kind\), seed: this\.seed \}\);/);
-		expect(read("src", "SetupWizardView.ts")).toMatch(/markFreshMap\(plugin, result\.name, \{ generator: kind\.id, options: resolvedOptions\(kind, ctx\), seed: ctx\.seed \}\)/);
+		expect(readSurface("setup-wizard")).toMatch(/markFreshMap\(plugin, result\.name, \{ generator: kind\.id, options: resolvedOptions\(kind, ctx\), seed: ctx\.seed \}\)/);
 	});
 
 	it("the map's bar shows for a fresh map and Reroll runs its recipe", () => {
-		const view = read("src", "hex-map", "HexMapView.ts");
+		const view = readSurface("map-view");
 		expect(view).toMatch(/const fresh = !map\?\.parent && !!recipeOf\(map\);/);
-		const arrival = read("src", "arrival", "ArrivalService.ts");
+		const arrival = readSurface("arrival");
 		expect(arrival).toMatch(/if \(recipe\) return this\.rerollFromRecipe\(mapName, recipe\);/);
 		// Where it sits is kept: its neighbours (with its Neighbour influence) or its parent hex.
 		expect(arrival).toMatch(/region \? \{ region, neighbourWeight: map\.neighbourInfluence \} : \{\}/);

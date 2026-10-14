@@ -6,8 +6,6 @@
  */
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { MemVault } from "./helpers/memVault";
 import {
 	DEFAULT_WORLD_TYPES,
@@ -22,6 +20,7 @@ import { DEFAULT_WORLD_TYPE_ROWS } from "../src/space/worldTypePresets";
 import { WorldTypeStore } from "../src/space/WorldTypeStore";
 import { WorldTypesDraft } from "../src/space/worldTypesDraft";
 import { TFile } from "obsidian";
+import { readSurface } from "./helpers/source";
 
 const NOTE = `world/world-types/${DEFAULT_WORLD_TYPES}.md`;
 const W = (c: string) => WORLD_TYPE_COLUMNS.indexOf(c as never);
@@ -177,7 +176,7 @@ describe("World types autosave (SP2)", () => {
 });
 
 describe("World types dialog: no Save button, autosave status like the hex editor", () => {
-	const modal = readFileSync(path.join(process.cwd(), "src", "space", "WorldTypesModal.ts"), "utf8").replace(/\r\n/g, "\n");
+	const modal = readSurface("world-types-modal");
 	it("has no Save button or 'Unsaved changes'", () => {
 		expect(modal).not.toContain('text: "Save"');
 		expect(modal).not.toContain("Unsaved changes");

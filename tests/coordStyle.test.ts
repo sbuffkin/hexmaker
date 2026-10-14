@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 import {
 	coordHaloColor,
 	MIN_PNG_COORD_PX,
@@ -78,7 +79,7 @@ describe("wiring", () => {
 	const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "utf8").replace(/\r\n/g, "\n");
 
 	it("the PNG renderer always draws the halo and reads the coordinate settings", () => {
-		const src = read("src", "export", "mapPngRenderer.ts");
+		const src = readSurface("png-renderer");
 		expect(src).toMatch(/opts\.coordHalo \?\? coordHaloColor\(coordColor\)/);
 		expect(src).toMatch(/plugin\.settings\.coordFontColor/);
 		expect(src).toMatch(/pngCoordFontPx\(R, plugin\.settings\.coordFontSize\)/);
@@ -86,7 +87,7 @@ describe("wiring", () => {
 	});
 
 	it("the map sets the halo variable the label CSS uses", () => {
-		expect(read("src", "hex-map", "HexMapView.ts")).toMatch(/"--duckmage-coord-halo": coordHaloColor\(coordFontColor\)/);
+		expect(readSurface("map-view")).toMatch(/"--duckmage-coord-halo": coordHaloColor\(coordFontColor\)/);
 		expect(read("styles.css")).toMatch(/\.duckmage-coord-label-html \{\n\s+text-shadow:[^}]*var\(--duckmage-coord-halo/);
 	});
 });
