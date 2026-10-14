@@ -92,6 +92,14 @@ export async function restoreBackup(app: App, backupsFolder: string, backup: Not
   return { restored, undo };
 }
 
+/** "2026-10-14 09:05" in local time, from an ISO time. */
+export function localTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 const STATUS_TEXT: Record<RestoreStatus, string> = {
   changed: "put back",
   missing: "made again (it's gone now)",
@@ -131,7 +139,7 @@ export class RestoreBackupModal extends HexmakerModal {
       const n = Object.keys(b.notes).length;
       const row = list.createEl("button", { cls: "duckmage-restore-backup-row" });
       row.createSpan({ cls: "duckmage-restore-backup-name", text: `${b.folder}/${b.name}` });
-      row.createSpan({ cls: "duckmage-map-origin-desc", text: ` ${n} note${n === 1 ? "" : "s"}${b.savedAt ? `, saved ${b.savedAt.slice(0, 16).replace("T", " ")}` : ""}` });
+      row.createSpan({ cls: "duckmage-map-origin-desc", text: `${n} note${n === 1 ? "" : "s"}${b.savedAt ? `, saved ${localTime(b.savedAt)}` : ""}` });
       row.addEventListener("click", () => void this.showBackup(b));
     }
     contentEl.createEl("p", { cls: "duckmage-map-origin-desc", text: "Other files in the backups folder (a map's data, path reports) aren't notes to put back; Open backups folder shows them." });
@@ -157,7 +165,7 @@ export class RestoreBackupModal extends HexmakerModal {
     for (const s of plan) {
       const li = ul.createEl("li");
       li.createSpan({ text: s.path });
-      li.createSpan({ cls: "duckmage-map-origin-desc", text: `: ${STATUS_TEXT[s.status]}` });
+      li.createSpan({ cls: "duckmage-map-origin-desc", text: ` (${STATUS_TEXT[s.status]})` });
     }
     this.footer({
       primary: { text: todo ? `Restore ${todo} note${todo === 1 ? "" : "s"}` : "Restore", disabled: !todo, onClick: () => void this.restore(b) },

@@ -202,7 +202,10 @@ export async function runNoteRewrites(host: NoteFormatHost, steps: readonly Note
   }
   const msg = upgradeMessage(results, steps);
   if (msg) {
+    const label = (id: string) => steps.find((s) => s.recordId === id)?.label ?? id;
     noticeUpgrade(msg, {
+      // The upgrade note lists each step on its own line.
+      lines: results.filter((r) => r.changed.length).map((r) => `${label(r.id)}: ${r.changed.length} note${r.changed.length === 1 ? "" : "s"}`),
       ids: results.filter((r) => r.changed.length).map((r) => steps.find((s) => s.recordId === r.id)?.info.id ?? r.id),
       backups: results.map((r) => r.backup).filter((b): b is string => !!b),
       check: results.flatMap((r) => [

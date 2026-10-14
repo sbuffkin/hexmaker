@@ -35,6 +35,8 @@ export interface UpgradeNoteInput {
   changelog?: string;
   /** The command palette's prefix ("Hexmap World Creator"). */
   pluginName: string;
+  /** The note's title (its name); default upgradeNoteName(date). */
+  title?: string;
 }
 
 /** The note's Markdown. */
@@ -43,7 +45,7 @@ export function upgradeNoteText(input: UpgradeNoteInput): string {
   const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
   const from = input.from ? `version ${input.from}` : "an older version";
   const lines: string[] = [
-    `# ${upgradeNoteName(date)}`,
+    `# ${input.title ?? upgradeNoteName(date)}`,
     "",
     UPDATE_DEVICES_LINE,
     "",
@@ -52,7 +54,7 @@ export function upgradeNoteText(input: UpgradeNoteInput): string {
     "## What changed",
     "",
   ];
-  const changed = unique(entries.map((e) => sentence(e.text)));
+  const changed = unique(entries.flatMap((e) => (e.lines?.length ? e.lines : [e.text]).map(sentence)));
   lines.push(...(changed.length ? changed.map((t) => `- ${t}`) : ["- Nothing in your notes changed."]));
   lines.push(
     "",
@@ -119,7 +121,7 @@ export async function writeUpgradeNote(app: App, folder: string, input: UpgradeN
   let n = 1;
   while (app.vault.getAbstractFileByPath(at(n))) n++;
   const path = at(n);
-  await app.vault.create(path, upgradeNoteText(input));
+  await app.vault.create(path, upgradeNoteText({ ...input, title: `${base}${n > 1 ? ` (${n})` : ""}` }));
   return path;
 }
 

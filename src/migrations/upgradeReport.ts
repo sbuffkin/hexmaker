@@ -17,6 +17,8 @@ export interface UpgradeEntry {
   backups?: string[];
   /** Things the user may want to look at. */
   check?: string[];
+  /** How the upgrade note lists it, when not as `text` (one line each). */
+  lines?: string[];
 }
 
 let entries: UpgradeEntry[] = [];

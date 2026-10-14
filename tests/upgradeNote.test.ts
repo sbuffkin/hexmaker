@@ -92,6 +92,12 @@ describe("MG1: the upgrade note", () => {
 		expect(changelogPoints(md, undefined)).toContain("- Old.");
 	});
 
+	it("lists an entry's own lines when it has them (the note rewrites, one line per step)", () => {
+		const t = upgradeNoteText({ ...input, entries: [{ text: "updated note formats. a: 2 notes. b: 1 note.", lines: ["links in hex notes: 2 notes", "old lines moved: 1 note"] }] });
+		expect(t).toContain("- Links in hex notes: 2 notes.\n- Old lines moved: 1 note.\n");
+		expect(t).not.toContain("Updated note formats");
+	});
+
 	it("says 'an older version' when data.json had no savedWith", () => {
 		expect(upgradeNoteText({ ...input, from: undefined })).toContain("from an older version to version 1.6.0");
 	});
@@ -101,7 +107,9 @@ describe("MG1: the upgrade note", () => {
 		const p = await writeUpgradeNote(vault.app() as never, "World", input);
 		expect(p).toBe("World/Hexmaker upgrade 2026-10-14 (2).md");
 		expect(vault.files.get("World/Hexmaker upgrade 2026-10-14.md")).toBe("mine");
-		expect(vault.files.get(p)).toBe(upgradeNoteText(input));
+		// Its title is its name.
+		expect(vault.files.get(p)).toBe(upgradeNoteText({ ...input, title: "Hexmaker upgrade 2026-10-14 (2)" }));
+		expect(vault.files.get(p)!.split("\n")[0]).toBe("# Hexmaker upgrade 2026-10-14 (2)");
 		const root = new MemVault();
 		expect(await writeUpgradeNote(root.app() as never, "", input)).toBe("Hexmaker upgrade 2026-10-14.md");
 	});

@@ -9544,6 +9544,8 @@ button.is-armed {
 }
 .duckmage-restore-backup-row {
     justify-content: flex-start;
+    gap: 0.6em;
+    flex-wrap: wrap;
     text-align: start;
     height: auto;
     white-space: normal;
