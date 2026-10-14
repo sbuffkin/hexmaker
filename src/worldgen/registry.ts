@@ -16,7 +16,6 @@ import { generateConnected, type NewRegion } from "./neighbours";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
 import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
-import { moduleGenerators } from "../modules/runtime";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -207,7 +206,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       toPaths,
     },
     // Each module's built-in generators, in their list order.
-    ...moduleGenerators(plugin, { toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
+    ...plugin.moduleGenerators({ toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
   ];
   // Every generator, tagged with its map type: callers filter with
   // visibleKinds (they know the palette, the parent map and the current choice).

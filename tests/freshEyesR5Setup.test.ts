@@ -23,6 +23,8 @@ import { slugHint } from "../src/wizardText";
 import { mapExportFileNames, mapExportStem, mapExportSuffix } from "../src/export/exportNames";
 import { defaultIconPack } from "../src/utils";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 
 /** Fresh-eyes round 5 (new submap / new map dialogs, wizard, export modal, icon pickers). */
 
@@ -33,6 +35,7 @@ function pluginWith(mapKinds: string[]): HexmakerPlugin {
 	return {
 		settings: { worldFolder: "world", mapKinds, pathTypes: [], hexOrientation: "flat" },
 		app: { vault: { getMarkdownFiles: () => [], cachedRead: async () => "" } },
+		moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as unknown as HexmakerPlugin, h); },
 	} as unknown as HexmakerPlugin;
 }
 

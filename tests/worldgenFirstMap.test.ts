@@ -16,6 +16,8 @@ import {
 } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID } from "../src/space/starScatter";
 import { BLANK_ID, firstMapGenerator, generationKey, kindOptions, listGeneratorKinds, optionsWithDefaults } from "../src/worldgen/registry";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 import { ORBITS_ID } from "../src/space/orbits";
 import { NO_PATHS, ORBIT_TYPE_KEY, PRESET_PATH_TYPE, ROUTE_TYPE_KEY, chosenPathType, defaultPathTypeFor } from "../src/worldgen/generatorPathTypes";
 import { generatedToMapPaths, routedBranches } from "../src/paths/fromGenerated";
@@ -571,6 +573,7 @@ describe("Star scatter and Orbits: the path type is an option from the palette",
 			defaultName: () => DEFAULT_SPACE.name,
 			sourceFor: (_v: string | undefined, palette: TerrainColor[]) => ({ source: worldTypesSource(DEFAULT_SPACE, palette) }),
 		},
+		moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as never, h); },
 	};
 	const kindsP = listGeneratorKinds(fakePlugin as never);
 	const kindOf = async (id: string) => (await kindsP).find((k) => k.id === id)!;

@@ -1,0 +1,27 @@
+{
+	"limit": 800,
+	"caps": {
+		"src/hex-map/HexMapView.ts": 8310,
+		"src/HexmakerPlugin.ts": 3088,
+		"src/maps/mapNote.ts": 2146,
+		"src/random-tables/RandomTableView.ts": 1947,
+		"src/hex-map/HexEditorModal.ts": 1747,
+		"src/worldgen/GeneratorPanel.ts": 1562,
+		"src/maps/MapStore.ts": 1526,
+		"src/hex-map/pathTool.ts": 1505,
+		"src/overworld/regionGen.ts": 1405,
+		"src/random-tables/randomTable.ts": 1296,
+		"src/export/mapPngRenderer.ts": 1262,
+		"src/hex-table/HexTableView.ts": 1140,
+		"src/worldgen/NewMapSetupModal.ts": 1137,
+		"src/SetupWizardView.ts": 1120,
+		"src/space/worldTypes.ts": 1095,
+		"src/palettes/PaletteStore.ts": 1043,
+		"src/HexmakerSettingTab.ts": 1015,
+		"src/worldgen/procedural/planetSurface.ts": 1003,
+		"src/hex-map/MapModal.ts": 927,
+		"src/overworld/EditRegionModal.ts": 909,
+		"src/random-tables/RandomTableEditorModal.ts": 899,
+		"src/worldgen/generators.ts": 841
+	}
+}

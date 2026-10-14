@@ -24,6 +24,8 @@ import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space
 import { getPreset } from "../src/palettes/presets";
 import { slugify } from "../src/utils";
 import { MemVault } from "./helpers/memVault";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 import { Notice } from "obsidian";
 import type { MapData } from "../src/types";
 import type { RoleId } from "../src/worldgen/tableRoles";
@@ -50,6 +52,7 @@ function world(opts: { arrival?: string; seed?: number; mode?: string } = {}) {
 		settings: { hexFolder: "world/hexes", worldFolder: "world", tablesFolder: "world/tables", maps, hexOrientation: "flat", staggerOffset: "odd", mapKinds: ["space"] } as Record<string, unknown> & { maps: MapData[] },
 		mapStore: undefined as unknown as MapStore,
 		saves: 0,
+		moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as never, h); },
 		getMap: (n: string) => maps.find((m) => m.name === n),
 
 		rolledMapName: () => undefined,

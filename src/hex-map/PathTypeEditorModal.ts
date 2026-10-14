@@ -2,7 +2,7 @@ import { App, Notice, Setting } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathAutoRoute, PathType, PathLineStyle, PathRouting } from "../types";
-import { buildPathPreviewSvg } from "./PathPickerModal";
+import { buildPathPreviewSvg } from "./pathPreviewSvg";
 import { pathAvoidsImpassable, pathMeanders } from "../impassable";
 import { countPathsOfType, removePathTypeFromChains, renamePathTypeInChains } from "../paths/typeRefs";
 import { renderLabeledSlider, sliderFormat } from "../ui/sliders";

@@ -21,7 +21,7 @@ import { canAdd } from "../workMode";
 import type { BiomeNoteFields } from "./biomeNote";
 import { biomeGroupOf, groupBiomes } from "./biomeGroups";
 import { biomeNameProblem, generatorName, routeNote } from "./biomeForm";
-import { lockButton } from "./BiomeModals";
+import { lockButton } from "../ui/lockButton";
 import { addPickerFilter, filterText } from "../ui/pickers";
 
 /** Why biomes can't be added or edited from this overworld now, or undefined. */

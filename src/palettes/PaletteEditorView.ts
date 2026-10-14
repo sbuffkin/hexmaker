@@ -12,7 +12,7 @@ import { fillPaletteSelect } from "./paletteOptions";
 import { listGeneratorKinds, visibleKinds, type TerrainGeneratorKind } from "../worldgen/registry";
 import { paletteKind } from "../mapKinds";
 import { impassableSourceText, isImpassable, setImpassable } from "../impassable";
-import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
+import { buildPathPreviewSvg } from "../hex-map/pathPreviewSvg";
 import { PathTypeEditorModal } from "../hex-map/PathTypeEditorModal";
 import { isDebugMode, onDebugModeChange } from "../ui/debugMode";
 import { isShown } from "../ui/placement";

@@ -3,6 +3,8 @@ import expect from "expect";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { TFile } from "obsidian";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 import { contextKindsIn, kindForIn, sectionWordsIn, type MapKindHost } from "../src/maps/mapKindQueries";
 import {
   MAP_KINDS,
@@ -105,6 +107,7 @@ function fakePlugin(mapKinds: string[] | undefined): HexmakerPlugin & MapKindHos
       return par ? { map: par.map, hex: par.hex } : undefined;
     },
     getPaletteByName: (n: string) => terrainPalettes.find((p) => p.name === n),
+    moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as unknown as HexmakerPlugin, h); },
   } as unknown as HexmakerPlugin & MapKindHost;
 }
 
