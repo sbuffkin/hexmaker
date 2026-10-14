@@ -18,7 +18,6 @@
 
 export type Side = "north" | "south" | "east" | "west";
 export const SIDES: readonly Side[] = ["north", "east", "south", "west"];
-export const OPPOSITE: Record<Side, Side> = { north: "south", south: "north", east: "west", west: "east" };
 const DELTA: Record<Side, [number, number]> = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
 
 export interface WorldSlot {

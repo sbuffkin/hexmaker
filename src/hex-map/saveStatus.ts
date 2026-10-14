@@ -12,6 +12,8 @@
  * same words in a quieter colour. DOM-free so it can be unit-tested.
  */
 
+import { logError } from "../log";
+
 export type SaveState = "idle" | "pending" | "saving" | "saved" | "settled" | "error";
 
 export const SAVE_STATUS_TEXT: Record<SaveState, string> = {
@@ -76,7 +78,7 @@ export class SaveTracker {
       await work;
     } catch (err) {
       this.failed = true;
-      console.error("Hexmaker: save failed", err);
+      logError("save failed", err);
     } finally {
       this.inFlight--;
       if (this.inFlight === 0) {

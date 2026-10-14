@@ -103,7 +103,6 @@ export const DEFAULT_WORLD_TYPES = "Default space";
 
 /** Which kind of space map picks: a sector's systems, or a system's orbits. */
 export type WorldTypeMap = "sector" | "system";
-export const WORLD_TYPE_MAPS: readonly WorldTypeMap[] = ["sector", "system"];
 
 export interface WorldTypeRow {
   /** The terrain this row places, as written ("ocean planet"). */

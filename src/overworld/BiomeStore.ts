@@ -22,6 +22,7 @@
  * Every change is handed to the lookups in biomes.ts (setBiomeSource).
  */
 
+import { logError } from "../log";
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import { noticeBackground } from "../ui/notify";
 import type HexmakerPlugin from "../HexmakerPlugin";
@@ -390,7 +391,7 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
           await this.plugin.app.vault.create(path, text);
           this.take(path, biomeFileName(p.label), text);
         } catch (e) {
-          console.error("Hexmaker: couldn't write biome note", path, e);
+          logError("couldn't write biome note", e, path);
         }
       }
       // A biome shipped after the "All biomes" pool was written joins it
@@ -411,7 +412,7 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
       const next = appendPoolRows(content, names);
       if (next !== content) await this.plugin.app.vault.modify(f, next);
     } catch (e) {
-      console.error("Hexmaker: couldn't add new biomes to the biome pool", f.path, e);
+      logError("couldn't add new biomes to the biome pool", e, f.path);
     }
   }
 
@@ -433,7 +434,7 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
         if (next !== content) await this.plugin.app.vault.modify(f, next);
         this.take(f.path, f.basename, next);
       } catch (err) {
-        console.error("Hexmaker: couldn't add a climate to biome note", f.path, err);
+        logError("couldn't add a climate to biome note", err, f.path);
       }
     }
     s.biomeClimatesSeeded = [...done, ...plan.done];
@@ -456,13 +457,13 @@ export class BiomeStore implements BiomeStoreApi, ModuleStore {
       const dir = `${this.plugin.manifest.dir}/backups/biome-notes-${new Date().toISOString().slice(0, 10)}`;
       await writeJsonBackup(this.plugin.app.vault.adapter, dir, base, JSON.stringify({ savedAt: new Date().toISOString(), notes }));
     } catch (e) {
-      console.error("Hexmaker: biome backup failed", e);
+      logError("biome backup failed", e);
     }
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
     this.queue = this.queue.then(task).catch((e) => {
-      console.error("Hexmaker: biome notes", e);
+      logError("biome notes", e);
     });
     return this.queue;
   }

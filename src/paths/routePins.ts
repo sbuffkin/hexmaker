@@ -28,6 +28,7 @@
  * Every write goes through the path edit gate (editGate.ts).
  */
 
+import { logError } from "../log";
 import { Notice } from "obsidian";
 import type { HexKey, MapData, MapPath } from "../types";
 import type { SegmentStyle } from "./router";
@@ -177,7 +178,7 @@ export class RoutePins {
     this.host.mapStore.setPaths(mapName, after);
     void this.host.saveSettings?.();
     for (const fn of this.listeners) {
-      try { fn(rec); } catch (e) { console.error("Hexmaker: pin listener failed", e); }
+      try { fn(rec); } catch (e) { logError("pin listener failed", e); }
     }
     this.batch.push(rec);
     if (this.batchTimer === undefined) this.batchTimer = window.setTimeout(() => this.showNotice(), BATCH_MS);

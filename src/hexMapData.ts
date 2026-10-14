@@ -37,9 +37,6 @@ import { takeBodyFields, type TakenBodyField } from "./hexBodyFields";
 
 export const MAP_DATA_CALLOUT = "[!hexmaker]";
 
-/** Placeholder the built-in template carries until the note is filled in. */
-export const MAP_DATA_TEMPLATE = `> ${MAP_DATA_CALLOUT} Map data\n> Filled in from the map by Hexmaker.`;
-
 export interface HexMapDataView {
   /** Map (folder) name, for the link to its map note. */
   map: string;

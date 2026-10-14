@@ -35,7 +35,6 @@ export interface ClimateRange {
 }
 
 export type ClimateElevation = "sea" | "low" | "mid" | "high" | "mouth";
-export const CLIMATE_ELEVATIONS: readonly ClimateElevation[] = ["sea", "low", "mid", "high", "mouth"];
 
 export interface BiomeClimate {
   /** Unset: any temperature. */
@@ -153,9 +152,6 @@ function readChance(raw: string): number {
   const v = pct || n > 1 ? n / 100 : n;
   return v >= 0 && v <= 1 ? v : NaN;
 }
-
-/** The climate keys this file owns, in writing order. */
-export const CLIMATE_KEYS = ["temperature", "moisture", "elevation", "coastal", "chance", "rare"] as const;
 
 /** Read the climate keys from a note's (lower-cased) frontmatter. Undefined when none is set. */
 export function readClimate(fm: ReadonlyMap<string, string>): { climate?: BiomeClimate; problems: ClimateProblem[] } {

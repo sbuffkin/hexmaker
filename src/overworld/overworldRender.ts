@@ -266,9 +266,6 @@ export function cellsBox(layout: RegionLayout, cells: { x: number; y: number }[]
   return { x: minX - m, y: minY - m, w: maxX - minX + 2 * m, h: maxY - minY + 2 * m };
 }
 
-/** Which region (parent hex key) a child cell belongs to. */
-export const ownerKey = (layout: RegionLayout, x: number, y: number): string => parentOf(layout, x, y).join("_");
-
 // ── the minimap: the overworld's own hexes ───────────────────────────────
 
 export interface MiniHex {

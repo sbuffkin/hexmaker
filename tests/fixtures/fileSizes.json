@@ -15,7 +15,7 @@
 		"src/hex-table/HexTableView.ts": 1140,
 		"src/worldgen/NewMapSetupModal.ts": 1137,
 		"src/SetupWizardView.ts": 1120,
-		"src/space/worldTypes.ts": 1095,
+		"src/space/worldTypes.ts": 1094,
 		"src/palettes/PaletteStore.ts": 1043,
 		"src/HexmakerSettingTab.ts": 1015,
 		"src/worldgen/procedural/planetSurface.ts": 1003,

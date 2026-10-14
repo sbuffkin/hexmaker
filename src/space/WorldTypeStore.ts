@@ -22,6 +22,7 @@
  * - Every change is told to onChange listeners.
  */
 
+import { logError } from "../log";
 import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
@@ -437,7 +438,7 @@ export class WorldTypeStore implements ModuleStore {
         await this.plugin.app.vault.modify(f, upgraded);
         content = upgraded;
       } catch (e) {
-        console.error("Hexmaker: couldn't add stars and sector features to", f.path, e);
+        logError("couldn't add stars and sector features to", e, f.path);
       }
     }
     this.take(f.path, content);
@@ -479,7 +480,7 @@ export class WorldTypeStore implements ModuleStore {
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);
     } catch (e) {
-      console.error("Hexmaker: couldn't write the world types note", path, e);
+      logError("couldn't write the world types note", e, path);
     }
   }
 
@@ -499,13 +500,13 @@ export class WorldTypeStore implements ModuleStore {
       const dir = `${this.plugin.manifest.dir}/backups/world-types-${new Date().toISOString().slice(0, 10)}`;
       await writeJsonBackup(this.plugin.app.vault.adapter, dir, base, JSON.stringify({ savedAt: new Date().toISOString(), notes }));
     } catch (e) {
-      console.error("Hexmaker: world types backup failed", e);
+      logError("world types backup failed", e);
     }
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
     this.queue = this.queue.then(task).catch((e) => {
-      console.error("Hexmaker: world types", e);
+      logError("world types", e);
     });
     return this.queue;
   }

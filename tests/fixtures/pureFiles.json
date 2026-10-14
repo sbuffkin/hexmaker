@@ -43,6 +43,7 @@
 	"src/hexMapData.ts",
 	"src/impassable.ts",
 	"src/kindContent.ts",
+	"src/log.ts",
 	"src/mapKinds.ts",
 	"src/mapScales.ts",
 	"src/maps/calloutMemory.ts",

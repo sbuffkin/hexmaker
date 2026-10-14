@@ -486,15 +486,3 @@ export function defaultGeneratorFor(
   }
   return fitting.find((k) => k.source === "built-in")?.id ?? BLANK_ID;
 }
-
-/**
- * Notes-on-use: should a generated or painted terrain create/update the hex
- * note? Not when it's the map's base terrain and the hex has no note yet —
- * an absent note already renders as the base terrain.
- */
-export function shouldWriteCell(plugin: HexmakerPlugin, mapName: string, key: string, terrain: string): boolean {
-  const base = plugin.getMap(mapName)?.baseTerrain;
-  if (!base || terrain !== base) return true;
-  const [x, y] = key.split("_").map(Number);
-  return plugin.app.vault.getAbstractFileByPath(plugin.hexPath(x, y, mapName)) !== null;
-}
