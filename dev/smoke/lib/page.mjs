@@ -463,11 +463,26 @@ export async function partyPlay(id, name) {
       el.ownerDocument.dispatchEvent(new MouseEvent("mouseup", at));
     };
     press(tokenEl);
-    const step = await waitFor(() => view.containerEl.querySelector(".duckmage-hex.duckmage-party-step"));
+    // The map may still redraw after the mode switch: let it settle, then
+    // take the lit hex from the grid as it is now (not a detached one).
+    await sleep(800);
+    const step = await waitFor(() => [...view.containerEl.querySelectorAll(".duckmage-hex-map-grid .duckmage-hex.duckmage-party-step")].find((el) => el.isConnected));
     if (!view.containerEl.querySelector(".duckmage-token.is-party.is-selected")) fail("a click didn't pick the party up");
     if (!step) { fail("no neighbouring hex lit up"); return out; }
     const to = `${step.dataset.x}_${step.dataset.y}`;
-    step.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    const party = view.activeParty?.();
+    let reached = false;
+    const onHexClick = view.onHexClick;
+    view.onHexClick = function (...a) { reached = true; return onHexClick.apply(this, a); };
+    try {
+      // A real mouseup is always followed by a click; the synthetic strokes
+      // of earlier checks aren't, which leaves the view's "that was a drag,
+      // swallow the next click" flag set. A click on the view's own box
+      // (no hex) clears it.
+      view.contentEl.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+      step.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    } finally { view.onHexClick = onHexClick; }
+    if (!reached || !party) out.problems.push(`(click reached the map: ${reached}; target ${step.className} in ${step.parentElement?.className}; party picked up: ${party ? party.hex : "none"}; mode ${p.getMap(name).workMode})`);
     const readTok = async () => (await app.vault.adapter.exists(tokPath)) ? app.vault.adapter.read(tokPath) : "";
     let moved = false;
     for (let i = 0; i < 40 && !moved; i++) { moved = new RegExp(`^token-hex: "?${to}"?\\s*$`, "m").test(await readTok()); if (!moved) await sleep(100); }
