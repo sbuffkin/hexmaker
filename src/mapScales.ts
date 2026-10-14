@@ -29,14 +29,16 @@ export function scaleOrFirst(scales: readonly MapScaleDef[], id: string | undefi
  * `otherGenerators`, also every generator of its map type that no scale
  * lists (learned and shipped ones), in list order.
  */
-export function scaleGenerators<K extends { id: string; source?: string; mapKind?: string }>(scale: MapScaleDef, all: readonly K[]): K[] {
+export function scaleGenerators<K extends { id: string; source?: string; mapKind?: string; everyScale?: boolean }>(scale: MapScaleDef, all: readonly K[]): K[] {
   const blank = all.filter((k) => k.source === "blank");
-  const own = scale.generators.flatMap((id) => all.filter((k) => k.id === id && k.source !== "blank"));
-  if (!scale.otherGenerators) return [...blank, ...own];
+  // Generators offered on every scale come right after Blank.
+  const every = all.filter((k) => k.everyScale && k.source !== "blank");
+  const own = scale.generators.flatMap((id) => all.filter((k) => k.id === id && k.source !== "blank" && !k.everyScale));
+  if (!scale.otherGenerators) return [...blank, ...every, ...own];
   const listed = new Set(registry.mapScales().flatMap((s) => s.generators));
   const fallback = registry.fallbackKind();
-  const others = all.filter((k) => k.source !== "blank" && !listed.has(k.id) && (registry.kindId(k.mapKind) ?? fallback) === scale.kind);
-  return [...blank, ...own, ...others];
+  const others = all.filter((k) => k.source !== "blank" && !k.everyScale && !listed.has(k.id) && (registry.kindId(k.mapKind) ?? fallback) === scale.kind);
+  return [...blank, ...every, ...own, ...others];
 }
 
 /** The palette a scale wants for a generator: the generator's own (Orbits: Space - System), else the scale's. */

@@ -33,8 +33,8 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps and space, in that order", () => {
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space"]);
+  it("registers world, world-maps, space and hex-flower, in that order", () => {
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "hex-flower"]);
     expect(registry.kindIds()).toEqual(["world", "space"]);
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();

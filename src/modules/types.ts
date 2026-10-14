@@ -28,6 +28,7 @@ import type { LatticeGrid, Pt } from "../paths/pathGeometry";
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
 import type { TAbstractFile } from "obsidian";
+import type { UndoItem } from "../hex-map/undoItems";
 
 /** A map type id ("world", "space"). Stable, never reused. */
 export type KindId = string;
@@ -244,6 +245,12 @@ export interface HexmakerModule {
   addedPresetPathFields?: readonly { pathType: string; field: "carves" | "carveWidth" }[];
   /** Generator ids a palette's Submap defaults name (listed in the palette note's help line). */
   submapGeneratorIds?: readonly string[];
+  /**
+   * Map settings this module keeps in the map note, one plain key each,
+   * read and written like the core's. A build without the module keeps
+   * the keys as the user's own.
+   */
+  mapNoteFields?: readonly MapNoteField[];
   /** Data the module owns (release slicing derives its lists from these). */
   owns: {
     settingsKeys: readonly string[];
@@ -256,6 +263,17 @@ export interface HexmakerModule {
      */
     strings?: readonly string[];
   };
+}
+
+/**
+ * A map setting a module keeps in the map note: the MapData field (one the
+ * core doesn't declare), its frontmatter key, and how it's written
+ * ("list": a list of strings; "note": a vault path written as a wikilink).
+ */
+export interface MapNoteField {
+  field: string;
+  key: string;
+  kind: "str" | "num" | "bool" | "list" | "note";
 }
 
 // ── Runtime: what a module adds that needs the plugin ─────────────────────
@@ -441,6 +459,58 @@ export interface ArrivalHooks {
   tableSourceFor?(plugin: HexmakerPlugin, terrains: string[], mapName: string): TableSource | undefined;
 }
 
+/** A party token stepped from one hex to the next (Play, or dragged in any mode). */
+export interface PartyStep {
+  map: string;
+  /** The hex it left and the one it entered ("x_y"). */
+  from: string;
+  to: string;
+  /** The party token's note. */
+  token?: string;
+}
+
+/** What a module adds to Play. */
+export interface PlayHooks {
+  /**
+   * The party entered a hex. Returns the undo entries of what it wrote:
+   * the map view groups them with the token's move (one undo).
+   */
+  onEnter?(plugin: HexmakerPlugin, step: PartyStep): Promise<UndoItem[]>;
+}
+
+/** An item a module adds to a hex's right-click menu. */
+export interface HexMenuContribution {
+  /** Menu item id (src/workMode.ts classifies it). */
+  id: string;
+  label: string;
+  icon: string;
+  /** Its placement id (src/ui/placement.ts). */
+  placementId?: string;
+  run(): void;
+}
+
+/** What a generator page tab can ask of the page. */
+export interface GeneratorPageHost {
+  /** Redraw the whole page. */
+  rerender(): void;
+  /** Redraw the part below the list (and the preview column). */
+  show(): void;
+  /** The palette the page is on. */
+  paletteName(): string;
+}
+
+/**
+ * A tab a module adds to the generator page's library (beside Generators
+ * and Maps): its list and actions, and what the page shows while it's open.
+ */
+export interface GeneratorPageTab {
+  id: string;
+  label: string;
+  count(plugin: HexmakerPlugin): number;
+  drawList(plugin: HexmakerPlugin, list: HTMLElement, actions: HTMLElement, ctx: { query: string; redraw(): void; host: GeneratorPageHost }): void;
+  renderPanel(plugin: HexmakerPlugin, main: HTMLElement, side: HTMLElement, host: GeneratorPageHost): void;
+}
+
 /**
  * The runtime half of a module (see the top of this file): host-bound
  * pieces, read only by the plugin and its services (src/modules/runtime.ts).
@@ -495,4 +565,12 @@ export interface ModuleRuntime {
    * src/modules/runtime.ts worldMaps() and `import type` only.
    */
   worldMaps?(): WorldMapsApi;
+  /** What it adds to Play (the party entering a hex). */
+  play?: PlayHooks;
+  /** Items for a hex's right-click menu on map `map` (none: an empty list). */
+  hexMenu?(plugin: HexmakerPlugin, map: string, hex: string): HexMenuContribution[];
+  /** More hexes the map's "?" layer marks (the uncharted layer). */
+  unchartedKeys?(plugin: HexmakerPlugin, map: string): Iterable<string>;
+  /** Tabs of the generator page's library. */
+  generatorPage?: readonly GeneratorPageTab[];
 }

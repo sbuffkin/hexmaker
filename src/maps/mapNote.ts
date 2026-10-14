@@ -5,6 +5,7 @@ import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
 import { ENGINE_ROLES } from "../worldgen/tableRoles";
+import { registry } from "../modules";
 import { splitRow } from "../md/tableRow";
 
 /**
@@ -380,10 +381,7 @@ function toJs(n: YNode): unknown {
 
 type Kind = "str" | "num" | "bool" | "list" | "note";
 
-/**
- * Settings given one plain key each: [MapData field, key, kind, old keys].
- * "note" = a vault note path written as a wikilink.
- */
+/** Settings given one plain key each: [MapData field, key, kind, old keys]; "note" = a vault note path written as a wikilink. */
 const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["displayName", "display-name", "str"],
   ["paletteName", "palette", "str"],
@@ -443,6 +441,8 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["gridDisplayScaleY", "grid-display-scale-y", "num"],
   ["gridDisplayOffsetX", "grid-display-offset-x", "num"],
   ["gridDisplayOffsetY", "grid-display-offset-y", "num"],
+  // Modules' own map settings (HexmakerModule.mapNoteFields), last.
+  ...registry.mapNoteFields().map((f): [keyof MapSettings, string, Kind] => [f.field as keyof MapSettings, f.key, f.kind]),
 ];
 
 const PARENT_KEYS = ["parent", "parent-hex"];

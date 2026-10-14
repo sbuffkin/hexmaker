@@ -22,8 +22,8 @@ export function wizardScale(ctx: Pick<WizardContext, "mapKinds" | "scaleId">): M
 }
 
 /** A scale's list starts on its first real generator (Blank when it has none). */
-export function scaleStarter(fitting: readonly { id: string }[]): string {
-	return fitting.find((k) => k.id !== BLANK_ID)?.id ?? BLANK_ID;
+export function scaleStarter(fitting: readonly { id: string; everyScale?: boolean }[]): string {
+	return fitting.find((k) => k.id !== BLANK_ID && !k.everyScale)?.id ?? BLANK_ID;
 }
 
 /**

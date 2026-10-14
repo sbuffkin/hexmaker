@@ -112,6 +112,7 @@ import {
 } from "../frontmatter";
 import { PainterContextMenu, type PainterContextMenuOption } from "./PainterContextMenu";
 
+import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./view/undoGroup";
 import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
@@ -6051,6 +6052,8 @@ export class HexMapView extends ItemView {
         const place = (t: TokenSnap | null) => (t ? { hex: t.hex, map: t.map } : null);
         return sameValue(now, place(want)) ? item : null;
       }
+      case "group": return prepareGroup(item, dir, (it, d) => this.prepareUndo(it, d));
+      case "map-field": return prepareMapField(this.plugin, item, dir);
     }
   }
 
@@ -6096,7 +6099,9 @@ export class HexMapView extends ItemView {
       void this.plugin.saveSettings();
       this.renderGrid();
       this.updateModeBar();
-    } else {
+    } else if (item.kind === "group") await applyGroup(item, dir, (it, d) => this.applyUndo(it, d));
+    else if (item.kind === "map-field") applyMapField(this.plugin, item, dir);
+    else {
       await this.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);
     }
   }
@@ -8303,19 +8308,9 @@ export class HexMapView extends ItemView {
         if (dist < bestDist) { bestDist = dist; best = key; }
       }
       if (best !== closestHex) {
-        if (closestHex) {
-          const [px, py] = closestHex.split("_").map(Number);
-          this.viewportEl
-            ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-            ?.removeClass("duckmage-token-drop-target");
-        }
+        if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
         closestHex = best;
-        if (best) {
-          const [px, py] = best.split("_").map(Number);
-          this.viewportEl
-            ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-            ?.addClass("duckmage-token-drop-target");
-        }
+        if (best) { const [px, py] = best.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.addClass("duckmage-token-drop-target"); }
       }
     };
 
@@ -8324,12 +8319,7 @@ export class HexMapView extends ItemView {
       activeDocument.removeEventListener("mouseup", onUp);
       tokenEl.removeClass("duckmage-token-dragging");
 
-      if (closestHex) {
-        const [px, py] = closestHex.split("_").map(Number);
-        this.viewportEl
-          ?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)
-          ?.removeClass("duckmage-token-drop-target");
-      }
+      if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.viewportEl?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
 
       if (!isDragging) {
         onClickInstead();

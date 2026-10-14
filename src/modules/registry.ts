@@ -16,6 +16,7 @@ import type {
   MapScaleDef,
   KindId,
   KindInfo,
+  MapNoteField,
   ShippedTableDef,
   TableConditionDef,
   TerrainGroupDef,
@@ -152,6 +153,11 @@ export class ModuleRegistry {
   /** Every module's map scales, in registry order. */
   mapScales(): MapScaleDef[] {
     return this.modules.flatMap((m) => [...(m.mapScales ?? [])]);
+  }
+
+  /** Map-note settings the modules add, in registry order. */
+  mapNoteFields(): MapNoteField[] {
+    return this.modules.flatMap((m) => [...(m.mapNoteFields ?? [])]);
   }
 
   pathRoles(): Record<string, string> {

@@ -428,6 +428,8 @@ export interface HexmakerPluginSettings {
 	noteFormatUpgrades?: string[];
 	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
 	worldTypesFolder?: string;
+	/** Vault folder for hex flower notes; blank = `<worldFolder>/hex flowers`. */
+	hexFlowersFolder?: string;
 	/** True once the shipped "Default space" world types note was written (once, so a deleted one stays deleted). */
 	worldTypesSeeded?: boolean;
 	/** True once settings-only palettes were written out as notes. */

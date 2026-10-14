@@ -19,7 +19,7 @@
     "test:e2e": "tsx --tsconfig ./tsconfig.test.json --import ./tests/register.mjs --test tests/integration/e2e-*.integration.ts",
     "lint": "eslint . --ext .js,.ts",
     "obsidian:login": "node dev/obsidian-login.mjs",
-    "preview:overworld": "esbuild dev/overworld-preview.ts --bundle --format=iife --loader:.md=text --define:__SLICE_WORLDMAPS__=true --define:__SLICE_SPACE__=true --outfile=dev/overworld-preview.js"
+    "preview:overworld": "esbuild dev/overworld-preview.ts --bundle --format=iife --loader:.md=text --define:__SLICE_WORLDMAPS__=true --define:__SLICE_SPACE__=true --define:__SLICE_HEXFLOWER__=true --outfile=dev/overworld-preview.js"
   },
   "keywords": [
     "obsidian",

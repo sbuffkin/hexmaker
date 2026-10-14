@@ -19,6 +19,7 @@ import type { GeneratorFile } from "./generators";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
 import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
+import type { ScaleMapMade } from "../modules/types";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -119,6 +120,14 @@ export interface TerrainGeneratorKind {
    *  (already created, with its terrain): drops path types its palette
    *  doesn't have (named in `missing`); see generators.ts toMapPaths. */
   toPaths(paths: GeneratedPath[], mapName: string, taken?: Iterable<string>): { paths: MapPath[]; missing: string[] };
+  /** Offered on every map scale of the setup wizard and New map, right after Blank. */
+  everyScale?: boolean;
+  /**
+   * After a map is made with it (setup wizard, New map): what it writes
+   * beyond the terrain (notes, map settings, tokens). Such a map has no
+   * fresh-map Reroll / Lock bar.
+   */
+  afterCreate?(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<void>;
 }
 
 export const BLANK_ID = "blank";
@@ -500,7 +509,7 @@ export function neighbourFirst<K extends Pick<TerrainGeneratorKind, "id" | "sour
  * carries on from its edge; otherwise the first built-in one; else Blank.
  */
 export function defaultGeneratorFor(
-  fitting: Pick<TerrainGeneratorKind, "id" | "source" | "needsContext" | "continuesNeighbours">[],
+  fitting: Pick<TerrainGeneratorKind, "id" | "source" | "needsContext" | "continuesNeighbours" | "everyScale">[],
   where: { parentHex?: boolean; neighbour?: boolean },
 ): string {
   if (where.parentHex) {
@@ -511,5 +520,5 @@ export function defaultGeneratorFor(
     const cont = neighbourFirst(fitting.filter((k) => k.id !== BLANK_ID && k.continuesNeighbours))[0];
     if (cont) return cont.id;
   }
-  return fitting.find((k) => k.source === "built-in")?.id ?? BLANK_ID;
+  return fitting.find((k) => k.source === "built-in" && !k.everyScale)?.id ?? BLANK_ID;
 }
