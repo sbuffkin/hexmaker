@@ -70,7 +70,6 @@ import { setHandEditListener, setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
-import { OPEN_MAP_ACTION, parseMapLinkParams } from "./hexLink";
 import { TableNotes } from "./random-tables/TableNotes";
 import { inheritedRoleTables, type RoleTablePick } from "./worldgen/tableSources";
 import { NAMES_ROLE, type RoleId } from "./worldgen/tableRoles";
@@ -111,6 +110,7 @@ import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from ".
 import { HexPropsSync } from "./maps/hexPropsSync";
 import { registerHexPropsEvents } from "./plugin/hexPropsEvents";
 import { registerCommands, registerEditorMenu } from "./plugin/commands";
+import { registerProtocolHandlers } from "./plugin/protocolHandlers";
 import {
   addLinkToSection,
   getLinksInSection,
@@ -372,72 +372,8 @@ export default class HexmakerPlugin extends Plugin {
     // Right-click "Insert table roller" / "Insert map link" in any editor.
     registerEditorMenu(this);
 
-    interface WithOpenTable {
-      openTable?(path: string): void;
-    }
-    this.registerObsidianProtocolHandler("duckmage-roll", (params) => {
-      const filePath = params["file"];
-      if (!filePath) return;
-      const leaves = this.app.workspace.getLeavesOfType(
-        VIEW_TYPE_RANDOM_TABLES,
-      );
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenTable).openTable?.(filePath);
-      } else {
-        void this.app.workspace.getLeaf("tab").setViewState({
-          type: VIEW_TYPE_RANDOM_TABLES,
-          state: { filePath },
-        });
-      }
-    });
-
-    interface WithOpenWorkflow {
-      openWorkflow?(path: string): void;
-    }
-    this.registerObsidianProtocolHandler("duckmage-workflow", (params) => {
-      const filePath = params["file"];
-      if (!filePath) return;
-      const leaves = this.app.workspace.getLeavesOfType(
-        VIEW_TYPE_RANDOM_TABLES,
-      );
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenWorkflow).openWorkflow?.(
-          filePath,
-        );
-      } else {
-        void this.app.workspace.getLeaf("tab").setViewState({
-          type: VIEW_TYPE_RANDOM_TABLES,
-          state: { filePath, mode: "workflows" },
-        });
-      }
-    });
-
-    // A map link (`map=`), or a hex link (`map=&x=&y=`: the map centred on
-    // that hex, e.g. copied from the hex editor's centre dot). src/hexLink.ts.
-    this.registerObsidianProtocolHandler(OPEN_MAP_ACTION, (params) => {
-      const target = parseMapLinkParams(params);
-      if (!target) return;
-      const go = (view: HexMapView, record: boolean) => {
-        if (target.hex) view.goToHex(target.map, target.hex.x, target.hex.y, { recordHistory: record });
-        else view.navigateToMap(target.map, { recordHistory: record });
-      };
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      if (leaves.length > 0) {
-        // Revealing loads a deferred (restored, never shown) tab first.
-        void this.app.workspace.revealLeaf(leaves[0]).then(() => {
-          if (leaves[0].view instanceof HexMapView) go(leaves[0].view, true);
-        });
-      } else {
-        void this.app.workspace.getLeaf("tab")
-          .setViewState({ type: VIEW_TYPE_HEX_MAP })
-          .then(() => {
-            const view = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view;
-            if (view instanceof HexMapView) go(view, false);
-          });
-      }
-    });
+    // obsidian:// actions: tables, workflows, map and hex links (src/plugin/protocolHandlers.ts).
+    registerProtocolHandlers(this);
 
     // Keep linkedFolder frontmatter in sync when a folder is renamed
     this.registerEvent(

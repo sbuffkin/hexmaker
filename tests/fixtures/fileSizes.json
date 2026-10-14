@@ -2,7 +2,7 @@
 	"limit": 800,
 	"caps": {
 		"src/hex-map/HexMapView.ts": 8416,
-		"src/HexmakerPlugin.ts": 2898,
+		"src/HexmakerPlugin.ts": 2834,
 		"src/maps/mapNote.ts": 2136,
 		"src/random-tables/RandomTableView.ts": 1933,
 		"src/hex-map/HexEditorModal.ts": 1764,
