@@ -6,7 +6,7 @@
 		"src/maps/mapNote.ts": 2136,
 		"src/random-tables/RandomTableView.ts": 1933,
 		"src/hex-map/HexEditorModal.ts": 631,
-		"src/worldgen/GeneratorPanel.ts": 1603,
+		"src/worldgen/GeneratorPanel.ts": 1580,
 		"src/maps/MapStore.ts": 1373,
 		"src/hex-map/pathTool.ts": 1496,
 		"src/overworld/regionGen.ts": 1405,

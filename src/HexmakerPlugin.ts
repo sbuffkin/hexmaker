@@ -130,7 +130,7 @@ import {
   appendSectionText,
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
-import { GeneratorPanel } from "./worldgen/GeneratorPanel";
+import { generatorPageState } from "./worldgen/generatorPageState";
 import { openNoteFocused } from "./openNote";
 import { ensureLogNote } from "./play/playLogWriter";
 import { logFolderFor } from "./play/playLog";
@@ -791,19 +791,19 @@ export default class HexmakerPlugin extends Plugin {
    * generator (the page says which biomes use it).
    */
   async openTerrainGenerator(select: { mapName?: string; generatorPath?: string; paletteName?: string; biome?: string } = {}): Promise<void> {
-    if (select.mapName) GeneratorPanel.mapName = select.mapName;
-    if (select.paletteName) GeneratorPanel.paletteName = select.paletteName;
+    if (select.mapName) generatorPageState.mapName = select.mapName;
+    if (select.paletteName) generatorPageState.paletteName = select.paletteName;
     if (select.generatorPath) {
-      GeneratorPanel.selectedPath = select.generatorPath;
-      GeneratorPanel.biome = "";
+      generatorPageState.selectedPath = select.generatorPath;
+      generatorPageState.biome = "";
     }
     if (select.biome) {
       const b = (this.moduleStore("biomes") as BiomeStore | undefined)?.get(select.biome);
       const file = b?.generator ? this.app.vault.getAbstractFileByPath(`${b.generator}.md`) ?? this.app.vault.getAbstractFileByPath(b.generator) ?? this.app.metadataCache.getFirstLinkpathDest(b.generator, "") : null;
       if (b && file) {
-        GeneratorPanel.selectedPath = file.path;
-        GeneratorPanel.biome = "";
-      } else if (b && !b.generator) GeneratorPanel.biome = b.id;
+        generatorPageState.selectedPath = file.path;
+        generatorPageState.biome = "";
+      } else if (b && !b.generator) generatorPageState.biome = b.id;
     }
     const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_GENERATOR)[0];
     if (existing) {

@@ -48,6 +48,7 @@ import { blendFromNeighbours, regionBiome, generateConnected, neighbourSpec, NEI
 import { GeneratorLibrary } from "./GeneratorLibrary";
 import { worldMaps } from "../modules/runtime";
 import { showModuleTab } from "./genPage/moduleTabs";
+import { generatorPageState } from "./generatorPageState";
 import { generatorMapKind, isGeneratorShown } from "../mapKinds";
 import { Disclosure, Fold } from "../ui/disclosure";
 import { ENGINE_TUNING_IDS, engineTuningIsSet } from "./engineTuningSet";
@@ -75,7 +76,6 @@ import {
   type CountRange,
   COMPASS,
   type Compass,
-  type HexWfcModel,
 } from "../../packages/hex-wfc/src";
 import type { TFile } from "obsidian";
 
@@ -109,29 +109,6 @@ const SYMMETRY_LABELS: Record<Symmetry, string> = {
 };
 
 export class GeneratorPanel {
-  /** Selections survive re-renders. */
-  static selectedPath = "";
-  static mapName = "";
-  static paletteName = "";
-  static seedLocked = false;
-  /** Generate the new map as a neighbouring region of an existing one. */
-  static connect: { anchor: string; side: Side } | null = null;
-  /** When connected: blend toward the neighbours' terrain (see blendFromNeighbours). */
-  static leanToNeighbours = true;
-  /**
-   * The save last loaded. While the page still shows its generator, seed and
-   * size (and no setting has changed), the preview and Create map use the
-   * saved map, even if this version would generate a different one.
-   */
-  static loadedSave: GeneratorSave | null = null;
-  /**
-   * A generator that only exists on this page (a new blend) until saved.
-   * Settings, sliders and directions change it in memory; Save writes it to
-   * the generators folder.
-   */
-  static draft: HexWfcModel | null = null;
-  /** A blend-field biome shown instead of a generator (its id; "" = none). See BiomePanel. */
-  static biome = "";
   private seed = randomSeed();
   private previewCols = 30;
   private previewRows = 20;
@@ -145,18 +122,18 @@ export class GeneratorPanel {
     private host: GeneratorPanelHost,
   ) {
     const maps = plugin.settings.maps;
-    if (!maps.some((m) => m.name === GeneratorPanel.mapName)) {
+    if (!maps.some((m) => m.name === generatorPageState.mapName)) {
       const active = (app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP)[0]?.view as HexMapView | undefined)?.activeMapName;
-      GeneratorPanel.mapName = active ?? plugin.settings.defaultMap ?? maps[0]?.name ?? "";
+      generatorPageState.mapName = active ?? plugin.settings.defaultMap ?? maps[0]?.name ?? "";
     }
-    if (!plugin.settings.terrainPalettes.some((p) => p.name === GeneratorPanel.paletteName))
-      GeneratorPanel.paletteName = plugin.getMap(GeneratorPanel.mapName)?.paletteName ?? plugin.settings.terrainPalettes[0]?.name ?? "";
-    const map = plugin.getMap(GeneratorPanel.mapName);
+    if (!plugin.settings.terrainPalettes.some((p) => p.name === generatorPageState.paletteName))
+      generatorPageState.paletteName = plugin.getMap(generatorPageState.mapName)?.paletteName ?? plugin.settings.terrainPalettes[0]?.name ?? "";
+    const map = plugin.getMap(generatorPageState.mapName);
     if (map && map.gridSize.cols * map.gridSize.rows <= PREVIEW_AUTO_LIMIT) {
       this.previewCols = map.gridSize.cols;
       this.previewRows = map.gridSize.rows;
     }
-    const loaded = GeneratorPanel.loadedSave;
+    const loaded = generatorPageState.loadedSave;
     if (loaded) {
       this.seed = loaded.seed;
       this.previewCols = loaded.cols;
@@ -165,11 +142,11 @@ export class GeneratorPanel {
   }
 
   private get mapName(): string {
-    return GeneratorPanel.mapName;
+    return generatorPageState.mapName;
   }
 
   private paletteTerrains(): string[] {
-    return this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains.map((t) => t.name) ?? [];
+    return this.plugin.getPaletteByName(generatorPageState.paletteName)?.terrains.map((t) => t.name) ?? [];
   }
 
   render(root: HTMLElement): void {
@@ -188,11 +165,11 @@ export class GeneratorPanel {
     const body = el.createDiv();
     let generators: GeneratorFile[] = [];
     const current = (): ShownGenerator | undefined =>
-      GeneratorPanel.selectedPath === DRAFT_PATH
-        ? GeneratorPanel.draft ? { file: null, model: GeneratorPanel.draft, warnings: [] } : undefined
-        : generators.find((g) => g.file.path === GeneratorPanel.selectedPath);
+      generatorPageState.selectedPath === DRAFT_PATH
+        ? generatorPageState.draft ? { file: null, model: generatorPageState.draft, warnings: [] } : undefined
+        : generators.find((g) => g.file.path === generatorPageState.selectedPath);
 
-    const page = { rerender: () => this.host.rerender(), show: () => show(), paletteName: () => GeneratorPanel.paletteName, mapName: () => this.mapName }; // a module tab's host (genPage/moduleTabs.ts)
+    const page = { rerender: () => this.host.rerender(), show: () => show(), paletteName: () => generatorPageState.paletteName, mapName: () => this.mapName }; // a module tab's host (genPage/moduleTabs.ts)
     const show = () => {
       body.empty();
       side.empty();
@@ -200,18 +177,18 @@ export class GeneratorPanel {
       // World maps: a blend-field biome shown instead of a generator (BiomePanel).
       const wm = worldMaps();
       wm?.BiomePanel.dispose();
-      const biome = GeneratorPanel.biome ? this.plugin.biomeStore?.get(GeneratorPanel.biome) : undefined;
+      const biome = generatorPageState.biome ? this.plugin.biomeStore?.get(generatorPageState.biome) : undefined;
       if (wm && biome && !biome.generator) {
         const panel = new wm.BiomePanel(this.plugin, {
           rerender: () => this.host.rerender(),
           section: (e, t) => this.section(e, t),
-          back: () => { GeneratorPanel.biome = ""; wm.BiomePanel.dispose(); show(); },
-        }, biome.id, () => GeneratorPanel.paletteName);
-        panel.onPalette = (name) => { GeneratorPanel.paletteName = name; show(); };
+          back: () => { generatorPageState.biome = ""; wm.BiomePanel.dispose(); show(); },
+        }, biome.id, () => generatorPageState.paletteName);
+        panel.onPalette = (name) => { generatorPageState.paletteName = name; show(); };
         panel.render(body, side);
         return;
       }
-      GeneratorPanel.biome = "";
+      generatorPageState.biome = "";
       const g = current();
       if (g) this.renderGenerator(body, side, g);
       else {
@@ -221,12 +198,12 @@ export class GeneratorPanel {
       }
     };
     const choose = (g: GeneratorFile) => {
-      GeneratorPanel.biome = "";
-      GeneratorPanel.selectedPath = g.file.path;
+      generatorPageState.biome = "";
+      generatorPageState.selectedPath = g.file.path;
       const source = sourceMapsOf(g.model)[0];
-      if (source && this.plugin.getMap(source)) GeneratorPanel.mapName = source;
+      if (source && this.plugin.getMap(source)) generatorPageState.mapName = source;
       const palette = g.model.meta.palette;
-      if (palette && this.plugin.settings.terrainPalettes.some((p) => p.name === palette)) GeneratorPanel.paletteName = palette;
+      if (palette && this.plugin.settings.terrainPalettes.some((p) => p.name === palette)) generatorPageState.paletteName = palette;
       show();
     };
 
@@ -234,12 +211,12 @@ export class GeneratorPanel {
       // Planet generators (map-kind: planet) are hidden while the Space map
       // type is off, unless this palette/map is in space or one is loaded.
       const context = new Set([
-        this.plugin.getPaletteOrPresetKind(GeneratorPanel.paletteName),
+        this.plugin.getPaletteOrPresetKind(generatorPageState.paletteName),
         ...(this.mapName ? this.plugin.contextKinds(this.mapName) : []),
       ]);
       generators = found.filter((g) => isGeneratorShown(this.plugin.settings, generatorMapKind(g.model.meta), {
         context,
-        selected: g.file.path === GeneratorPanel.selectedPath,
+        selected: g.file.path === generatorPageState.selectedPath,
       }));
       const hiddenBySpace = found.length - generators.length;
       this.generators = found;
@@ -248,23 +225,23 @@ export class GeneratorPanel {
       if (!current()) {
         const names = this.paletteTerrains();
         const g = generators.find((x) => sourceMapsOf(x.model).includes(this.mapName))
-          ?? generators.find((x) => x.model.meta.palette === GeneratorPanel.paletteName || generatorFitsPalette(x.model, names))
+          ?? generators.find((x) => x.model.meta.palette === generatorPageState.paletteName || generatorFitsPalette(x.model, names))
           ?? generators[0];
-        if (g) GeneratorPanel.selectedPath = g.file.path;
+        if (g) generatorPageState.selectedPath = g.file.path;
       }
       libraryEl.empty();
       new GeneratorLibrary(this.app, this.plugin, generators, {
-        selectedPath: () => GeneratorPanel.selectedPath,
+        selectedPath: () => generatorPageState.selectedPath,
         page,
         load: choose,
         loadDraft: (draft) => {
-          GeneratorPanel.biome = "";
-          GeneratorPanel.draft = draft;
-          GeneratorPanel.selectedPath = DRAFT_PATH;
+          generatorPageState.biome = "";
+          generatorPageState.draft = draft;
+          generatorPageState.selectedPath = DRAFT_PATH;
           show();
         },
         changed: (selectPath) => {
-          if (selectPath) GeneratorPanel.selectedPath = selectPath;
+          if (selectPath) generatorPageState.selectedPath = selectPath;
           this.host.rerender();
         },
       }).render(libraryEl);
@@ -296,7 +273,7 @@ export class GeneratorPanel {
     const dropIfEmpty = (body: HTMLElement) => {
       if (!body.childElementCount) body.parentElement?.remove();
     };
-    const colors = paletteColors(this.plugin, GeneratorPanel.paletteName);
+    const colors = paletteColors(this.plugin, generatorPageState.paletteName);
     // One short line; the per-shape breakdown is on hover.
     const byShape = (shape: string) => model.terrains.filter((t) => (t.shape ?? "none") === shape).map((t) => t.name);
     const detail = (["blob", "line", "scatter", "none"] as const)
@@ -318,14 +295,14 @@ export class GeneratorPanel {
     }
 
     // Current settings, kept in sync with the file.
-    const s = () => generatorSettings(model, this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? []);
+    const s = () => generatorSettings(model, this.plugin.getPaletteByName(generatorPageState.paletteName)?.terrains ?? []);
     // A just-loaded save's settings win over a possibly stale read of the file.
     const isThisGenerator = (sv: GeneratorSave) => (!!file && sv.generatorPath === file.path) || sv.generatorName === model.name;
-    if (GeneratorPanel.loadedSave && isThisGenerator(GeneratorPanel.loadedSave)) model.settings = { ...GeneratorPanel.loadedSave.settings };
+    if (generatorPageState.loadedSave && isThisGenerator(generatorPageState.loadedSave)) model.settings = { ...generatorPageState.loadedSave.settings };
     /** The last settings write, for anything that must re-read the file after it. */
     let lastWrite: Promise<void> = Promise.resolve();
     const save = (patch: Partial<Record<keyof GeneratorSettings, unknown>>) => {
-      GeneratorPanel.loadedSave = null;
+      generatorPageState.loadedSave = null;
       const next: Record<string, unknown> = { ...(model.settings ?? {}) };
       for (const [k, v] of Object.entries(patch)) {
         if (v === undefined) delete next[k];
@@ -351,8 +328,8 @@ export class GeneratorPanel {
       keep.addEventListener("click", () => {
         keep.disabled = true;
         void saveGeneratorModel(this.plugin, model).then((r) => {
-          GeneratorPanel.draft = null;
-          GeneratorPanel.selectedPath = r.file.path;
+          generatorPageState.draft = null;
+          generatorPageState.selectedPath = r.file.path;
           new Notice(`Saved generator "${r.model.name}".`);
           this.host.rerender();
         }, (e: unknown) => {
@@ -362,8 +339,8 @@ export class GeneratorPanel {
       });
       const discard = draftRow.createEl("button", { text: "Discard" });
       discard.addEventListener("click", () => {
-        GeneratorPanel.draft = null;
-        GeneratorPanel.selectedPath = "";
+        generatorPageState.draft = null;
+        generatorPageState.selectedPath = "";
         this.host.rerender();
       });
     }
@@ -396,7 +373,7 @@ export class GeneratorPanel {
           return;
         }
         new Notice(`Renamed to "${r.name}"${r.savesUpdated ? `; ${r.savesUpdated} save${r.savesUpdated === 1 ? "" : "s"} updated` : ""}.`);
-        GeneratorPanel.selectedPath = r.file.path;
+        generatorPageState.selectedPath = r.file.path;
         this.host.rerender();
       });
     };
@@ -420,7 +397,7 @@ export class GeneratorPanel {
     ownPalette.addEventListener("change", () => {
       model.meta.palette = ownPalette.value;
       void (file ? setGeneratorPalette(this.plugin, file, ownPalette.value) : Promise.resolve()).then(() => {
-        GeneratorPanel.paletteName = ownPalette.value;
+        generatorPageState.paletteName = ownPalette.value;
         this.host.rerender();
       });
     });
@@ -446,7 +423,7 @@ export class GeneratorPanel {
           relearnBtn.disabled = false;
           return;
         }
-        if (!saved) GeneratorPanel.draft = r.model;
+        if (!saved) generatorPageState.draft = r.model;
         new Notice(`${isBlend ? "Re-blended" : "Re-learned"} "${model.name}" from ${sources.map(sourceLabel).join(" + ")}.`);
         this.host.rerender();
       });
@@ -512,7 +489,7 @@ export class GeneratorPanel {
         for (const points of compasses) for (const p of points) p.b.disabled = true;
         void (saved ? relearnGenerator(this.plugin, saved, next, nextDirs) : remakeBlend(this.plugin, model, next, nextDirs)).then((res) => {
           if ("error" in res) new Notice(res.error);
-          else if (!saved) GeneratorPanel.draft = res.model;
+          else if (!saved) generatorPageState.draft = res.model;
           this.host.rerender();
         });
       };
@@ -580,9 +557,9 @@ export class GeneratorPanel {
     paletteRow.createSpan({ text: "Palette", cls: "duckmage-map-origin-label" });
     const paletteSelect = paletteRow.createEl("select");
     for (const p of this.plugin.settings.terrainPalettes) paletteSelect.createEl("option", { value: p.name, text: p.name });
-    paletteSelect.value = GeneratorPanel.paletteName;
+    paletteSelect.value = generatorPageState.paletteName;
     paletteSelect.addEventListener("change", () => {
-      GeneratorPanel.paletteName = paletteSelect.value;
+      generatorPageState.paletteName = paletteSelect.value;
       this.host.rerender();
     });
     // Name what the palette lacks (G2) rather than dropping it silently.
@@ -635,16 +612,16 @@ export class GeneratorPanel {
     for (const m of this.plugin.settings.maps) anchorSelect.createEl("option", { value: m.name, text: this.plugin.mapLabel(m.name) });
     const sideSelect = connectRow.createEl("select");
     for (const sd of SIDES) sideSelect.createEl("option", { value: sd, text: `${sd} of it` });
-    anchorSelect.value = GeneratorPanel.connect?.anchor ?? "";
-    sideSelect.value = GeneratorPanel.connect?.side ?? "east";
+    anchorSelect.value = generatorPageState.connect?.anchor ?? "";
+    sideSelect.value = generatorPageState.connect?.side ?? "east";
     sideSelect.disabled = !anchorSelect.value;
     const connectNote = el.createEl("p", { cls: "duckmage-map-origin-desc" });
     let connected: NewRegion | null = null;
-    if (GeneratorPanel.connect) {
-      const spec = neighbourSpec(this.plugin, GeneratorPanel.connect.anchor, GeneratorPanel.connect.side);
+    if (generatorPageState.connect) {
+      const spec = neighbourSpec(this.plugin, generatorPageState.connect.anchor, generatorPageState.connect.side);
       if (!spec.ok) connectNote.setText(`⚠ ${spec.reason}`);
       else {
-        connected = { slot: spec.slot, aSlot: spec.aSlot, anchor: GeneratorPanel.connect.anchor, side: GeneratorPanel.connect.side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
+        connected = { slot: spec.slot, aSlot: spec.aSlot, anchor: generatorPageState.connect.anchor, side: generatorPageState.connect.side, cols: spec.cols, rows: spec.rows, offset: spec.offset, stagger: spec.stagger, paletteName: spec.paletteName };
         const borders = occupiedSides(this.plugin, connected).map((sd) => `${sd}: ${this.plugin.mapLabel(regionNameAt(this.plugin, connected!, sd))}`);
         connectNote.setText(`Size locked to ${spec.cols}×${spec.rows} and palette to ${spec.paletteName}, so it lines up. Borders ${borders.join("; ")}. ${hexRangeText(spec.offset, spec.cols, spec.rows)}.`);
         colsInput.value = String(spec.cols);
@@ -655,10 +632,10 @@ export class GeneratorPanel {
       }
     }
     const setConnect = () => {
-      GeneratorPanel.connect = anchorSelect.value ? { anchor: anchorSelect.value, side: sideSelect.value as Side } : null;
+      generatorPageState.connect = anchorSelect.value ? { anchor: anchorSelect.value, side: sideSelect.value as Side } : null;
       // Neighbours must share the palette.
       const anchorMap = anchorSelect.value ? this.plugin.getMap(anchorSelect.value) : undefined;
-      if (anchorMap) GeneratorPanel.paletteName = anchorMap.paletteName;
+      if (anchorMap) generatorPageState.paletteName = anchorMap.paletteName;
       this.host.rerender();
     };
     anchorSelect.addEventListener("change", setConnect);
@@ -670,18 +647,18 @@ export class GeneratorPanel {
     if (connected) {
       const lean = el.createEl("label", { cls: "duckmage-region-row duckmage-wfc-toggle" });
       const box = lean.createEl("input", { type: "checkbox" });
-      box.checked = GeneratorPanel.leanToNeighbours;
+      box.checked = generatorPageState.leanToNeighbours;
       lean.createSpan({ text: "Lean toward neighbours" });
       lean.setAttr("title", `Blend in what the neighbouring regions look like (${NEIGHBOUR_SHARE}% between them), each toward its own side. Directional bias sets how sharp the change is.`);
       box.addEventListener("change", () => {
-        GeneratorPanel.leanToNeighbours = box.checked;
+        generatorPageState.leanToNeighbours = box.checked;
         this.host.rerender();
       });
-      if (GeneratorPanel.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected), NEIGHBOUR_SHARE, this.generators);
+      if (generatorPageState.leanToNeighbours) genModel = blendFromNeighbours(this.plugin, model, regionNeighbourNames(this.plugin, connected), NEIGHBOUR_SHARE, this.generators);
     }
 
     const showLock = () => {
-      const locked = GeneratorPanel.seedLocked;
+      const locked = generatorPageState.seedLocked;
       setIcon(lockBtn, locked ? "lock" : "lock-open");
       lockBtn.toggleClass("is-active", locked);
       lockBtn.setAttr("aria-pressed", String(locked));
@@ -690,7 +667,7 @@ export class GeneratorPanel {
       rerollBtn.setText(locked ? "Regenerate" : "Reroll");
     };
     lockBtn.addEventListener("click", () => {
-      GeneratorPanel.seedLocked = !GeneratorPanel.seedLocked;
+      generatorPageState.seedLocked = !generatorPageState.seedLocked;
       showLock();
       schedulePreview();
     });
@@ -795,7 +772,7 @@ export class GeneratorPanel {
     };
     /** The loaded save, while the page shows exactly its generator, seed and size. */
     const showingSave = (): GeneratorSave | null => {
-      const sv = GeneratorPanel.loadedSave;
+      const sv = generatorPageState.loadedSave;
       if (!sv || !isThisGenerator(sv)) return null;
       if (sv.seed !== Number(seedInput.value) >>> 0 || sv.cols !== Number(colsInput.value) || sv.rows !== Number(rowsInput.value)) return null;
       return sv;
@@ -826,19 +803,19 @@ export class GeneratorPanel {
           rawPaths = sv.paths;
           saveNote = ` · saved map "${sv.name}" (from v${sv.version}; this version generates it differently)`;
         }
-      } else GeneratorPanel.loadedSave = null;
+      } else generatorPageState.loadedSave = null;
       shown = { cells, paths: rawPaths };
       // Paths are coloured as the map path type they'll become.
       const paths = rawPaths.map((p) => ({ ...p, type: drawnPathType(model, p) }));
       lastDraw = (highlight?: string) => {
         // Draw at the side column's device-pixel width so it stays sharp when stretched.
         const dpr = activeWindow.devicePixelRatio || 1;
-        drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin, GeneratorPanel.paletteName),
+        drawPreview(canvas, cells, grid, this.plugin.settings.hexOrientation, colors, r.featureCells, paths, pathColors(this.plugin, generatorPageState.paletteName),
           Math.max(420, side.clientWidth) * dpr, 40 * dpr, highlight, { shadow });
       };
       lastDraw(hoveredRoute);
       renderPreviewLegend(legendBox, this.plugin,
-        this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? this.plugin.settings.terrainPalettes[0]?.terrains ?? [],
+        this.plugin.getPaletteByName(generatorPageState.paletteName)?.terrains ?? this.plugin.settings.terrainPalettes[0]?.terrains ?? [],
         cells.values(), (i) => getIconUrl(this.plugin, i));
       updateShares(cells, grid, palette);
       updatePathRows(r.pathRoutes);
@@ -849,7 +826,7 @@ export class GeneratorPanel {
     const schedulePreview = () => {
       if (this.previewTimer !== null) window.clearTimeout(this.previewTimer);
       if (Number(colsInput.value) * Number(rowsInput.value) > PREVIEW_AUTO_LIMIT) {
-        status.setText(GeneratorPanel.seedLocked
+        status.setText(generatorPageState.seedLocked
           ? "Large map: press Regenerate to see your changes on this seed."
           : "Large map: press Reroll to preview it, or lock the seed (Advanced → Seed) to compare settings.");
         return;
@@ -876,7 +853,7 @@ export class GeneratorPanel {
             created: new Date().toISOString().slice(0, 10),
             generatorName: model.name,
             generatorPath: g.file?.path ?? "",
-            palette: GeneratorPanel.paletteName,
+            palette: generatorPageState.paletteName,
             seed: this.seed,
             cols: grid.cols,
             rows: grid.rows,
@@ -889,7 +866,7 @@ export class GeneratorPanel {
             generatorMarkdown: g.file ? await this.app.vault.read(g.file) : generatorText(this.plugin, model),
           };
           const file = await writeSave(this.plugin, saved);
-          GeneratorPanel.loadedSave = { ...saved, name: file.basename };
+          generatorPageState.loadedSave = { ...saved, name: file.basename };
           saveNameInput.value = "";
           new Notice(`Saved "${file.basename}".`);
           // The new file may not be in the metadata cache yet.
@@ -919,10 +896,10 @@ export class GeneratorPanel {
           loadBtn.disabled = false;
           return;
         }
-        GeneratorPanel.loadedSave = { ...sv, generatorPath: applied.file.path };
-        GeneratorPanel.selectedPath = applied.file.path;
-        if (this.plugin.settings.terrainPalettes.some((p) => p.name === sv.palette)) GeneratorPanel.paletteName = sv.palette;
-        GeneratorPanel.seedLocked = true;
+        generatorPageState.loadedSave = { ...sv, generatorPath: applied.file.path };
+        generatorPageState.selectedPath = applied.file.path;
+        if (this.plugin.settings.terrainPalettes.some((p) => p.name === sv.palette)) generatorPageState.paletteName = sv.palette;
+        generatorPageState.seedLocked = true;
         const notes = [
           applied.recreated ? `recreated generator "${applied.file.basename}" from the save` : "",
           compareVersions(sv.version, pluginVersion(this.plugin)) !== 0 ? `saved with v${sv.version}` : "",
@@ -933,7 +910,7 @@ export class GeneratorPanel {
       })();
     });
     rerollBtn.addEventListener("click", () => {
-      if (!GeneratorPanel.seedLocked) seedInput.value = String(randomSeed());
+      if (!generatorPageState.seedLocked) seedInput.value = String(randomSeed());
       runPreview();
     });
     showLock();
@@ -960,12 +937,12 @@ export class GeneratorPanel {
       const r = sv ? { ...generated, cells: sv.cells, paths: sv.paths } : generated;
       // The choice this map is made with; the page may be redrawn (and the
       // choice changed) while a big map is still being written.
-      const usedConnect = GeneratorPanel.connect;
+      const usedConnect = generatorPageState.connect;
       createBtn.disabled = true;
       void this.plugin
         .createNewMap(
           newNameInput.value.trim() || `${model.name}-${seed}`,
-          grid.cols, grid.rows, GeneratorPanel.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
+          grid.cols, grid.rows, generatorPageState.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
           (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
           r.cells,
         )
@@ -982,12 +959,12 @@ export class GeneratorPanel {
               .map((n) => regionBiome(this.plugin, n, this.generators)?.name)
               .filter((n): n is string => !!n && n !== model.name);
             const made = this.plugin.getMap(result.name);
-            if (made) made.biome = GeneratorPanel.leanToNeighbours && around.length
+            if (made) made.biome = generatorPageState.leanToNeighbours && around.length
               ? { generator: model.name, from: [...new Set(around)] }
               : { generator: model.name };
             await placeNewRegion(this.plugin, result.name, connected);
             // Only clear the choice if it's still the one used; a newer one stays.
-            if (GeneratorPanel.connect === usedConnect) GeneratorPanel.connect = null;
+            if (generatorPageState.connect === usedConnect) generatorPageState.connect = null;
           }
           // Generated paths become the map's anchored paths (after placing:
           // that sets the stagger they're routed with).
@@ -998,7 +975,7 @@ export class GeneratorPanel {
           }
           if (missing.length) new Notice(`No path type named ${missing.join(", ")}, so those paths were skipped.`);
           new Notice(`Created map "${result.name}"${connected ? ` ${connected.side} of ${connected.anchor}` : ""}.`);
-          GeneratorPanel.mapName = result.name;
+          generatorPageState.mapName = result.name;
           await this.plugin.showMap(result.name);
           this.host.rerender();
         });
@@ -1061,7 +1038,7 @@ export class GeneratorPanel {
     // Terrain the learned paths go around, offered to add (never added for you).
     const drawHints = () => {
       hintBox.empty();
-      const palette = this.plugin.getPaletteByName(GeneratorPanel.paletteName)?.terrains ?? [];
+      const palette = this.plugin.getPaletteByName(generatorPageState.paletteName)?.terrains ?? [];
       const hints = suggestImpassable(model, colors, s().impassable, new Set(palette.filter(isImpassable).map((t) => t.name)));
       if (!hints.length) return;
       const row = hintBox.createDiv({ cls: "duckmage-region-row" });
@@ -1269,8 +1246,8 @@ export class GeneratorPanel {
         save({ drawPaths: v });
         showPathsOn(v);
       });
-      const mapTypes = this.plugin.getPathTypes(GeneratorPanel.paletteName).map((t) => t.name);
-      const typeColors = pathColors(this.plugin, GeneratorPanel.paletteName);
+      const mapTypes = this.plugin.getPathTypes(generatorPageState.paletteName).map((t) => t.name);
+      const typeColors = pathColors(this.plugin, generatorPageState.paletteName);
       const swatchFor = (parent: HTMLElement, type: string) =>
         parent.createSpan({ cls: "duckmage-wfc-swatch" }).setCssProps({ "--duckmage-wfc-swatch": typeColors.get(type) ?? "var(--background-modifier-border)" });
 
