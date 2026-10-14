@@ -14,7 +14,7 @@ import { MarkdownView, TFile, type App, type TAbstractFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
 import { importHandEdit, type ImportKind } from "./tableImport";
-import { isTableNotePath } from "./tableMigration";
+import { isTableNotePath } from "./tableNotePaths";
 
 /** Content the plugin last read or wrote, per table note path. */
 const lastContent = new Map<string, string>();

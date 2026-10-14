@@ -19,8 +19,8 @@ import {
 	noticeUpgrade,
 	UPGRADE_NOTICE_MS,
 } from "../src/ui/notify";
-import { oneHexPiecesText } from "../src/maps/MapStore";
-import { tableRangesNoticeText } from "../src/random-tables/tableMaintenance";
+import { oneHexPiecesText } from "../src/migrations/v1.5-map-data-to-map-notes";
+import { tableRangesNoticeText } from "../src/migrations/v1.5-table-roll-ranges";
 import { uniqueMapsByName } from "../src/maps/mapTree";
 
 const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");

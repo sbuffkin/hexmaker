@@ -145,7 +145,7 @@ export function retiredWords(text: string, isDoc = false): string[] {
  */
 const WORD_ALLOW: Record<string, RegExp> = {
   "palettes/paletteNote.ts": /"icon colour"/, // palette note column header, read as an alias of "Icon color"
-  "palettes/PaletteStore.ts": /backups\/palette-colours-/, // backup folder name of the one-time colour conversion
+  "migrations/v1.5-palette-colors-as-code.ts": /backups\/palette-colours-/, // backup folder name of the one-time colour conversion
 };
 
 /** The text with allowed lines blanked (line numbers kept). */

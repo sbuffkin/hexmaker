@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { DEFAULT_PATH_TYPES, UNKNOWN_PATH_TYPE } from "../src/constants";
 import { pathAvoidsImpassable, pathMeanders } from "../src/impassable";
-import { fillLegacyPathType, fillLegacyPathTypes } from "../src/palettes/pathTypeLegacy";
+import { fillLegacyPathType, fillLegacyPathTypes } from "../src/migrations/v1.5-path-types-explicit";
 import { PALETTE_PRESETS } from "../src/palettes/presets";
 import { SPACE_PATH_TYPES, SYSTEM_PATH_TYPES } from "../src/modules/space/presets";
 import { parsePathTypes, serializePathTypes } from "../src/palettes/pathTypeTable";

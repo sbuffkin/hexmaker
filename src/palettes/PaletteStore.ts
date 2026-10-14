@@ -21,75 +21,23 @@ import {
   updatePaletteNote,
   wrapPaletteColors,
 } from "./paletteNote";
-import { PALETTE_PRESETS, cloneSubmapDefaults, getPreset, uniquePaletteName } from "./presets";
-import { clonePathTypes, parsePathTypes, pathTableHasColumn, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
+import { PALETTE_PRESETS, uniquePaletteName } from "./presets";
+import { parsePathTypes, pathTableHasColumn, pathTypesKey, setPathTypes, wrapPathTypeColors } from "./pathTypeTable";
 import { writeJsonBackup } from "../backup";
-import { fillLegacyPathTypes } from "./pathTypeLegacy";
+import { fillLegacyPathTypes } from "../migrations/v1.5-path-types-explicit";
+import { seedTerrainTypes } from "../migrations/v1.5-palette-terrain-types";
+import { writePaletteNotes, type PaletteMigrationHost } from "../migrations/v1.5-palettes-to-notes";
+import { backupBeforeColorConversion } from "../migrations/v1.5-palette-colors-as-code";
+import { upgradePaletteData } from "../migrations/v1.5-palette-data";
+import { fillPalettePathTypes } from "../migrations/v1.5-palette-path-types";
 import { ADDED_PRESET_TERRAINS, DEFAULT_PATH_TYPES } from "../constants";
 import { registry } from "../modules";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
-import { inferTerrainType, refinedTerrainType } from "../terrainTypes";
 import { repointPaletteName } from "./paletteOptions";
 import { TerrainRenameOffers } from "./renameOffer";
 
 /** Local storage key (per device): what was last said about each palette note's colours. */
 const COLOR_REPORTED_KEY = "hexmaker-palette-colors-reported";
-
-/**
- * Fill in missing terrain types: a same-named terrain in a preset wins,
- * else the type is inferred from the name/category. Returns how many
- * terrains were typed.
- */
-export function seedTerrainTypes(palettes: TerrainPalette[]): number {
-  const known = new Map<string, string>();
-  for (const p of PALETTE_PRESETS) for (const t of p.terrains) if (t.type) known.set(t.name.toLowerCase(), t.type);
-  let n = 0;
-  for (const pal of palettes) {
-    for (const t of pal.terrains) {
-      if (t.type) continue;
-      const type = known.get(t.name.toLowerCase()) ?? inferTerrainType(t.name, t.category);
-      if (type) { t.type = type; n++; }
-    }
-  }
-  return n;
-}
-
-/**
- * One-time upgrade of data that used to be worked out from names at run
- * time, so from now on only what the palette note says counts:
- *  - space terrains typed before the space roles had their own types get
- *    them (a "moon" typed world becomes a moon; see refinedTerrainType);
- *  - an installed palette named like a built-in preset gets that preset's
- *    child palette and Submap defaults rows it doesn't have yet (they used
- *    to be borrowed from the preset by name on every lookup).
- * Returns how many palettes changed.
- */
-export function upgradePaletteData(palettes: TerrainPalette[]): number {
-  let n = 0;
-  for (const pal of palettes) {
-    let changed = false;
-    for (const t of pal.terrains) {
-      const refined = refinedTerrainType(t);
-      if (refined) { t.type = refined; changed = true; }
-    }
-    const preset = getPreset(pal.name);
-    if (preset?.childPalette && !pal.childPalette) {
-      pal.childPalette = preset.childPalette;
-      changed = true;
-    }
-    if (preset?.submapDefaults) {
-      const missing = Object.keys(preset.submapDefaults).filter((k) => !pal.submapDefaults?.[k]);
-      if (missing.length) {
-        const rows = cloneSubmapDefaults(preset.submapDefaults);
-        pal.submapDefaults = { ...(pal.submapDefaults ?? {}) };
-        for (const k of missing) pal.submapDefaults[k] = rows[k];
-        changed = true;
-      }
-    }
-    if (changed) n++;
-  }
-  return n;
-}
 
 /**
  * Copy a note's metadata (`child-palette`, the Submap defaults table) onto
@@ -156,12 +104,6 @@ function newNote(pal: TerrainPalette, childNote?: string): string {
   return pal.pathTypes ? setPathTypes(note, pal.pathTypes) : note;
 }
 
-/**
- * Give every palette without path types a copy of the old plugin-wide list
- * (settings.pathTypes, else Road and River). Before path types moved into
- * palettes every map could draw every type, so copying them all keeps every
- * map's paths drawable. Returns how many palettes were filled.
- */
 /** A palette's own copy (never alias a shared constant). */
 export function clonePalette(p: TerrainPalette): TerrainPalette {
   return { name: p.name, terrains: p.terrains.map((t) => ({ ...t })), ...(p.kind ? { kind: p.kind } : {}) };
@@ -182,17 +124,6 @@ export function palettesOnLoad(saved: unknown, defaults: readonly TerrainPalette
 export function missingDefaults(list: readonly { name: string }[], defaults: readonly TerrainPalette[]): TerrainPalette[] {
   const have = new Set(list.map((p) => p.name.toLowerCase()));
   return defaults.filter((p) => !have.has(p.name.toLowerCase()));
-}
-
-export function fillPalettePathTypes(palettes: TerrainPalette[], legacy: PathType[] | undefined): number {
-  const source = legacy && legacy.length ? legacy : DEFAULT_PATH_TYPES;
-  let n = 0;
-  for (const pal of palettes) {
-    if (pal.pathTypes) continue;
-    pal.pathTypes = clonePathTypes(source);
-    n++;
-  }
-  return n;
 }
 
 /**
@@ -382,6 +313,24 @@ export class PaletteStore {
     pal.name = newName;
   }
 
+  /** What the palette migrations (src/migrations) need from the store. */
+  private migrationHost(): PaletteMigrationHost {
+    return {
+      app: this.plugin.app,
+      manifest: this.plugin.manifest,
+      settings: this.plugin.settings,
+      folder: () => this.folder(),
+      pathFor: (name) => this.pathFor(name),
+      paletteFiles: () => this.paletteFiles(),
+      renamePalette: (pal, name) => this.renamePalette(pal, name),
+      writeNote: async (pal, path) => {
+        const content = newNote(pal, this.childNoteOf(pal));
+        this.bind(pal, path, content);
+        await this.plugin.app.vault.create(path, content);
+      },
+    };
+  }
+
   /**
    * Call once the vault is indexed (onLayoutReady). Converts legacy
    * settings-only palettes to notes the first time, then loads every note.
@@ -430,38 +379,7 @@ export class PaletteStore {
         dirty = true;
       }
     }
-    if (!settings.palettesMigrated || existing.length === 0) {
-      const paletteNames = new Set(existing.map((f) => f.basename.toLowerCase()));
-      for (const pal of settings.terrainPalettes) {
-        const safe = paletteFileName(pal.name);
-        if (paletteNames.has(safe.toLowerCase())) {
-          // A palette note of that name already exists (e.g. synced from a
-          // device that migrated first) — the note wins on load below.
-          if (safe !== pal.name) this.renamePalette(pal, safe);
-          continue;
-        }
-        let name = safe;
-        if (this.plugin.app.vault.getAbstractFileByPath(this.pathFor(name))) {
-          // Some unrelated note already has this name.
-          const folder = this.plugin.app.vault.getAbstractFileByPath(this.folder());
-          const siblings = folder instanceof TFolder
-            ? folder.children.map((c) => c.name.replace(/.md$/, ""))
-            : [];
-          name = uniquePaletteName(safe, siblings);
-        }
-        if (name !== pal.name) this.renamePalette(pal, name);
-        const content = newNote(pal, this.childNoteOf(pal));
-        const path = this.pathFor(pal.name);
-        this.bind(pal, path, content);
-        await this.plugin.app.vault.create(path, content);
-        paletteNames.add(name.toLowerCase());
-      }
-      if (!settings.palettesMigrated) {
-        settings.palettesMigrated = true;
-        noticeUpgrade(`terrain palettes are now notes in "${this.folder()}".`);
-      }
-      dirty = true;
-    }
+    if (await writePaletteNotes(this.migrationHost(), existing)) dirty = true;
 
     if (await this.loadAll()) dirty = true;
     // Colours in palette notes became inline code (Obsidian read `#14223d`
@@ -474,7 +392,7 @@ export class PaletteStore {
     // later because the user changed something still converts.)
     let refresh = true;
     if (!settings.paletteColorsCode) {
-      refresh = await this.backupBeforeColorConversion();
+      refresh = await backupBeforeColorConversion(this.migrationHost());
       if (refresh) {
         settings.paletteColorsCode = true;
         dirty = true;
@@ -581,33 +499,6 @@ export class PaletteStore {
         (settings.terrainPalettes.length ? "" : " Add palettes, or the defaults, in Settings → Terrain palettes."),
       15000,
     );
-  }
-
-  /**
-   * Save the full text of every palette note (gzipped JSON in the plugin's
-   * backups folder) when any of them still has colours that aren't inline
-   * code. Returns false, after saying so, if the backup couldn't be saved.
-   */
-  private async backupBeforeColorConversion(): Promise<boolean> {
-    const { vault } = this.plugin.app;
-    const notes: Record<string, string> = {};
-    let needed = false;
-    for (const file of this.paletteFiles()) {
-      const content = await vault.read(file);
-      notes[file.path] = content;
-      if (parsePaletteNote(content) && wrapNoteColors(content) !== content) needed = true;
-    }
-    if (!needed) return true;
-    try {
-      const dir = `${this.plugin.manifest.dir}/backups/palette-colours-${new Date().toISOString().slice(0, 10)}`;
-      const json = JSON.stringify({ kind: "palette-colours", savedAt: new Date().toISOString(), notes });
-      await writeJsonBackup(vault.adapter, dir, "palette-notes", json);
-      return true;
-    } catch (e) {
-      console.error("Hexmaker: couldn't back up palette notes; their colors weren't converted", e);
-      noticeBackground("couldn't save a backup of the palette notes, so their colors weren't converted yet. It will try again next time.", 10000);
-      return false;
-    }
   }
 
   /**

@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from "node:test";
 import expect from "expect";
-import { MapStore, HEX_DATA_KEYS, droppedWhat, withoutNotePaths } from "../src/maps/MapStore";
+import { MapStore, droppedWhat, withoutNotePaths } from "../src/maps/MapStore";
+import { HEX_DATA_KEYS } from "../src/migrations/v1.5-map-data-to-map-notes";
 import { parseMapNote } from "../src/maps/mapNote";
 import { migrateMapData } from "../src/compat";
 import { MemVault } from "./helpers/memVault";

@@ -405,7 +405,7 @@ export interface HexmakerPluginSettings {
 	biomePoolSeeded?: boolean;
 	/** True once every overworld's Biome column was filled (BC1 migration, once per vault). */
 	biomeColumnsFilled?: boolean;
-	/** One-time note-format rewrites already done in this vault (src/noteFormatUpgrade.ts: NF1–NF3). */
+	/** One-time note-format rewrites already done in this vault (src/migrations/ (noteRewrites.ts and the v1.5-*.ts note steps): NF1–NF3). */
 	noteFormatUpgrades?: string[];
 	/** Vault folder for world types notes (which worlds space generators place); blank = `<worldFolder>/world-types`. */
 	worldTypesFolder?: string;
@@ -423,7 +423,7 @@ export interface HexmakerPluginSettings {
 	/**
 	 * True once every path type's behaviour (avoid impassable, auto-route,
 	 * routing) was written out explicitly (PA5). Before that, blank cells in
-	 * palette notes are read with the old name rules (pathTypeLegacy.ts).
+	 * palette notes are read with the old name rules (src/migrations/v1.5-path-types-explicit.ts).
 	 */
 	pathTypesExplicit?: boolean;
 	/**

@@ -12,7 +12,8 @@ import { takeBodyFields } from "../src/hexBodyFields";
 import { mapDataLines, moveBodyFieldsIntoMapData, planCalloutImport, readMapData, setMapData, shownValues, type HexMapDataView } from "../src/hexMapData";
 import { withMapLink } from "../src/maps/mapNote";
 import { getTokenDataFromCache, readTokenPlace, setTokenHex, tokenMapValue } from "../src/frontmatter";
-import { runNoteFormatUpgrades, runUpgrade, type NoteFormatHost } from "../src/noteFormatUpgrade";
+import { runNoteFormatUpgrades, runUpgrade } from "../src/migrations/registry";
+import type { NoteFormatHost } from "../src/migrations/noteRewrites";
 import { MemVault } from "./helpers/memVault";
 
 /**

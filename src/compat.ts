@@ -10,7 +10,8 @@
  * Pure (no Obsidian imports), so tests and the snapshot script can use it.
  */
 
-import type { MapData } from "./types";
+import type { MapData, PathChain } from "./types";
+import { migrate as roadRiverChains } from "./migrations/v1.2-road-river-chains-to-path-chains";
 
 /** Frontmatter key recording the plugin version that last wrote a file. */
 export const VERSION_KEY = "hexmaker-version";
@@ -58,15 +59,7 @@ export function migrateMapData(raw: unknown, defaultPalette = LEGACY_PALETTE_NAM
   if (!r.gridSize || typeof r.gridSize !== "object") r.gridSize = { cols: 0, rows: 0 };
   if (!r.gridOffset) r.gridOffset = { x: 0, y: 0 };
   if (!Array.isArray(r.pathChains)) r.pathChains = [];
-  // Before path types (≤ 1.2): roads and rivers as two lists of hex chains.
-  // Their conversion was lost in 5e475da; bring such maps' paths across.
-  for (const [key, typeName] of [["roadChains", "Road"], ["riverChains", "River"]] as const) {
-    const old = r[key];
-    if (!Array.isArray(old)) continue;
-    for (const c of old) {
-      if (Array.isArray(c) && c.length) r.pathChains.push({ typeName, hexes: c.map(String) });
-    }
-    delete r[key];
-  }
+  // Before path types (≤ 1.2): src/migrations/v1.2-road-river-chains-to-path-chains.ts.
+  roadRiverChains(r as Record<string, unknown> & { pathChains: PathChain[] });
   return r as MapData;
 }

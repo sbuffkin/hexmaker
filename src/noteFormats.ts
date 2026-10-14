@@ -1,6 +1,6 @@
 /**
  * Note-format changes approved in round 6 (NF1, NF3), as pure text helpers.
- * The one-time vault rewrites that use them are in noteFormatUpgrade.ts.
+ * The one-time vault rewrites that use them are in migrations/ (noteRewrites.ts and the v1.5-*.ts note steps).
  *
  * NF1: a hex note points at its map note with `map: "[[_coast]]"`. Older
  * notes say `hexmaker-map: "[[_coast]]"` (the same key map notes use for

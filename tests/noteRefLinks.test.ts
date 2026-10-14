@@ -14,7 +14,8 @@ import {
 	buildWorldTypes, linkWorldTypePalettes, parseWorldTypes, updateWorldTypes, worldTypeCells, worldTypeCellsLinked, WORLD_TYPE_COLUMNS,
 	type WorldTypeRow,
 } from "../src/space/worldTypes";
-import { runNoteFormatUpgrades, runUpgrade, type NoteFormatHost } from "../src/noteFormatUpgrade";
+import { runNoteFormatUpgrades, runUpgrade } from "../src/migrations/registry";
+import type { NoteFormatHost } from "../src/migrations/noteRewrites";
 import { MemVault } from "./helpers/memVault";
 
 /**

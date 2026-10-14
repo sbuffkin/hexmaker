@@ -1,6 +1,6 @@
 import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../types";
 import { parseImpassableCell } from "../impassable";
-import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "./pathTypeLegacy";
+import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "../migrations/v1.5-path-types-explicit";
 import { colorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
@@ -18,7 +18,7 @@ import { colorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colo
 // Every behaviour is a column, written out for every row: nothing follows a
 // path type's name (PA5). A blank or missing cell reads as the plain default
 // (through, yes, direct) and is written back filled in. Notes from before
-// PA5 are read once with the old name rules instead (pathTypeLegacy.ts).
+// PA5 are read once with the old name rules instead (src/migrations/v1.5-path-types-explicit.ts).
 //
 // Read forgivingly, since people edit it by hand: columns by name in any
 // order (Path or Name, Color or Colour, Style or Line…), values in any case,

@@ -1,6 +1,17 @@
 import type { PathAutoRoute, PathRouting, PathType, TerrainPalette } from "../types";
+import type { MigrationInfo } from "./types";
 
-// MIGRATION ONLY (PA5). Before path types carried every behaviour as an
+export const info: MigrationInfo = {
+  id: "v1.5-path-types-explicit",
+  from: "1.5.x",
+  to: "1.6",
+  phase: "palettes",
+  change: "Path types got every behaviour written out (avoid impassable, auto-route, routing), as they behaved before.",
+  recordedBy: "pathTypesExplicit",
+};
+
+// MIGRATION ONLY (PA5; also the reader of blank cells in palette notes
+// written before then, see pathTypeTable.ts). Before path types carried every behaviour as an
 // explicit option, some behaviour followed a type's name: an unset "avoid
 // impassable" was no for river-like names, auto-routes wound for them, and a
 // blank routing was meander for them. Path types saved by those builds are

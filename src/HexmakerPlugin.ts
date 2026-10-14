@@ -14,9 +14,9 @@ import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
-import { fillLegacyPathTypes } from "./palettes/pathTypeLegacy";
+import { fillLegacyPathTypes } from "./migrations/v1.5-path-types-explicit";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { openTableRangesModal, runTableCheck, upgradeTableRangesOnce } from "./random-tables/tableMaintenance";
+import { openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
 import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
@@ -39,7 +39,8 @@ import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
 import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { ModuleStore, RefLinker } from "./modules/types";
-import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
+import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
+import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
@@ -105,7 +106,10 @@ import type { RegionSettings } from "./types";
 import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
-import { runNoteFormatUpgrades } from "./noteFormatUpgrade";
+import { runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
+import { migrate as migrateFlatHexNotes } from "./migrations/v1.0-flat-hex-notes-to-default-map";
+import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
+import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
@@ -818,8 +822,8 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    // One-time migration: rename settings keys "regions" → "maps" and "defaultRegion" → "defaultMap"
-    // Must run on raw data BEFORE Object.assign so the migrated key wins over DEFAULT_SETTINGS.
+    // The settings-phase migrations (src/migrations) run on the raw data
+    // BEFORE Object.assign, so a moved key wins over DEFAULT_SETTINGS.
     // One read only: nothing may await between swapping in the new
     // settings and handing their maps to the map store (adoptAll below), or a
     // save in between would see maps without their paths (incident
@@ -828,16 +832,7 @@ export default class HexmakerPlugin extends Plugin {
     const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
     this.onDisk = loaded ? JSON.stringify(loaded) : null;
     const data = loaded ?? {};
-    if (data["regions"] !== undefined && data["maps"] === undefined) {
-      data["maps"] = data["regions"];
-    }
-    delete data["regions"];
-    if (data["defaultRegion"] !== undefined && data["defaultMap"] === undefined) {
-      data["defaultMap"] = data["defaultRegion"];
-    }
-    delete data["defaultRegion"];
-    // The roll-ranges prompt (never released) became a silent upgrade (DJ-Q6).
-    delete data["tableRangesPrompt"];
+    runSettingsMigrations(data);
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
     // Own copy: the default is a shared constant, and editors push into lists.
@@ -1381,24 +1376,8 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
 
-    // Migrate any old flat-format files ({name} - {type}.md) to the new subfolder scheme
-    for (const entry of this.getAllTerrains()) {
-      for (const tableType of ["description", "encounters"] as const) {
-        const oldPath = `${subfolder}/${entry.name} - ${tableType}.md`;
-        const newPath = `${subfolder}/${tableType}/${entry.name}.md`;
-        const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
-        if (
-          oldFile instanceof TFile &&
-          !this.app.vault.getAbstractFileByPath(newPath)
-        ) {
-          try {
-            await this.app.fileManager.renameFile(oldFile, newPath);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    }
+    // Old flat-named tables ({name} - {type}.md) move into the type folders.
+    await migrateFlatTerrainTables(this.app, subfolder, this.getAllTerrains().map((t) => t.name));
 
     // Create any still-missing table files
     await this.createTerrainTableFiles(terrains);
@@ -3045,39 +3024,9 @@ export default class HexmakerPlugin extends Plugin {
     return r;
   }
 
+  /** Pre-1.0 hex notes loose in the hexes folder move into the "default" map's folder. */
   private async migrateHexFilesToDefaultRegion(): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    if (!hexFolder) return;
-
-    // Scan first — only create the destination folder if there are actually
-    // files to move. On a fresh install the scan returns nothing and we return
-    // early, avoiding spurious folder creation before setup is complete.
-    const candidates = this.app.vault.getMarkdownFiles().filter((f) => {
-      const parent = f.parent?.path ?? "";
-      return parent === hexFolder && /^-?\d+_-?\d+$/.test(f.basename);
-    });
-    if (candidates.length === 0) return;
-
-    const defaultFolder = `${hexFolder}/default`;
-    if (!this.app.vault.getAbstractFileByPath(defaultFolder)) {
-      try {
-        await this.app.vault.createFolder(defaultFolder);
-      } catch {
-        /* exists */
-      }
-    }
-    let moved = 0;
-    for (const file of candidates) {
-      const newPath = `${defaultFolder}/${file.name}`;
-      if (!this.app.vault.getAbstractFileByPath(newPath)) {
-        try {
-          await this.app.fileManager.renameFile(file, newPath);
-          moved++;
-        } catch {
-          /* skip */
-        }
-      }
-    }
+    const moved = await migrateFlatHexNotes(this.app, this.settings.hexFolder);
     if (moved > 0)
       noticeBackground(
         `migrated ${moved} hex file(s) to "default" region.`,

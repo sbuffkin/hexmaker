@@ -34,7 +34,7 @@ import {
   type ResolvedTable,
   type TableReport,
 } from "./randomTable";
-import { planTableMigration } from "./tableMigration";
+import { planTableMigration } from "../migrations/v1.5-table-roll-ranges";
 import { processTableNote } from "./TableStore";
 import { groupTableFiles } from "./tablePickerGroups";
 import { MAP_MADE_GROUP_LABEL } from "./resolve";
