@@ -18,6 +18,7 @@ import {
 } from "../src/modules/runtime";
 import { MOON_TETHER_OVERLAY } from "../src/space/moonLinks";
 import { ROLE_TABLES_SECTION } from "../src/space/roleTablesSection";
+import { EXPLORE_PROPS } from "../src/hexflower/exploreProps";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { readSurface, readSource } from "./helpers/source";
 
@@ -27,9 +28,9 @@ const read = (...p: string[]) => readFileSync(path.join(process.cwd(), ...p), "u
 const runtime = (id: string) => MODULE_RUNTIMES.find((r) => r.id === id)!;
 
 describe("P5: map UI pieces are module contributions", () => {
-  it("Space's moon tethers are the only overlay; its Convert world types button the only Map properties section", () => {
+  it("Space's moon tethers are the only overlay; Map properties sections: Space's Convert world types button, then Hex flower's Exploring", () => {
     expect(moduleOverlays()).toEqual([MOON_TETHER_OVERLAY]);
-    expect(moduleMapProperties()).toEqual([ROLE_TABLES_SECTION]);
+    expect(moduleMapProperties()).toEqual([ROLE_TABLES_SECTION, EXPLORE_PROPS]);
     // Generator tables is the core's (Names is on every map); the modules' sections come after it.
     const modal = readSurface("map-modal");
     expect(modal).toMatch(/renderRoleTables\(el, this\.plugin, currentMap, \(\) => this\.render\(\)\);\n\s+\/\/ Modules' sections[^\n]*\n\s+for \(const section of moduleMapProperties\(\)\) section\.render\(/);

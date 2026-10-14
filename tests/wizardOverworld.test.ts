@@ -144,8 +144,8 @@ describe("a Biomes map from the wizard or New map is an overworld", () => {
 	});
 
 	it("the wizard and New map both run the scale's setup after creating the map", () => {
-		expect(readSurface("setup-wizard")).toMatch(/await runScaleMapMade\(plugin, scale\?\.id, \{/);
-		expect(readSurface("new-map-setup")).toMatch(/await runScaleMapMade\(this\.plugin, scale\.id, \{/);
+		expect(readSurface("setup-wizard")).toMatch(/await runScaleMapMade\(plugin, scale\?\.id, made\);/);
+		expect(readSurface("new-map-setup")).toMatch(/if \(scale\) await runScaleMapMade\(this\.plugin, scale\.id, madeWith\);/);
 	});
 });
 

@@ -77,7 +77,7 @@ export function drawFlowerList(plugin: HexmakerPlugin, list: HTMLElement, action
   make.addEventListener("click", () => void newFlower(plugin, ctx.host.paletteName()).then((path) => {
     if (path) { state.selected = path; ctx.redraw(); ctx.host.show(); }
   }));
-  const open = actions.createEl("button", { text: "Open note" });
+  const open = actions.createEl("button", { text: "Open note", attr: { title: "Open the hex flower note (edit it by hand: its tables are read back)" } });
   open.disabled = !store?.get(state.selected);
   open.addEventListener("click", () => {
     const f = plugin.app.vault.getAbstractFileByPath(state.selected);

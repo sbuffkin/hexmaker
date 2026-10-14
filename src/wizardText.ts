@@ -29,9 +29,11 @@ export function slugHint(typed: string): string {
  * wizard: Wizard.genOptWater, …Climate, …Relief, …Sea; any other option
  * is Wizard.genOptOther.
  */
-export function wizardOptionId(key: string): string {
+export function wizardOptionId(key: string, newMapId?: string): string {
 	const named = ["water", "climate", "relief", "sea"];
-	return named.includes(key) ? `Wizard.genOpt${key.charAt(0).toUpperCase()}${key.slice(1)}` : "Wizard.genOptOther";
+	if (named.includes(key)) return `Wizard.genOpt${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+	// A module's option with its own New map id (NewMap.x) has the matching Wizard.x.
+	return newMapId?.startsWith("NewMap.") ? `Wizard.${newMapId.slice("NewMap.".length)}` : "Wizard.genOptOther";
 }
 
 /** Inventory id of the setup wizard's engine tuning sliders (its Advanced). */

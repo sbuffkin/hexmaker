@@ -9802,3 +9802,9 @@ button.is-armed {
     font-size: var(--font-ui-smaller);
     white-space: pre-wrap;
 }
+/* Map properties → Exploring: the explore-with rules, one per line. */
+.duckmage-explore-rules {
+    width: 100%;
+    font-family: var(--font-monospace);
+    resize: vertical;
+}

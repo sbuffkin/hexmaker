@@ -20,8 +20,8 @@ export const hexFlowerModule: HexmakerModule = {
     settingsKeys: ["hexFlowersFolder"],
     mapNoteKeys: EXPLORE_FIELDS.map((f) => f.key),
     commands: [],
+    // Not "Hex flowers" (the tab): the region shape and the regions' toolbar ring are called hex flowers too.
     strings: [
-      "Hex flowers",
       "hexmaker-hex-flower",
       "duckmage-hex-flower",
       "hex flower note",

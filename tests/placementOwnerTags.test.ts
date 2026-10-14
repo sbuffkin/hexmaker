@@ -398,7 +398,7 @@ describe("generator page and wizard place their controls by id", () => {
     expect(wizardOptionId("sea")).toBe("Wizard.genOptSea");
     expect(wizardOptionId("rivers")).toBe("Wizard.genOptOther");
     for (const k of ["water", "climate", "relief", "sea", "rivers"]) expect(layerOf(wizardOptionId(k))).toBe("main"); // owner override 2026-10-12
-    expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key), row)");
+    expect(wizard).toContain("optsDisclosure.place(wizardOptionId(opt.key, newMapOptionId(kind?.id ?? \"\", opt.key)), row)");
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advRow)');
     expect(wizard).toContain('disclosure.place("Wizard.configureFoldersIndividually", advSection)');
   });

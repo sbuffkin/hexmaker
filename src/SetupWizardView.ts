@@ -30,6 +30,7 @@ import { scalePalette, scalesFor, type MapScaleDef } from "./mapScales";
 import { wizardKinds, wizardScale } from "./wizardKinds";
 import { moduleScaleChoices, runOnScalePicked, runScaleMapMade, scaleChoiceValues } from "./modules/runtime";
 import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } from "./wizardText";
+import { newMapOptionId } from "./worldgen/newMapOptionIds";
 import { Disclosure } from "./ui/disclosure";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "./ui/mapScaleForm";
 import { renderResetButton } from "./ui/sliders";
@@ -686,7 +687,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				const optsDisclosure = new Disclosure(plugin.app, "Wizard.map", () => optsBox);
 				for (const opt of kind ? kindOptions(kind, terrains(), plugin.getPathTypes(ctx.paletteName)) : []) {
 					const row = optsBox.createEl("label", { cls: "duckmage-wizard-generator-option" });
-					optsDisclosure.place(wizardOptionId(opt.key), row);
+					optsDisclosure.place(wizardOptionId(opt.key, newMapOptionId(kind?.id ?? "", opt.key)), row);
 					row.createSpan({ text: opt.label });
 					const sel = row.createEl("select");
 					for (const c of opt.choices) {
@@ -824,10 +825,10 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				const { paths } = kind.toPaths(outcome.paths, result.name);
 				addGeneratedPaths(plugin, result.name, paths);
 			}
-			// What the scale's module adds (Biomes: an overworld with its region settings).
+			// What the scale's module adds (Biomes: an overworld with its region settings), then the generator (a hex flower's note).
 			const scale = wizardScale(ctx);
 			const choices = moduleScaleChoices(scale?.id, kind?.id);
-			await runScaleMapMade(plugin, scale?.id, {
+			const made = {
 				mapName: result.name,
 				generatorId: kind?.id ?? BLANK_ID,
 				options: kind ? resolvedOptions(kind, ctx) : {},
@@ -836,13 +837,12 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 				paletteName: ctx.paletteName,
 				choices: scaleChoiceValues(choices, ctx.scaleChoices),
 				onProgress,
-			});
+			};
+			await runScaleMapMade(plugin, scale?.id, made);
+			await kind?.afterCreate?.(plugin, made);
 			ctx.generatedWith = outcome?.ok ? kind?.label : undefined;
-			// A generated first map is open for Reroll / Lock until its first
-			// hand edit, as New map's (SF7); a map with its own rerolls is left alone.
-			if (outcome?.ok && kind && !plugin.arrival.isOverworld(result.name)) {
-				markFreshMap(plugin, result.name, { generator: kind.id, options: resolvedOptions(kind, ctx), seed: ctx.seed });
-			}
+			// A generated first map is open for Reroll / Lock until its first hand edit, as New map's (SF7); a map with its own rerolls (or made by a generator that sets it up after: a hex flower's) is left alone.
+			if (outcome?.ok && kind && !kind.afterCreate && !plugin.arrival.isOverworld(result.name)) markFreshMap(plugin, result.name, { generator: kind.id, options: resolvedOptions(kind, ctx), seed: ctx.seed });
 			plugin.settings.defaultMap = result.name;
 			// The shipped "default" map is clutter now that there's a real one.
 			await removeUnusedPlaceholder(plugin, result.name);

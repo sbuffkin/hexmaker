@@ -28,8 +28,10 @@ import { parseVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
 import { addLinkToSection, appendSectionText, sectionText } from "../sections";
 import { setTokenHex } from "../frontmatter";
-import { resolveRoll, type ResolveContext } from "../random-tables/resolve";
+import { resolveRoll, type ResolveContext, type TableLookup } from "../random-tables/resolve";
 import { flowerStoreOf } from "./context";
+import { logError } from "../log";
+import { exploreOrder } from "./exploreOrder";
 import { isExploreMap, type ExploreMap } from "./exploreFields";
 import {
   describeMove,
@@ -104,10 +106,15 @@ export class ExploreService {
     return !this.terrainAt(map, k);
   }
 
+  /** The vault's random tables (none before the plugin has started its table notes). */
+  private tables(): TableLookup {
+    return this.plugin.tableNotes?.lookup() ?? { table: () => undefined };
+  }
+
   /** The table / flower a rule's link names. */
   private source(map: ExploreMap): (link: string) => ExploreSource | undefined {
     const store = flowerStoreOf(this.plugin);
-    const lookup = this.plugin.tableNotes.lookup();
+    const lookup = this.tables();
     const terrains = this.terrains(map);
     return (link) => {
       const f = store?.get(link);
@@ -144,7 +151,7 @@ export class ExploreService {
   private async plan(map: ExploreMap, k: string, from: string | undefined, at: ReadonlyMap<string, number>, reroll: number, everyOnly: boolean): Promise<Plan> {
     const sections = ["Features", "Description"];
     const rules = readRules(map.exploreWith, sections);
-    const lookup = this.plugin.tableNotes.lookup();
+    const lookup = this.tables();
     return planStep({
       rules,
       hex: k,
@@ -260,7 +267,8 @@ export class ExploreService {
     if (!this.exploreMap(step.map)) return [];
     const r = await this.fill(step.map, step.to, step.from);
     if (!r) return [];
-    if (r.lines.length) this.notify(step.map, r, step);
+    // What came up is told, but a notice that fails never costs the step its undo.
+    try { this.notify(step.map, r, step); } catch (e) { logError("hex flower notice", e); }
     return r.undo;
   }
 
@@ -367,20 +375,6 @@ export class ExploreService {
     this.setFlowerAt(map, at);
     return n;
   }
-}
-
-/** Every hex reachable from `start`, breadth first, each with the hex it was reached from. */
-export function exploreOrder(start: string, neighbours: (k: string) => string[]): { hex: string; from?: string }[] {
-  const out: { hex: string; from?: string }[] = [{ hex: start }];
-  const seen = new Set([start]);
-  for (let i = 0; i < out.length; i++) {
-    for (const n of neighbours(out[i].hex)) {
-      if (seen.has(n)) continue;
-      seen.add(n);
-      out.push({ hex: n, from: out[i].hex });
-    }
-  }
-  return out;
 }
 
 /** The step's notice: what was filled, then Reroll · Undo links (notes and the play log stay). */

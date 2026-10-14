@@ -16,6 +16,7 @@ import type { Menu as RealMenu } from "obsidian";
 import { groupAgrees } from "../src/ui/placeGroup";
 import { newMapOptionIds, newMapOptionId } from "../src/worldgen/newMapOptionIds";
 import { ORBITS_ID, ORBITS_OPTIONS } from "../src/space/orbits";
+import { FLOWER_OPTIONS, HEX_FLOWER_GENERATOR_ID } from "../src/hexflower/flowerGenerator";
 import { OVERLAND_ID, OVERLAND_OPTIONS, PLANET_SURFACE_ID, PLANET_SURFACE_OPTIONS, REGION_DETAIL_ID, REGION_DETAIL_OPTIONS } from "../src/worldgen/procedural/planetSurface";
 import { STAR_SCATTER_ID, STAR_SCATTER_OPTIONS } from "../src/space/starScatter";
 import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS } from "../src/overworld/worldBiomes";
@@ -143,6 +144,7 @@ describe("New map form: generator options by inventory id", () => {
     [WORLD_BIOMES_ID]: WORLD_BIOMES_OPTIONS.map((o) => o.key),
     [STAR_SCATTER_ID]: [...STAR_SCATTER_OPTIONS.map((o) => o.key), ROUTE_TYPE_KEY],
     [ORBITS_ID]: [...ORBITS_OPTIONS.map((o) => o.key), ORBIT_TYPE_KEY],
+    [HEX_FLOWER_GENERATOR_ID]: ["flower", ...Object.keys(FLOWER_OPTIONS)],
   };
 
   it("every mapped option is a real option of its generator", () => {
@@ -154,7 +156,8 @@ describe("New map form: generator options by inventory id", () => {
 
   it("every generator option is main (owner 2026-10-12, as the wizard); the tuning sliders and Make every region now are Advanced", () => {
     for (const [kind, keys] of Object.entries(newMapOptionIds())) {
-      for (const key of Object.keys(keys)) expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, "main"]);
+      // Except the Hex flower card's Party token and Reveal: Advanced (plan-hex-flower, 2026-10-14).
+      for (const key of Object.keys(keys)) expect([kind, key, layerOf(newMapOptionId(kind, key)!)]).toEqual([kind, key, kind === HEX_FLOWER_GENERATOR_ID ? "advanced" : "main"]);
     }
     expect(layerOf(newMapOptionId(STAR_SCATTER_ID, ROUTE_TYPE_KEY)!)).toBe("main");
     expect(layerOf(newMapOptionId(ORBITS_ID, ORBIT_TYPE_KEY)!)).toBe("main");
