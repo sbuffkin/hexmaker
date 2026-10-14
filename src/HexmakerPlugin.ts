@@ -22,11 +22,10 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import type { BiomeStore } from "./overworld/BiomeStore";
-import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
@@ -54,7 +53,6 @@ import type {
   TerrainColor,
   TerrainPalette,
 } from "./types";
-import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
 import { writeJsonBackup } from "./backup";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, tokenMapValue } from "./frontmatter";
@@ -98,11 +96,13 @@ import {
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
-import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
-import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
+import { type NotePickPurpose } from "./templateNotes";
 import { MapsService, type NewMapOptions } from "./services/MapsService";
 import { PaletteQueries } from "./services/PaletteQueries";
+import { TemplatesService } from "./services/TemplatesService";
 export default class HexmakerPlugin extends Plugin {
+  /** Note templates and which notes pickers offer (src/services/TemplatesService.ts). */
+  readonly templates = new TemplatesService(this);
   /** Palette lookups and installs (src/services/PaletteQueries.ts). */
   readonly palettes = new PaletteQueries(this);
   /** The map list: create, link, rename, restore (src/services/MapsService.ts). */
@@ -656,34 +656,7 @@ export default class HexmakerPlugin extends Plugin {
 
   autoRegisterMapsFromVault(): Promise<void> { return this.maps.autoRegisterMapsFromVault(); }
 
-  /**
-   * Whether a note may be offered in a note picker: never `_`-prefixed;
-   * templates (the hex template, workflow templates, the core Templates or
-   * Templater folder) only when the picker is for choosing a template
-   * (`purpose` "template"). Use in every note picker.
-   */
-  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean {
-    return isLinkableNotePath(file.path, file.basename, this.templateRules(), purpose);
-  }
-
-  private templateRules(): TemplateNoteRules {
-    type Loose = {
-      internalPlugins?: {
-        getPluginById?(id: string): { enabled?: boolean; instance?: { options?: { folder?: string } } } | null;
-      };
-      plugins?: { plugins?: Record<string, { settings?: { templates_folder?: string } } | undefined> };
-    };
-    const loose = this.app as unknown as Loose;
-    const core = loose.internalPlugins?.getPluginById?.("templates");
-    const coreFolder = core?.enabled ? core.instance?.options?.folder : undefined;
-    const templater = loose.plugins?.plugins?.["templater-obsidian"]?.settings?.templates_folder;
-    return templateNoteRules(this.settings, [coreFolder, templater], [
-      this.paletteStore.folder(),
-      ...this.moduleStores.flatMap((st) => (st.folder ? [st.folder()] : [])),
-      ...moduleFolders(this),
-      generatorsFolder(this),
-    ]);
-  }
+  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean { return this.templates.isLinkableNote(file, purpose); }
 
   /**
    * Check whether a TFile is a workflow note (lives under the configured
@@ -1659,119 +1632,19 @@ export default class HexmakerPlugin extends Plugin {
     return n;
   }
 
-  private async loadHexTemplate(): Promise<string> {
-    const templatePath = normalizeFolder(this.settings.templatePath ?? "");
-    if (templatePath) {
-      const templateFile = this.app.vault.getAbstractFileByPath(templatePath);
-      if (templateFile instanceof TFile) {
-        try {
-          return await this.app.vault.read(templateFile);
-        } catch { /* fall through */ }
-      }
-      new Notice(`Hex template not found at "${templatePath}" — using built-in default.`);
-      return DEFAULT_HEX_TEMPLATE;
-    }
-    // No path set: hex.md in the templates folder, if there is one (PA3).
-    const inFolder = this.app.vault.getAbstractFileByPath(hexTemplatePathFor(this.settings));
-    if (inFolder instanceof TFile) {
-      try {
-        return await this.app.vault.read(inFolder);
-      } catch { /* fall through */ }
-    }
-    return DEFAULT_HEX_TEMPLATE;
-  }
+  loadHexTemplate(): Promise<string> { return this.templates.loadHexTemplate(); }
 
-  /** The plugin's templates folder (PA3; see src/noteTemplates.ts). */
-  templatesFolder(): string {
-    return templatesFolderFor(this.settings);
-  }
+  templatesFolder(): string { return this.templates.templatesFolder(); }
 
-  /** Create a note template file from its built-in default if it's missing. */
-  private async ensureTemplateFile(path: string, content: string): Promise<void> {
-    if (this.app.vault.getAbstractFileByPath(path)) return;
-    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-    if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-      try {
-        await this.app.vault.createFolder(folder);
-      } catch { /* exists */ }
-    }
-    try {
-      await this.app.vault.create(path, content);
-    } catch { /* created concurrently — fine */ }
-  }
+  ensureTemplates(): Promise<void> { return this.templates.ensureTemplates(); }
 
-  /**
-   * Make sure the templates folder holds every plugin note template: the
-   * hex template (unless the user points templatePath elsewhere) and each
-   * link section's note template. Existing files are never overwritten.
-   */
-  async ensureTemplates(): Promise<void> {
-    await this.ensureHexTemplate();
-    for (const section of Object.keys(LINK_NOTE_TEMPLATES)) {
-      const path = linkNoteTemplatePathFor(this.settings, section);
-      if (path) await this.ensureTemplateFile(path, LINK_NOTE_TEMPLATES[section].starter);
-    }
-  }
+  openNoteTemplate(path: string): Promise<void> { return this.templates.openNoteTemplate(path); }
 
-  /**
-   * Open a note template to edit it (SX1: easy to find and edit), making
-   * it from its built-in starter first if it isn't there yet.
-   */
-  async openNoteTemplate(path: string): Promise<void> {
-    await this.ensureTemplates();
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
-    else new Notice(`No template at ${path}.`);
-  }
+  newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> { return this.templates.newLinkedNoteContent(section, title, fromHex); }
 
-  /**
-   * Starting text for a note made from a link section's "create new": the
-   * section's note template (LINK_NOTE_TEMPLATES, written to the templates
-   * folder on first use); encounter tables get a table. `title` fills {{title}}.
-   */
-  async newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> {
-    if (section === "Encounters Table") return makeTableTemplate(this.settings.defaultTableDice);
-    // Made from a hex: a place says where it is (R3).
-    const located = (content: string) =>
-      fromHex && LOCATION_SECTIONS.includes(section) ? this.withHexLocation(content, fromHex) : content;
-    const tpl = linkNoteTemplate(section);
-    const path = linkNoteTemplatePathFor(this.settings, section);
-    if (!tpl || !path) return located("");
-    await this.ensureTemplateFile(path, tpl.starter);
-    const file = this.app.vault.getAbstractFileByPath(path);
-    let template = tpl.starter;
-    if (file instanceof TFile) {
-      try {
-        template = await this.app.vault.read(file);
-      } catch { /* use the default */ }
-    }
-    return located(fillNoteTemplate(template, title));
-  }
+  withHexLocation(content: string, hexPath: string): string { return this.templates.withHexLocation(content, hexPath); }
 
-  /** `content` with a `Location: [[hex|<map> x, y]]` line under its title (R3). */
-  withHexLocation(content: string, hexPath: string): string {
-    const loc = this.mapStore.resolve(hexPath);
-    const [x, y] = loc ? loc.key.split("_") : [];
-    const label = loc ? this.hexCoordAlias(loc.map, x, y) : this.hexLinkAlias(hexPath);
-    return withLocationLine(content, hexPath, label);
-  }
-
-  /**
-   * Ensure a hex template file exists on disk.
-   * - If templatePath is set and the file exists: no-op.
-   * - If templatePath is set but the file is missing: create it from the built-in default.
-   * - If templatePath is blank: create hex.md in the templates folder (PA3)
-   *   and persist the path.
-   */
-  async ensureHexTemplate(): Promise<void> {
-    let templatePath = normalizeFolder(this.settings.templatePath ?? "");
-    if (!templatePath) {
-      templatePath = hexTemplatePathFor(this.settings);
-      this.settings.templatePath = templatePath;
-      await this.saveSettings();
-    }
-    await this.ensureTemplateFile(templatePath, DEFAULT_HEX_TEMPLATE);
-  }
+  ensureHexTemplate(): Promise<void> { return this.templates.ensureHexTemplate(); }
 
   restoreMissingMap(name: string): Promise<boolean> { return this.maps.restoreMissingMap(name); }
 
