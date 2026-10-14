@@ -9,10 +9,13 @@ import expect from "expect";
 import { childNeighbours, childPoint, parentOf, regionCells, regionCentreCell, type RegionLayout } from "../src/overworld/layout";
 import { applyAffine, childToParentPlane, composeAffine, type Affine } from "../src/overworld/overworldRender";
 import {
+  biomeViewLines,
   CrossRegionPaths,
+  edgeToEdgePoints,
   OW_PATH_MIN,
   OW_PATH_SCALE,
   crossRegionLines,
+  overworldRoute,
   overworldPathDash,
   overworldPathWidth,
   pathAtGridPoint,
@@ -21,12 +24,13 @@ import {
   type RegionPathSource,
 } from "../src/overworld/regionPaths";
 import { REGION_PATHS_ROW } from "../src/overworld/overworldLayer";
-import { regionsViewTip } from "../src/hex-map/hexHover";
+import { pathFirst, regionsViewTip } from "../src/hex-map/hexHover";
+import { hexCenter } from "../packages/hex-wfc/src/grid";
 import { UNKNOWN_PATH_TYPE } from "../src/constants";
 import type { MapPath, PathType } from "../src/types";
 import { layerOf } from "../src/ui/placement";
 import type { ResolvedBranch } from "../src/paths/resolve";
-import { readSurface } from "./helpers/source";
+import { readSource, readSurface } from "./helpers/source";
 
 const layouts: RegionLayout[] = [
   { footprint: "rect", size: 6, orientation: "flat", parentStagger: "odd", childStagger: "odd" },
@@ -101,6 +105,33 @@ for (const l of layouts) {
       const fwd = [centre(l, C), c, b2, centre(l, B), b1, a, centre(l, A)];
       expect(h[0] === fwd[0] ? h : [...h].reverse()).toEqual(fwd);
       expect(lines[0].regions.sort()).toEqual(["A", "B", "C"]);
+    });
+
+    it("O1: never pairs two pieces of ONE region, even across its block's edge (a hex flower's map box runs past it)", () => {
+      const [a, b] = seamPair(l, A, B);
+      // Both drawn in region A's map; b lies in B's block.
+      expect(crossRegionLines(l, [piece("A", "Road", [centre(l, A), a]), piece("A", "Road", [b], "Other")])).toEqual([]);
+    });
+
+    it("O1: a path with forks that stays in one region is not drawn; the crossing one beside it is", () => {
+      const [a, b] = seamPair(l, A, B);
+      const c = centre(l, A);
+      const [nx, ny] = childNeighbours(l, ...xy(c))[2];
+      const local: RegionPathPiece[] = [
+        piece("A", "Road", [c, k(nx, ny)], "Lane"),
+        { ...piece("A", "Road", [c, a], "Lane"), branch: 1, openStart: false }, // its fork runs to the edge…
+      ];
+      // …but nothing meets it there: still not drawn.
+      expect(crossRegionLines(l, local)).toEqual([]);
+      const lines = crossRegionLines(l, [...local, piece("B", "Road", [b, centre(l, B)], "Lane")]);
+      expect(lines.flatMap((x) => x.regions).sort()).toEqual(["A", "A", "B"]);
+    });
+
+    it("joins ends on the same hex of two regions too", () => {
+      const [a] = seamPair(l, A, B);
+      const lines = crossRegionLines(l, [piece("A", "Road", [centre(l, A), a]), piece("B", "Road", [a, centre(l, B)])]);
+      expect(lines).toHaveLength(1);
+      expect(lines[0].hexes).toEqual([centre(l, A), a, centre(l, B)]);
     });
 
     it("keeps a crossing path's fork in its region with it, as its own line", () => {
@@ -255,6 +286,58 @@ describe("hover: the line under the pointer, in the drawing's units", () => {
     expect(regionsViewTip({ region: "North", parentHex: "1_1" }, { ...opts, path: "Kings Road" })).toBe("Kings Road\nNorth: click to go there");
     expect(regionsViewTip(null, { ...opts, path: "Kings Road" })).toBe("Kings Road");
     expect(regionsViewTip({ region: "North", parentHex: "1_1" }, opts)).toBe("North: click to go there");
+  });
+});
+
+describe("O2: the Biomes view's simplified lines, edge to edge", () => {
+  const P = (x: number, y: number) => hexCenter(x, y, l.orientation, l.parentStagger);
+  const [a, b] = seamPair(l, A, B);
+
+  it("the overworld hexes a line passes through, repeats dropped, an in-and-out dip left out", () => {
+    expect(overworldRoute(l, [centre(l, A), a, b, centre(l, B)])).toEqual(["1_1", "2_1"]);
+    expect(overworldRoute(l, [centre(l, A), a, b, a, centre(l, A)])).toEqual(["1_1"]);
+    expect(overworldRoute(l, [])).toEqual([]);
+  });
+
+  it("from the first hex's centre through each shared edge's middle to the last hex's centre", () => {
+    const [ax, ay] = P(1, 1), [bx, by] = P(2, 1), [cx, cy] = P(3, 1);
+    expect(edgeToEdgePoints(l, ["1_1", "2_1", "3_1"])).toEqual([[ax, ay], [(ax + bx) / 2, (ay + by) / 2], [(bx + cx) / 2, (by + cy) / 2], [cx, cy]]);
+    expect(edgeToEdgePoints(l, ["1_1"])).toEqual([]);
+  });
+
+  it("biomeViewLines: same line (name, look), straight, in the parent plane; one that never leaves its hex is dropped", () => {
+    const w = world();
+    const joined = new CrossRegionPaths().lines(l, w.src);
+    const lines = biomeViewLines(l, joined);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ typeName: "Road", names: joined[0].names, width: joined[0].width, color: joined[0].color, smooth: false });
+    expect(lines[0].pts[0]).toEqual(P(1, 1));
+    const stuck = { ...joined[0], hexes: [centre(l, A), a] };
+    expect(biomeViewLines(l, [stuck])).toEqual([]);
+  });
+
+  const p2g: Affine = [67.6, 0, 0, 68, 66, 173];
+  const EM = 28;
+  const lines = biomeViewLines(l, new CrossRegionPaths().lines(l, world().src));
+  for (const F of [0.5, 1, 1.7, 3]) {
+    it(`hover finds it at zoom ×${F} (points in the parent plane), and nothing a hex away`, () => {
+      const [mx, my] = lines[0].pts[1]; // the shared edge's middle
+      const [gx, gy] = applyAffine(p2g, mx, my);
+      expect(pathAtGridPoint(lines, p2g, p2g, EM, EM * F, 1, gx * F, gy * F)?.names).toEqual(["Road"]);
+      const [ox, oy] = applyAffine(p2g, ...P(1, 2));
+      expect(pathAtGridPoint(lines, p2g, p2g, EM, EM * F, 1, ox * F, oy * F)).toBeNull();
+    });
+  }
+
+  it("the layer draws them in the Biomes view too, under the same toggle", () => {
+    const layer = readSource("src/overworld/overworldLayer.ts");
+    expect(layer).toContain("if (view && REGION_PATHS_ROW.value(map)) this.drawPaths(canvas.parentElement, geom, map, view);");
+    expect(layer).toContain('const plane = view === "biomes" ? geom.p2g : geom.c2g;');
+  });
+
+  it("the hex tooltip puts a path's name first", () => {
+    expect(pathFirst("Kings Road", "Forest · hex 1, 1")).toBe("Kings Road\nForest · hex 1, 1");
+    expect(pathFirst(undefined, "Forest · hex 1, 1")).toBe("Forest · hex 1, 1");
   });
 });
 

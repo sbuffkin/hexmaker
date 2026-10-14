@@ -17,13 +17,17 @@
  * lattice coordinates by the view (one read of the grid's box per event,
  * never per hex) and compared with the same polylines the map draws.
  *
+ * Neighbouring maps' paths past the edges (the strip) can be hooked onto,
+ * and a path drawn to the edge carried on into the neighbour (O1; the pure
+ * part is src/paths/seamHook.ts).
+ *
  * The top part of this file is pure (tests/pathTool.test.ts).
  */
 
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapPath } from "../types";
-import { latticeCenter, type LatticeGrid, type PathStroke, type Pt } from "../paths/pathGeometry";
+import { type LatticeGrid, type PathStroke, type Pt } from "../paths/pathGeometry";
 import type { RouteCache } from "../paths/routeCache";
 import {
   appendAnchor,
@@ -51,127 +55,11 @@ import { PathPickerModal } from "./PathPickerModal";
 import { PathNameModal } from "./PathNameModal";
 import { addSubmenuButtons, placedRows } from "../ui/placedMenu";
 import { isDebugMode } from "../ui/debugMode";
+import { anchorEnd, hitTestPaths, type PathHit } from "./pathHit";
+import { crossFrom, hookAt, hookedName, hookFor, seamHooks, type SeamHook, type StripRef } from "../paths/seamHook";
 
-// ── Pure: hit-testing ────────────────────────────────────────────────────────
-
-/** Anchor handle radius, lattice units (a hex's centre-to-corner is 1). */
-export const HANDLE_R = 0.24;
-/** End handles ("+": continue from here) are drawn a little bigger. */
-export const END_HANDLE_R = 0.32;
-/** Slack added to half the stroke width when hitting a line (lattice units). */
-export const LINE_SLACK = 0.25;
-
-export function distToSegment(p: Pt, a: Pt, b: Pt): number {
-  const dx = b.cx - a.cx;
-  const dy = b.cy - a.cy;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 ? Math.max(0, Math.min(1, ((p.cx - a.cx) * dx + (p.cy - a.cy) * dy) / len2)) : 0;
-  return Math.hypot(p.cx - (a.cx + t * dx), p.cy - (a.cy + t * dy));
-}
-
-export function distToPolyline(p: Pt, pts: readonly Pt[]): number {
-  if (!pts.length) return Infinity;
-  if (pts.length === 1) return Math.hypot(p.cx - pts[0].cx, p.cy - pts[0].cy);
-  let best = Infinity;
-  for (let i = 1; i < pts.length; i++) best = Math.min(best, distToSegment(p, pts[i - 1], pts[i]));
-  return best;
-}
-
-/** Index of the hex of `hexes` whose centre is nearest `p` (ties: the lower index). */
-export function nearestHexIdx(p: Pt, hexes: readonly HexKey[], grid: LatticeGrid): number {
-  let best = -1;
-  let bestD = Infinity;
-  hexes.forEach((h, i) => {
-    const c = latticeCenter(h, grid);
-    const d = Math.hypot(p.cx - c.cx, p.cy - c.cy);
-    if (d < bestD - 1e-9) {
-      bestD = d;
-      best = i;
-    }
-  });
-  return best;
-}
-
-/** Which end of its branch an anchor is: head (first, not a fork's start), tail (last), or neither. */
-export function anchorEnd(rb: Pick<ResolvedBranch, "anchorIdx" | "forkFrom">, anchor: number): "head" | "tail" | null {
-  const n = rb.anchorIdx.length;
-  if (n > 1 && anchor === n - 1) return "tail";
-  if (anchor === 0 && !rb.forkFrom) return n > 1 ? "head" : "tail";
-  return null;
-}
-
-export interface PathHit {
-  path: string;
-  branch: number;
-  /** The branch's routed hex nearest the pointer (the anchor's own hex when `anchor` is set). */
-  hexIdx: number;
-  /** That routed hex. */
-  hex: HexKey;
-  /** The anchor whose handle is under the pointer (editable paths only), else null. */
-  anchor: number | null;
-  /** When `anchor` is a branch end. */
-  end: "head" | "tail" | null;
-  /** The path is of the tool's type (it can be reshaped); false: another type's, inert. */
-  editable: boolean;
-}
-
-/**
- * What's under lattice point `p`. Anchor handles of every editable path
- * (`editable(name)`; all paths when null) come first, the nearest within
- * its radius; else the nearest path line within half its stroke plus
- * LINE_SLACK. Where lines overlap, an editable path beats an inert one and
- * the selected path beats the rest. Inert paths are still reported (for
- * the "switch to … to edit it" hint) with `editable: false`. Null when
- * nothing is under the pointer.
- */
-export function hitTestPaths(
-  p: Pt,
-  strokes: readonly PathStroke[],
-  resolved: readonly ResolvedBranch[],
-  grid: LatticeGrid,
-  selected: string | null,
-  editable: ((path: string) => boolean) | null = null,
-): PathHit | null {
-  const canEdit = (path: string) => editable === null || editable(path);
-  let best: PathHit | null = null;
-  let bestD = Infinity;
-  let bestSel = false;
-  for (const rb of resolved) {
-    if (!canEdit(rb.path)) continue;
-    const sel = rb.path === selected;
-    rb.anchorIdx.forEach((hexIdx, a) => {
-      const end = anchorEnd(rb, a);
-      const c = latticeCenter(rb.hexes[hexIdx], grid);
-      const d = Math.hypot(p.cx - c.cx, p.cy - c.cy);
-      if (d > (end ? END_HANDLE_R : HANDLE_R)) return;
-      // Stacked handles (paths sharing a hex): the selected path's first, then the nearest.
-      if ((sel && !bestSel) || (sel === bestSel && d < bestD - 1e-9)) {
-        bestD = d;
-        bestSel = sel;
-        best = { path: rb.path, branch: rb.branch, hexIdx, hex: rb.hexes[hexIdx], anchor: a, end, editable: true };
-      }
-    });
-  }
-  if (best) return best;
-  let pick: PathStroke | null = null;
-  let pickD = Infinity;
-  let pickRank = -1;
-  for (const s of strokes) {
-    const d = distToPolyline(p, s.pts);
-    if (d > s.width / 2 + LINE_SLACK) continue;
-    const rank = (canEdit(s.path) ? 2 : 0) + (s.path === selected ? 1 : 0);
-    if (rank > pickRank || (rank === pickRank && d < pickD - 1e-9)) {
-      pick = s;
-      pickD = d;
-      pickRank = rank;
-    }
-  }
-  if (!pick) return null;
-  const rb = resolved.find((r) => r.path === pick.path && r.branch === pick.branch);
-  if (!rb) return null;
-  const hexIdx = nearestHexIdx(p, rb.hexes, grid);
-  return { path: rb.path, branch: rb.branch, hexIdx, hex: rb.hexes[hexIdx], anchor: null, end: null, editable: canEdit(rb.path) };
-}
+// Pure hit-testing lives in pathHit.ts (re-exported for the tests).
+export { anchorEnd, distToPolyline, distToSegment, END_HANDLE_R, HANDLE_R, hitTestPaths, LINE_SLACK, nearestHexIdx, type PathHit } from "./pathHit";
 
 // ── Pure: what a click, a press and a right-click do ─────────────────────────
 
@@ -346,10 +234,17 @@ export interface PathToolHost {
   setGrabCursor(on: boolean): void;
   /** The tool's path type changed (the toolbar swatch follows it). */
   typeChanged(): void;
+  /** Neighbouring maps' hexes just past this map's edges (this map's key → theirs); empty when none. */
+  neighbourStrip(): ReadonlyMap<HexKey, StripRef>;
+  /** Go to neighbouring map `map` with the path tool still on, showing its hex `hex`; then `arm` sets the tool up there. */
+  openNeighbour(map: string, hex: HexKey, arm: () => void): void;
 }
 
-/** A path or fork started by one click: it's created when the second anchor comes. */
-type Pending = { kind: "new"; hex: HexKey } | { kind: "fork"; path: string; hex: HexKey };
+/**
+ * A path or fork started by one click: it's created when the second anchor
+ * comes. A new path hooked onto a neighbour's takes its name (`name`).
+ */
+type Pending = { kind: "new"; hex: HexKey; name?: string } | { kind: "fork"; path: string; hex: HexKey };
 
 interface Drag {
   path: string;
@@ -852,7 +747,12 @@ export class PathTool {
     if (pending?.kind === "new") {
       const type = this.typeName;
       if (!type) return null;
-      const p = newPath(type, pending.hex, this.paths().map((q) => q.name));
+      const taken = this.paths().map((q) => q.name);
+      const p = newPath(type, pending.hex, taken);
+      // Started beside a neighbour's path of this type (hooked, or by hand): its name.
+      const hooked = pending.name ?? hookFor(pending.hex, type, this.hooks())?.path;
+      const name = hooked ? hookedName(hooked, taken) : null;
+      if (name) p.name = name;
       return { paths: [...clonePaths(this.paths()), p], target: { name: p.name, branch: 0, end: "tail" } };
     }
     if (pending?.kind === "fork") {
@@ -1106,6 +1006,95 @@ export class PathTool {
     };
   }
 
+  // ── across the seam: neighbours' paths (O1, src/paths/seamHook.ts) ──
+
+  private hookMemo: { key: readonly unknown[]; hooks: SeamHook[] } | null = null;
+
+  /** Neighbour paths ending in the strip beside this map (cached while the strip and their routes stay the same). */
+  private hooks(): SeamHook[] {
+    const strip = this.host.neighbourStrip();
+    if (!strip.size) return [];
+    const grid = this.grid();
+    const map = this.plugin.getMap(this.map);
+    if (!grid || !map) return [];
+    const maps = [...new Set([...strip.values()].map((r) => r.map))];
+    const key = [strip, this.map, ...maps.map((m) => this.plugin.paths.resolved(m))];
+    if (this.hookMemo && this.hookMemo.key.length === key.length && this.hookMemo.key.every((k, i) => k === key[i])) return this.hookMemo.hooks;
+    const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
+    const inMap = (k: HexKey) => {
+      const [x, y] = k.split("_").map(Number);
+      return !strip.has(k) && x >= ox && x < ox + cols && y >= oy && y < oy + rows;
+    };
+    const hooks = seamHooks(strip, (m) => this.plugin.paths.resolved(m), inMap, grid);
+    this.hookMemo = { key, hooks };
+    return hooks;
+  }
+
+  private hookUnder(e: { clientX: number; clientY: number }): SeamHook | null {
+    const p = this.host.pointerLattice(e);
+    const grid = this.grid();
+    return p && grid ? hookAt(p, this.hooks(), grid) : null;
+  }
+
+  /** Has map `map` a path type called `typeName`? Says so when it hasn't. */
+  private hasType(map: string, typeName: string): boolean {
+    if (this.plugin.getMapPathTypes(map).some((t) => t.name === typeName)) return true;
+    new Notice(`${this.plugin.mapLabel(map)} has no ${typeName} path type. Add it to its palette first.`);
+    return false;
+  }
+
+  /**
+   * A click on the strip past this map's edge (the neighbours' hexes) with
+   * the tool on. Drawing, with the end on the edge: carry the path on into
+   * that neighbour. Else, on a neighbour's road or river that ends beside
+   * this map: hook onto it, so the next clicks extend it here. False when
+   * the click isn't the tool's (the strip's own click then goes ahead).
+   */
+  clickStrip(e: { clientX: number; clientY: number }): boolean {
+    if (this.isDragging() || !this.plugin.paths.isReady(this.map)) return false;
+    const p = this.host.pointerLattice(e);
+    const grid = this.grid();
+    if (!p || !grid) return false;
+    const active = this.activeHex();
+    if (active !== null) {
+      const to = crossFrom(active, p, this.host.neighbourStrip(), grid);
+      if (to) this.carryInto(to.map, to.hex);
+      else {
+        this.hint = "draw up to the edge to carry on into the next map";
+        this.host.refreshBar();
+      }
+      return true;
+    }
+    const hook = hookAt(p, this.hooks(), grid);
+    if (!hook || !this.hasType(this.map, hook.typeName)) return !!hook;
+    this.startHooked(hook.typeName, hook.start, hook.path, `carrying on ${hook.path} from ${this.plugin.mapLabel(hook.map)}`);
+    return true;
+  }
+
+  /** Start a path at `hex` (created by the next click) of type `typeName`, named `name` if it's free. */
+  private startHooked(typeName: string, hex: HexKey, name: string | undefined, hint: string): void {
+    if (typeName !== this.typeName) {
+      this.setType(typeName);
+      this.host.typeChanged();
+    }
+    this.selected = null;
+    this.active = null;
+    this.forceNew = false;
+    this.pending = { kind: "new", hex, ...(name ? { name } : {}) };
+    this.hint = hint;
+    this.host.redraw();
+    this.host.refreshBar();
+  }
+
+  /** The path being drawn reached the edge: go on drawing it in neighbour `map`, from its hex `hex`. */
+  private carryInto(map: string, hex: HexKey): void {
+    const type = this.currentType();
+    if (!type || !this.hasType(map, type)) return;
+    const name = this.pending ? undefined : this.pathNamed(this.selected)?.name;
+    const from = this.plugin.mapLabel(this.map);
+    this.host.openNeighbour(map, hex, () => this.startHooked(type, hex, name, `carrying on ${name ?? "the path"} from ${from}`));
+  }
+
   // ── pointer: hover and drag ──
 
   /**
@@ -1124,7 +1113,9 @@ export class PathTool {
     this.hover = hover;
     this.host.setGrabCursor(press === "move" || press === "insert");
     const other = hit && !hit.editable ? this.pathNamed(hit.path) : undefined;
-    const hint = other ? inertHint(other) : null;
+    // Over a neighbour's path ending at the edge: say a click hooks onto it.
+    const hook = !hit && !quiet && !erasing && this.activeHex() === null ? this.hookUnder(e) : null;
+    const hint = other ? inertHint(other) : hook ? `click to carry on ${hook.path} here` : null;
     const hintChanged = hint !== this.hoverHint;
     this.hoverHint = hint;
     if (changed) this.host.redraw();

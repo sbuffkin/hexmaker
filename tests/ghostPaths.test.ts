@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "../src/hex-map/ghostPaths";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
-import { readSurface } from "./helpers/source";
+import { readSource, readSurface } from "./helpers/source";
 
 /**
  * This map: 4×3 at offset 0,0. Its southern neighbour "south" is 4×3 too,
@@ -84,8 +84,11 @@ describe("HexMapView draws them in the strip", () => {
 		expect(m).not.toBeNull();
 		const body = m![0];
 		expect(body).toMatch(/ghostPathRuns\(shadow, \(m\) => this\.plugin\.paths\.resolvedPathChains\(m\)\)/);
-		expect(body).toMatch(/svg\.classList\.add\("duckmage-region-shadow-paths"\)/);
-		expect(body).toMatch(/layer\.appendChild\(svg\)/);
+		// Drawn on the strip's layer by ghostPathsSvg.ts.
+		expect(body).toMatch(/drawGhostPaths\(layer, ghostPaths, gridWEm, gridHEm, em\)/);
+		const svg = readSource("src/hex-map/ghostPathsSvg.ts");
+		expect(svg).toMatch(/svg\.classList\.add\("duckmage-region-shadow-paths"\)/);
+		expect(svg).toMatch(/layer\.appendChild\(svg\)/);
 		// Reads (place/offsetWidth) before the first write (createDiv).
 		expect(body.indexOf("gridContainer.offsetWidth / em")).toBeLessThan(body.indexOf("gridContainer.createDiv"));
 	});

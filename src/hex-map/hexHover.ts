@@ -67,10 +67,13 @@ export function regionsViewTip(
   cell: { region?: string; parentHex: string } | null,
   opts: { label: (region: string) => string; emptySlot: (parentHex: string) => boolean; canAdd: boolean; path?: string },
 ): string {
-  const base = regionTip(cell, opts);
-  if (!opts.path) return base;
-  return base ? `${opts.path}
-${base}` : opts.path;
+  return pathFirst(opts.path, regionTip(cell, opts));
+}
+
+/** A tooltip with the name of the path line under the pointer (if any) on its own first line. */
+export function pathFirst(path: string | undefined, base: string): string {
+  if (!path) return base;
+  return base ? `${path}\n${base}` : path;
 }
 
 function regionTip(

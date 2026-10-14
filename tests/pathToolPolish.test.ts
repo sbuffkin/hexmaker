@@ -183,6 +183,8 @@ function rig() {
     refreshBar: () => {},
     setGrabCursor: () => {},
     typeChanged: () => {},
+    neighbourStrip: () => new Map(),
+    openNeighbour: () => {},
   });
   tool.typeName = "Road";
   const at = (hex: string) => { const [x, y] = hex.split("_").map(Number); return { clientX: x * 100, clientY: y * 100 }; };

@@ -24,6 +24,7 @@ import type { ResolvedBranch } from "../paths/resolve";
 import { DASH_PX, isSmooth, SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
 import { ownerOf } from "../paths/pathColumns";
 import { pathNameKey } from "../paths/names";
+import { hexCenter } from "../../packages/hex-wfc/src/grid";
 import { childNeighbours, childPoint, parentOf, type RegionLayout } from "./layout";
 import { affineScale, gridPointToChild, RegionBitmapCache, type Affine } from "./overworldRender";
 
@@ -98,11 +99,12 @@ export function piecesOf(region: string, resolved: readonly ResolvedBranch[], st
 /**
  * The pieces that cross a seam, joined into lines. Pieces are in the
  * overworld's shared child grid (every region of one overworld is a block
- * of it), so "touching across a seam" is: neighbours in that grid, in
- * different blocks.
+ * of it), so "touching across a seam" is: the same hex or neighbours in
+ * that grid, in different regions. Only pieces that pair with another
+ * region's are drawn (with the forks of their paths): a path that stays in
+ * one region never is.
  */
 export function crossRegionLines(layout: RegionLayout, pieces: readonly RegionPathPiece[]): CrossRegionLine[] {
-  const block = (k: HexKey) => parentOf(layout, ...xy(k)).join("_");
   // End ids: piece i's start is 2i, its end 2i+1 (a one-hex piece has only its start).
   const endHex = (id: number) => {
     const p = pieces[id >> 1];
@@ -126,7 +128,10 @@ export function crossRegionLines(layout: RegionLayout, pieces: readonly RegionPa
     }
   });
 
-  // Seam pairs.
+  // Seam pairs: an open end of a piece in ANOTHER region on the same hex or
+  // a touching one (O1: only paths joining two regions or more are drawn;
+  // a region's own pieces never pair, even where its map's box runs past
+  // its block, as a hex flower's does).
   const partners = new Map<number, number[]>();
   const link = (a: number, b: number) => {
     const l = partners.get(a);
@@ -136,12 +141,9 @@ export function crossRegionLines(layout: RegionLayout, pieces: readonly RegionPa
   pieces.forEach((p, i) => {
     for (const id of endIds(i)) {
       const h = endHex(id);
-      const own = block(h);
-      for (const [nx, ny] of childNeighbours(layout, ...xy(h))) {
-        const n = `${nx}_${ny}`;
-        if (block(n) === own) continue;
+      for (const n of [h, ...childNeighbours(layout, ...xy(h)).map(([nx, ny]) => `${nx}_${ny}`)]) {
         for (const other of byHex.get(`${p.typeName}\u0000${n}`) ?? []) {
-          if (other >> 1 === i) continue;
+          if (pieces[other >> 1].region === p.region) continue;
           link(id, other);
           link(other, id);
         }
@@ -290,6 +292,46 @@ export class CrossRegionPaths {
   }
 }
 
+// ── the Biomes view: simplified, edge to edge (O2) ─────────────────────────
+
+/**
+ * The overworld hexes a line passes through, in order: each child hex's
+ * parent, repeats dropped, and a dip into a hex and straight back out
+ * (A, B, A) left out.
+ */
+export function overworldRoute(layout: RegionLayout, hexes: readonly HexKey[]): HexKey[] {
+  const out: HexKey[] = [];
+  for (const h of hexes) {
+    const p = parentOf(layout, ...xy(h)).join("_");
+    if (out[out.length - 1] === p) continue;
+    if (out.length >= 2 && out[out.length - 2] === p) { out.pop(); continue; }
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * A simplified line in the overworld's parent plane (O2: "just edge to
+ * edge, no need to match the real curves"): from the first hex's centre,
+ * straight through the middle of each shared edge, to the last hex's
+ * centre. Fewer than two hexes: nothing (it doesn't leave its hex here).
+ */
+export function edgeToEdgePoints(layout: RegionLayout, route: readonly HexKey[]): [number, number][] {
+  if (route.length < 2) return [];
+  const c = route.map((k) => hexCenter(...xy(k), layout.orientation, layout.parentStagger));
+  const pts: [number, number][] = [c[0]];
+  for (let i = 1; i < c.length; i++) pts.push([(c[i - 1][0] + c[i][0]) / 2, (c[i - 1][1] + c[i][1]) / 2]);
+  pts.push(c[c.length - 1]);
+  return pts;
+}
+
+/** The Biomes view's lines: the same lines, `pts` in the parent plane, straight. */
+export function biomeViewLines<L extends OverworldPathLine>(layout: RegionLayout, lines: readonly L[]): L[] {
+  return lines
+    .map((l) => ({ ...l, pts: edgeToEdgePoints(layout, overworldRoute(layout, l.hexes)), smooth: false }))
+    .filter((l) => l.pts.length >= 2);
+}
+
 /** Distance from a point to a polyline. */
 function distToPolyline(pts: readonly [number, number][], x: number, y: number): number {
   if (pts.length === 1) return Math.hypot(pts[0][0] - x, pts[0][1] - y);
@@ -310,8 +352,10 @@ export const PATH_HIT_PX = 4;
 /**
  * The line under a grid-px point measured now (the layer's hover hit
  * test). `c2g` / `p2g` were measured when the grid's font size was
- * `emThen`; `screenPerPx` is screen px per layout px (sx). The point goes
- * back to the child plane the lines are built in, and the slack (half the
+ * `emThen`; `screenPerPx` is screen px per layout px (sx). `c2g` maps the
+ * plane the lines' points are in: the child plane, or for the Biomes
+ * view's lines the parent plane (pass p2g there). The point goes
+ * back to that plane, and the slack (half the
  * stroke plus PATH_HIT_PX on screen) is converted to child units the same
  * way, so the test holds at every zoom.
  */
