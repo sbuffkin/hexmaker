@@ -9755,11 +9755,18 @@ button.is-armed {
     color: var(--text-muted);
     font-style: italic;
 }
+.duckmage-wfc-library-table.is-flowers .duckmage-wfc-library-row {
+    /* Name, Palette, Results */
+    grid-template-columns: minmax(8em, 1fr) minmax(6em, 0.8fr) minmax(8em, 2fr);
+}
+/* A big palette's swatches scroll (the flower's own results come first). */
 .duckmage-flower-panel .duckmage-flower-swatches {
     display: flex;
     flex-wrap: wrap;
     gap: 0.3em;
     margin: 0.4em 0;
+    max-height: 6.2em;
+    overflow-y: auto;
 }
 .duckmage-flower-swatch {
     display: inline-flex;

@@ -31,6 +31,7 @@ import {
   NOTHING,
   emptyFlower,
   isBlocked,
+  landingOdds,
   longRunOdds,
   parseDice,
   transitionMatrix,
@@ -171,7 +172,9 @@ class FlowerEditor {
     const colors = terrainColors(this.plugin, f.palette ?? this.host.paletteName());
     const sw = el.createDiv({ cls: "duckmage-flower-swatches", attr: { role: "radiogroup", "aria-label": "Paint cells with" } });
     if (!state.paint) state.paint = this.terrains[0]?.name ?? NOTHING;
-    for (const t of [...this.terrains.map((x) => x.name), NOTHING, BLOCKED]) {
+    // The flower's own results first, then nothing and blocked, then the rest of the palette.
+    const own = sharesOf(f.cells).map((s) => s.terrain);
+    for (const t of [...new Set([...own, NOTHING, BLOCKED, ...this.terrains.map((x) => x.name)])]) {
       const b = sw.createEl("button", { cls: `duckmage-flower-swatch${state.paint === t ? " is-active" : ""}`, attr: { role: "radio", "aria-checked": String(state.paint === t) } });
       const dot = b.createSpan({ cls: "duckmage-flower-swatch-dot" });
       const c = colors.get(t.toLowerCase());
@@ -181,15 +184,17 @@ class FlowerEditor {
     }
 
     // The flower: click paints, right-click for the rest; long-run share under each cell.
-    const odds = longRunOdds(f, 600);
+    // Landing odds: where the next step goes from the test walk's cell, else from the start.
+    const here = (this.walk ? this.walk.at.get(f.name.toLowerCase()) : undefined) ?? f.start;
+    const odds = landingOdds(f, here);
     drawFlower(el, f, {
       colors,
       current: this.walk ? this.walk.at.get(f.name.toLowerCase()) : undefined,
-      under: (n) => (isBlocked(f.cells[n - 1].result) ? undefined : pct(odds[n - 1])),
+      under: (n) => (isBlocked(f.cells[n - 1].result) || !odds[n - 1] ? undefined : pct(odds[n - 1])),
       onClick: (n) => { f.cells[n - 1] = { result: state.paint, ...(f.cells[n - 1].notes ? { notes: f.cells[n - 1].notes } : {}) }; this.save(); },
       onContext: (n, e) => this.cellMenu(el, n, e),
     });
-    el.createDiv({ cls: "duckmage-map-origin-desc", text: "Under each cell: how often a long walk stands there. Underlined: where a walk starts." });
+    el.createDiv({ cls: "duckmage-map-origin-desc", text: `Under each cell: the chance the next step lands there from cell ${here} (underlined: where a walk starts). Debug has the long-run odds.` });
 
     const actions = el.createDiv({ cls: "duckmage-flower-actions" });
     const fill = actions.createEl("button", { text: "Fill from palette", attr: { title: "New cells from this palette's terrains, as patches (blocked cells stay)" } });
