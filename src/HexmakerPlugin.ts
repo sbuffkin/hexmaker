@@ -25,7 +25,7 @@ import type { BiomeStore } from "./overworld/BiomeStore";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
@@ -55,7 +55,7 @@ import type {
 } from "./types";
 import { migrateMapData, pluginVersion } from "./compat";
 import { writeJsonBackup } from "./backup";
-import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, tokenMapValue } from "./frontmatter";
+import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
@@ -66,11 +66,10 @@ import { type RoleId } from "./worldgen/tableRoles";
 import { ArrivalService } from "./arrival/ArrivalService";
 import { EventsService } from "./arrival/EventsService";
 import { type ArrivalMode } from "./arrival/arrival";
-import { withMapLink } from "./maps/mapNote";
 import type { RegionSettings } from "./types";
-import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
+import { type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
-import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
+import { type CalloutSyncResult } from "./maps/calloutSync";
 import { recordMigrationRun, runSettingsMigrations } from "./migrations/registry";
 import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
 import { takeUpgradeReport } from "./migrations/upgradeReport";
@@ -78,9 +77,8 @@ import type { NoteRewrite } from "./migrations/noteRewrites";
 import { writeUpgradeNote } from "./migrations/upgradeNote";
 import changelog from "../CHANGELOG.md";
 import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
-import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
+import { type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
-import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from "./maps/hexNames";
 import { HexPropsSync } from "./maps/hexPropsSync";
 import { registerVaultEvents } from "./plugin/vaultEvents";
 import { bindPorts } from "./ports";
@@ -91,8 +89,6 @@ import {
   addLinkToSection,
   getLinksInSection,
   removeLinkFromSection,
-  insertLinkInSection,
-  appendSectionText,
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
@@ -100,7 +96,10 @@ import { type NotePickPurpose } from "./templateNotes";
 import { MapsService, type NewMapOptions } from "./services/MapsService";
 import { PaletteQueries } from "./services/PaletteQueries";
 import { TemplatesService } from "./services/TemplatesService";
+import { HexNotesService } from "./services/HexNotesService";
 export default class HexmakerPlugin extends Plugin {
+  /** Hex notes, their Map data callouts, and region / faction notes (src/services/HexNotesService.ts). */
+  readonly hexNotes = new HexNotesService(this);
   /** Note templates and which notes pickers offer (src/services/TemplatesService.ts). */
   readonly templates = new TemplatesService(this);
   /** Palette lookups and installs (src/services/PaletteQueries.ts). */
@@ -668,23 +667,9 @@ export default class HexmakerPlugin extends Plugin {
     return file.path.startsWith(folder + "/") && !file.basename.startsWith("_");
   }
 
-  /**
-   * Check whether a TFile is a hex note (lives under the configured hex
-   * folder, basename matches the `x_y` coord pattern). Used to gate the
-   * structured hex export command.
-   */
-  isHexFile(file: TFile): boolean {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    if (hexFolder && !file.path.startsWith(hexFolder + "/")) return false;
-    return /^-?\d+_-?\d+$/.test(file.basename);
-  }
+  isHexFile(file: TFile): boolean { return this.hexNotes.isHexFile(file); }
 
-  hexPath(x: number, y: number, mapName: string): string {
-    const folder = normalizeFolder(this.settings.hexFolder);
-    return folder
-      ? `${folder}/${mapName}/${x}_${y}.md`
-      : `${mapName}/${x}_${y}.md`;
-  }
+  hexPath(x: number, y: number, mapName: string): string { return this.hexNotes.hexPath(x, y, mapName); }
 
   updateSubmapReferences(oldName: string, newName: string): Promise<void> { return this.maps.updateSubmapReferences(oldName, newName); }
 
@@ -1349,288 +1334,37 @@ export default class HexmakerPlugin extends Plugin {
     return result;
   }
 
-  async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
-    const key = `${x}_${y}`;
-    const name = cleanHexName(raw);
-    const old = this.mapStore.get(mapName, key)?.name;
-    if ((old ?? "") === name) return;
-    this.mapStore.set(mapName, key, { name: name || null }, "edit-note");
-    // The "<map> x, y" alias rides along (added if the note lacks it).
-    const coord = this.hexCoordAlias(mapName, x, y);
-    await syncHexAliases(this.app, this.hexPath(x, y, mapName), [
-      { from: old, to: name },
-      { from: coord, to: coord },
-    ]);
-  }
+  setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> { return this.hexNotes.setHexName(mapName, x, y, raw); }
 
-  /** A hex note's "<map display name> x, y" alias (NM2). */
-  hexCoordAlias(mapName: string, x: number | string, y: number | string): string {
-    return coordAlias(this.mapLabel(mapName), x, y);
-  }
+  hexCoordAlias(mapName: string, x: number | string, y: number | string): string { return this.hexNotes.hexCoordAlias(mapName, x, y); }
 
-  /** A map's display name changed from `oldLabel`: swap the "<map> x, y" alias on its hex notes (hexNames.ts). */
-  async syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> {
-    await swapMapCoordAliases(this.app, this.mapStore.mapFolder(mapName), oldLabel, this.mapLabel(mapName));
-  }
+  syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> { return this.hexNotes.syncMapCoordAliases(mapName, oldLabel); }
 
-  /** Create a hex note from the configured template (or the built-in default). */
-  async createHexNote(
-    x: number,
-    y: number,
-    mapName: string,
-    preloadedTemplate?: string,
-    terrain?: string,
-  ): Promise<TFile | null> {
-    const path = this.hexPath(x, y, mapName);
-    let content: string;
+  createHexNote(x: number, y: number, mapName: string, preloadedTemplate?: string, terrain?: string): Promise<TFile | null> { return this.hexNotes.createHexNote(x, y, mapName, preloadedTemplate, terrain); }
 
-    if (preloadedTemplate !== undefined) {
-      content = preloadedTemplate;
-    } else {
-      content = await this.loadHexTemplate();
-    }
+  appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> { return this.hexNotes.appendToHexSection(x, y, mapName, section, text); }
 
-    content = content
-      .replace(/\{\{x\}\}/g, String(x))
-      .replace(/\{\{y\}\}/g, String(y))
-      .replace(/\{\{title\}\}/g, `Hex ${x}, ${y}`)
-      .replace(/\{\{map\}\}/g, mapName);
-    // Map data lives in the map note: the hex note links there instead of
-    // carrying (possibly stale) terrain/region fields.
-    content = withMapLink(content, mapName);
-    if (terrain) this.mapStore.set(mapName, `${x}_${y}`, { terrain });
-    // Its terrain, area, icon and name as properties (MG4).
-    content = this.hexProps.withProps(content, mapName, x, y, path);
-    // The template's Map data callout shows what the map has for this hex.
-    const mapDataView = this.hexMapDataView(mapName, x, y);
-    const withMapData = setMapData(content, mapDataView);
-    // Remember what it shows, so a later hand edit is told from a stale copy.
-    if (withMapData !== content) this.calloutMemory.set(path, shownValues(mapDataLines(mapDataView)));
-    content = withMapData;
-    // The hex's terrain (just set, or painted before it had a note) gets
-    // its encounter-table link now rather than patched in later.
-    const encounterLink = this.terrainEncounterLinkFor(mapName, x, y, path);
-    if (encounterLink) {
-      content = insertLinkInSection(content, "Encounters Table", `[[${encounterLink}]]`);
-    }
-    // Likewise its area's table (painted before the hex had a note), so the
-    // hex editor's Encounters list doesn't lose it when the note is made.
-    const areaTable = this.areaEncounterTableFor(mapName, x, y);
-    if (areaTable) {
-      content = insertLinkInSection(content, "Encounters Table", `[[${this.app.metadataCache.fileToLinktext(areaTable, path)}]]`);
-    }
+  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView { return this.hexNotes.hexMapDataView(mapName, x, y); }
 
-    const hexBase = normalizeFolder(this.settings.hexFolder);
-    const mapFolder = hexBase ? `${hexBase}/${mapName}` : mapName;
-    if (!this.app.vault.getAbstractFileByPath(mapFolder)) {
-      // Wrap in try/catch: a concurrent worker may have already created the folder.
-      try {
-        await this.app.vault.createFolder(mapFolder);
-      } catch {
-        /* exists */
-      }
-    }
+  refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> { return this.hexNotes.refreshHexMapData(mapName, x, y, insert); }
 
-    try {
-      const file = await this.app.vault.create(path, content);
-      // A named hex's note gets its name as an alias (X4), and every hex
-      // note gets "<map> x, y" (NM2).
-      const name = this.mapStore.get(mapName, `${x}_${y}`)?.name;
-      await syncHexAliases(this.app, path, [
-        { from: undefined, to: name },
-        { from: undefined, to: this.hexCoordAlias(mapName, x, y) },
-      ]);
-      return file;
-    } catch {
-      // A concurrent worker may have created this file between our existence check and
-      // this create call.  If the file now exists, use it rather than treating it as an error.
-      const existing = this.app.vault.getAbstractFileByPath(path);
-      if (existing instanceof TFile) return existing;
-      new Notice("Could not create note at " + path);
-      return null;
-    }
-  }
+  syncHexMapData(mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {}): Promise<CalloutSyncResult> { return this.hexNotes.syncHexMapData(mapName, x, y, opts); }
 
-  /**
-   * Append text to a section of a hex's note, creating the note first if
-   * the hex has none (P2 "Add to this hex").
-   */
-  async appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> {
-    const path = this.hexPath(x, y, mapName);
-    let file = this.app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) file = await this.createHexNote(x, y, mapName);
-    if (!(file instanceof TFile)) throw new Error(`Could not create the note for hex ${x}, ${y}`);
-    await this.app.vault.process(file, (content) => appendSectionText(content, section, text));
-  }
+  addMapDataToHexNotes(mapName: string): Promise<number> { return this.hexNotes.addMapDataToHexNotes(mapName); }
 
-  /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
-  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
-    const h = this.mapStore.get(mapName, `${x}_${y}`) ?? {};
-    const ref = (m: string) => ({ map: m, label: this.mapLabel(m) });
-    return {
-      map: mapName, mapLabel: this.mapLabel(mapName), x, y, terrain: h.terrain, region: h.region, name: h.name,
-      regionMap: h.regionMap ? ref(h.regionMap) : undefined,
-      locations: h.locations?.length ? h.locations.map(ref) : undefined,
-      biome: this.hexBiomeRef(mapName, `${x}_${y}`),
-    };
-  }
+  regionOrFactionKind(file: TFile): "region" | "faction" | null { return this.hexNotes.regionOrFactionKind(file); }
 
-  /** An overworld hex's biome for its Map data callout (World maps), else nothing. */
-  private hexBiomeRef(mapName: string, key: string): { label: string; note?: string } | undefined {
-    return worldMaps()?.hexBiomeRef(this, mapName, key);
-  }
+  regionAndFactionNotes(): TFile[] { return this.hexNotes.regionAndFactionNotes(); }
 
-  /**
-   * Bring a hex note's Map data callout up to date with the map (or add one
-   * when `insert`). Hand edits made inside the callout go to the map first
-   * (phase 2, see `syncHexMapData`). Only writes when something changed; a
-   * note without a callout is left alone unless `insert`. Returns whether
-   * it wrote.
-   */
-  async refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> {
-    return (await this.syncHexMapData(mapName, x, y, { insert })).wrote;
-  }
+  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView { return this.hexNotes.regionMapDataView(file, kind); }
 
-  /**
-   * A hex note's Map data callout, both ways (phase 2): hand edits to
-   * Terrain, Region or Name made since the plugin last wrote it go to the
-   * map (through the work-mode gate, as one undo step), unless the map has
-   * changed them since (the map is newer); then the callout is rewritten
-   * to show the map. Edits that weren't applied stay in the callout as
-   * "Not applied:" lines and lines it can't read as "Not read:" lines, and
-   * a notice says so (unless `quiet`).
-   */
-  async syncHexMapData(
-    mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {},
-  ): Promise<CalloutSyncResult> {
-    return syncHexMapDataWith(this, mapName, x, y, opts);
-  }
+  refreshRegionMapData(file: TFile, insert = false): Promise<boolean> { return this.hexNotes.refreshRegionMapData(file, insert); }
 
-  /** Add (or update) the Map data callout in every hex note of a map. Returns how many notes changed. */
-  async addMapDataToHexNotes(mapName: string): Promise<number> {
-    const hexBase = normalizeFolder(this.settings.hexFolder);
-    const folder = this.app.vault.getAbstractFileByPath(hexBase ? `${hexBase}/${mapName}` : mapName);
-    if (!(folder instanceof TFolder)) return 0;
-    let n = 0;
-    const totals = { applied: [] as string[], notApplied: [] as string[], unreadable: [] as string[] };
-    for (const f of folder.children) {
-      if (!(f instanceof TFile)) continue;
-      const m = /^(-?\d+)_(-?\d+)\.md$/.exec(f.name);
-      if (!m) continue;
-      const r = await this.syncHexMapData(mapName, Number(m[1]), Number(m[2]), { insert: true, quiet: true });
-      if (r.wrote) n++;
-      totals.applied.push(...r.applied);
-      totals.notApplied.push(...r.notApplied);
-      totals.unreadable.push(...r.unreadable);
-    }
-    const msg = mapDataSyncMessage(this.mapLabel(mapName), totals);
-    if (msg) new Notice(msg, 8000);
-    return n;
-  }
+  updateRegionFactionMapData(): Promise<number> { return this.hexNotes.updateRegionFactionMapData(); }
 
-  // ── Region and faction notes (R1, R2) ────────────────────────────────────
+  renameRegionInMaps(oldName: string, newName: string): number { return this.hexNotes.renameRegionInMaps(oldName, newName); }
 
-  /** "region" / "faction" for a note in the regions / factions folder ("_" notes aren't). */
-  regionOrFactionKind(file: TFile): "region" | "faction" | null {
-    if (file.extension !== "md" || file.basename.startsWith("_")) return null;
-    const inFolder = (setting: string) => {
-      const folder = normalizeFolder(setting ?? "");
-      return !!folder && file.path.startsWith(folder + "/");
-    };
-    if (inFolder(this.settings.regionsFolder)) return "region";
-    if (inFolder(this.settings.factionsFolder)) return "faction";
-    return null;
-  }
-
-  /** Every region and faction note. */
-  regionAndFactionNotes(): TFile[] {
-    return this.app.vault.getMarkdownFiles().filter((f) => this.regionOrFactionKind(f) !== null);
-  }
-
-  /** The maps that use a region or faction note, for its Map data callout. */
-  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView {
-    const maps = this.settings.maps.map((m) => ({ name: m.name, label: this.mapLabel(m.name) }));
-    if (kind === "region") {
-      const folder = normalizeFolder(this.settings.tablesFolder);
-      const table = this.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${file.basename}.md`);
-      return {
-        kind,
-        maps: regionUse(file.basename, maps, (m) => this.mapStore.all(m).values()),
-        encounterTable: table instanceof TFile ? this.app.metadataCache.fileToLinktext(table, file.path) : undefined,
-      };
-    }
-    // Factions: hex notes that link the faction note, per map.
-    const counts = new Map<string, number>();
-    for (const [source, targets] of Object.entries(this.app.metadataCache.resolvedLinks)) {
-      if (!targets[file.path]) continue;
-      const loc = this.mapStore.resolve(source);
-      if (loc) counts.set(loc.map, (counts.get(loc.map) ?? 0) + 1);
-    }
-    return {
-      kind,
-      maps: maps
-        .filter((m, i) => counts.get(m.name) && maps.findIndex((o) => o.name === m.name) === i)
-        .map((m) => ({ map: m.name, label: m.label, hexes: counts.get(m.name) ?? 0 })),
-    };
-  }
-
-  /**
-   * Bring a region or faction note's Map data callout up to date (or add
-   * one when `insert`). Only writes when something changed. Returns
-   * whether it wrote.
-   */
-  async refreshRegionMapData(file: TFile, insert = false): Promise<boolean> {
-    const kind = this.regionOrFactionKind(file);
-    if (!kind || !this.mapStore.isReady()) return false;
-    const current = await this.app.vault.read(file);
-    if (!insert && !hasRegionMapData(current)) return false;
-    const view = this.regionMapDataView(file, kind);
-    // Read first: most notes need nothing, and a no-op process() still writes.
-    if (setRegionMapData(current, view, insert) === current) return false;
-    let wrote = false;
-    await this.app.vault.process(file, (content) => {
-      const next = setRegionMapData(content, view, insert);
-      wrote = next !== content;
-      return next;
-    });
-    return wrote;
-  }
-
-  /** Add or update the Map data callout in every region and faction note. Returns how many changed. */
-  async updateRegionFactionMapData(): Promise<number> {
-    await this.mapStore.flush();
-    let n = 0;
-    for (const f of this.regionAndFactionNotes()) {
-      if (await this.refreshRegionMapData(f, true)) n++;
-    }
-    return n;
-  }
-
-  /**
-   * A region note was renamed: hexes whose Region named it follow, through
-   * the map store (the map notes are rewritten from it). Returns how many
-   * hexes changed.
-   */
-  renameRegionInMaps(oldName: string, newName: string): number {
-    return renameRegionInStore(this.mapStore, this.settings.maps.map((m) => m.name), oldName, newName);
-  }
-
-  /** A map was renamed: tokens placed on it (`token-map`) follow. Returns how many notes changed. */
-  async updateTokenMapReferences(oldName: string, newName: string): Promise<number> {
-    let n = 0;
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.basename.startsWith("_")) continue;
-      const fm = this.app.metadataCache.getFileCache(file)?.frontmatter;
-      if (!fm || renamedTokenMap(fm["token-map"], oldName, newName) === null) continue;
-      await this.app.fileManager.processFrontMatter(file, (front: Record<string, unknown>) => {
-        const next = renamedTokenMap(front["token-map"], oldName, newName);
-        // An old plain name becomes a link to the map note (NF3); a link keeps its form.
-        if (next !== null) front["token-map"] = next === newName ? tokenMapValue(newName) : next;
-      });
-      n++;
-    }
-    return n;
-  }
+  updateTokenMapReferences(oldName: string, newName: string): Promise<number> { return this.hexNotes.updateTokenMapReferences(oldName, newName); }
 
   loadHexTemplate(): Promise<string> { return this.templates.loadHexTemplate(); }
 
@@ -1652,104 +1386,15 @@ export default class HexmakerPlugin extends Plugin {
 
   createNewMap(opts: NewMapOptions): Promise<{ name: string } | { error: string }> { return this.maps.createNewMap(opts); }
 
-  /**
-   * Set terrain for specific hexes ("x_y" → terrain). With map notes this
-   * writes map data only — hex notes are created when a hex gets content —
-   * so it returns 0 notes created. Falls back to creating notes only if the
-   * map store isn't ready yet.
-   */
-  async generateHexNotesAt(
-    mapName: string,
-    cells: [string, string][],
-    onProgress?: (done: number) => void,
-  ): Promise<number> {
-    if (this.mapStore.isReady()) {
-      this.mapStore.setMany(mapName, cells.filter(([, t]) => t).map(([k, t]) => [k, { terrain: t }]));
-      onProgress?.(cells.length);
-      await this.mapStore.flush();
-      return 0;
-    }
-    const template = await this.loadHexTemplate();
-    if (template === null) return 0;
-    let created = 0;
-    let done = 0;
-    const CHUNK = 20;
-    for (let i = 0; i < cells.length; i += CHUNK) {
-      await Promise.all(
-        cells.slice(i, i + CHUNK).map(async ([key, terrain]) => {
-          const [x, y] = key.split("_").map(Number);
-          if (!this.app.vault.getAbstractFileByPath(this.hexPath(x, y, mapName))) {
-            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
-          }
-          done++;
-        }),
-      );
-      onProgress?.(done);
-    }
-    return created;
-  }
+  generateHexNotesAt(mapName: string, cells: [string, string][], onProgress?: (done: number) => void): Promise<number> { return this.hexNotes.generateHexNotesAt(mapName, cells, onProgress); }
 
-  async generateHexNotes(
-    mapName: string,
-    xs: number[],
-    ys: number[],
-    onProgress?: (done: number) => void,
-    terrainAt?: Map<string, string>,
-  ): Promise<number> {
-    if (this.mapStore.isReady()) {
-      const cells: [string, string][] = [];
-      for (const x of xs) for (const y of ys) {
-        const t = terrainAt?.get(`${x}_${y}`);
-        if (t) cells.push([`${x}_${y}`, t]);
-      }
-      if (cells.length) return this.generateHexNotesAt(mapName, cells);
-      onProgress?.(xs.length * ys.length);
-      return 0;
-    }
-    // Read template once — avoids N vault reads for the same file
-    const template = await this.loadHexTemplate();
-    if (template === null) return 0;
-
-    let created = 0;
-    let done = 0;
-    const CHUNK = 20;
-    const pairs: [number, number][] = [];
-    for (const x of xs) for (const y of ys) pairs.push([x, y]);
-    for (let i = 0; i < pairs.length; i += CHUNK) {
-      await Promise.all(
-        pairs.slice(i, i + CHUNK).map(async ([x, y]) => {
-          const path = this.hexPath(x, y, mapName);
-          if (!this.app.vault.getAbstractFileByPath(path)) {
-            const terrain = terrainAt?.get(`${x}_${y}`);
-            // createHexNote writes the terrain and its encounter link in one go.
-            if (await this.createHexNote(x, y, mapName, template, terrain)) created++;
-          }
-          done++;
-        }),
-      );
-      onProgress?.(done);
-    }
-    return created;
-  }
+  generateHexNotes(mapName: string, xs: number[], ys: number[], onProgress?: (done: number) => void, terrainAt?: Map<string, string>): Promise<number> { return this.hexNotes.generateHexNotes(mapName, xs, ys, onProgress, terrainAt); }
 
   getMap(name: string): MapData | undefined { return this.maps.getMap(name); }
 
   mapLabel(name: string): string { return this.maps.mapLabel(name); }
 
-  /**
-   * How a back-link to a hex note reads: the hex's name, else
-   * "<map> x, y" (round 6 S2). Paths outside the hex folder fall back to
-   * the note's name.
-   */
-  hexLinkAlias(hexPath: string): string {
-    const folder = normalizeFolder(this.settings.hexFolder);
-    const rel = folder && hexPath.startsWith(folder + "/") ? hexPath.slice(folder.length + 1) : hexPath;
-    const m = /^(.+)\/(-?\d+)_(-?\d+)\.md$/.exec(rel);
-    if (!m) return rel.replace(/^.*\//, "").replace(/\.md$/i, "");
-    const [, map, x, y] = m;
-    const name = this.mapStore.get(map, `${x}_${y}`)?.name?.trim();
-    return name || `${this.mapLabel(map)} ${x}, ${y}`;
-  }
+  hexLinkAlias(hexPath: string): string { return this.hexNotes.hexLinkAlias(hexPath); }
 
   setMapDisplayName(name: string, typed: string): Promise<void> { return this.maps.setMapDisplayName(name, typed); }
 
