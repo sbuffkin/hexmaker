@@ -7,6 +7,7 @@
  * (./api.ts).
  */
 
+import { logError } from "../../log";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ModuleRuntime } from "../types";
 import { biomeByRef, representableBiomes } from "../../overworld/biomes";
@@ -84,7 +85,7 @@ export const worldMapsRuntime: ModuleRuntime = {
     },
   ],
   // BC1, once per vault: every overworld hex's biome in its Biome column.
-  afterStoresReady: (plugin) => fillBiomeColumns(plugin).catch((e) => console.error("Hexmaker: filling Biome columns", e)),
+  afterStoresReady: (plugin) => fillBiomeColumns(plugin).catch((e) => logError("filling Biome columns", e)),
   // Biomes picked in the setup wizard: World biomes needs the shipped biome
   // notes, written now as opening New overworld… does (DJ-Q4).
   onScalePicked: async (plugin, scaleId) => {

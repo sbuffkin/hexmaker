@@ -22,6 +22,7 @@
  * - Every change is told to onChange listeners.
  */
 
+import { logError } from "../log";
 import { Notice, TAbstractFile, TFile } from "obsidian";
 import { normalizeFolder } from "../utils";
 import { NoteFolderStore } from "../stores/NoteFolderStore";
@@ -373,7 +374,7 @@ export class WorldTypeStore extends NoteFolderStore<Entry> {
         await this.plugin.app.vault.modify(f, upgraded);
         content = upgraded;
       } catch (e) {
-        console.error("Hexmaker: couldn't add stars and sector features to", f.path, e);
+        logError("couldn't add stars and sector features to", e, f.path);
       }
     }
     this.take(f.path, content);
@@ -415,7 +416,7 @@ export class WorldTypeStore extends NoteFolderStore<Entry> {
       await this.plugin.app.vault.create(path, text);
       this.take(path, text);
     } catch (e) {
-      console.error("Hexmaker: couldn't write the world types note", path, e);
+      logError("couldn't write the world types note", e, path);
     }
   }
 }

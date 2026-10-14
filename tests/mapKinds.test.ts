@@ -13,6 +13,8 @@ import { DEFAULT_SETTINGS, DEFAULT_TERRAIN_PALETTE, LIMITED_TERRAIN_PALETTE } fr
 import { PALETTE_PRESETS } from "../src/palettes/presets";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { listGeneratorKinds, visibleKinds, BLANK_ID } from "../src/worldgen/registry";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 import { STAR_SCATTER_ID } from "../src/space/starScatter";
 import { ORBITS_ID } from "../src/space/orbits";
 import { OVERLAND_ID, PLANET_SURFACE_ID, REGION_DETAIL_ID } from "../src/worldgen/procedural/planetSurface";
@@ -124,6 +126,7 @@ function pluginWith(generators: Record<string, Record<string, string>>, mapKinds
 				cachedRead: async (f: TFile) => files.get(f.path) ?? "",
 			},
 		},
+		moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as unknown as HexmakerPlugin, h); },
 	} as unknown as HexmakerPlugin;
 }
 

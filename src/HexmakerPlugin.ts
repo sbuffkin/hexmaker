@@ -37,8 +37,8 @@ import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
-import type { ModuleStore, RefLinker } from "./modules/types";
+import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleGenerators, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
@@ -135,6 +135,8 @@ export default class HexmakerPlugin extends Plugin {
   moduleStore(id: string): ModuleStore | undefined {
     return this.moduleStores.find((s) => s.id === id);
   }
+  /** Every module's built-in generators; worldgen/registry asks here so it never imports modules/runtime (import cycle). */
+  moduleGenerators(helpers: GeneratorHelpers): GeneratorContribution[] { return moduleGenerators(this, helpers); }
   /** Overworld biome notes (#50; the World maps module's store). Module code only: undefined without World maps. */
   get biomeStore(): BiomeStore {
     return this.moduleStore("biomes") as BiomeStore;

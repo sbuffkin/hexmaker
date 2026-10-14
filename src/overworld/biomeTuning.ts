@@ -280,11 +280,6 @@ export function readTuningRows(rows: { cells: string[]; line: string; n: number 
   return { ...(Object.keys(out).length ? { tuning: out } : {}), unknownRows, problems };
 }
 
-/** Same tuning (written values) on both sides. */
-export function sameTuning(a: BiomeTuning | undefined, b: BiomeTuning | undefined): boolean {
-  return JSON.stringify(cleanTuning(a) ?? {}) === JSON.stringify(cleanTuning(b) ?? {});
-}
-
 /** Blend two tunings: `w` of `b` and 1 − w of `a`, per param (unset = the default; whole-number params rounded). */
 export function blendTuning(a: BiomeTuning | undefined, b: BiomeTuning | undefined, w: number): BiomeTuning | undefined {
   const out: BiomeTuning = {};

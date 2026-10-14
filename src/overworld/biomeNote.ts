@@ -167,7 +167,6 @@ export interface BiomeNoteFields {
 }
 
 export type BiomeLayer = "surface" | "underground";
-export const BIOME_LAYERS: readonly BiomeLayer[] = ["surface", "underground"];
 
 /** Whether a biome lies underground (`layer: underground`). */
 export const isUnderground = (b: Pick<BiomeNoteFields, "layer"> | undefined): boolean => b?.layer === "underground";

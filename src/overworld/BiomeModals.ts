@@ -24,6 +24,7 @@ import { regionCells } from "./layout";
 import { composeAffine, drawRegionCells, cellsBox, type RegionCell } from "./overworldRender";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { openBiomeGenerator } from "./BiomeLibraryModal";
+import { lockButton } from "../ui/lockButton";
 import {
   createRegion,
   hexBiomeAt,
@@ -89,13 +90,9 @@ export function rerolledNotice(label: string): string {
   return `Rerolled ${label}.`;
 }
 
-/** Mark a button as locked by the work mode: disabled, with the hint as its tooltip. */
-export function lockButton(btn: HTMLButtonElement, hint: string): void {
-  btn.disabled = true;
-  btn.addClass("is-locked");
-  btn.setAttr("title", hint);
-  btn.setAttr("aria-label", `${btn.getText()} (${hint})`);
-}
+// Kept exported here for existing importers; it lives in ui/lockButton so
+// BiomeLibraryModal can use it without importing this file (import cycle).
+export { lockButton };
 
 /** A biome offered on an overworld: the terrain it paints there (none for a blank biome) and its swatch colour. */
 export interface PaintableBiome {

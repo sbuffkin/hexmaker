@@ -22,6 +22,7 @@
  * Every change is handed to the lookups in biomes.ts (setBiomeSource).
  */
 
+import { logError } from "../log";
 import { Notice, TAbstractFile, TFile } from "obsidian";
 import { noticeBackground } from "../ui/notify";
 import { normalizeFolder } from "../utils";
@@ -330,7 +331,7 @@ export class BiomeStore extends NoteFolderStore<Entry> implements BiomeStoreApi 
           await this.plugin.app.vault.create(path, text);
           this.take(path, biomeFileName(p.label), text);
         } catch (e) {
-          console.error("Hexmaker: couldn't write biome note", path, e);
+          logError("couldn't write biome note", e, path);
         }
       }
       // A biome shipped after the "All biomes" pool was written joins it
@@ -351,7 +352,7 @@ export class BiomeStore extends NoteFolderStore<Entry> implements BiomeStoreApi 
       const next = appendPoolRows(content, names);
       if (next !== content) await this.plugin.app.vault.modify(f, next);
     } catch (e) {
-      console.error("Hexmaker: couldn't add new biomes to the biome pool", f.path, e);
+      logError("couldn't add new biomes to the biome pool", e, f.path);
     }
   }
 
@@ -373,7 +374,7 @@ export class BiomeStore extends NoteFolderStore<Entry> implements BiomeStoreApi 
         if (next !== content) await this.plugin.app.vault.modify(f, next);
         this.take(f.path, f.basename, next);
       } catch (err) {
-        console.error("Hexmaker: couldn't add a climate to biome note", f.path, err);
+        logError("couldn't add a climate to biome note", err, f.path);
       }
     }
     s.biomeClimatesSeeded = [...done, ...plan.done];

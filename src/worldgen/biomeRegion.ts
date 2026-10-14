@@ -16,7 +16,7 @@ import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapPath, PathType, TerrainPalette } from "../types";
 import { isModelMarkdown, type GeneratorSettings, type HexWfcModel } from "../../packages/hex-wfc/src";
-import { blendSourcesOf, drawnPathType, generatorFitsPalette, parseGeneratorText, toPathsOn, type GridSpec } from "./generators";
+import { drawnPathType, generatorFitsPalette, parseGeneratorText, toPathsOn, type GridSpec } from "./generators";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { solveWithRing } from "./neighbours";
 import { listGeneratorKinds, optionsWithDefaults } from "./registry";
@@ -121,11 +121,6 @@ async function load(plugin: HexmakerPlugin, ref: GeneratorRef): Promise<Loaded> 
 /** A generator with some of its engine settings replaced (the file is untouched). */
 export function withSettings(model: HexWfcModel, settings: GeneratorSettings): HexWfcModel {
   return { ...model, settings: { ...model.settings, ...settings } };
-}
-
-/** What kind of generator a ref is, for the page and the report: learned, blend or preset. */
-export function generatorSource(model: HexWfcModel, preset: boolean): "learned" | "blend" | "preset" {
-  return preset ? "preset" : blendSourcesOf(model).length ? "blend" : "learned";
 }
 
 /**

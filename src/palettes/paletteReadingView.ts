@@ -1,7 +1,7 @@
 import type { MarkdownPostProcessorContext } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { PathType } from "../types";
-import { buildPathPreviewSvg } from "../hex-map/PathPickerModal";
+import { buildPathPreviewSvg } from "../hex-map/pathPreviewSvg";
 import { createIconEl, getIconUrl } from "../utils";
 import { parsePaletteNote, PALETTE_NOTE_MARKER } from "./paletteNote";
 import { parsePathTypes } from "./pathTypeTable";

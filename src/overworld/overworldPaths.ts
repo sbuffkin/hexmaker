@@ -12,6 +12,7 @@
  * Gated like every path edit: Build or God on the overworld.
  */
 
+import { logError } from "../log";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { HexKey, MapData, MapPath, PathType } from "../types";
 import type { ResolvedBranch } from "../paths/resolve";
@@ -20,7 +21,6 @@ import { routeSegment, DEFAULT_SEGMENT_STYLE } from "../paths/router";
 import { anchorsFor, dedupeSteps } from "../paths/fromHexes";
 import { pathNameKey } from "../paths/names";
 import { clonePaths } from "../paths/edit";
-import { regionMapAt } from "../maps/submaps";
 import { cellEdits, cellPatch, currentCellEdits, sameValue, type CellEdit, type UndoDirection } from "../undoBook";
 import { mapAllows } from "../workMode";
 import { inRegion, type RegionLayout } from "./layout";
@@ -75,19 +75,6 @@ function regionsOf(plugin: HexmakerPlugin, owName: string): Map<HexKey, MapData>
   const out = new Map<HexKey, MapData>();
   for (const m of plugin.settings.maps) {
     if (m.submapKind === "region" && m.parent?.map === owName && !out.has(m.parent.hex)) out.set(m.parent.hex, m);
-  }
-  return out;
-}
-
-/** The region maps an overworld path crosses (that exist), in path order. */
-export function regionsCrossed(plugin: HexmakerPlugin, owName: string, pathName: string): string[] {
-  const out: string[] = [];
-  for (const rb of plugin.paths.resolved(owName)) {
-    if (pathNameKey(rb.path) !== pathNameKey(pathName)) continue;
-    for (const h of rb.hexes) {
-      const r = regionMapAt(plugin.settings.maps, owName, h);
-      if (r && !out.includes(r.name)) out.push(r.name);
-    }
   }
   return out;
 }
@@ -321,7 +308,7 @@ export function applyConfirmedPaths(plugin: HexmakerPlugin, regionName: string):
     }
     return n;
   } catch (e) {
-    console.error("Hexmaker: putting confirmed paths into a region failed", e);
+    logError("putting confirmed paths into a region failed", e);
     return 0;
   }
 }

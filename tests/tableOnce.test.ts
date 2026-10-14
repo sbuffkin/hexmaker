@@ -27,6 +27,8 @@ import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "../src/space
 import { getPreset } from "../src/palettes/presets";
 import { slugify } from "../src/utils";
 import { MemVault } from "./helpers/memVault";
+import { moduleGenerators as runtimeGenerators } from "../src/modules/runtime";
+import type { GeneratorHelpers } from "../src/modules/types";
 import { Notice } from "obsidian";
 import type { MapData, TerrainColor } from "../src/types";
 
@@ -77,6 +79,7 @@ function world() {
 		mapStore: undefined as unknown as MapStore,
 		events: undefined as unknown as EventsService,
 		saves: 0,
+		moduleGenerators(h: GeneratorHelpers) { return runtimeGenerators(this as never, h); },
 		getMap: (n: string) => maps.find((m) => m.name === n),
 
 		rolledMapName: () => undefined,

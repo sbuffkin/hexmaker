@@ -19,7 +19,6 @@ import type { GeneratorFile } from "./generators";
 import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
 import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
 import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
-import { moduleGenerators } from "../modules/runtime";
 
 /**
  * One list of terrain generators for map creation: Blank, the built-in
@@ -216,7 +215,7 @@ export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<Terrai
       toPaths,
     },
     // Each module's built-in generators, in their list order.
-    ...moduleGenerators(plugin, { toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
+    ...plugin.moduleGenerators({ toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
   ];
   // Every generator, tagged with its map type: callers filter with
   // visibleKinds (they know the palette, the parent map and the current choice).
@@ -513,16 +512,4 @@ export function defaultGeneratorFor(
     if (cont) return cont.id;
   }
   return fitting.find((k) => k.source === "built-in")?.id ?? BLANK_ID;
-}
-
-/**
- * Notes-on-use: should a generated or painted terrain create/update the hex
- * note? Not when it's the map's base terrain and the hex has no note yet —
- * an absent note already renders as the base terrain.
- */
-export function shouldWriteCell(plugin: HexmakerPlugin, mapName: string, key: string, terrain: string): boolean {
-  const base = plugin.getMap(mapName)?.baseTerrain;
-  if (!base || terrain !== base) return true;
-  const [x, y] = key.split("_").map(Number);
-  return plugin.app.vault.getAbstractFileByPath(plugin.hexPath(x, y, mapName)) !== null;
 }

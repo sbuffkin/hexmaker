@@ -14,6 +14,7 @@
  *   generator-backed biomes are made by their generator, the rest blend.
  */
 
+import { logError } from "../log";
 import { TFile, TFolder } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
@@ -70,7 +71,7 @@ export async function ensureDefaultPool(plugin: HexmakerPlugin): Promise<void> {
     try {
       await plugin.app.vault.create(path, buildBiomePool(ALL_BIOMES_POOL, allBiomesPool(BIOME_PRESETS)));
     } catch (e) {
-      console.error("Hexmaker: couldn't write the biome pool", path, e);
+      logError("couldn't write the biome pool", e, path);
       return;
     }
   }

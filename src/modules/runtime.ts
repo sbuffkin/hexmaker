@@ -7,6 +7,7 @@
  * through here.
  */
 
+import { logError } from "../log";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type {
   CommandContribution,
@@ -117,7 +118,7 @@ export function runAfterStoresReady(plugin: HexmakerPlugin, coreReady: Promise<u
   for (const m of MODULE_RUNTIMES) {
     if (!m.afterStoresReady) continue;
     const own = (m.stores ? stores.filter((s) => storeOwner.get(s) === m.id) : []).map((s) => ready.get(s));
-    void Promise.all([coreReady, ...own]).then(() => m.afterStoresReady!(plugin)).catch((e) => console.error(`Hexmaker: ${m.id} start-up upgrade`, e));
+    void Promise.all([coreReady, ...own]).then(() => m.afterStoresReady!(plugin)).catch((e) => logError(`${m.id} start-up upgrade`, e));
   }
 }
 

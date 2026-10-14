@@ -14,6 +14,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { ModuleStore } from "../modules/types";
 import { writeJsonBackup } from "../backup";
 import { ensureFolderPath } from "../vault/ensureFolder";
+import { logError } from "../log";
 
 export abstract class NoteFolderStore<E extends { path: string }> implements ModuleStore {
   abstract readonly id: string;
@@ -112,13 +113,13 @@ export abstract class NoteFolderStore<E extends { path: string }> implements Mod
       const dir = `${this.plugin.manifest.dir}/backups/${this.backupFolder}-${new Date().toISOString().slice(0, 10)}`;
       await writeJsonBackup(this.plugin.app.vault.adapter, dir, base, JSON.stringify({ savedAt: new Date().toISOString(), notes }));
     } catch (e) {
-      console.error(`Hexmaker: ${this.backupLabel} backup failed`, e);
+      logError(`${this.backupLabel} backup failed`, e);
     }
   }
 
   protected enqueue(task: () => Promise<void>): Promise<void> {
     this.queue = this.queue.then(task).catch((e) => {
-      console.error(`Hexmaker: ${this.logLabel}`, e);
+      logError(this.logLabel, e);
     });
     return this.queue;
   }
