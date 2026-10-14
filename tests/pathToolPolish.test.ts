@@ -130,7 +130,7 @@ describe("anchor handles sit over the icon layers (#48)", () => {
   });
 
   it("the view draws handles and the active-end dot there, not in the path layer", () => {
-    const body = view.slice(view.indexOf("  private renderPathOverlay("), view.indexOf("  private updatePathIcons("));
+    const body = view.slice(view.search(/\n  (?:private )?renderPathOverlay\(/), view.search(/\n  (?:private )?updatePathIcons\(/));
     const handlesAt = body.indexOf('emSvg("duckmage-path-handles-svg")');
     expect(handlesAt).toBeGreaterThan(body.indexOf('emSvg("duckmage-path-svg")'));
     expect(body.slice(handlesAt)).toMatch(/duckmage-svg-path-handle[\s\S]*if \(dot\)/);

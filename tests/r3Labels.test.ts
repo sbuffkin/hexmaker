@@ -136,7 +136,7 @@ describe("NM3: hex names keep a readable size on screen", () => {
 	it("redraws names when the zoom settles (the floor depends on it)", () => {
 		const src = readSurface("map-view");
 		expect(src).toMatch(/if \(this\.(?:viewport\.)?zoom !== this\.namesZoom\)/);
-		expect(src).toMatch(/renderHexNameLayer\([^)]*font, this\.(?:viewport\.)?zoom\)/);
+		expect(src).toMatch(/renderHexNameLayer\([^)]*font, this\.(?:viewport\.zoom|host\.zoom\(\))\)/);
 	});
 });
 

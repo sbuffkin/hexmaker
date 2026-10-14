@@ -62,8 +62,8 @@ describe("the uncharted marker", () => {
 		// The view draws it right after the coordinate layer measured the hexes.
 		const view = readSurface("map-view");
 		const body = view.slice(view.indexOf("private renderMeasuredLayers"));
-		expect(body.indexOf("this.renderCoordLabelsLayer(gridContainer)")).toBeLessThan(body.indexOf("renderUnchartedLayer("));
-		expect(body.indexOf("renderUnchartedLayer(gridContainer, this.coordPlacements")).toBeGreaterThan(0);
+		expect(body.indexOf("this.labels.renderCoordLabelsLayer(gridContainer)")).toBeLessThan(body.indexOf("renderUnchartedLayer("));
+		expect(body.indexOf("renderUnchartedLayer(gridContainer, this.labels.coordPlacements")).toBeGreaterThan(0);
 	});
 
 	it("its layers-menu toggle is kept per map in the map note (show-uncharted)", () => {
