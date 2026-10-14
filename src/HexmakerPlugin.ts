@@ -37,7 +37,7 @@ import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleRefLinkers, moduleNoteRewrites, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
@@ -109,6 +109,7 @@ import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./
 import { recordMigrationRun, runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
 import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
 import { takeUpgradeReport } from "./migrations/upgradeReport";
+import type { NoteRewrite } from "./migrations/noteRewrites";
 import { RestoreBackupModal, openBackupsFolder } from "./BackupsModal";
 import { writeUpgradeNote } from "./migrations/upgradeNote";
 import changelog from "../CHANGELOG.md";
@@ -152,6 +153,10 @@ export default class HexmakerPlugin extends Plugin {
   /** Each module's "ref-links" rewriters for its own notes (note format upgrade NF3). */
   get moduleRefLinks(): RefLinker[] {
     return moduleRefLinkers(this);
+  }
+  /** Each module's one-time rewrites of its own notes (the notes phase, after the core's). */
+  get moduleNoteRewrites(): NoteRewrite[] {
+    return moduleNoteRewrites(this);
   }
   /** The tables folder's notes in memory, for rolls the generators make (src/random-tables/TableNotes.ts). */
   tableNotes!: TableNotes;

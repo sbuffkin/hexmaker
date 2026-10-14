@@ -6,7 +6,7 @@
  *   > [!hexmaker] Map data
  *   > Map: [[_the-coast|the-coast]], hex 0, 1
  *   > Terrain: desert rocky
- *   > Region: Dustbowl
+ *   > Area: Dustbowl
  *   > Name: —
  *
  * A hex with a region map or locations gets "Region map:" / "Locations:"
@@ -66,7 +66,7 @@ export function mapDataLines(d: HexMapDataView): string[] {
     `> ${MAP_DATA_CALLOUT} Map data`,
     `> Map: [[_${d.map}|${d.mapLabel.replace(/[|[\]]/g, "")}]], hex ${d.x}, ${d.y}`,
     `> Terrain: ${d.terrain || NONE}`,
-    `> Region: ${d.region || NONE}`,
+    `> Area: ${d.region || NONE}`,
     `> Name: ${d.name || NONE}`,
     ...(d.biome ? [`> Biome: ${biomeRef(d.biome)}`] : []),
     ...(d.regionMap ? [`> Region map: ${mapRef(d.regionMap)}`] : []),
@@ -164,10 +164,10 @@ export function readMapData(content: string): { terrain?: string; region?: strin
   if (!span) return null;
   const out: { terrain?: string; region?: string; name?: string } = {};
   for (const l of lines.slice(span.start + 1, span.end)) {
-    const m = /^\s*>\s*(terrain|region|name)\s*:\s*(.*?)\s*$/i.exec(l);
+    const m = /^\s*>\s*(terrain|area|region|name)\s*:\s*(.*?)\s*$/i.exec(l);
     if (!m) continue;
     const v = unlink(m[2]);
-    if (v && v !== NONE && v !== "-") out[m[1].toLowerCase() as "terrain" | "region" | "name"] = v;
+    if (v && v !== NONE && v !== "-") out[canonKey(m[1].toLowerCase()) as "terrain" | "region" | "name"] = v;
   }
   return out;
 }
@@ -180,14 +180,21 @@ export type ImportField = (typeof IMPORT_FIELDS)[number];
 
 /** Every line key the callout writes, lower case → how it's written. */
 const KEYS: Record<string, string> = {
-  map: "Map", terrain: "Terrain", region: "Region", name: "Name", biome: "Biome", "region map": "Region map", locations: "Locations",
+  map: "Map", terrain: "Terrain", region: "Area", name: "Name", biome: "Biome", "region map": "Region map", locations: "Locations",
 };
+
+/**
+ * A line's key as the plugin keeps it: "Area" (MG5) and the older "Region"
+ * are the same field, kept as "region" (so what a callout showed before
+ * reads the same).
+ */
+const canonKey = (k: string) => (k === "area" ? "region" : k);
 
 /** What a callout shows, key (lower case) → value as written. */
 export type MapDataShown = Record<string, string>;
 
 /** Lines that hold what a person typed and are kept as they are. */
-const KEPT = /^\s*>\s*(not applied|not read|old terrain|old region)\s*:/i;
+const KEPT = /^\s*>\s*(not applied|not read|old terrain|old region|old area)\s*:/i;
 const isKeptLine = (l: string) => KEPT.test(l);
 /** The built-in template's placeholder line. */
 const PLACEHOLDER = /^filled in from the map by hexmaker\.?$/i;
@@ -206,7 +213,8 @@ export function shownValues(lines: string[]): MapDataShown {
   const out: MapDataShown = {};
   for (const l of lines) {
     const m = /^\s*>\s*([A-Za-z][A-Za-z ]*?)\s*:\s*(.*?)\s*$/.exec(l);
-    if (m && KEYS[m[1].toLowerCase()] && !(m[1].toLowerCase() in out)) out[m[1].toLowerCase()] = m[2];
+    const k = m ? canonKey(m[1].toLowerCase()) : "";
+    if (m && KEYS[k] && !(k in out)) out[k] = m[2];
   }
   return out;
 }
@@ -243,7 +251,7 @@ export function planCalloutImport(content: string, shown: MapDataShown | undefin
     const body = raw.replace(/^\s*>\s?/, "").trim();
     if (!body || isKeptLine(raw) || PLACEHOLDER.test(body)) continue;
     const m = /^([A-Za-z][A-Za-z ]*?)\s*:\s*(.*)$/.exec(body);
-    const key = m?.[1].toLowerCase();
+    const key = m ? canonKey(m[1].toLowerCase()) : undefined;
     if (!m || !key || !KEYS[key] || key in typed) { out.unreadable.push(body); continue; }
     typed[key] = m[2].trim();
   }

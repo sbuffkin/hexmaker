@@ -102,7 +102,7 @@ const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
 	{ key: "questsFolder",    label: "Quests",     suffix: "quests" },
 	{ key: "featuresFolder",  label: "Features",   suffix: "features" },
 	{ key: "factionsFolder",  label: "Factions",   suffix: "factions" },
-	{ key: "regionsFolder",   label: "Areas",      suffix: "regions" },
+	{ key: "regionsFolder",   label: "Areas",      suffix: "areas" },
 	{ key: "tablesFolder",    label: "Tables",     suffix: "tables" },
 	{ key: "workflowsFolder", label: "Workflows",  suffix: "workflows" },
 	{ key: "templatesFolder", label: "Templates",  suffix: "templates" },

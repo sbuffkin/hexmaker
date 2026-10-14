@@ -7,6 +7,7 @@
  * through here.
  */
 
+import type { NoteRewrite } from "../migrations/noteRewrites";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type {
   CommandContribution,
@@ -67,6 +68,11 @@ export function moduleFolderSettings(): FolderSettingContribution[] {
 /** Every module's "ref-links" rewriters for its own notes. */
 export function moduleRefLinkers(plugin: HexmakerPlugin): RefLinker[] {
   return MODULE_RUNTIMES.flatMap((m) => m.refLinkers?.(plugin) ?? []);
+}
+
+/** Each module's one-time rewrites of its own notes (run after the core's). */
+export function moduleNoteRewrites(plugin: HexmakerPlugin): NoteRewrite[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.noteRewrites?.(plugin) ?? []);
 }
 
 /** Run the onEnabled hook of each module whose map type is in `kinds` (just turned on), in module order. */

@@ -505,12 +505,12 @@ describe("map store: path edits, hand edits and the three-way merge", () => {
     expect(store.resolved("m")![0].hexes).not.toContain(mid);
   });
 
-  it("a format-6 note is broken with a notice that names the format and says to update", async () => {
-    const v = new MemVault({ [NOTE]: buildMapNote("m", data([KINGS])).replace(`hexmaker-map: ${MAP_NOTE_FORMAT}`, "hexmaker-map: 6") });
+  it("a note in a newer format is broken with a notice that names the format and says to update", async () => {
+    const v = new MemVault({ [NOTE]: buildMapNote("m", data([KINGS])).replace(`hexmaker-map: ${MAP_NOTE_FORMAT}`, `hexmaker-map: ${MAP_NOTE_FORMAT + 1}`) });
     const before = v.files.get(NOTE);
     const { store } = await boot(v, [fixtureMap()]);
     expect(store.holdsPaths("m")).toBe(false);
-    expect(Notice.shown.some((n) => n.msg.includes("map-note format 6") && n.msg.includes("Update Hexmap World Creator"))).toBe(true);
+    expect(Notice.shown.some((n) => n.msg.includes(`map-note format ${MAP_NOTE_FORMAT + 1}`) && n.msg.includes("Update Hexmap World Creator"))).toBe(true);
     expect(v.files.get(NOTE)).toBe(before);
   });
 });

@@ -216,7 +216,7 @@ describe("unknown table columns (forward compatibility)", () => {
 
 	it("notes without unknown columns are written exactly as before", () => {
 		const note = buildMapNote("m", sample());
-		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |\n");
+		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked |\n");
 		expect(note).toContain("| Path | Type | Route | Notes | Ford |\n");
 		expect(note).toContain("| Path | Branch | Anchors |\n");
 	});
@@ -238,7 +238,8 @@ describe("unknown table columns (forward compatibility)", () => {
 		const d = parseMapNote(reordered)!;
 		// Converted once: the derived Summary is added, the old Paths table becomes Paths + Path routes (its extra column kept).
 		const current = updateMapNote(reordered, "m", d);
-		expect(current).toContain(reordered.slice(reordered.indexOf("| Terrain | Rumours"), reordered.indexOf("\n\n## Paths")));
+		// (Region is written Area since format 6, MG5; order and the rest as typed.)
+		expect(current).toContain(reordered.slice(reordered.indexOf("| Terrain | Rumours"), reordered.indexOf("\n\n## Paths")).replace("| Locations | Region |", "| Locations | Area |"));
 		expect(current).toContain("| Path | Type | Route | Notes | Name |\n| --- | --- | --- | --- | --- |\n| Road | Road | 1, 1 → 2, 1 |  | King's Way |");
 		expect(current).toContain("## Path routes\n\n| Path | Branch | Anchors |\n| --- | --- | --- |\n| Road | main | 1, 1 → 2, 1 |");
 		expect(updateMapNote(current, "m", parseMapNote(current)!)).toBe(current);
@@ -254,7 +255,7 @@ describe("unknown table columns (forward compatibility)", () => {
 		d.hexes.set("0_0", { ...d.hexes.get("0_0")!, name: "Sea" });
 		const out = updateMapNote(old, "m", d);
 		const header = out.split("\n").find((l) => l.includes("| Hex |"))!;
-		expect(header).toBe("| Terrain | Hex | Notes | Name | Icon | GM icons | Region | Locations | Locked |");
+		expect(header).toBe("| Terrain | Hex | Notes | Name | Icon | GM icons | Area | Locations | Locked |");
 		expect(parseMapNote(out)!.hexes.get("0_0")).toEqual({ name: "Sea", terrain: "ocean", extra: { Notes: "deep" } });
 	});
 
@@ -326,7 +327,7 @@ describe("map notes: plain keys instead of JSON (#42)", () => {
 		expect(fm).toContain("\nworld: wabc\nworld-x: 1\nworld-y: -1\n");
 		expect(fm).toContain('\nbackground-image: "[[maps/bg.png]]"\nbackground-x: 10\nbackground-y: -5\nbackground-scale: 1.5\nbackground-rotation: 0\nbackground-opacity: 0.8');
 		expect(fm).toContain("\nswatch-terrain: grass\n");
-		expect(fm).toMatch(/^hexmaker-map: 5$/m);
+		expect(fm).toMatch(/^hexmaker-map: 6$/m);
 		expect(fm).not.toMatch(/[{}]/);
 	});
 
@@ -500,7 +501,7 @@ describe("map notes: forgiving tables (#42)", () => {
 		const out = updateMapNote(messy, "m", d);
 		const lines = out.split("\n");
 		const head = lines.findIndex((l) => l.startsWith("| Terrain | Hex |"));
-		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Region | Locations |");
+		expect(lines[head]).toBe("| Terrain | Hex | GM icons | Locked | My Notes | Name | Icon | Area | Locations |");
 		expect(lines[head + 1]).toMatch(/^\| --- \|/);
 		expect(out).toContain("| forest | 3_4 | skull.png, trap.png | yes | keep me |  |  |  |  |");
 		expect(out).toContain("| Path | Type | Route | Notes |\n| --- | --- | --- | --- |\n| Road | Road | 3, 4 → 7, 8 |  |");
@@ -659,7 +660,7 @@ describe("map notes: the derived Summary (format 4, #46 M1)", () => {
 		expect(s).toContain("- **Palette:** [[world/palettes/Default]]\n");
 		expect(s).toContain("- **Hexes:** −7…30 × −8…16 (38×25)\n");
 		expect(s).toContain("- **Base terrain:** grass (hexes not listed in the table)\n");
-		expect(s).toContain("- **Regions:** [[Basin]] (2 hexes)\n");
+		expect(s).toContain("- **Areas:** [[Basin]] (2 hexes)\n");
 		expect(s).toContain("- **Region settings:** hex flowers of 37 hexes, wide blend\n");
 		expect(s).toContain("- **Maps from hexes:** 1 region map, 2 locations\n");
 		expect(s).toContain("- **⚠ Not in the palette:** Mountain Ridge (1 hex).");
@@ -690,9 +691,9 @@ describe("map notes: the derived Summary (format 4, #46 M1)", () => {
 
 	it("edits inside it are replaced; text typed under it and the user's own Summary are kept", () => {
 		const note = buildMapNote("m", data(), ctx) + "\n## Summary\nSession 3: we found the mine.\n";
-		const edited = note.replace("- **Regions:** [[Basin]] (2 hexes)", "- **Regions:** lots").replace("\n\n## Hexes", "\n\nMy note about the map.\n\n## Hexes");
+		const edited = note.replace("- **Areas:** [[Basin]] (2 hexes)", "- **Areas:** lots").replace("\n\n## Hexes", "\n\nMy note about the map.\n\n## Hexes");
 		const out = updateMapNote(edited, "m", parseMapNote(edited)!, ctx);
-		expect(out).toContain("- **Regions:** [[Basin]] (2 hexes)");
+		expect(out).toContain("- **Areas:** [[Basin]] (2 hexes)");
 		expect(out).not.toContain("lots");
 		expect(out).toContain("My note about the map.");
 		expect(out).toContain("## Summary\nSession 3: we found the mine.\n");

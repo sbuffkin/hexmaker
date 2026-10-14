@@ -12,6 +12,7 @@
 
 import type { MapData, PathChain } from "./types";
 import { migrate as roadRiverChains } from "./migrations/v1.2-road-river-chains-to-path-chains";
+import { upgradeMapSettings as upgradeAreaNames } from "./migrations/map-note-5-to-6-area-names";
 
 /** Frontmatter key recording the plugin version that last wrote a file. */
 export const VERSION_KEY = "hexmaker-version";
@@ -61,5 +62,7 @@ export function migrateMapData(raw: unknown, defaultPalette = LEGACY_PALETTE_NAM
   if (!Array.isArray(r.pathChains)) r.pathChains = [];
   // Before path types (≤ 1.2): src/migrations/v1.2-road-river-chains-to-path-chains.ts.
   roadRiverChains(r as Record<string, unknown> & { pathChains: PathChain[] });
+  // "make places" → "make submaps" (src/migrations/map-note-5-to-6-area-names.ts).
+  upgradeAreaNames(r);
   return r as MapData;
 }

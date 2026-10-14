@@ -49,10 +49,13 @@ named in each file; settings, notes and tables run from `registry.ts`.
 | palettes | `v1.5-palette-terrain-types` | 1.5.x → 1.6 | `terrainTypesSeeded` |
 | palettes | `v1.5-palette-data` | 1.5.x → 1.6 | `paletteDataUpgraded` |
 | maps | `v1.5-map-data-to-map-notes` | 1.5.x → 1.6 | a map note existing |
+| maps | `map-note-1-to-6-help-text` (via mapNote.updateMapNote) | map-note 1 → 6 | the note's `hexmaker-map:` format |
+| maps | `map-note-5-to-6-area-names` (via MapStore.apply, compat.migrateMapData) | map-note 5 → 6 | the note's `hexmaker-map:` format |
 | notes | `v1.5-hex-map-key` | unreleased → 1.6 | `noteFormatUpgrades: hex-map-key` |
 | notes | `v1.5-hex-body-lines` | 1.5.x → 1.6 | `noteFormatUpgrades: hex-body-lines` |
 | notes | `v1.5-note-links` | 1.5.x → 1.6 | `noteFormatUpgrades: note-links` |
 | notes | `v1.5-ref-links` | 1.5.x → 1.6 | `noteFormatUpgrades: ref-links` |
+| notes | `unreleased-hex-callout-area-line` | unreleased → 1.6 | `noteFormatUpgrades: area-line` |
 | tables | `v1.0-flat-terrain-tables-to-subfolders` | 0.x → 1.0 | every terrain-table check |
 | tables | `v1.5-table-roll-ranges` | 1.5.x → 1.6 | `tableRangesUpgraded` |
 
@@ -62,16 +65,21 @@ to `NOTE_REWRITES`.
 
 Not here, on purpose:
 
-- Map notes upgrade their own older formats (`hexmaker-map: 1`–`4`) on
-  their next write, after a backup (MapStore + mapNote.ts): that is the map
-  note's reader and writer, which must read every format forever.
+- A map note older than the current format is rewritten on its next write,
+  after a backup of its text (MapStore): the reader (mapNote.ts) reads every
+  format forever, so the rewrite is just the writer; what each format step
+  changes in the note is in the `map-note-*` files here.
 - Content updates to shipped palettes (new preset terrains, new path-type
   fields: `palettes/presetUpdates.ts`) add content rather than change a
   format.
 - Modules own the upgrades of their own notes and run them from their
   runtime (the core never imports a module): World maps fills overworlds'
-  Biome column once (BC1, `overworld/overworldPass.ts`, `biomeColumnsFilled`);
-  Space upgrades World types tables when read (`space/WorldTypeStore.ts`).
+  Biome column once (BC1, `overworld/overworldPass.ts`, `biomeColumnsFilled`)
+  and renames biome notes' `colour:` to `color:` once
+  (`overworld/migrations/biome-colour-key-to-color.ts`, a `NoteRewrite` it
+  contributes through its runtime's `noteRewrites`, recorded as
+  `noteFormatUpgrades: biome-color`); Space upgrades World types tables when
+  read (`space/WorldTypeStore.ts`).
 
 ## The data stamp (`stamp.ts`)
 

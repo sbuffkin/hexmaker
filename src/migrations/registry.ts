@@ -27,11 +27,14 @@ import { hexMapKey } from "./v1.5-hex-map-key";
 import { hexBodyLines } from "./v1.5-hex-body-lines";
 import { noteLinks } from "./v1.5-note-links";
 import { refLinks } from "./v1.5-ref-links";
+import { hexCalloutAreaLine } from "./unreleased-hex-callout-area-line";
+import * as helpText from "./map-note-1-to-6-help-text";
+import * as areaNames from "./map-note-5-to-6-area-names";
 import * as tableRanges from "./v1.5-table-roll-ranges";
 import { runNoteRewrites, runRewrite, type NoteFormatHost, type NoteRewrite, type UpgradeResult } from "./noteRewrites";
 
 /** The note rewrites (phase "notes"), in the order they run. */
-export const NOTE_REWRITES: readonly NoteRewrite[] = [hexMapKey, hexBodyLines, noteLinks, refLinks];
+export const NOTE_REWRITES: readonly NoteRewrite[] = [hexMapKey, hexBodyLines, noteLinks, refLinks, hexCalloutAreaLine];
 
 /** Every migration, in start-up order (phase, then the order within it). */
 export const MIGRATIONS: readonly MigrationInfo[] = [
@@ -49,6 +52,8 @@ export const MIGRATIONS: readonly MigrationInfo[] = [
   paletteData.info,
   // maps: MapStore.init
   mapNotes.info,
+  helpText.info,
+  areaNames.info,
   // notes: one-time rewrites, once the stores are in
   ...NOTE_REWRITES.map((s) => s.info),
   // tables

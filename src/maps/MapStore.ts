@@ -45,6 +45,7 @@ import {
   writePathReport,
   type MapNotesMigrationHost,
 } from "../migrations/v1.5-map-data-to-map-notes";
+import { upgradeMapSettings as upgradeAreaSettings } from "../migrations/map-note-5-to-6-area-names";
 
 /** One hex changed during MapStore.record: its data before and after. */
 export interface HexCellChange {
@@ -906,6 +907,8 @@ export class MapStore {
    */
   private apply(map: MapData, data: MapNoteData): void {
     Object.assign(map, data.settings);
+    // A note older than format 6 says "make places" (src/migrations/map-note-5-to-6-area-names.ts).
+    if ((data.format ?? 1) < 6) upgradeAreaSettings(map);
     if ((data.format ?? 1) >= READABLE_KEYS_FORMAT) {
       const unreadable = new Set((data.problems ?? []).map((p) => p.field));
       const m = map as unknown as Record<string, unknown>;

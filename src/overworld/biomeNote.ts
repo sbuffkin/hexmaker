@@ -6,7 +6,7 @@
  *   hexmaker-biome: 1
  *   id: tundra
  *   label: Tundra
- *   colour: "#d8e4ea"
+ *   color: "#d8e4ea"
  *   blend: normal
  *   land-share: 90%
  *   min-islands: 3
@@ -326,8 +326,9 @@ export function parseBiomeNote(content: string, basename: string): ParsedBiomeNo
     mix: [],
     transitions: [],
   };
-  const colour = fm.get("colour") ?? fm.get("color");
-  if (colour) fields.color = readColour(colour);
+  // color: (the older colour: still reads, O7)
+  const swatch = fm.get("color") ?? fm.get("colour");
+  if (swatch) fields.color = readColour(swatch);
   const blend = fm.get("blend")?.trim().toLowerCase();
   if (blend) {
     if ((BIOME_BLENDS as readonly string[]).includes(blend)) fields.blend = blend as BiomeBlend;
@@ -474,7 +475,7 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
     [BIOME_NOTE_MARKER, String(BIOME_NOTE_FORMAT)],
     ["id", f.id],
     ["label", quote(f.label)],
-    ["colour", f.color ? `"${f.color}"` : undefined],
+    ["color", f.color ? `"${f.color}"` : undefined],
     ["blend", f.blend],
     ["land-share", f.landShare !== undefined ? shareText(f.landShare) : undefined],
     ["min-islands", f.minIslands !== undefined ? String(f.minIslands) : undefined],
@@ -487,7 +488,8 @@ function ownKeys(f: BiomeNoteFields): [string, string | undefined][] {
   ];
 }
 
-const OWN_ALIASES: Record<string, string> = { color: "colour" };
+// colour: (written before 1.6, O7) is read as color: forever.
+const OWN_ALIASES: Record<string, string> = { colour: "color" };
 
 /** A fresh biome note. */
 export function buildBiomeNote(f: BiomeNoteFields): string {
@@ -560,7 +562,7 @@ const CLIMATE_KEY_SET = new Set(climateKeyValues(undefined).map(([k]) => k));
 function sameValue(key: string, cur: string, want: string): boolean {
   const w = unquote(want);
   if (key === "land-share") return parseShare(cur) === parseShare(w);
-  if (key === "colour") return readColour(cur) === readColour(w);
+  if (key === "color") return readColour(cur) === readColour(w);
   if (key === "generator" || key === "parent") return linkTarget(cur) === linkTarget(w);
   if (key === "id") return biomeSlug(cur) === biomeSlug(w);
   if (key === "shore" || key === "blank") return readYesNo(cur) === readYesNo(w);

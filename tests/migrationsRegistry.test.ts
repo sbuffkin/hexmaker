@@ -38,7 +38,7 @@ describe("migrations registry", () => {
   });
 
   it("keeps the note rewrites' record ids (data.json's noteFormatUpgrades) as released", () => {
-    expect(NOTE_REWRITES.map((s) => s.recordId)).toEqual(["hex-map-key", "hex-body-lines", "note-links", "ref-links"]);
+    expect(NOTE_REWRITES.map((s) => s.recordId)).toEqual(["hex-map-key", "hex-body-lines", "note-links", "ref-links", "area-line"]);
   });
 
   it("is described in the folder's README (every id)", () => {

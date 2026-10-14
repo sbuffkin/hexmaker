@@ -1,8 +1,8 @@
 /**
  * Roll on arrival (plan-tables-everywhere phase 4: SP4, SP5, GM4, T5).
  *
- * - A world is set to make places on arrival with the map note key
- *   `on-arrival: make places` (Map properties), inherited down the map
+ * - A world is set to make submaps on arrival with the map note key
+ *   `on-arrival: make submaps` ("make places" before 1.6 still reads) (Map properties), inherited down the map
  *   tree; unset everywhere = off, and then nothing here ever runs.
  * - Seeds depend only on stored values: the parent map's `seed:`, the hex
  *   and a purpose (and the reroll count), never on map names.
@@ -24,7 +24,7 @@ import type { SubmapDefault } from "../types";
 export type ArrivalMode = "off" | "make";
 
 /** How the setting is written in the map note. */
-export const ARRIVAL_MODE_WORDS: Record<ArrivalMode, string> = { off: "off", make: "make places" };
+export const ARRIVAL_MODE_WORDS: Record<ArrivalMode, string> = { off: "off", make: "make submaps" };
 
 /** The choices as shown in Map properties. */
 export const ARRIVAL_MODE_TEXT: Record<ArrivalMode, string> = {
@@ -32,7 +32,7 @@ export const ARRIVAL_MODE_TEXT: Record<ArrivalMode, string> = {
   make: "Make the submap, in any mode",
 };
 
-/** `on-arrival:` read forgivingly ("make places", "make", "generate", "yes" / "off", "no", "nothing"); unknown → undefined. */
+/** `on-arrival:` read forgivingly ("make submaps", the older "make places", "make", "generate", "yes" / "off", "no", "nothing"); unknown → undefined. */
 export function parseArrivalMode(raw: unknown): ArrivalMode | undefined {
   if (typeof raw !== "string") return undefined;
   const t = raw.trim().toLowerCase();

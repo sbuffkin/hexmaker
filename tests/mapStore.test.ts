@@ -366,7 +366,7 @@ describe("map store: a note broken by hand mid-session (#42)", () => {
 		const { store } = await boot(v, oneMap());
 		store.set("m", "1_1", { terrain: "grass" });
 		await store.flush();
-		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 5", "hexmaker-mpa: 5");
+		const broken = v.files.get(NOTE)!.replace("hexmaker-map: 6", "hexmaker-mpa: 6");
 		v.files.set(NOTE, broken); // onModify hasn't run yet
 		store.set("m", "2_2", { terrain: "lava" });
 		await store.flush();
@@ -410,7 +410,7 @@ describe("map store: older map notes are converted once, after a backup (#42)", 
 		expect(backups.map((k) => k.split("/").pop())).toEqual(["m-map-note.md"]);
 		expect(v.files.get(backups[0])).toBe(old);
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 5");
+		expect(now).toContain("hexmaker-map: 6");
 		expect(now).toContain('parent: "[[_world]]"\nparent-hex: 3, 4');
 		expect(now).toContain('background-image: "[[art/bg.png]]"');
 		expect(now).toContain("hexmaker-origin-x: 0");
@@ -576,7 +576,7 @@ describe("map store: format 2 notes and region mirrors (overworld phase 1)", () 
 		const { store } = await boot(v, world());
 		expect(store.get("m", "1_1")).toEqual({ terrain: "forest", region: "Basin", locations: ["town"] });
 		const now = v.files.get(NOTE)!;
-		expect(now).toContain("hexmaker-map: 5");
+		expect(now).toContain("hexmaker-map: 6");
 		expect(now).toContain("Our notes.");
 		expect(now).toContain("| 1_1 | forest | [[Basin]] | [[_town]] |");
 		expect(now).not.toContain("Submap");

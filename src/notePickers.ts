@@ -33,10 +33,14 @@ export const CONTENT_FOLDER_DEFAULTS: Record<ContentFolderKey, string> = {
   questsFolder: "quests",
   featuresFolder: "features",
   factionsFolder: "factions",
-  regionsFolder: "regions",
+  // Areas (named zones on a map, MG5). Older vaults' "regions" is still listed (pickerFolders).
+  regionsFolder: "areas",
   tablesFolder: "tables",
   workflowsFolder: "workflows",
 };
+
+/** The areas folder's name before areas were called areas (MG5). */
+export const LEGACY_AREAS_FOLDER = "regions";
 
 /** Token notes made from the token form go here, under the world folder. */
 export const TOKENS_SUBFOLDER = "tokens";
@@ -77,6 +81,8 @@ export function pickerFolders(
 ): string[] {
   const spec = PICKER_FOLDERS[purpose];
   const out = spec.folders.map((k) => contentFolder(settings, k));
+  // A blank Areas setting: the old default folder name is listed too (MG5: old names still read).
+  if (spec.folders.includes("regionsFolder") && !trim(settings.regionsFolder)) out.push(`${worldFolderOf(settings)}/${LEGACY_AREAS_FOLDER}`);
   if (spec.tokens) out.push(`${worldFolderOf(settings)}/${TOKENS_SUBFOLDER}`);
   return [...new Set(out)];
 }

@@ -1,6 +1,7 @@
 import { parseNameFamily, parseNameSize, parseNameStyle } from "../hex-map/hexNameFont";
 import type { HexKey, MapData, MapPath, PathBranch, PathChain, RegionSettings } from "../types";
 import { formatAnchors, formatAnchor, parseAnchors } from "../paths/anchorText";
+import { upgradeHelpLines } from "../migrations/map-note-1-to-6-help-text";
 import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
@@ -24,7 +25,7 @@ import { ENGINE_ROLES } from "../worldgen/tableRoles";
  *   # The Coast
  *   > [!info]- How to edit this note
  *   ## Hexes
- *   | Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |
+ *   | Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked |
  *   | 3_4 | Glass Wastes | dunes |  |  | [[Basin]] | [[_saltmere]], [[_old-mine]] |  |
  *   ## Paths
  *   | Path | Type | Route | Notes |
@@ -72,15 +73,21 @@ import { ENGINE_ROLES } from "../worldgen/tableRoles";
  *   case and spacing. The old every-hex `Type | Hexes` table is read forever
  *   (each row a path with every hex an anchor) and written back in the new
  *   form; MapStore compacts those when it converts an older note.
- *   map-note-formats/format-4.md pins format 4.
+ *   map-note-formats/format-4.md pins format 4;
+ * - format 6 calls a map's named zones areas (owner MG5): the Hexes
+ *   table's Area column (Region, read forever), `show-area-overlay`
+ *   (`show-region-overlay`, read forever), the Summary's Areas line, and
+ *   `on-arrival: make submaps` ("make places" still reads).
+ *   map-note-formats/format-5.md pins format 5.
  */
 
 export const MAP_NOTE_MARKER = "hexmaker-map";
 /** Format written by this build (the marker's value). 1 = JSON values,
  *  2 = readable keys + one Submap column, 3 = Region map + Locations, links,
  *  4 = derived Summary + Route/Warning path columns, 5 = named paths with
- *  anchors (Paths + Path routes). */
-export const MAP_NOTE_FORMAT = 5;
+ *  anchors (Paths + Path routes), 6 = zones called areas (Area column,
+ *  show-area-overlay, "make submaps"; src/migrations/map-note-5-to-6-area-names.ts). */
+export const MAP_NOTE_FORMAT = 6;
 /** First format with named, anchored paths (older notes hold every-hex chains). */
 export const PATHS_FORMAT = 5;
 /** First format with one readable key per setting (deleting a key resets it). */
@@ -417,7 +424,8 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["showIconOverrides", "show-icon-overrides", "bool"],
   ["showPaths", "show-paths", "bool"],
   ["showFactionOverlay", "show-faction-overlay", "bool"],
-  ["showRegionOverlay", "show-region-overlay", "bool"],
+  // The Areas overlay ("show-region-overlay" before format 6).
+  ["showRegionOverlay", "show-area-overlay", "bool", ["show-region-overlay"]],
   ["showGmLayer", "show-gm-layer", "bool"],
   ["showTokens", "show-tokens", "bool"],
   ["showLinkBadges", "show-link-badges", "bool"],
@@ -959,7 +967,7 @@ const FRONTMATTER = /^---[ \t]*\n(?:([\s\S]*?)\n)?---[ \t]*(\n|$)/;
 
 // ── tables ───────────────────────────────────────────────────────────────
 
-const HEX_HEADERS = ["Hex", "Name", "Terrain", "Biome", "Icon", "GM icons", "Region", "Region map", "Locations", "Locked", "On arrival"];
+const HEX_HEADERS = ["Hex", "Name", "Terrain", "Biome", "Icon", "GM icons", "Area", "Region map", "Locations", "Locked", "On arrival"];
 /** Known columns written only when the table has them or some row needs them (column → does a row need it). */
 const OPTIONAL_HEX_HEADERS: Record<string, (h: HexData) => boolean> = {
   "region map": (h) => !!h.regionMap,
@@ -981,7 +989,8 @@ const FORK_LABEL = "fork";
 /** Header → canonical column, ignoring case, spaces, dashes and markup. */
 const HEX_COL_ALIASES: Record<string, string> = {
   hex: "hex", name: "name", terrain: "terrain", icon: "icon",
-  gmicons: "gm icons", gmicon: "gm icons", region: "region",
+  // Area: a map's named zone (MG5); "Region" before format 6, read forever.
+  gmicons: "gm icons", gmicon: "gm icons", area: "area", areas: "area", region: "area",
   regionmap: "region map", regionsubmap: "region map",
   locations: "locations", location: "locations",
   // Format 2's one-submap column: read as Locations, renamed on write.
@@ -1178,7 +1187,7 @@ const HEX_CELL: Record<string, (k: string, h: HexData) => string | undefined> = 
   biome: (_k, h) => h.biome,
   icon: (_k, h) => h.icon,
   "gm icons": (_k, h) => h.gmIcons?.join(", "),
-  region: (_k, h) => (h.region ? regionLinkText(h.region) : undefined),
+  area: (_k, h) => (h.region ? regionLinkText(h.region) : undefined),
   "region map": (_k, h) => (h.regionMap ? mapLinkText(h.regionMap) : undefined),
   locations: (_k, h) => h.locations?.map(mapLinkText).join(", "),
   locked: (_k, h) => (h.locked ? "yes" : ""),
@@ -1343,7 +1352,7 @@ function readHexTable(lines: string[], t: Table | null): TableRead<Map<string, H
   const bad: MapNoteProblem[] = [];
   if (!t) return { rows: out, bad };
   const col = (name: string) => t.cols.indexOf(name);
-  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("region"), regionMap: col("region map"), locked: col("locked"), biome: col("biome"), onArrival: col("on arrival") };
+  const ci = { hex: col("hex"), name: col("name"), terrain: col("terrain"), icon: col("icon"), gm: col("gm icons"), region: col("area"), regionMap: col("region map"), locked: col("locked"), biome: col("biome"), onArrival: col("on arrival") };
   // Locations may sit in more than one column (a Submap column next to a
   // Locations one): all are read, in column order.
   const locCols = t.cols.flatMap((c, i) => (c === "locations" ? [i] : []));
@@ -1642,13 +1651,8 @@ const PROBLEM_TITLE = /^>\s*\[!warning\][+-]?\s*hexmaker couldn't read/i;
 /** The one-line description format-1 notes opened with (plugin text, replaced by the help box). */
 const OLD_INTRO = "Hexmap World Creator map. Each hex's name, terrain, icons, region and submap live in the table below — edit it here or paint on the map. Hex notes hold descriptions and links, and only exist once a hex has some.";
 
-/** Format 2's Hexes help line (one Submap column), replaced when still word for word. */
-const HEX_HELP_LINE_V2 = "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* and *Region* use names from the map's palette. *Icon* and *GM icons* are icon file names; separate several with commas. *Submap* is the map that opens from the hex. *Locked* `yes` keeps generators off it.";
-const HEX_HELP_LINE = "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* uses names from the map's palette; *Region* links the region's note. *Icon* and *GM icons* are icon file names; separate several with commas. *Locations* links the maps that open from the hex (towns, dungeons…), separated by commas; *Region map*, when there is one, is the map of the hex itself. *Locked* `yes` keeps generators off it.";
+const HEX_HELP_LINE = "> - **Hexes**: one row per hex that has something set. *Hex* is the column and row, like `3_4`. *Terrain* uses names from the map's palette; *Area* links the area's note. *Icon* and *GM icons* are icon file names; separate several with commas. *Locations* links the maps that open from the hex (towns, dungeons…), separated by commas; *Region map*, when there is one, is the map of the hex itself. *Locked* `yes` keeps generators off it.";
 
-/** Format 2–3's and format 4's Paths help lines, replaced when still word for word. */
-const PATH_HELP_LINE_V3 = "> - **Paths**: *Type* is a path type (Road, River…). *Hexes* lists its hexes in order, separated by spaces.";
-const PATH_HELP_LINE_V4 = "> - **Paths**: *Type* is a path type (Road, River…). *Hexes* lists its hexes in order, separated by spaces. The plugin fills in *Route*, *Warning* and the **Summary** above from the tables; edits to those are replaced.";
 const PATH_HELP_LINE = "> - **Paths**: one row per path. *Path* is its name, *Type* a path type from the palette (Road, River…), *Notes* are yours. The plugin fills in *Route* and the **Summary** above; edits to those are replaced.";
 const ROUTES_HELP_LINE = "> - **Path routes**: where each path goes, as hexes in order like `0, 8 → 9, 8 → 13, 8`; the map draws the way between them. A path's `main` row is its main line; every other row is a fork that leaves the path at its first hex. To rename a path, edit *Path* in both tables.";
 
@@ -1758,7 +1762,7 @@ export function summaryLines(data: MapNoteData, ctx: MapNoteContext = {}): strin
   }
   const byCount = <T extends [string, number]>(a: T, b: T) => b[1] - a[1] || a[0].localeCompare(b[0]);
   if (regions.size) {
-    bullets.push(`- **Regions:** ${[...regions].sort(byCount).map(([r, n]) => `${regionLinkText(r)} (${plural(n, "hex", "hexes")})`).join(", ")}`);
+    bullets.push(`- **Areas:** ${[...regions].sort(byCount).map(([r, n]) => `${regionLinkText(r)} (${plural(n, "hex", "hexes")})`).join(", ")}`);
   }
   const rs = s.regions;
   if (rs) {
@@ -2042,17 +2046,10 @@ export function updateMapNote(content: string, name: string, data: MapNoteData, 
   else lines = [...lines, "", "## Hexes", "", ...hexLines];
   lines = writePathTables(lines, data.paths, ctx);
 
+  // The help box's lines from older formats, while still the plugin's own
+  // words, become this format's (src/migrations/map-note-1-to-6-help-text.ts).
+  if (front.format < MAP_NOTE_FORMAT) lines = upgradeHelpLines(lines, { hex: HEX_HELP_LINE, paths: [PATH_HELP_LINE, ROUTES_HELP_LINE] });
   // Format 1 → 2: add the help box once (in place of the old one-line intro, if it's still there).
-  // Format 2 → 3: the help box's Hexes line, if it's still the plugin's own words.
-  // Format 3/4 → 5: its Paths line becomes the Paths and Path routes lines, likewise.
-  if (front.format < MAP_NOTE_FORMAT) {
-    lines = lines.flatMap((l) => {
-      const s = l.trim();
-      if (s === HEX_HELP_LINE_V2) return [HEX_HELP_LINE];
-      if (s === PATH_HELP_LINE_V3 || s === PATH_HELP_LINE_V4) return [PATH_HELP_LINE, ROUTES_HELP_LINE];
-      return [l];
-    });
-  }
   if (front.format < READABLE_KEYS_FORMAT && !lines.some((l) => HELP_TITLE.test(l))) {
     const intro = lines.findIndex((l) => l.trim() === OLD_INTRO);
     if (intro >= 0) lines.splice(intro, 1, ...HELP_CALLOUT);
