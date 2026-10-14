@@ -425,6 +425,9 @@ const SIMPLE_KEYS: [keyof MapSettings, string, Kind, string[]?][] = [
   ["linkBadgeSize", "link-badge-size", "str"],
   ["showHexNames", "show-hex-names", "bool"],
   ["showTokenNames", "show-token-names", "bool"],
+  // Solo play: hexes the party has stood on, and the layer showing them (src/play/partyTravel.ts).
+  ["visited", "visited", "list"],
+  ["showVisited", "show-visited", "bool"],
   ["showUncharted", "show-uncharted", "bool"],
   // Hex-name font (NM3): plain words, read forgivingly (hexNameFont.ts).
   ["hexNameFont", "name-font", "str"],

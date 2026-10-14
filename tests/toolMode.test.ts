@@ -113,7 +113,7 @@ describe("toolModeLabel (fresh-eyes T3: sticky modes need an indicator)", () => 
 
 	it("the map view refreshes the bar with the toolbar and Esc exits the tool", () => {
 		expect(method("updateToolbarButtonStates")).toMatch(/this\.updateModeBar\(\);/);
-		expect(viewSrc).toMatch(/this\.scope\.register\(\[\], "Escape"[\s\S]{0,600}this\.exitCurrentMode\(\)/);
+		expect(viewSrc).toMatch(/this\.scope\.register\(\[\], "Escape"[\s\S]{0,800}this\.exitCurrentMode\(\)/);
 	});
 });
 

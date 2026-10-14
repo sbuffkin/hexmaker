@@ -106,6 +106,12 @@ export const PLACEMENT: Readonly<Record<string, Placement>> = {
   "MapView.dblRightClickExit": "hidden",
   "MapView.dblClickOffGridExit": "hidden",
 
+  // ── Solo play (owner calls SF3–SF5, 2026-10-13): the party switch, the
+  // play log folder setting and "Show on map" are main; a party's own log
+  // folder and marking one hex visited by hand are Advanced. ──
+  "Token.logFolder": "advanced",
+  "MapView.hexVisited": "advanced",
+
   // ── Hex editor: a section's table source is Advanced ──
   "HexEditor.weatherSource": "advanced",
   "HexEditor.hooksSource": "advanced",

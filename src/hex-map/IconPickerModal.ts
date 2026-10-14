@@ -13,6 +13,8 @@ export class IconPickerModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private onSelect: (iconName: string | null, gmOnly: boolean) => void,
     initialGmOnly = false,
+    /** Picking an icon for something other than painting: its title, and no GM-layer switch. */
+    private opts: { title?: string; gmToggle?: boolean; removeLabel?: string } = {},
   ) {
     super(app);
     this.gmOnly = initialGmOnly;
@@ -37,12 +39,13 @@ export class IconPickerModal extends HexmakerModal {
 
     // ── Header ────────────────────────────────────────────────────────────
     const header = contentEl.createDiv({ cls: "duckmage-icon-picker-header" });
-    header.createEl("h2", { text: "Paint icon" });
+    header.createEl("h2", { text: this.opts.title ?? "Paint icon" });
 
     const headerRight = header.createDiv({ cls: "duckmage-icon-picker-header-right" });
 
     // GM layer only toggle
     const gmRow = headerRight.createDiv({ cls: "duckmage-icon-gm-toggle-row" });
+    if (this.opts.gmToggle === false) gmRow.hide();
     const gmCb = gmRow.createEl("input", { type: "checkbox" });
     gmCb.checked = this.gmOnly;
     const gmLabel = gmRow.createSpan({ text: "GM layer only", cls: "duckmage-icon-gm-toggle-label" });
@@ -78,7 +81,7 @@ export class IconPickerModal extends HexmakerModal {
       clearBtn.createDiv({
         cls: "duckmage-icon-preview duckmage-icon-preview-clear",
       });
-      clearBtn.createSpan({ text: "Remove", cls: "duckmage-icon-option-name" });
+      clearBtn.createSpan({ text: this.opts.removeLabel ?? "Remove", cls: "duckmage-icon-option-name" });
       clearBtn.addEventListener("click", () => {
         this.onSelect(null, this.gmOnly);
         this.close();

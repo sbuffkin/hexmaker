@@ -66,6 +66,10 @@ import { contentFolder } from "../notePickers";
 import { terrainStartsCollapsed } from "./terrainSection";
 import { addPickerFilter, filterText } from "../ui/pickers";
 import { withRepairHint } from "../ui/repairHint";
+import { addToPlayLog } from "../play/playLogWriter";
+import { PLAY_LOG_TARGET, rollDefaultSection } from "../play/playLog";
+import { PlayLogModal } from "../play/PlayLogModal";
+import { linkSectionIcon, showOnMapOffer } from "../play/linkIcons";
 
 /** Typing pause after which a text section autosaves. */
 const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
@@ -236,6 +240,17 @@ export class HexEditorModal extends HexmakerModal {
       attr: { title: "Roll a workflow and add the result to this hex" },
     });
     wfLink.addEventListener("click", () => this.pickWorkflow());
+    // What happened here, to the dated play log (SF3).
+    const logLink = titleLeft.createEl("a", {
+      text: "Add to log",
+      cls: "duckmage-editor-open-link",
+      attr: { title: "Write what happened here in today's play log" },
+    });
+    logLink.addEventListener("click", () => {
+      new PlayLogModal(this.app, `${this.plugin.mapLabel(this.mapName)} ${this.x}, ${this.y}`, (text) =>
+        addToPlayLog(this.plugin, this.mapName, this.x, this.y, text),
+      ).open();
+    });
     this.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
     this.renderMapsStrip(contentEl);
@@ -269,20 +284,22 @@ export class HexEditorModal extends HexmakerModal {
     // A hex that already has a terrain opens with Terrain collapsed to a
     // one-line summary (round 5: the 50-swatch grid reopened expanded on
     // every hex; round 6: expanding it once must not stick).
+    let syncChangeHint = (): void => {};
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
       "hexEditorTerrainCollapsed",
       terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false),
+      () => syncChangeHint(),
     );
     const headerPreview = terrainHeader.createSpan({
       cls: "duckmage-terrain-header-preview",
     });
     this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
     const changeHint = terrainHeader.createSpan({ cls: "duckmage-terrain-change-hint", text: "▸ change" });
-    const syncChangeHint = () => changeHint.toggle(!terrainBody.isShown() && canDo(this.mapName, "paint-terrain"));
+    const terrainOpen = () => (terrainBody.parentElement as HTMLDetailsElement | null)?.open ?? true;
+    syncChangeHint = () => changeHint.toggle(!terrainOpen() && canDo(this.mapName, "paint-terrain"));
     syncChangeHint();
-    terrainHeader.addEventListener("click", syncChangeHint);
     const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
     // Terrain and icons are map data: the map's work mode may lock them
     // (one line instead of the pickers). Notes are never locked (WM2).
@@ -771,9 +788,10 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   /**
-   * Collapsible group whose open/closed state is remembered in the given
-   * settings flag (so collapsing Terrain once keeps it collapsed on every
-   * hex, E5). The same flags are exposed in the settings tab.
+   * One of the editor's main groups (Terrain, Notes, Linked notes, Icons):
+   * the shared Fold (owner call O8), its open/closed state remembered in
+   * the given settings flag (so collapsing Terrain once keeps it collapsed
+   * on every hex, E5). The same flags are exposed in the settings tab.
    */
   private makeCollapsible(
     container: HTMLElement,
@@ -784,36 +802,25 @@ export class HexEditorModal extends HexmakerModal {
       | "hexEditorFeaturesCollapsed"
       | "hexEditorIconsCollapsed",
     startCollapsedOverride?: boolean,
+    onToggle?: (open: boolean) => void,
   ): { body: HTMLElement; header: HTMLElement } {
     const startCollapsed = startCollapsedOverride ?? this.plugin.settings[flag] ?? false;
-    const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
-    const header = wrapper.createDiv({
-      cls: "duckmage-editor-collapsible-header",
+    // No device store: the settings flag is the remembered state.
+    const fold = new Fold(container, {
+      title: label,
+      open: !startCollapsed,
+      cls: "duckmage-editor-group",
+      summaryCls: "duckmage-editor-group-header",
+      bodyCls: "duckmage-editor-group-body",
+      onToggle: (open) => {
+        this.plugin.settings[flag] = !open;
+        // Expanding Terrain is NOT remembered: on hexes with a terrain it opens
+        // collapsed again (round 6; see terrainStartsCollapsed).
+        void this.plugin.saveSettings();
+        onToggle?.(open);
+      },
     });
-    const arrow = header.createSpan({
-      cls: "duckmage-editor-collapsible-arrow",
-      text: startCollapsed ? "▶" : "▼",
-    });
-    header.createEl("h3", {
-      text: label,
-      cls: "duckmage-editor-collapsible-title",
-    });
-    const body = wrapper.createDiv({ cls: "duckmage-editor-collapsible-body" });
-    if (startCollapsed) body.hide();
-    header.addEventListener("click", () => {
-      const collapsed = !body.isShown();
-      if (collapsed) {
-        body.show();
-      } else {
-        body.hide();
-      }
-      arrow.textContent = collapsed ? "▼" : "▶";
-      this.plugin.settings[flag] = !collapsed;
-      // Expanding Terrain is NOT remembered: on hexes with a terrain it opens
-      // collapsed again (round 6; see terrainStartsCollapsed).
-      void this.plugin.saveSettings();
-    });
-    return { body, header };
+    return { body: fold.body, header: fold.summary };
   }
 
   private renderTerrainSection(
@@ -1224,6 +1231,29 @@ export class HexEditorModal extends HexmakerModal {
       );
     };
 
+    // "Show on map" (SF4): the section's icon as the hex's icon, in one click.
+    const showEl = sectionEl.createDiv({ cls: "duckmage-link-show-on-map-row" });
+    const renderShowOnMap = () => {
+      showEl.empty();
+      const offer = showOnMapOffer({
+        icon: linkSectionIcon(this.plugin.settings, section),
+        linkCount: currentLinks.length,
+        hexIcon: this.directIcon,
+        available: (i) => this.plugin.availableIcons.includes(i),
+      });
+      if (!offer || !canDo(this.mapName, "show-place-icon")) return;
+      const btn = showEl.createEl("button", {
+        cls: "duckmage-link-show-on-map",
+        attr: { title: `Use the ${words.noun} icon as this hex's icon (change it in settings → Map look)` },
+      });
+      btn.createEl("img", { attr: { src: getIconUrl(this.plugin, offer), alt: "" } });
+      btn.createSpan({ text: "Show on map" });
+      btn.addEventListener("click", () => {
+        btn.disabled = true;
+        void this.showIconOnMap(path, offer).then(() => renderShowOnMap());
+      });
+    };
+
     const refresh = () => {
       linksEl.empty();
       this.renderLinkList(
@@ -1234,6 +1264,7 @@ export class HexEditorModal extends HexmakerModal {
         onItemClick,
         onRollClick,
       );
+      renderShowOnMap();
     };
 
     refresh();
@@ -1398,6 +1429,13 @@ export class HexEditorModal extends HexmakerModal {
       currentLinks = [...links];
       refresh();
     };
+  }
+
+  /** "Show on map" (SF4): make `icon` this hex's icon (allowed wherever linking is). */
+  private async showIconOnMap(path: string, icon: string): Promise<void> {
+    if (!(await setIconOverrideInFile(this.app, path, icon, "show-place-icon"))) return;
+    this.directIcon = icon;
+    this.onChanged(undefined, new Map([[path, icon]]));
   }
 
   /** Encounter tables to show: the note's links, or for a hex with no note
@@ -1620,7 +1658,11 @@ export class HexEditorModal extends HexmakerModal {
     picker.open();
   }
 
-  /** "Add to this hex" for a roll made here (P2): every text section, `defaultSection` first. */
+  /**
+   * "Add to this hex" for a roll made here (P2): the play log, then every
+   * text section. `defaultSection` is picked first, except in Play, where
+   * the play log is (SF3: what happened goes to the log, not Description).
+   */
   private rollTarget(defaultSection: string): RollHexTarget {
     const hx = this.x;
     const hy = this.y;
@@ -1631,9 +1673,10 @@ export class HexEditorModal extends HexmakerModal {
     return {
       label: `hex ${hx}, ${hy}`,
       context: { ...(terrain ? { terrain } : {}), ...(type ? { type } : {}) },
-      sections: [...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
-      defaultSection,
+      sections: [{ key: PLAY_LOG_TARGET, label: "Play log" }, ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
+      defaultSection: rollDefaultSection(workModeOf(this.plugin.getMap(this.mapName)), defaultSection),
       add: async (key, text) => {
+        if (key === PLAY_LOG_TARGET) { await addToPlayLog(this.plugin, this.mapName, hx, hy, text); return; }
         // Still on this hex with the box showing: add through the box.
         const box = hx === this.x && hy === this.y ? this.textBoxes.get(key) : undefined;
         if (box) { box(text); return; }

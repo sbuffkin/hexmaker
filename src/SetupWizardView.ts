@@ -45,6 +45,7 @@ type FolderKey =
 	| "tablesFolder"
 	| "workflowsFolder"
 	| "templatesFolder"
+	| "logFolder"
 	| "iconsFolder";
 
 interface WizardContext {
@@ -106,6 +107,8 @@ const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
 	{ key: "tablesFolder",    label: "Tables",     suffix: "tables" },
 	{ key: "workflowsFolder", label: "Workflows",  suffix: "workflows" },
 	{ key: "templatesFolder", label: "Templates",  suffix: "templates" },
+	// The play log (SF3): one note per day of play.
+	{ key: "logFolder",       label: "Play log",   suffix: "log" },
 	{ key: "iconsFolder",     label: "Icons",      suffix: "icons" },
 ];
 

@@ -119,6 +119,9 @@ import {
 } from "./sections";
 import { GeneratorView } from "./worldgen/GeneratorView";
 import { GeneratorPanel } from "./worldgen/GeneratorPanel";
+import { openNoteFocused } from "./openNote";
+import { ensureLogNote } from "./play/playLogWriter";
+import { logFolderFor } from "./play/playLog";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
 import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
@@ -511,6 +514,16 @@ export default class HexmakerPlugin extends Plugin {
         if (!mapName) return false;
         if (!checking) new MapExportModal(this.app, this, mapName).open();
         return true;
+      },
+    });
+    // Solo play (SF3): today's play log note, made if missing.
+    addPlaced("Plugin.cmd.openPlayLog", {
+      id: "open-play-log",
+      name: "Open today's play log",
+      callback: () => {
+        void ensureLogNote(this.app, logFolderFor(this.settings))
+          .then((file) => openNoteFocused(this.app, file))
+          .catch((err) => new Notice(`Could not open the play log: ${String(err)}`));
       },
     });
     // File-menu items: right-click any markdown file → Export to PDF /

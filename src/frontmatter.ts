@@ -350,9 +350,10 @@ export async function setIconOverrideInFile(
   app: App,
   path: string,
   icon: string | null,
+  action: ModeAction = "paint-icon",
 ): Promise<boolean> {
   const loc = hexLoc(path);
-  if (loc) return hexSource!.set(loc.map, loc.key, { icon }, "paint-icon");
+  if (loc) return hexSource!.set(loc.map, loc.key, { icon }, action);
   const file = app.vault.getAbstractFileByPath(path);
   if (!(file instanceof TFile)) return false;
   await app.fileManager.processFrontMatter(file, (fm: Frontmatter) => {
@@ -485,7 +486,17 @@ export function getTokenDataFromCache(app: App, file: TFile): TokenEntry | null 
     color: typeof fm["token-color"] === "string" ? fm["token-color"] : undefined,
     border: typeof fm["token-border"] === "string" ? fm["token-border"] : undefined,
     description: typeof fm["token-description"] === "string" ? fm["token-description"] : undefined,
+    // The party token (SF5): `token-party: true` (yes/x/on read too).
+    party: tokenFlag(fm["token-party"]),
+    logFolder: typeof fm["token-log"] === "string" && fm["token-log"].trim() ? fm["token-log"].trim() : undefined,
   };
+}
+
+/** A yes/no frontmatter value read forgivingly (true, "yes", "x", "on", 1). */
+export function tokenFlag(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v !== 0;
+  return typeof v === "string" && /^(yes|true|y|x|on|1|✓)$/i.test(v.trim());
 }
 
 /**
@@ -550,6 +561,8 @@ export async function removeTokenFrontmatter(
     delete fm["token-border"];
     delete fm["token-link"];
     delete fm["token-description"];
+    delete fm["token-party"];
+    delete fm["token-log"];
   });
 }
 
@@ -567,6 +580,8 @@ export async function applyTokenFrontmatter(
     border?: string;
     tokenLink?: string;
     description?: string;
+    party?: boolean;
+    logFolder?: string;
   },
 ): Promise<void> {
   const file = app.vault.getAbstractFileByPath(path);
@@ -592,6 +607,13 @@ export async function applyTokenFrontmatter(
     if (data.description !== undefined) {
       if (data.description) fm["token-description"] = data.description;
       else delete fm["token-description"];
+    }
+    // Written only while on: a plain token's note doesn't grow the keys.
+    if (data.party !== undefined) {
+      if (data.party) fm["token-party"] = true; else delete fm["token-party"];
+    }
+    if (data.logFolder !== undefined) {
+      if (data.logFolder.trim()) fm["token-log"] = data.logFolder.trim(); else delete fm["token-log"];
     }
   });
 }

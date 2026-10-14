@@ -362,40 +362,60 @@ describe("HexEditorModal reads terrain from the map note (E1)", () => {
 	});
 });
 
-describe("HexEditorModal remembers collapsed groups (E5)", () => {
-	/** Just enough of an HTMLElement for makeCollapsible. */
-	function fakeEl(): any {
-		let shown = true;
+describe("HexEditorModal remembers collapsed groups (E5) in the shared Fold (O8)", () => {
+	/** Just enough of an HTMLElement for a Fold (src/ui/disclosure.ts): records what it makes. */
+	function fakeEl(tag = "div"): any {
 		const listeners: Record<string, () => void> = {};
-		return {
-			textContent: "",
+		const el: any = {
+			tag,
+			open: false,
+			made: [] as any[],
+			setText: () => {},
 			createDiv: () => fakeEl(),
-			createSpan: () => fakeEl(),
-			createEl: () => fakeEl(),
-			hide: () => { shown = false; },
-			show: () => { shown = true; },
-			isShown: () => shown,
+			createSpan: () => fakeEl("span"),
+			createEl: (t: string) => { const c = fakeEl(t); el.made.push(c); return c; },
 			addEventListener: (t: string, fn: () => void) => { listeners[t] = fn; },
 			fire: (t: string) => listeners[t]?.(),
 		};
+		return el;
 	}
 
-	it("collapsing a group saves its flag, so the next hex opens the same way", () => {
+	it("each group is a <details> Fold; folding it saves its flag, so the next hex opens the same way", () => {
 		const plugin = makePlugin(() => "hex/1_1.md");
 		const saveSettings = mock.fn(async () => {});
 		(plugin as any).saveSettings = saveSettings;
 		const modal = new HexEditorModal(makeApp({}), plugin, 1, 1, "default", () => {}) as any;
-		const { body, header } = modal.makeCollapsible(fakeEl(), "Terrain", "hexEditorTerrainCollapsed");
-		expect(body.isShown()).toBe(true);
-		header.fire("click");
-		expect(body.isShown()).toBe(false);
+		const parent = fakeEl();
+		modal.makeCollapsible(parent, "Terrain", "hexEditorTerrainCollapsed");
+		const details = parent.made[0];
+		expect(details.tag).toBe("details");
+		expect(details.open).toBe(true);
+		details.open = false;
+		details.fire("toggle");
 		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(true);
 		expect(saveSettings.mock.callCount()).toBe(1);
 
 		const next = new HexEditorModal(makeApp({}), plugin, 2, 2, "default", () => {}) as any;
-		const reopened = next.makeCollapsible(fakeEl(), "Terrain", "hexEditorTerrainCollapsed");
-		expect(reopened.body.isShown()).toBe(false);
-		reopened.header.fire("click");
+		const parent2 = fakeEl();
+		next.makeCollapsible(parent2, "Terrain", "hexEditorTerrainCollapsed");
+		const reopened = parent2.made[0];
+		expect(reopened.open).toBe(false);
+		reopened.open = true;
+		reopened.fire("toggle");
 		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(false);
+	});
+
+	it("a start state passed in wins over the flag, and the group's toggle is reported", () => {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		(plugin as any).saveSettings = async () => {};
+		const modal = new HexEditorModal(makeApp({}), plugin, 1, 1, "default", () => {}) as any;
+		const seen: boolean[] = [];
+		const parent = fakeEl();
+		modal.makeCollapsible(parent, "Terrain", "hexEditorTerrainCollapsed", true, (open: boolean) => seen.push(open));
+		const details = parent.made[0];
+		expect(details.open).toBe(false);
+		details.open = true;
+		details.fire("toggle");
+		expect(seen).toEqual([true]);
 	});
 });

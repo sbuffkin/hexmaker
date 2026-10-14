@@ -116,3 +116,45 @@ export function groupSize(tokens: { size?: "sm" | "md" | "lg" }[]): "sm" | "md" 
   if (tokens.some((t) => t.size === "lg")) return "lg";
   return tokens.some((t) => (t.size ?? "md") === "md") ? "md" : "sm";
 }
+
+/** Token diameters in grid em (the CSS --token-size per size class). */
+export const TOKEN_SIZE_EM: Record<"sm" | "md" | "lg", number> = { sm: 1.35, md: 2, lg: 2.85 };
+
+/** How far the coordinate label sits from the hex centre, in grid em (CSS --duckmage-coord-y-offset). */
+export const COORD_OFFSET_EM = 1.2;
+
+/** The ring drawn outside a token (outline 3px, offset 2px). */
+const TOKEN_RING_PX = 5;
+
+/**
+ * How far (px, + = down) to move the tokens on a hex so they don't cover
+ * its coordinate (owner call SF5: the party token hid the hex number).
+ * Coordinates at the bottom push the group up, at the top push it down;
+ * in the middle (or hidden) nothing moves (the label is drawn over the
+ * tokens there). Never more than the coordinate's own offset, so tokens
+ * stay on their hex.
+ */
+export function tokenCoordShift(o: {
+  placement: "top" | "middle" | "bottom" | undefined;
+  showCoords: boolean;
+  /** Pixels per grid em. */
+  emPx: number;
+  /** The coordinate label's size in grid em (setting, default 0.8). */
+  coordFontSize?: number;
+  /** Each token's offset from the hex centre in px (dy) and its size. */
+  tokens: { dy: number; size: "sm" | "md" | "lg" }[];
+}): number {
+  const placement = o.placement ?? "bottom";
+  if (!o.showCoords || placement === "middle" || !o.tokens.length || !(o.emPx > 0)) return 0;
+  const labelHalf = 0.6 * (o.coordFontSize ?? 0.8) * o.emPx;
+  const half = (s: "sm" | "md" | "lg") => (TOKEN_SIZE_EM[s] / 2) * o.emPx + TOKEN_RING_PX;
+  const limit = COORD_OFFSET_EM * o.emPx;
+  if (placement === "bottom") {
+    const groupBottom = Math.max(...o.tokens.map((t) => t.dy + half(t.size)));
+    const labelTop = COORD_OFFSET_EM * o.emPx - labelHalf;
+    return Math.max(-limit, Math.min(0, labelTop - 1 - groupBottom));
+  }
+  const groupTop = Math.min(...o.tokens.map((t) => t.dy - half(t.size)));
+  const labelBottom = -COORD_OFFSET_EM * o.emPx + labelHalf;
+  return Math.min(limit, Math.max(0, labelBottom + 1 - groupTop));
+}

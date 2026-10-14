@@ -1,7 +1,10 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import { DEFAULT_NAME_FONT, NAME_FAMILIES, NAME_SIZES, NAME_STYLES, nameStyleId, resolveNameFont, type HexNameSize } from "./hex-map/hexNameFont";
 import type HexmakerPlugin from "./HexmakerPlugin";
-import { normalizeFolder } from "./utils";
+import { getIconUrl, iconLabel, normalizeFolder } from "./utils";
+import { IconPickerModal } from "./hex-map/IconPickerModal";
+import { linkSectionIcon } from "./play/linkIcons";
+import { LINK_SECTIONS } from "./types";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
@@ -153,6 +156,7 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "workflowsFolder",
   "templatesFolder",
   "palettesFolder",
+  "logFolder",
 ]);
 
 /** A folder-path key: the core's, or a module's folder setting (Space: World types folder). */
@@ -326,6 +330,12 @@ export class HexmakerSettingTab extends PluginSettingTab {
             desc: "Default weight and slant for hex names.",
             control: { type: "dropdown", key: "hexNameStyle", options: Object.fromEntries(NAME_STYLES.map((s) => [s.id, s.label])), defaultValue: "bold" },
           }),
+          // SF4: the icon each link section's "Show on map" offers (hex editor).
+          T("Settings.linkSectionIcons", {
+            name: "Icons for linked notes",
+            desc: "When a town, dungeon or other note is linked to a hex, the hex editor offers its section's icon in one click (\"Show on map\"). Click one to change it.",
+            render: (setting: Setting) => this.renderLinkSectionIcons(setting.controlEl),
+          }),
           T("Settings.hexGap", {
             name: "Hex cell spacing",
             desc: "Gap between hex cells (0 – 0.5 em).",
@@ -402,6 +412,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
             },
           }),
           T("Settings.worldFolder", folderText("World notes folder", "worldFolder", "World.", "Vault-relative path. Scopes the file search when adding links to hexes.")),
+          T("Settings.logFolder", folderText("Play log folder", "logFolder", "World/log", "Where the play log goes: one note per day, with what happened, when, where and who. Blank: a log folder in the world folder.")),
           T("Settings.iconsFolder", folderText(
             "Custom icons folder",
             "iconsFolder",
@@ -571,6 +582,28 @@ export class HexmakerSettingTab extends PluginSettingTab {
     await this.plugin.applyKindContent();
   }
 
+  /** One button per link section: its "Show on map" icon (SF4), picked with the shared icon picker. */
+  private renderLinkSectionIcons(el: HTMLElement): void {
+    el.empty();
+    el.addClass("duckmage-link-icons-row");
+    for (const section of LINK_SECTIONS) {
+      const icon = linkSectionIcon(this.plugin.settings, section);
+      const btn = el.createEl("button", {
+        cls: "duckmage-link-icon-btn",
+        attr: { title: icon ? `${section}: ${iconLabel(icon)}` : `${section}: none`, "aria-label": `Icon for ${section}` },
+      });
+      if (icon) btn.createEl("img", { attr: { src: getIconUrl(this.plugin, icon), alt: "" } });
+      btn.createSpan({ text: section });
+      btn.addEventListener("click", () => {
+        new IconPickerModal(this.app, this.plugin, (picked) => {
+          this.plugin.settings.linkSectionIcons = { ...(this.plugin.settings.linkSectionIcons ?? {}), [section]: picked ?? "" };
+          void this.plugin.saveSettings();
+          this.renderLinkSectionIcons(el);
+        }, false, { title: `Icon for ${section}`, gmToggle: false, removeLabel: "None" }).open();
+      });
+    }
+  }
+
   /** "Set up folders": blank folder settings get defaults under the world folder, and the folders are made. */
   private async generateFolders(): Promise<void> {
     const world = normalizeFolder(this.plugin.settings.worldFolder) || "world";
@@ -585,6 +618,7 @@ export class HexmakerSettingTab extends PluginSettingTab {
       ["tablesFolder", `${world}/tables`],
       ["workflowsFolder", `${world}/workflows`],
       ["templatesFolder", `${world}/templates`],
+      ["logFolder", `${world}/log`],
     ];
     for (const [key, path] of defaults) {
       if (!this.plugin.settings[key]) {
