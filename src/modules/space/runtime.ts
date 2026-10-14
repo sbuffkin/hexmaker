@@ -25,7 +25,7 @@ import { OnceTracker, type FiredEvent } from "../../arrival/eventsLedger";
 import { withOnce } from "../../worldgen/tableRoles";
 import { Notice } from "obsidian";
 import { WorldTypesModal } from "../../space/WorldTypesModal";
-import { WorldTypeStore } from "../../space/WorldTypeStore";
+import { WorldTypeStore, worldTypesFolder } from "../../space/WorldTypeStore";
 import { linkWorldTypePalettes, WORLD_TYPES_MARKER } from "../../space/worldTypes";
 import { contentFolder } from "../../notePickers";
 import { MOON_TETHER_OVERLAY } from "../../space/moonLinks";
@@ -132,6 +132,7 @@ export const spaceRuntime: ModuleRuntime = {
   id: "space",
   generators,
   stores: (plugin) => [new WorldTypeStore(plugin)],
+  packKinds: (plugin) => [{ id: "world-types", label: "World types", folder: worldTypesFolder(plugin.settings) }],
   folderSettings: [{
     id: "Settings.worldTypesFolder",
     key: "worldTypesFolder",

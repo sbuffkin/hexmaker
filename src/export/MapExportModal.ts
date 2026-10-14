@@ -16,6 +16,7 @@ import {
 } from "./exportNames";
 import { Disclosure, Fold } from "../ui/disclosure";
 import { uniqueMapsByName } from "../maps/mapTree";
+import { openPackExport } from "../packs/packOpeners";
 
 /**
  * The map export form: PNG, PDF with reference table, hexcrawl manual.
@@ -277,6 +278,15 @@ export function renderMapExportForm(
   list.createEl("li", {
     text: "Hexcrawl manual: the full game master gazetteer with the parts you tick, hidden and secret sections included, unless you tick the player version.",
   });
+  // Content pack (SF1): not the map but your notes (tables, templates, towns…) in one .zip.
+  const packBox = el.createDiv({ cls: "duckmage-export-group duckmage-export-pack" });
+  packBox.createDiv({ cls: "duckmage-export-group-title", text: "Content pack (.zip)" });
+  packBox.createDiv({ cls: "duckmage-export-tab-row-hint", text: "Your tables, workflows, templates, towns and other notes in one .zip, to bring into another vault." });
+  packBox.createEl("button", { text: "Export content pack…" }).addEventListener("click", () => {
+    form.onExport?.();
+    openPackExport();
+  });
+  disclosure.place("MapExport.contentPack", packBox);
   disclosure.toEnd();
 }
 

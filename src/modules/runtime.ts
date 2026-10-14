@@ -25,6 +25,7 @@ import type {
 } from "./types";
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
+import type { PackKind } from "../packs/packKinds";
 import { registry } from "./index";
 import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
@@ -124,6 +125,11 @@ export function runAfterStoresReady(plugin: HexmakerPlugin, coreReady: Promise<u
 
 /** Which module made each store (createModuleStores). */
 const storeOwner = new WeakMap<ModuleStore, string>();
+
+/** Every module's content pack kinds, in module order. */
+export function modulePackKinds(plugin: HexmakerPlugin): PackKind[] {
+  return MODULE_RUNTIMES.flatMap((m) => m.packKinds?.(plugin) ?? []);
+}
 
 /** Every module's extra note folders. */
 export function moduleFolders(plugin: HexmakerPlugin): string[] {

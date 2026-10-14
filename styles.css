@@ -9687,3 +9687,82 @@ button.is-armed {
     min-height: 5em;
     resize: vertical;
 }
+
+/* Content packs (SF1): export and import dialogs, wizard offer. */
+.duckmage-pack-desc {
+    flex: 1;
+    min-width: 12em;
+    resize: vertical;
+}
+.duckmage-pack-kinds-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-kinds-head .duckmage-export-group-title {
+    flex: 1;
+}
+.duckmage-pack-small-btn {
+    font-size: var(--font-ui-smaller);
+    padding: 0 8px;
+    height: auto;
+}
+.duckmage-pack-kind .duckmage-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-count,
+.duckmage-pack-tag,
+.duckmage-pack-from {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-pack-count {
+    margin-left: auto;
+}
+.duckmage-pack-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 16em;
+    overflow-y: auto;
+    padding: 2px 0 2px 1.4em;
+}
+.duckmage-pack-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-item-name {
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+.duckmage-pack-choice {
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-pack-zip {
+    justify-content: flex-start;
+    text-align: left;
+}
+.duckmage-pack-error {
+    color: var(--text-error);
+    margin: 0.4em 0;
+}
+.duckmage-pack-report {
+    margin: 0;
+    padding-left: 1.2em;
+    font-size: var(--font-ui-smaller);
+    max-height: 14em;
+    overflow-y: auto;
+}
+.duckmage-wizard-pack-text {
+    color: var(--text-muted);
+}
+.duckmage-wizard-pack-row {
+    margin-top: 1em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}

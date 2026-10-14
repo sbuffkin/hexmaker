@@ -122,6 +122,7 @@ import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { openNoteFocused } from "./openNote";
 import { ensureLogNote } from "./play/playLogWriter";
 import { logFolderFor } from "./play/playLog";
+import { packCommands } from "./packs/packCommands";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
 import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
 export default class HexmakerPlugin extends Plugin {
@@ -357,10 +358,7 @@ export default class HexmakerPlugin extends Plugin {
     addPlaced("Plugin.cmd.openHexTable", {
       id: "open-hex-table",
       name: "Open hex table",
-      callback: () =>
-        void this.app.workspace
-          .getLeaf()
-          .setViewState({ type: VIEW_TYPE_HEX_TABLE }),
+      callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_HEX_TABLE }),
     });
     addPlaced("Plugin.cmd.openTerrainGenerator", {
       id: "open-terrain-generator",
@@ -421,11 +419,12 @@ export default class HexmakerPlugin extends Plugin {
     addPlaced("Plugin.cmd.openRandomTables", {
       id: "open-random-tables",
       name: "Open random tables",
-      callback: () =>
-        void this.app.workspace
-          .getLeaf()
-          .setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
+      callback: () => void this.app.workspace.getLeaf().setViewState({ type: VIEW_TYPE_RANDOM_TABLES }),
     });
+    // Content packs (SF1): export notes to a .zip, import one into this vault.
+    const packs = packCommands(this);
+    addPlaced("Plugin.cmd.exportContentPack", { id: "export-content-pack", name: "Export content pack…", callback: packs.exportPack });
+    addPlaced("Plugin.cmd.importContentPack", { id: "import-content-pack", name: "Import content pack…", callback: packs.importPack });
     addPlaced("Plugin.cmd.addRollRanges", {
       id: "add-roll-ranges",
       name: "Add roll ranges to tables",

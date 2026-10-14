@@ -33,6 +33,7 @@ import { TERRAIN_TABLES_SUMMARY, WIZARD_TUNING_ID, slugHint, wizardOptionId } fr
 import { Disclosure } from "./ui/disclosure";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "./ui/mapScaleForm";
 import { renderResetButton } from "./ui/sliders";
+import { renderPackImportOffer } from "./packs/packOffer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -234,7 +235,6 @@ function makeWelcomeStep(): WizardStep {
 					cbs.onUpdate();
 				});
 			}
-
 		},
 		canProceed: (ctx) => ctx.mapKinds.length > 0,
 		async onNext(ctx, plugin) {
@@ -870,7 +870,7 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 
 // ─── Step 4 — Done ────────────────────────────────────────────────────────────
 
-function makeDoneStep(): WizardStep {
+function makeDoneStep(plugin: HexmakerPlugin): WizardStep {
 	return {
 		id: "done",
 		title: "You're ready to explore!",
@@ -924,6 +924,7 @@ function makeDoneStep(): WizardStep {
 				cls: "duckmage-wizard-skip-btn",
 			});
 			exploreBtn.addEventListener("click", () => void cb.onComplete(false));
+			renderPackImportOffer(container, plugin.app);
 		},
 		// Final step — Next button is hidden; CTAs are inline
 		canProceed: () => false,
@@ -955,12 +956,7 @@ export class SetupWizardView extends ItemView {
 			scaleChoices: {},
 			seed: randomSeed(),
 		};
-		this.steps = [
-			makeWelcomeStep(),
-			makeFolderStep(plugin),
-			makeMapStep(plugin),
-			makeDoneStep(),
-		];
+		this.steps = [makeWelcomeStep(), makeFolderStep(plugin), makeMapStep(plugin), makeDoneStep(plugin)];
 	}
 
 	getViewType() { return VIEW_TYPE_SETUP_WIZARD; }
