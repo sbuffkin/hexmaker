@@ -3,9 +3,10 @@
  * generator. The file format is in saveFormat.ts.
  */
 
-import { TFile, TFolder } from "obsidian";
+import { TFile } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { slugify } from "../utils";
+import { ensureFolder } from "../vault/ensureFolder";
 import { VERSION_KEY } from "../compat";
 import { generatorsFolder, savesFolder, listGenerators, parseGeneratorText, saveGeneratorSettings, type GeneratorFile } from "./generators";
 import { parseSave, retargetSave, serializeSave, SAVE_MARKER, type GeneratorSave } from "./saveFormat";
@@ -43,20 +44,11 @@ export function listSaves(plugin: HexmakerPlugin): SaveEntry[] {
     .sort((a, b) => b.file.stat.mtime - a.file.stat.mtime);
 }
 
-async function ensureFolder(plugin: HexmakerPlugin, path: string): Promise<void> {
-  if (plugin.app.vault.getAbstractFileByPath(path) instanceof TFolder) return;
-  try {
-    await plugin.app.vault.createFolder(path);
-  } catch {
-    /* exists */
-  }
-}
-
 /** Write a save. Never overwrites: a name clash gets a numeric suffix. */
 export async function writeSave(plugin: HexmakerPlugin, save: GeneratorSave): Promise<TFile> {
   const folder = savesFolder(plugin);
-  await ensureFolder(plugin, generatorsFolder(plugin));
-  await ensureFolder(plugin, folder);
+  await ensureFolder(plugin.app.vault, generatorsFolder(plugin));
+  await ensureFolder(plugin.app.vault, folder);
   const base = slugify(save.name) || "save";
   let name = base;
   for (let n = 2; plugin.app.vault.getAbstractFileByPath(`${folder}/${name}.md`); n++) name = `${base}-${n}`;
@@ -88,7 +80,7 @@ export async function applySave(
   if (!g) {
     if (!save.generatorMarkdown) return { error: `Generator "${save.generatorName}" no longer exists and the save has no copy of it.` };
     const folder = generatorsFolder(plugin);
-    await ensureFolder(plugin, folder);
+    await ensureFolder(plugin.app.vault, folder);
     const base = slugify(save.generatorName) || "generator";
     let path = `${folder}/${base}.md`;
     for (let n = 2; plugin.app.vault.getAbstractFileByPath(path); n++) path = `${folder}/${base}-${n}.md`;

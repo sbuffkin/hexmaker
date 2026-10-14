@@ -19,7 +19,8 @@ import { renderMarkdownToHtml } from "../htmlRenderer";
 import { ensureExportFolder } from "../exportFolder";
 import { serializeMarkdown, stripFrontmatter } from "../mdSerializer";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportedMessage, openExported, withExportProvenance } from "../exportFolder";
+import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 export async function exportSingleNoteAsPdf(
   plugin: HexmakerPlugin,
@@ -98,39 +99,4 @@ export function ensureLeadingTitle(raw: string, basename: string): string {
   if (/^# /.test(stripped)) return stripped;
   if (stripped.length === 0) return `# ${basename}`;
   return `# ${basename}\n\n${stripped}`;
-}
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<boolean> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-    return true;
-  }
-  await app.vault.createBinary(path, buf);
-  return false;
-}
-
-/** Write the export; true when it replaced an earlier one. */
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<boolean> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-    return true;
-  }
-  await app.vault.create(path, data);
-  return false;
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  await openExported(app, path);
 }

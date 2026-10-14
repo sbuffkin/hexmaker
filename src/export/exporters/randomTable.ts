@@ -28,7 +28,8 @@ import {
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportedMessage, openExported, withExportProvenance } from "../exportFolder";
+import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
 export interface LinkedNote {
@@ -215,41 +216,4 @@ export function formatRandomTableMarkdown(name: string, table: RandomTable): str
   });
 
   return lines.join("\n");
-}
-
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<boolean> {
-  // vault.createBinary / modifyBinary require a plain ArrayBuffer.
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-    return true;
-  }
-  await app.vault.createBinary(path, buf);
-  return false;
-}
-
-/** Write the export; true when it replaced an earlier one. */
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<boolean> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-    return true;
-  }
-  await app.vault.create(path, data);
-  return false;
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  await openExported(app, path);
 }

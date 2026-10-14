@@ -325,7 +325,7 @@ describe("no confirm dialogs (Q6)", () => {
 
 describe("autosaving editors have no footer button (Q5)", () => {
   it("no Close / Save / Cancel on the table, workflow, path type, terrain, faction and region-area editors", () => {
-    for (const p of ["random-tables/RandomTableEditorModal.ts", "random-tables/WorkflowEditorModal.ts", "hex-map/PathTypeEditorModal.ts", "hex-map/TerrainEntryEditorModal.ts", "hex-map/FactionPickerModal.ts", "hex-map/GeoRegionPickerModal.ts"]) {
+    for (const p of ["random-tables/RandomTableEditorModal.ts", "random-tables/WorkflowEditorModal.ts", "hex-map/PathTypeEditorModal.ts", "hex-map/TerrainEntryEditorModal.ts", "hex-map/AreaNotePickerModal.ts"]) {
       const s = src(p);
       expect({ p, close: /text: "(Close|Save|Cancel)"/.test(s) }).toEqual({ p, close: false });
       expect({ p, line: s.includes("renderSaveStatusLine(") }).toEqual({ p, line: true });

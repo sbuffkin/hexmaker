@@ -43,8 +43,7 @@ describe("R12: template notes are never offered for linking", () => {
 			["src", "hex-map", "FileLinkSuggestModal.ts"],
 			["src", "hex-map", "FolderTreePickerModal.ts"],
 			["src", "hex-table", "LinkPickerModal.ts"],
-			["src", "hex-map", "FactionPickerModal.ts"],
-			["src", "hex-map", "GeoRegionPickerModal.ts"],
+			["src", "hex-map", "AreaNotePickerModal.ts"],
 		]) {
 			expect({ file: p.join("/"), ok: /this\.plugin\.isLinkableNote\(f(, this\.purpose)?\)/.test(read(...p)) }).toEqual({ file: p.join("/"), ok: true });
 		}

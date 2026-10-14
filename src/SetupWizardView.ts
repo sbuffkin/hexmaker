@@ -1,8 +1,9 @@
-import { App, ItemView, Notice, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "./HexmakerPlugin";
 import type { HexMapView } from "./hex-map/HexMapView";
 import type { TerrainColor } from "./types";
 import { linkLabel, normalizeFolder, slugify } from "./utils";
+import { ensureFolder } from "./vault/ensureFolder";
 import { VIEW_TYPE_SETUP_WIZARD, VIEW_TYPE_HEX_MAP } from "./constants";
 import { attachPaletteHint, defaultPaletteFor, fillPaletteSelect } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, terrainsForTables, type MapKind } from "./mapKinds";
@@ -111,16 +112,6 @@ const FOLDER_KEYS: Array<{ key: FolderKey; label: string; suffix: string }> = [
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function ensureFolder(app: App, path: string): Promise<void> {
-	if (!app.vault.getAbstractFileByPath(path)) {
-		try {
-			await app.vault.createFolder(path);
-		} catch {
-			// race: folder created between check and call
-		}
-	}
-}
 
 function wizardGrid(plugin: HexmakerPlugin, ctx: WizardContext) {
 	return {
@@ -378,13 +369,13 @@ function makeFolderStep(plugin: HexmakerPlugin): WizardStep {
 		async onNext(ctx, plugin) {
 			const world = normalizeFolder(ctx.worldFolder) || "world";
 			plugin.settings.worldFolder = world;
-			await ensureFolder(plugin.app, world);
+			await ensureFolder(plugin.app.vault, world);
 			for (const { key, suffix } of FOLDER_KEYS) {
 				const path = ctx.useAdvanced
 					? normalizeFolder(ctx.advancedFolders[key] ?? "") || `${world}/${suffix}`
 					: `${world}/${suffix}`;
 				(plugin.settings as unknown as Record<string, unknown>)[key] = path;
-				await ensureFolder(plugin.app, path);
+				await ensureFolder(plugin.app.vault, path);
 			}
 			await plugin.saveSettings();
 			// The folder is confirmed: the stores may write now (F19), and

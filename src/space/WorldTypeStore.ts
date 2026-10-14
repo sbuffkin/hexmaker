@@ -22,10 +22,9 @@
  * - Every change is told to onChange listeners.
  */
 
-import { Notice, TAbstractFile, TFile, TFolder } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
+import { Notice, TAbstractFile, TFile } from "obsidian";
 import { normalizeFolder } from "../utils";
-import { writeJsonBackup } from "../backup";
+import { NoteFolderStore } from "../stores/NoteFolderStore";
 import { enabledKinds } from "../mapKinds";
 import { biomeFileName } from "../overworld/biomeNote";
 import {
@@ -52,7 +51,6 @@ import {
 import { DEFAULT_WORLD_TYPE_EXTRAS, DEFAULT_WORLD_TYPE_ROWS } from "./worldTypePresets";
 import { chosenWorldTypes, defaultWorldTypesName, worldTypesSource } from "./worldTypesSource";
 import type { TableSource } from "../worldgen/tableRoles";
-import type { ModuleStore } from "../modules/types";
 
 /** The World types store's id among the modules' stores. */
 export const WORLD_TYPES_STORE = "world-types";
@@ -96,24 +94,15 @@ export function worldTypesFolder(settings: StoreSettings): string {
   return world ? `${world}/world-types` : "world-types";
 }
 
-export class WorldTypeStore implements ModuleStore {
+export class WorldTypeStore extends NoteFolderStore<Entry> {
   /** Its id among the modules' stores (HexmakerPlugin.moduleStore). */
   readonly id = WORLD_TYPES_STORE;
-  private entries = new Map<string, Entry>();
-  private lastContent = new Map<string, string>();
-  private reported = new Map<string, string>();
-  private listeners = new Set<() => void>();
-  private ready = false;
-  private queue: Promise<void> = Promise.resolve();
-
-  constructor(private plugin: HexmakerPlugin) {}
+  protected readonly logLabel = "world types";
+  protected readonly backupFolder = "world-types";
+  protected readonly backupLabel = "world types";
 
   private get settings(): StoreSettings {
     return this.plugin.settings;
-  }
-
-  isReady(): boolean {
-    return this.ready;
   }
 
   /** Where the palettes the tables name have notes (the Palette column is written as links to them). */
@@ -130,27 +119,11 @@ export class WorldTypeStore implements ModuleStore {
     return worldTypesFolder(this.settings);
   }
 
-  /** Call `fn` after every change. Returns an unsubscribe. */
-  onChange(fn: () => void): () => void {
-    this.listeners.add(fn);
-    return () => this.listeners.delete(fn);
-  }
-
   async init(): Promise<void> {
     await this.enqueue(async () => {
       for (const f of this.files()) await this.load(f);
       if (enabledKinds(this.settings).has("space")) await this.seed();
       this.ready = true;
-      this.publish();
-    });
-  }
-
-  /** Re-read every note (the folder setting changed). */
-  async reload(): Promise<void> {
-    await this.enqueue(async () => {
-      this.entries.clear();
-      this.lastContent.clear();
-      for (const f of this.files()) await this.load(f);
       this.publish();
     });
   }
@@ -358,29 +331,10 @@ export class WorldTypeStore implements ModuleStore {
 
   // ── vault events ───────────────────────────────────────────────────────
 
-  /** A new note is read like an edited one. */
-  onCreate(f: TAbstractFile): void {
-    this.onModify(f);
-  }
-
-  onModify(f: TAbstractFile): void {
-    if (!this.isTableFile(f)) return;
-    void this.enqueue(async () => {
-      if (await this.load(f)) this.publish();
-    });
-  }
-
-  onDelete(f: TAbstractFile): void {
-    if (!this.entries.has(f.path)) return;
-    this.entries.delete(f.path);
-    this.lastContent.delete(f.path);
-    this.publish();
-  }
-
   onRename(f: TAbstractFile, oldPath: string): void {
     const had = this.entries.delete(oldPath);
     this.lastContent.delete(oldPath);
-    if (!this.isTableFile(f)) {
+    if (!this.isNoteFile(f)) {
       if (had) this.publish();
       return;
     }
@@ -403,31 +357,13 @@ export class WorldTypeStore implements ModuleStore {
       ?? list.find((e) => e.name.toLowerCase() === k);
   }
 
-  private publish(): void {
-    for (const fn of this.listeners) fn();
-  }
-
-  private isTableFile(f: TAbstractFile): f is TFile {
+  protected isNoteFile(f: TAbstractFile): f is TFile {
     return f instanceof TFile && f.extension === "md" && !f.basename.startsWith("_")
       && f.path.startsWith(this.folder() + "/");
   }
 
-  private files(): TFile[] {
-    const root = this.plugin.app.vault.getAbstractFileByPath(this.folder());
-    if (!(root instanceof TFolder)) return [];
-    const out: TFile[] = [];
-    const walk = (folder: TFolder) => {
-      for (const child of folder.children) {
-        if (child instanceof TFolder) walk(child);
-        else if (child instanceof TFile && child.path.endsWith(".md") && !child.name.startsWith("_")) out.push(child);
-      }
-    };
-    walk(root);
-    return out.sort((a, b) => a.path.localeCompare(b.path));
-  }
-
   /** Read one note (upgrading a format 1 note first). True when what it says changed. */
-  private async load(f: TFile): Promise<boolean> {
+  protected async load(f: TFile): Promise<boolean> {
     let content = await this.plugin.app.vault.read(f);
     if (this.lastContent.get(f.path) === content && this.entries.has(f.path)) return false;
     const upgraded = upgradeWorldTypes(content, { ...DEFAULT_WORLD_TYPE_EXTRAS, rows: DEFAULT_WORLD_TYPE_ROWS }, this.links());
@@ -481,32 +417,5 @@ export class WorldTypeStore implements ModuleStore {
     } catch (e) {
       console.error("Hexmaker: couldn't write the world types note", path, e);
     }
-  }
-
-  private async ensureFolder(folder: string): Promise<void> {
-    const vault = this.plugin.app.vault;
-    const parts = folder.split("/");
-    for (let i = 1; i <= parts.length; i++) {
-      const p = parts.slice(0, i).join("/");
-      if (!vault.getAbstractFileByPath(p)) {
-        try { await vault.createFolder(p); } catch { /* made meanwhile */ }
-      }
-    }
-  }
-
-  private async backup(base: string, notes: Record<string, string>): Promise<void> {
-    try {
-      const dir = `${this.plugin.manifest.dir}/backups/world-types-${new Date().toISOString().slice(0, 10)}`;
-      await writeJsonBackup(this.plugin.app.vault.adapter, dir, base, JSON.stringify({ savedAt: new Date().toISOString(), notes }));
-    } catch (e) {
-      console.error("Hexmaker: world types backup failed", e);
-    }
-  }
-
-  private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((e) => {
-      console.error("Hexmaker: world types", e);
-    });
-    return this.queue;
   }
 }

@@ -5,6 +5,7 @@ import { legacyChainsToPaths } from "../paths/legacy";
 import { pathNameKey, uniquePathName } from "../paths/names";
 import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
 import { ENGINE_ROLES } from "../worldgen/tableRoles";
+import { splitRow } from "../md/tableRow";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -1007,21 +1008,6 @@ const CANONICAL: Record<string, string> = Object.fromEntries(
 );
 const SEPARATOR_ROW = /^\s*\|?\s*:?[-=]+:?\s*(\|\s*:?[-=]*:?\s*)*\|?\s*$/;
 const normHeader = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-function splitRow(line: string): string[] {
-  let s = line.trim();
-  if (s.startsWith("|")) s = s.slice(1);
-  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
-  const cells: string[] = [];
-  let cur = "";
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\" && s[i + 1] === "|") { cur += "|"; i++; }
-    else if (s[i] === "|") { cells.push(cur.trim()); cur = ""; }
-    else cur += s[i];
-  }
-  cells.push(cur.trim());
-  return cells;
-}
 
 /** A row's cells lined up with `n` headers: stray empty cells at either end (extra pipes) dropped. */
 function rowCells(line: string, n: number): string[] {

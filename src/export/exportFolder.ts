@@ -5,6 +5,7 @@
 import { TFile, type App, type WorkspaceLeaf } from "obsidian";
 import { leafShowingPath } from "../openNote";
 import { normalizeFolder } from "../utils";
+import { ensureFolder } from "../vault/ensureFolder";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { localIsoDateTime, withFrontmatterEntries, yamlLink } from "../provenance";
 
@@ -25,18 +26,8 @@ export function resolveExportFolder(plugin: HexmakerPlugin): string {
  */
 export async function ensureExportFolder(plugin: HexmakerPlugin): Promise<string> {
   const folder = resolveExportFolder(plugin);
-  await ensureFolder(plugin.app, folder);
+  await ensureFolder(plugin.app.vault, folder);
   return folder;
-}
-
-/** Create the folder if missing. Quietly tolerates concurrent creation. */
-async function ensureFolder(app: App, path: string): Promise<void> {
-  if (app.vault.getAbstractFileByPath(path)) return;
-  try {
-    await app.vault.createFolder(path);
-  } catch {
-    /* race: already exists */
-  }
 }
 
 /**
