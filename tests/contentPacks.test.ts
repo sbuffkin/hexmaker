@@ -104,7 +104,7 @@ describe("content packs: folder mapping", () => {
       workflows: "world/workflows",
       templates: "world/templates",
       towns: "world/towns",
-      areas: "world/regions",
+      areas: "world/areas", // new vaults default to areas (upgrade MG5)
       palettes: "world/palettes",
       generators: "world/generators",
     });
