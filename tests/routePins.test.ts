@@ -177,6 +177,8 @@ describe("drawing with the path tool right after the routing context changed", (
       refreshBar: () => {},
       setGrabCursor: () => {},
       typeChanged: () => {},
+      neighbourStrip: () => new Map(),
+      openNeighbour: () => {},
     });
     tool.typeName = "Road";
     const draw = (...hexes: string[]) => {

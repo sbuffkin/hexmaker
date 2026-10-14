@@ -41,7 +41,7 @@ import {
 import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
 import { overworldOf, overworldTerrain, placedBiomes } from "./regionsVault";
 import { FrameThrottle } from "./overworldInput";
-import { CrossRegionPaths, pathAtGridPoint, type OverworldPathLine, type RegionPathSource } from "./regionPaths";
+import { biomeViewLines, CrossRegionPaths, pathAtGridPoint, type OverworldPathLine, type RegionPathSource } from "./regionPaths";
 import { UNKNOWN_PATH_TYPE } from "../constants";
 import { SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
 import { sharpPath, smoothPath } from "../hex-map/hexGeometry";
@@ -110,8 +110,11 @@ export class OverworldLayer {
   private pathSvg: SVGSVGElement | null = null;
   /** What the path layer was last drawn from (skip rebuilding the same SVG). */
   private pathSvgFrom: { lines: OverworldPathLine[]; geom: Geometry } | null = null;
-  /** The lines on screen now, for the hover hit test. */
+  /** The lines on screen now, for the hover hit test, and the plane their points are in (→ grid px). */
   private shownLines: OverworldPathLine[] = [];
+  private shownPlane: Affine = [1, 0, 0, 1, 0, 0];
+  /** The Biomes view's simplified lines, and the joined lines they were made from. */
+  private biomeLines: { from: OverworldPathLine[]; layout: RegionLayout; lines: OverworldPathLine[] } | null = null;
   /** Redraws coalesce to one per animation frame, and keep coming during a brush stroke. */
   private redraws = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
   /** Timings of the last draw (ms) and how many region bitmaps it built; paths: ms and lines drawn. */
@@ -218,8 +221,8 @@ export class OverworldLayer {
   }
 
   /**
-   * The path line under a screen point (Regions view): tested in the child
-   * plane the lines are built in, the pointer brought back to the em the
+   * The path line under a screen point (either view): tested in the plane
+   * the lines on screen are in, the pointer brought back to the em the
    * layer was measured at (a zoom bake since then grows grid px).
    */
   pathAt(grid: HTMLElement, clientX: number, clientY: number): OverworldPathLine | null {
@@ -229,7 +232,7 @@ export class OverworldLayer {
     const sx = grid.offsetWidth ? g.width / grid.offsetWidth : 1;
     const sy = grid.offsetHeight ? g.height / grid.offsetHeight : 1;
     const emNow = parseFloat(getComputedStyle(grid).fontSize) || geom.em;
-    return pathAtGridPoint(this.shownLines, geom.c2g, geom.p2g, geom.em, emNow, sx, (clientX - g.left) / sx, (clientY - g.top) / sy);
+    return pathAtGridPoint(this.shownLines, this.shownPlane, geom.p2g, geom.em, emNow, sx, (clientX - g.left) / sx, (clientY - g.top) / sy);
   }
 
   // ── drawing ────────────────────────────────────────────────────────────
@@ -246,10 +249,10 @@ export class OverworldLayer {
     this.lastStats.ms = Math.round((performance.now() - t0) * 10) / 10;
     this.lastStats.builds = this.cache.builds - builds0;
     const t1 = performance.now();
-    // Region paths across seams: the Regions view only (the Biomes view
-    // shows the overworld's own hexes, where region detail would crowd
-    // its labels; its own paths are drawn by the map as usual).
-    if (view === "regions" && REGION_PATHS_ROW.value(map)) this.drawPaths(canvas.parentElement, geom, map);
+    // Region paths across seams, in both views: as they run in the Regions
+    // view, simplified to straight edge-to-edge lines in the Biomes view
+    // (O2). The overworld's own paths are drawn by the map as usual.
+    if (view && REGION_PATHS_ROW.value(map)) this.drawPaths(canvas.parentElement, geom, map, view);
     else this.removePathSvg();
     this.lastStats.pathMs = Math.round((performance.now() - t1) * 10) / 10;
     this.lastStats.pathLines = this.shownLines.length;
@@ -271,26 +274,35 @@ export class OverworldLayer {
   }
 
   /**
-   * The joined region paths as one SVG over the region bitmaps, placed in
-   * em (one user unit = 1em of the grid) so zoom bakes keep it. Built from
-   * the cached geometry only: no layout reads here.
+   * The joined region paths as one SVG over the region bitmaps (Biomes
+   * view: over the overworld's hexes, simplified), placed in em (one user
+   * unit = 1em of the grid) so zoom bakes keep it. Built from the cached
+   * geometry only: no layout reads here.
    */
-  private drawPaths(grid: HTMLElement | null, geom: Geometry, map: MapData): void {
+  private drawPaths(grid: HTMLElement | null, geom: Geometry, map: MapData, view: "regions" | "biomes"): void {
     if (!grid) return;
     if (this.pathsOf !== map.name) {
       this.paths.clear();
       this.pathsOf = map.name;
     }
-    const lines = this.paths.lines(geom.layout, this.pathSource(map));
+    const joined = this.paths.lines(geom.layout, this.pathSource(map));
+    let lines = joined;
+    if (view === "biomes") {
+      const memo = this.biomeLines;
+      if (memo?.from !== joined || memo.layout !== geom.layout) this.biomeLines = { from: joined, layout: geom.layout, lines: biomeViewLines(geom.layout, joined) };
+      lines = this.biomeLines!.lines;
+    }
     if (this.pathSvg?.isConnected && this.pathSvgFrom?.lines === lines && this.pathSvgFrom.geom === geom) return;
     this.removePathSvg();
     this.shownLines = lines;
+    const plane = view === "biomes" ? geom.p2g : geom.c2g;
+    this.shownPlane = plane;
     if (!lines.length) return;
     // Overworld hex radius in em: widths are px at the default zoom of a SCREEN_HEX_RADIUS hex.
     const unit = affineScale(geom.p2g) / geom.em / SCREEN_HEX_RADIUS;
     const fmt = (n: number) => String(Math.round(n * 1e4) / 1e4);
     const at = (x: number, y: number) => {
-      const [gx, gy] = applyAffine(geom.c2g, x, y);
+      const [gx, gy] = applyAffine(plane, x, y);
       return { cx: Number(fmt(gx / geom.em)), cy: Number(fmt(gy / geom.em)) };
     };
     const svgNS = "http://www.w3.org/2000/svg";

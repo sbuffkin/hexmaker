@@ -47,13 +47,15 @@ import { REGION_AREAS_TOOL } from "./toolMode";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
+import { drawGhostPaths } from "./ghostPathsSvg";
+import { watchBiomesPathHover } from "./biomesPathHover";
 import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
 import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenCoordShift, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
 import { markVisited, parseVisited, partyClick, unmarkVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
 import { PlayLogModal } from "../play/PlayLogModal";
-import { hexHoverLabel, hexKeyCoords, overlayClosed, pointerMovedFrom, regionsViewTip } from "./hexHover";
+import { hexHoverLabel, hexKeyCoords, overlayClosed, pathFirst, pointerMovedFrom, regionsViewTip } from "./hexHover";
 import { renderHexNameLayer } from "./hexNameLayer";
 import { resolveNameFont } from "./hexNameFont";
 import { whenSized } from "./whenSized";
@@ -394,6 +396,15 @@ export class HexMapView extends ItemView {
       refreshBar: () => this.updateModeBar(),
       setGrabCursor: (on) => this.viewportEl?.toggleClass("duckmage-path-grab", on),
       typeChanged: () => this.updateToolbarButtonStates(),
+      neighbourStrip: () => (this.lastShadow?.map === this.activeMapName ? this.lastShadow.shadow : new Map()),
+      openNeighbour: (map, hex, arm) => {
+        const [x, y] = hex.split("_").map(Number);
+        this.goToRegionHex(map, x, y);
+        this.drawingMode = "path";
+        arm();
+        this.updateToolbarButtonStates();
+        this.updatePathOverlay();
+      },
     });
     const wm = worldMaps();
     this.overworldLayer = wm ? new wm.OverworldLayer(plugin) : undefined;
@@ -4503,7 +4514,11 @@ export class HexMapView extends ItemView {
         });
       });
       gridContainer.addEventListener("mouseleave", () => hover.request(() => setTip("")));
-    } else if (owView === "biomes") gridContainer.addClass("duckmage-ow-biomes");
+    } else if (owView === "biomes") {
+      gridContainer.addClass("duckmage-ow-biomes");
+      // A path between regions under the pointer: its name in the tooltip (O2).
+      watchBiomesPathHover(gridContainer, (x, y) => this.overworldLayer?.pathAt(gridContainer, x, y)?.names.join(", "), (el, path) => this.labelHex(el, undefined, path));
+    }
 
     // Apply optional independent grid transform (used for bg-image calibration).
     // Custom-property values default to identity in CSS when unset, so we
@@ -4855,7 +4870,7 @@ export class HexMapView extends ItemView {
         .filter((p): p is { cx: number; cy: number } => p !== null);
       if (startJoin) pts.unshift(seamPoint(centreEm(startJoin.other), centreEm(startJoin.own)));
       if (endJoin) pts.push(seamPoint(centreEm(endJoin.other), centreEm(endJoin.own)));
-      return [{ run, pt, pts, ends }];
+      return [{ map: run.map, pt, pts, ends }];
     });
     const gridWEm = gridContainer.offsetWidth / em;
     const gridHEm = gridContainer.offsetHeight / em;
@@ -4875,43 +4890,14 @@ export class HexMapView extends ItemView {
         "--duckmage-shadow-h": `${A.h / em}em`,
         ...(color ? { "--duckmage-shadow-color": color } : {}),
       });
-      el.addEventListener("click", () => {
+      el.addEventListener("click", (e) => {
+        // The path tool hooks onto a neighbour's path here, or carries one on across (O1).
+        if (this.drawingMode === "path" && !this.isErasingMode && this.pathTool.clickStrip(e)) return;
         new RegionNavigateModal(this.app, this.plugin, { map: s.map, x: s.x, y: s.y }, () => this.goToRegionHex(s.map, s.x, s.y)).open();
       });
     }
 
-    if (ghostPaths.length > 0 && gridWEm > 0 && gridHEm > 0) {
-      const svgNS = "http://www.w3.org/2000/svg";
-      const svg = activeDocument.createElementNS(svgNS, "svg");
-      svg.classList.add("duckmage-region-shadow-paths");
-      // One user unit = 1em of the grid, so it scales with zoom like the strip.
-      svg.setAttribute("viewBox", `0 0 ${gridWEm} ${gridHEm}`);
-      svg.setAttribute("preserveAspectRatio", "none");
-      const dashFor: Record<string, number[]> = { dashed: [8, 4], dotted: [2, 4] };
-      for (const { run, pt, pts, ends } of ghostPaths) {
-        const path = activeDocument.createElementNS(svgNS, "path");
-        path.setAttribute("d", smoothPath(pts));
-        path.setAttribute("stroke", pt.color);
-        path.setAttribute("stroke-width", String(pt.width / em));
-        path.setAttribute("stroke-linecap", "round");
-        path.setAttribute("stroke-linejoin", "round");
-        path.setAttribute("fill", "none");
-        const dash = dashFor[pt.lineStyle];
-        if (dash) path.setAttribute("stroke-dasharray", dash.map((d) => d / em).join(" "));
-        path.setAttribute("data-region", run.map);
-        svg.appendChild(path);
-        for (const end of ends) {
-          const dot = activeDocument.createElementNS(svgNS, "circle");
-          dot.setAttribute("class", "duckmage-region-shadow-path-end");
-          dot.setAttribute("cx", String(end.cx));
-          dot.setAttribute("cy", String(end.cy));
-          dot.setAttribute("r", String(Math.max(3, pt.width * 0.9) / em));
-          dot.setAttribute("fill", pt.color);
-          svg.appendChild(dot);
-        }
-      }
-      layer.appendChild(svg);
-    }
+    drawGhostPaths(layer, ghostPaths, gridWEm, gridHEm, em);
   }
 
   /** Switch to a neighbouring region and land on one of its hexes. */
@@ -5677,7 +5663,7 @@ export class HexMapView extends ItemView {
    * hover and right after a repaint (round 7 S18: the label said "void (map
    * base)" until the hex was hovered again).
    */
-  private labelHex(hexEl: HTMLElement, terrain?: string | null): void {
+  private labelHex(hexEl: HTMLElement, terrain?: string | null, path?: string): void {
     const x = Number(hexEl.dataset.x);
     const y = Number(hexEl.dataset.y);
     const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
@@ -5690,7 +5676,7 @@ export class HexMapView extends ItemView {
     // tooltip names the hex's region instead.
     const regionMap = this.owView(this.getActiveMap()) === "biomes" ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)?.regionMap : undefined;
     const region = regionMap && this.plugin.getMap(regionMap) ? this.plugin.mapLabel(regionMap) : null;
-    const label = hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked, region);
+    const label = pathFirst(path, hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked, region));
     if (hexEl.title !== label) {
       hexEl.title = label;
       hexEl.setAttr("aria-label", label);
