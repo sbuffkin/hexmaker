@@ -135,7 +135,7 @@ describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => 
 	});
 
 	it("revealing a hex is gated on it", () => {
-		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
+		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.(?:host\.drawingMode\(\)|drawingMode)\)\) return;/);
 	});
 
 	it("starting or changing a tool (the mode bar) never pans the map", () => {
@@ -166,6 +166,6 @@ describe("crossing into a neighbouring region keeps the zoom (fresh-eyes round 5
 
 	it("goToRegionHex measures the hex size before leaving and centres with it", () => {
 		const view = readSurface("map-view");
-		expect(view).toMatch(/private goToRegionHex[\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.centerOnHex\(x, y, hexWidth\);/);
+		expect(view).toMatch(/\n  (?:private )?goToRegionHex\([\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.(?:host\.)?centerOnHex\(x, y, hexWidth\);/);
 	});
 });
