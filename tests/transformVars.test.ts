@@ -22,7 +22,8 @@ const viewSrc = readSurface("map-view");
 
 /** Keys of the setCssProps({...}) object literal inside method `name`. */
 function varsWrittenBy(name: string): string[] {
-  const start = viewSrc.indexOf(`private ${name}(`);
+  // The declaration (private in the view, public on a controller it delegates to).
+  const start = viewSrc.search(new RegExp(`\\n  (?:private )?${name}\\(`));
   expect(start).toBeGreaterThan(-1);
   const body = viewSrc.slice(start, viewSrc.indexOf("\n  }\n", start));
   return [...body.matchAll(/"(--duckmage-[\w-]+)":/g)].map((m) => m[1]);
