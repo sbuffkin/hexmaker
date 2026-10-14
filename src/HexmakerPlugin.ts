@@ -79,18 +79,18 @@ import { HexNotesService } from "./services/HexNotesService";
 import { SettingsPersistence } from "./plugin/settingsPersistence";
 import { TerrainTablesService } from "./services/TerrainTablesService";
 export default class HexmakerPlugin extends Plugin {
-  /** Terrain and area tables, roller blocks, terrain renames (src/services/TerrainTablesService.ts). */
-  readonly terrainTables = new TerrainTablesService(this);
-  /** data.json: load, save, own-write echoes, outside changes (src/plugin/settingsPersistence.ts). */
-  readonly settingsIO = new SettingsPersistence(this, (data) => super.saveData(data));
+  /** The map list: create, link, rename, restore (src/services/MapsService.ts). */
+  readonly maps = new MapsService(this);
+  /** Palette lookups and installs (src/services/PaletteQueries.ts). */
+  readonly palettes = new PaletteQueries(this);
   /** Hex notes, their Map data callouts, and region / faction notes (src/services/HexNotesService.ts). */
   readonly hexNotes = new HexNotesService(this);
   /** Note templates and which notes pickers offer (src/services/TemplatesService.ts). */
   readonly templates = new TemplatesService(this);
-  /** Palette lookups and installs (src/services/PaletteQueries.ts). */
-  readonly palettes = new PaletteQueries(this);
-  /** The map list: create, link, rename, restore (src/services/MapsService.ts). */
-  readonly maps = new MapsService(this);
+  /** Terrain and area tables, roller blocks, terrain renames (src/services/TerrainTablesService.ts). */
+  readonly terrainTables = new TerrainTablesService(this);
+  /** data.json: load, save, own-write echoes, outside changes (src/plugin/settingsPersistence.ts). */
+  readonly settingsIO = new SettingsPersistence(this, (data) => super.saveData(data));
   settings: HexmakerPluginSettings;
   availableIcons: string[] = [];
   vaultIconsSet: Set<string> = new Set();
@@ -276,30 +276,14 @@ export default class HexmakerPlugin extends Plugin {
    */
   devTools?: Record<string, (...args: never[]) => unknown>;
 
-  showMap(name: string): Promise<void> { return this.maps.showMap(name); }
-
-  setMapWorkMode(mapName: string, mode: WorkMode): void { return this.maps.setMapWorkMode(mapName, mode); }
-
   openSetupWizard(): void {
     void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_SETUP_WIZARD });
   }
-
-  loadSettings(): Promise<void> { return this.settingsIO.loadSettings(); }
-
-  async saveData(data: unknown): Promise<void> { return this.settingsIO.saveData(data); }
-
-  private finishStartupUpgrades(): Promise<void> { return this.settingsIO.finishStartupUpgrades(); }
 
   /** The plugin's backups folder (vault-relative, under the config folder). */
   backupsFolder(): string {
     return `${this.manifest.dir ?? ""}/backups`;
   }
-
-  saveSettings(): Promise<void> { return this.settingsIO.saveSettings(); }
-
-  onExternalSettingsChange(): Promise<void> { return this.settingsIO.onExternalSettingsChange(); }
-
-  filterTableFiles(files: TFile[], filterKey: "roll-filter" | "encounter-filter", excludedFolders: string[]): TFile[] { return this.terrainTables.filterTableFiles(files, filterKey, excludedFolders); }
 
   /** Open (or focus) the palette editor page, optionally on one palette. */
   async openPaletteEditor(paletteName?: string): Promise<void> {
@@ -398,10 +382,6 @@ export default class HexmakerPlugin extends Plugin {
     this.availableIcons = [...ordered, ...rest];
   }
 
-  autoRegisterMapsFromVault(): Promise<void> { return this.maps.autoRegisterMapsFromVault(); }
-
-  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean { return this.templates.isLinkableNote(file, purpose); }
-
   /**
    * Check whether a TFile is a workflow note (lives under the configured
    * workflows folder). Used to gate the workflow export command.
@@ -411,54 +391,6 @@ export default class HexmakerPlugin extends Plugin {
     if (!folder) return false;
     return file.path.startsWith(folder + "/") && !file.basename.startsWith("_");
   }
-
-  isHexFile(file: TFile): boolean { return this.hexNotes.isHexFile(file); }
-
-  hexPath(x: number, y: number, mapName: string): string { return this.hexNotes.hexPath(x, y, mapName); }
-
-  updateSubmapReferences(oldName: string, newName: string): Promise<void> { return this.maps.updateSubmapReferences(oldName, newName); }
-
-  buildRollerLink(): string { return this.terrainTables.buildRollerLink(); }
-
-  ensureRollerLink(filePath: string): Promise<boolean> { return this.terrainTables.ensureRollerLink(filePath); }
-
-  installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> { return this.terrainTables.installShippedTables(kinds); }
-
-  ensureAllRollerLinks(): Promise<void> { return this.terrainTables.ensureAllRollerLinks(); }
-
-  ensureTerrainTables(terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)), kinds: Iterable<string> = enabledKinds(this.settings)): Promise<void> { return this.terrainTables.ensureTerrainTables(terrains, kinds); }
-
-  tableTerrains(): TerrainColor[] { return this.terrainTables.tableTerrains(); }
-
-  ensureTablesForNewTerrains(): Promise<void> { return this.terrainTables.ensureTablesForNewTerrains(); }
-
-  backfillTerrainLinks(): Promise<void> { return this.terrainTables.backfillTerrainLinks(); }
-
-  hasTerrainEncounterTable(terrain: string): boolean { return this.terrainTables.hasTerrainEncounterTable(terrain); }
-
-  terrainEncounterTable(terrain: string): TFile | null { return this.terrainTables.terrainEncounterTable(terrain); }
-
-  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null { return this.terrainTables.terrainEncounterLinkFor(mapName, x, y, sourcePath); }
-
-  areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null { return this.terrainTables.areaEncounterTableFor(mapName, x, y); }
-
-  syncHexEncounterTableLink(hexFilePath: string, terrain: string | null): Promise<void> { return this.terrainTables.syncHexEncounterTableLink(hexFilePath, terrain); }
-
-  refreshAllTerrainEncounterLinks(): Promise<void> { return this.terrainTables.refreshAllTerrainEncounterLinks(); }
-
-  ensureRegionTable(regionName: string): Promise<void> { return this.terrainTables.ensureRegionTable(regionName); }
-
-  syncHexRegionTableLink(hexFilePath: string, regionName: string | null): Promise<void> { return this.terrainTables.syncHexRegionTableLink(hexFilePath, regionName); }
-
-  backfillRegionLinks(): Promise<void> { return this.terrainTables.backfillRegionLinks(); }
-
-  renameTerrainInHexes(oldName: string, newName: string, paletteName?: string): Promise<Map<string, string>> { return this.terrainTables.renameTerrainInHexes(oldName, newName, paletteName); }
-
-  renameTerrain(entry: TerrainColor, newName: string): Promise<void> { return this.terrainTables.renameTerrain(entry, newName); }
-
-  terrainTableFiles(name: string): TFile[] { return this.terrainTables.terrainTableFiles(name); }
-
-  renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> { return this.terrainTables.renameTerrainEverywhere(paletteName, oldName, newName); }
 
   refreshHexMapWithOverrides(
     terrainOverrides: Map<string, string | null>,
@@ -475,11 +407,6 @@ export default class HexmakerPlugin extends Plugin {
     });
   }
 
-  /**
-   * Name (or rename, or with "" unname) a hex. The name lives in the map
-   * note; a hex that has a note also gets it as an alias, replacing the
-   * previous name's alias and keeping any the user added.
-   */
   /** Record an action done on `mapName` in its current work mode (WM6). */
   pushUndo(mapName: string, item: UndoItem): void {
     this.undoBook.push(mapName, workModeOf(this.getMap(mapName)), item);
@@ -496,76 +423,6 @@ export default class HexmakerPlugin extends Plugin {
     if (edits.length) this.pushUndo(mapName, { kind: "cells", edits });
     return result;
   }
-
-  setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> { return this.hexNotes.setHexName(mapName, x, y, raw); }
-
-  hexCoordAlias(mapName: string, x: number | string, y: number | string): string { return this.hexNotes.hexCoordAlias(mapName, x, y); }
-
-  syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> { return this.hexNotes.syncMapCoordAliases(mapName, oldLabel); }
-
-  createHexNote(x: number, y: number, mapName: string, preloadedTemplate?: string, terrain?: string): Promise<TFile | null> { return this.hexNotes.createHexNote(x, y, mapName, preloadedTemplate, terrain); }
-
-  appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> { return this.hexNotes.appendToHexSection(x, y, mapName, section, text); }
-
-  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView { return this.hexNotes.hexMapDataView(mapName, x, y); }
-
-  refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> { return this.hexNotes.refreshHexMapData(mapName, x, y, insert); }
-
-  syncHexMapData(mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {}): Promise<CalloutSyncResult> { return this.hexNotes.syncHexMapData(mapName, x, y, opts); }
-
-  addMapDataToHexNotes(mapName: string): Promise<number> { return this.hexNotes.addMapDataToHexNotes(mapName); }
-
-  regionOrFactionKind(file: TFile): "region" | "faction" | null { return this.hexNotes.regionOrFactionKind(file); }
-
-  regionAndFactionNotes(): TFile[] { return this.hexNotes.regionAndFactionNotes(); }
-
-  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView { return this.hexNotes.regionMapDataView(file, kind); }
-
-  refreshRegionMapData(file: TFile, insert = false): Promise<boolean> { return this.hexNotes.refreshRegionMapData(file, insert); }
-
-  updateRegionFactionMapData(): Promise<number> { return this.hexNotes.updateRegionFactionMapData(); }
-
-  renameRegionInMaps(oldName: string, newName: string): number { return this.hexNotes.renameRegionInMaps(oldName, newName); }
-
-  updateTokenMapReferences(oldName: string, newName: string): Promise<number> { return this.hexNotes.updateTokenMapReferences(oldName, newName); }
-
-  loadHexTemplate(): Promise<string> { return this.templates.loadHexTemplate(); }
-
-  templatesFolder(): string { return this.templates.templatesFolder(); }
-
-  ensureTemplates(): Promise<void> { return this.templates.ensureTemplates(); }
-
-  openNoteTemplate(path: string): Promise<void> { return this.templates.openNoteTemplate(path); }
-
-  newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> { return this.templates.newLinkedNoteContent(section, title, fromHex); }
-
-  withHexLocation(content: string, hexPath: string): string { return this.templates.withHexLocation(content, hexPath); }
-
-  ensureHexTemplate(): Promise<void> { return this.templates.ensureHexTemplate(); }
-
-  restoreMissingMap(name: string): Promise<boolean> { return this.maps.restoreMissingMap(name); }
-
-  removeMapEntry(name: string): Promise<void> { return this.maps.removeMapEntry(name); }
-
-  createNewMap(opts: NewMapOptions): Promise<{ name: string } | { error: string }> { return this.maps.createNewMap(opts); }
-
-  generateHexNotesAt(mapName: string, cells: [string, string][], onProgress?: (done: number) => void): Promise<number> { return this.hexNotes.generateHexNotesAt(mapName, cells, onProgress); }
-
-  generateHexNotes(mapName: string, xs: number[], ys: number[], onProgress?: (done: number) => void, terrainAt?: Map<string, string>): Promise<number> { return this.hexNotes.generateHexNotes(mapName, xs, ys, onProgress, terrainAt); }
-
-  getMap(name: string): MapData | undefined { return this.maps.getMap(name); }
-
-  mapLabel(name: string): string { return this.maps.mapLabel(name); }
-
-  hexLinkAlias(hexPath: string): string { return this.hexNotes.hexLinkAlias(hexPath); }
-
-  setMapDisplayName(name: string, typed: string): Promise<void> { return this.maps.setMapDisplayName(name, typed); }
-
-  getPaletteByName(name: string): TerrainPalette | undefined { return this.palettes.getPaletteByName(name); }
-
-  getPaletteOrPresetTerrains(name: string): TerrainColor[] { return this.palettes.getPaletteOrPresetTerrains(name); }
-
-  getPaletteOrPresetKind(name: string): MapKind { return this.palettes.getPaletteOrPresetKind(name); }
 
   /**
    * Install the shipped content of map types that are on and haven't had
@@ -605,36 +462,6 @@ export default class HexmakerPlugin extends Plugin {
     }
     this.onMapKindsChanged();
   }
-
-  getPathTypes(paletteName: string | undefined): PathType[] { return this.palettes.getPathTypes(paletteName); }
-
-  mapPaletteName(mapName: string | undefined): string { return this.palettes.mapPaletteName(mapName); }
-
-  getMapPathTypes(mapName: string | undefined): PathType[] { return this.palettes.getMapPathTypes(mapName); }
-
-  mapsOnPalette(paletteName: string): MapData[] { return this.palettes.mapsOnPalette(paletteName); }
-
-  installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> { return this.palettes.installPalettePreset(presetName, asName, opts); }
-
-  childPaletteFor(parentMap: string): string { return this.palettes.childPaletteFor(parentMap); }
-
-  linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> { return this.maps.linkSubmap(parentMap, x, y, childMap, action); }
-
-  linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> { return this.maps.linkRegion(parentMap, x, y, childMap); }
-
-  unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> { return this.maps.unlinkSubmap(parentMap, x, y, childMap); }
-
-  setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void { return this.maps.setHexLocations(parentMap, x, y, locations); }
-
-  setRegionSettings(mapName: string, next: RegionSettings): Promise<void> { return this.maps.setRegionSettings(mapName, next); }
-
-  parentOf(mapName: string): { map: string; hex: string } | undefined { return this.maps.parentOf(mapName); }
-
-  roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> { return this.maps.roleTablesFor(mapName); }
-
-  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined { return this.maps.rolledMapName(parentMap, hexKey, seed); }
-
-  arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } { return this.maps.arrivalModeFor(mapName); }
 
   /**
    * Turn a map type (its module) on: what Settings → Map types does, from
@@ -681,18 +508,6 @@ export default class HexmakerPlugin extends Plugin {
     await hit.command.run(this);
   }
 
-  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined { return this.palettes.submapDefaultFor(parentMap, terrain); }
-
-  saveSubmapDefault(parentMap: string, terrain: string, set: SubmapDefault, clear: (keyof SubmapDefault)[]): Promise<void> { return this.palettes.saveSubmapDefault(parentMap, terrain, set, clear); }
-
-  missingDefaultPalettes(): string[] { return this.palettes.missingDefaultPalettes(); }
-
-  addDefaultPalettes(): Promise<string[]> { return this.palettes.addDefaultPalettes(); }
-
-  ensurePaletteInstalled(name: string): Promise<void> { return this.palettes.ensurePaletteInstalled(name); }
-
-  getMapPalette(mapName: string): TerrainColor[] { return this.palettes.getMapPalette(mapName); }
-
   /**
    * The map types in context on `mapName`: its palette's and every
    * ancestor map's (a planet submap of a star system is in space). A type
@@ -720,7 +535,110 @@ export default class HexmakerPlugin extends Plugin {
     return sectionWordsIn(this, mapName);
   }
 
+  // One-line delegations: the code lives in the services; callers, tests and
+  // module code keep calling the plugin.
+
+  // ── Settings on disk (src/plugin/settingsPersistence.ts) ──
+  loadSettings(): Promise<void> { return this.settingsIO.loadSettings(); }
+  async saveData(data: unknown): Promise<void> { return this.settingsIO.saveData(data); }
+  private finishStartupUpgrades(): Promise<void> { return this.settingsIO.finishStartupUpgrades(); }
+  saveSettings(): Promise<void> { return this.settingsIO.saveSettings(); }
+  onExternalSettingsChange(): Promise<void> { return this.settingsIO.onExternalSettingsChange(); }
+
+  // ── Maps (src/services/MapsService.ts) ──
+  showMap(name: string): Promise<void> { return this.maps.showMap(name); }
+  setMapWorkMode(mapName: string, mode: WorkMode): void { return this.maps.setMapWorkMode(mapName, mode); }
+  autoRegisterMapsFromVault(): Promise<void> { return this.maps.autoRegisterMapsFromVault(); }
+  updateSubmapReferences(oldName: string, newName: string): Promise<void> { return this.maps.updateSubmapReferences(oldName, newName); }
+  restoreMissingMap(name: string): Promise<boolean> { return this.maps.restoreMissingMap(name); }
+  removeMapEntry(name: string): Promise<void> { return this.maps.removeMapEntry(name); }
+  createNewMap(opts: NewMapOptions): Promise<{ name: string } | { error: string }> { return this.maps.createNewMap(opts); }
+  getMap(name: string): MapData | undefined { return this.maps.getMap(name); }
+  mapLabel(name: string): string { return this.maps.mapLabel(name); }
+  setMapDisplayName(name: string, typed: string): Promise<void> { return this.maps.setMapDisplayName(name, typed); }
+  linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> { return this.maps.linkSubmap(parentMap, x, y, childMap, action); }
+  linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> { return this.maps.linkRegion(parentMap, x, y, childMap); }
+  unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> { return this.maps.unlinkSubmap(parentMap, x, y, childMap); }
+  setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void { return this.maps.setHexLocations(parentMap, x, y, locations); }
+  setRegionSettings(mapName: string, next: RegionSettings): Promise<void> { return this.maps.setRegionSettings(mapName, next); }
+  parentOf(mapName: string): { map: string; hex: string } | undefined { return this.maps.parentOf(mapName); }
+  roleTablesFor(mapName: string): Partial<Record<RoleId, RoleTablePick>> { return this.maps.roleTablesFor(mapName); }
+  rolledMapName(parentMap: string, hexKey: string, seed?: number): string | undefined { return this.maps.rolledMapName(parentMap, hexKey, seed); }
+  arrivalModeFor(mapName: string): { mode: ArrivalMode; from?: string } { return this.maps.arrivalModeFor(mapName); }
+  getOrCreateMap(name: string): MapData { return this.maps.getOrCreateMap(name); }
+
+  // ── Palettes (src/services/PaletteQueries.ts) ──
+  getPaletteByName(name: string): TerrainPalette | undefined { return this.palettes.getPaletteByName(name); }
+  getPaletteOrPresetTerrains(name: string): TerrainColor[] { return this.palettes.getPaletteOrPresetTerrains(name); }
+  getPaletteOrPresetKind(name: string): MapKind { return this.palettes.getPaletteOrPresetKind(name); }
+  getPathTypes(paletteName: string | undefined): PathType[] { return this.palettes.getPathTypes(paletteName); }
+  mapPaletteName(mapName: string | undefined): string { return this.palettes.mapPaletteName(mapName); }
+  getMapPathTypes(mapName: string | undefined): PathType[] { return this.palettes.getMapPathTypes(mapName); }
+  mapsOnPalette(paletteName: string): MapData[] { return this.palettes.mapsOnPalette(paletteName); }
+  installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> { return this.palettes.installPalettePreset(presetName, asName, opts); }
+  childPaletteFor(parentMap: string): string { return this.palettes.childPaletteFor(parentMap); }
+  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined { return this.palettes.submapDefaultFor(parentMap, terrain); }
+  saveSubmapDefault(parentMap: string, terrain: string, set: SubmapDefault, clear: (keyof SubmapDefault)[]): Promise<void> { return this.palettes.saveSubmapDefault(parentMap, terrain, set, clear); }
+  missingDefaultPalettes(): string[] { return this.palettes.missingDefaultPalettes(); }
+  addDefaultPalettes(): Promise<string[]> { return this.palettes.addDefaultPalettes(); }
+  ensurePaletteInstalled(name: string): Promise<void> { return this.palettes.ensurePaletteInstalled(name); }
+  getMapPalette(mapName: string): TerrainColor[] { return this.palettes.getMapPalette(mapName); }
   getAllTerrains(): TerrainColor[] { return this.palettes.getAllTerrains(); }
 
-  getOrCreateMap(name: string): MapData { return this.maps.getOrCreateMap(name); }
+  // ── Hex, region and faction notes (src/services/HexNotesService.ts) ──
+  isHexFile(file: TFile): boolean { return this.hexNotes.isHexFile(file); }
+  hexPath(x: number, y: number, mapName: string): string { return this.hexNotes.hexPath(x, y, mapName); }
+  setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> { return this.hexNotes.setHexName(mapName, x, y, raw); }
+  hexCoordAlias(mapName: string, x: number | string, y: number | string): string { return this.hexNotes.hexCoordAlias(mapName, x, y); }
+  syncMapCoordAliases(mapName: string, oldLabel: string): Promise<void> { return this.hexNotes.syncMapCoordAliases(mapName, oldLabel); }
+  createHexNote(x: number, y: number, mapName: string, preloadedTemplate?: string, terrain?: string): Promise<TFile | null> { return this.hexNotes.createHexNote(x, y, mapName, preloadedTemplate, terrain); }
+  appendToHexSection(x: number, y: number, mapName: string, section: string, text: string): Promise<void> { return this.hexNotes.appendToHexSection(x, y, mapName, section, text); }
+  hexMapDataView(mapName: string, x: number, y: number): HexMapDataView { return this.hexNotes.hexMapDataView(mapName, x, y); }
+  refreshHexMapData(mapName: string, x: number, y: number, insert = false): Promise<boolean> { return this.hexNotes.refreshHexMapData(mapName, x, y, insert); }
+  syncHexMapData(mapName: string, x: number, y: number, opts: { insert?: boolean; quiet?: boolean } = {}): Promise<CalloutSyncResult> { return this.hexNotes.syncHexMapData(mapName, x, y, opts); }
+  addMapDataToHexNotes(mapName: string): Promise<number> { return this.hexNotes.addMapDataToHexNotes(mapName); }
+  regionOrFactionKind(file: TFile): "region" | "faction" | null { return this.hexNotes.regionOrFactionKind(file); }
+  regionAndFactionNotes(): TFile[] { return this.hexNotes.regionAndFactionNotes(); }
+  regionMapDataView(file: TFile, kind: "region" | "faction"): RegionMapDataView { return this.hexNotes.regionMapDataView(file, kind); }
+  refreshRegionMapData(file: TFile, insert = false): Promise<boolean> { return this.hexNotes.refreshRegionMapData(file, insert); }
+  updateRegionFactionMapData(): Promise<number> { return this.hexNotes.updateRegionFactionMapData(); }
+  renameRegionInMaps(oldName: string, newName: string): number { return this.hexNotes.renameRegionInMaps(oldName, newName); }
+  updateTokenMapReferences(oldName: string, newName: string): Promise<number> { return this.hexNotes.updateTokenMapReferences(oldName, newName); }
+  generateHexNotesAt(mapName: string, cells: [string, string][], onProgress?: (done: number) => void): Promise<number> { return this.hexNotes.generateHexNotesAt(mapName, cells, onProgress); }
+  generateHexNotes(mapName: string, xs: number[], ys: number[], onProgress?: (done: number) => void, terrainAt?: Map<string, string>): Promise<number> { return this.hexNotes.generateHexNotes(mapName, xs, ys, onProgress, terrainAt); }
+  hexLinkAlias(hexPath: string): string { return this.hexNotes.hexLinkAlias(hexPath); }
+
+  // ── Note templates (src/services/TemplatesService.ts) ──
+  isLinkableNote(file: TFile, purpose: NotePickPurpose = "link"): boolean { return this.templates.isLinkableNote(file, purpose); }
+  loadHexTemplate(): Promise<string> { return this.templates.loadHexTemplate(); }
+  templatesFolder(): string { return this.templates.templatesFolder(); }
+  ensureTemplates(): Promise<void> { return this.templates.ensureTemplates(); }
+  openNoteTemplate(path: string): Promise<void> { return this.templates.openNoteTemplate(path); }
+  newLinkedNoteContent(section: string, title: string, fromHex?: string): Promise<string> { return this.templates.newLinkedNoteContent(section, title, fromHex); }
+  withHexLocation(content: string, hexPath: string): string { return this.templates.withHexLocation(content, hexPath); }
+  ensureHexTemplate(): Promise<void> { return this.templates.ensureHexTemplate(); }
+
+  // ── Terrain and area tables (src/services/TerrainTablesService.ts) ──
+  filterTableFiles(files: TFile[], filterKey: "roll-filter" | "encounter-filter", excludedFolders: string[]): TFile[] { return this.terrainTables.filterTableFiles(files, filterKey, excludedFolders); }
+  buildRollerLink(): string { return this.terrainTables.buildRollerLink(); }
+  ensureRollerLink(filePath: string): Promise<boolean> { return this.terrainTables.ensureRollerLink(filePath); }
+  installShippedTables(kinds: readonly string[] = [...enabledKinds(this.settings)]): Promise<string[]> { return this.terrainTables.installShippedTables(kinds); }
+  ensureAllRollerLinks(): Promise<void> { return this.terrainTables.ensureAllRollerLinks(); }
+  ensureTerrainTables(terrains: TerrainColor[] = terrainsForTables(this.settings.terrainPalettes, enabledKinds(this.settings)), kinds: Iterable<string> = enabledKinds(this.settings)): Promise<void> { return this.terrainTables.ensureTerrainTables(terrains, kinds); }
+  tableTerrains(): TerrainColor[] { return this.terrainTables.tableTerrains(); }
+  ensureTablesForNewTerrains(): Promise<void> { return this.terrainTables.ensureTablesForNewTerrains(); }
+  backfillTerrainLinks(): Promise<void> { return this.terrainTables.backfillTerrainLinks(); }
+  hasTerrainEncounterTable(terrain: string): boolean { return this.terrainTables.hasTerrainEncounterTable(terrain); }
+  terrainEncounterTable(terrain: string): TFile | null { return this.terrainTables.terrainEncounterTable(terrain); }
+  terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null { return this.terrainTables.terrainEncounterLinkFor(mapName, x, y, sourcePath); }
+  areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null { return this.terrainTables.areaEncounterTableFor(mapName, x, y); }
+  syncHexEncounterTableLink(hexFilePath: string, terrain: string | null): Promise<void> { return this.terrainTables.syncHexEncounterTableLink(hexFilePath, terrain); }
+  refreshAllTerrainEncounterLinks(): Promise<void> { return this.terrainTables.refreshAllTerrainEncounterLinks(); }
+  ensureRegionTable(regionName: string): Promise<void> { return this.terrainTables.ensureRegionTable(regionName); }
+  syncHexRegionTableLink(hexFilePath: string, regionName: string | null): Promise<void> { return this.terrainTables.syncHexRegionTableLink(hexFilePath, regionName); }
+  backfillRegionLinks(): Promise<void> { return this.terrainTables.backfillRegionLinks(); }
+  renameTerrainInHexes(oldName: string, newName: string, paletteName?: string): Promise<Map<string, string>> { return this.terrainTables.renameTerrainInHexes(oldName, newName, paletteName); }
+  renameTerrain(entry: TerrainColor, newName: string): Promise<void> { return this.terrainTables.renameTerrain(entry, newName); }
+  terrainTableFiles(name: string): TFile[] { return this.terrainTables.terrainTableFiles(name); }
+  renameTerrainEverywhere(paletteName: string, oldName: string, newName: string): Promise<string | null> { return this.terrainTables.renameTerrainEverywhere(paletteName, oldName, newName); }
 }

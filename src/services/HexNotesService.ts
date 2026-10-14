@@ -44,6 +44,11 @@ export class HexNotesService {
       : `${mapName}/${x}_${y}.md`;
   }
 
+  /**
+   * Name (or rename, or with "" unname) a hex. The name lives in the map
+   * note; a hex that has a note also gets it as an alias, replacing the
+   * previous name's alias and keeping any the user added.
+   */
   async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
     const key = `${x}_${y}`;
     const name = cleanHexName(raw);
