@@ -324,17 +324,17 @@ async function freshExtra(ctx) {
     await new Promise((r2) => setTimeout(r2, 1500));
     const files = [...new Set(window.__smoke.writes.filter((w) => w.t >= t && /\.md$/.test(w.path)).map((w) => w.path))];
     const note = p.mapStore.notePath(res.name);
-    // First hex note: links its map note, carries no map data.
+    // First hex note: links its map note; its terrain is a copy of the map's (hex-note properties, MG4).
     await p.createHexNote(1, 1, res.name);
     const hexPath = p.hexPath(1, 1, res.name);
     const text = (await app.vault.adapter.exists(hexPath)) ? await app.vault.adapter.read(hexPath) : null;
-    return { map: res.name, files, note, hexPath, hasLink: !!text && /^map:\s*"\[\[_/m.test(text), hasTerrain: !!text && /^terrain\s*:/m.test(text) };
+    return { map: res.name, files, note, hexPath, hasLink: !!text && /^map:\s*"\[\[_/m.test(text), terrainProp: text ? (/^terrain\s*:\s*"?([^"\r\n]*)"?\s*$/m.exec(text)?.[1] ?? null) : null, terrain: terr[0] };
   })(), ctx.pluginId);
   if (r.error) out.push({ check: "F1-create-paint", ok: false, detail: r.error });
   else {
     const others = r.files.filter((f) => f !== r.note);
     out.push({ check: "F1-create-paint", ok: r.files.includes(r.note) && others.length === 0, detail: `wrote ${r.files.join(", ") || "(nothing)"}` });
-    out.push({ check: "F1-first-hex-note", ok: r.hasLink && !r.hasTerrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain key ${r.hasTerrain}` });
+    out.push({ check: "F1-first-hex-note", ok: r.hasLink && r.terrainProp === r.terrain, detail: `${r.hexPath}: map link ${r.hasLink}, terrain property ${r.terrainProp} (map: ${r.terrain})` });
   }
   out.push(...(await wizardMapStepChecks(ctx)));
   return out;

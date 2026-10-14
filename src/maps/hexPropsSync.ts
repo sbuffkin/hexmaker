@@ -268,12 +268,10 @@ export class HexPropsSync {
     if (imported.length) {
       await this.importEdits(map, key, path, plan.imports, refused);
       want = propsOf(store.get(map, key));
-    }
-    const active = this.isActive(path);
-    if (active && imported.length) {
-      // In the editor: the map has what was typed; the note isn't rewritten
-      // under the cursor. Remembered as typed, so leaving it puts the map's
-      // spelling back; a refused edit stays an edit until then.
+      // The edit is taken: remembered as typed at once, so a later sync
+      // (after an undo, or when the write below has to wait) reads the
+      // note as a stale copy, never as the same edit again. A refused
+      // edit stays an edit (put back below, or when the note is left).
       const shown: HexProps = { ...(base ?? {}) };
       for (const f of imported) {
         if (refused.some((r) => r.field === f)) continue;
@@ -281,6 +279,11 @@ export class HexPropsSync {
       }
       this.rememberShown(path, shown);
       this.markSeen(map, key, want);
+    }
+    const active = this.isActive(path);
+    if (active && imported.length) {
+      // In the editor: the map has what was typed; the note isn't rewritten
+      // under the cursor. Leaving it puts the map's spelling back.
       if (refused.length) this.held.add(path); else this.held.delete(path);
       return;
     }

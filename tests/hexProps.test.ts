@@ -240,6 +240,20 @@ describe("hex-note properties sync: notes → map", () => {
 		expect(fm(r, P12)?.terrain).toBe("ocean");
 	});
 
+	it("an edit taken while the note changes under the write is never taken twice (undo right after stays undone)", async () => {
+		const r = await rig(oldVault());
+		// The encounter-table link lands in the note's body between the read and the write (smoke real-data).
+		r.host.syncHexEncounterTableLink = async (path: string) => { r.vault.files.set(path, r.vault.files.get(path)! + "\n- [[forest]]\n"); };
+		edit(r, P12, (t) => t.replace("terrain: ocean", "terrain: forest"));
+		await r.sync.flush();
+		expect(r.store.get("coast", "1_2")?.terrain).toBe("Forest");
+		r.host.undone();
+		await r.sync.flush();
+		await r.sync.flush();
+		expect(r.store.get("coast", "1_2")?.terrain).toBe("ocean");
+		expect(fm(r, P12)?.terrain).toBe("ocean");
+	});
+
 	it("area (and the old region key), icon and name edits go to the map", async () => {
 		const r = await rig(oldVault());
 		edit(r, P34, (t) => t.replace("area: Basin", "region: Dustbowl").replace("icon: castle.png", "icon: Tower.png"));
