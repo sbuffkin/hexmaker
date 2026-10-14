@@ -1,4 +1,4 @@
-import { Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
+import { Notice, Plugin, TFile, TFolder } from "obsidian";
 import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade, type NoticeLink } from "./ui/notify";
 import { HexMapView } from "./hex-map/HexMapView";
 import { SANDBOX_MARKER } from "./sandbox";
@@ -52,7 +52,6 @@ import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons
 import { shippedTablesToInstall } from "./random-tables/shippedTables";
 import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
-import { parseWorkflow, buildWorkflowContent } from "./random-tables/workflow";
 import type {
   HexmakerPluginSettings,
   MapData,
@@ -108,7 +107,7 @@ import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from "./maps/hexNames";
 import { HexPropsSync } from "./maps/hexPropsSync";
-import { registerHexPropsEvents } from "./plugin/hexPropsEvents";
+import { registerVaultEvents } from "./plugin/vaultEvents";
 import { registerCommands, registerEditorMenu } from "./plugin/commands";
 import { registerProtocolHandlers } from "./plugin/protocolHandlers";
 import {
@@ -215,9 +214,8 @@ export default class HexmakerPlugin extends Plugin {
     setModeMapLookup((name) => this.getMap(name));
     // The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
     setHandEditListener((name) => this.arrival.lockOnHandEdit(name));
-    // Notes written by this plugin are read from memory until indexed (see frontmatter.ts).
-    this.registerEvent(this.app.metadataCache.on("changed", (file) => clearPendingTerrain(file.path)));
-    registerHexPropsEvents(this, this.hexProps);
+    // One handler per vault / workspace event, in the order they always ran (src/plugin/vaultEvents.ts).
+    registerVaultEvents(this);
     // Defer until vault metadata cache is ready; calling before layout-ready
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
@@ -279,62 +277,6 @@ export default class HexmakerPlugin extends Plugin {
       void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => this.finishStartupUpgrades());
     });
 
-    // Live-refresh the icon list when image files appear in / leave the
-    // icons folder. Without this, icons dropped in via the OS file explorer
-    // needed an Obsidian restart to show up in the pickers (forum report).
-    const isIconFile = (path: string): boolean => {
-      const folder = normalizeFolder(this.settings.iconsFolder ?? "");
-      if (!folder) return false;
-      return (
-        path.startsWith(folder + "/") &&
-        /\.(png|jpg|jpeg|gif|svg|webp)$/i.test(path)
-      );
-    };
-    this.registerEvent(
-      this.app.vault.on("create", (f) => {
-        if (isIconFile(f.path)) this.loadAvailableIcons();
-        this.paletteStore.onModify(f);
-        for (const st of this.moduleStores) st.onCreate?.(f);
-        this.mapStore.onCreate(f);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("delete", (f) => {
-        if (isIconFile(f.path)) this.loadAvailableIcons();
-        this.mapStore.onDelete(f);
-        this.paletteStore.onDelete(f);
-        for (const st of this.moduleStores) st.onDelete?.(f);
-        this.calloutMemory.forget(f.path);
-      }),
-    );
-    this.registerEvent(
-      this.app.vault.on("rename", (f, oldPath) => {
-        if (isIconFile(f.path) || isIconFile(oldPath)) this.loadAvailableIcons();
-        this.paletteStore.onRename(f, oldPath);
-        for (const st of this.moduleStores) st.onRename?.(f, oldPath);
-        this.calloutMemory.rename(oldPath, f.path);
-        if (f instanceof TFile) void this.onRegionNoteRenamed(f, oldPath);
-      }),
-    );
-    // A region or faction note's Map data callout is refreshed when it's opened (R1).
-    this.registerEvent(
-      this.app.workspace.on("file-open", (file) => {
-        if (file && this.regionOrFactionKind(file)) void this.refreshRegionMapData(file);
-        this.onHexNoteFocus(file);
-      }),
-    );
-    // Palette notes edited by hand (or by sync) flow back into the palettes.
-    this.registerEvent(
-      this.app.vault.on("modify", (f) => {
-        this.paletteStore.onModify(f);
-        for (const st of this.moduleStores) st.onModify?.(f);
-        this.mapStore.onModify(f);
-      }),
-    );
-    // A hand-edited palette note's derived cells ("(yes)", "(mountains)")
-    // are refreshed once the user stops editing it.
-    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.paletteStore.flushPendingDerived()));
-
     await this.migrateHexFilesToDefaultRegion();
 
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
@@ -374,78 +316,6 @@ export default class HexmakerPlugin extends Plugin {
 
     // obsidian:// actions: tables, workflows, map and hex links (src/plugin/protocolHandlers.ts).
     registerProtocolHandlers(this);
-
-    // Keep linkedFolder frontmatter in sync when a folder is renamed
-    this.registerEvent(
-      this.app.vault.on("rename", async (abstractFile, oldPath) => {
-        if (!(abstractFile instanceof TFolder)) return;
-        const oldFolder = normalizeFolder(oldPath);
-        const newFolder = normalizeFolder(abstractFile.path);
-        if (oldFolder === newFolder) return;
-
-        const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
-        const tableFiles = this.app.vault
-          .getMarkdownFiles()
-          .filter(
-            (f) => !tablesPrefix || f.path.startsWith(tablesPrefix + "/"),
-          );
-
-        for (const tableFile of tableFiles) {
-          const fm = this.app.metadataCache.getFileCache(tableFile)?.frontmatter;
-          const lf: unknown = fm?.["linkedFolder"] ?? fm?.["linked-folder"];
-          if (!lf || typeof lf !== "string") continue;
-          const wikiLinkMatch = /^\[\[(.+?)\]\]$/.exec(lf);
-          const lfClean = wikiLinkMatch ? wikiLinkMatch[1].trim() : lf;
-          const lfNorm = normalizeFolder(lfClean);
-          if (lfNorm !== oldFolder && !lfNorm.startsWith(oldFolder + "/"))
-            continue;
-          const updatedLf = newFolder + lfNorm.slice(oldFolder.length);
-          await this.app.vault.process(tableFile, (content) =>
-            content.replace(
-              /^((?:linkedFolder|linked-folder):\s*).*$/m,
-              `$1"[[${updatedLf}]]"`,
-            ),
-          );
-        }
-      }),
-    );
-
-    // Remove workflow steps that reference a deleted table file
-    this.registerEvent(
-      this.app.vault.on("delete", async (abstractFile: TAbstractFile) => {
-        if (!(abstractFile instanceof TFile)) return;
-        const tablesPrefix = normalizeFolder(this.settings.tablesFolder);
-        if (tablesPrefix && !abstractFile.path.startsWith(tablesPrefix + "/"))
-          return;
-
-        // The table path stored in workflows has no .md extension
-        const deletedTablePath = abstractFile.path.slice(0, -3);
-
-        const wfPrefix = normalizeFolder(this.settings.workflowsFolder);
-        const templatesPath = wfPrefix ? `${wfPrefix}/templates` : "templates";
-        const workflowFiles = this.app.vault
-          .getMarkdownFiles()
-          .filter(
-            (f) =>
-              (!wfPrefix || f.path.startsWith(wfPrefix + "/")) &&
-              !f.path.startsWith(templatesPath + "/") &&
-              !f.basename.startsWith("_"),
-          );
-
-        for (const wfFile of workflowFiles) {
-          await this.app.vault.process(wfFile, (content) => {
-            const workflow = parseWorkflow(content, wfFile.basename);
-            const filtered = workflow.steps.filter(
-              (s) => s.tablePath !== deletedTablePath,
-            );
-            if (filtered.length === workflow.steps.length) return content;
-            workflow.steps = filtered;
-            // Everything else in the note (other columns, text after the table) stays.
-            return buildWorkflowContent(workflow, { existing: content });
-          });
-        }
-      }),
-    );
   }
 
   onunload() {
@@ -1796,31 +1666,6 @@ export default class HexmakerPlugin extends Plugin {
     await this.app.vault.process(file, (content) => appendSectionText(content, section, text));
   }
 
-  /** Read the hex template once (used by bulk generation to avoid N redundant reads). */
-  /** The hex note last opened in an editor (its callout is synced when another file opens). */
-  private focusedHexNote: string | null = null;
-
-  /**
-   * A file opened in an editor: a hex note left behind has its Map data
-   * callout synced (hand edits made in it go to the map), and a hex note
-   * being opened gets its callout brought up to date before it's edited.
-   * Not while the user is still in the note: rewriting it mid-typing would
-   * fight the editor.
-   */
-  private onHexNoteFocus(file: TFile | null): void {
-    const sync = (path: string) => {
-      const loc = this.mapStore.isReady() ? this.mapStore.resolve(path) : null;
-      if (!loc || !this.getMap(loc.map)) return;
-      const [x, y] = loc.key.split("_").map(Number);
-      void this.syncHexMapData(loc.map, x, y);
-    };
-    const prev = this.focusedHexNote;
-    const next = file && this.mapStore.isReady() && this.mapStore.resolve(file.path) ? file.path : null;
-    if (prev && prev !== file?.path) sync(prev);
-    if (next && next !== prev) sync(next);
-    this.focusedHexNote = next;
-  }
-
   /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
   hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
     const h = this.mapStore.get(mapName, `${x}_${y}`) ?? {};
@@ -1971,29 +1816,6 @@ export default class HexmakerPlugin extends Plugin {
    */
   renameRegionInMaps(oldName: string, newName: string): number {
     return renameRegionInStore(this.mapStore, this.settings.maps.map((m) => m.name), oldName, newName);
-  }
-
-  /**
-   * A note in the regions folder was renamed (R2): its hexes keep their
-   * region, and its encounter table follows the name (unless the new name
-   * already has one).
-   */
-  private async onRegionNoteRenamed(file: TFile, oldPath: string): Promise<void> {
-    const folder = normalizeFolder(this.settings.regionsFolder ?? "");
-    if (!folder || !oldPath.startsWith(folder + "/") || !/\.md$/i.test(oldPath)) return;
-    const oldName = oldPath.slice(oldPath.lastIndexOf("/") + 1).replace(/\.md$/i, "");
-    const newName = file.basename;
-    if (oldName === newName || oldName.startsWith("_") || !this.mapStore.isReady()) return;
-    const n = this.renameRegionInMaps(oldName, newName);
-    const tables = normalizeFolder(this.settings.tablesFolder);
-    const sub = tables ? `${tables}/regions` : "regions";
-    const table = this.app.vault.getAbstractFileByPath(`${sub}/${oldName}.md`);
-    if (table instanceof TFile && !this.app.vault.getAbstractFileByPath(`${sub}/${newName}.md`)) {
-      try {
-        await this.app.fileManager.renameFile(table, `${sub}/${newName}.md`);
-      } catch { /* the hexes still keep their region */ }
-    }
-    if (n) new Notice(`Region renamed: ${n} hex${n === 1 ? "" : "es"} now in "${newName}".`);
   }
 
   /** A map was renamed: tokens placed on it (`token-map`) follow. Returns how many notes changed. */
