@@ -8,13 +8,10 @@
  * is World maps module code (core may not import it: tests/moduleBoundary),
  * and BiomeStore, not the plugin, feeds it as biome notes load.
  *
- * bindPorts(plugin) wires all of them in one place, in the order
- * HexmakerPlugin.onload sets them today; resetPorts() puts every port back
- * to its module default (for onunload and tests).
- *
- * NOT YET USED by the plugin: onload still calls the setters itself. The
- * plugin lane (plan-architecture-refactor L1) switches onload to
- * bindPorts(this) and onunload to resetPorts().
+ * bindPorts(plugin) wires all of them in one place; HexmakerPlugin.onload
+ * calls it (in the order onload used to set them itself). resetPorts() puts
+ * every port back to its module default (for tests; onunload doesn't call
+ * it yet, as the plugin never did).
  */
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { setIconPackDefault } from "./HexmakerModal";

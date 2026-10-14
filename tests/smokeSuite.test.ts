@@ -104,7 +104,7 @@ describe("smoke suite findings stay fixed", () => {
 
   it("C5: startup saves wait for the map notes to load", () => {
     const src = readSurface("plugin");
-    expect(src).toMatch(/rangesDone = storesReady\.then\(\(\) => upgradeTableRangesOnce\(this\)\);/);
+    expect(src).toMatch(/rangesDone = storesReady\.then\(\(\) => upgradeTableRangesOnce\(plugin\)\);/);
   });
 });
 

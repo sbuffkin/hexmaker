@@ -97,7 +97,8 @@ describe("F2: upgrade notices at start-up are one notice, in order", () => {
 	it("the plugin batches its start-up upgrades and shows them once they're all done", () => {
 		const plugin = readSurface("plugin");
 		expect(plugin).toContain("beginNoticeBatch();");
-		expect(plugin).toMatch(/Promise\.allSettled\(\[storesReady, formatsDone, registered, rangesDone\]\)\.then\(\(\) => this\.finishStartupUpgrades\(\)\)/);
+		expect(plugin).toMatch(/Promise\.allSettled\(\[storesReady, formatsDone, registered, rangesDone\]\)\.then\(\(\) => finish\(\)\)/);
+		expect(plugin).toMatch(/startOnLayoutReady\(this, this\.newerData, \(\) => this\.finishStartupUpgrades\(\)\)/);
 		// MG1: once done, the upgrade note is written, then the one notice links it.
 		expect(plugin).toMatch(/private async finishStartupUpgrades[\s\S]*?writeUpgradeNote[\s\S]*?endNoticeBatch\(link\)/);
 	});

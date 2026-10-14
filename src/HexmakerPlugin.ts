@@ -1,7 +1,6 @@
 import { Notice, Plugin, TFile, TFolder } from "obsidian";
-import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade, type NoticeLink } from "./ui/notify";
+import { closeNoticeBatch, endNoticeBatch, noticeUpgrade, type NoticeLink } from "./ui/notify";
 import { HexMapView } from "./hex-map/HexMapView";
-import { SANDBOX_MARKER } from "./sandbox";
 import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
@@ -9,7 +8,7 @@ import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
 import { fillLegacyPathTypes } from "./migrations/v1.5-path-types-explicit";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { processTableNote, TableStore } from "./random-tables/TableStore";
+import { processTableNote } from "./random-tables/TableStore";
 import {
   DEFAULT_PALETTE_NAME,
   DEFAULT_PATH_TYPES,
@@ -25,32 +24,29 @@ import { SetupWizardView } from "./SetupWizardView";
 import type { BiomeStore } from "./overworld/BiomeStore";
 import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
-import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
+import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
 import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
 import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
-import { setPathEditMapLookup } from "./paths/editGate";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
 import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
-import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault, setPaletteTerrainSource } from "./palettes/paletteOptions";
+import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
 import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
-import { setNumberBoxDebug } from "./ui/numberBoxes";
 import {
   getPreset,
   presetToPalette,
   uniquePaletteName,
 } from "./palettes/presets";
 import { clonePathTypes } from "./palettes/pathTypeTable";
-import { normalizeFolder, makeTableTemplate, slugify, defaultIconPack, sortIcons } from "./utils";
+import { normalizeFolder, makeTableTemplate, slugify, sortIcons } from "./utils";
 import { shippedTablesToInstall } from "./random-tables/shippedTables";
-import { setIconPackDefault } from "./HexmakerModal";
 import { BUNDLED_ICONS } from "./bundledIcons";
 import type {
   HexmakerPluginSettings,
@@ -63,9 +59,8 @@ import type {
 import DEFAULT_HEX_TEMPLATE from "./defaultHexTemplate.md";
 import { migrateMapData, pluginVersion } from "./compat";
 import { writeJsonBackup } from "./backup";
-import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, setHexDataSource, tokenMapValue } from "./frontmatter";
+import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain, tokenMapValue } from "./frontmatter";
 import { MapStore, withoutNotePaths } from "./maps/MapStore";
-import { setHandEditListener, setModeMapLookup } from "./modeGate";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
@@ -93,21 +88,21 @@ import type { RegionSettings } from "./types";
 import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
-import { recordMigrationRun, runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
+import { recordMigrationRun, runSettingsMigrations } from "./migrations/registry";
 import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
 import { takeUpgradeReport } from "./migrations/upgradeReport";
 import type { NoteRewrite } from "./migrations/noteRewrites";
 import { writeUpgradeNote } from "./migrations/upgradeNote";
 import changelog from "../CHANGELOG.md";
-import { migrate as migrateFlatHexNotes } from "./migrations/v1.0-flat-hex-notes-to-default-map";
 import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
-import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
 import { cleanHexName, coordAlias, swapMapCoordAliases, syncHexAliases } from "./maps/hexNames";
 import { HexPropsSync } from "./maps/hexPropsSync";
 import { registerVaultEvents } from "./plugin/vaultEvents";
+import { bindPorts } from "./ports";
+import { migrateHexFilesToDefaultRegion, startOnLayoutReady } from "./plugin/startup";
 import { registerCommands, registerEditorMenu } from "./plugin/commands";
 import { registerProtocolHandlers } from "./plugin/protocolHandlers";
 import {
@@ -203,81 +198,15 @@ export default class HexmakerPlugin extends Plugin {
     // note adds while Obsidian was closed get their tables once the notes
     // are read (HG5).
     this.tableTerrainNames = new Set(this.tableTerrains().map((t) => t.name));
-    // Icon pickers open on the Space tab for space-only setups.
-    setIconPackDefault(() => defaultIconPack(this.settings));
-    // Number boxes beside sliders follow debug mode (src/ui/numberBoxes.ts).
-    setNumberBoxDebug(() => isDebugMode(this.app));
-    // Palette pickers preview the picked palette's terrains (E4).
-    setPaletteTerrainSource((name) => this.getPaletteOrPresetTerrains(name));
-    setHexDataSource(this.mapStore);
-    setPathEditMapLookup((name) => this.getMap(name));
-    setModeMapLookup((name) => this.getMap(name));
-    // The first hand edit of a new (open) place locks it (ArrivalService.lockOnHandEdit).
-    setHandEditListener((name) => this.arrival.lockOnHandEdit(name));
+    // The module-level ports (icon pickers, number boxes, palette previews,
+    // hex data, the work-mode gates): src/ports.ts, same order as ever.
+    bindPorts(this);
     // One handler per vault / workspace event, in the order they always ran (src/plugin/vaultEvents.ts).
     registerVaultEvents(this);
-    // Defer until vault metadata cache is ready; calling before layout-ready
-    // returns null for all vault paths so custom icons are silently dropped.
-    this.app.workspace.onLayoutReady(() => {
-      this.loadAvailableIcons();
-      // data.json was written by a newer version (its data stamp, MG7): say so, and stay.
-      if (this.newerData) noticeBackground(this.newerData, 0);
-      // The one-time upgrades below report in ONE notice once they're all
-      // done, not a stack over the map's toolbar (fresh-eyes 2026-10-13 F2).
-      beginNoticeBatch();
-      // Palettes first (maps reference them), then map notes — which may
-      // migrate per-hex data out of hex notes on the first run.
-      // Modules' note stores (biomes, world types) start first, as the
-      // biome store always did; then the tables and the core's stores.
-      const storeReady = new Map(this.moduleStores.map((st) => [st, st.init()] as const));
-      const moduleStoresReady = Promise.all(storeReady.values());
-      void this.tableNotes.init();
-      // A fresh install with the setup wizard about to open: the stores'
-      // first writes (palette notes, the placeholder map's note) wait until
-      // the wizard confirms the world folder, or closes, or a map opens, so
-      // nothing appears in a folder the user hasn't agreed to (fresh-eyes F19).
-      const gate = startupWritesWait(this.settings, (p) => !!this.app.vault.getAbstractFileByPath(p));
-      this.startupWritesHeld = gate.held;
-      this.releaseStartupWrites = () => {
-        this.startupWritesHeld = false;
-        gate.release();
-      };
-      // A fresh install has no older palettes to move into notes: its
-      // palettes are simply written, without the "now notes" notice.
-      if (gate.held) this.settings.palettesMigrated = true;
-      const storesReady = gate.wait.then(() => this.paletteStore.init()).then(() => this.mapStore.init());
-      this.storesStarted = storesReady;
-      // Each module's one-time upgrades once its stores and the core's are in
-      // (World maps, BC1: every overworld hex's biome in its Biome column).
-      runAfterStoresReady(this, storesReady, this.moduleStores, storeReady);
-      void storesReady.then(() => this.ensureTablesForNewTerrains());
-      // Terrains renamed in a palette note while Obsidian was closed: offer "Rename everywhere".
-      void storesReady.then(() => this.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
-      // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
-      // generator and modules' notes (world types) in the new note formats (backed up first).
-      const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(this)).catch((e) => console.error("Hexmaker: note format upgrades", e));
-      // Hex-note properties follow the map once the notes are in their new formats (MG4).
-      void formatsDone.then(() => this.hexProps.start());
-      // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.
-      void this.app.vault.adapter.exists(SANDBOX_MARKER).then((sandbox) => {
-        if (!sandbox) return;
-        this.devTools = moduleDevTools(this);
-      });
-      const registered = this.autoRegisterMapsFromVault();
-      // Hand edits to table notes (ranges, die, weights) are imported.
-      TableStore.register(this);
-      let rangesDone: Promise<unknown> = Promise.resolve();
-      if (!this.settings.setupComplete && !this.settings.setupDismissed) {
-        this.openSetupWizard();
-      } else {
-        // Once after updating: add roll ranges to older tables, silently,
-        // after a backup (DJ-Q6). After the stores load, for the same reason.
-        rangesDone = storesReady.then(() => upgradeTableRangesOnce(this));
-      }
-      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => this.finishStartupUpgrades());
-    });
+    // The rest of start-up waits for the layout (src/plugin/startup.ts).
+    this.app.workspace.onLayoutReady(() => startOnLayoutReady(this, this.newerData, () => this.finishStartupUpgrades()));
 
-    await this.migrateHexFilesToDefaultRegion();
+    await migrateHexFilesToDefaultRegion(this);
 
     this.registerView(VIEW_TYPE_SETUP_WIZARD, (leaf) => new SetupWizardView(leaf, this));
     this.registerView(VIEW_TYPE_HEX_MAP, (leaf) => new HexMapView(leaf, this));
@@ -2643,14 +2572,5 @@ export default class HexmakerPlugin extends Plugin {
       this.settings.maps.push(r);
     }
     return r;
-  }
-
-  /** Pre-1.0 hex notes loose in the hexes folder move into the "default" map's folder. */
-  private async migrateHexFilesToDefaultRegion(): Promise<void> {
-    const moved = await migrateFlatHexNotes(this.app, this.settings.hexFolder);
-    if (moved > 0)
-      noticeBackground(
-        `migrated ${moved} hex file(s) to "default" region.`,
-      );
   }
 }
