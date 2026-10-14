@@ -1,18 +1,14 @@
 import { Notice, Plugin, TFile, TFolder } from "obsidian";
-import { closeNoticeBatch, endNoticeBatch, type NoticeLink } from "./ui/notify";
+import { closeNoticeBatch } from "./ui/notify";
 import { HexMapView } from "./hex-map/HexMapView";
 import { HexTableView } from "./hex-table/HexTableView";
 import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
-import { fillLegacyPathTypes } from "./migrations/v1.5-path-types-explicit";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
 import { processTableNote } from "./random-tables/TableStore";
 import {
-  DEFAULT_PALETTE_NAME,
-  DEFAULT_PATH_TYPES,
-  DEFAULT_SETTINGS,
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
@@ -22,17 +18,17 @@ import {
 } from "./constants";
 import { SetupWizardView } from "./SetupWizardView";
 import type { BiomeStore } from "./overworld/BiomeStore";
-import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
+import { planKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
 import { createModuleStores, moduleCommands, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
-import { PaletteStore, palettesOnLoad } from "./palettes/PaletteStore";
+import { PaletteStore } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, newTerrains, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
-import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
+import { enabledKinds, isIconHiddenByKind, newTerrains, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
+import { defaultPaletteFor } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
 import { registry } from "./modules";
@@ -41,7 +37,6 @@ import {
   getPreset,
   presetToPalette,
 } from "./palettes/presets";
-import { clonePathTypes } from "./palettes/pathTypeTable";
 import { normalizeFolder, makeTableTemplate, sortIcons } from "./utils";
 import { shippedTablesToInstall } from "./random-tables/shippedTables";
 import { BUNDLED_ICONS } from "./bundledIcons";
@@ -53,10 +48,9 @@ import type {
   TerrainColor,
   TerrainPalette,
 } from "./types";
-import { migrateMapData, pluginVersion } from "./compat";
 import { writeJsonBackup } from "./backup";
 import { getTerrainFromFile, getHexRegionFromFile, clearPendingTerrain } from "./frontmatter";
-import { MapStore, withoutNotePaths } from "./maps/MapStore";
+import { MapStore } from "./maps/MapStore";
 import { cellEdits, UndoBook } from "./undoBook";
 import type { UndoItem } from "./hex-map/undoItems";
 import { workModeOf, type ModeAction, type WorkMode } from "./workMode";
@@ -70,12 +64,7 @@ import type { RegionSettings } from "./types";
 import { type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { type CalloutSyncResult } from "./maps/calloutSync";
-import { recordMigrationRun, runSettingsMigrations } from "./migrations/registry";
-import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
-import { takeUpgradeReport } from "./migrations/upgradeReport";
 import type { NoteRewrite } from "./migrations/noteRewrites";
-import { writeUpgradeNote } from "./migrations/upgradeNote";
-import changelog from "../CHANGELOG.md";
 import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
 import { type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
@@ -97,7 +86,10 @@ import { MapsService, type NewMapOptions } from "./services/MapsService";
 import { PaletteQueries } from "./services/PaletteQueries";
 import { TemplatesService } from "./services/TemplatesService";
 import { HexNotesService } from "./services/HexNotesService";
+import { SettingsPersistence } from "./plugin/settingsPersistence";
 export default class HexmakerPlugin extends Plugin {
+  /** data.json: load, save, own-write echoes, outside changes (src/plugin/settingsPersistence.ts). */
+  readonly settingsIO = new SettingsPersistence(this, (data) => super.saveData(data));
   /** Hex notes, their Map data callouts, and region / faction notes (src/services/HexNotesService.ts). */
   readonly hexNotes = new HexNotesService(this);
   /** Note templates and which notes pickers offer (src/services/TemplatesService.ts). */
@@ -193,7 +185,7 @@ export default class HexmakerPlugin extends Plugin {
     // One handler per vault / workspace event, in the order they always ran (src/plugin/vaultEvents.ts).
     registerVaultEvents(this);
     // The rest of start-up waits for the layout (src/plugin/startup.ts).
-    this.app.workspace.onLayoutReady(() => startOnLayoutReady(this, this.newerData, () => this.finishStartupUpgrades()));
+    this.app.workspace.onLayoutReady(() => startOnLayoutReady(this, this.settingsIO.newerData, () => this.finishStartupUpgrades()));
 
     await migrateHexFilesToDefaultRegion(this);
 
@@ -303,234 +295,21 @@ export default class HexmakerPlugin extends Plugin {
     void this.app.workspace.getLeaf("tab").setViewState({ type: VIEW_TYPE_SETUP_WIZARD });
   }
 
-  async loadSettings() {
-    // The settings-phase migrations (src/migrations) run on the raw data
-    // BEFORE Object.assign, so a moved key wins over DEFAULT_SETTINGS.
-    // One read only: nothing may await between swapping in the new
-    // settings and handing their maps to the map store (adoptAll below), or a
-    // save in between would see maps without their paths (incident
-    // 2026-10-10). rawData is an untouched copy for the "fresh install?" checks.
-    const loaded = (await this.loadData()) as Record<string, unknown> | null;
-    const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
-    this.onDisk = loaded ? JSON.stringify(loaded) : null;
-    // An existing vault (not a fresh install): the version that last saved it, for the upgrade note.
-    this.upgradeFrom = rawData ? { version: typeof rawData["savedWith"] === "string" ? rawData["savedWith"] : undefined } : null;
-    const data = loaded ?? {};
-    // Written by a newer build (its data stamp is newer than this build knows): say so once loaded.
-    this.newerData = writtenByNewer(data) ? newerDataText(data["savedWith"], dataFormatOf(data)) : null;
-    this.settingsMigrationsRan = runSettingsMigrations(data);
+  loadSettings(): Promise<void> { return this.settingsIO.loadSettings(); }
 
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
-    // The data stamp (src/migrations/stamp.ts): written with the next save, never lowered.
-    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
-    // Own copy: the default is a shared constant, and editors push into lists.
-    // (Kept only as the fallback palettes are filled from; see getPathTypes.)
-    this.settings.pathTypes = clonePathTypes(this.settings.pathTypes ?? DEFAULT_PATH_TYPES);
+  async saveData(data: unknown): Promise<void> { return this.settingsIO.saveData(data); }
 
-    // Deep-clone the maps array so mutations to settings.maps never alias DEFAULT_SETTINGS.maps.
-    // Object.assign does a shallow copy, so on first run (data===null) settings.maps IS
-    // DEFAULT_SETTINGS.maps – pushing/mutating it would corrupt the constant for the session.
-    this.settings.maps = Array.isArray(this.settings.maps)
-      ? this.settings.maps
-      : [];
-
-    this.settings.maps = this.settings.maps.map((r) => migrateMapData(r, DEFAULT_PALETTE_NAME));
-    // Reloaded (onExternalSettingsChange): data.json doesn't hold the paths
-    // of maps whose note does, so the fresh map objects take the store's at
-    // once. Missing paths mean "not loaded", never "no paths".
-    this.mapStore.adoptAll();
-    // Ensure terrainPalettes is valid. An empty list is the user's (every
-    // palette deleted, SM-DEL): it stays empty; "Add default palettes" in
-    // settings puts the defaults back on request.
-    this.settings.terrainPalettes = palettesOnLoad(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes);
-    // PA5: path types saved before every behaviour was an explicit option get
-    // them filled in from the old name rules (once), so no map changes look.
-    // Notes are migrated by PaletteStore on attach.
-    if (!this.settings.pathTypesExplicit) fillLegacyPathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
-    if (!this.settings.hexOrientation) this.settings.hexOrientation = "pointy";
-    if (!this.settings.tablesFolder)
-      this.settings.tablesFolder = "world/tables";
-    if (!this.settings.defaultTableDice) this.settings.defaultTableDice = 100;
-    if (this.settings.questsFolder === undefined)
-      this.settings.questsFolder = "";
-    if (this.settings.featuresFolder === undefined)
-      this.settings.featuresFolder = "";
-    if (this.settings.factionsFolder === undefined)
-      this.settings.factionsFolder = "";
-    if (this.settings.hexEditorTerrainCollapsed === undefined)
-      this.settings.hexEditorTerrainCollapsed = false;
-    if (this.settings.hexEditorFeaturesCollapsed === undefined)
-      this.settings.hexEditorFeaturesCollapsed = false;
-    if (this.settings.hexEditorNotesCollapsed === undefined)
-      this.settings.hexEditorNotesCollapsed = false;
-    if (!Array.isArray(this.settings.rollTableExcludedFolders))
-      this.settings.rollTableExcludedFolders = ["terrain"];
-    if (!Array.isArray(this.settings.encounterTableExcludedFolders))
-      this.settings.encounterTableExcludedFolders = ["terrain"];
-    if (!this.settings.defaultMap) {
-      this.settings.defaultMap = this.settings.maps[0]?.name ?? "default";
-    }
-    // Own copy (never alias DEFAULT_SETTINGS). Read from the raw data: unset
-    // (new install / older data) = world, plus space if a palette has space
-    // terrains already.
-    this.settings.mapKinds = resolveMapKinds(data["mapKinds"], this.settings.terrainPalettes);
-    // Shipped content per map type (SP3): an update has its types' content
-    // already; a fresh install writes none until its setup picks the types.
-    // Setup over without a pick: inferred, nothing installed (saved with the next save).
-    this.settings.kindContent = inferKindContent({ ...this.settings, kindContent: resolveKindContent(rawData, this.settings.mapKinds) });
-    // New maps default to Expanded on fresh installs only (GEN1): decided
-    // once from the raw data, and saved with it.
-    this.settings.expandedByDefault = resolveExpandedDefault(rawData);
-    const firstExpanded = typeof rawData?.["expandedByDefault"] !== "boolean";
-    // "Palette for new maps": seeded once from the above, then the user's.
-    this.settings.defaultPalette = resolveDefaultPalette(rawData);
-    const firstDefaultPalette = typeof rawData?.["defaultPalette"] !== "string";
-    const firstKindContent = rawData?.["kindContent"] === undefined;
-    if (firstKindContent || firstExpanded || firstDefaultPalette) await this.saveData(this.settings);
-  }
-
-  /**
-   * Settings go to data.json without the paths of maps whose note holds them
-   * (MapStore.holdsPaths): each map's roads and rivers live only in its map
-   * note, which a person can read and edit. Maps not yet in a note keep them.
-   */
-  async saveData(data: unknown): Promise<void> {
-    const ready = !!this.mapStore?.isReady();
-    const out = data !== this.settings ? data : withoutNotePaths(this.settings, (name) => ready && this.mapStore.holdsPaths(name));
-    // Same as what data.json holds (last loaded or written): don't touch the
-    // file. Startup saves that change nothing then leave it alone (smoke C5).
-    let text: string | null = null;
-    try { text = JSON.stringify(out); } catch { /* not JSON-able: write it */ }
-    if (text !== null && text === this.onDisk) return;
-    this.rememberWrite(out);
-    await super.saveData(out);
-    this.onDisk = text;
-  }
-
-  /** Set when data.json was written by a newer build: the notice to show (see stamp.ts). */
-  private newerData: string | null = null;
-  /** Settings-phase migrations that changed data.json on this load (recorded once settings exist). */
-  private settingsMigrationsRan: string[] = [];
-  /** Set for an existing vault: the version that last saved data.json (null: a fresh install). */
-  private upgradeFrom: { version: string | undefined } | null = null;
-
-  /**
-   * After the start-up upgrades (MG1): record which migrations changed the
-   * vault (data.json's migrationsRun), write the "Hexmaker upgrade <date>"
-   * note when an existing vault was upgraded, and show the one combined
-   * notice, linking the note. A fresh install gets no note.
-   */
-  private async finishStartupUpgrades(): Promise<void> {
-    const entries = takeUpgradeReport();
-    let recorded = false;
-    for (const id of [...this.settingsMigrationsRan, ...entries.flatMap((e) => e.ids ?? [])]) {
-      if (recordMigrationRun(this.settings, id)) recorded = true;
-    }
-    this.settingsMigrationsRan = [];
-    let link: NoticeLink | undefined;
-    const now = pluginVersion(this);
-    const upgraded = !!this.upgradeFrom && entries.length > 0 && (entries.some((e) => e.ids?.length) || this.upgradeFrom.version !== now);
-    if (upgraded) {
-      try {
-        const path = await writeUpgradeNote(this.app, normalizeFolder(this.settings.worldFolder ?? ""), {
-          date: new Date(),
-          from: this.upgradeFrom?.version,
-          to: now,
-          entries,
-          backupsFolder: this.backupsFolder(),
-          changelog,
-          pluginName: this.manifest.name ?? "Hexmap World Creator",
-        });
-        const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
-        link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
-      } catch (e) {
-        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
-      }
-    }
-    endNoticeBatch(link);
-    // Only data.json: the record must not make a fresh install write notes (F19).
-    if (recorded && this.upgradeFrom) await this.saveData(this.settings);
-  }
+  private finishStartupUpgrades(): Promise<void> { return this.settingsIO.finishStartupUpgrades(); }
 
   /** The plugin's backups folder (vault-relative, under the config folder). */
   backupsFolder(): string {
     return `${this.manifest.dir ?? ""}/backups`;
   }
 
-  /** Open a vault note in a new tab. */
-  private async openVaultNote(path: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
-  }
 
-  /** data.json's content as last loaded or written by this session (compact JSON). */
-  private onDisk: string | null = null;
+  saveSettings(): Promise<void> { return this.settingsIO.saveSettings(); }
 
-  /** What we wrote to data.json lately (compact JSON), to tell our own writes from outside changes. */
-  private recentWrites: string[] = [];
-
-  private rememberWrite(data: unknown): void {
-    try {
-      this.recentWrites.push(JSON.stringify(data));
-      if (this.recentWrites.length > 20) this.recentWrites.shift();
-    } catch { /* not JSON-able: never matches */ }
-  }
-
-  /** data.json holds exactly something this session wrote (an echo of our own save). */
-  private isOwnWrite(disk: unknown): boolean {
-    if (disk === null || disk === undefined) return false;
-    const text = JSON.stringify(disk);
-    return this.recentWrites.includes(text);
-  }
-
-  async saveSettings() {
-    this.settings.savedWith = pluginVersion(this);
-    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
-    // The setup just finished or was turned off without picking map types
-    // (e.g. "Don't show again", a recipe): record its types, install nothing.
-    this.settings.kindContent = inferKindContent(this.settings);
-    await this.saveData(this.settings);
-    // Mirror palette edits (from any editor) into the palette notes.
-    void this.paletteStore.sync();
-    // A terrain added anywhere (palette editor, terrain editor, a new or
-    // imported palette) gets its empty tables (HG5).
-    void this.ensureTablesForNewTerrains();
-    void this.mapStore.sync();
-    // Settings hold map-level state (paths, palette, grid size, overlays).
-    // A save made from one view/window leaves sibling map views stale —
-    // flag them so they re-render on next activation (issue #32). The
-    // active map view (the one making the change) is skipped inside
-    // markStaleFromExternal.
-    this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP).forEach((leaf) => {
-      if (leaf.view instanceof HexMapView) leaf.view.markStaleFromExternal();
-    });
-  }
-
-  // Called by Obsidian Sync when it delivers a new data.json from another device.
-  // Reloads settings into memory and refreshes all open views so the user sees
-  // the synced state without a manual Obsidian restart.
-  async onExternalSettingsChange(): Promise<void> {
-    // Obsidian also fires this for our own saves when several land close
-    // together (its watcher sees a write it hasn't recorded yet). Reloading
-    // our own data would at best do nothing and at worst roll back changes
-    // made since that save, so ignore anything we wrote ourselves.
-    const disk = (await this.loadData()) as unknown;
-    if (this.isOwnWrite(disk)) {
-      this.onDisk = JSON.stringify(disk);
-      return;
-    }
-    await this.loadSettings();
-    // Map notes hold paths and map settings; the new data.json doesn't win.
-    // Queued before any sync, so nothing writes the bare copy over a note.
-    void this.mapStore.reloadFromNotes();
-    // data.json carries a cached copy of the palettes; the notes win.
-    await this.paletteStore.reload();
-    this.loadAvailableIcons();
-    this.refreshHexMap();
-    this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE).forEach((leaf) => {
-      if (leaf.view instanceof HexTableView) void leaf.view.loadTable();
-    });
-  }
+  onExternalSettingsChange(): Promise<void> { return this.settingsIO.onExternalSettingsChange(); }
 
   /**
    * Filter a list of table files using a two-tier system:
