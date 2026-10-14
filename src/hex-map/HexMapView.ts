@@ -49,8 +49,8 @@ import { coordHaloColor } from "../coordStyle";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type ShadowRef } from "./ghostPaths";
 import { drawGhostPaths } from "./ghostPathsSvg";
 import { watchBiomesPathHover } from "./biomesPathHover";
-import { fitToSafeArea, mayAutoPan, overlayInsets, revealDelta, unionBoxes, usableInsets, zoomForHexWidth, NO_INSETS, type Box, type Insets } from "./safeArea";
-import { wheelZoomLog, wheelZoomsMap } from "./wheelZoom";
+import { mayAutoPan, revealDelta, usableInsets } from "./safeArea";
+import { wheelZoomsMap } from "./wheelZoom";
 import { groupSize, pickTokenFill, tokenCoordShift, tokenGroupOffsets, tokenNamePlacement, tokenNameSide } from "./tokenDefaults";
 import { markVisited, parseVisited, partyClick, unmarkVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
@@ -116,6 +116,7 @@ import { PainterContextMenu, type PainterContextMenuOption } from "./PainterCont
 
 import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./view/undoGroup";
 import { BackgroundCalibration } from "./view/backgroundCalibration";
+import { MapViewport } from "./view/mapViewport";
 import type { CalibrateSnapshot, FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry, TerrainUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
 function nullOverrides(paths: string[]): Map<string, null> {
@@ -163,10 +164,8 @@ interface PathLayerCalibration {
 
 export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
-  private zoom = 1;
-  private panX = 0;
-  private panY = 0;
-  private zoomSettleTimer: number | null = null;
+  /** Pan / zoom (view/mapViewport.ts). */
+  private viewport: MapViewport;
   // Coord labels are created only for on-screen hexes big enough to read
   // (see syncCoordLabels). Placements are measured once per renderGrid.
   private coordPlacements: { key: string; ox: number; oy: number }[] = [];
@@ -207,22 +206,6 @@ export class HexMapView extends ItemView {
   private namesZoom = 1;
   private controlsEl: HTMLElement | null = null;
   private settleTimer: number | null = null;
-  // Wheel-zoom rAF coalescing. Wheel events fire faster than the browser
-  // paints (esp. trackpads). We sum the log-zoom delta of all events that
-  // arrive in one frame and apply them as ONE transform update on the next
-  // rAF tick. This is the entire smoothing mechanism — no easing tail,
-  // no inertia. The visual lands EXACTLY where the cumulative wheel deltas
-  // placed it; when the user stops scrolling, the visual stops moving.
-  //
-  // Smoothness during a fast scroll comes naturally from trackpad event
-  // deltas being small (deltaY≈2-10 per event) so visual motion between
-  // events is sub-pixel. For mouse wheels (deltaY≈100 per notch) each
-  // notch is one visible step — that's what the user wants ("stop where
-  // I stopped scrolling") and it's not actually clunky because the rAF
-  // batching keeps the paint cadence tight.
-  private pendingZoomLog = 0;
-  private pendingZoomPivot: { cx: number; cy: number } | null = null;
-  private zoomFrameId: number | null = null;
   private viewportEl: HTMLElement | null = null;
   /** Background-image calibration (view/backgroundCalibration.ts). */
   private calibration: BackgroundCalibration;
@@ -305,11 +288,6 @@ export class HexMapView extends ItemView {
     { x: number; y: number; list: string[] }
   >();
   private flushing = new Set<string>(); // "t:<path>", "i:<path>", or "g:<path>"
-  // Per-map viewport state saved when navigating away; restored on return (or fit on first visit).
-  // fontSize must be saved alongside zoom/panX/panY because bakeZoom() encodes the visual zoom
-  // into viewportEl.style.fontSize and resets this.zoom to 1. Restoring without the fontSize
-  // would apply the wrong scale on the incoming map.
-  private mapViewport = new Map<string, { zoom: number; panX: number; panY: number; fontSize: string }>();
   private factionTooltipEl: HTMLElement | null = null;
   // Faction links painted but not yet reflected in the metadata cache
   private pendingFactionLinks = new Map<string, Set<string>>();
@@ -363,8 +341,6 @@ export class HexMapView extends ItemView {
   private crumbsEl: HTMLElement | null = null;
   /** Sideways crumbs: the neighbouring regions of the open map. */
   private sideCrumbsEl: HTMLElement | null = null;
-  /** False until the first map's viewport is placed (restored or fitted). */
-  private viewportReady = false;
   private tokenEntries: TokenEntry[] = [];
   private pendingTokenNotePath: string | null = null;
   private pendingTokenPlaceData: NonNullable<TokenSnap["look"]> | null = null;
@@ -403,17 +379,46 @@ export class HexMapView extends ItemView {
         this.updatePathOverlay();
       },
     });
+    this.viewport = new MapViewport({
+      plugin: this.plugin,
+      viewportEl: () => this.viewportEl,
+      getActiveMap: () => this.getActiveMap(),
+      calibration: () => this.calibration,
+      overlayEls: () => ({
+        top: this.topBandEls.filter((el) => el.isConnected),
+        right: [this.toolsPanel, this.overlayPanel]
+          .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
+          .map((p) => p.element),
+        left: Array.from(this.controlsEl?.querySelectorAll<HTMLElement>(":scope > .duckmage-terrain-legend") ?? []),
+      }),
+      transformed: () => {
+        // Names keep a readable size on screen (NM3): redraw once the zoom settles.
+        if (this.viewport.zoom !== this.namesZoom) {
+          this.namesZoom = this.viewport.zoom;
+          this.scheduleHexNames();
+        }
+        this.calibration.updateCalHandleScale();
+        this.onViewportMoved();
+      },
+      baked: () => {
+        this.updatePathIcons();
+        this.updateFactionOverlay();
+        this.updateRegionOverlay();
+        this.updateTokenLayer();
+      },
+      renderGrid: () => this.renderGrid(),
+    });
     this.calibration = new BackgroundCalibration({
       plugin: this.plugin,
       contentEl: this.contentEl,
       viewportEl: () => this.viewportEl,
-      zoom: () => this.zoom,
+      zoom: () => this.viewport.zoom,
       getActiveMap: () => this.getActiveMap(),
       activeMapName: () => this.activeMapName,
       pushUndo: (item, mapName) => this.pushUndo(item, mapName),
       updateUndoButton: () => this.updateUndoButton(),
       renderGrid: () => this.renderGrid(),
-      cancelZoomBake: () => this.cancelZoomBake(),
+      cancelZoomBake: () => this.viewport.cancelZoomBake(),
       registerDomEvent: (el, type, cb) => this.registerDomEvent(el, type, cb),
     });
     const wm = worldMaps();
@@ -502,14 +507,8 @@ export class HexMapView extends ItemView {
     // the zoom/pan are placeholder values, and saving them would clobber the
     // default map's stored viewport (e.g. a new tab immediately switching to
     // a submap).
-    if (this.viewportEl && this.viewportReady) {
-      const snapshot = {
-        zoom: this.zoom,
-        panX: this.panX,
-        panY: this.panY,
-        fontSize: this.viewportEl.style.fontSize ?? "",
-      };
-      this.mapViewport.set(this.activeMapName, snapshot);
+    const snapshot = this.viewport.remember(this.activeMapName);
+    if (snapshot) {
       const departing = this.plugin.getMap(this.activeMapName);
       if (departing) {
         departing.savedViewport = snapshot;
@@ -520,41 +519,8 @@ export class HexMapView extends ItemView {
     this.activeMapName = name;
     this.updateMapBtnLabel();
     this.refreshViewHeader();
-    this.restoreViewport(name);
+    this.viewport.restoreViewport(name);
     this.refreshMapNav();
-  }
-
-  /**
-   * Show `name` at its last viewport: the in-memory cache (live state from
-   * this session), else the persisted savedViewport (survives view
-   * close/reopen), else fit the whole grid (first visit).
-   */
-  private restoreViewport(name: string): void {
-    const stored = this.mapViewport.get(name) ?? this.plugin.getMap(name)?.savedViewport;
-    if (stored) {
-      this.zoom = stored.zoom;
-      this.panX = stored.panX;
-      this.panY = stored.panY;
-      this.setViewportFontSize(stored.fontSize);
-      this.applyTransform();
-      this.renderGrid();
-      // A saved position can leave the grid off-screen or too small to see
-      // (e.g. saved while the view had no size). Re-fit rather than show an
-      // empty view.
-      window.requestAnimationFrame(() => {
-        this.refitIfLost();
-        this.viewportReady = true;
-      });
-    } else {
-      this.zoom = 1; this.panX = 0; this.panY = 0;
-      this.setViewportFontSize("");
-      this.applyTransform();
-      this.renderGrid();
-      window.requestAnimationFrame(() => {
-        this.fitGridToView();
-        this.viewportReady = true;
-      });
-    }
   }
 
   /**
@@ -785,13 +751,11 @@ export class HexMapView extends ItemView {
     const clip = clipEl.getBoundingClientRect();
     if (clip.width === 0 || clip.height === 0) return;
     const h = hexEl.getBoundingClientRect();
-    const ins = usableInsets(clip.width, clip.height, this.measureOverlayInsets());
+    const ins = usableInsets(clip.width, clip.height, this.viewport.measureOverlayInsets());
     const dx = revealDelta(h.left - clip.left, h.right - clip.left, ins.left, clip.width - ins.right);
     const dy = revealDelta(h.top - clip.top, h.bottom - clip.top, ins.top, clip.height - ins.bottom);
     if (dx === 0 && dy === 0) return;
-    this.panX += dx;
-    this.panY += dy;
-    this.applyTransform();
+    this.viewport.panBy(dx, dy);
   }
 
   /** Breadcrumb (ancestors), the ← ↑ → arrows and the neighbour widget for the active map. */
@@ -1245,7 +1209,7 @@ export class HexMapView extends ItemView {
     this.controlsEl = controlsEl;
 
     this.viewportEl = clipEl.createDiv({ cls: "duckmage-hex-map-viewport" });
-    this.applyTransform();
+    this.viewport.applyTransform();
 
     // Mode bar: paint/draw tools are sticky, so say which one is on and how
     // to stop it (fresh-eyes T3). Hidden while no tool is active.
@@ -1356,16 +1320,7 @@ export class HexMapView extends ItemView {
         // both layers. Treat both as a viewport zoom.
         e.preventDefault();
         const rect = contentEl.getBoundingClientRect();
-        this.pendingZoomLog += wheelZoomLog(e.deltaY, e.deltaMode);
-        this.pendingZoomPivot = {
-          cx: e.clientX - rect.left,
-          cy: e.clientY - rect.top,
-        };
-        if (this.zoomFrameId !== null) return;
-        this.zoomFrameId = window.requestAnimationFrame(() => {
-          this.zoomFrameId = null;
-          this.flushPendingZoom();
-        });
+        this.viewport.queueWheelZoom(e, rect);
       },
       { passive: false },
     );
@@ -1392,8 +1347,8 @@ export class HexMapView extends ItemView {
         hasDragged = false;
         dragStartX = e.clientX;
         dragStartY = e.clientY;
-        panStartX = this.panX;
-        panStartY = this.panY;
+        panStartX = this.viewport.panX;
+        panStartY = this.viewport.panY;
         this.viewportEl?.addClass("is-dragging");
         beginDrag();
         return;
@@ -1406,8 +1361,8 @@ export class HexMapView extends ItemView {
         hasDragged = false;
         dragStartX = e.clientX;
         dragStartY = e.clientY;
-        panStartX = this.panX;
-        panStartY = this.panY;
+        panStartX = this.viewport.panX;
+        panStartY = this.viewport.panY;
         this.viewportEl?.addClass("is-dragging");
         beginDrag();
         return;
@@ -1492,8 +1447,8 @@ export class HexMapView extends ItemView {
       hasDragged = false;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
-      panStartX = this.panX;
-      panStartY = this.panY;
+      panStartX = this.viewport.panX;
+      panStartY = this.viewport.panY;
       this.viewportEl?.addClass("is-dragging");
       beginDrag();
     });
@@ -1567,9 +1522,9 @@ export class HexMapView extends ItemView {
         if (isRightDragging) rightDragMoved = true;
       }
       if (hasDragged) {
-        this.panX = panStartX + dx;
-        this.panY = panStartY + dy;
-        this.applyTransform();
+        this.viewport.panX = panStartX + dx;
+        this.viewport.panY = panStartY + dy;
+        this.viewport.applyTransform();
       }
     };
     const onDragUp = () => {
@@ -1926,7 +1881,7 @@ export class HexMapView extends ItemView {
 
     // Reopen where the user left this map (onClose saves savedViewport);
     // first visit fits the whole grid.
-    this.restoreViewport(this.activeMapName);
+    this.viewport.restoreViewport(this.activeMapName);
     this.refreshMapNav();
     return Promise.resolve();
   }
@@ -1976,18 +1931,18 @@ export class HexMapView extends ItemView {
     const sign = opts.shrink ? -1 : 1;
     if (opts.axis === "row") {
       const sy = this.gridDisplayScaleY(map);
-      this.panY -= sign * stride * sy * this.zoom;
+      this.viewport.panY -= sign * stride * sy * this.viewport.zoom;
       if (map.backgroundImage) {
         map.backgroundImage.offsetY += sign * stride * sy;
       }
     } else {
       const sx = this.gridDisplayScaleX(map);
-      this.panX -= sign * stride * sx * this.zoom;
+      this.viewport.panX -= sign * stride * sx * this.viewport.zoom;
       if (map.backgroundImage) {
         map.backgroundImage.offsetX += sign * stride * sx;
       }
     }
-    this.applyTransform();
+    this.viewport.applyTransform();
     if (map.backgroundImage) {
       // Re-apply the bg layer's transform with the new offset so the visual
       // updates immediately, and persist the new offset.
@@ -3242,23 +3197,6 @@ export class HexMapView extends ItemView {
     window.requestAnimationFrame(() => bar.addClass("is-new"));
   }
 
-  private applyTransform(): void {
-    if (this.viewportEl) {
-      this.viewportEl.setCssProps({
-        "--duckmage-vp-tx": `${this.panX}px`,
-        "--duckmage-vp-ty": `${this.panY}px`,
-        "--duckmage-vp-scale": String(this.zoom),
-      });
-    }
-    // Names keep a readable size on screen (NM3): redraw once the zoom settles.
-    if (this.zoom !== this.namesZoom) {
-      this.namesZoom = this.zoom;
-      this.scheduleHexNames();
-    }
-    this.calibration.updateCalHandleScale();
-    this.onViewportMoved();
-  }
-
   /** Enter calibration mode for the active map's bg image. No-op if no image. */
   enterBgCalibration(): void {
     this.calibration.enter();
@@ -3267,20 +3205,6 @@ export class HexMapView extends ItemView {
   /** Exit calibration. If `save`, persist the current transform. */
   async exitBgCalibration(save: boolean): Promise<void> {
     await this.calibration.exit(save);
-  }
-
-  /** Cancel a pending zoom bake and wheel frame (calibration keeps zoom as a transform). */
-  private cancelZoomBake(): void {
-    if (this.zoomSettleTimer !== null) {
-      window.clearTimeout(this.zoomSettleTimer);
-      this.zoomSettleTimer = null;
-    }
-    if (this.zoomFrameId !== null) {
-      window.cancelAnimationFrame(this.zoomFrameId);
-      this.zoomFrameId = null;
-      this.pendingZoomLog = 0;
-      this.pendingZoomPivot = null;
-    }
   }
 
   /**
@@ -3306,228 +3230,16 @@ export class HexMapView extends ItemView {
     if (this.viewportEl) {
       const map = this.plugin.getMap(this.activeMapName);
       if (map) {
-        map.savedViewport = {
-          zoom: this.zoom,
-          panX: this.panX,
-          panY: this.panY,
-          fontSize: this.viewportEl.style.fontSize ?? "",
-        };
+        map.savedViewport = this.viewport.snapshot(this.viewportEl);
         await this.plugin.saveSettings();
       }
     }
   }
 
-  /** Re-fit the grid if it's entirely outside the view or its hexes are too small to see. */
-  private refitIfLost(): void {
-    const clipEl = this.viewportEl?.parentElement;
-    const gridEl = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    const hexEl = gridEl?.querySelector<HTMLElement>("[data-x]");
-    if (!clipEl || !gridEl || !hexEl) return;
-    const clip = clipEl.getBoundingClientRect();
-    if (clip.width === 0 || clip.height === 0) return; // hidden; measure next time
-    const grid = gridEl.getBoundingClientRect();
-    const overlapW = Math.min(grid.right, clip.right) - Math.max(grid.left, clip.left);
-    const overlapH = Math.min(grid.bottom, clip.bottom) - Math.max(grid.top, clip.top);
-    const tooSmall = hexEl.getBoundingClientRect().width < 4;
-    if (overlapW < 40 || overlapH < 40 || tooSmall) this.fitGridToView();
-  }
-
-  private fitGridToView(): void {
-    const clipEl  = this.viewportEl?.parentElement;
-    const gridEl  = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    if (!clipEl || !gridEl) return;
-    // Measure at base font size (no baked zoom) so the scale calculation is clean.
-    this.setViewportFontSize("");
-    const clipW = clipEl.clientWidth;
-    const clipH = clipEl.clientHeight;
-    const gridW = gridEl.offsetWidth;
-    const gridH = gridEl.offsetHeight;
-    if (clipW === 0 || clipH === 0 || gridW === 0 || gridH === 0) return;
-    // Fit the map's content (edge hexes plus the neighbour strip) into the
-    // part of the view the toolbar rows and an open side panel don't cover,
-    // so no hex starts out hidden under them. Content is measured on screen
-    // and mapped back to unzoomed viewport units (screen = clip + pan + v·zoom).
-    const clipRect = clipEl.getBoundingClientRect();
-    const content = this.measureContentBox();
-    const z0 = Math.max(0.01, this.zoom);
-    const vx = content ? (content.left - clipRect.left - this.panX) / z0 : 0;
-    const vy = content ? (content.top - clipRect.top - this.panY) / z0 : 0;
-    const vw = content ? (content.right - content.left) / z0 : gridW;
-    const vh = content ? (content.bottom - content.top) / z0 : gridH;
-    const fit = fitToSafeArea(clipW, clipH, vw, vh, this.measureOverlayInsets());
-    this.zoom = fit.zoom;
-    this.panX = fit.panX - vx * fit.zoom;
-    this.panY = fit.panY - vy * fit.zoom;
-    this.applyTransform();
-  }
-
-  /** Screen box of the map's content: the grid's edge hexes (a flat-top
-   *  grid's last column pokes out of the grid element) and the neighbour
-   *  strip. Reads only. */
-  private measureContentBox(): Box | null {
-    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    if (!grid) return null;
-    const map = this.getActiveMap();
-    const { x: ox, y: oy } = map.gridOffset;
-    const { cols, rows } = map.gridSize;
-    const edge = [`[data-x="${ox}"]`, `[data-x="${ox + cols - 1}"]`, `[data-y="${oy}"]`, `[data-y="${oy + rows - 1}"]`]
-      .map((s) => `.duckmage-hex${s}`)
-      .join(", ");
-    const els = [
-      grid,
-      ...Array.from(grid.querySelectorAll<HTMLElement>(edge)),
-      ...Array.from(grid.querySelectorAll<HTMLElement>(".duckmage-region-shadow-hex")),
-    ];
-    return unionBoxes(els.map((el) => el.getBoundingClientRect()));
-  }
-
-  /**
-   * How far the toolbar rows (with the mode bar), an open side panel and
-   * the legend reach into the map view, in px from the clip's edges. Reads only.
-   */
-  private measureOverlayInsets(): Insets {
-    const clipEl = this.viewportEl?.parentElement;
-    if (!clipEl) return NO_INSETS;
-    const clip = clipEl.getBoundingClientRect();
-    if (clip.width === 0 || clip.height === 0) return NO_INSETS;
-    const box = (el: HTMLElement): Box => el.getBoundingClientRect();
-    const top = this.topBandEls.filter((el) => el.isConnected).map(box);
-    const right = [this.toolsPanel, this.overlayPanel]
-      .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
-      .map((p) => box(p.element));
-    // The legend, pinned bottom-left over the map.
-    const left = Array.from(this.controlsEl?.querySelectorAll<HTMLElement>(":scope > .duckmage-terrain-legend") ?? []).map(box);
-    return overlayInsets(clip, top, right, undefined, left);
-  }
-
-  private flushPendingZoom(): void {
-    if (this.pendingZoomLog === 0 || !this.pendingZoomPivot) {
-      this.pendingZoomLog = 0;
-      this.pendingZoomPivot = null;
-      return;
-    }
-    const factor = Math.exp(this.pendingZoomLog);
-    const { cx, cy } = this.pendingZoomPivot;
-    const newZoom = Math.min(5, Math.max(0.2, this.zoom * factor));
-    const realFactor = newZoom / this.zoom;
-    this.panX = cx - (cx - this.panX) * realFactor;
-    this.panY = cy - (cy - this.panY) * realFactor;
-    this.zoom = newZoom;
-    this.pendingZoomLog = 0;
-    this.pendingZoomPivot = null;
-    this.applyTransform();
-    // Bake after a short debounce. With no easing tail, we can be aggressive
-    // — 80ms ≈ 5 frames of quiet — short enough that coords un-blur fast,
-    // long enough that a continuous scroll never bakes mid-stream.
-    this.scheduleZoomBake();
-  }
-
-  private scheduleZoomBake(): void {
-    // During calibration we keep zoom as a CSS transform on the viewport
-    // (instead of baking it into font-size) so the SVG outline overlay,
-    // the hex grid, and the bg image all scale together as a single unit.
-    if (this.calibration.active) return;
-    // Same reasoning whenever a background image is present, but permanently:
-    // baking grows the em-based hex grid via font-size while the px-based bg
-    // image is grown through a separate `* F` multiply (see bakeZoom). Those
-    // two paths only match under exact arithmetic — device-pixel snapping of
-    // the em layout on fractional/Retina DPR (e.g. macOS) rounds differently
-    // than the smoothly-scaled bg transform, so the grid visibly jumps off the
-    // image the instant zoom settles. Keeping zoom as a single composited
-    // viewport scale() makes grid + bg scale as one unit → no drift on any DPR.
-    // Trade-off: hexes upscale via the compositor (slightly soft) at high zoom
-    // over a bg, which is acceptable and matches calibration-mode behaviour.
-    if (this.getActiveMap().backgroundImage) return;
-    if (this.zoomSettleTimer !== null) window.clearTimeout(this.zoomSettleTimer);
-    // 80ms ≈ 5 frames of quiet — short enough that coords un-blur quickly
-    // after a scroll stops, long enough that a continuous wheel stream
-    // never triggers a mid-stream bake (which would tear down/rebuild SVGs
-    // and cost a noticeable hitch).
-    this.zoomSettleTimer = window.setTimeout(() => {
-      this.zoomSettleTimer = null;
-      this.bakeZoom();
-    }, 80);
-  }
-
-  private setViewportFontSize(fs: string): void {
-    if (!this.viewportEl) return;
-    this.viewportEl.style.fontSize = fs;
-  }
-
-  // Bake the current CSS scale() into the viewport's font-size so the DOM
-  // renders natively at the zoomed size instead of upscaling a compositor
-  // bitmap (which causes pixelation). Pan offsets stay correct because layout
-  // coordinates scale by the same factor as the transform did.
-  private bakeZoom(): void {
-    if (!this.viewportEl || this.zoom === 1) return;
-    // Defensive: do NOT bake while calibrating. Even if a pending timer fires
-    // here (shouldn't, since enterBgCalibration cancels it and
-    // scheduleZoomBake bails when calibrating), baking mid-calibration drifts
-    // the SVG outline from the hex grid.
-    if (this.calibration.active) return;
-    const F = this.zoom;
-    const currentFs = parseFloat(getComputedStyle(this.viewportEl).fontSize);
-
-    // The path layer is placed in em (lattice units, see renderPathOverlay),
-    // so it grows with the font size and is NOT rebuilt here. The icon
-    // layer over it holds px positions computed against the pre-bake hex
-    // sizes: tear it down FIRST, before the font-size mutation below, so no
-    // paint frame shows icons stranded where the hexes used to be; it is
-    // rebuilt via `updatePathIcons()` further down. Sandbox repro of the
-    // pre-fix slip: dev/coord-slip-sandbox.html.
-    this.viewportEl.querySelector("svg.duckmage-path-icons-svg")?.remove();
-    this.viewportEl.removeClass("duckmage-svg-labels-active");
-    // Same for the faction/region overlays — they also hold pre-bake
-    // pixel positions and would visibly mis-align during the transition.
-    this.viewportEl.querySelector("svg.duckmage-faction-svg")?.remove();
-    this.viewportEl.querySelector(".duckmage-faction-legend")?.remove();
-    this.viewportEl.querySelector("svg.duckmage-region-svg")?.remove();
-    this.viewportEl.querySelector(".duckmage-region-labels-layer")?.remove();
-
-    this.viewportEl.style.fontSize = `${currentFs * F}px`;
-    this.zoom = 1;
-    this.applyTransform();
-
-    // bakeZoom grows em-based things (hex grid CSS dimensions) by F, but
-    // pixel-based calibration transforms (bg image offset/scale, grid display
-    // offset) do not naturally grow. Multiplying them here by F preserves
-    // their position and size relative to the now-bigger hex grid — so a
-    // calibrated bg image stays aligned across wheel zooming.
-    // Scale-multipliers (gridDisplayScaleX/Y) are unitless and do NOT change.
-    const map = this.getActiveMap();
-    if (map.backgroundImage) {
-      map.backgroundImage.offsetX *= F;
-      map.backgroundImage.offsetY *= F;
-      map.backgroundImage.scale *= F;
-      const bgLayer = this.viewportEl.querySelector<HTMLElement>(".duckmage-bg-image-layer");
-      if (bgLayer) this.calibration.applyBgLayerVars(bgLayer, map.backgroundImage);
-    }
-    if (
-      map.gridDisplayOffsetX !== undefined ||
-      map.gridDisplayOffsetY !== undefined ||
-      map.gridDisplayScaleX !== undefined ||
-      map.gridDisplayScaleY !== undefined ||
-      map.gridDisplayScale !== undefined
-    ) {
-      map.gridDisplayOffsetX = (map.gridDisplayOffsetX ?? 0) * F;
-      map.gridDisplayOffsetY = (map.gridDisplayOffsetY ?? 0) * F;
-      const gridContainer = this.viewportEl.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-      if (gridContainer) this.calibration.applyGridLayerVars(gridContainer, map);
-    }
-    // Also persist the new viewport state — font-size just baked from the
-    // viewport zoom, so the saved snapshot has to follow.
-    map.savedViewport = {
-      zoom: this.zoom,
-      panX: this.panX,
-      panY: this.panY,
-      fontSize: this.viewportEl.style.fontSize ?? "",
-    };
-    void this.plugin.saveSettings();
-
-    this.updatePathIcons();
-    this.updateFactionOverlay();
-    this.updateRegionOverlay();
-    this.updateTokenLayer();
+  /** Centre the view on a hex. `keepHexWidth` (on-screen px) keeps that hex
+   *  size instead of zooming to the default 1.5× (crossing regions). */
+  centerOnHex(x: number, y: number, keepHexWidth?: number): void {
+    this.viewport.centerOnHex(x, y, keepHexWidth);
   }
 
   setSelectedHex(x: number, y: number): void {
@@ -3573,43 +3285,6 @@ export class HexMapView extends ItemView {
     });
     const hit = nearestHex(clientX, clientY, boxes);
     return hit ? pool.find((h) => Number(h.dataset.x) === hit.x && Number(h.dataset.y) === hit.y) ?? null : null;
-  }
-
-  /** Centre the view on a hex. `keepHexWidth` (on-screen px) keeps that hex
-   *  size instead of zooming to the default 1.5× (crossing regions). */
-  centerOnHex(x: number, y: number, keepHexWidth?: number): void {
-    const hexEl = this.viewportEl?.querySelector<HTMLElement>(
-      `[data-x="${x}"][data-y="${y}"]`,
-    );
-    if (!hexEl) {
-      new Notice(`Hex ${x}, ${y} is not in the current grid.`);
-      return;
-    }
-
-    const clipEl = this.viewportEl?.parentElement;
-    if (!clipEl) return;
-
-    // Use getBoundingClientRect for reliable positions — the offsetParent chain
-    // can silently break (e.g. fixed-position ancestors), causing wrong results.
-    const hexRect = hexEl.getBoundingClientRect();
-    const clipRect = clipEl.getBoundingClientRect();
-
-    // Back-compute the hex centre in pre-transform viewport coordinates
-    const hexScreenX = hexRect.left + hexRect.width / 2;
-    const hexScreenY = hexRect.top + hexRect.height / 2;
-    const hexViewX = (hexScreenX - clipRect.left - this.panX) / this.zoom;
-    const hexViewY = (hexScreenY - clipRect.top - this.panY) / this.zoom;
-
-    const targetZoom = keepHexWidth ? zoomForHexWidth(keepHexWidth, hexRect.width, this.zoom) : 1.5;
-    // Centre in the part of the view no toolbar or open panel covers.
-    const ins = usableInsets(clipRect.width, clipRect.height, this.measureOverlayInsets());
-    const midX = ins.left + (clipRect.width - ins.left - ins.right) / 2;
-    const midY = ins.top + (clipRect.height - ins.top - ins.bottom) / 2;
-    this.zoom = targetZoom;
-    this.panX = midX - hexViewX * targetZoom;
-    this.panY = midY - hexViewY * targetZoom;
-    this.applyTransform();
-    this.scheduleZoomBake();
   }
 
   renderGrid(
@@ -6391,12 +6066,12 @@ export class HexMapView extends ItemView {
     // The font and the grid's on-screen size too: a name's size has a
     // readable floor (NM3), so zooming can change its layout.
     const font = resolveNameFont(this.getActiveMap(), this.plugin.settings);
-    const screenEm = names.size ? (parseFloat(getComputedStyle(gridContainer).fontSize) || 16) * this.zoom : 0;
+    const screenEm = names.size ? (parseFloat(getComputedStyle(gridContainer).fontSize) || 16) * this.viewport.zoom : 0;
     const sig = [...names].map(([k, n]) => `${k}=${n}|${fills.get(k) ?? ""}|${limits.get(k) ?? ""}`).sort().join("\n")
       + `\nfont=${font.family}|${font.scale}|${font.bold}|${font.italic}|${screenEm.toFixed(1)}`;
     if (onlyIfChanged && sig === this.drawnHexNames) return;
     this.drawnHexNames = sig;
-    renderHexNameLayer(gridContainer, names, fills, this.plugin.settings.coordPlacement ?? "bottom", limits, font, this.zoom);
+    renderHexNameLayer(gridContainer, names, fills, this.plugin.settings.coordPlacement ?? "bottom", limits, font, this.viewport.zoom);
   }
 
   /** How far right each named hex's name may reach: clear of its shown badges (R8). */
@@ -7484,8 +7159,8 @@ export class HexMapView extends ItemView {
         isDragging = true;
         tokenEl.addClass("duckmage-token-dragging");
       }
-      const dx = (e.clientX - startClientX) / this.zoom;
-      const dy = (e.clientY - startClientY) / this.zoom;
+      const dx = (e.clientX - startClientX) / this.viewport.zoom;
+      const dy = (e.clientY - startClientY) / this.viewport.zoom;
       tokenEl.style.left = `${origLeft + dx}px`;
       tokenEl.style.top  = `${origTop  + dy}px`;
 
