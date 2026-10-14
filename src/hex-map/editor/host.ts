@@ -11,6 +11,16 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { HexEditorOptions } from "../../types";
 import type { SaveTracker } from "../saveStatus";
 
+let fieldSeq = 0;
+/** The next id number for a label for= ↔ box pair (post-increment: the Name box). */
+export function nextFieldSeq(): number {
+  return fieldSeq++;
+}
+/** The next id number, pre-incremented (the text boxes): one counter for every editor box. */
+export function bumpFieldSeq(): number {
+  return ++fieldSeq;
+}
+
 /** The editor's change callback: overrides the map can't read from its cache yet. */
 export type HexEditorChanged = (
   terrainOverrides?: Map<string, string | null>,

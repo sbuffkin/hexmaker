@@ -134,12 +134,12 @@ describe("one table section per kind (SF2)", () => {
   it("the hex editor draws every kind through the one section, and choosing writes nothing", () => {
     const editor = readSurface("hex-editor");
     expect(editor).toContain(`this.renderTableChoice(encCard, path, "encounters")`);
-    expect(editor).toContain("this.renderTableChoice(host, path, section)");
+    expect(editor).toContain("this.tables.renderTableChoice(host, path, section)");
     // The old per-source controls are gone.
     expect(editor).not.toContain("renderRolledControls");
     expect(editor).not.toContain("pickSectionTable");
     // Switching only remembers; no gate on the work mode, so it works in Play.
-    const body = editor.slice(editor.indexOf("private renderTableChoice("), editor.indexOf("private pickTableFor("));
+    const body = editor.slice(editor.indexOf("renderTableChoice(host: HTMLElement,"), editor.indexOf("private pickTableFor("));
     expect(body).toContain("onChoose: (item) => rememberChoice(key, item.path)");
     expect(body).not.toMatch(/canDo\(|map-properties/);
   });

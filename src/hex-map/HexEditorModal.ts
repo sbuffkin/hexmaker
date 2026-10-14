@@ -1,14 +1,10 @@
-import { effectiveTerrainType } from "../terrainTypes";
-import { App, Notice, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
 import { canDo } from "../modeGate";
-import { lockedHint, workModeOf, type ModeAction } from "../workMode";
+import { lockedHint, type ModeAction } from "../workMode";
 import { addGodOffer } from "./godOffer";
 import { HexmakerModal } from "../HexmakerModal";
 import { Fold } from "../ui/disclosure";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import {
-  normalizeFolder,
-} from "../utils";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -16,42 +12,30 @@ import {
   getHexNameFromFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
-import {
-  addLinkToSection,
-  removeLinkFromSection,
-  getLinksInSection,
-  getAllSectionData,
-  setSectionContent,
-  addBacklinkToFile,
-  joinSectionText,
-} from "../sections";
+import { getAllSectionData } from "../sections";
 import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
 import type { LinkSection, HexEditorOptions } from "../types";
-import { RandomTableModal, type RollHexTarget } from "../random-tables/RandomTableModal";
+import type { RollHexTarget } from "../random-tables/RandomTableModal";
 import { WorkflowWizardModal } from "../random-tables/WorkflowWizardModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
-import { isRolledSection } from "../regionTables";
-import { TABLE_KINDS, choiceKey, initialChoice, rememberChoice, rememberedChoice, tableChoices, type TableChoiceItem, type TableKind } from "../tableChoice";
-import { TableChoice } from "../random-tables/TableChoice";
-import { groupTableFiles } from "../random-tables/tablePickerGroups";
 import { HexExportModal } from "./HexExportModal";
-import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
+import { VIEW_TYPE_HEX_MAP } from "../constants";
 import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
 import { openNoteFocused } from "../openNote";
 import { contentFolder } from "../notePickers";
 import { terrainStartsCollapsed } from "./terrainSection";
 import { addToPlayLog } from "../play/playLogWriter";
-import { PLAY_LOG_TARGET, rollDefaultSection } from "../play/playLog";
 import { PlayLogModal } from "../play/PlayLogModal";
 import { NeighbourFlower, type NeighbourFlowerHost } from "./editor/NeighbourFlower";
 import { MapsStrip, type MapsStripHost } from "./editor/MapsStrip";
 import { TerrainIconSections, type TerrainIconHost } from "./editor/TerrainIconSections";
 import { LinkSections, type LinkSectionHost } from "./editor/LinkSection";
+import { TableSections, type TableSectionsHost } from "./editor/TableSections";
+import { TextSections, type TextSectionHost } from "./editor/TextSection";
+import { nextFieldSeq } from "./editor/host";
 
 /** Typing pause after which a text section autosaves. */
 const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
-/** Unique ids for label for= ↔ textarea pairs. */
-let textFieldSeq = 0;
 
 export class HexEditorModal extends HexmakerModal {
   /** Placement surface (src/ui/placement.ts): the editor's Advanced dropdown. */
@@ -91,6 +75,8 @@ export class HexEditorModal extends HexmakerModal {
   private readonly mapsStrip = new MapsStrip(this.host);
   private readonly terrainIcons = new TerrainIconSections(this.host);
   private readonly links = new LinkSections(this.host);
+  private readonly tables = new TableSections(this.host);
+  private readonly texts = new TextSections(this.host, this.tables);
 
   constructor(
     app: App,
@@ -109,7 +95,7 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   /** The one host object every part gets (each part types it to the slice it uses). */
-  private makeHost(): NeighbourFlowerHost & MapsStripHost & TerrainIconHost & LinkSectionHost {
+  private makeHost(): NeighbourFlowerHost & MapsStripHost & TerrainIconHost & LinkSectionHost & TableSectionsHost & TextSectionHost {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- getters below read the editor's live fields
     const modal = this;
     return {
@@ -124,6 +110,14 @@ export class HexEditorModal extends HexmakerModal {
       set directTerrain(v) { modal.directTerrain = v; },
       get directIcon() { return modal.directIcon; },
       set directIcon(v) { modal.directIcon = v; },
+      get hexExists() { return modal.hexExists; },
+      set hexExists(v) { modal.hexExists = v; },
+      get allLinks() { return modal.allLinks; },
+      get allText() { return modal.allText; },
+      get choiceRefreshers() { return modal.choiceRefreshers; },
+      get textBoxes() { return modal.textBoxes; },
+      get pendingTextSaves() { return modal.pendingTextSaves; },
+      get notesStatusEl() { return modal.notesStatusEl; },
       onChanged: (...args) => this.onChanged(...args),
       ensureHexNote: (x, y) => this.ensureHexNote(x, y),
       reloadEncounterLinks: (path) => this.reloadEncounterLinks(path),
@@ -470,7 +464,7 @@ export class HexEditorModal extends HexmakerModal {
    */
   private renderNameField(container: HTMLElement, path: string): void {
     const row = container.createDiv({ cls: "duckmage-editor-name-row" });
-    const id = `duckmage-hex-name-${textFieldSeq++}`;
+    const id = `duckmage-hex-name-${nextFieldSeq()}`;
     row.createEl("label", { text: "Name", attr: { for: id } });
     const input = row.createEl("input", {
       type: "text",
@@ -600,295 +594,19 @@ export class HexEditorModal extends HexmakerModal {
     return this.links.renderDropdownSection(container, path, section, hexExists, sourceFolder, initialLinks);
   }
 
-  /**
-   * Encounters: one section that lists the tables this hex can roll on
-   * (hex > area > terrain) and switches between them (SF2).
-   */
+  /** Encounters: its table section (editor/TableSections.ts). */
   private renderEncountersSection(container: HTMLElement, path: string): void {
-    const encCard = container.createDiv({ cls: "duckmage-editor-link-section duckmage-editor-link-card duckmage-editor-encounters" });
-    encCard.createEl("h4", { text: this.plugin.sectionWordsFor(this.mapName)("Encounters Table").label, cls: "duckmage-link-section-title" });
-    this.renderTableChoice(encCard, path, "encounters");
+    this.tables.renderEncountersSection(container, path);
   }
 
-  /** Re-read the Encounters section after a terrain change (its terrain table follows the terrain). */
-  private async reloadEncounterLinks(path: string): Promise<void> {
-    await this.reloadKindLinks(path, TABLE_KINDS.encounters);
-    this.choiceRefreshers.get("encounters")?.();
+  /** Re-read the Encounters section after a terrain change (editor/TableSections.ts). */
+  private reloadEncounterLinks(path: string): Promise<void> {
+    return this.tables.reloadEncounterLinks(path);
   }
 
-  /** Re-read a kind's links from the hex note into allLinks. */
-  private async reloadKindLinks(path: string, kind: TableKind): Promise<void> {
-    this.hexExists = this.app.vault.getAbstractFileByPath(path) instanceof TFile;
-    const links = this.hexExists ? await getLinksInSection(this.app, path, kind.hexSection) : [];
-    this.allLinks.set(kind.hexSection.toLowerCase(), links);
-  }
-
-  /** The tables that apply to this hex for a kind, most specific first (tableChoice.ts). */
-  private tableChoiceItems(path: string, kind: TableKind): TableChoiceItem[] {
-    const tables = normalizeFolder(this.plugin.settings.tablesFolder ?? "");
-    const inTables = (p: string) => (tables ? `${tables}/${p}` : p);
-    const links = this.hexExists ? this.allLinks.get(kind.hexSection.toLowerCase()) ?? [] : [];
-    const terrain = getTerrainFromFile(this.app, path);
-    return tableChoices({
-      noteExists: this.hexExists,
-      noteLinks: links.map((link) => ({ link, path: this.app.metadataCache.getFirstLinkpathDest(link, path)?.path ?? null })),
-      area: kind.areaTables ? this.plugin.areaEncounterTableFor(this.mapName, this.x, this.y)?.path : null,
-      terrain: kind.terrainTables && terrain ? this.plugin.terrainEncounterTable(terrain)?.path : null,
-      map: kind.mapField ? this.plugin.getMap(this.mapName)?.[kind.mapField]?.trim() || null : null,
-      fallback: kind.starterFile ? inTables(kind.starterFile) : null,
-      folders: { area: inTables("regions"), terrain: inTables("terrain") },
-      exists: (p) => this.app.vault.getAbstractFileByPath(p) instanceof TFile,
-    });
-  }
-
-  /**
-   * A section's tables (SF2): the ones that apply to this hex as radio
-   * buttons, most specific first, Roll, and "change…" to pick any table
-   * (linked to this hex, so it's note text: allowed in Play). Switching is
-   * remembered for this session and writes nothing.
-   */
-  private renderTableChoice(host: HTMLElement, path: string, kindId: TableKind["id"]): void {
-    const kind = TABLE_KINDS[kindId];
-    const key = choiceKey(this.mapName, this.x, this.y, kind.id);
-    const first = this.tableChoiceItems(path, kind);
-    const refresh = () => {
-      const items = this.tableChoiceItems(path, kind);
-      choice.setItems(items, initialChoice(items, rememberedChoice(key)));
-    };
-    const choice = new TableChoice(host, {
-      app: this.app,
-      plugin: this.plugin,
-      noun: kind.noun,
-      items: first,
-      start: initialChoice(first, rememberedChoice(key)),
-      onChoose: (item) => rememberChoice(key, item.path),
-      onRoll: (item) => new RandomTableModal(this.app, this.plugin, undefined, item.path, this.rollTarget(kind.rollInto)).open(),
-      onOpen: (item) => this.openTableInView(item.path),
-      onChange: () =>
-        this.pickTableFor(path, kind, (picked) => {
-          rememberChoice(key, picked);
-          refresh();
-        }),
-      onRemove: (item) => {
-        if (!item.link) return;
-        const link = item.link;
-        void this.saves.track(
-          (async () => {
-            // A noteless hex shows the tables its note will get: make the
-            // note so removing one sticks.
-            await this.ensureHexNote();
-            await removeLinkFromSection(this.app, path, kind.hexSection, link);
-            await this.reloadKindLinks(path, kind);
-            refresh();
-            this.onChanged();
-          })(),
-        );
-      },
-    });
-    this.choiceRefreshers.set(kind.id, refresh);
-  }
-
-  /**
-   * "change…": any table in the tables folder, the user's own first (F2:
-   * 124 terrain tables were listed before the user's), or a new one. A
-   * table already listed for this hex is just chosen; another is linked
-   * into the hex's section for the kind.
-   */
-  private pickTableFor(path: string, kind: TableKind, chosen: (tablePath: string) => void): void {
-    const use = (file: TFile) =>
-      void this.saves.track(
-        (async () => {
-          if (!this.tableChoiceItems(path, kind).some((it) => it.path === file.path)) {
-            const note = await this.ensureHexNote();
-            if (!note) throw new Error("Could not create the hex note");
-            await addLinkToSection(this.app, path, kind.hexSection, `[[${this.app.metadataCache.fileToLinktext(file, path)}]]`);
-            if (kind.id === "encounters") void addBacklinkToFile(this.app, file.path, path, this.plugin.hexLinkAlias(path));
-            await this.reloadKindLinks(path, kind);
-            this.onChanged();
-          }
-          chosen(file.path);
-        })(),
-      );
-    const folder = contentFolder(this.plugin.settings, "tablesFolder");
-    const create = (name: string) =>
-      void (async () => {
-        const dir = normalizeFolder(folder);
-        const newPath = dir ? `${dir}/${name}.md` : `${name}.md`;
-        let file = this.app.vault.getAbstractFileByPath(newPath);
-        try {
-          if (dir && !this.app.vault.getAbstractFileByPath(dir)) await this.app.vault.createFolder(dir);
-          if (!(file instanceof TFile)) file = await this.app.vault.create(newPath, await this.plugin.newLinkedNoteContent("Encounters Table", name));
-        } catch (err) {
-          new Notice(`Could not create ${newPath}: ${String(err)}`);
-          return;
-        }
-        if (file instanceof TFile) use(file);
-      })();
-    const picker = new FileLinkSuggestModal(this.app, this.plugin, use, folder, ["md"], "link", {
-      order: (files) => {
-        const shown = kind.id === "encounters"
-          ? this.plugin.filterTableFiles(files, "encounter-filter", this.plugin.settings.encounterTableExcludedFolders)
-          : files;
-        const { own, mapMade } = groupTableFiles(this.app, shown);
-        return [...own, ...mapMade];
-      },
-      onCreate: create,
-      createNoun: "table",
-    });
-    picker.setPlaceholder(`Pick a ${kind.noun} table for this hex…`);
-    picker.open();
-  }
-
-  /** Show a table in the random tables view. */
-  private openTableInView(tablePath: string): void {
-    void (async () => {
-      interface WithOpenTable {
-        openTable?(path: string): void;
-      }
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_RANDOM_TABLES);
-      if (leaves.length > 0) {
-        void this.app.workspace.revealLeaf(leaves[0]);
-        (leaves[0].view as unknown as WithOpenTable).openTable?.(tablePath);
-      } else {
-        const leaf = this.app.workspace.getLeaf("tab");
-        await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-        (leaf.view as unknown as WithOpenTable).openTable?.(tablePath);
-      }
-      this.close();
-    })();
-  }
-
-  private renderTextSection(
-    container: HTMLElement,
-    path: string,
-    section: string,
-    label: string,
-    initialContent: string,
-  ): void {
-    const sectionEl = container.createDiv({
-      cls: `duckmage-editor-text-section duckmage-editor-text-section-${section.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-    });
-    const labelRow = sectionEl.createDiv({
-      cls: "duckmage-text-section-label-row",
-    });
-    // label for= → clicking the label focuses the box.
-    const labelEl = labelRow.createEl("label", {
-      text: label,
-      cls: "duckmage-text-section-label",
-      attr: { for: `duckmage-hex-text-${section}-${++textFieldSeq}` },
-    });
-
-    // 📖 button: terrain description table (description section) or section-specific table
-    const tablesFolder = normalizeFolder(
-      this.plugin.settings.tablesFolder ?? "",
-    );
-    let previewTablePath: string | null = null;
-    let previewTitle = "";
-
-    if (section === "description") {
-      const terrain = getTerrainFromFile(this.app, path);
-      if (terrain) {
-        const p = tablesFolder
-          ? `${tablesFolder}/terrain/description/${terrain}.md`
-          : `terrain/description/${terrain}.md`;
-        if (this.app.vault.getAbstractFileByPath(p)) {
-          previewTablePath = p;
-          previewTitle = `Roll on ${terrain} description table`;
-        }
-      }
-    } else if (
-      section === "landmark" ||
-      section === "hidden" ||
-      section === "secret"
-    ) {
-      const p = tablesFolder
-        ? `${tablesFolder}/${section}.md`
-        : `${section}.md`;
-      if (this.app.vault.getAbstractFileByPath(p)) {
-        previewTablePath = p;
-        previewTitle = `Roll on ${section} table`;
-      }
-    }
-
-    const textarea = sectionEl.createEl("textarea", {
-      cls: "duckmage-text-section-textarea",
-      attr: { id: labelEl.htmlFor },
-    });
-
-    if (previewTablePath) {
-      const btnGroup = labelRow.createDiv({
-        cls: "duckmage-text-section-btn-group",
-      });
-      const previewBtn = btnGroup.createEl("button", {
-        text: "📖",
-        cls: "duckmage-section-desc-table-btn",
-      });
-      previewBtn.title = previewTitle;
-      const capturedPath = previewTablePath;
-      previewBtn.addEventListener("click", () => {
-        new RandomTableModal(
-          this.app,
-          this.plugin,
-          undefined,
-          capturedPath,
-          this.rollTarget(section),
-        ).open();
-      });
-    } else if (isRolledSection(section)) {
-      // One table section per kind (SF2): its tables, Roll and change….
-      const host = sectionEl.createDiv({ cls: "duckmage-editor-rolled-choice" });
-      textarea.before(host);
-      this.renderTableChoice(host, path, section);
-    }
-    textarea.rows = 3;
-    textarea.placeholder = `${label}…`;
-    textarea.value = initialContent;
-
-    // Autosave: a moment after typing stops, on blur, and on close or
-    // navigation (flushTextSaves). The hex is captured now, so a save that
-    // lands after navigating still goes to this hex. Unchanged text isn't
-    // written (just focusing a box no longer creates the hex note).
-    const hx = this.x;
-    const hy = this.y;
-    let lastSaved = initialContent;
-    let timer: number | null = null;
-    const save = (): void => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = null;
-      this.pendingTextSaves.delete(save);
-      const value = textarea.value;
-      if (value === lastSaved) {
-        this.saves.settle();
-        return;
-      }
-      lastSaved = value;
-      void this.saves.track(
-        (async () => {
-          const file = await this.ensureHexNote(hx, hy);
-          if (!file) throw new Error(`Could not create the note for hex ${hx}, ${hy}`);
-          await setSectionContent(this.app, path, section, value);
-        })(),
-      );
-    };
-    textarea.addEventListener("input", () => {
-      if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(save, TEXT_AUTOSAVE_MS);
-      this.pendingTextSaves.add(save);
-      this.saves.markPending();
-    });
-    textarea.addEventListener("blur", save);
-    // "Add to this hex" from a roll lands in this box (and saves), so the
-    // box and the note can't disagree.
-    this.textBoxes.set(section, (addition) => {
-      textarea.value = joinSectionText(textarea.value, addition);
-      save();
-      this.onChanged();
-    });
-    // Keep the autosave status beside the box being typed in.
-    textarea.addEventListener("focus", () => {
-      const status = this.notesStatusEl;
-      if (status && status.parentElement !== labelRow) labelEl.after(status);
-    });
+  /** A text section (editor/TextSection.ts). */
+  private renderTextSection(container: HTMLElement, path: string, section: string, label: string, initialContent: string): void {
+    this.texts.renderTextSection(container, path, section, label, initialContent);
   }
 
   /** "Run workflow" (PA2): pick a workflow note, then run it for this hex. */
@@ -905,33 +623,9 @@ export class HexEditorModal extends HexmakerModal {
     picker.open();
   }
 
-  /**
-   * "Add to this hex" for a roll made here (P2): the play log, then every
-   * text section. `defaultSection` is picked first, except in Play, where
-   * the play log is (SF3: what happened goes to the log, not Description).
-   */
+  /** "Add to this hex" for a roll made here (editor/TableSections.ts). */
   private rollTarget(defaultSection: string): RollHexTarget {
-    const hx = this.x;
-    const hy = this.y;
-    // The hex's terrain and its type: When context for the roll (hexRoll.ts).
-    const terrain = getTerrainFromFile(this.app, this.plugin.hexPath(hx, hy, this.mapName)) ?? undefined;
-    const entry = terrain ? this.plugin.getMapPalette(this.mapName).find((t) => t.name === terrain) : undefined;
-    const type = entry ? effectiveTerrainType(entry) : undefined;
-    return {
-      label: `hex ${hx}, ${hy}`,
-      context: { ...(terrain ? { terrain } : {}), ...(type ? { type } : {}) },
-      sections: [{ key: PLAY_LOG_TARGET, label: "Play log" }, ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
-      defaultSection: rollDefaultSection(workModeOf(this.plugin.getMap(this.mapName)), defaultSection),
-      add: async (key, text) => {
-        if (key === PLAY_LOG_TARGET) { await addToPlayLog(this.plugin, this.mapName, hx, hy, text); return; }
-        // Still on this hex with the box showing: add through the box.
-        const box = hx === this.x && hy === this.y ? this.textBoxes.get(key) : undefined;
-        if (box) { box(text); return; }
-        await this.plugin.appendToHexSection(hx, hy, this.mapName, key, text);
-        if (hx === this.x && hy === this.y) this.allText.set(key, joinSectionText(this.allText.get(key) ?? "", text));
-        this.onChanged();
-      },
-    };
+    return this.tables.rollTarget(defaultSection);
   }
 
   private async ensureHexNote(x = this.x, y = this.y): Promise<TFile | null> {
