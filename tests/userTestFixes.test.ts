@@ -20,6 +20,7 @@ import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SCENARIOS, runScenario } from "./biomeParityFixtures";
 import { presetFields } from "./biomeParityFixtures";
 import type { MapData } from "../src/types";
+import type { NewMapOptions } from "../src/services/MapsService";
 
 describe("the toolbar's region flower", () => {
 	it("every petal is a whole 22px target and none touch, in both orientations", () => {
@@ -118,10 +119,9 @@ function world(rows: number) {
 			flush: async () => {},
 		},
 		saveSettings: async () => {},
-		createNewMap: async (
-			name: string, cols: number, rows: number, _palette: string, x: number, y: number, stagger: string,
-			_progress: unknown, cells?: Map<string, string>, extra?: { parent?: { map: string; hex: string } },
-		) => {
+		createNewMap: async (opts: NewMapOptions) => {
+			const { name, cols, rows, stagger, terrain: cells } = opts;
+			const x = opts.offset?.x ?? 0, y = opts.offset?.y ?? 0, extra = opts;
 			const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 			maps.push({ name: slug, paletteName: "Default", gridSize: { cols, rows }, gridOffset: { x, y }, staggerOffset: stagger, parent: extra?.parent, submapKind: "region", pathChains: [] } as unknown as MapData);
 			for (const [k, t] of cells ?? []) hexes(slug).set(k, { terrain: t });

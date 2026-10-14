@@ -174,8 +174,8 @@ describe("hex flower fills × hex-note properties (real plugin)", () => {
 		const v = new MemVault();
 		v.files.set(DATA, JSON.stringify({ hexFolder: "world/hexes", worldFolder: "world", hexOrientation: "flat", setupComplete: true, maps: [] }, null, 2));
 		const plugin = await boot(v, true);
-		const make = plugin.createNewMap as (...a: unknown[]) => Promise<{ name: string }>;
-		const made = await make.call(plugin, "Moor", 4, 4, EXPANDED_PALETTE_NAME, 0, 0, "odd", undefined, new Map([["1_1", TERRAIN]]), { quiet: true });
+		const make = plugin.createNewMap as (opts: Record<string, unknown>) => Promise<{ name: string }>;
+		const made = await make.call(plugin, { name: "Moor", cols: 4, rows: 4, palette: EXPANDED_PALETTE_NAME, stagger: "odd", terrain: new Map([["1_1", TERRAIN]]), quiet: true });
 		const name = made.name;
 		const path = `world/hexes/${name}/1_1.md`;
 		await plugin.createHexNote(1, 1, name);

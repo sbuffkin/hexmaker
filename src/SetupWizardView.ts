@@ -801,23 +801,18 @@ function makeMapStep(plugin: HexmakerPlugin): WizardStep {
 			// appear as hexes get content (createNewMap installs a preset
 			// palette such as Space - Sector on first use).
 			onProgress("Creating the map…");
-			const result = await plugin.createNewMap(
-				ctx.mapName,
-				ctx.mapCols,
-				ctx.mapRows,
-				ctx.paletteName,
-				0,
-				0,
-				plugin.settings.staggerOffset,
-				undefined,
-				outcome?.ok ? outcome.cells : undefined,
-				{
-					baseTerrain: suggestBaseTerrain(terrains),
-					quiet: true,
-					...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
-					...(outcome?.ok && outcome.events ? { events: outcome.events } : {}),
-				},
-			);
+			const result = await plugin.createNewMap({
+				name: ctx.mapName,
+				cols: ctx.mapCols,
+				rows: ctx.mapRows,
+				palette: ctx.paletteName,
+				stagger: plugin.settings.staggerOffset,
+				terrain: outcome?.ok ? outcome.cells : undefined,
+				baseTerrain: suggestBaseTerrain(terrains),
+				quiet: true,
+				...(outcome?.ok && outcome.arrivals ? { arrivals: outcome.arrivals } : {}),
+				...(outcome?.ok && outcome.events ? { events: outcome.events } : {}),
+			});
 			if ("error" in result) throw new Error(result.error);
 
 			// Generated paths (jump routes…) become the map's anchored paths.

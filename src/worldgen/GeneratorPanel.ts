@@ -963,12 +963,12 @@ export class GeneratorPanel {
       const usedConnect = GeneratorPanel.connect;
       createBtn.disabled = true;
       void this.plugin
-        .createNewMap(
-          newNameInput.value.trim() || `${model.name}-${seed}`,
-          grid.cols, grid.rows, GeneratorPanel.paletteName, grid.offset.x, grid.offset.y, grid.stagger,
-          (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
-          r.cells,
-        )
+        .createNewMap({
+          name: newNameInput.value.trim() || `${model.name}-${seed}`,
+          cols: grid.cols, rows: grid.rows, palette: GeneratorPanel.paletteName, offset: grid.offset, stagger: grid.stagger,
+          onProgress: (done, total) => createBtn.setText(`Creating ${done} / ${total}…`),
+          terrain: r.cells,
+        })
         .then(async (result) => {
           createBtn.disabled = false;
           createBtn.setText("Create map");
