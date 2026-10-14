@@ -28,12 +28,11 @@ import { PLACEHOLDER_MAP_NAME } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
 import { createModuleStores, moduleCommands, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
-import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
-import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
+import { PaletteStore, palettesOnLoad } from "./palettes/PaletteStore";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { PaletteEditorView } from "./palettes/PaletteEditorView";
-import { enabledKinds, isIconHiddenByKind, newTerrains, paletteKind, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
+import { enabledKinds, isIconHiddenByKind, newTerrains, resolveMapKinds, terrainsForTables, type MapKind, type SectionWordsFn } from "./mapKinds";
 import { defaultPaletteFor, resolveDefaultPalette, resolveExpandedDefault } from "./palettes/paletteOptions";
 import { contextKindsIn, kindForIn, sectionWordsIn } from "./maps/mapKindQueries";
 import { declineModuleOffer, moduleOfferFor, moduleOfferText } from "./maps/moduleOffer";
@@ -42,7 +41,6 @@ import { isDebugMode, onDebugModeChange, setDebugMode } from "./ui/debugMode";
 import {
   getPreset,
   presetToPalette,
-  uniquePaletteName,
 } from "./palettes/presets";
 import { clonePathTypes } from "./palettes/pathTypeTable";
 import { normalizeFolder, makeTableTemplate, sortIcons } from "./utils";
@@ -103,7 +101,10 @@ import { GeneratorPanel } from "./worldgen/GeneratorPanel";
 import { isLinkableNotePath, templateNoteRules, type NotePickPurpose, type TemplateNoteRules } from "./templateNotes";
 import { fillNoteTemplate, hexTemplatePathFor, LINK_NOTE_TEMPLATES, linkNoteTemplate, linkNoteTemplatePathFor, LOCATION_SECTIONS, templatesFolderFor, withLocationLine } from "./noteTemplates";
 import { MapsService, type NewMapOptions } from "./services/MapsService";
+import { PaletteQueries } from "./services/PaletteQueries";
 export default class HexmakerPlugin extends Plugin {
+  /** Palette lookups and installs (src/services/PaletteQueries.ts). */
+  readonly palettes = new PaletteQueries(this);
   /** The map list: create, link, rename, restore (src/services/MapsService.ts). */
   readonly maps = new MapsService(this);
   settings: HexmakerPluginSettings;
@@ -1879,22 +1880,11 @@ export default class HexmakerPlugin extends Plugin {
 
   setMapDisplayName(name: string, typed: string): Promise<void> { return this.maps.setMapDisplayName(name, typed); }
 
-  getPaletteByName(name: string): TerrainPalette | undefined {
-    return this.settings.terrainPalettes.find((p) => p.name === name);
-  }
+  getPaletteByName(name: string): TerrainPalette | undefined { return this.palettes.getPaletteByName(name); }
 
-  /**
-   * Terrains for an installed palette, or for a built-in preset that isn't
-   * installed yet (lets new-map dropdowns preview presets before install).
-   */
-  getPaletteOrPresetTerrains(name: string): TerrainColor[] {
-    return this.getPaletteByName(name)?.terrains ?? getPreset(name)?.terrains ?? [];
-  }
+  getPaletteOrPresetTerrains(name: string): TerrainColor[] { return this.palettes.getPaletteOrPresetTerrains(name); }
 
-  /** The map type of a palette (or a preset not installed yet): see paletteKind. */
-  getPaletteOrPresetKind(name: string): MapKind {
-    return paletteKind(this.getPaletteByName(name) ?? getPreset(name));
-  }
+  getPaletteOrPresetKind(name: string): MapKind { return this.palettes.getPaletteOrPresetKind(name); }
 
   /**
    * Install the shipped content of map types that are on and haven't had
@@ -1935,78 +1925,17 @@ export default class HexmakerPlugin extends Plugin {
     this.onMapKindsChanged();
   }
 
-  /**
-   * Path types maps on this palette can draw, in picker order: the palette's
-   * own list (the live array, so editors can change it in place), a preset's
-   * when it isn't installed, else the old plugin-wide list or Road and River.
-   */
-  getPathTypes(paletteName: string | undefined): PathType[] {
-    const pal = paletteName ? this.getPaletteByName(paletteName) : this.settings.terrainPalettes[0];
-    const fallback = this.settings.pathTypes?.length ? this.settings.pathTypes : DEFAULT_PATH_TYPES;
-    if (pal) return (pal.pathTypes ??= clonePathTypes(fallback));
-    return (paletteName ? getPreset(paletteName)?.pathTypes : undefined) ?? fallback;
-  }
+  getPathTypes(paletteName: string | undefined): PathType[] { return this.palettes.getPathTypes(paletteName); }
 
-  /** The palette a map actually uses: its own when installed, else the first. */
-  mapPaletteName(mapName: string | undefined): string {
-    const map = mapName ? this.getMap(mapName) : undefined;
-    if (map?.paletteName && this.getPaletteByName(map.paletteName)) return map.paletteName;
-    return this.settings.terrainPalettes[0]?.name ?? "";
-  }
+  mapPaletteName(mapName: string | undefined): string { return this.palettes.mapPaletteName(mapName); }
 
-  /** Path types for a map: its palette's (see getPathTypes). */
-  getMapPathTypes(mapName: string | undefined): PathType[] {
-    return this.getPathTypes(this.mapPaletteName(mapName));
-  }
+  getMapPathTypes(mapName: string | undefined): PathType[] { return this.palettes.getMapPathTypes(mapName); }
 
-  /** Maps whose palette is `paletteName` (see mapPaletteName). */
-  mapsOnPalette(paletteName: string): MapData[] {
-    return this.settings.maps.filter((m) => this.mapPaletteName(m.name) === paletteName);
-  }
+  mapsOnPalette(paletteName: string): MapData[] { return this.palettes.mapsOnPalette(paletteName); }
 
-  /**
-   * Add a copy of a built-in preset as a new palette (a unique name is chosen
-   * if the preset's name is taken), with the preset's path types. Saves;
-   * the palette note is written by the sync that follows. Returns the new
-   * palette's name.
-   */
-  async installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> {
-    const preset = getPreset(presetName);
-    if (!preset) return undefined;
-    const name = uniquePaletteName(
-      asName ?? preset.name,
-      this.settings.terrainPalettes.map((p) => p.name),
-    );
-    const palette = presetToPalette(preset, name);
-    this.settings.terrainPalettes.push(palette);
-    await this.saveSettings();
-    // Give the new terrains their description/encounters tables when the
-    // vault uses terrain tables, so a submap's hexes get an encounters
-    // table like the parent's (round 7: a system map installed "Space -
-    // System" and its "ice planet" hex showed Encounters Table "None").
-    await this.ensureTablesForNewTerrains();
-    // Installed on first use by a new map: expected, so no notice (F12).
-    if (!opts.quiet) new Notice(`Added palette "${name}".`);
-    return name;
-  }
+  installPalettePreset(presetName: string, asName?: string, opts: { quiet?: boolean } = {}): Promise<string | undefined> { return this.palettes.installPalettePreset(presetName, asName, opts); }
 
-  /**
-   * Palette to pre-select for a new submap of `parentMap`: the parent
-   * palette's `childPalette` (its note's `child-palette`; the preset's only
-   * while that preset isn't installed), else the parent's own palette, else
-   * the palette for new maps. An installed palette is never topped up from
-   * a same-named preset: clearing its child palette means none.
-   */
-  childPaletteFor(parentMap: string): string {
-    const parentPaletteName = this.getMap(parentMap)?.paletteName;
-    const parentPalette = parentPaletteName ? this.getPaletteByName(parentPaletteName) : undefined;
-    const child = parentPalette
-      ? parentPalette.childPalette
-      : parentPaletteName ? getPreset(parentPaletteName)?.childPalette : undefined;
-    if (child && (this.getPaletteByName(child) || getPreset(child))) return child;
-    if (parentPalette) return parentPalette.name;
-    return defaultPaletteFor(this.settings);
-  }
+  childPaletteFor(parentMap: string): string { return this.palettes.childPaletteFor(parentMap); }
 
   linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> { return this.maps.linkSubmap(parentMap, x, y, childMap, action); }
 
@@ -2071,87 +2000,17 @@ export default class HexmakerPlugin extends Plugin {
     await hit.command.run(this);
   }
 
-  /**
-   * Saved setup for a new submap made from a `terrain` hex on `parentMap`:
-   * the parent palette's Submap defaults row for that terrain (from its
-   * note). Only a preset that isn't installed answers from its own rows;
-   * palettes installed before their preset gained defaults got the rows
-   * copied in once (PaletteStore, `paletteDataUpgraded`), so a row the user
-   * deletes stays deleted.
-   */
-  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined {
-    if (!terrain) return undefined;
-    const paletteName = this.getMap(parentMap)?.paletteName;
-    if (!paletteName) return undefined;
-    const pal = this.getPaletteByName(paletteName);
-    if (pal) return pal.submapDefaults?.[terrain];
-    return getPreset(paletteName)?.submapDefaults?.[terrain];
-  }
+  submapDefaultFor(parentMap: string, terrain: string | null | undefined): SubmapDefault | undefined { return this.palettes.submapDefaultFor(parentMap, terrain); }
 
-  /**
-   * Remember (or forget) choices for new submaps of `terrain` on the parent
-   * map's palette. `set` fields are stored; `clear` fields are removed.
-   * Saved into the palette note's Submap defaults table by the sync.
-   */
-  async saveSubmapDefault(
-    parentMap: string,
-    terrain: string,
-    set: SubmapDefault,
-    clear: (keyof SubmapDefault)[],
-  ): Promise<void> {
-    const paletteName = this.getMap(parentMap)?.paletteName;
-    const pal = paletteName ? this.getPaletteByName(paletteName) : undefined;
-    if (!pal) return;
-    // Start from what the user currently sees (see submapDefaultFor).
-    const current: SubmapDefault = { ...(this.submapDefaultFor(parentMap, terrain) ?? {}) };
-    for (const k of clear) delete current[k];
-    Object.assign(current, set);
-    const defaults = { ...(pal.submapDefaults ?? {}) };
-    if (Object.keys(current).length) defaults[terrain] = current;
-    else delete defaults[terrain];
-    if (Object.keys(defaults).length) pal.submapDefaults = defaults;
-    else delete pal.submapDefaults;
-    await this.saveSettings();
-  }
+  saveSubmapDefault(parentMap: string, terrain: string, set: SubmapDefault, clear: (keyof SubmapDefault)[]): Promise<void> { return this.palettes.saveSubmapDefault(parentMap, terrain, set, clear); }
 
-  /** The built-in default palettes (a fresh install's) that aren't in the palette list. */
-  missingDefaultPalettes(): string[] {
-    return missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes).map((p) => p.name);
-  }
+  missingDefaultPalettes(): string[] { return this.palettes.missingDefaultPalettes(); }
 
-  /**
-   * Put back the default palettes that aren't there (only ever on request:
-   * palettes the user deleted stay deleted). Returns the names added.
-   */
-  async addDefaultPalettes(): Promise<string[]> {
-    const add = this.missingDefaultPalettes();
-    for (const p of missingDefaults(this.settings.terrainPalettes, DEFAULT_SETTINGS.terrainPalettes)) {
-      this.settings.terrainPalettes.push(clonePalette(p));
-    }
-    if (!add.length) return add;
-    // Same as a fresh install's: path types from the shipped list.
-    fillPalettePathTypes(this.settings.terrainPalettes, this.settings.pathTypes);
-    await this.saveSettings();
-    await this.ensureTablesForNewTerrains();
-    new Notice(`Added ${add.join(" and ")}.`);
-    return add;
-  }
+  addDefaultPalettes(): Promise<string[]> { return this.palettes.addDefaultPalettes(); }
 
-  /** Install `name` from the presets if no palette by that name exists yet. */
-  async ensurePaletteInstalled(name: string): Promise<void> {
-    if (this.getPaletteByName(name) || !getPreset(name)) return;
-    // A new map installing its palette is expected: no notice (F12).
-    await this.installPalettePreset(name, undefined, { quiet: true });
-  }
+  ensurePaletteInstalled(name: string): Promise<void> { return this.palettes.ensurePaletteInstalled(name); }
 
-  getMapPalette(mapName: string): TerrainColor[] {
-    const map = this.getMap(mapName);
-    return (
-      this.getPaletteByName(map?.paletteName ?? "")?.terrains ??
-      this.settings.terrainPalettes[0]?.terrains ??
-      []
-    );
-  }
+  getMapPalette(mapName: string): TerrainColor[] { return this.palettes.getMapPalette(mapName); }
 
   /**
    * The map types in context on `mapName`: its palette's and every
@@ -2180,19 +2039,7 @@ export default class HexmakerPlugin extends Plugin {
     return sectionWordsIn(this, mapName);
   }
 
-  getAllTerrains(): TerrainColor[] {
-    const seen = new Set<string>();
-    const result: TerrainColor[] = [];
-    for (const pal of this.settings.terrainPalettes) {
-      for (const t of pal.terrains) {
-        if (!seen.has(t.name)) {
-          seen.add(t.name);
-          result.push(t);
-        }
-      }
-    }
-    return result;
-  }
+  getAllTerrains(): TerrainColor[] { return this.palettes.getAllTerrains(); }
 
   getOrCreateMap(name: string): MapData { return this.maps.getOrCreateMap(name); }
 }
