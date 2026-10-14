@@ -3,7 +3,7 @@ import expect from "expect";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { splitMix } from "../src/ui/mixList";
-import { addedMixWeight, setMixRow } from "../src/overworld/BiomePanel";
+import { addedMixWeight, setMixRow } from "../src/overworld/biomePage/fields";
 import type { BiomeNoteFields } from "../src/overworld/biomeNote";
 import { readSurface } from "./helpers/source";
 

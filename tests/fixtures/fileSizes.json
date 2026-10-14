@@ -23,6 +23,6 @@
 		"src/random-tables/RandomTableEditorModal.ts": 899,
 		"src/overworld/EditRegionModal.ts": 891,
 		"src/worldgen/generators.ts": 841,
-		"src/overworld/BiomePanel.ts": 818
+		"src/overworld/BiomePanel.ts": 678
 	}
 }

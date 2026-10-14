@@ -9,7 +9,7 @@ import { oddsText, readOddsWeight } from "../src/ui/odds";
 import { renderSaveStatusLine } from "../src/ui/saveStatusLine";
 import { editorOdds } from "../src/random-tables/RandomTableEditorModal";
 import { freeNoteName } from "../src/random-tables/WorkflowWizardModal";
-import { biomePagePatch, setMixShares, setTypeTerrainWeights, typeTerrainShares } from "../src/overworld/BiomePanel";
+import { biomePagePatch, setMixShares, setTypeTerrainWeights, typeTerrainShares } from "../src/overworld/biomePage/fields";
 import { newBiomeFields } from "../src/overworld/BiomeLibraryModal";
 import { biomeNameProblem } from "../src/overworld/biomeForm";
 import { landOf } from "../src/overworld/biomeCombo";

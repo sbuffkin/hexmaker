@@ -74,7 +74,7 @@ export const SURFACES = {
 	/** Overworld modals (New world map, …). */
 	"overworld-modals": { file: "src/overworld/OverworldModals.ts", more: [] },
 	/** The biome page. */
-	"biome-page": { file: "src/overworld/BiomePanel.ts", more: [] },
+	"biome-page": { file: "src/overworld/BiomePanel.ts", more: ["src/overworld/biomePage"] },
 	/** The arrival service. */
 	"arrival": { file: "src/arrival/ArrivalService.ts", more: [] },
 	/** World types modal (space). */
