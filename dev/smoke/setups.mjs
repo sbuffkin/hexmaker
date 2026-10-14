@@ -157,18 +157,40 @@ function recipeSpace(id) {
   })();
 }
 
+/**
+ * Built as dev/demo-world.mjs builds it: on a fresh install, while the
+ * stores still wait for the setup wizard (F19, setup prepHeld), then the
+ * wizard closes and the stores start. Incident 2026-10-14: every region
+ * lost its kind, world slot and arrival here (notes written at creation
+ * only, then read back over memory), and the overworld showed no regions.
+ */
 function recipeOverworld(id) {
   return (async () => {
     const p = window.app.plugins.plugins[id];
-    p.settings.setupComplete = true;
-    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     const t0 = Date.now();
-    while (!p.devTools && Date.now() - t0 < 30000) await new Promise((r) => setTimeout(r, 300));
+    while (!p.devTools && Date.now() - t0 < 30000) await sleep(300);
     if (!p.devTools) throw new Error("devTools missing (sandbox marker?)");
+    const heldAtBuild = !!p.startupWritesHeld && !p.mapStore.isReady();
     const demo = await p.devTools.buildDemoWorld({ seed: 7 });
     await p.saveSettings();
     await p.mapStore.flush();
-    return { overworld: demo.overworld, regions: demo.regions, hexes: demo.overworldHexes };
+    // The wizard closes: the stores start now.
+    window.app.workspace.getLeavesOfType("duckmage-setup-wizard").forEach((l) => l.detach());
+    p.releaseStartupWrites?.();
+    while (!p.mapStore.isReady() && Date.now() - t0 < 120_000) await sleep(250);
+    await p.mapStore.flush();
+    const mine = p.settings.maps.filter((m) => m.parent?.map === demo.overworld);
+    const regionsAfterStart = mine.filter((m) => m.submapKind === "region" && m.world && m.arrival).length;
+    let regionNotes = 0;
+    for (const m of mine) {
+      const text = (await p.mapStore.readNoteText(m.name)) ?? "";
+      if (/\nsubmap-kind: region\r?\n/.test(text) && /\nworld: /.test(text) && /\narrival: /.test(text)) regionNotes++;
+    }
+    await p.showMap(demo.overworld);
+    await sleep(2500);
+    const layerRegions = p.devTools.overworldStats?.()?.[0]?.regions ?? null;
+    return { overworld: demo.overworld, regions: demo.regions, hexes: demo.overworldHexes, heldAtBuild, regionsAfterStart, regionNotes, layerRegions };
   })();
 }
 
@@ -491,11 +513,28 @@ async function spaceExtra(ctx) {
   return out;
 }
 
+/** The demo world's overworld is a radius-2 hex of 19 hexes, each with its region. */
+const DEMO_REGIONS = 19;
+
 async function overworldExtra(ctx) {
   const ow = ctx.state.maps.find((m) => m.overworld);
   if (!ow) return [{ check: "F5-overworld", ok: false, detail: "no overworld map" }];
-  const regions = ctx.state.maps.filter((m) => m.submapKind === "region" && m.parent === ow.name);
-  const out = [{ check: "F5-regions", ok: regions.length > 0, detail: `${ow.name}: ${regions.length} region maps` }];
+  const regions = ctx.state.maps.filter((m) => m.submapKind === "region" && m.parent === ow.name && m.world);
+  // Incident 2026-10-14: the region fields (kind, world slot, arrival) reach the
+  // notes and survive the stores starting late and a restart; the overworld draws them all.
+  const prep = ctx.prepInfo ?? {};
+  const out = [{
+    check: "F5-regions-prep",
+    ok: prep.regions === DEMO_REGIONS && prep.regionsAfterStart === DEMO_REGIONS && prep.regionNotes === DEMO_REGIONS && prep.layerRegions === DEMO_REGIONS,
+    detail: `built ${prep.regions} (stores held: ${prep.heldAtBuild}); after the stores started: ${prep.regionsAfterStart} in memory, ${prep.regionNotes} notes, ${prep.layerRegions} on the overworld layer (want ${DEMO_REGIONS})`,
+  }];
+  const layer = await ctx.ev(async (id, n) => {
+    const p = window.app.plugins.plugins[id];
+    await p.showMap(n);
+    await new Promise((r) => setTimeout(r, 2500));
+    return p.devTools?.overworldStats?.()?.[0]?.regions ?? null;
+  }, ctx.pluginId, ow.name);
+  out.push({ check: "F5-regions", ok: regions.length === DEMO_REGIONS && layer === DEMO_REGIONS, detail: `after a restart: ${ow.name}: ${regions.length} region maps with a world slot, ${layer} on the overworld layer (want ${DEMO_REGIONS})` });
   const lock = await ctx.ev((id, n) => window.__smokePage.overworldPaintLock(id, n), ctx.pluginId, ow.name);
   out.push({ check: "C8-overworld-paint", ok: lock.ok, detail: [...lock.steps, ...lock.problems].join("; ") });
 
@@ -636,7 +675,7 @@ export const SETUPS = [
   { id: "fresh", title: "Fresh install", build: (dir) => ({ seed: seedDir(dir) }), expect: { wizard: true }, extra: freshExtra, skipPaint: true },
   { id: "v155", title: "Synthetic 1.5.5 vault (hex-note frontmatter + data.json maps), migrates", build: buildV155, migration: true, expect: {} },
   { id: "space", title: "Space only (sector → system → planet)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeSpace, expect: {}, extra: spaceExtra },
-  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, expect: { openMs: 60_000 }, extra: overworldExtra },
+  { id: "overworld", title: "Overworld + regions (demo world, seed 7)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeOverworld, prepHeld: true, expect: { openMs: 60_000 }, extra: overworldExtra },
   { id: "neighbours", title: "Neighbours world (legacy 2×2, own coordinates)", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeNeighbours, expect: {}, extra: neighboursExtra },
   { id: "custom-palette", title: "One custom palette, no default names", build: (dir) => ({ seed: seedDir(dir) }), recipe: recipeCustomPalette, expect: {}, extra: customPaletteExtra },
   {

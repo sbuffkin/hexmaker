@@ -19,10 +19,11 @@ import {
   type MapNoteData,
   type MapNoteProblem,
   type MapNoteReadOptions,
-  type PathRouteStats,
 } from "./mapNote";
 import { renamedHexes, syncHexNameAlias } from "./hexNames";
 import { regionMirrorFixes } from "./submaps";
+import { mergePaths, pathRouteStats } from "./mapPathMerge";
+export { mergePaths, pathRouteStats } from "./mapPathMerge";
 import { guardWrite } from "../modeGate";
 import type { ModeAction } from "../workMode";
 import { impassableNames } from "../impassable";
@@ -31,7 +32,7 @@ import { RouteCache, type SegmentRouter } from "../paths/routeCache";
 import { resolvePaths, styleOf, type ResolvedBranch, type StyleFor } from "../paths/resolve";
 import { anchorsFor, compactLegacy, dedupeSteps, reproduces, routeFnFor, type CompactReport } from "../paths/fromHexes";
 import { pinChanged, segmentFn } from "../paths/edit";
-import { pathNameKey, uniquePathName } from "../paths/names";
+import { uniquePathName } from "../paths/names";
 import { mapRouteContext, pathTypeStyleFor } from "../paths/mapContext";
 import { buildView, emptyView, reconcile, type PathView } from "../paths/chainView";
 import { uniqueMapsByName } from "./mapTree";
@@ -769,10 +770,17 @@ export class MapStore {
     });
   }
 
-  /** Settings changed (saveSettings): write notes whose data differs. */
+  /**
+   * Settings changed (saveSettings): write notes whose data differs. Before
+   * the store is ready (a fresh install's stores wait for the setup wizard,
+   * F19) only the notes this session already wrote (maps made meanwhile:
+   * createNewMap flushes) are kept up to date; nothing else is written yet.
+   * Incident 2026-10-14: skipping those left a new region's note without the
+   * fields set after it was made (kind, world slot, arrival).
+   */
   sync(): Promise<void> {
-    if (!this.ready) return this.queue;
     for (const m of this.uniqueMaps()) {
+      if (!this.ready && !this.lastKey.has(m.name)) continue;
       if (this.missing.has(m.name)) continue;
       if (this.lastKey.get(m.name) !== mapNoteKey(this.dataFor(m))) this.dirty.add(m.name);
       // A palette change can change the derived Summary (a terrain no longer
@@ -1021,6 +1029,32 @@ export class MapStore {
   }
 
   /**
+   * init() for a map whose note this session wrote before the store started
+   * (made while a fresh install's stores waited, F19). Memory is the newer
+   * copy: the note is never applied over it (that dropped every field set
+   * after the map was made, incident 2026-10-14). Edits made to the note
+   * meanwhile (by hand, sync) are folded in; the note is rewritten if
+   * memory has moved on.
+   */
+  private async loadOwnNote(map: MapData): Promise<"loaded" | "missing" | { unreadable: string; newer?: number }> {
+    const file = this.plugin.app.vault.getAbstractFileByPath(this.notePath(map.name));
+    if (!(file instanceof TFile)) return "missing";
+    const content = await this.plugin.app.vault.read(file);
+    const r = readMapNote(content, this.readOpts(file.path));
+    if (!r || !r.ok) return { unreadable: r ? r.reason : NO_FRONTMATTER, newer: r && !r.ok ? r.newer : undefined };
+    const seen = this.lastContent.get(file.path);
+    if (seen !== content) {
+      if (seen === undefined) this.apply(map, r.data);
+      else this.foldIn(map, seen, r.data);
+      this.lastContent.set(file.path, content);
+    }
+    this.known.set(map.name, map);
+    await this.cacheNote(map.name, content);
+    if (this.lastKey.get(map.name) !== mapNoteKey(this.dataFor(map))) this.dirty.add(map.name);
+    return "loaded";
+  }
+
+  /**
    * A map note that can't be read: hold every change in memory instead of
    * writing over it (a rebuild would lose the user's text), and say so once
    * with a notice that stays until it reads again.
@@ -1202,7 +1236,9 @@ export class MapStore {
       const unreadable: MapData[] = [];
       const gone: MapData[] = [];
       for (const map of maps) {
-        const r = await this.loadMap(map);
+        // A note this session wrote before the store started holds nothing
+        // newer than memory: never read it back over memory (see loadOwnNote).
+        const r = this.lastKey.has(map.name) ? await this.loadOwnNote(map) : await this.loadMap(map);
         // Deleted by hand (SM-DEL): marked missing, never re-created empty.
         if (r === "missing" && (await this.wasDeleted(map))) gone.push(map);
         else if (r === "missing") toMigrate.push(map);
@@ -1334,48 +1370,4 @@ export function withoutNotePaths<S extends { maps: MapData[] }>(settings: S, hol
     return rest as MapData;
   });
   return { ...settings, maps };
-}
-
-/**
- * Three-way merge of a map's paths by name (ignoring case and spacing):
- * `base` is what the note held when we last read or wrote it, `theirs` what
- * it holds now (hand edits, sync), `ours` the paths in memory (edits not yet
- * written). A path they changed, added or removed takes their version;
- * every other path keeps ours. Their order first, then paths only we added.
- */
-export function mergePaths(base: readonly MapPath[], theirs: readonly MapPath[], ours: readonly MapPath[]): MapPath[] {
-  const key = (p: MapPath) => pathNameKey(p.name);
-  const b = new Map(base.map((p) => [key(p), p]));
-  const o = new Map(ours.map((p) => [key(p), p]));
-  const t = new Map(theirs.map((p) => [key(p), p]));
-  const same = (x: MapPath | undefined, y: MapPath | undefined) => JSON.stringify(x) === JSON.stringify(y);
-  const out: MapPath[] = [];
-  for (const p of theirs) {
-    const k = key(p);
-    if (!same(b.get(k), p)) out.push(p); // changed or added by hand
-    else if (o.has(k)) out.push(o.get(k)!); // ours (maybe edited); removed by us = gone
-  }
-  for (const p of ours) {
-    const k = key(p);
-    if (!t.has(k) && !b.has(k)) out.push(p); // added by us
-  }
-  return out;
-}
-
-/** Per path (by pathNameKey): the hexes it covers and the segments drawn straight. */
-export function pathRouteStats(paths: readonly MapPath[], resolved: readonly ResolvedBranch[]): Record<string, PathRouteStats> {
-  const out: Record<string, PathRouteStats> = {};
-  const byName = new Map(paths.map((p) => [p.name, p]));
-  const hexes = new Map<string, Set<string>>();
-  for (const r of resolved) {
-    const k = pathNameKey(r.path);
-    let set = hexes.get(k);
-    if (!set) { set = new Set(); hexes.set(k, set); }
-    for (const h of r.hexes) set.add(h);
-    const st = (out[k] ??= { hexes: 0 });
-    const anchors = byName.get(r.path)?.branches[r.branch]?.anchors ?? [];
-    for (const i of r.fallbackSegments) (st.fallbacks ??= []).push([anchors[i], anchors[i + 1]]);
-  }
-  for (const [k, set] of hexes) out[k].hexes = set.size;
-  return out;
 }

@@ -142,7 +142,7 @@ async function runSetup(setup) {
   };
   const dir = path.join(work, setup.id);
   fs.mkdirSync(dir, { recursive: true });
-  let runDir = null, vault = null, sess = null;
+  let runDir = null, vault = null, sess = null, prepInfo = null;
   const ev = (fn, ...args) => sess.page.evaluate(fn, ...args);
   const stop = async () => {
     if (sess) { await sess.close().catch(() => {}); sess = null; }
@@ -170,9 +170,12 @@ async function runSetup(setup) {
     // ── prep launch (recipe) ──
     if (setup.recipe) {
       await launch();
-      const r = await ev(P.waitReady, pluginId, 120_000);
+      // prepHeld: the recipe runs while a fresh install's stores still wait
+      // for the setup wizard (F19), as dev/demo-world.mjs does; it releases them.
+      const r = await ev(setup.prepHeld ? P.waitLayout : P.waitReady, pluginId, 120_000);
       if (!r.ready) throw new Error(`prep: plugin not ready ${JSON.stringify(r)}`);
       const info = await ev(setup.recipe, pluginId);
+      prepInfo = info;
       await ev(P.settle, pluginId, 2500, 120_000);
       const errs = pluginErrors(sess.log, pluginId);
       rec("prep", errs.length === 0, errs.length ? errs.map((e) => e.text).join(" || ") : JSON.stringify(info).slice(0, 600));
@@ -320,7 +323,7 @@ async function runSetup(setup) {
 
     // Setup-specific checks.
     if (setup.extra) {
-      const ctx = { pluginId, state, ev, log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0 };
+      const ctx = { pluginId, state, ev, log: sess.log, readyMs: ready.ms, firstOpen, wizardAtLoad, runDir, vault, snap0, prepInfo };
       for (const c of await setup.extra(ctx)) rec(c.check, c.ok, c.detail);
       state = await ev(P.state, pluginId);
     }

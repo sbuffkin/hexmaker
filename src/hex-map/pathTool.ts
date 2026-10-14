@@ -44,7 +44,7 @@ import { routeBranch, type ResolvedBranch } from "../paths/resolve";
 import { canEditPaths, PATH_EDIT_LOCKED_HINT, type PathEditAction } from "../paths/editGate";
 import { noteHandEdit } from "../modeGate";
 import { pathRouteText } from "../maps/mapNote";
-import { pathRouteStats } from "../maps/MapStore";
+import { pathRouteStats } from "../maps/mapPathMerge";
 import { impassableNames, noRouteMessage } from "../impassable";
 import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";

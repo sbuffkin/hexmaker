@@ -39,6 +39,22 @@ export async function waitReady(id, timeoutMs) {
   return { ready: false, ms: Date.now() - t0, loaded: !!p, mapStore: !!p?.mapStore?.isReady?.(), palettes: !!p?.paletteStore?.isReady?.() };
 }
 
+/**
+ * Wait for the layout and the plugin only: a fresh install's stores stay
+ * held (F19) until the caller releases them (setups with prepHeld).
+ */
+export async function waitLayout(id, timeoutMs) {
+  const t0 = Date.now();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const app = window.app;
+  while (Date.now() - t0 < timeoutMs) {
+    const p = app.plugins.plugins[id];
+    if (app.workspace.layoutReady && p?.paletteStore) return { ready: true, ms: Date.now() - t0, held: !!p.startupWritesHeld };
+    await sleep(250);
+  }
+  return { ready: false, ms: Date.now() - t0 };
+}
+
 /** Wait for `quietMs` with no vault writes (max `maxMs`), flushing the map store. */
 export async function settle(id, quietMs, maxMs) {
   const t0 = Date.now();
