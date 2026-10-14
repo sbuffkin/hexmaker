@@ -16,6 +16,7 @@
  * Types only: no runtime code here.
  */
 
+import type { NoteRewrite } from "../migrations/noteRewrites";
 import type { PalettePreset } from "../palettes/presets";
 import type { SubmapKind } from "../types";
 import type { RowType } from "../random-tables/randomTable";
@@ -455,6 +456,8 @@ export interface ModuleRuntime {
   commands?: readonly CommandContribution[];
   folderSettings?: readonly FolderSettingContribution[];
   refLinkers?(plugin: HexmakerPlugin): RefLinker[];
+  /** One-time rewrites of the module's own notes, run after the core's (src/migrations/noteRewrites.ts). */
+  noteRewrites?(plugin: HexmakerPlugin): NoteRewrite[];
   /** The module's map type was just turned on (setup or Settings): install its shipped content once. */
   onEnabled?(plugin: HexmakerPlugin): Promise<void>;
   /** Overlays drawn over the terrain, under the paths (map view and PNG export). */

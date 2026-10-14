@@ -23,7 +23,7 @@ describe("N1: hex names in the map note", () => {
 			["3_1", { terrain: "forest" }],
 		]);
 		const text = buildMapNote("m", data);
-		expect(text).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked |");
+		expect(text).toContain("| Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked |");
 		expect(text).toContain("| 1_1 | Glass Wastes | dunes |");
 		const back = parseMapNote(text)!;
 		expect(back.hexes.get("1_1")).toEqual({ name: "Glass Wastes", terrain: "dunes" });
@@ -46,7 +46,7 @@ describe("N1: hex names in the map note", () => {
 		parsed.hexes.set("1_1", { ...parsed.hexes.get("1_1"), name: "Basin Gate" });
 		const updated = updateMapNote(old, "m", parsed);
 		// The user's column order is kept; the missing Name column goes at the end (#42).
-		expect(updated).toContain("| Hex | Terrain | Icon | GM icons | Region | Locations | Locked | Name |");
+		expect(updated).toContain("| Hex | Terrain | Icon | GM icons | Area | Locations | Locked | Name |");
 		expect(updated).toContain("| 1_1 | dunes |  |  | [[Basin]] |  |  | Basin Gate |");
 		expect(parseMapNote(updated)!.hexes.get("1_1")?.name).toBe("Basin Gate");
 	});

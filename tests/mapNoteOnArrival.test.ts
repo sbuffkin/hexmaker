@@ -28,7 +28,7 @@ describe("the On arrival column", () => {
 			["4_7", { terrain: "star system", onArrival: "world/tables/space/Default space/Sector/Mainworlds" }],
 			["5_2", { onArrival: "world/tables/space/Default space/Sector/Uncharted" }],
 		]));
-		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked | On arrival |");
+		expect(note).toContain("| Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked | On arrival |");
 		expect(note).toContain("| 4_7 |  | star system |  |  |  |  |  | [[world/tables/space/Default space/Sector/Mainworlds]] |");
 		// A hex with nothing but an On arrival roll still gets its row.
 		expect(note).toContain("| 5_2 |  |  |  |  |  |  |  | [[world/tables/space/Default space/Sector/Uncharted]] |");

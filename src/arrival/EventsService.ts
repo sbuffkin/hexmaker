@@ -15,6 +15,7 @@
 
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { mapLinkText } from "../maps/mapNote";
+import { mapRoot } from "../maps/mapWalk";
 import { eventOnMap, eventRow, NO_LEDGERS, readEvents, withEvents, withoutEvents, type FiredEvent, type LedgerEvent, type Ledgers } from "./eventsLedger";
 
 type Host = Pick<HexmakerPlugin, "getMap" | "parentOf" | "mapStore">;
@@ -22,17 +23,15 @@ type Host = Pick<HexmakerPlugin, "getMap" | "parentOf" | "mapStore">;
 export class EventsService {
   constructor(private plugin: Host) {}
 
-  /** The top of `map`'s map tree (the map itself when it has no parent). */
+  /**
+   * The top of `map`'s map tree (the map itself when it has no parent).
+   * Maps that are each other's submaps share one top (mapRoot, MG8).
+   */
   rootOf(map: string): string {
-    const seen = new Set<string>();
-    let at = map;
-    while (!seen.has(at)) {
-      seen.add(at);
-      const up = this.plugin.parentOf(at)?.map;
-      if (!up || !this.plugin.getMap(up)) break;
-      at = up;
-    }
-    return at;
+    return mapRoot(map, (m) => {
+      const up = this.plugin.parentOf(m)?.map;
+      return up && this.plugin.getMap(up) ? up : undefined;
+    });
   }
 
   /** A map note's ledger rows (none when it has no note or no ## Events). */

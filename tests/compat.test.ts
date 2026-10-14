@@ -191,9 +191,9 @@ describe("map note formats", () => {
     expect(out).not.toContain("| Type | Hexes |");
     expect(out).toContain("The plugin fills in *Route*");
     expect(out).toContain("edit *Path* in both tables");
-    // The Hexes table is untouched.
+    // The Hexes table is untouched, but for its Region column now called Area (format 6, MG5).
     const hexTable = (s: string) => s.slice(s.indexOf("| Hex |"), s.indexOf("## Paths"));
-    expect(hexTable(out)).toBe(hexTable(text));
+    expect(hexTable(out)).toBe(hexTable(text).replace("| GM icons | Region |", "| GM icons | Area |"));
     const back = parseMapNote(out)!;
     expect(mapNoteKey(back)).toBe(mapNoteKey(d));
     expect(updateMapNote(out, "compat-example", back)).toBe(out);
@@ -205,7 +205,7 @@ describe("map note formats", () => {
     const out = updateMapNote(text, "compat-example", d);
     expect(out).toMatch(new RegExp(`^hexmaker-map: ${MAP_NOTE_FORMAT}$`, "m"));
     expect(out).toContain("My notes.");
-    expect(out).toContain("| Hex | Name | Terrain | Icon | GM icons | Region | Locations | Locked | Notes |");
+    expect(out).toContain("| Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked | Notes |");
     expect(out).toContain("| 3_4 | Glass Wastes | hills | bw-castle.png | skull.png, trap.png | [[Basin]] | [[_compat-example-3-4]] | yes |  |");
     expect(out).toContain("*Locations* links the maps");
     const back = parseMapNote(out)!;

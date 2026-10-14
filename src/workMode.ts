@@ -217,6 +217,9 @@ export const COMMAND_ACTIONS: Record<string, ModeAction> = {
   "open-random-tables": "view",
   "add-roll-ranges": "tables",
   "check-tables": "tables",
+  // Backups (MG2): opening the folder changes nothing; a restore is recovery, never locked.
+  "open-backups-folder": "view",
+  "restore-from-upgrade-backup": "settings",
   "export-current-note-pdf": "export",
   "export-current-note-markdown": "export",
   "export-current-hex": "export",

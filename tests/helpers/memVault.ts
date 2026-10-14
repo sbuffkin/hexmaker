@@ -124,6 +124,20 @@ export class MemVault {
 						if (v.failBinary) throw new Error("disk full");
 						v.binaries.set(p, new Uint8Array(data));
 					},
+					readBinary: async (p: string) => {
+						const b = v.binaries.get(p);
+						if (!b) throw new Error("no file " + p);
+						return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
+					},
+					/** Direct children of a folder (full paths), as Obsidian's adapter lists them. */
+					list: async (p: string) => {
+						const prefix = p ? p + "/" : "";
+						const direct = (k: string) => k.startsWith(prefix) && k.length > prefix.length && !k.slice(prefix.length).includes("/");
+						return {
+							files: [...new Set([...v.files.keys(), ...v.binaries.keys()])].filter(direct).sort(),
+							folders: [...v.folders].filter(direct).sort(),
+						};
+					},
 				},
 			},
 			metadataCache: {

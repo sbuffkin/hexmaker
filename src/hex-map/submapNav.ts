@@ -5,25 +5,8 @@ import { slugify } from "../utils";
  * Obsidian imports so they're unit-testable.
  */
 
-/**
- * Ancestors of `start`, root first, excluding `start` itself. Stops at the
- * first map without a parent, on a cycle, or after `max` hops.
- */
-export function mapAncestors(
-  start: string,
-  parentOf: (mapName: string) => string | undefined,
-  max = 8,
-): string[] {
-  const chain: string[] = [];
-  const seen = new Set([start]);
-  let cur = parentOf(start);
-  while (cur && !seen.has(cur) && chain.length < max) {
-    chain.unshift(cur);
-    seen.add(cur);
-    cur = parentOf(cur);
-  }
-  return chain;
-}
+// The parent-link walks live in src/maps/mapWalk.ts (pure); re-exported here.
+export { mapAncestors, mapRoot } from "../maps/mapWalk";
 
 /**
  * Default name for a submap created from hex (x, y) of `parentMap`:

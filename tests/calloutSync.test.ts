@@ -105,7 +105,7 @@ describe("Map data callout phase 2, end to end (syncHexMapData)", () => {
 		const r = await s.sync();
 		expect(r).toMatchObject({ wrote: true, applied: [], moved: ["Old terrain: swamp"] });
 		expect(s.hexes.get("3_4")?.terrain).toBe("forest");
-		expect(s.content()).toBe("# Hex 3, 4\n\n> [!hexmaker] Map data\n> Map: [[_coast|Coast]], hex 3, 4\n> Terrain: forest\n> Region: —\n> Name: —\n> Old terrain: swamp\n\nText.\n");
+		expect(s.content()).toBe("# Hex 3, 4\n\n> [!hexmaker] Map data\n> Map: [[_coast|Coast]], hex 3, 4\n> Terrain: forest\n> Area: —\n> Name: —\n> Old terrain: swamp\n\nText.\n");
 		expect(s.memory.get("hexes/coast/3_4.md")?.terrain).toBe("forest");
 		// Done once: the next sync has nothing to move or write.
 		expect(await s.sync()).toMatchObject({ wrote: false, moved: [] });

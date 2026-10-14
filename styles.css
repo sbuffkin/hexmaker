@@ -9687,3 +9687,38 @@ button.is-armed {
     min-height: 5em;
     resize: vertical;
 }
+
+/* The upgrade notice's link to the upgrade note (MG1): clickable though the notice lets clicks through. */
+.duckmage-bg-notice .duckmage-bg-notice-link {
+    pointer-events: auto;
+    cursor: pointer;
+}
+.duckmage-bg-notice p + p {
+    margin-top: 0.4em;
+}
+
+/* Restore from upgrade backup (MG2). */
+.duckmage-restore-backup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.duckmage-restore-backup-row {
+    justify-content: flex-start;
+    gap: 0.6em;
+    flex-wrap: wrap;
+    text-align: start;
+    height: auto;
+    white-space: normal;
+}
+.duckmage-restore-backup-name {
+    font-family: var(--font-monospace);
+    word-break: break-all;
+}
+.duckmage-restore-backup-notes {
+    max-height: 40vh;
+    overflow-y: auto;
+    word-break: break-all;
+}

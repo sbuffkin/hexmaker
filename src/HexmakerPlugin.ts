@@ -1,5 +1,5 @@
 import { type Command, Editor, EventRef, MarkdownView, Menu, Notice, Plugin, TAbstractFile, TFile, TFolder } from "obsidian";
-import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade } from "./ui/notify";
+import { beginNoticeBatch, closeNoticeBatch, endNoticeBatch, noticeBackground, noticeUpgrade, type NoticeLink } from "./ui/notify";
 import {
   exportSingleNoteAsPdf,
   exportSingleNoteAsMarkdown,
@@ -14,9 +14,9 @@ import { RandomTableView } from "./random-tables/RandomTableView";
 import { HexmakerSettingTab } from "./HexmakerSettingTab";
 import { registerRollerBlock } from "./random-tables/RollerBlock";
 import { registerPaletteReadingView } from "./palettes/paletteReadingView";
-import { fillLegacyPathTypes } from "./palettes/pathTypeLegacy";
+import { fillLegacyPathTypes } from "./migrations/v1.5-path-types-explicit";
 import { locateRollTable, withRollerBlock } from "./random-tables/randomTable";
-import { openTableRangesModal, runTableCheck, upgradeTableRangesOnce } from "./random-tables/tableMaintenance";
+import { openTableRangesModal, runTableCheck } from "./random-tables/tableMaintenance";
 import { processTableNote, TableStore } from "./random-tables/TableStore";
 import { FileLinkSuggestModal } from "./hex-map/FileLinkSuggestModal";
 import { MapLinkModal } from "./hex-map/MapLinkModal";
@@ -37,9 +37,10 @@ import { generatorsFolder } from "./worldgen/generators";
 import { inferKindContent, planKindContent, resolveKindContent } from "./kindContent";
 import { PLACEHOLDER_MAP_NAME, startupWritesWait } from "./setupPlaceholder";
 import type { WorldTypeStore } from "./space/WorldTypeStore";
-import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleGenerators, moduleRefLinkers, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
+import { createModuleStores, moduleCommands, moduleDevTools, moduleFolders, moduleGenerators, moduleRefLinkers, moduleNoteRewrites, runAfterStoresReady, runOnEnabled, runOnKindsEnabled, worldMaps } from "./modules/runtime";
 import type { GeneratorContribution, GeneratorHelpers, ModuleStore, RefLinker } from "./modules/types";
-import { PaletteStore, fillPalettePathTypes, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
+import { PaletteStore, clonePalette, missingDefaults, palettesOnLoad } from "./palettes/PaletteStore";
+import { fillPalettePathTypes } from "./migrations/v1.5-palette-path-types";
 import { PathsService } from "./paths/PathsService";
 import { RoutePins } from "./paths/routePins";
 import { setPathEditMapLookup } from "./paths/editGate";
@@ -105,7 +106,16 @@ import type { RegionSettings } from "./types";
 import { mapDataLines, mapDataSyncMessage, setMapData, shownValues, type HexMapDataView } from "./hexMapData";
 import { CalloutMemory } from "./maps/calloutMemory";
 import { syncHexMapData as syncHexMapDataWith, type CalloutSyncResult } from "./maps/calloutSync";
-import { runNoteFormatUpgrades } from "./noteFormatUpgrade";
+import { recordMigrationRun, runNoteFormatUpgrades, runSettingsMigrations } from "./migrations/registry";
+import { dataFormatOf, newerDataText, stampToSave, writtenByNewer } from "./migrations/stamp";
+import { takeUpgradeReport } from "./migrations/upgradeReport";
+import type { NoteRewrite } from "./migrations/noteRewrites";
+import { RestoreBackupModal, openBackupsFolder } from "./BackupsModal";
+import { writeUpgradeNote } from "./migrations/upgradeNote";
+import changelog from "../CHANGELOG.md";
+import { migrate as migrateFlatHexNotes } from "./migrations/v1.0-flat-hex-notes-to-default-map";
+import { migrate as migrateFlatTerrainTables } from "./migrations/v1.0-flat-terrain-tables-to-subfolders";
+import { upgradeTableRangesOnce } from "./migrations/v1.5-table-roll-ranges";
 import { hasRegionMapData, regionUse, renameRegionInStore, renamedTokenMap, setRegionMapData, type RegionMapDataView } from "./regionMapData";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { displayNameFor, mapLabel } from "./maps/mapTree";
@@ -148,6 +158,10 @@ export default class HexmakerPlugin extends Plugin {
   /** Each module's "ref-links" rewriters for its own notes (note format upgrade NF3). */
   get moduleRefLinks(): RefLinker[] {
     return moduleRefLinkers(this);
+  }
+  /** Each module's one-time rewrites of its own notes (the notes phase, after the core's). */
+  get moduleNoteRewrites(): NoteRewrite[] {
+    return moduleNoteRewrites(this);
   }
   /** The tables folder's notes in memory, for rolls the generators make (src/random-tables/TableNotes.ts). */
   tableNotes!: TableNotes;
@@ -217,6 +231,8 @@ export default class HexmakerPlugin extends Plugin {
     // returns null for all vault paths so custom icons are silently dropped.
     this.app.workspace.onLayoutReady(() => {
       this.loadAvailableIcons();
+      // data.json was written by a newer version (its data stamp, MG7): say so, and stay.
+      if (this.newerData) noticeBackground(this.newerData, 0);
       // The one-time upgrades below report in ONE notice once they're all
       // done, not a stack over the map's toolbar (fresh-eyes 2026-10-13 F2).
       beginNoticeBatch();
@@ -267,7 +283,7 @@ export default class HexmakerPlugin extends Plugin {
         // after a backup (DJ-Q6). After the stores load, for the same reason.
         rangesDone = storesReady.then(() => upgradeTableRangesOnce(this));
       }
-      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => endNoticeBatch());
+      void Promise.allSettled([storesReady, formatsDone, registered, rangesDone]).then(() => this.finishStartupUpgrades());
     });
 
     // Live-refresh the icon list when image files appear in / leave the
@@ -435,6 +451,17 @@ export default class HexmakerPlugin extends Plugin {
       id: "check-tables",
       name: "Check tables",
       callback: () => void runTableCheck(this),
+    });
+    // Backups stay in the plugin's folder; these reach them (owner MG2).
+    addPlaced("Plugin.cmd.openBackupsFolder", {
+      id: "open-backups-folder",
+      name: "Open backups folder",
+      callback: () => void openBackupsFolder(this),
+    });
+    addPlaced("Plugin.cmd.restoreFromBackup", {
+      id: "restore-from-upgrade-backup",
+      name: "Restore from upgrade backup…",
+      callback: () => new RestoreBackupModal(this.app, this).open(),
     });
     addPlaced("Plugin.cmd.exportNotePdf", {
       id: "export-current-note-pdf",
@@ -833,8 +860,8 @@ export default class HexmakerPlugin extends Plugin {
   }
 
   async loadSettings() {
-    // One-time migration: rename settings keys "regions" → "maps" and "defaultRegion" → "defaultMap"
-    // Must run on raw data BEFORE Object.assign so the migrated key wins over DEFAULT_SETTINGS.
+    // The settings-phase migrations (src/migrations) run on the raw data
+    // BEFORE Object.assign, so a moved key wins over DEFAULT_SETTINGS.
     // One read only: nothing may await between swapping in the new
     // settings and handing their maps to the map store (adoptAll below), or a
     // save in between would see maps without their paths (incident
@@ -842,19 +869,16 @@ export default class HexmakerPlugin extends Plugin {
     const loaded = (await this.loadData()) as Record<string, unknown> | null;
     const rawData = loaded ? (JSON.parse(JSON.stringify(loaded)) as Record<string, unknown>) : null;
     this.onDisk = loaded ? JSON.stringify(loaded) : null;
+    // An existing vault (not a fresh install): the version that last saved it, for the upgrade note.
+    this.upgradeFrom = rawData ? { version: typeof rawData["savedWith"] === "string" ? rawData["savedWith"] : undefined } : null;
     const data = loaded ?? {};
-    if (data["regions"] !== undefined && data["maps"] === undefined) {
-      data["maps"] = data["regions"];
-    }
-    delete data["regions"];
-    if (data["defaultRegion"] !== undefined && data["defaultMap"] === undefined) {
-      data["defaultMap"] = data["defaultRegion"];
-    }
-    delete data["defaultRegion"];
-    // The roll-ranges prompt (never released) became a silent upgrade (DJ-Q6).
-    delete data["tableRangesPrompt"];
+    // Written by a newer build (its data stamp is newer than this build knows): say so once loaded.
+    this.newerData = writtenByNewer(data) ? newerDataText(data["savedWith"], dataFormatOf(data)) : null;
+    this.settingsMigrationsRan = runSettingsMigrations(data);
 
     this.settings = Object.assign({}, DEFAULT_SETTINGS, data as Partial<HexmakerPluginSettings>);
+    // The data stamp (src/migrations/stamp.ts): written with the next save, never lowered.
+    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
     // Own copy: the default is a shared constant, and editors push into lists.
     // (Kept only as the fallback palettes are filled from; see getPathTypes.)
     this.settings.pathTypes = clonePathTypes(this.settings.pathTypes ?? DEFAULT_PATH_TYPES);
@@ -939,6 +963,62 @@ export default class HexmakerPlugin extends Plugin {
     this.onDisk = text;
   }
 
+  /** Set when data.json was written by a newer build: the notice to show (see stamp.ts). */
+  private newerData: string | null = null;
+  /** Settings-phase migrations that changed data.json on this load (recorded once settings exist). */
+  private settingsMigrationsRan: string[] = [];
+  /** Set for an existing vault: the version that last saved data.json (null: a fresh install). */
+  private upgradeFrom: { version: string | undefined } | null = null;
+
+  /**
+   * After the start-up upgrades (MG1): record which migrations changed the
+   * vault (data.json's migrationsRun), write the "Hexmaker upgrade <date>"
+   * note when an existing vault was upgraded, and show the one combined
+   * notice, linking the note. A fresh install gets no note.
+   */
+  private async finishStartupUpgrades(): Promise<void> {
+    const entries = takeUpgradeReport();
+    let recorded = false;
+    for (const id of [...this.settingsMigrationsRan, ...entries.flatMap((e) => e.ids ?? [])]) {
+      if (recordMigrationRun(this.settings, id)) recorded = true;
+    }
+    this.settingsMigrationsRan = [];
+    let link: NoticeLink | undefined;
+    const now = pluginVersion(this);
+    const upgraded = !!this.upgradeFrom && entries.length > 0 && (entries.some((e) => e.ids?.length) || this.upgradeFrom.version !== now);
+    if (upgraded) {
+      try {
+        const path = await writeUpgradeNote(this.app, normalizeFolder(this.settings.worldFolder ?? ""), {
+          date: new Date(),
+          from: this.upgradeFrom?.version,
+          to: now,
+          entries,
+          backupsFolder: this.backupsFolder(),
+          changelog,
+          pluginName: this.manifest.name ?? "Hexmap World Creator",
+        });
+        const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+        link = { text: `What changed, and the backups: ${name}`, open: () => void this.openVaultNote(path) };
+      } catch (e) {
+        console.error("Hexmap World Creator: couldn't write the upgrade note", e);
+      }
+    }
+    endNoticeBatch(link);
+    // Only data.json: the record must not make a fresh install write notes (F19).
+    if (recorded && this.upgradeFrom) await this.saveData(this.settings);
+  }
+
+  /** The plugin's backups folder (vault-relative, under the config folder). */
+  backupsFolder(): string {
+    return `${this.manifest.dir ?? ""}/backups`;
+  }
+
+  /** Open a vault note in a new tab. */
+  private async openVaultNote(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (file instanceof TFile) await this.app.workspace.getLeaf("tab").openFile(file);
+  }
+
   /** data.json's content as last loaded or written by this session (compact JSON). */
   private onDisk: string | null = null;
 
@@ -961,6 +1041,7 @@ export default class HexmakerPlugin extends Plugin {
 
   async saveSettings() {
     this.settings.savedWith = pluginVersion(this);
+    this.settings.dataFormat = stampToSave(this.settings.dataFormat);
     // The setup just finished or was turned off without picking map types
     // (e.g. "Don't show again", a recipe): record its types, install nothing.
     this.settings.kindContent = inferKindContent(this.settings);
@@ -1396,24 +1477,8 @@ export default class HexmakerPlugin extends Plugin {
       }
     }
 
-    // Migrate any old flat-format files ({name} - {type}.md) to the new subfolder scheme
-    for (const entry of this.getAllTerrains()) {
-      for (const tableType of ["description", "encounters"] as const) {
-        const oldPath = `${subfolder}/${entry.name} - ${tableType}.md`;
-        const newPath = `${subfolder}/${tableType}/${entry.name}.md`;
-        const oldFile = this.app.vault.getAbstractFileByPath(oldPath);
-        if (
-          oldFile instanceof TFile &&
-          !this.app.vault.getAbstractFileByPath(newPath)
-        ) {
-          try {
-            await this.app.fileManager.renameFile(oldFile, newPath);
-          } catch {
-            /* ignore */
-          }
-        }
-      }
-    }
+    // Old flat-named tables ({name} - {type}.md) move into the type folders.
+    await migrateFlatTerrainTables(this.app, subfolder, this.getAllTerrains().map((t) => t.name));
 
     // Create any still-missing table files
     await this.createTerrainTableFiles(terrains);
@@ -3086,39 +3151,9 @@ export default class HexmakerPlugin extends Plugin {
     return r;
   }
 
+  /** Pre-1.0 hex notes loose in the hexes folder move into the "default" map's folder. */
   private async migrateHexFilesToDefaultRegion(): Promise<void> {
-    const hexFolder = normalizeFolder(this.settings.hexFolder);
-    if (!hexFolder) return;
-
-    // Scan first — only create the destination folder if there are actually
-    // files to move. On a fresh install the scan returns nothing and we return
-    // early, avoiding spurious folder creation before setup is complete.
-    const candidates = this.app.vault.getMarkdownFiles().filter((f) => {
-      const parent = f.parent?.path ?? "";
-      return parent === hexFolder && /^-?\d+_-?\d+$/.test(f.basename);
-    });
-    if (candidates.length === 0) return;
-
-    const defaultFolder = `${hexFolder}/default`;
-    if (!this.app.vault.getAbstractFileByPath(defaultFolder)) {
-      try {
-        await this.app.vault.createFolder(defaultFolder);
-      } catch {
-        /* exists */
-      }
-    }
-    let moved = 0;
-    for (const file of candidates) {
-      const newPath = `${defaultFolder}/${file.name}`;
-      if (!this.app.vault.getAbstractFileByPath(newPath)) {
-        try {
-          await this.app.fileManager.renameFile(file, newPath);
-          moved++;
-        } catch {
-          /* skip */
-        }
-      }
-    }
+    const moved = await migrateFlatHexNotes(this.app, this.settings.hexFolder);
     if (moved > 0)
       noticeBackground(
         `migrated ${moved} hex file(s) to "default" region.`,

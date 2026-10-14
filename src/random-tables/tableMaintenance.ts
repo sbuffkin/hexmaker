@@ -5,7 +5,8 @@
  * - "Add roll ranges to tables" upgrades older tables to `| dN | Result |
  *   Weight |`, after writing a gzipped full-text backup. It only runs from
  *   the user's click in TableRangesModal, and once, silently, on the first
- *   load after updating (see upgradeTableRangesOnce; no prompt: DJ-Q6).
+ *   load after updating (src/migrations/v1.5-table-roll-ranges.ts; no
+ *   prompt: DJ-Q6).
  *
  * Never adds to or alters `_` notes (other than the report it owns).
  */
@@ -14,102 +15,20 @@ import { Notice, TFile, type App } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { writeJsonBackup } from "../backup";
 import { parseRandomTableWithReport, type TableIssue } from "./randomTable";
-import { isTableNotePath, planTableMigration } from "./tableMigration";
-import { processTableNote } from "./TableStore";
-import { noticeUpgrade } from "../ui/notify";
+import { tableNotes, type TableScope } from "./tableNotePaths";
+import { backupDirFor, migrateTables, type MigrationResult, type MigrationSurvey, surveyTableMigration } from "../migrations/v1.5-table-roll-ranges";
+
+export type { TableScope };
+export { migrateTables, surveyTableMigration, tableNotes, type MigrationResult, type MigrationSurvey };
 
 export const TABLE_CHECK_NOTE = "_table-check.md";
-
-export interface TableScope {
-  tablesFolder: string;
-  workflowsFolder: string;
-}
 
 export function tableScope(plugin: HexmakerPlugin): TableScope {
   return {
     tablesFolder: normalizeFolder(plugin.settings.tablesFolder ?? ""),
     workflowsFolder: normalizeFolder(plugin.settings.workflowsFolder ?? ""),
   };
-}
-
-/** Table notes in the tables folder ("_" notes and workflows excluded), by path. */
-export function tableNotes(app: App, scope: TableScope): TFile[] {
-  return app.vault
-    .getMarkdownFiles()
-    .filter((f) => isTableNotePath(f.path, scope.tablesFolder, scope.workflowsFolder))
-    .sort((a, b) => a.path.localeCompare(b.path));
-}
-
-export interface MigrationSurvey {
-  /** Notes that would change: path → [original, upgraded]. */
-  changes: Map<string, [string, string]>;
-  /** Tables left alone, with why. */
-  skipped: { path: string; reason: string }[];
-  /** Tables already in the new format. */
-  unchanged: number;
-  /** Notes in the folder with no roll table. */
-  notTables: number;
-}
-
-export async function surveyTableMigration(app: App, scope: TableScope): Promise<MigrationSurvey> {
-  const survey: MigrationSurvey = { changes: new Map(), skipped: [], unchanged: 0, notTables: 0 };
-  for (const file of tableNotes(app, scope)) {
-    const content = await app.vault.read(file);
-    const plan = planTableMigration(content);
-    if (plan.action === "change") survey.changes.set(file.path, [content, plan.content]);
-    else if (plan.action === "none") survey.unchanged++;
-    else if (plan.reason === "no roll table") survey.notTables++;
-    else survey.skipped.push({ path: file.path, reason: plan.reason });
-  }
-  return survey;
-}
-
-export interface MigrationResult extends MigrationSurvey {
-  /** Paths actually rewritten. */
-  changed: string[];
-  /** Where the originals were saved. */
-  backup?: string;
-  /** Set when nothing was written because the backup failed. */
-  error?: string;
-}
-
-/**
- * Add roll ranges to every table that can take them. The full text of every
- * note about to change is backed up first; if the backup can't be written,
- * nothing is changed. Safe to run twice.
- */
-export async function migrateTables(app: App, scope: TableScope, backupDir: string): Promise<MigrationResult> {
-  const survey = await surveyTableMigration(app, scope);
-  const result: MigrationResult = { ...survey, changed: [] };
-  if (!survey.changes.size) return result;
-  const notes: Record<string, string> = {};
-  for (const [path, [original]] of survey.changes) notes[path] = original;
-  try {
-    const json = JSON.stringify({ kind: "table-ranges", savedAt: new Date().toISOString(), notes });
-    result.backup = await writeJsonBackup(app.vault.adapter, backupDir, "tables", json);
-  } catch (e) {
-    console.error("Hexmap World Creator: couldn't back up tables; nothing was changed", e);
-    result.error = `Couldn't save a backup (${String(e)}), so no table was changed.`;
-    return result;
-  }
-  for (const [path, [original, upgraded]] of survey.changes) {
-    const file = app.vault.getAbstractFileByPath(path);
-    if (!(file instanceof TFile)) continue;
-    let wrote = false;
-    await processTableNote(app, file, (cur) => {
-      // Edited since the survey: plan again from what's there now.
-      const next = cur === original ? upgraded : (() => {
-        const p = planTableMigration(cur);
-        return p.action === "change" ? p.content : cur;
-      })();
-      wrote = next !== cur;
-      return next;
-    });
-    if (wrote) result.changed.push(path);
-  }
-  return result;
 }
 
 export interface TableCheck {
@@ -185,10 +104,6 @@ export async function writeTableReport(app: App, scope: TableScope, text: string
     await app.vault.create(path, text);
   }
   return path;
-}
-
-function backupDirFor(host: { manifest: { dir?: string } }): string {
-  return `${host.manifest.dir}/backups/table-ranges-${new Date().toISOString().slice(0, 10)}`;
 }
 
 /** "Check tables" command. */
@@ -282,43 +197,4 @@ export async function openTableRangesModal(plugin: HexmakerPlugin): Promise<void
     return;
   }
   new TableRangesModal(plugin.app, plugin, survey).open();
-}
-
-/** The one-time upgrade's notice: how many tables, and where the originals are (fresh-eyes 2026-10-13 F2). */
-export function tableRangesNoticeText(n: number, backup: string | undefined): string {
-  const what = `added roll ranges to ${n} table${n === 1 ? "" : "s"}.`;
-  return backup ? `${what} The originals are backed up in ${backup}.` : what;
-}
-
-/** What the one-time upgrade needs from the plugin (tests pass a fake). */
-export interface TableRangesHost {
-  app: App;
-  manifest: { dir?: string };
-  settings: { tablesFolder?: string; workflowsFolder?: string; tableRangesUpgraded?: boolean };
-  saveSettings(): Promise<void>;
-}
-
-/**
- * First load after updating: add roll ranges to older tables, silently and
- * once (owner decision DJ-Q6: no prompt, no nag). The originals are backed
- * up first; if the backup fails nothing changes and it runs again next
- * start. When nothing needs ranges no note is written, only the record.
- * One short notice afterwards, and only when a table changed.
- */
-export async function upgradeTableRangesOnce(host: TableRangesHost): Promise<MigrationResult | null> {
-  if (host.settings.tableRangesUpgraded) return null;
-  const scope: TableScope = {
-    tablesFolder: normalizeFolder(host.settings.tablesFolder ?? ""),
-    workflowsFolder: normalizeFolder(host.settings.workflowsFolder ?? ""),
-  };
-  const result = await migrateTables(host.app, scope, backupDirFor(host));
-  if (result.error) {
-    console.warn("Hexmap World Creator: roll ranges not added; will try again next start.", result.error);
-    return result;
-  }
-  host.settings.tableRangesUpgraded = true;
-  await host.saveSettings();
-  const n = result.changed.length;
-  if (n) noticeUpgrade(tableRangesNoticeText(n, result.backup));
-  return result;
 }

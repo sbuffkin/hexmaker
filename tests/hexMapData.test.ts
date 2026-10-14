@@ -38,7 +38,7 @@ describe("hex note Map data callout", () => {
 	it("keeps CRLF notes CRLF", () => {
 		const crlf = setMapData(TEMPLATE, VIEW).replace(/\n/g, "\r\n");
 		const out = setMapData(crlf, { ...VIEW, region: "Basin" });
-		expect(out).toContain("> Region: Basin\r\n");
+		expect(out).toContain("> Area: Basin\r\n");
 		expect(out.replace(/\r\n/g, "")).not.toContain("\n");
 	});
 
@@ -93,8 +93,8 @@ describe("Map data callout phase 2: hand edits back to the map", () => {
 	});
 
 	it("reads a dash, 'none' or nothing as clearing the field", () => {
-		expect(planCalloutImport(edit("> Region: Dustbowl", "> Region: —"), shown, shown)!.apply).toEqual({ region: null });
-		expect(planCalloutImport(edit("> Region: Dustbowl", "> Region:"), shown, shown)!.apply).toEqual({ region: null });
+		expect(planCalloutImport(edit("> Area: Dustbowl", "> Area: —"), shown, shown)!.apply).toEqual({ region: null });
+		expect(planCalloutImport(edit("> Area: Dustbowl", "> Area:"), shown, shown)!.apply).toEqual({ region: null });
 		expect(planCalloutImport(edit("> Name: Old Oak", "> Name: none"), shown, shown)!.apply).toEqual({ name: null });
 	});
 

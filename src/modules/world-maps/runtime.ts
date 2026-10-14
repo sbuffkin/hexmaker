@@ -15,6 +15,7 @@ import { WORLD_BIOMES_ID, WORLD_BIOMES_OPTIONS, WORLD_BIOMES_TUNING, worldBiomes
 import { gridKeys } from "../../worldgen/procedural/common";
 import { BiomeStore } from "../../overworld/BiomeStore";
 import { biomePoolsFolder, fillBiomeColumns } from "../../overworld/overworldGen";
+import { biomeColorKey } from "../../overworld/migrations/biome-colour-key-to-color";
 import { openNewOverworld } from "../../overworld/mapModalParts";
 import { buildBenchWorld, buildDemoWorld } from "../../overworld/demoWorld";
 import { VIEW_TYPE_HEX_MAP } from "../../constants";
@@ -84,6 +85,8 @@ export const worldMapsRuntime: ModuleRuntime = {
       run: (plugin) => openNewOverworld(plugin),
     },
   ],
+  // Biome notes' colour: → color: (O7), once, in the notes phase.
+  noteRewrites: (plugin) => [biomeColorKey(plugin)],
   // BC1, once per vault: every overworld hex's biome in its Biome column.
   afterStoresReady: (plugin) => fillBiomeColumns(plugin).catch((e) => logError("filling Biome columns", e)),
   // Biomes picked in the setup wizard: World biomes needs the shipped biome

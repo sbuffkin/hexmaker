@@ -5,8 +5,10 @@ import * as path from "node:path";
 import type { App } from "obsidian";
 import { MemVault } from "./helpers/memVault";
 import { parseRandomTable, parseRandomTableWithReport, resolveTable } from "../src/random-tables/randomTable";
-import { isTableNotePath, planTableMigration } from "../src/random-tables/tableMigration";
-import { checkTables, formatTableReport, migrateTables, surveyTableMigration, upgradeTableRangesOnce, writeTableReport } from "../src/random-tables/tableMaintenance";
+import { isTableNotePath } from "../src/random-tables/tableNotePaths";
+import { planTableMigration } from "../src/migrations/v1.5-table-roll-ranges";
+import { checkTables, formatTableReport, migrateTables, surveyTableMigration, writeTableReport } from "../src/random-tables/tableMaintenance";
+import { upgradeTableRangesOnce } from "../src/migrations/v1.5-table-roll-ranges";
 import { Notice } from "./__mocks__/obsidian"; // the mock: Notice.shown records every notice
 
 (globalThis as Record<string, unknown>).window ??= globalThis;
