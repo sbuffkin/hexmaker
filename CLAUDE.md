@@ -17,8 +17,11 @@ npm run build:full
 # Prove a slice built off leaves no trace in main.js (builds each slice off, then all off)
 npm run check:release        # or: node dev/release/check-release.mjs --off space
 
-# Run tests (node:test via tsx; every slice on)
+# Run tests (node:test via tsx; every slice on; runs every tests/*.test.ts)
 npm test
+
+# Type-check the tests (tsconfig.test.json; also in premerge)
+npm run typecheck:tests
 
 # Bump version (updates manifest.json and versions.json, stages both)
 npm run version
@@ -29,6 +32,12 @@ Slash commands (invoke inside Claude Code):
 - `/rebuild` — one-off production build + test run; reports errors if either fails
 
 **Always run `/rebuild` after making code changes.** The TypeScript type-check and test suite are the only automated verification — catch errors before the user does.
+
+### Tests
+
+- `npm test` globs `tests/*.test.ts` (node's own glob, so the order is fixed): a new test file runs as soon as it exists. There is no file list in package.json to edit. Integration tests stay in `tests/integration/*.integration.ts` (`npm run test:integration`).
+- Tests are type-checked: `npm run typecheck:tests` (`tsc -p tsconfig.test.json`; `obsidian` resolves to `tests/__mocks__/obsidian.ts`). It runs in premerge after lint.
+- **Tests that assert on source text read a surface, never a file path:** `readSurface("map-view")` etc. from `tests/helpers/source.ts`. A surface is a big file plus the folder its code is being split into (e.g. `map-view` = `src/hex-map/HexMapView.ts` + `src/hex-map/view/**`, `plugin` = `src/HexmakerPlugin.ts` + `src/plugin/**` + `src/services/**`, `hex-editor`, `generator-page`, `new-map-setup`, `setup-wizard`, …; the list is `SURFACES`). Moving code inside a surface needs no test edit. When you extract code out of a surface file, put it in that surface's folder or add the new file to the surface in the same commit. Loops over file lists use `readSource(path)` (routes a surface file to its surface); scans that report file paths map them with `ownerFile(path)`.
 
 ## Dev loop
 
@@ -44,7 +53,7 @@ Each coding session:
 
 ## Before merging or deploying: `npm run premerge`
 
-**Before merging into `feat/region-notes` (or master) or deploying a build into the live vault, run `npm run premerge`** (from WSL, like every npm script here) and only go ahead when it ends with `PREMERGE PASSED`. It runs build → lint → unit tests → integration tests → the **smoke vault matrix**, stopping loudly at the first failure (owner decision WM5: the matrix runs locally, not in CI; CI keeps the Obsidian-free tests).
+**Before merging into `feat/region-notes` (or master) or deploying a build into the live vault, run `npm run premerge`** (from WSL, like every npm script here) and only go ahead when it ends with `PREMERGE PASSED`. It runs build → lint → test type-check → unit tests → integration tests → the **smoke vault matrix**, stopping loudly at the first failure (owner decision WM5: the matrix runs locally, not in CI; CI keeps the Obsidian-free tests).
 
 - The matrix (`dev/smoke/run.mjs`, plan [[plan-work-modes]] §3) builds 9 vault setups (fresh install, a synthetic 1.5.5 vault, a copy of the owner's real data `C:/Users/markr/work/tmp/migtest/seedF` + a copy of the live `data.json`, space only, overworld + regions, neighbours world, a custom palette with no default names, everything deleted, 80 maps), each in its own sandboxed Obsidian (fresh-eyes `sandbox.mjs`, up to 4 at once), and checks: no plugin console errors; settings saved; every map opens and renders; untouched files unchanged on disk (migrations verified separately: map notes, backups, hex data vs the old frontmatter, paths resolve, palette upgrades keep every terrain); a restart rewrites nothing; paint → undo round trip; registered commands; Play refuses a path edit. ~5 minutes, mostly the real-data migration.
 - Run parts of it: `npm run smoke -- --only fresh,v155 --jobs 2` (`--list` for the setup ids, `--keep` to keep run folders, `--build <dir>` to test another build). A failed setup keeps its run folder (path in `dev/smoke/last-run.json`); a full pass writes `dev/smoke/last-pass.json` (commit, build hash, per-check results).
