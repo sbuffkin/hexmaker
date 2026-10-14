@@ -2,8 +2,6 @@ import { effectiveTerrainType } from "../terrainTypes";
 import { App, Notice, TFile } from "obsidian";
 import { canDo } from "../modeGate";
 import { lockedHint, workModeOf, type ModeAction } from "../workMode";
-import { newMapItemTitle } from "../maps/submaps";
-import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
 import { addGodOffer } from "./godOffer";
 import { HexmakerModal } from "../HexmakerModal";
 import { Fold } from "../ui/disclosure";
@@ -21,7 +19,6 @@ import {
   setIconOverrideInFile,
   setGmIconsInFile,
   getGmIconsFromFile,
-  getHexMapsFromFile,
   getHexNameFromFile,
 } from "../frontmatter";
 import { cleanHexName } from "../maps/hexNames";
@@ -58,6 +55,7 @@ import { PLAY_LOG_TARGET, rollDefaultSection } from "../play/playLog";
 import { PlayLogModal } from "../play/PlayLogModal";
 import { linkSectionIcon, showOnMapOffer } from "../play/linkIcons";
 import { NeighbourFlower, type NeighbourFlowerHost } from "./editor/NeighbourFlower";
+import { MapsStrip, type MapsStripHost } from "./editor/MapsStrip";
 
 /** Typing pause after which a text section autosaves. */
 const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
@@ -99,6 +97,7 @@ export class HexEditorModal extends HexmakerModal {
   /** What the editor's parts (src/hex-map/editor/) read and call: live, never a copy. */
   private readonly host = this.makeHost();
   private readonly flower = new NeighbourFlower(this.host);
+  private readonly mapsStrip = new MapsStrip(this.host);
 
   constructor(
     app: App,
@@ -117,7 +116,7 @@ export class HexEditorModal extends HexmakerModal {
   }
 
   /** The one host object every part gets (each part types it to the slice it uses). */
-  private makeHost(): NeighbourFlowerHost {
+  private makeHost(): NeighbourFlowerHost & MapsStripHost {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- getters below read the editor's live fields
     const modal = this;
     return {
@@ -129,6 +128,7 @@ export class HexEditorModal extends HexmakerModal {
       get options() { return modal.options; },
       navigate: (nx, ny) => this.navigate(nx, ny),
       close: () => this.close(),
+      rerender: () => this.onOpen(),
     };
   }
 
@@ -264,7 +264,7 @@ export class HexEditorModal extends HexmakerModal {
     });
     this.flower.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);
-    this.renderMapsStrip(contentEl);
+    this.mapsStrip.renderMapsStrip(contentEl);
 
     this.makeDraggable();
     // The body renders after an async read, so the modal opens short and
@@ -440,11 +440,6 @@ export class HexEditorModal extends HexmakerModal {
     else this.renderModeLocked(iconsBody, "paint-icon");
   }
 
-  /** Menus here: debug mode, and the God offer on God-only items. */
-  private modeMenuOptions(): ModeMenuOptions {
-    return { store: this.app, onGod: () => { this.plugin.setMapWorkMode(this.mapName, "god"); this.onOpen(); } };
-  }
-
   /** One line where a section the work mode locks would be. */
   private renderModeLocked(container: HTMLElement, action: ModeAction): void {
     const line = container.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint(action) });
@@ -536,52 +531,6 @@ export class HexEditorModal extends HexmakerModal {
     el.setText(SAVE_STATUS_TEXT[state]);
     el.title = SAVE_STATUS_TITLE;
     el.dataset["state"] = state;
-  }
-
-  /**
-   * "Maps" strip: the hex's region chip first (accent outline), then a
-   * chip per location (scrolls sideways), then "+" (new map, link existing,
-   * manage locations). Hidden when the hex has no maps and the host can't
-   * make any.
-   */
-  private renderMapsStrip(container: HTMLElement): void {
-    const { regionMap, locations } = getHexMapsFromFile(this.app, this.plugin.hexPath(this.x, this.y, this.mapName));
-    const locs = locations.filter((l) => l !== regionMap);
-    if (!regionMap && !locs.length && !this.options.onNewChildMap) return;
-    const strip = container.createDiv({ cls: "duckmage-maps-strip" });
-    strip.createSpan({ cls: "duckmage-maps-strip-label", text: "Maps" });
-    const chips = strip.createDiv({ cls: "duckmage-maps-strip-chips" });
-    const chip = (name: string, kind: "region" | "location") => {
-      const exists = !!this.plugin.getMap(name);
-      const label = this.plugin.mapLabel(name);
-      const c = chips.createEl("button", {
-        cls: `duckmage-maps-chip duckmage-maps-chip--${kind}${exists ? "" : " is-missing"}`,
-        text: label,
-        attr: { title: exists ? `${kind === "region" ? "Region" : "Location"}: ${label}` : `No map named ${name}` },
-      });
-      c.disabled = !exists;
-      c.addEventListener("click", () => {
-        this.close();
-        this.options.onSwitchMap?.(name);
-      });
-    };
-    if (regionMap) chip(regionMap, "region");
-    for (const l of locs) chip(l, "location");
-    if (!regionMap && !locs.length) chips.createSpan({ cls: "duckmage-maps-strip-empty", text: "None yet" });
-    if (!this.options.onNewChildMap) return;
-    const add = strip.createEl("button", { cls: "duckmage-maps-chip-add", text: "+", attr: { "aria-label": "Add a map to this hex", title: "New map from this hex, link one, or manage locations" } });
-    add.addEventListener("click", (e) => {
-      const { x, y } = this;
-      const menu = new ModeMenu(workModeOf(this.plugin.getMap(this.mapName)), this.modeMenuOptions());
-      menu.add("editor.new-map", newMapItemTitle({ regionMap, locations: locs }), "plus", () => { this.close(); this.options.onNewChildMap?.(x, y); });
-      if (this.options.onLinkExistingMap) {
-        menu.add("editor.link-map", "Link existing map…", "link", () => { this.close(); this.options.onLinkExistingMap?.(x, y); });
-      }
-      if (locs.length && this.options.onManageLocations) {
-        menu.add("editor.manage-locations", `Manage locations (${locs.length})…`, "list", () => { this.close(); this.options.onManageLocations?.(x, y); });
-      }
-      menu.showAtMouseEvent(e);
-    });
   }
 
   /** Terrain header summary: swatch + current terrain name ("(base)" when
