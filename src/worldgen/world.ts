@@ -16,6 +16,8 @@
  * Pure: works on map-like records; callers save the changes.
  */
 
+import { hexKey } from "../hexKey";
+
 export type Side = "north" | "south" | "east" | "west";
 export const SIDES: readonly Side[] = ["north", "east", "south", "west"];
 const DELTA: Record<Side, [number, number]> = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
@@ -265,7 +267,7 @@ export function shadowHexes<T extends RegionLike>(maps: T[], m: T, depth: number
     for (let x = ox - depth; x < ox + cols + depth; x++) {
       if (x >= ox && x < ox + cols && y >= oy && y < oy + rows) continue;
       const r = resolveHex(maps, m, x, y);
-      if (r) out.set(`${x}_${y}`, r);
+      if (r) out.set(hexKey(x, y), r);
     }
   return out;
 }

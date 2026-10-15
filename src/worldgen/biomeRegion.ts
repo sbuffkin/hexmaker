@@ -23,6 +23,7 @@ import { listGeneratorKinds, optionsWithDefaults } from "./registry";
 import type { GenerationContext } from "./procedural/common";
 import { mapRouteContext } from "../paths/mapContext";
 import { impassableNames } from "../impassable";
+import { hexXY } from "../hexKey";
 
 /**
  * Which generator makes the region:
@@ -136,7 +137,7 @@ export async function generateBiomeRegion(plugin: HexmakerPlugin, req: BiomeRegi
   const stagger = req.bounds.stagger ?? plugin.settings.staggerOffset ?? "odd";
   const grid: GridSpec = { cols: req.bounds.cols, rows: req.bounds.rows, offset: { ...req.bounds.offset }, stagger };
   const inBox = (k: string) => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     return x >= grid.offset.x && x < grid.offset.x + grid.cols && y >= grid.offset.y && y < grid.offset.y + grid.rows;
   };
   const mine = (k: string) => inBox(k) && (!req.mask || req.mask(k));

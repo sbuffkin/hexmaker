@@ -21,6 +21,7 @@ import {
   clampQ,
   tuned,
 } from "./common";
+import { hexPair, hexXY } from "../../hexKey";
 
 /**
  * "Planet surface": a region map of a world — seas, coasts, plains,
@@ -148,7 +149,7 @@ export function seaSideFromNeighbours(
   type Seam = "north" | "east" | "south" | "west";
   const seams = new Map<Seam, { n: number; wet: number[] }>();
   for (const [k, c] of edgeCells) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const w = x < o.x, e = x > o.x + cols - 1, nn = y < o.y, s = y > o.y + rows - 1;
     if (Number(w) + Number(e) + Number(nn) + Number(s) !== 1) continue; // corners: ambiguous
     const seam: Seam = w ? "west" : e ? "east" : nn ? "north" : "south";
@@ -836,10 +837,7 @@ export function edgePulls(
 ): (EdgePull | undefined)[] {
   const reach = edgeReach(weight);
   const cells = [...edgeCells]
-    .map(([k, c]) => {
-      const type = isTerrainType(c.type) ? c.type : undefined;
-      return { at: k.split("_").map(Number) as [number, number], type };
-    })
+    .map(([k, c]) => ({ at: hexPair(k), type: isTerrainType(c.type) ? c.type : undefined }))
     .filter((c): c is { at: [number, number]; type: NonNullable<typeof c.type> } => !!c.type && !!TYPE_TARGETS[c.type]);
   return hexes.map((h) => {
     let near = Infinity, wsum = 0, wet = 0, moist = 0;
@@ -895,7 +893,7 @@ function regionField(
     .map((s) => ({ s, t: targetOf(context.sides?.[s]) }))
     .filter((x): x is { s: Side; t: [number, number, number] } => !!x.t);
   const edgeCells = [...(context.edgeCells ?? new Map<string, ContextTerrain>())]
-    .map(([k, c]) => ({ at: k.split("_").map(Number) as [number, number], t: targetOf(c) }))
+    .map(([k, c]) => ({ at: hexPair(k), t: targetOf(c) }))
     .filter((x): x is { at: [number, number]; t: [number, number, number] } => !!x.t);
 
   const smooth = (t: number) => t * t * (3 - 2 * t);

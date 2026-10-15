@@ -18,7 +18,7 @@
 		"src/space/worldTypes.ts": 1076,
 		"src/HexmakerSettingTab.ts": 1061,
 		"src/palettes/PaletteStore.ts": 945,
-		"src/worldgen/procedural/planetSurface.ts": 1007,
+		"src/worldgen/procedural/planetSurface.ts": 1005,
 		"src/hex-map/MapModal.ts": 927,
 		"src/random-tables/RandomTableEditorModal.ts": 899,
 		"src/overworld/EditRegionModal.ts": 891,
