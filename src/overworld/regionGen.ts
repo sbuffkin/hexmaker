@@ -31,9 +31,10 @@
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import { SHORE_TYPES, WATER_TYPES, type BiomeId, type BiomeProfile } from "./biomes";
 import { namesWithinType, typeMix, type BlendField } from "./blendField";
-import { childNeighbours, childPoint, neighbourRegions, parentOf, regionCells, regionCentrePoint, regionSpacing, type RegionLayout } from "./layout";
+import { childNeighbourKeysAt, childNeighbours, childPoint, neighbourRegions, parentOf, regionCells, regionCentrePoint, regionSpacing, type RegionLayout } from "./layout";
 import { fbm, hash2 } from "./noise";
 import { tuned, type BiomeTuning } from "./biomeTuning";
+import { hexKey, hexXY } from "../hexKey";
 
 export interface RegionGenInput {
   layout: RegionLayout;
@@ -62,10 +63,10 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   const pinned = input.pinned ?? new Map<string, string>();
   // Pinned cells inside the region (hand-painted, locked) stay as they are
   // and count as fixed context, like the neighbours' cells.
-  const cells = regionCells(layout, input.parent[0], input.parent[1]).filter(([x, y]) => !pinned.has(`${x}_${y}`));
-  const own = new Set(cells.map(([x, y]) => `${x}_${y}`));
+  const cells = regionCells(layout, input.parent[0], input.parent[1]).filter(([x, y]) => !pinned.has(hexKey(x, y)));
+  const own = new Set(cells.map(([x, y]) => hexKey(x, y)));
   // The region's own biome: its islands, patches and tuning (biomeTuning.ts).
-  const ownBiome = field.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
+  const ownBiome = field.biomes.get(hexKey(input.parent[0], input.parent[1]));
   const profile = ownBiome ? profiles.get(ownBiome) : undefined;
   const tuning = profile?.tuning;
   const sharp = input.sharpness ?? tuned(tuning, "name-sharpness");
@@ -88,7 +89,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     const phi = field.zoned(x, y);
     const base = typeMix(phi, profiles);
     const tau = ctx ? ctx.leanTypes(x, y, base) : base;
-    types.set(`${x}_${y}`, tau);
+    types.set(hexKey(x, y), tau);
     const rng = mulberry32(cellSeed(input.seed, x, y));
     const type = pick(tau, rng());
     return type ? pick(ctx ? namesAt(x, y, type) : namesWithinType(phi, profiles, type, sharp), rng()) : undefined;
@@ -96,7 +97,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   const work = new Map<string, string>();
   for (const [x, y] of cells) {
     const name = draw(x, y);
-    if (name) work.set(`${x}_${y}`, name);
+    if (name) work.set(hexKey(x, y), name);
   }
 
   // 2. Type-first smoothing (synchronous passes, so cell order doesn't matter).
@@ -110,7 +111,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     const next: [number, number][] = [];
     for (const [x, y] of ring) {
       for (const [a, b] of childNeighbours(layout, x, y)) {
-        const k = `${a}_${b}`;
+        const k = hexKey(a, b);
         if (seen.has(k) || pinned.has(k)) continue;
         seen.add(k);
         next.push([a, b]);
@@ -126,7 +127,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     const v = work.get(k) ?? pinned.get(k);
     if (v !== undefined || seen.has(k)) return v;
     if (!outer.has(k)) {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       outer.set(k, draw(x, y));
     }
     return outer.get(k);
@@ -136,13 +137,13 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   for (let pass = 0; pass < passes; pass++) {
     const next = new Map(work);
     for (const [x, y] of [...cells, ...halo]) {
-      const k = `${x}_${y}`;
+      const k = hexKey(x, y);
       const cur = work.get(k);
       if (!cur) continue;
       const score = new Map<string, number>();
       const namesByType = new Map<string, Map<string, number>>();
       for (const [a, b] of childNeighbours(layout, x, y)) {
-        const t = terrainAt(`${a}_${b}`);
+        const t = terrainAt(hexKey(a, b));
         const ty = t ? typeOf(t) : undefined;
         if (!t || !ty) continue;
         score.set(ty, (score.get(ty) ?? 0) + 1);
@@ -175,7 +176,7 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
   //    0: nothing changes. Before islands and patches, which are placed on
   //    purpose (a small archipelago ringed by sea keeps its islands).
   if (ctx) {
-    const home = `${input.parent[0]}_${input.parent[1]}`;
+    const home = hexKey(input.parent[0], input.parent[1]);
     const water = new Set(WATER_TYPES);
     const classOf = (t: string | undefined): number | undefined => {
       const ty = t ? typeOf(t) : undefined;
@@ -183,13 +184,13 @@ export function generateRegion(input: RegionGenInput): Map<string, string> {
     };
     const next = new Map<string, string>();
     for (const [x, y] of cells) {
-      const k = `${x}_${y}`;
+      const k = hexKey(x, y);
       const mine = classOf(work.get(k));
       if (mine === undefined) continue;
       let land = 0, wet = 0;
       const byType = new Map<string, Map<string, number>>();
       for (const [a, b] of childNeighbours(layout, x, y)) {
-        const nk = `${a}_${b}`;
+        const nk = hexKey(a, b);
         const t = terrainAt(nk);
         const ty = t ? typeOf(t) : undefined;
         if (t && ty) {
@@ -379,7 +380,7 @@ export class NeighbourContext {
    * 2026-10-12: the region must still clearly be its own biome).
    */
   private around(x: number, y: number): [ContextCell, number][] {
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     let hit = this.near.get(key);
     if (hit) return hit;
     const [ax, ay] = childPoint(this.layout, x, y);
@@ -450,7 +451,7 @@ export class NeighbourContext {
 
   /** Does the context hold cells of the region of parent hex `hex`? */
   hasRegion(hex: [number, number]): boolean {
-    return this.byRegion.has(`${hex[0]}_${hex[1]}`);
+    return this.byRegion.has(hexKey(hex[0], hex[1]));
   }
 
   /** The land values (0 / 1) a made neighbour's context cells take: [min, max]. */
@@ -499,14 +500,14 @@ export function neighbourContext(
 ): NeighbourContext | undefined {
   if (!(depth > 0) || !(influence > 0) || !pinned.size || !cells.length) return undefined;
   const water = new Set(WATER_TYPES);
-  const seen = new Set(cells.map(([x, y]) => `${x}_${y}`));
+  const seen = new Set(cells.map(([x, y]) => hexKey(x, y)));
   const out: ContextCell[] = [];
   let ring = cells;
   for (let d = 1; d <= depth && ring.length; d++) {
     const next: [number, number][] = [];
     for (const [x, y] of ring) {
       for (const [a, b] of childNeighbours(layout, x, y)) {
-        const k = `${a}_${b}`;
+        const k = hexKey(a, b);
         if (seen.has(k)) continue;
         seen.add(k);
         next.push([a, b]);
@@ -548,16 +549,16 @@ export function seamContinuity(
     const ty = t ? typeOf(t) : undefined;
     return ty === undefined ? undefined : water.has(ty) ? 0 : 1;
   };
-  const home = `${parent[0]}_${parent[1]}`;
+  const home = hexKey(parent[0], parent[1]);
   let edge = 0, matched = 0;
   for (const [k, t] of own) {
     const mine = cls(t);
     if (mine === undefined) continue;
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     let land = 0, wet = 0;
     for (const [a, b] of childNeighbours(layout, x, y)) {
       if (parentOf(layout, a, b).join("_") === home) continue;
-      const c = cls(pinned.get(`${a}_${b}`));
+      const c = cls(pinned.get(hexKey(a, b)));
       if (c === 1) land++;
       else if (c === 0) wet++;
     }
@@ -613,14 +614,11 @@ export function placeIslands(input: IslandInput): void {
   const water = new Set(WATER_TYPES);
   const cores = new Map([...profile.types].filter(([t, s]) => s > 0 && !water.has(t) && !SHORE_TYPES.includes(t) && t !== "settlement"));
   if (!cores.size) return;
-  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const own = new Set(input.cells.map(([x, y]) => hexKey(x, y)));
   const ownList = [...own].sort();
   const n = own.size;
   if (!n) return;
-  const nbrs = (k: string): string[] => {
-    const [x, y] = k.split("_").map(Number);
-    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
-  };
+  const nbrs = (k: string): string[] => childNeighbourKeysAt(layout, k);
   const isLand = (k: string) => {
     const t = terrainAt(k);
     const ty = t ? typeOf(t) : undefined;
@@ -683,7 +681,7 @@ export function placeIslands(input: IslandInput): void {
       if (!free(k)) continue;
       const around = nbrs(k);
       if (around.some(isLand)) continue;
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       const score = (input.influence(x, y) + 0.05) * (around.every((m) => own.has(m)) ? 1 : edgeShy) * (0.5 + rng());
       if (score > best) { best = score; start = k; }
     }
@@ -766,16 +764,13 @@ export function placePatches(input: PatchInput): void {
   const edgeShy = tuned(t, "patch-edge");
   const wants = [...(profile.minPatches ?? [])].filter(([t, n]) => n > 0 && profile.names.get(t)?.size).sort((a, b) => (a[0] < b[0] ? -1 : 1));
   if (!wants.length) return;
-  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const own = new Set(input.cells.map(([x, y]) => hexKey(x, y)));
   const ownList = [...own].sort();
   const n = ownList.length;
   if (!n) return;
   const protectedTypes = new Set(wants.map(([t]) => t));
   const water = new Set(WATER_TYPES);
-  const nbrs = (k: string): string[] => {
-    const [x, y] = k.split("_").map(Number);
-    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
-  };
+  const nbrs = (k: string): string[] => childNeighbourKeysAt(layout, k);
   const typeAt = (k: string) => {
     const t = terrainAt(k);
     return t ? typeOf(t) : undefined;
@@ -826,7 +821,7 @@ export function placePatches(input: PatchInput): void {
         if (!free(k)) continue;
         const around = nbrs(k);
         if (around.some((m) => typeAt(m) === type)) continue;
-        const [x, y] = k.split("_").map(Number);
+        const { x, y } = hexXY(k);
         const near = input.affinity ? input.affinity(type, x, y) : 0;
         // Next to the same type in a neighbour, the edge is no reason to stay away.
         const shy = around.every((m) => own.has(m)) ? 1 : edgeShy + (1 - edgeShy) * Math.min(1, near);
@@ -877,7 +872,7 @@ interface KeepMixInput {
 /** Own cells next to a pinned cell (a made neighbour's, or a locked own one): the seam band. */
 function seamBand(layout: RegionLayout, cells: [number, number][], pinned: ReadonlyMap<string, string>): Set<string> {
   const out = new Set<string>();
-  for (const [x, y] of cells) if (childNeighbours(layout, x, y).some(([a, b]) => pinned.has(`${a}_${b}`))) out.add(`${x}_${y}`);
+  for (const [x, y] of cells) if (childNeighbours(layout, x, y).some(([a, b]) => pinned.has(hexKey(a, b)))) out.add(hexKey(x, y));
   return out;
 }
 
@@ -907,12 +902,9 @@ export function keepMix(input: KeepMixInput): void {
   if (!strength) return;
   const water = new Set(WATER_TYPES);
   const shore = new Set(SHORE_TYPES);
-  const ownList = input.cells.map(([x, y]) => `${x}_${y}`).sort();
+  const ownList = input.cells.map(([x, y]) => hexKey(x, y)).sort();
   const own = new Set(ownList);
-  const nbrs = (k: string): string[] => {
-    const [x, y] = k.split("_").map(Number);
-    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
-  };
+  const nbrs = (k: string): string[] => childNeighbourKeysAt(layout, k);
   const typeAt = (k: string) => {
     const t = input.terrainAt(k);
     return t ? typeOf(t) : undefined;
@@ -1016,7 +1008,7 @@ export function keepMix(input: KeepMixInput): void {
       const t = input.terrainAt(m);
       if (t && typeOf(t) === u) byName.set(t, (byName.get(t) ?? 0) + 1);
     }
-    const [x, y] = best.split("_").map(Number);
+    const { x, y } = hexXY(best);
     let name = byName.size ? [...byName].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0] : undefined;
     if (!name) {
       const field = input.namesAt(x, y, u);
@@ -1079,7 +1071,7 @@ export function neighbourLand(
 ): { hex: [number, number]; land: number }[] {
   const painted = new Map<string, { land: number; all: number }>();
   for (const [k, t] of pinned) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const pk = parentOf(layout, x, y).join("_");
     const ty = typeOf(t);
     if (!ty) continue;
@@ -1090,7 +1082,7 @@ export function neighbourLand(
   }
   const out: { hex: [number, number]; land: number }[] = [];
   for (const [qx, qy] of neighbourRegions(layout, parent[0], parent[1])) {
-    const pk = `${qx}_${qy}`;
+    const pk = hexKey(qx, qy);
     const c = painted.get(pk);
     if (c && c.all >= 3) { out.push({ hex: [qx, qy], land: c.land / c.all }); continue; }
     const b = biomes.get(pk);
@@ -1128,7 +1120,7 @@ export function placeShore(input: ShoreInput): void {
   const lean = tuned(profile.tuning, "shore-lean");
   const ragged = tuned(profile.tuning, "shore-ragged");
   const coastWidth = tuned(profile.tuning, "coast-width");
-  const own = new Set(input.cells.map(([x, y]) => `${x}_${y}`));
+  const own = new Set(input.cells.map(([x, y]) => hexKey(x, y)));
   const ownList = [...own].sort();
   if (!ownList.length) return;
   const water = new Set(WATER_TYPES);
@@ -1144,7 +1136,7 @@ export function placeShore(input: ShoreInput): void {
   const dirs: { ux: number; uy: number; land: number; local?: string }[] = sides.map((s) => {
     const [qx, qy] = regionCentrePoint(layout, s.hex[0], s.hex[1]);
     const len = Math.hypot(qx - cx, qy - cy) || 1;
-    const local = ctx?.hasRegion(s.hex) ? `${s.hex[0]}_${s.hex[1]}` : undefined;
+    const local = ctx?.hasRegion(s.hex) ? hexKey(s.hex[0], s.hex[1]) : undefined;
     return { ux: (qx - cx) / len, uy: (qy - cy) / len, land: s.land, ...(local ? { local } : {}) };
   });
   const lands = dirs.flatMap((d) => {
@@ -1177,7 +1169,7 @@ export function placeShore(input: ShoreInput): void {
   const f = 1.4 / (radius * 2);
   const landness = new Map<string, number>();
   for (const k of ownList) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const [px, py] = childPoint(layout, x, y);
     const vx = (px - cx) / radius, vy = (py - cy) / radius;
     let sw = 0, sl = 0;
@@ -1199,10 +1191,7 @@ export function placeShore(input: ShoreInput): void {
 
   // 4. Terrain for each cell.
   const rng = mulberry32(cellSeed(input.seed ^ 0x1f83d9ab, parent[0], parent[1]));
-  const nbrs = (k: string): string[] => {
-    const [x, y] = k.split("_").map(Number);
-    return childNeighbours(layout, x, y).map(([a, b]) => `${a}_${b}`);
-  };
+  const nbrs = (k: string): string[] => childNeighbourKeysAt(layout, k);
   /** Is a neighbouring cell land? Own cells by the plan, others by their terrain. */
   const landAt = (k: string): boolean | undefined => {
     if (isLandCell.has(k)) return isLandCell.get(k);
@@ -1215,7 +1204,7 @@ export function placeShore(input: ShoreInput): void {
   const waterShore = SHORE_TYPES.find((t) => water.has(t) && has(t));
   const shoreSet = new Set(SHORE_TYPES);
   const nameFor = (k: string, wantLand: boolean): string | undefined => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const phi = field.zoned(x, y);
     const ok = (t: string) => t !== "settlement" && !shoreSet.has(t) && (wantLand ? !water.has(t) : water.has(t));
     let odds = new Map([...typeMix(phi, profiles)].filter(([t]) => ok(t)));
@@ -1334,17 +1323,17 @@ export function seamStats(layout: RegionLayout, cells: ReadonlyMap<string, strin
   const ownerOf = (k: string) => {
     let o = owner.get(k);
     if (!o) {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       o = parentOf(layout, x, y).join("_");
       owner.set(k, o);
     }
     return o;
   };
   for (const [k, t] of cells) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const ok = ownerOf(k);
     for (const [a, b] of childNeighbours(layout, x, y)) {
-      const nk = `${a}_${b}`;
+      const nk = hexKey(a, b);
       if (nk <= k) continue; // each pair once
       const nt = cells.get(nk);
       if (nt === undefined) continue;
@@ -1390,10 +1379,10 @@ export function mixDistance(cells: ReadonlyMap<string, string>, profile: BiomePr
 export function interiorAgreement(layout: RegionLayout, cells: ReadonlyMap<string, string>, typeOf: (t: string) => string | undefined): number {
   let pairs = 0, same = 0;
   for (const [k, t] of cells) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const o = parentOf(layout, x, y).join("_");
     for (const [a, b] of childNeighbours(layout, x, y)) {
-      const nk = `${a}_${b}`;
+      const nk = hexKey(a, b);
       if (nk <= k) continue;
       const nt = cells.get(nk);
       if (nt === undefined || parentOf(layout, a, b).join("_") !== o) continue;

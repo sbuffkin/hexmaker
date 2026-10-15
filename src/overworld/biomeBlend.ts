@@ -27,6 +27,7 @@ import { profileFromFields, WATER_TYPES, withinTypeWeights } from "./biomes";
 import { neighbourRegions, type RegionLayout } from "./layout";
 import { interiorAgreement } from "./regionGen";
 import { paletteTypeOf, planRegion } from "./regionWorld";
+import { hexKey, hexXY } from "../hexKey";
 
 /** What a map shows: hexes per terrain, its land share and how often neighbours share a type. */
 export interface MapStats {
@@ -49,9 +50,9 @@ export function measureMap(cells: ReadonlyMap<string, string>, palette: readonly
     if (!ty || ty === "settlement") continue;
     typed++;
     if (!water.has(ty)) land++;
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     for (const [a, b] of hexNeighbors(x, y, orientation, stagger)) {
-      const nk = `${a}_${b}`;
+      const nk = hexKey(a, b);
       if (nk <= k) continue;
       const nt = cells.get(nk);
       const nty = nt ? typeOf.get(nt) : undefined;
@@ -134,7 +135,7 @@ export function fitSmoothing(fields: BiomeNoteFields, palette: TerrainColor[], l
     const profile = profileFromFields({ ...fields, tuning: { ...fields.tuning, smoothing: s } }, palette);
     if (!profile.types.size) return current;
     const biomes = new Map<string, string>([["0_0", fields.id]]);
-    for (const [x, y] of neighbourRegions(layout, 0, 0)) biomes.set(`${x}_${y}`, fields.id);
+    for (const [x, y] of neighbourRegions(layout, 0, 0)) biomes.set(hexKey(x, y), fields.id);
     let sum = 0;
     for (const seed of seeds) {
       const plan = planRegion({ layout, parent: [0, 0], biomes, profiles: new Map([[fields.id, profile]]), typeOf: paletteTypeOf(palette), worldSeed: seed, seed });

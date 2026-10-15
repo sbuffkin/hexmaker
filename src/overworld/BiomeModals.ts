@@ -37,6 +37,7 @@ import {
   setBiomeAt,
   type RegionGenOptions,
 } from "./regionsVault";
+import { hexKey, hexXY } from "../hexKey";
 
 export interface BiomeHost {
   app: App;
@@ -66,7 +67,7 @@ export function mayReshape(host: BiomeHost, parentName: string, px: number, py: 
  * for the first time is not (it makes a map).
  */
 export async function reshapeUndoable<T>(plugin: HexmakerPlugin, parentName: string, px: number, py: number, fn: () => Promise<T>): Promise<T> {
-  if (!regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`)) return fn();
+  if (!regionMapAt(plugin.settings.maps, parentName, hexKey(px, py))) return fn();
   return plugin.undoableEdit(parentName, fn);
 }
 
@@ -76,7 +77,7 @@ export async function reshapeUndoable<T>(plugin: HexmakerPlugin, parentName: str
  * locked hexes stay. Refused (false) where the mode can't change it. Undoable.
  */
 export async function rerollRegionAt(host: BiomeHost, parentName: string, px: number, py: number): Promise<boolean> {
-  const region = regionMapAt(host.plugin.settings.maps, parentName, `${px}_${py}`);
+  const region = regionMapAt(host.plugin.settings.maps, parentName, hexKey(px, py));
   if (!region || !mayReshape(host, parentName, px, py)) return false;
   await reshapeUndoable(host.plugin, parentName, px, py, () => regenerateRegion(host.plugin, region.name, { seed: newSeed() }));
   host.changed();
@@ -150,7 +151,7 @@ export class RegionGenModal extends HexmakerModal {
     const { plugin } = this.host;
     const ow = overworldOf(plugin, this.parentName);
     if (!ow) { this.close(); return; }
-    const hex = `${this.px}_${this.py}`;
+    const hex = hexKey(this.px, this.py);
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
     const biome = hexBiomeAt(plugin, this.parentName, hex);
     this.opts = {
@@ -251,7 +252,7 @@ export class RegionGenModal extends HexmakerModal {
 
   private async apply(): Promise<void> {
     const { plugin } = this.host;
-    const hex = `${this.px}_${this.py}`;
+    const hex = hexKey(this.px, this.py);
     const region = regionMapAt(plugin.settings.maps, this.parentName, hex);
     const notice = new Notice(region ? "Remaking the region…" : "Making the region…", 0);
     let res: { name: string } | { error: string };
@@ -275,7 +276,7 @@ export class RegionGenModal extends HexmakerModal {
  * shows its result while the dialog covers the map.
  */
 export function drawRegionNow(canvas: HTMLCanvasElement, plugin: HexmakerPlugin, parentName: string, px: number, py: number): void {
-  const region = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  const region = regionMapAt(plugin.settings.maps, parentName, hexKey(px, py));
   const cells = new Map<string, string>();
   if (region) for (const [k, h] of plugin.mapStore.all(region.name)) if (h.terrain) cells.set(k, h.terrain);
   drawRegionPlan(canvas, plugin, parentName, px, py, { cells, mix: new Map() });
@@ -297,28 +298,28 @@ export function drawRegionPlan(
   const ow = overworldOf(plugin, parentName);
   const ctx = canvas.getContext("2d");
   if (!ow || !ctx) return;
-  const hex = `${px}_${py}`;
+  const hex = hexKey(px, py);
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (!plan) return;
   const layout = ow.layout;
   const colour = new Map(plugin.getPaletteOrPresetTerrains(ow.settings.palette ?? ow.map.paletteName).map((t) => [t.name, t.color]));
   const own: RegionCell[] = [...plan.cells].map(([k, t]) => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     return { x, y, color: colour.get(t) ?? "#333" };
   });
   const locked = regionMapAt(plugin.settings.maps, parentName, hex);
   if (locked) for (const [k, h] of plugin.mapStore.all(locked.name)) {
     if (!h.locked || !h.terrain) continue;
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     own.push({ x, y, color: colour.get(h.terrain) ?? "#333" });
   }
   const around: RegionCell[] = [];
   for (const [qx, qy] of hexNeighbors(px, py, layout.orientation, layout.parentStagger)) {
-    const r = regionMapAt(plugin.settings.maps, parentName, `${qx}_${qy}`);
+    const r = regionMapAt(plugin.settings.maps, parentName, hexKey(qx, qy));
     if (!r) continue;
     const hexes = plugin.mapStore.all(r.name);
     for (const [x, y] of regionCells(layout, qx, qy)) {
-      const t = hexes.get(`${x}_${y}`)?.terrain;
+      const t = hexes.get(hexKey(x, y))?.terrain;
       if (t) around.push({ x, y, color: colour.get(t) ?? "#333" });
     }
   }

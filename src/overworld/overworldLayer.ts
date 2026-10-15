@@ -45,6 +45,7 @@ import { biomeViewLines, CrossRegionPaths, pathAtGridPoint, type OverworldPathLi
 import { UNKNOWN_PATH_TYPE } from "../constants";
 import { SCREEN_HEX_RADIUS } from "../paths/pathGeometry";
 import { sharpPath, smoothPath } from "../hex-map/hexGeometry";
+import { hexKey, hexPair, hexXY } from "../hexKey";
 
 /** Layers-menu row: paths between regions, on overworlds (unset = shown). */
 export const REGION_PATHS_ROW = {
@@ -95,7 +96,7 @@ export function blankSlots(map: Pick<MapData, "gridOffset" | "gridSize">, taken:
   const out: [number, number][] = [];
   const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
   for (let y = oy; y < oy + rows; y++) {
-    for (let x = ox; x < ox + cols; x++) if (!taken.has(`${x}_${y}`)) out.push([x, y]);
+    for (let x = ox; x < ox + cols; x++) if (!taken.has(hexKey(x, y))) out.push([x, y]);
   }
   return out;
 }
@@ -364,12 +365,12 @@ export class OverworldLayer {
     const taken = new Set(regions.map((r) => r.parent!.hex));
     const empty = blankSlots(map, taken);
     if (empty.length) {
-      const blankKey = `${geoKey}|${empty.map(([x, y]) => `${x}_${y}`).join(",")}`;
+      const blankKey = `${geoKey}|${empty.map(([x, y]) => hexKey(x, y)).join(",")}`;
       const blank = this.cache.get(BLANK, blankKey, () => this.buildBlank(empty, geom, k0));
       if (blank.canvas) bitmaps.push(blank);
     }
     for (const r of regions) {
-      const [px, py] = r.parent!.hex.split("_").map(Number);
+      const [px, py] = hexPair(r.parent!.hex);
       const palette = this.plugin.getMapPalette(r.name);
       const key = `${geoKey}|${loaded}|${r.baseTerrain ?? ""}|${palette.map((t) => t.color).join("")}`;
       const bmp = this.cache.get(r.name, key, () => this.buildRegion(r, px, py, geom, k0));
@@ -395,7 +396,7 @@ export class OverworldLayer {
     const hexes = this.plugin.mapStore.all(r.name);
     const cells: RegionCell[] = [];
     for (const [x, y] of regionCells(geom.layout, px, py)) {
-      const t = hexes.get(`${x}_${y}`)?.terrain ?? r.baseTerrain;
+      const t = hexes.get(hexKey(x, y))?.terrain ?? r.baseTerrain;
       const c = t ? colour.get(t) : undefined;
       if (c) cells.push({ x, y, color: c });
     }
@@ -448,7 +449,7 @@ export class OverworldLayer {
     const biomes = overworldBiomes(overworldTerrain(this.plugin, map), this.plugin.getMapPalette(map.name), geom.layout.orientation, geom.layout.parentStagger, placedBiomes(this.plugin, map.name));
     const ecotones = ecotoneHexes(biomes, geom.layout.orientation, geom.layout.parentStagger);
     for (const k2 of ecotones) {
-      const [x, y] = k2.split("_").map(Number);
+      const { x, y } = hexXY(k2);
       const [X, Y] = at(x, y);
       hexPath(ctx, X, Y, s * k * 0.97, geom.layout.orientation);
       ctx.strokeStyle = "#fff";
@@ -464,7 +465,7 @@ export class OverworldLayer {
     ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
     ctx.fillStyle = "#000";
     for (const [key, b] of biomes) {
-      const [x, y] = key.split("_").map(Number);
+      const { x, y } = hexXY(key);
       const [X, Y] = at(x, y);
       // A mix (Alpine + Taiga) is one part per line, "+" before the rest, so it fits the hex.
       const parts = biomeParts(b);

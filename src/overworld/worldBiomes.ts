@@ -44,6 +44,7 @@ import {
 import { climateArea, inClimateRange, isPlaceable, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
 import { isUnderground, type BiomeNoteFields } from "./biomeNote";
 import { BIOME_PRESETS } from "./biomePresets";
+import { hexKey, hexXY } from "../hexKey";
 
 export type Climate = "cold" | "temperate" | "warm" | "varied";
 export type LandShape = "one" | "two" | "islands";
@@ -110,7 +111,6 @@ export const MAX_PATCH = 5;
 /** No land biome may cover more than this share of the land. */
 export const MAX_SHARE = 0.4;
 
-const key = (x: number, y: number) => `${x}_${y}`;
 
 // ── generator ────────────────────────────────────────────────────────────
 
@@ -136,12 +136,12 @@ export function worldBiomes(
   const seed = opts.seed >>> 0;
   const rng = mulberry32(seed ^ 0x5eed);
   const list = [...cells].sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  const keys = list.map(([x, y]) => key(x, y));
+  const keys = list.map(([x, y]) => hexKey(x, y));
   const N = keys.length;
   const inMap = new Set(keys);
   const nbrs = new Map<string, string[]>();
   for (const [x, y] of list) {
-    nbrs.set(key(x, y), hexNeighbors(x, y, orientation, stagger).map(([a, b]) => key(a, b)).filter((k) => inMap.has(k)));
+    nbrs.set(hexKey(x, y), hexNeighbors(x, y, orientation, stagger).map(([a, b]) => hexKey(a, b)).filter((k) => inMap.has(k)));
   }
   const empty: WorldBiomesResult = {
     biomes: new Map(), terrain: new Map(), elevation: new Map(), temperature: new Map(), moisture: new Map(),
@@ -220,9 +220,9 @@ export function worldBiomes(
   const high = (k: string) => (rank.get(k) ?? 0) > 0.8;
   const moisture = new Map<string, number>();
   for (const k of keys) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     let shadow = 0;
-    for (let s = 1; s <= 3; s++) if (high(key(x - s, y))) shadow++;
+    for (let s = 1; s <= 3; s++) if (high(hexKey(x - s, y))) shadow++;
     const nearSea = sea.size ? 1 - Math.min(toSea.get(k) ?? 4, 4) / 4 : 0.4;
     const m = 0.55 * fbm(seed + 991, pos.get(k)![0] * freq, pos.get(k)![1] * freq) + tune("coastRain", 0.45) * nearSea - 0.15 * shadow + tune("wetness", 0);
     moisture.set(k, Math.min(1, Math.max(0, m)));

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import expect from "expect";
 import { fromAxial, hexNeighbors, toAxial, type Orientation, type Stagger } from "../packages/hex-wfc/src/grid";
 import {
+	childNeighbourKeysAt,
 	childNeighbours,
 	flowerTwistDegrees,
 	fromLocal,
@@ -175,5 +176,16 @@ describe("region layout: local cells and helpers", () => {
 
 	it("the fromAxial import matches the layout's own maths (sanity)", () => {
 		expect(fromAxial(0, 0, "flat", "odd")).toEqual([0, 0]);
+	});
+});
+
+describe("childNeighbourKeysAt", () => {
+	it("is childNeighbours as hex keys", () => {
+		for (const childStagger of ["odd", "even"] as const) {
+			const l: RegionLayout = { footprint: "hex", size: 3, orientation: "pointy", parentStagger: "odd", childStagger };
+			for (const [x, y] of [[0, 0], [3, -2], [-5, 7]]) {
+				expect(childNeighbourKeysAt(l, `${x}_${y}`)).toEqual(childNeighbours(l, x, y).map(([a, b]) => `${a}_${b}`));
+			}
+		}
 	});
 });

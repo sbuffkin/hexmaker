@@ -17,6 +17,7 @@
 import { hexDistance, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import { mulberry32 } from "../../packages/hex-wfc/src/rng";
 import type { BiomeId } from "./biomes";
+import { hexPair } from "../hexKey";
 
 export interface PassHex {
   terrain?: string;
@@ -96,14 +97,13 @@ export function pickBlankHexes(
   const want = Math.max(0, Math.min(keys.length, Math.floor(n)));
   if (!want) return [];
   const rng = mulberry32((seed >>> 0) ^ 0xb1a4c);
-  const pos = (k: string) => k.split("_").map(Number) as [number, number];
   const picked: string[] = [];
   const pickFrom = (pool: string[]) => {
     const left = [...pool];
     while (picked.length < want && left.length) {
       let best = -1, bestScore = -Infinity;
       for (let i = 0; i < left.length; i++) {
-        const d = picked.length ? Math.min(...picked.map((p) => hexDistance(pos(p), pos(left[i]), orientation, stagger))) : 0;
+        const d = picked.length ? Math.min(...picked.map((p) => hexDistance(hexPair(p), hexPair(left[i]), orientation, stagger))) : 0;
         const score = d + rng() * 0.5;
         if (score > bestScore) { bestScore = score; best = i; }
       }

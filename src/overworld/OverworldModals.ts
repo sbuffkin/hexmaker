@@ -41,6 +41,7 @@ import {
   saveBiomePool,
   type PoolNote,
 } from "./overworldGen";
+import { hexKey } from "../hexKey";
 
 export class GenerateRegionsModal extends HexmakerModal {
   private stop = false;
@@ -473,7 +474,7 @@ export class NewOverworldModal extends HexmakerModal {
     const eco = ecotoneHexes(this.result.biomes, o, s);
     const locked = (k: string) => (this.regenerate ? this.plugin.mapStore.get(this.regenerate, k)?.locked : false);
     const hexes: MiniHex[] = cells.map(([x, y]) => {
-      const k = `${x}_${y}`;
+      const k = hexKey(x, y);
       if (locked(k)) {
         const t = this.plugin.mapStore.get(this.regenerate!, k)?.terrain;
         return { x, y, color: colour.get(t ?? "") ?? "#333", label: "locked" };

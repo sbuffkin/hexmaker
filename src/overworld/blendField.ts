@@ -21,6 +21,7 @@ import { hexDistance } from "../../packages/hex-wfc/src/grid";
 import type { BiomeId, BiomeProfile } from "./biomes";
 import { fbm } from "./noise";
 import { childPoint, parentOf, regionCentrePoint, regionSpacing, type RegionLayout } from "./layout";
+import { hexKey } from "../hexKey";
 
 /**
  * Domain warp used for region generation (region spacings). Measured on the
@@ -113,7 +114,7 @@ export class BlendField {
   }
 
   private centre(px: number, py: number): [number, number] {
-    const key = `${px}_${py}`;
+    const key = hexKey(px, py);
     let c = this.centres.get(key);
     if (!c) { c = regionCentrePoint(this.layout, px, py); this.centres.set(key, c); }
     return c;
@@ -130,7 +131,7 @@ export class BlendField {
       for (let dx = -ring; dx <= ring; dx++) {
         const px = p0x + dx, py = p0y + dy;
         if (hexDistance([p0x, p0y], [px, py], l.orientation, l.parentStagger) > ring) continue;
-        const key = `${px}_${py}`;
+        const key = hexKey(px, py);
         if (!this.biomes.has(key)) continue;
         const [ax, ay] = this.centre(px, py);
         const d = Math.hypot(ax - cx, ay - cy) / this.spacing;
@@ -143,7 +144,7 @@ export class BlendField {
 
   /** Φ at child cell (x, y): biome → share, summing to 1 (empty when no overworld hex is near). */
   at(x: number, y: number): BiomeMix {
-    const ck = `${x}_${y}`;
+    const ck = hexKey(x, y);
     const hit = this.cache.get(ck);
     if (hit) return hit;
     const mix: BiomeMix = new Map();
@@ -169,7 +170,7 @@ export class BlendField {
   zoned(x: number, y: number): BiomeMix {
     const phi = this.at(x, y);
     if (!this.expand) return phi;
-    const ck = `${x}_${y}`;
+    const ck = hexKey(x, y);
     const hit = this.zoneCache.get(ck);
     if (hit) return hit;
     let out: BiomeMix | undefined;

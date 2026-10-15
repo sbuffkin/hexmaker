@@ -15,6 +15,7 @@
  */
 
 import { fromAxial, hexCenter, hexNeighbors, toAxial, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
+import { hexKey, hexXY } from "../hexKey";
 
 export type Footprint = "hex" | "rect";
 
@@ -191,6 +192,12 @@ export function neighbourRegions(l: RegionLayout, px: number, py: number): [numb
 /** Child-grid neighbours of a child cell. */
 export function childNeighbours(l: RegionLayout, x: number, y: number): [number, number][] {
   return hexNeighbors(x, y, l.orientation, l.childStagger);
+}
+
+/** `childNeighbours` of a child cell key, as keys. */
+export function childNeighbourKeysAt(l: RegionLayout, key: string): string[] {
+  const { x, y } = hexXY(key);
+  return childNeighbours(l, x, y).map(([a, b]) => hexKey(a, b));
 }
 
 /** Centre of a child cell in the plane where neighbouring cells are √3 apart. */

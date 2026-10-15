@@ -27,6 +27,7 @@ import { pathNameKey } from "../paths/names";
 import { hexCenter } from "../../packages/hex-wfc/src/grid";
 import { childNeighbours, childPoint, parentOf, type RegionLayout } from "./layout";
 import { affineScale, gridPointToChild, RegionBitmapCache, type Affine } from "./overworldRender";
+import { hexKey } from "../hexKey";
 
 /** Overworld width of a path = its type's width × this. */
 export const OW_PATH_SCALE = 0.5;
@@ -141,7 +142,7 @@ export function crossRegionLines(layout: RegionLayout, pieces: readonly RegionPa
   pieces.forEach((p, i) => {
     for (const id of endIds(i)) {
       const h = endHex(id);
-      for (const n of [h, ...childNeighbours(layout, ...xy(h)).map(([nx, ny]) => `${nx}_${ny}`)]) {
+      for (const n of [h, ...childNeighbours(layout, ...xy(h)).map(([nx, ny]) => hexKey(nx, ny))]) {
         for (const other of byHex.get(`${p.typeName}\u0000${n}`) ?? []) {
           if (pieces[other >> 1].region === p.region) continue;
           link(id, other);

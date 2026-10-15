@@ -11,6 +11,7 @@ import { percentsToWeights } from "../../ui/shares";
 import { profilesForPalette } from "../regionsVault";
 import { paletteTypeOf, planRegion } from "../regionWorld";
 import { neighbourRegions, type RegionLayout } from "../layout";
+import { hexKey } from "../../hexKey";
 
 /** What the preview puts around the sample region. */
 export type PreviewSurround = "same" | "land-west";
@@ -127,7 +128,7 @@ export function biomeSamplePlan(
   const biomes = new Map<string, BiomeId>([["0_0", fields.id]]);
   for (const [x, y] of neighbourRegions(layout, 0, 0)) {
     // West of it land, east of it sea, north and south more of the biome.
-    biomes.set(`${x}_${y}`, surround === "same" || x === 0 ? fields.id : x < 0 ? landBiome : OPEN_SEA);
+    biomes.set(hexKey(x, y), surround === "same" || x === 0 ? fields.id : x < 0 ? landBiome : OPEN_SEA);
   }
   const profiles = new Map(others);
   profiles.set(fields.id, profileFromFields(fields, palette));
