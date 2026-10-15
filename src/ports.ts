@@ -1,7 +1,7 @@
 /**
  * The module-level ports: functions the plugin hands to plain modules on
  * load so they can reach plugin state without importing the plugin
- * (frontmatter's hex data, the work-mode gates, palette previews, icon
+ * (hex data: maps/hexData.ts; the work-mode gates, palette previews, icon
  * pickers, slider number boxes).
  *
  * The eighth port, setBiomeSource (overworld/biomes.ts), is not here: it
@@ -15,7 +15,7 @@
  */
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { setIconPackDefault } from "./HexmakerModal";
-import { setHexDataSource } from "./frontmatter";
+import { setHexDataSource } from "./maps/hexData";
 import { setHandEditListener, setModeMapLookup } from "./modeGate";
 import { setPaletteTerrainSource } from "./palettes/paletteOptions";
 import { setPathEditMapLookup } from "./paths/editGate";
