@@ -1,0 +1,118 @@
+/**
+ * Note pickers list what they're for, never "the vault minus some system
+ * folders" (owner call SP3: one focus per picker; biome notes flooded the
+ * token Note picker). Each picker purpose is an ALLOW-list of content
+ * folders, as data: a new kind of plugin note (biomes, world types,
+ * palettes…) can't leak in, because it isn't in any purpose's list.
+ *
+ * A blank folder setting means that folder's usual place under the world
+ * folder (`world/towns`…, what "Generate folders" fills in), never the
+ * whole vault.
+ *
+ * Pure: no Obsidian imports.
+ */
+
+import { tableFitsWant, type TableMaker, type TableWant } from "./random-tables/resolve";
+import type { RandomTable } from "./random-tables/randomTable";
+
+/** A content folder setting. */
+export type ContentFolderKey =
+  | "townsFolder"
+  | "dungeonsFolder"
+  | "questsFolder"
+  | "featuresFolder"
+  | "factionsFolder"
+  | "regionsFolder"
+  | "tablesFolder"
+  | "workflowsFolder";
+
+/** Where each content folder lives under the world folder when its setting is blank. */
+export const CONTENT_FOLDER_DEFAULTS: Record<ContentFolderKey, string> = {
+  townsFolder: "towns",
+  dungeonsFolder: "dungeons",
+  questsFolder: "quests",
+  featuresFolder: "features",
+  factionsFolder: "factions",
+  // Areas (named zones on a map, MG5). Older vaults' "regions" is still listed (pickerFolders).
+  regionsFolder: "areas",
+  tablesFolder: "tables",
+  workflowsFolder: "workflows",
+};
+
+/** The areas folder's name before areas were called areas (MG5). */
+export const LEGACY_AREAS_FOLDER = "regions";
+
+/** Token notes made from the token form go here, under the world folder. */
+export const TOKENS_SUBFOLDER = "tokens";
+
+const trim = (p: string | undefined): string => (p ?? "").trim().replace(/^\/+|\/+$/g, "");
+
+/** The world folder ("world" when blank). */
+export function worldFolderOf(settings: { worldFolder?: string }): string {
+  return trim(settings.worldFolder) || "world";
+}
+
+/** A content folder: its setting, else its usual place under the world folder. */
+export function contentFolder(
+  settings: Partial<Record<ContentFolderKey, string>> & { worldFolder?: string },
+  key: ContentFolderKey,
+): string {
+  return trim(settings[key]) || `${worldFolderOf(settings)}/${CONTENT_FOLDER_DEFAULTS[key]}`;
+}
+
+/** What a picker is for, and the content folders it lists from. */
+export type PickerPurpose = "token" | "table" | "workflow";
+
+export const PICKER_FOLDERS: Record<PickerPurpose, { folders: ContentFolderKey[]; tokens?: boolean }> = {
+  // Things a token stands for: characters and ships (the tokens folder),
+  // factions, places (towns, dungeons, features, regions) and quests.
+  token: {
+    folders: ["townsFolder", "dungeonsFolder", "featuresFolder", "questsFolder", "factionsFolder", "regionsFolder"],
+    tokens: true,
+  },
+  table: { folders: ["tablesFolder"] },
+  workflow: { folders: ["workflowsFolder"] },
+};
+
+/** The folders a picker lists notes from (deduplicated). */
+export function pickerFolders(
+  settings: Partial<Record<ContentFolderKey, string>> & { worldFolder?: string },
+  purpose: PickerPurpose,
+): string[] {
+  const spec = PICKER_FOLDERS[purpose];
+  const out = spec.folders.map((k) => contentFolder(settings, k));
+  // A blank Areas setting: the old default folder name is listed too (MG5: old names still read).
+  if (spec.folders.includes("regionsFolder") && !trim(settings.regionsFolder)) out.push(`${worldFolderOf(settings)}/${LEGACY_AREAS_FOLDER}`);
+  if (spec.tokens) out.push(`${worldFolderOf(settings)}/${TOKENS_SUBFOLDER}`);
+  return [...new Set(out)];
+}
+
+/** Is `path` inside one of `folders` (case-insensitive)? */
+export function inAnyFolder(path: string, folders: readonly string[]): boolean {
+  const p = path.toLowerCase();
+  return folders.some((f) => !!f && p.startsWith(f.toLowerCase() + "/"));
+}
+
+/**
+ * A table picker's list in two parts, order kept: the user's own tables,
+ * then the ones the map made (tableFitsWant's "map" group: terrain and
+ * region tables, marked by their frontmatter). Pickers show the user's
+ * first and the map's under one "Made by the map" heading, collapsed where
+ * the picker can collapse. Tables that don't fit the want are left out.
+ */
+export function groupTablesForPicker<T>(
+  items: readonly T[],
+  tableOf: (item: T) => Pick<RandomTable, "rows" | "terrainTypes"> & { madeBy?: TableMaker },
+  want: TableWant = { mapMade: "group" },
+): { own: T[]; mapMade: T[] } {
+  const own: T[] = [], mapMade: T[] = [];
+  for (const item of items) {
+    const r = tableFitsWant(tableOf(item), want);
+    if (r.fit === "no") continue;
+    (r.group === "map" ? mapMade : own).push(item);
+  }
+  return { own, mapMade };
+}
+
+/** Files the table editor's Import… can read: text with one entry per list item or line. */
+export const IMPORT_LIST_EXTENSIONS = ["md", "txt", "csv"];

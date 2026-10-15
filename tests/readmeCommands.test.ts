@@ -1,0 +1,49 @@
+import { describe, it } from "node:test";
+import expect from "expect";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readSurface } from "./helpers/source";
+
+/**
+ * Fresh-eyes round 3: the README named commands that don't exist
+ * ("Open Hexmaker random tables"). Every command the README names must be
+ * registered under exactly that name, and every registered command must be
+ * in the README's list. The palette shows "<plugin name>: <command name>".
+ */
+const read = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
+const readme = read("../README.md");
+const plugin = readSurface("plugin");
+const pluginName = (JSON.parse(read("../manifest.json")) as { name: string }).name;
+
+// Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
+const core = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]);
+// Modules add theirs as command contributions (src/modules/<id>/runtime.ts).
+const moduleRuntimes = readdirSync(new URL("../src/modules", import.meta.url), { withFileTypes: true })
+	.filter((d) => d.isDirectory() && existsSync(new URL(`../src/modules/${d.name}/runtime.ts`, import.meta.url)))
+	.map((d) => read(`../src/modules/${d.name}/runtime.ts`));
+const fromModules = moduleRuntimes.flatMap((t) => [...t.matchAll(/\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]));
+const registered = [...core, ...fromModules];
+const prefix = `${pluginName}: `;
+const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\\*|"|\\s\\|)`, "g"))].map((m) => m[1].trim());
+
+describe("README command names", () => {
+	it("finds the registered commands, the modules' too", () => {
+		// Read per module folder, in name order (space, world, world-maps).
+		expect(fromModules).toEqual(["Edit world types…", "Convert world types to tables", "New overworld…"]);
+		expect(registered.length).toBeGreaterThan(5);
+		expect(registered).toContain("Export current map…");
+	});
+
+	it("every command the README names is registered under that exact name", () => {
+		expect(mentioned.length).toBeGreaterThan(0);
+		for (const name of mentioned) expect(registered).toContain(name);
+	});
+
+	it("every registered command is listed in the README", () => {
+		for (const name of registered) expect(readme).toContain(`**${prefix}${name}**`);
+	});
+
+	it("no stale 'Open Hexmaker …' names", () => {
+		expect(readme).not.toMatch(/Open Hexmaker /);
+	});
+});

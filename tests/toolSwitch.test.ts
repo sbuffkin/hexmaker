@@ -1,7 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { readFileSync } from "node:fs";
-import * as path from "node:path";
+import { readSurface } from "./helpers/source";
 
 /**
  * Regression guard: switching terrain (or any tool's choice) must not turn
@@ -12,11 +11,13 @@ import * as path from "node:path";
  * something is picked.
  */
 
-const src = readFileSync(path.join(process.cwd(), "src", "hex-map", "HexMapView.ts"), "utf8").replace(/\r\n/g, "\n");
+const src = readSurface("map-view");
 
 /** Source of the method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {
-  const start = src.indexOf(`  private ${name}(`);
+  // The declaration: private in the view, protected/public on a controller (src/hex-map/view/).
+  const m = new RegExp(`\\n  (?:private |protected )?${name}\\(`).exec(src);
+  const start = m ? m.index + 1 : -1;
   expect(start).toBeGreaterThan(-1);
   return src.slice(start, src.indexOf("\n  }\n", start));
 }

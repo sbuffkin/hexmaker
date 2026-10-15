@@ -1,37 +1,50 @@
-import { App, Notice, TFile } from "obsidian";
+import { App, TFile } from "obsidian";
+import { canDo } from "../modeGate";
+import { lockedHint, type ModeAction } from "../workMode";
+import { addGodOffer } from "./godOffer";
 import { HexmakerModal } from "../HexmakerModal";
+import { Fold } from "../ui/disclosure";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import {
-  getIconUrl,
-  normalizeFolder,
-  makeTableTemplate,
-  createIconEl,
-} from "../utils";
-import {
   getTerrainFromFile,
-  setTerrainInFile,
-  setIconOverrideInFile,
-  setGmIconsInFile,
+  getIconOverrideFromFile,
   getGmIconsFromFile,
-  getSubmapFromFile,
+  getHexNameFromFile,
 } from "../frontmatter";
-import {
-  addLinkToSection,
-  removeLinkFromSection,
-  getAllSectionData,
-  setSectionContent,
-  addBacklinkToFile,
-} from "../sections";
-import { TEXT_SECTIONS } from "../types";
-import type { LinkSection, HexEditorOptions, TerrainColor } from "../types";
-import { RandomTableModal } from "../random-tables/RandomTableModal";
+import { cleanHexName } from "../maps/hexNames";
+import { getAllSectionData } from "../sections";
+import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "../types";
+import type { LinkSection, HexEditorOptions } from "../types";
+import type { RollHexTarget } from "../random-tables/RandomTableModal";
+import { WorkflowWizardModal } from "../random-tables/WorkflowWizardModal";
+import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
 import { HexExportModal } from "./HexExportModal";
-import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
+import { activeMapView } from "../workspace/views";
+import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTracker, type SaveState } from "./saveStatus";
+import { openNoteFocused } from "../openNote";
+import { contentFolder } from "../notePickers";
+import { terrainStartsCollapsed } from "./terrainSection";
+import { addToPlayLog } from "../play/playLogWriter";
+import { PlayLogModal } from "../play/PlayLogModal";
+import { NeighbourFlower, type NeighbourFlowerHost } from "./editor/NeighbourFlower";
+import { MapsStrip, type MapsStripHost } from "./editor/MapsStrip";
+import { TerrainIconSections, type TerrainIconHost } from "./editor/TerrainIconSections";
+import { LinkSections, type LinkSectionHost } from "./editor/LinkSection";
+import { TableSections, type TableSectionsHost } from "./editor/TableSections";
+import { TextSections, type TextSectionHost } from "./editor/TextSection";
+import { nextFieldSeq } from "./editor/host";
+
+/** Typing pause after which a text section autosaves. */
+const TEXT_AUTOSAVE_MS = AUTOSAVE_MS;
 
 export class HexEditorModal extends HexmakerModal {
+  /** Placement surface (src/ui/placement.ts): the editor's Advanced dropdown. */
+  protected surfaceId = "HexEditor";
   private hexExists = false;
   private allText = new Map<string, string>();
   private allLinks = new Map<string, string[]>();
+  /** Section key → its heading as written in the note (see getAllSectionData). */
+  private allHeadings = new Map<string, string>();
   private directTerrain: string | null = null;
   private directIcon: string | null = null;
   private directGmIcon: string | null = null;
@@ -39,6 +52,31 @@ export class HexEditorModal extends HexmakerModal {
    *  read sites; `directGmIcon` is the first entry of this list. */
   private directGmIcons: string[] = [];
   private dataPreloaded = false;
+  /** Stops keepInViewport's observer (set on first open). */
+  private stopKeepInViewport: (() => void) | null = null;
+  /** The autosave status, in ONE place: beside the box being edited (it
+   *  starts beside the Name box). Round 4: a title-row cue alone was missed;
+   *  round 7: a title-row copy next to this one read as redundant. */
+  private notesStatusEl: HTMLElement | null = null;
+  private saves = new SaveTracker(
+    (state) => this.renderSaveStatus(state),
+    (fn, ms) => window.setTimeout(fn, ms),
+    (id) => window.clearTimeout(id),
+  );
+  /** Redraws each table-choice section (by kind) from the current links. */
+  private choiceRefreshers = new Map<string, () => void>();
+  /** Text sections with typed-but-unsaved changes: flush on close/navigate. */
+  private pendingTextSaves = new Set<() => void>();
+  /** Text boxes by section key: append a rolled result and save (P2). */
+  private textBoxes = new Map<string, (addition: string) => void>();
+  /** What the editor's parts (src/hex-map/editor/) read and call: live, never a copy. */
+  private readonly host = this.makeHost();
+  private readonly flower = new NeighbourFlower(this.host);
+  private readonly mapsStrip = new MapsStrip(this.host);
+  private readonly terrainIcons = new TerrainIconSections(this.host);
+  private readonly links = new LinkSections(this.host);
+  private readonly tables = new TableSections(this.host);
+  private readonly texts = new TextSections(this.host, this.tables);
 
   constructor(
     app: App,
@@ -56,17 +94,76 @@ export class HexEditorModal extends HexmakerModal {
     super(app);
   }
 
+  /** The one host object every part gets (each part types it to the slice it uses). */
+  private makeHost(): NeighbourFlowerHost & MapsStripHost & TerrainIconHost & LinkSectionHost & TableSectionsHost & TextSectionHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- getters below read the editor's live fields
+    const modal = this;
+    return {
+      get app() { return modal.app; },
+      get plugin() { return modal.plugin; },
+      get x() { return modal.x; },
+      get y() { return modal.y; },
+      get mapName() { return modal.mapName; },
+      get options() { return modal.options; },
+      get saves() { return modal.saves; },
+      get directTerrain() { return modal.directTerrain; },
+      set directTerrain(v) { modal.directTerrain = v; },
+      get directIcon() { return modal.directIcon; },
+      set directIcon(v) { modal.directIcon = v; },
+      get hexExists() { return modal.hexExists; },
+      set hexExists(v) { modal.hexExists = v; },
+      get allLinks() { return modal.allLinks; },
+      get allText() { return modal.allText; },
+      get choiceRefreshers() { return modal.choiceRefreshers; },
+      get textBoxes() { return modal.textBoxes; },
+      get pendingTextSaves() { return modal.pendingTextSaves; },
+      get notesStatusEl() { return modal.notesStatusEl; },
+      onChanged: (...args) => this.onChanged(...args),
+      ensureHexNote: (x, y) => this.ensureHexNote(x, y),
+      reloadEncounterLinks: (path) => this.reloadEncounterLinks(path),
+      chainWheelToModal: (inner) => this.chainWheelToModal(inner),
+      addIconFilter: (grid, vaultIcons) => this.addIconFilter(grid, vaultIcons),
+      anchorDropdown: (anchorEl, dropdownEl) => this.anchorDropdown(anchorEl, dropdownEl),
+      navigate: (nx, ny) => this.navigate(nx, ny),
+      close: () => this.close(),
+      rerender: () => this.onOpen(),
+    };
+  }
+
+  /** Move to hex (nx, ny) of this map: read it first, then redraw with no Loading frame. */
+  private navigate(nx: number, ny: number): void {
+    this.x = nx;
+    this.y = ny;
+    this.options.onNavigate?.(nx, ny);
+    void this.loadData().then(() => {
+      this.dataPreloaded = true;
+      this.onOpen();
+      this.dataPreloaded = false;
+    });
+  }
+
   async loadData(): Promise<void> {
     // Reset all fields so stale data from a previous hex never bleeds through
     this.hexExists = false;
     this.allText = new Map();
     this.allLinks = new Map();
+    this.allHeadings = new Map();
     this.directTerrain = null;
     this.directIcon = null;
     this.directGmIcon = null;
     this.directGmIcons = [];
 
     const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+    // Hand edits in the note's Map data callout go to the map first (phase
+    // 2), so the editor shows them; the callout then shows what the map has.
+    if (this.app.vault.getAbstractFileByPath(path) instanceof TFile) await this.plugin.syncHexMapData(this.mapName, this.x, this.y);
+    // Terrain, icon and GM icons live in the map note (the map store), not in
+    // the hex note — and a hex can have them before its note exists. Reading
+    // only hex frontmatter left the current terrain never highlighted (E1).
+    this.directTerrain = getTerrainFromFile(this.app, path);
+    this.directIcon = getIconOverrideFromFile(this.app, path);
+    this.directGmIcons = getGmIconsFromFile(this.app, path);
+    this.directGmIcon = this.directGmIcons[0] ?? null;
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!(file instanceof TFile)) return;
     this.hexExists = true;
@@ -74,25 +171,19 @@ export class HexEditorModal extends HexmakerModal {
     // Single read — reused for both frontmatter and section parsing
     const rawContent = await this.app.vault.read(file);
 
+    // Fallback for notes the store doesn't serve yet (startup, or a note
+    // written moments ago that isn't indexed): read the raw frontmatter.
     const fmMatch = rawContent.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
       const tm = fmMatch[1].match(/^\s*terrain:\s*(.+)$/m);
-      if (tm) this.directTerrain = tm[1].trim();
+      if (tm && this.directTerrain === null) this.directTerrain = tm[1].trim();
       const im = fmMatch[1].match(/^\s*icon:\s*(.+)$/m);
-      if (im) this.directIcon = im[1].trim();
+      if (im && this.directIcon === null) this.directIcon = im[1].trim();
       const gm = fmMatch[1].match(/^\s*gm-icon:\s*(.+)$/m);
-      if (gm) this.directGmIcon = gm[1].trim();
-    }
-    // Authoritative multi-icon read via the helper (handles the new
-    // `gm-icons` array AND the legacy `gm-icon` singular). Done after
-    // the regex-based directGmIcon read so the modal stays compatible
-    // with existing single-icon notes.
-    this.directGmIcons = getGmIconsFromFile(this.app, path);
-    if (this.directGmIcon === null && this.directGmIcons.length > 0) {
-      this.directGmIcon = this.directGmIcons[0];
+      if (gm && this.directGmIcon === null) this.directGmIcon = gm[1].trim();
     }
 
-    ({ text: this.allText, links: this.allLinks } = await getAllSectionData(
+    ({ text: this.allText, links: this.allLinks, headings: this.allHeadings } = await getAllSectionData(
       this.app,
       path,
       rawContent,
@@ -101,6 +192,9 @@ export class HexEditorModal extends HexmakerModal {
 
   onOpen() {
     const { contentEl } = this;
+    // Re-render on navigation: save what was typed into the previous hex.
+    this.flushTextSaves();
+    this.textBoxes.clear();
     contentEl.empty();
     contentEl.addClass("duckmage-hex-editor");
 
@@ -116,15 +210,7 @@ export class HexEditorModal extends HexmakerModal {
       title: "Center map on this hex",
     });
     centerBtn.addEventListener("click", () => {
-      const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-      interface WithCenterOnHex {
-        centerOnHex?(x: number, y: number): void;
-      }
-      if (leaves.length > 0)
-        (leaves[0].view as unknown as WithCenterOnHex).centerOnHex?.(
-          this.x,
-          this.y,
-        );
+      activeMapView(this.app.workspace)?.centerOnHex(this.x, this.y);
     });
 
     // "Open note" can be determined synchronously from the vault index
@@ -135,7 +221,7 @@ export class HexEditorModal extends HexmakerModal {
         cls: "duckmage-editor-open-link",
       });
       openLink.addEventListener("click", () => {
-        void this.app.workspace.getLeaf("tab").openFile(fileNow);
+        void openNoteFocused(this.app, fileNow);
         this.close();
       });
       const exportLink = titleLeft.createEl("a", {
@@ -147,9 +233,34 @@ export class HexEditorModal extends HexmakerModal {
         new HexExportModal(this.app, this.plugin, fileNow).open();
       });
     }
-    this.renderNeighborWidget(titleRow, this.x, this.y);
+    // Run a workflow for this hex (PA2): its result can be added to a
+    // section here.
+    const wfLink = titleLeft.createEl("a", {
+      text: "Run workflow",
+      cls: "duckmage-editor-open-link",
+      attr: { title: "Roll a workflow and add the result to this hex" },
+    });
+    wfLink.addEventListener("click", () => this.pickWorkflow());
+    // What happened here, to the dated play log (SF3).
+    const logLink = titleLeft.createEl("a", {
+      text: "Add to log",
+      cls: "duckmage-editor-open-link",
+      attr: { title: "Write what happened here in today's play log" },
+    });
+    logLink.addEventListener("click", () => {
+      new PlayLogModal(this.app, `${this.plugin.mapLabel(this.mapName)} ${this.x}, ${this.y}`, (text) =>
+        addToPlayLog(this.plugin, this.mapName, this.x, this.y, text),
+      ).open();
+    });
+    this.flower.renderNeighborWidget(titleRow, this.x, this.y);
+    this.renderNameField(contentEl, path);
+    this.mapsStrip.renderMapsStrip(contentEl);
 
     this.makeDraggable();
+    // The body renders after an async read, so the modal opens short and
+    // then grows: keep its bottom on screen (it ran off the window, and a
+    // click on the hidden half closed the editor — fresh-eyes round 3).
+    this.stopKeepInViewport ??= this.keepInViewport();
 
     // ── Body — populated after the single async read ──────────────────────
     const bodyEl = contentEl.createDiv({ cls: "duckmage-editor-body" });
@@ -171,45 +282,37 @@ export class HexEditorModal extends HexmakerModal {
     const { hexExists, allText, allLinks, directTerrain, directIcon } = this;
     const s = this.plugin.settings;
 
+    // A hex that already has a terrain opens with Terrain collapsed to a
+    // one-line summary (round 5: the 50-swatch grid reopened expanded on
+    // every hex; round 6: expanding it once must not stick).
+    let syncChangeHint = (): void => {};
     const { body: terrainBody, header: terrainHeader } = this.makeCollapsible(
       bodyEl,
       "Terrain",
-      s.hexEditorTerrainCollapsed ?? false,
+      "hexEditorTerrainCollapsed",
+      terrainStartsCollapsed(directTerrain !== null, s.hexEditorTerrainCollapsed ?? false),
+      () => syncChangeHint(),
     );
-    const paletteEntry = directTerrain
-      ? this.plugin
-          .getMapPalette(this.mapName)
-          .find((p) => p.name === directTerrain)
-      : undefined;
-    const iconToShow = directIcon ?? paletteEntry?.icon;
-    if (paletteEntry || iconToShow) {
-      const preview = terrainHeader.createSpan({
-        cls: "duckmage-terrain-header-preview",
-      });
-      const swatch = preview.createSpan({
-        cls: "duckmage-terrain-header-swatch",
-      });
-      if (paletteEntry)
-        swatch.setCssProps({ "--duckmage-bg": paletteEntry.color });
-      if (iconToShow) {
-        const img = swatch.createEl("img");
-        img.src = getIconUrl(this.plugin, iconToShow);
-      }
-      if (paletteEntry) {
-        preview.createSpan({
-          text: paletteEntry.name,
-          cls: "duckmage-terrain-header-name",
-        });
-      }
-    }
-    this.renderTerrainSection(terrainBody, path, directTerrain, directIcon, this.directGmIcons);
+    const headerPreview = terrainHeader.createSpan({
+      cls: "duckmage-terrain-header-preview",
+    });
+    this.renderTerrainHeader(headerPreview, directTerrain, directIcon);
+    const changeHint = terrainHeader.createSpan({ cls: "duckmage-terrain-change-hint", text: "▸ change" });
+    const terrainOpen = () => (terrainBody.parentElement as HTMLDetailsElement | null)?.open ?? true;
+    syncChangeHint = () => changeHint.toggle(!terrainOpen() && canDo(this.mapName, "paint-terrain"));
+    syncChangeHint();
+    const refreshHeader = () => this.renderTerrainHeader(headerPreview, this.directTerrain, this.directIcon);
+    // Terrain and icons are map data: the map's work mode may lock them
+    // (one line instead of the pickers). Notes are never locked (WM2).
+    if (canDo(this.mapName, "paint-terrain")) this.renderTerrainSection(terrainBody, path, directTerrain, refreshHeader);
+    else this.renderModeLocked(terrainBody, "paint-terrain");
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
     const { body: notesBody } = this.makeCollapsible(
       bodyEl,
       "Notes",
-      s.hexEditorNotesCollapsed ?? false,
+      "hexEditorNotesCollapsed",
     );
     for (const { key, label } of TEXT_SECTIONS) {
       if (!this.options.gmLayerActive && (key === "hidden" || key === "secret")) continue;
@@ -221,28 +324,65 @@ export class HexEditorModal extends HexmakerModal {
         allText.get(key) ?? "",
       );
     }
+    // New maps start with the GM layer off, which hides Hidden and Secret;
+    // say so rather than leave a GM wondering where they went.
+    if (!this.options.gmLayerActive && this.options.onEnableGmLayer) {
+      const hint = notesBody.createDiv({ cls: "duckmage-editor-gm-hint" });
+      hint.createSpan({ text: "Hidden and Secret notes show while the GM layer is on. " });
+      const show = hint.createEl("a", { text: "Show them", href: "#" });
+      show.addEventListener("click", (e) => {
+        e.preventDefault();
+        this.options.onEnableGmLayer?.();
+        this.options.gmLayerActive = true;
+        this.onOpen();
+      });
+    }
+    // Weather and Hooks & Rumors (E2): rolled from the region's tables,
+    // folded away unless the hex already has some.
+    const rolled = new Fold(notesBody, {
+      title: ROLLED_TEXT_SECTIONS.map((s) => s.label).join(" · "),
+      open: ROLLED_TEXT_SECTIONS.some(({ key }) => !!(allText.get(key) ?? "").trim()),
+      cls: "duckmage-editor-rolled-sections",
+    });
+    for (const { key, label } of ROLLED_TEXT_SECTIONS) {
+      this.renderTextSection(rolled.body, path, key, label, allText.get(key) ?? "");
+    }
+    // Sections in this note the editor has no field for (the user's own, or
+    // an older template's): shown and editable under their own headings, so
+    // nothing in the note is out of sight here.
+    const known = new Set<string>([
+      ...TEXT_SECTIONS.map((s) => s.key as string),
+      ...ROLLED_TEXT_SECTIONS.map((s) => s.key as string),
+      ...LINK_SECTIONS.map((s) => s.toLowerCase()),
+    ]);
+    const others = [...this.allHeadings].filter(([key]) => !known.has(key));
+    if (others.length) {
+      const more = new Fold(notesBody, {
+        title: `More in this note (${others.length})`,
+        open: others.some(([key]) => !!(allText.get(key) ?? "").trim()),
+        cls: "duckmage-editor-other-sections",
+      });
+      for (const [key, heading] of others) this.renderTextSection(more.body, path, heading, heading.replace(/[:：]+$/, ""), allText.get(key) ?? "");
+    }
 
     bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
 
+    // The group of link fields. Not called "Features": that's one of the
+    // fields, and a group heading with a field's name read as that field's
+    // label (E5). The settings flag keeps its old name.
     const { body: featuresBody } = this.makeCollapsible(
       bodyEl,
-      "Features",
-      s.hexEditorFeaturesCollapsed ?? false,
+      "Linked notes",
+      "hexEditorFeaturesCollapsed",
     );
-    this.renderDropdownSection(
-      featuresBody,
-      path,
-      "Encounters Table",
-      hexExists,
-      s.tablesFolder,
-      allLinks.get("encounters table") ?? [],
-    );
+    featuresBody.addClass("duckmage-editor-link-group");
+    this.renderEncountersSection(featuresBody, path);
     this.renderDropdownSection(
       featuresBody,
       path,
       "Towns",
       hexExists,
-      s.townsFolder,
+      contentFolder(s, "townsFolder"),
       allLinks.get("towns") ?? [],
     );
     this.renderDropdownSection(
@@ -250,7 +390,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Dungeons",
       hexExists,
-      s.dungeonsFolder,
+      contentFolder(s, "dungeonsFolder"),
       allLinks.get("dungeons") ?? [],
     );
     this.renderDropdownSection(
@@ -258,7 +398,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Quests",
       hexExists,
-      s.questsFolder,
+      contentFolder(s, "questsFolder"),
       allLinks.get("quests") ?? [],
     );
     this.renderDropdownSection(
@@ -266,7 +406,7 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Factions",
       hexExists,
-      s.factionsFolder,
+      contentFolder(s, "factionsFolder"),
       allLinks.get("factions") ?? [],
     );
     this.renderDropdownSection(
@@ -274,416 +414,167 @@ export class HexEditorModal extends HexmakerModal {
       path,
       "Features",
       hexExists,
-      s.featuresFolder,
+      contentFolder(s, "featuresFolder"),
       allLinks.get("features") ?? [],
     );
+
+    // Icon pickers last: they are long grids, and above Notes they pushed
+    // Description below the fold (fresh-eyes round 3).
+    bodyEl.createEl("hr", { cls: "duckmage-editor-divider" });
+    const { body: iconsBody } = this.makeCollapsible(
+      bodyEl,
+      "Icons",
+      "hexEditorIconsCollapsed",
+    );
+    if (canDo(this.mapName, "paint-icon")) this.renderIconSections(iconsBody, path, directIcon, this.directGmIcons, refreshHeader);
+    else this.renderModeLocked(iconsBody, "paint-icon");
+  }
+
+  /** One line where a section the work mode locks would be. */
+  private renderModeLocked(container: HTMLElement, action: ModeAction): void {
+    const line = container.createDiv({ cls: "duckmage-editor-mode-locked", text: lockedHint(action) });
+    // A God-only section offers the switch right here (godOffer.ts).
+    addGodOffer(line, this.plugin, this.mapName, lockedHint(action), () => this.onOpen());
   }
 
   onClose() {
+    this.flushTextSaves();
+    // Terrain, region or name may have changed here: refresh the note's Map data.
+    void this.plugin.refreshHexMapData(this.mapName, this.x, this.y);
+    this.saves.dispose();
+    this.notesStatusEl = null;
+    this.stopKeepInViewport?.();
+    this.stopKeepInViewport = null;
     this.options.onModalClose?.();
     this.contentEl.empty();
   }
 
-  private isOnMap(nx: number, ny: number): boolean {
-    const region = this.plugin.getOrCreateMap(this.mapName);
-    const { gridOffset, gridSize } = region;
-    return (
-      nx >= gridOffset.x &&
-      nx < gridOffset.x + gridSize.cols &&
-      ny >= gridOffset.y &&
-      ny < gridOffset.y + gridSize.rows
+  /**
+   * The hex's name (N1), top of the editor. Stored in the map note (no
+   * hex note needed); a hex with a note also gets it as an alias (X4).
+   * Saves when the box loses focus or Enter is pressed, and on close.
+   */
+  private renderNameField(container: HTMLElement, path: string): void {
+    const row = container.createDiv({ cls: "duckmage-editor-name-row" });
+    const id = `duckmage-hex-name-${nextFieldSeq()}`;
+    row.createEl("label", { text: "Name", attr: { for: id } });
+    const input = row.createEl("input", {
+      type: "text",
+      cls: "duckmage-editor-name-input",
+      attr: { id, placeholder: "Name this hex (optional)", spellcheck: "false" },
+    });
+    input.value = getHexNameFromFile(path) ?? "";
+    // The single autosave status starts here, beside the first box; text
+    // sections move it beside whichever box has focus.
+    this.notesStatusEl = row.createDiv({
+      cls: "duckmage-editor-notes-status",
+      attr: { "aria-live": "polite" },
+    });
+    this.renderSaveStatus(this.saves.current);
+    input.addEventListener("focus", () => {
+      const status = this.notesStatusEl;
+      if (status && status.parentElement !== row) row.appendChild(status);
+    });
+    const { x, y, mapName } = this;
+    let saved = cleanHexName(input.value);
+    // Saves a moment after typing stops, like the text boxes (round 7: the
+    // name only saved on blur, so "Saving shortly…" sat there).
+    const debounce = new DebouncedSave(
+      () => save(),
+      TEXT_AUTOSAVE_MS,
+      (fn, ms) => window.setTimeout(fn, ms),
+      (id) => window.clearTimeout(id),
     );
+    const save = () => {
+      debounce.cancel();
+      this.pendingTextSaves.delete(save);
+      const name = cleanHexName(input.value);
+      if (name === saved) {
+        this.saves.settle();
+        return;
+      }
+      saved = name;
+      void this.saves.track(this.plugin.undoableEdit(mapName, () => this.plugin.setHexName(mapName, x, y, name)).then(() => this.onChanged()));
+    };
+    input.addEventListener("input", () => {
+      debounce.schedule();
+      this.pendingTextSaves.add(save);
+      this.saves.markPending();
+    });
+    input.addEventListener("change", save);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        save();
+      }
+    });
   }
 
-  private renderNeighborWidget(
-    container: HTMLElement,
-    x: number,
-    y: number,
-  ): void {
-    const isFlat = this.plugin.settings.hexOrientation === "flat";
-    const stagger =
-      this.plugin.getMap(this.mapName)?.staggerOffset
-      ?? this.plugin.settings.staggerOffset
-      ?? "odd";
-    // notShifted = the hex sits on the non-staggered (un-shifted) row/col.
-    const notShifted = (n: number) =>
-      stagger === "odd" ? n % 2 === 0 : n % 2 !== 0;
-    // First-wins on duplicate-named palette entries — matches HexMapView's
-    // .find() behaviour so the neighbor preview agrees with the main grid.
-    const paletteMap = new Map<string, TerrainColor>();
-    for (const p of this.plugin.getMapPalette(this.mapName)) {
-      if (!paletteMap.has(p.name)) paletteMap.set(p.name, p);
-    }
-    const widget = container.createDiv({ cls: "duckmage-neighbor-widget" });
-
-    type NeighborDef = { l: number; t: number; nx: number; ny: number };
-    const defs: NeighborDef[] = isFlat
-      ? [
-          { l: 22, t: 2, nx: x, ny: y - 1 }, // N
-          { l: 42, t: 13, nx: x + 1, ny: notShifted(x) ? y - 1 : y }, // NE
-          { l: 42, t: 32, nx: x + 1, ny: notShifted(x) ? y : y + 1 }, // SE
-          { l: 22, t: 40, nx: x, ny: y + 1 }, // S
-          { l: 2, t: 32, nx: x - 1, ny: notShifted(x) ? y : y + 1 }, // SW
-          { l: 2, t: 13, nx: x - 1, ny: notShifted(x) ? y - 1 : y }, // NW
-        ]
-      : [
-          { l: 10, t: 1, nx: notShifted(y) ? x - 1 : x, ny: y - 1 }, // NW
-          { l: 34, t: 1, nx: notShifted(y) ? x : x + 1, ny: y - 1 }, // NE
-          { l: 0, t: 18, nx: x - 1, ny: y }, // W
-          { l: 44, t: 18, nx: x + 1, ny: y }, // E
-          { l: 10, t: 35, nx: notShifted(y) ? x - 1 : x, ny: y + 1 }, // SW
-          { l: 34, t: 35, nx: notShifted(y) ? x : x + 1, ny: y + 1 }, // SE
-        ];
-
-    for (const { l, t, nx, ny } of defs) {
-      const onMap = this.isOnMap(nx, ny);
-      const tile = widget.createDiv({
-        cls: `duckmage-neighbor-tile${onMap ? "" : " duckmage-neighbor-tile-offmap"}`,
-      });
-      tile.setCssProps({ left: `${l}px`, top: `${t}px` });
-
-      if (onMap) {
-        tile.title = `Hex ${nx}, ${ny}`;
-        const nPath = this.plugin.hexPath(nx, ny, this.mapName);
-        const terrain = getTerrainFromFile(this.app, nPath);
-        const entry = terrain ? paletteMap.get(terrain) : undefined;
-        if (entry) tile.setCssProps({ "--duckmage-bg": entry.color });
-        tile.addEventListener("click", () => {
-          this.x = nx;
-          this.y = ny;
-          this.options.onNavigate?.(nx, ny);
-          void this.loadData().then(() => {
-            this.dataPreloaded = true;
-            this.onOpen();
-            this.dataPreloaded = false;
-          });
-        });
-      } else {
-        tile.title = "Off map";
-      }
-    }
-
-    // Centre dot — only shown when a submap is linked
-    const hexPath = this.plugin.hexPath(this.x, this.y, this.mapName);
-    const submap = getSubmapFromFile(this.app, hexPath);
-    if (submap) {
-      const centre = widget.createDiv({ cls: "duckmage-neighbor-centre duckmage-neighbor-centre--linked" });
-      // Flat-top flower center: (30,30); pointy-top: (30,26). Dot is 12×12.
-      const cy = isFlat ? 24 : 20;
-      centre.setCssProps({ left: "24px", top: `${cy}px` });
-      centre.title = `Submap: ${submap}`;
-      // Color the dot with the linked map's terrain type color (if configured)
-      const submapData = this.plugin.getMap(submap);
-      if (submapData?.terrainType) {
-        const terrainEntry = this.plugin.getMapPalette(submap).find((t) => t.name === submapData.terrainType);
-        if (terrainEntry?.color) centre.style.backgroundColor = terrainEntry.color;
-      }
-      centre.addEventListener("click", () => {
-        this.close();
-        this.options.onSwitchMap?.(submap);
-      });
-    }
+  private flushTextSaves(): void {
+    for (const save of [...this.pendingTextSaves]) save();
+    this.pendingTextSaves.clear();
   }
 
-  private makeCollapsible(
-    container: HTMLElement,
-    label: string,
-    startCollapsed: boolean,
-  ): { body: HTMLElement; header: HTMLElement } {
-    const wrapper = container.createDiv({ cls: "duckmage-editor-collapsible" });
-    const header = wrapper.createDiv({
-      cls: "duckmage-editor-collapsible-header",
-    });
-    const arrow = header.createSpan({
-      cls: "duckmage-editor-collapsible-arrow",
-      text: startCollapsed ? "▶" : "▼",
-    });
-    header.createEl("h3", {
-      text: label,
-      cls: "duckmage-editor-collapsible-title",
-    });
-    const body = wrapper.createDiv({ cls: "duckmage-editor-collapsible-body" });
-    if (startCollapsed) body.hide();
-    header.addEventListener("click", () => {
-      const collapsed = !body.isShown();
-      if (collapsed) {
-        body.show();
-      } else {
-        body.hide();
-      }
-      arrow.textContent = collapsed ? "▼" : "▶";
-    });
-    return { body, header };
+  private renderSaveStatus(state: SaveState): void {
+    const el = this.notesStatusEl;
+    if (!el) return;
+    el.setText(SAVE_STATUS_TEXT[state]);
+    el.title = SAVE_STATUS_TITLE;
+    el.dataset["state"] = state;
   }
 
-  private renderTerrainSection(
-    container: HTMLElement,
-    path: string,
-    currentTerrain: string | null,
-    currentIcon: string | null,
-    currentGmIcons: string[],
-  ): void {
-    const palette = this.plugin.getMapPalette(this.mapName);
-
-    const section = container.createDiv({ cls: "duckmage-editor-section" });
-
-    const grid = section.createDiv({ cls: "duckmage-terrain-picker" });
-
-    // Clear terrain — always first in the grid
-    if (currentTerrain) {
-      const clearBtn = grid.createDiv({
-        cls: "duckmage-terrain-option duckmage-terrain-option-clear",
-      });
-      clearBtn.createDiv({
-        cls: "duckmage-terrain-preview duckmage-terrain-preview-clear",
-      });
-      clearBtn.createSpan({
-        text: "Clear",
-        cls: "duckmage-terrain-option-name",
-      });
-      clearBtn.addEventListener("click", () => {
-        void (async () => {
-          await setTerrainInFile(this.app, path, null);
-          void this.plugin.syncHexEncounterTableLink(path, null);
-          this.onChanged(new Map([[path, null]]));
-          this.close();
-        })();
-      });
-    }
-
-    for (const entry of palette) {
-      const btn = grid.createDiv({
-        cls: `duckmage-terrain-option${entry.name === currentTerrain ? " is-selected" : ""}`,
-      });
-
-      const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.setCssProps({ "--duckmage-bg": entry.color });
-
-      if (entry.icon) {
-        createIconEl(
-          preview,
-          getIconUrl(this.plugin, entry.icon),
-          entry.name,
-          entry.iconColor,
-          "duckmage-terrain-preview-icon",
-        );
-      }
-
-      btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
-
-      btn.addEventListener("click", () => {
-        void (async () => {
-          await this.ensureHexNote();
-          await setTerrainInFile(this.app, path, entry.name);
-          void this.plugin.syncHexEncounterTableLink(path, entry.name);
-          this.onChanged(new Map([[path, entry.name]]));
-          this.close();
-        })();
-      });
-    }
-
-    // Keep terrain in the overrides map so renderGrid doesn't lose it during
-    // the brief window when Obsidian clears the metadata cache on file modify.
-    const terrainOverrides: Map<string, string | null> | undefined =
-      currentTerrain ? new Map([[path, currentTerrain]]) : undefined;
-
-    // Icon override palette
-    const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
-    const visibleIcons = this.plugin.availableIcons.filter((i) => !hidden.has(i));
-
-    section.createEl("p", { text: "Icon override", cls: "duckmage-icon-inline-label" });
-    this.renderIconGrid(
-      section,
-      visibleIcons,
-      currentIcon,
-      "— terrain default —",
-      async (picked) => {
-        await this.ensureHexNote();
-        await setIconOverrideInFile(this.app, path, picked);
-        this.onChanged(terrainOverrides, new Map([[path, picked]]));
-      },
-    );
-
-    // GM icon palette — only when GM layer is active. Multi-add model:
-    // left-click an icon to add one, right-click to remove one. Tile shows
-    // a "+N" badge when N>0. Special "— clear all —" tile wipes the list.
-    if (this.options.gmLayerActive) {
-      section.createEl("p", { text: "Game master icons", cls: "duckmage-icon-inline-label" });
-      this.renderGmIconCountGrid(section, visibleIcons, currentGmIcons, path);
-    }
+  /** Terrain header summary (editor/TerrainIconSections.ts). */
+  private renderTerrainHeader(preview: HTMLElement, terrain: string | null, icon: string | null): void {
+    this.terrainIcons.renderTerrainHeader(preview, terrain, icon);
   }
 
   /**
-   * Multi-add GM icon picker. Local state is a copy of `initialCounts`
-   * (the count of each icon name on this hex). Left-click increments,
-   * right-click decrements (clamped at 0). Each change writes the full
-   * list to frontmatter via `setGmIconsInFile`, which preserves order
-   * — the user sees their additions in the order they made them on the
-   * map render.
+   * One of the editor's main groups (Terrain, Notes, Linked notes, Icons):
+   * the shared Fold (owner call O8), its open/closed state remembered in
+   * the given settings flag (so collapsing Terrain once keeps it collapsed
+   * on every hex, E5). The same flags are exposed in the settings tab.
    */
-  private renderGmIconCountGrid(
+  private makeCollapsible(
     container: HTMLElement,
-    icons: string[],
-    initialList: string[],
-    path: string,
-  ): void {
-    // Working copy of the list (with duplicates) the user is editing.
-    const list: string[] = [...initialList];
-    const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
-
-    const countOf = (icon: string): number => list.filter((i) => i === icon).length;
-
-    const persist = async (): Promise<void> => {
-      await this.ensureHexNote();
-      await setGmIconsInFile(this.app, path, list);
-      // Pass the new list directly via the overrides arg so the view
-      // can update the hex's data-gm-icons attribute immediately
-      // without round-tripping through the metadata cache (which lags
-      // file writes by a tick — that race meant rapid multi-add
-      // clicks could silently lose icons in the on-map render).
-      this.onChanged(undefined, undefined, new Map([[path, [...list]]]));
-    };
-
-    const makeTile = (icon: string | null): HTMLElement => {
-      const label = icon
-        ? icon.replace(/^bw-/, "").replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "").replace(/-/g, " ")
-        : "— clear all —";
-      const tile = grid.createDiv({ cls: "duckmage-icon-option" });
-      tile.dataset["icon"] = icon ?? "";
-      const preview = tile.createDiv({
-        cls: `duckmage-icon-preview${!icon ? " duckmage-icon-preview-clear" : ""}`,
-      });
-      if (icon) {
-        const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });
-        img.src = getIconUrl(this.plugin, icon);
-        img.alt = label;
-      }
-      tile.createSpan({ text: label, cls: "duckmage-icon-option-name" });
-
-      // Count badge — created lazily on first non-zero count.
-      const refreshBadge = (): void => {
-        const c = icon ? countOf(icon) : 0;
-        let badge = tile.querySelector<HTMLElement>(".duckmage-icon-count-badge");
-        if (c > 0) {
-          if (!badge) {
-            badge = tile.createDiv({ cls: "duckmage-icon-count-badge" });
-          }
-          badge.setText(c > 1 ? `×${c}` : "✓");
-          tile.addClass("is-selected");
-        } else {
-          badge?.remove();
-          tile.removeClass("is-selected");
-        }
-      };
-      refreshBadge();
-
-      // Left-click: add (or clear-all for the special null tile).
-      tile.addEventListener("click", () => {
-        void (async () => {
-          if (icon === null) {
-            list.length = 0;
-          } else {
-            list.push(icon);
-          }
-          // Refresh ALL tiles' badges since clear-all resets every count.
-          grid.querySelectorAll<HTMLElement>(".duckmage-icon-option").forEach((t) => {
-            const ic = t.dataset["icon"] || null;
-            const c = ic ? countOf(ic) : 0;
-            let b = t.querySelector<HTMLElement>(".duckmage-icon-count-badge");
-            if (c > 0) {
-              if (!b) b = t.createDiv({ cls: "duckmage-icon-count-badge" });
-              b.setText(c > 1 ? `×${c}` : "✓");
-              t.addClass("is-selected");
-            } else {
-              b?.remove();
-              t.removeClass("is-selected");
-            }
-          });
-          await persist();
-        })();
-      });
-
-      // Right-click: remove one. No-op on the clear-all tile.
-      tile.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        if (icon === null) return;
-        const idx = list.lastIndexOf(icon);
-        if (idx === -1) return;
-        list.splice(idx, 1);
-        refreshBadge();
-        void persist();
-      });
-
-      return tile;
-    };
-
-    makeTile(null);
-    for (const icon of icons) makeTile(icon);
+    label: string,
+    flag:
+      | "hexEditorTerrainCollapsed"
+      | "hexEditorNotesCollapsed"
+      | "hexEditorFeaturesCollapsed"
+      | "hexEditorIconsCollapsed",
+    startCollapsedOverride?: boolean,
+    onToggle?: (open: boolean) => void,
+  ): { body: HTMLElement; header: HTMLElement } {
+    const startCollapsed = startCollapsedOverride ?? this.plugin.settings[flag] ?? false;
+    // No device store: the settings flag is the remembered state.
+    const fold = new Fold(container, {
+      title: label,
+      open: !startCollapsed,
+      cls: "duckmage-editor-group",
+      summaryCls: "duckmage-editor-group-header",
+      bodyCls: "duckmage-editor-group-body",
+      onToggle: (open) => {
+        this.plugin.settings[flag] = !open;
+        // Expanding Terrain is NOT remembered: on hexes with a terrain it opens
+        // collapsed again (round 6; see terrainStartsCollapsed).
+        void this.plugin.saveSettings();
+        onToggle?.(open);
+      },
+    });
+    return { body: fold.body, header: fold.summary };
   }
 
-  private renderIconGrid(
-    container: HTMLElement,
-    icons: string[],
-    current: string | null,
-    noneLabel: string,
-    onPick: (icon: string | null) => Promise<void>,
-  ): void {
-    let selected = current;
-    const grid = container.createDiv({ cls: "duckmage-icon-picker duckmage-icon-picker-inline" });
-
-    const makeTile = (icon: string | null) => {
-      const label = icon
-        ? icon.replace(/^bw-/, "").replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "").replace(/-/g, " ")
-        : noneLabel;
-      const tile = grid.createDiv({
-        cls: `duckmage-icon-option${selected === icon ? " is-selected" : ""}`,
-      });
-      const preview = tile.createDiv({
-        cls: `duckmage-icon-preview${!icon ? " duckmage-icon-preview-clear" : ""}`,
-      });
-      if (icon) {
-        const img = preview.createEl("img", { cls: "duckmage-icon-preview-img" });
-        img.src = getIconUrl(this.plugin, icon);
-        img.alt = label;
-      }
-      tile.createSpan({ text: label, cls: "duckmage-icon-option-name" });
-      tile.addEventListener("click", () => {
-        void (async () => {
-          selected = icon;
-          grid.querySelectorAll(".duckmage-icon-option").forEach((el) =>
-            el.toggleClass("is-selected", (el as HTMLElement).dataset["icon"] === (icon ?? "")),
-          );
-          await onPick(icon);
-        })();
-      });
-      tile.dataset["icon"] = icon ?? "";
-      return tile;
-    };
-
-    makeTile(null);
-    for (const icon of icons) makeTile(icon);
+  /** The terrain palette grid (editor/TerrainIconSections.ts). */
+  private renderTerrainSection(container: HTMLElement, path: string, currentTerrain: string | null, onTerrainChange: () => void): void {
+    this.terrainIcons.renderTerrainSection(container, path, currentTerrain, onTerrainChange);
   }
 
-  private getFilesForDropdown(
-    folder: string,
-    filterType?: "roll-filter" | "encounter-filter",
-  ): TFile[] {
-    const normalized = normalizeFolder(folder);
-    const all = this.app.vault.getMarkdownFiles();
-    const scoped = normalized
-      ? all.filter((f) => f.path.startsWith(normalized + "/"))
-      : all;
-    let filtered = scoped.filter((f) => !f.basename.startsWith("_"));
-    if (filterType) {
-      const excluded =
-        filterType === "encounter-filter"
-          ? this.plugin.settings.encounterTableExcludedFolders
-          : this.plugin.settings.rollTableExcludedFolders;
-      filtered = this.plugin.filterTableFiles(filtered, filterType, excluded);
-    }
-    return filtered.sort((a, b) => a.basename.localeCompare(b.basename));
+  /** Icon override + GM icon pickers (editor/TerrainIconSections.ts). */
+  private renderIconSections(container: HTMLElement, path: string, currentIcon: string | null, currentGmIcons: string[], onIconChange: () => void): void {
+    this.terrainIcons.renderIconSections(container, path, currentIcon, currentGmIcons, onIconChange);
   }
 
+  /** A link section (editor/LinkSection.ts); returns its links setter. */
   private renderDropdownSection(
     container: HTMLElement,
     path: string,
@@ -691,407 +582,50 @@ export class HexEditorModal extends HexmakerModal {
     hexExists: boolean,
     sourceFolder: string,
     initialLinks: string[],
-  ): void {
-    const sectionEl = container.createDiv({
-      cls: "duckmage-editor-link-section",
-    });
-    sectionEl.createEl("h4", {
-      text: section,
-      cls: "duckmage-link-section-title",
-    });
+  ): (links: string[]) => void {
+    return this.links.renderDropdownSection(container, path, section, hexExists, sourceFolder, initialLinks);
+  }
 
-    // ── Combo box ──────────────────────────────────────────────────────────
-    const comboWrap = sectionEl.createDiv({ cls: "duckmage-link-combo" });
-    const input = comboWrap.createEl("input", {
-      type: "text",
-      cls: "duckmage-link-combo-input",
-    });
-    input.placeholder = `Search or create…`;
+  /** Encounters: its table section (editor/TableSections.ts). */
+  private renderEncountersSection(container: HTMLElement, path: string): void {
+    this.tables.renderEncountersSection(container, path);
+  }
 
-    const arrowBtn = comboWrap.createEl("button", {
-      text: "▾",
-      cls: "duckmage-link-combo-arrow",
-      title: "Show all",
-    });
-    const dropdown = comboWrap.createDiv({
-      cls: "duckmage-link-combo-dropdown",
-    });
-    dropdown.hide();
+  /** Re-read the Encounters section after a terrain change (editor/TableSections.ts). */
+  private reloadEncounterLinks(path: string): Promise<void> {
+    return this.tables.reloadEncounterLinks(path);
+  }
 
-    // ── Link list ──────────────────────────────────────────────────────────
-    const linksEl = sectionEl.createDiv({ cls: "duckmage-link-list" });
+  /** A text section (editor/TextSection.ts). */
+  private renderTextSection(container: HTMLElement, path: string, section: string, label: string, initialContent: string): void {
+    this.texts.renderTextSection(container, path, section, label, initialContent);
+  }
 
-    let currentLinks = hexExists ? [...initialLinks] : [];
-    const filterType =
-      section === "Encounters Table"
-        ? ("encounter-filter" as const)
-        : undefined;
-
-    const onItemClick =
-      section === "Encounters Table"
-        ? (_link: string, file: TFile) => {
-            void (async () => {
-              interface WithOpenTable {
-                openTable?(path: string): void;
-              }
-              const leaves = this.app.workspace.getLeavesOfType(
-                VIEW_TYPE_RANDOM_TABLES,
-              );
-              if (leaves.length > 0) {
-                void this.app.workspace.revealLeaf(leaves[0]);
-                (leaves[0].view as unknown as WithOpenTable).openTable?.(
-                  file.path,
-                );
-              } else {
-                const leaf = this.app.workspace.getLeaf("tab");
-                await leaf.setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-                (leaf.view as unknown as WithOpenTable).openTable?.(file.path);
-              }
-              this.close();
-            })();
-          }
-        : undefined;
-
-    const onRollClick =
-      section === "Encounters Table"
-        ? (file: TFile) =>
-            new RandomTableModal(
-              this.app,
-              this.plugin,
-              undefined,
-              file.path,
-            ).open()
-        : undefined;
-
-    const onRemove = (link: string) => {
-      currentLinks = currentLinks.filter((l) => l !== link);
-      refresh();
-      void removeLinkFromSection(this.app, path, section, link).then(() =>
-        this.onChanged(),
-      );
-    };
-
-    const refresh = () => {
-      linksEl.empty();
-      this.renderLinkList(
-        linksEl,
-        currentLinks,
-        path,
-        onRemove,
-        onItemClick,
-        onRollClick,
-      );
-    };
-
-    refresh();
-
-    // ── Dropdown logic ─────────────────────────────────────────────────────
-    let isOpen = false;
-
-    const getFiltered = (query: string): TFile[] => {
-      const files = this.getFilesForDropdown(sourceFolder, filterType);
-      if (!query) return files;
-      const q = query.toLowerCase();
-      return files.filter((f) => f.basename.toLowerCase().includes(q));
-    };
-
-    const populateDropdown = (query: string) => {
-      dropdown.empty();
-      const trimmed = query.trim();
-      const files = getFiltered(trimmed);
-
-      if (files.length === 0 && !trimmed) {
-        dropdown.createDiv({
-          cls: "duckmage-link-combo-empty",
-          text: "No files in folder",
-        });
-      }
-
-      for (const file of files) {
-        const item = dropdown.createDiv({ cls: "duckmage-link-combo-item" });
-        item.textContent = file.basename;
-        item.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          void selectFile(file);
-        });
-      }
-
-      const exactMatch = files.some(
-        (f) => f.basename.toLowerCase() === trimmed.toLowerCase(),
-      );
-      if (trimmed && !exactMatch) {
-        const createItem = dropdown.createDiv({
-          cls: "duckmage-link-combo-item duckmage-link-combo-create",
-        });
-        createItem.textContent = `＋ Create "${trimmed}"`;
-        createItem.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          void createAndLink(trimmed);
-        });
-      }
-    };
-
-    let anchor: { reposition: () => void; detach: () => void } | null = null;
-
-    const openDropdown = () => {
-      isOpen = true;
-      populateDropdown(input.value);
-      dropdown.show();
-      // Anchor AFTER show so offsetHeight is measurable for above/below flip.
-      anchor?.detach();
-      anchor = this.anchorDropdown(comboWrap, dropdown);
-    };
-
-    const closeDropdown = () => {
-      isOpen = false;
-      dropdown.hide();
-      anchor?.detach();
-      anchor = null;
-    };
-
-    const selectFile = async (file: TFile) => {
-      closeDropdown();
-      input.value = "";
-      const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
-      }
-      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
-      currentLinks = [...currentLinks, linkPath];
-      refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path);
-      this.onChanged();
-    };
-
-    const createAndLink = async (name: string) => {
-      closeDropdown();
-      input.value = "";
-      const folder = normalizeFolder(sourceFolder);
-      const newPath = folder ? `${folder}/${name}.md` : `${name}.md`;
-      let file = this.app.vault.getAbstractFileByPath(newPath);
-      if (!(file instanceof TFile)) {
-        try {
-          if (folder && !this.app.vault.getAbstractFileByPath(folder)) {
-            await this.app.vault.createFolder(folder);
-          }
-          file = await this.app.vault.create(
-            newPath,
-            section === "Encounters Table"
-              ? makeTableTemplate(this.plugin.settings.defaultTableDice)
-              : "",
-          );
-        } catch (err) {
-          new Notice(`Could not create ${newPath}: ${String(err)}`);
-          return;
-        }
-      }
-      if (!(file instanceof TFile)) return;
-      const hexFile = await this.ensureHexNote();
-      if (!hexFile) {
-        new Notice("Could not create hex note.");
-        return;
-      }
-      const linkPath = this.app.metadataCache.fileToLinktext(file, path);
-      currentLinks = [...currentLinks, linkPath];
-      refresh();
-      void addLinkToSection(this.app, path, section, `[[${linkPath}]]`);
-      void addBacklinkToFile(this.app, file.path, path);
-      this.onChanged();
-    };
-
-    input.addEventListener("focus", () => openDropdown());
-    input.addEventListener("blur", () =>
-      window.setTimeout(() => closeDropdown(), 150),
+  /** "Run workflow" (PA2): pick a workflow note, then run it for this hex. */
+  private pickWorkflow(): void {
+    // Workflows only: a blank setting is the workflows folder's usual place, never the world folder.
+    const picker = new FileLinkSuggestModal(
+      this.app,
+      this.plugin,
+      (file) => new WorkflowWizardModal(this.app, this.plugin, file, this.rollTarget("description")).open(),
+      contentFolder(this.plugin.settings, "workflowsFolder"),
+      ["md"],
     );
-    input.addEventListener("input", () => {
-      if (!isOpen) openDropdown();
-      else {
-        populateDropdown(input.value);
-        anchor?.reposition();
-      }
-    });
-    input.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        closeDropdown();
-        input.blur();
-        return;
-      }
-      if (e.key === "Enter") {
-        const trimmed = input.value.trim();
-        if (!trimmed) return;
-        const files = getFiltered(trimmed);
-        const exact = files.find(
-          (f) => f.basename.toLowerCase() === trimmed.toLowerCase(),
-        );
-        if (exact) void selectFile(exact);
-        else if (files.length === 1) void selectFile(files[0]);
-        else void createAndLink(trimmed);
-      }
-    });
-
-    arrowBtn.addEventListener("mousedown", (e) => e.preventDefault());
-    arrowBtn.addEventListener("click", () => {
-      if (isOpen) closeDropdown();
-      else {
-        input.focus();
-        openDropdown();
-      }
-    });
+    picker.setPlaceholder("Pick a workflow to run…");
+    picker.open();
   }
 
-  private renderLinkList(
-    container: HTMLElement,
-    links: string[],
-    sourcePath: string,
-    onRemove?: (link: string) => void,
-    onItemClick?: (link: string, file: TFile) => void,
-    onRollClick?: (file: TFile) => void,
-  ): void {
-    if (links.length === 0) {
-      container.createSpan({ text: "None", cls: "duckmage-link-empty" });
-    } else {
-      for (const link of links) {
-        const item = container.createDiv({ cls: "duckmage-link-item" });
-        const label = item.createSpan({
-          text: `[[${link}]]`,
-          cls: "duckmage-link-item-label",
-        });
-        const file = this.app.metadataCache.getFirstLinkpathDest(
-          link,
-          sourcePath,
-        );
-        if (file instanceof TFile) {
-          label.addClass("duckmage-link-item-clickable");
-          label.addEventListener("click", () => {
-            if (onItemClick) {
-              void onItemClick(link, file);
-            } else {
-              void this.app.workspace.getLeaf("tab").openFile(file);
-              this.close();
-            }
-          });
-          if (onRollClick) {
-            const rollBtn = item.createEl("button", {
-              text: "🎲",
-              cls: "duckmage-link-roll-btn",
-            });
-            rollBtn.title = "Roll on this table";
-            rollBtn.addEventListener("click", () => onRollClick(file));
-          }
-        }
-        if (onRemove) {
-          const removeBtn = item.createEl("button", {
-            text: "×",
-            cls: "duckmage-link-remove-btn",
-          });
-          removeBtn.addEventListener("click", () => onRemove(link));
-        }
-      }
-    }
+  /** "Add to this hex" for a roll made here (editor/TableSections.ts). */
+  private rollTarget(defaultSection: string): RollHexTarget {
+    return this.tables.rollTarget(defaultSection);
   }
 
-  private renderTextSection(
-    container: HTMLElement,
-    path: string,
-    section: string,
-    label: string,
-    initialContent: string,
-  ): void {
-    const sectionEl = container.createDiv({
-      cls: `duckmage-editor-text-section duckmage-editor-text-section-${section}`,
-    });
-    const labelRow = sectionEl.createDiv({
-      cls: "duckmage-text-section-label-row",
-    });
-    labelRow.createEl("label", {
-      text: label,
-      cls: "duckmage-text-section-label",
-    });
-
-    // 📖 button: terrain description table (description section) or section-specific table
-    const tablesFolder = normalizeFolder(
-      this.plugin.settings.tablesFolder ?? "",
-    );
-    let previewTablePath: string | null = null;
-    let previewTitle = "";
-
-    if (section === "description") {
-      const terrain = getTerrainFromFile(this.app, path);
-      if (terrain) {
-        const p = tablesFolder
-          ? `${tablesFolder}/terrain/description/${terrain}.md`
-          : `terrain/description/${terrain}.md`;
-        if (this.app.vault.getAbstractFileByPath(p)) {
-          previewTablePath = p;
-          previewTitle = `Roll on ${terrain} description table`;
-        }
-      }
-    } else if (
-      section === "landmark" ||
-      section === "hidden" ||
-      section === "secret"
-    ) {
-      const p = tablesFolder
-        ? `${tablesFolder}/${section}.md`
-        : `${section}.md`;
-      if (this.app.vault.getAbstractFileByPath(p)) {
-        previewTablePath = p;
-        previewTitle = `Roll on ${section} table`;
-      }
-    }
-
-    const textarea = sectionEl.createEl("textarea", {
-      cls: "duckmage-text-section-textarea",
-    });
-
-    if (previewTablePath) {
-      const btnGroup = labelRow.createDiv({
-        cls: "duckmage-text-section-btn-group",
-      });
-      const previewBtn = btnGroup.createEl("button", {
-        text: "📖",
-        cls: "duckmage-section-desc-table-btn",
-      });
-      previewBtn.title = previewTitle;
-      const capturedPath = previewTablePath;
-      previewBtn.addEventListener("click", () => {
-        new RandomTableModal(
-          this.app,
-          this.plugin,
-          (result) => {
-            if (textarea.value && !textarea.value.endsWith("\n"))
-              textarea.value += "\n";
-            textarea.value += result;
-            void (async () => {
-              const file = await this.ensureHexNote();
-              if (!file) return;
-              await setSectionContent(this.app, path, section, textarea.value);
-            })();
-            this.onChanged();
-          },
-          capturedPath,
-        ).open();
-      });
-    }
-    textarea.rows = 3;
-    textarea.placeholder = `${label}…`;
-    textarea.value = initialContent;
-
-    textarea.addEventListener("blur", () => {
-      void (async () => {
-        const file = await this.ensureHexNote();
-        if (!file) return;
-        await setSectionContent(this.app, path, section, textarea.value);
-      })();
-    });
-  }
-
-  private async ensureHexNote(): Promise<TFile | null> {
-    const path = this.plugin.hexPath(this.x, this.y, this.mapName);
+  private async ensureHexNote(x = this.x, y = this.y): Promise<TFile | null> {
+    const path = this.plugin.hexPath(x, y, this.mapName);
     const existing = this.app.vault.getAbstractFileByPath(path);
     if (existing instanceof TFile) return existing;
-    return this.plugin.createHexNote(this.x, this.y, this.mapName);
+    // (x, y), not this.x/this.y: a save that lands after navigating to a
+    // neighbour must create the note of the hex it was typed into.
+    return this.plugin.createHexNote(x, y, this.mapName);
   }
 }

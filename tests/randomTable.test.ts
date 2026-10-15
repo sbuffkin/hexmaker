@@ -6,7 +6,8 @@ import {
   getOddsLabel,
   getDieRanges,
   setDiceInFrontmatter,
-  extractPostTableContent,
+  parseRandomTableWithReport,
+  emptyTableMessage,
 } from "../src/random-tables/randomTable";
 
 // ── parseRandomTable ──────────────────────────────────────────────────────────
@@ -51,11 +52,13 @@ describe("parseRandomTable", () => {
     expect(result.entries[0].weight).toBe(1);
   });
 
-  it("clamps invalid weight (0 or NaN) to 1", () => {
-    const content = `| Result | Weight |\n|--------|--------|\n| Bad | 0 |\n| NaN | abc |`;
-    const result = parseRandomTable(content);
-    expect(result.entries[0].weight).toBe(1);
-    expect(result.entries[1].weight).toBe(1);
+  it("keeps weight 0; an unreadable weight counts as 1 and is reported", () => {
+    const content = `| Result | Weight |\n|--------|--------|\n| Never | 0 |\n| NaN | abc |`;
+    const { table, issues } = parseRandomTableWithReport(content);
+    expect(table.entries[0].weight).toBe(0);
+    expect(table.entries[1].weight).toBe(1);
+    expect(table.entries[1].result).toBe("NaN");
+    expect(issues.map((i) => i.code)).toContain("weight-unreadable");
   });
 
   it("skips separator rows", () => {
@@ -320,22 +323,23 @@ describe("setDiceInFrontmatter", () => {
   });
 });
 
-// ── extractPostTableContent ───────────────────────────────────────────────────
+// ── emptyTableMessage (fresh-eyes E6) ─────────────────────────────────────────
 
-describe("extractPostTableContent", () => {
-  it("returns empty string when nothing follows the table", () => {
-    const content = `---\ndice: 6\n---\n\n| Result | Weight |\n|--------|--------|\n| a | 1 |\n`;
-    expect(extractPostTableContent(content)).toBe("");
+describe("emptyTableMessage", () => {
+  it("calls a setup-made table with only an empty row 'no entries yet', not a format error", () => {
+    const content = makeTableTemplateLike();
+    expect(parseRandomTable(content).entries).toHaveLength(0);
+    const msg = emptyTableMessage(content);
+    expect(msg).toMatch(/no entries yet/);
+    expect(msg).not.toMatch(/format/i);
   });
 
-  it("returns content after the last table row", () => {
-    const content = `| Result | Weight |\n|--------|--------|\n| a | 1 |\n\n## Notes\n\nSome extra text.\n`;
-    expect(extractPostTableContent(content)).toBe(
-      "## Notes\n\nSome extra text.\n",
-    );
-  });
-
-  it("returns empty string when no table present", () => {
-    expect(extractPostTableContent("No table here.")).toBe("");
+  it("says there's no table yet when the note has no table at all", () => {
+    expect(emptyTableMessage("---\ndice: 6\n---\nJust some notes.\n")).toMatch(/no table to roll on yet/);
   });
 });
+
+/** Same shape as utils.makeTableTemplate (what setup writes for terrain tables). */
+function makeTableTemplateLike(): string {
+  return "---\ndice: 20\n---\n\n| Result | Weight |\n|--------|--------|\n|  | 1 |\n";
+}

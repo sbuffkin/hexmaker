@@ -1,0 +1,524 @@
+import type HexmakerPlugin from "../HexmakerPlugin";
+import type { MapPath, PathType, TerrainColor } from "../types";
+import {
+  drawnPathType,
+  generateTerrain,
+  generatorFitsPalette,
+  listGenerators,
+  toMapPaths,
+  type GridSpec,
+} from "./generators";
+import { ofType, SIDES, tuneKey, type GenerationContext, type ProcGrid, type ProcOption, type Side, type TuningDef } from "./procedural/common";
+import { generatorMapKind, isGeneratorShown, kindOfTerrains, type MapKind } from "../mapKinds";
+import { routeContextPaths } from "./procedural/contextPaths";
+import { PATH_ROW_PREFIX } from "./procedural/pathRows";
+import { registry } from "../modules";
+import { blendFromNeighbours, generateConnected, regionNeighbourNames, type NewRegion } from "./neighbours";
+import { neighbourShare } from "./neighbourWeight";
+import type { GeneratorFile } from "./generators";
+import { BUILTIN_GENERATORS, BUILTIN_PREFIX, builtinModel, builtinPathType, fitBuiltinModel } from "./builtinGenerators";
+import { DEFAULT_SETTINGS as WFC_DEFAULT_SETTINGS, type HexWfcModel } from "../../packages/hex-wfc/src";
+import type { FiredEvent, Ledgers } from "../arrival/eventsLedger";
+import type { ScaleMapMade } from "../modules/types";
+
+/**
+ * One list of terrain generators for map creation: Blank, the built-in
+ * procedural generators (Star scatter, Orbits), and every learned WFC
+ * generator file. Callers (setup modal, New map tab) only see this
+ * interface; WFC specifics stay in generators.ts.
+ */
+
+export interface GeneratedPath {
+  type: string;
+  route?: string;
+  hexes: string[];
+}
+
+export type GenerateOutcome =
+  | {
+      ok: true;
+      cells: Map<string, string>;
+      paths: GeneratedPath[];
+      featureCells?: Set<string>;
+      warnings: string[];
+      /** Hexes left to roll on arrival ("x_y" → table link): the map note's On arrival column. */
+      arrivals?: Map<string, string>;
+      /** Once rows that came up (SP6): the caller writes them to the Events ledgers once the map exists. */
+      events?: FiredEvent[];
+    }
+  | { ok: false; message: string };
+
+export interface GenerateRequest {
+  terrains: TerrainColor[];
+  grid: GridSpec;
+  seed: number;
+  options: Record<string, string>;
+  /** The target palette's path types (options that pick one, e.g. Star
+   *  scatter's "Path type for routes", choose among these). */
+  pathTypes?: readonly PathType[];
+  /** Where the map sits in the bigger map (parent hex, neighbours). */
+  context?: GenerationContext;
+  /** A new region placed next to existing ones: learned generators solve
+   *  against the neighbours' edges (generateConnected). */
+  region?: NewRegion;
+  /**
+   * Neighbour influence next to a neighbour (New map → Next to, SF6;
+   * worldgen/neighbourWeight.ts): 1 = as tuned, 0 = the seam only, 2 =
+   * twice as much. Unset = 1.
+   */
+  neighbourWeight?: number;
+  /**
+   * The map whose generator tables apply (Map properties → Tables, T11):
+   * the map being made's parent, or the map itself. Its own and its
+   * ancestors' tables win over the World types option's.
+   */
+  tablesFrom?: string;
+  /**
+   * The Events ledgers (SP6) where the map sits: Once rows already used
+   * there are left out. Unset: none used yet (rows still fire at most once
+   * per run).
+   */
+  ledgers?: Ledgers;
+}
+
+export interface TerrainGeneratorKind {
+  id: string;
+  label: string;
+  description: string;
+  /** Card text for a given palette, when it depends on what the palette
+   *  has (Overland: no "coast" on a palette without a coast terrain).
+   *  Falls back to `description`; see describeKind. */
+  describe?(terrains: TerrainColor[]): string;
+  source: "blank" | "built-in" | "learned";
+  /** Map type that owns the generator (hidden when that type is off; see
+   *  visibleKinds). Learned ones take it from their `map-kind` frontmatter. */
+  mapKind?: MapKind;
+  /** Only meaningful inside a parent hex (offered for submaps only). */
+  needsContext?: boolean;
+  /** Carries terrain on across the border of a neighbouring region it's
+   *  placed next to (Overland via context edgeCells, learned generators
+   *  via generateConnected). */
+  continuesNeighbours?: boolean;
+  options: ProcOption[];
+  /**
+   * Engine tuning sliders (the setup wizard's Advanced, owner 2026-10-12):
+   * the few that most change the map's layout. Their values travel in the
+   * options as `tune.<key>`; unset = the default, which is the engine's
+   * own behaviour.
+   */
+  tuning?: readonly TuningDef[];
+  /** The options as shown for one palette, when a choice lists that
+   *  palette's own terrains (Orbits' Star) or path types (Star scatter's
+   *  and Orbits' path type). Same keys as `options`; see kindOptions. */
+  optionsFor?(terrains: TerrainColor[], pathTypes?: readonly PathType[]): ProcOption[];
+  /** Can this generator produce terrain for a palette with these terrains? */
+  fits(terrains: TerrainColor[]): boolean;
+  generate(req: GenerateRequest): GenerateOutcome;
+  /** For learned generators: the generator note (for "Open generator"). */
+  generatorPath?: string;
+  /** Turn generated paths into anchored paths for the map `mapName`
+   *  (already created, with its terrain): drops path types its palette
+   *  doesn't have (named in `missing`); see generators.ts toMapPaths. */
+  toPaths(paths: GeneratedPath[], mapName: string, taken?: Iterable<string>): { paths: MapPath[]; missing: string[] };
+  /** Offered on every map scale of the setup wizard and New map, right after Blank. */
+  everyScale?: boolean;
+  /**
+   * After a map is made with it (setup wizard, New map): what it writes
+   * beyond the terrain (notes, map settings, tokens). Such a map has no
+   * fresh-map Reroll / Lock bar.
+   */
+  afterCreate?(plugin: HexmakerPlugin, made: ScaleMapMade): Promise<void>;
+}
+
+export const BLANK_ID = "blank";
+
+/**
+ * Region detail's card text with no hex to describe. Generic on purpose:
+ * a worked example ("sea to the east → coast on the east") read as if the
+ * sea had been detected (fresh-eyes r5).
+ */
+export const REGION_DETAIL_DESCRIPTION =
+  "Zoom into the parent hex: its terrain fills the map, and each neighbouring hex shapes the edge it touches.";
+
+const SIDE_WORDS: Record<Side, string> = {
+  N: "north", NE: "north-east", E: "east", SE: "south-east",
+  S: "south", SW: "south-west", W: "west", NW: "north-west",
+};
+
+function joinAnd(items: string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * Region detail's card text for an actual parent hex: what fills the map
+ * and which neighbours shape which edges, read from the hex's context.
+ * Falls back to the generic text when there's no context.
+ */
+export function regionDetailDescription(context: GenerationContext | undefined): string {
+  const parent = context?.parent?.terrain;
+  const sides = context?.sides ?? {};
+  const present = SIDES.filter((s) => sides[s]?.terrain);
+  if (!parent && present.length === 0) return REGION_DETAIL_DESCRIPTION;
+  const lead = parent ? `Zoom into this ${parent} hex: ${parent} fills the map` : "Zoom into this hex";
+  // Neighbours that differ from the hex itself, grouped by terrain.
+  const byTerrain = new Map<string, Side[]>();
+  for (const s of present) {
+    const t = sides[s]?.terrain;
+    if (!t || t === parent) continue;
+    byTerrain.set(t, [...(byTerrain.get(t) ?? []), s]);
+  }
+  if (byTerrain.size === 0) {
+    return present.length
+      ? `${lead}, and its neighbours are ${parent} too, so it runs to every edge.`
+      : `${lead} to every edge (no neighbouring hexes on the map).`;
+  }
+  const parts = [...byTerrain].map(([t, ss]) => `${t} on the ${joinAnd(ss.map((s) => SIDE_WORDS[s]))}`);
+  return `${lead}; its neighbours shape the edges: ${joinAnd(parts)}.`;
+}
+
+/**
+ * The generator a submap starts on. A saved choice (the per-terrain submap
+ * default) or one the user clicked stays; otherwise a submap of a hex with
+ * terrain starts on the generator that zooms into that hex (Region detail)
+ * instead of Blank, when it fits the palette (fresh-eyes r5).
+ */
+export function submapStartKind(
+  fitting: Pick<TerrainGeneratorKind, "id" | "needsContext">[],
+  current: string,
+  opts: { parentTerrain?: string; savedGenerator?: string; picked?: boolean },
+): string {
+  if (current !== BLANK_ID || opts.picked || opts.savedGenerator || !opts.parentTerrain) return current;
+  return fitting.find((k) => k.needsContext)?.id ?? current;
+}
+
+/** A generator card's text for this palette. */
+export function describeKind(kind: TerrainGeneratorKind, terrains: TerrainColor[]): string {
+  return kind.describe?.(terrains) ?? kind.description;
+}
+
+/**
+ * The terrain a fresh map shows where nothing has been painted: the
+ * palette's first terrain of a map type's background types (Space: void),
+ * otherwise none. By type, so a renamed or custom background works too.
+ */
+export function suggestBaseTerrain(terrains: TerrainColor[]): string | undefined {
+  return ofType(terrains, registry.kinds().flatMap((k) => k.baseTerrainTypes ?? []))[0];
+}
+
+function procGrid(plugin: HexmakerPlugin, grid: GridSpec): ProcGrid {
+  return { ...grid, orientation: plugin.settings.hexOrientation };
+}
+
+export async function listGeneratorKinds(plugin: HexmakerPlugin): Promise<TerrainGeneratorKind[]> {
+  const toPaths = (paths: GeneratedPath[], mapName: string, taken?: Iterable<string>) => toMapPaths(plugin, paths, undefined, mapName, taken);
+
+  const builtIn: TerrainGeneratorKind[] = [
+    {
+      id: BLANK_ID,
+      label: "Blank",
+      description: "An empty map to paint by hand.",
+      source: "blank",
+      options: [],
+      fits: () => true,
+      generate: () => ({ ok: true, cells: new Map(), paths: [], warnings: [] }),
+      toPaths,
+    },
+    // Each module's built-in generators, in their list order.
+    ...plugin.moduleGenerators({ toPaths, procGrid: (grid) => procGrid(plugin, grid) }).map(({ order: _order, ...k }) => k),
+  ];
+  // Every generator, tagged with its map type: callers filter with
+  // visibleKinds (they know the palette, the parent map and the current choice).
+  const kinds = [...builtIn];
+  const learned = await listGenerators(plugin);
+
+  // Shipped biome / preset generators, fitted to the palette by terrain
+  // type (builtinGenerators.ts). A learned generator file of the same name
+  // (e.g. the vault copy they were written in) takes their place.
+  const learnedNames = new Set(learned.map((g) => g.file.basename.toLowerCase()));
+  for (const def of BUILTIN_GENERATORS) {
+    const model = builtinModel(def.slug);
+    if (!model || learnedNames.has(def.slug)) continue;
+    kinds.push(builtinKind(plugin, def.slug, def.label, def.description, model, learned));
+  }
+
+  for (const g of learned) {
+    kinds.push({
+      id: `wfc:${g.file.path}`,
+      label: g.file.basename,
+      description: "Learned from a painted map.",
+      source: "learned",
+      mapKind: generatorMapKind(g.model.meta),
+      options: [],
+      tuning: wfcTuning(g.model),
+      generatorPath: g.file.path,
+      continuesNeighbours: true,
+      fits: (terrains) => generatorFitsPalette(g.model, terrains.map((t) => t.name)),
+      generate: (req) => {
+        const names = req.terrains.map((t) => t.name);
+        const model = withWfcTuning(g.model, req.options);
+        const res = req.region
+          ? generateConnected(plugin, leanToNeighbours(plugin, model, req, learned), names, req.region, req.seed)
+          : generateTerrain(plugin, model, names, req.grid, req.seed);
+        if (!res.ok) return { ok: false, message: res.message };
+        return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
+      },
+      toPaths: (paths, mapName, taken) => toMapPaths(plugin, paths, g.model, mapName, taken),
+    });
+  }
+  return kinds;
+}
+
+/**
+ * The learned-terrain engine's tuning sliders, from the generator page's
+ * Engine tuning (same names, ranges and settings keys). Each starts on the
+ * generator's own value (its note's settings, else the engine default).
+ */
+const WFC_TUNING: readonly (Omit<TuningDef, "default"> & { setting: "featureSize" | "neighbourInfluence" | "frequencyFeedback" | "scatter" | "randomness" | "directionalBias" | "edgeStrength" })[] = [
+  { key: "featureSize", setting: "featureSize", label: "Feature size", help: "Size of each terrain's patches. Lower makes more, smaller patches.", min: 0, max: 3, step: 0.25 },
+  { key: "clumping", setting: "neighbourInfluence", label: "Clumping", help: "How strongly each hex follows its neighbours. 0 gives speckled noise.", min: 0, max: 6, step: 0.5 },
+  { key: "mixStrength", setting: "frequencyFeedback", label: "Mix strength", help: "How closely the overall terrain mix follows the example.", min: 0, max: 4, step: 0.5 },
+  { key: "scatter", setting: "scatter", label: "Scatter", help: "Randomness in where patches start. Too low and one terrain can take over.", min: 0, max: 6, step: 0.5 },
+  { key: "randomness", setting: "randomness", label: "Randomness", help: "Share of hexes chosen by chance, ignoring neighbours.", min: 0, max: 1, step: 0.05 },
+  { key: "directionalBias", setting: "directionalBias", label: "Directional bias", help: "0 = terrain goes anywhere. 1 = it keeps to where it was in the example.", min: 0, max: 1, step: 0.05 },
+  { key: "edgeStrength", setting: "edgeStrength", label: "Edge strength", help: "How strongly the border follows the edge style. 0 = off.", min: 0, max: 1, step: 0.05 },
+];
+
+/** A learned or shipped generator's tuning sliders, starting on its own values. */
+export function wfcTuning(model: Pick<HexWfcModel, "settings">): TuningDef[] {
+  const s = { ...WFC_DEFAULT_SETTINGS, ...(model.settings ?? {}) };
+  return WFC_TUNING.map(({ setting, ...t }) => ({ ...t, default: s[setting] }));
+}
+
+/** The model with any tuning set in `options` applied to its settings (the model itself when none is). */
+export function withWfcTuning<M extends Pick<HexWfcModel, "settings">>(model: M, options: Readonly<Record<string, string>> | undefined): M {
+  const over: Record<string, number> = {};
+  for (const t of WFC_TUNING) {
+    const raw = options?.[tuneKey(t.key)];
+    if (raw === undefined || raw.trim() === "") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n)) over[t.setting] = n;
+  }
+  return Object.keys(over).length ? { ...model, settings: { ...(model.settings ?? {}), ...over } } : model;
+}
+
+/**
+ * A learned generator next to a neighbour (SF6): the neighbours' character
+ * blended in by the map's Neighbour influence (neighbourShare: 20% at ×1,
+ * 40% at ×2, none at ×0, when only the seam is matched). Each neighbour
+ * leans toward its own side (blendFromNeighbours).
+ */
+function leanToNeighbours(plugin: HexmakerPlugin, model: HexWfcModel, req: GenerateRequest, generators: GeneratorFile[]): HexWfcModel {
+  const share = neighbourShare(req.neighbourWeight);
+  if (!req.region || share <= 0) return model;
+  return blendFromNeighbours(plugin, model, regionNeighbourNames(plugin, req.region), share, generators);
+}
+
+/**
+ * A shipped biome / preset generator as a generator kind (World type).
+ */
+export function builtinKind(
+  plugin: HexmakerPlugin,
+  slug: string,
+  label: string,
+  description: string,
+  model: HexWfcModel,
+  generators: GeneratorFile[] = [],
+): TerrainGeneratorKind {
+  // The last fitted model, for drawing its paths (route keys follow the palette).
+  let fitted: HexWfcModel = model;
+  return {
+    id: `${BUILTIN_PREFIX}${slug}`,
+    label,
+    description,
+    source: "built-in",
+    mapKind: "world",
+    continuesNeighbours: true,
+    options: [],
+    tuning: wfcTuning(model),
+    fits: (terrains) => fitBuiltinModel(model, terrains) !== undefined,
+    generate: (req) => {
+      const fit = fitBuiltinModel(model, req.terrains);
+      if (!fit) return { ok: false, message: "This palette has too few terrains with a type for this generator." };
+      fitted = fit;
+      const names = req.terrains.map((t) => t.name);
+      const tunedFit = withWfcTuning(fit, req.options);
+      const res = req.region
+        ? generateConnected(plugin, leanToNeighbours(plugin, tunedFit, req, generators), names, req.region, req.seed)
+        : generateTerrain(plugin, tunedFit, names, req.grid, req.seed);
+      if (!res.ok) return { ok: false, message: res.message };
+      return { ok: true, cells: res.cells, paths: res.paths, featureCells: res.featureCells, warnings: res.warnings };
+    },
+    toPaths: (paths, mapName, taken) => {
+      // Streams and trails draw as the palette's type that behaves like them when it has no such type.
+      const known = plugin.getMapPathTypes(mapName);
+      return toMapPaths(plugin, paths.map((p) => ({ type: builtinPathType(drawnPathType(fitted, p), known), hexes: p.hexes })), undefined, mapName, taken);
+    },
+  };
+}
+
+/**
+ * Run a generator with its context, then continue the context's paths
+ * (a parent hex's roads / rivers, a neighbour's crossing roads) across the
+ * result. Palettes of a map type that says so skip the carry-over (Space:
+ * a jump route through a sector hex isn't a lane in the system). Shared by the setup modal and the Maps →
+ * New map tab so both make the same map from the same choices.
+ */
+export function runGenerator(
+  orientation: "flat" | "pointy",
+  kind: TerrainGeneratorKind,
+  req: GenerateRequest,
+): GenerateOutcome {
+  const outcome = kind.generate(req);
+  const carry = req.context?.paths ?? [];
+  if (!outcome.ok || carry.length === 0 || registry.kindInfo(kindOfTerrains(req.terrains))?.carryContextPaths === false) return outcome;
+  const routed = routeContextPaths(outcome.cells, req.terrains, { ...req.grid, orientation }, carry, req.seed);
+  return { ...outcome, paths: [...outcome.paths, ...routed] };
+}
+
+/** A generator's options as shown for a palette (see optionsFor). */
+export function kindOptions(
+  kind: Pick<TerrainGeneratorKind, "options" | "optionsFor">,
+  terrains: TerrainColor[],
+  pathTypes?: readonly PathType[],
+): ProcOption[] {
+  return kind.optionsFor?.(terrains, pathTypes) ?? kind.options;
+}
+
+/**
+ * A generator's options at their defaults, overridden by `chosen`. The
+ * path-type rows (`paths.<type>`, SF8) depend on the palette, so they
+ * aren't in the static list: a chosen one is kept as chosen (unset = Auto).
+ */
+export function optionsWithDefaults(kind: Pick<TerrainGeneratorKind, "options">, chosen: Record<string, string> = {}): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const o of kind.options) out[o.key] = chosen[o.key] ?? o.default;
+  for (const [k, v] of Object.entries(chosen)) if (k.startsWith(PATH_ROW_PREFIX) && v !== undefined) out[k] = v;
+  return out;
+}
+
+/**
+ * The options a run uses: each option (picked, else its default) plus the
+ * tuning sliders that were moved (`tune.<key>`; unset ones leave the
+ * engine as it is). The setup wizard and New map both run with these.
+ */
+export function optionsWithTuning(kind: Pick<TerrainGeneratorKind, "options" | "tuning">, chosen: Record<string, string> = {}): Record<string, string> {
+  const out = optionsWithDefaults(kind, chosen);
+  for (const t of kind.tuning ?? []) {
+    const v = chosen[tuneKey(t.key)];
+    if (v !== undefined) out[tuneKey(t.key)] = v;
+  }
+  return out;
+}
+
+/**
+ * Generators to offer: those whose map type is on, those of a type offered
+ * in context (Space) on a map with that type in context (`context`, contextKindsOf), and
+ * the current/saved choice (`selectedId`).
+ */
+export function visibleKinds(
+  kinds: TerrainGeneratorKind[],
+  settings: { mapKinds?: string[] },
+  context: ReadonlySet<MapKind>,
+  selectedId?: string,
+): TerrainGeneratorKind[] {
+  return kinds.filter((k) => isGeneratorShown(settings, k.mapKind, { context, selected: k.id === selectedId }));
+}
+
+/**
+ * Generators for the Maps → New map tab's dropdown, Blank aside: built-in
+ * and learned ones whose map type is on (space ones on a space palette, the
+ * current choice always) that fit the palette and need no parent hex. Next
+ * to a neighbour, the ones that continue its edge come first.
+ */
+export function newMapGeneratorChoices(
+  kinds: TerrainGeneratorKind[],
+  settings: { mapKinds?: string[] },
+  terrains: TerrainColor[],
+  currentId: string | undefined,
+  neighbour: boolean,
+): TerrainGeneratorKind[] {
+  const shown = visibleKinds(kinds, settings, new Set([kindOfTerrains(terrains)]), currentId);
+  const fitting = kindsForPalette(shown, terrains, false).filter((k) => k.id !== BLANK_ID);
+  return neighbour ? neighbourFirst(fitting) : fitting;
+}
+
+/**
+ * Generator a first map starts with (setup wizard): each map type's first
+ * choice (World: Overland, Space: Star scatter), the types that are on
+ * first (in module order), then the rest with the fallback type (World)
+ * last; the first that fits the palette, else Blank.
+ */
+export function firstMapGenerator(fitting: { id: string }[], mapKinds: Iterable<string>): string {
+  const on = new Set(mapKinds);
+  const fallback = registry.fallbackKind();
+  const rank = (k: { id: string }) => (on.has(k.id) ? 0 : k.id === fallback ? 2 : 1);
+  const prefs = registry.kinds()
+    .map((k, i) => ({ k, i }))
+    .sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i)
+    .flatMap(({ k }) => k.firstGenerators ?? []);
+  return prefs.find((id) => fitting.some((k) => k.id === id)) ?? BLANK_ID;
+}
+
+/**
+ * Everything a generator run depends on, as one string: when a preview's
+ * key matches the create-time key, the previewed outcome is what gets
+ * created (no second run that could differ). Option order doesn't matter.
+ */
+export function generationKey(req: {
+  generatorId: string;
+  options: Record<string, string>;
+  seed: number;
+  cols: number;
+  rows: number;
+  orientation: string;
+  stagger: string;
+  palette: string;
+  /** Anything else the run reads (neighbour, parent hex…). */
+  extra?: string;
+}): string {
+  const opts = Object.keys(req.options).sort().map((k) => [k, req.options[k]]);
+  return JSON.stringify([req.generatorId, opts, req.seed, req.cols, req.rows, req.orientation, req.stagger, req.palette, req.extra ?? ""]);
+}
+
+/**
+ * Generators usable with a palette, Blank first. Parent-hex-only ones
+ * (Region detail: "zoom into the parent hex") need `hasParentHex` — a
+ * submap. A map placed next to a neighbour has context too, but no parent
+ * hex, so they're not offered there.
+ */
+export function kindsForPalette(
+  kinds: TerrainGeneratorKind[],
+  terrains: TerrainColor[],
+  hasParentHex = false,
+): TerrainGeneratorKind[] {
+  return kinds.filter((k) => k.fits(terrains) && (hasParentHex || !k.needsContext));
+}
+
+/**
+ * Order generators for a map placed next to a neighbour: Blank, then those
+ * that carry on from its edge (built-in first), then the rest. Stable.
+ */
+export function neighbourFirst<K extends Pick<TerrainGeneratorKind, "id" | "source" | "continuesNeighbours">>(kinds: K[]): K[] {
+  const rank = (k: K) => (k.id === BLANK_ID ? 0 : k.continuesNeighbours ? (k.source === "built-in" ? 1 : 2) : 3);
+  return kinds.map((k, i) => ({ k, i })).sort((a, b) => rank(a.k) - rank(b.k) || a.i - b.i).map(({ k }) => k);
+}
+
+/**
+ * The generator a new map / submap starts on, from those offered: a submap
+ * zooms into its parent hex (Region detail); a map next to a neighbour
+ * carries on from its edge; otherwise the first built-in one; else Blank.
+ */
+export function defaultGeneratorFor(
+  fitting: Pick<TerrainGeneratorKind, "id" | "source" | "needsContext" | "continuesNeighbours" | "everyScale">[],
+  where: { parentHex?: boolean; neighbour?: boolean },
+): string {
+  if (where.parentHex) {
+    const zoom = fitting.find((k) => k.needsContext);
+    if (zoom) return zoom.id;
+  }
+  if (where.neighbour) {
+    const cont = neighbourFirst(fitting.filter((k) => k.id !== BLANK_ID && k.continuesNeighbours))[0];
+    if (cont) return cont.id;
+  }
+  return fitting.find((k) => k.source === "built-in" && !k.everyScale)?.id ?? BLANK_ID;
+}

@@ -22,6 +22,9 @@ import { serializeMarkdown } from "../mdSerializer";
 import { getAllSectionData } from "../../sections";
 import { getTerrainFromFile } from "../../frontmatter";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { strictHexXY } from "../../hexKey";
 
 /**
  * Hex section descriptor. To add a new section to the export:
@@ -89,8 +92,8 @@ export async function exportHexAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(`Exported to ${outPath}`);
+    const replaced = await writeBinaryToVault(plugin.app, outPath, pdfBytes);
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);
@@ -112,8 +115,13 @@ export async function exportHexAsMarkdown(
   try {
     const md = await buildHexMarkdown(plugin, hexFile, opts);
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
-    await writeTextToVault(plugin.app, outPath, finalMd);
-    new Notice(`Exported to ${outPath}`);
+    // Where it came from, in its frontmatter (X1).
+    const replaced = await writeTextToVault(
+      plugin.app,
+      outPath,
+      withExportProvenance(finalMd, hexFile.path, "hex"),
+    );
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);
@@ -151,10 +159,15 @@ export async function buildHexMarkdown(
 
   // Section bodies
   const data = await getAllSectionData(app, hexFile.path);
+  // Link sections in the map type's words (G4b: Settlements on a space map).
+  const words = plugin.sectionWordsFor(plugin.mapStore?.resolve(hexFile.path)?.map);
   for (const section of HEX_SECTIONS) {
     if (section.gmOnly && !opts.includeGmSections) continue;
     if (opts.excludeSections?.has(section.id)) continue;
-    const block = renderSectionBlock(section, data);
+    const shown = section.kind === "links" && section.id !== "encounters table"
+      ? { ...section, title: words(section.title).label }
+      : section;
+    const block = renderSectionBlock(shown, data);
     if (block) lines.push(block);
   }
   return lines.join("\n");
@@ -214,48 +227,11 @@ function wrapInSection(title: string, body: string): string {
 export function parseHexCoord(
   basename: string,
 ): { x: number; y: number } | null {
-  const m = /^(-?\d+)_(-?\d+)$/.exec(basename);
-  if (!m) return null;
-  return { x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
+  return strictHexXY(basename);
 }
 
 // ── File-IO helpers ──────────────────────────────────────────────────────
 
 function sanitiseFilename(name: string): string {
   return name.replace(/[\\/:*?"<>|]/g, "_");
-}
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-  } else {
-    await app.vault.createBinary(path, buf);
-  }
-}
-
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<void> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-  } else {
-    await app.vault.create(path, data);
-  }
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
 }

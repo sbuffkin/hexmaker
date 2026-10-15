@@ -1,6 +1,41 @@
 import type HexmakerPlugin from "./HexmakerPlugin";
-import { normalizePath } from "obsidian";
+import { Notice, normalizePath } from "obsidian";
 import { BUNDLED_ICONS } from "./bundledIcons";
+import { registry } from "./modules";
+import { rangeCellTexts } from "./random-tables/randomTable";
+
+let labelSeq = 0;
+
+/** Image file extensions a map background can use. */
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
+
+/**
+ * Tie a <label> to its control so clicking the label focuses it (round 6:
+ * clicking "Map name" in the setup wizard did nothing). Gives the control a
+ * unique id if it has none.
+ */
+export function linkLabel(label: HTMLElement, control: HTMLElement): void {
+	if (!control.id) control.id = `duckmage-field-${++labelSeq}`;
+	label.setAttr("for", control.id);
+}
+
+/**
+ * The first click (or tab) into `input` selects all of it, so typing
+ * replaces a pre-filled default; later clicks place the cursor as usual.
+ */
+export function selectAllOnFocus(input: HTMLInputElement): void {
+	let justFocused = false;
+	input.addEventListener("focus", () => {
+		input.select();
+		justFocused = true;
+	});
+	// The mouseup that follows a focusing click would drop the selection.
+	input.addEventListener("mouseup", (e) => {
+		if (justFocused) e.preventDefault();
+		justFocused = false;
+	});
+	input.addEventListener("blur", () => { justFocused = false; });
+}
 
 export function slugify(name: string): string {
 	return name
@@ -14,13 +49,41 @@ export function normalizeFolder(path: string): string {
 	return normalizePath(path);
 }
 
-export function makeTableTemplate(dice: number, extraFrontmatter?: Record<string, string | boolean | number>, preamble?: string): string {
-	const rows = "|  | 1 |";
+export function makeTableTemplate(
+	dice: number,
+	extraFrontmatter?: Record<string, string | boolean | number>,
+	preamble?: string,
+	/** Starter rows (result, weight); default is one empty row. */
+	entries?: readonly (readonly [string, number])[],
+): string {
+	// With a die, every row shows its roll range (`| d20 | Result | Weight |`),
+	// so the note can be rolled by hand (issue #45).
+	const ranges = dice > 0 && entries?.length
+		? rangeCellTexts(dice, entries.map(([result, weight]) => ({ result, weight })), "regenerate")
+		: [];
+	const cell = (r: string) => r.replace(/\|/g, "\\|");
+	const rows = entries?.length
+		? entries.map(([r, w], i) => (dice > 0 ? `| ${ranges[i]} | ${cell(r)} | ${w} |` : `| ${cell(r)} | ${w} |`)).join("\n")
+		: dice > 0 ? "|  |  | 1 |" : "|  | 1 |";
+	const head = dice > 0
+		? `| d${dice} | Result | Weight |\n|-----|--------|--------|`
+		: "| Result | Weight |\n|--------|--------|";
 	const extra = extraFrontmatter
 		? Object.entries(extraFrontmatter).map(([k, v]) => `${k}: ${v}`).join("\n") + "\n"
 		: "";
 	const preambleBlock = preamble ? `\n${preamble}\n` : "";
-	return `---\ndice: ${dice}\n${extra}---\n${preambleBlock}\n| Result | Weight |\n|--------|--------|\n${rows}\n`;
+	return `---\ndice: ${dice}\n${extra}---\n${preambleBlock}\n${head}\n${rows}\n`;
+}
+
+/**
+ * A CSS `url("…")` value for `src`. SVG icons are inlined as raw
+ * `data:image/svg+xml,<svg xmlns="…">` text, whose quotes would end the
+ * string early and make the whole value invalid (the mask is then dropped
+ * and the icon shows as a solid block), so quotes, backslashes and line
+ * breaks are percent-encoded.
+ */
+export function cssUrl(src: string): string {
+	return `url("${src.replace(/["\\\n\r]/g, (c) => encodeURIComponent(c))}")`;
 }
 
 /**
@@ -39,7 +102,7 @@ export function createIconEl(
 	if (iconColor) {
 		const div = parent.createDiv({ cls: `${cls} duckmage-masked-icon`, title: alt });
 		div.setCssProps({
-			'--duckmage-mask-url': `url("${src}")`,
+			'--duckmage-mask-url': cssUrl(src),
 			'--duckmage-bg': iconColor,
 		});
 		return div;
@@ -62,11 +125,137 @@ export function getIconUrl(plugin: HexmakerPlugin, iconFilename: string): string
 }
 
 /**
+ * Icon groups shown as tabs in icon pickers: Terrain (the core's bw-
+ * icons), each module's pack (World: Places, Space: Space), then Custom.
+ */
+export type IconPack = string;
+
+/** Pack labels, in tab order. */
+export const ICON_PACK_LABELS: Record<IconPack, string> = {
+	terrain: "Terrain",
+	...Object.fromEntries(registry.iconPacks().map((p) => [p.id, p.label])),
+	custom: "Custom",
+};
+
+/**
+ * A pack's sub-groups, shown as chips on its tab (World's Places pack:
+ * Settlements, Castles…), in display order: [id, label]. Empty for a pack
+ * without any (and for All, Terrain and Custom).
+ */
+export function iconSubgroups(pack: IconPack): readonly (readonly [string, string])[] {
+	return registry.iconPacks().find((p) => p.id === pack)?.subgroups ?? [];
+}
+
+/** The sub-group a bundled icon belongs to in its pack (undefined for icons without one). */
+export function iconSubgroup(icon: string): string | undefined {
+	return registry.iconPackOf(icon)?.subgroupOf?.get(icon);
+}
+
+/** Packs that keep their own order: icon → its sort key (prefix + index). */
+const PACK_ORDER = new Map(registry.iconPacks().filter((p) => p.keepOrder)
+	.flatMap((p) => p.icons.map(([file], i): [string, string] => [file, `${p.prefix}${String(i).padStart(4, "0")}`])));
+
+/**
+ * Default icon order (before the user's saved order): by name, except the
+ * packs that keep their order (Places) so settlements, castles, towers…
+ * sit together.
+ */
+export function sortIcons(icons: string[]): string[] {
+	const key = (icon: string): string => PACK_ORDER.get(icon) ?? icon;
+	return icons
+		.map((icon) => [key(icon), icon] as const)
+		.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+		.map(([, icon]) => icon);
+}
+
+/**
+ * The icon tab a picker opens on before the user picks one this session:
+ * when only one map type is on and it asks for it (Space), that type's
+ * pack, so a sci-fi user doesn't scroll past cactus and evergreen icons
+ * (fresh-eyes r5); All otherwise. Unset map types mean all types, so All.
+ */
+export function defaultIconPack(settings: { mapKinds?: string[] }): IconPack {
+	const kinds = settings.mapKinds;
+	if (!Array.isArray(kinds)) return "all";
+	const on = registry.kinds().filter((k) => kinds.includes(k.id));
+	const only = on.length === 1 && on[0].iconPackFirst ? on[0].id : undefined;
+	return registry.iconPacks().find((p) => only !== undefined && p.kind === only)?.id ?? "all";
+}
+
+/**
+ * The tabs an icon picker shows, with counts: All, every pack that has
+ * icons, and Custom always (empty until the user adds their own).
+ */
+export function iconPackTabs(counts: ReadonlyMap<IconPack, number>): [IconPack, string, number][] {
+	const total = [...counts.values()].reduce((a, b) => a + b, 0);
+	return [
+		["all", "All", total],
+		...(Object.keys(ICON_PACK_LABELS))
+			.filter((p) => p === "custom" || (counts.get(p) ?? 0) > 0)
+			.map((p): [IconPack, string, number] => [p, ICON_PACK_LABELS[p], counts.get(p) ?? 0]),
+	];
+}
+
+/** Which picker tab an icon belongs to: the user's icons folder wins over bundled names. */
+export function iconPack(icon: string, vaultIcons: Set<string>): IconPack {
+	if (vaultIcons.has(icon)) return "custom";
+	const pack = registry.iconPackOf(icon);
+	if (pack) return pack.id;
+	if (icon.startsWith("bw-")) return "terrain";
+	return "custom";
+}
+
+/** The bundled prefixes: the core's bw- and each pack's (letters and dashes). */
+const PACK_PREFIXES = ["bw-", ...registry.iconPacks().map((p) => p.prefix)];
+
+/** Human label for an icon file name: drops the pack prefix and extension. */
+export function iconLabel(icon: string): string {
+	const prefix = PACK_PREFIXES.find((p) => icon.startsWith(p));
+	return (prefix ? icon.slice(prefix.length) : icon)
+		.replace(/\.(png|jpg|jpeg|gif|svg|webp)$/i, "")
+		.replace(/-/g, " ");
+}
+
+/**
  * Write a File (from a drag-drop event) into the vault at the given folder.
  * Creates intermediate folders as needed. Auto-renames on collision
  * (foo.png → foo (1).png) so existing assets aren't clobbered.
  * Returns the resolved vault-relative path of the written file.
  */
+/** Where a map's imported background images go: {hexFolder}/{map}/_bg. */
+export function mapBgImportFolder(hexFolder: string, mapName: string): string {
+	const folder = normalizeFolder(hexFolder);
+	return `${folder ? `${folder}/${mapName}` : mapName}/_bg`;
+}
+
+/**
+ * Make `el` a drop target for an image file from the computer: calls
+ * `onFile` with the first image dropped, toggling `is-drop-target` while
+ * dragging over. Shared by Maps → Properties and the New map form.
+ */
+export function attachImageDropZone(el: HTMLElement, onFile: (file: File) => Promise<void>): void {
+	el.addEventListener("dragover", (e: DragEvent) => {
+		e.preventDefault();
+		el.addClass("is-drop-target");
+	});
+	el.addEventListener("dragleave", () => {
+		el.removeClass("is-drop-target");
+	});
+	el.addEventListener("drop", (e: DragEvent) => {
+		e.preventDefault();
+		el.removeClass("is-drop-target");
+		const file = e.dataTransfer?.files?.[0];
+		if (!file) return;
+		if (!file.type.startsWith("image/")) {
+			new Notice("Dropped file isn't an image.");
+			return;
+		}
+		void onFile(file).catch((err) => {
+			new Notice(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+		});
+	});
+}
+
 export async function importBinaryFileToVault(
 	plugin: HexmakerPlugin,
 	file: File,

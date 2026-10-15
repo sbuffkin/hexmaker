@@ -1,0 +1,284 @@
+/**
+ * The generator page's file list: a Generators tab (load one, or tick several
+ * to open, re-learn, blend or delete them) and a Regions tab (tick one or more maps
+ * and learn a generator from them, combined when there are several).
+ */
+
+import { App, Notice } from "obsidian";
+import type HexmakerPlugin from "../HexmakerPlugin";
+import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
+import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
+import { uniqueMapsByName } from "../maps/mapTree";
+import type { GeneratorPageHost } from "../modules/types";
+import { moduleGeneratorTabs } from "../modules/runtime";
+import { moduleTab } from "./genPage/moduleTabs";
+
+export interface LibraryHost {
+  /** The generator shown below the list. */
+  selectedPath(): string;
+  /** Show this generator below the list. */
+  load(g: GeneratorFile): void;
+  /** Show an unsaved generator (a new blend) below the list. */
+  loadDraft(model: HexWfcModel): void;
+  /** Files changed (learned, re-learned, deleted): reload the page. */
+  changed(selectPath?: string): void;
+  /** The page, for a module's tab (its own list and page). */
+  page: GeneratorPageHost;
+}
+
+/** "generators", "regions" (Maps) or a module's tab id. */
+type Tab = string;
+
+export class GeneratorLibrary {
+  /** Kept across re-renders of the page. */
+  static tab: Tab = "generators";
+  static query = "";
+  static checkedGenerators = new Set<string>();
+  static checkedRegions = new Set<string>();
+
+  constructor(
+    private app: App,
+    private plugin: HexmakerPlugin,
+    private generators: GeneratorFile[],
+    private host: LibraryHost,
+  ) {
+    // Forget ticks on files that are gone.
+    const paths = new Set(generators.map((g) => g.file.path));
+    for (const p of GeneratorLibrary.checkedGenerators) if (!paths.has(p)) GeneratorLibrary.checkedGenerators.delete(p);
+    for (const r of GeneratorLibrary.checkedRegions) if (!plugin.getMap(r)) GeneratorLibrary.checkedRegions.delete(r);
+  }
+
+  render(el: HTMLElement): void {
+    const box = el.createDiv({ cls: "duckmage-wfc-library" });
+    const top = box.createDiv({ cls: "duckmage-wfc-library-top" });
+    const tabs = top.createDiv({ cls: "duckmage-wfc-library-tabs", attr: { role: "tablist" } });
+    const filter = top.createEl("input", {
+      type: "search",
+      cls: "duckmage-wfc-library-filter",
+      attr: { placeholder: "Filter generators…", "aria-label": "Filter generators" },
+      value: GeneratorLibrary.query,
+    });
+    const list = box.createDiv({ cls: "duckmage-wfc-library-list" });
+    const actions = box.createDiv({ cls: "duckmage-region-row duckmage-wfc-library-actions" });
+
+    const tabBtn = (tab: Tab, label: string, count: number) => {
+      const btn = tabs.createEl("button", { cls: "duckmage-wfc-library-tab", attr: { role: "tab" } });
+      btn.createSpan({ text: label });
+      btn.createSpan({ text: String(count), cls: "duckmage-wfc-library-count" });
+      btn.addEventListener("click", () => {
+        const page = !!moduleTab(tab) || !!moduleTab(GeneratorLibrary.tab);
+        GeneratorLibrary.tab = tab;
+        draw();
+        // A module's tab has its own page below the list.
+        if (page) this.host.page.show();
+      });
+      return { tab, btn };
+    };
+    const tabBtns = [
+      tabBtn("generators", "Generators", this.generators.length),
+      tabBtn("regions", "Maps", uniqueMapsByName(this.plugin.settings.maps).length),
+      ...moduleGeneratorTabs().map((t) => tabBtn(t.id, t.label, t.count(this.plugin))),
+    ];
+
+    const draw = () => {
+      for (const { tab, btn } of tabBtns) {
+        const on = tab === GeneratorLibrary.tab;
+        btn.toggleClass("is-active", on);
+        btn.setAttr("aria-selected", String(on));
+      }
+      const mod = moduleTab(GeneratorLibrary.tab);
+      const things = mod ? mod.label.toLowerCase() : GeneratorLibrary.tab === "generators" ? "generators" : "maps";
+      filter.placeholder = `Filter ${things}…`;
+      filter.setAttr("aria-label", `Filter ${things}`);
+      list.empty();
+      actions.empty();
+      if (mod) mod.drawList(this.plugin, list, actions, { query: GeneratorLibrary.query, redraw: draw, host: this.host.page });
+      else if (GeneratorLibrary.tab === "generators") this.drawGenerators(list, actions, draw);
+      else this.drawRegions(list, actions, draw);
+    };
+    filter.addEventListener("input", () => {
+      GeneratorLibrary.query = filter.value;
+      draw();
+    });
+    draw();
+  }
+
+  // ── Generators tab ───────────────────────────────────────────────────────
+
+  private drawGenerators(list: HTMLElement, actions: HTMLElement, redraw: () => void): void {
+    const checked = GeneratorLibrary.checkedGenerators;
+    const rows = generatorRows(
+      this.generators.map((g) => ({
+        path: g.file.path,
+        name: g.model.name,
+        sources: sourceMapsOf(g.model),
+        palette: g.model.meta.palette,
+        terrains: g.model.terrains.length,
+        created: g.model.meta.created,
+      })),
+      GeneratorLibrary.query,
+    );
+    const table = list.createDiv({ cls: "duckmage-wfc-library-table is-generators" });
+    this.header(table, ["Name", "From", "Palette", "Terrains", "Created"], rows.map((r) => r.path), checked, redraw);
+    for (const r of rows) {
+      const row = this.row(table, r.path, checked, redraw);
+      if (r.path === this.host.selectedPath()) row.addClass("is-current");
+      this.cells(row, [r.name, r.from || "–", r.palette || "–", String(r.terrains), r.created || "–"]);
+      row.setAttr("title", "Click to load; tick to select");
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest("input")) return;
+        const g = this.generators.find((x) => x.file.path === r.path);
+        if (g) this.host.load(g);
+        redraw();
+      });
+    }
+    if (!rows.length) list.createDiv({ text: this.generators.length ? "No generators match." : "No generators yet. Learn one on the Maps tab.", cls: "duckmage-empty-state" });
+
+    const selected = this.generators.filter((g) => checked.has(g.file.path));
+    actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick generators to act on them", cls: "duckmage-map-origin-desc" });
+    const open = actions.createEl("button", { text: "Open file" });
+    const relearn = actions.createEl("button", { text: "Re-learn", attr: { title: "Learn again from the maps they came from, keeping their settings" } });
+    const blend = actions.createEl("button", {
+      text: selected.length > 1 ? `Blend (${selected.length})` : "Blend",
+      attr: { title: "Try a blend of these, each leaning toward its own side of the map: the border country between them. It isn't saved until you choose to." },
+    });
+    const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
+    for (const b of [open, relearn, del]) b.disabled = !selected.length;
+    relearn.disabled ||= !selected.some((g) => sourceMapsOf(g.model).length || blendSourcesOf(g.model).length);
+    blend.disabled = selected.length < 2;
+    blend.addEventListener("click", () => {
+      const r = blendGenerators(this.plugin, selected);
+      if ("error" in r) {
+        new Notice(r.error);
+        return;
+      }
+      checked.clear();
+      redraw();
+      this.host.loadDraft(r.model);
+    });
+    open.addEventListener("click", () => {
+      for (const g of selected) void this.app.workspace.getLeaf("tab").openFile(g.file);
+    });
+    relearn.addEventListener("click", () => {
+      relearn.disabled = true;
+      void (async () => {
+        const failed: string[] = [];
+        for (const g of selected) {
+          const r = await relearnGenerator(this.plugin, g);
+          if ("error" in r) failed.push(`${g.model.name}: ${r.error}`);
+        }
+        const done = selected.length - failed.length;
+        if (done) new Notice(`Re-learned ${done} generator${done === 1 ? "" : "s"}.`);
+        for (const f of failed) new Notice(`Couldn't re-learn ${f}`);
+        this.host.changed();
+      })();
+    });
+    // No confirm (owner Q6): it goes to the trash, and saves keep a copy.
+    del.addEventListener("click", () => {
+      const names = selected.map((g) => g.model.name);
+      const what = names.length === 1 ? `"${names[0]}"` : `${names.length} generators`;
+      void deleteGenerators(this.plugin, selected.map((g) => g.file)).then(() => {
+        for (const g of selected) checked.delete(g.file.path);
+        new Notice(`Moved ${what} to the trash. Saves made from ${names.length === 1 ? "it" : "them"} keep a copy.`);
+        this.host.changed();
+      });
+    });
+  }
+
+  // ── Regions tab ──────────────────────────────────────────────────────────
+
+  private drawRegions(list: HTMLElement, actions: HTMLElement, redraw: () => void): void {
+    const checked = GeneratorLibrary.checkedRegions;
+    const rows: RegionRow[] = regionRows(
+      uniqueMapsByName(this.plugin.settings.maps).map((m) => ({ name: m.name, cols: m.gridSize.cols, rows: m.gridSize.rows, palette: m.paletteName })),
+      this.generators.map((g) => ({ path: g.file.path, name: g.model.name, sources: sourceMapsOf(g.model), terrains: g.model.terrains.length })),
+      GeneratorLibrary.query,
+    );
+    const table = list.createDiv({ cls: "duckmage-wfc-library-table is-regions" });
+    this.header(table, ["Map", "Size", "Palette", "Generators"], rows.map((r) => r.name), checked, redraw);
+    for (const r of rows) {
+      const row = this.row(table, r.name, checked, redraw);
+      this.cells(row, [this.plugin.mapLabel(r.name), r.size, r.palette, r.generators ? String(r.generators) : "–"]);
+      // The whole row ticks the region.
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest("input")) return;
+        if (!checked.delete(r.name)) checked.add(r.name);
+        redraw();
+      });
+    }
+    if (!rows.length) list.createDiv({ text: "No maps match.", cls: "duckmage-empty-state" });
+
+    // Keep the order the regions were ticked in; it names the generator.
+    const picked = [...checked];
+    const nameInput = actions.createEl("input", {
+      type: "text",
+      attr: { placeholder: picked.length ? combinedName(picked) : "Generator name" },
+    });
+    const learn = actions.createEl("button", {
+      text: picked.length > 1 ? `Learn combined generator (${picked.length} maps)` : "Learn generator",
+      cls: "mod-cta",
+    });
+    learn.disabled = !picked.length;
+    const palettes = new Set(picked.map((n) => this.plugin.getMap(n)?.paletteName));
+    if (palettes.size > 1) {
+      actions.createDiv({
+        text: `⚠ These maps use different palettes; the generator uses ${this.plugin.getMap(picked[0])?.paletteName ?? "the first"}'s.`,
+        cls: "duckmage-map-origin-desc duckmage-wfc-library-note",
+      });
+    } else if (!picked.length) {
+      actions.createDiv({ text: "Tick one map, or several to combine them into one generator.", cls: "duckmage-map-origin-desc duckmage-wfc-library-note" });
+    }
+    learn.addEventListener("click", () => {
+      learn.disabled = true;
+      learn.setText("Learning…");
+      void saveGeneratorFromMaps(this.plugin, picked, nameInput.value || combinedName(picked)).then((result) => {
+        if ("error" in result) {
+          new Notice(result.error);
+          redraw();
+          return;
+        }
+        const { model, file } = result;
+        new Notice(`Learned generator "${model.name}" from ${picked.join(" + ")}: ${model.terrains.length} terrains, ${model.adjacency.length} neighbour pairs.`);
+        checked.clear();
+        GeneratorLibrary.tab = "generators";
+        this.host.changed(file.path);
+      });
+    });
+  }
+
+  // ── Table parts ──────────────────────────────────────────────────────────
+
+  private header(table: HTMLElement, titles: string[], keys: string[], checked: Set<string>, redraw: () => void): void {
+    const head = table.createDiv({ cls: "duckmage-wfc-library-row is-head" });
+    const all = head.createEl("input", { type: "checkbox", attr: { "aria-label": "Select all shown" } });
+    const shownChecked = keys.filter((k) => checked.has(k)).length;
+    all.checked = keys.length > 0 && shownChecked === keys.length;
+    all.indeterminate = shownChecked > 0 && shownChecked < keys.length;
+    all.addEventListener("change", () => {
+      for (const k of keys) {
+        if (all.checked) checked.add(k);
+        else checked.delete(k);
+      }
+      redraw();
+    });
+    for (const t of titles) head.createSpan({ text: t });
+  }
+
+  private row(table: HTMLElement, key: string, checked: Set<string>, redraw: () => void): HTMLElement {
+    const row = table.createDiv({ cls: "duckmage-wfc-library-row" });
+    row.toggleClass("is-checked", checked.has(key));
+    const box = row.createEl("input", { type: "checkbox" });
+    box.checked = checked.has(key);
+    box.addEventListener("change", () => {
+      if (box.checked) checked.add(key);
+      else checked.delete(key);
+      redraw();
+    });
+    return row;
+  }
+
+  private cells(row: HTMLElement, values: string[]): void {
+    for (const v of values) row.createSpan({ text: v, attr: { title: v } });
+  }
+}

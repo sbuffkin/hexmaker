@@ -1,0 +1,9 @@
+{
+  "about": "Release slices (plan-release-slicing): one module is one slice. `npm run build` compiles the slices marked released; `npm run build:full` compiles every slice. A slice built off leaves no trace in main.js (npm run check:release). The foundation slice is always built.",
+  "slices": {
+    "foundation": { "define": null, "modules": ["world"], "released": true },
+    "worldmaps": { "define": "__SLICE_WORLDMAPS__", "modules": ["world-maps"], "released": true },
+    "space": { "define": "__SLICE_SPACE__", "modules": ["space"], "released": true },
+    "hexflower": { "define": "__SLICE_HEXFLOWER__", "modules": ["hex-flower"], "released": false }
+  }
+}

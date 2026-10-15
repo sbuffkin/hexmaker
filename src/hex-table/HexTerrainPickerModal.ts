@@ -1,8 +1,11 @@
-import { App } from "obsidian";
+import { App, Notice } from "obsidian";
+import { lockedHint } from "../workMode";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { getIconUrl, normalizeFolder, createIconEl } from "../utils";
 import { setTerrainInFile } from "../frontmatter";
+import { addPickerFilter, filterText } from "../ui/pickers";
+import { hexPair } from "../hexKey";
 
 export class HexTerrainPickerModal extends HexmakerModal {
   constructor(
@@ -30,16 +33,17 @@ export class HexTerrainPickerModal extends HexmakerModal {
         cls: `duckmage-terrain-option${entry.name === this.currentTerrain ? " is-selected" : ""}`,
       });
       const preview = btn.createDiv({ cls: "duckmage-terrain-preview" });
-      preview.style.backgroundColor = entry.color;
+      preview.setCssProps({ "--duckmage-bg": entry.color });
       if (entry.icon) {
         createIconEl(preview, getIconUrl(this.plugin, entry.icon), entry.name, entry.iconColor, "duckmage-terrain-preview-icon");
       }
       btn.createSpan({ text: entry.name, cls: "duckmage-terrain-option-name" });
+      filterText(btn, entry.name, entry.type, entry.category);
       btn.addEventListener("click", () => {
         void (async () => {
-          if (!this.app.vault.getAbstractFileByPath(this.hexPath)) {
+          if (!this.plugin.mapStore.isReady() && !this.app.vault.getAbstractFileByPath(this.hexPath)) {
             const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
-            const [hx, hy] = basename.split("_").map(Number);
+            const [hx, hy] = hexPair(basename);
             const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
             const relative = hexFolder
               ? this.hexPath.slice(hexFolder.length + 1)
@@ -47,12 +51,16 @@ export class HexTerrainPickerModal extends HexmakerModal {
             const mapName = relative.split("/")[0];
             await this.plugin.createHexNote(hx, hy, mapName);
           }
-          await setTerrainInFile(this.app, this.hexPath, entry.name);
+          // Refused when the map's work mode locks terrain (src/workMode.ts).
+          if (!(await setTerrainInFile(this.app, this.hexPath, entry.name))) new Notice(lockedHint("paint-terrain"));
           this.onPicked();
           this.close();
         })();
       });
     }
+
+    // The shared picker filter (src/ui/pickers.ts), once the palette is long.
+    addPickerFilter(grid, { things: "terrains", count: this.palette.length });
 
     if (this.currentTerrain) {
       const clearBtn = contentEl.createEl("button", {
@@ -61,7 +69,7 @@ export class HexTerrainPickerModal extends HexmakerModal {
       });
       clearBtn.addEventListener("click", () => {
         void (async () => {
-          await setTerrainInFile(this.app, this.hexPath, null);
+          if (!(await setTerrainInFile(this.app, this.hexPath, null))) new Notice(lockedHint("paint-terrain"));
           this.onPicked();
           this.close();
         })();

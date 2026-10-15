@@ -1,0 +1,133 @@
+import { TFile, TFolder, type App } from "obsidian";
+
+/**
+ * Hex names (N1) live in the map note's Hexes table. A hex that has a note
+ * also gets its name as one of the note's Obsidian `aliases` (X4), so the
+ * quick switcher, search and [[links]] find "Glass Wastes" while the file
+ * stays `x_y.md`.
+ *
+ * The plugin manages two aliases per note: the hex's current name, and
+ * "<map> x, y" (NM2, see coordAlias). On rename it swaps the old value for
+ * the new one and leaves every other alias (the user's own) alone. The old name comes from the map note
+ * (the name before the change), so nothing extra is stored in the note.
+ */
+
+/** Tidy a typed name: one line, trimmed, no table pipes. "" = no name. */
+export function cleanHexName(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/[\r\n|]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The `aliases` list after a hex is renamed from `oldName` to `newName`
+ * (either may be empty = no name), or null when nothing changes.
+ * `current` is whatever the frontmatter holds (list, single string, or
+ * nothing). Only `oldName` is removed; other aliases keep their order.
+ */
+export function nextAliases(
+  current: unknown,
+  oldName: string | null | undefined,
+  newName: string | null | undefined,
+): string[] | null {
+  const list = Array.isArray(current)
+    ? current.filter((a): a is string => typeof a === "string")
+    : typeof current === "string" && current.trim()
+      ? [current]
+      : [];
+  const oldN = cleanHexName(oldName);
+  const newN = cleanHexName(newName);
+  let out = list;
+  if (oldN && oldN !== newN) out = out.filter((a) => a !== oldN);
+  if (newN && !out.includes(newN)) out = [...out, newN];
+  const same = out.length === list.length && out.every((a, i) => a === list[i]);
+  // A single-string `aliases` is rewritten as a list only if it changed.
+  return same ? null : out;
+}
+
+/**
+ * A hex note's coordinate alias (NM2): "<map display name> x, y", so the
+ * quick switcher finds "Gloomwood 3, 4". Managed like the name alias: the
+ * plugin swaps its own old value for the new one (map renamed) and never
+ * touches the user's aliases.
+ */
+export function coordAlias(mapLabel: string, x: number | string, y: number | string): string {
+  return cleanHexName(`${mapLabel} ${x}, ${y}`);
+}
+
+/** One plugin-managed alias changing from `from` to `to` (either may be empty). */
+export interface AliasSwap {
+  from: string | null | undefined;
+  to: string | null | undefined;
+}
+
+/** nextAliases for several managed aliases at once; null when nothing changes. */
+export function nextAliasesMulti(current: unknown, swaps: readonly AliasSwap[]): string[] | null {
+  let list: unknown = current;
+  let changed = false;
+  for (const s of swaps) {
+    const next = nextAliases(list, s.from, s.to);
+    if (next !== null) {
+      list = next;
+      changed = true;
+    }
+  }
+  return changed ? (list as string[]) : null;
+}
+
+/** Apply alias swaps to one note's `aliases`. No-op when nothing changes. */
+export async function syncHexAliases(app: App, path: string, swaps: readonly AliasSwap[]): Promise<void> {
+  const file = app.vault.getAbstractFileByPath(path);
+  if (!(file instanceof TFile)) return;
+  // Skip the write when the indexed frontmatter already agrees.
+  const cache = app.metadataCache.getFileCache(file);
+  if (cache && nextAliasesMulti(cache.frontmatter?.aliases, swaps) === null) return;
+  await app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+    const next = nextAliasesMulti(fm.aliases, swaps);
+    if (next === null) return;
+    if (next.length) fm.aliases = next;
+    else delete fm.aliases;
+  });
+}
+
+/**
+ * A map's display name changed from `oldLabel` to `newLabel`: swap the
+ * "<map> x, y" alias on every hex note in its folder. User aliases stay;
+ * a note without the old alias gets the new one.
+ */
+export async function swapMapCoordAliases(app: App, mapFolder: string, oldLabel: string, newLabel: string): Promise<void> {
+  if (newLabel === oldLabel) return;
+  const folder = app.vault.getAbstractFileByPath(mapFolder);
+  if (!(folder instanceof TFolder)) return;
+  for (const child of folder.children) {
+    if (!(child instanceof TFile)) continue;
+    const m = /^(-?\d+)_(-?\d+)$/.exec(child.basename);
+    if (!m || child.extension !== "md") continue;
+    await syncHexAliases(app, child.path, [
+      { from: coordAlias(oldLabel, m[1], m[2]), to: coordAlias(newLabel, m[1], m[2]) },
+    ]);
+  }
+}
+
+/** Apply a rename to one note's `aliases`. No-op when nothing changes. */
+export async function syncHexNameAlias(
+  app: App,
+  path: string,
+  oldName: string | null | undefined,
+  newName: string | null | undefined,
+): Promise<void> {
+  await syncHexAliases(app, path, [{ from: oldName, to: newName }]);
+}
+
+/** Names that changed between two versions of a map's hexes (hand edits of the map note). */
+export function renamedHexes(
+  before: ReadonlyMap<string, { name?: string }>,
+  after: ReadonlyMap<string, { name?: string }>,
+): { key: string; oldName?: string; newName?: string }[] {
+  const out: { key: string; oldName?: string; newName?: string }[] = [];
+  const keys = new Set([...before.keys(), ...after.keys()]);
+  for (const key of keys) {
+    const oldName = before.get(key)?.name;
+    const newName = after.get(key)?.name;
+    if ((oldName ?? "") !== (newName ?? "")) out.push({ key, oldName, newName });
+  }
+  return out;
+}

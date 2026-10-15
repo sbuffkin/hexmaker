@@ -1,0 +1,205 @@
+/**
+ * The Add / Edit biome form's model (#50), kept apart from the DOM so it
+ * can be tested, plus the one routing point for how a biome's regions are
+ * made (regionGenerator).
+ *
+ * Pure: no Obsidian imports.
+ */
+
+import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
+import type { TerrainColor } from "../types";
+import { biomeSlug, tunedOrUnset, type BiomeBlend, type BiomeNoteFields, type BiomeTransition } from "./biomeNote";
+import { climateKeyValues, readClimate, type BiomeClimate, type ClimateElevation } from "./biomeClimate";
+import { profileFromFields, type BiomeId } from "./biomes";
+import { planRegion, paletteTypeOf, type RegionPlan } from "./regionWorld";
+import type { RegionLayout } from "./layout";
+import { hexKey } from "../hexKey";
+
+// ── routing ──────────────────────────────────────────────────────────────
+
+export type RegionRoute =
+  | { kind: "blend" }
+  /** A blank biome (`blank: yes`): nothing generated, painted by hand. */
+  | { kind: "blank" }
+  /** Made by a generator note (generateBiomeRegion, src/worldgen/biomeRegion.ts). */
+  | { kind: "generator"; generator: string; ready: boolean };
+
+/**
+ * How regions of this biome are made: the single routing point. A biome
+ * with a `generator:` link has its regions made by that generator
+ * (generateBiomeRegion, joined to the cells already painted around it;
+ * regionsVault.planRegionWithGenerator); every other biome blends (the
+ * blend field mixes its type mix with its neighbours'). A blank biome's
+ * regions are left blank.
+ */
+export function regionGenerator(biome: Pick<BiomeNoteFields, "generator" | "blank"> | undefined): RegionRoute {
+  if (biome?.blank) return { kind: "blank" };
+  if (biome?.generator) return { kind: "generator", generator: biome.generator, ready: true };
+  return { kind: "blend" };
+}
+
+/** A link target's display name: "world/generators/My tundra" → "My tundra". */
+export const generatorName = (target: string): string => target.slice(target.lastIndexOf("/") + 1).replace(/\.md$/, "");
+
+/** The status line shown for a biome (undefined when it simply blends). */
+export function routeNote(biome: Pick<BiomeNoteFields, "generator" | "blank"> | undefined): string | undefined {
+  const r = regionGenerator(biome);
+  if (r.kind === "blank") return "Blank: its regions start empty, to paint by hand.";
+  if (r.kind === "generator" && !r.ready) return `Uses ${generatorName(r.generator)}: available once generator regions land. Blends until then.`;
+  if (r.kind === "generator") return `Made by ${generatorName(r.generator)}, joined to its neighbours.`;
+  return undefined;
+}
+
+// ── the form ─────────────────────────────────────────────────────────────
+
+export interface BiomeFormState {
+  label: string;
+  color: string;
+  /** Generator link target, or "" for the built-in blend. */
+  generator: string;
+  /** Type → weight (0 = not in the mix). */
+  mix: Map<string, number>;
+  /** "" = the overworld's setting. */
+  blend: BiomeBlend | "";
+  /** 0..100, or undefined (not set). */
+  landPercent?: number;
+  minIslands?: number;
+  /** Type → fewest patches (the Mix table's Min patches); kept through the form. */
+  minPatches: Map<string, number>;
+  shore: boolean;
+  /** Regions start blank (painted by hand); the mix may then be empty. */
+  blank: boolean;
+  transitions: BiomeTransition[];
+  /** Climate for generated overworlds, as typed (blank = not set). */
+  climate: ClimateFormState;
+}
+
+/** The form's climate fields: text as typed for the ranges, so any spelling the note accepts works. */
+export interface ClimateFormState {
+  temperature: string;
+  moisture: string;
+  elevation: ClimateElevation | "";
+  coastal: boolean;
+  /** 0..100, or undefined (every fitting hex). */
+  chancePercent?: number;
+  rare: boolean;
+}
+
+/** The form's climate fields filled from a biome's climate. */
+export function climateFormFrom(c: BiomeClimate | undefined): ClimateFormState {
+  const values = new Map(climateKeyValues(c));
+  return {
+    temperature: values.get("temperature") ?? "",
+    moisture: values.get("moisture") ?? "",
+    elevation: c?.elevation ?? "",
+    coastal: !!c?.coastal,
+    chancePercent: c?.chance !== undefined ? Math.round(c.chance * 100) : undefined,
+    rare: !!c?.rare,
+  };
+}
+
+/** The climate the form says, and what in it couldn't be read. */
+export function climateFromForm(s: ClimateFormState): { climate?: BiomeClimate; problems: string[] } {
+  const fm = new Map<string, string>();
+  if (s.temperature.trim()) fm.set("temperature", s.temperature);
+  if (s.moisture.trim()) fm.set("moisture", s.moisture);
+  if (s.elevation) fm.set("elevation", s.elevation);
+  if (s.coastal) fm.set("coastal", "yes");
+  if (s.chancePercent !== undefined) fm.set("chance", `${Math.min(100, Math.max(0, s.chancePercent))}%`);
+  if (s.rare) fm.set("rare", "yes");
+  const r = readClimate(fm);
+  return { climate: r.climate, problems: r.problems.map((p) => p.text) };
+}
+
+/** The types a form offers: the palette's (in order, settlements left out), then any others the biome already uses. */
+export function formTypes(palette: TerrainColor[], fields?: Pick<BiomeNoteFields, "mix">): string[] {
+  const out: string[] = [];
+  for (const t of palette) if (t.type && t.type !== "settlement" && !out.includes(t.type)) out.push(t.type);
+  for (const r of fields?.mix ?? []) if (!out.includes(r.type)) out.push(r.type);
+  return out;
+}
+
+/** A form filled from a biome (or blank for a new one). */
+export function formFromFields(fields: BiomeNoteFields | undefined, types: string[]): BiomeFormState {
+  const mix = new Map(types.map((t) => [t, 0]));
+  for (const r of fields?.mix ?? []) mix.set(r.type, (mix.get(r.type) ?? 0) + r.weight);
+  return {
+    label: fields?.label ?? "",
+    color: fields?.color ?? "#7a9a5a",
+    generator: fields?.generator ?? "",
+    mix,
+    blend: fields?.blend ?? "",
+    landPercent: fields?.landShare !== undefined ? Math.round(fields.landShare * 100) : undefined,
+    minIslands: fields?.minIslands,
+    minPatches: new Map((fields?.mix ?? []).filter((r) => r.minPatches !== undefined).map((r) => [r.type, r.minPatches!])),
+    shore: !!fields?.shore,
+    blank: !!fields?.blank,
+    transitions: (fields?.transitions ?? []).map((t) => ({ ...t })),
+    climate: climateFormFrom(fields?.climate),
+  };
+}
+
+/** The note fields a form says (`id` kept from the biome being edited, else from the label). */
+export function fieldsFromForm(s: BiomeFormState, id?: string): BiomeNoteFields {
+  const f: BiomeNoteFields = {
+    id: id ?? (biomeSlug(s.label) || "biome"),
+    label: s.label.trim(),
+    color: s.color || undefined,
+    mix: [...s.mix].filter(([, w]) => w > 0).map(([type, weight]) => {
+      const minPatches = s.minPatches?.get(type);
+      return minPatches !== undefined ? { type, weight, minPatches } : { type, weight };
+    }),
+    transitions: s.transitions.filter((t) => t.next.trim() && t.between.trim()).map((t) => ({ next: t.next.trim(), between: t.between.trim() })),
+  };
+  if (!f.color) delete f.color;
+  if (s.generator) f.generator = s.generator;
+  if (s.blend) f.blend = s.blend;
+  if (s.landPercent !== undefined) f.landShare = Math.min(100, Math.max(0, s.landPercent)) / 100;
+  if (s.minIslands !== undefined) f.minIslands = Math.max(0, Math.round(s.minIslands));
+  if (s.shore) f.shore = true;
+  if (s.blank) f.blank = true;
+  const climate = s.climate ? climateFromForm(s.climate).climate : undefined;
+  if (climate) f.climate = climate;
+  return f;
+}
+
+/** Why a biome can't have this name, or undefined. `others`: the labels and ids of the other biomes. */
+export function biomeNameProblem(name: string, others: readonly { id: string; label: string }[]): string | undefined {
+  const label = name.trim();
+  if (!label) return "Give the biome a name.";
+  const k = biomeSlug(label);
+  if (!k) return "Use some letters or numbers in the name.";
+  if (others.some((o) => o.id === k || biomeSlug(o.label) === k)) return `There's already a biome called ${label}.`;
+  return undefined;
+}
+
+/** Why the form can't be saved, or undefined. `others`: the labels and ids of the other biomes. */
+export function formProblem(s: BiomeFormState, others: { id: string; label: string }[]): string | undefined {
+  const named = biomeNameProblem(s.label, others);
+  if (named) return named;
+  if (!s.blank && ![...s.mix.values()].some((w) => w > 0)) return "Give at least one terrain type a weight.";
+  const climate = s.climate ? climateFromForm(s.climate).problems : [];
+  if (climate.length) return `Climate: ${climate[0]}.`;
+  return undefined;
+}
+
+/**
+ * A preview of one region of this biome: the region of hex (0, 0) with its
+ * neighbours the same biome, made by the blend field from the form's mix.
+ */
+export function previewRegion(layout: RegionLayout, palette: TerrainColor[], fields: BiomeNoteFields, seed: number): RegionPlan {
+  const id: BiomeId = fields.id;
+  const biomes = new Map<string, BiomeId>([["0_0", id]]);
+  for (const [x, y] of hexNeighbors(0, 0, layout.orientation, layout.parentStagger)) biomes.set(hexKey(x, y), id);
+  const profile = profileFromFields({ ...fields, id }, palette);
+  return planRegion({
+    layout,
+    parent: [0, 0],
+    biomes,
+    profiles: new Map([[id, profile]]),
+    typeOf: paletteTypeOf(palette),
+    worldSeed: seed,
+    seed,
+    blend: tunedOrUnset(fields.tuning, "blend-k") ?? fields.blend,
+  });
+}

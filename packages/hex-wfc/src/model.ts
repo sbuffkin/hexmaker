@@ -1,0 +1,496 @@
+/**
+ * The generator model ("solver"): which terrains exist, how common each is,
+ * and which pairs may sit next to each other.
+ *
+ * Terrains are opaque strings, so any palette works. Adjacency is undirected
+ * and the same in all six directions. A pair that is not listed (or is listed
+ * with weight 0) may never touch. That includes a terrain next to itself.
+ */
+
+/**
+ * How a terrain spreads when the solver places it:
+ *  - "blob": grows outward into a compact patch (lakes, forests);
+ *  - "line": pushes forward in a heading, turning now and then (ranges, ridges);
+ *  - "scatter": single hexes dotted around (towns, ruins); kept apart by
+ *    spacing and never removed by smoothing;
+ *  - "none": no growth; its shape comes from the neighbour rules alone
+ *    (backgrounds, shores).
+ */
+export type GrowthShape = "blob" | "line" | "scatter" | "none";
+
+export const GROWTH_SHAPES: readonly GrowthShape[] = ["blob", "line", "scatter", "none"];
+
+export interface TerrainEntry {
+  name: string;
+  /** Relative frequency. 0 = never placed by the solver (still valid in fixed cells). */
+  weight: number;
+  /**
+   * Typical patch size as a fraction of the whole map (0.05 = 5%). Stored
+   * relative to map area so a generator learned on a 50×50 map produces the
+   * same-looking terrain on a 20×20 one.
+   */
+  patch?: number;
+  /** Growth style. Missing = "none". */
+  shape?: GrowthShape;
+  /** For "line": chance per step of turning (0–1). Missing = 0.2. */
+  turn?: number;
+  /** For "line": thickness in hexes (1–3). Missing = 1. */
+  width?: number;
+  /**
+   * For "scatter": minimum distance in hexes between two hexes of this
+   * terrain, as seen in the example. Scaled with map size when solving.
+   */
+  spacing?: number;
+  /**
+   * How common the terrain is along the map border compared with overall
+   * (1 = no preference, 3 = three times as common at the edge).
+   */
+  edge?: number;
+  /**
+   * Where the terrain sat in the example, as relative density in a 3×3 grid
+   * (row-major: NW, N, NE, W, C, E, SW, S, SE) or a 5×5 one (row-major,
+   * R1C1 … R5C5). 1 = as common as anywhere, 3 = three times as common
+   * there. Values blend smoothly between grid cells. Used by directional bias.
+   */
+  layout?: number[];
+  /**
+   * The terrain only appears within `distance` hexes of `terrain`, e.g. lava
+   * fields near a volcano. Steered while solving and enforced afterwards.
+   */
+  near?: NearRule;
+}
+
+export interface NearRule {
+  terrain: string;
+  /** Most hexes away from the nearest hex of `terrain` (1 = touching). */
+  distance: number;
+}
+
+/** Layout bin names, in the order of TerrainEntry.layout. */
+export const LAYOUT_BINS = ["NW", "N", "NE", "W", "C", "E", "SW", "S", "SE"] as const;
+/** Column names of a 5×5 layout grid, row-major. */
+export const LAYOUT_BINS_5 = Array.from({ length: 25 }, (_, i) => `R${Math.floor(i / 5) + 1}C${(i % 5) + 1}`);
+
+/** A layout's grid size: 3 (9 values) or 5 (25 values); 0 if neither. */
+export const layoutSize = (lay: number[] | undefined): number => (lay?.length === 9 ? 3 : lay?.length === 25 ? 5 : 0);
+
+/**
+ * A layout's value at a point of the map (fx, fy from 0 to 1), bilinear
+ * between grid-cell centres, so preferences change smoothly across the map.
+ */
+export function layoutValue(lay: number[], fx: number, fy: number): number {
+  const n = layoutSize(lay);
+  if (!n) return 1;
+  const axis = (f: number): [number, number, number] => {
+    const pos = f * n - 0.5; // in cell-centre units
+    if (pos <= 0) return [0, 0, 0];
+    if (pos >= n - 1) return [n - 1, n - 1, 0];
+    const i = Math.floor(pos);
+    return [i, i + 1, pos - i];
+  };
+  const [x0, x1, tx] = axis(fx), [y0, y1, ty] = axis(fy);
+  const top = lay[y0 * n + x0] * (1 - tx) + lay[y0 * n + x1] * tx;
+  const bottom = lay[y1 * n + x0] * (1 - tx) + lay[y1 * n + x1] * tx;
+  return top * (1 - ty) + bottom * ty;
+}
+
+/** A 3×3 layout as 5×5 (sampled at the 5×5 cell centres); 5×5 is returned as is. */
+export function layoutTo5(lay: number[]): number[] {
+  if (layoutSize(lay) !== 3) return lay;
+  return Array.from({ length: 25 }, (_, i) => layoutValue(lay, ((i % 5) + 0.5) / 5, (Math.floor(i / 5) + 0.5) / 5));
+}
+
+/** Each terrain's near rule: the model's, with settings overriding (null = off). */
+export function nearRules(model: HexWfcModel, settings: GeneratorSettings = {}): Map<string, NearRule> {
+  const out = new Map<string, NearRule>();
+  for (const t of model.terrains) if (t.near) out.set(t.name, t.near);
+  for (const [t, rule] of Object.entries(settings.near ?? {})) {
+    if (rule) out.set(t, rule);
+    else out.delete(t);
+  }
+  return out;
+}
+
+/**
+ * A guaranteed line feature, e.g. a river from a map edge to a lake. Placed
+ * before the solver runs, so it always exists. `from`/`to` are "edge", "none"
+ * (just stops) or a terrain name it must end at.
+ */
+export interface LineFeature {
+  terrain: string;
+  from: string;
+  to: string;
+  /** How many the example had. Scaled with map size when solving. */
+  count: number;
+}
+
+/**
+ * A path drawn on top of the terrain (a river or road made with a path tool),
+ * learned from the example's paths and routed over generated terrain.
+ * `from`/`to` are "edge", "none", "path" (joins another path of this type,
+ * like a tributary) or a terrain name.
+ */
+export interface PathFeature {
+  type: string;
+  from: string;
+  to: string;
+  /** How many the example had. Scaled with map size when routing. */
+  count: number;
+  /** Share of steps that change direction (0–1). */
+  turn: number;
+  /** Length as a share of the map's larger side. */
+  length: number;
+  /** Share of the path's hexes on each terrain. */
+  through: Record<string, number>;
+}
+
+export type Symmetry = "none" | "left-right" | "top-bottom" | "both";
+export const SYMMETRIES: readonly Symmetry[] = ["none", "left-right", "top-bottom", "both"];
+
+/** Min/max number of separate patches of a terrain (a town is a 1-hex patch). */
+/** Adjustments to one learned path route; anything unset is as learned. */
+export interface PathTweak {
+  /** Never place this route. */
+  off?: boolean;
+  /** Exact number to place. Unset = learned count scaled to the map size. */
+  count?: number;
+  /** Multiplier on how much it meanders. 0 = as straight as the terrain allows. */
+  wiggle?: number;
+  /** Multiplier on its length (routes ending in "none", and edge-to-edge). */
+  length?: number;
+  /** Multiplier on how strongly it keeps to the terrains it ran through. 0 = ignores terrain. */
+  follow?: number;
+  /** Path type to draw it as on the map, instead of its learned type. */
+  as?: string;
+  /** May cross impassable terrain. Set from its path type (PathTypeTweak). */
+  crossImpassable?: boolean;
+}
+
+/**
+ * Adjustments to every learned route of one path type (all Roads, say).
+ * Applied on top of each route's own PathTweak; see effectivePathTweaks().
+ */
+export interface PathTypeTweak {
+  /** Place none of this type. */
+  off?: boolean;
+  /**
+   * Share of the type's routes to keep (0–1). The routes the example had most
+   * of are kept; the rest are turned off. Unset = all.
+   */
+  keep?: number;
+  /**
+   * Let this type's paths cross impassable terrain. By default they never
+   * start, run or end on it, except where an end is that terrain itself.
+   */
+  crossImpassable?: boolean;
+  /** Multipliers on every route's wiggle, length and terrain following. */
+  wiggle?: number;
+  length?: number;
+  follow?: number;
+}
+
+/**
+ * Each route's tweak with its path type's settings applied: a type that's off
+ * turns its routes off, `keep` turns off the least common of the type's
+ * routes that are still on, and the type's multipliers multiply the route's.
+ * Routes are grouped by their learned type.
+ */
+export function effectivePathTweaks(
+  routes: PathFeature[],
+  tweaks: Record<string, PathTweak> = {},
+  types: Record<string, PathTypeTweak> = {},
+): Record<string, PathTweak> {
+  const out: Record<string, PathTweak> = {};
+  for (const r of routes) {
+    const key = pathRouteKey(r);
+    out[key] = { ...(tweaks[key] ?? {}) };
+  }
+  const byType = new Map<string, PathFeature[]>();
+  for (const r of routes) byType.set(r.type, [...(byType.get(r.type) ?? []), r]);
+  for (const [type, list] of byType) {
+    const t = types[type];
+    if (!t) continue;
+    for (const r of list) {
+      const tw = out[pathRouteKey(r)];
+      if (t.off) tw.off = true;
+      if (t.crossImpassable) tw.crossImpassable = true;
+      for (const k of ["wiggle", "length", "follow"] as const) {
+        if (t[k] !== undefined) tw[k] = (tw[k] ?? 1) * t[k];
+      }
+    }
+    if (!t.off && t.keep !== undefined && t.keep < 1) {
+      const on = list
+        .filter((r) => !out[pathRouteKey(r)].off)
+        .sort((a, b) => b.count - a.count || pathRouteKey(a).localeCompare(pathRouteKey(b)));
+      const kept = t.keep <= 0 ? 0 : Math.max(1, Math.round(t.keep * on.length));
+      for (const r of on.slice(kept)) out[pathRouteKey(r)].off = true;
+    }
+  }
+  return out;
+}
+
+/** Key that identifies a learned path route, e.g. "Road: edge > peak". */
+export function pathRouteKey(p: { type: string; from: string; to: string }): string {
+  return `${p.type}: ${p.from} > ${p.to}`;
+}
+
+export interface CountRange {
+  min?: number;
+  max?: number;
+}
+
+/**
+ * Solver settings saved with a generator. Options passed to solve() win over
+ * these, and missing ones use DEFAULT_SETTINGS.
+ */
+export interface GeneratorSettings {
+  /** Multiplier on learned patch sizes. 0 turns growth off. */
+  featureSize?: number;
+  /** 0–1: keep terrain where it sat in the example (an ocean along the bottom stays there). */
+  directionalBias?: number;
+  /** How strongly decided neighbours steer each choice (clumping). */
+  neighbourInfluence?: number;
+  /** How hard the overall terrain mix is pulled toward the model's weights. */
+  frequencyFeedback?: number;
+  /** Randomness in which hex is decided next; lets enclosed features start. */
+  scatter?: number;
+  /** 0–1 share of each choice made by terrain weight alone (peppers rare terrain). */
+  randomness?: number;
+  /** 0–1: how strongly the border follows `edgeTerrain` (or the learned edge preference). */
+  edgeStrength?: number;
+  /** Terrain the border should prefer ("" = as learned), e.g. water for islands. */
+  edgeTerrain?: string;
+  /** Thickness of line terrains: 0 = as learned, otherwise 1–3. */
+  lineWidth?: number;
+  /**
+   * Legacy single knob (0–1): lone specks, plus ragged edges from 0.5. Used
+   * only while `edgeSmoothing` and `speckSize` are both 0.
+   */
+  smoothing?: number;
+  /** 0–1: trim one-hex protrusions and notches on patch edges. Leaves lone hexes alone. */
+  edgeSmoothing?: number;
+  /** Remove patches of this many hexes or fewer (0 = off). */
+  speckSize?: number;
+  /**
+   * 0–1 share of the example: terrains rarer than this are never smoothed or
+   * removed, so the odd rare hex survives. 0 = off.
+   */
+  keepRare?: number;
+  /** Mirror the map. Symmetric where the rules allow. */
+  symmetry?: Symmetry;
+  /** Multiplier on learned spacing between scattered terrain (towns). 0 = off. */
+  spacing?: number;
+  /** Make all land (terrain not in `impassable`) one connected area. */
+  connected?: boolean;
+  /** Terrains that count as impassable for `connected` (water, peaks, ...). */
+  impassable?: string[];
+  /** Per-terrain multiplier on weight, e.g. { Forest: 1.5, Water: 0.5 }. */
+  mix?: Record<string, number>;
+  /** Per-terrain min/max number of separate patches. */
+  counts?: Record<string, CountRange>;
+  /** Lay down the model's guaranteed features (terrain lines such as a river painted as terrain). */
+  features?: boolean;
+  /**
+   * Draw the learned paths (roads, rivers drawn as paths) over the terrain.
+   * Unset: follows `features`, as before the two were split.
+   */
+  drawPaths?: boolean;
+  /** Per-route adjustments, keyed by pathRouteKey(). */
+  paths?: Record<string, PathTweak>;
+  /** Per path type adjustments (all Roads, all Rivers), on top of `paths`. */
+  pathTypes?: Record<string, PathTypeTweak>;
+  /** Near rules per terrain, over the model's (null turns a model rule off). */
+  near?: Record<string, NearRule | null>;
+}
+
+export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
+  featureSize: 1,
+  directionalBias: 0,
+  neighbourInfluence: 3,
+  frequencyFeedback: 2,
+  scatter: 3,
+  randomness: 0.1,
+  edgeStrength: 1,
+  edgeTerrain: "",
+  lineWidth: 0,
+  smoothing: 0,
+  edgeSmoothing: 0,
+  speckSize: 0,
+  keepRare: 0,
+  symmetry: "none",
+  spacing: 1,
+  connected: false,
+  impassable: [],
+  mix: {},
+  counts: {},
+  features: true,
+  drawPaths: true,
+  paths: {},
+  pathTypes: {},
+  near: {},
+};
+
+export interface AdjacencyEntry {
+  a: string;
+  b: string;
+  /** How often this pair touches. Higher = more likely. 0 = forbidden. */
+  weight: number;
+}
+
+export interface HexWfcModel {
+  name: string;
+  terrains: TerrainEntry[];
+  adjacency: AdjacencyEntry[];
+  /** Guaranteed line features painted as terrain (rivers). */
+  features?: LineFeature[];
+  /** Paths drawn over the terrain (rivers, roads), routed after solving. */
+  paths?: PathFeature[];
+  /** Number of painted hexes in the example. Used to scale counts and spacing. */
+  exampleHexes?: number;
+  /** Free-form string metadata (palette, source map, ...). Preserved by the file format. */
+  meta: Record<string, string>;
+  /** Saved solver settings. Missing fields use DEFAULT_SETTINGS. */
+  settings?: GeneratorSettings;
+}
+
+const pairKey = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
+
+/**
+ * Symmetric lookup of adjacency weights. Duplicate rows (in either order) are
+ * summed, so a hand-edited file that lists "A | B" and "B | A" still works.
+ */
+export function adjacencyLookup(model: HexWfcModel): (a: string, b: string) => number {
+  const m = new Map<string, number>();
+  for (const { a, b, weight } of model.adjacency) {
+    if (!(weight > 0)) continue;
+    const k = pairKey(a, b);
+    m.set(k, (m.get(k) ?? 0) + weight);
+  }
+  return (a, b) => m.get(pairKey(a, b)) ?? 0;
+}
+
+/** Problems that make a model unusable or surprising. Empty = fine. */
+export function validateModel(model: HexWfcModel): string[] {
+  const problems: string[] = [];
+  const names = new Set<string>();
+  for (const t of model.terrains) {
+    if (!t.name) problems.push("A terrain has an empty name");
+    else if (names.has(t.name)) problems.push(`Terrain "${t.name}" is listed twice`);
+    names.add(t.name);
+    if (!Number.isFinite(t.weight) || t.weight < 0)
+      problems.push(`Terrain "${t.name}" has an invalid weight`);
+    if (t.patch !== undefined && !(t.patch >= 0 && t.patch <= 1))
+      problems.push(`Terrain "${t.name}" has a patch size outside 0–100%`);
+    if (t.shape !== undefined && !GROWTH_SHAPES.includes(t.shape))
+      problems.push(`Terrain "${t.name}" has unknown shape "${String(t.shape)}"`);
+    if (t.turn !== undefined && !(t.turn >= 0 && t.turn <= 1))
+      problems.push(`Terrain "${t.name}" has a turn rate outside 0–1`);
+    if (t.width !== undefined && !(t.width >= 1 && t.width <= 3))
+      problems.push(`Terrain "${t.name}" has a width outside 1–3`);
+    if (t.layout !== undefined && (!layoutSize(t.layout) || t.layout.some((v) => !(v >= 0))))
+      problems.push(`Terrain "${t.name}" needs 9 or 25 layout values ≥ 0`);
+  }
+  if (model.terrains.length === 0) problems.push("No terrains listed");
+  for (const t of model.terrains)
+    if (t.near !== undefined && !(names.has(t.near.terrain) && t.near.distance >= 1))
+      problems.push(`Terrain "${t.name}" has a near rule on an unknown terrain or a distance under 1`);
+  for (const { a, b, weight } of model.adjacency) {
+    for (const n of [a, b])
+      if (!names.has(n)) problems.push(`Adjacency row "${a} | ${b}" uses unknown terrain "${n}"`);
+    if (!Number.isFinite(weight) || weight < 0)
+      problems.push(`Adjacency row "${a} | ${b}" has an invalid weight`);
+  }
+  for (const f of model.features ?? []) {
+    if (!names.has(f.terrain)) problems.push(`Feature uses unknown terrain "${f.terrain}"`);
+    for (const end of [f.from, f.to])
+      if (end !== "edge" && end !== "none" && !names.has(end))
+        problems.push(`Feature "${f.terrain}" ends at unknown terrain "${end}"`);
+  }
+  const adj = adjacencyLookup(model);
+  for (const t of model.terrains) {
+    if (t.weight > 0 && !model.terrains.some((u) => adj(t.name, u.name) > 0))
+      problems.push(`Terrain "${t.name}" is not allowed next to anything, so it can only appear alone`);
+  }
+  return problems;
+}
+
+/** "edge-N" / "edge-E" / "edge-S" / "edge-W" (any case): which side; null for anything else. */
+export function edgeSide(anchor: string): "N" | "E" | "S" | "W" | null {
+  const m = /^edge-([nesw])$/i.exec(anchor.trim());
+  return m ? (m[1].toUpperCase() as "N" | "E" | "S" | "W") : null;
+}
+/** Any edge anchor: `edge` or one side of it. */
+export const isEdgeAnchor = (anchor: string): boolean => anchor === "edge" || edgeSide(anchor) !== null;
+
+/**
+ * Drop terrains that aren't in `allowed` (and their adjacency rows and
+ * features). Use it to fit a model to a palette that lacks some terrains.
+ */
+export function restrictModel(model: HexWfcModel, allowed: Iterable<string>): HexWfcModel {
+  const keep = new Set(allowed);
+  const ok = (end: string) => isEdgeAnchor(end) || end === "none" || keep.has(end);
+  return {
+    ...model,
+    terrains: model.terrains.filter((t) => keep.has(t.name)),
+    adjacency: model.adjacency.filter((e) => keep.has(e.a) && keep.has(e.b)),
+    ...(model.features
+      ? { features: model.features.filter((f) => keep.has(f.terrain) && ok(f.from) && ok(f.to)) }
+      : {}),
+    ...(model.paths
+      ? { paths: model.paths.filter((p) => (p.from === "path" || ok(p.from)) && (p.to === "path" || ok(p.to))) }
+      : {}),
+    meta: { ...model.meta },
+    ...(model.settings ? { settings: { ...model.settings } } : {}),
+  };
+}
+
+/**
+ * Each terrain's share of the map going by weights alone (0–1): `mixed`
+ * false uses the table's weights, true multiplies them by the `mix`
+ * setting first, as the solver does.
+ */
+export function weightShares(model: HexWfcModel, mixed = false): Map<string, number> {
+  const mix = model.settings?.mix ?? {};
+  const w = (t: TerrainEntry) => Math.max(0, t.weight) * (mixed ? mix[t.name] ?? 1 : 1);
+  const total = model.terrains.reduce((sum, t) => sum + w(t), 0) || 1;
+  return new Map(model.terrains.map((t) => [t.name, w(t) / total]));
+}
+
+/**
+ * Terrain names a model uses that aren't in `allowed` (a palette), with
+ * where each is used. Generating on that palette leaves them out, along with
+ * the adjacency rows, features and path ends that name them.
+ */
+export function missingTerrains(model: HexWfcModel, allowed: Iterable<string>): { name: string; where: string[] }[] {
+  const keep = new Set(allowed);
+  const found = new Map<string, Set<string>>();
+  const note = (name: string, where: string) => {
+    if (!name || keep.has(name)) return;
+    if (!found.has(name)) found.set(name, new Set());
+    found.get(name)!.add(where);
+  };
+  const end = (e: string) => !isEdgeAnchor(e) && e !== "none" && e !== "path";
+  for (const t of model.terrains) if (t.weight > 0) note(t.name, "terrains");
+  for (const t of model.terrains) if (t.near && t.weight > 0) note(t.near.terrain, "near");
+  for (const e of model.adjacency) if (e.weight > 0) { note(e.a, "adjacency"); note(e.b, "adjacency"); }
+  for (const f of model.features ?? []) {
+    note(f.terrain, "features");
+    for (const x of [f.from, f.to]) if (end(x)) note(x, "features");
+  }
+  for (const p of model.paths ?? []) {
+    for (const x of [p.from, p.to]) if (end(x)) note(x, "paths");
+    for (const t of Object.keys(p.through)) note(t, "paths");
+  }
+  return [...found].map(([name, where]) => ({ name, where: [...where] }));
+}
+
+/** Settings with defaults filled in; `override` wins over the model's saved ones. */
+export function resolveSettings(model: HexWfcModel, override: GeneratorSettings = {}): Required<GeneratorSettings> {
+  const out: Required<GeneratorSettings> = { ...DEFAULT_SETTINGS };
+  for (const src of [model.settings ?? {}, override]) {
+    for (const [k, v] of Object.entries(src)) {
+      if (v !== undefined) (out as unknown as Record<string, unknown>)[k] = v;
+    }
+  }
+  return out;
+}

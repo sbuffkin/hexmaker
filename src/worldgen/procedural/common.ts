@@ -1,0 +1,255 @@
+import { cellKey, hexDistance, type Orientation, type Stagger } from "../../../packages/hex-wfc/src";
+import { isTerrainType } from "../../terrainTypes";
+import type { TerrainColor } from "../../types";
+
+/**
+ * Shared types and helpers for the procedural (non-learned) generators.
+ * Pure: no Obsidian imports, deterministic for a given seed.
+ */
+
+export interface ProcGrid {
+  cols: number;
+  rows: number;
+  offset: { x: number; y: number };
+  stagger: Stagger;
+  orientation: Orientation;
+}
+
+export interface ProcPath {
+  /** Path type name (must exist in the map palette's path types to be drawn). */
+  type: string;
+  hexes: string[];
+}
+
+export interface ProcResult {
+  /** Terrain per hex ("x_y"); every hex of the grid is set. */
+  cells: Map<string, string>;
+  paths: ProcPath[];
+  warnings: string[];
+  /**
+   * Hexes left to roll when someone first arrives ("x_y" → table link):
+   * rows whose Roll is "on arrival" (plan-tables-everywhere §2.6). Written
+   * to the map note's On arrival column.
+   */
+  arrivals?: Map<string, string>;
+}
+
+/** Compass sides of a map, for what lies beyond each edge. */
+export type Side = "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW";
+export const SIDES: Side[] = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+
+/** A terrain as context: its palette name and (when known) its type. */
+export interface ContextTerrain {
+  terrain?: string;
+  type?: string;
+}
+
+/**
+ * What surrounds the map being generated, so it fits into the bigger map:
+ *  - `parent`: the hex a submap zooms into (its terrain fills the map);
+ *  - `sides`: the parent hex's neighbours, by compass side (each pulls its
+ *    edge of the map toward its own terrain — east *and* west neighbours
+ *    both act, each on their side);
+ *  - `edgeCells`: exact terrain of hexes just outside the grid, keyed in
+ *    this map's coordinates (from neighbouring regions sharing a border).
+ * Every field is optional; generators ignore what they can't use.
+ */
+export interface GenerationContext {
+  parent?: ContextTerrain;
+  sides?: Partial<Record<Side, ContextTerrain>>;
+  edgeCells?: Map<string, ContextTerrain>;
+  /** Neighbour influence on `edgeCells` (worldgen/neighbourWeight.ts): 1 = as tuned, 0 = the seam only, 2 = twice as far in. */
+  neighbourWeight?: number;
+  /** Paths (roads, rivers…) crossing the parent hex, so they continue
+   *  across the submap from the side they enter to the side they leave. */
+  paths?: ContextPath[];
+}
+
+/**
+ * A path through the parent hex: its type and the sides it enters / leaves
+ * by. A missing side means the path ends in this hex (e.g. a road to a
+ * town) and is routed to the middle of the submap.
+ */
+export interface ContextPath {
+  type: string;
+  /** The path type's routing (how it's drawn). */
+  routing?: "through" | "meander" | "edge";
+  /** The path type's Avoid impassable: off = routed like a river (prefers
+   *  low ground and water); on or unset = like a road (keeps off water). */
+  avoidImpassable?: boolean;
+  /** The path type's Auto-route: "winding" wanders, "direct" (or unset) keeps straight. */
+  autoRoute?: "direct" | "winding";
+  from?: Side;
+  to?: Side;
+  /** Exact entry / exit hex ("x_y" in this map) — e.g. where a neighbouring
+   *  region's road crosses the shared border. Wins over `from` / `to`. */
+  fromHex?: string;
+  toHex?: string;
+}
+
+/** Unit vector (screen space: +x east, +y south) for each side. */
+export const SIDE_VECTORS: Record<Side, [number, number]> = {
+  N: [0, -1],
+  NE: [Math.SQRT1_2, -Math.SQRT1_2],
+  E: [1, 0],
+  SE: [Math.SQRT1_2, Math.SQRT1_2],
+  S: [0, 1],
+  SW: [-Math.SQRT1_2, Math.SQRT1_2],
+  W: [-1, 0],
+  NW: [-Math.SQRT1_2, -Math.SQRT1_2],
+};
+
+/** The compass side a direction vector points to (8 sectors of 45°). */
+export function sideOf(dx: number, dy: number): Side {
+  const angle = Math.atan2(dy, dx); // 0 = east, +π/2 = south (screen y down)
+  const sector = Math.round(angle / (Math.PI / 4));
+  const bySector: Record<number, Side> = { 0: "E", 1: "SE", 2: "S", 3: "SW", 4: "W", [-4]: "W", [-3]: "NW", [-2]: "N", [-1]: "NE" };
+  return bySector[sector];
+}
+
+export interface ProcOption {
+  key: string;
+  label: string;
+  choices: { value: string; label: string }[];
+  default: string;
+}
+
+/**
+ * An engine tuning slider (owner 2026-10-12: a trimmed set that most
+ * affects the first map's layout, in the setup wizard's Advanced). Its
+ * value travels in the generator options as `tune.<key>` (a number as
+ * text); unset means `default`, which is exactly what the engine did
+ * before the slider existed.
+ */
+export interface TuningDef {
+  key: string;
+  label: string;
+  /** One line: what moving it does. */
+  help: string;
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+}
+
+/** The options key a tuning slider's value travels under. */
+export const tuneKey = (key: string): string => `tune.${key}`;
+
+/** A tuning value from the options: the number set, else `def`. */
+export function tuned(options: Readonly<Record<string, string>> | undefined, key: string, def: number): number {
+  const raw = options?.[tuneKey(key)];
+  if (raw === undefined || raw.trim() === "") return def;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : def;
+}
+
+/** A quantile clamped into (0, 1), unchanged when it already is. */
+export const clampQ = (q: number): number => Math.min(0.995, Math.max(0.005, q));
+
+/** Every "x_y" key of the grid, column-major like map creation. */
+export function gridKeys(grid: ProcGrid): [number, number][] {
+  const out: [number, number][] = [];
+  for (let i = 0; i < grid.cols; i++)
+    for (let j = 0; j < grid.rows; j++) out.push([grid.offset.x + i, grid.offset.y + j]);
+  return out;
+}
+
+export function distance(a: [number, number], b: [number, number], grid: ProcGrid): number {
+  return hexDistance(a, b, grid.orientation, grid.stagger);
+}
+
+/** The hex nearest the middle of the grid. */
+export function centerHex(grid: ProcGrid): [number, number] {
+  return [grid.offset.x + Math.floor((grid.cols - 1) / 2), grid.offset.y + Math.floor((grid.rows - 1) / 2)];
+}
+
+export { cellKey };
+
+/**
+ * The first terrain whose name is one of `names` (case-insensitive), in the
+ * order of `names`. Only used to break ties among terrains already chosen
+ * by type (findByType's `preferNames`); never to pick a terrain by name.
+ */
+export function findTerrain(terrains: TerrainColor[], names: string[]): string | undefined {
+  const byName = new Map(terrains.map((t) => [t.name.toLowerCase(), t.name]));
+  for (const n of names) {
+    const hit = byName.get(n.toLowerCase());
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/*
+ * Type-aware lookups. A terrain's `type` (see terrainTypes.ts) is the only
+ * thing that gives it a role: a typed terrain fills only the roles of its
+ * type, however it is named ("ocean" typed desert is never used as sea),
+ * and an untyped terrain fills none — not even one named "ocean" or filed
+ * under a "sea" category. Generators work the same on any palette, the
+ * shipped ones included; the palette editor's "Guess types from names"
+ * button types a hand-made palette in one go.
+ */
+
+/** Terrains with a known type id. Unknown ids count as untyped. */
+function typeOf(t: TerrainColor): string | undefined {
+  return isTerrainType(t.type) ? t.type : undefined;
+}
+
+/** Names of all terrains of the given types, in palette order. */
+export function ofType(terrains: TerrainColor[], typeIds: string[]): string[] {
+  return terrains.filter((t) => typeIds.includes(typeOf(t) ?? "")).map((t) => t.name);
+}
+
+/**
+ * The terrain for a role among those of the given types: the first name in
+ * `preferNames` (case-insensitive) that is of one of the types, else the
+ * first terrain of `typeIds[0]`, then `typeIds[1]`, … in palette order.
+ * Picks "forest" over "forest heavy" for the base forest role, while a
+ * palette whose only forest is "Pinewood" still gets a forest.
+ */
+export function findByType(
+  terrains: TerrainColor[],
+  typeIds: string[],
+  preferNames: string[] = [],
+): string | undefined {
+  const typed = terrains.filter((t) => typeIds.includes(typeOf(t) ?? ""));
+  if (typed.length === 0) return undefined;
+  const hinted = findTerrain(typed, preferNames);
+  if (hinted) return hinted;
+  for (const id of typeIds) {
+    const hit = typed.find((t) => typeOf(t) === id);
+    if (hit) return hit.name;
+  }
+  return undefined;
+}
+
+/** Lower-case name → type id, for weight tables keyed by type. */
+export function typeIndex(terrains: TerrainColor[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of terrains) {
+    const id = typeOf(t);
+    if (id) out.set(t.name.toLowerCase(), id);
+  }
+  return out;
+}
+
+/**
+ * Weighted pick. `weights` maps lower-case terrain names to weights; names
+ * not listed get `fallback`. Returns undefined for an empty list.
+ */
+export function weightedPick(
+  rand: () => number,
+  names: string[],
+  weights: Record<string, number>,
+  fallback = 1,
+): string | undefined {
+  if (names.length === 0) return undefined;
+  const w = names.map((n) => Math.max(0, weights[n.toLowerCase()] ?? fallback));
+  const total = w.reduce((a, b) => a + b, 0);
+  if (total <= 0) return names[Math.floor(rand() * names.length)];
+  let r = rand() * total;
+  for (let i = 0; i < names.length; i++) {
+    r -= w[i];
+    if (r < 0) return names[i];
+  }
+  return names[names.length - 1];
+}

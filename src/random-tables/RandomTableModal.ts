@@ -1,10 +1,75 @@
-import { App, TFile } from "obsidian";
+import { App, Notice, TFile } from "obsidian";
+import { handRollLabel } from "../arrival/eventsLedger";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { parseRandomTable, rollOnTable, getDieRanges } from "./randomTable";
+import { parseRandomTable, resolveTable, rowOdds, dieLabel } from "./randomTable";
+import { renderEmptyTableState, setRollEnabled } from "./emptyTable";
+import { rollForHex } from "./hexRoll";
+import { layeredLookup, notesLookup } from "./resolve";
 import { VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { RandomTableEditorModal } from "./RandomTableEditorModal";
+import { groupTableFiles } from "./tablePickerGroups";
+import { MAP_MADE_GROUP_LABEL } from "./resolve";
+import { withRepairHint } from "../ui/repairHint";
+import { tableTitle } from "../encounterLinks";
+
+/**
+ * "Add to this hex" target for a roll made from a hex (P2): which sections
+ * the result may go to, the one picked first (where the roll came from), and
+ * how to add it (the hex editor appends to its own text box; elsewhere
+ * plugin.appendToHexSection creates the note if needed).
+ */
+export interface RollHexTarget {
+  /** "Hex 3, 4", shown on the button's tooltip. */
+  label: string;
+  sections: readonly { key: string; label: string }[];
+  defaultSection: string;
+  add: (sectionKey: string, text: string) => Promise<void> | void;
+  /** The hex's terrain and terrain type: a table row's When can ask for them. */
+  context?: { terrain?: string; type?: string };
+}
+
+/**
+ * Section picker + "Add to this hex" button (P2), for a roll result or a
+ * filled-in workflow (PA2). `getText` is read on click.
+ */
+export function renderAddToHex(
+  parent: HTMLElement,
+  target: RollHexTarget,
+  getText: () => string,
+  opts: { cta?: boolean; onAdded?: () => void } = {},
+): void {
+  const select = parent.createEl("select", {
+    cls: "duckmage-roll-add-section",
+    attr: { "aria-label": "Section to add the result to" },
+  });
+  for (const s of target.sections) select.createEl("option", { value: s.key, text: s.label });
+  select.value = target.sections.some((s) => s.key === target.defaultSection)
+    ? target.defaultSection
+    : (target.sections[0]?.key ?? "");
+  const addBtn = parent.createEl("button", {
+    text: "Add to this hex",
+    cls: opts.cta ? "mod-cta" : "",
+    attr: { title: `Append the result to a section of ${target.label}'s note` },
+  });
+  addBtn.addEventListener("click", () => {
+    const text = getText().trim();
+    if (!text || !select.value) return;
+    addBtn.disabled = true;
+    void (async () => {
+      try {
+        await target.add(select.value, text);
+        const label = target.sections.find((s) => s.key === select.value)?.label ?? select.value;
+        new Notice(`Added to ${label} (${target.label}).`);
+        opts.onAdded?.();
+      } catch (err) {
+        new Notice(`Could not add the result: ${String(err)}`);
+        addBtn.disabled = false;
+      }
+    })();
+  });
+}
 
 /**
  * Lightweight inline roll modal — used by the 🎲 button inside HexEditorModal
@@ -12,7 +77,8 @@ import { RandomTableEditorModal } from "./RandomTableEditorModal";
  *
  * When `initialFilePath` is supplied the dropdown is skipped and that table is
  * loaded immediately (used for terrain description tables via the 📖 button).
- * When `onInsert` is absent the result shows a Copy button instead of "Use result".
+ * The result always has Copy; "Use result" when `onInsert` is given, and
+ * "Add to this hex" with a section picker when `hexTarget` is given.
  */
 export class RandomTableModal extends HexmakerModal {
   constructor(
@@ -20,6 +86,7 @@ export class RandomTableModal extends HexmakerModal {
     private plugin: HexmakerPlugin,
     private onInsert?: (result: string) => void,
     private initialFilePath?: string,
+    private hexTarget?: RollHexTarget,
   ) {
     super(app);
   }
@@ -51,7 +118,7 @@ export class RandomTableModal extends HexmakerModal {
     if (files.length === 0) {
       contentEl.createDiv({
         cls: "duckmage-rt-empty",
-        text: `No tables found in "${this.plugin.settings.tablesFolder}".`,
+        text: withRepairHint(`No tables found in "${this.plugin.settings.tablesFolder}".`),
       });
       return;
     }
@@ -60,8 +127,14 @@ export class RandomTableModal extends HexmakerModal {
       cls: "duckmage-roll-modal-select",
     });
     select.createEl("option", { value: "", text: "— choose a table —" });
-    for (const file of files) {
-      select.createEl("option", { value: file.path, text: file.basename });
+    // The user's tables first; any the map made (when not filtered out) grouped after them.
+    const { own, mapMade } = groupTableFiles(this.app, files);
+    for (const file of own) {
+      select.createEl("option", { value: file.path, text: tableTitle(file.path) });
+    }
+    if (mapMade.length) {
+      const group = select.createEl("optgroup", { attr: { label: MAP_MADE_GROUP_LABEL } });
+      for (const file of mapMade) group.createEl("option", { value: file.path, text: tableTitle(file.path) });
     }
 
     // "Open in roller" link — hidden until a table is selected
@@ -114,7 +187,7 @@ export class RandomTableModal extends HexmakerModal {
     if (!(file instanceof TFile)) {
       contentEl.createDiv({
         cls: "duckmage-rt-empty",
-        text: "Table file not found.",
+        text: withRepairHint("Table file not found."),
       });
       return;
     }
@@ -123,7 +196,7 @@ export class RandomTableModal extends HexmakerModal {
     const headerRow = contentEl.createDiv({
       cls: "duckmage-roll-modal-header-row",
     });
-    headerRow.createEl("strong", { text: file.basename });
+    headerRow.createEl("strong", { text: tableTitle(file.path) });
     const editLink = headerRow.createEl("a", {
       text: "Edit",
       cls: "duckmage-roll-modal-edit-link",
@@ -189,9 +262,11 @@ export class RandomTableModal extends HexmakerModal {
   private buildResultBox(contentEl: HTMLElement): {
     el: HTMLElement;
     textarea: HTMLTextAreaElement;
+    face: HTMLElement;
   } {
     const resultBox = contentEl.createDiv({ cls: "duckmage-roll-result" });
     resultBox.hide();
+    const face = resultBox.createDiv({ cls: "duckmage-roll-face" });
     const resultTextarea = resultBox.createEl("textarea", {
       cls: "duckmage-roll-result-textarea",
     });
@@ -200,65 +275,87 @@ export class RandomTableModal extends HexmakerModal {
     });
 
     if (this.onInsert) {
+      // Plain: Roll is this surface's one primary.
       const useBtn = resultBtns.createEl("button", {
         text: "Use result",
-        cls: "mod-cta",
       });
       useBtn.addEventListener("click", () => {
         this.onInsert!(resultTextarea.value);
         this.close();
       });
-    } else {
-      const copyBtn = resultBtns.createEl("button", {
-        text: "Copy",
-        cls: "mod-cta",
-      });
-      copyBtn.addEventListener("click", () => {
-        void navigator.clipboard.writeText(resultTextarea.value);
+    }
+
+    const target = this.hexTarget;
+    if (target) {
+      renderAddToHex(resultBtns, target, () => resultTextarea.value, {
+        cta: false, // Roll is the one primary here
+        onAdded: () => this.close(),
       });
     }
 
-    return { el: resultBox, textarea: resultTextarea };
+    const copyBtn = resultBtns.createEl("button", {
+      text: "Copy",
+    });
+    copyBtn.addEventListener("click", () => {
+      void navigator.clipboard.writeText(resultTextarea.value);
+      copyBtn.setText("Copied");
+      window.setTimeout(() => copyBtn.setText("Copy"), 1200);
+    });
+
+    return { el: resultBox, textarea: resultTextarea, face };
   }
 
   private async renderOddsTable(
     tableContainer: HTMLElement,
-    resultBox: { el: HTMLElement; textarea: HTMLTextAreaElement },
+    resultBox: { el: HTMLElement; textarea: HTMLTextAreaElement; face: HTMLElement },
     rollBtn: HTMLButtonElement,
     file: TFile,
   ): Promise<void> {
     const content = await this.app.vault.read(file);
     const table = parseRandomTable(content);
-    const ranges = table.dice > 0 ? getDieRanges(table) : null;
+    const resolved = resolveTable(table);
+    // Ranges as stored in the note (blanks filled): the ones that are rolled.
+    const ranges = table.dice > 0 ? resolved.labels : null;
+    const odds = rowOdds(table, resolved);
 
     if (table.entries.length === 0) {
-      tableContainer.createSpan({
-        text: "No entries found.",
-        cls: "duckmage-rt-empty",
+      // SF1: Roll stays disabled; the empty state opens the table editor.
+      setRollEnabled(rollBtn, false);
+      renderEmptyTableState(tableContainer, {
+        app: this.app,
+        plugin: this.plugin,
+        file,
+        content,
+        onSaved: () => {
+          void (async () => {
+            tableContainer.empty();
+            resultBox.el.hide();
+            await this.renderOddsTable(tableContainer, resultBox, rollBtn, file);
+          })();
+        },
       });
       return;
     }
+    setRollEnabled(rollBtn, true);
 
     const tableEl = tableContainer.createEl("table", {
       cls: "duckmage-random-table",
     });
     const thead = tableEl.createEl("thead");
     const headerRow = thead.createEl("tr");
-    if (ranges) headerRow.createEl("th", { text: `d${table.dice}` });
+    if (ranges) headerRow.createEl("th", { text: dieLabel(table.dice) });
     headerRow.createEl("th", { text: "Result" });
     headerRow.createEl("th", { text: "Odds" });
     headerRow.createEl("th", { cls: "duckmage-rt-copy-col-header" });
 
     const tbody = tableEl.createEl("tbody");
-    const total = table.entries.reduce((s, e) => s + e.weight, 0);
     table.entries.forEach((entry, i) => {
       const tr = tbody.createEl("tr");
       tr.dataset.index = String(i);
       if (ranges)
         tr.createEl("td", { text: ranges[i], cls: "duckmage-rt-range-cell" });
       tr.createEl("td", { text: entry.result });
-      const pct = `${Math.round((entry.weight / total) * 100)}%`;
-      tr.createEl("td", { text: pct, cls: "duckmage-rt-odds-cell" });
+      tr.createEl("td", { text: odds[i], cls: "duckmage-rt-odds-cell" });
       const copyTd = tr.createEl("td", { cls: "duckmage-rt-entry-copy-cell" });
       const copyBtn = copyTd.createEl("button", {
         text: "⎘",
@@ -274,17 +371,26 @@ export class RandomTableModal extends HexmakerModal {
     });
 
     rollBtn.disabled = false;
+    // The roll goes through the shared resolver (hexRoll.ts): a row that
+    // links another table is rolled through, and the hex's terrain is the
+    // When context. This note's own text wins over the tables folder's copy.
+    const lookup = layeredLookup(notesLookup({ [file.path]: content }), this.plugin.tableNotes.lookup());
     rollBtn.onclick = () => {
-      const rolled = rollOnTable(table);
-      if (!rolled) return;
+      const roll = rollForHex(file.path, lookup, this.hexTarget?.context ?? {});
+      if (!roll.results.length) return;
+      const taken = new Set(roll.rows.map(String));
       tbody.querySelectorAll("tr").forEach((tr) => {
-        tr.toggleClass(
-          "is-rolled",
-          tr.textContent?.includes(rolled.result) || false,
-        );
+        tr.toggleClass("is-rolled", taken.has(tr.dataset.index ?? ""));
       });
       resultBox.el.show();
-      resultBox.textarea.value = rolled.result;
+      const first = roll.rows.length === 1 ? roll.rows[0] : undefined;
+      const face = [
+        first !== undefined ? handRollLabel(table, { entry: table.entries[first], index: first, ...(roll.face !== undefined ? { face: roll.face } : {}) }) : "",
+        ...roll.chains,
+      ].filter(Boolean).join(" · ");
+      resultBox.face.setText(face);
+      resultBox.face.toggle(!!face);
+      resultBox.textarea.value = roll.text;
     };
   }
 

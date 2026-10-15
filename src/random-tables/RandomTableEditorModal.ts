@@ -1,20 +1,60 @@
 import { App, Notice, TFile } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
-import { parseRandomTable, extractPostTableContent, parseMarkdownListItems } from "./randomTable";
-import type { RandomTableEntry } from "./randomTable";
+import { dragGrip } from "../ui/pickers";
+import {
+  parseRandomTableWithReport,
+  parseMarkdownListItems,
+  writeRollTable,
+  rangeCellTexts,
+  resolveTable,
+  dieLabel,
+  readTableWeight,
+  rowOdds,
+  type RandomTableEntry,
+  type TableWrite,
+} from "./randomTable";
 import { FileLinkSuggestModal } from "../hex-map/FileLinkSuggestModal";
+import { IMPORT_LIST_EXTENSIONS } from "../notePickers";
+import { processTableNote } from "./TableStore";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder } from "../utils";
-import { escapeRegex, escapeTableCell } from "../textUtils";
+import { escapeRegex } from "../textUtils";
+import { oddsText } from "../ui/odds";
+import { renderSaveStatusLine } from "../ui/saveStatusLine";
+import { tableTitle } from "../encounterLinks";
+
+/** How the editor writes the die column: ranges are redone when weights or rows change. */
+export function editorRangeMode(rowsOrWeightsChanged: boolean): TableWrite["ranges"] {
+  return rowsOrWeightsChanged ? "regenerate" : "keep";
+}
+
+/**
+ * Each row's % as the editor shows it: from the note's own roll ranges
+ * while the rows and weights are as written, else from the weights (the
+ * ranges are redone from them on save). Owner Q1: a % column beside the
+ * free weights, always up to date.
+ */
+export function editorOdds(dice: number, entries: readonly RandomTableEntry[], rowsOrWeightsChanged: boolean): string[] {
+  if (!rowsOrWeightsChanged) return rowOdds({ dice, entries: [...entries] });
+  return oddsText(entries.map((e) => e.weight));
+}
 
 /**
  * Modal editor for a random table file.
  * Shows existing entries as editable rows and allows adding new ones.
- * Saves back to the file, preserving frontmatter.
+ * Autosaves when closed (× only, no footer button: owner Q5), preserving
+ * frontmatter; a hand edit to the note while nothing was changed here
+ * redraws it from the note.
  */
 export class RandomTableEditorModal extends HexmakerModal {
+  protected surfaceId = "TableEditor";
   // Held so onClose can flush a pending "add row" entry and save it
   private flushAndSave: (() => Promise<void>) | null = null;
+  /** Something was changed here (a hand edit to the note then doesn't redraw over it). */
+  private touched = false;
+  private modifyRef: ReturnType<App["vault"]["on"]> | null = null;
+  /** The note text the editor was drawn from. */
+  private shownContent = "";
 
   constructor(
     app: App,
@@ -27,29 +67,58 @@ export class RandomTableEditorModal extends HexmakerModal {
   }
 
   async onOpen(): Promise<void> {
-    this.titleEl.setText(`Edit: ${this.file.basename}`);
+    this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`);
     const { contentEl } = this;
     contentEl.addClass("duckmage-table-editor");
 
     const rawContent =
       this.initialContent ?? (await this.app.vault.read(this.file));
-    const table = parseRandomTable(rawContent);
+    this.touched = false;
+    // Any typing or picking here counts as a change.
+    contentEl.addEventListener("input", () => { this.touched = true; });
+    contentEl.addEventListener("change", () => { this.touched = true; });
+    // A hand edit to the note while nothing changed here: redraw from it (its % column too).
+    if (!this.modifyRef) {
+      this.modifyRef = this.app.vault.on("modify", (f) => {
+        if (f !== this.file || this.touched) return;
+        void this.app.vault.read(this.file).then((text) => {
+          if (this.touched || text === this.shownContent) return;
+          this.initialContent = text;
+          contentEl.empty();
+          this.resetDisclosure();
+          this.flushAndSave = null;
+          void this.onOpen();
+        });
+      });
+    }
+    this.shownContent = rawContent;
+    const report = parseRandomTableWithReport(rawContent);
+    const table = report.table;
     const frontmatter = this.extractFrontmatter(rawContent);
-    const preamble = this.extractPreamble(rawContent, frontmatter);
 
     // Working copy so edits don't mutate until Save
     const entries: RandomTableEntry[] = table.entries.map((e) => ({ ...e }));
+    // Which parsed row each entry came from (survives drag-reorder), so the
+    // writer keeps that row's raw text: extra columns, aliases, spacing.
+    const entrySource = new WeakMap<RandomTableEntry, number>();
+    entries.forEach((e, i) => entrySource.set(e, i));
 
-    // If linked to a folder, silently drop entries whose note no longer exists
+    // Linked-folder rows whose note is missing are kept and reported, not
+    // deleted: the note may have been renamed or moved elsewhere.
+    const missingAtOpen = new Set<string>();
     if (table.linkedFolder) {
       const lf = normalizeFolder(table.linkedFolder);
-      for (let i = entries.length - 1; i >= 0; i--) {
-        if (
-          !this.app.vault.getAbstractFileByPath(`${lf}/${entries[i].result}.md`)
-        ) {
-          entries.splice(i, 1);
-        }
+      for (const e of entries) {
+        if (!this.app.vault.getAbstractFileByPath(`${lf}/${e.result}.md`)) missingAtOpen.add(e.result);
       }
+    }
+    if (missingAtOpen.size) {
+      const warn = contentEl.createDiv({ cls: "duckmage-table-editor-warning" });
+      const names = [...missingAtOpen];
+      warn.setText(
+        `${names.length === 1 ? "This row has" : "These rows have"} no note in ${table.linkedFolder}: ${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""}. ` +
+          `${names.length === 1 ? "It's" : "They're"} kept; delete ${names.length === 1 ? "it" : "them"} here if the note is gone for good.`,
+      );
     }
 
     // Track each entry's original result by object identity (survives drag-reorder)
@@ -72,6 +141,8 @@ export class RandomTableEditorModal extends HexmakerModal {
       cls: "duckmage-table-editor-name-input",
     });
     nameInput.value = this.file.basename;
+    // The shared autosave line (no Close button: × closes and saves).
+    renderSaveStatusLine(contentEl, { title: "Saves when you close this (×). There is no Save button." });
 
     const doRename = async () => {
       const newName = nameInput.value.trim();
@@ -83,7 +154,7 @@ export class RandomTableEditorModal extends HexmakerModal {
       const newPath = dir + newName + ".md";
       try {
         await this.app.fileManager.renameFile(this.file, newPath);
-        this.titleEl.setText(`Edit: ${this.file.basename}`);
+        this.titleEl.setText(`Edit: ${tableTitle(this.file.path)}`);
         this.onSaved?.();
       } catch {
         nameInput.value = this.file.basename; // revert on error
@@ -161,10 +232,10 @@ export class RandomTableEditorModal extends HexmakerModal {
     const subOneToAllBtn = entriesHeadingRow.createEl("button", {
       text: "-1",
       cls: "duckmage-table-editor-add-one-btn",
-      attr: { title: "Add 1 to every entry's weight" },
+      attr: { title: "Subtract 1 from every entry's weight (stops at 0)" },
     });
     subOneToAllBtn.addEventListener("click", () => {
-      for (const e of entries) e.weight -= 1;
+      for (const e of entries) e.weight = Math.max(0, e.weight - 1);
       renderRows();
     });
     const addOneToAllBtn = entriesHeadingRow.createEl("button", {
@@ -202,6 +273,8 @@ export class RandomTableEditorModal extends HexmakerModal {
           })();
         },
         "",
+        // Text it can read as entries (list items or lines), not images or PDFs.
+        IMPORT_LIST_EXTENSIONS,
       ).open();
     });
 
@@ -216,8 +289,33 @@ export class RandomTableEditorModal extends HexmakerModal {
       el.setCssProps({ height: `${el.scrollHeight}px` });
     };
 
+    // Rows added, removed, reordered or reweighted: the ranges are redone.
+    const rowsOrWeightsChanged = (): boolean =>
+      entries.length !== table.entries.length ||
+      entries.some((e, i) => entrySource.get(e) !== i || e.weight !== table.entries[i].weight);
+    // Each row's roll range, as it will be written.
+    let rangeEls: HTMLElement[] = [];
+    // Each row's % (owner Q1), next to its weight.
+    let oddsEls: HTMLElement[] = [];
+    const onWeightsChanged = (): void => {
+      const changed = rowsOrWeightsChanged();
+      const odds = editorOdds(table.dice, entries, changed);
+      oddsEls.forEach((el, i) => el.setText(odds[i] ?? "–"));
+      if (table.dice <= 0) return;
+      const labels = changed
+        ? rangeCellTexts(table.dice, entries, "regenerate")
+        : resolveTable({ dice: table.dice, entries }).labels;
+      rangeEls.forEach((el, i) => el.setText(labels[i] || "—"));
+    };
+
+    let drawn = false;
     const renderRows = () => {
+      // Every redraw after the first is a change made here (sort, ±1, add, remove, move).
+      if (drawn) this.touched = true;
+      drawn = true;
       rowsEl.empty();
+      rangeEls = [];
+      oddsEls = [];
       if (entries.length === 0) {
         rowsEl.createSpan({
           text: "No entries yet.",
@@ -225,16 +323,27 @@ export class RandomTableEditorModal extends HexmakerModal {
         });
         return;
       }
+      // Column headers, laid out like the rows (fresh-eyes F16 / C12: the
+      // weight column had no name).
+      const cols = rowsEl.createDiv({ cls: "duckmage-table-editor-row duckmage-table-editor-cols", attr: { "aria-hidden": "true" } });
+      dragGrip(cols, "duckmage-table-editor-drag-handle duckmage-table-editor-col-spacer");
+      if (table.dice > 0) cols.createSpan({ cls: "duckmage-table-editor-range", text: "Roll" });
+      cols.createSpan({ cls: "duckmage-table-editor-col-result", text: "Result" });
+      cols.createSpan({ cls: "duckmage-table-editor-weight duckmage-table-editor-col-weight", text: "Weight" });
+      cols.createSpan({ cls: "duckmage-odds-percent duckmage-table-editor-odds", text: "Odds" });
+      cols.createSpan({ cls: "duckmage-table-editor-del duckmage-table-editor-col-spacer", text: "×" });
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         const row = rowsEl.createDiv({ cls: "duckmage-table-editor-row" });
         row.draggable = true;
 
-        const handle = row.createSpan({
-          cls: "duckmage-table-editor-drag-handle",
-          text: "⠿",
-        });
+        const handle = dragGrip(row, "duckmage-table-editor-drag-handle");
         handle.title = "Drag to reorder";
+        if (table.dice > 0) {
+          const rangeEl = row.createSpan({ cls: "duckmage-table-editor-range" });
+          rangeEl.title = `Roll range on the ${dieLabel(table.dice)} (from the weights)`;
+          rangeEls.push(rangeEl);
+        }
 
         const resultInput = row.createEl("textarea", {
           cls: "duckmage-table-editor-result",
@@ -242,6 +351,7 @@ export class RandomTableEditorModal extends HexmakerModal {
         // Show [[path]] for link entries so the user can see and edit the link format
         resultInput.value = entry.isLink ? `[[${entry.result}]]` : entry.result;
         resultInput.placeholder = "Result…";
+        resultInput.setAttr("aria-label", "Result");
         resultInput.rows = 1;
         // Size to content immediately, then keep in sync as the user types
         window.requestAnimationFrame(() => autoResize(resultInput));
@@ -263,19 +373,15 @@ export class RandomTableEditorModal extends HexmakerModal {
           cls: "duckmage-table-editor-weight",
         });
         weightInput.value = String(entry.weight);
-        //weightInput.min = "1";
+        weightInput.min = "0";
+        weightInput.step = "any";
+        weightInput.title = "Weight (0 = never rolled)";
+        weightInput.setAttr("aria-label", "Weight");
         weightInput.addEventListener("input", () => {
-          entries[i].weight = Math.max(1, parseInt(weightInput.value, 10) || 1);
+          entries[i].weight = readWeight(weightInput.value);
+          onWeightsChanged();
         });
-        // weightInput.addEventListener("keydown", (e: KeyboardEvent) => {
-        //   if (e.key === "ArrowDown" && entries[i].weight <= 1) {
-        //     e.preventDefault();
-        //     for (let j = 0; j < entries.length; j++) {
-        //       if (j !== i) entries[j].weight += 1;
-        //     }
-        //     renderRows();
-        //   }
-        // });
+        oddsEls.push(row.createSpan({ cls: "duckmage-odds-percent duckmage-table-editor-odds", attr: { title: "This row's share of the rolls" } }));
 
         const delBtn = row.createEl("button", {
           text: "×",
@@ -321,6 +427,7 @@ export class RandomTableEditorModal extends HexmakerModal {
           renderRows();
         });
       }
+      onWeightsChanged();
     };
     renderRows();
 
@@ -337,14 +444,21 @@ export class RandomTableEditorModal extends HexmakerModal {
       cls: "duckmage-table-editor-result",
     });
     newResult.placeholder = "New result…";
+    newResult.setAttr("aria-label", "New result");
     newResult.rows = 1;
 
-    const newWeight = addRow.createEl("input", {
+    // The weight box is labelled (fresh-eyes F16: a bare "1" beside the result).
+    const newWeightLabel = addRow.createEl("label", { cls: "duckmage-table-editor-add-weight" });
+    newWeightLabel.createSpan({ text: "Weight", cls: "duckmage-table-editor-add-weight-text" });
+
+    const newWeight = newWeightLabel.createEl("input", {
       type: "number",
       cls: "duckmage-table-editor-weight",
+      attr: { title: "Weight (0 = never rolled)" },
     });
     newWeight.value = "1";
-    newWeight.min = "1";
+    newWeight.min = "0";
+    newWeight.step = "any";
 
     const addBtn = addRow.createEl("button", {
       text: "Add",
@@ -458,6 +572,19 @@ export class RandomTableEditorModal extends HexmakerModal {
       this.parseFrontmatterBool(frontmatter, "encounter-filter") === false;
     encFilterRow.createEl("label", { text: "Exclude from encounters table" });
 
+    // ── Advanced: bulk weight steps, import, linked folder, filters ──
+    // (Placement map; the filters stay hidden on the map's own tables.)
+    this.place("TableEditor.minusOneAll", subOneToAllBtn);
+    this.place("TableEditor.plusOneAll", addOneToAllBtn);
+    this.place("TableEditor.import", importBtn);
+    // Set ones count in the header ("Advanced · 1 set").
+    this.place("TableEditor.linkedFolder", folderRow, () => folderInput.value.trim() !== "");
+    if (!isSystemTable) {
+      this.place("TableEditor.excludeRollPicker", rollFilterRow, () => rollFilterCb.checked);
+      this.place("TableEditor.excludeEncounters", encFilterRow, () => encFilterCb.checked);
+    }
+    this.disclosure.toEnd();
+
     const doAdd = () => {
       const raw = newResult.value.trim();
       if (!raw) return;
@@ -497,11 +624,11 @@ export class RandomTableEditorModal extends HexmakerModal {
         errorEl.hide();
         // Store the vault-relative path without extension (canonical link form)
         const resolvedPath = found.path.replace(/\.md$/i, "");
-        const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
+        const weight = readWeight(newWeight.value);
         entries.push({ result: resolvedPath, weight, isLink: true });
       } else {
         errorEl.hide();
-        const weight = Math.max(1, parseInt(newWeight.value, 10) || 1);
+        const weight = readWeight(newWeight.value);
         entries.push({ result: raw, weight });
       }
 
@@ -510,10 +637,10 @@ export class RandomTableEditorModal extends HexmakerModal {
       renderRows();
       newResult.focus();
     };
-    // Expose so onClose always saves all changes (flushes pending "add row" text first)
+    // Expose so onClose saves all changes (flushes pending "add row" text
+    // first). Nothing is written unless something actually changed.
     this.flushAndSave = async () => {
       doAdd(); // flush pending "add row" text if any (no-op if empty)
-      const suffix = extractPostTableContent(rawContent) || undefined;
       let updatedFm = this.setFrontmatterBool(
         frontmatter,
         "roll-filter",
@@ -525,11 +652,13 @@ export class RandomTableEditorModal extends HexmakerModal {
         encFilterCb.checked ? false : undefined,
       );
       const linkedFolder = normalizeFolder(folderInput.value.trim());
-      updatedFm = this.setFrontmatterString(
-        updatedFm,
-        "linkedFolder",
-        linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
-      );
+      if (linkedFolder !== normalizeFolder(table.linkedFolder ?? "")) {
+        updatedFm = this.setFrontmatterString(
+          updatedFm,
+          "linkedFolder",
+          linkedFolder ? `"[[${linkedFolder}]]"` : undefined,
+        );
+      }
       if (linkedFolder) {
         await this.renameUpdatedEntries(
           entries,
@@ -537,31 +666,47 @@ export class RandomTableEditorModal extends HexmakerModal {
           linkedFolder,
         );
         await this.retireDeletedEntries(originalResults, entries, linkedFolder);
-        await this.syncLinkedFolder(entries, linkedFolder);
+        await this.syncLinkedFolder(entries, linkedFolder, missingAtOpen);
       }
-      // Rebuild preamble: preserve or insert roller block, replace user description
-      const rollerLinkMatch =
-        preamble.match(/```duckmage-roller[\s\S]*?```/) ??
-        preamble.match(/\[.*?\]\(obsidian:\/\/duckmage-roll[^)]*\)/);
-      // Always include a roller — upgrade old URI links to the code block form
-      const rollerLink =
-        rollerLinkMatch?.index !== undefined &&
-        /```duckmage-roller/.test(rollerLinkMatch[0])
-          ? rollerLinkMatch[0]
-          : "```duckmage-roller\n```";
+
+      // ── Table: only its own lines are rewritten, and only if it changed.
+      const orig = table.entries;
+      const reweighted = rowsOrWeightsChanged();
+      const textChanged = entries.some((e) => {
+        const src = entrySource.get(e);
+        return src === undefined || orig[src].result !== e.result || !!orig[src].isLink !== !!e.isLink;
+      });
+      let next = rawContent;
+      if (reweighted || textChanged) {
+        next = writeRollTable(rawContent, {
+          dice: table.dice,
+          rows: entries.map((entry) => ({ entry, source: entrySource.get(entry) })),
+          ranges: editorRangeMode(reweighted),
+          linkCells: !!linkedFolder,
+          dropPlaceholders: true,
+        });
+      }
+
+      // ── Description: only the text between frontmatter and table, only if edited.
       const newDescription = descInput.value.trim();
-      const newPreamble = [rollerLink, newDescription]
-        .filter(Boolean)
-        .join("\n\n");
-      const newContent = this.buildContent(
-        updatedFm,
-        newPreamble,
-        entries,
-        linkedFolder || undefined,
-        suffix,
-      );
+      if (newDescription !== (table.description ?? "")) {
+        const eol = rawContent.includes("\r\n") ? "\r\n" : "\n";
+        const fmEnd = frontmatter ? frontmatter.length : 0;
+        const tableStart = report.block ? report.block.start : fmEnd;
+        const preamble = rawContent.slice(fmEnd, tableStart);
+        // Keep the roller block; an old roller link becomes the block.
+        const roller =
+          /```duckmage-roller[\s\S]*?```/.exec(preamble)?.[0] ?? "```duckmage-roller" + eol + "```";
+        const parts = [roller, newDescription.replace(/\r?\n/g, eol)].filter(Boolean);
+        const newPreamble = (frontmatter ? eol + eol : "") + parts.join(eol + eol) + (report.block ? eol + eol : eol);
+        // The table write above leaves everything before the table as it was.
+        next = next.slice(0, fmEnd) + newPreamble + next.slice(tableStart);
+      }
+
+      if (updatedFm !== frontmatter) next = updatedFm + next.slice(frontmatter.length);
+      if (next === rawContent) return;
       try {
-        await this.app.vault.process(this.file, () => newContent);
+        await processTableNote(this.app, this.file, () => next);
         this.onSaved?.();
       } catch {
         /* best-effort */
@@ -577,20 +722,22 @@ export class RandomTableEditorModal extends HexmakerModal {
       }
     });
 
-    // ── Footer: Close (auto-saves on close) ───────────────────────────
-    const footer = contentEl.createDiv({ cls: "duckmage-table-editor-footer" });
-
-    footer
-      .createEl("button", { text: "Close", cls: "mod-cta" })
-      .addEventListener("click", () => this.close());
-
+    // No footer (owner Q5): × closes, and closing saves.
     this.makeDraggable();
+    // Typing on open goes to a new row, never the table's name (fresh-eyes
+    // C12: stray keys renamed the table). After Obsidian's own focus on
+    // open, which takes the first field.
+    newResult.focus();
+    window.setTimeout(() => {
+      if (newResult.isConnected && activeDocument.activeElement === nameInput) newResult.focus();
+    }, 0);
   }
 
   /** Sync entries ↔ notes in linkedFolder. Mutates entries in-place. */
   private async syncLinkedFolder(
     entries: RandomTableEntry[],
     folderPath: string,
+    missingAtOpen: Set<string>,
   ): Promise<void> {
     // Ensure folder exists
     if (!this.app.vault.getAbstractFileByPath(folderPath)) {
@@ -610,6 +757,8 @@ export class RandomTableEditorModal extends HexmakerModal {
 
     // For each entry: create note if missing
     for (const entry of entries) {
+      // A row whose note was missing when the editor opened is reported, not recreated.
+      if (missingAtOpen.has(entry.result)) continue;
       const notePath = `${folderPath}/${entry.result}.md`;
       const noteFile = this.app.vault.getAbstractFileByPath(notePath);
       if (!noteFile) {
@@ -674,6 +823,8 @@ export class RandomTableEditorModal extends HexmakerModal {
   }
 
   onClose(): void {
+    if (this.modifyRef) this.app.vault.offref(this.modifyRef);
+    this.modifyRef = null;
     // If the user typed something in "Add row" and closed without clicking Add,
     // flush it and save so the entry isn't lost.
     void this.flushAndSave?.();
@@ -703,19 +854,19 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: boolean | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:[^\\r\\n]*`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (value === undefined) {
       if (!hasKey) return frontmatter;
       // Remove the line (and any trailing newline)
-      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*(?:\\r?\\n)?`, "m"), "");
     }
     const line = `${key}: ${value}`;
     if (hasKey) {
       return frontmatter.replace(lineRegex, () => line);
     }
     // Insert before closing ---
-    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
+    return frontmatter.replace(/(\r?\n)---$/, (_m, eol: string) => `${eol}${line}${eol}---`);
   }
 
   /** Set, remove, or update a string key in a frontmatter block string. */
@@ -724,50 +875,25 @@ export class RandomTableEditorModal extends HexmakerModal {
     key: string,
     value: string | undefined,
   ): string {
-    const lineRegex = new RegExp(`^${escapeRegex(key)}:.*$`, "m");
+    const lineRegex = new RegExp(`^${escapeRegex(key)}:[^\\r\\n]*`, "m");
     const hasKey = lineRegex.test(frontmatter);
     if (!value) {
       if (!hasKey) return frontmatter;
-      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*\\n?`, "m"), "");
+      return frontmatter.replace(new RegExp(`^${escapeRegex(key)}:.*(?:\\r?\\n)?`, "m"), "");
     }
     const line = `${key}: ${value}`;
     if (hasKey) return frontmatter.replace(lineRegex, () => line);
-    return frontmatter.replace(/\n---$/, () => `\n${line}\n---`);
+    return frontmatter.replace(/(\r?\n)---$/, (_m, eol: string) => `${eol}${line}${eol}---`);
   }
 
   private extractFrontmatter(content: string): string {
-    const match = content.match(/^---\n[\s\S]*?\n---/);
+    const match = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?=\r?\n|$)/.exec(content);
     return match ? match[0] : "";
   }
+}
 
-  private extractPreamble(content: string, frontmatter: string): string {
-    const afterFm = frontmatter ? content.slice(frontmatter.length) : content;
-    // Find first markdown table row (line starting with |)
-    const tableMatch = afterFm.match(/^[ \t]*\|/m);
-    if (!tableMatch || tableMatch.index === undefined) return "";
-    return afterFm.slice(0, tableMatch.index).trim();
-  }
-
-  private buildContent(
-    frontmatter: string,
-    preamble: string,
-    entries: RandomTableEntry[],
-    linkedFolder?: string,
-    suffix?: string,
-  ): string {
-    const rows = entries
-      .map((e) => {
-        const cell = linkedFolder || e.isLink ? `[[${e.result}]]` : e.result;
-        return `| ${escapeTableCell(cell)} | ${e.weight} |`;
-      })
-      .join("\n");
-    const tableBlock = `| Result | Weight |\n|--------|--------|\n${rows}`;
-    const parts: string[] = [];
-    if (frontmatter) parts.push(frontmatter);
-    if (preamble) parts.push(preamble);
-    parts.push(tableBlock);
-    let result = parts.join("\n\n") + "\n";
-    if (suffix) result += "\n" + suffix;
-    return result;
-  }
+/** A typed weight: a number ≥ 0 (decimals too, T10); anything else counts as 1. */
+function readWeight(value: string): number {
+  const n = readTableWeight(value);
+  return Number.isFinite(n) ? n : 1;
 }

@@ -356,13 +356,37 @@
     cursor: grabbing;
 }
 
-/* SVG overlay for paths, coordinate labels and elevated icons */
+/* SVG overlay for paths: one user unit = 1em of the grid (lattice
+   polylines placed in em), so zoom bakes resize it without a rebuild. */
 .duckmage-path-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 5;
+}
+
+/* Elevated override icons and GM icons, over the paths (px, rebuilt on
+   zoom bakes). Same z-index as the paths; later in the DOM, so on top. */
+.duckmage-path-icons-svg {
     position: absolute;
     top: 0;
     left: 0;
     pointer-events: none;
     z-index: 5;
+}
+
+/* The path tool's anchor handles and active-end dot: over the paths AND
+   the icon layer (elevated override and GM icons), so no icon hides a
+   handle (#48). Placed in em like the paths. */
+.duckmage-path-handles-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 6;
 }
 
 /* SVG overlay for faction color fills — sits below paths */
@@ -420,7 +444,11 @@
     height: calc(var(--hex-size) * 2);
     clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
     background: var(--background-secondary);
-    border: 2px solid var(--background-modifier-border);
+    /* No border: a box border under a hexagon clip-path survives only as
+       bars on the straight sides and specks at the tips (and insets the
+       fill). The gap between hexes (--duckmage-hex-gap) draws an even
+       outline instead. */
+    border: none;
     margin: var(--duckmage-hex-gap, 0.15em);
     display: flex;
     align-items: center;
@@ -652,14 +680,14 @@ div.duckmage-hex-terrain-icon {
 /* ── Neighbour hex preview widget ──────────────────────────────────── */
 .duckmage-neighbor-widget {
     position: relative;
-    width: 60px;
-    height: 51px;
+    width: var(--duckmage-nb-w, 80px);
+    height: var(--duckmage-nb-h, 77px);
     flex-shrink: 0;
 }
 .duckmage-neighbor-tile {
     position: absolute;
-    width: 16px;
-    height: 16px;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background-color: var(--duckmage-bg, var(--background-modifier-border));
     cursor: pointer;
@@ -672,7 +700,8 @@ div.duckmage-hex-terrain-icon {
 }
 .duckmage-neighbor-tile:hover {
     border-color: var(--interactive-accent);
-    transform: scale(1.25);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+    transform: scale(1.1);
     z-index: 1;
 }
 .duckmage-neighbor-tile-offmap {
@@ -682,8 +711,8 @@ div.duckmage-hex-terrain-icon {
 }
 .duckmage-neighbor-centre {
     position: absolute;
-    width: 12px;
-    height: 12px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: var(--background-modifier-border);
     box-sizing: border-box;
@@ -706,12 +735,18 @@ div.duckmage-hex-terrain-icon {
     max-height: min(90vh, 860px);
     max-width: none;
     min-width: 320px;
-    min-height: 420px;
+    min-height: min(420px, calc(100vh - 16px));
+    /* A flex column whose content may shrink: the content scrolls inside
+       the modal, and the modal stays inside the window (fresh-eyes
+       2026-10-13 F6; HexmakerModal.clampToViewport keeps its top in reach). */
+    display: flex;
+    flex-direction: column;
 }
 .duckmage-editor-modal-drag .modal-content {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
+    min-height: 0;
 }
 .duckmage-editor-title-drag {
     cursor: move;
@@ -1060,25 +1095,6 @@ input.duckmage-input-error {
     background: var(--background-modifier-error);
 }
 
-/* ── Terrain entry editor modal buttons ──────────────────────────── */
-.duckmage-tee-buttons {
-    display: flex;
-    gap: 0.5em;
-    flex-wrap: wrap;
-    margin-top: 1.25em;
-    padding-top: 0.75em;
-    border-top: 1px solid var(--background-modifier-border);
-}
-.duckmage-btn-danger {
-    color: var(--text-error);
-    border-color: var(--background-modifier-border);
-    margin-left: auto;
-}
-.duckmage-btn-danger:hover {
-    background: var(--background-modifier-error);
-    border-color: var(--text-error);
-}
-
 /* Link sections */
 .duckmage-editor-link-section {
     margin-bottom: 0.85em;
@@ -1161,6 +1177,13 @@ input.duckmage-input-error {
 .duckmage-link-combo-create {
     color: var(--interactive-accent);
     border-top: 1px solid var(--background-modifier-border-focus);
+}
+
+/* "Edit the town template…" at the foot of a link field's list (SX1). */
+.duckmage-link-combo-template {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    border-top: 1px solid var(--background-modifier-border);
 }
 
 .duckmage-link-combo-empty {
@@ -1688,6 +1711,45 @@ input.duckmage-input-error {
     max-width: 54px;
 }
 
+/* The Paint icon picker: whole tiles only (fresh-eyes F6: names cut to
+   "evergree…" and a half-hidden last row took a click). Fixed-size tiles
+   in a grid whose height is a whole number of rows, snapping row by row
+   as it scrolls, so no row is ever cut at the edge; names wrap like the
+   token picker's (full name on hover). */
+.duckmage-icon-picker.duckmage-icon-picker-full {
+    --duckmage-icon-tile-w: 88px;
+    --duckmage-icon-tile-h: 86px;
+    --duckmage-icon-tile-gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, var(--duckmage-icon-tile-w));
+    grid-auto-rows: var(--duckmage-icon-tile-h);
+    gap: var(--duckmage-icon-tile-gap);
+    height: calc(5 * var(--duckmage-icon-tile-h) + 4 * var(--duckmage-icon-tile-gap));
+    max-height: none;
+    padding: 0;
+    overflow-y: auto;
+    scroll-snap-type: y mandatory;
+}
+.duckmage-icon-picker-full .duckmage-icon-option {
+    width: var(--duckmage-icon-tile-w);
+    min-width: 0;
+    height: var(--duckmage-icon-tile-h);
+    box-sizing: border-box;
+    justify-content: flex-start;
+    scroll-snap-align: start;
+}
+.duckmage-icon-picker-full .duckmage-icon-option-name {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+    text-overflow: clip;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
 /* Selected state */
 .duckmage-icon-option.is-selected {
     border-color: var(--interactive-accent);
@@ -1716,9 +1778,514 @@ input.duckmage-input-error {
     min-height: 0;
 }
 .duckmage-token-modal .duckmage-icon-picker-inline {
-    height: 150px;
+    height: 220px;
     max-height: none;
     flex-shrink: 0;
+    resize: vertical; /* big token libraries: drag the bottom edge to see more */
+    min-height: 120px;
+}
+
+/* Inline icon grids elsewhere can also be dragged taller. */
+.duckmage-icon-picker-inline {
+    resize: vertical;
+    min-height: 90px;
+}
+
+/* ── Icon filter bar (search + pack tabs) above icon grids ───────────── */
+.duckmage-icon-filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    margin-bottom: 0.4em;
+}
+
+.duckmage-icon-filter-search {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.duckmage-icon-filter-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25em;
+}
+
+.duckmage-icon-filter-tab {
+    font-size: var(--font-ui-smaller);
+    padding: 0.15em 0.6em;
+    height: auto;
+}
+
+.duckmage-icon-filter-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Places sub-groups (Settlements, Castles…): a quieter second row of chips. */
+.duckmage-icon-filter-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2em;
+    flex-basis: 100%;
+}
+
+.duckmage-icon-filter-kind {
+    font-size: var(--font-ui-smaller);
+    padding: 0.05em 0.5em;
+    height: auto;
+    box-shadow: none;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.duckmage-icon-filter-kind.is-active {
+    border-color: var(--interactive-accent);
+    color: var(--text-normal);
+}
+
+
+
+/* ── Add palette modal ──────────────────────────────────────────────── */
+.duckmage-add-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.duckmage-add-palette-option {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35em;
+    height: auto;
+    padding: 0.5em 0.75em;
+    text-align: left;
+    white-space: normal;
+}
+
+.duckmage-add-palette-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-add-palette-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-add-palette-swatches {
+    display: flex;
+    gap: 2px;
+}
+
+.duckmage-add-palette-swatch {
+    width: 14px;
+    height: 10px;
+    border-radius: 2px;
+    background: var(--duckmage-bg, transparent);
+}
+
+/* ── New map / submap setup modal ───────────────────────────────────── */
+.duckmage-setup-modal {
+    width: min(860px, 94vw);
+}
+
+.duckmage-setup-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 1em 1.25em;
+}
+
+.duckmage-setup-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.55em;
+    min-width: 0;
+}
+
+.duckmage-setup-row {
+    display: grid;
+    grid-template-columns: 7.5em minmax(0, 1fr);
+    align-items: start;
+    gap: 0.5em;
+}
+
+.duckmage-setup-label {
+    padding-top: 0.35em;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.duckmage-setup-control {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em;
+    min-width: 0;
+}
+
+.duckmage-setup-name {
+    flex: 1 1 12em;
+}
+
+.duckmage-setup-size-presets {
+    display: flex;
+    gap: 0.25em;
+}
+
+.duckmage-setup-size-presets button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+.duckmage-setup-size-custom {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+}
+
+.duckmage-setup-size-custom input {
+    width: 4.5em;
+}
+
+/* The list grows to its content: no scroller inside the scrolling form
+   (fresh-eyes F8 / critic C8: biome generators were missed in a 15em
+   box, and the picked card scrolled out of sight). */
+.duckmage-setup-generators {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(12em, 1fr));
+    gap: 0.4em;
+    width: 100%;
+}
+
+.duckmage-setup-gen {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2em;
+    height: auto;
+    padding: 0.45em 0.6em;
+    text-align: left;
+    white-space: normal;
+}
+
+.duckmage-setup-gen.is-active {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: -2px;
+}
+
+.duckmage-setup-gen-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-setup-gen-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-setup-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4em;
+}
+
+.duckmage-setup-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4em;
+    width: 320px;
+}
+
+/* Submap preview framed by the parent's neighbours: NW N NE / W [map] E / SW S SE */
+.duckmage-setup-context {
+    display: grid;
+    grid-template-columns: minmax(3.5em, auto) auto minmax(3.5em, auto);
+    align-items: center;
+    justify-items: center;
+    gap: 0.25em;
+}
+
+.duckmage-setup-context.is-empty {
+    grid-template-columns: auto;
+}
+
+.duckmage-setup-context.is-empty > .duckmage-setup-ctx:not(.duckmage-setup-ctx-C) {
+    display: none;
+}
+
+.duckmage-setup-ctx {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.15em;
+    max-width: 6em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    text-align: center;
+    overflow-wrap: anywhere;
+}
+
+.duckmage-setup-ctx-swatch {
+    width: 1.4em;
+    height: 1.2em;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    background: var(--duckmage-bg, transparent);
+}
+
+.duckmage-setup-canvas {
+    max-width: 100%;
+    border-radius: 6px;
+    background: var(--background-secondary);
+}
+
+.duckmage-setup-seed-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-setup-seed {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    font-family: var(--font-monospace);
+}
+
+.duckmage-setup-status {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    text-align: center;
+}
+
+.duckmage-setup-status.mod-warning {
+    color: var(--text-warning);
+}
+
+.duckmage-setup-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5em;
+}
+
+/* ── Palette editor page ────────────────────────────────────────────── */
+.duckmage-palette-editor {
+    padding: 1em 1.25em 3em;
+}
+
+.duckmage-pe-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+.duckmage-pe-palette-select {
+    font-weight: var(--font-semibold);
+    min-width: 12em;
+}
+
+.duckmage-pe-search {
+    margin-left: auto;
+    min-width: 12em;
+}
+
+.duckmage-pe-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 0.4em;
+}
+
+.duckmage-pe-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.duckmage-pe-table th {
+    text-align: left;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    font-weight: var(--font-normal);
+    padding: 0.25em 0.4em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-pe-table td {
+    padding: 0.2em 0.4em;
+    border-bottom: 1px solid var(--background-modifier-border-hover);
+    vertical-align: middle;
+}
+
+.duckmage-pe-table input[type="text"],
+.duckmage-pe-table select {
+    width: 100%;
+    min-width: 7em;
+}
+
+.duckmage-pe-table input[type="color"] {
+    width: 2.2em;
+    height: 1.8em;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+}
+
+.duckmage-pe-table select.is-unset {
+    color: var(--text-faint);
+}
+
+.duckmage-pe-handle {
+    cursor: grab;
+    color: var(--text-faint);
+    width: 1.2em;
+    user-select: none;
+}
+
+.duckmage-pe-table tr.is-dragging {
+    opacity: 0.45;
+}
+
+.duckmage-pe-table tr.is-drop-target {
+    box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+
+.duckmage-pe-icon {
+    width: 2.4em;
+    height: 2.2em;
+    padding: 0.15em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Icon preview sits on the terrain's colour, tinted, as the map draws it. */
+/* Scoped twice over so it beats the theme's button background rules. */
+.duckmage-palette-editor .duckmage-pe-table button.duckmage-pe-icon {
+    background-color: var(--duckmage-pe-fill, var(--interactive-normal));
+    box-shadow: none;
+}
+
+.duckmage-pe-icon-img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Tint swatch reads as "off" when tint is disabled. */
+.duckmage-pe-tint input[type="color"]:disabled {
+    opacity: 0.25;
+    cursor: default;
+}
+
+.duckmage-pe-tint {
+    white-space: nowrap;
+}
+
+.duckmage-pe-delete {
+    padding: 0 0.6em;
+    color: var(--text-muted);
+}
+
+.duckmage-pe-delete.is-armed {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+.duckmage-pe-size {
+    white-space: nowrap;
+}
+
+.duckmage-pe-size input {
+    width: 4em;
+}
+
+.duckmage-pe-add-row {
+    display: flex;
+    gap: 0.5em;
+    margin: 0.5em 0 1em;
+}
+
+.duckmage-pe-field {
+    display: grid;
+    grid-template-columns: 10em minmax(0, 22em);
+    align-items: center;
+    gap: 0.25em 0.75em;
+}
+
+.duckmage-pe-field .setting-item-description {
+    grid-column: 2;
+}
+
+.duckmage-pe-defaults td.mod-warning {
+    color: var(--text-warning);
+}
+
+/* Onboarding: "What will you map?" checkboxes. */
+.duckmage-wizard-kinds {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5em;
+    margin-top: 1em;
+}
+
+.duckmage-wizard-kind {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6em;
+    cursor: pointer;
+}
+
+.duckmage-wizard-kind input {
+    margin-top: 0.25em;
+}
+
+.duckmage-wizard-kind-title {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-wizard-kind-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+/* "Default for <terrain>" checkbox at the end of a setup row. */
+.duckmage-setup-default {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.duckmage-setup-generators + .duckmage-setup-default,
+.duckmage-setup-control > .duckmage-setup-default:first-child {
+    margin-left: 0;
+}
+
+.duckmage-submap-new-row,
+.duckmage-map-guided-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.4em 0 0.8em;
+}
+
+@media (max-width: 700px) {
+    .duckmage-setup-layout {
+        grid-template-columns: 1fr;
+    }
+    .duckmage-setup-preview {
+        width: 100%;
+    }
 }
 
 /* Token modal title row with inline preview */
@@ -2125,10 +2692,17 @@ input.duckmage-input-error {
     margin-right: 4px;
     vertical-align: middle;
     flex-shrink: 0;
+    background-color: var(--duckmage-swatch-color, transparent);
 }
 
 .duckmage-hex-table-empty {
     color: var(--text-faint);
+}
+
+/* Terrain/type shown from the map's base terrain (hex has none of its own) */
+.duckmage-hex-table-base-terrain {
+    color: var(--text-muted);
+    font-style: italic;
 }
 
 .duckmage-hex-table-cell-clickable {
@@ -2254,6 +2828,20 @@ tr.duckmage-row-hidden {
 
 .duckmage-terrain-filter-row-indented {
     padding-left: 14px;
+}
+
+/* Type rows filter by terrain type; styled as headings over their terrains */
+.duckmage-terrain-filter-type-row {
+    margin-top: 4px;
+    font-weight: 600;
+}
+
+.duckmage-terrain-filter-section-label {
+    margin-top: 8px;
+    font-size: 0.85em;
+    color: var(--text-faint);
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 6px;
 }
 
 .duckmage-terrain-filter-btns {
@@ -2409,15 +2997,7 @@ tr.duckmage-row-hidden {
     background: var(--background-secondary);
 }
 
-.duckmage-table-picker-topbar {
-    display: flex;
-    margin-bottom: 10px;
-}
 
-.duckmage-table-picker-view-btn {
-    font-size: var(--font-ui-small);
-    padding: 3px 8px;
-}
 
 .duckmage-table-picker-combo {
     margin-bottom: 0;
@@ -2446,43 +3026,12 @@ tr.duckmage-row-hidden {
     font-weight: 500;
 }
 
-.duckmage-submap-create-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin-bottom: 0.4em;
-}
 
-.duckmage-submap-create-label {
-    min-width: 56px;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
 
-.duckmage-submap-create-name {
-    flex: 1;
-}
 
-.duckmage-submap-create-sep {
-    color: var(--text-muted);
-}
 
-.duckmage-submap-create-palette {
-    flex: 1;
-}
 
-.duckmage-submap-terrain-heading {
-    margin: 0.6em 0 0.3em;
-    font-size: 0.85em;
-    color: var(--text-muted);
-    font-weight: 500;
-}
 
-.duckmage-submap-create-btn {
-    width: 100%;
-    margin-top: 0.5em;
-}
 
 .duckmage-table-picker-new-heading {
     margin: 16px 0 8px;
@@ -2590,11 +3139,7 @@ tr.duckmage-row-hidden {
     border-radius: 6px;
     margin-bottom: 8px;
 }
-.duckmage-picker-list-empty {
-    padding: 8px 12px;
-    color: var(--text-muted);
-    font-size: var(--font-ui-small);
-}
+
 
 .duckmage-rt-list-item {
     padding: 5px 12px;
@@ -3214,6 +3759,31 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 .duckmage-table-editor-weight {
     width: 64px;
 }
+/* Column headers above the entries: laid out like a row. */
+.duckmage-table-editor-cols {
+    align-items: baseline;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-table-editor-cols .duckmage-table-editor-range {
+    font-size: inherit;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-result {
+    flex: 1;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-weight {
+    flex-shrink: 0;
+}
+.duckmage-table-editor-cols .duckmage-table-editor-col-spacer {
+    visibility: hidden;
+}
+.duckmage-table-editor-add-weight {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
 .duckmage-table-editor-del {
     background: none;
     border: none;
@@ -3234,12 +3804,51 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     font-size: 0.85em;
     margin-top: 4px;
 }
-.duckmage-table-editor-footer {
+/* A problem with one form field, said under it (src/ui/fieldError.ts). */
+.duckmage-field-error {
+    flex-basis: 100%;
+    color: var(--text-error);
+    font-size: var(--font-ui-smaller);
+    margin-top: 4px;
+}
+input.duckmage-field-invalid,
+input.duckmage-field-invalid:focus {
+    border-color: var(--text-error);
+    box-shadow: 0 0 0 1px var(--text-error);
+}
+.duckmage-table-editor-warning,
+.duckmage-rt-banner {
+    border: 1px solid var(--background-modifier-border);
+    border-left: 3px solid var(--text-warning);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 0.9em;
+    color: var(--text-normal);
+}
+.duckmage-rt-banner-list {
+    margin: 0 0 4px;
+    padding-left: 18px;
+}
+.duckmage-rt-banner-btns {
     display: flex;
-    justify-content: flex-end;
-    margin-top: 14px;
-    padding-top: 10px;
-    border-top: 1px solid var(--background-modifier-border);
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+.duckmage-roll-face {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 2px;
+}
+.duckmage-table-editor-range {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
 }
 
 /* ── Random table editor — name row ────────────────────────────────────────── */
@@ -3379,13 +3988,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     margin-top: 6px;
 }
 
-/* Confirm delete modal */
-.duckmage-confirm-btn-row {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-}
-
 /* ── Region button & modal ────────────────────────────────────────────────── */
 
 /* Region selector button — always-visible top-left area, after ⊞ and 🎲 */
@@ -3442,6 +4044,75 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     opacity: 1;
     color: var(--text-normal);
     border-color: var(--interactive-accent);
+}
+
+/* Up to parent map — same look as Back. */
+.duckmage-map-up-btn {
+    height: 26px;
+    font-size: 0.78em;
+    padding: 0 8px;
+    opacity: 0.75;
+    background: transparent;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.duckmage-map-up-btn:hover {
+    opacity: 1;
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+
+/* Breadcrumb of parent maps before the map button: sector › system › */
+.duckmage-map-crumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    pointer-events: auto;
+    max-width: 40vw;
+    overflow: hidden;
+}
+.duckmage-map-crumb {
+    height: 26px;
+    font-size: 0.78em;
+    padding: 0 6px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 14em;
+}
+.duckmage-map-crumb:hover {
+    color: var(--text-normal);
+    text-decoration: underline;
+}
+.duckmage-map-crumb-sep {
+    color: var(--text-faint);
+    font-size: 0.85em;
+}
+
+/* Submap marker: a small ring at the top of hexes that drill down. */
+.duckmage-hex-submap-badge {
+    position: absolute;
+    top: 0.3em;
+    width: 0.75em;
+    height: 0.75em;
+    border-radius: 50%;
+    border: 2px solid var(--interactive-accent);
+    background: color-mix(in srgb, var(--background-primary) 60%, transparent);
+    box-sizing: border-box;
+    cursor: pointer;
+    z-index: 2;
+}
+.duckmage-hex-submap-badge:hover {
+    background: var(--interactive-accent);
+    transform: scale(1.25);
 }
 
 /* Faction hover tooltip */
@@ -3568,11 +4239,10 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 
 .duckmage-region-palette-badge {
     font-size: 0.75em;
-    color: var(--text-muted);
-    background: var(--background-modifier-hover);
-    border-radius: 3px;
+    color: var(--text-faint);
     padding: 1px 5px;
     margin-left: auto;
+    white-space: nowrap;
 }
 
 .duckmage-palette-mgmt-list {
@@ -3653,30 +4323,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     color: var(--text-muted);
 }
 
-/* Inline delete confirmation row */
-.duckmage-map-item-confirming {
-    cursor: default;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 7px 10px;
-}
-
-.duckmage-map-delete-warning {
-    flex: 1 1 100%;
-    font-size: 0.85em;
-    color: var(--text-muted);
-}
-
-.duckmage-map-confirm-btn {
-    padding: 3px 10px;
-    font-size: 0.82em;
-}
-
-.duckmage-map-cancel-btn {
-    padding: 3px 10px;
-    font-size: 0.82em;
-}
-
 .duckmage-region-row {
     display: flex;
     gap: 6px;
@@ -3724,20 +4370,18 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     padding: 4px 8px;
     border-bottom: 1px solid var(--background-modifier-border);
 }
-.duckmage-rt-mode-tab {
-    background: none;
-    border: 1px solid transparent;
-    border-radius: 4px;
+/* Same look as the icon pickers' pack tabs: the shown mode has the accent
+   fill. (The old plain style lost to Obsidian's button fill, so the mode
+   NOT shown looked selected: fresh-eyes F12.) */
+.duckmage-rt-mode-tabs .duckmage-rt-mode-tab {
     padding: 2px 10px;
     font-size: 0.85em;
-    color: var(--text-muted);
+    height: auto;
     cursor: pointer;
-    box-shadow: none;
 }
-.duckmage-rt-mode-tab.is-active {
-    border-color: var(--background-modifier-border);
-    color: var(--text-normal);
-    background: var(--background-secondary);
+.duckmage-rt-mode-tabs .duckmage-rt-mode-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
 }
 
 /* Workflow list item */
@@ -4001,11 +4645,7 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     min-width: 320px;
 }
 
-.duckmage-faction-picker-empty {
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 8px 0;
-}
+
 
 /* Hidden native color picker — triggered via .click() */
 .duckmage-faction-color-input {
@@ -4151,13 +4791,6 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     line-height: 1.5;
     color: var(--text-normal);
     white-space: pre-wrap;
-}
-
-.duckmage-faction-editor-btns {
-    display: flex;
-    gap: 8px;
-    margin-top: 12px;
-    justify-content: flex-end;
 }
 
 .duckmage-pattern-preview-wrap {
@@ -4542,6 +5175,48 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     line-height: 1.4;
 }
 
+/* ── What are you mapping? (map scales, one card per scale) ── */
+
+.duckmage-wizard-scale-row {
+    flex-wrap: wrap;
+}
+
+.duckmage-wizard-scale-btn {
+    min-width: 150px;
+}
+
+/* Grid size back to the scale's default. */
+.duckmage-wizard-size-reset {
+    padding: 2px 8px;
+    margin-left: 4px;
+}
+
+/* Setup wizard Advanced: engine tuning sliders (owner 2026-10-12), on the shared LabeledSlider. */
+.duckmage-wizard-tuning {
+    margin-bottom: 8px;
+}
+
+/* A map scale's own choice (Biomes: Make every region now), wizard and New map. */
+.duckmage-scale-choice {
+    margin-bottom: 8px;
+}
+
+.duckmage-scale-choice-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* New map: the scale cards, smaller than the wizard's. */
+.duckmage-setup-scale .duckmage-wizard-scale-row {
+    gap: 6px;
+}
+
+.duckmage-setup-scale .duckmage-wizard-scale-btn {
+    min-width: 120px;
+    padding: 6px 10px;
+}
+
 /* ── Palette select ── */
 
 .duckmage-wizard-select {
@@ -4876,8 +5551,8 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     width: 100%;
 }
 
-/* Token modal styles */
-.duckmage-token-modal-buttons {
+/* A row of action buttons inside a modal's content (not its footer: src/ui/footer.ts). */
+.duckmage-action-row {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
@@ -5007,6 +5682,13 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
     color: var(--text-accent);
 }
 
+/* Between the items about what's under the pointer and the tool's own. */
+.duckmage-painter-ctx-separator {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--background-modifier-border);
+}
+
 /* ── Stagger offset toggle button ────────────────────────────────────────── */
 
 .duckmage-stagger-toggle {
@@ -5095,9 +5777,4155 @@ tr:hover .duckmage-rt-entry-copy-btn:hover {
 /* Inline numeric readout shown beside a settings slider. */
 .duckmage-slider-value {
     display: inline-block;
-    min-width: 2.5em;
+    min-width: 3em;
     margin-right: 8px;
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--text-muted);
+}
+
+/* ── Maps modal: Generator tab (wave function collapse) ───────────────────── */
+
+.duckmage-wfc-section {
+    margin: 0.75em 0;
+}
+
+.duckmage-wfc-preview {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-s);
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-heading {
+    margin: 1.2em 0 0.2em;
+    padding-bottom: 0.2em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* The page's sections are shared Folds (src/ui/disclosure.ts): a heading look. */
+.duckmage-fold > .duckmage-wfc-heading {
+    font-weight: var(--font-semibold);
+}
+
+.duckmage-wfc-seed {
+    width: 120px;
+}
+
+.duckmage-wfc-num {
+    width: 60px;
+}
+
+.duckmage-wfc-toggle {
+    gap: 0.5em;
+    cursor: pointer;
+}
+
+.duckmage-wfc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35em 0.75em;
+}
+
+.duckmage-wfc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    cursor: pointer;
+}
+
+.duckmage-wfc-terrains {
+    display: grid;
+    gap: 0.25em;
+}
+
+.duckmage-wfc-terrain-row {
+    display: grid;
+    /* Terrain, Mix, Min, Max, Example, Map, × (Near is under Advanced → Engine tuning) */
+    grid-template-columns: minmax(7em, 1.3fr) minmax(8em, 2fr) 3.75em 3.75em 3.5em 5.5em 1.8em;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-wfc-terrain-head {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.duckmage-wfc-terrain-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-wfc-swatch {
+    flex: none;
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 2px;
+    background: var(--duckmage-wfc-swatch, var(--background-modifier-border));
+}
+
+.duckmage-wfc-mix {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+.duckmage-wfc-mix input[type="range"] {
+    flex: 1;
+    min-width: 0;
+}
+
+.duckmage-wfc-filter {
+    width: 100%;
+    margin: 0.35em 0;
+}
+
+/* Suggested impassable terrain under the Impassable chips: dashed, to read
+   as "not added yet". */
+.duckmage-wfc-hint:empty {
+    display: none;
+}
+
+.duckmage-wfc-hint .duckmage-region-row {
+    margin: 0.3em 0 0;
+}
+
+.duckmage-wfc-hint-chip {
+    padding: 0.05em 0.5em;
+    border: 1px dashed var(--background-modifier-border-hover);
+    border-radius: var(--radius-s);
+    color: var(--text-muted);
+    cursor: help;
+}
+
+.duckmage-wfc-matches:empty {
+    display: none;
+}
+
+.duckmage-wfc-chip.is-selected {
+    padding: 0.1em 0.2em 0.1em 0.5em;
+    border-radius: var(--radius-s);
+    background: var(--background-modifier-hover);
+}
+
+button.duckmage-wfc-chip {
+    padding: 0.15em 0.6em;
+    height: auto;
+}
+
+.duckmage-wfc-chip-remove {
+    padding: 0 0.35em;
+    height: auto;
+    box-shadow: none;
+    background: transparent;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-page {
+    padding: 1em 1.5em 3em;
+}
+
+/* The view's content element carries both classes. It is the container the
+   narrow-pane @container rule below measures. */
+.duckmage-wfc-page.duckmage-wfc-tab {
+    container-type: inline-size;
+}
+
+.duckmage-wfc-page .duckmage-wfc-layout {
+    max-width: 1280px;
+    margin: 0 auto;
+}
+
+/* Controls left, preview right. The preview column sticks to the top of the
+   scrolling view so changes made far down the page are visible right away. */
+.duckmage-wfc-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 42%);
+    gap: 2em;
+    align-items: start;
+}
+
+.duckmage-wfc-side {
+    position: sticky;
+    top: 0;
+    max-height: 100vh;
+    overflow-y: auto;
+}
+
+.duckmage-wfc-side .duckmage-wfc-preview {
+    width: 100%;
+}
+
+/* Narrow panes: one column, with the preview pinned to the top (capped in
+   height so the controls keep most of the pane; its own rows scroll). */
+@container (max-width: 760px) {
+    .duckmage-wfc-layout {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1em;
+    }
+
+    .duckmage-wfc-side {
+        order: -1;
+        z-index: 2;
+        max-height: 45vh;
+        padding-bottom: 0.5em;
+        background: var(--background-primary);
+        border-bottom: 1px solid var(--background-modifier-border);
+    }
+
+    .duckmage-wfc-side .duckmage-wfc-preview {
+        width: auto;
+        max-width: 100%;
+        max-height: 28vh;
+        margin: 0 auto;
+    }
+}
+
+.duckmage-wfc-share {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.duckmage-wfc-tag {
+    flex: none;
+    font-size: 0.75em;
+    color: var(--text-faint);
+}
+
+.duckmage-wfc-share-change {
+    margin-left: 0.35em;
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-share-change.is-up {
+    color: var(--color-green);
+}
+
+.duckmage-wfc-share-change.is-down {
+    color: var(--color-red);
+}
+
+/* The page's file list: Generators and Regions tabs (src/worldgen/GeneratorLibrary.ts). */
+.duckmage-wfc-library {
+    margin-bottom: 0.75em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-library-top {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    padding: 0.4em 0.5em;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-wfc-library-tabs {
+    display: flex;
+    gap: 0.25em;
+}
+
+button.duckmage-wfc-library-tab {
+    display: inline-flex;
+    gap: 0.4em;
+    height: auto;
+    padding: 0.25em 0.7em;
+    box-shadow: none;
+    background: transparent;
+    color: var(--text-muted);
+}
+
+button.duckmage-wfc-library-tab.is-active {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+    font-weight: 600;
+}
+
+.duckmage-wfc-library-count {
+    color: var(--text-faint);
+    font-weight: normal;
+}
+
+.duckmage-wfc-library-filter {
+    flex: 1;
+    min-width: 6em;
+}
+
+.duckmage-wfc-library-list {
+    max-height: 15em;
+    overflow-y: auto;
+}
+
+.duckmage-wfc-library-row {
+    display: grid;
+    align-items: center;
+    gap: 0.75em;
+    padding: 0.25em 0.6em;
+    cursor: pointer;
+}
+
+.duckmage-wfc-library-table.is-generators .duckmage-wfc-library-row {
+    /* Tick, Name, From, Palette, Terrains, Created */
+    grid-template-columns: 1.2em minmax(8em, 1.4fr) minmax(6em, 1.4fr) minmax(4em, 0.8fr) 4.5em 6em;
+}
+
+.duckmage-wfc-library-table.is-regions .duckmage-wfc-library-row {
+    /* Tick, Region, Size, Palette, Generators */
+    grid-template-columns: 1.2em minmax(8em, 2fr) 5em minmax(4em, 1fr) 7.5em;
+}
+
+.duckmage-wfc-library-row > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-wfc-library-row.is-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    cursor: default;
+    background: var(--background-secondary);
+    font-size: 0.75em;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.duckmage-wfc-library-row:not(.is-head):hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-library-row.is-checked {
+    background: var(--background-modifier-active-hover);
+}
+
+.duckmage-wfc-library-row.is-current > span:first-of-type {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+
+
+
+.duckmage-wfc-library-actions {
+    margin: 0;
+    padding: 0.4em 0.5em;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-wfc-library-actions > .duckmage-map-origin-desc:first-child {
+    flex: 1;
+}
+
+.duckmage-wfc-library-note {
+    flex-basis: 100%;
+}
+
+/* Map section rows: labels line up. */
+.duckmage-wfc-map-row > .duckmage-map-origin-label:first-child {
+    min-width: 4em;
+}
+
+/* Beats .duckmage-region-row input[type="number"], which is too narrow for a seed. */
+.duckmage-wfc-map-row input.duckmage-wfc-seed {
+    width: 9em;
+}
+
+.duckmage-wfc-map-row input.duckmage-wfc-num {
+    width: 4.5em;
+}
+
+.duckmage-wfc-presets {
+    margin-bottom: 0.5em;
+}
+
+/* Region influence sliders on combined generators (always add up to 100%). */
+.duckmage-wfc-influence {
+    margin: 0.5em 0;
+}
+
+/* The shared zero-sum sliders (src/ui/shareSliders.ts): name, slider,
+   % readout, then the caller's own cells. Always add up to 100%. */
+.duckmage-share-sliders-row {
+    display: grid;
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em auto;
+    align-items: center;
+    gap: 0.6em;
+    margin: 0.2em 0;
+}
+
+.duckmage-share-sliders-row.is-head {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+.duckmage-share-sliders-row.is-missing .duckmage-share-sliders-name {
+    color: var(--text-faint);
+    font-style: italic;
+}
+
+.duckmage-share-sliders-name {
+    display: flex;
+    align-items: center;
+    gap: 0.4em;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.duckmage-share-sliders-name > span:last-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.duckmage-share-sliders-row input[type="range"] {
+    width: 100%;
+}
+
+.duckmage-share-sliders-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Which side of the map a blended source leans toward: a 3×3 compass. */
+.duckmage-wfc-compass {
+    display: grid;
+    grid-template-columns: repeat(3, 1.4em);
+    grid-template-rows: repeat(3, 1.4em);
+    gap: 1px;
+}
+
+.duckmage-wfc-compass-point {
+    width: 1.4em;
+    height: 1.4em;
+    min-width: 0;
+    padding: 0;
+    font-size: 0.75em;
+    line-height: 1;
+    box-shadow: none;
+    color: var(--text-muted);
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-compass-point.is-active {
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.duckmage-wfc-preset-size {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+.duckmage-wfc-presets .duckmage-wfc-chip.is-selected {
+    padding: 0.15em 0.6em;
+    color: var(--text-on-accent);
+    background: var(--interactive-accent);
+}
+
+.duckmage-wfc-presets .duckmage-wfc-chip.is-selected .duckmage-wfc-preset-size {
+    color: inherit;
+}
+
+/* Drag-to-change number inputs (src/worldgen/scrub.ts). Spinners are hidden:
+   dragging replaces them, and a click focuses the field for typing. */
+.duckmage-scrub:not(:focus) {
+    cursor: ns-resize;
+}
+
+.duckmage-scrub::-webkit-inner-spin-button,
+.duckmage-scrub::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.duckmage-scrub.is-scrubbing {
+    cursor: ns-resize;
+    border-color: var(--interactive-accent);
+}
+
+.duckmage-wfc-lock.is-active {
+    color: var(--interactive-accent);
+}
+
+/* Generator page: Paths table. Each route is a two-line card: on/name/route/
+   count/type/placed, then its shape sliders. */
+.duckmage-wfc-paths {
+    display: grid;
+    gap: 0.4em;
+}
+
+.duckmage-wfc-path-row {
+    padding: 0.4em 0.5em;
+    border-radius: var(--radius-s);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.duckmage-wfc-path-row:hover {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-wfc-paths.is-off .duckmage-wfc-path-row,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-knobs,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-count,
+.duckmage-wfc-path-row.is-off .duckmage-wfc-path-as {
+    opacity: 0.45;
+}
+
+.duckmage-wfc-path-top {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4em 0.8em;
+}
+
+.duckmage-wfc-path-route {
+    flex: 1;
+    min-width: 8em;
+    margin: 0;
+}
+
+.duckmage-wfc-path-count,
+.duckmage-wfc-path-as {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+}
+
+.duckmage-wfc-path-count .duckmage-wfc-num {
+    width: 6.5em;
+}
+
+.duckmage-wfc-path-placed {
+    min-width: 4.5em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.duckmage-wfc-path-placed.is-short {
+    color: var(--color-orange);
+}
+
+.duckmage-wfc-path-knobs {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
+    gap: 0.25em 1em;
+    margin-top: 0.35em;
+}
+
+/* One group per path type: a header with the type's checkbox, summary and
+   sliders for all its routes, and the routes themselves (folded by default). */
+.duckmage-wfc-path-group {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    overflow: hidden;
+}
+
+.duckmage-wfc-path-group-head {
+    padding: 0.4em 0.6em;
+    background: var(--background-secondary);
+}
+
+.duckmage-wfc-path-group-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.duckmage-wfc-path-group-summary {
+    flex: 1;
+    margin: 0;
+}
+
+.duckmage-wfc-path-group-title .duckmage-fold-title {
+    font-weight: 600;
+}
+
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-knobs,
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-fold-title,
+.duckmage-wfc-path-group.is-off .duckmage-wfc-path-group-title .duckmage-wfc-terrain-name {
+    opacity: 0.45;
+}
+
+/* In a group the route name is its own span; the note (why it's off) takes
+   only the space left over, so it never pushes the placed count down. */
+.duckmage-wfc-path-group-body .duckmage-wfc-path-route {
+    min-width: 0;
+}
+
+.duckmage-wfc-path-group-body {
+    display: grid;
+    gap: 0.4em;
+    padding: 0.4em 0.6em 0.6em 1.6em;
+}
+
+/* Neighbouring regions (src/worldgen/world.ts): their terrain shown dimmed
+   past the map's edges, on a layer of its own so the grid doesn't move. */
+.duckmage-region-shadow-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.duckmage-region-shadow-hex {
+    position: absolute;
+    left: var(--duckmage-shadow-x, 0px);
+    top: var(--duckmage-shadow-y, 0px);
+    width: var(--duckmage-shadow-w);
+    height: var(--duckmage-shadow-h);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    background: var(--duckmage-shadow-color, var(--background-secondary));
+    opacity: 0.35;
+    filter: saturate(0.6);
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.duckmage-grid-flat .duckmage-region-shadow-hex {
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+}
+
+.duckmage-region-shadow-hex:hover {
+    opacity: 0.7;
+}
+
+/* Hex flower: a tile past the edge that's in a neighbouring region. */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region {
+    opacity: 0.55;
+    cursor: pointer;
+    outline: 1px dashed var(--text-muted);
+    outline-offset: -2px;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-region:hover {
+    opacity: 0.9;
+}
+
+/* Hex flower: past the edge with no region yet; click to walk into new land. */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new {
+    opacity: 0.45;
+    cursor: pointer;
+    outline: 1px dashed var(--interactive-accent);
+    outline-offset: -2px;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new::after {
+    content: "+";
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--interactive-accent);
+    font-weight: bold;
+}
+
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new:hover {
+    opacity: 0.9;
+}
+
+/* Play mode: the "+" stays, locked (its tooltip says to switch to Build). */
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new.is-locked,
+.duckmage-neighbor-tile.duckmage-neighbor-tile-new.is-locked:hover {
+    opacity: 0.25;
+    cursor: default;
+}
+
+/* "Go to region?" box. */
+.duckmage-region-nav-preview {
+    display: block;
+    max-width: 100%;
+    margin: 0.5em auto;
+    border-radius: var(--radius-s);
+}
+
+/* ── New map / submap setup modal: never taller than the window ──────
+   The form scrolls; the preview stays in view beside it and the
+   Generate / Cancel row is pinned to the bottom (fresh-eyes G11).
+   The draggable-modal rules (.duckmage-editor-modal-drag: 620px, flex
+   column) out-ranked the two-column setup layout, so it is restated at
+   higher specificity. NewMapSetupModal also keeps the modal on screen
+   as it grows (HexmakerModal.keepInViewport). */
+.modal.duckmage-setup-modal.duckmage-editor-modal-drag {
+    width: min(860px, 94vw);
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.duckmage-setup-modal > .modal-content.duckmage-setup-layout {
+    display: grid;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    align-items: start;
+}
+
+.duckmage-setup-layout > .duckmage-setup-preview {
+    position: sticky;
+    top: 0;
+}
+
+.duckmage-setup-layout > .duckmage-setup-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 0.6em 0 0.2em;
+    border-top: 1px solid var(--background-modifier-border);
+    background: var(--modal-background, var(--background-primary));
+}
+
+@media (max-width: 700px) {
+    .duckmage-setup-layout > .duckmage-setup-preview {
+        position: static;
+    }
+}
+
+/* The preview canvas sits in the neighbour frame's centre cell; the 6em cap
+   on the frame's name cells shrank it to a thumbnail (fresh-eyes T8). */
+.duckmage-setup-ctx.duckmage-setup-ctx-C {
+    max-width: 100%;
+}
+
+/* ── Setup wizard: first-map generator choice + preview ─────────────── */
+.duckmage-wizard-generator-body {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1em;
+    align-items: flex-start;
+}
+
+.duckmage-wizard-generator-choices {
+    flex: 1 1 18em;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6em;
+}
+
+.duckmage-wizard-generator-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5em 1em;
+}
+
+.duckmage-wizard-generator-option {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+/* Stays in view beside a long generator list. */
+.duckmage-wizard-generator-preview {
+    position: sticky;
+    top: 0;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4em;
+    width: 240px;
+}
+
+/* Terrain mix: the Near rule field ("volcano 3"). */
+.duckmage-wfc-near {
+    width: 100%;
+    min-width: 0;
+}
+
+/* Near rules (Advanced → Engine tuning): one row per terrain. */
+.duckmage-wfc-near-list {
+    display: grid;
+    grid-template-columns: minmax(7em, max-content) minmax(6em, 12em);
+    gap: 0.25em 0.5em;
+    align-items: center;
+}
+
+.duckmage-wfc-near-row {
+    display: contents;
+}
+
+/* ── Fresh-eyes fixes: hex editor (#38), path tool & navigation (#39) ───── */
+
+/* Hex editor: the link fields sit in a "Linked notes" group, each in its own
+   boxed card so a label can't be read as belonging to the next field (E5). */
+.duckmage-editor-link-group {
+    padding-left: 0.6em;
+    border-left: 2px solid var(--background-modifier-border);
+}
+.duckmage-editor-link-card {
+    padding: 0.45em 0.6em 0.5em;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary-alt);
+}
+.duckmage-editor-link-card .duckmage-link-section-title {
+    color: var(--text-normal);
+}
+
+/* Terrain swatches show the full name on up to two lines instead of
+   "forested ..." (E4); a tile's title holds the name if it's longer still. */
+.duckmage-terrain-picker .duckmage-terrain-option {
+    width: 72px;
+    min-width: 0;
+}
+.duckmage-terrain-picker .duckmage-terrain-option-name {
+    max-width: 100%;
+    min-height: 2.3em;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+/* Two rows of the taller tiles in the hex editor's terrain strip. */
+.duckmage-hex-editor .duckmage-terrain-picker {
+    max-height: 164px;
+}
+/* The full palette (Paint terrain) grows with its modal, which scrolls as
+   one: no short inner scroll box whose last row sits cut off at its edge
+   (fresh-eyes 2026-10-13 F6). */
+.duckmage-hex-editor .duckmage-terrain-picker.duckmage-terrain-picker-full {
+    max-height: none;
+    overflow-y: visible;
+}
+
+/* Random tables with nothing to roll yet: message + a way to fill them (E6). */
+.duckmage-rt-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5em;
+    margin: 0.5em 0;
+}
+
+/* While a drawing tool is active, clicks on a token fall through to the hex
+   under it (a token used to swallow path/paint clicks on its hex, T2). */
+.duckmage-hex-map-viewport.duckmage-draw-mode .duckmage-token {
+    pointer-events: none;
+}
+
+/* Mode bar: which drawing tool is on and how to stop it (T3). Sits above
+   the bottom expand button, centred over the map. */
+.duckmage-mode-bar {
+    position: absolute;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    max-width: calc(100% - 2em);
+    padding: 0.3em 0.4em 0.3em 0.8em;
+    border-radius: 999px;
+    border: 1px solid var(--interactive-accent);
+    background: var(--background-primary);
+    box-shadow: var(--shadow-s);
+    font-size: var(--font-ui-small);
+    white-space: nowrap;
+}
+.duckmage-mode-bar-text {
+    font-weight: 600;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.duckmage-mode-bar-hint {
+    color: var(--text-muted);
+}
+.duckmage-mode-bar-stop {
+    padding: 0 0.5em;
+    height: 1.7em;
+    border-radius: 999px;
+    box-shadow: none;
+}
+.duckmage-rt-roll-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Hex editor autosave cue ("Saving…" → "✓ Saved"), fresh-eyes round 3. */
+.duckmage-editor-save-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-left: 0.5em;
+    white-space: nowrap;
+}
+.duckmage-editor-save-status[data-state="saved"] {
+    color: var(--text-success);
+}
+.duckmage-editor-save-status[data-state="error"] {
+    color: var(--text-error);
+}
+
+/* Token form: what the Note field will do, and clickable field names
+   (fresh-eyes round 3). */
+.duckmage-token-note-status {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin: -0.4em 0 0.5em;
+}
+.duckmage-token-note-status.is-new {
+    color: var(--text-accent);
+}
+.duckmage-note-picker-item.is-active {
+    background: var(--background-modifier-hover);
+}
+.duckmage-token-field-label {
+    cursor: pointer;
+}
+
+/* Picker tiles: only the selected tile wears the accent ring. Hover used the
+   same purple border, so the tile under the pointer read as a second
+   selection (fresh-eyes round 3: "— terrain…" and "forest hea…" both
+   looked selected). */
+.duckmage-icon-option:hover:not(.is-selected),
+.duckmage-terrain-option:hover:not(.is-selected) {
+    border-color: var(--background-modifier-border-hover);
+}
+.duckmage-icon-option.is-selected,
+.duckmage-terrain-option.is-selected {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+/* Submap marker: bigger, and a white ring with a dark outline so it reads
+   on light and dark terrain alike ("tiny and greyish", round 3). Pointy-top
+   hexes come to a point at the top, so the marker sits a little lower. */
+.duckmage-hex-submap-badge {
+    top: 0.5em;
+    width: 0.95em;
+    height: 0.95em;
+    border: 0.17em solid #fff;
+    background: rgba(0, 0, 0, 0.45);
+    box-shadow:
+        0 0 0 0.06em rgba(0, 0, 0, 0.8),
+        0 0.05em 0.25em rgba(0, 0, 0, 0.5);
+}
+.duckmage-grid-flat .duckmage-hex-submap-badge {
+    top: 0.3em;
+}
+.duckmage-hex-submap-badge:hover {
+    background: var(--interactive-accent);
+    transform: scale(1.2);
+}
+
+/* Token form: nothing in the scrolling column may shrink. The note
+   suggestion list (max-height + overflow) was flex-shrunk to a ~4px
+   sliver, so a click aimed at a suggestion landed on the "Icon" label
+   below it: the real cause of round 3's "list closes under the click". */
+.duckmage-token-modal .modal-content > * {
+    flex-shrink: 0;
+}
+
+/* ── Fresh-eyes r3 (setup, new map, export) — fix/fresh-eyes-r3-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Setup wizard: the chosen orientation card is ticked and filled; hover
+   only lightens a card so it never reads as chosen. */
+.duckmage-wizard-orient-btn:hover:not(.is-active) {
+    border-color: var(--background-modifier-border-hover);
+    background: var(--background-modifier-hover);
+}
+.duckmage-wizard-orient-btn.is-active {
+    border-color: var(--interactive-accent);
+    background: hsla(var(--interactive-accent-hsl), 0.18);
+    box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+.duckmage-wizard-orient-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+}
+.duckmage-wizard-orient-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5em;
+}
+.duckmage-wizard-orient-mark {
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--interactive-accent);
+}
+.duckmage-wizard-preview-exact {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    text-align: center;
+    max-width: 240px;
+}
+
+/* New map / submap setup: neighbour seam, labelled defaults. */
+.duckmage-setup-gen-seam {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-faint);
+}
+.duckmage-setup-gen-seam.is-continues {
+    color: var(--text-accent);
+    font-weight: 600;
+}
+.duckmage-setup-gen-seam.is-continues::before {
+    content: "↔ ";
+}
+.duckmage-setup-seam-note {
+    max-width: 320px;
+}
+.duckmage-setup-control > .duckmage-setup-default {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}
+.duckmage-setup-defaults-note {
+    margin-bottom: 0.4em;
+}
+
+/* Map export form (Maps → Export and "Export current map…"). */
+.duckmage-export-tab-row {
+    flex-wrap: wrap;
+}
+.duckmage-export-tab-row-hint {
+    flex-basis: 100%;
+    padding-left: 1.9em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-export-included {
+    margin: 0.5em 0;
+    padding: 0.5em 0.75em;
+    border-left: 3px solid var(--interactive-accent);
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-export-included-title {
+    font-weight: 600;
+    margin-bottom: 0.2em;
+}
+.duckmage-export-included ul {
+    margin: 0;
+    padding-left: 1.2em;
+}
+
+/* ── Fresh-eyes r4 (map view, editor, tokens) ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Hex editor autosave status, persistent. It starts under the Notes
+   heading and moves beside the label of the box being typed in, so it's
+   in view while typing (round 4: the title-row cue alone went unseen). */
+.duckmage-editor-notes-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    margin: 0 0 0.6em;
+    padding: 0.1em 0.6em;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    transition: color 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+.duckmage-text-section-label-row .duckmage-editor-notes-status {
+    margin: 0 0.4em 0 auto;
+}
+.duckmage-editor-notes-status[data-state="pending"] {
+    font-style: italic;
+}
+.duckmage-editor-notes-status[data-state="saving"] {
+    color: var(--text-accent);
+    border-color: var(--interactive-accent);
+}
+.duckmage-editor-notes-status[data-state="saved"] {
+    color: var(--text-success);
+    border-color: var(--color-green);
+    background: rgba(var(--color-green-rgb), 0.15);
+    font-weight: 600;
+}
+.duckmage-editor-notes-status[data-state="settled"] {
+    color: var(--text-success);
+}
+.duckmage-editor-notes-status[data-state="error"] {
+    color: var(--text-error);
+    border-color: var(--color-red);
+    background: rgba(var(--color-red-rgb), 0.12);
+    font-weight: 600;
+}
+.duckmage-editor-save-status.is-quiet {
+    display: none;
+}
+.duckmage-editor-save-status[data-state="settled"] {
+    color: var(--text-success);
+}
+
+/* Tool mode bar: in the toolbar band (second row, right of undo/redo)
+   instead of floating over the bottom row of hexes, where a click on a
+   bottom-row hex hit the bar. HexMapView keeps hexes out of this band
+   (safeArea.ts). Filled with the accent colour and pulsed when a tool
+   starts, so it's noticed (round 4: one tester never saw it). */
+.duckmage-hex-map-controls .duckmage-mode-bar {
+    top: 42px;
+    bottom: auto;
+    left: 84px;
+    transform: none;
+    max-width: calc(100% - 300px);
+    min-height: 26px;
+    box-sizing: border-box;
+    padding: 0.15em 0.3em 0.15em 0.8em;
+    border-color: var(--interactive-accent);
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    box-shadow: var(--shadow-s);
+    z-index: 11;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-text {
+    color: var(--text-on-accent);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-hint {
+    color: var(--text-on-accent);
+    opacity: 0.85;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-stop {
+    height: 1.6em;
+    color: var(--text-normal);
+    background: var(--background-primary);
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+    animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
+}
+@keyframes duckmage-mode-bar-pulse {
+    0% {
+        box-shadow: 0 0 0 0 hsla(var(--interactive-accent-hsl), 0.7);
+    }
+    100% {
+        box-shadow: 0 0 0 10px hsla(var(--interactive-accent-hsl), 0);
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-hex-map-controls .duckmage-mode-bar.is-new {
+        animation: none;
+    }
+}
+
+/* Coordinate labels: a halo in the colour opposite to the text
+   (--duckmage-coord-halo, set by HexMapView from the coordinate colour
+   setting) so they read on white ice and pale hills, not just dark hexes.
+   Eight 1px offsets make a solid outline; the blur softens its edge. */
+.duckmage-coord-label-html {
+    text-shadow:
+        -1px -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px -1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px 0 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        1px 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        -1px 1px 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        -1px 0 0 var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85)),
+        0 0 3px var(--duckmage-coord-halo, rgba(0, 0, 0, 0.85));
+}
+
+/* Token form icon picker: roomy, with full names. It was a 220px box
+   with names cut to "ship a…", so look-alike ships couldn't be told
+   apart. Taller (still drag-resizable), fixed-width tiles whose names
+   wrap instead of truncating; hovering a tile shows its name too. */
+.duckmage-token-modal .duckmage-icon-picker-inline {
+    height: min(360px, 45vh);
+    min-height: 160px;
+    align-content: flex-start;
+    align-items: flex-start;
+}
+.duckmage-token-modal .duckmage-icon-option {
+    width: 76px;
+    min-width: 76px;
+}
+.duckmage-token-modal .duckmage-icon-option-name {
+    max-width: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
+}
+
+/* Neighbouring maps' roads and rivers in the ghost strip (read-only), so
+   a path can be continued to meet them; a dot marks where one ends. The
+   SVG covers the grid (one user unit = 1em) and overflows into the strip. */
+.duckmage-region-shadow-paths {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    opacity: 0.75;
+}
+.duckmage-region-shadow-path-end {
+    stroke: var(--background-primary);
+    stroke-width: 0.06;
+}
+
+/* ── Fresh-eyes r4 (setup, new map, maps modal) — fix/fresh-eyes-r4-setup ──
+   Self-contained block; keep it together at the end of the file. */
+
+/* Maps modal: never taller than the window. The tab bar stays put, the
+   tab content scrolls, and the Export buttons stay pinned at the bottom
+   (it ran off-screen at a 900px window). MapModal also keeps the modal
+   on screen as a tab grows (HexmakerModal.keepInViewport). */
+.modal.duckmage-map-modal.duckmage-editor-modal-drag {
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.duckmage-map-modal > .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+.duckmage-map-modal .duckmage-map-modal-tabs {
+    flex: none;
+}
+.duckmage-map-modal .duckmage-map-modal-tab-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.duckmage-map-modal .duckmage-export-tab-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-bottom: 0.2em;
+    background: var(--modal-background, var(--background-primary));
+}
+
+/* Maps list: a hint instead of a delete ✕ per name; delete is in Properties. */
+.duckmage-map-list-hint {
+    margin-top: 0.6em;
+}
+.duckmage-map-delete-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-map-delete-block > p {
+    flex: 1 1 100%;
+    margin: 0;
+}
+
+/* New map setup: where Overland's Sea default came from (the neighbour). */
+.duckmage-setup-control > .duckmage-setup-sea-hint {
+    flex-basis: 100%;
+    margin-left: 0;
+    white-space: normal;
+}
+
+/* ── Fresh-eyes r5 (map view, editor, tokens) ─────────────────────────────── */
+
+/* A modal or menu just closed over the map: no hover highlight on the hex
+   under the unmoved pointer until it really moves (a stray highlight was
+   left on a hex after Create token). The selection still shows. */
+.duckmage-hex-map-viewport.duckmage-hover-paused .duckmage-hex:not(.is-selected):hover::after {
+    content: none;
+}
+
+/* Hex editor Terrain: the swatch grid grows with the modal (no nested two-row
+   scroll box); long palettes get a filter. Collapsed, the header reads
+   "Terrain [swatch] forest > change". */
+.duckmage-hex-editor .duckmage-terrain-picker.duckmage-terrain-picker-grow {
+    max-height: none;
+    overflow-y: visible;
+}
+.duckmage-terrain-filter {
+    width: 100%;
+    margin-bottom: 0.5em;
+}
+
+.duckmage-terrain-change-hint {
+    margin-left: 0.5em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-accent);
+}
+
+/* ── Fresh-eyes r5 (setup, new map, export) ── */
+
+/* Wizard: the "Saved as …" line always holds one line of space, so the
+   form doesn't jump under the cursor when it appears while typing. */
+.duckmage-wizard-slug-note {
+    min-height: calc(1em * var(--line-height-normal, 1.5));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Export: the overlay suffix ("-region") right after the File name box. */
+.duckmage-export-name-suffix {
+    color: var(--text-muted);
+    font-family: var(--font-monospace);
+    white-space: nowrap;
+}
+
+/* Maps → New map: the chosen generator's description under the dropdown. */
+.duckmage-map-generator-desc {
+    margin-top: 0.25em;
+}
+
+/* Map list as a tree (N4): submaps under their parent, neighbouring
+   regions grouped; collapsible, with a search box on long lists. */
+.duckmage-map-tree-search {
+    width: 100%;
+    margin-bottom: 6px;
+}
+.duckmage-map-tree-node {
+    list-style: none;
+}
+.duckmage-map-tree-children {
+    padding-left: 14px;
+    border-left: 1px solid var(--background-modifier-border);
+    margin-left: 14px;
+}
+.duckmage-map-tree-toggle {
+    width: 1em;
+    flex-shrink: 0;
+    text-align: center;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-map-tree-world {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-map-tree-world-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Sideways crumbs (X3): neighbouring regions after the map button. */
+.duckmage-map-side-crumbs {
+    max-width: 30vw;
+}
+/* "beside Thornwood:" before a submap's parent's neighbours (round 6 U13). */
+.duckmage-map-side-via {
+    font-size: 0.72em;
+    color: var(--text-faint);
+    white-space: nowrap;
+    padding: 0 2px 0 4px;
+}
+
+/* Round 6 U9: the toolbar sits above the map (controls z-index 20), but its
+   buttons were see-through (transparent background, opacity < 1), so a
+   panned map showed through and looked drawn on top of them. Give every
+   toolbar control an opaque backing; the muted look comes from text colour. */
+.duckmage-map-nav-group .duckmage-region-btn,
+.duckmage-map-nav-group .duckmage-map-up-btn,
+.duckmage-map-nav-group .duckmage-map-back-btn {
+    opacity: 1;
+    background: var(--background-secondary);
+}
+.duckmage-hex-map-controls .duckmage-table-btn,
+.duckmage-hex-map-controls .duckmage-rt-btn,
+.duckmage-hex-map-controls .duckmage-undo-btn-map {
+    opacity: 1;
+}
+.duckmage-hex-map-controls .duckmage-undo-btn-map:disabled {
+    opacity: 1;
+    color: var(--text-faint);
+}
+.duckmage-map-nav-group .duckmage-map-crumbs {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+}
+
+/* ── Link badges (N2): one small marker per link type at a hex corner ──────
+   Positioned like the coord labels (% of the grid + em offset), so they
+   follow zoom bakes. The layers menu hides them by viewport class.
+   Stacked ABOVE the hex names (11) and coordinates (10): a name sits in the
+   same top band of the hex, and at z 9 it covered the badge completely
+   (round 6 R1: "badges never appear"). */
+.duckmage-link-badges-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 12;
+}
+/* A column at the hex's right side, centred on its middle row: the hex name
+   and the coordinates sit above and below the middle, so a badge there
+   covers neither (round 6 R1). More kinds go in two columns. Chip size
+   and the column's right edge come from the map's badge size (S / M / L,
+   BADGE_LAYOUT in linkBadges.ts), set on the layer. */
+.duckmage-link-badges {
+    position: absolute;
+    left: calc(var(--duckmage-badge-x, 50%) + var(--duckmage-badge-right, 1.95em));
+    top: var(--duckmage-badge-y, 50%);
+    transform: translate(-100%, -50%);
+    display: grid;
+    grid-template-columns: var(--duckmage-badge-size, 0.8em);
+    gap: 0.06em;
+}
+.duckmage-link-badges.is-two-col {
+    grid-template-columns: var(--duckmage-badge-size, 0.8em) var(--duckmage-badge-size, 0.8em);
+}
+.duckmage-link-badge-towns    { --duckmage-badge-color: #c0803a; }
+.duckmage-link-badge-dungeons { --duckmage-badge-color: #8e3b46; }
+.duckmage-link-badge-features { --duckmage-badge-color: #3f7f5f; }
+.duckmage-link-badge-quests   { --duckmage-badge-color: #b59a2a; }
+.duckmage-link-badge-factions { --duckmage-badge-color: #5a5fb0; }
+/* A filled chip: the kind's colour, a white rim and a dark outline so it
+   reads on any terrain, and its icon in white (round 7 R8). */
+.duckmage-link-badge {
+    width: var(--duckmage-badge-size, 0.8em);
+    height: var(--duckmage-badge-size, 0.8em);
+    box-sizing: border-box;
+    border-radius: 50%;
+    background: var(--duckmage-badge-color, #666666);
+    color: #ffffff;
+    border: max(1px, calc(var(--duckmage-badge-size, 0.8em) * 0.09)) solid #ffffff;
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.55),
+        0 0.05em 0.2em rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.duckmage-link-badge svg {
+    width: 64%;
+    height: 64%;
+    stroke-width: 2.6;
+}
+/* Badge kinds in the map's legend */
+.duckmage-terrain-legend .duckmage-link-badge {
+    --duckmage-badge-size: var(--duckmage-legend-swatch, 1.3em);
+    flex-shrink: 0;
+}
+.duckmage-hide-link-badges .duckmage-link-badges-layer { display: none; }
+.duckmage-hide-badge-towns .duckmage-link-badge-towns,
+.duckmage-hide-badge-dungeons .duckmage-link-badge-dungeons,
+.duckmage-hide-badge-features .duckmage-link-badge-features,
+.duckmage-hide-badge-quests .duckmage-link-badge-quests,
+.duckmage-hide-badge-factions .duckmage-link-badge-factions { display: none; }
+
+/* Layers menu: the ▸ that unfolds the per-type badge chips */
+.duckmage-overlay-more {
+    margin-left: auto;
+    padding: 0 2px;
+    height: auto;
+}
+/* Badge size S / M / L, in the badges row (round 7 R8) */
+.duckmage-overlay-sizes {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.duckmage-overlay-sizes + .duckmage-overlay-more { margin-left: 2px; }
+.duckmage-overlay-sizes button.duckmage-overlay-size {
+    font-size: 0.8em;
+    padding: 0 4px;
+    height: 1.6em;
+    min-width: 1.6em;
+    box-shadow: none;
+}
+.duckmage-overlay-sizes button.duckmage-overlay-size.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-overlay-more svg { transition: transform 120ms ease; }
+.duckmage-overlay-more.is-open svg { transform: rotate(90deg); }
+.duckmage-overlay-subrow {
+    display: flex;
+    gap: 4px;
+    padding-left: 20px;
+}
+/* button.… so Obsidian's `button:not(.clickable-icon)` background doesn't win */
+.duckmage-overlay-subrow button.duckmage-overlay-chip {
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--duckmage-badge-color, var(--interactive-normal));
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none;
+}
+.duckmage-overlay-chip svg { width: 14px; height: 14px; }
+.duckmage-overlay-subrow button.duckmage-overlay-chip.is-off {
+    opacity: 0.3;
+    filter: grayscale(1);
+}
+
+/* ── Terrain legend (L1): map corner + generator previews ─────────────────── */
+.duckmage-terrain-legend {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 4px 8px 6px;
+    font-size: var(--duckmage-legend-font, 0.85em);
+    --duckmage-legend-swatch: 1.3em;
+}
+.duckmage-terrain-legend-s { --duckmage-legend-font: 0.72em; }
+.duckmage-terrain-legend-m { --duckmage-legend-font: 0.85em; }
+.duckmage-terrain-legend-l { --duckmage-legend-font: 1.05em; --duckmage-legend-swatch: 1.6em; }
+/* Map legend (MK2): pinned to the view's bottom-left, beside the help
+   button (left column) and clear of Obsidian's status bar (bottom-right);
+   small and thin, names cut short in JS. */
+.duckmage-terrain-legend-map {
+    position: absolute;
+    left: 42px;
+    bottom: 8px;
+    max-height: 40%;
+    max-width: min(220px, 45%);
+    overflow-y: auto;
+    z-index: 10;
+    padding: 2px 6px 4px;
+    opacity: 0.92;
+}
+.duckmage-terrain-legend-map:hover { opacity: 1; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-head { gap: 3px; margin-bottom: 2px; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-list { gap: 1px; }
+.duckmage-terrain-legend-map .duckmage-terrain-legend-row { gap: 4px; }
+.duckmage-terrain-legend-map.is-collapsed {
+    padding: 0;
+    border: none;
+    background: transparent;
+    overflow: visible;
+}
+button.duckmage-terrain-legend-chip {
+    font-size: var(--font-ui-smaller);
+    height: 1.9em;
+    padding: 0 10px;
+    border-radius: 999px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-primary);
+    box-shadow: none;
+}
+/* Saving… shows over the legend's corner while it's up. */
+.duckmage-hex-map-controls > .duckmage-saving-indicator { z-index: 11; }
+.duckmage-terrain-legend-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 3px;
+}
+.duckmage-terrain-legend-title {
+    font-weight: 600;
+    margin-right: auto;
+}
+.duckmage-terrain-legend-sizes { display: flex; gap: 2px; }
+.duckmage-terrain-legend-size,
+.duckmage-terrain-legend-min,
+.duckmage-terrain-legend-hide {
+    font-size: 0.85em;
+    padding: 0 5px;
+    height: 1.6em;
+    min-width: 1.6em;
+    box-shadow: none;
+}
+.duckmage-terrain-legend-size.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-terrain-legend-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.duckmage-terrain-legend-preview .duckmage-terrain-legend-list {
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: 12px;
+}
+.duckmage-terrain-legend-preview { margin-top: 6px; }
+.duckmage-terrain-legend-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+.duckmage-terrain-legend-swatch {
+    width: var(--duckmage-legend-swatch);
+    height: calc(var(--duckmage-legend-swatch) * 0.866);
+    flex-shrink: 0;
+    background: var(--duckmage-legend-color, #888888);
+    clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.duckmage-terrain-legend-icon {
+    width: 70%;
+    height: 70%;
+    object-fit: contain;
+}
+.duckmage-terrain-legend-show {
+    font-size: var(--font-ui-smaller);
+    margin-top: 4px;
+}
+
+/* Path tool auto-route (P1): toggle + "Cross impassable" in the mode bar. */
+.duckmage-mode-bar-route {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-route-toggle {
+    height: 1.6em;
+    padding: 0 0.6em;
+    border-radius: 999px;
+    box-shadow: none;
+    color: var(--text-normal);
+    background: var(--background-primary);
+    opacity: 0.8;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar-route-toggle.is-active {
+    opacity: 1;
+    font-weight: 600;
+    outline: 2px solid var(--text-on-accent);
+}
+.duckmage-mode-bar-route-cross {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25em;
+    cursor: pointer;
+}
+.duckmage-mode-bar-route-note {
+    font-style: italic;
+    opacity: 0.85;
+    cursor: help;
+}
+/* Overworld paths: a draft (not confirmed into its regions) is drawn faded. */
+.duckmage-svg-path-line.duckmage-svg-path-draft {
+    opacity: 0.5;
+}
+.duckmage-hex-map-controls .duckmage-path-confirm-btn {
+    opacity: 1;
+    font-weight: 600;
+}
+.duckmage-edit-region-paths {
+    margin: 0;
+    padding-left: 1.2em;
+}
+.duckmage-edit-region-paths li {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin: 2px 0;
+}
+.duckmage-edit-region-path-state {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+/* Path picker: Hex by hex / Auto-route switch. */
+.duckmage-path-draw-mode {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    margin-bottom: 0.3em;
+}
+.duckmage-path-draw-mode-seg {
+    display: inline-flex;
+    gap: 0;
+}
+.duckmage-path-draw-mode-seg button {
+    border-radius: 0;
+}
+.duckmage-path-draw-mode-seg button:first-child {
+    border-radius: var(--button-radius) 0 0 var(--button-radius);
+}
+.duckmage-path-draw-mode-seg button:last-child {
+    border-radius: 0 var(--button-radius) var(--button-radius) 0;
+}
+.duckmage-path-draw-mode-seg button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-path-draw-mode-hint {
+    margin-bottom: 0.6em;
+}
+/* "1. How to draw:" / "2. Pick a path type…" step labels (round 6 U7). */
+.duckmage-path-draw-mode-label {
+    font-weight: 600;
+    font-size: var(--font-ui-small);
+}
+.duckmage-path-type-step {
+    margin-bottom: 0.3em;
+}
+
+/* Roll result: "Add to this hex" section picker (P2). */
+.duckmage-roll-add-section {
+    max-width: 12em;
+}
+/* Workflow run from a hex (PA2): Copy + section picker + Add to this hex. */
+.duckmage-wf-result-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Hex editor: Weather + Hooks & Rumors, folded under Notes (E2). */
+.duckmage-editor-rolled-sections {
+    margin-top: 0.4em;
+}
+.duckmage-editor-rolled-sections > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: 0.2em 0;
+}
+
+/* Palette editor: Impassable column (P1). */
+.duckmage-pe-impassable {
+    text-align: center;
+}
+
+/* Map properties: weather / rumours tables (E2). */
+.duckmage-region-table-label {
+    min-width: 5em;
+    font-weight: 600;
+}
+
+/* ── Layers menu: the "Labels" group (coordinates, hex names, token names) ── */
+.duckmage-overlay-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+.duckmage-overlay-group-title {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+}
+/* "Aa": unfolds the hex-name font row (NM3) */
+.duckmage-overlay-group-title button.duckmage-overlay-font-btn {
+    margin-left: auto;
+    font-size: 1em;
+    padding: 0 5px;
+    height: 1.6em;
+    box-shadow: none;
+}
+.duckmage-overlay-group-title button.duckmage-overlay-font-btn.is-open {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-overlay-font-row {
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 4px 0 2px 0;
+    max-width: 15em;
+}
+.duckmage-overlay-font-row .duckmage-overlay-sizes { margin-left: 0; }
+.duckmage-overlay-font-row select.duckmage-overlay-font-family {
+    font-size: 0.8em;
+    height: 1.8em;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+.duckmage-overlay-font-row .duckmage-overlay-font-bold { font-weight: 700; }
+.duckmage-overlay-font-row .duckmage-overlay-font-italic { font-style: italic; }
+.duckmage-overlay-font-row .duckmage-overlay-font-reset { padding: 0 2px; height: auto; }
+.duckmage-overlay-group-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    /* Wrap onto two lines rather than doubling the menu's width. */
+    max-width: 15em;
+}
+
+/* ── Hex names on the map (N1) ── */
+.duckmage-hide-hex-names .duckmage-hex-names-layer { display: none; }
+.duckmage-hex-names-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 11;
+}
+.duckmage-hex-name-label {
+    position: absolute;
+    left: var(--duckmage-name-x, 50%);
+    top: var(--duckmage-name-y, 50%);
+    /* On the side away from the coordinates; offset, size and line breaks
+       come from layoutHexName (hexNameLayer.ts), all in em so the name
+       scales with the zoom. Lines break only at spaces (round 7 R7). */
+    transform: translate(calc(-50% + var(--duckmage-name-dx, 0em)), calc(-50% + var(--duckmage-name-dy, 0em)));
+    font-size: var(--duckmage-name-font, 0.95em);
+    /* The map's name font (NM3), set on the layer by renderHexNameLayer. */
+    font-family: var(--duckmage-name-family, inherit);
+    font-weight: var(--duckmage-name-weight, 700);
+    font-style: var(--duckmage-name-style, normal);
+    line-height: 1.1;
+    --duckmage-name-ink: var(--text-normal);
+    --duckmage-name-halo: var(--background-primary);
+    color: var(--duckmage-name-ink);
+    width: max-content;
+    text-align: center;
+    white-space: pre;
+    padding: 0;
+    user-select: none;
+    text-shadow:
+        -1px -1px 0 var(--duckmage-name-halo),
+        1px -1px 0 var(--duckmage-name-halo),
+        -1px 1px 0 var(--duckmage-name-halo),
+        1px 1px 0 var(--duckmage-name-halo),
+        0 0 3px var(--duckmage-name-halo);
+}
+/* Contrast with the terrain under the name (round 6 S4: white on snow). */
+.duckmage-hex-name-label.is-on-light {
+    --duckmage-name-ink: #1b1b1b;
+    --duckmage-name-halo: rgba(255, 255, 255, 0.92);
+}
+.duckmage-hex-name-label.is-on-dark {
+    --duckmage-name-ink: #ffffff;
+    --duckmage-name-halo: rgba(0, 0, 0, 0.85);
+}
+
+/* ── Token names under tokens (N5); hidden by the toggle but shown on hover ── */
+.duckmage-token-name {
+    position: absolute;
+    left: var(--duckmage-token-x, 0);
+    top: var(--duckmage-token-y, 0);
+    /* Drop below the token: (half the token's size + a gap) in this label's em. */
+    transform: translate(-50%, calc(var(--duckmage-token-name-drop, 1.47em) + var(--duckmage-token-name-line, 0) * 1.15em));
+    /* Readable at the default zoom (round 6 S8: 0.6em came out ~7px), like
+       the hex names; never below 11px. */
+    font-size: max(0.9em, 11px);
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--text-normal);
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    text-shadow:
+        -1px -1px 0 var(--background-primary),
+        1px -1px 0 var(--background-primary),
+        -1px 1px 0 var(--background-primary),
+        1px 1px 0 var(--background-primary);
+}
+.duckmage-token-name.is-stacked::before {
+    content: "";
+    display: inline-block;
+    width: 0.6em;
+    height: 0.6em;
+    margin-right: 0.25em;
+    border-radius: 50%;
+    background: var(--token-color, #4a90e2);
+}
+/* Above the token instead, away from coordinates at the bottom (fresh-eyes
+   F4: the name hid the hex number); later lines stack upward. */
+.duckmage-token-name.is-above {
+    transform: translate(-50%, calc(-100% - var(--duckmage-token-name-drop, 1.47em) - var(--duckmage-token-name-line, 0) * 1.15em));
+}
+.duckmage-token-name-sm { --duckmage-token-name-drop: 1.13em; }
+.duckmage-token-name-md { --duckmage-token-name-drop: 1.47em; }
+.duckmage-token-name-lg { --duckmage-token-name-drop: 1.97em; }
+.duckmage-hide-token-names .duckmage-token-name { display: none; }
+.duckmage-hide-token-names .duckmage-token:hover + .duckmage-token-name { display: block; z-index: 50; }
+.duckmage-token-dragging + .duckmage-token-name { display: none; }
+
+/* Hex editor: the hex's name, under the title. */
+.duckmage-editor-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 6px;
+}
+.duckmage-editor-name-row label {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-editor-name-input {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Hex table: the hex's name beside its coordinates. */
+.duckmage-hex-table-name {
+    margin-left: 6px;
+    font-weight: 600;
+}
+
+/* Export: compact groups of checkboxes. */
+.duckmage-export-group {
+    margin: 4px 0;
+}
+.duckmage-export-group > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-export-group-title {
+    color: var(--text-muted);
+    font-size: 0.9em;
+}
+.duckmage-export-inline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 14px;
+    margin: 2px 0 2px 2px;
+}
+.duckmage-export-inline label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+/* Hex editor: why Hidden/Secret are missing when the GM layer is off. */
+.duckmage-editor-gm-hint {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin: 4px 0;
+}
+
+/* ── Fresh-eyes r7 (fix/r7-b) ── keep together at the end of the file. */
+
+/* Token form: the status line under Note keeps one line of height, so text
+   appearing there never moves the note list under the pointer; the buttons
+   stay in view at the bottom while the long icon grid scrolls. */
+.duckmage-token-note-status {
+    min-height: 1.4em;
+}
+.duckmage-token-modal .duckmage-modal-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: 8px;
+    padding: 10px 0 4px;
+    background: var(--modal-background, var(--background-primary));
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Hex editor: the single autosave status, beside the Name box at first. */
+.duckmage-editor-name-row .duckmage-editor-notes-status {
+    margin: 0;
+    flex-shrink: 0;
+}
+
+/* New map: the folded "More" section (coordinates, stagger, background). */
+.duckmage-setup-more {
+    margin: 6px 0;
+}
+.duckmage-setup-more > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    margin-bottom: 4px;
+}
+.duckmage-setup-coord {
+    width: 70px;
+    margin-right: 6px;
+}
+
+/* Palette editor: the palette's path types (src/palettes/PaletteEditorView.ts). */
+.duckmage-pe-path-types {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0.4em 0 0.6em;
+}
+
+.duckmage-pe-path-type {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    padding: 2px 6px;
+    border-radius: var(--radius-s);
+    cursor: pointer;
+}
+
+.duckmage-pe-path-type:hover,
+.duckmage-pe-path-type:focus-visible {
+    background: var(--background-modifier-hover);
+}
+
+.duckmage-pe-path-type-name {
+    font-weight: 600;
+}
+
+.duckmage-pe-path-type-desc {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+/* ── Regions and locations (overworld phase 1) ─────────────────────────── */
+
+/* A hex with a Region map: a thin inner hex outline (a ring cut with evenodd). */
+.duckmage-hex-region-outline {
+    position: absolute;
+    inset: 6%;
+    pointer-events: none;
+    z-index: 1;
+    background: color-mix(in srgb, var(--interactive-accent) 85%, #fff);
+    clip-path: polygon(evenodd, 50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%, 50% 0%, 50% 7%, 7% 28.5%, 7% 71.5%, 50% 93%, 93% 71.5%, 93% 28.5%, 50% 7%);
+}
+.duckmage-grid-flat .duckmage-hex-region-outline {
+    clip-path: polygon(evenodd, 25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%, 25% 0%, 28.5% 7%, 7% 50%, 28.5% 93%, 71.5% 93%, 93% 50%, 71.5% 7%, 28.5% 7%);
+}
+
+/* Several locations: the badge shows how many. */
+.duckmage-hex-submap-badge.has-count {
+    width: auto;
+    min-width: 1.15em;
+    height: 1.15em;
+    padding: 0 0.2em;
+    border-radius: 0.6em;
+    font-size: 0.7em;
+    line-height: 0.85em;
+    font-weight: 700;
+    color: #fff;
+    text-align: center;
+}
+
+/* Centre dot of the hex editor's flower: the linked map's swatch colour. */
+.duckmage-neighbor-centre--linked {
+    background: var(--duckmage-bg, #1a1a1a);
+}
+
+/* Hex editor: Maps strip (region chip, location chips, +). */
+.duckmage-maps-strip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0 8px;
+    min-width: 0;
+}
+.duckmage-maps-strip-label {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+.duckmage-maps-strip-chips {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    min-width: 0;
+    flex: 0 1 auto;
+}
+.duckmage-maps-strip-empty {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-faint);
+}
+.duckmage-maps-chip,
+.duckmage-maps-chip-add {
+    flex-shrink: 0;
+    height: auto;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: var(--font-ui-smaller);
+    white-space: nowrap;
+    max-width: 14em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.duckmage-maps-chip--region {
+    box-shadow: 0 0 0 1.5px var(--interactive-accent);
+}
+.duckmage-maps-chip.is-missing {
+    opacity: 0.6;
+    text-decoration: line-through;
+}
+
+/* Locations list */
+.duckmage-locations-search {
+    width: 100%;
+    margin-bottom: 6px;
+}
+.duckmage-locations-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.duckmage-locations-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 4px;
+    border-radius: 4px;
+}
+.duckmage-locations-row:hover {
+    background: var(--background-modifier-hover);
+}
+.duckmage-locations-row.is-dragging {
+    opacity: 0.5;
+}
+.duckmage-locations-row.is-drop-target {
+    box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+.duckmage-locations-row .duckmage-map-terrain-swatch--set {
+    background-color: var(--duckmage-bg);
+}
+.duckmage-locations-grip {
+    cursor: grab;
+    color: var(--text-faint);
+}
+.duckmage-locations-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.duckmage-locations-size {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-locations-foot {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+/* Short pickers: no tall empty space under them. */
+.modal.duckmage-editor-modal-drag.duckmage-child-kind-modal,
+.modal.duckmage-editor-modal-drag.duckmage-locations-modal {
+    min-height: 0;
+}
+
+/* Region or Location? */
+.duckmage-child-kind-card {
+    display: block;
+    width: 100%;
+    height: auto;
+    text-align: left;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    white-space: normal;
+}
+.duckmage-child-kind-title {
+    font-weight: 600;
+}
+.duckmage-child-kind-desc,
+.duckmage-child-kind-why {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    font-weight: normal;
+}
+.duckmage-child-kind-why {
+    margin-top: 2px;
+    font-style: italic;
+}
+.duckmage-child-kind-enter {
+    margin: -4px 0 8px;
+}
+
+/* Region settings (one-time step and the Regions tab) */
+.duckmage-region-settings-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    margin-bottom: 10px;
+}
+.duckmage-region-settings-row > .setting-item-description {
+    flex-basis: 100%;
+    margin-left: 5.5em;
+}
+.duckmage-region-settings-label {
+    width: 5em;
+    flex-shrink: 0;
+    font-weight: 600;
+}
+.duckmage-region-settings-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    flex: 1;
+    min-width: 0;
+}
+.duckmage-region-settings-choice {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+}
+.duckmage-region-settings-choice-title {
+    font-weight: 500;
+}
+.duckmage-region-settings-footer {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-regions-tab-locked {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+/* Hex editor: sections of the note the editor has no field for. */
+.duckmage-editor-other-sections > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin: 0.4em 0;
+}
+
+/* Overworld (OW1): every region's hexes on one canvas over the grid, drawn
+   like the overworld preview's full view. Clicks go to the hexes below. */
+.duckmage-ow-layer {
+    position: absolute;
+    left: var(--duckmage-ow-left, 0);
+    top: var(--duckmage-ow-top, 0);
+    width: var(--duckmage-ow-width, 0);
+    height: var(--duckmage-ow-height, 0);
+    pointer-events: none;
+    z-index: 2; /* above the hexes, below the region (3), faction (4) and path (5) layers */
+}
+
+/* Region paths that cross region seams (Regions view): one user unit = 1em
+   of the grid, like the path layer. Over the region bitmaps (later in the
+   DOM, same z-index), under the overworld's own paths (5). */
+.duckmage-ow-paths-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    overflow: visible;
+    pointer-events: none;
+    z-index: 2;
+}
+.duckmage-hide-paths .duckmage-ow-paths-svg {
+    display: none;
+}
+
+/* The overworld minimap and the Regions / Biomes switch: bottom-right,
+   clear of Obsidian's status bar. */
+.duckmage-ow-minimap {
+    position: absolute;
+    right: 12px;
+    bottom: 40px;
+    z-index: 10;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    padding: 4px;
+    opacity: 0.95;
+}
+.duckmage-ow-minimap-head {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+.duckmage-ow-minimap-title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-ow-minimap-canvas {
+    display: block;
+    width: 220px;
+    height: 180px;
+    cursor: pointer;
+}
+.duckmage-ow-minimap.is-collapsed .duckmage-ow-minimap-canvas {
+    display: none;
+}
+.duckmage-ow-view-toggle {
+    display: flex;
+    margin-bottom: 4px;
+}
+.duckmage-ow-view-toggle button {
+    flex: 1;
+    font-size: 0.8em;
+    padding: 2px 8px;
+    border-radius: 0;
+}
+.duckmage-ow-view-toggle button:first-of-type { border-radius: 4px 0 0 4px; }
+.duckmage-ow-view-toggle button:last-of-type { border-radius: 0 4px 4px 0; }
+.duckmage-ow-view-toggle button.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Biome picker and the region's small generator editor. */
+.duckmage-biome-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+    gap: 4px;
+    margin-bottom: 0.8em;
+}
+.duckmage-biome-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: flex-start;
+}
+.duckmage-biome-option.is-active {
+    outline: 2px solid var(--interactive-accent);
+}
+/* Biome pickers: group headings (Surface, Mountains, …) and the filter box. */
+.duckmage-biome-group-head {
+    flex-basis: 100%;
+    grid-column: 1 / -1;
+    margin: 0.3em 0 0;
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-semibold);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.duckmage-biome-group-head:first-child {
+    margin-top: 0;
+}
+/* Edit region…'s biome strip: tall enough to show a group heading with its row. */
+.duckmage-terrain-picker.duckmage-edit-region-biomes {
+    max-height: 15em;
+}
+
+/* Edit region…: mixing several biomes. */
+.duckmage-edit-region-mix-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.6em;
+    margin-bottom: 0.4em;
+}
+.duckmage-edit-region-mix {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 0.4em;
+}
+.duckmage-biome-swatch {
+    width: 1em;
+    height: 1em;
+    border-radius: 3px;
+    flex: none;
+    background: var(--duckmage-biome-color, var(--background-modifier-border));
+}
+.duckmage-region-gen-form {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 0.6em;
+}
+.duckmage-region-gen-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.duckmage-region-gen-label {
+    min-width: 10em;
+    color: var(--text-muted);
+}
+.duckmage-region-gen-preview,
+.duckmage-ow-new-preview {
+    display: block;
+    max-width: 100%;
+    margin: 0 auto 0.4em;
+    background: var(--background-secondary);
+    border-radius: 6px;
+}
+.duckmage-ow-progress {
+    color: var(--text-muted);
+    min-height: 1.4em;
+}
+
+/* ── Palette notes in reading view (swatches, icons, path previews) ── */
+.markdown-rendered td.duckmage-palette-color-cell {
+    white-space: nowrap;
+}
+
+.duckmage-palette-swatch {
+    display: inline-block;
+    width: 0.9em;
+    height: 0.9em;
+    margin-right: 0.35em;
+    vertical-align: -0.1em;
+    border-radius: 2px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--duckmage-palette-swatch, transparent);
+}
+
+.duckmage-palette-icon {
+    display: inline-block;
+    width: 1.4em;
+    height: 1.4em;
+    margin-right: 0.35em;
+    vertical-align: middle;
+}
+
+.duckmage-palette-icon-img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.duckmage-palette-path-preview {
+    display: inline-block;
+    margin-right: 0.35em;
+    vertical-align: middle;
+}
+
+.duckmage-palette-path-preview svg {
+    display: block;
+    width: 1.8em;
+    height: 1.8em;
+}
+
+/* Path tool (anchored paths): grab cursor over the selected path, the
+   "Reroute instead" notice button, and "Paths on this map" in the picker. */
+.duckmage-hex-map-viewport.duckmage-draw-mode.duckmage-path-grab .duckmage-hex {
+    cursor: grab;
+}
+.duckmage-hex-map-viewport.duckmage-draw-mode.duckmage-path-grab:active .duckmage-hex {
+    cursor: grabbing;
+}
+.duckmage-notice-btn {
+    margin-left: 0.6em;
+}
+.duckmage-mode-bar-path-name {
+    font-style: italic;
+}
+.duckmage-path-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 14em;
+    overflow-y: auto;
+    margin-top: 0.3em;
+}
+.duckmage-path-list-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+    justify-content: flex-start;
+    height: auto;
+    padding: 0.25em 0.5em;
+    box-shadow: none;
+    background: transparent;
+    text-align: left;
+}
+.duckmage-path-list-row.is-selected {
+    background: var(--background-modifier-hover);
+    font-weight: 600;
+}
+.duckmage-path-list-swatch {
+    flex: none;
+    width: 1.4em;
+    height: 0.3em;
+    border-radius: 999px;
+    background: var(--duckmage-path-swatch, var(--text-faint));
+}
+.duckmage-path-list-summary {
+    margin-left: auto;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-path-name-input {
+    width: 100%;
+}
+.duckmage-path-name-problem {
+    min-height: 1.4em;
+    margin-top: 0.3em;
+    color: var(--text-error);
+    font-size: var(--font-ui-small);
+}
+/* Save while the name is empty or taken: Obsidian's disabled look, even
+   on a mod-cta button (#48). */
+.duckmage-path-name-modal button.mod-disabled,
+.duckmage-path-name-modal button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* Path tool: the mode bar text wraps (it has more to say and more controls). */
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path {
+    border-radius: 0.9em;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-text {
+    white-space: normal;
+    min-width: 14em;
+    line-height: 1.25;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar.is-path .duckmage-mode-bar-hint {
+    display: none;
+}
+
+/* ── Overworld playtest fixes (2026-10-10) ───────────────────────────────── */
+
+/* Regions view: only the regions and blank bricks show. The overworld's own
+   hexes stay as invisible click targets; their coordinates, names and
+   badges are hidden (the region's name is the grid's tooltip on hover). */
+.duckmage-ow-regions .duckmage-hex {
+    background: transparent;
+}
+.duckmage-ow-regions .duckmage-hex:hover::after {
+    display: none;
+}
+.duckmage-ow-regions .duckmage-coord-labels-layer,
+.duckmage-ow-regions .duckmage-hex-names-layer,
+.duckmage-ow-regions .duckmage-link-badges-layer {
+    display: none;
+}
+
+/* Map navigation: ← ↑ → as glyphs only, always in that order. */
+.duckmage-map-nav-arrows {
+    display: flex;
+    gap: 2px;
+}
+.duckmage-map-nav-arrows .duckmage-map-nav-arrow {
+    height: 26px;
+    min-width: 26px;
+    padding: 0 4px;
+    font-size: 0.95em;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-map-nav-arrows .duckmage-map-nav-arrow:hover:not(:disabled) {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+.duckmage-map-nav-arrows .duckmage-map-nav-arrow:disabled {
+    color: var(--text-faint);
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* A region's neighbours: a hex flower, each petal in its direction (its
+   offsets from mapNav.flowerLayout). Petals are 22px with a hover ring, on
+   an opaque card so the map never shows through or draws over it. */
+.duckmage-region-flower {
+    position: relative;
+    box-sizing: content-box;
+    width: var(--duckmage-flower-w, 60px);
+    height: var(--duckmage-flower-h, 66px);
+    padding: 2px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+}
+.duckmage-region-flower-petal {
+    position: absolute;
+    left: calc(50% - 11px + var(--duckmage-petal-x, 0px));
+    top: calc(50% - 11px + var(--duckmage-petal-y, 0px));
+    width: 22px;
+    height: 22px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 50%;
+    box-shadow: none;
+    border: 1px solid var(--text-faint);
+    background: var(--duckmage-petal-bg, var(--background-secondary-alt));
+    cursor: pointer;
+    transition:
+        border-color 0.1s ease,
+        box-shadow 0.1s ease;
+}
+.duckmage-region-flower-petal:hover:not(:disabled),
+.duckmage-region-flower-petal:focus-visible {
+    border-color: var(--interactive-accent);
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+    z-index: 1;
+}
+.duckmage-region-flower-petal.is-here {
+    background: var(--interactive-accent);
+    border-color: var(--interactive-accent);
+    cursor: pointer;
+}
+.duckmage-region-flower-petal.is-empty {
+    background: var(--background-primary);
+    border-style: dashed;
+    cursor: default;
+}
+/* An empty petal is new land: a "+" that opens the walk (pick or roll a biome). */
+.duckmage-region-flower-petal.is-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-region-flower-petal.is-new:hover:not(:disabled) {
+    color: var(--interactive-accent);
+    background: var(--background-modifier-hover);
+}
+.duckmage-region-flower-petal.is-new.is-locked {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* Edit region…: the region as it is now (a Reroll shows here; the dialog covers the map). */
+.duckmage-edit-region-preview {
+    display: block;
+    width: 240px;
+    height: 150px;
+    margin-top: 6px;
+    border-radius: 6px;
+    background: var(--background-secondary);
+}
+.duckmage-edit-region-preview.is-new {
+    animation: duckmage-mode-bar-pulse 0.9s ease-out 2;
+}
+/* New-region mode: the preview is what Create makes, so it's bigger. */
+.duckmage-edit-region-preview.duckmage-edit-region-preview-new {
+    width: 360px;
+    max-width: 100%;
+    height: auto;
+    aspect-ratio: 3 / 2;
+}
+.duckmage-edit-region-draft-note {
+    min-height: 1.4em;
+}
+@media (prefers-reduced-motion: reduce) {
+    .duckmage-edit-region-preview.is-new {
+        animation: none;
+    }
+}
+.duckmage-region-nav input.duckmage-walk-seed {
+    width: 9em;
+}
+
+/* Maps on a world grid: their four sides as a d-pad (◀ ▲ ▼ ▶), fixed order. */
+.duckmage-map-pad {
+    display: flex;
+    gap: 1px;
+}
+.duckmage-map-pad .duckmage-map-pad-btn {
+    height: 26px;
+    min-width: 20px;
+    padding: 0 3px;
+    font-size: 0.7em;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+.duckmage-map-pad .duckmage-map-pad-btn:hover:not(:disabled) {
+    color: var(--text-normal);
+    border-color: var(--interactive-accent);
+}
+.duckmage-map-pad .duckmage-map-pad-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+.duckmage-map-pad .duckmage-map-pad-btn.is-new {
+    font-weight: 700;
+    border-style: dashed;
+}
+
+/* Work mode (Play / Build / God): always on the toolbar. */
+.duckmage-map-nav-group .duckmage-work-mode-btn {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.8em;
+    font-weight: 600;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.duckmage-map-nav-group .duckmage-work-mode-btn.is-play {
+    color: var(--color-green);
+    border-color: var(--color-green);
+}
+.duckmage-map-nav-group .duckmage-work-mode-btn.is-god {
+    color: var(--text-on-accent);
+    background: var(--color-orange);
+    border-color: var(--color-orange);
+}
+
+/* A reshape action locked by the work mode, and the line saying how to unlock it. */
+.duckmage-biome-option.is-locked,
+.duckmage-action-row button.is-locked {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+.duckmage-locked-hint {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin: 0 0 0.6em;
+}
+.duckmage-action-row .duckmage-locked-hint,
+.duckmage-modal-footer .duckmage-locked-hint {
+    margin: 0;
+    align-self: center;
+}
+
+/* Overworld view switch: say which one is on. */
+.duckmage-ow-view-label {
+    font-size: 0.75em;
+    color: var(--text-muted);
+    align-self: center;
+    padding-right: 4px;
+}
+
+/* "Edit region…" (#49): compact, never taller than the window, body scrolls. */
+.modal.duckmage-edit-region-modal.duckmage-editor-modal-drag {
+    width: min(480px, 94vw);
+    min-width: 0;
+    min-height: 0;
+    max-height: calc(100vh - 16px);
+    display: flex;
+    flex-direction: column;
+}
+.duckmage-edit-region-modal > .modal-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+.duckmage-edit-region-modal h4 {
+    margin: 0.6em 0 0.3em;
+}
+.duckmage-edit-region-modal input.duckmage-edit-region-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 1.1em;
+    font-weight: 600;
+}
+.duckmage-edit-region-modal .duckmage-map-origin-desc {
+    margin: 0.3em 0;
+}
+.duckmage-edit-region-modal .duckmage-action-row {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+.duckmage-edit-region-biome-show {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-edit-region-dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 2px 10px;
+    margin: 0;
+    font-size: 0.9em;
+}
+.duckmage-edit-region-dl dt {
+    color: var(--text-muted);
+}
+.duckmage-edit-region-dl dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+.duckmage-edit-region-neighbour + .duckmage-edit-region-neighbour::before {
+    content: ", ";
+    color: var(--text-normal);
+}
+.duckmage-edit-region-notes-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+.duckmage-edit-region-notes-status {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+textarea.duckmage-edit-region-notes-input {
+    width: 100%;
+    min-height: 4.5em;
+    resize: vertical;
+}
+
+/* Biomes list and the Add / Edit biome form (#50). */
+.duckmage-biome-list {
+    display: grid;
+    gap: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: 0.6em;
+}
+.duckmage-biome-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.duckmage-biome-row-text {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.duckmage-biome-row-note {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-biome-mix-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(16em, 1fr));
+    gap: 2px 12px;
+}
+.duckmage-biome-mix-grid .duckmage-region-gen-label {
+    min-width: 6.5em;
+}
+.duckmage-biome-mix-grid input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 3em;
+}
+/* Generate overworld: the biome pool list (compact, scrolls when long). */
+.duckmage-ow-pool-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15em, 1fr));
+    gap: 2px 10px;
+    max-height: 14em;
+    overflow-y: auto;
+    margin: 4px 0;
+}
+.duckmage-ow-pool-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+.duckmage-ow-pool-swatch {
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 2px;
+    flex: none;
+    background: var(--duckmage-swatch, transparent);
+}
+.duckmage-ow-pool-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-ow-pool-tag {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+/* Biome pool weight: the shared multiplier slider, compact in the row. */
+.duckmage-ow-pool-item .duckmage-ow-pool-weight {
+    flex: 0 1 12em;
+    flex-wrap: nowrap;
+    margin: 0;
+}
+/* Biome page: Type mix on the shared share sliders, plus Min patches and × columns. */
+.duckmage-biome-page-mix .duckmage-share-sliders-row {
+    grid-template-columns: minmax(6em, 10em) 1fr 3.5em 5em 1.8em;
+}
+
+/* Mix lists (src/ui/mixList.ts, O6): the × at the end of a row, "+ Add …"
+   under the list, and its picker. Shared by the biome and generator pages. */
+.duckmage-mix-remove {
+    padding: 0 0.3em;
+    color: var(--text-muted);
+}
+
+.duckmage-mix-remove:hover {
+    color: var(--text-error);
+}
+
+.duckmage-mix-add {
+    margin-top: 0.4em;
+}
+
+.duckmage-mix-add-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.duckmage-mix-add-tile {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4em;
+}
+
+/* New map → Next to: the Neighbour influence slider under the row (SF6). */
+.duckmage-setup-neighbour-weight {
+    margin: 0 0 0.6em;
+}
+/* Biome page: Terrain weights, one set of share sliders per type. */
+.duckmage-biome-terrain-weights-type {
+    margin-top: 0.5em;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-wfc-used-by {
+    font-style: italic;
+}
+/* World types table editor (space generators). */
+.modal.duckmage-world-types-modal {
+    width: min(72em, 95vw);
+    max-width: 95vw;
+}
+.duckmage-world-types-head,
+.duckmage-world-types-new,
+.duckmage-world-types-preview-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-world-types-problems,
+.duckmage-world-types-row-hint {
+    color: var(--text-error);
+}
+/* Rows not saved until finished (SP2); pushes the save status right. */
+.duckmage-world-types-incomplete {
+    flex: 1 1 auto;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-error);
+}
+/* The autosave status pill (the hex editor's), in the buttons row. */
+.duckmage-editor-notes-status.duckmage-world-types-status {
+    margin: 0;
+}
+.duckmage-world-types-row-hint {
+    font-size: var(--font-ui-smaller);
+    margin-top: 2px;
+}
+.duckmage-world-types-rows {
+    /* Most of the dialog's height (F9: a short inner list hid new rows). */
+    max-height: 55vh;
+    /* The dialog body is a flex column: without this the list was squeezed
+       to a few rows to fit the preview, which scrolls with the dialog. */
+    flex-shrink: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0;
+}
+.duckmage-world-types-row {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 3px 6px;
+}
+.duckmage-world-types-row.is-invalid {
+    border-color: var(--text-error);
+}
+.duckmage-world-types-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 4px 6px;
+}
+.duckmage-world-types-line.is-setup {
+    opacity: 0.85;
+}
+.duckmage-world-types-cell {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.duckmage-world-types-cell-label {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-world-types-cell input {
+    width: 8em;
+}
+.duckmage-world-types-cell.is-world input {
+    width: 11em;
+}
+.duckmage-world-types-cell.is-weight input {
+    width: 4em;
+}
+.duckmage-world-types-cell.is-palette input,
+.duckmage-world-types-cell.is-generator input,
+.duckmage-world-types-cell.is-options input {
+    width: 13em;
+}
+.duckmage-world-types-tools {
+    display: flex;
+    gap: 2px;
+    margin-left: auto;
+}
+.duckmage-world-types-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    padding-bottom: 4px;
+}
+.duckmage-world-types-tab.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+.duckmage-world-types-cell.is-star input,
+.duckmage-world-types-cell.is-feature input {
+    width: 13em;
+}
+.duckmage-world-types-cell.is-chance input {
+    width: 7em;
+}
+.duckmage-world-types-dist {
+    display: grid;
+    grid-template-columns: minmax(8em, max-content) minmax(6em, 1fr) max-content max-content;
+    gap: 2px 8px;
+    align-items: center;
+    max-height: 14em;
+    overflow-y: auto;
+    margin-top: 4px;
+}
+.duckmage-world-types-dist-row {
+    display: contents;
+}
+.duckmage-world-types-dist-bar {
+    height: 0.7em;
+    background: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.duckmage-world-types-dist-fill {
+    display: block;
+    height: 100%;
+    width: var(--duckmage-dist, 0%);
+    background: var(--interactive-accent);
+}
+.duckmage-world-types-dist-num,
+.duckmage-world-types-dist-odds {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+/* Work modes (src/workMode.ts): Play hides the grid's +/- (map structure);
+   the drawing panel hides locked tools behind one line. */
+.duckmage-hex-map-container.duckmage-mode-play .duckmage-expand-group {
+    display: none;
+}
+.duckmage-shrink-btn:disabled,
+.duckmage-shrink-btn.is-locked {
+    cursor: not-allowed;
+}
+.duckmage-tools-locked {
+    padding: 4px 2px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-editor-mode-locked {
+    margin: 4px 0;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+/* S11: a moon tied to its planet (a faint dashed tether). */
+.duckmage-moon-link {
+    stroke: #d7deff;
+    opacity: 0.55;
+}
+/* E4: a palette picker shows the picked palette's terrains (named on hover). */
+.duckmage-palette-preview {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+.duckmage-palette-preview-count {
+    flex: none;
+    line-height: 14px;
+}
+.duckmage-palette-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    max-width: 280px;
+}
+.duckmage-palette-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    background: var(--duckmage-swatch, #888888);
+    border: 1px solid var(--background-modifier-border);
+}
+/* Missing maps (SM-DEL): folder and map note deleted by hand */
+.duckmage-map-missing-icon {
+    display: inline-flex;
+    color: var(--text-warning);
+    margin-right: 4px;
+}
+.duckmage-map-missing-icon svg {
+    width: 14px;
+    height: 14px;
+}
+.duckmage-map-list-item.is-missing .duckmage-map-list-name {
+    color: var(--text-muted);
+}
+.duckmage-map-missing-actions {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+}
+.duckmage-map-missing-actions button {
+    padding: 2px 8px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-map-missing-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 420px;
+    padding: 16px 20px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    text-align: center;
+}
+.duckmage-map-missing-state .duckmage-map-missing-actions {
+    margin-left: 0;
+}
+/* Make generator from this region (PR1) */
+.duckmage-make-generator-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.duckmage-make-generator-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: var(--font-semibold);
+}
+.duckmage-make-generator-name {
+    margin-left: 22px;
+    max-width: 320px;
+}
+.duckmage-make-generator-list {
+    margin-left: 22px;
+    max-height: 240px;
+    overflow-y: auto;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+}
+.duckmage-make-generator-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+.duckmage-make-generator-row:hover {
+    background: var(--background-modifier-hover);
+}
+.duckmage-make-generator-row.is-selected {
+    background: var(--background-modifier-active-hover);
+}
+.duckmage-make-generator-row-why {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-make-generator-row.is-suggested .duckmage-make-generator-row-name {
+}
+
+/* Round 5 overworld tools: the Biome painter, blank biomes, the
+   "Biomes without a climate" row at the top of New overworld. */
+.duckmage-draw-btn-terrain:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+.duckmage-biome-blank-preview {
+    background-image: repeating-linear-gradient(45deg, transparent 0 4px, var(--background-modifier-border) 4px 6px);
+}
+.duckmage-ow-top {
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-secondary);
+}
+.duckmage-ow-gaps .duckmage-region-gen-label {
+    font-weight: var(--font-semibold);
+}
+
+/* Token form: note suggestions drop down over the form instead of pushing
+   it, so the icon grid never moves under the pointer (fresh-eyes F15). */
+.duckmage-note-picker-anchor {
+    position: relative;
+    height: 0;
+}
+.duckmage-note-picker-results.is-dropdown {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    margin: 0;
+    box-shadow: var(--shadow-s);
+}
+
+/* Breadcrumb: what the hex this map was made from is (fresh-eyes F11). */
+.duckmage-map-crumb-from {
+    font-size: 0.78em;
+    padding: 0 6px 0 2px;
+    color: var(--text-faint);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 14em;
+}
+/* "New map from this hex": the hex's existing maps, listed first (C11). */
+.duckmage-child-kind-enter.is-existing {
+    display: block;
+    margin: 4px 0 6px;
+}
+
+/* World types: a deleted row's space is kept until the pointer leaves
+   the list, so rows don't slide under it (fresh-eyes F9). */
+.duckmage-world-types-spacer {
+    flex: none;
+    height: var(--duckmage-wt-spacer, 0px);
+}
+.duckmage-world-types-rows:focus {
+    outline: none;
+}
+
+/* Toolbar row vs the top +/- buttons (deep maps' breadcrumb crowded them):
+   the row stops short of the centred +/- (is-centred) and its crumbs
+   shrink, each with an ellipsis (full name in the tooltip).
+   HexMapView.fitTopBar folds the middle crumbs into "…" when they don't
+   fit whole; when the row's own buttons don't fit there, the row takes
+   the width up to the side-panel buttons and the top +/- move to the
+   second row (right side, clear of the mode bar). */
+.duckmage-map-nav-group {
+    max-width: calc(100% - 92px - 112px);
+}
+.duckmage-map-nav-group.is-centred {
+    max-width: calc(50% - 92px - 40px);
+}
+.duckmage-map-nav-group > .duckmage-map-crumbs {
+    flex: 0 1 auto;
+    min-width: 7em;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs {
+    min-width: 0;
+}
+.duckmage-map-nav-group > .duckmage-region-btn {
+    flex: 0 1 auto;
+    min-width: 3em;
+}
+.duckmage-map-nav-group > :not(.duckmage-map-crumbs):not(.duckmage-region-btn) {
+    flex-shrink: 0;
+}
+.duckmage-map-crumbs > .duckmage-map-crumb,
+.duckmage-map-crumbs > .duckmage-map-crumb-from {
+    flex: 0 1 auto;
+    min-width: 2.5em;
+}
+.duckmage-map-crumbs > .duckmage-map-crumb-sep {
+    flex-shrink: 0;
+}
+/* Obsidian buttons centre their text (inline-flex), which cuts a long
+   name at both ends with no ellipsis: block, so the end gets the "…". */
+.duckmage-map-crumbs > .duckmage-map-crumb:not(.duckmage-map-crumb-more),
+.duckmage-map-nav-group > .duckmage-region-btn {
+    display: block;
+    line-height: 24px;
+    text-align: left;
+}
+.duckmage-map-crumbs .duckmage-map-crumb-more {
+    display: none;
+}
+.duckmage-map-crumbs.is-folded .duckmage-map-crumb-more {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    min-width: 0;
+}
+.duckmage-map-crumbs.is-folded .duckmage-map-crumb-mid {
+    display: none;
+}
+.duckmage-top-crowded > .duckmage-expand-group-top {
+    top: var(--duckmage-top-band-bottom, 44px);
+    left: auto;
+    right: 112px;
+    transform: none;
+}
+
+/* User test 2026-10-12 (the flower's "+" couldn't be clicked with the file
+   sidebar open): nothing in the toolbar row ever overlaps.
+   - Items keep their size and hang from the top of the row (a region's
+     flower is taller than the buttons); the neighbour box never shrinks
+     or clips (it hid the flower behind the next button).
+   - When the row doesn't fit even with the crumbs folded, it wraps
+     (is-wrapped, HexMapView.fitTopBar) onto a second line.
+   - Whatever sits under the row (the mode bar, the moved +/-) starts at
+     --duckmage-top-band-bottom, the row's measured bottom. */
+.duckmage-map-nav-group {
+    align-items: flex-start;
+}
+.duckmage-map-nav-group.is-wrapped {
+    flex-wrap: wrap;
+    row-gap: 4px;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs {
+    flex: none;
+    min-width: auto;
+    max-width: none;
+    overflow: visible;
+}
+.duckmage-map-nav-group > .duckmage-map-side-crumbs:has(> .duckmage-region-flower) {
+    background: none;
+    border: none;
+}
+.duckmage-hex-map-controls .duckmage-mode-bar {
+    top: var(--duckmage-top-band-bottom, 42px);
+}
+
+/* Table pickers: the terrain and region tables the map made, grouped
+   after the user's own tables (collapsed). */
+.duckmage-rt-map-made {
+    margin-top: 6px;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 4px;
+}
+.duckmage-rt-map-made > .duckmage-rt-folder-header .duckmage-rt-folder-name {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.duckmage-link-picker-map-made > summary {
+    cursor: pointer;
+    color: var(--text-muted);
+    margin: 6px 0;
+}
+
+/* A place made on arrival (GM4): Reroll / Lock next to the mode switch. */
+.duckmage-map-nav-group .duckmage-arrival-bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.duckmage-arrival-bar .duckmage-arrival-bar-label {
+    font-size: 0.8em;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.duckmage-map-nav-group .duckmage-arrival-bar button {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.8em;
+}
+
+/* Map properties → Tables (T11): one row per generator role. */
+.duckmage-role-table-row {
+    display: grid;
+    grid-template-columns: 9em 1fr;
+    align-items: center;
+    gap: 6px;
+    margin: 2px 0;
+}
+.duckmage-role-table-row select {
+    min-width: 0;
+    width: 100%;
+}
+.duckmage-role-table-from {
+    grid-column: 2;
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
+/* Uncharted marker (plan-tables-everywhere §2.6): a small ? on hexes whose
+   On arrival roll is still to come, left of the hex centre (badges sit on
+   the right). Layers menu → Labels → Uncharted. */
+.duckmage-uncharted-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9;
+}
+.duckmage-hide-uncharted .duckmage-uncharted-layer { display: none; }
+.duckmage-uncharted-mark {
+    position: absolute;
+    left: calc(var(--duckmage-uncharted-x, 50%) - 1.35em);
+    top: var(--duckmage-uncharted-y, 50%);
+    transform: translate(-50%, -50%);
+    font-size: 0.75em;
+    font-weight: 700;
+    line-height: 1;
+    color: #ffffff;
+    opacity: 0.7;
+    text-shadow: 0 0 2px #000000, 0 0 3px #000000;
+}
+
+/* ── Local disclosure (src/ui/disclosure.ts, src/ui/placement.ts) ─────────
+   Each surface's collapsed "Advanced" dropdown, with the "Debug"
+   subsection inside it (debug mode only), and the settings tab's rows. */
+.duckmage-disclosure {
+    margin: 0.75em 0;
+    border-top: 1px solid var(--background-modifier-border);
+    padding-top: 0.4em;
+}
+
+.duckmage-disclosure-summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    padding: 0.2em 0;
+}
+
+.duckmage-disclosure-summary:hover {
+    color: var(--text-normal);
+}
+
+.duckmage-disclosure-body {
+    padding-top: 0.25em;
+}
+
+/* Sub-sections inside Advanced ("advanced/<Sub-section>"): nested, closed by default. */
+.duckmage-disclosure-sub {
+    margin: 0.35em 0 0.35em 0.4em;
+    padding-left: 0.6em;
+    border-left: 2px solid var(--background-modifier-border);
+}
+
+.duckmage-disclosure-sub-summary {
+    cursor: pointer;
+    user-select: none;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    padding: 0.15em 0;
+}
+
+.duckmage-disclosure-sub-summary:hover {
+    color: var(--text-normal);
+}
+
+.duckmage-disclosure-sub-body {
+    padding-top: 0.2em;
+}
+
+.duckmage-disclosure-debug {
+    margin-top: 0.6em;
+    padding: 0.4em 0.6em;
+    border: 1px dashed var(--background-modifier-border);
+    border-radius: var(--radius-s);
+}
+
+.duckmage-disclosure-debug-title {
+    color: var(--text-faint);
+    font-size: var(--font-ui-smaller);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25em;
+}
+
+/* Compact surfaces: the map's side panels and the hex table toolbar. */
+.duckmage-side-panel > .duckmage-disclosure {
+    margin: 0;
+    padding-top: 4px;
+}
+.duckmage-side-panel .duckmage-disclosure-body,
+.duckmage-side-panel .duckmage-disclosure-debug {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.duckmage-hex-table-toolbar > .duckmage-disclosure {
+    margin: 0;
+    padding-top: 0;
+    border-top: none;
+}
+.duckmage-hex-table-toolbar .duckmage-disclosure-body,
+.duckmage-hex-table-toolbar .duckmage-disclosure-debug {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+}
+.duckmage-filter-range {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Hex editor: one section per kind of rolled table (SF2,
+   src/random-tables/TableChoice.ts): its tables, Roll and change…. */
+.duckmage-table-choice {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 2px 0 6px;
+    font-size: var(--font-ui-small);
+}
+.duckmage-table-choice-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.duckmage-table-choice-option,
+.duckmage-table-choice-one {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-table-choice-source {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-table-choice-name.is-missing {
+    color: var(--text-error);
+    text-decoration: line-through;
+}
+.duckmage-table-choice-none {
+    color: var(--text-muted);
+}
+.duckmage-table-choice-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.duckmage-rt-empty-state.is-compact {
+    flex-direction: row;
+    align-items: center;
+    margin: 0;
+}
+
+/* The inline God offer (src/hex-map/godOffer.ts). */
+.duckmage-god-offer {
+    margin-left: 6px;
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-god-offer-notice {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+.duckmage-god-offer-notice .duckmage-god-offer {
+    margin-left: 0;
+}
+
+/* Hex editor: the flower's centre dot copies a link to the hex. */
+button.duckmage-neighbor-centre {
+    padding: 0;
+    min-height: 0;
+    height: 16px;
+    box-shadow: none;
+}
+
+/* Settings tab: the Advanced row opens and closes the dropdown. */
+.duckmage-settings-advanced-row {
+    cursor: pointer;
+}
+
+.duckmage-settings-advanced-row:hover .setting-item-name {
+    color: var(--text-accent);
+}
+
+/* A sub-section's row inside the settings tab's Advanced dropdown. */
+.duckmage-settings-advanced-row.is-sub {
+    padding-left: 1em;
+}
+
+.duckmage-settings-advanced-row.is-sub .setting-item-name {
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+}
+
+/* Settings tab: palette list inside one setting row, full width under its name. */
+.duckmage-palette-mgmt-setting {
+    flex-wrap: wrap;
+}
+
+.duckmage-palette-mgmt-setting > .duckmage-palette-mgmt-host {
+    flex-basis: 100%;
+}
+
+/* Status bar: "Debug" while debug mode is on (click to turn it off). */
+.duckmage-debug-status {
+    color: var(--text-warning);
+}
+
+/* ── Shared controls (src/ui/sliders.ts, footer.ts, saveStatusLine.ts) ────── */
+
+/* LabeledSlider: label, slider, value always shown, [number box], [reset]. */
+.duckmage-labeled-slider {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5em;
+    margin: 0.2em 0;
+}
+
+.duckmage-labeled-slider > input[type="range"] {
+    flex: 1 1 8em;
+    min-width: 6em;
+}
+
+.duckmage-labeled-slider.is-stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+}
+
+.duckmage-labeled-slider.is-stacked > input[type="range"] {
+    width: 100%;
+    flex: none;
+}
+
+.duckmage-labeled-slider-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5em;
+}
+
+.duckmage-labeled-slider-label {
+    min-width: 6em;
+}
+
+.duckmage-labeled-slider-value {
+    min-width: 3.2em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+.duckmage-labeled-slider.is-stacked .duckmage-labeled-slider-value {
+    margin-left: auto;
+}
+
+.duckmage-labeled-slider-box {
+    width: 5em;
+}
+
+.duckmage-biome-tune-row .duckmage-labeled-slider-label {
+    min-width: 13em;
+}
+
+.duckmage-labeled-slider-help {
+    flex-basis: 100%;
+}
+
+/* An optional / inherited value: dimmed until set; the reset brings it back. */
+.duckmage-labeled-slider.is-inherited > input[type="range"],
+.duckmage-labeled-slider.is-inherited .duckmage-labeled-slider-value {
+    opacity: 0.55;
+}
+
+.duckmage-labeled-slider.is-disabled {
+    opacity: 0.5;
+}
+
+/* In a table cell (generator Bias, path knobs): no wrap, compact. */
+.duckmage-wfc-mix .duckmage-labeled-slider,
+.duckmage-wfc-terrain-row .duckmage-labeled-slider {
+    flex-wrap: nowrap;
+    margin: 0;
+    gap: 0.3em;
+}
+
+.duckmage-wfc-mix .duckmage-labeled-slider-label {
+    min-width: 0;
+}
+
+/* ResetButton: one rotate icon, disabled at the default. */
+.duckmage-reset-btn {
+    padding: 2px;
+}
+
+.duckmage-reset-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* The one modal footer: primary first, right-aligned. */
+.duckmage-modal-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 16px;
+}
+
+.duckmage-modal-footer button.is-locked {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
+/* Two-click delete: armed for a few seconds. */
+button.is-armed {
+    color: var(--text-on-accent);
+    background-color: var(--background-modifier-error);
+}
+
+/* The autosave line on editors with no Save button. */
+.duckmage-save-status-line {
+    align-self: flex-start;
+    margin: 0.4em 0;
+}
+
+/* % column beside free weights (random tables, world types). */
+.duckmage-odds-percent {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+    text-align: right;
+    white-space: nowrap;
+}
+
+.duckmage-table-editor-odds {
+    flex: 0 0 3em;
+    align-self: center;
+}
+
+/* ── Fold (src/ui/disclosure.ts): a titled group that folds away ──────────
+   A chevron that points right when closed and down when open. */
+.duckmage-fold > .duckmage-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.35em;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+}
+
+.duckmage-fold > .duckmage-fold-summary::-webkit-details-marker {
+    display: none;
+}
+
+.duckmage-fold > .duckmage-fold-summary:hover {
+    color: var(--text-accent);
+}
+
+.duckmage-fold-chevron {
+    display: inline-flex;
+    color: var(--text-muted);
+    transition: transform 120ms ease;
+}
+
+.duckmage-fold-chevron svg {
+    width: 1em;
+    height: 1em;
+}
+
+.duckmage-fold[open] > .duckmage-fold-summary .duckmage-fold-chevron {
+    transform: rotate(90deg);
+}
+
+/* ── Picker standard (src/ui/pickers.ts): filter box, empty state, grip ─── */
+.duckmage-picker-filter {
+    width: 100%;
+    margin-bottom: 0.4em;
+}
+
+.duckmage-empty-state {
+    padding: 0.5em 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.duckmage-drag-grip {
+    cursor: grab;
+    color: var(--text-faint);
+    user-select: none;
+}
+
+/* ── Background notices (src/ui/notify.ts): clicks pass through to the
+   map toolbar under Obsidian's notice corner; only the × catches them ── */
+.notice.duckmage-bg-notice {
+    pointer-events: none;
+    position: relative;
+    padding-inline-end: 2em;
+}
+
+.duckmage-bg-notice .duckmage-bg-notice-close {
+    pointer-events: auto;
+    position: absolute;
+    top: 4px;
+    inset-inline-end: 4px;
+    padding: 0 6px;
+    height: auto;
+    min-height: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.duckmage-bg-notice ul {
+    margin: 0.3em 0 0;
+    padding-inline-start: 1.2em;
+}
+
+.duckmage-bg-notice p {
+    margin: 0;
+}
+
+/* ── Solo play (owner calls SF3-SF5, O8) ─────────────────────────────────── */
+
+/* Visited hexes: a small dot at the hex's left (badges sit right, the
+   coordinate top or bottom, the name in the middle). Layers menu ->
+   Labels -> Visited hides them. */
+.duckmage-hex-visited:not(.duckmage-hex-brush-hover)::before {
+    content: "";
+    position: absolute;
+    left: 22%;
+    top: 50%;
+    width: 0.5em;
+    height: 0.5em;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: var(--duckmage-visited-color, #f2c94c);
+    box-shadow: 0 0 0 0.08em rgba(0, 0, 0, 0.55);
+    pointer-events: none;
+    z-index: 2;
+}
+.duckmage-hide-visited .duckmage-hex-visited::before { display: none; }
+
+/* The selected party token, and the hexes it can step to. */
+.duckmage-token.is-party {
+    box-shadow: 0 0 0 2px var(--background-primary), 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.duckmage-token.is-party.is-selected {
+    box-shadow: 0 0 0 2px var(--background-primary), 0 0 0 5px var(--interactive-accent), 0 2px 8px rgba(0, 0, 0, 0.6);
+}
+.duckmage-hex.duckmage-party-step::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(120, 200, 255, 0.36);
+    pointer-events: none;
+}
+.duckmage-hex.duckmage-party-step:hover::after {
+    background: rgba(120, 200, 255, 0.5);
+}
+
+/* A name above its token sits close to it: the token is moved up off the
+   hex number, so a wide gap would push the name onto the hex above. */
+.duckmage-token-name-sm.is-above { --duckmage-token-name-drop: 0.85em; }
+.duckmage-token-name-md.is-above { --duckmage-token-name-drop: 1.15em; }
+.duckmage-token-name-lg.is-above { --duckmage-token-name-drop: 1.6em; }
+
+/* Coordinates stay readable over a token (middle placement; tokens are
+   moved off top and bottom coordinates). */
+.duckmage-hex-map-grid > .duckmage-coord-labels-layer {
+    z-index: 11;
+}
+
+/* Hex editor: "Show on map" beside a link section with links (SF4). */
+.duckmage-link-show-on-map {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    margin-top: 0.3em;
+    font-size: var(--font-ui-small);
+}
+.duckmage-link-show-on-map img {
+    width: 1.3em;
+    height: 1.3em;
+    object-fit: contain;
+}
+
+/* Settings: the icon each link section offers. */
+.duckmage-link-icons-row {
+    flex-wrap: wrap;
+    gap: 0.4em;
+}
+.duckmage-link-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+}
+.duckmage-link-icon-btn img {
+    width: 1.3em;
+    height: 1.3em;
+    object-fit: contain;
+}
+
+/* Add to play log. */
+.duckmage-play-log-text {
+    width: 100%;
+    min-height: 5em;
+    resize: vertical;
+}
+
+/* The upgrade notice's link to the upgrade note (MG1): clickable though the notice lets clicks through. */
+.duckmage-bg-notice .duckmage-bg-notice-link {
+    pointer-events: auto;
+    cursor: pointer;
+}
+.duckmage-bg-notice p + p {
+    margin-top: 0.4em;
+}
+
+/* Restore from upgrade backup (MG2). */
+.duckmage-restore-backup-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+}
+.duckmage-restore-backup-row {
+    justify-content: flex-start;
+    gap: 0.6em;
+    flex-wrap: wrap;
+    text-align: start;
+    height: auto;
+    white-space: normal;
+}
+.duckmage-restore-backup-name {
+    font-family: var(--font-monospace);
+    word-break: break-all;
+}
+.duckmage-restore-backup-notes {
+    max-height: 40vh;
+    overflow-y: auto;
+    word-break: break-all;
+}
+
+/* Content packs (SF1): export and import dialogs, wizard offer. */
+.duckmage-pack-desc {
+    flex: 1;
+    min-width: 12em;
+    resize: vertical;
+}
+.duckmage-pack-kinds-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-kinds-head .duckmage-export-group-title {
+    flex: 1;
+}
+.duckmage-pack-small-btn {
+    font-size: var(--font-ui-smaller);
+    padding: 0 8px;
+    height: auto;
+}
+.duckmage-pack-kind .duckmage-fold-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-count,
+.duckmage-pack-tag,
+.duckmage-pack-from {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-pack-count {
+    margin-left: auto;
+}
+.duckmage-pack-items {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 16em;
+    overflow-y: auto;
+    padding: 2px 0 2px 1.4em;
+}
+.duckmage-pack-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.duckmage-pack-item-name {
+    flex: 1;
+    overflow-wrap: anywhere;
+}
+.duckmage-pack-choice {
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-pack-zip {
+    justify-content: flex-start;
+    text-align: left;
+}
+.duckmage-pack-error {
+    color: var(--text-error);
+    margin: 0.4em 0;
+}
+.duckmage-pack-report {
+    margin: 0;
+    padding-left: 1.2em;
+    font-size: var(--font-ui-smaller);
+    max-height: 14em;
+    overflow-y: auto;
+}
+.duckmage-wizard-pack-text {
+    color: var(--text-muted);
+}
+.duckmage-wizard-pack-row {
+    margin-top: 1em;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+}
+
+/* Hex flowers (plan-hex-flower): 19 flat-topped cells placed by custom properties. */
+.duckmage-flower {
+    position: relative;
+    width: 100%;
+    max-width: 26em;
+    aspect-ratio: 4 / 4.33;
+    margin: 0.5em auto;
+}
+.duckmage-flower.is-note {
+    max-width: 22em;
+}
+.duckmage-flower-cell {
+    position: absolute;
+    left: var(--duckmage-flower-left, 0);
+    top: var(--duckmage-flower-top, 0);
+    width: 25%;
+    height: 20%;
+    clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+    background: var(--duckmage-flower-color, var(--background-secondary-alt));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.1;
+    overflow: hidden;
+}
+.duckmage-flower-cell.has-color {
+    color: var(--text-on-accent);
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.8);
+}
+.duckmage-flower-cell.is-blocked {
+    background: repeating-linear-gradient(45deg, var(--background-modifier-border) 0 4px, var(--background-primary) 4px 8px);
+    color: var(--text-muted);
+}
+.duckmage-flower-cell.is-start .duckmage-flower-num {
+    font-weight: bold;
+    text-decoration: underline;
+}
+.duckmage-flower-cell.is-current {
+    outline: none;
+    box-shadow: inset 0 0 0 3px var(--interactive-accent);
+}
+.duckmage-flower.is-editable .duckmage-flower-cell {
+    cursor: pointer;
+}
+.duckmage-flower.is-editable .duckmage-flower-cell:hover {
+    filter: brightness(1.15);
+}
+.duckmage-flower-num {
+    opacity: 0.75;
+}
+.duckmage-flower-result {
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.duckmage-flower-under {
+    opacity: 0.8;
+    font-size: 0.9em;
+}
+.duckmage-flower-missing {
+    color: var(--text-muted);
+    font-style: italic;
+}
+.duckmage-wfc-library-table.is-flowers .duckmage-wfc-library-row {
+    /* Name, Palette, Results */
+    grid-template-columns: minmax(8em, 1fr) minmax(6em, 0.8fr) minmax(8em, 2fr);
+}
+/* A big palette's swatches scroll (the flower's own results come first). */
+.duckmage-flower-panel .duckmage-flower-swatches {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3em;
+    margin: 0.4em 0;
+    max-height: 6.2em;
+    overflow-y: auto;
+}
+.duckmage-flower-swatch {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+}
+.duckmage-flower-swatch.is-active {
+    box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+.duckmage-flower-swatch-dot {
+    width: 0.9em;
+    height: 0.9em;
+    border-radius: 50%;
+    background: var(--duckmage-flower-color, var(--background-modifier-border));
+}
+.duckmage-flower-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4em;
+    margin: 0.5em 0;
+}
+.duckmage-flower-moves td,
+.duckmage-flower-moves th,
+.duckmage-flower-matrix td,
+.duckmage-flower-matrix th {
+    padding: 0.1em 0.4em;
+    text-align: center;
+}
+.duckmage-flower-matrix {
+    font-size: var(--font-ui-smaller);
+}
+.duckmage-flower-walk-log {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    max-height: 8em;
+    overflow-y: auto;
+    white-space: pre-wrap;
+}
+.duckmage-flower-report {
+    font-size: var(--font-ui-smaller);
+    white-space: pre-wrap;
+}
+/* Map properties → Exploring: the explore-with rules, one per line. */
+.duckmage-explore-rules {
+    width: 100%;
+    font-family: var(--font-monospace);
+    resize: vertical;
 }

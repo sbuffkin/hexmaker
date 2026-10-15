@@ -38,6 +38,8 @@ function makePlugin(hexPathFn: (x: number, y: number) => string) {
 			hexEditorStartCollapsed: false,
 		},
 		availableIcons: [],
+		terrainEncounterLinkFor: () => null,
+		syncHexMapData: mock.fn(async () => ({ wrote: false, applied: [], notApplied: [], unreadable: [] })),
 	} as unknown as import("../src/HexmakerPlugin").default;
 }
 
@@ -195,13 +197,21 @@ describe("HexEditorModal section start-collapsed settings", () => {
 			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive },
 		) as any;
 		const states = new Map<string, boolean>();
-		modal.makeCollapsible = (_c: unknown, label: string, startCollapsed: boolean) => {
-			states.set(label, startCollapsed);
-			return { body: {}, header: {} };
+		// Just enough of an element for a Fold (src/ui/disclosure.ts) built in the body.
+		const stub = (): any => ({ createEl: () => stub(), createSpan: () => stub(), createDiv: () => stub(), addEventListener: () => {}, setText: () => {} });
+		modal.makeCollapsible = (_c: unknown, label: string, flag: string) => {
+			states.set(label, (plugin.settings as any)[flag] ?? false);
+			return {
+				body: { addClass: () => {}, isShown: () => true, createEl: () => stub(), createDiv: () => ({ dataset: {}, setText: () => {}, toggleClass: () => {} }) },
+				header: { createSpan: () => ({ toggle: () => {} }), addEventListener: () => {} },
+			};
 		};
+		modal.renderTerrainHeader = () => {};
 		modal.renderTerrainSection = () => {};
+		modal.renderIconSections = () => {};
 		modal.renderTextSection = () => {};
 		modal.renderDropdownSection = () => {};
+		modal.renderEncountersSection = () => {};
 		modal.renderBody({ createEl: () => ({}) }, "hex/1_1.md");
 		return states;
 	}
@@ -216,6 +226,60 @@ describe("HexEditorModal section start-collapsed settings", () => {
 
 	it("starts Notes expanded when the setting is off", () => {
 		expect(collapsedStates(false, true).get("Notes")).toBe(false);
+	});
+
+	it("puts Notes right under Terrain and the long icon grids last (fresh-eyes round 3)", () => {
+		expect([...collapsedStates(false, true).keys()]).toEqual(["Terrain", "Notes", "Linked notes", "Icons"]);
+	});
+});
+
+// ── Hidden/Secret hint when the GM layer is off (fresh-eyes round 6) ─────────
+
+describe("HexEditorModal GM-layer hint", () => {
+	/** Render with stubs; return the texts of hint divs and a "Show them" click. */
+	function render(gmLayerActive: boolean, onEnableGmLayer?: () => void) {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		(plugin as any).getMapPalette = () => [];
+		const modal = new HexEditorModal(
+			makeApp({}), plugin, 1, 1, "default", () => {}, { gmLayerActive, onEnableGmLayer },
+		) as any;
+		const hints: string[] = [];
+		let click: (() => void) | null = null;
+		const el = (): any => ({
+			dataset: {}, setText: () => {}, toggleClass: () => {}, addClass: () => {}, isShown: () => true,
+			createEl: (_t: string, o?: { text?: string }) => {
+				const a = el();
+				if (o?.text === "Show them") a.addEventListener = (_e: string, fn: (e: { preventDefault(): void }) => void) => { click = () => fn({ preventDefault: () => {} }); };
+				return a;
+			},
+			createSpan: (o?: { text?: string }) => { if (o?.text) hints.push(o.text); return el(); },
+			createDiv: (o?: { cls?: string }) => (o?.cls === "duckmage-editor-gm-hint" ? (hints.push("<hint>"), el()) : el()),
+			addEventListener: () => {},
+			toggle: () => {},
+		});
+		modal.makeCollapsible = () => ({ body: el(), header: el() });
+		modal.renderTerrainHeader = () => {};
+		modal.renderTerrainSection = () => {};
+		modal.renderIconSections = () => {};
+		modal.renderTextSection = () => {};
+		modal.renderDropdownSection = () => {};
+		modal.renderEncountersSection = () => {};
+		modal.onOpen = () => {};
+		modal.renderBody(el(), "hex/1_1.md");
+		return { hints, click: () => click?.(), modal };
+	}
+
+	it("offers to show Hidden and Secret when the GM layer is off", () => {
+		let enabled = 0;
+		const r = render(false, () => enabled++);
+		expect(r.hints).toContain("<hint>");
+		r.click();
+		expect(enabled).toBe(1);
+		expect(r.modal.options.gmLayerActive).toBe(true);
+	});
+
+	it("shows no hint when the GM layer is on", () => {
+		expect(render(true, () => {}).hints).not.toContain("<hint>");
 	});
 });
 
@@ -272,5 +336,88 @@ describe("HexEditorModal navigation reload", () => {
 		(modal as any).y = 1;
 		await modal.loadData();
 		expect((modal as any).directIcon).toBe("oasis.png");
+	});
+});
+
+// ── Fresh-eyes #38 (E1, E5) ─────────────────────────────────────────────────
+
+describe("HexEditorModal reads terrain from the map note (E1)", () => {
+	it("loads terrain and icon from the map store even when the hex note doesn't exist", async () => {
+		const { setHexDataSource } = await import("../src/frontmatter");
+		setHexDataSource({
+			isReady: () => true,
+			resolve: (p: string) => (p === "hex/3_3.md" ? { map: "m", key: "3_3" } : null),
+			get: (_m: string, k: string) => (k === "3_3" ? { terrain: "hill", icon: "tower.png", gmIcons: ["skull.png"] } : undefined),
+			set: () => {},
+		} as any);
+		try {
+			const plugin = makePlugin(() => "hex/3_3.md");
+			const modal = new HexEditorModal(makeApp({}), plugin, 3, 3, "m", () => {}) as any;
+			await modal.loadData();
+			expect(modal.hexExists).toBe(false);
+			expect(modal.directTerrain).toBe("hill");
+			expect(modal.directIcon).toBe("tower.png");
+			expect(modal.directGmIcons).toEqual(["skull.png"]);
+		} finally {
+			setHexDataSource(null);
+		}
+	});
+});
+
+describe("HexEditorModal remembers collapsed groups (E5) in the shared Fold (O8)", () => {
+	/** Just enough of an HTMLElement for a Fold (src/ui/disclosure.ts): records what it makes. */
+	function fakeEl(tag = "div"): any {
+		const listeners: Record<string, () => void> = {};
+		const el: any = {
+			tag,
+			open: false,
+			made: [] as any[],
+			setText: () => {},
+			createDiv: () => fakeEl(),
+			createSpan: () => fakeEl("span"),
+			createEl: (t: string) => { const c = fakeEl(t); el.made.push(c); return c; },
+			addEventListener: (t: string, fn: () => void) => { listeners[t] = fn; },
+			fire: (t: string) => listeners[t]?.(),
+		};
+		return el;
+	}
+
+	it("each group is a <details> Fold; folding it saves its flag, so the next hex opens the same way", () => {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		const saveSettings = mock.fn(async () => {});
+		(plugin as any).saveSettings = saveSettings;
+		const modal = new HexEditorModal(makeApp({}), plugin, 1, 1, "default", () => {}) as any;
+		const parent = fakeEl();
+		modal.makeCollapsible(parent, "Terrain", "hexEditorTerrainCollapsed");
+		const details = parent.made[0];
+		expect(details.tag).toBe("details");
+		expect(details.open).toBe(true);
+		details.open = false;
+		details.fire("toggle");
+		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(true);
+		expect(saveSettings.mock.callCount()).toBe(1);
+
+		const next = new HexEditorModal(makeApp({}), plugin, 2, 2, "default", () => {}) as any;
+		const parent2 = fakeEl();
+		next.makeCollapsible(parent2, "Terrain", "hexEditorTerrainCollapsed");
+		const reopened = parent2.made[0];
+		expect(reopened.open).toBe(false);
+		reopened.open = true;
+		reopened.fire("toggle");
+		expect(plugin.settings.hexEditorTerrainCollapsed).toBe(false);
+	});
+
+	it("a start state passed in wins over the flag, and the group's toggle is reported", () => {
+		const plugin = makePlugin(() => "hex/1_1.md");
+		(plugin as any).saveSettings = async () => {};
+		const modal = new HexEditorModal(makeApp({}), plugin, 1, 1, "default", () => {}) as any;
+		const seen: boolean[] = [];
+		const parent = fakeEl();
+		modal.makeCollapsible(parent, "Terrain", "hexEditorTerrainCollapsed", true, (open: boolean) => seen.push(open));
+		const details = parent.made[0];
+		expect(details.open).toBe(false);
+		details.open = true;
+		details.fire("toggle");
+		expect(seen).toEqual([true]);
 	});
 });

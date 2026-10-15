@@ -1,7 +1,9 @@
 import { TFile } from "obsidian";
+import { handRollLabel } from "../arrival/eventsLedger";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { parseRandomTable, rollOnTable } from "./randomTable";
-import { DIE_OPTIONS } from "./RandomTableView";
+import { dieLabel, parseRandomTable, rollTable } from "./randomTable";
+import { renderEmptyTableState, setRollEnabled, tableIsEmpty } from "./emptyTable";
+import { withRepairHint } from "../ui/repairHint";
 
 /**
  * Registers the `duckmage-roller` fenced code block processor.
@@ -23,39 +25,27 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
       if (!(file instanceof TFile)) {
         el.createDiv({
           cls: "duckmage-rt-empty",
-          text: `Table not found: "${targetPath}"`,
+          text: withRepairHint(`Table not found: "${targetPath}"`),
         });
         return;
       }
 
-      // Read initial table to seed the die selector
+      // The die is the table's own (its frontmatter / roll column header).
       const initialContent = await plugin.app.vault.read(file);
       const initialTable = parseRandomTable(initialContent);
-
-      // Local die state — cosmetic, not saved to file
-      let currentDice = initialTable.dice;
 
       // ── Widget container ─────────────────────────────────────────────
       const block = el.createDiv({ cls: "duckmage-roller-block" });
 
-      // Header: title + die selector
+      // Header: title + the table's die
       const header = block.createDiv({ cls: "duckmage-roller-header" });
       header.createSpan({
         cls: "duckmage-roller-title",
         text: `🎲 ${file.basename}`,
       });
-      const dieSelect = header.createEl("select", {
+      const dieEl = header.createSpan({
         cls: "duckmage-roller-die",
-      });
-      for (const opt of DIE_OPTIONS) {
-        const o = dieSelect.createEl("option", {
-          value: String(opt.value),
-          text: opt.label,
-        });
-        if (opt.value === currentDice) o.selected = true;
-      }
-      dieSelect.addEventListener("change", () => {
-        currentDice = parseInt(dieSelect.value, 10);
+        text: dieLabel(initialTable.dice),
       });
 
       // Roll button
@@ -64,6 +54,27 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
         cls: "duckmage-roller-btn mod-cta",
       });
 
+      // An empty table (tables ship empty, SF1): Roll is disabled and the
+      // shared empty state opens the table editor. Checked again after an
+      // edit there and before each roll.
+      const emptyWrap = block.createDiv();
+      const showEmpty = (content: string): boolean => {
+        emptyWrap.empty();
+        const empty = tableIsEmpty(content);
+        setRollEnabled(rollBtn, !empty);
+        if (empty) {
+          renderEmptyTableState(emptyWrap, {
+            app: plugin.app,
+            plugin,
+            file,
+            content,
+            onSaved: () => void plugin.app.vault.read(file).then(showEmpty),
+          });
+        }
+        return empty;
+      };
+      showEmpty(initialContent);
+
       // Result area — hidden until first roll (reuses modal CSS classes)
       const resultBox = block.createDiv({ cls: "duckmage-roll-result" });
       resultBox.hide();
@@ -71,10 +82,11 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
         cls: "duckmage-roll-result-textarea",
       });
       resultTextarea.readOnly = true;
+      const faceEl = resultBox.createDiv({ cls: "duckmage-roll-face" });
+      resultTextarea.before(faceEl);
       const resultBtns = resultBox.createDiv({ cls: "duckmage-roll-result-btns" });
       const copyBtn = resultBtns.createEl("button", {
         text: "Copy",
-        cls: "mod-cta",
       });
       copyBtn.addEventListener("click", () => {
         void navigator.clipboard.writeText(resultTextarea.value);
@@ -109,8 +121,13 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
         void (async () => {
           const content = await plugin.app.vault.read(file);
           const table = parseRandomTable(content);
-          const rolled = rollOnTable(table);
-          if (!rolled) return;
+          dieEl.setText(dieLabel(table.dice));
+          const outcome = rollTable(table);
+          const rolled = outcome?.entry;
+          if (showEmpty(content) || !outcome || !rolled) {
+            resultBox.hide();
+            return;
+          }
 
           // For linked-folder / isLink entries strip the path prefix
           let display = rolled.result;
@@ -119,6 +136,10 @@ export function registerRollerBlock(plugin: HexmakerPlugin): void {
           }
 
           resultTextarea.value = display;
+          // "d20 → 14": the face rolled, so it can be checked against the note.
+          const face = handRollLabel(table, outcome);
+          faceEl.setText(face);
+          faceEl.toggle(!!face);
           resultBox.show();
 
           history.unshift(display);

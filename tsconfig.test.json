@@ -2,9 +2,9 @@
 	"extends": "./tsconfig.json",
 	"compilerOptions": {
 		"esModuleInterop": true,
-		"paths": {
-			"obsidian": ["./tests/__mocks__/obsidian.ts"]
-		}
+		"lib": ["DOM", "ES2022"],
+		"types": ["node"]
 	},
-	"include": ["tests/**/*.ts"]
+	"include": ["tests/**/*.ts", "src/md.d.ts", "src/slices.d.ts"],
+	"exclude": ["node_modules"]
 }

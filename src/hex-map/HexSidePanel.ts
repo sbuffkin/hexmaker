@@ -1,6 +1,10 @@
 import { setIcon } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
+import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
+import { Disclosure } from "../ui/disclosure";
+import { renderResetButton } from "../ui/sliders";
+import { NAME_FAMILIES, NAME_SIZES, nameStyleId, resolveNameFont, type HexNameSize, type ResolvedNameFont } from "./hexNameFont";
 
 // ── Abstract base ────────────────────────────────────────────────────────────
 
@@ -55,6 +59,11 @@ export abstract class HexSidePanel {
   get isOpen(): boolean {
     return this._isOpen;
   }
+
+  /** The panel box (to keep hexes out from under it while it's open). */
+  get element(): HTMLElement {
+    return this.panelEl;
+  }
 }
 
 // ── Drawing tool panel ───────────────────────────────────────────────────────
@@ -80,6 +89,10 @@ export class DrawingToolPanel extends HexSidePanel {
 
 export type OverlayKey =
   | "showCoords"
+  | "showHexNames"
+  | "showTokenNames"
+  | "showUncharted"
+  | "showVisited"
   | "showTerrainIcons"
   | "showIconOverrides"
   | "showPaths";
@@ -88,14 +101,48 @@ interface OverlayOption {
   key: OverlayKey;
   label: string;
   cssClass: string;
+  /** Shown in the compact "Labels" group rather than as its own row. */
+  inLabels?: boolean;
 }
 
 const OVERLAY_OPTIONS: OverlayOption[] = [
-  { key: "showCoords",        label: "Show coordinates",   cssClass: "duckmage-hide-coords" },
   { key: "showTerrainIcons",  label: "Show terrain icons", cssClass: "duckmage-hide-terrain-icons" },
   { key: "showIconOverrides", label: "Show icon overrides",cssClass: "duckmage-hide-icon-overrides" },
   { key: "showPaths",         label: "Show paths",         cssClass: "duckmage-hide-paths" },
+  // Labels: one group, so the menu doesn't grow a row per label kind.
+  { key: "showCoords",     label: "Coordinates", cssClass: "duckmage-hide-coords",      inLabels: true },
+  { key: "showHexNames",   label: "Hex names",   cssClass: "duckmage-hide-hex-names",   inLabels: true },
+  { key: "showTokenNames", label: "Token names", cssClass: "duckmage-hide-token-names", inLabels: true },
+  // Hexes still to roll on arrival (a ? mark).
+  { key: "showUncharted",  label: "Uncharted (?)", cssClass: "duckmage-hide-uncharted",   inLabels: true },
+  // Hexes a party token has stood on (SF5): a dot on each.
+  { key: "showVisited",    label: "Visited",       cssClass: "duckmage-hide-visited",     inLabels: true },
 ];
+
+/** Optional layers-menu rows (kept out of the positional callbacks). */
+export interface OverlayPanelExtras {
+  /** Terrain legend toggled (a plugin-wide setting, not per map). */
+  onLegendChange?: (show: boolean) => void;
+  /** Badge size or the badge kinds shown changed (redraw badges + legend). */
+  onBadgesChange?: () => void;
+  /** The map's hex-name font changed (redraw the names). */
+  onHexNameFontChange?: () => void;
+  /** Rows a module adds after "Show paths" (shown only on maps they apply to). */
+  rows?: readonly LayerRow[];
+  /** A module row was toggled (the map already holds the new value). */
+  onRowChange?: (id: string) => void;
+}
+
+/** A layers-menu row a module adds: a per-map on/off. */
+export interface LayerRow {
+  /** UI inventory id (placement map). */
+  id: string;
+  label: string;
+  /** Is the row offered on this map. */
+  shows(map: MapData): boolean;
+  value(map: MapData): boolean;
+  set(map: MapData, on: boolean): void;
+}
 
 export class OverlayPanel extends HexSidePanel {
   private plugin: HexmakerPlugin;
@@ -108,8 +155,20 @@ export class OverlayPanel extends HexSidePanel {
   private checkboxes = new Map<OverlayKey, HTMLInputElement>();
   private factionOverlayCb: HTMLInputElement | null = null;
   private regionOverlayCb: HTMLInputElement | null = null;
+  /** The layers menu's Advanced dropdown (its header counts what's on in it). */
+  private layersDisclosure: Disclosure | null = null;
   private gmLayerCb: HTMLInputElement | null = null;
   private tokensCb: HTMLInputElement | null = null;
+  private badgesCb: HTMLInputElement | null = null;
+  private badgeChips = new Map<string, HTMLButtonElement>();
+  private badgeSizeBtns = new Map<string, HTMLButtonElement>();
+  private legendCb: HTMLInputElement | null = null;
+  private nameFamilySelect: HTMLSelectElement | null = null;
+  private nameSizeBtns = new Map<HexNameSize, HTMLButtonElement>();
+  private nameBoldBtn: HTMLButtonElement | null = null;
+  private nameItalicBtn: HTMLButtonElement | null = null;
+  private extras: OverlayPanelExtras;
+  private moduleRows: { row: LayerRow; el: HTMLElement; cb: HTMLInputElement }[] = [];
 
   constructor(
     container: HTMLElement,
@@ -120,6 +179,7 @@ export class OverlayPanel extends HexSidePanel {
     onRegionOverlayChange: (show: boolean) => void,
     onGmLayerChange: (show: boolean) => void,
     onTokensChange: (show: boolean) => void,
+    extras: OverlayPanelExtras = {},
   ) {
     super(container, "layers", 44, "Map overlays");
     this.plugin = plugin;
@@ -129,12 +189,24 @@ export class OverlayPanel extends HexSidePanel {
     this.onRegionOverlayChange = onRegionOverlayChange;
     this.onGmLayerChange = onGmLayerChange;
     this.onTokensChange = onTokensChange;
+    this.extras = extras;
     this.buildPanel(this.panelEl);
   }
 
   protected buildPanel(panel: HTMLDivElement): void {
+    // The layers menu's Advanced dropdown (placement map; built only when something goes in it).
+    const disclosure = new Disclosure(this.plugin.app, "LayersMenu", () => panel);
+    this.layersDisclosure = disclosure;
+    // The Labels group comes first: one heading, its toggles side by side.
+    const labelGroup = panel.createDiv({ cls: "duckmage-overlay-group" });
+    const labelTitle = labelGroup.createDiv({ cls: "duckmage-overlay-group-title" });
+    labelTitle.createSpan({ text: "Labels" });
+    const labelRow = labelGroup.createDiv({ cls: "duckmage-overlay-group-row" });
+    this.buildNameFontRow(labelTitle, labelGroup);
     for (const opt of OVERLAY_OPTIONS) {
-      const row = panel.createDiv({ cls: "duckmage-overlay-row" });
+      const row = opt.inLabels
+        ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-label-toggle" })
+        : panel.createDiv({ cls: "duckmage-overlay-row" });
 
       const cb = row.createEl("input", { type: "checkbox" });
       cb.checked = true; // default — refreshed in syncToRegion()
@@ -154,6 +226,7 @@ export class OverlayPanel extends HexSidePanel {
         cb.checked = !cb.checked;
         apply();
       });
+      if (opt.key === "showPaths") this.buildModuleRows(panel, disclosure);
     }
 
     // Show tokens — default on
@@ -211,7 +284,7 @@ export class OverlayPanel extends HexSidePanel {
     this.regionOverlayCb = regionCb;
 
     const regionLabel = regionRow.createSpan({
-      text: "Show region overlay",
+      text: "Show area overlay",
       cls: "duckmage-overlay-label",
     });
 
@@ -227,6 +300,10 @@ export class OverlayPanel extends HexSidePanel {
       regionCb.checked = !regionCb.checked;
       applyRegion();
     });
+    // The region overlay is Advanced (placement: LayersMenu.regionOverlay):
+    // in a collapsed dropdown at the end of the menu, so it doesn't grow.
+    // "Advanced · 1 set" while the overlay is on.
+    disclosure.place("LayersMenu.regionOverlay", regionRow, () => regionCb.checked);
 
     // GM layer — default on (unlike the opt-in overlays above)
     const gmRow = panel.createDiv({ cls: "duckmage-overlay-row" });
@@ -252,7 +329,233 @@ export class OverlayPanel extends HexSidePanel {
       applyGm();
     });
 
+    this.buildBadgeRows(panel);
 
+    // Terrain legend — plugin-wide (also in generator previews), on by default
+    const legendRow = panel.createDiv({ cls: "duckmage-overlay-row" });
+    const legendCb = legendRow.createEl("input", { type: "checkbox" });
+    legendCb.checked = this.plugin.settings.showTerrainLegend ?? true;
+    this.legendCb = legendCb;
+    const legendLabel = legendRow.createSpan({ text: "Show legend", cls: "duckmage-overlay-label" });
+    const applyLegend = () => {
+      this.plugin.settings.showTerrainLegend = legendCb.checked;
+      void this.plugin.saveSettings();
+      this.extras.onLegendChange?.(legendCb.checked);
+    };
+    legendCb.addEventListener("change", applyLegend);
+    legendLabel.addEventListener("click", () => {
+      legendCb.checked = !legendCb.checked;
+      applyLegend();
+    });
+    disclosure.toEnd();
+  }
+
+  /**
+   * Hex-name font (NM3): an "Aa" button in the Labels heading unfolds one
+   * compact row (font, size S–XL, bold, italic, back to the default), so
+   * the menu doesn't grow. Saved per map; unset parts follow the default
+   * in the plugin settings.
+   */
+  private buildNameFontRow(title: HTMLElement, group: HTMLElement): void {
+    const btn = title.createEl("button", {
+      cls: "duckmage-overlay-font-btn",
+      text: "Aa",
+      attr: { "aria-label": "Hex name font", "aria-expanded": "false" },
+    });
+    const row = group.createDiv({ cls: "duckmage-overlay-subrow duckmage-overlay-font-row" });
+    row.hide();
+    btn.addEventListener("click", () => {
+      const open = !row.isShown();
+      row.toggle(open);
+      btn.toggleClass("is-open", open);
+      btn.setAttr("aria-expanded", String(open));
+    });
+
+    const changed = () => {
+      void this.plugin.saveSettings();
+      this.syncNameFont();
+      this.extras.onHexNameFontChange?.();
+    };
+
+    const family = row.createEl("select", { cls: "dropdown duckmage-overlay-font-family", attr: { "aria-label": "Font" } });
+    for (const f of NAME_FAMILIES) family.createEl("option", { value: f.id, text: f.label });
+    family.addEventListener("change", () => {
+      this.getActiveMap().hexNameFont = family.value;
+      changed();
+    });
+    this.nameFamilySelect = family;
+
+    const sizes = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Name size" } });
+    for (const s of NAME_SIZES) {
+      const b = sizes.createEl("button", {
+        cls: "duckmage-overlay-size",
+        text: s.label,
+        attr: { "aria-label": `Name size ${s.label}` },
+      });
+      this.nameSizeBtns.set(s.id, b);
+      b.addEventListener("click", () => {
+        this.getActiveMap().hexNameSize = s.id;
+        changed();
+      });
+    }
+
+    const styles = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Name style" } });
+    const styleBtn = (text: string, label: string, cls: string, flip: (f: ResolvedNameFont) => ResolvedNameFont) => {
+      const b = styles.createEl("button", { cls: `duckmage-overlay-size ${cls}`, text, attr: { "aria-label": label } });
+      b.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        const next = flip(resolveNameFont(map, this.plugin.settings));
+        map.hexNameStyle = nameStyleId(next.bold, next.italic);
+        changed();
+      });
+      return b;
+    };
+    this.nameBoldBtn = styleBtn("B", "Bold", "duckmage-overlay-font-bold", (f) => ({ ...f, bold: !f.bold }));
+    this.nameItalicBtn = styleBtn("I", "Italic", "duckmage-overlay-font-italic", (f) => ({ ...f, italic: !f.italic }));
+
+    // The one reset button (src/ui/sliders.ts).
+    renderResetButton(row, {
+      what: "the name font",
+      defaultText: "the settings' font",
+      onReset: () => {
+        const map = this.getActiveMap();
+        delete map.hexNameFont;
+        delete map.hexNameSize;
+        delete map.hexNameStyle;
+        changed();
+      },
+    }).el.addClass("duckmage-overlay-font-reset");
+  }
+
+  /** Name-font controls ← the current map's font. */
+  private syncNameFont(): void {
+    const font = resolveNameFont(this.getActiveMap(), this.plugin.settings);
+    if (this.nameFamilySelect) this.nameFamilySelect.value = font.family;
+    for (const [id, b] of this.nameSizeBtns) {
+      b.toggleClass("is-active", id === font.size);
+      b.setAttr("aria-pressed", String(id === font.size));
+    }
+    this.nameBoldBtn?.toggleClass("is-active", font.bold);
+    this.nameBoldBtn?.setAttr("aria-pressed", String(font.bold));
+    this.nameItalicBtn?.toggleClass("is-active", font.italic);
+    this.nameItalicBtn?.setAttr("aria-pressed", String(font.italic));
+  }
+
+  /**
+   * Link badges: one row (master toggle + a ▸ that unfolds a compact strip
+   * of per-type chips) so the menu doesn't grow a row per link type.
+   * Only CSS classes on the viewport change: no re-render on toggle.
+   */
+  private buildBadgeRows(panel: HTMLDivElement): void {
+    const row = panel.createDiv({ cls: "duckmage-overlay-row" });
+    const cb = row.createEl("input", { type: "checkbox" });
+    cb.checked = true;
+    this.badgesCb = cb;
+    const label = row.createSpan({ text: "Show link badges", cls: "duckmage-overlay-label" });
+    // Badge size, per map (round 7 R8): S / M / L beside the toggle.
+    const sizes = row.createDiv({ cls: "duckmage-overlay-sizes", attr: { role: "group", "aria-label": "Badge size" } });
+    for (const s of BADGE_SIZES) {
+      const b = sizes.createEl("button", {
+        cls: "duckmage-overlay-size",
+        text: s.toUpperCase(),
+        attr: { "aria-label": `Badge size ${s.toUpperCase()}` },
+      });
+      this.badgeSizeBtns.set(s, b);
+      b.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        map.linkBadgeSize = s;
+        void this.plugin.saveSettings();
+        this.applyBadgeClasses(map);
+        this.extras.onBadgesChange?.();
+      });
+    }
+    const more = row.createEl("button", {
+      cls: "clickable-icon duckmage-overlay-more",
+      attr: { "aria-label": "Pick badge types", "aria-expanded": "false" },
+    });
+    setIcon(more, "chevron-right");
+    const chips = panel.createDiv({ cls: "duckmage-overlay-subrow" });
+    chips.hide();
+    more.addEventListener("click", () => {
+      const open = !chips.isShown();
+      chips.toggle(open);
+      more.toggleClass("is-open", open);
+      more.setAttr("aria-expanded", String(open));
+    });
+
+    const apply = () => {
+      const map = this.getActiveMap();
+      map.showLinkBadges = cb.checked;
+      void this.plugin.saveSettings();
+      this.applyBadgeClasses(map);
+      this.extras.onBadgesChange?.();
+    };
+    cb.addEventListener("change", apply);
+    label.addEventListener("click", () => {
+      cb.checked = !cb.checked;
+      apply();
+    });
+
+    for (const s of BADGE_SECTIONS) {
+      const info = BADGE_INFO[s];
+      const chip = chips.createEl("button", {
+        cls: `duckmage-overlay-chip duckmage-link-badge-${info.cls}`,
+        attr: { "aria-label": `${info.label} badges` },
+      });
+      setIcon(chip, info.icon);
+      this.badgeChips.set(s, chip);
+      chip.addEventListener("click", () => {
+        const map = this.getActiveMap();
+        map.hiddenLinkBadges = toggleHiddenBadge(map.hiddenLinkBadges, s);
+        void this.plugin.saveSettings();
+        this.applyBadgeClasses(map);
+        this.extras.onBadgesChange?.();
+      });
+    }
+  }
+
+  private applyBadgeClasses(map: MapData): void {
+    const show = map.showLinkBadges ?? true;
+    const hidden = new Set(hiddenBadges(map));
+    if (this.badgesCb) this.badgesCb.checked = show;
+    const size = badgeSize(map.linkBadgeSize);
+    for (const [s, b] of this.badgeSizeBtns) {
+      b.toggleClass("is-active", s === size);
+      b.setAttr("aria-pressed", String(s === size));
+    }
+    // Chip names in the map type's words (G4b).
+    const words = this.plugin.sectionWordsFor(map.name);
+    for (const [s, chip] of this.badgeChips) {
+      chip.setAttr("aria-label", `${words(s).label} badges`);
+      chip.toggleClass("is-off", hidden.has(s));
+      chip.setAttr("aria-pressed", String(!hidden.has(s)));
+    }
+    const vp = this.getViewportEl();
+    if (!vp) return;
+    vp.toggleClass("duckmage-hide-link-badges", !show);
+    for (const s of BADGE_SECTIONS) vp.toggleClass(badgeHideClass(s), hidden.has(s));
+  }
+
+  /** The modules' rows, each placed by its id; hidden on maps it doesn't apply to (syncToRegion). */
+  private buildModuleRows(panel: HTMLDivElement, disclosure: Disclosure): void {
+    for (const row of this.extras.rows ?? []) {
+      const el = panel.createDiv({ cls: "duckmage-overlay-row" });
+      const cb = el.createEl("input", { type: "checkbox" });
+      const label = el.createSpan({ text: row.label, cls: "duckmage-overlay-label" });
+      const apply = () => {
+        row.set(this.getActiveMap(), cb.checked);
+        void this.plugin.saveSettings();
+        this.extras.onRowChange?.(row.id);
+        this.layersDisclosure?.refreshSet();
+      };
+      cb.addEventListener("change", apply);
+      label.addEventListener("click", () => {
+        cb.checked = !cb.checked;
+        apply();
+      });
+      if (!disclosure.place(row.id, el, () => !cb.checked)) continue;
+      this.moduleRows.push({ row, el, cb });
+    }
   }
 
   /** Read the current map's saved state and apply it to the viewport + checkboxes. */
@@ -277,6 +580,7 @@ export class OverlayPanel extends HexSidePanel {
       const show = map.showRegionOverlay ?? false;
       this.regionOverlayCb.checked = show;
       this.onRegionOverlayChange(show);
+      this.layersDisclosure?.refreshSet();
     }
     // GM layer — undefined → true (on by default)
     if (this.gmLayerCb) {
@@ -290,6 +594,18 @@ export class OverlayPanel extends HexSidePanel {
       this.tokensCb.checked = show;
       this.onTokensChange(show);
     }
+    for (const { row, el, cb } of this.moduleRows) {
+      el.toggle(row.shows(map));
+      cb.checked = row.value(map);
+    }
+    this.applyBadgeClasses(map);
+    this.syncNameFont();
+    this.syncLegendToggle();
+  }
+
+  /** Legend checkbox ← setting (the legend's own × also turns it off). */
+  syncLegendToggle(): void {
+    if (this.legendCb) this.legendCb.checked = this.plugin.settings.showTerrainLegend ?? true;
   }
 
   private applyClass(opt: OverlayOption, show: boolean): void {

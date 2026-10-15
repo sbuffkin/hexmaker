@@ -1,44 +1,74 @@
-import { App, Notice, TFolder } from "obsidian";
+import { App, Menu, Notice, TFolder, setIcon } from "obsidian";
 import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import type { MapData } from "../types";
 import type { HexMapView } from "./HexMapView";
-import { normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
-import { getSubmapFromFile, setSubmapInFile } from "../frontmatter";
-import { exportMapAsPng } from "../export/mapPngRenderer";
-import { exportMapAsPdf } from "../export/exporters/mapWithTable";
+import { IMAGE_EXTENSIONS, attachImageDropZone, mapBgImportFolder, normalizeFolder, slugify, getIconUrl, createIconEl, importBinaryFileToVault } from "../utils";
+import { renderMapExportForm } from "../export/MapExportModal";
 import { FileLinkSuggestModal } from "./FileLinkSuggestModal";
+import { contentFolder } from "../notePickers";
+import {
+  listGenerators,
+  generatorsForRegion,
+  type GeneratorFile,
+} from "../worldgen/generators";
+import { SIDES, link, type Side } from "../worldgen/world";
+import {
+  detachRegion,
+  gridRules,
+  linkRegions,
+  regionNeighbours,
+} from "../worldgen/neighbours";
+import { regionsOf, removeMapPatch } from "../maps/submaps";
+import { RegionSettingsModal } from "./newChildMap";
+import { lockedHint } from "../workMode";
+import { canDo, guardWrite } from "../modeGate";
+import { addGodOffer } from "./godOffer";
+import { renderRegionSettingsForm } from "./regionSettingsForm";
+import { NewMapSetupModal } from "../worldgen/NewMapSetupModal";
+import { buildMapTree, filterMapTree, nodeKey, treeContains, uniqueMapsByName, type MapTreeNode } from "../maps/mapTree";
+import { renderLabeledSlider, sliderFormat } from "../ui/sliders";
+import { armButton } from "../ui/footer";
+import { ROLLED_SECTION_TABLES, mapSectionTable, starterTablePath } from "../regionTables";
+import { renderArrivalSetting, renderRoleTables } from "./mapTablesForm";
+import { moduleMapProperties, worldMaps } from "../modules/runtime";
+import { PlacedMenu } from "../ui/placedMenu";
+import { Disclosure } from "../ui/disclosure";
+import { isDebugMode } from "../ui/debugMode";
+import { groupId } from "../ui/placeGroup";
 
-const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif", "svg", "bmp"];
+type ModalTab = "Maps" | "Properties" | "Regions" | "Export";
 
-type ModalTab = "Maps" | "Properties" | "New map" | "Export";
-
-function makeCheckbox(
-  parent: HTMLElement,
-  labelText: string,
-  initial: boolean,
-): HTMLInputElement {
-  const row = parent.createDiv({ cls: "duckmage-export-tab-row" });
-  const cb = row.createEl("input", {
-    type: "checkbox",
-    cls: "duckmage-export-tab-checkbox",
+/**
+ * Restore / Remove for a missing map (SM-DEL), in the map list and on the
+ * map view's empty state. Remove asks once more (a second click) before it
+ * drops the map from the list; no file is touched either way.
+ */
+export function renderMissingActions(el: HTMLElement, plugin: HexmakerPlugin, name: string, done: () => void): void {
+  const box = el.createSpan({ cls: "duckmage-map-missing-actions" });
+  const restore = box.createEl("button", { text: "Restore", cls: "mod-cta", attr: { title: "Write its map note back from the last saved copy" } });
+  restore.addEventListener("click", (e) => {
+    e.stopPropagation();
+    restore.disabled = true;
+    void plugin.restoreMissingMap(name).then(done);
   });
-  cb.checked = initial;
-  row.createEl("label", { text: labelText, cls: "duckmage-export-tab-label" });
-  // Make the label clickable to toggle the box.
-  row.addEventListener("click", (e) => {
-    if (e.target instanceof HTMLInputElement) return;
-    cb.checked = !cb.checked;
+  const remove = box.createEl("button", { text: "Remove", attr: { title: "Drop it from the map list (no files are deleted)" } });
+  // The shared two-click guard (src/ui/footer.ts armButton).
+  remove.addEventListener("click", (e) => e.stopPropagation());
+  armButton(remove, {
+    armedText: "Click again to remove",
+    onConfirm: () => {
+      remove.disabled = true;
+      void plugin.removeMapEntry(name).then(() => {
+        new Notice(`Removed "${plugin.mapLabel(name)}" from the map list.`);
+        done();
+      });
+    },
   });
-  return cb;
-}
-
-function clampInt(v: number, lo: number, hi: number, fallback: number): number {
-  if (Number.isNaN(v)) return fallback;
-  return Math.max(lo, Math.min(hi, v));
 }
 
 export class MapModal extends HexmakerModal {
-  private confirmingDelete: string | null = null;
+  private stopKeepInViewport?: () => void;
   private activeTab: ModalTab = "Maps";
 
   constructor(
@@ -53,6 +83,10 @@ export class MapModal extends HexmakerModal {
   onOpen(): void {
     this.titleEl.setText("Maps");
     this.makeDraggable();
+    // Never taller than the window: the tab content scrolls and the modal
+    // moves up as a tab grows (fresh-eyes r4: Export ran off the bottom).
+    this.modalEl.addClass("duckmage-map-modal");
+    this.stopKeepInViewport = this.keepInViewport();
     this.render();
   }
 
@@ -63,7 +97,10 @@ export class MapModal extends HexmakerModal {
 
     // Tab bar
     const tabBar = contentEl.createDiv({ cls: "duckmage-rt-mode-tabs duckmage-map-modal-tabs" });
-    const tabNames: ModalTab[] = ["Maps", "Properties", "New map", "Export"];
+    const active = this.plugin.getMap(this.view.activeMapName);
+    const showRegions = !!active;
+    const tabNames: ModalTab[] = showRegions ? ["Maps", "Properties", "Regions", "Export"] : ["Maps", "Properties", "Export"];
+    if (!tabNames.includes(this.activeTab)) this.activeTab = "Maps";
 
     const contentDivs = new Map<ModalTab, HTMLElement>();
     for (const tab of tabNames) {
@@ -79,6 +116,14 @@ export class MapModal extends HexmakerModal {
         cls: "duckmage-rt-mode-tab" + (tab === this.activeTab ? " is-active" : ""),
       });
       tabBtns.set(tab, btn);
+      // "New map…" sits between Properties and Export: it opens the
+      // new-map form rather than a tab.
+      if (tab === "Properties") {
+        tabBar.createEl("button", { text: "New map…", cls: "duckmage-rt-mode-tab duckmage-map-new-btn" })
+          .addEventListener("click", () => this.openNewMap());
+        // World maps' New overworld… (a build without World maps has none).
+        worldMaps()?.addNewOverworldTab(tabBar, this.plugin, () => this.close());
+      }
       btn.addEventListener("click", () => {
         this.activeTab = tab;
         for (const [t, div] of contentDivs) {
@@ -92,206 +137,266 @@ export class MapModal extends HexmakerModal {
 
     this.renderMapsTab(contentDivs.get("Maps")!);
     this.renderPropertiesTab(contentDivs.get("Properties")!);
-    this.renderNewMapTab(contentDivs.get("New map")!);
+    if (showRegions) this.renderRegionsTab(contentDivs.get("Regions")!);
     this.renderExportTab(contentDivs.get("Export")!);
+  }
+
+  // ── Regions tab ───────────────────────────────────────────────────────────
+
+  /**
+   * The map's region settings (K1): set once (on the first region, or here),
+   * then fixed while any region exists; blend stays editable. Lists the
+   * regions, in reading order.
+   */
+  private renderRegionsTab(el: HTMLElement): void {
+    const map = this.plugin.getMap(this.view.activeMapName);
+    if (!map) return;
+    el.createEl("p", {
+      cls: "duckmage-map-origin-desc",
+      text: "A region is a map of one hex of this map, at one scale for every hex, lining up with the regions next to it. Make one from a hex's right-click menu.",
+    });
+    if (!map.regions) {
+      const btn = el.createEl("button", { text: "Set up regions…" });
+      btn.addEventListener("click", () => {
+        new RegionSettingsModal(this.app, this.plugin, map.name, () => this.render()).open();
+      });
+      return;
+    }
+    const regions = regionsOf(this.plugin.settings.maps, map.name);
+    const locked = regions.length > 0;
+    if (locked) {
+      const note = el.createDiv({ cls: "duckmage-regions-tab-locked" });
+      setIcon(note.createSpan(), "lock");
+      note.createSpan({ text: `Fixed: ${regions.length} region${regions.length === 1 ? " uses" : "s use"} these. Delete ${regions.length === 1 ? "it" : "them"} to change shape, size or palette.` });
+    }
+    renderRegionSettingsForm(el, this.plugin, map.regions, {
+      locked,
+      onChange: (s) => void this.plugin.setRegionSettings(map.name, s),
+    });
+    // World maps: make the missing regions, generate the overworld again.
+    worldMaps()?.renderOverworldRegionRows(el, {
+      app: this.app,
+      plugin: this.plugin,
+      render: () => this.render(),
+      changed: () => this.onChanged(),
+      close: () => this.close(),
+    }, map);
+    if (!regions.length) return;
+    el.createEl("h4", { text: `Regions (${regions.length})` });
+    const list = el.createEl("ul", { cls: "duckmage-region-list" });
+    for (const r of regions) {
+      const li = list.createEl("li", { cls: "duckmage-region-item duckmage-map-list-item" });
+      const [hx, hy] = r.parent!.hex.split("_");
+      const a = li.createEl("a", { text: this.plugin.mapLabel(r.name), cls: "duckmage-map-list-name" });
+      li.createSpan({ cls: "duckmage-region-palette-badge", text: `hex ${hx}, ${hy}` });
+      a.addEventListener("click", () => {
+        this.view.switchMapFromModal(r.name, { offerModule: true });
+        this.close();
+      });
+    }
   }
 
   // ── Export tab ────────────────────────────────────────────────────────────
 
   private renderExportTab(el: HTMLElement): void {
-    el.empty();
-    el.addClass("duckmage-export-tab");
-
-    const mapName = this.view.activeMapName;
-
-    el.createEl("p", {
-      cls: "duckmage-export-tab-hint",
-      text: `Export the active map "${mapName}" as a PNG. The file is written to the configured export folder and opened in a new tab.`,
-    });
-
-    const optsForm = el.createDiv({ cls: "duckmage-export-tab-options" });
-
-    // File name override — defaults to the map name; suffixes are auto-appended
-    // based on overlay checkboxes so the user can do successive variants without
-    // hand-renaming each export.
-    const nameRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
-    nameRow.createEl("label", {
-      text: "File name",
-      cls: "duckmage-export-tab-label",
-    });
-    const nameInput = nameRow.createEl("input", {
-      type: "text",
-      cls: "duckmage-export-tab-text",
-      attr: { placeholder: mapName },
-    });
-    nameInput.value = mapName;
-
-    const showCoords = makeCheckbox(
-      optsForm,
-      "Show coordinate labels",
-      true,
-    );
-    const showIcons = makeCheckbox(
-      optsForm,
-      "Show terrain / override icons",
-      true,
-    );
-    const showPaths = makeCheckbox(
-      optsForm,
-      "Include paths (roads, rivers, etc.)",
-      true,
-    );
-    const showFactionOverlay = makeCheckbox(
-      optsForm,
-      "Include faction overlay",
-      false,
-    );
-    const showRegionOverlay = makeCheckbox(
-      optsForm,
-      "Include region overlay",
-      false,
-    );
-
-    // Output size: a dropdown of presets that map to a hex-radius value.
-    // The actual PNG dimensions depend on grid size too, so we phrase the
-    // presets by hex pixel size + approximate use-case.
-    const sizeRow = optsForm.createDiv({ cls: "duckmage-export-tab-row" });
-    sizeRow.createEl("label", {
-      text: "Output size",
-      cls: "duckmage-export-tab-label",
-    });
-    const sizeSelect = sizeRow.createEl("select", {
-      cls: "duckmage-export-tab-select",
-    });
-    const sizePresets: { label: string; radius: number }[] = [
-      { label: "Small (30px hexes — quick preview)", radius: 30 },
-      { label: "Medium (50px hexes — standard)", radius: 50 },
-      { label: "Large (80px hexes — print quality)", radius: 80 },
-      { label: "Huge (120px hexes — max detail)", radius: 120 },
-    ];
-    for (const preset of sizePresets) {
-      const opt = sizeSelect.createEl("option", {
-        text: preset.label,
-        value: String(preset.radius),
-      });
-      if (preset.radius === 50) opt.selected = true;
-    }
-
-    // Live filename preview combines the user's base name with any overlay
-    // suffixes. Both suffixes attach in the order faction → region so multiple
-    // exports of the same map produce a predictable filename family. The
-    // preview shows the stem only — each export button adds its own extension.
-    const preview = el.createDiv({ cls: "duckmage-export-tab-preview" });
-    const buildStem = (): string => {
-      const base = nameInput.value.trim() || mapName;
-      let suffix = "";
-      if (showFactionOverlay.checked) suffix += "-faction";
-      if (showRegionOverlay.checked) suffix += "-region";
-      return base + suffix;
-    };
-    const updatePreview = () => {
-      preview.setText(`Output: ${buildStem()}.png  /  ${buildStem()}.pdf`);
-    };
-    nameInput.addEventListener("input", updatePreview);
-    showFactionOverlay.addEventListener("change", updatePreview);
-    showRegionOverlay.addEventListener("change", updatePreview);
-    updatePreview();
-
-    const collectOpts = () => ({
-      outputName: buildStem(),
-      hexRadius: clampInt(parseInt(sizeSelect.value, 10), 10, 200, 50),
-      showCoords: showCoords.checked,
-      showIcons: showIcons.checked,
-      showPaths: showPaths.checked,
-      showFactionOverlay: showFactionOverlay.checked,
-      showRegionOverlay: showRegionOverlay.checked,
-    });
-
-    const actions = el.createDiv({ cls: "duckmage-export-tab-actions" });
-    const exportPngBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PNG",
-    });
-    exportPngBtn.addEventListener("click", () => {
-      void exportMapAsPng(this.plugin, mapName, collectOpts());
-      this.close();
-    });
-    const exportPdfBtn = actions.createEl("button", {
-      cls: "mod-cta",
-      text: "Export PDF with reference table",
-    });
-    exportPdfBtn.addEventListener("click", () => {
-      void exportMapAsPdf(this.plugin, mapName, collectOpts());
-      this.close();
-    });
+    // The same form as the "Export current map…" command (MapExportModal).
+    renderMapExportForm(el, this.plugin, this.view.activeMapName, { onExport: () => this.close() });
   }
 
   // ── Maps tab ──────────────────────────────────────────────────────────────
 
+  /**
+   * The map list as a tree (N4): submaps under their parent, neighbouring
+   * regions grouped by world. Groups collapse; the open map is highlighted
+   * and its branch kept open; a search box appears once the list is long.
+   */
   private renderMapsTab(el: HTMLElement): void {
-    const list = el.createEl("ul", { cls: "duckmage-region-list" });
-    const canDelete = this.plugin.settings.maps.length > 1;
+    const maps = uniqueMapsByName(this.plugin.settings.maps);
+    const tree = buildMapTree(maps, (n) => this.plugin.parentOf(n)?.map);
+    const long = maps.length > MapModal.SEARCH_FROM;
+    let query = MapModal.lastQuery;
+    if (long) {
+      const search = el.createEl("input", {
+        type: "search",
+        cls: "duckmage-map-tree-search",
+        attr: { placeholder: "Filter maps…", "aria-label": "Filter maps" },
+      });
+      search.value = query;
+      search.addEventListener("input", () => {
+        query = MapModal.lastQuery = search.value;
+        draw();
+      });
+      window.setTimeout(() => search.focus(), 0);
+    }
+    const list = el.createEl("ul", { cls: "duckmage-region-list duckmage-map-tree" });
+    const draw = () => {
+      list.empty();
+      const shown = filterMapTree(tree, long ? query : "");
+      if (!shown.length) list.createEl("li", { cls: "duckmage-map-origin-desc", text: "No map matches." });
+      for (const node of shown) this.renderTreeNode(list, node, !!query.trim() && long);
+    };
+    draw();
+    // Deleting lives in Properties (with a confirm), away from the names
+    // you click to switch maps (fresh-eyes r4: a ✕ beside every name).
+    el.createEl("p", {
+      cls: "duckmage-map-origin-desc duckmage-map-list-hint",
+      text: "Click a name to open that map. Rename or delete the open map in its properties tab.",
+    });
+  }
 
-    for (const map of this.plugin.settings.maps) {
+  /** Show a search box above the map list once it has more maps than this. */
+  private static readonly SEARCH_FROM = 10;
+  /** Collapsed/expanded by the user this session, by node key. */
+  private static expanded = new Map<string, boolean>();
+  private static lastQuery = "";
+
+  private renderTreeNode(parentEl: HTMLElement, node: MapTreeNode, filtering: boolean): void {
+    const active = this.view.activeMapName;
+    const li = parentEl.createEl("li", { cls: "duckmage-map-tree-node" });
+    const key = nodeKey(node);
+    const hasKids = node.children.length > 0;
+    // Default: open on the open map's branch, and everywhere in a short list.
+    // A map's regions group starts collapsed unless the open map is in it.
+    const defaultOpen = treeContains(node, active) || (node.kind !== "regions" && this.plugin.settings.maps.length <= 12);
+    const open = filtering || (MapModal.expanded.get(key) ?? defaultOpen);
+    const toggleTo = (to: boolean) => {
+      MapModal.expanded.set(key, to);
+      this.rerenderMapsTab();
+    };
+
+    if (node.kind === "regions") {
+      const row = li.createDiv({ cls: "duckmage-region-item duckmage-map-tree-world" });
+      this.renderTreeToggle(row, open, () => toggleTo(!open), true);
+      row.createSpan({ cls: "duckmage-map-tree-world-label", text: node.label });
+      row.setAttr("title", `Regions of ${this.plugin.mapLabel(node.parent)}: one per hex, in reading order`);
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".duckmage-map-tree-toggle")) return;
+        toggleTo(!open);
+      });
+    } else if (node.kind === "world") {
+      const row = li.createDiv({ cls: "duckmage-region-item duckmage-map-tree-world" });
+      this.renderTreeToggle(row, open, () => toggleTo(!open), true);
+      row.createSpan({ cls: "duckmage-map-tree-world-label", text: `Neighbours: ${node.label}` });
+      row.setAttr("title", "Neighbouring regions: one world, side by side");
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest(".duckmage-map-tree-toggle")) return;
+        toggleTo(!open);
+      });
+    } else {
+      this.renderMapRow(li, node, open, hasKids, () => toggleTo(!open));
+    }
+    if (hasKids && open) {
+      const ul = li.createEl("ul", { cls: "duckmage-region-list duckmage-map-tree-children" });
+      for (const c of node.children) this.renderTreeNode(ul, c, filtering);
+    }
+  }
+
+  private renderTreeToggle(row: HTMLElement, open: boolean, onToggle: () => void, show: boolean): void {
+    const t = row.createSpan({ cls: "duckmage-map-tree-toggle", text: show ? (open ? "▾" : "▸") : "" });
+    if (!show) return;
+    t.setAttr("role", "button");
+    t.setAttr("aria-label", open ? "Collapse" : "Expand");
+    t.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onToggle();
+    });
+  }
+
+  private rerenderMapsTab(): void {
+    const tabEl = this.contentEl.querySelector<HTMLElement>(".duckmage-map-tree")?.parentElement;
+    if (!tabEl) return this.render();
+    tabEl.empty();
+    this.renderMapsTab(tabEl);
+  }
+
+  private renderMapRow(li: HTMLElement, node: Extract<MapTreeNode, { kind: "map" }>, open: boolean, hasKids: boolean, onToggle: () => void): void {
+    const map = this.plugin.getMap(node.name);
+    if (!map) return;
+    {
       const isActive = map.name === this.view.activeMapName;
-      const isConfirming = this.confirmingDelete === map.name;
 
-      const li = list.createEl("li", {
+      const row = li.createDiv({
         cls: "duckmage-region-item duckmage-map-list-item" + (isActive ? " is-active" : ""),
       });
+      if (isActive) row.setAttr("aria-current", "true");
+      this.renderTreeToggle(row, open, onToggle, hasKids);
+      row.addEventListener("contextmenu", (e: MouseEvent) => {
+        e.preventDefault();
+        const at = { x: e.clientX, y: e.clientY };
+        // A region that already has a generator opens it; learning another
+        // stays available below.
+        void Promise.all([listGenerators(this.plugin), worldMaps()?.blendMenuLabel(this.plugin, map.name)]).then(([all, blendLabel]) => {
+          const existing = generatorsForRegion(all, map.name)[0];
+          const menu = new Menu();
+          // Generators are Advanced (placement map). Nothing else is in this
+          // menu, so they're shown directly rather than under "Advanced ▸".
+          const layers = new PlacedMenu(menu, isDebugMode(this.app));
+          if (existing) {
+            layers.add("MapModal.mapRowContextGenerator", {
+              label: `Open generator "${existing.model.name}"`,
+              icon: "wand-sparkles",
+              onClick: () => void this.openGenerator(map.name, existing),
+            });
+          }
+          // New, or over an existing one (the region's biome's and its parents' first), PR1 (World maps).
+          const wmake = worldMaps();
+          if (wmake) {
+            layers.add("MapModal.mapRowContextMakeGenerator", {
+              label: `Make generator from ${this.plugin.mapLabel(map.name)}…`,
+              icon: existing ? "plus" : "wand-sparkles",
+              onClick: () => {
+                this.close();
+                wmake.openMakeGenerator(this.app, this.plugin, map.name);
+              },
+            });
+          }
+          // Fold the map, as hand-edited, back into the biome it was made from (World maps).
+          if (wmake && blendLabel) {
+            layers.add("MapModal.mapRowContextBlendIntoBiome", {
+              label: blendLabel,
+              icon: "combine",
+              onClick: () => {
+                this.close();
+                void wmake.openBlendIntoBiome(this.app, this.plugin, map.name);
+              },
+            });
+          }
+          layers.finish(() => at);
+          menu.showAtPosition(at);
+        });
+      });
 
-      if (isConfirming) {
-        li.addClass("duckmage-map-item-confirming");
-        li.createSpan({
-          cls: "duckmage-map-delete-warning",
-          text: `Delete "${map.name}"? This will trash all its hex notes.`,
-        });
-        const confirmBtn = li.createEl("button", {
-          text: "Delete",
-          cls: "mod-warning duckmage-map-confirm-btn",
-        });
-        confirmBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          void this.deleteMap(map.name);
-        });
-        const cancelBtn = li.createEl("button", {
-          text: "Cancel",
-          cls: "duckmage-map-cancel-btn",
-        });
-        cancelBtn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.confirmingDelete = null;
+      const terrainEntry = map.terrainType
+        ? this.plugin.getMapPalette(map.name).find((t) => t.name === map.terrainType)
+        : undefined;
+      const swatch = row.createSpan({ cls: "duckmage-map-terrain-swatch" });
+      if (terrainEntry?.color) {
+        swatch.style.backgroundColor = terrainEntry.color;
+        swatch.addClass("duckmage-map-terrain-swatch--set");
+      }
+
+      const missing = this.plugin.mapStore.isMissing(map.name);
+      if (missing) {
+        row.addClass("is-missing");
+        const warn = row.createSpan({ cls: "duckmage-map-missing-icon", attr: { "aria-label": "Missing: its folder and map note were deleted", title: "Missing: its folder and map note were deleted" } });
+        setIcon(warn, "alert-triangle");
+      }
+      const nameSpan = row.createSpan({ text: node.label, cls: "duckmage-map-list-name" });
+      // The slug is the folder; worth seeing when it differs from the name.
+      if (node.label !== map.name) nameSpan.setAttr("title", `Folder: ${map.name}`);
+      nameSpan.addEventListener("click", () => {
+        this.view.switchMapFromModal(map.name, { offerModule: true });
+        this.close();
+      });
+      if (missing) {
+        renderMissingActions(row, this.plugin, map.name, () => {
+          this.onChanged();
           this.render();
         });
-      } else {
-        const terrainEntry = map.terrainType
-          ? this.plugin.getMapPalette(map.name).find((t) => t.name === map.terrainType)
-          : undefined;
-        const swatch = li.createSpan({ cls: "duckmage-map-terrain-swatch" });
-        if (terrainEntry?.color) {
-          swatch.style.backgroundColor = terrainEntry.color;
-          swatch.addClass("duckmage-map-terrain-swatch--set");
-        }
-
-        const nameSpan = li.createSpan({ text: map.name, cls: "duckmage-map-list-name" });
-        nameSpan.addEventListener("click", () => {
-          this.view.switchMapFromModal(map.name);
-          this.close();
-        });
-        li.createSpan({ cls: "duckmage-region-palette-badge", text: map.paletteName });
-        if (canDelete) {
-          const deleteBtn = li.createEl("button", {
-            text: "✕",
-            cls: "duckmage-map-delete-btn",
-          });
-          deleteBtn.setAttribute("aria-label", "Delete map");
-          deleteBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this.confirmingDelete = map.name;
-            this.render();
-          });
-        }
+        return;
       }
+      // "palette: Expanded" in muted text; a bare "Expanded" read like a fold state (round 6 U10).
+      row.createSpan({ cls: "duckmage-region-palette-badge", text: `palette: ${map.paletteName}`, attr: { title: "Terrain palette" } });
     }
   }
 
@@ -299,22 +404,46 @@ export class MapModal extends HexmakerModal {
 
   private renderPropertiesTab(el: HTMLElement): void {
     const currentMap = this.plugin.getMap(this.view.activeMapName);
+    // Properties are map structure: locked in Play (one line, not a wall of
+    // disabled fields).
+    if (!canDo(this.view.activeMapName, "map-properties")) {
+      el.createEl("p", { cls: "duckmage-editor-mode-locked", text: lockedHint("map-properties") });
+      return;
+    }
 
-    // Rename
-    el.createEl("h4", { text: "Rename" });
-    const renameRow = el.createDiv({ cls: "duckmage-region-row" });
-    const renameInput = renameRow.createEl("input", {
+    // Name (display only: nothing moves) and folder name (the slug; moves
+    // the folder and map note, and updates every reference).
+    el.createEl("h4", { text: "Name" });
+    const nameRow = el.createDiv({ cls: "duckmage-region-row" });
+    const nameInput = nameRow.createEl("input", {
       type: "text",
-      value: this.view.activeMapName,
+      value: this.plugin.mapLabel(this.view.activeMapName),
+      attr: { "aria-label": "Map name" },
     });
-    const renameBtn = renameRow.createEl("button", { text: "Rename", cls: "mod-cta" });
-    renameBtn.addEventListener("click", () =>
-      void this.renameMap(renameInput.value.trim(), renameBtn, renameInput),
-    );
-    renameInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter")
-        void this.renameMap(renameInput.value.trim(), renameBtn, renameInput);
+    // Saves when you leave the box or press Enter (audit C3: no Save button).
+    const saveName = () => {
+      const typed = nameInput.value.trim();
+      if (!typed || typed === this.plugin.mapLabel(this.view.activeMapName)) return;
+      void this.plugin.setMapDisplayName(this.view.activeMapName, typed).then(() => {
+        new Notice(`Renamed to "${this.plugin.mapLabel(this.view.activeMapName)}".`);
+        this.onChanged();
+        this.render();
+      });
+    };
+    nameInput.addEventListener("change", saveName);
+    nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter") nameInput.blur();
     });
+    el.createEl("p", { cls: "duckmage-map-origin-desc", text: "Shown everywhere. Its folder stays put." });
+
+    // The page's Advanced dropdown (and Debug inside it), at the end of the tab.
+    const disclosure = new Disclosure(this.app, "MapModal.Properties", () => el);
+    // `isSet`: the control holds a value, counted in the header ("Advanced · 1 set").
+    const at = (ids: readonly string[], isSet?: () => boolean) => disclosure.target(groupId(ids), el, isSet);
+
+    // Folder name (the slug): Debug.
+    const folderEl = at(["MapModal.propsFolderName", "MapModal.propsRenameFolder"]);
+    if (folderEl) this.renderFolderName(folderEl);
 
     // Stagger offset
     el.createEl("h4", { text: "Stagger offset" });
@@ -323,8 +452,19 @@ export class MapModal extends HexmakerModal {
     const propStaggerBtn = staggerRow.createEl("button", { cls: "duckmage-stagger-toggle" });
     propStaggerBtn.setText(propStaggerVal === "odd" ? "Odd" : "Even");
     propStaggerBtn.toggleClass("is-even", propStaggerVal === "even");
+    // A map with neighbours can't flip its stagger: its seams would stop lining up.
+    // Same for an overworld with regions (each region's slot depends on it) and a region itself.
+    const ownsRegions = !!currentMap && (regionsOf(this.plugin.settings.maps, currentMap.name).length > 0 || currentMap.submapKind === "region");
+    const hasNeighbours = ownsRegions || (!!currentMap && Object.keys(regionNeighbours(this.plugin, currentMap.name)).length > 0);
+    if (hasNeighbours) {
+      propStaggerBtn.disabled = true;
+      staggerRow.createSpan({
+        text: ownsRegions ? "Fixed while this map has regions or is one (they have to line up)." : "Fixed while this map has neighbouring regions (it has to line up with them).",
+        cls: "duckmage-map-origin-desc",
+      });
+    }
     propStaggerBtn.addEventListener("click", () => {
-      if (!currentMap) return;
+      if (!currentMap || hasNeighbours) return;
       propStaggerVal = propStaggerVal === "odd" ? "even" : "odd";
       propStaggerBtn.setText(propStaggerVal === "odd" ? "Odd" : "Even");
       propStaggerBtn.toggleClass("is-even", propStaggerVal === "even");
@@ -332,7 +472,54 @@ export class MapModal extends HexmakerModal {
       void this.plugin.saveSettings().then(() => this.onChanged());
     });
 
-    // Terrain theme
+    if (currentMap) this.renderNeighbourBlock(el, currentMap);
+
+    if (currentMap) {
+      renderArrivalSetting(el, this.plugin, currentMap, () => this.render());
+      renderRoleTables(el, this.plugin, currentMap, () => this.render());
+      // Modules' sections (Space: Convert world types to tables).
+      for (const section of moduleMapProperties()) section.render(el, this.plugin, currentMap, () => this.render());
+    }
+
+    // The whole background-image row stays together on the main page:
+    // customisation is not "advanced" (owner, 2026-10-11).
+    this.renderBackgroundImage(el, currentMap);
+
+    if (currentMap) this.renderDeleteBlock(el, currentMap.name);
+
+    // ── Advanced: terrain theme, weather and rumours tables ───────────────
+    const themeEl = at(["MapModal.propsTerrainTheme"], () => !!currentMap?.terrainType);
+    if (themeEl) this.renderTerrainTheme(themeEl, currentMap);
+    const tablesEl = at(["MapModal.propsWeatherTable", "MapModal.propsWeatherClear", "MapModal.propsRumoursTable", "MapModal.propsRumoursClear", "MapProps.sectionTablePicker"],
+      () => !!currentMap && !!mapSectionTable(currentMap, "weather"));
+    if (currentMap && tablesEl) {
+      disclosure.track("MapModal.propsRumoursTable", () => !!mapSectionTable(currentMap, "hooks & rumors"));
+      this.renderRegionTables(tablesEl, currentMap);
+    }
+    disclosure.toEnd();
+  }
+
+  /** Folder name (the slug): moves the folder and map note, and updates every reference. */
+  private renderFolderName(el: HTMLElement): void {
+    el.createEl("h4", { text: "Folder name" });
+    const renameRow = el.createDiv({ cls: "duckmage-region-row" });
+    const renameInput = renameRow.createEl("input", {
+      type: "text",
+      value: this.view.activeMapName,
+      attr: { "aria-label": "Folder name" },
+    });
+    const renameBtn = renameRow.createEl("button", { text: "Rename folder" });
+    renameBtn.addEventListener("click", () =>
+      void this.renameMap(renameInput.value.trim(), renameBtn, renameInput),
+    );
+    renameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+      if (e.key === "Enter")
+        void this.renameMap(renameInput.value.trim(), renameBtn, renameInput);
+    });
+  }
+
+  /** The map's own terrain (shown in the map list swatch). */
+  private renderTerrainTheme(el: HTMLElement, currentMap: MapData | undefined): void {
     el.createEl("h4", { text: "Terrain theme" });
     const terrainPalette = this.plugin.getMapPalette(this.view.activeMapName);
     const terrainGrid = el.createDiv({ cls: "duckmage-terrain-picker" });
@@ -377,15 +564,17 @@ export class MapModal extends HexmakerModal {
       });
     }
 
-    // ── Background image ───────────────────────────────────────────────────
+  }
+
+  /** Background image, all in one place: pick or drop an image, clear, opacity, calibrate. */
+  private renderBackgroundImage(el: HTMLElement, currentMap: MapData | undefined): void {
     el.createEl("h4", { text: "Background image" });
     const bgRow = el.createDiv({ cls: "duckmage-region-row duckmage-bg-image-row" });
     bgRow.createSpan({
       text: currentMap?.backgroundImage?.path ?? "(none) — drop an image here",
       cls: "duckmage-bg-image-path",
     });
-    const pickBtn = bgRow.createEl("button", { text: "Pick image…" });
-    pickBtn.addEventListener("click", () => {
+    bgRow.createEl("button", { text: "Pick image…" }).addEventListener("click", () => {
       new FileLinkSuggestModal(
         this.app,
         this.plugin,
@@ -405,32 +594,32 @@ export class MapModal extends HexmakerModal {
         this.render();
       });
     });
-    this.attachImageDropZone(bgRow, async (file) => {
+    attachImageDropZone(bgRow, async (file) => {
       const mapName = this.view.activeMapName;
-      const dest = this.bgImportFolder(mapName);
+      const dest = mapBgImportFolder(this.plugin.settings.hexFolder, mapName);
       const path = await importBinaryFileToVault(this.plugin, file, dest);
       this.setActiveMapBackground(path);
     });
 
     if (currentMap?.backgroundImage) {
       const bg = currentMap.backgroundImage;
-      const opacityRow = el.createDiv({ cls: "duckmage-region-row" });
-      opacityRow.createSpan({ text: "Opacity", cls: "duckmage-map-field-label" });
-      const opacitySlider = opacityRow.createEl("input", { type: "range" });
-      opacitySlider.min = "0.1";
-      opacitySlider.max = "1";
-      opacitySlider.step = "0.05";
-      opacitySlider.value = String(bg.opacity ?? 1);
-      opacitySlider.addEventListener("input", () => {
+      // Preview on input, save on change (audit S5).
+      const setOpacity = (v: number) => {
         const map = this.plugin.getMap(this.view.activeMapName);
-        if (!map?.backgroundImage) return;
-        map.backgroundImage.opacity = parseFloat(opacitySlider.value);
-        void this.plugin.saveSettings().then(() => this.onChanged());
+        if (!map?.backgroundImage) return false;
+        map.backgroundImage.opacity = v;
+        return true;
+      };
+      renderLabeledSlider(el, {
+        label: "Opacity", min: 0.1, max: 1, step: 0.05, value: bg.opacity ?? 1,
+        format: sliderFormat.fraction,
+        reset: { value: 1 },
+        onInput: (v) => { if (setOpacity(v)) this.onChanged(); },
+        onChange: (v) => { if (setOpacity(v)) void this.plugin.saveSettings().then(() => this.onChanged()); },
       });
 
       const calibrateBtn = el.createEl("button", {
         text: "Calibrate position & scale",
-        cls: "mod-cta",
       });
       calibrateBtn.addEventListener("click", () => {
         this.close();
@@ -439,13 +628,134 @@ export class MapModal extends HexmakerModal {
     }
   }
 
-  /** Compute the folder where dropped bg images should land for a given map. */
-  private bgImportFolder(mapName: string): string {
-    const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-    const base = hexFolder ? `${hexFolder}/${mapName}` : mapName;
-    return `${base}/_bg`;
+  /**
+   * Delete the open map: at the bottom of Properties, behind a confirm, so
+   * it can't be hit by accident from the map list.
+   */
+  /** The map's weather and rumours tables, rolled from the hex editor (E2). */
+  private renderRegionTables(el: HTMLElement, map: MapData): void {
+    el.createEl("h4", { text: "Weather and rumours" });
+    el.createDiv({
+      cls: "duckmage-map-origin-desc",
+      text: "Tables the hex editor rolls for Weather and Hooks & Rumors on this map. A hex can use its own instead (⋯ in the editor).",
+    });
+    for (const section of ["weather", "hooks & rumors"] as const) {
+      const spec = ROLLED_SECTION_TABLES[section];
+      const row = el.createDiv({ cls: "duckmage-region-row duckmage-region-table-row" });
+      row.createSpan({ text: section === "weather" ? "Weather" : "Rumours", cls: "duckmage-region-table-label" });
+      const current = mapSectionTable(map, section);
+      row.createSpan({
+        text: current ?? `(none: uses ${starterTablePath(normalizeFolder(this.plugin.settings.tablesFolder ?? ""), section)} if it exists)`,
+        cls: "duckmage-bg-image-path",
+      });
+      row.createEl("button", { text: "Pick table…" }).addEventListener("click", () => {
+        new FileLinkSuggestModal(
+          this.app,
+          this.plugin,
+          (file) => {
+            map[spec.mapField] = file.path;
+            void this.plugin.saveSettings().then(() => this.render());
+          },
+          contentFolder(this.plugin.settings, "tablesFolder"),
+          ["md"],
+        ).open();
+      });
+      const clear = row.createEl("button", { text: "Clear" });
+      clear.disabled = !current;
+      clear.addEventListener("click", () => {
+        delete map[spec.mapField];
+        void this.plugin.saveSettings().then(() => this.render());
+      });
+    }
   }
 
+  private renderDeleteBlock(el: HTMLElement, name: string): void {
+    el.createEl("h4", { text: "Delete map" });
+    if (!canDo(name, "delete-map")) {
+      const p = el.createEl("p", { text: lockedHint("delete-map"), cls: "duckmage-map-origin-desc" });
+      addGodOffer(p, this.plugin, name, lockedHint("delete-map"), () => this.render());
+      return;
+    }
+    if (this.plugin.settings.maps.length <= 1) {
+      el.createEl("p", { text: "This is the only map, so it can't be deleted.", cls: "duckmage-map-origin-desc" });
+      return;
+    }
+    const box = el.createDiv({ cls: "duckmage-map-delete-block" });
+    box.createEl("p", {
+      text: `Moves "${this.plugin.mapLabel(name)}" (its folder, map note and hex notes) to the trash and removes it from the map list.`,
+      cls: "duckmage-map-origin-desc",
+    });
+    // Two clicks, no dialog (owner Q6): the button asks once more for a few seconds.
+    const del = box.createEl("button", { text: `Delete "${this.plugin.mapLabel(name)}"`, cls: "mod-warning duckmage-map-delete-map" });
+    armButton(del, { armedText: "Click again to delete", onConfirm: () => void this.deleteMap(name) });
+  }
+
+  /**
+   * Neighbouring regions: which map is north, east, south and west of this
+   * one on their shared grid. Only maps that fit (same size and palette,
+   * lining up, slot free) are offered; an empty side can get a new region.
+   */
+  private renderNeighbourBlock(el: HTMLElement, map: MapData): void {
+    // A region of an overworld joins the regions next to it by itself.
+    if (map.submapKind === "region" && map.world) {
+      el.createEl("h4", { text: "Neighbouring regions" });
+      el.createEl("p", {
+        cls: "duckmage-map-origin-desc",
+        text: "This is a region of an overworld: it joins the regions of the hexes around it by itself. Their names are in the bar above the map.",
+      });
+      return;
+    }
+    el.createEl("h4", { text: "Neighbouring regions" });
+    el.createEl("p", {
+      text: "Regions next to each other share one grid: walking off this map's edge (or the hex flower) leads into them. They must be the same size and use the same palette.",
+      cls: "duckmage-map-origin-desc",
+    });
+    const current = regionNeighbours(this.plugin, map.name);
+    const rules = gridRules(this.plugin);
+    const grid = el.createDiv({ cls: "duckmage-neighbour-grid" });
+    for (const side of SIDES) {
+      const row = grid.createDiv({ cls: "duckmage-region-row duckmage-neighbour-row" });
+      row.createSpan({ text: side[0].toUpperCase() + side.slice(1), cls: "duckmage-map-origin-label" });
+      const select = row.createEl("select");
+      select.createEl("option", { value: "", text: "None" });
+      const now = current[side];
+      if (now) select.createEl("option", { value: now.name, text: this.plugin.mapLabel(now.name) });
+      for (const other of this.plugin.settings.maps) {
+        if (other.name === map.name || other.name === now?.name) continue;
+        if (link(this.plugin.settings.maps, map.name, side, other.name, rules, () => "check").ok)
+          select.createEl("option", { value: other.name, text: this.plugin.mapLabel(other.name) });
+      }
+      select.value = now?.name ?? "";
+      select.addEventListener("change", () => {
+        void (async () => {
+          if (now && select.value !== now.name) await detachRegion(this.plugin, now.name);
+          if (select.value) {
+            const r = await linkRegions(this.plugin, map.name, side, select.value);
+            if (!r.ok) new Notice(r.reason);
+          }
+          this.onChanged();
+          this.render();
+        })();
+      });
+      if (!now) {
+        const add = row.createEl("button", { text: "New region here…", attr: { title: `Make a new map ${side} of ${this.plugin.mapLabel(map.name)}` } });
+        add.addEventListener("click", () => {
+          this.openNewMap({ anchor: map.name, side });
+        });
+      }
+    }
+    if (map.world) {
+      const leave = el.createDiv({ cls: "duckmage-region-row" }).createEl("button", { text: "Detach from its neighbours" });
+      leave.addEventListener("click", () => {
+        void detachRegion(this.plugin, map.name).then(() => {
+          this.onChanged();
+          this.render();
+        });
+      });
+    }
+  }
+
+  /** Compute the folder where dropped bg images should land for a given map. */
   /**
    * Set the active map's bg image and drop the user straight into calibration
    * mode. A freshly-added background almost always needs calibration anyway —
@@ -470,200 +780,61 @@ export class MapModal extends HexmakerModal {
     });
   }
 
+  // ── New map ───────────────────────────────────────────────────────────────
+
   /**
-   * Make `el` a drop target for an image file. Calls `onFile` with the first
-   * image dropped. Adds/removes the `is-drop-target` class for visual feedback.
+   * New map is one form: the guided setup (generator cards with a live
+   * preview and options, Next to, coordinates, background image). The old
+   * quick form here defaulted to Blank with no preview, and testers only
+   * found the preview behind a second, guided form (fresh-eyes round 7).
    */
-  private attachImageDropZone(
-    el: HTMLElement,
-    onFile: (file: File) => Promise<void>,
-  ): void {
-    el.addEventListener("dragover", (e: DragEvent) => {
-      e.preventDefault();
-      el.addClass("is-drop-target");
-    });
-    el.addEventListener("dragleave", () => {
-      el.removeClass("is-drop-target");
-    });
-    el.addEventListener("drop", (e: DragEvent) => {
-      e.preventDefault();
-      el.removeClass("is-drop-target");
-      const file = e.dataTransfer?.files?.[0];
-      if (!file) return;
-      if (!file.type.startsWith("image/")) {
-        new Notice("Dropped file isn't an image.");
-        return;
-      }
-      void onFile(file).catch((err) => {
-        new Notice(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
-    });
+  private openNewMap(prefill?: { anchor?: string; side?: Side }): void {
+    new NewMapSetupModal(this.app, this.plugin, ({ name, backgroundImage }) => {
+      this.view.switchMapFromModal(name);
+      this.onChanged();
+      // A background picked while creating: straight into calibration,
+      // as when adding one to an existing map.
+      if (backgroundImage) this.view.enterBgCalibration();
+    }, undefined, prefill).open();
+    this.close();
   }
 
-  // ── New map tab ───────────────────────────────────────────────────────────
+  // ── Generator ─────────────────────────────────────────────────────────────
 
-  private renderNewMapTab(el: HTMLElement): void {
-    // Name
-    el.createEl("label", { text: "Name", cls: "duckmage-map-field-label" });
-    const nameRow = el.createDiv({ cls: "duckmage-region-row" });
-    const nameInput = nameRow.createEl("input", {
-      type: "text",
-      placeholder: "map-name",
-      cls: "duckmage-map-new-name-input",
-    });
-
-    // Size
-    el.createEl("label", { text: "Size", cls: "duckmage-map-field-label" });
-    const sizeRow = el.createDiv({ cls: "duckmage-region-row" });
-    const colsInput = sizeRow.createEl("input", {
-      type: "number",
-      value: String(this.plugin.settings.defaultNewMapCols ?? 20),
-    });
-    colsInput.setCssProps({ width: "65px" });
-    sizeRow.createSpan({ text: "cols ×", cls: "duckmage-map-size-sep" });
-    const rowsInput = sizeRow.createEl("input", {
-      type: "number",
-      value: String(this.plugin.settings.defaultNewMapRows ?? 16),
-    });
-    rowsInput.setCssProps({ width: "65px" });
-    sizeRow.createSpan({ text: "rows", cls: "duckmage-map-size-sep" });
-
-    // Presets
-    el.createEl("label", { text: "Presets", cls: "duckmage-map-field-label" });
-    const presetsRow = el.createDiv({ cls: "duckmage-region-row duckmage-map-presets-row" });
-    const presets: [string, number, number][] = [
-      ["Small", 5, 5],
-      ["Medium", 15, 15],
-      ["Large", 25, 20],
-    ];
-    for (const [label, cols, rows] of presets) {
-      const btn = presetsRow.createEl("button", { text: `${label} (${cols}×${rows})` });
-      btn.addEventListener("click", () => {
-        colsInput.value = String(cols);
-        rowsInput.value = String(rows);
-      });
-    }
-
-    // Palette
-    el.createEl("label", { text: "Palette", cls: "duckmage-map-field-label" });
-    const paletteRow = el.createDiv({ cls: "duckmage-region-row" });
-    const paletteSelect = paletteRow.createEl("select", { cls: "duckmage-map-new-palette-select" });
-    for (const pal of this.plugin.settings.terrainPalettes) {
-      paletteSelect.createEl("option", { value: pal.name, text: pal.name });
-    }
-
-    // Stagger offset
-    el.createEl("label", { text: "Stagger offset", cls: "duckmage-map-field-label" });
-    const staggerRow = el.createDiv({ cls: "duckmage-region-row" });
-    let staggerVal: "odd" | "even" = this.plugin.settings.staggerOffset ?? "odd";
-    const staggerBtn = staggerRow.createEl("button", { cls: "duckmage-stagger-toggle" });
-    staggerBtn.setText(staggerVal === "odd" ? "Odd" : "Even");
-    staggerBtn.toggleClass("is-even", staggerVal === "even");
-    staggerBtn.addEventListener("click", () => {
-      staggerVal = staggerVal === "odd" ? "even" : "odd";
-      staggerBtn.setText(staggerVal === "odd" ? "Odd" : "Even");
-      staggerBtn.toggleClass("is-even", staggerVal === "even");
-    });
-
-    // Starting coordinates
-    el.createEl("label", { text: "Starting coordinates", cls: "duckmage-map-field-label" });
-    el.createEl("p", {
-      text: "Hex labels and filenames start from these values instead of 0,0.",
-      cls: "duckmage-map-origin-desc",
-    });
-    const originRow = el.createDiv({ cls: "duckmage-region-row" });
-    originRow.createSpan({ text: "X", cls: "duckmage-map-origin-label" });
-    const originXInput = originRow.createEl("input", { type: "number", value: "0" });
-    originXInput.setCssProps({ width: "70px" });
-    originRow.createSpan({ text: "Y", cls: "duckmage-map-origin-label" });
-    const originYInput = originRow.createEl("input", { type: "number", value: "0" });
-    originYInput.setCssProps({ width: "70px" });
-
-    // Background image (optional). User can either pick an existing vault file
-    // (path captured locally) or drop a file from the OS (captured as a File;
-    // imported into the new map's _bg folder after create).
-    el.createEl("label", { text: "Background image (optional)", cls: "duckmage-map-field-label" });
-    let pendingBgPath: string | null = null;
-    let pendingBgFile: File | null = null;
-    const bgRow = el.createDiv({ cls: "duckmage-region-row duckmage-bg-image-row" });
-    const bgPathLabel = bgRow.createSpan({
-      text: "(none) — drop an image here",
-      cls: "duckmage-bg-image-path",
-    });
-    const bgPickBtn = bgRow.createEl("button", { text: "Pick image…" });
-    bgPickBtn.addEventListener("click", () => {
-      new FileLinkSuggestModal(
-        this.app,
-        this.plugin,
-        (file) => {
-          pendingBgPath = file.path;
-          pendingBgFile = null;
-          bgPathLabel.setText(file.path);
-          bgClearBtn.disabled = false;
-        },
-        "",
-        IMAGE_EXTENSIONS,
-      ).open();
-    });
-    const bgClearBtn = bgRow.createEl("button", { text: "Clear" });
-    bgClearBtn.disabled = true;
-    bgClearBtn.addEventListener("click", () => {
-      pendingBgPath = null;
-      pendingBgFile = null;
-      bgPathLabel.setText("(None) — drop an image here");
-      bgClearBtn.disabled = true;
-    });
-    this.attachImageDropZone(bgRow, async (file) => {
-      pendingBgFile = file;
-      pendingBgPath = null;
-      bgPathLabel.setText(`${file.name} (will be imported on create)`);
-      bgClearBtn.disabled = false;
-    });
-
-    // Create button
-    const createRow = el.createDiv({ cls: "duckmage-region-row duckmage-map-create-row" });
-    const createBtn = createRow.createEl("button", { text: "Create", cls: "mod-cta" });
-    const allInputs: (HTMLInputElement | HTMLSelectElement)[] = [
-      nameInput, colsInput, rowsInput, paletteSelect, originXInput, originYInput,
-    ];
-    const doCreate = () =>
-      void this.handleCreate(
-        nameInput.value.trim(),
-        Number(colsInput.value) || 20,
-        Number(rowsInput.value) || 16,
-        paletteSelect.value,
-        Number(originXInput.value) || 0,
-        Number(originYInput.value) || 0,
-        staggerVal,
-        createBtn,
-        allInputs,
-        pendingBgPath,
-        pendingBgFile,
-      );
-    createBtn.addEventListener("click", doCreate);
-    nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
-      if (e.key === "Enter") doCreate();
+  /** Open a region's existing generator in the terrain generator. */
+  private async openGenerator(mapName: string, g: GeneratorFile): Promise<void> {
+    this.close();
+    await this.plugin.openTerrainGenerator({
+      mapName,
+      generatorPath: g.file.path,
+      paletteName: g.model.meta.palette,
     });
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
 
   private async deleteMap(name: string): Promise<void> {
+    if (!guardWrite(name, "delete-map")) return;
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
     const folderPath = hexFolder ? `${hexFolder}/${name}` : name;
     const folder = this.app.vault.getAbstractFileByPath(folderPath);
     if (folder instanceof TFolder) {
+      // Our own delete: the note going doesn't make the map "missing".
+      this.plugin.mapStore.expectRemoval(name);
       try {
         await this.app.fileManager.trashFile(folder);
       } catch (e) {
         new Notice(`Delete failed: ${e instanceof Error ? e.message : String(e)}`);
-        this.confirmingDelete = null;
         this.render();
         return;
       }
     }
 
     this.plugin.settings.maps = this.plugin.settings.maps.filter((m) => m.name !== name);
+    // Submaps of the deleted map lose their breadcrumb parent.
+    for (const m of this.plugin.settings.maps) {
+      if (m.parent?.map === name) delete m.parent;
+    }
 
     if (this.plugin.settings.defaultMap === name) {
       this.plugin.settings.defaultMap = this.plugin.settings.maps[0]?.name ?? "";
@@ -673,12 +844,21 @@ export class MapModal extends HexmakerModal {
       this.view.activeMapName = this.plugin.settings.maps[0]?.name ?? "";
     }
 
-    const submapRefs = this.app.vault.getMarkdownFiles().filter(
-      (f) => getSubmapFromFile(this.app, f.path) === name,
-    );
-    await Promise.all(submapRefs.map((f) => setSubmapInFile(this.app, f.path, null)));
+    // Hexes pointing at the deleted map lose that link (region or location);
+    // its own regions and locations become top-level maps.
+    this.plugin.mapStore.forgetMap(name);
+    this.plugin.undoBook.forgetMap(name);
+    for (const m of this.plugin.settings.maps) {
+      for (const [key, h] of [...this.plugin.mapStore.all(m.name)]) {
+        const patch = removeMapPatch(h, name);
+        if (Object.keys(patch).length) this.plugin.mapStore.set(m.name, key, patch);
+      }
+      if (m.parent?.map === name) {
+        delete m.parent;
+        delete m.submapKind;
+      }
+    }
 
-    this.confirmingDelete = null;
     await this.plugin.saveSettings();
     this.onChanged();
     this.render();
@@ -712,97 +892,36 @@ export class MapModal extends HexmakerModal {
         await this.app.fileManager.renameFile(oldFolder, newPath);
       } catch (e) {
         new Notice(`Rename failed: ${e instanceof Error ? e.message : String(e)}`);
-        btn.setText("Rename");
+        btn.setText("Rename folder");
         btn.disabled = false;
         input.disabled = false;
         return;
       }
     }
     const oldName = this.view.activeMapName;
+    const oldLabel = this.plugin.mapLabel(oldName);
     const map = this.plugin.getMap(oldName);
     if (map) map.name = newName;
+    // The map note moved with its folder; give it the new name too.
+    await this.plugin.mapStore.renameMap(oldName, newName);
+    // Its undo queues follow it (WM6).
+    this.plugin.undoBook.renameMap(oldName, newName);
     if (this.plugin.settings.defaultMap === oldName) {
       this.plugin.settings.defaultMap = newName;
     }
     this.view.activeMapName = newName;
     await this.plugin.updateSubmapReferences(oldName, newName);
+    // Tokens placed on the map (token-map) follow it.
+    await this.plugin.updateTokenMapReferences(oldName, newName);
     await this.plugin.saveSettings();
+    // A map shown by its folder name: its hex notes' "<map> x, y" aliases follow.
+    await this.plugin.syncMapCoordAliases(newName, oldLabel);
     this.onChanged();
     this.render();
   }
 
-  // ── Create ────────────────────────────────────────────────────────────────
-
-  private async handleCreate(
-    raw: string,
-    cols: number,
-    rows: number,
-    paletteName: string,
-    initialX: number,
-    initialY: number,
-    staggerOffset: "odd" | "even",
-    btn: HTMLButtonElement,
-    inputs: (HTMLInputElement | HTMLSelectElement)[],
-    bgImagePath: string | null,
-    bgImageFile: File | null,
-  ): Promise<void> {
-    btn.setText("Generating…");
-    btn.disabled = true;
-    for (const input of inputs) input.disabled = true;
-
-    const result = await this.plugin.createNewMap(
-      raw, cols, rows, paletteName, initialX, initialY, staggerOffset,
-      (done, total) => btn.setText(`Generating ${done} / ${total}…`),
-    );
-
-    if ("error" in result) {
-      new Notice(result.error);
-      btn.setText("Create");
-      btn.disabled = false;
-      for (const input of inputs) input.disabled = false;
-      return;
-    }
-
-    // Resolve the bg image path: a dropped File needs importing into the new
-    // map's _bg folder first; a picked vault path is used directly.
-    let resolvedBgPath: string | null = bgImagePath;
-    if (bgImageFile) {
-      try {
-        btn.setText("Importing background…");
-        resolvedBgPath = await importBinaryFileToVault(
-          this.plugin,
-          bgImageFile,
-          this.bgImportFolder(result.name),
-        );
-      } catch (e) {
-        new Notice(`Background import failed: ${e instanceof Error ? e.message : String(e)}`);
-        resolvedBgPath = null;
-      }
-    }
-
-    if (resolvedBgPath) {
-      const newMap = this.plugin.getMap(result.name);
-      if (newMap) {
-        newMap.backgroundImage = {
-          path: resolvedBgPath,
-          offsetX: 0,
-          offsetY: 0,
-          scale: 1,
-          rotation: 0,
-          opacity: 1,
-        };
-        await this.plugin.saveSettings();
-      }
-    }
-
-    this.view.switchMapFromModal(result.name);
-    this.close();
-    // If the new map was created with a background image, drop straight into
-    // calibration mode — same UX as adding a bg to an existing map.
-    if (resolvedBgPath) this.view.enterBgCalibration();
-  }
-
   onClose(): void {
+    this.stopKeepInViewport?.();
     this.contentEl.empty();
   }
 }

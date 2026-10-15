@@ -176,7 +176,8 @@ describe("setTokenHex", () => {
 		const { app, getContent } = makeApp("tokens/hero.md", "---\ntoken: true\n---\n");
 		await setTokenHex(app, "tokens/hero.md", "5_7", "overworld");
 		expect(getContent()).toContain("token-hex: 5_7");
-		expect(getContent()).toContain("token-map: overworld");
+		// NF3: a link to the map note.
+		expect(getContent()).toContain("token-map: [[_overworld]]");
 	});
 });
 
@@ -252,7 +253,7 @@ describe("applyTokenFrontmatter", () => {
 		expect(content).toContain("token: true");
 		expect(content).toContain("token-icon: sword.png");
 		expect(content).toContain("token-hex: 2_3");
-		expect(content).toContain("token-map: overworld");
+		expect(content).toContain("token-map: [[_overworld]]");
 		expect(content).toContain("token-visible: true");
 		expect(content).toContain("token-shape: square");
 		expect(content).toContain("token-size: lg");

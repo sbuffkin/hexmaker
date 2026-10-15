@@ -1,4 +1,5 @@
-import { App, Modal, Notice, TFile, TFolder } from "obsidian";
+import { App, Notice, TFile, TFolder } from "obsidian";
+import { HexmakerModal } from "../HexmakerModal";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, makeTableTemplate } from "../utils";
 import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/FolderTree";
@@ -7,10 +8,9 @@ import { buildTree, renderFolderTree, type TreeNode } from "../random-tables/Fol
  * Unified table/file picker modal.
  *
  * - `onChoose`       — called when the user selects an existing file.
- * - `onOpenView`     — if provided, renders a "🎲 Open tables view" button.
  * - `onTableCreated` — if provided, called after a new table is created (e.g. to open it in RT view).
  */
-export class FolderTreePickerModal extends Modal {
+export class FolderTreePickerModal extends HexmakerModal {
   constructor(
     app: App,
     private plugin: HexmakerPlugin,
@@ -19,7 +19,6 @@ export class FolderTreePickerModal extends Modal {
     private filterPlaceholder: string,
     private emptyMessage: string,
     private onChoose: (file: TFile) => void,
-    private onOpenView?: () => void,
     private onTableCreated?: (file: TFile) => void,
   ) {
     super(app);
@@ -30,19 +29,9 @@ export class FolderTreePickerModal extends Modal {
     const { contentEl } = this;
     contentEl.addClass("duckmage-table-picker-modal");
 
-    // ── Optional "open tables view" button ───────────────────────────────
-    if (this.onOpenView) {
-      const topBar = contentEl.createDiv({ cls: "duckmage-table-picker-topbar" });
-      topBar.createEl("button", {
-        cls: "duckmage-rt-icon-btn duckmage-table-picker-view-btn",
-        text: "🎲 Open tables view",
-        title: "Open random tables view",
-      }).addEventListener("click", () => this.onOpenView!());
-    }
-
     // ── Filter input ─────────────────────────────────────────────────────
     const filterInput = contentEl.createEl("input", {
-      type: "text",
+      type: "search",
       cls: "duckmage-rt-search",
     });
     filterInput.placeholder = this.filterPlaceholder;
@@ -59,7 +48,7 @@ export class FolderTreePickerModal extends Modal {
         .filter(
           (f) =>
             (!prefix || f.path.startsWith(prefix)) &&
-            !f.basename.startsWith("_"),
+            this.plugin.isLinkableNote(f),
         )
         .sort((a, b) => a.path.localeCompare(b.path));
       if (query) {
@@ -82,7 +71,7 @@ export class FolderTreePickerModal extends Modal {
       const files = getFiles(trimmed);
 
       if (files.length === 0) {
-        listEl.createDiv({ cls: "duckmage-picker-list-empty", text: this.emptyMessage });
+        listEl.createDiv({ cls: "duckmage-empty-state", text: this.emptyMessage });
         return;
       }
 

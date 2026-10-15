@@ -1,7 +1,9 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { normalizeFolder, makeTableTemplate, getIconUrl } from "../src/utils";
+import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl, iconPackTabs } from "../src/utils";
+import { BUNDLED_ICONS } from "../src/bundledIcons";
+import { parseRandomTable, parseRandomTableWithReport } from "../src/random-tables/randomTable";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 
 // ── normalizeFolder ───────────────────────────────────────────────────────────
@@ -54,20 +56,28 @@ describe("makeTableTemplate", () => {
 		expect(t).toContain("\n---\n");
 	});
 
-	it("generates a single blank example row", () => {
+	it("generates a single blank example row (range left blank)", () => {
 		const t = makeTableTemplate(6);
-		expect(t).toContain("|  | 1 |");
+		expect(t).toContain("\n|  |  | 1 |\n");
 	});
 
-	it("includes the Result/Weight table header", () => {
+	it("names the die in the roll column: | d6 | Result | Weight |", () => {
 		const t = makeTableTemplate(6);
-		expect(t).toContain("| Result | Weight |");
-		expect(t).toContain("|--------|--------|");
+		expect(t).toContain("| d6 | Result | Weight |\n|-----|--------|--------|\n");
 	});
 
-	it("dice: 0 still produces valid frontmatter", () => {
+	it("starter rows get roll ranges for the die, never past it", () => {
+		const t = makeTableTemplate(20, undefined, undefined, [["crabmen", 4], ["mage", 1], ["kraken", 0], ["a | b", 1]]);
+		expect(t).toContain("| 1–13 | crabmen | 4 |\n| 14–17 | mage | 1 |\n| — | kraken | 0 |\n| 18–20 | a \\| b | 1 |\n");
+		const table = parseRandomTable(t);
+		expect(table.entries.map((e) => e.range)).toEqual(["1–13", "14–17", "—", "18–20"]);
+		expect(parseRandomTableWithReport(t).issues).toEqual([]);
+	});
+
+	it("dice: 0 still produces valid frontmatter and the old two-column table", () => {
 		const t = makeTableTemplate(0);
 		expect(t).toContain("dice: 0");
+		expect(t).toContain("| Result | Weight |\n|--------|--------|\n|  | 1 |\n");
 	});
 
 	it("includes extra frontmatter fields when provided", () => {
@@ -90,7 +100,7 @@ describe("makeTableTemplate", () => {
 		const t = makeTableTemplate(6, undefined, "[🎲 Open](obsidian://roll)");
 		expect(t).toContain("[🎲 Open](obsidian://roll)");
 		const preambleIdx = t.indexOf("[🎲 Open]");
-		const tableIdx = t.indexOf("| Result |");
+		const tableIdx = t.indexOf("| d6 |");
 		expect(preambleIdx).toBeLessThan(tableIdx);
 	});
 });
@@ -181,4 +191,48 @@ describe("getIconUrl", () => {
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
   });
+});
+
+describe("cssUrl", () => {
+  // The quoted string inside url("…") must not end early.
+  const inner = (v: string) => v.slice('url("'.length, -'")'.length);
+
+  it("percent-encodes quotes in an inline SVG so the CSS value stays valid", () => {
+    const svg = 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"><path fill="%23000" d="M0 0"/></svg>';
+    const v = cssUrl(svg);
+    expect(v.startsWith('url("')).toBe(true);
+    expect(inner(v)).not.toContain('"');
+    expect(decodeURIComponent(inner(v))).toBe(decodeURIComponent(svg.replace(/"/g, "%22")));
+  });
+
+  it("leaves base64 data URLs and plain paths alone", () => {
+    expect(cssUrl("data:image/png;base64,iVBORw0KGgo=")).toBe('url("data:image/png;base64,iVBORw0KGgo=")');
+    expect(cssUrl("app://local/icons/x.png")).toBe('url("app://local/icons/x.png")');
+  });
+
+  it("every bundled icon (the space SVGs included) makes a valid url() value", () => {
+    expect(BUNDLED_ICONS.size).toBeGreaterThan(0);
+    for (const [name, src] of BUNDLED_ICONS) {
+      const v = inner(cssUrl(src));
+      if (/["\\n\r]/.test(v)) throw new Error(`${name} would break url("…")`);
+    }
+  });
+});
+
+describe("iconPackTabs (round 6 R4: the Paint icon picker had no tabs)", () => {
+	it("shows All, Terrain and an empty Custom tab when only terrain icons exist", () => {
+		expect(iconPackTabs(new Map([["terrain", 40]]))).toEqual([
+			["all", "All", 40],
+			["terrain", "Terrain", 40],
+			["custom", "Custom", 0],
+		]);
+	});
+	it("adds Space when space icons are enabled, and counts custom icons", () => {
+		expect(iconPackTabs(new Map([["terrain", 40], ["space", 30], ["custom", 2]])).map(([k, , n]) => `${k}:${n}`)).toEqual([
+			"all:72",
+			"terrain:40",
+			"space:30",
+			"custom:2",
+		]);
+	});
 });

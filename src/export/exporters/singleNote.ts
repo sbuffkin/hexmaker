@@ -19,6 +19,8 @@ import { renderMarkdownToHtml } from "../htmlRenderer";
 import { ensureExportFolder } from "../exportFolder";
 import { serializeMarkdown, stripFrontmatter } from "../mdSerializer";
 import type HexmakerPlugin from "../../HexmakerPlugin";
+import { exportedMessage, withExportProvenance } from "../exportFolder";
+import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
 
 export async function exportSingleNoteAsPdf(
   plugin: HexmakerPlugin,
@@ -41,8 +43,8 @@ export async function exportSingleNoteAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    await writeBinaryToVault(plugin.app, outPath, bytes);
-    new Notice(`Exported to ${outPath}`);
+    const replaced = await writeBinaryToVault(plugin.app, outPath, bytes);
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);
@@ -62,8 +64,13 @@ export async function exportSingleNoteAsMarkdown(
 
   try {
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
-    await writeTextToVault(plugin.app, outPath, finalMd);
-    new Notice(`Exported to ${outPath}`);
+    // Where it came from, in its frontmatter (X1).
+    const replaced = await writeTextToVault(
+      plugin.app,
+      outPath,
+      withExportProvenance(finalMd, file.path, "note"),
+    );
+    new Notice(exportedMessage(outPath, replaced));
     void openInVault(plugin.app, outPath);
   } catch (err) {
     console.error(err);
@@ -92,39 +99,4 @@ export function ensureLeadingTitle(raw: string, basename: string): string {
   if (/^# /.test(stripped)) return stripped;
   if (stripped.length === 0) return `# ${basename}`;
   return `# ${basename}\n\n${stripped}`;
-}
-
-async function writeBinaryToVault(
-  app: App,
-  path: string,
-  data: Uint8Array,
-): Promise<void> {
-  const buf = new ArrayBuffer(data.byteLength);
-  new Uint8Array(buf).set(data);
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modifyBinary(existing, buf);
-  } else {
-    await app.vault.createBinary(path, buf);
-  }
-}
-
-async function writeTextToVault(
-  app: App,
-  path: string,
-  data: string,
-): Promise<void> {
-  const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof TFile) {
-    await app.vault.modify(existing, data);
-  } else {
-    await app.vault.create(path, data);
-  }
-}
-
-async function openInVault(app: App, path: string): Promise<void> {
-  const file = app.vault.getAbstractFileByPath(path);
-  if (file instanceof TFile) {
-    await app.workspace.getLeaf(false).openFile(file);
-  }
 }

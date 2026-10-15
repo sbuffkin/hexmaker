@@ -5,14 +5,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Development (watch mode with inline sourcemaps) — use with Hot Reload (see below)
+# Development (watch mode with inline sourcemaps, every release slice built) — use with Hot Reload (see below)
 npm run dev
 
-# Production build (type-checks then bundles)
+# Release build (type-checks then bundles the slices marked released in release-slices.json)
 npm run build
 
-# Run tests (vitest)
+# Full build: every slice, released or not (owner and test vaults)
+npm run build:full
+
+# Prove a slice built off leaves no trace in main.js (builds each slice off, then all off)
+npm run check:release        # or: node dev/release/check-release.mjs --off space
+
+# Run tests (node:test via tsx; every slice on; runs every tests/*.test.ts)
 npm test
+
+# Type-check the tests (tsconfig.test.json; also in premerge)
+npm run typecheck:tests
 
 # Bump version (updates manifest.json and versions.json, stages both)
 npm run version
@@ -30,163 +39,128 @@ Each coding session:
 1. Run `npm run dev` in a terminal (or `/dev` from Claude Code) — esbuild watches for changes and rebuilds `main.js` on every save
 2. After a rebuild, reload the plugin in Obsidian:
    ```bash
-   powershell.exe -Command "obsidian plugin:reload id=duckmage-plugin"
+   powershell.exe -Command "obsidian eval code=\"(async()=>{await app.plugins.disablePlugin('hexmaker'); await app.plugins.enablePlugin('hexmaker'); return 'ok'})()\""
    ```
+   The plugin **id is `hexmaker`** (the folder is `duckmage-plugin`). On this machine's Obsidian installer the CLI's `plugin:reload` / `plugin:disable` / `plugin:enable` and `dev:*` commands silently do nothing (exit 255, "installer out of date"); `obsidian eval` works. To check what's loaded: `obsidian eval code="Object.keys(app.commands.commands).filter(c=>c.startsWith('hexmaker:'))"`. Screenshot: `require('@electron/remote').getCurrentWebContents().capturePage()` inside `eval`. `app.plugins.plugins.hexmaker.manifest.version` is cached from startup — don't use it to tell builds apart.
+   **Before copying a build into this folder**, check which branch the current vault build came from — other sessions deploy from their own branches, and a deploy reverts theirs.
 3. Use `/rebuild` for a final production build before committing (runs the TypeScript type-check and tests too)
+
+## Running from a Windows-native session
+
+`node_modules` is installed from WSL (Linux esbuild binary, no `.cmd` shims), so npm scripts fail when run from Windows. Run them through WSL:
+
+```bash
+MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'cd /mnt/c/Users/markr/Documents/KB/journal/.obsidian/plugins/duckmage-plugin && npm run build'
+```
+
+## Before merging or deploying: `npm run premerge`
+
+**Before merging into `feat/region-notes` (or master) or deploying a build into the live vault, run `npm run premerge`** (from WSL, like every npm script here) and only go ahead when it ends with `PREMERGE PASSED`. It runs build → lint → test type-check → unit tests → integration tests → the **smoke vault matrix**, stopping loudly at the first failure (owner decision WM5: the matrix runs locally, not in CI; CI keeps the Obsidian-free tests).
+
+- The matrix (`dev/smoke/run.mjs`, plan [[plan-work-modes]] §3) builds 9 vault setups (fresh install, a synthetic 1.5.5 vault, a copy of the owner's real data `C:/Users/markr/work/tmp/migtest/seedF` + a copy of the live `data.json`, space only, overworld + regions, neighbours world, a custom palette with no default names, everything deleted, 80 maps), each in its own sandboxed Obsidian (fresh-eyes `sandbox.mjs`, up to 4 at once), and checks: no plugin console errors; settings saved; every map opens and renders; untouched files unchanged on disk (migrations verified separately: map notes, backups, hex data vs the old frontmatter, paths resolve, palette upgrades keep every terrain); a restart rewrites nothing; paint → undo round trip; registered commands; Play refuses a path edit. ~5 minutes, mostly the real-data migration.
+- Run parts of it: `npm run smoke -- --only fresh,v155 --jobs 2` (`--list` for the setup ids, `--keep` to keep run folders, `--build <dir>` to test another build). A failed setup keeps its run folder (path in `dev/smoke/last-run.json`); a full pass writes `dev/smoke/last-pass.json` (commit, build hash, per-check results).
+- It only stops the sandboxes it started and checks every other Obsidian process is still there (`otherObsidianBefore == otherObsidianAfter`). Never point it at the main vault.
+- A new feature with a user-visible write path (paint, paths, a new note type, a migration) should get a smoke check in `dev/smoke/lib/page.mjs` / `setups.mjs` as well as unit tests.
 
 ## Architecture
 
-The plugin source is split across `main.ts` (entry point re-export) and modules under `src/`. esbuild bundles everything into `main.js`, which Obsidian loads directly.
+`main.ts` re-exports `src/HexmakerPlugin.ts`; esbuild bundles everything into `main.js` (`.md` files import as text: `loader: { '.md': 'text' }` in `esbuild.config.mjs`). The plugin id is `hexmaker`; view types, CSS classes and protocol actions keep the old `duckmage-` prefix. See `ARCHITECTURE.md` for the module table, the data formats and the modules/slices system.
 
-See `ARCHITECTURE.md` for a full overview of the system.
+**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__` / `__SLICE_HEXFLOWER__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, or World maps' hooks via `worldMaps()` (undefined without the slice; type-only imports). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
 
 ### Source layout
 
 ```
-main.ts                          ← thin re-export: export { default } from "./src/DuckmagePlugin"
+main.ts                 ← export { default } from "./src/HexmakerPlugin"
 src/
-  DuckmagePlugin.ts              ← Plugin class (entry point, default export)
-  HexMapView.ts                  ← ItemView — hex grid, all drawing tools, inline modals
-  HexEditorModal.ts              ← Modal — right-click per-hex editor (terrain, links, notes, icon override)
-  HexTableView.ts                ← ItemView — spreadsheet view of all hex notes with filters/sort
-  TerrainPickerModal.ts          ← Modal — full terrain palette picker for the terrain paint tool
-  TerrainEntryEditorModal.ts     ← Modal — edit a single terrain palette entry (name, color, icon)
-  IconPickerModal.ts             ← Modal — icon picker for the icon paint tool
-  RegionModal.ts                 ← Modal — switch active region, create/rename/delete regions
-  FileLinkSuggestModal.ts        ← SuggestModal — file picker scoped to worldFolder
-  RandomTableView.ts             ← ItemView — random table + workflow browser (tabbed: Tables / Workflows)
-  RandomTableModal.ts            ← Modal — inline roll modal used from HexEditorModal
-  RandomTableEditorModal.ts      ← Modal — edit entries of a random table file
-  WorkflowEditorModal.ts         ← Modal — edit workflow definition (steps, template, results folder)
-  WorkflowWizardModal.ts         ← Modal — execute a workflow (roll steps, fill template, save as note)
-  randomTable.ts                 ← Pure logic: parse, roll, weight, die-range helpers
-  workflow.ts                    ← Pure logic: parse/serialize workflows, generate templates, placeholder helpers
-  DuckmageSettingTab.ts          ← PluginSettingTab — settings UI
-  types.ts                       ← Interfaces & type constants (TerrainColor, DuckmagePluginSettings, LINK_SECTIONS, TEXT_SECTIONS)
-  constants.ts                   ← Runtime constants (VIEW_TYPE_*, DEFAULT_TERRAIN_PALETTE, DEFAULT_SETTINGS)
-  defaultHexTemplate.md          ← Built-in hex note template (imported as text via esbuild loader)
-  frontmatter.ts                 ← YAML frontmatter helpers (terrain + icon override read/write)
-  sections.ts                    ← Markdown section helpers (addLinkToSection, getLinksInSection, getAllSectionData, …)
-  utils.ts                       ← Shared utilities (normalizeFolder, getIconUrl, makeTableTemplate)
-  md.d.ts                        ← TypeScript declaration for "*.md" text imports
+  HexmakerPlugin.ts     ← Plugin class, thin: fields, onload/onunload, one-line delegations to services
+  plugin/               ← what onload used to do: commands.ts (ribbon, commands, file/editor menus),
+                          protocolHandlers.ts (duckmage-roll, duckmage-workflow, map/hex links),
+                          vaultEvents.ts (ONE handler per vault event, fixed step order — see its header),
+                          startup.ts (onLayoutReady: icons, stores, note-format upgrades, upgrade notice),
+                          settingsPersistence.ts (data.json load/save, own-write echoes, stamp)
+  services/             ← MapsService (map list, createNewMap options object), PaletteQueries,
+                          HexNotesService, TemplatesService, TerrainTablesService
+  HexmakerModal.ts      ← base class of every modal (drag, place()/section(), icon filter)
+  HexmakerSettingTab.ts ← settings tab (declarative getSettingDefinitions + display() fallback)
+  SetupWizardView.ts    ← first-run setup wizard
+  ports.ts              ← bindPorts(plugin): the module-level setters plain modules use to reach plugin state
+  log.ts                ← logError / logWarn ("Hexmaker: <scope>" prefix); user messages go via ui/notify.ts
+  frontmatter.ts        ← re-export barrel over maps/hexData, notes/areaStyle, tokens/tokenNotes
+  types.ts constants.ts ← settings/map types, LINK_SECTIONS/TEXT_SECTIONS; VIEW_TYPE_*, DEFAULT_SETTINGS
+  hex-map/              ← HexMapView.ts (ItemView, ~1000 lines) + the map's modals, path tool, geometry
+    view/               ← the map view's controllers (gridRenderer, hexPainter, mapInput, mapViewport,
+                          mapToolbar + toolState, mapNavigation, mapShell, pathOverlay, areaOverlay,
+                          gridLabels, neighbourShadow, backgroundCalibration, undoController,
+                          hexWrites + coalescingWriteQueue, tokenLayer, hexContextMenu, hexSwap, …)
+    editor/             ← HexEditorModal's sections (TerrainIconSections, LinkSection, TextSection,
+                          TableSections, NeighbourFlower, MapsStrip; hosts in host.ts)
+  hex-table/            ← HexTableView (spreadsheet of hexes) and its pickers
+  maps/                 ← MapStore (per-hex map data, one map note per map), mapNote.ts (pure parse/write),
+                          hexData.ts (hex getters/setters routed to the store), hexProps + hexPropsSync
+                          (hex-note properties both ways), callouts, map tree / navigation / submaps
+  migrations/           ← one file per stored-format step, registry.ts, stamp.ts (dataFormat),
+                          upgradeNote.ts / upgradeReport.ts; rules in its README.md
+  modules/              ← registry (data half), runtime (plugin half); world/, world-maps/, space/, hex-flower/
+  worldgen/             ← generators, engines (procedural/, builtin/), GeneratorPanel + genPage/ section
+                          renderers (GeneratorPageCtx), generatorPageState.ts, NewMapSetupModal
+  overworld/ space/ hexflower/ ← module code (World maps, Space, hex flowers)
+  random-tables/        ← RandomTableView, table parse/roll (randomTable.ts), TableStore, workflows
+  palettes/             ← PaletteStore (palette notes ⇄ settings), paletteNote, pathTypeTable, presets
+  paths/                ← PathsService (resolved chains, route cache), router, path edits, legacy readers
+  play/ arrival/        ← play log, party travel, link icons; places made on arrival, events ledgers
+  packs/ export/        ← pack export/import; map/hex/workflow exports (PNG, PDF, HTML, Markdown)
+  notes/ tokens/        ← area (faction/region) note styling, frontmatter text; token notes
+  ui/                   ← shared kit: sliders.ts, shareSliders.ts (zero-sum), pickers.ts, disclosure.ts
+                          (Advanced dropdown, Debug, Fold), placement.ts (the placement map), notify.ts, …
+  md/ stores/ vault/ workspace/ ← tableRow.splitRow; NoteFolderStore base; ensureFolder; views.ts (find/open views)
+  hexKey.ts             ← hex-key ("x_y") helpers (Lane L11, landing separately)
 ```
 
-The `.md` loader is configured in `esbuild.config.mjs` (`loader: { '.md': 'text' }`), allowing `defaultHexTemplate.md` to be imported as a plain string.
+### Patterns
 
-### Plugin purpose
-
-Renders an interactive hex-grid map for tabletop RPG world-building inside Obsidian. Each hex cell corresponds to a Markdown note on disk. The map supports terrain painting, icon painting, road/river chain drawing, link-to-hex tools (random tables, factions), panning, and zooming. A spreadsheet view summarises all hex notes with filtering. A random tables view lets users browse, roll, and edit weighted random tables, and execute multi-step workflows that chain table rolls into a filled template note.
-
-### Key classes
-
-- **`DuckmagePlugin`** (`src/DuckmagePlugin.ts`) — Main plugin entry point. Registers views (`HexMapView`, `HexTableView`, `RandomTableView`), ribbon icons, commands, and the settings tab. Key public API:
-  - `hexPath(x, y)` — vault-relative path for a hex note
-  - `createHexNote(x, y)` — creates hex note from template
-  - `loadAvailableIcons()` — merges plugin `icons/` with user custom icons folder into `availableIcons: string[]`
-  - `refreshHexMap()` — re-renders all open `HexMapView` instances
-  - `ensureTerrainTables()` — creates missing terrain table files under `tablesFolder/terrain/`
-  - `ensureAllRollerLinks()` — adds roller-link preamble to all table files
-  - `backfillTerrainLinks()` — links each hex note's terrain table into its Encounters Table section
-  - `buildRollerLink(path)` — generates the `[Roll](<obsidian://…>)` URI for a table file
-
-- **`HexMapView`** (`src/HexMapView.ts`, extends `ItemView`) — Renders the hex grid and handles all user interaction.
-  - **DOM structure**: `contentEl` (`.duckmage-hex-map-container`) → `.duckmage-hex-map-clip` (panning viewport, `overflow: hidden`) + `.duckmage-hex-map-controls` (overlay for buttons, `pointer-events: none`). This keeps toolbar/expand buttons unclipped by the viewport transform.
-  - **`renderGrid(terrainOverrides?, iconOverrides?)`** — full DOM re-render. Optional override Maps allow passing values not yet in the metadata cache.
-  - **Drawing tools**: `drawingMode` union `"road" | "river" | "terrain" | "icon" | "tableLink" | "factionLink" | null`. Toolbar buttons toggle mode; each mode has a `handle*Button()` opener, `exit*Mode()` closer, and `onHex*Click()` handler.
-  - **Write queues**: `scheduleTerrainWrite` / `scheduleIconWrite` coalesce rapid repaints — only the latest value per hex is written, preventing stale overwrites.
-  - **Link tools** (`tableLink`, `factionLink`): pick a file via folder-tree modal, then click hexes to add a wiki-link to the `Encounters Table` or `Factions` section. Visual feedback: badge span + CSS ripple blip animation (`duckmage-hex-blip`).
-  - Left-click: opens/creates hex note (normal), paints terrain/icon, extends road/river chain, or adds a link.
-  - Right-click: opens `HexEditorModal` (normal), deletes road/river node, or exits current tool mode.
-  - Expand buttons (+) grow the grid in four cardinal directions, adjusting `gridOffset` and `gridSize` in settings.
-  - **`centerOnHex(x, y)`** (public) — pans the viewport to centre on a given hex coordinate.
-  - **`activeRegionName`** (public) — the currently displayed region name.
-
-- **`HexEditorModal`** (`src/HexEditorModal.ts`, extends `Modal`) — The right-click per-hex editor:
-  - Terrain picker (2-row scrollable grid) with icon override and "Clear terrain".
-  - Dropdown link sections for **Towns, Dungeons, Features, Quests, Factions, Encounters Table** — each backed by its own configured folder, rendered via `renderDropdownSection`. Uses `LinkPickerModal` internally (file list + create-new).
-  - Free-text note sections: Description, Landmark, Hidden, Secret, Weather, Hooks & Rumors.
-  - Fetches all section data in a single read before touching the DOM (`getAllSectionData`).
-
-- **`HexTableView`** (`src/HexTableView.ts`, extends `ItemView`) — Spreadsheet of all hex notes:
-  - Columns: Hex (coords + jump button), Terrain, Description, Landmark, Towns, Dungeons, Features, Quests, Factions, Enc. Table, Hidden, Secret, Weather, Hooks & Rumors.
-  - Enc. Table cell shows the basename of the linked table file; clicking opens `RandomTableView` at that file.
-  - Toolbar filters: X/Y range inputs, terrain multi-select (left-click include / right-click exclude), Has Town/Dungeon/Feature/Quest/Faction checkboxes, region selector, X→Y / Y→X sort priority, Asc/Desc direction.
-  - Live updates on vault `modify` events (300 ms debounce per file).
-  - Jump button (◎) calls `HexMapView.centerOnHex(x, y)` on the open map view.
-
-- **`RandomTableView`** (`src/RandomTableView.ts`, extends `ItemView`) — Tabbed browser with two modes:
-  - **Tables mode**: folder tree + search + new-table creator. Detail pane shows entries with die-range and % odds, die-size selector, Roll button, copy result, roll history. Edit opens `RandomTableEditorModal`. Bottom of detail pane shows "Workflows using this table" links (each opens that workflow in Workflows mode) and a "+ New workflow with this table" link.
-  - **Workflows mode**: folder tree of workflow files. Detail pane shows each step as a clickable link (opens that table in Tables mode) with roll count. Edit opens `WorkflowEditorModal`. "Roll workflow" button opens `WorkflowWizardModal`.
-  - **`openTable(filePath)`** (public) — switches to Tables mode, expands ancestor folders so the target is visible, and loads the table detail; called from `HexTableView` (Enc. Table cell), `HexEditorModal`, workflow step links, and the protocol handler.
-
-- **`RandomTableModal`** (`src/RandomTableModal.ts`, extends `Modal`) — Lightweight inline roll modal opened from `HexEditorModal` (🎲 button per link section or 📖 for terrain description). Skips the picker if `initialFilePath` is supplied.
-
-- **`RandomTableEditorModal`** (`src/RandomTableEditorModal.ts`, extends `Modal`) — Edit table entries (result text + weight), linked folder, description, filter flags. Auto-saves on close. Accepts optional `initialContent` to avoid a redundant vault read when the caller already has the file content.
-
-- **`WorkflowEditorModal`** (`src/WorkflowEditorModal.ts`, extends `Modal`) — Edit a workflow definition:
-  - Rename workflow, set results folder, manage steps (table picker + roll count + label) with drag-to-reorder.
-  - Template textarea with live placeholder validation — shows missing `$placeholder` names.
-  - Template auto-syncs: new step appends `## label\n$label` block; label change updates the heading AND all `$var`/`$var_N` placeholder references; roll-count change adds or removes `_N` suffixed placeholders (reducing to 1 collapses back to bare `$var`).
-  - Auto-saves workflow file and template file on close. Modal is draggable by its title bar.
-
-- **`WorkflowWizardModal`** (`src/WorkflowWizardModal.ts`, extends `Modal`) — Execute a workflow:
-  - Shows each step with a manual-pick dropdown and a Roll button. Fixed-width controls to prevent layout shift on roll.
-  - Result textarea shows the template filled with rolled values.
-  - Save section writes the filled result as a new vault note in the configured results folder.
-
-- **`RegionModal`** (`src/RegionModal.ts`, extends `Modal`) — Manage hex map regions:
-  - Switch the active region displayed on the hex map.
-  - Create, rename, and delete regions. Regions map to subfolders under `hexFolder`.
-
-- **`TerrainEntryEditorModal`** (`src/TerrainEntryEditorModal.ts`, extends `Modal`) — Edit a single terrain palette entry: name, color, icon (with preview), and icon color tint. Changes are staged in pending fields and only written to the palette on Save.
-
-- **`TerrainPickerModal`** (`src/TerrainPickerModal.ts`) — Full terrain palette picker (no row cap). Includes "Clear" to erase terrain.
-
-- **`IconPickerModal`** (`src/IconPickerModal.ts`) — Full icon picker with image previews. Includes "Remove" option.
-
-- **`FileLinkSuggestModal`** (`src/FileLinkSuggestModal.ts`) — Reusable fuzzy-search file picker scoped to a configured folder.
-
-- **`DuckmageSettingTab`** (`src/DuckmageSettingTab.ts`) — Settings UI:
-  - "Generate folders" button — fills blank folder settings with defaults under `worldFolder` and creates the folders.
-  - Folder paths: world, hexes, towns, dungeons, quests, features, factions, tables, workflows.
-  - "Generate terrain tables & hex links" button — runs `ensureTerrainTables`, `ensureAllRollerLinks`, `backfillTerrainLinks`.
-  - Hex orientation, grid dimensions, hex gap, custom icons folder, road/river colors, terrain palette editor (drag-to-reorder, click entry to open `TerrainEntryEditorModal`).
+- **Plugin = thin shell.** New plugin behaviour goes in a service (`src/services/`) or `src/plugin/`; `HexmakerPlugin` keeps a one-line delegation (integration tests and many `plugin.getMap`-style call sites rely on them).
+- **Controllers take a narrow `*Host`.** Code split out of a big view/modal gets an interface listing only what it uses (`PathToolHost`, `GridRendererHost`, `HexPainterHost`, `EditorWriteHost`, `GeneratorPageHost`…), never the whole view or plugin. `HexMapView.viewFacade()` returns the members most map controllers read (all functions, read live) and each host is built as `{ ...view, …extras }`. Fake hosts in tests implement the whole interface.
+- **Vault events:** `src/plugin/vaultEvents.ts` is the only place that registers vault/workspace events; each step runs isolated, in the order its header lists. Add a step in the right slot rather than a new handler.
+- **Ports:** plain modules that need plugin state get a setter bound in `ports.ts` `bindPorts()`; don't add module-level state set from elsewhere.
+- **Views** are found/opened through `src/workspace/views.ts`, not `getLeavesOfType(...)[0].view as …`.
 
 ### Data model
 
-- **Hex notes**: `{hexFolder}/{region}/{x}_{y}.md`. Created via `createHexNote(x, y, region)` using the configured template or `defaultHexTemplate.md`.
-- **Template placeholders**: `{{x}}`, `{{y}}`, `{{title}}`. Template must include `### Towns`, `### Dungeons`, `### Features`, `### Quests`, `### Factions`, `### Encounters Table` headings.
-- **Terrain**: YAML frontmatter `terrain: <name>`. Read via `getTerrainFromFile` (metadata cache); written via `setTerrainInFile` (raw text patch). Both in `frontmatter.ts`.
-- **Icon override**: frontmatter `icon: <filename>`. Read via `getIconOverrideFromFile`; written via `setIconOverrideInFile`.
-- **Terrain icons**: plugin `icons/` folder + user custom icons folder → `plugin.availableIcons`. URLs via `getIconUrl(plugin, filename)`. Vault-sourced filenames tracked in `plugin.vaultIconsSet`.
-- **Roads & rivers**: `settings.roadChains` / `settings.riverChains` — arrays of `string[]` chains, each element `"x_y"`. Drawn as SVG polylines over the grid.
-- **Link sections** (`LINK_SECTIONS`): `"Towns" | "Dungeons" | "Features" | "Quests" | "Factions" | "Encounters Table"`. Wiki-links inserted under the matching `###` heading via `addLinkToSection`. Read back via `getLinksInSection`.
-- **Text sections** (`TEXT_SECTIONS`): Description, Landmark, Hidden, Secret. Free text stored under `###` headings. Weather and Hooks & Rumors are also text sections but not in the `TEXT_SECTIONS` constant.
-- **Random tables**: Markdown files with YAML `dice: N` frontmatter and a `| Result | Weight |` table. Parsed by `randomTable.ts`. Stored under `tablesFolder` (default `world/tables`). Terrain tables live at `{tablesFolder}/terrain/{name} - {description|encounters}.md`.
-- **Workflows**: Markdown files with YAML frontmatter (`results-folder`, `template-file`) and a `| Table | Rolls | Label |` steps table. Stored under `workflowsFolder`. Templates stored at `{workflowsFolder}/templates/{name}.md`. Parsed/serialized by `workflow.ts`.
-- **Settings** (`data.json`): `worldFolder`, `hexFolder`, `townsFolder`, `dungeonsFolder`, `questsFolder`, `featuresFolder`, `factionsFolder`, `tablesFolder`, `workflowsFolder`, `iconsFolder`, `templatePath`, `hexGap`, `hexOrientation`, `terrainPalette`, `gridSize`, `gridOffset`, `zoomLevel`, `roadChains`, `riverChains`, `roadColor`, `riverColor`, `defaultTableDice`, `regions`.
+- **Map notes are the source of truth for map data.** `{hexFolder}/{map}/_{map}.md`, frontmatter `hexmaker-map: 6` (format history in the `mapNote.ts` header). Frontmatter = the map's settings (palette, size, parent, layer toggles, mode, seed…); `## Hexes` table (Hex | Name | Terrain | Icon | GM icons | Area | Locations | Locked); `## Paths` + `## Path routes` (named paths with anchors); a derived `## Summary`. Readers are forgiving, unknown text/keys survive rewrites. Owned by `MapStore`; parsed/written by `src/maps/mapNote.ts`.
+- **Hex notes** `{hexFolder}/{map}/{x}_{y}.md` exist only once a hex gets prose or links. Frontmatter `map: "[[_<map>]]"` plus mirrored properties `terrain`/`area`/`icon`/`name` (copies for Dataview/Bases; `hexPropsSync.ts` keeps them in step both ways, the map wins on conflict). Body: a `> [!hexmaker] Map data` callout and `###` sections (Description, Landmark, Hidden, Secret, Weather, Hooks & Rumors, Encounters Table, Towns, Dungeons, Quests, Factions, Features; `sections.ts`). Template: `src/defaultHexTemplate.md` or the user's in `templatesFolder`; placeholders `{{x}}`, `{{y}}`, `{{title}}`.
+- **Palettes are notes** (`palettesFolder`, default `{worldFolder}/palettes`, `hexmaker-palette: 1`): a terrain table (Terrain | Color | Icon | Icon color | Category | Type | Impassable) and a `## Path types` table. `PaletteStore` syncs notes ⇄ `settings.terrainPalettes` (the in-memory working copy and data.json cache): edit palettes in memory + `saveSettings()`, never write palette notes directly. Presets in `src/palettes/presets.ts` and each module's `presets.ts`.
+- **Other note stores:** biome notes and pools (World maps, `BiomeStore`), world types (Space, `WorldTypeStore`) — hex flowers (`FlowerStore`) — all on `NoteFolderStore`; generator notes (`worldgen/generators.ts`); token notes; faction/region (area) notes.
+- **Random tables:** notes with a roll column, Result and Weight (`| d20 | Result | Weight |`, ranges like `1–16`, `—` for weight 0). Weights are core; stored ranges are what's rolled, a blank range is filled from the weights; older `| Result | Weight |` tables still read. Optional frontmatter (`rows:`, `pick: each`, …) and extra columns are row attributes (`randomTable.ts` header). Hand edits are imported by `TableStore`.
+- **Workflows:** frontmatter `results-folder` / `template-file`, a `| Table | Rolls | Label | Die | Fills |` table (Die and Fills are derived, ignored on read); templates use `$label` / `$label_N` (`random-tables/workflow.ts`).
+- **Settings (`data.json`)** — `HexmakerPluginSettings` in `types.ts`, defaults in `constants.ts`: folders (`worldFolder`, `hexFolder`, `townsFolder`, `dungeonsFolder`, `questsFolder`, `featuresFolder`, `factionsFolder`, `regionsFolder`, `tablesFolder`, `workflowsFolder`, `palettesFolder`, `templatesFolder`, `exportFolder`, `iconsFolder`, `logFolder`…), `maps` (per-map `MapData` minus what the map note holds: `paths`/`pathChains` are stripped by `withoutNotePaths`, hexes live only in `MapStore`), `terrainPalettes`, display prefs (`hexOrientation`, `staggerOffset`, `hexGap`, `zoomLevel`, coord/hex-name/legend options), `mapKinds`, and one-time flags (`palettesMigrated`, `pathTypesExplicit`, `tableRangesUpgraded`, `noteFormatUpgrades`, …). `dataFormat` is the data stamp (`migrations/stamp.ts`, currently 2: map data in map notes), `savedWith` the version that saved, `migrationsRun` the ids of migrations that changed this vault. `settings.pathTypes` is only read by the path-type migrations.
+- **Hex geometry:** `hexNeighbors(x, y, orientation, stagger)` in `src/hex-map/hexGeometry.ts`; flat-top (default) staggers columns, pointy-top rows; `staggerOffset` odd/even (per map or global).
 
-### Hex orientations
+### Tests
 
-- **Pointy-top**: points north/south, flat sides east/west. Odd rows offset right. Adjacency via odd-r offset.
-- **Flat-top** (default): flat sides north/south, points east/west. Odd columns offset down. Adjacency via odd-q offset.
-- `hexNeighbors(x, y)` in `HexMapView` branches on `settings.hexOrientation`.
+- `npm test` globs `tests/*.test.ts` (node's own glob, so the order is fixed): a new test file runs as soon as it exists. There is no file list in package.json to edit. Integration tests stay in `tests/integration/*.integration.ts` (`npm run test:integration`).
+- Tests are type-checked: `npm run typecheck:tests` (`tsc -p tsconfig.test.json`; `obsidian` resolves to `tests/__mocks__/obsidian.ts`; import mock-only members like `Notice.shown` from `./__mocks__/obsidian`). It runs in premerge after lint.
+- **Tests that assert on source text read a surface, never a file path:** `readSurface("map-view")` etc. from `tests/helpers/source.ts`. A surface is a big file plus the folder its code is being split into (e.g. `map-view` = `src/hex-map/HexMapView.ts` + `src/hex-map/view/**`, `plugin` = `src/HexmakerPlugin.ts` + `src/plugin/**` + `src/services/**`, `hex-editor`, `generator-page`, …; the list is `SURFACES`). Moving code inside a surface needs no test edit. When you extract code out of a surface file, put it in that surface's folder or add the new file to the surface in the same commit. Loops over file lists use `readSource(path)`; scans that report file paths map them with `ownerFile(path)`.
+- **Ratchets:** `fileSizes` (files over 800 lines are capped and may only shrink; lower the cap in `tests/fixtures/fileSizes.json` when they do; prefer new focused files over growing a big one), `importCycles` (no new cycles; the list only shrinks), `pureFiles` (listed files never reach `obsidian` at run time), `moduleBoundary` (above).
 
 ### Key conventions
 
-- Folder paths normalised (no leading/trailing slashes) via `normalizeFolder()`.
-- Links use vault-relative paths via `metadataCache.fileToLinktext(file, sourcePath)`.
-- `obsidian` is an esbuild external — never bundled; provided by Obsidian at runtime.
-- CSS classes use the `duckmage-` prefix (styles in `styles.css`).
-- View/modal/tab files use `import type DuckmagePlugin` to avoid circular runtime dependencies.
-- Paint tool methods (`onHexPaintClick`, `onHexIconClick`) are synchronous — DOM patched immediately, file writes queued via coalescing queue.
-- Link-tool click handlers (`onHexTableLinkClick`, `onHexFactionLinkClick`) are async — no coalescing needed (one-shot writes).
-- `onChanged` callback from `HexEditorModal` defers `renderGrid()` 300 ms when no terrain/icon overrides are passed (link-only changes) to avoid a metadata-cache race after `vault.modify`.
-- Modals that preload file content accept an optional `preloaded` / `initialContent` parameter — callers that already hold the file content pass it in to avoid a redundant vault read.
+- Folder paths normalised (no leading/trailing slashes) via `normalizeFolder()`. Links via `metadataCache.fileToLinktext(file, sourcePath)`.
+- `obsidian` is an esbuild external. CSS classes use the `duckmage-` prefix (`styles.css`, CRLF: stage with `git -c core.autocrlf=false add styles.css`).
+- Views, modals and helpers use `import type HexmakerPlugin` to avoid runtime import cycles.
+- Paint tools patch the DOM synchronously and queue file writes through `CoalescingWriteQueue` (`hex-map/view/hexWrites.ts`): only the latest value per hex is written. Link tools are one-shot async writes.
+- Modals that preload file content accept an optional `preloaded` / `initialContent` parameter so callers that already hold the content skip a vault read.
 - Exclude notes whose `basename` starts with `"_"` whenever enumerating vault files for display, dropdowns, or linking. Pattern: `.filter(f => !f.basename.startsWith("_"))`.
-- **All modals must extend `DuckmageModal`** (`src/DuckmageModal.ts`) rather than Obsidian's `Modal` directly. `DuckmageModal` is the single place for shared modal behaviour. Any functionality needed by more than one modal belongs there, not in `utils.ts` or duplicated across files.
-- All modals call `this.makeDraggable()` in `onOpen` (inherited from `DuckmageModal`), which adds the `duckmage-editor-modal-drag` class and locks dragging to the title-bar area. (`FileLinkSuggestModal` is the sole exception — it extends `SuggestModal` and cannot inherit from `DuckmageModal`.)
-- **NEVER interleave layout reads (`offsetWidth/Height/Left/Top`, `getBoundingClientRect`, `getComputedStyle`) with DOM writes (`createDiv`/`createEl`/`appendChild`/`setCssProps`/style changes) inside a per-hex loop.** Each read after a write forces a full synchronous layout flush → O(n²) thrash. On large maps (chult = 3843 hexes) this stalled the main thread for ~20s on open (regression in `renderCoordLabelsLayer`, commit 10475fd; fixed by batching). **Pattern:** read ALL geometry into a plain array first, THEN do all DOM writes. This is the established pattern in `renderPathOverlay`/`renderFactionOverlay` (build `centerMap` read-only, then build the SVG). The overlay/label builders in `HexMapView` are the hot path — any new one MUST follow read-then-write. Reproduce/validate with `dev/coord-label-thrash-bench.{html,mjs}` (~198× speedup batched vs interleaved).
+- **Map data lives in map notes, not hex notes.** Terrain, icon, GM icons, area/region, submap/locations, name and locked are stored in the map note (src/maps). Read/write them only through `plugin.mapStore` or the `src/frontmatter.ts` getters/setters (→ `maps/hexData.ts`) — never `cache.frontmatter.terrain` etc. (the hex-note properties are copies), and never gate the read on the hex note existing (most hexes have no note). This mistake caused four separate regressions (submap rings, hex locks, editor terrain, exports) — see the KB plan note `plan-map-notes`.
+- **Note-only fields survive a settings reload; missing ≠ empty.** data.json leaves out what only the map note holds (each map's `paths`/`pathChains`, via `withoutNotePaths`; hexes live only in `MapStore`). So `loadSettings` / `onExternalSettingsChange` hand out fresh `MapData` objects WITHOUT those fields, and Obsidian fires `onExternalSettingsChange` for our own saves during a save burst. Never read a missing note-only field as "empty" (`map.paths ?? []` feeding a write is the trap): `MapStore.adopt()` carries the store's copy onto fresh objects, `SettingsPersistence.loadSettings` must not `await` between swapping `plugin.settings` and `mapStore.adoptAll()`, and `MapStore.writeNote` refuses to drop every path/hex a note holds unless an edit cleared them (`clearedPaths`/`clearedHexes`). Any new field stored only in the map note needs the same treatment. Incident: 2026-10-10 paths wiped when creating a region next to a map (KB `incident-2026-10-10-path-loss-on-external-reload`; regression tests `tests/pathLossReload.test.ts`).
+- **A store never reads its own write back over newer memory, and writes made before it's ready are owned, not half-done.** A fresh install's stores wait for the setup wizard (F19), so maps can be made before `MapStore` is ready: `sync()` keeps the notes this session already wrote current, and `init()` loads those through `loadOwnNote` (memory wins, hand edits folded in), never `apply`. Any new store, gate or "load from disk" step must keep that. Test both ways (stores started, and held then released), as `tests/integration/regionDataAfterCreate.integration.ts` does. Incident 2026-10-14: every region lost `submap-kind`/world/`arrival` (KB `incident-2026-10-14-region-data-after-create`). New note-folder stores extend `src/stores/NoteFolderStore.ts` (one queue for reads and writes, so a hand edit is read before a write that follows it).
+- **Stored formats change only through `src/migrations/`** (owner MG7). Any change to what the plugin stores (data.json keys, map/hex/palette/table/workflow/token/generator note formats, names written into notes) adds a migration file there, one per step, named `v<from>-<what>.ts` (or `map-note-<a>-to-<b>-…`, `unreleased-…`), with its `info` (one-sentence `change`, `recordedBy` flag) and an entry in `registry.ts` — never an upgrade inline in a store or view. Back up before rewriting notes (`src/backup.ts`), keep readers of every old form forever, re-plan notes edited since they were read, and update `tests/migrationGolden.test.ts` when the 1.5.6 upgrade's result changes on purpose. A vault from any released version must still have a path forward. Bump the data stamp (`DATA_FORMAT` in `src/migrations/stamp.ts`) when an older build would misread the new data. Changes are recorded in `migrationsRun` and reported in the upgrade note. Rules and the step list: `src/migrations/README.md`.
+- **All modals must extend `HexmakerModal`** (`src/HexmakerModal.ts`) rather than Obsidian's `Modal` directly. `HexmakerModal` is the single place for shared modal behaviour (drag, `place(id, el)` / `section("advanced")` placement, `addIconFilter`). Any functionality needed by more than one modal belongs there, not in `utils.ts` or duplicated across files.
+- All modals call `this.makeDraggable()` in `onOpen` (inherited from `HexmakerModal`), which adds the `duckmage-editor-modal-drag` class and locks dragging to the title-bar area. (`FileLinkSuggestModal` is the sole exception — it extends `SuggestModal` and cannot inherit from `HexmakerModal`.)
+- **Placement, not feature levels.** Where a control sits (main / more / advanced / debug / hidden) comes from `src/ui/placement.ts`; use `place()` / `section()` (modals, pages) and the settings-tab equivalents. Same concept, same shared control: weights/shares that sum to a whole use `ShareSliders`, single values `ui/sliders.ts`, lists `ui/pickers.ts`, groups `Fold` (`ui/disclosure.ts`).
+- **NEVER interleave layout reads (`offsetWidth/Height/Left/Top`, `getBoundingClientRect`, `getComputedStyle`) with DOM writes (`createDiv`/`createEl`/`appendChild`/`setCssProps`/style changes) inside a per-hex loop.** Each read after a write forces a full synchronous layout flush → O(n²) thrash. On large maps (chult = 3843 hexes) this stalled the main thread for ~20s on open (regression in `renderCoordLabelsLayer`, commit 10475fd; fixed by batching). **Pattern:** read ALL geometry into a plain array first, THEN do all DOM writes. The overlay/label builders in `src/hex-map/view/` (`pathOverlay`, `areaShapes`, `gridLabels`, `neighbourShadow`) are the hot path and follow read-then-write — any new one MUST too. Reproduce/validate with `dev/coord-label-thrash-bench.{html,mjs}`.
+- **Hit tests live in the drawing's units.** The map's zoom is baked into the grid's font size, so anything placed in em/% follows it but geometry measured in px at render time goes stale. A pointer→cell lookup must re-measure or rescale cached px geometry by the em ratio, and be tested at several zoom factors. Data writers (`createRegion`, `setBiomeAt`, …) refuse coordinates outside the map rather than trusting the UI. (Incident 2026-10-12: region hover said "No region yet" and a click made a region off the map; KB `incident-2026-10-12-region-hit-test-drift`.)
+- **Sandboxes are hidden.** Visual and e2e checks run in a throwaway vault via the fresh-eyes `sandbox.mjs` (`C:/Users/markr/work/tools/skills-share/ux-testing/fresh-eyes-tester/scripts/`), which starts Obsidian on its own hidden Windows desktop by default (`--visible` or `SANDBOX_VISIBLE=1` to watch). Never run the plugin against the main vault, never kill Obsidian by name; check `otherObsidianBefore == otherObsidianAfter` after `stop`.
 
 ### Obsidian directory review in CI (never via the dashboard by hand)
 
@@ -221,8 +195,10 @@ in any new code; failing these means another bump-and-fix cycle.
 - **Settings tab is declarative (Obsidian ≥1.13).** `HexmakerSettingTab`
   implements `getSettingDefinitions()`; on 1.13+ the tab renders FROM THE
   DEFINITIONS and `display()` is never called (it remains only as the
-  pre-1.13 fallback). Any new setting must be added to BOTH paths until
-  minAppVersion reaches 1.13. Local `obsidian` typings are 1.12 — the
+  pre-1.13 fallback). The fallback draws the SAME definitions
+  (`display()` → `renderDefinitions`), so a new setting goes in
+  `getSettingDefinitions()` only, tagged with its `Settings.<control>`
+  placement id, and one placement entry places it on both paths. Local `obsidian` typings are 1.12 — the
   1.13 shapes are mirrored as local interfaces in HexmakerSettingTab.ts;
   delete them when the package is bumped.
 - **CSS lint "css-clip-path partially supported" warnings are accepted** —

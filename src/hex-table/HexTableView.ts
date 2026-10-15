@@ -3,17 +3,37 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
-  VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
-import type { TerrainColor } from "../types";
+import type { HexMapView } from "../hex-map/HexMapView";
+import { activeMapView, openTableInView } from "../workspace/views";
+import { LINK_SECTIONS, type TerrainColor } from "../types";
+import type { SectionWordsFn } from "../mapKinds";
 import { getAllSectionData } from "../sections";
-import { getTerrainFromFile } from "../frontmatter";
+import { displayedEncounterLinks } from "../encounterLinks";
+import { getTerrainFromFile, getHexNameFromFile } from "../frontmatter";
 import { normalizeFolder, makeTableTemplate } from "../utils";
+import { contentFolder } from "../notePickers";
 import { TerrainFilterModal } from "./TerrainFilterModal";
+import { Disclosure } from "../ui/disclosure";
 import { HexCellModal } from "./HexCellModal";
 import { MultiLinkNavModal } from "./MultiLinkNavModal";
 import { HexTerrainPickerModal } from "./HexTerrainPickerModal";
 import { LinkPickerModal } from "./LinkPickerModal";
+import {
+  compareTerrainTypes,
+  matchesTerrainFilter,
+  resolveTerrainType,
+  terrainTypeLabel,
+} from "./terrainTypeFilter";
+import { uniqueMapsByName } from "../maps/mapTree";
+
+type SortMode = "x" | "y" | "type";
+const SORT_LABELS: Record<SortMode, string> = {
+  x: "Sort: xy",
+  y: "Sort: yx",
+  type: "Sort: type",
+};
+const NEXT_SORT: Record<SortMode, SortMode> = { x: "y", y: "type", type: "x" };
 
 // Column definitions in template order
 const COLUMNS: { key: string; label: string; isLink: boolean }[] = [
@@ -38,7 +58,7 @@ const HEX_PATTERN = /^(?:.*\/)?(-?\d+)_(-?\d+)\.md$/;
 
 export class HexTableView extends ItemView {
   private scrollEl: HTMLElement | null = null;
-  private updateTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private updateTimers = new Map<string, number>();
   private loadGeneration = 0;
   // Memoised name→entry palette maps, keyed by region. fillRow runs once per
   // hex per load (skeleton + fill batch) so rebuilding this Map inline cost
@@ -47,7 +67,7 @@ export class HexTableView extends ItemView {
   private paletteMapCache = new Map<string, Map<string, TerrainColor>>();
 
   // Sort state
-  private sortPrimary: "x" | "y" = "x";
+  private sortPrimary: SortMode = "x";
   private sortAsc = true;
   private sortPrimaryBtn: HTMLButtonElement | null = null;
   private sortDirBtn: HTMLButtonElement | null = null;
@@ -59,16 +79,22 @@ export class HexTableView extends ItemView {
   private filterYMax: number | null = null;
   private filterTerrains = new Set<string>();
   private filterExcludeTerrains = new Set<string>();
+  private filterTypes = new Set<string>();
+  private filterExcludeTypes = new Set<string>();
   private filterHasTown = false;
   private filterHasDungeon = false;
   private filterHasFeature = false;
   private filterHasQuest = false;
   private filterHasFaction = false;
   private mapFilter = "all";
+  /** Column names for link sections, per the shown maps' type (G4b). */
+  private words: SectionWordsFn | null = null;
   private mapSelectEl: HTMLSelectElement | null = null;
 
   // Filter UI elements (created once in onOpen)
   private filterXMinInput: HTMLInputElement | null = null;
+  /** The toolbar's Advanced dropdown (its header counts the range bounds in effect). */
+  private toolbarDisclosure: Disclosure | null = null;
   private filterXMaxInput: HTMLInputElement | null = null;
   private filterYMinInput: HTMLInputElement | null = null;
   private filterYMaxInput: HTMLInputElement | null = null;
@@ -89,6 +115,24 @@ export class HexTableView extends ItemView {
   getViewType(): string {
     return VIEW_TYPE_HEX_TABLE;
   }
+
+  /**
+   * Section words for the shown hexes (G4b): the filtered map's type; with
+   * all maps shown, their shared type's words, or the usual ones if mixed.
+   */
+  private sectionWords(): SectionWordsFn {
+    if (this.mapFilter !== "all") return this.plugin.sectionWordsFor(this.mapFilter);
+    const all = uniqueMapsByName(this.plugin.settings.maps).map((m) => this.plugin.sectionWordsFor(m.name));
+    const sig = (w: SectionWordsFn) => LINK_SECTIONS.map((s) => w(s).label).join("|");
+    if (all.length && all.every((w) => sig(w) === sig(all[0]))) return all[0];
+    return this.plugin.sectionWordsFor(undefined);
+  }
+
+  /** A column's header: link sections in the map type's words. */
+  private colLabel(col: { key: string; label: string; isLink: boolean }): string {
+    if (!col.isLink || col.key === "encounters table") return col.label;
+    return (this.words ?? this.sectionWords())(col.key).label;
+  }
   getDisplayText(): string {
     return this.mapFilter && this.mapFilter !== "all"
       ? `Hex table — ${this.mapFilter}`
@@ -102,65 +146,35 @@ export class HexTableView extends ItemView {
     // ── Toolbar ──────────────────────────────────────────────────────────
     const toolbar = contentEl.createDiv({ cls: "duckmage-hex-table-toolbar" });
 
+    // The toolbar's simple filters come first; the X / Y range boxes are in
+    // its Advanced dropdown, and Refresh (the table updates live) in Debug
+    // (placement: HexTable.*).
+    const disclosure = new Disclosure(this.app, "HexTable", () => toolbar);
+    this.toolbarDisclosure = disclosure;
     const refreshBtn = toolbar.createEl("button", {
       text: "Refresh",
       cls: "duckmage-filter-btn",
     });
     refreshBtn.addEventListener("click", () => void this.loadTable());
+    disclosure.place("HexTable.refresh", refreshBtn);
 
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
-
-    // X range filter
-    toolbar.createSpan({ text: "X:", cls: "duckmage-filter-label" });
-    this.filterXMinInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterXMinInput.type = "number";
-    this.filterXMinInput.placeholder = "Min";
-    this.filterXMinInput.addEventListener("input", () => {
-      const v = this.filterXMinInput!.value;
-      this.filterXMin = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-    toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
-    this.filterXMaxInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterXMaxInput.type = "number";
-    this.filterXMaxInput.placeholder = "Max";
-    this.filterXMaxInput.addEventListener("input", () => {
-      const v = this.filterXMaxInput!.value;
-      this.filterXMax = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
-
-    // Y range filter
-    toolbar.createSpan({ text: "Y:", cls: "duckmage-filter-label" });
-    this.filterYMinInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterYMinInput.type = "number";
-    this.filterYMinInput.placeholder = "Min";
-    this.filterYMinInput.addEventListener("input", () => {
-      const v = this.filterYMinInput!.value;
-      this.filterYMin = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-    toolbar.createSpan({ text: "–", cls: "duckmage-filter-label" });
-    this.filterYMaxInput = toolbar.createEl("input", {
-      cls: "duckmage-filter-range-input",
-    });
-    this.filterYMaxInput.type = "number";
-    this.filterYMaxInput.placeholder = "Max";
-    this.filterYMaxInput.addEventListener("input", () => {
-      const v = this.filterYMaxInput!.value;
-      this.filterYMax = v !== "" ? Number(v) : null;
-      this.applyFilters();
-    });
-
-    toolbar.createDiv({ cls: "duckmage-filter-separator" });
+    // X / Y range filters: one labelled box per bound.
+    const rangeInput = (id: string, label: string, set: (v: number | null) => void): HTMLInputElement => {
+      const wrap = toolbar.createEl("label", { cls: "duckmage-filter-range" });
+      wrap.createSpan({ text: label, cls: "duckmage-filter-label" });
+      const input = wrap.createEl("input", { cls: "duckmage-filter-range-input", type: "number" });
+      input.addEventListener("input", () => {
+        set(input.value !== "" ? Number(input.value) : null);
+        this.applyFilters();
+      });
+      // "Advanced · 1 set" while a bound is filled: the filter is in effect.
+      disclosure.place(id, wrap, () => input.value !== "");
+      return input;
+    };
+    this.filterXMinInput = rangeInput("HexTable.xMin", "X min", (v) => { this.filterXMin = v; });
+    this.filterXMaxInput = rangeInput("HexTable.xMax", "X max", (v) => { this.filterXMax = v; });
+    this.filterYMinInput = rangeInput("HexTable.yMin", "Y min", (v) => { this.filterYMin = v; });
+    this.filterYMaxInput = rangeInput("HexTable.yMax", "Y max", (v) => { this.filterYMax = v; });
 
     // Terrain multi-select filter
     this.terrainFilterBtn = toolbar.createEl("button", {
@@ -175,11 +189,17 @@ export class HexTableView extends ItemView {
       new TerrainFilterModal(
         this.app,
         palette,
-        new Set(this.filterTerrains),
-        new Set(this.filterExcludeTerrains),
-        (selected, excluded) => {
-          this.filterTerrains = selected;
-          this.filterExcludeTerrains = excluded;
+        {
+          terrains: new Set(this.filterTerrains),
+          excludeTerrains: new Set(this.filterExcludeTerrains),
+          types: new Set(this.filterTypes),
+          excludeTypes: new Set(this.filterExcludeTypes),
+        },
+        (sets) => {
+          this.filterTerrains = sets.terrains;
+          this.filterExcludeTerrains = sets.excludeTerrains;
+          this.filterTypes = sets.types;
+          this.filterExcludeTypes = sets.excludeTypes;
           this.updateTerrainBtnLabel();
           this.applyFilters();
         },
@@ -195,7 +215,7 @@ export class HexTableView extends ItemView {
     });
     this.townCb = townLabel.createEl("input");
     this.townCb.type = "checkbox";
-    townLabel.appendText("Town");
+    townLabel.createSpan({ text: "Town", attr: { "data-duckmage-section": "Towns" } });
     this.townCb.addEventListener("change", () => {
       this.filterHasTown = this.townCb!.checked;
       this.applyFilters();
@@ -207,7 +227,7 @@ export class HexTableView extends ItemView {
     });
     this.dungeonCb = dungeonLabel.createEl("input");
     this.dungeonCb.type = "checkbox";
-    dungeonLabel.appendText("Dungeon");
+    dungeonLabel.createSpan({ text: "Dungeon", attr: { "data-duckmage-section": "Dungeons" } });
     this.dungeonCb.addEventListener("change", () => {
       this.filterHasDungeon = this.dungeonCb!.checked;
       this.applyFilters();
@@ -219,7 +239,7 @@ export class HexTableView extends ItemView {
     });
     this.featureCb = featureLabel.createEl("input");
     this.featureCb.type = "checkbox";
-    featureLabel.appendText("Feature");
+    featureLabel.createSpan({ text: "Feature", attr: { "data-duckmage-section": "Features" } });
     this.featureCb.addEventListener("change", () => {
       this.filterHasFeature = this.featureCb!.checked;
       this.applyFilters();
@@ -231,7 +251,7 @@ export class HexTableView extends ItemView {
     });
     this.questCb = questLabel.createEl("input");
     this.questCb.type = "checkbox";
-    questLabel.appendText("Quest");
+    questLabel.createSpan({ text: "Quest", attr: { "data-duckmage-section": "Quests" } });
     this.questCb.addEventListener("change", () => {
       this.filterHasQuest = this.questCb!.checked;
       this.applyFilters();
@@ -243,7 +263,7 @@ export class HexTableView extends ItemView {
     });
     this.factionCb = factionLabel.createEl("input");
     this.factionCb.type = "checkbox";
-    factionLabel.appendText("Faction");
+    factionLabel.createSpan({ text: "Faction", attr: { "data-duckmage-section": "Factions" } });
     this.factionCb.addEventListener("change", () => {
       this.filterHasFaction = this.factionCb!.checked;
       this.applyFilters();
@@ -257,18 +277,12 @@ export class HexTableView extends ItemView {
     });
     this.mapSelectEl = regionSelect;
     regionSelect.createEl("option", { value: "all", text: "All maps" });
-    for (const r of this.plugin.settings.maps) {
-      regionSelect.createEl("option", { value: r.name, text: r.name });
+    for (const r of uniqueMapsByName(this.plugin.settings.maps)) {
+      regionSelect.createEl("option", { value: r.name, text: this.plugin.mapLabel(r.name) });
     }
     // Default to active map view's map
-    interface WithActiveMapName {
-      activeMapName: string;
-    }
-    const mapLeaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-    if (mapLeaves.length > 0) {
-      const mapView = mapLeaves[0].view as unknown as WithActiveMapName;
-      this.mapFilter = mapView.activeMapName;
-    }
+    const mapView = activeMapView(this.app.workspace);
+    if (mapView) this.mapFilter = mapView.activeMapName;
     regionSelect.value = this.mapFilter;
     regionSelect.addEventListener("change", () => {
       this.mapFilter = regionSelect.value;
@@ -283,16 +297,14 @@ export class HexTableView extends ItemView {
 
     // Sort controls
     this.sortPrimaryBtn = toolbar.createEl("button", {
-      text: "Sort: xy",
+      text: SORT_LABELS[this.sortPrimary],
       cls: "duckmage-filter-btn",
     });
     this.sortPrimaryBtn.title =
-      "Toggle sort priority between X-first and y-first";
+      "Cycle sort order: X first, y first, terrain type";
     this.sortPrimaryBtn.addEventListener("click", () => {
-      this.sortPrimary = this.sortPrimary === "x" ? "y" : "x";
-      this.sortPrimaryBtn!.setText(
-        this.sortPrimary === "x" ? "Sort: xy" : "Sort: yx",
-      );
+      this.sortPrimary = NEXT_SORT[this.sortPrimary];
+      this.sortPrimaryBtn!.setText(SORT_LABELS[this.sortPrimary]);
       void this.loadTable();
     });
 
@@ -315,6 +327,8 @@ export class HexTableView extends ItemView {
       cls: "duckmage-filter-btn",
     });
     clearBtn.addEventListener("click", () => this.clearFilters());
+    // The Advanced dropdown (if anything went in it) ends the toolbar.
+    disclosure.toEnd();
 
     // ── Scroll area ───────────────────────────────────────────────────────
     this.scrollEl = contentEl.createDiv({ cls: "duckmage-hex-table-scroll" });
@@ -352,6 +366,49 @@ export class HexTableView extends ItemView {
         void this.loadTable();
       }),
     );
+
+    // Hex notes are created on use and can be trashed (e.g. when the map
+    // shrinks), so drop rows whose note is gone instead of leaving dead rows.
+    const dropRow = (path: string) => {
+      const pending = this.updateTimers.get(path);
+      if (pending) {
+        window.clearTimeout(pending);
+        this.updateTimers.delete(path);
+      }
+      this.scrollEl
+        ?.querySelector(`tr[data-hex-path="${CSS.escape(path)}"]`)
+        ?.remove();
+    };
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (file instanceof TFile) {
+          dropRow(file.path);
+          return;
+        }
+        // A map folder removed: its rows are all gone
+        const folder = normalizeFolder(this.plugin.settings.hexFolder);
+        if (!folder || file.path.startsWith(folder + "/")) void this.loadTable();
+      }),
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        if (!(file instanceof TFile)) return;
+        if (!HEX_PATTERN.test(oldPath) && !HEX_PATTERN.test(file.path)) return;
+        void this.loadTable();
+      }),
+    );
+
+    // Map data (terrain, region, …) changes in the map store, not in hex
+    // notes: reload once painting settles.
+    let storeTimer: number | undefined;
+    const offStore = this.plugin.mapStore.onChange(() => {
+      window.clearTimeout(storeTimer);
+      storeTimer = window.setTimeout(() => void this.loadTable(), 500);
+    });
+    this.register(() => {
+      offStore();
+      window.clearTimeout(storeTimer);
+    });
 
     void this.loadTable();
     return Promise.resolve();
@@ -406,6 +463,17 @@ export class HexTableView extends ItemView {
       return;
     }
 
+    // Hexes with map data (terrain, region, …) but no note yet — notes are
+    // created on use, so the map note is the other half of the list.
+    const seen = new Set(files.map((f) => f.path));
+    for (const m of uniqueMapsByName(this.plugin.settings.maps)) {
+      for (const key of this.plugin.mapStore.all(m.name).keys()) {
+        const [x, y] = key.split("_").map(Number);
+        const path = this.plugin.hexPath(x, y, m.name);
+        if (!seen.has(path)) files.push({ path, x, y, region: m.name });
+      }
+    }
+
     // Apply region filter
     if (this.mapFilter !== "all") {
       const prefix = hexFolder
@@ -414,10 +482,23 @@ export class HexTableView extends ItemView {
       files = files.filter((f) => f.path.startsWith(prefix));
     }
 
+    // Type sort: by terrain type (vocabulary order, untyped last), then x, y
+    const typeOf = new Map<string, string>();
+    if (this.sortPrimary === "type") {
+      for (const f of files) {
+        typeOf.set(f.path, this.resolveHexTerrain(f.path, f.region).type);
+      }
+    }
     files.sort((a, b) => {
-      const p = this.sortPrimary === "x" ? "x" : "y";
-      const s = this.sortPrimary === "x" ? "y" : "x";
-      const diff = a[p] !== b[p] ? a[p] - b[p] : a[s] - b[s];
+      let diff = 0;
+      if (this.sortPrimary === "type") {
+        diff = compareTerrainTypes(typeOf.get(a.path)!, typeOf.get(b.path)!);
+      }
+      if (diff === 0) {
+        const p = this.sortPrimary === "y" ? "y" : "x";
+        const s = this.sortPrimary === "y" ? "x" : "y";
+        diff = a[p] !== b[p] ? a[p] - b[p] : a[s] - b[s];
+      }
       return this.sortAsc ? diff : -diff;
     });
 
@@ -453,8 +534,15 @@ export class HexTableView extends ItemView {
     const headerRow = thead.createEl("tr");
     headerRow.createEl("th", { text: "Hex" });
     headerRow.createEl("th", { text: "Terrain" });
+    headerRow.createEl("th", { text: "Type" });
+    const words = this.sectionWords();
+    this.words = words;
+    // The "has a …" filters follow too.
+    this.contentEl.querySelectorAll<HTMLElement>("[data-duckmage-section]").forEach((el) => {
+      el.setText(words(el.dataset.duckmageSection ?? "").one);
+    });
     for (const col of COLUMNS) {
-      headerRow.createEl("th", { text: col.label });
+      headerRow.createEl("th", { text: this.colLabel(col) });
     }
 
     const tbody = table.createEl("tbody");
@@ -524,13 +612,13 @@ export class HexTableView extends ItemView {
 
   private updateTerrainBtnLabel(): void {
     if (!this.terrainFilterBtn) return;
-    const inc = this.filterTerrains.size;
-    const exc = this.filterExcludeTerrains.size;
+    const inc = this.filterTerrains.size + this.filterTypes.size;
+    const exc = this.filterExcludeTerrains.size + this.filterExcludeTypes.size;
     const parts: string[] = [];
     if (inc > 0) parts.push(`${inc} shown`);
     if (exc > 0) parts.push(`${exc} hidden`);
     this.terrainFilterBtn.setText(
-      parts.length ? `Terrain: ${parts.join(", ")}` : "Terrain: All",
+      parts.length ? `Terrain: ${parts.join(", ")}` : "Terrain: all",
     );
     this.terrainFilterBtn.toggleClass(
       "duckmage-filter-active",
@@ -545,6 +633,8 @@ export class HexTableView extends ItemView {
     this.filterYMax = null;
     this.filterTerrains = new Set();
     this.filterExcludeTerrains = new Set();
+    this.filterTypes = new Set();
+    this.filterExcludeTypes = new Set();
     this.filterHasTown = false;
     this.filterHasDungeon = false;
     this.filterHasFeature = false;
@@ -555,6 +645,7 @@ export class HexTableView extends ItemView {
     if (this.filterXMaxInput) this.filterXMaxInput.value = "";
     if (this.filterYMinInput) this.filterYMinInput.value = "";
     if (this.filterYMaxInput) this.filterYMaxInput.value = "";
+    this.toolbarDisclosure?.refreshSet();
     if (this.townCb) this.townCb.checked = false;
     if (this.dungeonCb) this.dungeonCb.checked = false;
     if (this.featureCb) this.featureCb.checked = false;
@@ -576,10 +667,20 @@ export class HexTableView extends ItemView {
     const tbody = this.scrollEl.querySelector("tbody");
     if (!tbody) return;
 
+    const terrainFilter = {
+      terrains: this.filterTerrains,
+      excludeTerrains: this.filterExcludeTerrains,
+      types: this.filterTypes,
+      excludeTypes: this.filterExcludeTypes,
+    };
     for (const tr of rows ?? Array.from(tbody.rows)) {
       const x = Number(tr.dataset.hexX);
       const y = Number(tr.dataset.hexY);
-      const terrain = tr.dataset.terrain ?? "";
+      const terrainRow = {
+        terrain: tr.dataset.terrain ?? "",
+        effectiveTerrain: tr.dataset.effectiveTerrain ?? "",
+        type: tr.dataset.terrainType ?? "",
+      };
       const hasTown = tr.dataset.hasTown === "1";
       const hasDungeon = tr.dataset.hasDungeon === "1";
       const hasFeature = tr.dataset.hasFeature === "1";
@@ -591,13 +692,7 @@ export class HexTableView extends ItemView {
       if (this.filterXMax !== null && x > this.filterXMax) show = false;
       if (this.filterYMin !== null && y < this.filterYMin) show = false;
       if (this.filterYMax !== null && y > this.filterYMax) show = false;
-      if (this.filterTerrains.size > 0 && !this.filterTerrains.has(terrain))
-        show = false;
-      if (
-        this.filterExcludeTerrains.size > 0 &&
-        this.filterExcludeTerrains.has(terrain)
-      )
-        show = false;
+      if (!matchesTerrainFilter(terrainRow, terrainFilter)) show = false;
       if (this.filterHasTown && !hasTown) show = false;
       if (this.filterHasDungeon && !hasDungeon) show = false;
       if (this.filterHasFeature && !hasFeature) show = false;
@@ -626,6 +721,25 @@ export class HexTableView extends ItemView {
     return m;
   }
 
+  /**
+   * A hex's own terrain, the terrain the map displays (own, else the map's
+   * base terrain) and that terrain's type ("" when the palette entry has none).
+   */
+  private resolveHexTerrain(
+    path: string,
+    region: string,
+  ): { terrain: string; effective: string; isBase: boolean; type: string } {
+    const terrain = getTerrainFromFile(this.app, path) ?? "";
+    const base = terrain ? "" : (this.plugin.getMap(region)?.baseTerrain ?? "");
+    const effective = terrain || base;
+    return {
+      terrain,
+      effective,
+      isBase: !terrain && !!base,
+      type: resolveTerrainType(effective, this.getPaletteMap(region)),
+    };
+  }
+
   private fillRow(
     tr: HTMLTableRowElement,
     path: string,
@@ -638,7 +752,6 @@ export class HexTableView extends ItemView {
     tr.empty();
 
     const paletteMap = this.getPaletteMap(region);
-    const terrainName = getTerrainFromFile(this.app, path);
 
     const hasTown = (links.get("towns") ?? []).length > 0;
     const hasDungeon = (links.get("dungeons") ?? []).length > 0;
@@ -649,7 +762,6 @@ export class HexTableView extends ItemView {
     // Store filter-relevant data on the row
     tr.dataset.hexX = String(x);
     tr.dataset.hexY = String(y);
-    tr.dataset.terrain = terrainName ?? "";
     tr.dataset.hasTown = hasTown ? "1" : "0";
     tr.dataset.hasDungeon = hasDungeon ? "1" : "0";
     tr.dataset.hasFeature = hasFeature ? "1" : "0";
@@ -665,9 +777,11 @@ export class HexTableView extends ItemView {
       cls: "duckmage-hex-table-jump-btn",
     });
     const coordsSpan = coordsTd.createSpan({
-      text: `${x},${y}`,
+      text: `${x}, ${y}`,
       cls: "duckmage-hex-table-coords",
     });
+    const hexName = getHexNameFromFile(path);
+    if (hexName) coordsTd.createSpan({ text: hexName, cls: "duckmage-hex-table-name" });
     coordsSpan.addEventListener("click", () => {
       const file = this.app.vault.getAbstractFileByPath(path);
       if (file instanceof TFile) {
@@ -678,23 +792,16 @@ export class HexTableView extends ItemView {
     jumpBtn.addEventListener("click", (e) => {
       void (async () => {
         e.stopPropagation();
-        interface WithCenterOnHex {
-          centerOnHex(x: number, y: number): void;
-        }
-        const existingLeaves =
-          this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_MAP);
-        if (existingLeaves.length > 0) {
-          void this.app.workspace.revealLeaf(existingLeaves[0]);
-          (existingLeaves[0].view as unknown as WithCenterOnHex).centerOnHex(
-            x,
-            y,
-          );
+        const mapView = activeMapView(this.app.workspace);
+        if (mapView) {
+          void this.app.workspace.revealLeaf(mapView.leaf);
+          mapView.centerOnHex(x, y);
         } else {
           const leaf = this.app.workspace.getLeaf("tab");
           await leaf.setViewState({ type: VIEW_TYPE_HEX_MAP });
           // Wait one frame for the view to render before centering
           window.setTimeout(
-            () => (leaf.view as unknown as WithCenterOnHex).centerOnHex(x, y),
+            () => (leaf.view as unknown as HexMapView).centerOnHex(x, y),
             100,
           );
         }
@@ -705,18 +812,42 @@ export class HexTableView extends ItemView {
     const terrainTd = tr.createEl("td", {
       cls: "duckmage-hex-table-cell-clickable",
     });
+    const typeTd = tr.createEl("td");
+    // Renders terrain + type and refreshes the row's filter data, so a pick
+    // shows at once (the vault modify event re-renders the row again later).
     const renderTerrainCell = () => {
       terrainTd.empty();
-      const current = getTerrainFromFile(this.app, path);
-      const entry = current ? paletteMap.get(current) : undefined;
+      typeTd.empty();
+      const hex = this.resolveHexTerrain(path, region);
+      tr.dataset.terrain = hex.terrain;
+      tr.dataset.effectiveTerrain = hex.effective;
+      tr.dataset.terrainType = hex.type;
+
+      const entry = hex.effective ? paletteMap.get(hex.effective) : undefined;
       if (entry) {
         const swatch = terrainTd.createSpan({
           cls: "duckmage-hex-table-swatch",
         });
-        swatch.style.backgroundColor = entry.color;
-        terrainTd.appendText(entry.name);
+        swatch.setCssProps({ "--duckmage-swatch-color": entry.color });
+        if (hex.isBase) {
+          terrainTd.createSpan({
+            text: entry.name,
+            cls: "duckmage-hex-table-base-terrain",
+            attr: { title: "Map base terrain (no terrain set on this hex)" },
+          });
+        } else {
+          terrainTd.appendText(entry.name);
+        }
       } else {
         terrainTd.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
+      }
+
+      const typeLabel = terrainTypeLabel(hex.type);
+      if (typeLabel) {
+        typeTd.setText(typeLabel);
+        typeTd.toggleClass("duckmage-hex-table-base-terrain", hex.isBase);
+      } else {
+        typeTd.createSpan({ text: "–", cls: "duckmage-hex-table-empty" });
       }
     };
     renderTerrainCell();
@@ -730,6 +861,7 @@ export class HexTableView extends ItemView {
         current,
         () => {
           renderTerrainCell();
+          this.applyFilters([tr]);
         },
       ).open();
     });
@@ -738,7 +870,16 @@ export class HexTableView extends ItemView {
     for (const col of COLUMNS) {
       const td = tr.createEl("td");
       if (col.isLink) {
-        const linkList = links.get(col.key) ?? [];
+        // Encounter tables: same rule as the hex editor, so a hex without a
+        // note shows its terrain's table in both (displayedEncounterLinks).
+        const linkList =
+          col.key === "encounters table"
+            ? displayedEncounterLinks(
+                this.app.vault.getAbstractFileByPath(path) instanceof TFile,
+                links.get(col.key) ?? [],
+                this.plugin.terrainEncounterLinkFor(region, x, y, path),
+              )
+            : (links.get(col.key) ?? []);
         if (linkList.length > 0) {
           const full = linkList.join(", ");
           td.dataset.fullContent = full;
@@ -757,11 +898,11 @@ export class HexTableView extends ItemView {
           col.key === "encounters table"
         ) {
           const sourceFolder =
-            col.key === "towns"
-              ? this.plugin.settings.townsFolder
+            contentFolder(this.plugin.settings, col.key === "towns"
+              ? "townsFolder"
               : col.key === "dungeons"
-                ? this.plugin.settings.dungeonsFolder
-                : this.plugin.settings.tablesFolder;
+                ? "dungeonsFolder"
+                : "tablesFolder");
           const section =
             col.key === "towns"
               ? "Towns"
@@ -780,16 +921,7 @@ export class HexTableView extends ItemView {
                 path,
               );
               if (!(file instanceof TFile)) return;
-              interface WithOpenTable {
-                openTable(path: string): void;
-              }
-              const leaf = this.app.workspace.getLeaf("tab");
-              await leaf.setViewState({
-                type: VIEW_TYPE_RANDOM_TABLES,
-                active: true,
-              });
-              void this.app.workspace.revealLeaf(leaf);
-              (leaf.view as unknown as WithOpenTable).openTable(file.path);
+              await openTableInView(this.app.workspace, file.path, { newTab: true });
             })();
           });
           td.addEventListener("click", () => {
@@ -813,24 +945,7 @@ export class HexTableView extends ItemView {
                     path,
                   );
                   if (file instanceof TFile) {
-                    interface WithOpenTable {
-                      openTable(path: string): void;
-                    }
-                    const leaves = this.app.workspace.getLeavesOfType(
-                      VIEW_TYPE_RANDOM_TABLES,
-                    );
-                    const leaf =
-                      leaves.length > 0
-                        ? leaves[0]
-                        : this.app.workspace.getLeaf("tab");
-                    await leaf.setViewState({
-                      type: VIEW_TYPE_RANDOM_TABLES,
-                      active: true,
-                    });
-                    void this.app.workspace.revealLeaf(leaf);
-                    (leaf.view as unknown as WithOpenTable).openTable(
-                      file.path,
-                    );
+                    await openTableInView(this.app.workspace, file.path);
                   }
                 } else {
                   const file = this.app.metadataCache.getFirstLinkpathDest(
@@ -844,7 +959,7 @@ export class HexTableView extends ItemView {
                 // Multiple: show a nav list
                 new MultiLinkNavModal(
                   this.app,
-                  `${x},${y} — ${section}`,
+                  `${x}, ${y} — ${section}`,
                   linkList,
                   path,
                 ).open();
@@ -857,7 +972,7 @@ export class HexTableView extends ItemView {
             const current = td.dataset.fullContent ?? "";
             new HexCellModal(
               this.app,
-              `${x},${y} — ${col.label}`,
+              `${x}, ${y} — ${this.colLabel(col)}`,
               current,
               true,
             ).open();
@@ -880,7 +995,7 @@ export class HexTableView extends ItemView {
           const current = td.dataset.fullContent ?? "";
           new HexCellModal(
             this.app,
-            `${x},${y} — ${col.label}`,
+            `${x}, ${y} — ${this.colLabel(col)}`,
             current,
             false,
             path,
@@ -917,9 +1032,9 @@ export class HexTableView extends ItemView {
       table.querySelectorAll<HTMLTableCellElement>("thead th"),
     );
 
-    // Default widths (px): Hex, Terrain, then one per COLUMN entry
+    // Default widths (px): Hex, Terrain, Type, then one per COLUMN entry
     const defaultWidths = [
-      60, 110, 220, 160, 150, 150, 150, 140, 160, 160, 160, 140,
+      60, 110, 100, 220, 160, 150, 150, 150, 140, 160, 160, 160, 140,
     ];
 
     // <col> elements + explicit table width is the only reliable way to drive

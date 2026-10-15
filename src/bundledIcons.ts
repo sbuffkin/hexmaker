@@ -1,3 +1,4 @@
+import { registry } from "./modules";
 import bwBadlands from "../icons/bw-badlands.png";
 import bwBrokenlands from "../icons/bw-brokenlands.png";
 import bwCactus from "../icons/bw-cactus.png";
@@ -36,6 +37,7 @@ import bwSwamp from "../icons/bw-swamp.png";
 import bwVolcano from "../icons/bw-volcano.png";
 import bwVolcanoDormant from "../icons/bw-volcano-dormant.png";
 
+/** Every bundled icon: the core's terrain icons (bw-), then each module's pack. */
 export const BUNDLED_ICONS: Map<string, string> = new Map([
 	["bw-badlands.png", bwBadlands],
 	["bw-brokenlands.png", bwBrokenlands],
@@ -74,4 +76,6 @@ export const BUNDLED_ICONS: Map<string, string> = new Map([
 	["bw-swamp.png", bwSwamp],
 	["bw-volcano.png", bwVolcano],
 	["bw-volcano-dormant.png", bwVolcanoDormant],
+	// Each module's icon pack (World: Places, Space: space icons).
+	...registry.iconPacks().flatMap((p) => p.icons.map(([file, url]): [string, string] => [file, url])),
 ]);
