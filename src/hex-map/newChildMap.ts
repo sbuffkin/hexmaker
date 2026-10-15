@@ -8,6 +8,7 @@ import { renderRegionSettingsForm } from "./regionSettingsForm";
 import { worldMaps } from "../modules/runtime";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
 import { registry } from "../modules";
+import { hexKey } from "../hexKey";
 
 /** The two kinds of map a hex opens into, with the small line under each (K1). */
 export const CHILD_KIND_TEXT: Record<SubmapKind, { title: string; desc: string }> = {
@@ -105,12 +106,12 @@ export class ChildKindModal extends HexmakerModal {
     const { contentEl } = this;
     contentEl.empty();
     const { plugin } = this.host;
-    const existing = regionMapAt(plugin.settings.maps, this.parentMap, `${this.x}_${this.y}`);
+    const existing = regionMapAt(plugin.settings.maps, this.parentMap, hexKey(this.x, this.y));
     const text = childKindText(plugin.kindFor(this.parentMap));
 
     // The hex's maps first (C11): opening what's there is the usual pick;
     // making another location stays possible below.
-    const locations = (plugin.mapStore.get(this.parentMap, `${this.x}_${this.y}`)?.locations ?? [])
+    const locations = (plugin.mapStore.get(this.parentMap, hexKey(this.x, this.y))?.locations ?? [])
       .filter((l) => l !== existing?.name && !!plugin.getMap(l));
     if (locations.length && this.host.onEnter) {
       contentEl.createDiv({ cls: "setting-item-description", text: "This hex already has:" });

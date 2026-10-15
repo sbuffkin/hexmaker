@@ -27,6 +27,7 @@ import type { DrawingMode } from "../toolMode";
 import type { MapToolbar } from "./mapToolbar";
 import type { MapViewport } from "./mapViewport";
 import type { UndoController } from "./undoController";
+import { hexKey, hexXY } from "../../hexKey";
 
 export interface MapNavigationHost {
   activeMapName(): string;
@@ -155,7 +156,7 @@ export class MapNavigation {
     const parent = this.plugin.parentOf(this.activeMapName);
     if (!parent) return false;
     this.navigateToMap(parent.map);
-    const [x, y] = parent.hex.split("_").map(Number);
+    const { x, y } = hexXY(parent.hex);
     window.requestAnimationFrame(() => this.flashHex(x, y));
     return true;
   }
@@ -243,7 +244,7 @@ export class MapNavigation {
   /** "Link existing map…" for hex (x, y): the picked map joins its locations. */
   openLinkExistingMap(x: number, y: number): void {
     const parentMap = this.activeMapName;
-    const linked = hexChildMaps(this.plugin.mapStore.get(parentMap, `${x}_${y}`));
+    const linked = hexChildMaps(this.plugin.mapStore.get(parentMap, hexKey(x, y)));
     new SubmapPickerModal(
       this.app,
       this.plugin,
@@ -480,7 +481,7 @@ export class MapNavigation {
       here.addEventListener("click", () => this.host.openEditRegion(home.px, home.py, home.overworld.name));
       const lock = wm.walkLock(this.plugin, this.activeMapName, home.overworld.name);
       petals.forEach((p, i) => {
-        const key = `${p.hex[0]}_${p.hex[1]}`;
+        const key = hexKey(p.hex[0], p.hex[1]);
         const region = regionMapAt(maps, home.overworld.name, key);
         const terrain = this.plugin.mapStore.get(home.overworld.name, key)?.terrain;
         const colour = terrain ? palette.find((t) => t.name === terrain)?.color : undefined;

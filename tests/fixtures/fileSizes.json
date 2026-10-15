@@ -8,7 +8,7 @@
 		"src/hex-map/HexEditorModal.ts": 631,
 		"src/worldgen/GeneratorPanel.ts": 325,
 		"src/maps/MapStore.ts": 1372,
-		"src/hex-map/pathTool.ts": 1496,
+		"src/hex-map/pathTool.ts": 1495,
 		"src/overworld/regionGen.ts": 1394,
 		"src/random-tables/randomTable.ts": 1293,
 		"src/export/mapPngRenderer.ts": 1248,

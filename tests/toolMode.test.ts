@@ -33,7 +33,7 @@ describe("Path tool button (fresh-eyes T7)", () => {
 	});
 
 	it("a hex-by-hex click away from the end is routed, and the bar says so (no lonely restart dots)", () => {
-		expect(toolMethod("noteGap")).toMatch(/if \(this\.autoRoute\) return;[\s\S]*hexNeighbors\([\s\S]*this\.hint = /);
+		expect(toolMethod("noteGap")).toMatch(/if \(this\.autoRoute\) return;[\s\S]*(?:hexNeighbors|areNeighbours)\([\s\S]*this\.hint = /);
 	});
 });
 

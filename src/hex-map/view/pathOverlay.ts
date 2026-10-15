@@ -25,6 +25,7 @@ import type { SeamJoin } from "../ghostPaths";
 import { smoothPath, sharpPath } from "../hexGeometry";
 import type { PathTool } from "../pathTool";
 import type { DrawingMode } from "../toolMode";
+import { hexKey } from "../../hexKey";
 
 /**
  * GM icon sub-grid positions inside a hex. 7 slots arranged as a small
@@ -161,9 +162,9 @@ export class PathOverlay {
     const farY = rows > 1 ? hexAt(ox, oy + rows - 1) : null;
     const hexRadius = isFlat ? A.w / 2 : A.h / 2;
     const affine = calibrateAffine(
-      { key: `${ox}_${oy}`, at: A },
-      farX ? { key: `${ox + cols - 1}_${oy}`, at: centre(farX) } : null,
-      farY ? { key: `${ox}_${oy + rows - 1}`, at: centre(farY) } : null,
+      { key: hexKey(ox, oy), at: A },
+      farX ? { key: hexKey(ox + cols - 1, oy), at: centre(farX) } : null,
+      farY ? { key: hexKey(ox, oy + rows - 1), at: centre(farY) } : null,
       lattice,
       hexRadius,
     );

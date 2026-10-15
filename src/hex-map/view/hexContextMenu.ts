@@ -23,6 +23,7 @@ import type { DrawingMode } from "../toolMode";
 import type { MapNavigation } from "./mapNavigation";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
+import { hexKey, hexPair } from "../../hexKey";
 
 export interface HexContextMenuHost {
   activeMapName(): string;
@@ -103,7 +104,7 @@ export class HexContextMenu {
     // terrain" on such hexes (fresh-eyes N3).
     const terrain = getTerrainFromFile(this.app, hexPath);
     const iconOverride = getIconOverrideFromFile(this.app, hexPath);
-    const hexMaps = this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
+    const hexMaps = this.plugin.mapStore.get(this.activeMapName, hexKey(x, y))
       ?? { locations: getHexMapsFromFile(this.app, hexPath).locations };
     const childPlan = submapMenuPlan(hexMaps);
 
@@ -144,9 +145,9 @@ export class HexContextMenu {
     menu.add("hex.create-token", "Create token here", "circle-user", () => this.host.createTokenAtHex(x, y));
     // Solo play (SF3): what happened here goes to the dated play log.
     menu.add("hex.log", "Add to play log…", "notebook-pen", () => this.host.openPlayLog(x, y));
-    const visited = parseVisited(this.host.getActiveMap().visited).includes(`${x}_${y}`);
-    menu.add("hex.visited", "Visited", "footprints", () => this.host.setVisited([`${x}_${y}`], !visited), { checked: visited, place: "MapView.hexVisited" });
-    for (const it of moduleHexMenu(this.plugin, this.activeMapName, `${x}_${y}`)) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { place: it.placementId });
+    const visited = parseVisited(this.host.getActiveMap().visited).includes(hexKey(x, y));
+    menu.add("hex.visited", "Visited", "footprints", () => this.host.setVisited([hexKey(x, y)], !visited), { checked: visited, place: "MapView.hexVisited" });
+    for (const it of moduleHexMenu(this.plugin, this.activeMapName, hexKey(x, y))) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { place: it.placementId });
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.host.centerOnHex(x, y));
     menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
 
@@ -206,8 +207,8 @@ export class HexContextMenu {
     const grid = this.host.viewportEl()?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
     const cell = this.host.owView(this.host.getActiveMap()) === "regions" && grid
       ? this.host.overworldLayer()?.cellAt(grid, evt.clientX, evt.clientY) ?? null : null;
-    const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
-    const key = `${px}_${py}`;
+    const [px, py] = cell ? hexPair(cell.parentHex) : [x, y];
+    const key = hexKey(px, py);
     const regionMap = regionMapAt(this.plugin.settings.maps, this.activeMapName, key);
     const region = regionMap?.name;
     const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;

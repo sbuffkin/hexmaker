@@ -50,13 +50,13 @@ import { noteHandEdit } from "../modeGate";
 import { pathRouteText } from "../maps/mapNote";
 import { pathRouteStats } from "../maps/mapPathMerge";
 import { impassableNames, noRouteMessage } from "../impassable";
-import { hexNeighbors } from "./hexGeometry";
 import { PathPickerModal } from "./PathPickerModal";
 import { PathNameModal } from "./PathNameModal";
 import { addSubmenuButtons, placedRows } from "../ui/placedMenu";
 import { isDebugMode } from "../ui/debugMode";
 import { anchorEnd, hitTestPaths, type PathHit } from "./pathHit";
 import { crossFrom, hookAt, hookedName, hookFor, seamHooks, type SeamHook, type StripRef } from "../paths/seamHook";
+import { areNeighbours, hexKey, hexXY } from "../hexKey";
 
 // Pure hit-testing lives in pathHit.ts (re-exported for the tests).
 export { anchorEnd, distToPolyline, distToSegment, END_HANDLE_R, HANDLE_R, hitTestPaths, LINE_SLACK, nearestHexIdx, type PathHit } from "./pathHit";
@@ -645,7 +645,7 @@ export class PathTool {
       return;
     }
     if (!this.ready()) return;
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     const forceNew = this.forceNew || !!e?.altKey;
     const activeHex = this.activeHex();
     const hit = e && (erasing || (!forceNew && activeHex === null)) ? this.hitAt(e) : null;
@@ -730,10 +730,9 @@ export class PathTool {
   /** Hex-by-hex mode: say when a click wasn't next to the end (the router filled the gap). */
   private noteGap(from: HexKey, to: HexKey): void {
     if (this.autoRoute) return;
-    const [x, y] = from.split("_").map(Number);
     const grid = this.grid();
     if (!grid) return;
-    const near = hexNeighbors(x, y, grid.orientation, grid.stagger).some(([nx, ny]) => `${nx}_${ny}` === to);
+    const near = areNeighbours(from, to, grid.orientation, grid.stagger);
     if (!near) this.hint = "not next to the end, so the gap was routed";
   }
 
@@ -1022,7 +1021,7 @@ export class PathTool {
     if (this.hookMemo && this.hookMemo.key.length === key.length && this.hookMemo.key.every((k, i) => k === key[i])) return this.hookMemo.hooks;
     const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
     const inMap = (k: HexKey) => {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       return !strip.has(k) && x >= ox && x < ox + cols && y >= oy && y < oy + rows;
     };
     const hooks = seamHooks(strip, (m) => this.plugin.paths.resolved(m), inMap, grid);

@@ -45,6 +45,7 @@ import type { AreaOverlay } from "./areaOverlay";
 import type { TokenLayer } from "./tokenLayer";
 import type { MapToolbar } from "./mapToolbar";
 import type { HexContextMenu } from "./hexContextMenu";
+import { hexKey } from "../../hexKey";
 
 export interface GridRendererHost {
   plugin: HexmakerPlugin;
@@ -330,7 +331,7 @@ export class GridRenderer {
     // Hexes the party has stood on (SF5): a mark the layers menu can hide.
     const visitedHexes = new Set(parseVisited(region.visited));
     const addHex = (parent: HTMLElement, x: number, y: number) => {
-      const path = folder ? `${folder}/${x}_${y}.md` : `${x}_${y}.md`;
+      const path = folder ? `${folder}/${hexKey(x, y)}.md` : `${hexKey(x, y)}.md`;
       const exists = existingHexPaths.has(path);
       // Fetch this hex's frontmatter ONCE; terrain/icon/gm-icons all derive
       // from it. Calling getTerrainFromFile + getIconOverrideFromFile +
@@ -340,7 +341,7 @@ export class GridRenderer {
       // Before the map store is ready (startup), fall back to frontmatter.
       const fromStore = this.plugin.mapStore.isReady();
       const fm = fromStore ? null : getFrontMatter(this.app, path);
-      const stored = fromStore ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`) : undefined;
+      const stored = fromStore ? this.plugin.mapStore.get(this.activeMapName, hexKey(x, y)) : undefined;
       // A note this plugin just wrote may not be indexed yet; its terrain is
       // held in memory until it is.
       const terrainKey = terrainOverrides?.has(path)
@@ -417,7 +418,7 @@ export class GridRenderer {
 
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
-      if (visitedHexes.has(`${x}_${y}`)) hexEl.addClass("duckmage-hex-visited");
+      if (visitedHexes.has(hexKey(x, y))) hexEl.addClass("duckmage-hex-visited");
 
       if (exists && !terrainEntry)
         hexEl.createSpan({ cls: "duckmage-hex-dot" });
@@ -574,7 +575,7 @@ export class GridRenderer {
     if (map.submapKind !== "region") return;
     const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
     for (let y = oy; y < oy + rows; y++) {
-      for (let x = ox; x < ox + cols; x++) this.shownTerrain.set(`${x}_${y}`, this.plugin.mapStore.get(map.name, `${x}_${y}`)?.terrain ?? null);
+      for (let x = ox; x < ox + cols; x++) this.shownTerrain.set(hexKey(x, y), this.plugin.mapStore.get(map.name, hexKey(x, y))?.terrain ?? null);
     }
   }
 

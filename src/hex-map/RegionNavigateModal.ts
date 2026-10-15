@@ -3,6 +3,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { HexmakerModal } from "../HexmakerModal";
 import { paletteColors, pathColors, readMapTerrain } from "../worldgen/generators";
 import { drawPreview } from "../worldgen/preview";
+import { hexKey } from "../hexKey";
 
 /**
  * "Go to <region>?" when stepping past a map's edge onto a neighbouring
@@ -41,7 +42,7 @@ export class RegionNavigateModal extends HexmakerModal {
         360,
         12,
         undefined,
-        { mark: `${x}_${y}` },
+        { mark: hexKey(x, y) },
       );
     }
     const go = this.footer({

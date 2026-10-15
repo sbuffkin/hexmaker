@@ -22,6 +22,7 @@ import type { BackgroundCalibration } from "./backgroundCalibration";
 import type { MapToolbar } from "./mapToolbar";
 import type { MapViewport } from "./mapViewport";
 import type { UndoController } from "./undoController";
+import { hexKey } from "../../hexKey";
 
 /** What the input handlers read and call on the view (read live, at event time). */
 export interface MapInputHost extends Pick<Component, "registerDomEvent" | "register"> {
@@ -236,7 +237,7 @@ export class MapInput {
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
-          lastPaintedKey = `${x}_${y}`;
+          lastPaintedKey = hexKey(x, y);
           if (this.host.drawingMode() === "terrain") this.host.onHexPaintClick(x, y);
           else if (this.host.drawingMode() === "icon") this.host.onHexIconClick(x, y);
           else if (this.host.drawingMode() === "factionLink") void this.host.areas().onHexFactionPaintClick(x, y);
@@ -309,7 +310,7 @@ export class MapInput {
         if (hexEl) {
           const x = Number(hexEl.dataset.x);
           const y = Number(hexEl.dataset.y);
-          const key = `${x}_${y}`;
+          const key = hexKey(x, y);
           if (key !== lastPaintedKey) {
             lastPaintedKey = key;
             if (this.host.drawingMode() === "terrain") this.host.onHexPaintClick(x, y);

@@ -13,6 +13,7 @@ import { resolveNameFont } from "../hexNameFont";
 import { renderHexNameLayer } from "../hexNameLayer";
 import { BADGE_INFO, badgeNameLimit, badgeSize, hexKeyFromBasename, hiddenBadges, legendBadgeKinds, linkSectionsFromCache, renderLinkBadgeLayer, type BadgeSection } from "../linkBadges";
 import { legendSize, MAP_LEGEND_NAME_MAX, renderTerrainLegend, usedTerrainEntries } from "../terrainLegend";
+import { hexXY } from "../../hexKey";
 
 export interface GridLabelsHost {
   plugin: HexmakerPlugin;
@@ -305,7 +306,7 @@ export class GridLabels {
     let painted = 0;
     for (const [key, h] of this.host.plugin.mapStore.all(this.host.activeMapName())) {
       if (!h.terrain) continue;
-      const [x, y] = key.split("_").map(Number);
+      const { x, y } = hexXY(key);
       if (x < ox || y < oy || x >= ox + cols || y >= oy + rows) continue;
       used.push(h.terrain);
       painted++;

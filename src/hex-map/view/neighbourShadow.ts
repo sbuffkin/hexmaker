@@ -8,11 +8,11 @@ import type HexmakerPlugin from "../../HexmakerPlugin";
 import type { MapData } from "../../types";
 import { ghostPathRuns, ghostRunPoints, seamJoinKey, seamJoins, seamPoint, type SeamJoin, type ShadowRef } from "../ghostPaths";
 import { drawGhostPaths } from "../ghostPathsSvg";
-import { hexNeighbors } from "../hexGeometry";
 import type { PathTool } from "../pathTool";
 import { RegionNavigateModal } from "../RegionNavigateModal";
 import type { DrawingMode } from "../toolMode";
 import { neighbourShadow } from "../../worldgen/neighbours";
+import { areNeighbours, hexXY } from "../../hexKey";
 
 export interface NeighbourShadowHost {
   plugin: HexmakerPlugin;
@@ -58,10 +58,7 @@ export class NeighbourShadow {
     if (!s || s.map !== region.name || !s.shadow.size) return [];
     const orientation = this.host.plugin.settings.hexOrientation;
     const stagger = this.host.getActiveStagger();
-    const touches = (a: string, b: string) => {
-      const [x, y] = a.split("_").map(Number);
-      return hexNeighbors(x, y, orientation, stagger).some(([nx, ny]) => `${nx}_${ny}` === b);
-    };
+    const touches = (a: string, b: string) => areNeighbours(a, b, orientation, stagger);
     return seamJoins(this.host.plugin.paths.resolvedPathChains(region.name), s.shadow, (m) => this.host.plugin.paths.resolvedPathChains(m), touches);
   }
   /**
@@ -121,7 +118,7 @@ export class NeighbourShadow {
       return p.get(terrain);
     };
     const items = [...shadow].map(([key, s]) => {
-      const [x, y] = key.split("_").map(Number);
+      const { x, y } = hexXY(key);
       return { s, at: place(x, y), color: colorOf(s.map, s.terrain) };
     });
     // The neighbours' roads and rivers across the strip (read-only), so a
@@ -130,7 +127,7 @@ export class NeighbourShadow {
     // Each neighbour's paths in its own palette's styles.
     const typeOf = (map: string, name: string) => this.host.plugin.getMapPathTypes(map).find((t) => t.name === name);
     const centreEm = (key: string) => {
-      const [x, y] = key.split("_").map(Number);
+      const { x, y } = hexXY(key);
       const p = place(x, y);
       return { cx: p.x / em, cy: p.y / em };
     };
