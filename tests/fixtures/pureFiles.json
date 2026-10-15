@@ -39,6 +39,7 @@
 	"src/hex-table/terrainTypeFilter.ts",
 	"src/hexBodyFields.ts",
 	"src/hexGuidance.ts",
+	"src/hexKey.ts",
 	"src/hexLink.ts",
 	"src/hexMapData.ts",
 	"src/hexflower/explore.ts",
