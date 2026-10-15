@@ -14,6 +14,7 @@ import { runNoteFormatUpgrades } from "../migrations/registry";
 import { migrate as migrateFlatHexNotes } from "../migrations/v1.0-flat-hex-notes-to-default-map";
 import { upgradeTableRangesOnce } from "../migrations/v1.5-table-roll-ranges";
 import { TableStore } from "../random-tables/TableStore";
+import { logError } from "../log";
 
 /**
  * Start-up, once the layout is ready. Defer until vault metadata cache is
@@ -55,10 +56,10 @@ export function startOnLayoutReady(plugin: HexmakerPlugin, newerData: string | n
   runAfterStoresReady(plugin, storesReady, plugin.moduleStores, storeReady);
   void storesReady.then(() => plugin.ensureTablesForNewTerrains());
   // Terrains renamed in a palette note while Obsidian was closed: offer "Rename everywhere".
-  void storesReady.then(() => plugin.paletteStore.offerPendingRenames()).catch((e) => console.error("Hexmaker: terrain renames", e));
+  void storesReady.then(() => plugin.paletteStore.offerPendingRenames()).catch((e) => logError("terrain renames", e));
   // NF1–NF3, once per vault: older hex, token, workflow, map, palette,
   // generator and modules' notes (world types) in the new note formats (backed up first).
-  const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(plugin)).catch((e) => console.error("Hexmaker: note format upgrades", e));
+  const formatsDone = Promise.all([storesReady, moduleStoresReady.catch(() => undefined)]).then(() => runNoteFormatUpgrades(plugin)).catch((e) => logError("note format upgrades", e));
   // Hex-note properties follow the map once the notes are in their new formats (MG4).
   void formatsDone.then(() => plugin.hexProps.start());
   // Sandbox vaults (dev/demo-world.mjs) get the demo builders; nothing else does.

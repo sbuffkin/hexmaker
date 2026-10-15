@@ -32,6 +32,7 @@ import { uniqueMapsByName } from "./mapTree";
 import { sameName } from "../hexBodyFields";
 import { lockedHint } from "../workMode";
 import { needsWrite, planPropsSync, propsOf, readProps, setPropsInText, type HexProps, type NoteProps, type PropField } from "./hexProps";
+import { logError } from "../log";
 
 /** What the sync needs from the plugin. */
 export interface HexPropsHost {
@@ -193,7 +194,7 @@ export class HexPropsSync {
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((e) => console.error("Hexmaker: hex note properties sync failed", e));
+    this.queue = this.queue.then(task).catch((e) => logError("hex note properties sync failed", e));
     return this.queue;
   }
 

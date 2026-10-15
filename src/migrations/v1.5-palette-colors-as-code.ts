@@ -13,6 +13,7 @@ import { parsePaletteNote, wrapPaletteColors } from "../palettes/paletteNote";
 import { wrapPathTypeColors } from "../palettes/pathTypeTable";
 import type { PaletteMigrationHost } from "./v1.5-palettes-to-notes";
 import type { MigrationInfo } from "./types";
+import { logError } from "../log";
 
 export const info: MigrationInfo = {
   id: "v1.5-palette-colors-as-code",
@@ -45,7 +46,7 @@ export async function backupBeforeColorConversion(host: Pick<PaletteMigrationHos
     reportUpgrade({ text: info.change, ids: [info.id], backups: [where] });
     return true;
   } catch (e) {
-    console.error("Hexmaker: couldn't back up palette notes; their colors weren't converted", e);
+    logError("couldn't back up palette notes; their colors weren't converted", e);
     noticeBackground("couldn't save a backup of the palette notes, so their colors weren't converted yet. It will try again next time.", 10000);
     return false;
   }

@@ -20,13 +20,14 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { clearPendingTerrain } from "../frontmatter";
 import { onTableDeleted, onTableFolderRenamed } from "../random-tables/tableVaultEvents";
 import { normalizeFolder } from "../utils";
+import { logError } from "../log";
 
 /** Run one former handler; an error is logged and the next still runs. */
 function step(run: () => void): void {
   try {
     run();
   } catch (e) {
-    console.error("Hexmaker: vault event handler", e);
+    logError("vault event handler", e);
   }
 }
 

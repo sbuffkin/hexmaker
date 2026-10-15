@@ -47,6 +47,7 @@ import {
   type MapNotesMigrationHost,
 } from "../migrations/v1.5-map-data-to-map-notes";
 import { upgradeMapSettings as upgradeAreaSettings } from "../migrations/map-note-5-to-6-area-names";
+import { logError } from "../log";
 
 /** One hex changed during MapStore.record: its data before and after. */
 export interface HexCellChange {
@@ -547,7 +548,7 @@ export class MapStore {
     let handled = false;
     for (const fn of this.contextListeners) {
       try { if (fn({ map: map.name, before, after, previous, current: cache, styleFor, ...(drawnBefore ? { drawnBefore } : {}) }) === true) handled = true; }
-      catch (e) { console.error("Hexmaker: route context listener failed", e); }
+      catch (e) { logError("route context listener failed", e); }
     }
     if (!handled && map.paths?.length) {
       const { paths, pinned } = pinChanged(map.paths, segmentFn(previous, styleFor), segmentFn(cache, styleFor), after, drawnBefore);
@@ -674,7 +675,7 @@ export class MapStore {
 
   private emit(map: string): void {
     for (const fn of this.listeners) {
-      try { fn(map); } catch (e) { console.error("Hexmaker: map listener failed", e); }
+      try { fn(map); } catch (e) { logError("map listener failed", e); }
     }
   }
 
@@ -686,7 +687,7 @@ export class MapStore {
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((e) => console.error("Hexmaker: map note sync failed", e));
+    this.queue = this.queue.then(task).catch((e) => logError("map note sync failed", e));
     return this.queue;
   }
 
@@ -805,9 +806,7 @@ export class MapStore {
       const regPal = map.regions?.palette;
       const regNote = regPal ? p.paletteStore?.notePathOf(regPal) : undefined;
       if (regNote) ctx.regionPaletteNote = regNote.replace(/.md$/i, "");
-    } catch (e) {
-      console.error("Hexmaker: couldn't read the palette for a map note's summary", e);
-    }
+    } catch (e) { logError("couldn't read the palette for a map note's summary", e); }
     const resolved = this.isReady(map.name) && map.paths?.length ? this.resolved(map.name) : null;
     if (resolved) ctx.pathRoutes = pathRouteStats(map.paths ?? [], resolved);
     return ctx;

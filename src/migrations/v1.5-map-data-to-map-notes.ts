@@ -32,6 +32,7 @@ import { PROP_KEYS, propsOf, readProps, setPropsInFm, type PropField } from "../
 import { legacyChainsToPaths } from "../paths/legacy";
 import type { CompactReport } from "../paths/fromHexes";
 import type { MigrationInfo } from "./types";
+import { logError } from "../log";
 
 export const info: MigrationInfo = {
   id: "v1.5-map-data-to-map-notes",
@@ -134,7 +135,7 @@ export async function migrateMaps(host: MapNotesMigrationHost, maps: MapData[]):
       await adapter.write(`${dir}/${map.name}.json`, JSON.stringify({ map: map.name, hexes: [...hexes], pathChains: oldChains }, null, 1));
       await host.savePathReport(map.name);
     } catch (e) {
-      console.error("Hexmaker: map-note backup failed", e);
+      logError("map-note backup failed", e);
       failed.push(map.name);
       continue;
     }

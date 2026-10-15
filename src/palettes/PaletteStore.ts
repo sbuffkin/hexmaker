@@ -36,6 +36,7 @@ import { registry } from "../modules";
 import { applyPresetPathFields, applyPresetTerrains, planPresetPathFields, planPresetTerrains } from "./presetUpdates";
 import { repointPaletteName } from "./paletteOptions";
 import { TerrainRenameOffers } from "./renameOffer";
+import { logError } from "../log";
 
 /** Local storage key (per device): what was last said about each palette note's colours. */
 const COLOR_REPORTED_KEY = "hexmaker-palette-colors-reported";
@@ -286,9 +287,7 @@ export class PaletteStore {
   }
 
   private enqueue(task: () => Promise<void>): Promise<void> {
-    this.queue = this.queue.then(task).catch((e) => {
-      console.error("Hexmaker: palette sync failed", e);
-    });
+    this.queue = this.queue.then(task).catch((e) => logError("palette sync failed", e));
     return this.queue;
   }
 

@@ -25,6 +25,7 @@ import {
   removeLinkFromSection,
 } from "../sections";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { logError } from "../log";
 
 /** What TerrainTablesService uses of the plugin. */
 export type TerrainTablesHost = Pick<HexmakerPlugin, "app" | "ensureRegionTable" | "ensureRollerLink" | "getAllTerrains" | "hexPath" | "installShippedTables" | "manifest" | "mapStore" | "mapsOnPalette" | "paletteStore" | "refreshHexMapWithOverrides" | "refreshHexTableTerrainRename" | "renameTerrainInHexes" | "saveSettings" | "settings" | "syncHexEncounterTableLink" | "syncHexRegionTableLink" | "tableNotes" | "tableTerrains" | "terrainEncounterTable" | "terrainTableFiles">;
@@ -241,7 +242,7 @@ export class TerrainTablesService {
         const folder = normalizeFolder(this.plugin.settings.tablesFolder);
         if (folder && !this.plugin.app.vault.getAbstractFileByPath(folder)) return;
         await this.createTerrainTableFiles(added);
-      }).catch((e) => console.error("Hexmaker: terrain tables", e));
+      }).catch((e) => logError("terrain tables", e));
     }
     return this.terrainTablesQueue;
   }
