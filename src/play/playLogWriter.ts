@@ -19,6 +19,7 @@ import {
   logTime,
   newLogNote,
 } from "./playLog";
+import { hexKey } from "../hexKey";
 
 /** Every token on map `mapName` (from the metadata cache). */
 export function tokensOnMap(app: App, mapName: string): TokenEntry[] {
@@ -66,7 +67,7 @@ export async function addToPlayLog(
   now = new Date(),
 ): Promise<string> {
   const app = plugin.app;
-  const party = partyFor(tokensOnMap(app, mapName), mapName, `${x}_${y}`);
+  const party = partyFor(tokensOnMap(app, mapName), mapName, hexKey(x, y));
   const folder = logFolderFor(plugin.settings, party);
   const log = await ensureLogNote(app, folder, now);
 

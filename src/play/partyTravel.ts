@@ -13,8 +13,8 @@
  *
  * Pure: no Obsidian imports.
  */
-import { hexNeighbors } from "../hex-map/hexGeometry";
 import { parseHexKey } from "../maps/mapNote";
+import { areNeighbours } from "../hexKey";
 
 /** Is `to` one step from `from` ("x_y" keys) on a grid of this orientation and stagger? */
 export function isStep(
@@ -26,8 +26,7 @@ export function isStep(
   const a = parseHexKey(from);
   const b = parseHexKey(to);
   if (!a || !b || a === b) return false;
-  const [x, y] = a.split("_").map(Number);
-  return hexNeighbors(x, y, orientation, stagger).some(([nx, ny]) => `${nx}_${ny}` === b);
+  return areNeighbours(a, b, orientation, stagger);
 }
 
 /** A map's `visited` value, read forgivingly: hex keys, first visit first, no repeats. */
