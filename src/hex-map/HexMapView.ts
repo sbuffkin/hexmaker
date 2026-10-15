@@ -132,6 +132,7 @@ export class HexMapView extends ItemView {
   constructor(leaf: WorkspaceLeaf, plugin: HexmakerPlugin) {
     super(leaf);
     this.plugin = plugin;
+    const view = this.viewFacade();
     this.pathTool = new PathTool({
       plugin: this.plugin,
       mapName: () => this.activeMapName,
@@ -157,17 +158,11 @@ export class HexMapView extends ItemView {
       },
     });
     this.writes = new HexWrites({
-      plugin: this.plugin,
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      renderGrid: () => this.renderGrid(),
+      ...view,
       changed: () => this.updateSavingIndicator(),
     });
     this.undos = new UndoController({
-      plugin: this.plugin,
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      wm: () => this.wm,
+      ...view,
       writes: this.writes,
       calibration: { captureCalibration: (m) => this.calibration.captureCalibration(m), applyCalibrationSnapshot: (n, s) => this.calibration.applyCalibrationSnapshot(n, s) },
       undoButtons: () => ({ undo: this.shell.undoBtn, redo: this.shell.redoBtn }),
@@ -178,56 +173,35 @@ export class HexMapView extends ItemView {
       executeHexSwap: (x1, y1, x2, y2, u) => this.swap.executeHexSwap(x1, y1, x2, y2, u),
       applyPathSnapshot: (m, p) => this.applyPathSnapshot(m, p),
       applyTokenSnap: (p, snap) => this.tokens.applyTokenSnap(p, snap),
-      renderGrid: () => this.renderGrid(),
       updateModeBar: () => this.toolbar.updateModeBar(),
       updateGmIcons: () => this.pathLayer.updateGmIcons(),
       updatePathOverlay: () => this.pathLayer.updatePathOverlay(),
     });
     this.areas = new AreaOverlay({
-      plugin: this.plugin,
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      getActiveMap: () => this.getActiveMap(),
-      drawingMode: () => this.drawingMode,
-      isErasingMode: () => this.isErasingMode,
+      ...view,
       paintFactionPath: () => this.paintFactionPath,
       paintRegionPath: () => this.paintRegionPath,
       undos: this.undos,
     });
     this.shadow = new NeighbourShadow({
-      plugin: this.plugin,
-      getActiveStagger: () => this.getActiveStagger(),
-      drawingMode: () => this.drawingMode,
-      isErasingMode: () => this.isErasingMode,
+      ...view,
       pathTool: () => this.pathTool,
       goToRegionHex: (map, x, y) => this.nav.goToRegionHex(map, x, y),
     });
     this.pathLayer = new PathOverlay({
-      plugin: this.plugin,
-      viewportEl: () => this.viewportEl,
-      getActiveMap: () => this.getActiveMap(),
-      getActiveStagger: () => this.getActiveStagger(),
-      drawingMode: () => this.drawingMode,
+      ...view,
       pathTool: () => this.pathTool,
       mapPathTypes: () => this.mapPathTypes(),
-      wm: () => this.wm,
       seamJoins: (grid, region) => this.shadow.seamJoins(grid, region),
-      renderGrid: () => this.renderGrid(),
     });
     this.labels = new GridLabels({
-      plugin: this.plugin,
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      controlsEl: () => this.controlsEl,
-      getActiveMap: () => this.getActiveMap(),
+      ...view,
       zoom: () => this.viewport.zoom,
       measuring: () => this.grid.measuring,
       syncLegendToggle: () => this.overlayPanel?.syncLegendToggle(),
     });
     this.viewport = new MapViewport({
-      plugin: this.plugin,
-      viewportEl: () => this.viewportEl,
-      getActiveMap: () => this.getActiveMap(),
+      ...view,
       calibration: () => this.calibration,
       overlayEls: () => ({
         top: this.shell.topBandEls.filter((el) => el.isConnected),
@@ -251,55 +225,35 @@ export class HexMapView extends ItemView {
         this.areas.updateRegionOverlay();
         this.tokens.updateTokenLayer();
       },
-      renderGrid: () => this.renderGrid(),
     });
     this.toolbar = new MapToolbar({
-      plugin: this.plugin,
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      getActiveMap: () => this.getActiveMap(),
-      wm: () => this.wm,
-      owView: (map) => this.owView(map),
-      modeAllows: (action) => this.modeAllows(action),
+      ...view,
       pathTool: this.pathTool,
       mapPathTypes: () => this.mapPathTypes(),
       undos: { commitTerrainStroke: () => this.undos.commitTerrainStroke(), updateUndoButton: () => this.undos.updateUndoButton() },
       pathLayer: { updatePathOverlay: () => this.pathLayer.updatePathOverlay(), updateGmIcons: () => this.pathLayer.updateGmIcons() },
       overlayPanel: () => this.overlayPanel,
       toolsPanel: () => this.toolsPanel,
-      centerOnHex: (x, y) => this.centerOnHex(x, y),
       applyWorkModeUi: () => this.workMode.applyWorkModeUi(),
       finishBiomeStroke: () => this.painter.finishBiomeStroke(),
       updateBrushHighlight: (x, y) => this.painter.updateBrushHighlight(x, y),
       showOverworldRegions: () => this.showOverworldRegions(),
       nextTokenFill: () => this.tokens.nextTokenFill(),
-      renderGrid: () => this.renderGrid(),
     });
     this.painter = new HexPainter({
-      plugin: this.plugin,
-      viewportEl: () => this.viewportEl,
-      activeMapName: () => this.activeMapName,
-      getActiveMap: () => this.getActiveMap(),
-      owView: (map) => this.owView(map),
-      getActiveStagger: () => this.getActiveStagger(),
-      wm: () => this.wm,
-      overworldLayer: () => this.overworldLayer,
+      ...view,
       toolbar: this.toolbar,
       undos: this.undos,
       writes: this.writes,
       pathLayer: this.pathLayer,
-      modeAllows: (action) => this.modeAllows(action),
       hexElAt: (t, x, y) => this.hexElAt(t, x, y),
-      renderGrid: (t, i) => this.renderGrid(t, i),
     });
     // The input handlers read the view live, and call its hex handlers
     // through it (the smoke suite wraps view.onHexClick).
     this.input = new MapInput({
+      ...view,
       registerDomEvent: this.registerDomEvent.bind(this),
       register: this.register.bind(this),
-      viewportEl: () => this.viewportEl,
-      drawingMode: () => this.drawingMode,
-      isErasingMode: () => this.isErasingMode,
       paintIconName: () => this.paintIconName,
       paintIconGmOnly: () => this.paintIconGmOnly,
       resetSubStrokeHint: () => { this.painter.subStrokeMissHinted = false; },
@@ -310,12 +264,6 @@ export class HexMapView extends ItemView {
       areas: () => this.areas,
       toolbar: () => this.toolbar,
       pathTool: () => this.pathTool,
-      overworldLayer: () => this.overworldLayer,
-      wm: () => this.wm,
-      getActiveMap: () => this.getActiveMap(),
-      owView: (map) => this.owView(map),
-      modeAllows: (action) => this.modeAllows(action),
-      exitCurrentMode: () => this.exitCurrentMode(),
       exitTerrainMode: () => this.exitTerrainMode(),
       hexElAt: (t, x, y) => this.hexElAt(t, x, y),
       labelHex: (el) => this.painter.labelHex(el),
@@ -332,18 +280,12 @@ export class HexMapView extends ItemView {
       paintSubHexAt: (x, y) => this.painter.paintSubHexAt(x, y),
     });
     this.nav = new MapNavigation(this.plugin, {
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
+      ...view,
       mapBtn: () => this.shell.mapBtn,
-      drawingMode: () => this.drawingMode,
-      wm: () => this.wm,
       viewport: { measureOverlayInsets: () => this.viewport.measureOverlayInsets(), panBy: (dx, dy) => this.viewport.panBy(dx, dy) },
       undos: { updateUndoButton: () => this.undos.updateUndoButton() },
       toolbar: { exitPathMode: () => this.toolbar.exitPathMode() },
       switchToMap: (name) => this.switchToMap(name),
-      exitCurrentMode: () => this.exitCurrentMode(),
-      renderGrid: () => this.renderGrid(),
-      centerOnHex: (x, y, w) => this.centerOnHex(x, y, w),
       setSelectedHex: (x, y) => this.setSelectedHex(x, y),
       refreshWorkModeBtn: () => this.workMode.refreshWorkModeBtn(),
       openHexEditorModal: (x, y) => this.openHexEditorModal(x, y),
@@ -351,13 +293,7 @@ export class HexMapView extends ItemView {
       biomeHost: () => this.biomeHost(),
     });
     this.hexMenu = new HexContextMenu(this.plugin, {
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      drawingMode: () => this.drawingMode,
-      overworldLayer: () => this.overworldLayer,
-      wm: () => this.wm,
-      getActiveMap: () => this.getActiveMap(),
-      owView: (map) => this.owView(map),
+      ...view,
       undos: { currentWorkMode: () => this.undos.currentWorkMode() },
       toolbar: { handleSwapButton: () => this.toolbar.handleSwapButton() },
       nav: { openLinkExistingMap: (x, y) => this.nav.openLinkExistingMap(x, y), enterRegionAt: (r, x, y) => this.nav.enterRegionAt(r, x, y) },
@@ -369,24 +305,17 @@ export class HexMapView extends ItemView {
       createTokenAtHex: (x, y) => this.tokens.createTokenAtHex(x, y),
       openPlayLog: (x, y) => this.openPlayLog(x, y),
       setVisited: (keys, on) => this.tokens.setVisited(keys, on),
-      centerOnHex: (x, y) => this.centerOnHex(x, y),
       linkTableToHex: (x, y, file) => this.painter.linkTableToHex(x, y, file),
       openRandomTableAtFile: (file) => this.openRandomTableAtFile(file),
       onHexSwapClick: (x, y) => this.swap.onHexSwapClick(x, y),
       paintOne: (x, y, terrain) => this.painter.paintOne(x, y, terrain),
       removeIconOverride: (x, y) => this.painter.removeIconOverride(x, y),
       biomeHost: () => this.biomeHost(),
-      renderGrid: () => this.renderGrid(),
     });
     this.tokens = new TokenLayer(this.plugin, {
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      drawingMode: () => this.drawingMode,
+      ...view,
       pendingTokenNotePath: () => this.pendingTokenNotePath,
       pendingTokenPlaceData: () => this.pendingTokenPlaceData,
-      getActiveMap: () => this.getActiveMap(),
-      getActiveStagger: () => this.getActiveStagger(),
-      owView: (map) => this.owView(map),
       undos: {
         currentWorkMode: () => this.undos.currentWorkMode(),
         pushUndo: (item, mapName) => this.undos.pushUndo(item, mapName),
@@ -400,36 +329,24 @@ export class HexMapView extends ItemView {
         addOverworldMenuItems: (menu, evt, x, y) => this.hexMenu.addOverworldMenuItems(menu, evt, x, y),
       },
       onHexClick: (x, y, e) => this.onHexClick(x, y, e),
-      centerOnHex: (x, y) => this.centerOnHex(x, y),
-      renderGrid: () => this.renderGrid(),
     });
     this.edges = new GridEdgeButtons(this.plugin, {
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
-      getActiveMap: () => this.getActiveMap(),
+      ...view,
       viewport: () => this.viewport,
       calibration: { applyBgLayerVars: (layer, bg) => this.calibration.applyBgLayerVars(layer, bg) },
-      modeAllows: (action) => this.modeAllows(action),
-      renderGrid: (t, i) => this.renderGrid(t, i),
     });
     this.swap = new HexSwap(this.plugin, {
-      activeMapName: () => this.activeMapName,
-      viewportEl: () => this.viewportEl,
+      ...view,
       writes: this.writes,
       undos: this.undos,
       toolbar: this.toolbar,
-      renderGrid: () => this.renderGrid(),
     });
     this.calibration = new BackgroundCalibration({
-      plugin: this.plugin,
+      ...view,
       contentEl: this.contentEl,
-      viewportEl: () => this.viewportEl,
       zoom: () => this.viewport.zoom,
-      getActiveMap: () => this.getActiveMap(),
-      activeMapName: () => this.activeMapName,
       pushUndo: (item, mapName) => this.undos.pushUndo(item, mapName),
       updateUndoButton: () => this.undos.updateUndoButton(),
-      renderGrid: () => this.renderGrid(),
       cancelZoomBake: () => this.viewport.cancelZoomBake(),
       registerDomEvent: (el, type, cb) => this.registerDomEvent(el, type, cb),
     });
@@ -437,18 +354,10 @@ export class HexMapView extends ItemView {
     this.overworldLayer = wm ? new wm.OverworldLayer(plugin) : undefined;
     this.minimap = wm ? new wm.OverworldMinimap(plugin, this) : undefined;
     this.grid = new GridRenderer({
-      plugin: this.plugin,
+      ...view,
       contentEl: this.contentEl,
-      viewportEl: () => this.viewportEl,
-      controlsEl: () => this.controlsEl,
-      activeMapName: () => this.activeMapName,
-      getActiveMap: () => this.getActiveMap(),
-      owView: (map) => this.owView(map),
-      getActiveStagger: () => this.getActiveStagger(),
       selectedHex: () => this.selectedHex,
-      drawingMode: () => this.drawingMode,
       overlayPanel: () => this.overlayPanel,
-      overworldLayer: () => this.overworldLayer,
       minimap: () => this.minimap,
       calibration: this.calibration,
       labels: this.labels,
@@ -467,30 +376,18 @@ export class HexMapView extends ItemView {
       emptySlotOnMap: (hex) => this.emptySlotOnMap(hex),
     });
     this.workMode = new WorkModeButton({
-      plugin: this.plugin,
+      ...view,
       contentEl: this.contentEl,
-      activeMapName: () => this.activeMapName,
-      getActiveMap: () => this.getActiveMap(),
-      owView: (map) => this.owView(map),
-      drawingMode: () => this.drawingMode,
       undos: this.undos,
       nav: this.nav,
       toolbar: this.toolbar,
-      exitCurrentMode: () => this.exitCurrentMode(),
     });
     this.shell = new MapShell({
-      plugin: this.plugin,
+      ...view,
       leaf: this.leaf,
       scope: () => this.scope!,
       registerEvent: this.registerEvent.bind(this),
       register: this.register.bind(this),
-      viewportEl: () => this.viewportEl,
-      activeMapName: () => this.activeMapName,
-      getActiveMap: () => this.getActiveMap(),
-      wm: () => this.wm,
-      overworldLayer: () => this.overworldLayer,
-      drawingMode: () => this.drawingMode,
-      isErasingMode: () => this.isErasingMode,
       activeParty: () => this.activeParty(),
       pathTool: this.pathTool,
       toolbar: this.toolbar,
@@ -506,15 +403,42 @@ export class HexMapView extends ItemView {
       navigateUp: () => this.navigateUp(),
       navigateBack: () => this.navigateBack(),
       navigateForward: () => this.navigateForward(),
-      exitCurrentMode: () => this.exitCurrentMode(),
       exitTerrainMode: () => this.exitTerrainMode(),
       openMapModal: (onChanged) => new MapModal(this.app, this.plugin, this, onChanged).open(),
       buildWorkModeBtn: (group) => this.workMode.build(group),
       refreshViewHeader: () => this.refreshViewHeader(),
       markStaleFromExternal: () => this.markStaleFromExternal(),
       onOverworldDataChange: (map) => this.onOverworldDataChange(map),
-      renderGrid: () => this.renderGrid(),
     });
+  }
+
+  /**
+   * What most controllers read from the view, spread into each host
+   * (`{ ...view, … }`) so a host lists only what it adds. Every member but
+   * `plugin` is a function, read when the controller calls it.
+   */
+  private viewFacade() {
+    return {
+      plugin: this.plugin,
+      activeMapName: () => this.activeMapName,
+      viewportEl: () => this.viewportEl,
+      controlsEl: () => this.controlsEl,
+      getActiveMap: () => this.getActiveMap(),
+      getActiveStagger: () => this.getActiveStagger(),
+      owView: (map: MapData) => this.owView(map),
+      wm: () => this.wm,
+      overworldLayer: () => this.overworldLayer,
+      drawingMode: () => this.drawingMode,
+      isErasingMode: () => this.isErasingMode,
+      modeAllows: (action: ModeAction) => this.modeAllows(action),
+      exitCurrentMode: () => this.exitCurrentMode(),
+      centerOnHex: (x: number, y: number, keepHexWidth?: number) => this.centerOnHex(x, y, keepHexWidth),
+      renderGrid: (
+        terrainOverrides?: Map<string, string | null>,
+        iconOverrides?: Map<string, string | null>,
+        gmIconsOverrides?: Map<string, string[]>,
+      ) => this.renderGrid(terrainOverrides, iconOverrides, gmIconsOverrides),
+    };
   }
 
   /** World maps' hooks (overworlds, regions, biomes, walking); undefined in a build without it. */
