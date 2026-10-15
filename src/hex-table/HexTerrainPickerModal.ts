@@ -5,6 +5,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import { getIconUrl, normalizeFolder, createIconEl } from "../utils";
 import { setTerrainInFile } from "../frontmatter";
 import { addPickerFilter, filterText } from "../ui/pickers";
+import { hexPair } from "../hexKey";
 
 export class HexTerrainPickerModal extends HexmakerModal {
   constructor(
@@ -42,7 +43,7 @@ export class HexTerrainPickerModal extends HexmakerModal {
         void (async () => {
           if (!this.plugin.mapStore.isReady() && !this.app.vault.getAbstractFileByPath(this.hexPath)) {
             const basename = this.hexPath.replace(/\.md$/, "").split("/").pop()!;
-            const [hx, hy] = basename.split("_").map(Number);
+            const [hx, hy] = hexPair(basename);
             const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
             const relative = hexFolder
               ? this.hexPath.slice(hexFolder.length + 1)

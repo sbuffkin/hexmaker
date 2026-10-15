@@ -19,6 +19,7 @@ import {
   appendSectionText,
 } from "../sections";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { hexKey, hexXY, isHexKey } from "../hexKey";
 
 /** What HexNotesService uses of the plugin. */
 export type HexNotesHost = HexmakerPlugin;
@@ -34,14 +35,14 @@ export class HexNotesService {
   isHexFile(file: TFile): boolean {
     const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
     if (hexFolder && !file.path.startsWith(hexFolder + "/")) return false;
-    return /^-?\d+_-?\d+$/.test(file.basename);
+    return isHexKey(file.basename);
   }
 
   hexPath(x: number, y: number, mapName: string): string {
     const folder = normalizeFolder(this.plugin.settings.hexFolder);
     return folder
-      ? `${folder}/${mapName}/${x}_${y}.md`
-      : `${mapName}/${x}_${y}.md`;
+      ? `${folder}/${mapName}/${hexKey(x, y)}.md`
+      : `${mapName}/${hexKey(x, y)}.md`;
   }
 
   /**
@@ -50,7 +51,7 @@ export class HexNotesService {
    * previous name's alias and keeping any the user added.
    */
   async setHexName(mapName: string, x: number, y: number, raw: string): Promise<void> {
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     const name = cleanHexName(raw);
     const old = this.plugin.mapStore.get(mapName, key)?.name;
     if ((old ?? "") === name) return;
@@ -98,7 +99,7 @@ export class HexNotesService {
     // Map data lives in the map note: the hex note links there instead of
     // carrying (possibly stale) terrain/region fields.
     content = withMapLink(content, mapName);
-    if (terrain) this.plugin.mapStore.set(mapName, `${x}_${y}`, { terrain });
+    if (terrain) this.plugin.mapStore.set(mapName, hexKey(x, y), { terrain });
     // Its terrain, area, icon and name as properties (MG4).
     content = this.plugin.hexProps.withProps(content, mapName, x, y, path);
     // The template's Map data callout shows what the map has for this hex.
@@ -135,7 +136,7 @@ export class HexNotesService {
       const file = await this.plugin.app.vault.create(path, content);
       // A named hex's note gets its name as an alias (X4), and every hex
       // note gets "<map> x, y" (NM2).
-      const name = this.plugin.mapStore.get(mapName, `${x}_${y}`)?.name;
+      const name = this.plugin.mapStore.get(mapName, hexKey(x, y))?.name;
       await syncHexAliases(this.plugin.app, path, [
         { from: undefined, to: name },
         { from: undefined, to: this.plugin.hexCoordAlias(mapName, x, y) },
@@ -165,13 +166,13 @@ export class HexNotesService {
 
   /** What the map has for a hex, for its note's Map data callout (src/hexMapData.ts). */
   hexMapDataView(mapName: string, x: number, y: number): HexMapDataView {
-    const h = this.plugin.mapStore.get(mapName, `${x}_${y}`) ?? {};
+    const h = this.plugin.mapStore.get(mapName, hexKey(x, y)) ?? {};
     const ref = (m: string) => ({ map: m, label: this.plugin.mapLabel(m) });
     return {
       map: mapName, mapLabel: this.plugin.mapLabel(mapName), x, y, terrain: h.terrain, region: h.region, name: h.name,
       regionMap: h.regionMap ? ref(h.regionMap) : undefined,
       locations: h.locations?.length ? h.locations.map(ref) : undefined,
-      biome: this.hexBiomeRef(mapName, `${x}_${y}`),
+      biome: this.hexBiomeRef(mapName, hexKey(x, y)),
     };
   }
 
@@ -357,7 +358,7 @@ export class HexNotesService {
     for (let i = 0; i < cells.length; i += CHUNK) {
       await Promise.all(
         cells.slice(i, i + CHUNK).map(async ([key, terrain]) => {
-          const [x, y] = key.split("_").map(Number);
+          const { x, y } = hexXY(key);
           if (!this.plugin.app.vault.getAbstractFileByPath(this.plugin.hexPath(x, y, mapName))) {
             if (await this.plugin.createHexNote(x, y, mapName, template, terrain)) created++;
           }
@@ -379,8 +380,8 @@ export class HexNotesService {
     if (this.plugin.mapStore.isReady()) {
       const cells: [string, string][] = [];
       for (const x of xs) for (const y of ys) {
-        const t = terrainAt?.get(`${x}_${y}`);
-        if (t) cells.push([`${x}_${y}`, t]);
+        const t = terrainAt?.get(hexKey(x, y));
+        if (t) cells.push([hexKey(x, y), t]);
       }
       if (cells.length) return this.plugin.generateHexNotesAt(mapName, cells);
       onProgress?.(xs.length * ys.length);
@@ -400,7 +401,7 @@ export class HexNotesService {
         pairs.slice(i, i + CHUNK).map(async ([x, y]) => {
           const path = this.plugin.hexPath(x, y, mapName);
           if (!this.plugin.app.vault.getAbstractFileByPath(path)) {
-            const terrain = terrainAt?.get(`${x}_${y}`);
+            const terrain = terrainAt?.get(hexKey(x, y));
             // createHexNote writes the terrain and its encounter link in one go.
             if (await this.plugin.createHexNote(x, y, mapName, template, terrain)) created++;
           }

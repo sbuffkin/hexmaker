@@ -8,6 +8,7 @@
 import { mapDataLines, moveBodyFieldsIntoMapData, shownValues } from "../hexMapData";
 import { takeBodyFields } from "../hexBodyFields";
 import { hexNotes, type NoteRewrite } from "./noteRewrites";
+import { hexXY } from "../hexKey";
 
 export const hexBodyLines: NoteRewrite = {
   info: {
@@ -32,7 +33,7 @@ export const hexBodyLines: NoteRewrite = {
   replan(host, path, current) {
     const loc = host.mapStore.resolve(path);
     if (!loc || !host.mapStore.isReady(loc.map)) return current;
-    const [x, y] = loc.key.split("_").map(Number);
+    const { x, y } = hexXY(loc.key);
     return moveBodyFieldsIntoMapData(current, host.hexMapDataView(loc.map, x, y)).content;
   },
   written(host, path) {
@@ -40,7 +41,7 @@ export const hexBodyLines: NoteRewrite = {
     // What the callout shows now, so a later hand edit is told from it.
     const loc = host.mapStore.resolve(path);
     if (loc) {
-      const [x, y] = loc.key.split("_").map(Number);
+      const { x, y } = hexXY(loc.key);
       host.calloutMemory.set(path, shownValues(mapDataLines(host.hexMapDataView(loc.map, x, y))));
     }
   },
