@@ -90,7 +90,8 @@ describe("smoke suite: legacy hex data and palette upgrades", () => {
 describe("smoke suite findings stay fixed", () => {
   it("C6: a terrain stroke remembers the old terrain from the map data, not the hex note's frontmatter", () => {
     const src = readSurface("map-view");
-    const start = src.indexOf("  private onHexPaintClick(");
+    // The declaration: private in the view, public on the painter (src/hex-map/view/hexPainter.ts).
+    const start = src.search(/\n  (?:private )?onHexPaintClick\(/) + 1;
     const body = src.slice(start, src.indexOf("\n  }\n", start));
     expect(body).toMatch(/oldTerrain = pending \? pending\.terrain : getTerrainFromFile\(this\.app, path\)/);
     expect(body).not.toMatch(/getCache\(path\)\?\.frontmatter/);
