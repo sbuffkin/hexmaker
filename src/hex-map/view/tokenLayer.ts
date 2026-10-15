@@ -26,6 +26,7 @@ import type { TokenSnap, UndoItem } from "../undoItems";
 import type { HexContextMenu } from "./hexContextMenu";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
+import { hexKey, hexPair } from "../../hexKey";
 
 export interface TokenLayerHost {
   activeMapName(): string;
@@ -103,7 +104,7 @@ export class TokenLayer {
         oy += cur.offsetTop;
         cur = cur.offsetParent as HTMLElement | null;
       }
-      centerMap.set(`${x}_${y}`, { cx: ox, cy: oy });
+      centerMap.set(hexKey(x, y), { cx: ox, cy: oy });
     });
     return centerMap;
   }
@@ -228,7 +229,7 @@ export class TokenLayer {
               this.selectParty(this.selectedParty === snapToken.filePath ? null : snapToken.filePath);
               return;
             }
-            const [hx, hy] = snapToken.hex.split("_").map(Number);
+            const [hx, hy] = hexPair(snapToken.hex);
             if (Number.isFinite(hx) && Number.isFinite(hy)) void this.host.onHexClick(hx, hy, e);
           });
         });
@@ -253,7 +254,7 @@ export class TokenLayer {
     gridContainer.querySelectorAll(".duckmage-party-step").forEach((el) => el.removeClass("duckmage-party-step"));
     const party = this.activeParty();
     if (!party) return;
-    const [px, py] = party.hex.split("_").map(Number);
+    const [px, py] = hexPair(party.hex);
     if (!Number.isFinite(px) || !Number.isFinite(py)) return;
     for (const [nx, ny] of hexNeighbors(px, py, this.plugin.settings.hexOrientation, this.host.getActiveStagger())) {
       gridContainer.querySelector<HTMLElement>(`.duckmage-hex[data-x="${nx}"][data-y="${ny}"]`)?.addClass("duckmage-party-step");
@@ -345,9 +346,9 @@ export class TokenLayer {
         if (dist < bestDist) { bestDist = dist; best = key; }
       }
       if (best !== closestHex) {
-        if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
+        if (closestHex) { const [px, py] = hexPair(closestHex); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
         closestHex = best;
-        if (best) { const [px, py] = best.split("_").map(Number); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.addClass("duckmage-token-drop-target"); }
+        if (best) { const [px, py] = hexPair(best); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.addClass("duckmage-token-drop-target"); }
       }
     };
 
@@ -356,7 +357,7 @@ export class TokenLayer {
       activeDocument.removeEventListener("mouseup", onUp);
       tokenEl.removeClass("duckmage-token-dragging");
 
-      if (closestHex) { const [px, py] = closestHex.split("_").map(Number); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
+      if (closestHex) { const [px, py] = hexPair(closestHex); this.host.viewportEl()?.querySelector<HTMLElement>(`[data-x="${px}"][data-y="${py}"]`)?.removeClass("duckmage-token-drop-target"); }
 
       if (!isDragging) { onClickInstead(); return; }
 
@@ -449,10 +450,10 @@ export class TokenLayer {
     menu.add("token.remove", "Remove token", "trash", () => this.removeToken(token));
     // The token covers its hex's centre, so the hex's own items follow
     // (F8: right-clicking "where the ship is" only gave the token's menu).
-    const [hx, hy] = token.hex.split("_").map(Number);
+    const [hx, hy] = hexPair(token.hex);
     if (token.map === this.activeMapName && Number.isFinite(hx) && Number.isFinite(hy)) {
       menu.addSeparator();
-      const hexName = this.plugin.mapStore.get(this.activeMapName, `${hx}_${hy}`)?.name?.trim();
+      const hexName = this.plugin.mapStore.get(this.activeMapName, hexKey(hx, hy))?.name?.trim();
       menu.addLabel(hexName ? `This hex: ${hexName}` : `This hex: ${hx}, ${hy}`);
       if (this.host.owView(this.host.getActiveMap())) this.host.hexMenu.addOverworldMenuItems(menu, evt, hx, hy);
       else this.host.hexMenu.addHexMenuItems(menu, hx, hy, true);
@@ -470,7 +471,7 @@ export class TokenLayer {
       "",
       { color: this.nextTokenFill() },
       (notePath, data) => {
-        void this.placeToken(notePath, { ...data }, `${x}_${y}`);
+        void this.placeToken(notePath, { ...data }, hexKey(x, y));
       },
       undefined,
       "Create token",
@@ -491,7 +492,7 @@ export class TokenLayer {
     const notePath = this.host.pendingTokenNotePath();
     const look = this.host.pendingTokenPlaceData();
     if (!notePath || !look) return;
-    await this.placeToken(notePath, look, `${x}_${y}`);
+    await this.placeToken(notePath, look, hexKey(x, y));
     this.host.toolbar.exitTokenMode();
   }
 

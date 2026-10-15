@@ -14,7 +14,6 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { GeneratorContribution, GeneratorHelpers, ScaleMapMade } from "../modules/types";
 import type { ProcOption } from "../worldgen/procedural/common";
 import type { GridSpec } from "../worldgen/generators";
-import { hexNeighbors } from "../hex-map/hexGeometry";
 import { applyTokenFrontmatter } from "../frontmatter";
 import { normalizeFolder } from "../utils";
 import { emptyFlower, isCell, type Flower } from "./flower";
@@ -23,6 +22,7 @@ import { classifyResult, formatFlowerAt, formatRule, planStep, readRules, startC
 import { exploreOrder } from "./exploreOrder";
 import { flowerStoreOf } from "./context";
 import type { ExploreMap } from "./exploreFields";
+import { hexKey, hexXY, neighbourKeys } from "../hexKey";
 
 export const HEX_FLOWER_GENERATOR_ID = "procedural:hex-flower";
 /** The Flower option's value for "New from this palette". */
@@ -47,7 +47,7 @@ function flowerOption(names: readonly string[]): ProcOption {
 
 /** The middle hex of a grid ("x_y"). */
 export function middleHex(grid: Pick<GridSpec, "cols" | "rows" | "offset">): string {
-  return `${grid.offset.x + Math.floor(grid.cols / 2)}_${grid.offset.y + Math.floor(grid.rows / 2)}`;
+  return hexKey(grid.offset.x + Math.floor(grid.cols / 2), grid.offset.y + Math.floor(grid.rows / 2));
 }
 
 /** The flower a run uses: a vault flower by name, else one from the palette (the same for the same seed). */
@@ -82,13 +82,10 @@ export function startFill(
   if (cell) cells.set(start, classifyResult(flower.cells[cell - 1].result, terrains, () => false)!.value);
   if (!whole) return { cells, at };
   const inGrid = (k: string) => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     return x >= grid.offset.x && y >= grid.offset.y && x < grid.offset.x + grid.cols && y < grid.offset.y + grid.rows;
   };
-  const near = (k: string) => {
-    const [x, y] = k.split("_").map(Number);
-    return hexNeighbors(x, y, orientation, grid.stagger).map(([a, b]) => `${a}_${b}`).filter(inGrid);
-  };
+  const near = (k: string) => neighbourKeys(k, orientation, grid.stagger).filter(inGrid);
   const rules = readRules([formatRule({ source: flower.name, target: { kind: "terrain" }, every: false })]);
   for (const { hex, from } of exploreOrder(start, near)) {
     if (cells.has(hex)) continue;

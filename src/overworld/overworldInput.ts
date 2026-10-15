@@ -22,6 +22,7 @@
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { canAdd, canChangeRegion, CHANGE_OPEN_REGION_HINT, isOpenPlace, PLACE_LOCKED_HINT } from "../workMode";
 import { parentOf, type RegionLayout } from "./layout";
+import { hexKey } from "../hexKey";
 
 /** The line under a region's biome in "Edit region…" outside God (shown read-only there). */
 export const BIOME_LOCKED_HINT = "Switch to God to change it.";
@@ -156,7 +157,7 @@ export function paintTargets(
   let missed = 0;
   for (const [x, y] of cells) {
     const map = regionAt(parentOf(layout, x, y).join("_"));
-    if (map) targets.push({ map, key: `${x}_${y}` });
+    if (map) targets.push({ map, key: hexKey(x, y) });
     else missed++;
   }
   return { targets, missed };

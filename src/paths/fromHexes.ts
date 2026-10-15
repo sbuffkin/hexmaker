@@ -12,6 +12,7 @@ import { hexDistance, type SegmentContext, type SegmentStyle, type RouteContext 
 import { contextRouter, RouteCache, type SegmentRouter } from "./routeCache";
 import { routeBranch, styleOf, type StyleFor } from "./resolve";
 import { uniquePathName } from "./names";
+import { hexPair } from "../hexKey";
 
 /** The route between two anchors under some fixed context and style. */
 export type RouteFn = (a: HexKey, b: HexKey) => { hexes: readonly HexKey[]; fallback?: string };
@@ -26,11 +27,6 @@ function asRouteFn(r: SegmentContext | RouteFn): RouteFn {
   const router = contextRouter(r);
   return routeFnFor(router, r);
 }
-
-const xy = (k: HexKey): [number, number] => {
-  const [x, y] = k.split("_").map(Number);
-  return [x, y];
-};
 
 /** The chain with consecutive repeats of a hex collapsed (they aren't steps). */
 export function dedupeSteps(hexes: readonly HexKey[]): HexKey[] {
@@ -64,7 +60,7 @@ export function anchorsFor(
     let best = i + 1;
     for (let j = h.length - 1; j > i + 1; j--) {
       // A route is never shorter than the hex distance.
-      if (ctx && hexDistance(xy(h[i]), xy(h[j]), ctx.orientation, ctx.stagger) > j - i) continue;
+      if (ctx && hexDistance(hexPair(h[i]), hexPair(h[j]), ctx.orientation, ctx.stagger) > j - i) continue;
       const r = fn(h[i], h[j]);
       if (r.fallback || r.hexes.length !== j - i + 1) continue;
       let same = true;

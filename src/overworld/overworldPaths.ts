@@ -40,6 +40,7 @@ import {
   withApplied,
   type OverworldBranch,
 } from "./pathProjection";
+import { hexPair } from "../hexKey";
 
 /** Shown when confirming is refused by the overworld's work mode. */
 export const CONFIRM_LOCKED_HINT = "Switch to Build to confirm paths into regions.";
@@ -59,11 +60,6 @@ export interface ProjectionReport {
   /** Regions that couldn't be routed (not loaded yet). */
   skipped: string[];
 }
-
-const xy = (k: HexKey): [number, number] => {
-  const [x, y] = k.split("_").map(Number);
-  return [x, y];
-};
 
 /** Is this map an overworld whose regions mesh (the paths can go into them)? */
 export function isPathOverworld(plugin: HexmakerPlugin, mapName: string): boolean {
@@ -169,8 +165,8 @@ function projectInto(plugin: HexmakerPlugin, owName: string, pathName: string, p
       report.skipped.push(m.name);
       continue;
     }
-    const [px, py] = xy(hex);
-    const inside = (k: HexKey) => inRegion(layout, px, py, ...xy(k));
+    const [px, py] = hexPair(hex);
+    const inside = (k: HexKey) => inRegion(layout, px, py, ...hexPair(k));
     const chains = projected.get(hex) ?? [];
     const store = plugin.mapStore;
     const palette = plugin.getMapPalette(m.name);

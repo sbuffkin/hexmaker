@@ -17,6 +17,7 @@ import { mapStagger } from "../worldgen/generators";
 import { drawPreview } from "../worldgen/preview";
 import { openMakeGenerator } from "./MakeGeneratorModal";
 import { renderShareSliders } from "../ui/shareSliders";
+import { hexXY } from "../hexKey";
 
 /** The default share of the map in a blend. */
 export const DEFAULT_BLEND_WEIGHT = 0.25;
@@ -123,7 +124,7 @@ export class BlendIntoBiomeModal extends HexmakerModal {
     if (ticket !== this.drawn) return; // a newer preview is on its way
     if ("error" in cells) { status.setText(cells.error); return; }
     if (!cells.size) { status.setText("Nothing to preview."); return; }
-    const xs = [...cells.keys()].map((k) => Number(k.split("_")[0])), ys = [...cells.keys()].map((k) => Number(k.split("_")[1]));
+    const xs = [...cells.keys()].map((k) => hexXY(k).x), ys = [...cells.keys()].map((k) => hexXY(k).y);
     const x0 = Math.min(...xs), y0 = Math.min(...ys);
     const grid = { cols: Math.max(...xs) - x0 + 1, rows: Math.max(...ys) - y0 + 1, offset: { x: x0, y: y0 }, stagger: mapStagger(plugin, this.mapName) };
     const colors = new Map(plugin.getMapPalette(this.mapName).map((t) => [t.name, t.color]));

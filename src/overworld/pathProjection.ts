@@ -31,7 +31,8 @@
 import type { HexKey, MapPath, PathType, TerrainColor } from "../types";
 import { hashString } from "../paths/router";
 import { pathNameKey, uniquePathName } from "../paths/names";
-import { childNeighbours, childPoint, regionCells, regionCentreCell, regionCentrePoint, type RegionLayout } from "./layout";
+import { childNeighbourKeysAt, childNeighbours, childPoint, regionCells, regionCentreCell, regionCentrePoint, type RegionLayout } from "./layout";
+import { hexKey, hexPair } from "../hexKey";
 
 /** Overworld Paths column: "yes" once a path is confirmed into its regions. */
 export const APPLIED_COL = "Applied";
@@ -39,11 +40,6 @@ import { OWNER_COL, extraCell, ownerOf, withExtraCell } from "../paths/pathColum
 /** Region Paths column and the column helpers (the core's, src/paths/pathColumns.ts). */
 export { OWNER_COL, extraCell, ownerOf, withExtraCell };
 
-const xy = (k: HexKey): [number, number] => {
-  const [x, y] = k.split("_").map(Number);
-  return [x, y];
-};
-const key = (x: number, y: number): HexKey => `${x}_${y}`;
 
 // ── the two columns ──────────────────────────────────────────────────────
 
@@ -99,14 +95,14 @@ export function draftsAfterEdit(before: readonly MapPath[], after: MapPath[]): M
  * `salt` so two paths over one seam don't overlap.
  */
 export function seamCrossing(layout: RegionLayout, p: [number, number], q: [number, number], salt: string): [HexKey, HexKey] | null {
-  const pk = key(p[0], p[1]), qk = key(q[0], q[1]);
+  const pk = hexKey(p[0], p[1]), qk = hexKey(q[0], q[1]);
   const [u, v] = pk < qk ? [p, q] : [q, p];
-  const vCells = new Set(regionCells(layout, v[0], v[1]).map(([x, y]) => key(x, y)));
+  const vCells = new Set(regionCells(layout, v[0], v[1]).map(([x, y]) => hexKey(x, y)));
   const pairs: [HexKey, HexKey][] = [];
   for (const [x, y] of regionCells(layout, u[0], u[1])) {
     for (const [a, b] of childNeighbours(layout, x, y)) {
-      const nk = key(a, b);
-      if (vCells.has(nk)) pairs.push([key(x, y), nk]);
+      const nk = hexKey(a, b);
+      if (vCells.has(nk)) pairs.push([hexKey(x, y), nk]);
     }
   }
   if (!pairs.length) return null;
@@ -115,8 +111,8 @@ export function seamCrossing(layout: RegionLayout, p: [number, number], q: [numb
   const [vx, vy] = regionCentrePoint(layout, v[0], v[1]);
   const tx = -(vy - uy), ty = vx - ux;
   const along = ([a, b]: [HexKey, HexKey]) => {
-    const [ax, ay] = childPoint(layout, ...xy(a));
-    const [bx, by] = childPoint(layout, ...xy(b));
+    const [ax, ay] = childPoint(layout, ...hexPair(a));
+    const [bx, by] = childPoint(layout, ...hexPair(b));
     return ((ax + bx) / 2) * tx + ((ay + by) / 2) * ty;
   };
   const sorted = pairs
@@ -164,7 +160,7 @@ export function projectPath(
 ): Map<HexKey, HexKey[][]> {
   const out = new Map<HexKey, HexKey[][]>();
   const firstIn = new Map<string, HexKey[]>();
-  const centre = (r: HexKey) => key(...regionCentreCell(layout, ...xy(r)));
+  const centre = (r: HexKey) => hexKey(...regionCentreCell(layout, ...hexPair(r)));
   const midOf = (branch: number, region: HexKey) => {
     const c = firstIn.get(`${branch}|${region}`);
     return c ? c[Math.floor((c.length - 1) / 2)] : undefined;
@@ -172,7 +168,7 @@ export function projectPath(
   const seamMemo = new Map<string, [HexKey, HexKey] | null>();
   const seam = (a: HexKey, b: HexKey) => {
     const k = `${a}>${b}`;
-    if (!seamMemo.has(k)) seamMemo.set(k, seamCrossing(layout, xy(a), xy(b), salt));
+    if (!seamMemo.has(k)) seamMemo.set(k, seamCrossing(layout, hexPair(a), hexPair(b), salt));
     return seamMemo.get(k)!;
   };
   for (const b of branches) {
@@ -285,5 +281,5 @@ export function carveWrites(
 
 /** Child-grid neighbours as keys (for carveCells). */
 export function childNeighbourKeys(layout: RegionLayout): (k: HexKey) => HexKey[] {
-  return (k) => childNeighbours(layout, ...xy(k)).map(([x, y]) => key(x, y));
+  return (k) => childNeighbourKeysAt(layout, k);
 }

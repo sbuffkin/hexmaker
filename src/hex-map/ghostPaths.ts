@@ -6,6 +6,8 @@
  * this map's coordinates; HexMapView draws them (read-only).
  */
 
+import { hexKey, hexPair } from "../hexKey";
+
 /** A hex in the strip: this map's key "x_y" → which map and hex it really is. */
 export interface ShadowRef {
   map: string;
@@ -33,11 +35,6 @@ export interface GhostRun {
   stubEnd: boolean;
 }
 
-const parse = (key: string): [number, number] => {
-  const [x, y] = key.split("_").map(Number);
-  return [x, y];
-};
-
 /**
  * The stretches of neighbouring maps' paths that cross the strip. A
  * neighbour's hexes map into this map's frame by a fixed offset (maps in a
@@ -50,7 +47,7 @@ export function ghostPathRuns(
   const offsets = new Map<string, { dx: number; dy: number }>();
   for (const [key, ref] of shadow) {
     if (offsets.has(ref.map)) continue;
-    const [x, y] = parse(key);
+    const [x, y] = hexPair(key);
     offsets.set(ref.map, { dx: x - ref.x, dy: y - ref.y });
   }
 
@@ -59,8 +56,8 @@ export function ghostPathRuns(
     const inStrip = (key: string) => shadow.get(key)?.map === map;
     for (const chain of chainsOf(map) ?? []) {
       const local = chain.hexes.map((k) => {
-        const [x, y] = parse(k);
-        return `${x + dx}_${y + dy}`;
+        const [x, y] = hexPair(k);
+        return hexKey(x + dx, y + dy);
       });
       let i = 0;
       while (i < local.length) {
@@ -125,7 +122,7 @@ export function seamJoins(
   const offsets = new Map<string, { dx: number; dy: number }>();
   for (const [key, ref] of shadow) {
     if (offsets.has(ref.map)) continue;
-    const [x, y] = parse(key);
+    const [x, y] = hexPair(key);
     offsets.set(ref.map, { dx: x - ref.x, dy: y - ref.y });
   }
   const ends = (c: ChainLike): string[] => (c.hexes.length === 0 ? [] : c.hexes.length === 1 ? [c.hexes[0]] : [c.hexes[0], c.hexes[c.hexes.length - 1]]);
@@ -134,8 +131,8 @@ export function seamJoins(
   for (const [map, { dx, dy }] of offsets) {
     for (const theirs of chainsOf(map) ?? []) {
       for (const end of ends(theirs)) {
-        const [x, y] = parse(end);
-        const other = `${x + dx}_${y + dy}`;
+        const [x, y] = hexPair(end);
+        const other = hexKey(x + dx, y + dy);
         if (shadow.get(other)?.map !== map) continue;
         for (const mine of ownChains) {
           if (mine.typeName !== theirs.typeName) continue;

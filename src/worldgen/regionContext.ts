@@ -3,6 +3,7 @@ import { hexNeighbors } from "../../packages/hex-wfc/src";
 import { neighbourShadow, type NewRegion } from "./neighbours";
 import { behaviourOf, pairCrossings } from "./procedural/contextPaths";
 import type { ContextTerrain, GenerationContext } from "./procedural/common";
+import { hexKey, hexPair } from "../hexKey";
 
 /**
  * Generation context for a new region placed next to existing ones (the
@@ -35,12 +36,12 @@ export function buildRegionContext(plugin: HexmakerPlugin, region: NewRegion): G
   for (const [key, cell] of shadow) {
     const map = plugin.getMap(cell.map);
     if (!map) continue;
-    const there = `${cell.x}_${cell.y}`;
+    const there = hexKey(cell.x, cell.y);
     for (const chain of plugin.paths.resolvedPathChains(cell.map)) {
       if (!chain.hexes.includes(there)) continue;
-      const [sx, sy] = key.split("_").map(Number);
+      const [sx, sy] = hexPair(key);
       const inside = hexNeighbors(sx, sy, orientation, region.stagger).find(([nx, ny]) => inGrid(nx, ny));
-      if (inside) crossings.push({ type: chain.typeName, ...behaviourOf(pathTypeOf(cell.map, chain.typeName)), hex: `${inside[0]}_${inside[1]}` });
+      if (inside) crossings.push({ type: chain.typeName, ...behaviourOf(pathTypeOf(cell.map, chain.typeName)), hex: hexKey(inside[0], inside[1]) });
     }
   }
   const paths = pairCrossings(crossings, {

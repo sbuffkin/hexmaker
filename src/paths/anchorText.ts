@@ -12,6 +12,7 @@
  */
 
 import type { HexKey } from "../types";
+import { hexKey } from "../hexKey";
 
 export type ParseAnchorsResult = { anchors: HexKey[] } | { error: string };
 
@@ -56,8 +57,6 @@ function readNumbers(text: string): number[] | string {
   return out;
 }
 
-const key = (x: number, y: number): HexKey => `${x}_${y}`;
-
 /**
  * Read a Path routes `Anchors` cell. Returns the anchors as hex keys, or an
  * error message (for the map note's warning callout) when the cell can't be
@@ -78,7 +77,7 @@ export function parseAnchors(cell: string): ParseAnchorsResult {
       if (nums.length !== 2) {
         return { error: `"${piece}" isn't one coordinate (expected x, y)` };
       }
-      anchors.push(key(nums[0], nums[1]));
+      anchors.push(hexKey(nums[0], nums[1]));
     }
     if (!anchors.length) return { error: "no anchors" };
     return { anchors };
@@ -91,6 +90,6 @@ export function parseAnchors(cell: string): ParseAnchorsResult {
     return { error: `an odd number of coordinates (${nums.length}): every anchor needs an x and a y` };
   }
   const anchors: HexKey[] = [];
-  for (let i = 0; i < nums.length; i += 2) anchors.push(key(nums[i], nums[i + 1]));
+  for (let i = 0; i < nums.length; i += 2) anchors.push(hexKey(nums[i], nums[i + 1]));
   return { anchors };
 }

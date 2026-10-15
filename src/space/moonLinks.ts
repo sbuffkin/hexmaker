@@ -11,6 +11,7 @@ import type { MapOverlayDef } from "../modules/types";
 import { effectiveTerrainType } from "../terrainTypes";
 import { hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import { latticeCenter, type LatticeGrid, type Pt } from "../paths/pathGeometry";
+import { hexKey, hexXY } from "../hexKey";
 
 export const MOON_TYPES: readonly string[] = ["moon"];
 export const PLANET_TYPES: readonly string[] = ["world", "gas-giant"];
@@ -30,9 +31,9 @@ export function moonPlanetLinks(
   const out: [string, string][] = [];
   for (const key of [...terrainAt.keys()].sort()) {
     if (!MOON_TYPES.includes(typeAt(key) ?? "")) continue;
-    const [x, y] = key.split("_").map(Number);
+    const { x, y } = hexXY(key);
     for (const [nx, ny] of hexNeighbors(x, y, orientation, stagger)) {
-      const n = `${nx}_${ny}`;
+      const n = hexKey(nx, ny);
       if (PLANET_TYPES.includes(typeAt(n) ?? "")) out.push([key, n]);
     }
   }

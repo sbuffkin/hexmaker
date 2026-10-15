@@ -24,6 +24,7 @@ import type { DrawingMode } from "../toolMode";
 import type { TokenSnap } from "../undoItems";
 import type { PathOverlay } from "./pathOverlay";
 import type { UndoController } from "./undoController";
+import { hexPair } from "../../hexKey";
 
 /** The link tools: each paints one note (or map) chosen in its picker. */
 const LINK_TOOLS = {
@@ -453,7 +454,7 @@ export abstract class ToolState {
           this.host.pathTool.selectPath(name);
           // Show it: the list is for paths that are hard to find on the map.
           const first = this.host.plugin.mapStore.paths(this.host.activeMapName()).find((q) => q.name === name)?.branches[0]?.anchors[0];
-          if (first) { const [hx, hy] = first.split("_").map(Number); this.host.centerOnHex(hx, hy); }
+          if (first) { const [hx, hy] = hexPair(first); this.host.centerOnHex(hx, hy); }
           this.updateToolbarButtonStates();
           this.host.pathLayer.updatePathOverlay();
         },

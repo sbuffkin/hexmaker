@@ -2,6 +2,7 @@ import { hexCenter, hexNeighbors, mulberry32 } from "../../../packages/hex-wfc/s
 import type { TerrainColor } from "../../types";
 import { effectiveTerrainType } from "../../terrainTypes";
 import { SIDE_VECTORS, cellKey, centerHex, gridKeys, type ContextPath, type ProcGrid, type ProcPath, type Side } from "./common";
+import { hexPair, hexXY } from "../../hexKey";
 
 /**
  * Continue the parent hex's paths across a submap: each enters at the
@@ -63,7 +64,7 @@ export function routeContextPaths(
   const out: ProcPath[] = [];
   paths.forEach((p, n) => {
     if (!p.from && !p.to && !p.fromHex && !p.toHex) return;
-    const at = (k: string | undefined) => (k && inGrid.has(k) ? (k.split("_").map(Number) as [number, number]) : undefined);
+    const at = (k: string | undefined) => (k && inGrid.has(k) ? hexPair(k) : undefined);
     const start = at(p.fromHex) ?? (p.from ? edgeHex(grid, p.from) : centerHex(grid));
     const end = at(p.toHex) ?? (p.to ? edgeHex(grid, p.to) : centerHex(grid));
     const sk = cellKey(start[0], start[1]), ek = cellKey(end[0], end[1]);
@@ -84,7 +85,7 @@ export function routeContextPaths(
       const t = cells.get(k);
       const type = t ? typeByName.get(t) : undefined;
       let c = (type ? costs[type] : undefined) ?? 1;
-      const [hx, hy] = k.split("_").map(Number);
+      const [hx, hy] = hexPair(k);
       const [px, py] = hexCenter(hx, hy, grid.orientation, grid.stagger);
       c += stray * Math.abs((bx - ax) * (ay - py) - (ax - px) * (by - ay)) / len / Math.sqrt(3);
       if (winding) {
@@ -107,7 +108,7 @@ export function routeContextPaths(
       open.delete(cur);
       if (cur === ek) break;
       done.add(cur);
-      const [x, y] = cur.split("_").map(Number);
+      const { x, y } = hexXY(cur);
       for (const [nx, ny] of hexNeighbors(x, y, grid.orientation, grid.stagger)) {
         const nk = cellKey(nx, ny);
         if (!inGrid.has(nk) || done.has(nk)) continue;
@@ -148,7 +149,7 @@ export function pairCrossings(
 ): ContextPath[] {
   const [mx, my] = hexCenter(...centerHex(grid), grid.orientation, grid.stagger);
   const angle = (k: string) => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const [px, py] = hexCenter(x, y, grid.orientation, grid.stagger);
     return Math.atan2(py - my, px - mx);
   };

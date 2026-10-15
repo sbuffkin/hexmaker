@@ -24,6 +24,7 @@ import type { HexData } from "../maps/mapNote";
 import type { HexProps } from "../maps/hexProps";
 import type { RefLinker } from "../modules/types";
 import type { MigrationInfo } from "./types";
+import { hexXY } from "../hexKey";
 
 /** What the rewrites need from the plugin. */
 export interface NoteFormatHost {
@@ -93,7 +94,7 @@ export function hexNotes(host: NoteFormatHost): { file: TFile; map: string; x: n
     if (!HEX_FILE.test(file.name)) continue;
     const loc = host.mapStore.resolve(file.path);
     if (!loc || !known.has(loc.map)) continue;
-    const [x, y] = loc.key.split("_").map(Number);
+    const { x, y } = hexXY(loc.key);
     out.push({ file, map: loc.map, x, y });
   }
   return out.sort((a, b) => a.file.path.localeCompare(b.file.path));

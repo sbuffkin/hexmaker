@@ -62,6 +62,7 @@ import {
   type ArrivalReport,
   type PlaceSetup,
 } from "./arrival";
+import { hexKey, hexPair, hexXY } from "../hexKey";
 
 /** What a hex's On arrival roll gave. */
 export interface HexResolution {
@@ -84,7 +85,6 @@ function eventLines(events: readonly FiredEvent[]): string[] {
 /** The submap size when nothing else says (SUBMAP_SIZE_PRESETS' Medium). */
 const DEFAULT_PLACE_SIZE = { cols: 13, rows: 13 };
 
-const keyOf = (x: number, y: number) => `${x}_${y}`;
 const hexText = (key: string) => key.replace("_", ", ");
 
 export class ArrivalService {
@@ -95,7 +95,7 @@ export class ArrivalService {
     const { plugin } = this;
     if (!plugin.getMap(mapName)) return "No such map.";
     if (plugin.arrivalModeFor(mapName).mode !== "make") return "off";
-    const key = keyOf(x, y);
+    const key = hexKey(x, y);
     const h = plugin.mapStore.get(mapName, key);
     if (h?.locked) return "This hex is locked.";
     const wm = worldMaps();
@@ -157,7 +157,7 @@ export class ArrivalService {
    */
   async resolveHex(mapName: string, x: number, y: number, action: ModeAction): Promise<HexResolution | null> {
     const { plugin } = this;
-    const key = keyOf(x, y);
+    const key = hexKey(x, y);
     const cell = plugin.mapStore.get(mapName, key)?.onArrival;
     if (!cell) return null;
     const seed = arrivalSeed(this.seedOf(mapName), key, "arrival", 0);
@@ -224,7 +224,7 @@ export class ArrivalService {
     }
     if (this.isOverworld(mapName)) return this.arriveRegion(mapName, x, y);
     const parent = plugin.getMap(mapName)!;
-    const key = keyOf(x, y);
+    const key = hexKey(x, y);
     const pseed = this.seedOf(mapName);
     const resolution = await this.resolveHex(mapName, x, y, "discover");
     if (resolution?.kind === "nothing") {
@@ -324,7 +324,7 @@ export class ArrivalService {
     if (!map.parent) return false;
     if (map.submapKind === "region") return this.rerollRegion(mapName);
     const { map: parentName, hex } = map.parent;
-    const [x, y] = hex.split("_").map(Number);
+    const { x, y } = hexXY(hex);
     const n = (map.arrivalRerolls ?? 0) + 1;
     const seed = arrivalSeed(this.seedOf(parentName), hex, "submap", n);
     // The old landscape's once-only events go with it.
@@ -392,7 +392,7 @@ export class ArrivalService {
     const region: NewRegion | undefined = map.world
       ? { slot: map.world, cols: grid.cols, rows: grid.rows, offset: { ...grid.offset }, stagger, paletteName: map.paletteName }
       : undefined;
-    const [px, py] = (map.parent?.hex ?? "0_0").split("_").map(Number);
+    const [px, py] = hexPair(map.parent?.hex ?? "0_0");
     const context = region ? buildRegionContext(plugin, region) : map.parent ? buildSubmapContext(plugin, map.parent.map, px, py) : undefined;
     const seed = nextRecipeSeed(recipe.seed);
     await plugin.events.forgetMap(mapName);
@@ -443,7 +443,7 @@ export class ArrivalService {
     const wm = worldMaps();
     if (!wm) return null;
     const parent = plugin.getMap(mapName)!;
-    const key = keyOf(x, y);
+    const key = hexKey(x, y);
     const pseed = this.seedOf(mapName);
     const resolution = await this.resolveHex(mapName, x, y, "discover");
     if (resolution?.kind === "nothing") {

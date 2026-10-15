@@ -5,6 +5,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { filterByQuery, moveItem } from "../maps/submaps";
 import { canDo } from "../modeGate";
 import { lockedHint } from "../workMode";
+import { hexKey } from "../hexKey";
 
 export interface LocationsModalActions {
   open: (map: string) => void;
@@ -36,7 +37,7 @@ export class LocationsModal extends HexmakerModal {
   }
 
   private locations(): string[] {
-    return [...(this.plugin.mapStore.get(this.mapName, `${this.x}_${this.y}`)?.locations ?? [])];
+    return [...(this.plugin.mapStore.get(this.mapName, hexKey(this.x, this.y))?.locations ?? [])];
   }
 
   onOpen(): void {

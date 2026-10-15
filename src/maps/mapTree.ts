@@ -11,6 +11,8 @@
  * its world id, so a later "super map" of a world's regions can hang off it.
  */
 
+import { compareHexKeys } from "../hexKey";
+
 export interface NamedMap {
   name: string;
   displayName?: string;
@@ -114,9 +116,7 @@ export function buildMapTree<T extends NamedMap>(maps: T[], parentOf: (name: str
 
 /** Reading order of "x_y" hexes: by row, then column. */
 function hexOrder(a: string, b: string): number {
-  const [ax, ay] = a.split("_").map(Number);
-  const [bx, by] = b.split("_").map(Number);
-  return (ay - by) || (ax - bx) || a.localeCompare(b);
+  return compareHexKeys(a, b) || a.localeCompare(b);
 }
 
 /** A world group's label: its regions' names, the first few. */

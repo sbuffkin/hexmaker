@@ -8,6 +8,7 @@ import { HEX_MAP_KEY, isMapNoteLink, LEGACY_HEX_MAP_KEY } from "../noteFormats";
 import { ENGINE_ROLES } from "../worldgen/tableRoles";
 import { registry } from "../modules";
 import { splitRow } from "../md/tableRow";
+import { compareHexKeys, hexKey } from "../hexKey";
 
 /**
  * Map notes: one note per map ("hexes/<map>/_<map>.md") holding the map's
@@ -666,7 +667,7 @@ export function parseHexKey(raw: string): string | null {
   let s = unlink(raw);
   s = s.slice(s.lastIndexOf("/") + 1).replace(/\.md$/i, "");
   const m = /^\(?\s*(-?\d+)\s*(?:[_,;]|\s)\s*(-?\d+)\s*\)?$/.exec(s);
-  return m ? `${Number(m[1])}_${Number(m[2])}` : null;
+  return m ? hexKey(Number(m[1]), Number(m[2])) : null;
 }
 
 const TRUE_WORDS = /^(yes|true|y|x|on|1|✓|✔|☑)$/i;
@@ -1099,13 +1100,6 @@ function locateTable(lines: string[], section: string, aliases: Record<string, s
 function sectionHasRows(lines: string[], range: [number, number]): boolean {
   for (let i = range[0]; i < range[1]; i++) if (/^\s*\|/.test(lines[i])) return true;
   return false;
-}
-
-/** Sort "x_y" keys by row then column, like reading a map. */
-export function compareHexKeys(a: string, b: string): number {
-  const [ax, ay] = a.split("_").map(Number);
-  const [bx, by] = b.split("_").map(Number);
-  return ay - by || ax - bx;
 }
 
 /** Anything besides terrain set on a hex. */
@@ -1712,7 +1706,7 @@ export function terrainCounts(
   const g = s.gridSize, o = s.gridOffset ?? { x: 0, y: 0 };
   if (g && g.cols > 0 && g.rows > 0) {
     for (let y = o.y; y < o.y + g.rows; y++) {
-      for (let x = o.x; x < o.x + g.cols; x++) count(hexes.get(`${x}_${y}`)?.terrain || base);
+      for (let x = o.x; x < o.x + g.cols; x++) count(hexes.get(hexKey(x, y))?.terrain || base);
     }
   } else {
     for (const h of hexes.values()) if (h.terrain) count(h.terrain);

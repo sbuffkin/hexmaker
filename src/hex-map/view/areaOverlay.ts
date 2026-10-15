@@ -23,6 +23,7 @@ import type { DrawingMode } from "../toolMode";
 import type { FactionUndoEntry, RegionUndoEntry } from "../undoItems";
 import { areaLabelPlacement, buildAreaSvg } from "./areaShapes";
 import type { UndoController } from "./undoController";
+import { hexKey } from "../../hexKey";
 
 export interface AreaOverlayHost {
   plugin: HexmakerPlugin;
@@ -221,7 +222,7 @@ export class AreaOverlay {
       const gy = Number(hexEl.dataset.y);
       const hexPath = this.host.plugin.hexPath(gx, gy, this.host.activeMapName());
       const links = this.getFactionLinksFromCache(hexPath);
-      const key = `${gx}_${gy}`;
+      const key = hexKey(gx, gy);
       for (const link of links) {
         if (!factionHexKeys.has(link)) factionHexKeys.set(link, []);
         factionHexKeys.get(link)!.push(key);
@@ -378,7 +379,7 @@ export class AreaOverlay {
       const hexFilePath = this.host.plugin.hexPath(gx, gy, this.host.activeMapName());
       const regionName = this.getHexRegionFromCache(hexFilePath);
       if (!regionName) continue;
-      const key = `${gx}_${gy}`;
+      const key = hexKey(gx, gy);
       if (!regionHexKeys.has(regionName)) regionHexKeys.set(regionName, []);
       regionHexKeys.get(regionName)!.push(key);
     }

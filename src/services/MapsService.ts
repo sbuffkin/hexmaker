@@ -37,6 +37,7 @@ import {
 import type { RegionSettings } from "../types";
 import { displayNameFor, mapLabel } from "../maps/mapTree";
 import type HexmakerPlugin from "../HexmakerPlugin";
+import { hexKey, strictHexXY } from "../hexKey";
 
 /** What MapsService uses of the plugin. */
 export type MapsHost = Pick<HexmakerPlugin, "app" | "manifest" | "ensureOverworldBiomes" | "ensurePaletteInstalled" | "events" | "getMap" | "getMapPalette" | "mapLabel" | "mapStore" | "parentOf" | "refreshHexMap" | "roleTablesFor" | "saveSettings" | "settings" | "syncMapCoordAliases" | "tableNotes" | "undoBook">;
@@ -122,9 +123,9 @@ export class MapsService {
       let minY = Infinity, maxY = -Infinity;
       for (const file of child.children) {
         if (!(file instanceof TFile)) continue;
-        const m = file.basename.match(/^(-?\d+)_(-?\d+)$/);
-        if (!m) continue;
-        const x = parseInt(m[1]), y = parseInt(m[2]);
+        const at = strictHexXY(file.basename);
+        if (!at) continue;
+        const { x, y } = at;
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -310,7 +311,7 @@ export class MapsService {
    */
   async linkSubmap(parentMap: string, x: number, y: number, childMap: string, action: ModeAction = "link-map"): Promise<void> {
     if (childMap === parentMap) return;
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     const patch = addLocationPatch(this.plugin.mapStore.get(parentMap, key), childMap);
     if (patch.locations && !this.plugin.mapStore.set(parentMap, key, patch, action)) return;
     this.noParentMaps.clear();
@@ -328,7 +329,7 @@ export class MapsService {
    * Refused when the hex already has another region (one per hex).
    */
   async linkRegion(parentMap: string, x: number, y: number, childMap: string): Promise<boolean> {
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     const other = regionMapAt(this.plugin.settings.maps, parentMap, key);
     if (childMap === parentMap || (other && other.name !== childMap)) return false;
     const child = this.plugin.getMap(childMap);
@@ -346,7 +347,7 @@ export class MapsService {
    * region and/or locations. A child whose parent was this hex loses it.
    */
   async unlinkSubmap(parentMap: string, x: number, y: number, childMap?: string): Promise<void> {
-    const key = `${x}_${y}`;
+    const key = hexKey(x, y);
     const h = this.plugin.mapStore.get(parentMap, key);
     const names = childMap ? [childMap] : hexChildMaps(h);
     let changed = false;
@@ -367,7 +368,7 @@ export class MapsService {
 
   /** Reorder the Locations of hex (x, y). */
   setHexLocations(parentMap: string, x: number, y: number, locations: string[]): void {
-    this.plugin.mapStore.set(parentMap, `${x}_${y}`, { locations: locations.length ? locations : null }, "link-map");
+    this.plugin.mapStore.set(parentMap, hexKey(x, y), { locations: locations.length ? locations : null }, "link-map");
   }
 
   /** Save region settings on `mapName` (fixed fields stay put while it has regions). */

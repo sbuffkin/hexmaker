@@ -33,6 +33,7 @@ import { sameName } from "../hexBodyFields";
 import { lockedHint } from "../workMode";
 import { needsWrite, planPropsSync, propsOf, readProps, setPropsInText, type HexProps, type NoteProps, type PropField } from "./hexProps";
 import { logError } from "../log";
+import { hexKey, hexXY } from "../hexKey";
 
 /** What the sync needs from the plugin. */
 export interface HexPropsHost {
@@ -127,7 +128,7 @@ export class HexPropsSync {
   /** The properties a new hex note starts with (createHexNote), remembered as written. */
   withProps(content: string, map: string, x: number, y: number, path: string): string {
     if (!this.enabled) return content;
-    const props = propsOf(this.host.mapStore.get(map, `${x}_${y}`));
+    const props = propsOf(this.host.mapStore.get(map, hexKey(x, y)));
     const next = setPropsInText(content, props);
     if (next !== content) this.rememberShown(path, props);
     return next;
@@ -324,7 +325,7 @@ export class HexPropsSync {
   /** Put hand edits on the map (one undo step, through the work-mode gate). */
   private async importEdits(map: string, key: string, path: string, imports: Partial<Record<PropField, string | null>>, refused: Refusal[]): Promise<void> {
     const store = this.host.mapStore;
-    const [x, y] = key.split("_").map(Number);
+    const { x, y } = hexXY(key);
     await this.host.undoableEdit(map, async () => {
       for (const [field, value] of Object.entries(imports) as [PropField, string | null][]) {
         if (field === "name") {

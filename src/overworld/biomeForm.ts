@@ -13,6 +13,7 @@ import { climateKeyValues, readClimate, type BiomeClimate, type ClimateElevation
 import { profileFromFields, type BiomeId } from "./biomes";
 import { planRegion, paletteTypeOf, type RegionPlan } from "./regionWorld";
 import type { RegionLayout } from "./layout";
+import { hexKey } from "../hexKey";
 
 // ── routing ──────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ export function formProblem(s: BiomeFormState, others: { id: string; label: stri
 export function previewRegion(layout: RegionLayout, palette: TerrainColor[], fields: BiomeNoteFields, seed: number): RegionPlan {
   const id: BiomeId = fields.id;
   const biomes = new Map<string, BiomeId>([["0_0", id]]);
-  for (const [x, y] of hexNeighbors(0, 0, layout.orientation, layout.parentStagger)) biomes.set(`${x}_${y}`, id);
+  for (const [x, y] of hexNeighbors(0, 0, layout.orientation, layout.parentStagger)) biomes.set(hexKey(x, y), id);
   const profile = profileFromFields({ ...fields, id }, palette);
   return planRegion({
     layout,

@@ -12,6 +12,7 @@
 
 import { hexCenter, hexNeighbors, type Orientation, type Stagger } from "../../packages/hex-wfc/src/grid";
 import { childNeighbours, childPoint, parentOf, regionCentrePoint, type RegionLayout } from "./layout";
+import { hexKey, hexXY } from "../hexKey";
 
 /** The bits of CanvasRenderingContext2D the drawing uses. */
 export interface Ctx2D {
@@ -222,7 +223,7 @@ export function drawRegionCells(
   opts: { seams?: boolean; seamColour?: string; seamWidth?: number } = {},
 ): void {
   const s = affineScale(toCanvas);
-  const own = new Set(cells.map((c) => `${c.x}_${c.y}`));
+  const own = new Set(cells.map((c) => hexKey(c.x, c.y)));
   for (const c of cells) {
     const [px, py] = childPoint(layout, c.x, c.y);
     const [X, Y] = applyAffine(toCanvas, px, py);
@@ -236,7 +237,7 @@ export function drawRegionCells(
   for (const c of cells) {
     const [ax, ay] = childPoint(layout, c.x, c.y);
     for (const [nx, ny] of childNeighbours(layout, c.x, c.y)) {
-      if (own.has(`${nx}_${ny}`)) continue;
+      if (own.has(hexKey(nx, ny))) continue;
       const [bx, by] = childPoint(layout, nx, ny);
       // The shared edge: through the midpoint, perpendicular, one hex side long.
       const mx = (ax + bx) / 2, my = (ay + by) / 2;
@@ -337,7 +338,7 @@ export function drawMiniOverworld(ctx: Ctx2D, l: MiniLayout, hexes: MiniHex[], r
   }
   drawRiver(ctx, river, (x, y) => miniPoint(l, x, y), 3);
   if (highlight) {
-    const [x, y] = highlight.split("_").map(Number);
+    const { x, y } = hexXY(highlight);
     const [cx, cy] = miniPoint(l, x, y);
     hexPath(ctx, cx, cy, l.size * 0.92, l.orientation);
     ctx.strokeStyle = "#f59e0b";
@@ -351,7 +352,7 @@ export function drawRiver(ctx: Ctx2D, river: string[], at: (x: number, y: number
   if (river.length < 2) return;
   ctx.beginPath();
   river.forEach((k, i) => {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const [X, Y] = at(x, y);
     if (i) ctx.lineTo(X, Y); else ctx.moveTo(X, Y);
   });

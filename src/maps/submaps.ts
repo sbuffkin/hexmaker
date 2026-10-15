@@ -11,6 +11,7 @@
 
 import type { MapData, RegionSettings, SubmapKind } from "../types";
 import type { HexData } from "./mapNote";
+import { compareHexKeys } from "../hexKey";
 
 /** A child map's role: "region" only when marked so; any other child is a location (K8). */
 export function submapKindOf(map: Pick<MapData, "parent" | "submapKind"> | undefined): SubmapKind | undefined {
@@ -111,17 +112,11 @@ export function filterByQuery<T extends { name: string; label: string }>(items: 
 
 // ── regions of a map ─────────────────────────────────────────────────────
 
-const hexOrder = (a: string, b: string) => {
-  const [ax, ay] = a.split("_").map(Number);
-  const [bx, by] = b.split("_").map(Number);
-  return ay - by || ax - bx;
-};
-
 /** The region maps of `parent`, in reading order of their parent hexes. */
 export function regionsOf<T extends Pick<MapData, "name" | "parent" | "submapKind">>(maps: T[], parent: string): T[] {
   return maps
     .filter((m) => m.submapKind === "region" && m.parent?.map === parent)
-    .sort((a, b) => hexOrder(a.parent!.hex, b.parent!.hex));
+    .sort((a, b) => compareHexKeys(a.parent!.hex, b.parent!.hex));
 }
 
 /**

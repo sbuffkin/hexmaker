@@ -42,6 +42,7 @@ import { MapShell } from "./view/mapShell";
 import { WorkModeButton } from "./view/workModeButton";
 import type { DrawingMode } from "./toolMode";
 import type { TokenSnap } from "./undoItems";
+import { hexKey, hexPair, hexXY } from "../hexKey";
 
 export class HexMapView extends ItemView {
   plugin: HexmakerPlugin;
@@ -149,7 +150,7 @@ export class HexMapView extends ItemView {
       typeChanged: () => this.toolbar.updateToolbarButtonStates(),
       neighbourStrip: () => this.shadow.strip(this.activeMapName),
       openNeighbour: (map, hex, arm) => {
-        const [x, y] = hex.split("_").map(Number);
+        const { x, y } = hexXY(hex);
         this.nav.goToRegionHex(map, x, y);
         this.drawingMode = "path";
         arm();
@@ -676,8 +677,7 @@ export class HexMapView extends ItemView {
 
   /** Is overworld hex "x_y" on the open map's grid (an empty brick there can take a biome)? */
   private emptySlotOnMap(hex: string): boolean {
-    const [px, py] = hex.split("_").map(Number);
-    return !!this.wm?.inOverworldGrid(this.getActiveMap(), px, py);
+    return !!this.wm?.inOverworldGrid(this.getActiveMap(), ...hexPair(hex));
   }
 
   /** Leave a different active tool before switching to `next` (the smoke suite drives this). */
@@ -894,8 +894,8 @@ export class HexMapView extends ItemView {
     // Play, a party token selected: a neighbouring hex is a step (SF5).
     if (!this.drawingMode && this.tokens.selectedParty && !e?.ctrlKey && !e?.metaKey && this.owView(this.getActiveMap()) !== "regions") {
       const party = this.activeParty();
-      if (party && partyClick(party, `${x}_${y}`, this.plugin.settings.hexOrientation, this.getActiveStagger()) === "move") {
-        await this.tokens.moveParty(party, `${x}_${y}`);
+      if (party && partyClick(party, hexKey(x, y), this.plugin.settings.hexOrientation, this.getActiveStagger()) === "move") {
+        await this.tokens.moveParty(party, hexKey(x, y));
         return;
       }
     }
@@ -908,8 +908,8 @@ export class HexMapView extends ItemView {
       const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
       const cell = ow === "regions" && e && grid ? this.overworldLayer?.cellAt(grid, e.clientX, e.clientY) ?? null : null;
       // The brick under the pointer in the Regions view, else the hex clicked.
-      const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
-      const region = cell ? cell.region : regionMapAt(this.plugin.settings.maps, this.activeMapName, `${x}_${y}`)?.name;
+      const [px, py] = cell ? hexPair(cell.parentHex) : [x, y];
+      const region = cell ? cell.region : regionMapAt(this.plugin.settings.maps, this.activeMapName, hexKey(x, y))?.name;
       // Past the overworld's edge (the gap beside the bricks): nothing to set there.
       if (!region && cell && !this.emptySlotOnMap(cell.parentHex)) return;
       const act = wm.overworldLeftClick(this.getActiveMap(), !!region);

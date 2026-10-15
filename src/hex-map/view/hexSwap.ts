@@ -10,6 +10,7 @@ import { normalizeFolder } from "../../utils";
 import type { HexWrites } from "./hexWrites";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
+import { hexKey } from "../../hexKey";
 
 export interface HexSwapHost {
   activeMapName(): string;
@@ -177,7 +178,7 @@ export class HexSwap {
     }
 
     if (!isUndoRedo) {
-      const at = (x: number, y: number) => this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`) ?? null;
+      const at = (x: number, y: number) => this.plugin.mapStore.get(this.activeMapName, hexKey(x, y)) ?? null;
       this.host.undos.pushUndo({ kind: "swap", x1, y1, x2, y2, after: [at(x1, y1), at(x2, y2)] });
       this.host.undos.updateUndoButton();
     }

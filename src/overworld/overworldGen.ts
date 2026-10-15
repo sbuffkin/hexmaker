@@ -41,6 +41,7 @@ import { createRegion, hexBiomeAt, overworldBiomeHexes, overworldOf, regenerateR
 import { unclimatedText, worldBiomes, type Unclimated, type WorldBiomesOptions, type WorldBiomesResult } from "./worldBiomes";
 import { newWorldId } from "../worldgen/world";
 import type { MapData, RegionSettings } from "../types";
+import { hexKey, hexPair } from "../hexKey";
 
 /** Hint shown where regenerating a whole overworld is locked. */
 export const REGENERATE_LOCKED_HINT = "Switch to God to regenerate the whole overworld.";
@@ -142,10 +143,10 @@ export function overworldCells(plugin: HexmakerPlugin, mapName: string): [number
   for (const m of plugin.settings.maps) if (m.submapKind === "region" && m.parent?.map === mapName) keys.add(m.parent.hex);
   if (!keys.size) {
     for (let y = map.gridOffset.y; y < map.gridOffset.y + map.gridSize.rows; y++) {
-      for (let x = map.gridOffset.x; x < map.gridOffset.x + map.gridSize.cols; x++) keys.add(`${x}_${y}`);
+      for (let x = map.gridOffset.x; x < map.gridOffset.x + map.gridSize.cols; x++) keys.add(hexKey(x, y));
     }
   }
-  return [...keys].map((k) => k.split("_").map(Number) as [number, number]);
+  return [...keys].map(hexPair);
 }
 
 /** World biomes for an overworld's cells from a pool. */
@@ -251,11 +252,11 @@ export async function regionPass(
   const out = { made: [] as string[], remade: [] as string[], waiting: 0, errors: [] as string[] };
   const ow = overworldOf(plugin, mapName);
   if (!ow) { out.errors.push("This map has no rectangle region settings."); return out; }
-  const order = regionOrder(cells.filter(([x, y]) => !opts.skip?.has(`${x}_${y}`)), ow.layout.orientation, ow.layout.parentStagger);
+  const order = regionOrder(cells.filter(([x, y]) => !opts.skip?.has(hexKey(x, y))), ow.layout.orientation, ow.layout.parentStagger);
   let done = 0;
   for (const [px, py] of order) {
     if (opts.cancelled?.()) break;
-    const hex = `${px}_${py}`;
+    const hex = hexKey(px, py);
     const terrain = plugin.mapStore.get(mapName, hex)?.terrain;
     const existing = regionMapAt(plugin.settings.maps, mapName, hex);
     // The hex's own biome: its Biome cell, else its region's, else its terrain's.

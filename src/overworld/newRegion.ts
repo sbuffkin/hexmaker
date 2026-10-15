@@ -30,6 +30,7 @@ import {
 import { gridToInclude } from "./regionWorld";
 import { clampNeighbourWeight, NEIGHBOUR_WEIGHT } from "../worldgen/neighbourWeight";
 import { ADD_REGION_LOCKED_HINT, canAdd } from "../workMode";
+import { hexKey } from "../hexKey";
 
 /** Walking into new land: where from, and which way ("south-east"). */
 export interface NewRegionWalk {
@@ -61,7 +62,7 @@ export const newDraftSeed = (): number => Math.floor(Math.random() * 1e9);
  * neither has one (the first paintable biome is picked by the modal).
  */
 export function startBiome(plugin: HexmakerPlugin, overworld: string, px: number, py: number, walk?: NewRegionWalk): BiomeId | undefined {
-  return walk ? walkFromBiome(plugin, walk.from) : hexBiomeAt(plugin, overworld, `${px}_${py}`);
+  return walk ? walkFromBiome(plugin, walk.from) : hexBiomeAt(plugin, overworld, hexKey(px, py));
 }
 
 /** A draft for hex (px, py): its start biome, a seed, the default weight. */

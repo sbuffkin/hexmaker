@@ -18,6 +18,7 @@ import type { BiomeNoteFields } from "./biomeNote";
 import { inRegion, regionBox } from "./layout";
 import { engineOverrides, tunedOrUnset } from "./biomeTuning";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
+import { hexKey, hexPair, hexXY } from "../hexKey";
 
 // Blending a hand-edited map into its biome (biomeBlend.ts), for the core's "Blend into" glue.
 export { blendBiomeFields, measureMap, type MapStats } from "./biomeBlend";
@@ -69,7 +70,7 @@ export function regionHome(plugin: HexmakerPlugin, regionName: string): { overwo
   if (m?.submapKind !== "region" || !m.parent) return undefined;
   const ow = overworldOf(plugin, m.parent.map);
   if (!ow) return undefined;
-  const [px, py] = m.parent.hex.split("_").map(Number);
+  const [px, py] = hexPair(m.parent.hex);
   return { overworld: ow.map, layout: ow.layout, px, py };
 }
 
@@ -98,8 +99,8 @@ export function overworldTerrain(plugin: HexmakerPlugin, map: MapData): Map<stri
   const out = new Map<string, string>();
   const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
   for (let y = oy; y < oy + rows; y++) for (let x = ox; x < ox + cols; x++) {
-    const t = plugin.mapStore.get(map.name, `${x}_${y}`)?.terrain ?? map.baseTerrain;
-    if (t) out.set(`${x}_${y}`, t);
+    const t = plugin.mapStore.get(map.name, hexKey(x, y))?.terrain ?? map.baseTerrain;
+    if (t) out.set(hexKey(x, y), t);
   }
   return out;
 }
@@ -144,7 +145,7 @@ export function overworldBiomeHexes(plugin: HexmakerPlugin, map: MapData): strin
   const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
   for (const [k, h] of plugin.mapStore.all(map.name)) {
     if (!h.biome || out.has(k)) continue;
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     if (x >= ox && x < ox + cols && y >= oy && y < oy + rows) out.add(k);
   }
   return [...out];
@@ -169,7 +170,7 @@ export function hexBiomeAt(plugin: HexmakerPlugin, overworldName: string, hex: s
  */
 export function walkFromBiome(plugin: HexmakerPlugin, regionName: string): BiomeId | undefined {
   const home = regionHome(plugin, regionName);
-  return home ? hexBiomeAt(plugin, home.overworld.name, `${home.px}_${home.py}`) : undefined;
+  return home ? hexBiomeAt(plugin, home.overworld.name, hexKey(home.px, home.py)) : undefined;
 }
 
 /**
@@ -201,7 +202,7 @@ async function ensureMeshFields(plugin: HexmakerPlugin, map: MapData): Promise<R
 function pinnedAround(plugin: HexmakerPlugin, parentName: string, layout: RegionLayout, px: number, py: number): Map<string, string> {
   const out = new Map<string, string>();
   for (const [qx, qy] of hexNeighbors(px, py, layout.orientation, layout.parentStagger)) {
-    const r = regionMapAt(plugin.settings.maps, parentName, `${qx}_${qy}`);
+    const r = regionMapAt(plugin.settings.maps, parentName, hexKey(qx, qy));
     if (!r) continue;
     for (const [k, h] of plugin.mapStore.all(r.name)) if (h.terrain) out.set(k, h.terrain);
   }
@@ -258,17 +259,17 @@ function regionInputs(plugin: HexmakerPlugin, parentName: string, px: number, py
   const owPalette = plugin.getMapPalette(ow.map.name);
   const grid = opts.previewGrid ? { ...ow.map, gridOffset: opts.previewGrid.offset, gridSize: opts.previewGrid.size } : ow.map;
   const terrain = overworldTerrain(plugin, grid);
-  if (opts.hexTerrain) terrain.set(`${px}_${py}`, opts.hexTerrain);
+  if (opts.hexTerrain) terrain.set(hexKey(px, py), opts.hexTerrain);
   const placed = placedBiomes(plugin, parentName);
-  if (opts.biome) placed.set(`${px}_${py}`, opts.biome);
+  if (opts.biome) placed.set(hexKey(px, py), opts.biome);
   const biomes = overworldBiomes(terrain, owPalette, ow.layout.orientation, ow.layout.parentStagger, placed);
-  const ownBiome = biomes.get(`${px}_${py}`);
+  const ownBiome = biomes.get(hexKey(px, py));
   const ownNote = ownBiome ? biomeNoteOf(ownBiome) : undefined;
   // A blank biome's hexes are painted by hand: they don't blend into their neighbours.
-  for (const [k, b] of biomes) if (isBlankBiome(b) && k !== `${px}_${py}`) biomes.delete(k);
+  for (const [k, b] of biomes) if (isBlankBiome(b) && k !== hexKey(px, py)) biomes.delete(k);
   const ws = worldSeed(ow.settings.worldId ?? ow.map.name);
   const pinned = pinnedAround(plugin, parentName, ow.layout, px, py);
-  const own = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  const own = regionMapAt(plugin.settings.maps, parentName, hexKey(px, py));
   if (own) for (const [k, h] of plugin.mapStore.all(own.name)) if (h.locked && h.terrain) pinned.set(k, h.terrain);
   const seed = opts.seed ?? own?.regionSeed ?? ws;
   const plan = () => planRegion({
@@ -318,7 +319,7 @@ export async function planRegionWithGenerator(plugin: HexmakerPlugin, parentName
     palette: pal,
     bounds: { cols: box.cols, rows: box.rows, offset: { x: box.x, y: box.y }, stagger: ow.layout.childStagger },
     mask: (k) => {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       return inRegion(ow.layout, px, py, x, y);
     },
     pinned,
@@ -354,7 +355,7 @@ export async function planBiomePreview(plugin: HexmakerPlugin, overworldName: st
     palette: pal,
     bounds: { cols: box.cols, rows: box.rows, offset: { x: box.x, y: box.y }, stagger: ow.layout.childStagger },
     mask: (k) => {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       return inRegion(ow.layout, 0, 0, x, y);
     },
     pinned: new Map(),
@@ -399,7 +400,7 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
   // A region always has its hex on the overworld (walkIntoHex grows the map first). One
   // past the edge has no neighbours to blend with and is drawn apart from the rest.
   if (!inOverworldGrid(parent, px, py)) return { error: OUTSIDE_OVERWORLD_HINT };
-  const hex = `${px}_${py}`;
+  const hex = hexKey(px, py);
   const existing = regionMapAt(plugin.settings.maps, parentName, hex);
   if (existing) return { error: `This hex's region is ${plugin.mapLabel(existing.name)}.` };
   const settings = await ensureMeshFields(plugin, parent);
@@ -449,7 +450,7 @@ export async function createRegion(plugin: HexmakerPlugin, parentName: string, p
  * has none (painted hexes are never touched). Returns the terrain set, if any.
  */
 export async function fillBlankParent(plugin: HexmakerPlugin, parentName: string, px: number, py: number, regionName: string): Promise<string | undefined> {
-  const hex = `${px}_${py}`;
+  const hex = hexKey(px, py);
   if (plugin.mapStore.get(parentName, hex)?.terrain) return undefined;
   const region = plugin.getMap(regionName);
   if (!region) return undefined;
@@ -470,7 +471,7 @@ export function missingRegionHexes(plugin: HexmakerPlugin, parentName: string): 
   const out: [number, number][] = [];
   for (const k of overworldBiomeHexes(plugin, map)) {
     if (regionMapAt(plugin.settings.maps, parentName, k)) continue;
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     out.push([x, y]);
   }
   return out;
@@ -514,7 +515,7 @@ export async function generateMissingRegions(
  */
 export function reshapeLock(plugin: HexmakerPlugin, parentName: string, px: number, py: number): string | undefined {
   const map = plugin.getMap(parentName);
-  const region = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  const region = regionMapAt(plugin.settings.maps, parentName, hexKey(px, py));
   if (!region) return canAdd(map) ? undefined : PLACE_LOCKED_HINT;
   return canChangeRegion(map, region) ? undefined : regionChangeHint(region);
 }
@@ -533,7 +534,7 @@ export async function regenerateRegion(plugin: HexmakerPlugin, regionName: strin
   const region = plugin.getMap(regionName);
   if (region?.submapKind !== "region" || !region.parent) return 0;
   if (!opts.arrival && !canChangeRegion(plugin.getMap(region.parent.map), region)) return 0; // see reshapeGate
-  const [px, py] = region.parent.hex.split("_").map(Number);
+  const [px, py] = hexPair(region.parent.hex);
   const planned = await planOrError(plugin, region.parent.map, px, py, opts);
   if (planned && "error" in planned) {
     new Notice(planned.error);
@@ -581,7 +582,7 @@ export async function setBiomeAt(
   const blank = isBlankBiome(biome);
   const terrain = blank ? undefined : representativeTerrain(biome, plugin.getMapPalette(parentName));
   if (!blank && !terrain) return { error: "This map's palette has no terrain for that biome." };
-  const hex = `${px}_${py}`;
+  const hex = hexKey(px, py);
   const lock = reshapeLock(plugin, parentName, px, py);
   if (lock) return { error: lock };
   if (plugin.mapStore.get(parentName, hex)?.terrain !== terrain) plugin.mapStore.set(parentName, hex, { terrain: terrain ?? null });
@@ -606,7 +607,7 @@ export async function setBiomeAt(
 export async function paintBiomeHex(plugin: HexmakerPlugin, parentName: string, px: number, py: number, biome: BiomeId): Promise<BiomePaintResult<CellEdit>> {
   const map = plugin.getMap(parentName);
   if (!map || !inOverworldGrid(map, px, py)) return { step: "skip" };
-  const hex = `${px}_${py}`;
+  const hex = hexKey(px, py);
   const region = regionMapAt(plugin.settings.maps, parentName, hex);
   const step = biomePaintStep(map, !!region, hexBiomeAt(plugin, parentName, hex), biome, region);
   if (step.kind === "skip") return { step: "skip" };
@@ -661,7 +662,7 @@ export async function walkIntoHex(
   const lock = walkLock(plugin, opts.from ?? parentName, parentName);
   if (lock) return { error: lock };
   if (!overworldOf(plugin, parentName)) return { error: "This map has no rectangle region settings." };
-  const existing = regionMapAt(plugin.settings.maps, parentName, `${px}_${py}`);
+  const existing = regionMapAt(plugin.settings.maps, parentName, hexKey(px, py));
   if (existing) return { error: `That hex's region is ${plugin.mapLabel(existing.name)}.` };
   if (!isBlankBiome(biome) && !representativeTerrain(biome, plugin.getMapPalette(parentName))) return { error: "This map's palette has no terrain for that biome." };
   const grow = gridToInclude(parent.gridOffset, parent.gridSize, px, py);

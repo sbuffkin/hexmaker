@@ -3,6 +3,7 @@ import { HexmakerModal } from "../HexmakerModal";
 import { openNoteFocused } from "../openNote";
 import type { TokenEntry } from "../types";
 import { hexKeyCoords } from "./hexHover";
+import { hexXY } from "../hexKey";
 
 export class TokenInfoModal extends HexmakerModal {
   private renderComp: Component | undefined;
@@ -34,7 +35,7 @@ export class TokenInfoModal extends HexmakerModal {
       attr: { title: "Jump to hex" },
     });
     jumpBtn.addEventListener("click", () => {
-      const [x, y] = this.token.hex.split("_").map(Number);
+      const { x, y } = hexXY(this.token.hex);
       this.close();
       this.onCenter(x, y);
     });

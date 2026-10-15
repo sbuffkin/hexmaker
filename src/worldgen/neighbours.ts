@@ -21,6 +21,7 @@ import {
   type Side,
   type WorldSlot,
 } from "./world";
+import { hexKey, hexXY } from "../hexKey";
 
 export function gridRules(plugin: HexmakerPlugin): GridRules {
   return { orientation: plugin.settings.hexOrientation, stagger: plugin.settings.staggerOffset ?? "odd" };
@@ -179,14 +180,14 @@ export function solveWithRing(
 ): SolveResult {
   const { cols, rows, offset } = grid;
   const inGrid = (key: string) => {
-    const [x, y] = key.split("_").map(Number);
+    const { x, y } = hexXY(key);
     return x >= offset.x && x < offset.x + cols && y >= offset.y && y < offset.y + rows;
   };
   const keep = inside ? (key: string) => inGrid(key) && inside(key) : inGrid;
   // The ring one hex out (and the grid itself), where a pin is.
   const fixed = new Map<string, string>();
   for (const [k, t] of around) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     if (x >= offset.x - 1 && x <= offset.x + cols && y >= offset.y - 1 && y <= offset.y + rows) fixed.set(k, t);
   }
   const crop = (r: SolveResult): SolveResult => {
@@ -203,7 +204,7 @@ export function solveWithRing(
   let dropped = 0;
   let r = generateTerrain(plugin, model, paletteTerrains, ringGrid, seed, fixed);
   while (!r.ok && r.at && fixed.size && dropped < 40) {
-    const key = `${r.at.x}_${r.at.y}`;
+    const key = hexKey(r.at.x, r.at.y);
     if (!fixed.delete(key)) break;
     dropped++;
     r = generateTerrain(plugin, model, paletteTerrains, ringGrid, seed, fixed);

@@ -24,6 +24,7 @@ import { getTerrainFromFile } from "../../frontmatter";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { exportedMessage, withExportProvenance } from "../exportFolder";
 import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { strictHexXY } from "../../hexKey";
 
 /**
  * Hex section descriptor. To add a new section to the export:
@@ -226,9 +227,7 @@ function wrapInSection(title: string, body: string): string {
 export function parseHexCoord(
   basename: string,
 ): { x: number; y: number } | null {
-  const m = /^(-?\d+)_(-?\d+)$/.exec(basename);
-  if (!m) return null;
-  return { x: parseInt(m[1], 10), y: parseInt(m[2], 10) };
+  return strictHexXY(basename);
 }
 
 // ── File-IO helpers ──────────────────────────────────────────────────────

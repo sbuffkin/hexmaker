@@ -28,6 +28,7 @@ import type { HexKey } from "../types";
 import { hexNeighbors } from "../../packages/hex-wfc/src/grid";
 import { latticeCenter, type LatticeGrid, type Pt } from "./pathGeometry";
 import { pathNameKey } from "./names";
+import { hexKey } from "../hexKey";
 
 /** A strip hex (this map's frame) → which map and hex it is. */
 export interface StripRef {
@@ -69,7 +70,7 @@ const parse = (k: HexKey): [number, number] => {
 
 /** Neighbours of a hex in this map's lattice. */
 export function touchingKeys(key: HexKey, grid: LatticeGrid): HexKey[] {
-  return hexNeighbors(...parse(key), grid.orientation, grid.stagger).map(([x, y]) => `${x}_${y}`);
+  return hexNeighbors(...parse(key), grid.orientation, grid.stagger).map(([x, y]) => hexKey(x, y));
 }
 
 /** Each neighbour map's offset into this map's frame (maps in a world sit on one grid, shifted). */
@@ -100,7 +101,7 @@ export function seamHooks(
       if (!b.hexes.length) continue;
       const local = b.hexes.map((k) => {
         const [x, y] = parse(k);
-        return `${x + dx}_${y + dy}`;
+        return hexKey(x + dx, y + dy);
       });
       const ends: { at: number; step: 1 | -1 }[] = [];
       if (!b.forkFrom) ends.push({ at: 0, step: 1 });
@@ -198,5 +199,5 @@ export function crossFrom(
   const across = touchingKeys(activeEnd, grid).filter((k) => strip.has(k));
   const local = nearestKey(p, across, grid);
   const ref = local ? strip.get(local) : undefined;
-  return local && ref ? { map: ref.map, hex: `${ref.x}_${ref.y}`, local } : null;
+  return local && ref ? { map: ref.map, hex: hexKey(ref.x, ref.y), local } : null;
 }

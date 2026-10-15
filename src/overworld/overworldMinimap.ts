@@ -16,6 +16,7 @@ import { ecotoneHexes, overworldBiomes, parseBiomeRiver } from "./regionWorld";
 import { overworldOf, overworldTerrain, placedBiomes, regionHome } from "./regionsVault";
 import { OverworldLayer } from "./overworldLayer";
 import { BiomeLibraryModal } from "./BiomeLibraryModal";
+import { hexKey, hexXY } from "../hexKey";
 
 const W = 220, H = 180;
 
@@ -35,7 +36,7 @@ export class OverworldMinimap {
   /** The overworld this map shows a minimap of, and the hex to outline. */
   private target(map: MapData): { overworld: MapData; here?: string; isOverworld: boolean } | null {
     const home = regionHome(this.plugin, map.name);
-    if (home) return { overworld: home.overworld, here: `${home.px}_${home.py}`, isOverworld: false };
+    if (home) return { overworld: home.overworld, here: hexKey(home.px, home.py), isOverworld: false };
     if (overworldOf(this.plugin, map.name)) return { overworld: map, isOverworld: true };
     return null;
   }
@@ -97,7 +98,7 @@ export class OverworldMinimap {
     const hexes: MiniHex[] = [];
     // Painted hexes, and blank-biome hexes (a Biome cell, no terrain) in their biome's colour.
     for (const k of new Set([...terrain.keys(), ...biomes.keys()])) {
-      const [x, y] = k.split("_").map(Number);
+      const { x, y } = hexXY(k);
       const b = biomes.get(k);
       const terr = terrain.get(k);
       hexes.push({ x, y, color: (terr ? colour.get(terr) : b ? biomeNoteOf(b)?.color : undefined) ?? "#333", label: b ? biomeShortLabel(b) : undefined, ecotone: eco.has(k) });
@@ -116,14 +117,14 @@ export class OverworldMinimap {
     canvas.addEventListener("mousemove", (e) => {
       const r = canvas.getBoundingClientRect();
       const h = miniHexAt(l, hexes, ((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H);
-      const region = h ? regionMapAt(this.plugin.settings.maps, t.overworld.name, `${h.x}_${h.y}`) : undefined;
+      const region = h ? regionMapAt(this.plugin.settings.maps, t.overworld.name, hexKey(h.x, h.y)) : undefined;
       canvas.title = region ? `${this.plugin.mapLabel(region.name)}: click to go there` : h ? `Hex ${h.x}, ${h.y}: click to show it on the overworld` : "";
     });
     canvas.addEventListener("click", (e) => {
       const r = canvas.getBoundingClientRect();
       const h = miniHexAt(l, hexes, ((e.clientX - r.left) / r.width) * W, ((e.clientY - r.top) / r.height) * H);
       if (!h) return;
-      const region = regionMapAt(this.plugin.settings.maps, t.overworld.name, `${h.x}_${h.y}`);
+      const region = regionMapAt(this.plugin.settings.maps, t.overworld.name, hexKey(h.x, h.y));
       if (region) {
         if (region.name !== this.host.activeMapName) this.host.navigateToMap(region.name);
         return;

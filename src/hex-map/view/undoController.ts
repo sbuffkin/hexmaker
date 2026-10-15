@@ -18,6 +18,7 @@ import type { FactionUndoEntry, IconUndoEntry, RegionUndoEntry, SubHexUndoEntry,
 import type { BackgroundCalibration } from "./backgroundCalibration";
 import type { HexWrites } from "./hexWrites";
 import { applyGroup, applyMapField, prepareGroup, prepareMapField } from "./undoGroup";
+import { hexKey } from "../../hexKey";
 
 export interface UndoHost {
   plugin: HexmakerPlugin;
@@ -196,7 +197,7 @@ export class UndoController {
       }
       case "swap": {
         if (!item.after) return item;
-        const now = [store.get(this.host.activeMapName(), `${item.x1}_${item.y1}`) ?? null, store.get(this.host.activeMapName(), `${item.x2}_${item.y2}`) ?? null];
+        const now = [store.get(this.host.activeMapName(), hexKey(item.x1, item.y1)) ?? null, store.get(this.host.activeMapName(), hexKey(item.x2, item.y2)) ?? null];
         // A swap is its own inverse: before it, the two hexes held each other's data.
         const want = dir === "undo" ? item.after : [item.after[1], item.after[0]];
         return sameValue(now, want) ? item : null;

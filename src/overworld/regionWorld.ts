@@ -27,6 +27,7 @@ import { regionBox, regionCells, regionCentrePoint, type RegionLayout } from "./
 import { generateRegion } from "./regionGen";
 import { tuned, tunedOrUnset } from "./biomeTuning";
 import { hash2 } from "./noise";
+import { hexKey, hexXY } from "../hexKey";
 
 export interface GridRules {
   orientation: Orientation;
@@ -131,7 +132,7 @@ export function regionNeighbourMaps<T extends Pick<MapData, "name" | "parent" | 
   const [ax, ay] = regionCentrePoint(layout, px, py);
   const out: (RegionNeighbour<T> & { angle: number })[] = [];
   for (const [qx, qy] of hexNeighbors(px, py, layout.orientation, layout.parentStagger)) {
-    const hex = `${qx}_${qy}`;
+    const hex = hexKey(qx, qy);
     const map = maps.find((m) => m.submapKind === "region" && m.parent?.map === parentName && m.parent.hex === hex);
     if (!map) continue;
     const [bx, by] = regionCentrePoint(layout, qx, qy);
@@ -167,10 +168,10 @@ export function overworldBiomes(
   }
   for (const [k, b] of placed ?? []) if (!terrain.has(k)) out.set(k, b);
   for (const k of unresolved) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     const counts = new Map<BiomeId, number>();
     for (const [a, b] of hexNeighbors(x, y, orientation, stagger)) {
-      const nb = out.get(`${a}_${b}`);
+      const nb = out.get(hexKey(a, b));
       if (nb) counts.set(nb, (counts.get(nb) ?? 0) + 1);
     }
     const best = [...counts].sort((p, q) => q[1] - p[1] || (p[0] < q[0] ? -1 : 1))[0];
@@ -187,8 +188,8 @@ export function overworldBiomes(
 export function ecotoneHexes(biomes: ReadonlyMap<string, BiomeId>, orientation: Orientation, stagger: Stagger): Set<string> {
   const out = new Set<string>();
   for (const [k, own] of biomes) {
-    const [x, y] = k.split("_").map(Number);
-    const around = hexNeighbors(x, y, orientation, stagger).map(([a, b]) => biomes.get(`${a}_${b}`)).filter((b): b is BiomeId => !!b && b !== own);
+    const { x, y } = hexXY(k);
+    const around = hexNeighbors(x, y, orientation, stagger).map(([a, b]) => biomes.get(hexKey(a, b))).filter((b): b is BiomeId => !!b && b !== own);
     let hit = false;
     for (let i = 0; i < around.length && !hit; i++) {
       for (let j = i + 1; j < around.length && !hit; j++) if (ecotoneBetween(around[i], around[j]) === own) hit = true;
@@ -243,7 +244,7 @@ export const FROM_SHARE = 0.1;
 /** Terrain for one region, blended with the overworld and pinned to its painted neighbours. */
 export function planRegion(input: RegionPlanInput): RegionPlan {
   // The region's own biome's tuning shapes the field it's made from (biomeTuning.ts).
-  const ownId = input.biomes.get(`${input.parent[0]}_${input.parent[1]}`);
+  const ownId = input.biomes.get(hexKey(input.parent[0], input.parent[1]));
   const t = ownId ? input.profiles.get(ownId)?.tuning : undefined;
   const field = new BlendField(input.layout, input.biomes, input.blend ?? tunedOrUnset(t, "blend-k") ?? "normal", {
     warp: input.warp ?? (t ? tuned(t, "wiggle") : REGION_WARP),
@@ -265,7 +266,7 @@ export function planRegion(input: RegionPlanInput): RegionPlan {
   });
   const mix = field.mean(regionCells(input.layout, input.parent[0], input.parent[1]));
   const ranked = [...mix].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
-  const own = input.biomes.get(`${input.parent[0]}_${input.parent[1]}`) ?? ranked[0]?.[0];
+  const own = input.biomes.get(hexKey(input.parent[0], input.parent[1])) ?? ranked[0]?.[0];
   let biome: RegionBiome | undefined;
   if (own) {
     // A combined biome is written readably ("Alpine 2 + Taiga"), in `from` too.

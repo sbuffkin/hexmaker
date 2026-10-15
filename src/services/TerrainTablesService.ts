@@ -26,6 +26,7 @@ import {
 } from "../sections";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { logError } from "../log";
+import { hexKey, hexXY } from "../hexKey";
 
 /** What TerrainTablesService uses of the plugin. */
 export type TerrainTablesHost = Pick<HexmakerPlugin, "app" | "ensureRegionTable" | "ensureRollerLink" | "getAllTerrains" | "hexPath" | "installShippedTables" | "manifest" | "mapStore" | "mapsOnPalette" | "paletteStore" | "refreshHexMapWithOverrides" | "refreshHexTableTerrainRename" | "renameTerrainInHexes" | "saveSettings" | "settings" | "syncHexEncounterTableLink" | "syncHexRegionTableLink" | "tableNotes" | "tableTerrains" | "terrainEncounterTable" | "terrainTableFiles">;
@@ -353,14 +354,14 @@ export class TerrainTablesService {
    * (see displayedEncounterLinks).
    */
   terrainEncounterLinkFor(mapName: string, x: number, y: number, sourcePath: string): string | null {
-    const terrain = this.plugin.mapStore.get(mapName, `${x}_${y}`)?.terrain;
+    const terrain = this.plugin.mapStore.get(mapName, hexKey(x, y))?.terrain;
     const table = terrain ? this.plugin.terrainEncounterTable(terrain) : null;
     return table ? this.plugin.app.metadataCache.fileToLinktext(table, sourcePath) : null;
   }
 
   /** The encounters table of the area hex (x, y) is in (`{tables}/regions/<area>.md`), if it has one. */
   areaEncounterTableFor(mapName: string, x: number, y: number): TFile | null {
-    const area = this.plugin.mapStore.get(mapName, `${x}_${y}`)?.region;
+    const area = this.plugin.mapStore.get(mapName, hexKey(x, y))?.region;
     if (!area) return null;
     const folder = normalizeFolder(this.plugin.settings.tablesFolder);
     const file = this.plugin.app.vault.getAbstractFileByPath(`${folder ? `${folder}/` : ""}regions/${area}.md`);
@@ -567,7 +568,7 @@ export class TerrainTablesService {
       for (const [key, h] of this.plugin.mapStore.all(m.name)) {
         if (h.terrain !== oldName) continue;
         this.plugin.mapStore.set(m.name, key, { terrain: newName });
-        const [x, y] = key.split("_").map(Number);
+        const { x, y } = hexXY(key);
         overrides.set(this.plugin.hexPath(x, y, m.name), newName);
       }
       if (m.baseTerrain === oldName) m.baseTerrain = newName;

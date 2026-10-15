@@ -12,6 +12,7 @@
 import type { HexKey } from "../types";
 import { DEFAULT_SEGMENT_STYLE, type RouteContext, type SegmentStyle } from "./router";
 import type { StyleFor } from "./resolve";
+import { hexKey, hexXY } from "../hexKey";
 
 export interface MapRouteInput {
   orientation: "flat" | "pointy";
@@ -44,7 +45,7 @@ export function mapRouteContext(m: MapRouteInput): RouteContext {
       // Every hex without its own terrain shows the base: walk the grid.
       for (let y = bounds.minY; y <= bounds.maxY; y++) {
         for (let x = bounds.minX; x <= bounds.maxX; x++) {
-          const k = `${x}_${y}`;
+          const k = hexKey(x, y);
           const t = shown(k);
           if (t && impassable.has(t)) blocked.add(k);
         }
@@ -52,7 +53,7 @@ export function mapRouteContext(m: MapRouteInput): RouteContext {
     } else {
       for (const [k, t] of own) {
         if (!t || !impassable.has(t)) continue;
-        const [x, y] = k.split("_").map(Number);
+        const { x, y } = hexXY(k);
         if (x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY) blocked.add(k);
       }
     }

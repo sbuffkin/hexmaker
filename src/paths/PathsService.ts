@@ -25,6 +25,7 @@ import { resolvePaths, resolvedToChains, type ResolvedBranch, type StyleFor } fr
 import { storedMapPaths } from "./mapPaths";
 import { buildPathStrokes, type LatticeGrid, type PathStroke, type StrokeOptions } from "./pathGeometry";
 import { UNKNOWN_PATH_TYPE } from "../constants";
+import { hexKey } from "../hexKey";
 
 /**
  * A path type's routing style: THE place the router's avoid/winding flags
@@ -147,7 +148,7 @@ export class PathsService {
         // Every hex without its own terrain shows the base: walk the bounds.
         for (let x = bounds.minX; x <= bounds.maxX; x++) {
           for (let y = bounds.minY; y <= bounds.maxY; y++) {
-            const k = `${x}_${y}`;
+            const k = hexKey(x, y);
             const t = hexes.get(k)?.terrain || base;
             if (names.has(t)) blocked.add(k);
           }

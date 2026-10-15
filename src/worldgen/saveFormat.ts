@@ -32,6 +32,7 @@
 import { VERSION_KEY } from "../compat";
 import type { GeneratorSettings } from "../../packages/hex-wfc/src";
 import { noteRefTarget, pathLink } from "../noteFormats";
+import { hexKey } from "../hexKey";
 
 /**
  * `generator-path` as read: a link (`[[world/generators/bay-area]]`, the
@@ -95,7 +96,7 @@ export function encodeCells(cells: Map<string, string>, cols: number, rows: numb
       if (run) tokens.push(run > 1 ? `${prev}*${run}` : prev);
     };
     for (let x = 0; x < cols; x++) {
-      const t = cells.get(`${x}_${y}`);
+      const t = cells.get(hexKey(x, y));
       let tok = "-";
       if (t !== undefined) {
         if (!index.has(t)) {
@@ -133,7 +134,7 @@ export function decodeCells(text: string, cols: number, rows: number): { cells: 
         if (m[1] === "-") continue;
         const t = legend[Number(m[1])];
         if (t === undefined) return { error: `row ${y + 1} uses terrain #${m[1]}, which isn't in the legend` };
-        cells.set(`${x}_${y}`, t);
+        cells.set(hexKey(x, y), t);
       }
     }
     if (x !== cols) return { error: `row ${y + 1} has ${x} hexes, expected ${cols}` };

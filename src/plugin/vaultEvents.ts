@@ -21,6 +21,7 @@ import { clearPendingTerrain } from "../frontmatter";
 import { onTableDeleted, onTableFolderRenamed } from "../random-tables/tableVaultEvents";
 import { normalizeFolder } from "../utils";
 import { logError } from "../log";
+import { hexXY } from "../hexKey";
 
 /** Run one former handler; an error is logged and the next still runs. */
 function step(run: () => void): void {
@@ -128,7 +129,7 @@ function hexNoteFocusTracker(plugin: HexmakerPlugin): (file: TFile | null) => vo
     const sync = (path: string) => {
       const loc = plugin.mapStore.isReady() ? plugin.mapStore.resolve(path) : null;
       if (!loc || !plugin.getMap(loc.map)) return;
-      const [x, y] = loc.key.split("_").map(Number);
+      const { x, y } = hexXY(loc.key);
       void plugin.syncHexMapData(loc.map, x, y);
     };
     const prev = focusedHexNote;

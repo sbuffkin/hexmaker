@@ -4,6 +4,7 @@
  */
 
 import { hexCenter, cellKey } from "../../packages/hex-wfc/src";
+import { hexXY } from "../hexKey";
 
 /** Above this many hexes the preview waits for an explicit click. */
 export const PREVIEW_AUTO_LIMIT = 4000;
@@ -50,7 +51,7 @@ export function drawPreview(
     for (let i = 0; i < cols; i++) addPoint(offset.x + i, offset.y + j);
   const inside = pts.length;
   for (const key of extra.shadow?.keys() ?? []) {
-    const [x, y] = key.split("_").map(Number);
+    const { x, y } = hexXY(key);
     if (Number.isFinite(x) && Number.isFinite(y)) addPoint(x, y);
   }
   const spanX = maxX - minX + 2, spanY = maxY - minY + 2;

@@ -21,6 +21,7 @@
  */
 
 import { ROLLED_SECTION_TABLES, type RolledSection, type RolledSectionTables } from "./regionTables";
+import { hexKey } from "./hexKey";
 
 export type ChoiceSource = "hex" | "area" | "map" | "terrain" | "default";
 
@@ -126,7 +127,7 @@ export function initialChoice(items: readonly TableChoiceItem[], remembered?: st
 const chosen = new Map<string, string>();
 
 export function choiceKey(map: string, x: number, y: number, kind: string): string {
-  return `${map}\u0000${x}_${y}\u0000${kind}`;
+  return `${map}\u0000${hexKey(x, y)}\u0000${kind}`;
 }
 
 export function rememberChoice(key: string, path: string): void {

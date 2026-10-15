@@ -35,6 +35,7 @@ import { setHexColor } from "./gridRenderer";
 import type { HexWrites } from "./hexWrites";
 import type { MapToolbar } from "./mapToolbar";
 import type { UndoController } from "./undoController";
+import { hexKey, hexPair } from "../../hexKey";
 
 export interface HexPainterHost {
   plugin: HexmakerPlugin;
@@ -129,7 +130,7 @@ export class HexPainter {
     const wm = this.wm;
     if (!biome || !wm) return;
     this.biomeStroke = new wm.BiomeStroke<CellEdit>(async (key) => {
-      const [px, py] = key.split("_").map(Number);
+      const [px, py] = hexPair(key);
       const r = await wm.paintBiomeHex(this.plugin, map, px, py, biome);
       if ((r.step === "place" || r.step === "reshape") && !r.error && this.activeMapName === map) {
         // Show it now: the hex's overworld terrain and the layer (labels, region bricks).
@@ -472,7 +473,7 @@ export class HexPainter {
     const linked = note instanceof TFile ? linkedNotesText(linksBySection(this.app.metadataCache.getFileCache(note)), this.plugin.sectionWordsFor(this.activeMapName)) : "";
     // Biomes view: the region outline is hidden (every hex has one), so the
     // tooltip names the hex's region instead.
-    const regionMap = this.owView(this.getActiveMap()) === "biomes" ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)?.regionMap : undefined;
+    const regionMap = this.owView(this.getActiveMap()) === "biomes" ? this.plugin.mapStore.get(this.activeMapName, hexKey(x, y))?.regionMap : undefined;
     const region = regionMap && this.plugin.getMap(regionMap) ? this.plugin.mapLabel(regionMap) : null;
     const label = pathFirst(path, hexHoverLabel(x, y, own, this.getActiveMap().baseTerrain ?? null, getHexNameFromFile(hexPath), linked, region));
     if (hexEl.title !== label) {
@@ -518,7 +519,7 @@ export class HexPainter {
   subHexKeyAt(clientX: number, clientY: number): string | null {
     const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
     const cell = grid ? this.overworldLayer?.cellAt(grid, clientX, clientY) ?? null : null;
-    return cell ? `${cell.x}_${cell.y}` : null;
+    return cell ? hexKey(cell.x, cell.y) : null;
   }
 
   /**
@@ -538,7 +539,7 @@ export class HexPainter {
     if (this.terrainPickMode && !this.isErasingMode) {
       if (!cell.region) return null;
       this.terrainPickMode = false;
-      this.paintTerrainName = this.plugin.mapStore.get(cell.region, `${cell.x}_${cell.y}`)?.terrain ?? null;
+      this.paintTerrainName = this.plugin.mapStore.get(cell.region, hexKey(cell.x, cell.y))?.terrain ?? null;
       this.toolbar.updateToolbarButtonStates();
       return null;
     }
@@ -565,7 +566,7 @@ export class HexPainter {
       // A hand edit of the region (paint-terrain): it locks a new region (modeGate.noteHandEdit).
       this.plugin.mapStore.set(map, key, { terrain, locked: terrain ? true : null }, "paint-terrain");
     }
-    return `${cell.x}_${cell.y}`;
+    return hexKey(cell.x, cell.y);
   }
 
   /** Set (or clear) one hex's terrain from a menu: mode-gated and undoable. */

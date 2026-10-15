@@ -18,6 +18,7 @@
 
 import type { HexKey } from "../types";
 import { hexNeighbors } from "../hex-map/hexGeometry";
+import { hexKey, hexPair, hexXY } from "../hexKey";
 
 /** Bumped (with a re-anchoring migration) whenever routes would change. */
 export const ROUTER_VERSION = 1;
@@ -182,8 +183,8 @@ function walkBack(cameFrom: Map<string, string>, end: string): string[] {
  * always the direct step (the ends are never blocked).
  */
 export function findRoute(from: string, to: string, opts: RouteOptions): RouteResult {
-  const [fx, fy] = from.split("_").map(Number);
-  const [tx, ty] = to.split("_").map(Number);
+  const [fx, fy] = hexPair(from);
+  const [tx, ty] = hexPair(to);
   const stagger = opts.stagger ?? "odd";
   if (!inBounds(fx, fy, opts.bounds) || !inBounds(tx, ty, opts.bounds)) {
     return { ok: false, reason: "out-of-bounds" };
@@ -220,12 +221,12 @@ export function findRoute(from: string, to: string, opts: RouteOptions): RouteRe
     if (closed.has(cur)) continue;
     if (cur === to) return { ok: true, hexes: walkBack(cameFrom, cur) };
     closed.add(cur);
-    const [cx, cy] = cur.split("_").map(Number);
+    const [cx, cy] = hexPair(cur);
     const gCur = g.get(cur)!;
     const pCur = p.get(cur)!;
     for (const [nx, ny] of hexNeighbors(cx, cy, opts.orientation, stagger)) {
       if (!inBounds(nx, ny, opts.bounds)) continue;
-      const nk = `${nx}_${ny}`;
+      const nk = hexKey(nx, ny);
       if (closed.has(nk)) continue;
       if (nk !== to && opts.blocked?.(nx, ny)) continue;
       const gNext = gCur + 1;
@@ -274,8 +275,8 @@ const MEANDER_PULL = 1.5;
  * heuristic and the result is a true shortest route for that cost.
  */
 function meanderRoute(from: string, to: string, opts: RouteOptions, seed: number): RouteResult {
-  const [fx, fy] = from.split("_").map(Number);
-  const [tx, ty] = to.split("_").map(Number);
+  const [fx, fy] = hexPair(from);
+  const [tx, ty] = hexPair(to);
   const stagger = opts.stagger ?? "odd";
   const SQ3 = Math.sqrt(3);
   const [ax, ay] = hexCenter(fx, fy, opts.orientation, stagger);
@@ -308,11 +309,11 @@ function meanderRoute(from: string, to: string, opts: RouteOptions, seed: number
     if (closed.has(cur)) continue;
     if (cur === to) return { ok: true, hexes: walkBack(cameFrom, cur) };
     closed.add(cur);
-    const [cx, cy] = cur.split("_").map(Number);
+    const [cx, cy] = hexPair(cur);
     const gCur = g.get(cur)!;
     for (const [nx, ny] of hexNeighbors(cx, cy, opts.orientation, stagger)) {
       if (!inBounds(nx, ny, opts.bounds)) continue;
-      const nk = `${nx}_${ny}`;
+      const nk = hexKey(nx, ny);
       if (closed.has(nk)) continue;
       if (nk !== to && opts.blocked?.(nx, ny)) continue;
       const gNext = gCur + 1 + MEANDER_PULL * offWave(nx, ny);
@@ -348,8 +349,8 @@ function cubeRound(fq: number, fr: number): [number, number] {
  */
 export function hexLine(a: HexKey, b: HexKey, orientation: Orientation, stagger: Stagger = "odd"): HexKey[] {
   if (a === b) return [a];
-  const [ax, ay] = a.split("_").map(Number);
-  const [bx, by] = b.split("_").map(Number);
+  const [ax, ay] = hexPair(a);
+  const [bx, by] = hexPair(b);
   const [aq, ar] = toAxial(ax, ay, orientation, stagger);
   const [bq, br] = toAxial(bx, by, orientation, stagger);
   const n = hexDistance([ax, ay], [bx, by], orientation, stagger);
@@ -361,7 +362,7 @@ export function hexLine(a: HexKey, b: HexKey, orientation: Orientation, stagger:
     const t = i / n;
     const [q, r] = cubeRound(nq + (bq - aq) * t, nr + (br - ar) * t);
     const [x, y] = fromAxial(q, r, orientation, stagger);
-    out.push(`${x}_${y}`);
+    out.push(hexKey(x, y));
   }
   out[0] = a;
   out[out.length - 1] = b;
@@ -410,7 +411,7 @@ export interface SegmentRoute {
 /** The router options for a segment context. */
 export function routeOptions(ctx: SegmentContext): RouteOptions {
   const blocked = ctx.avoid && ctx.blocked.size
-    ? (x: number, y: number) => ctx.blocked.has(`${x}_${y}`)
+    ? (x: number, y: number) => ctx.blocked.has(hexKey(x, y))
     : undefined;
   return { orientation: ctx.orientation, stagger: ctx.stagger, bounds: ctx.bounds, blocked, meander: ctx.winding };
 }
@@ -445,7 +446,7 @@ function hash53(s: string): number {
 export function blockedSignature(blocked: ReadonlySet<HexKey>, bounds: RouteBounds): string {
   const keys: string[] = [];
   for (const k of blocked) {
-    const [x, y] = k.split("_").map(Number);
+    const { x, y } = hexXY(k);
     if (inBounds(x, y, bounds)) keys.push(k);
   }
   keys.sort();

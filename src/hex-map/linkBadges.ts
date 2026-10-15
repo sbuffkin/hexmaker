@@ -1,6 +1,7 @@
 import { setIcon } from "obsidian";
 import type { SectionWordsFn } from "../mapKinds";
 import { isPluginSection, pickSectionHeading } from "../sections";
+import { isHexKey } from "../hexKey";
 
 /**
  * Link badges: a small marker per link type (town, dungeon, feature, quest,
@@ -198,7 +199,7 @@ export function hiddenBadges(map: { hiddenLinkBadges?: string[] }): string[] {
 
 /** Hex key ("x_y") from a hex note's basename, or null for other notes. */
 export function hexKeyFromBasename(basename: string): string | null {
-  return /^-?\d+_-?\d+$/.test(basename) ? basename : null;
+  return isHexKey(basename) ? basename : null;
 }
 
 /**

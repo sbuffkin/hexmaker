@@ -6,12 +6,13 @@
 import { Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { hexLinkLabel, hexMarkdownLink } from "../hexLink";
+import { hexKey } from "../hexKey";
 
 export const COPY_HEX_LINK_TITLE = "Copy link to this hex";
 
 /** The Markdown link to hex (x, y) of `mapName`, labelled with the hex's name when it has one. */
 export function hexLinkFor(plugin: HexmakerPlugin, mapName: string, x: number, y: number): string {
-  const name = plugin.mapStore.get(mapName, `${x}_${y}`)?.name;
+  const name = plugin.mapStore.get(mapName, hexKey(x, y))?.name;
   return hexMarkdownLink(plugin.app.vault.getName(), { map: mapName, hex: { x, y } }, hexLinkLabel(plugin.mapLabel(mapName), x, y, name));
 }
 
