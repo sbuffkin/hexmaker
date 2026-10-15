@@ -246,9 +246,9 @@ describe("every entry point opens Edit region in new-region mode", () => {
 	const view = readSurface("map-view");
 
 	it("an empty brick (Regions or Biomes view) and Set biome… on an empty hex", () => {
-		expect(view).toMatch(/act\.kind === "place"\) this\.openNewRegion\(px, py\)/);
+		expect(view).toMatch(/act\.kind === "place"\) this\.(?:hexMenu\.)?openNewRegion\(px, py\)/);
 		expect(view).toMatch(/it\.id === "set-biome"\) this\.openNewRegion\(px, py\)/);
-		expect(view).toMatch(/private openNewRegion\(px: number, py: number\): void \{[\s\S]{0,200}new wm\.EditRegionModal\([^;]*, px, py, \{\}\)\.open\(\)/);
+		expect(view).toMatch(/\n  (?:private )?openNewRegion\(px: number, py: number\): void \{[\s\S]{0,200}new wm\.EditRegionModal\([^;]*, px, py, \{\}\)\.open\(\)/);
 		expect(view).not.toMatch(/BiomePickerModal/);
 	});
 

@@ -1,6 +1,5 @@
 import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { COPY_HEX_LINK_TITLE, copyHexLink } from "./copyHexLink";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
@@ -15,7 +14,7 @@ import {
 import type { CellEdit } from "../undoBook";
 import { HexEditorModal } from "./HexEditorModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
-import { getFactionColorFromFile, getSubmapFromFile, getHexMapsFromFile } from "../frontmatter";
+import { getFactionColorFromFile, getSubmapFromFile } from "../frontmatter";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
@@ -23,9 +22,9 @@ import {
 } from "../constants";
 import { MapModal, renderMissingActions } from "./MapModal";
 import { PathTool } from "./pathTool";
-import { allows, canAdd, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type MenuActionId, type ModeAction, type WorkMode } from "../workMode";
+import { allows, canAdd, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo, guardWrite } from "../modeGate";
-import { ModeMenu, type ModeMenuOptions } from "./modeMenu";
+import { ModeMenu } from "./modeMenu";
 import { lockedNotice } from "./godOffer";
 import { openNoteFocused } from "../openNote";
 import { coordHaloColor } from "../coordStyle";
@@ -40,15 +39,14 @@ import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
 import { hexNeighbors } from "./hexGeometry";
-import { moduleHexMenu, moduleUnchartedKeys, runPartyEntered, worldMaps } from "../modules/runtime";
+import { moduleUnchartedKeys, runPartyEntered, worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
 import { HexHelpModal } from "./HexHelpModal";
-import { FolderTreePickerModal } from "./FolderTreePickerModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { renderUnchartedLayer, unchartedKeys } from "./unchartedLayer";
 import { hexKeyFromBasename, linkedNotesText, linksBySection } from "./linkBadges";
 import { TokenModal } from "./TokenModal";
-import { newMapItemTitle, regionMapAt, submapMenuPlan } from "../maps/submaps";
+import { regionMapAt } from "../maps/submaps";
 // World maps (overworlds, regions, biomes, walking) through its hooks,
 // typed only: worldMaps() is undefined in a build without it.
 import type { OverworldLayer } from "../overworld/overworldLayer";
@@ -77,6 +75,7 @@ import { NeighbourShadow } from "./view/neighbourShadow";
 import { MapToolbar } from "./view/mapToolbar";
 import { MapInput } from "./view/mapInput";
 import { MapNavigation } from "./view/mapNavigation";
+import { HexContextMenu } from "./view/hexContextMenu";
 import type { DrawingMode } from "./toolMode";
 import type { IconUndoEntry, TokenSnap, UndoItem } from "./undoItems";
 
@@ -184,6 +183,8 @@ export class HexMapView extends ItemView {
   private needsRerender = false;
   /** Moving between maps: history, crumbs, arrows, neighbours (view/mapNavigation.ts). */
   private nav: MapNavigation;
+  /** The hex right-click menus (view/hexContextMenu.ts). */
+  private hexMenu: HexContextMenu;
   private mapBtn: HTMLButtonElement | null = null;
   /** The map's work mode (Play / Build / God), always shown. */
   private workModeBtn: HTMLButtonElement | null = null;
@@ -368,7 +369,7 @@ export class HexMapView extends ItemView {
       labelHex: (el) => this.labelHex(el),
       updateBrushHighlight: (x, y) => this.updateBrushHighlight(x, y),
       onHexClick: (x, y, e) => this.onHexClick(x, y, e),
-      onHexContextMenu: (e, x, y) => this.onHexContextMenu(e, x, y),
+      onHexContextMenu: (e, x, y) => this.hexMenu.onHexContextMenu(e, x, y),
       onHexPaintClick: (x, y) => this.onHexPaintClick(x, y),
       onHexIconClick: (x, y) => this.onHexIconClick(x, y),
       removeOneGmIconFromHex: (el, x, y, icon) => this.removeOneGmIconFromHex(el, x, y, icon),
@@ -394,8 +395,36 @@ export class HexMapView extends ItemView {
       setSelectedHex: (x, y) => this.setSelectedHex(x, y),
       refreshWorkModeBtn: () => this.refreshWorkModeBtn(),
       openHexEditorModal: (x, y) => this.openHexEditorModal(x, y),
-      openEditRegion: (px, py, ow) => this.openEditRegion(px, py, ow),
+      openEditRegion: (px, py, ow) => this.hexMenu.openEditRegion(px, py, ow),
       biomeHost: () => this.biomeHost(),
+    });
+    this.hexMenu = new HexContextMenu(this.plugin, {
+      activeMapName: () => this.activeMapName,
+      viewportEl: () => this.viewportEl,
+      drawingMode: () => this.drawingMode,
+      overworldLayer: () => this.overworldLayer,
+      wm: () => this.wm,
+      getActiveMap: () => this.getActiveMap(),
+      owView: (map) => this.owView(map),
+      undos: { currentWorkMode: () => this.undos.currentWorkMode() },
+      toolbar: { handleSwapButton: () => this.toolbar.handleSwapButton() },
+      nav: { openLinkExistingMap: (x, y) => this.nav.openLinkExistingMap(x, y), enterRegionAt: (r, x, y) => this.nav.enterRegionAt(r, x, y) },
+      setWorkMode: (mode) => this.setWorkMode(mode),
+      navigateToMap: (name, opts) => this.navigateToMap(name, opts),
+      openLocationsList: (x, y) => this.openLocationsList(x, y),
+      openNewSubmapSetup: (x, y) => this.openNewSubmapSetup(x, y),
+      arriveAt: (x, y) => this.arriveAt(x, y),
+      createTokenAtHex: (x, y) => this.createTokenAtHex(x, y),
+      openPlayLog: (x, y) => this.openPlayLog(x, y),
+      setVisited: (keys, on) => this.setVisited(keys, on),
+      centerOnHex: (x, y) => this.centerOnHex(x, y),
+      linkTableToHex: (x, y, file) => this.linkTableToHex(x, y, file),
+      openRandomTableAtFile: (file) => this.openRandomTableAtFile(file),
+      onHexSwapClick: (x, y) => this.onHexSwapClick(x, y),
+      paintOne: (x, y, terrain) => this.paintOne(x, y, terrain),
+      removeIconOverride: (x, y) => this.removeIconOverride(x, y),
+      biomeHost: () => this.biomeHost(),
+      renderGrid: () => this.renderGrid(),
     });
     this.calibration = new BackgroundCalibration({
       plugin: this.plugin,
@@ -1847,7 +1876,7 @@ export class HexMapView extends ItemView {
         hexEl.addEventListener("click", (e) => {
           void this.onHexClick(x, y, e);
         });
-        hexEl.addEventListener("contextmenu", (evt) => this.onHexContextMenu(evt, x, y));
+        hexEl.addEventListener("contextmenu", (evt) => this.hexMenu.onHexContextMenu(evt, x, y));
         return;
       }
 
@@ -1951,7 +1980,7 @@ export class HexMapView extends ItemView {
         void this.onHexDblClick(x, y);
       });
       hexEl.addEventListener("contextmenu", (evt) =>
-        this.onHexContextMenu(evt, x, y),
+        this.hexMenu.onHexContextMenu(evt, x, y),
       );
       if (region.showFactionOverlay && this.factionTooltipEl) {
         const tooltip = this.factionTooltipEl;
@@ -2096,200 +2125,6 @@ export class HexMapView extends ItemView {
     modal.open();
   }
 
-  /** Options for the map view's menus: debug mode, and the God offer on God-only items. */
-  private modeMenuOptions(): ModeMenuOptions {
-    return { store: this.app, onGod: () => this.setWorkMode("god") };
-  }
-
-  private onHexContextMenu(evt: MouseEvent, x: number, y: number): void {
-    evt.preventDefault();
-    // When any tool is active, the global capture-phase contextmenu handler
-    // intercepts the event and shows the painter context menu — this handler
-    // only fires when drawingMode === null.
-    if (this.drawingMode !== null) return;
-
-    // Items the map's work mode locks are left out, with one hint line
-    // (for God-only items, an offer to switch: Swap hex).
-    const menu = new ModeMenu(this.undos.currentWorkMode(), this.modeMenuOptions());
-    // Overworlds are the big-picture view (#49): region-level items only,
-    // no hex editor.
-    if (this.owView(this.getActiveMap())) this.addOverworldMenuItems(menu, evt, x, y);
-    else this.addHexMenuItems(menu, x, y);
-    menu.showAtMouseEvent(evt);
-  }
-
-  /**
-   * A hex's right-click items (also under a token's own items, F8: the
-   * token covers the hex centre). `inTokenMenu` names the hex's note so it
-   * isn't taken for the token's.
-   */
-  private addHexMenuItems(menu: ModeMenu, x: number, y: number, inTokenMenu = false): void {
-    const hexPath = this.plugin.hexPath(x, y, this.activeMapName);
-    // Terrain, icon and submap live in the map note, and a hex can have them
-    // before its hex note exists (a generated map, a submap made from this
-    // menu) — gating these on the note hid "Enter submap" and "Clear
-    // terrain" on such hexes (fresh-eyes N3).
-    const terrain = getTerrainFromFile(this.app, hexPath);
-    const iconOverride = getIconOverrideFromFile(this.app, hexPath);
-    const hexMaps = this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`)
-      ?? { locations: getHexMapsFromFile(this.app, hexPath).locations };
-    const childPlan = submapMenuPlan(hexMaps);
-
-    // Maps from this hex (K7) come first, so entering what's there is the
-    // obvious pick (C11): its region, then up to two locations by name, or
-    // one "Locations (n)…" item that opens the list.
-    const region = childPlan.region;
-    const hasRegion = !!region && !!this.plugin.getMap(region);
-    if (region && hasRegion) {
-      menu.add("hex.enter-region", `Enter region: ${this.plugin.mapLabel(region)}`, "log-in", () => this.navigateToMap(region, { offerModule: true }));
-    }
-    for (const loc of childPlan.open) {
-      menu.add("hex.open-location", `Open: ${this.plugin.mapLabel(loc)}`, "map-pin", () => {
-        if (this.plugin.getMap(loc)) this.navigateToMap(loc, { offerModule: true });
-        else this.openLocationsList(x, y);
-      });
-    }
-    if (childPlan.listCount) {
-      menu.add("hex.locations", `Locations (${childPlan.listCount})…`, "list", () => this.openLocationsList(x, y));
-    }
-    // Arrival (GM4): a world set to make places makes this hex's place on
-    // the spot, in any mode, when it has none yet.
-    const arrive = !hasRegion && !childPlan.open.length && !childPlan.listCount && this.plugin.arrival.canArrive(this.activeMapName, x, y);
-    if (arrive) menu.add("hex.arrive", "Go there", "footprints", () => void this.arriveAt(x, y));
-    if (arrive || hasRegion || childPlan.open.length || childPlan.listCount) menu.addSeparator();
-
-    // The common jobs next: the hex's note, a token, centring.
-    menu.add("hex.open-note", inTokenMenu ? "Open hex note" : "Open note", "file-text", () => {
-      void (async () => {
-        const existing = this.app.vault.getAbstractFileByPath(hexPath);
-        const file =
-          existing instanceof TFile
-            ? existing
-            : await this.plugin.createHexNote(x, y, this.activeMapName);
-        if (file) await openNoteFocused(this.app, file);
-      })();
-    });
-    menu.add("hex.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(x, y));
-    // Solo play (SF3): what happened here goes to the dated play log.
-    menu.add("hex.log", "Add to play log…", "notebook-pen", () => this.openPlayLog(x, y));
-    const visited = parseVisited(this.getActiveMap().visited).includes(`${x}_${y}`);
-    menu.add("hex.visited", "Visited", "footprints", () => this.setVisited([`${x}_${y}`], !visited), { checked: visited, place: "MapView.hexVisited" });
-    for (const it of moduleHexMenu(this.plugin, this.activeMapName, `${x}_${y}`)) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { place: it.placementId });
-    menu.add("hex.center", "Center on this hex", "crosshair", () => this.centerOnHex(x, y));
-    menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
-
-    menu.addSeparator();
-
-    // "Add another map…" once the hex has one (C11): a hex can hold several
-    // locations, but the menu doesn't invite re-making the same map.
-    menu.add("hex.new-map", newMapItemTitle(hexMaps), "plus", () => this.openNewSubmapSetup(x, y));
-    menu.add("hex.link-map", "Link existing map…", "link", () => this.nav.openLinkExistingMap(x, y));
-    if (childPlan.open.length) {
-      // Unlinking and reordering live in the list.
-      menu.add("hex.manage-locations", "Manage locations…", "list", () => this.openLocationsList(x, y));
-    }
-
-    menu.add("hex.link-table", "Link table", "table", () => {
-      new FolderTreePickerModal(
-        this.app,
-        this.plugin,
-        this.plugin.settings.tablesFolder,
-        "Link table",
-        "Filter tables…",
-        "No tables found.",
-        (file) => void this.linkTableToHex(x, y, file),
-        (file) => void this.openRandomTableAtFile(file),
-      ).open();
-    });
-
-    menu.add("hex.swap", "Swap hex", "arrow-left-right", () => {
-      if (this.drawingMode !== "swap") this.toolbar.handleSwapButton();
-      void this.onHexSwapClick(x, y);
-    });
-
-    // ── Contextual delete options ──────────────────────────────────────────
-    if (terrain || iconOverride) {
-      menu.addSeparator();
-      if (terrain) {
-        menu.add("hex.clear-terrain", "Clear terrain", "eraser", () => {
-          this.paintOne(x, y, null);
-        });
-      }
-      if (iconOverride) {
-        menu.add("hex.remove-icon", "Remove icon override", "image-off", () => {
-          this.removeIconOverride(x, y);
-        });
-      }
-    }
-  }
-
-  /**
-   * An overworld hex's right-click items (overworldMenu): Enter region and
-   * Edit region on a region, Set biome on an empty hex, Center, and the
-   * hex's Locations. In the Regions view the brick under the pointer counts.
-   */
-  private addOverworldMenuItems(menu: ModeMenu, evt: MouseEvent, x: number, y: number): void {
-    const wm = this.wm;
-    if (!wm) return;
-    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-    const cell = this.owView(this.getActiveMap()) === "regions" && grid
-      ? this.overworldLayer?.cellAt(grid, evt.clientX, evt.clientY) ?? null : null;
-    const [px, py] = cell ? cell.parentHex.split("_").map(Number) : [x, y];
-    const key = `${px}_${py}`;
-    const regionMap = regionMapAt(this.plugin.settings.maps, this.activeMapName, key);
-    const region = regionMap?.name;
-    const locations = this.plugin.mapStore.get(this.activeMapName, key)?.locations?.length ?? 0;
-    const icons: Record<string, string> = { "enter-region": "log-in", "edit-region": "settings-2", reroll: "dices", lock: "lock", "set-biome": "trees", center: "crosshair", locations: "list" };
-    // Reroll / Lock on a new (open) region: placed main (src/ui/placement.ts).
-    const places: Record<string, string> = { reroll: "OverworldMenu.reroll", lock: "OverworldMenu.lock" };
-    // Arrival (GM4): a world set to make places makes this hex's region on the spot, in any mode.
-    if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
-      menu.add("ow.arrive", "Go there", "footprints", () => void this.arriveAt(px, py));
-      menu.addSeparator();
-    }
-    for (const it of wm.overworldMenu(this.getActiveMap(), !!region, locations, regionMap)) {
-      const id = `ow.${it.id}` as const;
-      const title = it.id === "enter-region" && region ? `Enter region: ${this.plugin.mapLabel(region)}` : it.enabled ? it.title : `${it.title} (${it.hint})`;
-      menu.add(id, title, icons[it.id] ?? "dot", () => {
-        if (it.id === "enter-region" && region) {
-          if (cell) this.nav.enterRegionAt(region, cell.x, cell.y);
-          else this.navigateToMap(region);
-        } else if (it.id === "edit-region") this.openEditRegion(px, py);
-        else if (it.id === "reroll") void wm.rerollRegionAt(this.biomeHost(), this.activeMapName, px, py);
-        else if (it.id === "lock" && region) void this.plugin.arrival.lock(region).then(() => this.renderGrid());
-        else if (it.id === "set-biome") this.openNewRegion(px, py);
-        else if (it.id === "center") this.centerOnHex(px, py);
-        else if (it.id === "locations") this.openLocationsList(px, py);
-      }, { disabled: !it.enabled, ...(places[it.id] ? { place: places[it.id] } : {}) });
-    }
-    menu.add("ow.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, px, py));
-    // Mark the party (or anything) on the overworld: tokens sit on its hexes.
-    menu.add("ow.create-token", "Create token here", "circle-user", () => this.createTokenAtHex(px, py));
-  }
-
-  /**
-   * An empty hex of the open overworld (an empty brick, Set biome…): Edit
-   * region in new-region mode. Nothing is made until its Create.
-   */
-  private openNewRegion(px: number, py: number): void {
-    const wm = this.wm;
-    if (!wm) return;
-    new wm.EditRegionModal({ ...this.biomeHost(), openLocations: (hx, hy) => this.openLocationsList(hx, hy) }, this.activeMapName, px, py, {}).open();
-  }
-
-  /** Edit the region on hex (px, py) of `overworld` (default the open map; from inside a region, its overworld). */
-  openEditRegion(px: number, py: number, overworld = this.activeMapName): void {
-    const openLocations = (hx: number, hy: number) => {
-      if (overworld === this.activeMapName) { this.openLocationsList(hx, hy); return; }
-      // The list belongs to the overworld hex: go there first.
-      this.navigateToMap(overworld);
-      window.setTimeout(() => this.openLocationsList(hx, hy), 50);
-    };
-    const wm = this.wm;
-    if (!wm) return;
-    new wm.EditRegionModal({ ...this.biomeHost(), openLocations }, overworld, px, py).open();
-  }
-
   private async onHexClick(x: number, y: number, e?: MouseEvent): Promise<void> {
     if (this.drawingMode && !this.modeAllows(TOOL_ACTIONS[this.drawingMode])) {
       this.exitCurrentMode();
@@ -2354,7 +2189,7 @@ export class HexMapView extends ItemView {
       } else if (!region && this.plugin.arrival.canArrive(this.activeMapName, px, py)) {
         // Arrival on: going there makes the region from its biome (GM4).
         await this.arriveAt(px, py);
-      } else if (act.kind === "place") this.openNewRegion(px, py);
+      } else if (act.kind === "place") this.hexMenu.openNewRegion(px, py);
       else if (act.kind === "hint") lockedNotice(this.plugin, this.activeMapName, act.hint);
       return;
     }
@@ -3324,7 +3159,7 @@ export class HexMapView extends ItemView {
   }
 
   private showTokenContextMenu(evt: MouseEvent, token: TokenEntry): void {
-    const menu = new ModeMenu(this.undos.currentWorkMode(), this.modeMenuOptions());
+    const menu = new ModeMenu(this.undos.currentWorkMode(), this.hexMenu.modeMenuOptions());
     menu.add("token.edit", "Edit token", "pencil", () => this.openTokenEditor(token));
     menu.add("token.info", "Token info", "info", () => this.openTokenInfo(token));
     // SF5: any token can be the party (moves by clicking a neighbour in Play).
@@ -3345,8 +3180,8 @@ export class HexMapView extends ItemView {
       menu.addSeparator();
       const hexName = this.plugin.mapStore.get(this.activeMapName, `${hx}_${hy}`)?.name?.trim();
       menu.addLabel(hexName ? `This hex: ${hexName}` : `This hex: ${hx}, ${hy}`);
-      if (this.owView(this.getActiveMap())) this.addOverworldMenuItems(menu, evt, hx, hy);
-      else this.addHexMenuItems(menu, hx, hy, true);
+      if (this.owView(this.getActiveMap())) this.hexMenu.addOverworldMenuItems(menu, evt, hx, hy);
+      else this.hexMenu.addHexMenuItems(menu, hx, hy, true);
     }
     menu.showAtMouseEvent(evt);
   }
