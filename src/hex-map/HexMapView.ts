@@ -5,9 +5,8 @@ import { getSubmapFromFile } from "../frontmatter";
 import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { MapModal } from "./MapModal";
 import { PathTool } from "./pathTool";
-import { allows, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
+import { lockedHint, TOOL_ACTIONS, type ModeAction, type WorkMode } from "../workMode";
 import { canDo } from "../modeGate";
-import { ModeMenu } from "./modeMenu";
 import { lockedNotice } from "./godOffer";
 import { partyClick } from "../play/partyTravel";
 import { nearestHex } from "./hitTest";
@@ -40,6 +39,7 @@ import { HexSwap } from "./view/hexSwap";
 import { GridRenderer } from "./view/gridRenderer";
 import { HexPainter } from "./view/hexPainter";
 import { MapShell } from "./view/mapShell";
+import { WorkModeButton } from "./view/workModeButton";
 import type { DrawingMode } from "./toolMode";
 import type { TokenSnap } from "./undoItems";
 
@@ -120,8 +120,8 @@ export class HexMapView extends ItemView {
   private nav: MapNavigation;
   /** The hex right-click menus (view/hexContextMenu.ts). */
   private hexMenu: HexContextMenu;
-  /** The map's work mode (Play / Build / God), always shown. */
-  private workModeBtn: HTMLButtonElement | null = null;
+  /** The work-mode button and menu (view/workModeButton.ts). */
+  private workMode: WorkModeButton;
   /** Tokens, the party and its steps (view/tokenLayer.ts). */
   private tokens: TokenLayer;
   /** The grid's +/− edge buttons (view/gridEdgeButtons.ts). */
@@ -268,7 +268,7 @@ export class HexMapView extends ItemView {
       overlayPanel: () => this.overlayPanel,
       toolsPanel: () => this.toolsPanel,
       centerOnHex: (x, y) => this.centerOnHex(x, y),
-      applyWorkModeUi: () => this.applyWorkModeUi(),
+      applyWorkModeUi: () => this.workMode.applyWorkModeUi(),
       finishBiomeStroke: () => this.painter.finishBiomeStroke(),
       updateBrushHighlight: (x, y) => this.painter.updateBrushHighlight(x, y),
       showOverworldRegions: () => this.showOverworldRegions(),
@@ -345,7 +345,7 @@ export class HexMapView extends ItemView {
       renderGrid: () => this.renderGrid(),
       centerOnHex: (x, y, w) => this.centerOnHex(x, y, w),
       setSelectedHex: (x, y) => this.setSelectedHex(x, y),
-      refreshWorkModeBtn: () => this.refreshWorkModeBtn(),
+      refreshWorkModeBtn: () => this.workMode.refreshWorkModeBtn(),
       openHexEditorModal: (x, y) => this.openHexEditorModal(x, y),
       openEditRegion: (px, py, ow) => this.hexMenu.openEditRegion(px, py, ow),
       biomeHost: () => this.biomeHost(),
@@ -458,13 +458,25 @@ export class HexMapView extends ItemView {
       tokens: this.tokens,
       toolbar: this.toolbar,
       hexMenu: this.hexMenu,
-      refreshWorkModeBtn: () => this.refreshWorkModeBtn(),
+      refreshWorkModeBtn: () => this.workMode.refreshWorkModeBtn(),
       onHexClick: (x, y, e) => this.onHexClick(x, y, e),
       navigateToMap: (name) => this.navigateToMap(name),
       openLocationsList: (x, y) => this.openLocationsList(x, y),
       labelHex: (el, t, p) => this.painter.labelHex(el, t, p),
       applyTerrainToHexEl: (el, t) => this.painter.applyTerrainToHexEl(el, t),
       emptySlotOnMap: (hex) => this.emptySlotOnMap(hex),
+    });
+    this.workMode = new WorkModeButton({
+      plugin: this.plugin,
+      contentEl: this.contentEl,
+      activeMapName: () => this.activeMapName,
+      getActiveMap: () => this.getActiveMap(),
+      owView: (map) => this.owView(map),
+      drawingMode: () => this.drawingMode,
+      undos: this.undos,
+      nav: this.nav,
+      toolbar: this.toolbar,
+      exitCurrentMode: () => this.exitCurrentMode(),
     });
     this.shell = new MapShell({
       plugin: this.plugin,
@@ -497,10 +509,7 @@ export class HexMapView extends ItemView {
       exitCurrentMode: () => this.exitCurrentMode(),
       exitTerrainMode: () => this.exitTerrainMode(),
       openMapModal: (onChanged) => new MapModal(this.app, this.plugin, this, onChanged).open(),
-      buildWorkModeBtn: (group) => {
-        this.workModeBtn = group.createEl("button", { cls: "duckmage-work-mode-btn" });
-        this.workModeBtn.addEventListener("click", (e) => this.openWorkModeMenu(e));
-      },
+      buildWorkModeBtn: (group) => this.workMode.build(group),
       refreshViewHeader: () => this.refreshViewHeader(),
       markStaleFromExternal: () => this.markStaleFromExternal(),
       onOverworldDataChange: (map) => this.onOverworldDataChange(map),
@@ -590,73 +599,9 @@ export class HexMapView extends ItemView {
     this.nav.fitTopBar();
   }
 
-  /** The work-mode switch: names the map's mode; click to pick another. */
-  private refreshWorkModeBtn(): void {
-    this.applyWorkModeUi();
-    // Reroll / Lock depend on the mode too (a locked place: God only).
-    this.nav.refreshArrivalBar();
-    const btn = this.workModeBtn;
-    if (!btn) return;
-    const mode = workModeOf(this.plugin.getMap(this.activeMapName));
-    const text = WORK_MODE_TEXT[mode];
-    btn.setText(text.label);
-    btn.removeClass("is-play", "is-build", "is-god");
-    btn.addClass(`is-${mode}`);
-    const tip = `Mode: ${text.label}. ${text.desc} Click to change.`;
-    btn.setAttr("title", tip);
-    btn.setAttr("aria-label", tip);
-  }
-
-  private openWorkModeMenu(e: MouseEvent): void {
-    const map = this.plugin.getMap(this.activeMapName);
-    if (!map) return;
-    const cur = workModeOf(map);
-    // Play, Build and God in one list (owner 2026-10-12: God isn't in
-    // Advanced); God is also offered where an action needs it (godOffer.ts).
-    const menu = new ModeMenu(cur, { store: this.app });
-    for (const m of WORK_MODES) {
-      menu.add("mode.switch", `${WORK_MODE_TEXT[m].label}: ${WORK_MODE_TEXT[m].short}`, null, () => this.setWorkMode(m), { checked: m === cur, place: `WorkModeMenu.${m}` });
-    }
-    menu.showAtMouseEvent(e);
-  }
-
-  /** Switch the open map's work mode (saved in its map note as `mode:`). */
+  /** Switch the open map's work mode (saved in its map note as `mode:`; view/workModeButton.ts). */
   setWorkMode(mode: WorkMode): void {
-    const map = this.plugin.getMap(this.activeMapName);
-    if (!map || workModeOf(map) === mode) return;
-    // The current stroke belongs to the mode it was made in.
-    this.undos.commitTerrainStroke();
-    this.undos.commitIconStroke();
-    map.workMode = mode;
-    void this.plugin.saveSettings();
-    // A tool the new mode locks is put down.
-    if (this.drawingMode && !allows(mode, TOOL_ACTIONS[this.drawingMode])) this.exitCurrentMode();
-    this.refreshWorkModeBtn();
-    // The neighbour "+" buttons lock and unlock with the mode.
-    this.nav.refreshSideCrumbs();
-    this.applyWorkModeUi();
-    // Each mode has its own undo queue (WM6).
-    this.undos.updateUndoButton();
-  }
-
-  /**
-   * Show the open map's mode on the UI: the drawing panel shows only the
-   * tools the mode allows, with one line naming the mode that unlocks the
-   * rest; the grid's +/− buttons follow (CSS on the mode class).
-   */
-  private applyWorkModeUi(): void {
-    const mode = this.undos.currentWorkMode();
-    this.contentEl.removeClass("duckmage-mode-play", "duckmage-mode-build", "duckmage-mode-god");
-    this.contentEl.addClass(`duckmage-mode-${mode}`);
-    this.toolbar.applyMode(mode, this.owView(this.getActiveMap()));
-    // Shrinking is God's: in Build the − stays clickable and its click
-    // offers to switch (modeAllows → lockedNotice), it isn't just greyed out.
-    for (const b of this.contentEl.querySelectorAll<HTMLButtonElement>(".duckmage-shrink-btn")) {
-      const ok = allows(mode, "shrink-map");
-      b.toggleClass("is-locked", !ok);
-      b.setAttr("aria-disabled", String(!ok));
-      b.setAttr("title", ok ? "Remove this edge" : lockedHint("shrink-map"));
-    }
+    this.workMode.setWorkMode(mode);
   }
 
   /**
