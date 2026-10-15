@@ -33,6 +33,7 @@ import { PlaceholderFilter } from "../manual/placeholders";
 import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "../manual/manualHtml";
 import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection, ManualTable } from "../manual/manualModel";
 import { exportedMessage } from "../exportFolder";
+import { hexKey } from "../../hexKey";
 
 export interface ManualExportOptions {
   /** Filename stem (no extension). Defaults to "<map> manual". */
@@ -192,7 +193,7 @@ export async function collectManualData(
         for (const [cat, key] of [["Towns", "towns"], ["Dungeons", "dungeons"], ["Features", "features"], ["Quests", "quests"]] as const) {
           for (const name of hexLinks[key]) indexes[cat].set(name, [...(indexes[cat].get(name) ?? []), number]);
         }
-        keyedByKey.set(`${x}_${y}`, {
+        keyedByKey.set(hexKey(x, y), {
           number,
           x,
           y,
@@ -252,7 +253,7 @@ export async function collectManualData(
     const hexes: ManualHex[] = [];
     for (let row = s.rowStart; row < s.rowEnd; row++)
       for (let col = s.colStart; col < s.colEnd; col++) {
-        const h = keyedByKey.get(`${col + ox}_${row + oy}`);
+        const h = keyedByKey.get(hexKey(col + ox, row + oy));
         if (h) hexes.push(h);
       }
     // Key order is by hex number (column, then row), as printed manuals do.
