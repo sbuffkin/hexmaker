@@ -3,7 +3,7 @@
 	"caps": {
 		"src/hex-map/HexMapView.ts": 1048,
 		"src/HexmakerPlugin.ts": 644,
-		"src/maps/mapNote.ts": 2136,
+		"src/maps/mapNote.ts": 2130,
 		"src/random-tables/RandomTableView.ts": 1928,
 		"src/hex-map/HexEditorModal.ts": 631,
 		"src/worldgen/GeneratorPanel.ts": 325,

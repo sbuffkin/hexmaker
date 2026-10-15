@@ -8,6 +8,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import { mapDataLines, mapDataSyncMessage, moveBodyFieldsIntoMapData, oldFieldLine, planCalloutImport, setMapData, shownValues } from "../hexMapData";
 import { lockedHint } from "../workMode";
 import { sameName, takeBodyFields } from "../hexBodyFields";
+import { hexKey } from "../hexKey";
 
 /** What syncHexMapData needs from the plugin. */
 export type CalloutSyncHost = Pick<HexmakerPlugin,
@@ -49,7 +50,7 @@ export async function syncHexMapData(
     const edits = Object.entries(plan.apply) as [keyof typeof plan.apply, string | null][];
     if (edits.length) {
       await host.undoableEdit(mapName, async () => {
-        const key = `${x}_${y}`;
+        const key = hexKey(x, y);
         for (const [field, value] of edits) {
           const shown = `${field[0].toUpperCase()}${field.slice(1)}: ${value ?? "—"}`;
           if (field === "name") {

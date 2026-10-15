@@ -33,6 +33,13 @@ export function hexPair(key: HexKey): [number, number] {
   return [Number(parts[0]), Number(parts[1])];
 }
 
+/** Sort keys by row then column, like reading a map. */
+export function compareHexKeys(a: HexKey, b: HexKey): number {
+  const [ax, ay] = hexPair(a);
+  const [bx, by] = hexPair(b);
+  return ay - by || ax - bx;
+}
+
 const STRICT = /^(-?\d+)_(-?\d+)$/;
 
 /** Is `s` exactly a hex key (integers, optional minus, one `_`)? */

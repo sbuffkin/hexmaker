@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { areNeighbours, hexKey, hexPair, hexXY, isHexKey, neighbourKeys, strictHexXY } from "../src/hexKey";
+import { areNeighbours, compareHexKeys, hexKey, hexPair, hexXY, isHexKey, neighbourKeys, strictHexXY } from "../src/hexKey";
 import { hexNeighbors } from "../src/hex-map/hexGeometry";
 
 /** What the call sites did before the helper: the behaviour hexXY keeps. */
@@ -67,5 +67,12 @@ describe("neighbourKeys / areNeighbours", () => {
 
   it("a malformed key has no real neighbours", () => {
     expect(areNeighbours("abc", "0_0", "flat")).toBe(false);
+  });
+});
+
+describe("compareHexKeys", () => {
+  it("sorts by row, then column", () => {
+    expect(["2_1", "0_1", "5_0", "-1_1", "3_-2"].sort(compareHexKeys)).toEqual(["3_-2", "5_0", "-1_1", "0_1", "2_1"]);
+    expect(compareHexKeys("4_4", "4_4")).toBe(0);
   });
 });
