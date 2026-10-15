@@ -1,44 +1,35 @@
-import { ItemView, Notice, Scope, TFile, TFolder, WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, Scope, TFile, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { normalizeFolder, getIconUrl, createIconEl } from "../utils";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
-  getFrontMatter,
-  terrainFromFm,
-  pendingTerrainOf,
-  iconOverrideFromFm,
-  gmIconsFromFm,
 } from "../frontmatter";
 import type { CellEdit } from "../undoBook";
 import { HexEditorModal } from "./HexEditorModal";
 import { addLinkToSection, getLinksInSection, removeLinkFromSection } from "../sections";
-import { getFactionColorFromFile, getSubmapFromFile } from "../frontmatter";
+import { getSubmapFromFile } from "../frontmatter";
 import {
   VIEW_TYPE_HEX_MAP,
   VIEW_TYPE_HEX_TABLE,
   VIEW_TYPE_RANDOM_TABLES,
 } from "../constants";
-import { MapModal, renderMissingActions } from "./MapModal";
+import { MapModal } from "./MapModal";
 import { PathTool } from "./pathTool";
-import { allows, canAdd, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
+import { allows, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
 import { canDo } from "../modeGate";
 import { ModeMenu } from "./modeMenu";
 import { lockedNotice } from "./godOffer";
-import { coordHaloColor } from "../coordStyle";
-import { watchBiomesPathHover } from "./biomesPathHover";
-import { parseVisited, partyClick } from "../play/partyTravel";
-import { hexHoverLabel, pathFirst, regionsViewTip } from "./hexHover";
-import { whenSized } from "./whenSized";
+import { partyClick } from "../play/partyTravel";
+import { hexHoverLabel, pathFirst } from "./hexHover";
 import { getHexNameFromFile } from "../frontmatter";
 import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
 import { hexNeighbors } from "./hexGeometry";
-import { moduleUnchartedKeys, worldMaps } from "../modules/runtime";
+import { worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
 import { HexHelpModal } from "./HexHelpModal";
 import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
-import { renderUnchartedLayer, unchartedKeys } from "./unchartedLayer";
 import { hexKeyFromBasename, linkedNotesText, linksBySection } from "./linkBadges";
 import { regionMapAt } from "../maps/submaps";
 // World maps (overworlds, regions, biomes, walking) through its hooks,
@@ -47,8 +38,6 @@ import type { OverworldLayer } from "../overworld/overworldLayer";
 import type { OverworldMinimap } from "../overworld/overworldMinimap";
 import type { BiomeHost } from "../overworld/BiomeModals";
 import type { BiomeStroke } from "../overworld/biomePainter";
-import { FrameThrottle } from "../frameThrottle";
-import { terrainDiff } from "./terrainDiff";
 import { PainterContextMenu } from "./PainterContextMenu";
 
 import { BackgroundCalibration } from "./view/backgroundCalibration";
@@ -66,6 +55,7 @@ import { HexContextMenu } from "./view/hexContextMenu";
 import { TokenLayer } from "./view/tokenLayer";
 import { GridEdgeButtons } from "./view/gridEdgeButtons";
 import { HexSwap } from "./view/hexSwap";
+import { GridRenderer, setHexColor } from "./view/gridRenderer";
 import type { DrawingMode } from "./toolMode";
 import type { IconUndoEntry, TokenSnap } from "./undoItems";
 
@@ -82,8 +72,8 @@ export class HexMapView extends ItemView {
   private pathLayer: PathOverlay;
   /** Coordinate labels, link badges, hex names, terrain legend (view/gridLabels.ts). */
   private labels: GridLabels;
-  /** Cancels a renderGrid waiting for the grid to get a layout size. */
-  private cancelMeasuredLayers: (() => void) | null = null;
+  /** The grid DOM and the layers measured from it (view/gridRenderer.ts). */
+  private grid: GridRenderer;
   /** Zoom at the last transform: a change redraws the names (readable size, NM3). */
   private namesZoom = 1;
   private controlsEl: HTMLElement | null = null;
@@ -130,7 +120,6 @@ export class HexMapView extends ItemView {
   private selectedHex: { x: number; y: number } | null = null;
   /** Paint writes (terrain, icon, GM icons), coalesced per hex (view/hexWrites.ts). */
   private writes: HexWrites;
-  private factionTooltipEl: HTMLElement | null = null;
   /** Faction and region overlays and their link tools (view/areaOverlay.ts). */
   private areas: AreaOverlay;
   private savingIndicatorEl: HTMLElement | null = null;
@@ -141,13 +130,6 @@ export class HexMapView extends ItemView {
   private undos: UndoController;
   /** The "no region here" hint was shown this stroke (once is enough). */
   private subStrokeMissHinted = false;
-  /**
-   * A region map's terrain as this view last drew it, so a brush stroke on
-   * its overworld (in another view) repaints just the hexes it changed, live.
-   * Empty for other maps.
-   */
-  private shownTerrain = new Map<string, string | null>();
-  private terrainSync = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
   /** Overworlds (OW1): every region's hexes stitched on one canvas, and the minimap. */
   private overworldLayer: OverworldLayer | undefined;
   private minimap: OverworldMinimap | undefined;
@@ -269,7 +251,7 @@ export class HexMapView extends ItemView {
       controlsEl: () => this.controlsEl,
       getActiveMap: () => this.getActiveMap(),
       zoom: () => this.viewport.zoom,
-      measuring: () => !!this.cancelMeasuredLayers,
+      measuring: () => this.grid.measuring,
       syncLegendToggle: () => this.overlayPanel?.syncLegendToggle(),
     });
     this.viewport = new MapViewport({
@@ -467,6 +449,36 @@ export class HexMapView extends ItemView {
     const wm = worldMaps();
     this.overworldLayer = wm ? new wm.OverworldLayer(plugin) : undefined;
     this.minimap = wm ? new wm.OverworldMinimap(plugin, this) : undefined;
+    this.grid = new GridRenderer({
+      plugin: this.plugin,
+      contentEl: this.contentEl,
+      viewportEl: () => this.viewportEl,
+      controlsEl: () => this.controlsEl,
+      activeMapName: () => this.activeMapName,
+      getActiveMap: () => this.getActiveMap(),
+      owView: (map) => this.owView(map),
+      getActiveStagger: () => this.getActiveStagger(),
+      selectedHex: () => this.selectedHex,
+      drawingMode: () => this.drawingMode,
+      overlayPanel: () => this.overlayPanel,
+      overworldLayer: () => this.overworldLayer,
+      minimap: () => this.minimap,
+      calibration: this.calibration,
+      labels: this.labels,
+      shadow: this.shadow,
+      pathLayer: this.pathLayer,
+      areas: this.areas,
+      tokens: this.tokens,
+      toolbar: this.toolbar,
+      hexMenu: this.hexMenu,
+      refreshWorkModeBtn: () => this.refreshWorkModeBtn(),
+      onHexClick: (x, y, e) => this.onHexClick(x, y, e),
+      navigateToMap: (name) => this.navigateToMap(name),
+      openLocationsList: (x, y) => this.openLocationsList(x, y),
+      labelHex: (el, t, p) => this.labelHex(el, t, p),
+      applyTerrainToHexEl: (el, t) => this.applyTerrainToHexEl(el, t),
+      emptySlotOnMap: (hex) => this.emptySlotOnMap(hex),
+    });
   }
 
   /** World maps' hooks (overworlds, regions, biomes, walking); undefined in a build without it. */
@@ -494,22 +506,6 @@ export class HexMapView extends ItemView {
   }
   getDisplayText(): string {
     return `Hex map — ${this.plugin.mapLabel(this.activeMapName)}`;
-  }
-
-  private missingEl: HTMLElement | null = null;
-
-  /** Show (true) or clear (false) the missing-map empty state for the open map. */
-  private renderMissingState(): boolean {
-    this.missingEl?.remove();
-    this.missingEl = null;
-    const name = this.activeMapName;
-    if (!this.plugin.mapStore.isMissing(name) || !this.controlsEl) return false;
-    const box = this.controlsEl.createDiv({ cls: "duckmage-map-missing-state" });
-    this.missingEl = box;
-    box.createEl("h3", { text: `${this.plugin.mapLabel(name)} is missing` });
-    box.createEl("p", { text: `Its folder and map note (${this.plugin.mapStore.notePath(name)}) were deleted. Restore writes the note back from the last saved copy; Remove drops the map from the list. No file is deleted.` });
-    renderMissingActions(box, this.plugin, name, () => this.renderGrid());
-    return true;
   }
 
   private getActiveMap(): MapData {
@@ -809,8 +805,8 @@ export class HexMapView extends ItemView {
       });
     }
 
-    this.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
-    this.factionTooltipEl.hide();
+    this.grid.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
+    this.grid.factionTooltipEl.hide();
 
     // Pointer input: hover, wheel zoom, pan, paint strokes, tool menus (view/mapInput.ts).
     this.input.attach(contentEl, clipEl);
@@ -951,7 +947,7 @@ export class HexMapView extends ItemView {
         // Badge size or kinds changed: redraw the badges and the legend.
         onBadgesChange: () => {
           const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-          if (grid && !this.cancelMeasuredLayers) {
+          if (grid && !this.grid.measuring) {
             this.labels.renderLinkBadges(grid);
             this.labels.drawHexNames(grid, true);
           }
@@ -960,7 +956,7 @@ export class HexMapView extends ItemView {
         // Name font changed (NM3): redraw the names.
         onHexNameFontChange: () => {
           const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-          if (grid && !this.cancelMeasuredLayers) this.labels.drawHexNames(grid, true);
+          if (grid && !this.grid.measuring) this.labels.drawHexNames(grid, true);
         },
         // Rows the modules add.
         rows: this.wm?.layerRows(this.plugin) ?? [],
@@ -1049,7 +1045,7 @@ export class HexMapView extends ItemView {
         this.onOverworldDataChange(map);
         if (map !== this.activeMapName) return;
         // Painted from its overworld in another view: repaint those hexes now.
-        if (this.shownTerrain.size && !this.undos.currentTerrainStroke) this.terrainSync.request(() => this.syncShownTerrain());
+        if (this.grid.shownTerrain.size && !this.undos.currentTerrainStroke) this.grid.requestTerrainSync();
         this.labels.scheduleTerrainLegend();
         // A name set without a redraw (hex table, code, map note edit) shows up.
         this.labels.scheduleHexNames();
@@ -1126,12 +1122,6 @@ export class HexMapView extends ItemView {
     if ((r.changed || r.made.length) && this.activeMapName === map) this.renderGrid();
   }
 
-  // Double-click on the destination confirms the swap
-  private onHexDblClick(_x: number, _y: number): void {
-    // Path tool: a double-click is two clicks on one hex, and the second
-    // one (on the active end) already finishes the branch.
-  }
-
   /** Leave a different active tool before switching to `next` (the smoke suite drives this). */
   private leaveOtherToolFor(next: DrawingMode): void {
     this.toolbar.leaveOtherToolFor(next);
@@ -1185,7 +1175,7 @@ export class HexMapView extends ItemView {
     this.stopUndoListen?.();
     this.stopUndoListen = null;
     this.labels.dispose();
-    this.cancelMeasuredLayers?.();
+    this.grid.cancelMeasured();
     if (this.calibration.active) {
       await this.calibration.exit(true);
     }
@@ -1253,375 +1243,14 @@ export class HexMapView extends ItemView {
     return hit ? pool.find((h) => Number(h.dataset.x) === hit.x && Number(h.dataset.y) === hit.y) ?? null : null;
   }
 
+  /** Full DOM re-render of the grid (view/gridRenderer.ts). The optional
+   *  overrides carry values not yet in the metadata cache / map store. */
   renderGrid(
     terrainOverrides?: Map<string, string | null>,
     iconOverrides?: Map<string, string | null>,
     gmIconsOverrides?: Map<string, string[]>,
   ): void {
-    if (!this.viewportEl) return;
-    this.factionTooltipEl?.hide();
-    this.viewportEl.empty();
-    // A map whose note was deleted by hand (SM-DEL): a clear empty state
-    // with Restore / Remove instead of an empty grid.
-    if (this.renderMissingState()) return;
-
-    const gap = this.plugin.settings.hexGap?.trim() || "0.15";
-    this.viewportEl.style.setProperty(
-      "--duckmage-hex-gap",
-      /^\d*\.?\d+$/.test(gap) ? `${gap}em` : gap,
-    );
-
-    // Apply the coord-placement class so CSS can position HTML labels
-    // top / middle / bottom inside the hex. The setting was previously
-    // honoured only by the (now-removed) SVG coord-label copies; the
-    // HTML labels need this class to know where to render.
-    const placement = this.plugin.settings.coordPlacement ?? "bottom";
-    this.viewportEl.removeClass(
-      "duckmage-coord-top",
-      "duckmage-coord-middle",
-      "duckmage-coord-bottom",
-    );
-    this.viewportEl.addClass(`duckmage-coord-${placement}`);
-
-    // Coord label size + font (settings → "Coordinate label"). Both flow
-    // into CSS vars consumed by `.duckmage-coord-label-html`. Size is in em so it
-    // scales with the hex; font family is one of Obsidian's CSS font vars.
-    const coordFontSize = this.plugin.settings.coordFontSize ?? 0.8;
-    const coordFontFamilyKey = this.plugin.settings.coordFontFamily ?? "interface";
-    const coordFontFamily =
-      coordFontFamilyKey === "monospace"
-        ? "var(--font-monospace)"
-        : coordFontFamilyKey === "serif"
-          ? 'Georgia, Cambria, "Times New Roman", Times, serif'
-          : "var(--font-interface)";
-    const coordFontColor = this.plugin.settings.coordFontColor ?? "#ffffff";
-    this.viewportEl.setCssProps({
-      "--duckmage-coord-font-size": `${coordFontSize}em`,
-      "--duckmage-coord-font-family": coordFontFamily,
-      "--duckmage-coord-color": coordFontColor,
-      // Halo opposite to the text colour: labels read on light terrain too.
-      "--duckmage-coord-halo": coordHaloColor(coordFontColor),
-    });
-
-    const region = this.getActiveMap();
-
-    // Background image layer (behind hex grid; shares the viewport's pan/zoom
-    // transform via DOM nesting). Added first so it stacks under the grid.
-    this.calibration.renderBackgroundImage(this.viewportEl, region);
-
-    // Sync overlay checkboxes and CSS classes to the active region's saved state
-    this.overlayPanel?.syncToRegion();
-
-    const { cols, rows } = region.gridSize;
-    const { x: ox, y: oy } = region.gridOffset;
-    const hexBase = normalizeFolder(this.plugin.settings.hexFolder);
-    const folder = hexBase
-      ? `${hexBase}/${this.activeMapName}`
-      : this.activeMapName;
-    const palette = this.plugin.getMapPalette(this.activeMapName);
-    // Index the palette by name once so `addHex` doesn't do a linear
-    // `palette.find` per hex. Output identical; on a 30×20 map this is
-    // ~600 fewer linear scans per renderGrid.
-    const paletteByName = new Map(palette.map((p) => [p.name, p]));
-    const isFlat = this.plugin.settings.hexOrientation === "flat";
-    const owView = this.owView(region);
-    const gridContainer = this.viewportEl.createDiv({
-      cls: `duckmage-hex-map-grid${isFlat ? " duckmage-grid-flat" : ""}`,
-    });
-    // An overworld's Regions view shows only the regions (and blank bricks
-    // where there's none yet): its own hexes stay as invisible click
-    // targets, and their coordinates, names and badges are hidden (owner
-    // playtest: "just show blank bricks rather than the hex one behind").
-    const regionsView = owView === "regions";
-    if (regionsView) {
-      gridContainer.addClass("duckmage-ow-regions");
-      // The region's name on hover, nothing drawn on the map. Once a frame,
-      // read at the LAST pointer position (the first one of the frame left
-      // a region's name up after the pointer had moved off it), and cleared
-      // when the pointer leaves the grid.
-      const hover = new FrameThrottle((cb) => window.requestAnimationFrame(cb));
-      const setTip = (tip: string) => { if (gridContainer.title !== tip) gridContainer.title = tip; };
-      gridContainer.addEventListener("mousemove", (e) => {
-        const { clientX, clientY } = e;
-        hover.request(() => {
-          const cell = this.overworldLayer?.cellAt(gridContainer, clientX, clientY) ?? null;
-          const line = this.overworldLayer?.pathAt(gridContainer, clientX, clientY) ?? null;
-          setTip(regionsViewTip(cell, {
-            label: (r) => this.plugin.mapLabel(r),
-            emptySlot: (h) => this.emptySlotOnMap(h),
-            canAdd: canAdd(this.getActiveMap()),
-            path: line?.names.join(", "),
-          }));
-        });
-      });
-      gridContainer.addEventListener("mouseleave", () => hover.request(() => setTip("")));
-    } else if (owView === "biomes") {
-      gridContainer.addClass("duckmage-ow-biomes");
-      // A path between regions under the pointer: its name in the tooltip (O2).
-      watchBiomesPathHover(gridContainer, (x, y) => this.overworldLayer?.pathAt(gridContainer, x, y)?.names.join(", "), (el, path) => this.labelHex(el, undefined, path));
-    }
-
-    // Apply optional independent grid transform (used for bg-image calibration).
-    // Custom-property values default to identity in CSS when unset, so we
-    // can safely write them unconditionally — no special-casing for the
-    // un-calibrated default.
-    this.calibration.applyGridLayerVars(gridContainer, region);
-
-    if (this.calibration.active) this.calibration.attachGridCalibrationHandlers(gridContainer, region);
-
-    // Pre-compute the set of existing hex notes for this map by walking the
-    // hex folder's TFolder.children directly. Lets `addHex` check existence
-    // via O(1) Set.has(path) instead of the per-hex
-    // `vault.getAbstractFileByPath` round-trip. Output identical.
-    const existingHexPaths = new Set<string>();
-    const hexFolderObj = folder ? this.app.vault.getAbstractFileByPath(folder) : null;
-    if (hexFolderObj instanceof TFolder) {
-      for (const child of hexFolderObj.children) {
-        if (child instanceof TFile && child.extension === "md") {
-          existingHexPaths.add(child.path);
-        }
-      }
-    }
-
-    // Hexes the party has stood on (SF5): a mark the layers menu can hide.
-    const visitedHexes = new Set(parseVisited(region.visited));
-    const addHex = (parent: HTMLElement, x: number, y: number) => {
-      const path = folder ? `${folder}/${x}_${y}.md` : `${x}_${y}.md`;
-      const exists = existingHexPaths.has(path);
-      // Fetch this hex's frontmatter ONCE; terrain/icon/gm-icons all derive
-      // from it. Calling getTerrainFromFile + getIconOverrideFromFile +
-      // getGmIconsFromFile separately would re-run getAbstractFileByPath +
-      // getFileCache three times per hex (~11.5k redundant lookups on a
-      // 3843-hex map).
-      // Before the map store is ready (startup), fall back to frontmatter.
-      const fromStore = this.plugin.mapStore.isReady();
-      const fm = fromStore ? null : getFrontMatter(this.app, path);
-      const stored = fromStore ? this.plugin.mapStore.get(this.activeMapName, `${x}_${y}`) : undefined;
-      // A note this plugin just wrote may not be indexed yet; its terrain is
-      // held in memory until it is.
-      const terrainKey = terrainOverrides?.has(path)
-        ? terrainOverrides.get(path)!
-        : fromStore ? stored?.terrain ?? null
-        : fm ? terrainFromFm(fm) : pendingTerrainOf(path);
-      // Hexes with no terrain (often no note at all — notes are created on
-      // use) show the map's base terrain, e.g. "void" on a system map.
-      const ownTerrain = terrainKey != null ? paletteByName.get(terrainKey) : undefined;
-      const baseEntry = !ownTerrain && region.baseTerrain ? paletteByName.get(region.baseTerrain) : undefined;
-      const terrainEntry = ownTerrain ?? baseEntry;
-
-      const hexEl = parent.createDiv({
-        cls: `duckmage-hex${exists ? " duckmage-hex-exists" : ""}`,
-        attr: { "data-x": String(x), "data-y": String(y) },
-      });
-      hexEl.tabIndex = -1;
-
-      if (regionsView) {
-        hexEl.addEventListener("click", (e) => {
-          void this.onHexClick(x, y, e);
-        });
-        hexEl.addEventListener("contextmenu", (evt) => this.hexMenu.onHexContextMenu(evt, x, y));
-        return;
-      }
-
-      this.setHexColor(hexEl, terrainEntry?.color);
-
-      const iconOverride = iconOverrides?.has(path)
-        ? iconOverrides.get(path)!
-        : fromStore ? stored?.icon ?? null : iconOverrideFromFm(fm);
-      if (iconOverride) {
-        // Render terrain icon as hidden fallback — shown by CSS when overrides are off
-        if (terrainEntry?.icon) {
-          createIconEl(
-            hexEl,
-            getIconUrl(this.plugin, terrainEntry.icon),
-            terrainEntry.name,
-            terrainEntry.iconColor,
-            "duckmage-hex-terrain-icon",
-          );
-        }
-        // Render the override icon (primary, visible by default)
-        createIconEl(
-          hexEl,
-          getIconUrl(this.plugin, iconOverride),
-          terrainEntry?.name ?? "",
-          undefined,
-          "duckmage-hex-icon duckmage-hex-override-icon",
-        );
-        // Tag the hex so the SVG overlay can elevate this icon above roads/rivers
-        hexEl.dataset.iconOverride = iconOverride;
-      } else if (terrainEntry?.icon) {
-        createIconEl(
-          hexEl,
-          getIconUrl(this.plugin, terrainEntry.icon),
-          terrainEntry.name,
-          terrainEntry.iconColor,
-          "duckmage-hex-icon",
-        );
-      }
-
-      // Tag hex for GM icon overlay (rendered in path SVG when GM layer is active)
-      // GM icons stored as a JSON-encoded array on the dataset; allows
-      // multiple icons per hex (with duplicates representing a count).
-      // Empty list → no attribute at all so the overlay query still
-      // matches only hexes that have GM content. The override path
-      // bypasses the metadata-cache read so the editor's just-written
-      // list lands on the dataset immediately, no race.
-      const gmIcons = gmIconsOverrides?.has(path)
-        ? gmIconsOverrides.get(path)!
-        : fromStore ? [...(stored?.gmIcons ?? [])] : gmIconsFromFm(fm);
-      if (gmIcons.length > 0) hexEl.dataset.gmIcons = JSON.stringify(gmIcons);
-
-      if (this.selectedHex?.x === x && this.selectedHex?.y === y)
-        hexEl.addClass("is-selected");
-      if (visitedHexes.has(`${x}_${y}`)) hexEl.addClass("duckmage-hex-visited");
-
-      if (exists && !terrainEntry)
-        hexEl.createSpan({ cls: "duckmage-hex-dot" });
-
-      // Submap marker: shows which hexes drill down (a system in a sector,
-      // a dungeon in a region). Clicking it enters the submap when no tool
-      // is active; with a tool active the click falls through to the hex.
-      // A Region map: a thin inner hex outline, except on an overworld
-      // (either view), where every hex has a region and the outline says
-      // nothing. Locations: the badge, with a count from two on; its
-      // tooltip lists them.
-      const legacySubmap: unknown = fromStore ? undefined : fm?.["duckmage-submap"];
-      const regionMap = stored?.regionMap && this.plugin.getMap(stored.regionMap) ? stored.regionMap : undefined;
-      const locations = (fromStore ? stored?.locations ?? [] : typeof legacySubmap === "string" && legacySubmap ? [legacySubmap] : [])
-        .filter((m) => m !== regionMap && !!this.plugin.getMap(m));
-      if (regionMap) {
-        hexEl.addClass("duckmage-hex-has-region-map");
-        if (!owView) hexEl.createSpan({
-          cls: "duckmage-hex-region-outline",
-          attr: { title: `Region: ${this.plugin.mapLabel(regionMap)} (Ctrl+click hex to enter)` },
-        });
-      }
-      if (locations.length) {
-        hexEl.addClass("duckmage-hex-has-submap");
-        const names = locations.map((m) => this.plugin.mapLabel(m));
-        const one = locations.length === 1;
-        const title = one
-          ? `Enter location: ${names[0]}${regionMap ? "" : " (Ctrl+click hex)"}`
-          : `Locations: ${names.join(", ")} (click for the list)`;
-        const badge = hexEl.createSpan({
-          cls: "duckmage-hex-submap-badge" + (one ? "" : " has-count"),
-          text: one ? "" : String(locations.length),
-          attr: { title, "aria-label": title },
-        });
-        badge.addEventListener("click", (e) => {
-          if (this.drawingMode) return;
-          e.stopPropagation();
-          if (one) this.navigateToMap(locations[0]);
-          else this.openLocationsList(x, y);
-        });
-      }
-
-      hexEl.addEventListener("click", (e) => {
-        void this.onHexClick(x, y, e);
-      });
-      hexEl.addEventListener("dblclick", () => {
-        void this.onHexDblClick(x, y);
-      });
-      hexEl.addEventListener("contextmenu", (evt) =>
-        this.hexMenu.onHexContextMenu(evt, x, y),
-      );
-      if (region.showFactionOverlay && this.factionTooltipEl) {
-        const tooltip = this.factionTooltipEl;
-        hexEl.addEventListener("mouseenter", (e: MouseEvent) => {
-          const factions = this.areas.getFactionLinksFromCache(path);
-          if (factions.length === 0) { tooltip.hide(); return; }
-          tooltip.empty();
-          const factionsFolder = normalizeFolder(this.plugin.settings.factionsFolder);
-          for (const name of factions) {
-            const row = tooltip.createDiv({ cls: "duckmage-faction-tooltip-row" });
-            const fPath = factionsFolder ? `${factionsFolder}/${name}.md` : `${name}.md`;
-            const color = getFactionColorFromFile(this.app, fPath);
-            const swatch = row.createSpan({ cls: "duckmage-faction-tooltip-swatch" });
-            if (color) swatch.style.backgroundColor = color;
-            row.createSpan({ text: name, cls: "duckmage-faction-tooltip-name" });
-          }
-          const containerRect = this.contentEl.getBoundingClientRect();
-          tooltip.style.left = `${e.clientX - containerRect.left + 14}px`;
-          tooltip.style.top = `${e.clientY - containerRect.top + 8}px`;
-          tooltip.show();
-        });
-        hexEl.addEventListener("mouseleave", () => tooltip.hide());
-      }
-    };
-
-    const stagger = this.getActiveStagger();
-    const isStaggered = (n: number) =>
-      stagger === "odd" ? n % 2 !== 0 : n % 2 === 0;
-
-    if (isFlat) {
-      // Flat-top: iterate columns; staggered columns shift down by half hex height
-      for (let i = 0; i < cols; i++) {
-        const x = ox + i;
-        const colEl = gridContainer.createDiv({
-          cls: `duckmage-hex-col${isStaggered(x) ? " duckmage-hex-col-offset" : ""}`,
-        });
-        for (let j = 0; j < rows; j++) {
-          addHex(colEl, x, oy + j);
-        }
-      }
-    } else {
-      // Pointy-top: iterate rows; staggered rows shift right by half hex width
-      for (let j = 0; j < rows; j++) {
-        const y = oy + j;
-        const rowEl = gridContainer.createDiv({
-          cls: `duckmage-hex-row${isStaggered(y) ? " duckmage-hex-row-offset" : ""}`,
-        });
-        for (let i = 0; i < cols; i++) {
-          addHex(rowEl, ox + i, y);
-        }
-      }
-    }
-
-    this.labels.refreshTerrainLegend();
-
-    // Everything below measures hex positions. A grid that isn't laid out
-    // yet (map tab in the background on plugin reload) measures 0 and would
-    // put every label at 0,0, so wait until it has a size.
-    this.cancelMeasuredLayers?.();
-    this.labels.resetCoords();
-    // whenSized may draw right away (the usual case): only keep the cancel
-    // while it's still waiting, or later redraws (names, badges) think the
-    // grid never got a size and skip (round 7: badge size didn't apply).
-    let drawn = false;
-    const cancel = whenSized(gridContainer, () => {
-      drawn = true;
-      this.cancelMeasuredLayers = null;
-      if (gridContainer.isConnected) this.renderMeasuredLayers(gridContainer, region);
-    });
-    if (!drawn) this.cancelMeasuredLayers = cancel;
-  }
-
-  /** The layers placed from measured hex geometry (see renderGrid). */
-  private renderMeasuredLayers(gridContainer: HTMLElement, region: MapData): void {
-    this.snapshotShownTerrain(region);
-    this.shadow.render(gridContainer, region);
-    this.overworldLayer?.render(gridContainer, region);
-    this.minimap?.render(this.contentEl, region);
-    // The view switch or a hand-edited `mode:` may have changed what the bars say.
-    this.toolbar.updateModeBar();
-    this.refreshWorkModeBtn();
-    this.pathLayer.renderPathOverlay(gridContainer);
-    this.areas.renderRegionOverlay(gridContainer);
-    this.areas.renderFactionOverlay(gridContainer);
-    // Coord labels go LAST (and at z:10 in CSS) so they sit above the path
-    // SVG, GM-icon overlay, faction overlay, and region overlay — paths
-    // and icons can no longer cover up the hex coordinates.
-    this.labels.renderCoordLabelsLayer(gridContainer);
-    // Badges reuse the hex centres the coord labels just measured.
-    this.labels.renderLinkBadges(gridContainer);
-    // So does the uncharted marker (no layout reads of its own).
-    renderUnchartedLayer(gridContainer, this.labels.coordPlacements, this.labels.coordGridSize, unchartedKeys(this.plugin.mapStore.all(this.activeMapName), moduleUnchartedKeys(this.plugin, this.activeMapName)));
-    this.labels.drawHexNames(gridContainer);
-    if (this.calibration.active) {
-      this.calibration.renderCalibrationOutlines(gridContainer);
-      this.calibration.applyCalibrationFocusStyles();
-    }
-    this.tokens.renderTokenLayer(gridContainer);
+    this.grid.renderGrid(terrainOverrides, iconOverrides, gmIconsOverrides);
   }
 
   private openHexEditorModal(x: number, y: number): void {
@@ -1824,7 +1453,7 @@ export class HexMapView extends ItemView {
         `[data-x="${hx}"][data-y="${hy}"]`,
       );
       if (hexEl) {
-        this.setHexColor(hexEl, entry?.color);
+        setHexColor(hexEl, entry?.color);
         hexEl.querySelector(".duckmage-hex-icon")?.remove();
         hexEl.querySelector(".duckmage-hex-dot")?.remove();
         if (entry?.icon) {
@@ -2072,24 +1701,6 @@ export class HexMapView extends ItemView {
   }
 
   /**
-   * Set (or clear) a hex cell's terrain background color, keeping the
-   * `duckmage-hex-painted` marker class in sync. The bg-image stylesheet uses
-   * that class — rather than a `:not([style*="background-color"])`
-   * attribute-substring selector, which is measurably slower for the engine to
-   * match across the thousands of hexes on a large map — to decide which empty
-   * hexes fall transparent over the image.
-   */
-  private setHexColor(hexEl: HTMLElement, color: string | undefined | null): void {
-    if (color) {
-      hexEl.style.backgroundColor = color;
-      hexEl.addClass("duckmage-hex-painted");
-    } else {
-      hexEl.style.removeProperty("background-color");
-      hexEl.removeClass("duckmage-hex-painted");
-    }
-  }
-
-  /**
    * A hex's tooltip / accessible name: name, terrain, coords, links.
    * `terrain` (when given) is the terrain just painted, ahead of its queued
    * write; otherwise a queued write wins over the saved map data. Called on
@@ -2125,7 +1736,7 @@ export class HexMapView extends ItemView {
     const palette = this.plugin.getMapPalette(this.activeMapName);
     const entry =
       terrain != null ? palette.find((p) => p.name === terrain) : undefined;
-    this.setHexColor(hexEl, entry?.color);
+    setHexColor(hexEl, entry?.color);
     hexEl.querySelector(".duckmage-hex-icon")?.remove();
     hexEl.querySelector(".duckmage-hex-dot")?.remove();
     if (entry?.icon) {
@@ -2201,28 +1812,6 @@ export class HexMapView extends ItemView {
       this.plugin.mapStore.set(map, key, { terrain, locked: terrain ? true : null }, "paint-terrain");
     }
     return `${cell.x}_${cell.y}`;
-  }
-
-  /** Remember a region map's terrain as drawn (see shownTerrain). */
-  private snapshotShownTerrain(map: MapData): void {
-    this.shownTerrain.clear();
-    if (map.submapKind !== "region") return;
-    const { x: ox, y: oy } = map.gridOffset, { cols, rows } = map.gridSize;
-    for (let y = oy; y < oy + rows; y++) {
-      for (let x = ox; x < ox + cols; x++) this.shownTerrain.set(`${x}_${y}`, this.plugin.mapStore.get(map.name, `${x}_${y}`)?.terrain ?? null);
-    }
-  }
-
-  /** Repaint the hexes whose terrain changed since they were drawn (see shownTerrain). */
-  private syncShownTerrain(): void {
-    const map = this.activeMapName;
-    const changes = terrainDiff(this.shownTerrain, (k) => this.plugin.mapStore.get(map, k)?.terrain);
-    for (const [key, terrain] of changes) {
-      this.shownTerrain.set(key, terrain);
-      const [x, y] = key.split("_");
-      const el = this.viewportEl?.querySelector<HTMLElement>(`.duckmage-hex[data-x="${x}"][data-y="${y}"]`);
-      if (el) this.applyTerrainToHexEl(el, terrain);
-    }
   }
 
   /** Show an overworld's Regions view (the terrain brush paints there). */
