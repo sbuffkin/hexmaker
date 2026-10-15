@@ -26,7 +26,7 @@ import { newWorldId } from "../worldgen/world";
 import { BUILTIN_GENERATORS, builtinModel } from "../worldgen/builtinGenerators";
 import { regionMapAt } from "../maps/submaps";
 import { biomeByRef, biomeForTerrain, biomeNoteOf, biomeProfiles, biomeRef, biomeSourceVersion, isBlankBiome, noteBiomeProfiles, representativeTerrain, withComboProfiles, type BiomeId, type BiomeProfile } from "./biomes";
-import { regionCells, type RegionLayout } from "./layout";
+import type { RegionLayout } from "./layout";
 import type { BlendWidth } from "./blendField";
 import { ADD_REGION_LOCKED_HINT, canAdd, canChangeRegion, PLACE_LOCKED_HINT, regionChangeHint } from "../workMode";
 import {
@@ -500,11 +500,6 @@ export async function generateMissingRegions(
     hooks.onProgress?.(made.length + errors.length, order.length, "name" in res ? res.name : "");
   }
   return { made, errors };
-}
-
-/** Every cell of a region map's block (for previews): shared-grid keys. */
-export function regionBlockKeys(layout: RegionLayout, px: number, py: number): string[] {
-  return regionCells(layout, px, py).map(([x, y]) => `${x}_${y}`);
 }
 
 // ── reshaping: set a biome, regenerate, reroll ───────────────────────────

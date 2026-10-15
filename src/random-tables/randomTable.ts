@@ -47,9 +47,6 @@ import { parseWhen, unreadableConditions, type TableCondition } from "./tableCon
 export type RowType = "text" | "note" | "table" | "generator" | "terrain" | "biome" | "any";
 export const ROW_TYPES: readonly RowType[] = ["text", "note", "table", "generator", "terrain", "biome", "any"];
 
-/** The four column names with a shared meaning in every table. */
-export const SHARED_COLUMNS = ["Roll", "Shown as", "Once", "When"] as const;
-
 export interface RandomTableEntry {
   result: string;
   weight: number;

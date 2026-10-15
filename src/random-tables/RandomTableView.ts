@@ -581,11 +581,6 @@ export class RandomTableView extends ItemView {
     };
   }
 
-  private isInTablesFolder(filePath: string): boolean {
-    const folder = normalizeFolder(this.plugin.settings.tablesFolder);
-    return !folder || filePath.startsWith(folder + "/");
-  }
-
   private isInWorkflowsFolder(filePath: string): boolean {
     const folder = normalizeFolder(this.plugin.settings.workflowsFolder);
     return !!folder && filePath.startsWith(folder + "/");

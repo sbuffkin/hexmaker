@@ -19,11 +19,6 @@ import { isTableNotePath } from "./tableNotePaths";
 /** Content the plugin last read or wrote, per table note path. */
 const lastContent = new Map<string, string>();
 
-/** Remember content the plugin wrote (or read) for a table note. */
-export function rememberTableContent(path: string, content: string): void {
-  lastContent.set(path, content);
-}
-
 /** vault.process for table notes: the result is recorded as the plugin's own write. */
 export async function processTableNote(app: App, file: TFile, edit: (content: string) => string): Promise<string> {
   return app.vault.process(file, (content) => {

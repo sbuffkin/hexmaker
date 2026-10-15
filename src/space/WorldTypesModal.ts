@@ -51,19 +51,12 @@ import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SaveTracker, type SaveSta
 import { isDebugMode } from "../ui/debugMode";
 import { isShown, layerOf } from "../ui/placement";
 import { oddsText, readOddsWeight } from "../ui/odds";
+import { lockButton } from "../ui/lockButton";
 
 /** Why world types can't be edited from this map now, or undefined. */
 export function worldTypesEditLock(plugin: HexmakerPlugin, mapName: string | undefined): string | undefined {
   const map = mapName ? plugin.getMap(mapName) : undefined;
   return canAdd(map) ? undefined : "Switch to Build to edit world types.";
-}
-
-/** A button that can't be used in this work mode (like the biome editor's). */
-function lockButton(btn: HTMLButtonElement, hint: string): void {
-  btn.disabled = true;
-  btn.addClass("is-locked");
-  btn.setAttr("title", hint);
-  btn.setAttr("aria-label", `${btn.getText()} (${hint})`);
 }
 
 const PLACEHOLDERS: Record<string, string> = {
