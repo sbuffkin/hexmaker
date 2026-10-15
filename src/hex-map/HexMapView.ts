@@ -1,13 +1,8 @@
 import { ItemView, Scope, TFile, WorkspaceLeaf } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
-import { normalizeFolder } from "../utils";
 import { HexEditorModal } from "./HexEditorModal";
 import { getSubmapFromFile } from "../frontmatter";
-import {
-  VIEW_TYPE_HEX_MAP,
-  VIEW_TYPE_HEX_TABLE,
-  VIEW_TYPE_RANDOM_TABLES,
-} from "../constants";
+import { VIEW_TYPE_HEX_MAP, VIEW_TYPE_RANDOM_TABLES } from "../constants";
 import { MapModal } from "./MapModal";
 import { PathTool } from "./pathTool";
 import { allows, lockedHint, TOOL_ACTIONS, WORK_MODES, WORK_MODE_TEXT, workModeOf, type ModeAction, type WorkMode } from "../workMode";
@@ -19,16 +14,13 @@ import { nearestHex } from "./hitTest";
 import type { MapData, MapPath, TokenEntry } from "../types";
 import { worldMaps } from "../modules/runtime";
 import type { WorldMapsApi } from "../modules/world-maps/api";
-import { HexHelpModal } from "./HexHelpModal";
-import { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
-import { hexKeyFromBasename } from "./linkBadges";
+import type { DrawingToolPanel, OverlayPanel } from "./HexSidePanel";
 import { regionMapAt } from "../maps/submaps";
 // World maps (overworlds, regions, biomes, walking) through its hooks,
 // typed only: worldMaps() is undefined in a build without it.
 import type { OverworldLayer } from "../overworld/overworldLayer";
 import type { OverworldMinimap } from "../overworld/overworldMinimap";
 import type { BiomeHost } from "../overworld/BiomeModals";
-import { PainterContextMenu } from "./PainterContextMenu";
 
 import { BackgroundCalibration } from "./view/backgroundCalibration";
 import { MapViewport } from "./view/mapViewport";
@@ -47,6 +39,7 @@ import { GridEdgeButtons } from "./view/gridEdgeButtons";
 import { HexSwap } from "./view/hexSwap";
 import { GridRenderer } from "./view/gridRenderer";
 import { HexPainter } from "./view/hexPainter";
+import { MapShell } from "./view/mapShell";
 import type { DrawingMode } from "./toolMode";
 import type { TokenSnap } from "./undoItems";
 
@@ -94,17 +87,12 @@ export class HexMapView extends ItemView {
   private get paintBiomeId(): string | null { return this.toolbar.paintBiomeId; }
   private get pendingTokenNotePath(): string | null { return this.toolbar.pendingTokenNotePath; }
   private get pendingTokenPlaceData(): NonNullable<TokenSnap["look"]> | null { return this.toolbar.pendingTokenPlaceData; }
-  /** On-map "which tool is on" bar (fresh-eyes T3). */
-  private get modeBarEl(): HTMLElement | null { return this.toolbar.modeBarEl; }
-  /** Toolbar rows (and the mode bar) along the top of the map: hexes are
-   *  kept out from under them (see safeArea.ts). */
-  private topBandEls: HTMLElement[] = [];
-  /** The open (or last) right-click tool menu, so Esc can close it first. */
-  private get painterMenu(): PainterContextMenu | null { return this.toolbar.painterMenu; }
   /** The paint tools' hex handlers and strokes (view/hexPainter.ts). */
   private painter: HexPainter;
-  private overlayPanel: OverlayPanel | null = null;
-  private toolsPanel: DrawingToolPanel | null = null;
+  /** Keys, top bar, side panels and listeners made in onOpen (view/mapShell.ts). */
+  private shell: MapShell;
+  private get overlayPanel(): OverlayPanel | null { return this.shell.overlayPanel; }
+  private get toolsPanel(): DrawingToolPanel | null { return this.shell.toolsPanel; }
   /** The path tool: drawing, selecting, reshaping (src/hex-map/pathTool.ts). */
   private pathTool: PathTool;
   private selectedHex: { x: number; y: number } | null = null;
@@ -122,22 +110,16 @@ export class HexMapView extends ItemView {
   private overworldLayer: OverworldLayer | undefined;
   private minimap: OverworldMinimap | undefined;
   private minimapTimer: number | null = null;
-  private undoBtn: HTMLButtonElement | null = null;
-  private redoBtn: HTMLButtonElement | null = null;
   activeMapName = "default";
 
   /** Path types the active map can draw: its palette's. */
   private mapPathTypes() {
     return this.plugin.getMapPathTypes(this.activeMapName);
   }
-  /** Set when another view/window mutated shared state while this view was
-   *  inactive; consumed by a re-render on next activation (issue #32). */
-  private needsRerender = false;
   /** Moving between maps: history, crumbs, arrows, neighbours (view/mapNavigation.ts). */
   private nav: MapNavigation;
   /** The hex right-click menus (view/hexContextMenu.ts). */
   private hexMenu: HexContextMenu;
-  private mapBtn: HTMLButtonElement | null = null;
   /** The map's work mode (Play / Build / God), always shown. */
   private workModeBtn: HTMLButtonElement | null = null;
   /** Tokens, the party and its steps (view/tokenLayer.ts). */
@@ -188,7 +170,7 @@ export class HexMapView extends ItemView {
       wm: () => this.wm,
       writes: this.writes,
       calibration: { captureCalibration: (m) => this.calibration.captureCalibration(m), applyCalibrationSnapshot: (n, s) => this.calibration.applyCalibrationSnapshot(n, s) },
-      undoButtons: () => ({ undo: this.undoBtn, redo: this.redoBtn }),
+      undoButtons: () => ({ undo: this.shell.undoBtn, redo: this.shell.redoBtn }),
       applyTerrainToHexEl: (el, t) => this.painter.applyTerrainToHexEl(el, t),
       getFactionLinksFromCache: (p) => this.areas.getFactionLinksFromCache(p),
       applyFactionStroke: (e, w) => this.areas.applyFactionStroke(e, w),
@@ -248,7 +230,7 @@ export class HexMapView extends ItemView {
       getActiveMap: () => this.getActiveMap(),
       calibration: () => this.calibration,
       overlayEls: () => ({
-        top: this.topBandEls.filter((el) => el.isConnected),
+        top: this.shell.topBandEls.filter((el) => el.isConnected),
         right: [this.toolsPanel, this.overlayPanel]
           .filter((p): p is DrawingToolPanel | OverlayPanel => !!p && p.isOpen)
           .map((p) => p.element),
@@ -352,7 +334,7 @@ export class HexMapView extends ItemView {
     this.nav = new MapNavigation(this.plugin, {
       activeMapName: () => this.activeMapName,
       viewportEl: () => this.viewportEl,
-      mapBtn: () => this.mapBtn,
+      mapBtn: () => this.shell.mapBtn,
       drawingMode: () => this.drawingMode,
       wm: () => this.wm,
       viewport: { measureOverlayInsets: () => this.viewport.measureOverlayInsets(), panBy: (dx, dy) => this.viewport.panBy(dx, dy) },
@@ -484,6 +466,46 @@ export class HexMapView extends ItemView {
       applyTerrainToHexEl: (el, t) => this.painter.applyTerrainToHexEl(el, t),
       emptySlotOnMap: (hex) => this.emptySlotOnMap(hex),
     });
+    this.shell = new MapShell({
+      plugin: this.plugin,
+      leaf: this.leaf,
+      scope: () => this.scope!,
+      registerEvent: this.registerEvent.bind(this),
+      register: this.register.bind(this),
+      viewportEl: () => this.viewportEl,
+      activeMapName: () => this.activeMapName,
+      getActiveMap: () => this.getActiveMap(),
+      wm: () => this.wm,
+      overworldLayer: () => this.overworldLayer,
+      drawingMode: () => this.drawingMode,
+      isErasingMode: () => this.isErasingMode,
+      activeParty: () => this.activeParty(),
+      pathTool: this.pathTool,
+      toolbar: this.toolbar,
+      undos: this.undos,
+      nav: this.nav,
+      tokens: this.tokens,
+      areas: this.areas,
+      pathLayer: this.pathLayer,
+      labels: this.labels,
+      grid: this.grid,
+      undo: () => this.undo(),
+      redo: () => this.redo(),
+      navigateUp: () => this.navigateUp(),
+      navigateBack: () => this.navigateBack(),
+      navigateForward: () => this.navigateForward(),
+      exitCurrentMode: () => this.exitCurrentMode(),
+      exitTerrainMode: () => this.exitTerrainMode(),
+      openMapModal: (onChanged) => new MapModal(this.app, this.plugin, this, onChanged).open(),
+      buildWorkModeBtn: (group) => {
+        this.workModeBtn = group.createEl("button", { cls: "duckmage-work-mode-btn" });
+        this.workModeBtn.addEventListener("click", (e) => this.openWorkModeMenu(e));
+      },
+      refreshViewHeader: () => this.refreshViewHeader(),
+      markStaleFromExternal: () => this.markStaleFromExternal(),
+      onOverworldDataChange: (map) => this.onOverworldDataChange(map),
+      renderGrid: () => this.renderGrid(),
+    });
   }
 
   /** World maps' hooks (overworlds, regions, biomes, walking); undefined in a build without it. */
@@ -527,11 +549,7 @@ export class HexMapView extends ItemView {
    */
   markStaleFromExternal(): void {
     if (this.app.workspace.getActiveViewOfType(HexMapView) === this) return;
-    this.needsRerender = true;
-  }
-
-  private updateMapBtnLabel(): void {
-    this.mapBtn?.setText(`${this.plugin.mapLabel(this.activeMapName)} ▾`);
+    this.shell.needsRerender = true;
   }
 
   private refreshViewHeader(): void {
@@ -561,7 +579,7 @@ export class HexMapView extends ItemView {
     }
 
     this.activeMapName = name;
-    this.updateMapBtnLabel();
+    this.shell.updateMapBtnLabel();
     this.refreshViewHeader();
     this.viewport.restoreViewport(name);
     this.nav.refreshMapNav();
@@ -739,38 +757,9 @@ export class HexMapView extends ItemView {
     // doesn't see a phantom "Calibrating background" on a fresh view.
     this.calibration.sweepStrayCalibrationHelp();
 
-    // View-scoped Ctrl/Cmd+Z (undo) and Ctrl/Cmd+Shift+Z (redo) via the
-    // view's keymap Scope: Obsidian activates it only while this view is
-    // active, in whichever window hosts it — unlike a document-level keydown
-    // registered against onOpen-time `activeDocument`, which goes stale when
-    // the tab is moved to a popout window (issue #32).
+    // The view's keymap scope: undo / redo and Alt+arrow navigation (view/mapShell.ts).
     this.scope = new Scope(this.app.scope);
-    this.scope.register(["Mod"], "z", (e: KeyboardEvent) => {
-      e.preventDefault();
-      void this.undo();
-      return false;
-    });
-    this.scope.register(["Mod", "Shift"], "z", (e: KeyboardEvent) => {
-      e.preventDefault();
-      void this.redo();
-      return false;
-    });
-    // Submap navigation: Alt+↑ up to the parent map, Alt+← back.
-    this.scope.register(["Alt"], "ArrowUp", (e: KeyboardEvent) => {
-      if (!this.navigateUp()) return;
-      e.preventDefault();
-      return false;
-    });
-    this.scope.register(["Alt"], "ArrowLeft", (e: KeyboardEvent) => {
-      if (!this.navigateBack()) return;
-      e.preventDefault();
-      return false;
-    });
-    this.scope.register(["Alt"], "ArrowRight", (e: KeyboardEvent) => {
-      if (!this.navigateForward()) return;
-      e.preventDefault();
-      return false;
-    });
+    this.shell.registerUndoNavKeys();
 
     // clipEl clips the panning viewport; controlsEl overlays buttons without clipping
     const clipEl = contentEl.createDiv({ cls: "duckmage-hex-map-clip" });
@@ -784,31 +773,8 @@ export class HexMapView extends ItemView {
 
     this.toolbar.buildModeBar(controlsEl);
 
-    // Esc leaves the active tool (modals and menus handle their own Esc first).
-    this.scope.register([], "Escape", () => {
-      // An open tool menu takes the first Esc (Obsidian's keymap sees the
-      // key before the menu's own listener would).
-      if (this.painterMenu?.isOpen()) {
-        this.painterMenu.close();
-        return false;
-      }
-      if (this.drawingMode === null) {
-        // Esc lets go of a selected party token (SF5).
-        if (this.activeParty()) { this.tokens.selectParty(null); return false; }
-        return true;
-      }
-      // The path tool steps out one level at a time (finish → deselect → leave).
-      if (this.drawingMode === "path" && !this.isErasingMode && this.pathTool.escape()) return false;
-      this.exitCurrentMode();
-      return false;
-    });
-    // Path tool: Backspace / Delete removes the hovered anchor, else the active end's.
-    for (const key of ["Backspace", "Delete"]) {
-      this.scope.register([], key, () => {
-        if (this.drawingMode !== "path" || this.isErasingMode) return true;
-        return !this.pathTool.deleteKey();
-      });
-    }
+    // Esc, Backspace and Delete for the active tool (view/mapShell.ts).
+    this.shell.registerToolKeys();
 
     this.grid.factionTooltipEl = contentEl.createDiv({ cls: "duckmage-faction-tooltip" });
     this.grid.factionTooltipEl.hide();
@@ -819,160 +785,9 @@ export class HexMapView extends ItemView {
     // Expand buttons and view buttons — always visible (not collapsible)
     this.edges.createExpandButtons(controlsEl);
 
-    const tableBtn = controlsEl.createEl("button", {
-      cls: "duckmage-table-btn",
-      title: "Open hex table (middle-click for new tab)",
-      text: "⊞",
-    });
-    tableBtn.addEventListener("click", () => {
-      const existing = this.app.workspace.getLeavesOfType(VIEW_TYPE_HEX_TABLE);
-      if (existing.length > 0) {
-        void this.app.workspace.revealLeaf(existing[0]);
-      } else {
-        void this.app.workspace
-          .getLeaf()
-          .setViewState({ type: VIEW_TYPE_HEX_TABLE });
-      }
-    });
-    tableBtn.addEventListener("auxclick", (e: MouseEvent) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      void this.app.workspace
-        .getLeaf("tab")
-        .setViewState({ type: VIEW_TYPE_HEX_TABLE });
-      void this.app.workspace.revealLeaf(this.leaf);
-    });
-
-    const rtBtn = controlsEl.createEl("button", {
-      cls: "duckmage-rt-btn",
-      title: "Open random tables (middle-click for new tab)",
-      text: "🎲",
-    });
-    rtBtn.addEventListener("click", () => {
-      const existing = this.app.workspace.getLeavesOfType(
-        VIEW_TYPE_RANDOM_TABLES,
-      );
-      if (existing.length > 0) {
-        void this.app.workspace.revealLeaf(existing[0]);
-      } else {
-        void this.app.workspace
-          .getLeaf()
-          .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-      }
-    });
-    rtBtn.addEventListener("auxclick", (e: MouseEvent) => {
-      if (e.button !== 1) return;
-      e.preventDefault();
-      void this.app.workspace
-        .getLeaf("tab")
-        .setViewState({ type: VIEW_TYPE_RANDOM_TABLES });
-      void this.app.workspace.revealLeaf(this.leaf);
-    });
-
-    const mapNavGroup = controlsEl.createDiv({ cls: "duckmage-map-nav-group" });
-
-    // Breadcrumb of parent maps (sector › system › …); filled by refreshMapNav.
-    this.nav.crumbsEl = mapNavGroup.createDiv({ cls: "duckmage-map-crumbs" });
-    this.nav.crumbsEl.hide();
-
-    this.mapBtn = mapNavGroup.createEl("button", {
-      cls: "duckmage-region-btn",
-      title: "Manage maps",
-    });
-    this.updateMapBtnLabel();
-    // ← ↑ → right after the map button, then the neighbours (flower / d-pad).
-    this.nav.navArrowsEl = mapNavGroup.createDiv({ cls: "duckmage-map-nav-arrows" });
-    this.nav.navArrowsEl.hide();
-    this.nav.sideCrumbsEl = mapNavGroup.createDiv({ cls: "duckmage-map-crumbs duckmage-map-side-crumbs" });
-    this.nav.sideCrumbsEl.hide();
-    this.mapBtn.addEventListener("click", () =>
-      new MapModal(this.app, this.plugin, this, () => {
-        this.exitTerrainMode();
-        this.toolbar.exitPathMode();
-        this.undos.updateUndoButton();
-        this.updateMapBtnLabel();
-        this.nav.refreshMapNav();
-        this.refreshViewHeader();
-        this.renderGrid();
-      }).open(),
-    );
-
-    this.workModeBtn = mapNavGroup.createEl("button", { cls: "duckmage-work-mode-btn" });
-    this.workModeBtn.addEventListener("click", (e) => this.openWorkModeMenu(e));
-    this.nav.arrivalBarEl = mapNavGroup.createDiv({ cls: "duckmage-arrival-bar" });
-    this.nav.arrivalBarEl.hide();
-    this.nav.refreshMapNav();
-
-    this.undoBtn = controlsEl.createEl("button", {
-      cls: "duckmage-undo-btn-map",
-      text: "↩",
-      attr: { title: "Undo (up to 20)" },
-    });
-    this.undoBtn.disabled = true;
-    this.undoBtn.addEventListener("click", () => {
-      void this.undo();
-    });
-
-    this.redoBtn = controlsEl.createEl("button", {
-      cls: "duckmage-undo-btn-map duckmage-redo-btn-map",
-      text: "↪",
-      attr: { title: "Redo" },
-    });
-    this.redoBtn.disabled = true;
-    this.redoBtn.addEventListener("click", () => {
-      void this.redo();
-    });
-    this.topBandEls = [tableBtn, rtBtn, mapNavGroup, this.undoBtn, this.redoBtn];
-    if (this.modeBarEl) this.topBandEls.push(this.modeBarEl);
-
-    const helpBtn = controlsEl.createEl("button", {
-      cls: "duckmage-help-btn",
-      title: "Controls & tools",
-      text: "?",
-    });
-    helpBtn.addEventListener("click", () => new HexHelpModal(this.app).open());
-
-    // Side panels — drawing tools (pencil) + overlays (layers), mutually exclusive
-    this.toolsPanel = new DrawingToolPanel(controlsEl, (panel) =>
-      this.toolbar.buildDrawingToolbarContent(panel),
-    );
-    const toolsPanel = this.toolsPanel;
-    this.overlayPanel = new OverlayPanel(
-      controlsEl,
-      this.plugin,
-      () => this.viewportEl,
-      () => this.getActiveMap(),
-      (show) => { if (show) this.areas.updateFactionOverlay(); else this.areas.clearFactionOverlay(); },
-      (show) => { if (show) this.areas.updateRegionOverlay(); else this.areas.clearRegionOverlay(); },
-      () => { this.pathLayer.updateGmIcons(); },
-      // Redraw either way: hiding tokens also clears the party's lit steps.
-      () => this.tokens.updateTokenLayer(),
-      {
-        onLegendChange: () => this.labels.refreshTerrainLegend(),
-        // Badge size or kinds changed: redraw the badges and the legend.
-        onBadgesChange: () => {
-          const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-          if (grid && !this.grid.measuring) {
-            this.labels.renderLinkBadges(grid);
-            this.labels.drawHexNames(grid, true);
-          }
-          this.labels.refreshTerrainLegend();
-        },
-        // Name font changed (NM3): redraw the names.
-        onHexNameFontChange: () => {
-          const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
-          if (grid && !this.grid.measuring) this.labels.drawHexNames(grid, true);
-        },
-        // Rows the modules add.
-        rows: this.wm?.layerRows(this.plugin) ?? [],
-        onRowChange: () => this.overworldLayer?.scheduleRedraw(),
-      },
-    );
-    toolsPanel.onBeforeOpen = () => this.overlayPanel?.close();
-    this.overlayPanel.onBeforeOpen = () => toolsPanel.close();
-    // Opening or closing a panel never moves the map (round 7 R9: the map
-    // slid left each time the layers panel opened). A panel may cover a few
-    // hexes; fitting and centring a hex still keep clear of it.
+    // The top bar and the side panels (view/mapShell.ts).
+    this.shell.buildTopBar(controlsEl);
+    this.shell.buildSidePanels(controlsEl);
 
     // Saving indicator — appears while background writes are in flight
     this.savingIndicatorEl = controlsEl.createSpan({
@@ -980,82 +795,8 @@ export class HexMapView extends ItemView {
       text: "Saving…",
     });
 
-    // Consume the cross-view stale flag: when the user switches to this
-    // view (tab click, window focus change), catch up on mutations made
-    // from other views/windows while it was inactive (issue #32).
-    this.registerEvent(
-      this.app.workspace.on("active-leaf-change", (leaf) => {
-        if (leaf !== this.leaf || !this.needsRerender) return;
-        this.needsRerender = false;
-        this.renderGrid();
-      }),
-    );
-
-    this.registerEvent(
-      this.app.metadataCache.on("changed", (file) => {
-        // Clear stale pending/erased entries for this file
-        this.areas.cacheUpdated(file.path);
-
-        // A hex note of THIS map changed while this view was inactive
-        // (edited from another view/window) → flag for catch-up render.
-        const hexFolder = normalizeFolder(this.plugin.settings.hexFolder);
-        const mapPrefix =
-          (hexFolder ? hexFolder + "/" : "") + this.activeMapName + "/";
-        if (file.path.startsWith(mapPrefix)) {
-          this.markStaleFromExternal();
-          // A hex note's links may have changed → its link badges.
-          if (hexKeyFromBasename(file.basename)) this.labels.scheduleLinkBadges();
-        }
-
-        if (this.getActiveMap().showFactionOverlay) {
-          const folder = normalizeFolder(this.plugin.settings.factionsFolder);
-          const isFactionFile =
-            !file.basename.startsWith("_") &&
-            (folder ? file.path.startsWith(folder + "/") : true);
-          if (isFactionFile) this.areas.updateFactionOverlay();
-        }
-
-        if (this.getActiveMap().showRegionOverlay) {
-          const rFolder = normalizeFolder(this.plugin.settings.regionsFolder);
-          const isRegionNoteFile =
-            !file.basename.startsWith("_") &&
-            (rFolder ? file.path.startsWith(rFolder + "/") : true);
-          if (isRegionNoteFile) this.areas.updateRegionOverlay();
-          // Also re-render when any hex file changes (region assignment may have changed)
-          else this.areas.updateRegionOverlay();
-        }
-
-        // Refresh token layer when a token file changes (added, edited, or removed)
-        const cache = this.app.metadataCache.getFileCache(file);
-        const hasToken  = !!cache?.frontmatter?.["token"];
-        const wasToken  = this.tokens.tokenEntries.some((t) => t.filePath === file.path);
-        if (hasToken || wasToken) this.tokens.updateTokenLayer();
-      }),
-    );
-    // A deleted hex note takes its badges with it.
-    this.registerEvent(
-      this.app.metadataCache.on("deleted", (file) => {
-        if (hexKeyFromBasename(file.basename)) this.labels.scheduleLinkBadges();
-      }),
-    );
-    // Paths that kept their route because of a terrain stroke: undone with it.
-    this.register(
-      this.plugin.pathPins.onPinned((r) => {
-        if (r.map === this.activeMapName && this.undos.strokePins) this.undos.strokePins.push(r);
-      }),
-    );
-    // Terrain painted / generated → the legend lists what the map now uses.
-    this.register(
-      this.plugin.mapStore.onChange((map) => {
-        this.onOverworldDataChange(map);
-        if (map !== this.activeMapName) return;
-        // Painted from its overworld in another view: repaint those hexes now.
-        if (this.grid.shownTerrain.size && !this.undos.currentTerrainStroke) this.grid.requestTerrainSync();
-        this.labels.scheduleTerrainLegend();
-        // A name set without a redraw (hex table, code, map note edit) shows up.
-        this.labels.scheduleHexNames();
-      }),
-    );
+    // Keep the open map current (view/mapShell.ts).
+    this.shell.registerListeners();
 
     // Reopen where the user left this map (onClose saves savedViewport);
     // first visit fits the whole grid.
