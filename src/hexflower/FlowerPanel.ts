@@ -45,6 +45,7 @@ import { drawFlower } from "./flowerView";
 import { formatRule, planStep, readRules } from "./explore";
 import type { FlowerEntry } from "./FlowerStore";
 import type { ExploreMap } from "./exploreFields";
+import { hexKey, hexXY } from "../hexKey";
 
 /** Page state kept across re-renders. */
 const state = {
@@ -288,7 +289,7 @@ class FlowerEditor {
   }
 
   private resetWalk(cols: number, rows: number): void {
-    const start = `${Math.floor(cols / 2)}_${Math.floor(rows / 2)}`;
+    const start = hexKey(Math.floor(cols / 2), Math.floor(rows / 2));
     this.walk = { cells: new Map(), party: start, log: [], at: new Map(), step: 0 };
     this.fillHex(start, undefined);
   }
@@ -297,10 +298,10 @@ class FlowerEditor {
   private stepWalk(cols: number, rows: number): void {
     const w = this.walk!;
     const rand = mulberry32((state.seed ^ (w.step * 7919)) >>> 0);
-    const [x, y] = w.party.split("_").map(Number);
+    const { x, y } = hexXY(w.party);
     const near = hexNeighbors(x, y, this.plugin.settings.hexOrientation, "odd").filter(([nx, ny]) => nx >= 0 && ny >= 0 && nx < cols && ny < rows);
     const [nx, ny] = near[Math.floor(rand() * near.length)];
-    const to = `${nx}_${ny}`;
+    const to = hexKey(nx, ny);
     w.step++;
     if (!w.cells.has(to)) this.fillHex(to, w.party);
     w.party = to;

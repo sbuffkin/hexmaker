@@ -23,7 +23,6 @@ import type { UndoItem } from "../hex-map/undoItems";
 import type { PartyStep } from "../modules/types";
 import { cellEdits, cellPatch, sameValue } from "../undoBook";
 import { hashSeed } from "../arrival/arrival";
-import { hexNeighbors } from "../hex-map/hexGeometry";
 import { parseVisited } from "../play/partyTravel";
 import { addToPlayLog } from "../play/playLogWriter";
 import { addLinkToSection, appendSectionText, sectionText } from "../sections";
@@ -47,6 +46,7 @@ import {
   type Plan,
   type Rolled,
 } from "./explore";
+import { hexPair, neighbourKeys } from "../hexKey";
 
 /** The last fill on a map, for Reroll. */
 interface LastFill {
@@ -57,8 +57,6 @@ interface LastFill {
   undo: UndoItem[];
 }
 
-const key = (x: number, y: number) => `${x}_${y}`;
-const xy = (k: string): [number, number] => k.split("_").map(Number) as [number, number];
 
 export class ExploreService {
   private last = new Map<string, LastFill>();
@@ -86,15 +84,14 @@ export class ExploreService {
   }
 
   private inGrid(map: ExploreMap, k: string): boolean {
-    const [x, y] = xy(k);
+    const [x, y] = hexPair(k);
     const o = map.gridOffset ?? { x: 0, y: 0 };
     return x >= o.x && y >= o.y && x < o.x + map.gridSize.cols && y < o.y + map.gridSize.rows;
   }
 
   neighbours(map: ExploreMap, k: string): string[] {
-    const [x, y] = xy(k);
     const stagger = map.staggerOffset ?? this.plugin.settings.staggerOffset ?? "odd";
-    return hexNeighbors(x, y, this.plugin.settings.hexOrientation, stagger).map(([nx, ny]) => key(nx, ny)).filter((n) => this.inGrid(map, n));
+    return neighbourKeys(k, this.plugin.settings.hexOrientation, stagger).filter((n) => this.inGrid(map, n));
   }
 
   private terrainAt(map: string, k: string): string | undefined {
@@ -135,7 +132,7 @@ export class ExploreService {
 
   private async hexNow(map: ExploreMap, k: string, rules: readonly ExploreRule[]): Promise<HexNow> {
     const h = this.plugin.mapStore.get(map.name, k) ?? {};
-    const [x, y] = xy(k);
+    const [x, y] = hexPair(k);
     const file = this.plugin.app.vault.getAbstractFileByPath(this.plugin.hexPath(x, y, map.name));
     const filled: string[] = [];
     if (file instanceof TFile) {
@@ -185,7 +182,7 @@ export class ExploreService {
       const edits = cellEdits(cells);
       if (edits.length) undo.push({ kind: "cells", edits });
     }
-    const [x, y] = xy(k);
+    const [x, y] = hexPair(k);
     for (const w of plan.writes) {
       if (w.target.kind === "section") {
         const section = w.target.section;
@@ -251,7 +248,7 @@ export class ExploreService {
   /** "4, 5: hills (8 → down-left from grassland). Features: [[Old shrine]]" */
   private line(map: ExploreMap, k: string, from: string | undefined, plan: Plan): string {
     if (!plan.writes.length && !plan.problems.length) return "";
-    const [x, y] = xy(k);
+    const [x, y] = hexPair(k);
     const m = plan.moves[0];
     const fromTerrain = from ? this.terrainAt(map.name, from) : undefined;
     const how = m ? ` (${describeMove(m)}${fromTerrain ? ` from ${fromTerrain}` : ""})` : "";
