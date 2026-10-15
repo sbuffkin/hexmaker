@@ -18,7 +18,8 @@ function toolMethod(name: string): string {
 
 /** Source of the HexMapView method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {
-	const m = new RegExp(`\\n  private (?:async )?${name}\\(`).exec(viewSrc);
+	// Private in the view, protected/public on a controller (src/hex-map/view/).
+	const m = new RegExp(`\\n  (?:private |protected )?(?:async )?${name}\\(`).exec(viewSrc);
 	const start = m ? m.index + 1 : -1;
 	expect(start).toBeGreaterThan(-1);
 	return viewSrc.slice(start, viewSrc.indexOf("\n  }\n", start));
@@ -63,9 +64,11 @@ describe("Path tool auto-route (P1, anchored paths)", () => {
 
 describe("Path tool right-click and tokens (fresh-eyes T2)", () => {
 	it("right-click on an anchor handle deletes it; on a path the menu gets that path's actions", () => {
-		const start = viewSrc.indexOf('"contextmenu",');
+		// The map's tool-menu handler (registered on the view's content, view/mapInput.ts).
+		const start = viewSrc.search(/registerDomEvent\(\s*contentEl,\s*"contextmenu",/);
+		expect(start).toBeGreaterThan(-1);
 		const handler = viewSrc.slice(start, viewSrc.indexOf("{ capture: true }", start));
-		expect(handler).toMatch(/this\.drawingMode === "path"[\s\S]*this\.pathTool\.contextMenu\(e\)[\s\S]*"handled" in r\) return;[\s\S]*showPainterContextMenu\(e\.clientX, e\.clientY, hexX, hexY, pathItems\)/);
+		expect(handler).toMatch(/this\.(?:host\.)?drawingMode(?:\(\))? === "path"[\s\S]*this\.(?:host\.)?pathTool(?:\(\))?\.contextMenu\(e\)[\s\S]*"handled" in r\) return;[\s\S]*showPainterContextMenu\(e\.clientX, e\.clientY, hexX, hexY, pathItems\)/);
 		const menu = toolMethod("contextMenu");
 		expect(menu).toMatch(/pathMenuItems\(p, branch, \{/);
 		// The labels and their order: tests/pathToolPolish.test.ts (#48).

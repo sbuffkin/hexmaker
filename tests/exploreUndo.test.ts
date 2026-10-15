@@ -178,7 +178,7 @@ describe("undo groups and map fields", () => {
 	it("the map view groups the token's move with what the step filled", () => {
 		const view = readSurface("map-view");
 		expect(view).toMatch(/const filled = await runPartyEntered\(this\.plugin, step\);/);
-		expect(view).toMatch(/this\.pushUndo\(filled\.length \? \{ kind: "group", items: \[token, \.\.\.filled\] \} : token, party\.map\);/);
+		expect(view).toMatch(/this\.(?:host\.)?(?:undos\.)?pushUndo\(filled\.length \? \{ kind: "group", items: \[token, \.\.\.filled\] \} : token, party\.map\);/);
 		// Dragging the party travels the same way.
 		expect(view).toMatch(/if \(token\.party && token\.map === this\.activeMapName\) void this\.moveParty\(token, closestHex, true\);/);
 		expect(view).toMatch(/case "group": return prepareGroup\(/);

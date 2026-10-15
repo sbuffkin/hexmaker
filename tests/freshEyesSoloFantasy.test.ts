@@ -67,7 +67,7 @@ describe("F6: the Icon tool", () => {
 
 	it("clicking the active Icon button reopens the picker, as Terrain does", () => {
 		const view = readSurface("map-view");
-		const handler = body(view, "  private handleIconButton(");
+		const handler = body(view, "  protected handleIconButton(");
 		expect(handler).not.toMatch(/exitIconMode\(\)/);
 		expect(handler).toContain("this.openIconPicker()");
 	});

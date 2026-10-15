@@ -121,7 +121,9 @@ describe("the map keeps hexes clear of its overlays", () => {
 describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => {
 	const view = readSurface("map-view");
 	const body = (name: string) => {
-		const start = view.indexOf(`private ${name}(`);
+		// The declaration: private in the view, public on a controller (src/hex-map/view/).
+		const m = new RegExp(`\\n  ((?:private )?${name}\\()`).exec(view);
+		const start = m ? m.index + 3 : -1;
 		expect(start).toBeGreaterThan(-1);
 		return view.slice(start, view.indexOf("\n  }\n", start));
 	};
@@ -133,7 +135,7 @@ describe("the map never moves under a drawing tool (fresh-eyes round 5)", () => 
 	});
 
 	it("revealing a hex is gated on it", () => {
-		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.drawingMode\)\) return;/);
+		expect(body("revealHexEl")).toMatch(/^private revealHexEl\(hexEl: HTMLElement\): void \{\n\s+if \(!mayAutoPan\(this\.(?:host\.drawingMode\(\)|drawingMode)\)\) return;/);
 	});
 
 	it("starting or changing a tool (the mode bar) never pans the map", () => {
@@ -164,6 +166,6 @@ describe("crossing into a neighbouring region keeps the zoom (fresh-eyes round 5
 
 	it("goToRegionHex measures the hex size before leaving and centres with it", () => {
 		const view = readSurface("map-view");
-		expect(view).toMatch(/private goToRegionHex[\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.centerOnHex\(x, y, hexWidth\);/);
+		expect(view).toMatch(/\n  (?:private )?goToRegionHex\([\s\S]{0,500}const hexWidth = [^\n]*getBoundingClientRect\(\)\.width;\n\s+this\.navigateToMap\(mapName\);[\s\S]{0,200}this\.(?:host\.)?centerOnHex\(x, y, hexWidth\);/);
 	});
 });

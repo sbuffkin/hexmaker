@@ -80,10 +80,11 @@ describe("HexMapView draws them in the strip", () => {
 	// Path anchors phase 4: the neighbours' chains are their RESOLVED paths
 	// (routed with each neighbour's own terrain and palette by the paths service).
 	it("from the neighbours' resolved path chains, read-only, on the strip layer", () => {
-		const m = /private renderNeighbourShadow[\s\S]*?\n {2}\}\n/.exec(view);
+		// NeighbourShadow.render (src/hex-map/view/neighbourShadow.ts).
+		const m = /\n {2}render\(gridContainer: HTMLElement, region: MapData\)[\s\S]*?\n {2}\}\n/.exec(view);
 		expect(m).not.toBeNull();
 		const body = m![0];
-		expect(body).toMatch(/ghostPathRuns\(shadow, \(m\) => this\.plugin\.paths\.resolvedPathChains\(m\)\)/);
+		expect(body).toMatch(/ghostPathRuns\(shadow, \(m\) => this\.host\.plugin\.paths\.resolvedPathChains\(m\)\)/);
 		// Drawn on the strip's layer by ghostPathsSvg.ts.
 		expect(body).toMatch(/drawGhostPaths\(layer, ghostPaths, gridWEm, gridHEm, em\)/);
 		const svg = readSource("src/hex-map/ghostPathsSvg.ts");

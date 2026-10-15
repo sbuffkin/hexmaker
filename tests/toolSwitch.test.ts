@@ -15,7 +15,9 @@ const src = readSurface("map-view");
 
 /** Source of the method `name` (up to its closing brace at two-space indent). */
 function method(name: string): string {
-  const start = src.indexOf(`  private ${name}(`);
+  // The declaration: private in the view, protected/public on a controller (src/hex-map/view/).
+  const m = new RegExp(`\\n  (?:private |protected )?${name}\\(`).exec(src);
+  const start = m ? m.index + 1 : -1;
   expect(start).toBeGreaterThan(-1);
   return src.slice(start, src.indexOf("\n  }\n", start));
 }

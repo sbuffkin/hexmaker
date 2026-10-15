@@ -96,9 +96,12 @@ describe("F8: a token's menu also has its hex's items", () => {
 	it("adds the hex's items after the token's, under a label", () => {
 		const at = view.indexOf("private showTokenContextMenu");
 		const body = view.slice(at, view.indexOf("\n  }\n", at));
-		expect(body.indexOf('"token.remove"')).toBeLessThan(body.indexOf("this.addHexMenuItems(menu, hx, hy, true)"));
+		// The hex's items come from the hex menus (view/hexContextMenu.ts).
+		const hexItems = body.search(/this\.(?:(?:host\.)?hexMenu\.)?addHexMenuItems\(menu, hx, hy, true\)/);
+		expect(hexItems).toBeGreaterThan(-1);
+		expect(body.indexOf('"token.remove"')).toBeLessThan(hexItems);
 		expect(body).toContain("menu.addLabel(");
-		expect(body).toContain("this.addOverworldMenuItems(menu, evt, hx, hy)");
+		expect(body).toMatch(/this\.(?:(?:host\.)?hexMenu\.)?addOverworldMenuItems\(menu, evt, hx, hy\)/);
 	});
 });
 
