@@ -6084,6 +6084,16 @@ button.duckmage-wfc-library-tab.is-active {
     grid-template-columns: 1.2em minmax(8em, 2fr) 5em minmax(4em, 1fr) 7.5em;
 }
 
+.duckmage-wfc-library-table.is-saves .duckmage-wfc-library-row {
+    /* Tick, Name, Generator, Seed, Size, Saved */
+    grid-template-columns: 1.2em minmax(8em, 2fr) minmax(6em, 1.4fr) 6.5em 4.5em 6em;
+}
+
+.duckmage-wfc-save-rename {
+    flex: 1 1 12em;
+    min-width: 8em;
+}
+
 .duckmage-wfc-library-row > span {
     overflow: hidden;
     text-overflow: ellipsis;

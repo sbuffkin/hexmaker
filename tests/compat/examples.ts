@@ -74,6 +74,7 @@ export function exampleFiles(version: string): { "generator.md": string; "save.m
     seed: SEED,
     cols: COLS,
     rows: ROWS,
+    origin: { x: 0, y: 0 },
     stagger: "odd",
     orientation: "flat",
     settings: model.settings ?? {},

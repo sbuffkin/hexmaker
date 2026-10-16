@@ -70,3 +70,22 @@ export function regionRows(regions: LibraryRegion[], generators: LibraryGenerato
 export function combinedName(regions: string[]): string {
   return regions.join("-and-");
 }
+
+export interface LibrarySave {
+  path: string;
+  name: string;
+  generator: string;
+  seed: string;
+  size: string;
+  /** When it was saved (the file's last change), "YYYY-MM-DD". */
+  saved: string;
+  /** Last-change time, for the newest-first order. */
+  mtime: number;
+}
+
+/** The Saves tab: newest first, filtered on every typed word like the others. */
+export function saveRows(saves: LibrarySave[], query = ""): LibrarySave[] {
+  return saves
+    .filter((s) => matches([s.name, s.generator, s.seed, s.size, s.saved], query))
+    .sort((a, b) => b.mtime - a.mtime || a.name.localeCompare(b.name));
+}

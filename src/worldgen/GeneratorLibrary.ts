@@ -1,14 +1,18 @@
 /**
  * The generator page's file list: a Generators tab (load one, or tick several
- * to open, re-learn, blend or delete them) and a Regions tab (tick one or more maps
- * and learn a generator from them, combined when there are several).
+ * to open, re-learn, blend or delete them), a Maps tab (tick one or more maps
+ * and learn a generator from them, combined when there are several) and a
+ * Saves tab (load a save, or tick to rename, open or delete).
  */
 
 import { App, Notice } from "obsidian";
 import type HexmakerPlugin from "../HexmakerPlugin";
 import { blendGenerators, blendSourcesOf, deleteGenerators, relearnGenerator, saveGeneratorFromMaps, sourceMapsOf, type GeneratorFile } from "./generators";
 import type { HexWfcModel } from "../../packages/hex-wfc/src";
-import { combinedName, generatorRows, regionRows, type RegionRow } from "./libraryRows";
+import { combinedName, generatorRows, regionRows, saveRows, type RegionRow } from "./libraryRows";
+import { deleteSaves, listSaves, renameSave, type SaveEntry } from "./saves";
+import { generatorPageState } from "./generatorPageState";
+import { loadSaveOntoPage } from "./genPage/loadSave";
 import { uniqueMapsByName } from "../maps/mapTree";
 import type { GeneratorPageHost } from "../modules/types";
 import { moduleGeneratorTabs } from "../modules/runtime";
@@ -27,7 +31,7 @@ export interface LibraryHost {
   page: GeneratorPageHost;
 }
 
-/** "generators", "regions" (Maps) or a module's tab id. */
+/** "generators", "regions" (Maps), "saves" or a module's tab id. */
 type Tab = string;
 
 export class GeneratorLibrary {
@@ -36,6 +40,8 @@ export class GeneratorLibrary {
   static query = "";
   static checkedGenerators = new Set<string>();
   static checkedRegions = new Set<string>();
+  static checkedSaves = new Set<string>();
+  private saves: SaveEntry[];
 
   constructor(
     private app: App,
@@ -47,6 +53,9 @@ export class GeneratorLibrary {
     const paths = new Set(generators.map((g) => g.file.path));
     for (const p of GeneratorLibrary.checkedGenerators) if (!paths.has(p)) GeneratorLibrary.checkedGenerators.delete(p);
     for (const r of GeneratorLibrary.checkedRegions) if (!plugin.getMap(r)) GeneratorLibrary.checkedRegions.delete(r);
+    this.saves = listSaves(plugin);
+    const savePaths = new Set(this.saves.map((sv) => sv.file.path));
+    for (const p of GeneratorLibrary.checkedSaves) if (!savePaths.has(p)) GeneratorLibrary.checkedSaves.delete(p);
   }
 
   render(el: HTMLElement): void {
@@ -78,6 +87,7 @@ export class GeneratorLibrary {
     const tabBtns = [
       tabBtn("generators", "Generators", this.generators.length),
       tabBtn("regions", "Maps", uniqueMapsByName(this.plugin.settings.maps).length),
+      tabBtn("saves", "Saves", this.saves.length),
       ...moduleGeneratorTabs().map((t) => tabBtn(t.id, t.label, t.count(this.plugin))),
     ];
 
@@ -88,13 +98,14 @@ export class GeneratorLibrary {
         btn.setAttr("aria-selected", String(on));
       }
       const mod = moduleTab(GeneratorLibrary.tab);
-      const things = mod ? mod.label.toLowerCase() : GeneratorLibrary.tab === "generators" ? "generators" : "maps";
+      const things = mod ? mod.label.toLowerCase() : GeneratorLibrary.tab === "generators" ? "generators" : GeneratorLibrary.tab === "saves" ? "saves" : "maps";
       filter.placeholder = `Filter ${things}…`;
       filter.setAttr("aria-label", `Filter ${things}`);
       list.empty();
       actions.empty();
       if (mod) mod.drawList(this.plugin, list, actions, { query: GeneratorLibrary.query, redraw: draw, host: this.host.page });
       else if (GeneratorLibrary.tab === "generators") this.drawGenerators(list, actions, draw);
+      else if (GeneratorLibrary.tab === "saves") this.drawSaves(list, actions, draw);
       else this.drawRegions(list, actions, draw);
     };
     filter.addEventListener("input", () => {
@@ -243,6 +254,86 @@ export class GeneratorLibrary {
         checked.clear();
         GeneratorLibrary.tab = "generators";
         this.host.changed(file.path);
+      });
+    });
+  }
+
+  // ── Saves tab ────────────────────────────────────────────────────────────
+
+  private drawSaves(list: HTMLElement, actions: HTMLElement, redraw: () => void): void {
+    const checked = GeneratorLibrary.checkedSaves;
+    const day = (ms: number) => {
+      const d = new Date(ms);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    };
+    const rows = saveRows(
+      this.saves.map((sv) => ({ path: sv.file.path, name: sv.name, generator: sv.generator, seed: sv.seed, size: sv.size, saved: day(sv.file.stat.mtime), mtime: sv.file.stat.mtime })),
+      GeneratorLibrary.query,
+    );
+    const table = list.createDiv({ cls: "duckmage-wfc-library-table is-saves" });
+    this.header(table, ["Name", "Generator", "Seed", "Size", "Saved"], rows.map((r) => r.path), checked, redraw);
+    for (const r of rows) {
+      const row = this.row(table, r.path, checked, redraw);
+      if (r.name === generatorPageState.loadedSave?.name) row.addClass("is-current");
+      this.cells(row, [r.name, r.generator || "–", r.seed || "–", r.size || "–", r.saved]);
+      row.setAttr("title", "Click to load; tick to select");
+      row.addEventListener("click", (e) => {
+        if ((e.target as HTMLElement).closest("input")) return;
+        const sv = this.saves.find((x) => x.file.path === r.path);
+        if (sv) void loadSaveOntoPage(this.plugin, sv.file, () => this.host.changed());
+      });
+    }
+    if (!rows.length) list.createDiv({ text: this.saves.length ? "No saves match." : "No saves yet. Save a preview with Save, under the preview.", cls: "duckmage-empty-state" });
+
+    const selected = this.saves.filter((sv) => checked.has(sv.file.path));
+    actions.createSpan({ text: selected.length ? `${selected.length} selected` : "Tick saves to act on them", cls: "duckmage-map-origin-desc" });
+    const nameInput = actions.createEl("input", {
+      type: "text",
+      cls: "duckmage-wfc-save-rename",
+      attr: { placeholder: selected.length === 1 ? selected[0].name : "New name", "aria-label": "New name for the save" },
+    });
+    nameInput.disabled = selected.length !== 1;
+    if (selected.length === 1) nameInput.value = selected[0].file.basename;
+    const rename = actions.createEl("button", { text: "Rename", attr: { title: "Rename the ticked save (tick one)" } });
+    const open = actions.createEl("button", { text: "Open file" });
+    const del = actions.createEl("button", { text: "Delete", cls: "mod-warning" });
+    rename.disabled = selected.length !== 1;
+    open.disabled = del.disabled = !selected.length;
+    const doRename = () => {
+      const sv = selected[0];
+      if (selected.length !== 1 || !sv) return;
+      rename.disabled = true;
+      const oldName = sv.name;
+      void renameSave(this.plugin, sv.file, nameInput.value).then((r) => {
+        if ("error" in r) {
+          new Notice(r.error);
+          rename.disabled = false;
+          return;
+        }
+        checked.delete(sv.file.path);
+        checked.add(r.file.path);
+        const loaded = generatorPageState.loadedSave;
+        if (loaded?.name === oldName) generatorPageState.loadedSave = { ...loaded, name: r.name };
+        new Notice(`Renamed "${oldName}" to "${r.name}".`);
+        // The new name may not be in the metadata cache yet.
+        window.setTimeout(() => this.host.changed(), 300);
+      });
+    };
+    rename.addEventListener("click", doRename);
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doRename();
+    });
+    open.addEventListener("click", () => {
+      for (const sv of selected) void this.app.workspace.getLeaf("tab").openFile(sv.file);
+    });
+    // No confirm, like generators (owner Q6): it goes to the trash.
+    del.addEventListener("click", () => {
+      const what = selected.length === 1 ? `"${selected[0].name}"` : `${selected.length} saves`;
+      del.disabled = true;
+      void deleteSaves(this.plugin, selected.map((sv) => sv.file)).then(() => {
+        for (const sv of selected) checked.delete(sv.file.path);
+        new Notice(`Moved ${what} to the trash.`);
+        this.host.changed();
       });
     });
   }

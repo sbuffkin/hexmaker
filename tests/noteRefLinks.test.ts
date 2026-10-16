@@ -143,7 +143,7 @@ describe("generator notes: palette, source-map(s), blend-of", () => {
 describe("generator saves: generator-path", () => {
 	const save: GeneratorSave = {
 		name: "s", version: "9.9.9", format: 1, created: "2026-10-11", generatorName: "valley", generatorPath: "world/generators/valley.md",
-		palette: "Default", seed: 1, cols: 1, rows: 1, stagger: "odd", orientation: "flat", settings: {},
+		palette: "Default", seed: 1, cols: 1, rows: 1, origin: { x: 0, y: 0 }, stagger: "odd", orientation: "flat", settings: {},
 		cells: new Map([["0_0", "grass"]]), paths: [], generatorMarkdown: "",
 	};
 
