@@ -6557,16 +6557,21 @@ button.duckmage-wfc-library-tab.is-active {
     width: 240px;
 }
 
-/* Terrain mix: the Near rule field ("volcano 3"). */
+/* Terrain mix: the Near rule's terrain select and distance. */
 .duckmage-wfc-near {
     width: 100%;
     min-width: 0;
 }
 
+.duckmage-wfc-near-distance {
+    width: 4em;
+}
+
 /* Near rules (Advanced → Engine tuning): one row per terrain. */
 .duckmage-wfc-near-list {
     display: grid;
-    grid-template-columns: minmax(7em, max-content) minmax(6em, 12em);
+    /* Terrain, near which terrain, distance, "hexes" */
+    grid-template-columns: minmax(7em, max-content) minmax(8em, 14em) 4em max-content;
     gap: 0.25em 0.5em;
     align-items: center;
 }
