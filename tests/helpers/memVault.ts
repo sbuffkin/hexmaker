@@ -35,6 +35,8 @@ export class MemVault {
 	/** Test hook: make adapter.writeBinary fail. */
 	failBinary = false;
 	writes: string[] = [];
+	/** Files sent to the trash with fileManager.trashFile. */
+	trashed: string[] = [];
 	/** Test hook: mangle content on its way to disk (simulates a bad write). */
 	corrupt: ((path: string, content: string) => string) | null = null;
 
@@ -153,6 +155,10 @@ export class MemVault {
 					const yaml = dumpMiniYaml(fm);
 					v.writes.push(f.path);
 					v.put(f.path, (yaml ? `---\n${yaml}\n---\n` : "") + body);
+				},
+				trashFile: async (f: TFile) => {
+					v.trashed.push(f.path);
+					v.files.delete(f.path);
 				},
 				renameFile: async (f: TFile, to: string) => {
 					const c = v.files.get(f.path)!;

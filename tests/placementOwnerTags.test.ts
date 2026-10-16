@@ -529,7 +529,7 @@ describe("seeds are kept with what they made", () => {
   it("a generator save stores its seed and shows it", () => {
     const save: GeneratorSave = {
       name: "Coast", version: "1.6.0", format: 1, created: "2026-10-11", generatorName: "Coast", generatorPath: "world/generators/Coast.md",
-      palette: "Overland", seed: 4242, cols: 2, rows: 1, stagger: "odd", orientation: "flat", settings: {}, cells: new Map([["0_0", "sea"], ["1_0", "plains"]]),
+      palette: "Overland", seed: 4242, cols: 2, rows: 1, origin: { x: 0, y: 0 }, stagger: "odd", orientation: "flat", settings: {}, cells: new Map([["0_0", "sea"], ["1_0", "plains"]]),
       paths: [], generatorMarkdown: "x",
     };
     const text = serializeSave(save);

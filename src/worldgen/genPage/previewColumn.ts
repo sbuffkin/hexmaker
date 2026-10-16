@@ -22,8 +22,10 @@ import { renderPreviewLegend } from "../../hex-map/terrainLegend";
 import { getIconUrl, linkLabel } from "../../utils";
 import { makeScrubbable } from "../../ui/scrub";
 import { regionBiome, generateConnected, neighbourSpec, placeNewRegion, regionNeighbourNames, type NewRegion } from "../neighbours";
-import { listSaves, writeSave, readSave, applySave } from "../saves";
-import { SAVE_FORMAT, type GeneratorSave } from "../saveFormat";
+import { listSaves, writeSave } from "../saves";
+import { loadSaveOntoPage } from "./loadSave";
+import { GeneratorLibrary } from "../GeneratorLibrary";
+import { mapForSave, SAVE_FORMAT, type GeneratorSave } from "../saveFormat";
 import { compareVersions, pluginVersion } from "../../compat";
 import { formatShare, formatShareChange, hasTerrainTweaks, terrainShares, withoutTerrainTweaks } from "../shares";
 import { generatorPageState } from "../generatorPageState";
@@ -131,6 +133,11 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
   const loadRow = savesBox.createDiv({ cls: "duckmage-region-row" });
   const loadSelect = loadRow.createEl("select", { cls: "duckmage-wfc-save-select" });
   const loadBtn = loadRow.createEl("button", { text: "Load" });
+  const manageBtn = loadRow.createEl("button", { text: "Manage", attr: { title: "Rename or delete saves in the list above" } });
+  manageBtn.addEventListener("click", () => {
+    GeneratorLibrary.tab = "saves";
+    ctx.host.rerender();
+  });
   const fillSaves = () => {
     const current = pluginVersion(plugin);
     const saves = listSaves(plugin);
@@ -144,14 +151,23 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
   };
   fillSaves();
 
+  /** The loaded save, while the page shows its generator, seed and size. */
+  const matchingSave = (): GeneratorSave | null => {
+    const sv = generatorPageState.loadedSave;
+    if (!sv || !isThisGenerator(sv)) return null;
+    if (sv.seed !== Number(seedInput.value) >>> 0 || sv.cols !== Number(colsInput.value) || sv.rows !== Number(rowsInput.value)) return null;
+    return sv;
+  };
   const previewGrid = () => {
     if (connected) return { cols: connected.cols, rows: connected.rows, offset: { ...connected.offset }, stagger: connected.stagger };
     const map = plugin.getMap(ctx.mapName);
+    // A loaded save is shown where it was made (a neighbour region doesn't start at 0,0).
+    const sv = matchingSave();
     return {
       cols: Math.max(2, Math.min(200, Number(colsInput.value) || 30)),
       rows: Math.max(2, Math.min(200, Number(rowsInput.value) || 20)),
-      offset: { x: 0, y: 0 },
-      stagger: map?.staggerOffset ?? plugin.settings.staggerOffset ?? "odd",
+      offset: sv ? { ...sv.origin } : { x: 0, y: 0 },
+      stagger: sv?.stagger ?? map?.staggerOffset ?? plugin.settings.staggerOffset ?? "odd",
     };
   };
   let baseline: { key: string; shares: Map<string, number> } | null = null;
@@ -208,12 +224,12 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
       placedEl.toggleClass("is-short", placed < wanted);
     }
   };
-  /** The loaded save, while the page shows exactly its generator, seed and size. */
+  /** The loaded save, while the page shows exactly its generator, seed, size and place. */
   const showingSave = (): GeneratorSave | null => {
-    const sv = generatorPageState.loadedSave;
-    if (!sv || !isThisGenerator(sv)) return null;
-    if (sv.seed !== Number(seedInput.value) >>> 0 || sv.cols !== Number(colsInput.value) || sv.rows !== Number(rowsInput.value)) return null;
-    return sv;
+    const sv = matchingSave();
+    if (!sv) return null;
+    const { offset } = previewGrid();
+    return offset.x === sv.origin.x && offset.y === sv.origin.y ? sv : null;
   };
   /** What the preview shows now, for Save. */
   let shown: { cells: Map<string, string>; paths: { type: string; route?: string; hexes: string[] }[] } | null = null;
@@ -235,8 +251,13 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     let saveNote = "";
     const sv = showingSave();
     if (sv) {
-      if (sameCells(sv.cells, r.cells)) saveNote = ` · save "${sv.name}"`;
-      else {
+      const shownSave = mapForSave(sv, r.cells);
+      if (shownSave.same) saveNote = ` · save "${sv.name}"`;
+      else if (shownSave.filled) {
+        cells = shownSave.cells;
+        rawPaths = sv.paths;
+        saveNote = ` · save "${sv.name}" (${shownSave.filled} missing hexes filled in from the seed)`;
+      } else {
         cells = sv.cells;
         rawPaths = sv.paths;
         saveNote = ` · saved map "${sv.name}" (from v${sv.version}; this version generates it differently)`;
@@ -295,6 +316,8 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
           seed: ctx.local.seed,
           cols: grid.cols,
           rows: grid.rows,
+          origin: { ...grid.offset },
+          ...(connected?.anchor && connected.side ? { connect: { anchor: connected.anchor, side: connected.side } } : {}),
           stagger: grid.stagger,
           orientation: plugin.settings.hexOrientation,
           settings: { ...(model.settings ?? {}) },
@@ -320,32 +343,9 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     const file = app.vault.getFileByPath(loadSelect.value);
     if (!file) return;
     loadBtn.disabled = true;
-    void (async () => {
-      const read = await readSave(plugin, file);
-      if ("error" in read) {
-        new Notice(`Couldn't load "${file.basename}": ${read.error}`);
-        loadBtn.disabled = false;
-        return;
-      }
-      const { save: sv, warnings } = read;
-      const applied = await applySave(plugin, sv);
-      if ("error" in applied) {
-        new Notice(applied.error);
-        loadBtn.disabled = false;
-        return;
-      }
-      generatorPageState.loadedSave = { ...sv, generatorPath: applied.file.path };
-      generatorPageState.selectedPath = applied.file.path;
-      if (plugin.settings.terrainPalettes.some((p) => p.name === sv.palette)) generatorPageState.paletteName = sv.palette;
-      generatorPageState.seedLocked = true;
-      const notes = [
-        applied.recreated ? `recreated generator "${applied.file.basename}" from the save` : "",
-        compareVersions(sv.version, pluginVersion(plugin)) !== 0 ? `saved with v${sv.version}` : "",
-        ...warnings,
-      ].filter(Boolean);
-      new Notice(`Loaded "${sv.name}"${notes.length ? ` (${notes.join("; ")})` : ""}.`);
-      ctx.host.rerender();
-    })();
+    void loadSaveOntoPage(plugin, file, () => ctx.host.rerender()).then((ok) => {
+      if (!ok) loadBtn.disabled = false;
+    });
   });
   rerollBtn.addEventListener("click", () => {
     if (!generatorPageState.seedLocked) seedInput.value = String(randomSeed());
@@ -372,7 +372,7 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     }
     // While a loaded save is shown, create exactly the saved map.
     const sv = showingSave();
-    const r = sv ? { ...generated, cells: sv.cells, paths: sv.paths } : generated;
+    const r = sv ? { ...generated, cells: mapForSave(sv, generated.cells).cells, paths: sv.paths } : generated;
     // The choice this map is made with; the page may be redrawn (and the
     // choice changed) while a big map is still being written.
     const usedConnect = generatorPageState.connect;
@@ -429,11 +429,4 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     });
   }
   return schedulePreview;
-}
-
-/** Same terrain on every hex. */
-function sameCells(a: Map<string, string>, b: Map<string, string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const [k, t] of a) if (b.get(k) !== t) return false;
-  return true;
 }

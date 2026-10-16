@@ -98,6 +98,45 @@ export async function applySave(
 }
 
 /**
+ * Rename a save: its file, the `name` in its frontmatter and its title
+ * heading (if it's still the one it was written with). Names are slugs, like
+ * a generator's; a name another save has is refused.
+ */
+export async function renameSave(
+  plugin: HexmakerPlugin,
+  file: TFile,
+  rawName: string,
+): Promise<{ file: TFile; name: string } | { error: string }> {
+  const name = slugify(rawName.trim());
+  if (!name) return { error: "Enter a name (letters, numbers and dashes)." };
+  const folder = file.parent?.path ?? savesFolder(plugin);
+  const path = `${folder}/${name}.md`;
+  if (path === file.path) return { file, name };
+  const clash = plugin.app.vault.getAbstractFileByPath(path);
+  if (clash && clash !== file) return { error: `There's already a save named "${name}".` };
+  const oldName = file.basename;
+  await plugin.app.vault.process(file, (text) => {
+    const fmEnd = text.search(/\r?\n---\s*(\r?\n|$)/);
+    if (!text.startsWith("---") || fmEnd < 0) return text;
+    const head = text.slice(0, fmEnd);
+    const was = /^name:[ \t]*([^\r\n]*)$/m.exec(head)?.[1]?.trim().replace(/^"(.*)"$/, "$1") ?? oldName;
+    const rest = text
+      .slice(fmEnd)
+      .split(/(\r?\n)/)
+      .map((line) => (line.trimEnd() === `# ${was}` ? `# ${name}` : line))
+      .join("");
+    return head.replace(/^name:[^\r\n]*$/m, () => `name: ${name}`) + rest;
+  });
+  await plugin.app.fileManager.renameFile(file, path);
+  return { file, name };
+}
+
+/** Delete saves: to the trash (Obsidian's or the system's, per the user's setting), so they can be got back. */
+export async function deleteSaves(plugin: HexmakerPlugin, files: TFile[]): Promise<void> {
+  for (const file of files) await plugin.app.fileManager.trashFile(file);
+}
+
+/**
  * Rename a generator: its file, the `name` in its frontmatter and its title
  * heading. Saves that point at it are updated, so loading them still finds it
  * (rather than recreating the old one from their copy).

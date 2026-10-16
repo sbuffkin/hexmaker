@@ -14,6 +14,9 @@
  *   palette: Default
  *   seed: 12345
  *   size: 38x25
+ *   origin: -7,-8                  <- top-left hex (format 2; 0,0 before)
+ *   connect-to: the-coast           <- the map it was generated beside, if any
+ *   connect-side: east
  *   stagger: odd
  *   orientation: flat
  *   created: 2026-10-08
@@ -32,7 +35,8 @@
 import { VERSION_KEY } from "../compat";
 import type { GeneratorSettings } from "../../packages/hex-wfc/src";
 import { noteRefTarget, pathLink } from "../noteFormats";
-import { hexKey } from "../hexKey";
+import { hexKey, hexXY } from "../hexKey";
+import type { Side } from "./world";
 
 /**
  * `generator-path` as read: a link (`[[world/generators/bay-area]]`, the
@@ -52,7 +56,12 @@ export function generatorPathValue(path: string): string {
   return (path && pathLink(path)) || path;
 }
 
-export const SAVE_FORMAT = 1;
+/**
+ * 2: `origin` (and `connect-to` / `connect-side`). Format 1 wrote every map
+ * from 0,0, so a map that started elsewhere (a neighbour region at -7,-8)
+ * lost the hexes left of and above 0,0; see legacyOrigin.
+ */
+export const SAVE_FORMAT = 2;
 export const SAVE_MARKER = "hexmaker-save";
 /** Code fence for embedded blocks; four tildes so the generator's own content can't close it. */
 const FENCE = "~~~~";
@@ -69,10 +78,14 @@ export interface GeneratorSave {
   seed: number;
   cols: number;
   rows: number;
+  /** The grid's top-left hex: `cells` and `paths` use the map's own coordinates. */
+  origin: { x: number; y: number };
+  /** The map it was generated beside (Connect to), so loading can put it back there. */
+  connect?: { anchor: string; side: Side };
   stagger: "odd" | "even";
   orientation: "flat" | "pointy";
   settings: GeneratorSettings;
-  /** Terrain per hex, keyed "x_y" (grid starts at 0_0). */
+  /** Terrain per hex, keyed "x_y" (grid starts at `origin`). */
   cells: Map<string, string>;
   paths: { type: string; route?: string; hexes: string[] }[];
   /** The generator file's full text when saved. */
@@ -81,11 +94,14 @@ export interface GeneratorSave {
 
 // ── Terrain grid ──────────────────────────────────────────────────────────
 
+const ZERO = { x: 0, y: 0 };
+
 /**
- * Encode a cols×rows grid as a legend line plus one line per row of legend
- * indexes, run-length encoded: "0*5 2 1*3". "-" is an unpainted hex.
+ * Encode a cols×rows grid starting at `origin` as a legend line plus one
+ * line per row of legend indexes, run-length encoded: "0*5 2 1*3". "-" is
+ * an unpainted hex.
  */
-export function encodeCells(cells: Map<string, string>, cols: number, rows: number): string {
+export function encodeCells(cells: Map<string, string>, cols: number, rows: number, origin = ZERO): string {
   const legend: string[] = [];
   const index = new Map<string, number>();
   const lines: string[] = [];
@@ -96,7 +112,7 @@ export function encodeCells(cells: Map<string, string>, cols: number, rows: numb
       if (run) tokens.push(run > 1 ? `${prev}*${run}` : prev);
     };
     for (let x = 0; x < cols; x++) {
-      const t = cells.get(hexKey(x, y));
+      const t = cells.get(hexKey(origin.x + x, origin.y + y));
       let tok = "-";
       if (t !== undefined) {
         if (!index.has(t)) {
@@ -118,7 +134,7 @@ export function encodeCells(cells: Map<string, string>, cols: number, rows: numb
   return [`legend: ${legend.join("; ")}`, ...lines].join("\n");
 }
 
-export function decodeCells(text: string, cols: number, rows: number): { cells: Map<string, string> } | { error: string } {
+export function decodeCells(text: string, cols: number, rows: number, origin = ZERO): { cells: Map<string, string> } | { error: string } {
   const lines = text.split(/\r?\n/);
   const head = lines.shift() ?? "";
   if (!head.startsWith("legend:")) return { error: "the terrain block has no legend line" };
@@ -134,7 +150,7 @@ export function decodeCells(text: string, cols: number, rows: number): { cells: 
         if (m[1] === "-") continue;
         const t = legend[Number(m[1])];
         if (t === undefined) return { error: `row ${y + 1} uses terrain #${m[1]}, which isn't in the legend` };
-        cells.set(hexKey(x, y), t);
+        cells.set(hexKey(origin.x + x, origin.y + y), t);
       }
     }
     if (x !== cols) return { error: `row ${y + 1} has ${x} hexes, expected ${cols}` };
@@ -191,6 +207,8 @@ export function serializeSave(s: GeneratorSave): string {
     `palette: ${yaml(s.palette)}`,
     `seed: ${s.seed}`,
     `size: ${s.cols}x${s.rows}`,
+    `origin: ${s.origin.x},${s.origin.y}`,
+    ...(s.connect ? [`connect-to: ${yaml(s.connect.anchor)}`, `connect-side: ${s.connect.side}`] : []),
     `stagger: ${s.stagger}`,
     `orientation: ${s.orientation}`,
     `created: ${yaml(s.created)}`,
@@ -211,7 +229,7 @@ export function serializeSave(s: GeneratorSave): string {
     "",
     "## Terrain",
     "",
-    block("hexmaker-terrain", encodeCells(s.cells, s.cols, s.rows)),
+    block("hexmaker-terrain", encodeCells(s.cells, s.cols, s.rows, s.origin)),
     "",
     "## Paths",
     "",
@@ -227,6 +245,8 @@ export function serializeSave(s: GeneratorSave): string {
 export function isSaveMarkdown(text: string): boolean {
   return new RegExp(`^---\\r?\\n(?:(?!---).*\\r?\\n)*?${SAVE_MARKER}\\s*:`).test(text);
 }
+
+const isSide = (v: string | undefined): v is Side => v === "north" || v === "south" || v === "east" || v === "west";
 
 function isSavedPath(p: unknown): p is GeneratorSave["paths"][number] {
   if (!p || typeof p !== "object") return false;
@@ -271,9 +291,13 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
   if (!size) return { error: `bad size "${fm.size ?? ""}"` };
   const cols = Number(size[1]), rows = Number(size[2]);
 
+  const originMatch = /^(-?\d+)\s*,\s*(-?\d+)$/.exec(fm.origin ?? "");
+  if (fm.origin !== undefined && !originMatch) return { error: `bad origin "${fm.origin}"` };
+  let origin = originMatch ? { x: Number(originMatch[1]), y: Number(originMatch[2]) } : { ...ZERO };
+
   const terrain = section(text, "Terrain");
   if (terrain === undefined) return { error: "no Terrain block" };
-  const decoded = decodeCells(terrain, cols, rows);
+  const decoded = decodeCells(terrain, cols, rows, origin);
   if ("error" in decoded) return { error: `terrain: ${decoded.error}` };
 
   let settings: GeneratorSettings = {};
@@ -289,6 +313,15 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
   } catch {
     warnings.push("The paths block couldn't be read, so the save has no paths");
   }
+  if (!originMatch) {
+    const legacy = legacyOrigin(decoded.cells, cols, rows, paths);
+    if (legacy) {
+      origin = legacy.origin;
+      warnings.push(`An older version saved only part of this map (${legacy.lost} of ${cols * rows} hexes are missing). They come back when the page makes the same map again: the same generator and seed, connected where it was`);
+    }
+  }
+  const side = fm["connect-side"];
+  const connect = fm["connect-to"] && isSide(side) ? { anchor: fm["connect-to"], side } : undefined;
 
   return {
     save: {
@@ -302,6 +335,8 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
       seed: Number(fm.seed) >>> 0,
       cols,
       rows,
+      origin,
+      ...(connect ? { connect } : {}),
       stagger: fm.stagger === "even" ? "even" : "odd",
       orientation: fm.orientation === "pointy" ? "pointy" : "flat",
       settings,
@@ -311,4 +346,56 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
     },
     warnings,
   };
+}
+
+/**
+ * Where a format-1 save's map really started. Format 1 wrote rows and
+ * columns from 0,0 whatever the grid's origin, so a map starting at -7,-8
+ * kept only its hexes from 0,0 on (in their right places) and the rest of
+ * each line came out blank. That shows as blank columns on the right and
+ * blank rows at the bottom; the origin is minus their count. It's only
+ * taken when every path hex then lies inside the grid and at least one is
+ * left of or above 0,0 (paths were saved whole), or there are no paths.
+ * Returns null for a save that isn't cut off like that.
+ */
+export function legacyOrigin(
+  cells: ReadonlyMap<string, string>,
+  cols: number,
+  rows: number,
+  paths: GeneratorSave["paths"],
+): { origin: { x: number; y: number }; lost: number } | null {
+  if (!cells.size) return null;
+  let maxX = -1, maxY = -1;
+  for (const k of cells.keys()) {
+    const { x, y } = hexXY(k);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+  const origin = { x: -(cols - 1 - maxX), y: -(rows - 1 - maxY) };
+  if (origin.x === 0 && origin.y === 0) return null;
+  const hexes = paths.flatMap((p) => p.hexes.map((h) => hexXY(h)));
+  const inside = hexes.every(({ x, y }) => x >= origin.x && x < origin.x + cols && y >= origin.y && y < origin.y + rows);
+  const offZero = hexes.some(({ x, y }) => x < 0 || y < 0);
+  if (hexes.length && !(inside && offZero)) return null;
+  return { origin, lost: cols * rows - cells.size };
+}
+
+/**
+ * The map to show for a loaded save, given what the page generates now from
+ * the same inputs. The same map: `same`. A save missing hexes (legacyOrigin)
+ * whose every hex matches: the generated map, which has the lost ones back
+ * (`filled` of them). Anything else: the saved map, as the source of truth.
+ */
+export function mapForSave(
+  save: Pick<GeneratorSave, "cells">,
+  generated: ReadonlyMap<string, string>,
+): { cells: Map<string, string>; same: boolean; filled: number } {
+  let matches = true;
+  for (const [k, t] of save.cells) if (generated.get(k) !== t) {
+    matches = false;
+    break;
+  }
+  if (matches && generated.size === save.cells.size) return { cells: save.cells, same: true, filled: 0 };
+  if (matches && generated.size > save.cells.size) return { cells: new Map(generated), same: false, filled: generated.size - save.cells.size };
+  return { cells: save.cells, same: false, filled: 0 };
 }

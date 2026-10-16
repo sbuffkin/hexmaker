@@ -4,12 +4,11 @@
  * "+ Add terrain" (the shared mix list), Near rules and Mix strength.
  */
 
-import { Notice } from "obsidian";
 import { makeScrubbable } from "../../ui/scrub";
 import { renderMultiplierSlider } from "../../ui/sliders";
 import { mixRemoveButton, renderMixAdd, splitMix } from "../../ui/mixList";
 import { exampleShares, formatShare } from "../shares";
-import { parseNear, type CountRange, type NearRule } from "../../../packages/hex-wfc/src";
+import type { CountRange, NearRule } from "../../../packages/hex-wfc/src";
 import { slider } from "./controls";
 import type { GeneratorPageCtx } from "./ctx";
 
@@ -38,12 +37,11 @@ export function renderTerrainMix(ctx: GeneratorPageCtx, main: HTMLElement): void
   const mix = { ...s().mix };
   const counts: Record<string, CountRange> = Object.fromEntries(Object.entries(s().counts).map(([k, r]) => [k, { ...r }]));
   const near: Record<string, NearRule | null> = { ...s().near };
-  const terrainNames = new Set(model.terrains.map((t) => t.name));
   // Near rules: one per terrain, in their own box (Advanced → Engine tuning).
   const nearBox = el.createDiv({ cls: "duckmage-wfc-control" });
   nearBox.createEl("label", { text: "Near", cls: "duckmage-map-field-label" });
   nearBox.createEl("p", {
-    text: "Keep a terrain within some hexes of another, such as lava fields near a volcano: \"volcano 3\" (how hard it steers follows the clumping slider). Blank = the generator's own rule; \"off\" = none.",
+    text: "Keep a terrain within some hexes of another, such as lava fields near a volcano: pick the terrain it stays near and how many hexes away (1 = touching). How hard it steers follows the clumping slider.",
     cls: "duckmage-map-origin-desc",
   });
   const nearList = nearBox.createDiv({ cls: "duckmage-wfc-near-list" });
@@ -99,29 +97,10 @@ export function renderTerrainMix(ctx: GeneratorPageCtx, main: HTMLElement): void
           save({ counts: Object.keys(counts).length ? { ...counts } : undefined });
         });
       }
-      // Near rule: blank = the generator's own (shown as the placeholder).
-      const nearRow = nearList.createDiv({ cls: "duckmage-wfc-near-row" });
-      nearRow.createSpan({ text: t.name, cls: "duckmage-wfc-terrain-name" });
-      const nearInput = nearRow.createEl("input", {
-        type: "text",
-        cls: "duckmage-wfc-near",
-        attr: { placeholder: t.near ? `${t.near.terrain} ${t.near.distance}` : "–", "aria-label": `${t.name} near rule` },
-      });
-      const own = near[t.name];
-      nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
-      nearInput.addEventListener("change", () => {
-        const raw = nearInput.value.trim();
-        if (!raw) delete near[t.name];
-        else if (/^(off|none)$/i.test(raw)) near[t.name] = null;
-        else {
-          const rule = parseNear(raw);
-          if (!rule || !terrainNames.has(rule.terrain) || rule.terrain === t.name) {
-            new Notice(`Write a terrain from this generator and a distance, e.g. "${model.terrains.find((x) => x.name !== t.name)?.name ?? "volcano"} 3", or "off".`);
-            nearInput.value = own === undefined ? "" : own === null ? "off" : `${own.terrain} ${own.distance}`;
-            return;
-          }
-          near[t.name] = rule;
-        }
+      // Near rule: a terrain on the map (the mix) and how many hexes away.
+      renderNearRow(nearList, t.name, t.near, near[t.name], shown.map((x) => x.name).filter((n) => n !== t.name), (rule) => {
+        if (rule === undefined) delete near[t.name];
+        else near[t.name] = rule;
         save({ near: Object.keys(near).length ? { ...near } : undefined });
       });
       row.createSpan({ text: formatShare(example.get(t.name) ?? 0), cls: "duckmage-wfc-share" });
@@ -158,4 +137,64 @@ export function renderTerrainMix(ctx: GeneratorPageCtx, main: HTMLElement): void
   drawMixRows();
   place("GenPage.near", nearBox);
   place("GenPage.mixStrength", slider(el, "Mix strength", "How closely the overall terrain mix follows the example.", 0, 4, 0.5, s().frequencyFeedback, (v) => save({ frequencyFeedback: v })));
+}
+
+/** The most hexes away a near rule can be (parseNear's limit). */
+const NEAR_MAX = 50;
+
+/**
+ * One terrain's near rule: a select of the terrains on the map (the mix;
+ * "As learned" = the generator's own rule, "Off" = none) and the distance.
+ * `onChange` gets undefined (as learned), null (off) or the rule.
+ */
+export function renderNearRow(
+  list: HTMLElement,
+  name: string,
+  learned: NearRule | undefined,
+  current: NearRule | null | undefined,
+  onMap: string[],
+  onChange: (rule: NearRule | null | undefined) => void,
+): void {
+  const row = list.createDiv({ cls: "duckmage-wfc-near-row" });
+  row.createSpan({ text: name, cls: "duckmage-wfc-terrain-name" });
+  const select = row.createEl("select", { cls: "duckmage-wfc-near", attr: { "aria-label": `Terrain ${name} stays near` } });
+  select.createEl("option", { value: "", text: learned ? `As learned (${learned.terrain}, ${learned.distance})` : "As learned (none)" });
+  select.createEl("option", { value: "\u0000off", text: "Off" });
+  const choices = [...onMap].sort((a, b) => a.localeCompare(b));
+  // A rule may name a terrain since taken out of the mix: keep it choosable.
+  if (current && !choices.includes(current.terrain)) choices.push(current.terrain);
+  const group = select.createEl("optgroup", { attr: { label: "Near (on the map)" } });
+  for (const c of choices) group.createEl("option", { value: c, text: onMap.includes(c) ? c : `${c} (not in the mix)` });
+  const distance = row.createEl("input", {
+    type: "number",
+    cls: "duckmage-wfc-num duckmage-wfc-near-distance",
+    attr: { min: "1", max: String(NEAR_MAX), "aria-label": `Most hexes ${name} is from it`, title: "Most hexes away (1 = touching)" },
+  });
+  row.createSpan({ text: "hexes", cls: "duckmage-map-origin-desc" });
+  makeScrubbable(distance, { min: 1, max: NEAR_MAX, pxPerStep: 8 });
+  const show = (rule: NearRule | null | undefined) => {
+    select.value = rule === undefined ? "" : rule === null ? "\u0000off" : rule.terrain;
+    const own = rule ?? (rule === undefined ? learned : undefined);
+    distance.value = own ? String(own.distance) : "";
+    // The distance belongs to a chosen terrain; "As learned" shows the generator's.
+    distance.disabled = !rule;
+  };
+  show(current);
+  let rule = current;
+  const clamp = (v: number) => Math.max(1, Math.min(NEAR_MAX, Math.round(v)));
+  select.addEventListener("change", () => {
+    const v = select.value;
+    if (v === "") rule = undefined;
+    else if (v === "\u0000off") rule = null;
+    else rule = { terrain: v, distance: rule ? rule.distance : learned?.distance ?? 2 };
+    show(rule);
+    onChange(rule);
+  });
+  distance.addEventListener("change", () => {
+    if (!rule) return;
+    const n = Number(distance.value);
+    rule = { ...rule, distance: Number.isFinite(n) && distance.value !== "" ? clamp(n) : rule.distance };
+    show(rule);
+    onChange(rule);
+  });
 }
