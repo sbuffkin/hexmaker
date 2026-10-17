@@ -12,10 +12,10 @@
  * Pure: no Obsidian imports.
  */
 
-import { contentFolder, type ContentFolderKey } from "../notePickers";
-import { templatesFolderFor } from "../noteTemplates";
-import { hasLegacyRollerLink, withRollerBlock } from "../random-tables/randomTable";
-import { escapeRegex } from "../textUtils";
+import { contentFolder, type ContentFolderKey } from "../../notePickers";
+import { templatesFolderFor } from "../../noteTemplates";
+import { hasLegacyRollerLink, withRollerBlock } from "../../random-tables/randomTable";
+import { escapeRegex } from "../../textUtils";
 
 export interface PackKind {
   /** Stable id, also the pack's folder for it ("tables"). */

@@ -7,16 +7,17 @@
  * had is kept, with the pack's copy added as "Name 2".
  */
 
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "../helpers/slices";
 import expect from "expect";
 import fs from "node:fs";
 import path from "node:path";
 
-import { coreKinds, notesByKind, type PackKind } from "../../src/packs/packKinds";
-import { buildPack, runImport, type PackWriteHost } from "../../src/packs/packIO";
-import { loadPack, planImport, resolveSteps } from "../../src/packs/packPlan";
-import { readZip } from "../../src/packs/zip";
-import { parseManifest } from "../../src/packs/packManifest";
+import { coreKinds, notesByKind, type PackKind } from "../../src/modules/packs/packKinds";
+import { buildPack, runImport, type PackWriteHost } from "../../src/modules/packs/packIO";
+import { loadPack, planImport, resolveSteps } from "../../src/modules/packs/packPlan";
+import { readZip } from "../../src/modules/packs/zip";
+import { parseManifest } from "../../src/modules/packs/packManifest";
 
 const ROOT = path.resolve(__dirname, "../fixtures/sim-vault");
 
@@ -81,7 +82,7 @@ async function importInto(b: ReturnType<typeof vaultB>, bytes: Uint8Array) {
   return { pack, plan, report: await runImport(b.host, steps, pack.manifest.name) };
 }
 
-describe("content pack: export then import into a second vault", () => {
+describeWith("packs", "content pack: export then import into a second vault", () => {
   it("exports every content note (no hex notes, no README) with a readable pack.md", async () => {
     const { bytes, picked } = await exportFixture();
     const entries = await readZip(bytes);

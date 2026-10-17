@@ -1,7 +1,8 @@
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "./helpers/slices";
 import expect from "expect";
-import { crc32, readZip, writeZip } from "../src/packs/zip";
-import { formatManifest, inferManifest, parseManifest, type PackManifest } from "../src/packs/packManifest";
+import { crc32, readZip, writeZip } from "../src/modules/packs/zip";
+import { formatManifest, inferManifest, parseManifest, type PackManifest } from "../src/modules/packs/packManifest";
 import {
   coreKinds,
   fixTableNote,
@@ -13,9 +14,9 @@ import {
   rewriteFolderLinks,
   vaultPathOf,
   type PackKind,
-} from "../src/packs/packKinds";
-import { decodeText, loadPack, planImport, resolveSteps, type PackFile, type PlanItem } from "../src/packs/packPlan";
-import { buildPack, packFileName, runImport, type PackWriteHost } from "../src/packs/packIO";
+} from "../src/modules/packs/packKinds";
+import { decodeText, loadPack, planImport, resolveSteps, type PackFile, type PlanItem } from "../src/modules/packs/packPlan";
+import { buildPack, packFileName, runImport, type PackWriteHost } from "../src/modules/packs/packIO";
 
 const enc = (s: string) => new TextEncoder().encode(s);
 const dec = (b: Uint8Array) => new TextDecoder().decode(b);
@@ -23,7 +24,7 @@ const dec = (b: Uint8Array) => new TextDecoder().decode(b);
 const kindsFor = (world: string, over: Record<string, string> = {}): PackKind[] =>
   coreKinds({ worldFolder: world, ...over }, { palettes: `${world}/palettes`, generators: `${world}/generators` });
 
-describe("content packs: zip", () => {
+describeWith("packs", "content packs: zip", () => {
   it("round-trips files, names with spaces and accents, empty files", async () => {
     const files = [
       { path: "pack.md", data: enc("# Pack\n") },
@@ -56,7 +57,7 @@ describe("content packs: zip", () => {
   });
 });
 
-describe("content packs: pack.md manifest", () => {
+describeWith("packs", "content packs: pack.md manifest", () => {
   const m: PackManifest = {
     format: 1,
     name: "Coast | tables \"v2\"",
@@ -95,7 +96,7 @@ describe("content packs: pack.md manifest", () => {
   });
 });
 
-describe("content packs: folder mapping", () => {
+describeWith("packs", "content packs: folder mapping", () => {
   it("core kinds follow the folder settings, blank = under the world folder", () => {
     const k = kindsFor("world", { tablesFolder: "Lore/Tables" });
     const by = Object.fromEntries(k.map((x) => [x.id, x.folder]));
@@ -150,7 +151,7 @@ describe("content packs: folder mapping", () => {
   });
 });
 
-describe("content packs: conflicts", () => {
+describeWith("packs", "content packs: conflicts", () => {
   it("keep both: Name 2, then 3…", () => {
     const taken = new Set(["t/Name 2.md"]);
     expect(keepBothPath("t/Name.md", (p) => taken.has(p))).toBe("t/Name 3.md");
@@ -172,7 +173,7 @@ describe("content packs: conflicts", () => {
   });
 });
 
-describe("content packs: planning an import", () => {
+describeWith("packs", "content packs: planning an import", () => {
   const kinds = kindsFor("world");
   const file = (path: string, text: string | Uint8Array): PackFile => ({ path, data: typeof text === "string" ? enc(text) : text });
 
@@ -207,7 +208,7 @@ describe("content packs: planning an import", () => {
   });
 });
 
-describe("content packs: export and import through hosts", () => {
+describeWith("packs", "content packs: export and import through hosts", () => {
   it("names the zip safely", () => {
     expect(packFileName("Coast: tables/v2?")).toBe("Coast tables v2.zip");
     expect(packFileName("  ")).toBe("Content pack.zip");

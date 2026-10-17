@@ -244,9 +244,6 @@ export const CORE_COMMAND_ACTIONS: Readonly<Record<string, ModeAction>> = {
   "add-map-data-to-hex-notes": "edit-note",
   "update-region-faction-map-data": "edit-note",
   "export-current-map": "export",
-  "export-content-pack": "export",
-  // Adds notes to content folders (no map data); never locked, like settings and palettes.
-  "import-content-pack": "settings",
   "open-play-log": "edit-note",
 };
 

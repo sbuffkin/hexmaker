@@ -138,7 +138,11 @@ const manifest = JSON.parse(fs.readFileSync(path.join(buildDir, "manifest.json")
 const pluginId = manifest.id;
 const mainJs = fs.readFileSync(path.join(buildDir, "main.js"), "utf8");
 // Commands are registered with addCommand, or addPlaced("<placement id>", …) (src/ui/commandPlacement.ts).
-const expectedCommands = [...new Set([...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => `${pluginId}:${m[1]}`))];
+// Modules' placed commands are contributions ({ id, name, placementId: "Plugin.cmd.…" }, src/modules/<id>/runtime.ts).
+const expectedCommands = [...new Set([
+  ...[...mainJs.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1]),
+  ...[...mainJs.matchAll(/\{\s*id:\s*"([^"]+)",\s*name:\s*"[^"]*",\s*placementId:\s*"Plugin\.cmd\./g)].map((m) => m[1]),
+].map((id) => `${pluginId}:${id}`))];
 const builtSlices = bannerSlices(mainJs);
 log(`build ${buildHash} (${manifest.version}) from ${source}; ${expectedCommands.length} commands; channel ${builtSlices.channel ?? "?"}, slices ${JSON.stringify(builtSlices.on)}`);
 

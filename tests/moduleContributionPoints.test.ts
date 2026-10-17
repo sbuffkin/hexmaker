@@ -25,14 +25,16 @@ import { TableSections } from "../src/hex-map/editor/TableSections";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
+import { sliceOn } from "./helpers/slices";
 
 /**
  * The runtime contribution points later slices plug into (S0.5 of the
  * "every major feature a slice" plan): settings, views, the Map export
  * form, setup wizard offers, start/stop, the generator page api and the
- * Play hooks. No module uses them yet, so each is tested with a fake
- * module added to the runtime list for the test, and its core call site
- * checked to do nothing when no module answers.
+ * Play hooks. Each is tested with a fake module added to the runtime
+ * list for the test, and its core call site checked to do nothing when no
+ * module answers (the real modules that use one: Content packs, the Map
+ * export form and the wizard's last step; tests/slice-packs.test.ts).
  */
 
 const runtimes = MODULE_RUNTIMES as ModuleRuntime[];
@@ -52,8 +54,9 @@ describe("contribution points: nothing contributed, nothing changes", () => {
   it("every collector is empty or neutral without a module that uses it", () => {
     const plugin = {} as never;
     expect(moduleViews()).toEqual([]);
-    expect(moduleExportForm()).toEqual([]);
-    expect(moduleWizardOffers("done")).toEqual([]);
+    // Content packs is the one real module with an export form part and a wizard offer.
+    expect(moduleExportForm().map((c) => c.id)).toEqual(sliceOn("packs") ? ["packs.export"] : []);
+    expect(moduleWizardOffers("done").map((o) => o.id)).toEqual(sliceOn("packs") ? ["packs.import"] : []);
     expect(genPage()).toBeUndefined();
     expect(modulePartyClick(plugin, { map: "m", token: "t.md", from: "0_0", to: "1_0", orientation: "flat", stagger: "odd" })).toBe("none");
     expect(moduleGridDecorations(plugin, { name: "m" } as never)("0_0")).toEqual([]);
@@ -221,7 +224,8 @@ describe("exportForm[]: a module's part of the Map export form", () => {
   it("without a module part the form is what it was", () => {
     const { root, el } = fakeRoot();
     renderMapExportForm(el, plugin() as never, "Coast");
-    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export"))).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)", "Export content pack…"]);
+    // The core's three, then Content pack's box when that slice is built.
+    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export"))).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)", ...(sliceOn("packs") ? ["Export content pack…"] : [])]);
     expect(texts(root).find((t) => t.startsWith("Writes:"))).toMatch(/\(manual\)$/);
   });
 });
@@ -229,9 +233,9 @@ describe("exportForm[]: a module's part of the Map export form", () => {
 describe("wizardOffers[]: offers on a setup wizard step", () => {
   it("by step, in module order; the done step draws them after its own", () => {
     withFake({ wizardOffers: [{ id: "a", step: "done", render: () => {} }, { id: "b", step: "folders", render: () => {} }] });
-    expect(moduleWizardOffers("done").map((o) => o.id)).toEqual(["a"]);
+    expect(moduleWizardOffers("done").map((o) => o.id).filter((id) => id !== "packs.import")).toEqual(["a"]);
     expect(moduleWizardOffers("folders").map((o) => o.id)).toEqual(["b"]);
-    expect(readSource("src", "SetupWizardView.ts")).toMatch(/renderPackImportOffer\(container, plugin\.app\);\n[^\n]*\n\s+for \(const offer of moduleWizardOffers\("done"\)\) offer\.render\(container, plugin\);/);
+    expect(readSource("src", "SetupWizardView.ts")).toMatch(/exploreBtn\.addEventListener\("click", \(\) => void cb\.onComplete\(false\)\);\n[^\n]*\n\s+for \(const offer of moduleWizardOffers\("done"\)\) offer\.render\(container, plugin\);/);
   });
 });
 

@@ -50,7 +50,7 @@ Each coding session:
 
 ## Feature switches (release slices)
 
-Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space` and `hexflower` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `hexflower` and `packs` today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
 
 | Variable | Meaning |
 |---|---|
@@ -136,7 +136,7 @@ src/
   palettes/             ← PaletteStore (palette notes ⇄ settings), paletteNote, pathTypeTable, presets
   paths/                ← PathsService (resolved chains, route cache), router, path edits, legacy readers
   play/ arrival/        ← play log, party travel, link icons; places made on arrival, events ledgers
-  packs/ export/        ← pack export/import; map/hex/workflow exports (PNG, PDF, HTML, Markdown)
+  export/               ← map/hex/workflow exports (PNG, PDF, HTML, Markdown); content packs are modules/packs/
   notes/ tokens/        ← area (faction/region) note styling, frontmatter text; token notes
   ui/                   ← shared kit: sliders.ts, shareSliders.ts (zero-sum), pickers.ts, disclosure.ts
                           (Advanced dropdown, Debug, Fold), placement.ts (the placement map), notify.ts, …

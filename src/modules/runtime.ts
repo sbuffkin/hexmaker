@@ -42,7 +42,7 @@ import type {
 } from "./types";
 import type { TableSource } from "../worldgen/tableRoles";
 import type { WorldMapsApi } from "./world-maps/api";
-import type { PackKind } from "../packs/packKinds";
+import type { PackKind } from "./packs/packKinds";
 import type { UndoItem } from "../hex-map/undoItems";
 import type { MapData } from "../types";
 import { registry } from "./index";
@@ -50,12 +50,14 @@ import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
+import { packsRuntime } from "./packs/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
+if (__SLICE_PACKS__) compiled.push(packsRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 
 /** Every module's built-in generators, in list order. */

@@ -1,8 +1,9 @@
-import { describe, it } from "node:test";
+import { it } from "node:test";
+import { describeWith } from "./helpers/slices";
 import expect from "expect";
-import { codeInNote, coreKinds, isSafePackPath, packPathProblem, type PackKind } from "../src/packs/packKinds";
-import { planImport, type ImportPlan, type LoadedPack } from "../src/packs/packPlan";
-import { PackImportModal } from "../src/packs/PackImportModal";
+import { codeInNote, coreKinds, isSafePackPath, packPathProblem, type PackKind } from "../src/modules/packs/packKinds";
+import { planImport, type ImportPlan, type LoadedPack } from "../src/modules/packs/packPlan";
+import { PackImportModal } from "../src/modules/packs/PackImportModal";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
 import { App } from "./__mocks__/obsidian";
 import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
@@ -10,7 +11,7 @@ import { fakeRoot, type FakeEl } from "./helpers/fakeDom";
 const enc = (s: string) => new TextEncoder().encode(s);
 const kinds: PackKind[] = coreKinds({ worldFolder: "world" }, { palettes: "world/palettes", generators: "world/generators" });
 
-describe("content packs: names any system can take (security #12)", () => {
+describeWith("packs", "content packs: names any system can take (security #12)", () => {
 	it("refuses Windows-forbidden and control characters", () => {
 		for (const bad of ["tables/a:b.md", "tables/a*.md", "tables/what?.md", 'tables/"q".md', "tables/a<b>.md", "tables/a|b.md", "tables/tab\there.md", "tables/nul\u0000.md", "tables/bell\u0007.md", "tables/del\u007f.md"]) {
 			expect({ bad, ok: isSafePackPath(bad) }).toEqual({ bad, ok: false });
@@ -41,7 +42,7 @@ describe("content packs: names any system can take (security #12)", () => {
 	});
 });
 
-describe("content packs: code other plugins run (security #12)", () => {
+describeWith("packs", "content packs: code other plugins run (security #12)", () => {
 	it("finds Dataview JS blocks and inline queries, and Templater tags", () => {
 		expect(codeInNote("# Town\n\n```dataviewjs\ndv.paragraph(1)\n```\n")).toEqual(["Dataview JS"]);
 		expect(codeInNote("  ~~~ dataviewjs\nx\n~~~")).toEqual(["Dataview JS"]);
@@ -83,7 +84,7 @@ describe("content packs: code other plugins run (security #12)", () => {
 	});
 });
 
-describe("content packs: the import preview warns about code", () => {
+describeWith("packs", "content packs: the import preview warns about code", () => {
 	async function preview(files: { path: string; text: string }[]): Promise<FakeEl> {
 		const pack: LoadedPack = {
 			manifest: { format: 1, name: "P", description: "", madeWith: "", date: "", kinds: [] },

@@ -5,16 +5,16 @@
  */
 
 import { TFile, type App } from "obsidian";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { writeJsonBackup } from "../backup";
-import { ensureExportFolder } from "../export/exportFolder";
-import { writeBinaryToVault } from "../export/vaultWrite";
-import { ensureFolderPath } from "../vault/ensureFolder";
-import { PLUGIN_NAME } from "../ui/notify";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { writeJsonBackup } from "../../backup";
+import { ensureExportFolder } from "../../export/exportFolder";
+import { writeBinaryToVault } from "../../export/vaultWrite";
+import { ensureFolderPath } from "../../vault/ensureFolder";
+import { PLUGIN_NAME } from "../../ui/notify";
 import { buildPack, localDate, packFileName, type PackExportInput, type PackReadHost, type PackWriteHost } from "./packIO";
 import type { FindPalette } from "./packPalettes";
-import { buildPaletteNote, serializeSubmapDefaults } from "../palettes/paletteNote";
-import { setPathTypes } from "../palettes/pathTypeTable";
+import { buildPaletteNote, serializeSubmapDefaults } from "../../palettes/paletteNote";
+import { setPathTypes } from "../../palettes/pathTypeTable";
 
 /**
  * This vault's palette of a name, any case (K2): its note, or (a palette

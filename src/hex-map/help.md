@@ -300,6 +300,8 @@ A map can start blank and fill in as the party explores. Each blank hex the part
 
 Rolls made from the hex editor (🎲 on a table section, 📖 on a section) have **Add to this hex**: pick the play log or a section and the result is appended to it (in Play the play log comes first). With workflows on, **Run workflow** beside the hex title runs a workflow for this hex, and its result can be added the same way. A row that links another table is rolled through (the chain shows under the result), and a row's **When** can ask for the hex's terrain or type (`terrain: swamp`, `type: hills`). World maps come with a starter `weather.md` (one word a row: Sunny, Rainy…) and an empty `rumors.md` to fill in, as ordinary tables in your tables folder.
 
+<!-- slice:packs -->
 ## Content packs
 
 Your tables, templates and notes can go to another vault as one .zip. **Export content pack…** (command palette, or the end of the map export form) packs the notes you tick, each kind in its own folder, with a readable `pack.md`. **Import content pack…** (command palette, or the last step of the setup wizard) shows where each note will go in this vault before anything is added. A note that's already here can be skipped, kept beside the new one ("Name 2"), or replaced (backed up first).
+<!-- /slice -->

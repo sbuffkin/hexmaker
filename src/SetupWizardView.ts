@@ -34,7 +34,6 @@ import { newMapOptionId } from "./worldgen/newMapOptionIds";
 import { Disclosure } from "./ui/disclosure";
 import { renderScaleCards, renderScaleChoices, renderTuningSliders } from "./ui/mapScaleForm";
 import { renderResetButton } from "./ui/sliders";
-import { renderPackImportOffer } from "./packs/packOffer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -916,7 +915,6 @@ function makeDoneStep(plugin: HexmakerPlugin): WizardStep {
 
 			const exploreBtn = ctaRow.createEl("button", { text: "I'll explore on my own", cls: "duckmage-wizard-skip-btn" });
 			exploreBtn.addEventListener("click", () => void cb.onComplete(false));
-			renderPackImportOffer(container, plugin.app);
 			// The modules' offers on this step (ModuleRuntime.wizardOffers).
 			for (const offer of moduleWizardOffers("done")) offer.render(container, plugin);
 		},

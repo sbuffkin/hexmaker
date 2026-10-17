@@ -1,9 +1,9 @@
 import { Notice, type App } from "obsidian";
-import { HexmakerModal } from "../HexmakerModal";
-import type HexmakerPlugin from "../HexmakerPlugin";
-import { Fold } from "../ui/disclosure";
-import { addPickerFilter, emptyState, filterText } from "../ui/pickers";
-import { exportedMessage, resolveExportFolder } from "../export/exportFolder";
+import { HexmakerModal } from "../../HexmakerModal";
+import type HexmakerPlugin from "../../HexmakerPlugin";
+import { Fold } from "../../ui/disclosure";
+import { addPickerFilter, emptyState, filterText } from "../../ui/pickers";
+import { exportedMessage, resolveExportFolder } from "../../export/exportFolder";
 import { notesByKind, type PackKind } from "./packKinds";
 import { packFileName } from "./packIO";
 import { exportPackToVault, madeWith } from "./packVault";
