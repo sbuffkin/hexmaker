@@ -12,3 +12,12 @@ dev/overworld-preview.js
 dev/smoke/last-run.json
 dev/smoke/last-pass.json
 dist/
+# Owner worksheet pages and their answers (local, not part of the plugin).
+dev/*-calls.html
+dev/.submissions/
+dev/icon-candidates.html
+dev/inputs-tags.html
+# Worldographer's own files for the bw-* icon set (not used by the plugin;
+# in bw-icons.zip, see icons/CREDITS.md). Removed from the repo 2026-10-17.
+icons/*.wxx
+icons/*.properties
