@@ -1,7 +1,8 @@
 /**
  * The +/− buttons on the grid's four edges (L2, split out of HexMapView):
  * grow or shrink the map by a row or column, keeping the existing hexes
- * (and a calibrated background image) where they are on screen, and ask
+ * (and a calibrated background image) where they are on screen
+ * (gridResize.ts), and ask
  * before dropping an edge whose hexes have content.
  */
 import { Notice, TFile, type App } from "obsidian";
@@ -11,6 +12,8 @@ import type { MapData } from "../../types";
 import type { ModeAction } from "../../workMode";
 import type { BackgroundCalibration } from "./backgroundCalibration";
 import type { MapViewport } from "./mapViewport";
+import type { GridBox } from "../../maps/gridGrowth";
+import { keepViewStill, shiftView } from "./gridResize";
 
 function nullOverrides(paths: string[]): Map<string, null> {
   return new Map(paths.map((p) => [p, null]));
@@ -38,111 +41,14 @@ export class GridEdgeButtons {
     return this.host.activeMapName();
   }
 
-  /**
-   * Effective horizontal scale of the grid container's CSS transform.
-   * Used by the expand/shrink buttons so visual pan compensation accounts
-   * for calibrated maps where the grid is non-uniformly scaled. Falls back
-   * to the legacy uniform `gridDisplayScale`, then to 1.
-   */
-  private gridDisplayScaleX(map: MapData): number {
-    return map.gridDisplayScaleX ?? map.gridDisplayScale ?? 1;
-  }
-  private gridDisplayScaleY(map: MapData): number {
-    return map.gridDisplayScaleY ?? map.gridDisplayScale ?? 1;
+  /** `rows` rows added at the top / `cols` columns at the left (negative: removed): keep the view still (gridResize.ts). */
+  private shiftForGridGrowth(rows: number, cols: number, map: MapData): void {
+    shiftView({ ...this.host, plugin: this.plugin }, map, rows, cols);
   }
 
-  /**
-   * Apply pan + bg-image compensation after the grid grew/shrank on the
-   * top/left side.
-   *
-   * Two compensations work together so an expand at the top (or left)
-   * looks like "the canvas extended that way" instead of "everything
-   * shifted":
-   *
-   * - **Pan**: existing hexes' in-container layout offset just grew by
-   *   `stride`, which would shift them in viewport pixels by
-   *   `stride * scale`. To freeze their screen position we shift the
-   *   viewport translate by `-stride * scale * zoom`.
-   * - **BG image**: that pan shift moves the bg image in screen space too
-   *   (the bg layer is a viewport descendant). The bg image's
-   *   `viewport-coord` position doesn't track the grid's layout change,
-   *   so the bg/hex alignment breaks unless we also shift `bg.offsetY/X`
-   *   by `+stride * scale` (matching the layout shift of the hexes).
-   *   Net bg screen movement: zero. Alignment preserved.
-   *
-   * `direction: "above"` is the top / left case (one positive-side
-   * compensation). `shrink: true` flips the sign — removing a top/left
-   * row/col is the inverse of adding one.
-   */
-  private shiftForGridGrowth(
-    opts: { axis: "row" | "col"; direction: "above"; shrink?: boolean },
-    map: MapData,
-  ): void {
-    const stride = this.measureGridStride(opts.axis);
-    if (stride === 0) return;
-    const sign = opts.shrink ? -1 : 1;
-    if (opts.axis === "row") {
-      const sy = this.gridDisplayScaleY(map);
-      this.host.viewport().panY -= sign * stride * sy * this.host.viewport().zoom;
-      if (map.backgroundImage) {
-        map.backgroundImage.offsetY += sign * stride * sy;
-      }
-    } else {
-      const sx = this.gridDisplayScaleX(map);
-      this.host.viewport().panX -= sign * stride * sx * this.host.viewport().zoom;
-      if (map.backgroundImage) {
-        map.backgroundImage.offsetX += sign * stride * sx;
-      }
-    }
-    this.host.viewport().applyTransform();
-    if (map.backgroundImage) {
-      // Re-apply the bg layer's transform with the new offset so the visual
-      // updates immediately, and persist the new offset.
-      const layer = this.host.viewportEl()?.querySelector<HTMLElement>(".duckmage-bg-image-layer");
-      if (layer) this.host.calibration.applyBgLayerVars(layer, map.backgroundImage);
-      void this.plugin.saveSettings();
-    }
-  }
-
-  /**
-   * Layout stride between adjacent rows/cols, measured directly from two
-   * consecutive elements in the DOM after render. This is more reliable
-   * than computing from hex dimensions because it captures everything that
-   * affects spacing: hex height + hex margin + row margin-bottom, etc.
-   *
-   * Returns 0 if there aren't enough elements to measure.
-   */
-  private measureGridStride(axis: "row" | "col"): number {
-    const isFlat = this.plugin.settings.hexOrientation === "flat";
-    if (axis === "row") {
-      if (isFlat) {
-        // Flat-top: hexes stacked vertically inside a column with no overlap.
-        // Measure the offsetTop delta between two consecutive hexes in the
-        // same column.
-        const col = this.host.viewportEl()?.querySelector<HTMLElement>(".duckmage-hex-col");
-        const hexes = col?.querySelectorAll<HTMLElement>(".duckmage-hex");
-        if (!hexes || hexes.length < 2) return 0;
-        return hexes[1].offsetTop - hexes[0].offsetTop;
-      }
-      // Pointy-top: rows stack vertically inside the grid container. Measure
-      // the offsetTop delta between the first two rows.
-      const rows = this.host.viewportEl()?.querySelectorAll<HTMLElement>(".duckmage-hex-row");
-      if (!rows || rows.length < 2) return 0;
-      return rows[1].offsetTop - rows[0].offsetTop;
-    }
-    // axis === "col"
-    if (isFlat) {
-      // Flat-top: columns are siblings in the grid container; measure delta.
-      const cols = this.host.viewportEl()?.querySelectorAll<HTMLElement>(".duckmage-hex-col");
-      if (!cols || cols.length < 2) return 0;
-      return cols[1].offsetLeft - cols[0].offsetLeft;
-    }
-    // Pointy-top: hexes within a row are side-by-side. Measure delta between
-    // first two hexes in the first row.
-    const row = this.host.viewportEl()?.querySelector<HTMLElement>(".duckmage-hex-row");
-    const hexes = row?.querySelectorAll<HTMLElement>(".duckmage-hex");
-    if (!hexes || hexes.length < 2) return 0;
-    return hexes[1].offsetLeft - hexes[0].offsetLeft;
+  /** After the grid went from `before` to `after` (and was redrawn): keep the view still. */
+  keepViewStill(before: GridBox, after: GridBox): void {
+    keepViewStill({ ...this.host, plugin: this.plugin }, this.host.getActiveMap(), before, after);
   }
 
   createExpandButtons(container: HTMLElement): void {
@@ -173,7 +79,7 @@ export class GridEdgeButtons {
           const xs = Array.from({ length: r.gridSize.cols }, (_, i) => r.gridOffset.x + i);
           const newPaths = xs.map((x) => this.plugin.hexPath(x, r.gridOffset.y, this.activeMapName));
           this.host.renderGrid(nullOverrides(newPaths), nullOverrides(newPaths));
-          this.shiftForGridGrowth({ axis: "row", direction: "above" }, r);
+          this.shiftForGridGrowth(1, 0, r);
           void this.plugin.generateHexNotes(this.activeMapName, xs, [r.gridOffset.y]);
         },
         shrinkAction: async () => {
@@ -181,7 +87,7 @@ export class GridEdgeButtons {
           this.host.getActiveMap().gridOffset.y++;
           await this.plugin.saveSettings();
           this.host.renderGrid();
-          this.shiftForGridGrowth({ axis: "row", direction: "above", shrink: true }, this.host.getActiveMap());
+          this.shiftForGridGrowth(-1, 0, this.host.getActiveMap());
         },
         canShrink: () => this.host.getActiveMap().gridSize.rows > 1,
         edgePaths: () => {
@@ -227,7 +133,7 @@ export class GridEdgeButtons {
           const ys = Array.from({ length: r.gridSize.rows }, (_, i) => r.gridOffset.y + i);
           const newPaths = ys.map((y) => this.plugin.hexPath(r.gridOffset.x, y, this.activeMapName));
           this.host.renderGrid(nullOverrides(newPaths), nullOverrides(newPaths));
-          this.shiftForGridGrowth({ axis: "col", direction: "above" }, r);
+          this.shiftForGridGrowth(0, 1, r);
           void this.plugin.generateHexNotes(this.activeMapName, [r.gridOffset.x], ys);
         },
         shrinkAction: async () => {
@@ -235,7 +141,7 @@ export class GridEdgeButtons {
           this.host.getActiveMap().gridOffset.x++;
           await this.plugin.saveSettings();
           this.host.renderGrid();
-          this.shiftForGridGrowth({ axis: "col", direction: "above", shrink: true }, this.host.getActiveMap());
+          this.shiftForGridGrowth(0, -1, this.host.getActiveMap());
         },
         canShrink: () => this.host.getActiveMap().gridSize.cols > 1,
         edgePaths: () => {
