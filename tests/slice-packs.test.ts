@@ -10,7 +10,7 @@ import { PackExportModal } from "../src/modules/packs/PackExportModal";
 import { PackImportModal } from "../src/modules/packs/PackImportModal";
 import { readSource } from "./helpers/source";
 import { fakeRoot } from "./helpers/fakeDom";
-import { describeWith, describeWithout } from "./helpers/slices";
+import { describeWith, describeWithout, sliceOn } from "./helpers/slices";
 
 /**
  * The "packs" slice (content packs, SF1). Built on, the commands, the Map
@@ -78,7 +78,7 @@ describeWith("packs", "packs on: content packs as they were", () => {
     const { root, el } = fakeRoot();
     let closed = 0;
     renderMapExportForm(el, plugin() as never, "Coast", { onExport: () => closed++ });
-    expect(exportButtons(root)).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)", "Export content pack…"]);
+    expect(exportButtons(root)).toEqual(["Export PNG", "Export PDF with reference table", ...(sliceOn("manual") ? ["Export hexcrawl manual (PDF)"] : []), "Export content pack…"]);
     const box = root.all((e) => e.classes.has("duckmage-export-pack"));
     expect(box.length).toBe(1);
     expect(box[0].classes.has("duckmage-export-group")).toBe(true);
@@ -115,7 +115,7 @@ describeWithout("packs", "packs off: no trace of content packs in the plugin", (
     expect(moduleExportForm().map((c) => c.id)).not.toContain("packs.export");
     const { root, el } = fakeRoot();
     renderMapExportForm(el, plugin() as never, "Coast");
-    expect(exportButtons(root)).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)"]);
+    expect(exportButtons(root)).toEqual(["Export PNG", "Export PDF with reference table", ...(sliceOn("manual") ? ["Export hexcrawl manual (PDF)"] : [])]);
     expect(root.all((e) => e.classes.has("duckmage-export-pack"))).toEqual([]);
   });
 
