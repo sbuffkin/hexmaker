@@ -8,8 +8,10 @@
  * hex filled, a Party token there, a hex flower note and explore-with; in
  * Play a party step into a blank neighbour fills it, and the view's undo
  * (Ctrl+Z) takes the step and the fill back together; a hand-painted hex
- * the party walks into is untouched. The map stays, so the C5 restart then
- * checks that nothing is rewritten.
+ * the party walks into is untouched. HF4: walking north off the edge grows
+ * the map (blank, no hex notes), Ctrl+Z shrinks it back, redo grows it
+ * again. The map stays, so the C5 restart then checks that nothing is
+ * rewritten (and the grown size is read back).
  */
 export async function hexFlowerSolo(id) {
   const app = window.app;
@@ -119,6 +121,32 @@ export async function hexFlowerSolo(id) {
     await sleep(1500);
     if (store.get(name, painted)?.terrain !== paintWith) fail(`the painted hex ${painted} changed to ${store.get(name, painted)?.terrain}`);
     else out.steps.push(`painted hex ${painted} kept ${paintWith}`);
+  }
+  // HF4: walk north to the edge; the map grows (blank), undo shrinks it, redo grows it again.
+  const gridNow = () => ({ ...p.getMap(name).gridOffset, ...p.getMap(name).gridSize });
+  const start = gridNow();
+  const partyNow = () => { view.tokens.loadTokensForMap(); return view.tokens.tokenEntries.find((t) => t.party); };
+  let grewAt = null;
+  for (let i = 0; i < 12 && !grewAt; i++) {
+    const t = partyNow();
+    if (!t) { fail("no party to walk north"); break; }
+    const [x, y] = t.hex.split("_").map(Number);
+    await view.tokens.moveParty(t, `${x}_${y - 1}`);
+    await sleep(500);
+    if (gridNow().y !== start.y) grewAt = `${x}_${y - 1}`;
+  }
+  if (!grewAt) fail(`walking north never grew the map (grid ${JSON.stringify(gridNow())})`);
+  else {
+    const grown = gridNow();
+    const notes = app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(store.mapFolder?.(name) ?? "\u0000") && /\/-?\d+_-\d+\.md$/.test(f.path));
+    if (notes.length) fail(`growing made hex notes: ${notes.map((f) => f.path).join(", ")}`);
+    await view.undo();
+    await sleep(800);
+    if (gridNow().y === grown.y) fail(`undo kept the grown rows (${JSON.stringify(gridNow())})`);
+    await view.redo();
+    await sleep(800);
+    if (gridNow().y !== grown.y) fail(`redo didn't grow it again (${JSON.stringify(gridNow())})`);
+    if (out.ok) out.steps.push(`grew at ${grewAt}: rows ${start.rows} → ${grown.rows}, undo and redo`);
   }
   view.setWorkMode("build");
   await p.saveSettings();
