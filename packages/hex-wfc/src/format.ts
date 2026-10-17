@@ -74,6 +74,7 @@ export const SETTING_KEYS: Record<keyof GeneratorSettings, string> = {
   drawPaths: "draw-paths",
   paths: "paths",
   pathTypes: "path-types",
+  pathsAmount: "paths-amount",
   near: "near",
 };
 
@@ -101,6 +102,7 @@ const SETTING_KINDS: Record<keyof GeneratorSettings, SettingKind> = {
   drawPaths: "boolean",
   paths: "paths",
   pathTypes: "pathTypes",
+  pathsAmount: "number",
   near: "near",
 };
 

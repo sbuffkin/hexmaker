@@ -299,6 +299,12 @@ export interface GeneratorSettings {
   paths?: Record<string, PathTweak>;
   /** Per path type adjustments (all Roads, all Rivers), on top of `paths`. */
   pathTypes?: Record<string, PathTypeTweak>;
+  /**
+   * Multiplier on how many paths of every type are drawn (×0 none, ×1 as
+   * learned, ×2 twice as many). Scales each route's auto count; a route's own
+   * exact count is kept. Unset (old files) = ×1.
+   */
+  pathsAmount?: number;
   /** Near rules per terrain, over the model's (null turns a model rule off). */
   near?: Record<string, NearRule | null>;
 }
@@ -327,6 +333,7 @@ export const DEFAULT_SETTINGS: Required<GeneratorSettings> = {
   drawPaths: true,
   paths: {},
   pathTypes: {},
+  pathsAmount: 1,
   near: {},
 };
 
