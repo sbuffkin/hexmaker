@@ -314,23 +314,29 @@ export class GeneratorLibrary {
     open.disabled = del.disabled = !selected.length;
     const doRename = () => {
       const sv = selected[0];
-      if (selected.length !== 1 || !sv) return;
+      // Enter can come again before the rename is done.
+      if (selected.length !== 1 || !sv || rename.disabled) return;
       rename.disabled = true;
-      const oldName = sv.name;
-      void renameSave(this.plugin, sv.file, nameInput.value).then((r) => {
-        if ("error" in r) {
-          new Notice(r.error);
+      const oldName = sv.name, oldPath = sv.file.path;
+      renameSave(this.plugin, sv.file, nameInput.value)
+        .then((r) => {
+          if ("error" in r) {
+            new Notice(r.error);
+            rename.disabled = false;
+            return;
+          }
+          checked.delete(oldPath);
+          checked.add(r.file.path);
+          const loaded = generatorPageState.loadedSave;
+          if (loaded?.name === oldName) generatorPageState.loadedSave = { ...loaded, name: r.name };
+          new Notice(`Renamed "${oldName}" to "${r.name}".`);
+          // The new name may not be in the metadata cache yet.
+          activeWindow.setTimeout(() => this.host.changed(), 300);
+        })
+        .catch((e: unknown) => {
+          new Notice(`Couldn't rename "${oldName}": ${e instanceof Error ? e.message : String(e)}`);
           rename.disabled = false;
-          return;
-        }
-        checked.delete(sv.file.path);
-        checked.add(r.file.path);
-        const loaded = generatorPageState.loadedSave;
-        if (loaded?.name === oldName) generatorPageState.loadedSave = { ...loaded, name: r.name };
-        new Notice(`Renamed "${oldName}" to "${r.name}".`);
-        // The new name may not be in the metadata cache yet.
-        window.setTimeout(() => this.host.changed(), 300);
-      });
+        });
     };
     rename.addEventListener("click", doRename);
     nameInput.addEventListener("keydown", (e) => {

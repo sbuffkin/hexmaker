@@ -260,7 +260,7 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
       } else {
         cells = sv.cells;
         rawPaths = sv.paths;
-        saveNote = ` · saved map "${sv.name}" (from v${sv.version}; this version generates it differently)`;
+        saveNote = ` · saved map "${sv.name}"${savedMapWhy(sv, !!connected, pluginVersion(plugin))}`;
       }
     } else generatorPageState.loadedSave = null;
     shown = { cells, paths: rawPaths };
@@ -429,4 +429,16 @@ export function renderPreviewActions(ctx: GeneratorPageCtx, preview: PreviewPart
     });
   }
   return schedulePreview;
+}
+
+/**
+ * Why a loaded save shows its stored map rather than what the page makes
+ * now: part of it was lost (an older save), it was made beside a map it
+ * isn't connected to now, or another version made it. Empty if none applies.
+ */
+export function savedMapWhy(sv: Pick<GeneratorSave, "cells" | "cols" | "rows" | "connect" | "version">, connectedNow: boolean, version: string): string {
+  if (sv.cells.size < sv.cols * sv.rows) return " (part of it was lost: set Connect to the map it was made beside and load it again to fill it in)";
+  if (sv.connect && !connectedNow) return ` (made beside ${sv.connect.anchor}; shown on its own, so the page makes a different map)`;
+  if (compareVersions(sv.version, version) !== 0) return ` (from v${sv.version}; this version generates it differently)`;
+  return "";
 }

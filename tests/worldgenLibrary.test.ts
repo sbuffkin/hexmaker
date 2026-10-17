@@ -187,3 +187,44 @@ describe("T4: the Generators tab on screen", () => {
     GeneratorLibrary.query = "";
   });
 });
+
+describe("Saves tab: rename", () => {
+  it("Enter pressed again while a rename is running doesn't start a second one", () => {
+    let processed = 0;
+    const file = { path: "world/generators/saves/a.md", basename: "a", parent: { path: "world/generators/saves" }, stat: { mtime: 1 } };
+    const plugin = {
+      settings: { worldFolder: "world", maps: [] },
+      app: {
+        vault: {
+          getMarkdownFiles: () => [file],
+          getAbstractFileByPath: () => null,
+          // Never finishes: the rename is still running when Enter comes again.
+          process: () => { processed++; return new Promise(() => {}); },
+        },
+        metadataCache: { getFileCache: () => ({ frontmatter: { "hexmaker-save": 2, name: "a" } }) },
+        fileManager: { renameFile: async () => {} },
+        workspace: {},
+      },
+      getMap: () => undefined,
+    } as unknown as HexmakerPlugin;
+    GeneratorLibrary.tab = "saves";
+    GeneratorLibrary.query = "";
+    GeneratorLibrary.checkedSaves.clear();
+    GeneratorLibrary.checkedSaves.add(file.path);
+    const { root, el } = fakeRoot();
+    new GeneratorLibrary({} as App, plugin, [], {
+      selectedPath: () => "",
+      load: () => {},
+      loadDraft: () => {},
+      changed: () => {},
+      page: { rerender: () => {}, show: () => {}, paletteName: () => "Default", mapName: () => "" },
+    }).render(el);
+    const input = root.find("duckmage-wfc-save-rename")!;
+    expect(input.value).toBe("a");
+    input.value = "b";
+    input.fire("keydown", { key: "Enter" });
+    input.fire("keydown", { key: "Enter" });
+    expect(processed).toBe(1);
+    GeneratorLibrary.tab = "generators";
+  });
+});

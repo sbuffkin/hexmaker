@@ -5,6 +5,7 @@ import type HexmakerPlugin from "../src/HexmakerPlugin";
 import { encodeCells, legacyOrigin, mapForSave, parseSave, serializeSave, type GeneratorSave } from "../src/worldgen/saveFormat";
 import { deleteSaves, listSaves, renameSave } from "../src/worldgen/saves";
 import { saveRows } from "../src/worldgen/libraryRows";
+import { savedMapWhy } from "../src/worldgen/genPage/previewColumn";
 import { hexKey } from "../src/hexKey";
 import { MemVault } from "./helpers/memVault";
 
@@ -255,5 +256,22 @@ describe("generator saves: the Saves tab's rows", () => {
     expect(saveRows(rows, "3947").map((r) => r.name)).toEqual(["new"]);
     expect(saveRows(rows, "2026-10-0").map((r) => r.name)).toEqual(["mid", "old"]);
     expect(saveRows(rows, "nothing")).toEqual([]);
+  });
+});
+
+describe("generator saves: why the saved map is shown", () => {
+  const whole = { cells: grid(), cols: COLS, rows: ROWS, version: "2.0.0" };
+  it("a cut-off save says how to fill it in", () => {
+    const cut = new Map([...grid()].filter(([k]) => !k.includes("-")));
+    expect(savedMapWhy({ ...whole, cells: cut }, false, "2.0.0")).toMatch(/part of it was lost: set Connect to/);
+  });
+  it("a save made beside a map, shown on its own, says so rather than blaming the version", () => {
+    const why = savedMapWhy({ ...whole, connect: { anchor: "the-coast", side: "east" } }, false, "2.0.0");
+    expect(why).toMatch(/made beside the-coast; shown on its own/);
+    expect(why).not.toMatch(/version/);
+  });
+  it("another version: names it; same version, connected: nothing to add", () => {
+    expect(savedMapWhy({ ...whole, version: "1.5.6" }, false, "2.0.0")).toMatch(/from v1\.5\.6/);
+    expect(savedMapWhy({ ...whole, connect: { anchor: "the-coast", side: "east" } }, true, "2.0.0")).toBe("");
   });
 });

@@ -317,7 +317,7 @@ export function parseSave(text: string, fallbackName = "save"): { save: Generato
     const legacy = legacyOrigin(decoded.cells, cols, rows, paths);
     if (legacy) {
       origin = legacy.origin;
-      warnings.push(`An older version saved only part of this map (${legacy.lost} of ${cols * rows} hexes are missing). They come back when the page makes the same map again: the same generator and seed, connected where it was`);
+      warnings.push(`An older version saved only part of this map (${legacy.lost} of ${cols * rows} hexes are missing). To get them back, set Connect to the map it was made beside and load it again`);
     }
   }
   const side = fm["connect-side"];
