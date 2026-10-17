@@ -9,7 +9,8 @@ import { ExploreService } from "../src/hexflower/ExploreService";
 import { exploreOrder } from "../src/hexflower/exploreOrder";
 import { FlowerStore } from "../src/hexflower/FlowerStore";
 import { setExplore, setFlowerStore } from "../src/hexflower/context";
-import { exploreFrontier, exploreHexMenu, exploreStep } from "../src/hexflower/exploreHooks";
+import { exploreFrontier, exploreHexMenu, explorePartyControls, exploreStep, REVEAL_CONTROL_ID } from "../src/hexflower/exploreHooks";
+import { clearRevealed, revealedNow } from "../src/hex-map/revealBounce";
 import { emptyFlower } from "../src/hexflower/flower";
 import { buildFlowerNote } from "../src/hexflower/flowerNote";
 import { readSurface } from "./helpers/source";
@@ -126,11 +127,49 @@ describe("exploring: a party step", () => {
 		expect([...a.store.all("m")]).toEqual([...b.store.all("m")]);
 	});
 
-	it("reveal neighbours fills the blank hexes around too", async () => {
+	it("reveal neighbours (the older value) fills the blank hexes around too", async () => {
 		const s = setup({ exploreReveal: "neighbours" });
 		await s.flowers.init();
 		await exploreStep(s.plugin as never, { map: "m", from: "1_2", to: "2_2" });
 		expect(s.store.all("m").size).toBe(7);
+	});
+
+	it("reveal 2 rings on entry fills two rings around (in the grid)", async () => {
+		const s = setup({ exploreReveal: "2 rings" });
+		await s.flowers.init();
+		await exploreStep(s.plugin as never, { map: "m", from: "2_1", to: "2_2" });
+		// 1 + 6 + 12 = 19, all inside the 5×5 grid around 2_2.
+		expect(s.store.all("m").size).toBe(19);
+	});
+
+	it("the party's Reveal button: rings around the party any time, one undo, and the hexes bounce in", async () => {
+		clearRevealed();
+		const s = setup();
+		await s.flowers.init();
+		await exploreStep(s.plugin as never, { map: "m", from: "2_1", to: "2_2" });
+		expect(s.store.all("m").size).toBe(1);
+		expect([...revealedNow("m")]).toEqual([["2_2", 0]]);
+		const controls = explorePartyControls(s.plugin as never, { map: "m", hex: "2_2", token: "party.md" });
+		expect(controls.map((c) => [c.id, c.label, c.buttons.map((b) => b.label)])).toEqual([[REVEAL_CONTROL_ID, "Reveal", ["1", "2", "3"]]]);
+		const undo = await controls[0].buttons[0].run();
+		expect(s.store.all("m").size).toBe(7);
+		expect(undo.map((u) => u.kind)).toEqual([...Array(6).fill("cells"), "map-field"]);
+		expect(s.notices.at(-1)).toMatch(/^Revealed 6 hexes \(1 ring around 2, 2\)\./);
+		const bouncing = revealedNow("m");
+		expect([...bouncing].filter(([, r]) => r === 1).length).toBe(6);
+		// Later, a bigger reveal from the same hex: the second ring only.
+		const undo2 = await controls[0].buttons[1].run();
+		expect(s.store.all("m").size).toBe(19);
+		// Undo takes back exactly that reveal.
+		await applyAll(s.plugin, undo2, "undo");
+		expect(s.store.all("m").size).toBe(7);
+		// Nothing left to reveal: told so, no undo.
+		await controls[0].buttons[0].run();
+		expect(await controls[0].buttons[0].run()).toEqual([]);
+		expect(s.notices.at(-1)).toMatch(/^Nothing new to reveal 1 ring around 2, 2\.$/);
+		// Not an explored map: no controls.
+		const plain = setup({ exploreWith: [] });
+		expect(explorePartyControls(plain.plugin as never, { map: "m", hex: "2_2", token: "p.md" })).toEqual([]);
 	});
 
 	it("hex menu: Roll this hex on a blank hex, Reroll on the latest fill; the frontier marks blank neighbours", async () => {
@@ -178,7 +217,12 @@ describe("undo groups and map fields", () => {
 	it("the map view groups the token's move with what the step filled", () => {
 		const view = readSurface("map-view");
 		expect(view).toMatch(/const filled = await runPartyEntered\(this\.plugin, step\);/);
-		expect(view).toMatch(/this\.(?:host\.)?(?:undos\.)?pushUndo\(filled\.length \? \{ kind: "group", items: \[token, \.\.\.filled\] \} : token, party\.map\);/);
+		// One undo: the move, the visited marks (P2) and what the step filled.
+		expect(view).toMatch(/const items = \[token, \.\.\.visited, \.\.\.filled\];/);
+		expect(view).toMatch(/this\.(?:host\.)?(?:undos\.)?pushUndo\(items\.length > 1 \? \{ kind: "group", items \} : token, party\.map\);/);
+		expect(view).toMatch(/\{ kind: "map-field", mapName: party\.map, field: "visited", before: visitedBefore, after: visitedAfter \}/);
+		// The step's log line (P1).
+		expect(view).toMatch(/void onPartyMoved\(this\.plugin, step\);/);
 		// Dragging the party travels the same way.
 		expect(view).toMatch(/if \(token\.party && token\.map === this\.activeMapName\) void this\.moveParty\(token, closestHex, true\);/);
 		expect(view).toMatch(/case "group": return prepareGroup\(/);

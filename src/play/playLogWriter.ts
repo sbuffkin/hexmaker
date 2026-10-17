@@ -52,6 +52,18 @@ export async function ensureLogNote(app: App, folder: string, now = new Date()):
   }
 }
 
+/** How an entry is written (addToPlayLog). */
+export interface PlayLogOptions {
+  /** The party token the entry names (its note path); default: the one on the hex, else the map's. */
+  partyPath?: string;
+  /**
+   * Link the hex: make its note when missing and list the day under its
+   * "Log" heading (default). Off: link the hex only when its note exists,
+   * and leave the note alone (a move line shouldn't make a note per step).
+   */
+  linkHex?: boolean;
+}
+
 /**
  * Append `text` to today's play log for hex (x, y) of `mapName`, naming the
  * party token there (or the map's party): in that party's log folder if it
@@ -65,15 +77,18 @@ export async function addToPlayLog(
   y: number,
   text: string,
   now = new Date(),
+  opts: PlayLogOptions = {},
 ): Promise<string> {
   const app = plugin.app;
-  const party = partyFor(tokensOnMap(app, mapName), mapName, hexKey(x, y));
+  const tokens = tokensOnMap(app, mapName);
+  const party = (opts.partyPath ? tokens.find((t) => t.filePath === opts.partyPath) : undefined) ?? partyFor(tokens, mapName, hexKey(x, y));
   const folder = logFolderFor(plugin.settings, party);
   const log = await ensureLogNote(app, folder, now);
+  const linkHex = opts.linkHex !== false;
 
   const hexPath = plugin.hexPath(x, y, mapName);
   let hexFile = app.vault.getAbstractFileByPath(hexPath);
-  if (!(hexFile instanceof TFile)) hexFile = await plugin.createHexNote(x, y, mapName);
+  if (!(hexFile instanceof TFile) && linkHex) hexFile = await plugin.createHexNote(x, y, mapName);
   const hexLink = hexFile instanceof TFile
     ? `[[${app.metadataCache.fileToLinktext(hexFile, log.path)}|${plugin.hexLinkAlias(hexFile.path)}]]`
     : `${plugin.mapLabel(mapName)} ${x}, ${y}`;
@@ -84,6 +99,6 @@ export async function addToPlayLog(
 
   const entry = formatLogEntry({ time: logTime(now), hexLink, partyLink, text });
   await app.vault.process(log, (content) => appendLogEntry(content, entry, logDayName(now)));
-  if (hexFile instanceof TFile) await addLinkToSection(app, hexFile.path, HEX_LOG_SECTION, logDayLink(log.path));
+  if (linkHex && hexFile instanceof TFile) await addLinkToSection(app, hexFile.path, HEX_LOG_SECTION, logDayLink(log.path));
   return log.path;
 }

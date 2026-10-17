@@ -271,7 +271,11 @@ export class UndoController {
       this.host.renderGrid();
       this.host.updateModeBar();
     } else if (item.kind === "group") await applyGroup(item, dir, (it, d) => this.applyUndo(it, d));
-    else if (item.kind === "map-field") applyMapField(this.host.plugin, item, dir);
+    else if (item.kind === "map-field") {
+      applyMapField(this.host.plugin, item, dir);
+      // A map setting the grid shows (the visited marks): redraw it.
+      if (item.field === "visited") this.host.renderGrid();
+    }
     else {
       await this.host.applyTokenSnap(item.path, dir === "undo" ? item.before : item.after);
     }
