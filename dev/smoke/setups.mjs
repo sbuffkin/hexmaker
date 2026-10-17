@@ -618,8 +618,11 @@ async function neighboursExtra(ctx) {
 
 async function customPaletteExtra(ctx) {
   const st = ctx.state;
+  // C11: note PDF / markdown and the map export form, end to end (lib/exports.mjs).
+  const ex = await ctx.ev((id) => window.__smokePage.exportsRoundTrip(id), ctx.pluginId);
   return [
     { check: "F7-palettes", ok: st.palettes.length === 1 && st.palettes[0] === "Moorland", detail: `palettes: ${st.palettes.join(", ")}` },
+    { check: "C11-exports", ok: ex.ok, detail: [...ex.steps, ...ex.problems].join("; ") },
   ];
 }
 
