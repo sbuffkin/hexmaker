@@ -51,6 +51,7 @@ import { genPageRuntime } from "./gen-page/runtime";
 import { playRuntime } from "./play/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
 import { packsRuntime } from "./packs/runtime";
+import { manualRuntime } from "./manual/runtime";
 
 /** The runtime halves, by the same slice flags as ./index.ts. */
 const compiled: ModuleRuntime[] = [worldRuntime];
@@ -61,6 +62,7 @@ if (__SLICE_GENPAGE__) compiled.push(genPageRuntime);
 if (__SLICE_PLAY__) compiled.push(playRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 if (__SLICE_PACKS__) compiled.push(packsRuntime);
+if (__SLICE_MANUAL__) compiled.push(manualRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
 setActiveRuntimes(MODULE_RUNTIMES);
 // genPage() and worldMaps() live in ./active.ts so module code can call them without importing this file.

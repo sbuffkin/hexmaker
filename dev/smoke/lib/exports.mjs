@@ -22,7 +22,9 @@
  * skipped and reported as such; the markdown and PNG parts always run.
  * The webview's set-up is unit tested in tests/pdfWebview.test.ts.
  */
-export async function exportsRoundTrip(id, withMapForm = true) {
+export async function exportsRoundTrip(id, withMapForm = true, opts = {}) {
+  // The "manual" slice (Hexcrawl manual in the form): on unless the build says it's off.
+  const manual = opts.manual ?? true;
   const app = window.app;
   const p = app.plugins.plugins[id];
   const vault = app.vault;
@@ -157,6 +159,15 @@ export async function exportsRoundTrip(id, withMapForm = true) {
         }
         return null;
       };
+      // The form's Hexcrawl manual part is there exactly when the build has the manual slice.
+      if (modal()) {
+        const text = modal().textContent;
+        const writes = [...modal().querySelectorAll(".duckmage-export-tab-preview")].map((e) => e.textContent).join(" ");
+        const has = { fold: text.includes("Hexcrawl manual"), button: [...modal().querySelectorAll("button")].some((b) => b.textContent.trim() === "Export hexcrawl manual (PDF)"), writes: writes.includes("(manual)") };
+        if (manual && !(has.fold && has.button && has.writes)) fail(`map export form: the manual slice is built but its part is missing ${JSON.stringify(has)}`);
+        else if (!manual && (has.fold || has.button || has.writes)) fail(`map export form: the manual slice is off but its part shows ${JSON.stringify(has)}`);
+        else out.steps.push(manual ? "form has the Hexcrawl manual part" : "form has no Hexcrawl manual part (slice off)");
+      }
       if (modal() && click("Export PNG")) {
         const f = await newFile("png");
         if (!f) fail("map PNG: not written");
@@ -174,7 +185,7 @@ export async function exportsRoundTrip(id, withMapForm = true) {
         else out.steps.push(`map PDF ${f}`);
       }
       if (pdfs && !modal()) { run("export-current-map"); await sleep(1000); }
-      if (pdfs && modal() && click("Export hexcrawl manual (PDF)")) {
+      if (pdfs && manual && modal() && click("Export hexcrawl manual (PDF)")) {
         const f = await newFile("pdf", 120_000);
         if (!f) fail("hexcrawl manual: not written");
         else out.steps.push(`manual ${f}`);

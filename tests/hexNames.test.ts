@@ -1,11 +1,12 @@
 import { describe, it } from "node:test";
+import { itWith } from "./helpers/slices";
 import expect from "expect";
 import { buildMapNote, mapNoteKey, parseMapNote, updateMapNote, type HexData, type MapNoteData } from "../src/maps/mapNote";
 import { cleanHexName, coordAlias, nextAliases, nextAliasesMulti, renamedHexes } from "../src/maps/hexNames";
 import { hexHoverLabel } from "../src/hex-map/hexHover";
 import { hexTableLines, type HexRow } from "../src/export/exporters/mapWithTable";
-import { buildManualHtml, entryTitle, isKeyed } from "../src/export/manual/manualHtml";
-import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
+import { buildManualHtml, entryTitle, isKeyed } from "../src/modules/manual/manualHtml";
+import type { ManualData, ManualHex } from "../src/modules/manual/manualModel";
 import { pngHexNameY, pngTokenRadius } from "../src/export/handoutLabels";
 import { groupSize, tokenGroupOffsets, tokenNamePlacement } from "../src/hex-map/tokenDefaults";
 
@@ -150,13 +151,13 @@ describe("X1: handout options", () => {
 		links: { ...noLinks }, ...over,
 	});
 
-	it("the manual keys and titles a named hex by its name", () => {
+	itWith("manual", "the manual keys and titles a named hex by its name", () => {
 		expect(isKeyed(hex({ name: "Lone Oak" }), true)).toBe(true);
 		expect(isKeyed(hex(), true)).toBe(false);
 		expect(entryTitle(hex({ name: "Lone Oak", links: { ...noLinks, towns: ["Farwharf"] } }))).toBe("Lone Oak");
 	});
 
-	it("the manual leaves out the parts the user unticks", () => {
+	itWith("manual", "the manual leaves out the parts the user unticks", () => {
 		const d: ManualData = {
 			title: "m", version: "1", date: "2026-10-10", hexCount: 1, keyedCount: 1, player: true, numberDigits: 2,
 			overviewMapUri: "data:,", legend: [{ name: "grass", color: "#6a6", hexCount: 1 }], paths: [],

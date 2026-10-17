@@ -1,4 +1,5 @@
 import { describe, it } from "node:test";
+import { itWith } from "./helpers/slices";
 import expect from "expect";
 import { readFileSync } from "node:fs";
 import { layoutHexName, NAME_LINE_HEIGHT, NAME_MAX_FONT_EM, NAME_MIN_FONT_EM } from "../src/hex-map/hexNameLayer";
@@ -30,8 +31,8 @@ import {
 } from "../src/mapKinds";
 import { linkedNotesText } from "../src/hex-map/linkBadges";
 import { hexTableLines, type HexRow } from "../src/export/exporters/mapWithTable";
-import { buildManualHtml } from "../src/export/manual/manualHtml";
-import type { ManualData, ManualHex } from "../src/export/manual/manualModel";
+import { buildManualHtml } from "../src/modules/manual/manualHtml";
+import type { ManualData, ManualHex } from "../src/modules/manual/manualModel";
 import { DEFAULT_TERRAIN_PALETTE } from "../src/constants";
 import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/space/presets";
 import { readSurface, readSource } from "./helpers/source";
@@ -262,7 +263,7 @@ describe("G4b: link section words follow the map type", () => {
 		expect(sectionWordsFor(mapKindInfo(kindForChain([{ terrains: [{ type: "void" }] }])))("Towns").label).toBe("Settlements");
 	});
 
-	it("names links in the hover text, the PDF table and the manual in those words", () => {
+	itWith("manual", "names links in the hover text, the PDF table and the manual in those words", () => {
 		const w = sectionWordsFor(space);
 		expect(linkedNotesText(new Map([["Towns", ["Kerrigan IV"]], ["Dungeons", ["A", "B"]]]), w)).toBe("Settlement: Kerrigan IV · Sites: A, B");
 		const row: HexRow = { hex: "1, 1", name: "", terrain: "void", towns: "Port", dungeons: "", features: "", quests: "", factions: "", encounters: "", description: "" };
@@ -285,7 +286,7 @@ describe("G4b: link section words follow the map type", () => {
 		expect(readSurface("map-view")).toMatch(/label: words\(s\)\.label/);
 		expect(readSurface("png-renderer")).toMatch(/name: sectionWords\(s\)\.label/);
 		expect(readSource("src", "export", "exporters", "singleHex.ts")).toMatch(/sectionWordsFor\(/);
-		expect(readSource("src", "export", "exporters", "hexcrawlManual.ts")).toMatch(/linkLabels:/);
+		expect(readSource("src", "modules", "manual", "hexcrawlManual.ts")).toMatch(/linkLabels:/);
 	});
 });
 

@@ -24,6 +24,7 @@ export const MODULE_DIRS: Record<string, string[]> = {
   "gen-page": ["src/modules/gen-page/"],
   packs: ["src/modules/packs/"],
   play: ["src/modules/play/"],
+  manual: ["src/modules/manual/"],
 };
 
 /**

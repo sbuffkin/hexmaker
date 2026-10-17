@@ -50,7 +50,7 @@ Each coding session:
 
 ## Feature switches (release slices)
 
-Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `genpage` (the generator page), `play` (Solo play: party steps, visited hexes, the play log), `hexflower` (needs `genpage` and `play`) and `packs` (content packs) today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `genpage` (the generator page), `play` (Solo play: party steps, visited hexes, the play log), `hexflower` (needs `genpage` and `play`) `packs` (content packs) and `manual` (the hexcrawl manual export) today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
 
 | Variable | Meaning |
 |---|---|

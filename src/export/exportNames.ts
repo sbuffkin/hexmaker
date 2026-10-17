@@ -17,8 +17,13 @@ export interface MapExportNameOptions {
   mapName: string;
   showFactionOverlay?: boolean;
   showRegionOverlay?: boolean;
-  /** Player version of the hexcrawl manual. */
-  player?: boolean;
+}
+
+/** A file a module's part of the export form writes (ExportFormPart.fileName), keyed by its contribution id. */
+export interface ExportFileNamePart {
+  id: string;
+  /** Its file name, from the form's base name (the typed name, or the map name when blank). */
+  fileName?(base: string): string;
 }
 
 /**
@@ -39,15 +44,24 @@ export function mapExportSuffix(o: Pick<MapExportNameOptions, "showFactionOverla
   return (o.showFactionOverlay ? "-faction" : "") + (o.showRegionOverlay ? "-area" : "");
 }
 
-/** Every file a map export can write, as written to the export folder. */
-export function mapExportFileNames(o: MapExportNameOptions): { png: string; pdf: string; manual: string } {
+/** The form's base name: what was typed, else the map name. */
+export function mapExportBase(o: Pick<MapExportNameOptions, "base" | "mapName">): string {
+  return o.base.trim() || o.mapName;
+}
+
+/**
+ * Every file a map export can write, as written to the export folder: the
+ * core's PNG and PDF, and each module part's file by its id (`parts`).
+ */
+export function mapExportFileNames(
+  o: MapExportNameOptions,
+  parts: readonly ExportFileNamePart[] = [],
+): { png: string; pdf: string; parts: Record<string, string> } {
   const stem = sanitiseFilename(mapExportStem(o));
-  const base = o.base.trim() || o.mapName;
-  return {
-    png: `${stem}.png`,
-    pdf: `${stem}.pdf`,
-    manual: `${sanitiseFilename(`${base} ${o.player ? "player" : "manual"}`)}.pdf`,
-  };
+  const base = mapExportBase(o);
+  const named: Record<string, string> = {};
+  for (const p of parts) if (p.fileName) named[p.id] = p.fileName(base);
+  return { png: `${stem}.png`, pdf: `${stem}.pdf`, parts: named };
 }
 
 /** The "On the map" ticks of the export form, in display order. */

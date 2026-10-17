@@ -229,9 +229,9 @@ describe("exportForm[]: a module's part of the Map export form", () => {
     expect(all.find((t) => t.startsWith("Writes:"))).toMatch(/· Coast fake\.pdf \(fake\)$/);
     expect(all).toContain("Fake: a fake file.");
     expect(all).toContain("Fake box");
-    // The core's buttons first, then the module's.
-    const buttons = root.buttons().map((b) => b.text);
-    expect(buttons.slice(0, 3)).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)"]);
+    // The core's buttons first, then the modules', in module order (the fake one last).
+    const buttons = root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export") && !t.includes("pack"));
+    expect(buttons).toEqual(["Export PNG", "Export PDF with reference table", ...(sliceOn("manual") ? ["Export hexcrawl manual (PDF)"] : []), "Export fake"]);
     const fake = root.buttons().find((b) => b.text === "Export fake")!;
     fake.fire("click");
     expect(ran).toEqual([["Coast", "Coast fake.pdf"]]);
@@ -240,12 +240,12 @@ describe("exportForm[]: a module's part of the Map export form", () => {
     expect(() => changed()).not.toThrow();
   });
 
-  it("without a module part the form is what it was", () => {
+  it("the core's own form: PNG and PDF, then whatever the built modules add", () => {
     const { root, el } = fakeRoot();
     renderMapExportForm(el, plugin() as never, "Coast");
-    // The core's three, then Content pack's box when that slice is built.
-    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export"))).toEqual(["Export PNG", "Export PDF with reference table", "Export hexcrawl manual (PDF)", ...(sliceOn("packs") ? ["Export content pack…"] : [])]);
-    expect(texts(root).find((t) => t.startsWith("Writes:"))).toMatch(/\(manual\)$/);
+    const manual = sliceOn("manual");
+    expect(root.buttons().map((b) => b.text).filter((t) => t.startsWith("Export") && !t.includes("pack"))).toEqual(["Export PNG", "Export PDF with reference table", ...(manual ? ["Export hexcrawl manual (PDF)"] : [])]);
+    expect(texts(root).find((t) => t.startsWith("Writes:"))).toBe(`Writes: Coast.png (PNG) · Coast.pdf (PDF)${manual ? " · Coast manual.pdf (manual)" : ""}`);
   });
 });
 

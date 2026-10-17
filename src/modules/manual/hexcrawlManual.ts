@@ -11,9 +11,9 @@
 
 import { Component, MarkdownRenderer, Notice, TFile } from "obsidian";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportToPdfBytes } from "../pdfExporter";
-import { ensureExportFolder } from "../exportFolder";
-import { renderMapToPngBlob } from "../mapPngRenderer";
+import { exportToPdfBytes } from "../../export/pdfExporter";
+import { ensureExportFolder } from "../../export/exportFolder";
+import { renderMapToPngBlob } from "../../export/mapPngRenderer";
 import { getAllSectionData } from "../../sections";
 import { getHexNameFromFile, getHexRegionFromFile, getTerrainFromFile } from "../../frontmatter";
 import { getIconUrl, normalizeFolder } from "../../utils";
@@ -23,15 +23,15 @@ import {
   blobToDataUri,
   computeSubdivisions,
   enumerateSections,
-} from "./mapWithTable";
-import { sanitiseFilename } from "../exportNames";
-import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
-import { hexNumbering } from "../manual/hexNumber";
+} from "../../export/exporters/mapWithTable";
+import { sanitiseFilename } from "../../export/exportNames";
+import { announceExport, reportExportFailure, saveExport } from "../../export/vaultWrite";
+import { hexNumbering } from "./hexNumber";
 import { pluginVersion } from "../../compat";
 import { mapLabel } from "../../maps/mapTree";
-import { PlaceholderFilter } from "../manual/placeholders";
-import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "../manual/manualHtml";
-import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection, ManualTable } from "../manual/manualModel";
+import { PlaceholderFilter } from "./placeholders";
+import { buildManualHtml, isKeyed, MANUAL_CSS, tableResultText } from "./manualHtml";
+import type { ManualData, ManualHex, ManualLinks, ManualPart, ManualSection, ManualTable } from "./manualModel";
 import { hexKey } from "../../hexKey";
 
 export interface ManualExportOptions {

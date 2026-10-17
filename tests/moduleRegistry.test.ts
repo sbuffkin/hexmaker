@@ -37,9 +37,9 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space, gen-page, play, hex-flower and packs (those built), in that order", () => {
+  it("registers world, world-maps, space, gen-page, play, hex-flower, packs and manual (those built), in that order", () => {
     // Play before Hex flower: a step is marked visited before exploring reads it.
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs"].filter(moduleOn));
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs", "manual"].filter(moduleOn));
     expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
