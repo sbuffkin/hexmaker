@@ -453,8 +453,8 @@ function yamlString(v: string): string {
   return plain ? v : JSON.stringify(v);
 }
 
-/** Numbers to at most 4 decimals: settings, not measurements to the atom. */
-const fmtNum = (n: number) => String(Math.round(n * 10000) / 10000);
+/** Numbers exactly (shortest exact form): 4-decimal rounding moved calibrated grids (audit 2026-10-17). */
+const fmtNum = (n: number) => (Number.isFinite(n) ? String(n) : "0");
 
 function yamlScalar(v: unknown, inList = false): string {
   if (typeof v === "number") return fmtNum(v);
