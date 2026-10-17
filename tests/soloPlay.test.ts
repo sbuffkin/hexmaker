@@ -1,6 +1,8 @@
 import { describe, it } from "node:test";
 import expect from "expect";
-import { isStep, markVisited, parseVisited, partyClick, partyFor, partyTokens, unmarkVisited } from "../src/play/partyTravel";
+import { isStep, markVisited, parseVisited, partyFor, partyTokens, unmarkVisited } from "../src/modules/play/partyTravel";
+import { playRuntime } from "../src/modules/play/runtime";
+import { playModule } from "../src/modules/play";
 import {
   appendLogEntry,
   formatLogEntry,
@@ -11,17 +13,17 @@ import {
   logTime,
   newLogNote,
   PLAY_LOG_TARGET,
-  rollDefaultSection,
-} from "../src/play/playLog";
-import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/play/linkIcons";
+} from "../src/modules/play/playLog";
+import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/ui/linkIcons";
 import { TOKEN_SIZE_EM, tokenCoordShift } from "../src/hex-map/tokenDefaults";
 import { tokenFlag } from "../src/frontmatter";
 import { buildMapNote, parseMapNote, type MapNoteData } from "../src/maps/mapNote";
 import { ACTION_POLICY, MENU_ACTIONS, COMMAND_ACTIONS } from "../src/workMode";
 import { HAND_EDIT_ACTIONS } from "../src/modeGate";
 import { layerOf } from "../src/ui/placement";
+import { allPlacement, itWith } from "./helpers/slices";
 import { LINK_SECTIONS } from "../src/types";
-import { readSurface } from "./helpers/source";
+import { readSource, readSurface } from "./helpers/source";
 
 // ── SF5: the party token ────────────────────────────────────────────────────
 
@@ -52,11 +54,11 @@ describe("party travel: one step at a time (SF5)", () => {
   });
 
   it("a click moves the selected party only onto a neighbour", () => {
-    const party = { party: true, hex: "2_4", map: "m", filePath: "p.md" };
-    expect(partyClick(party, "2_5", "flat")).toBe("move");
-    expect(partyClick(party, "2_4", "flat")).toBe("none");
-    expect(partyClick(party, "5_5", "flat")).toBe("none");
-    expect(partyClick(undefined, "2_5", "flat")).toBe("none");
+    const click = playRuntime.play!.partyClick!;
+    const at = (to: string) => ({ map: "m", token: "p.md", from: "2_4", to, orientation: "flat" as const, stagger: "odd" as const });
+    expect(click({} as never, at("2_5"))).toBe("move");
+    expect(click({} as never, at("2_4"))).toBe("none");
+    expect(click({} as never, at("5_5"))).toBe("none");
   });
 
   it("finds the party on a hex first, else the map's first party; hidden and other maps' don't count", () => {
@@ -161,8 +163,8 @@ describe("play log (SF3): one dated note per day, plain bullets", () => {
     expect(logFolderFor({ worldFolder: "Realm", logFolder: "" })).toBe("Realm/log");
     expect(logFolderFor({ worldFolder: "", logFolder: undefined })).toBe("world/log");
     expect(logFolderFor({ worldFolder: "Realm", logFolder: "/Campaign/Days/" })).toBe("Campaign/Days");
-    expect(logFolderFor({ logFolder: "Campaign/Days" }, { logFolder: "Party B/log" })).toBe("Party B/log");
-    expect(logFolderFor({ logFolder: "Campaign/Days" }, { logFolder: "  " })).toBe("Campaign/Days");
+    expect(logFolderFor({ logFolder: "Campaign/Days" }, { partyLog: "Party B/log" })).toBe("Party B/log");
+    expect(logFolderFor({ logFolder: "Campaign/Days" }, { partyLog: "  " })).toBe("Campaign/Days");
     expect(logNotePath("Realm/log", at)).toBe("Realm/log/2026-10-04.md");
   });
 
@@ -191,17 +193,17 @@ describe("play log (SF3): one dated note per day, plain bullets", () => {
     expect(logDayLink("Realm/log/2026-10-04.md")).toBe("[[Realm/log/2026-10-04|2026-10-04]]");
   });
 
-  it("Add to this hex points at the log first in Play, at the section rolled from otherwise", () => {
-    expect(rollDefaultSection("play", "description")).toBe(PLAY_LOG_TARGET);
-    expect(rollDefaultSection("build", "weather")).toBe("weather");
-    expect(rollDefaultSection("god", "description")).toBe("description");
+  it("Add to this hex offers the log, first in Play (the editor picks the section rolled from otherwise)", () => {
+    const [target] = playRuntime.play!.rollTargets!({} as never, { map: "m", x: 1, y: 2, mode: "build" });
+    expect(target.key).toBe(PLAY_LOG_TARGET);
+    expect(target.label).toBe("Play log");
+    expect(target.defaultIn).toEqual(["play"]);
   });
 
-  it("the hex editor offers the log among the targets and writes it through the log writer", () => {
+  it("the hex editor offers it through the modules' targets, never by name", () => {
     const editor = readSurface("hex-editor");
-    // (after the modules' own targets, ModuleRuntime.play.rollTargets)
-    expect(editor).toMatch(/sections: \[\.\.\.extra\.map\([^\n]*?\), \{ key: PLAY_LOG_TARGET, label: "Play log" \}/);
-    expect(editor).toMatch(/if \(key === PLAY_LOG_TARGET\) \{ await addToPlayLog\(/);
+    expect(editor).toMatch(/sections: \[\.\.\.extra\.map\([^\n]*?\), \.\.\.TEXT_SECTIONS, \.\.\.ROLLED_TEXT_SECTIONS\]/);
+    expect(editor).not.toMatch(/PLAY_LOG_TARGET|addToPlayLog|PlayLogModal/);
   });
 });
 
@@ -247,27 +249,34 @@ describe("Show on map (SF4): a per-section option, never by name in code", () =>
 
 describe("solo play controls: placement and work modes", () => {
   it("the party switch, the log folder setting and Show on map are above the fold; the rest Advanced", () => {
-    expect(layerOf("Token.party")).toBe("main");
-    expect(layerOf("Settings.logFolder")).toBe("main");
-    expect(layerOf("Settings.linkSectionIcons")).toBe("main");
-    expect(layerOf("Token.logFolder")).toBe("advanced");
-    expect(layerOf("MapView.hexVisited")).toBe("advanced");
+    const all = allPlacement();
+    expect(layerOf("Token.party", all)).toBe("main");
+    expect(layerOf("Settings.logFolder", all)).toBe("main");
+    expect(layerOf("Settings.linkSectionIcons", all)).toBe("main");
+    expect(layerOf("Token.logFolder", all)).toBe("advanced");
+    expect(layerOf("MapView.hexVisited", all)).toBe("advanced");
   });
 
-  it("the new menu items and command are classified (Play may use them)", () => {
+  it("the module classifies its menu items and command (Play may use them)", () => {
+    expect(playModule.modeActions?.menus).toEqual({ "hex.log": "edit-note", "hex.visited": "token", "token.party": "token" });
+    expect(playModule.modeActions?.commands).toEqual({ "open-play-log": "edit-note" });
+    for (const a of ["token", "edit-note"] as const) expect(ACTION_POLICY[a]!.modes).toContain("play");
+  });
+
+  itWith("play", "built on, the work-mode tables have them", () => {
     expect(MENU_ACTIONS["token.party"]).toBe("token");
     expect(MENU_ACTIONS["hex.visited"]).toBe("token");
     expect(MENU_ACTIONS["hex.log"]).toBe("edit-note");
     expect(COMMAND_ACTIONS["open-play-log"]).toBe("edit-note");
-    for (const a of ["token", "edit-note"] as const) expect(ACTION_POLICY[a]!.modes).toContain("play");
   });
 
   it("the setup wizard asks for the play log folder with the other folders", () => {
-    expect(readSurface("setup-wizard")).toMatch(/\{ key: "logFolder",\s+label: "Play log",\s+suffix: "log" \}/);
+    expect(playRuntime.settings?.find((x) => x.id === "Settings.logFolder")?.wizard).toEqual({ label: "Play log", suffix: "log" });
+    expect(readSource("src/wizardFolders.ts")).toMatch(/\.\.\.moduleWizardFolders\(\)/);
   });
 
-  it("the layers menu's Labels group has the Visited switch", () => {
-    expect(readSurface("side-panel")).toMatch(/key: "showVisited",\s+label: "Visited",\s+cssClass: "duckmage-hide-visited",\s+inLabels: true/);
+  it("the layers menu's Labels group has the Visited switch (in a build with the module)", () => {
+    expect(readSurface("side-panel")).toMatch(/key: "showVisited",\s+label: "Visited",\s+cssClass: "duckmage-hide-visited",\s+inLabels: true, module: true/);
   });
 });
 

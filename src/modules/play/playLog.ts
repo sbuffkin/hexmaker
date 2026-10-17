@@ -43,9 +43,9 @@ export function logTime(d: Date): string {
  */
 export function logFolderFor(
   settings: { logFolder?: string; worldFolder?: string },
-  party?: { logFolder?: string },
+  party?: { partyLog?: string },
 ): string {
-  return trimFolder(party?.logFolder) || trimFolder(settings.logFolder) || `${trimFolder(settings.worldFolder) || "world"}/${LOG_SUBFOLDER}`;
+  return trimFolder(party?.partyLog) || trimFolder(settings.logFolder) || `${trimFolder(settings.worldFolder) || "world"}/${LOG_SUBFOLDER}`;
 }
 
 /** The day's log note path in `folder`. */
@@ -97,13 +97,5 @@ export function logDayLink(notePath: string): string {
   return `[[${target}|${day}]]`;
 }
 
-/** The "Add to this hex" target that means the play log, not a section of the hex's note. */
+/** The "Add to this hex" target that means the play log, not a section of the hex's note (picked first in Play). */
 export const PLAY_LOG_TARGET = "play-log";
-
-/**
- * Where a roll's "Add to this hex" points first: the play log in Play
- * (SF3), else the section the roll came from.
- */
-export function rollDefaultSection(mode: "play" | "build" | "god", fromSection: string): string {
-  return mode === "play" ? PLAY_LOG_TARGET : fromSection;
-}

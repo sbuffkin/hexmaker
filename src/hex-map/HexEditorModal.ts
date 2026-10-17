@@ -24,8 +24,6 @@ import { AUTOSAVE_MS, DebouncedSave, SAVE_STATUS_TEXT, SAVE_STATUS_TITLE, SaveTr
 import { openNoteFocused } from "../openNote";
 import { contentFolder } from "../notePickers";
 import { terrainStartsCollapsed } from "./terrainSection";
-import { addToPlayLog } from "../play/playLogWriter";
-import { PlayLogModal } from "../play/PlayLogModal";
 import { moduleLogWriters } from "../modules/runtime";
 import { NeighbourFlower, type NeighbourFlowerHost } from "./editor/NeighbourFlower";
 import { MapsStrip, type MapsStripHost } from "./editor/MapsStrip";
@@ -242,14 +240,7 @@ export class HexEditorModal extends HexmakerModal {
       attr: { title: "Roll a workflow and add the result to this hex" },
     });
     wfLink.addEventListener("click", () => this.pickWorkflow());
-    // What happened here, to the dated play log (SF3).
-    const logLink = titleLeft.createEl("a", {
-      text: "Add to log",
-      cls: "duckmage-editor-open-link",
-      attr: { title: "Write what happened here in today's play log" },
-    });
-    logLink.addEventListener("click", () => new PlayLogModal(this.app, `${this.plugin.mapLabel(this.mapName)} ${this.x}, ${this.y}`, (text) => addToPlayLog(this.plugin, this.mapName, this.x, this.y, text)).open());
-    // The modules' "Add to log" links (ModuleRuntime.play.logWriters).
+    // The modules' "Add to log" links (ModuleRuntime.play.logWriters: Solo play's dated play log, SF3).
     for (const w of moduleLogWriters()) titleLeft.createEl("a", { text: w.label, cls: "duckmage-editor-open-link", attr: { title: w.title } }).addEventListener("click", () => w.open(this.plugin, { map: this.mapName, x: this.x, y: this.y }));
     this.flower.renderNeighborWidget(titleRow, this.x, this.y);
     this.renderNameField(contentEl, path);

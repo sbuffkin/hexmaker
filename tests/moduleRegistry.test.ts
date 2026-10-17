@@ -22,7 +22,7 @@ import { SPACE_SECTOR_TERRAINS, SPACE_SYSTEM_TERRAINS } from "../src/modules/spa
 import { describeWith, itWith, moduleOn, sliceOn } from "./helpers/slices";
 
 /** Every slice with a flag: tests of the modules' combined lists need them all (npm run test:slices builds fewer). */
-const EVERY = ["worldmaps", "space", "genpage", "hexflower"];
+const EVERY = ["worldmaps", "space", "genpage", "play", "hexflower"];
 
 /**
  * The module registry (plan-code-modules P1) and the one map-type rule
@@ -37,8 +37,9 @@ const bare = (id: string, extra: Partial<HexmakerModule> = {}): HexmakerModule =
 });
 
 describe("module registry", () => {
-  it("registers world, world-maps, space, gen-page, hex-flower and packs (those built), in that order", () => {
-    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "hex-flower", "packs"].filter(moduleOn));
+  it("registers world, world-maps, space, gen-page, play, hex-flower and packs (those built), in that order", () => {
+    // Play before Hex flower: a step is marked visited before exploring reads it.
+    expect(MODULES.map((m) => m.id)).toEqual(["world", "world-maps", "space", "gen-page", "play", "hex-flower", "packs"].filter(moduleOn));
     expect(registry.kindIds()).toEqual(["world", "space"].filter(moduleOn));
     // world-maps is a module but not a map type (CM2).
     expect(registry.module("world-maps")?.kind).toBeUndefined();
@@ -233,7 +234,8 @@ describe("stores, settings, commands and one-time upgrades through modules (P4)"
       ["new-overworld", null], // World maps (P7): works with any map type
       ["edit-world-types", "space"], // only while Space is on
       ["convert-world-types", null], // whenever there's something to convert
-      ["open-terrain-generator", null], // the generator page
+      ...(sliceOn("genpage") ? [["open-terrain-generator", null]] : []), // the generator page
+      ...(sliceOn("play") ? [["open-play-log", null]] : []), // Solo play
       // Content packs, when built: any vault.
       ...(sliceOn("packs") ? [["export-content-pack", null], ["import-content-pack", null]] : []),
     ]);

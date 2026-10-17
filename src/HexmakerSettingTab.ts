@@ -3,12 +3,12 @@ import { DEFAULT_NAME_FONT, NAME_FAMILIES, NAME_SIZES, NAME_STYLES, nameStyleId,
 import type HexmakerPlugin from "./HexmakerPlugin";
 import { getIconUrl, iconLabel, normalizeFolder } from "./utils";
 import { IconPickerModal } from "./hex-map/IconPickerModal";
-import { linkSectionIcon } from "./play/linkIcons";
+import { linkSectionIcon } from "./ui/linkIcons";
 import { LINK_SECTIONS } from "./types";
 import { AddPaletteModal } from "./palettes/AddPaletteModal";
 import { repointPaletteName } from "./palettes/paletteOptions";
 import { MAP_KINDS, enabledKinds, type MapKind } from "./mapKinds";
-import { addModuleSettings, isModuleFolderKey, moduleSettingChanged, moduleSettingRow } from "./settings/moduleSettings";
+import { addModuleSettings, isModuleFolderKey, moduleSettingChanged, moduleSettingRow, moduleWizardFolders } from "./settings/moduleSettings";
 import { ConfirmModal } from "./worldgen/ConfirmModal";
 import { disclosureOpen, setDisclosureOpen, subSectionKey } from "./ui/disclosure";
 import { layerOf, partitionSections } from "./ui/placement";
@@ -152,7 +152,6 @@ const FOLDER_PATH_KEYS = new Set<string>([
   "workflowsFolder",
   "templatesFolder",
   "palettesFolder",
-  "logFolder",
 ]);
 
 /** A folder-path key: the core's, or a module's folder setting (Space: World types folder). */
@@ -423,7 +422,6 @@ export class HexmakerSettingTab extends PluginSettingTab {
               }
             },
           }),
-          T("Settings.logFolder", folderText("Play log folder", "logFolder", "World/log", "Where the play log goes: one note per day, with what happened, when, where and who. Blank: a log folder in the world folder.")),
           T("Settings.iconsFolder", folderText(
             "Custom icons folder",
             "iconsFolder",
@@ -630,7 +628,8 @@ export class HexmakerSettingTab extends PluginSettingTab {
       ["tablesFolder", `${world}/tables`],
       ["workflowsFolder", `${world}/workflows`],
       ["templatesFolder", `${world}/templates`],
-      ["logFolder", `${world}/log`],
+      // The modules' folders the setup wizard asks for too.
+      ...moduleWizardFolders().map((f): [keyof typeof this.plugin.settings, string] => [f.key as keyof typeof this.plugin.settings, `${world}/${f.suffix}`]),
     ];
     for (const [key, path] of defaults) {
       if (!this.plugin.settings[key]) {

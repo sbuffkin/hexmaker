@@ -24,7 +24,6 @@ import { renderMissingActions } from "../MapModal";
 import { canAdd } from "../../workMode";
 import { coordHaloColor } from "../../coordStyle";
 import { watchBiomesPathHover } from "../biomesPathHover";
-import { parseVisited } from "../../play/partyTravel";
 import { revealedNow } from "../revealBounce";
 import { regionsViewTip } from "../hexHover";
 import { whenSized } from "../whenSized";
@@ -115,6 +114,18 @@ export function setHexColor(hexEl: HTMLElement, color: string | undefined | null
   }
 }
 
+/**
+ * Give hex `el` the modules' classes `want`, dropping the ones it had from
+ * them before (remembered in its `data-decorations`).
+ */
+export function markDecorations(el: HTMLElement, want: readonly string[]): void {
+  const had = el.dataset.decorations?.split(" ").filter(Boolean) ?? [];
+  for (const cls of had) if (!want.includes(cls)) el.removeClass(cls);
+  for (const cls of want) el.addClass(cls);
+  if (want.length) el.dataset.decorations = want.join(" ");
+  else if (had.length) delete el.dataset.decorations;
+}
+
 export class GridRenderer {
   /** Cancels a renderGrid waiting for the grid to get a layout size. */
   private cancelMeasuredLayers: (() => void) | null = null;
@@ -169,6 +180,20 @@ export class GridRenderer {
   /** Stop a renderGrid waiting for a layout size (view close). */
   cancelMeasured(): void {
     this.cancelMeasuredLayers?.();
+  }
+
+  /**
+   * The modules' marks on the drawn hexes, again from the open map
+   * (gridDecorations), without a redraw: a party step marks hexes at once.
+   * Writes only (no layout reads).
+   */
+  refreshDecorations(): void {
+    const grid = this.viewportEl?.querySelector<HTMLElement>(".duckmage-hex-map-grid");
+    if (!grid) return;
+    const decorate = moduleGridDecorations(this.plugin, this.getActiveMap());
+    grid.querySelectorAll<HTMLElement>(".duckmage-hex[data-x]").forEach((el) => {
+      markDecorations(el, decorate(`${el.dataset.x}_${el.dataset.y}`));
+    });
   }
 
   /** Repaint, next frame, the hexes whose terrain changed since they were drawn. */
@@ -329,9 +354,8 @@ export class GridRenderer {
       }
     }
 
-    // Hexes the party has stood on (SF5): a mark the layers menu can hide.
-    const visitedHexes = new Set(parseVisited(region.visited));
-    // The modules' own marks per hex (ModuleRuntime.play.gridDecorations), asked once before drawing.
+    // The modules' own marks per hex (ModuleRuntime.play.gridDecorations: Solo play's
+    // visited hexes), asked once before drawing.
     const decorate = moduleGridDecorations(this.plugin, region);
     // Hexes exploring just filled bounce in (HF3; revealBounce.ts).
     const revealed = revealedNow(region.name);
@@ -423,8 +447,7 @@ export class GridRenderer {
 
       if (this.selectedHex?.x === x && this.selectedHex?.y === y)
         hexEl.addClass("is-selected");
-      if (visitedHexes.has(hexKey(x, y))) hexEl.addClass("duckmage-hex-visited");
-      for (const cls of decorate(hexKey(x, y))) hexEl.addClass(cls);
+      markDecorations(hexEl, decorate(hexKey(x, y)));
       const ring = revealed.get(hexKey(x, y));
       // Only a hex that has terrain bounces in (one undone since stays still).
       if (ring !== undefined && ownTerrain) {

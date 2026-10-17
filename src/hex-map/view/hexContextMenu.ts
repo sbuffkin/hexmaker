@@ -13,7 +13,6 @@ import type { WorldMapsApi } from "../../modules/world-maps/api";
 import { openNoteFocused } from "../../openNote";
 import type { BiomeHost } from "../../overworld/BiomeModals";
 import type { OverworldLayer } from "../../overworld/overworldLayer";
-import { parseVisited } from "../../play/partyTravel";
 import type { MapData } from "../../types";
 import type { MenuActionId, WorkMode } from "../../workMode";
 import { COPY_HEX_LINK_TITLE, copyHexLink } from "../copyHexLink";
@@ -42,8 +41,6 @@ export interface HexContextMenuHost {
   openNewSubmapSetup(x: number, y: number): void;
   arriveAt(x: number, y: number): Promise<void>;
   createTokenAtHex(x: number, y: number): void;
-  openPlayLog(x: number, y: number): void;
-  setVisited(keys: string[], on: boolean): void;
   centerOnHex(x: number, y: number): void;
   linkTableToHex(x: number, y: number, tableFile: TFile): Promise<void>;
   openRandomTableAtFile(file: TFile): Promise<void>;
@@ -143,11 +140,8 @@ export class HexContextMenu {
       })();
     });
     menu.add("hex.create-token", "Create token here", "circle-user", () => this.host.createTokenAtHex(x, y));
-    // Solo play (SF3): what happened here goes to the dated play log.
-    menu.add("hex.log", "Add to play log…", "notebook-pen", () => this.host.openPlayLog(x, y));
-    const visited = parseVisited(this.host.getActiveMap().visited).includes(hexKey(x, y));
-    menu.add("hex.visited", "Visited", "footprints", () => this.host.setVisited([hexKey(x, y)], !visited), { checked: visited, place: "MapView.hexVisited" });
-    for (const it of moduleHexMenu(this.plugin, this.activeMapName, hexKey(x, y))) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { place: it.placementId });
+    // The modules' items (ModuleRuntime.hexMenu), classified by their modules.
+    for (const it of moduleHexMenu(this.plugin, this.activeMapName, hexKey(x, y))) menu.add(it.id as MenuActionId, it.label, it.icon, it.run, { checked: it.checked, place: it.placementId });
     menu.add("hex.center", "Center on this hex", "crosshair", () => this.host.centerOnHex(x, y));
     menu.add("hex.copy-link", COPY_HEX_LINK_TITLE, "link-2", () => copyHexLink(this.plugin, this.activeMapName, x, y));
 

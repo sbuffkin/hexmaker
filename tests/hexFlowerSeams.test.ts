@@ -69,7 +69,7 @@ describe("generators offered on every scale", () => {
 describe("runtime seams", () => {
 	it("the hooks answer (nothing for a map that isn't explored)", async () => {
 		const plugin = { getMap: () => undefined, settings: { maps: [] } } as never;
-		expect(moduleHexMenu(plugin, "nope", "1_1")).toEqual([]);
+		expect(moduleHexMenu(plugin, "nope", "1_1").filter((i) => i.id.startsWith("hex.explore"))).toEqual([]);
 		expect(moduleUnchartedKeys(plugin, "nope")).toEqual([]);
 		expect(await runPartyEntered(plugin, { map: "nope", from: "0_0", to: "1_0" })).toEqual([]);
 		expect(moduleGeneratorTabs().map((t) => t.id)).toEqual(["hex-flowers"]);

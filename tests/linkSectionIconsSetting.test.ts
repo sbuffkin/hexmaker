@@ -10,7 +10,7 @@ import { fakeRoot } from "./helpers/fakeDom";
 import { DEFAULT_SETTINGS } from "../src/constants";
 import { HexmakerSettingTab } from "../src/HexmakerSettingTab";
 import { IconPickerModal } from "../src/hex-map/IconPickerModal";
-import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/play/linkIcons";
+import { DEFAULT_LINK_SECTION_ICONS, linkSectionIcon, showOnMapOffer } from "../src/ui/linkIcons";
 import { LINK_SECTIONS } from "../src/types";
 
 type Item = { name?: string; items?: Item[]; render?: (s: { controlEl: HTMLElement }) => void };

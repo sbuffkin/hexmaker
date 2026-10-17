@@ -6,6 +6,7 @@
  */
 declare const __SLICE_WORLDMAPS__: boolean;
 declare const __SLICE_SPACE__: boolean;
+declare const __SLICE_PLAY__: boolean;
 declare const __SLICE_HEXFLOWER__: boolean;
 declare const __SLICE_GENPAGE__: boolean;
 declare const __SLICE_PACKS__: boolean;

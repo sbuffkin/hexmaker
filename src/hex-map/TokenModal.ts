@@ -7,6 +7,7 @@ import { noteLink } from "../noteFormats";
 import { pickerFolders } from "../notePickers";
 import { DEFAULT_TOKEN_FILL, isTokenNoteCandidate } from "./tokenDefaults";
 import { ensureFolder } from "../vault/ensureFolder";
+import { partyTokensOn } from "../modules/runtime";
 
 export interface TokenModalResult {
   icon: string | undefined;
@@ -15,10 +16,18 @@ export interface TokenModalResult {
   color: string | undefined;
   border: string | undefined;
   description: string | undefined;
-  /** The party token (SF5): moves by clicking a neighbouring hex in Play. */
-  party: boolean;
-  /** The party's own play log folder ("" = the campaign's). */
-  logFolder: string;
+  /** The party token (SF5): moves by clicking a neighbouring hex in Play. Unset: left as the note has it. */
+  party?: boolean;
+  /** The party's own log folder ("" = the campaign's). Unset: left as the note has it. */
+  partyLog?: string;
+}
+
+/**
+ * The party fields the form saves: none in a build without party tokens
+ * (partyTokensOn), so the note keeps its own `token-party` / `token-log`.
+ */
+export function partyFields(on: boolean, party: boolean, partyLog: string): Pick<TokenModalResult, "party" | "partyLog"> {
+  return on ? { party, partyLog } : {};
 }
 
 export class TokenModal extends HexmakerModal {
@@ -58,7 +67,7 @@ export class TokenModal extends HexmakerModal {
     this.pendingBorder      = initialData.border;
     this.pendingDescription = initialData.description;
     this.pendingParty       = initialData.party ?? false;
-    this.pendingLogFolder   = initialData.logFolder ?? "";
+    this.pendingLogFolder   = initialData.partyLog ?? "";
     this.hasBorder          = !!initialData.border;
   }
 
@@ -210,11 +219,15 @@ export class TokenModal extends HexmakerModal {
     }
 
     // Party token (SF5): above the fold, right under the note (placement: Token.party).
-    const partySetting = new Setting(contentEl)
-      .setName("Party token")
-      .setDesc("While playing, click it, then click a neighbouring hex to move it there. The hexes it visits are marked.")
-      .addToggle((t) => t.setValue(this.pendingParty).onChange((v) => { this.pendingParty = v; }));
-    this.place("Token.party", partySetting.settingEl);
+    // Only in a build with party tokens (partyFields).
+    const party = partyTokensOn();
+    if (party) {
+      const partySetting = new Setting(contentEl)
+        .setName("Party token")
+        .setDesc("While playing, click it, then click a neighbouring hex to move it there. The hexes it visits are marked.")
+        .addToggle((t) => t.setValue(this.pendingParty).onChange((v) => { this.pendingParty = v; }));
+      this.place("Token.party", partySetting.settingEl);
+    }
 
     // ── Icon palette ──────────────────────────────────────────────────────
     const hidden = new Set(this.plugin.settings.hiddenIcons ?? []);
@@ -354,14 +367,16 @@ export class TokenModal extends HexmakerModal {
     this.place("Token.description", descSetting.settingEl, () => !!descInput?.value.trim());
 
     // A party's own play log (SF3): Advanced; blank = the campaign's log folder.
-    const logSetting = new Setting(contentEl)
-      .setName("Log folder")
-      .setDesc("Where this party's play log goes, one note per day. Blank: the play log folder in settings.")
-      .addText((t) => t
-        .setPlaceholder(this.plugin.settings.logFolder || "World/log")
-        .setValue(this.pendingLogFolder)
-        .onChange((v) => { this.pendingLogFolder = v.trim(); }));
-    this.place("Token.logFolder", logSetting.settingEl, () => !!this.pendingLogFolder);
+    if (party) {
+      const logSetting = new Setting(contentEl)
+        .setName("Log folder")
+        .setDesc("Where this party's play log goes, one note per day. Blank: the play log folder in settings.")
+        .addText((t) => t
+          .setPlaceholder("World/log")
+          .setValue(this.pendingLogFolder)
+          .onChange((v) => { this.pendingLogFolder = v.trim(); }));
+      this.place("Token.logFolder", logSetting.settingEl, () => !!this.pendingLogFolder);
+    }
 
     // Buttons
     const onDelete = isEdit ? this.onDelete : undefined;
@@ -390,8 +405,7 @@ export class TokenModal extends HexmakerModal {
           color:       this.pendingColor,
           border:      this.pendingBorder,
           description: this.pendingDescription,
-          party:       this.pendingParty,
-          logFolder:   this.pendingLogFolder,
+          ...partyFields(party, this.pendingParty, this.pendingLogFolder),
         });
       })();
     };

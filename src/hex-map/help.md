@@ -5,7 +5,7 @@
 | **Middle-mouse drag** (or click + drag on empty space) | Pan the map |
 | **Scroll wheel** | Zoom in / out |
 | **Left-click** a hex | Open the hex editor (terrain, notes, links) |
-| **Right-click** a hex | Context menu: its region and locations first, then center on hex, open note, new map from this hex (**Add another map…** once it has one), link a map, link table, swap hex, create token here, add to play log, clear terrain. On a token: the token's items, then the hex's |
+| **Right-click** a hex | Context menu: its region and locations first, then center on hex, open note, new map from this hex (**Add another map…** once it has one), link a map, link table, swap hex, create token here<!-- slice:play -->, add to play log<!-- /slice -->, clear terrain. On a token: the token's items, then the hex's |
 | **Esc**, or right-click → **Exit tool** | Leave the active tool |
 | Hex editor: the flower's **centre dot**, or right-click a hex → **Copy link to this hex** | Copy a link to the hex. Paste it in a note: clicking it opens the map centred on that hex |
 
@@ -117,7 +117,7 @@ Swap the contents of two hex positions by renaming their files.
 Selecting the source hex again cancels the selection. Selecting a different hex while a destination is already highlighted changes the destination.
 
 ### Token
-Create a note-backed token (icon, shape, size, colors, description) and place it on the map. The **Token** button opens the token editor, then left-click a hex to place it. Alternatively, **right-click a hex → "Create token here"** creates the token directly on that hex with no placement step. Right-click a placed token to edit, open its note, make it the **Party token**, or remove it; the hex it sits on has its items below the token's. Tokens sit clear of the hex's coordinate (moved up when coordinates are at the bottom, down when at the top), so the hex number stays readable.
+Create a note-backed token (icon, shape, size, colors, description) and place it on the map. The **Token** button opens the token editor, then left-click a hex to place it. Alternatively, **right-click a hex → "Create token here"** creates the token directly on that hex with no placement step. Right-click a placed token to edit, open its note,<!-- slice:play --> make it the **Party token**,<!-- /slice --> or remove it; the hex it sits on has its items below the token's. Tokens sit clear of the hex's coordinate (moved up when coordinates are at the bottom, down when at the top), so the hex number stays readable.
 
 ---
 
@@ -166,8 +166,8 @@ Where things are on each page:
 - **Random tables**: the list keeps itself up to date (its refresh button is in Debug); right-click a folder for the roll picker and encounters filters (a table: **Advanced ▸**); **Generate from folder or file** is under the list's Advanced dropdown. A table's **Roll** sits above its entries; **Copy link** and a linked folder's **Refresh** are under Advanced (linked folders sync on their own). In the table editor, **-1** / **+1**, **Import…**, the linked folder and the two filters are under Advanced.
 - **Link submap** only links an existing map; **New location…** makes one. The table picker no longer has its own Open tables view button.
 - **Export**: **Area overlay** is under Advanced; the buttons come right after the options.
-- **Solo play**: the token form's **Party token** switch and **Settings → Play log folder** are on top; a party's own **Log folder** (token form) and marking one hex **Visited** by hand (hex menu) are Advanced, shown inline while each is the only Advanced item there.
-<!-- slice:hexflower -->- **Hex flowers**: the generator page's Hex flowers tab has dice, walk length and seed under Advanced, the note's read report and the odds matrix in Debug; the hex flowers folder setting is in Debug.
+<!-- slice:play -->- **Solo play**: the token form's **Party token** switch and **Settings → Play log folder** are on top; a party's own **Log folder** (token form) and marking one hex **Visited** by hand (hex menu) are Advanced, shown inline while each is the only Advanced item there.
+<!-- /slice --><!-- slice:hexflower -->- **Hex flowers**: the generator page's Hex flowers tab has dice, walk length and seed under Advanced, the note's read report and the odds matrix in Debug; the hex flowers folder setting is in Debug.
 <!-- /slice -->- <!-- slice:space -->**World types** (Debug): a world row's Generator and Options columns and the preview's Map, Orbit, Star and Rolls choices. <!-- /slice -->**Palette editor** (Debug): the submap defaults' Options column.
 
 **Map types.** What the setup installs follows the map types you pick: World gets the Expanded and Limited palettes<!-- slice:worldmaps --> and the biome notes<!-- /slice --><!-- slice:space -->; Space alone gets Space - Sector, Space - System and Space - Planet and nothing fantasy<!-- /slice -->. Turning a type on later in **Settings → Map types** installs its content then.<!-- slice:space --> Planets and moons open on **Space - Planet**, a land palette for surfaces.<!-- /slice --> Note pickers list only what they're for: the token form's Note list shows the tokens, towns, dungeons, features, quests, factions and areas folders, never biomes, palettes, tables or other plugin notes.
@@ -269,6 +269,7 @@ No palette or terrain is special because of its name. What a terrain does comes 
 
 Palette menus (setup, New map, new submap) show the picked palette's terrains as color swatches; hover one for its name. A terrain with no type gets no defaults and generators skip it; **Guess types from names** in the palette editor fills the Type column for you to check.
 
+<!-- slice:play -->
 ## Solo play: the party, visited hexes and the play log
 
 **Party token.** Any token can be the party: tick **Party token** in the token form (or right-click the token → **Party token**). In **Play**, click the party to pick it up: the hexes it can step to light up. Click one of them and the party moves there (undo takes the step back, visited dots included). Each step writes a line to the day's play log ("Moved from 4, 4 to 5, 4."), not to the party's note; undo leaves the line, like the rest of the log. Click the party again, or press Esc, to put it down. Dragging still works too. The note keeps the flag as `token-party: true`.
@@ -276,6 +277,9 @@ Palette menus (setup, New map, new submap) show the picked palette's terrains as
 **Visited.** Every hex the party stands on gets a small dot on its left. The map keeps the list in its map note (`visited: ["3_4", "4_4"]`, first visit first); **Layers → Labels → Visited** hides the dots. Right-click a hex → **Visited** marks or unmarks one by hand (an Advanced item: under **Advanced ▸** once that menu has more than one).
 
 **Play log.** What happens goes to a dated note, not into the hex's Description: one note per day (`2026-10-14.md`) in the play log folder (**Settings → Play log folder**, asked in the setup wizard; blank = `log` in the world folder). Each entry is one line: the time, a link to the hex, the party token and what you wrote. The hex's note gets a link to that day under **Log**. Add an entry with **Add to log** in the hex editor's title row, right-click a hex → **Add to play log…**, or **Add to this hex → Play log** after a roll (in Play it's picked first). **Open today's play log** in the command palette opens the day's note. A party can keep its own log: **Log folder** in its token form (an Advanced option; `token-log:` in its note).
+
+<!-- /slice -->
+## Show linked notes on the map
 
 **Show on map.** When a hex's town, dungeon or feature section has a link, the hex editor offers **Show on map** with that section's icon under it: one click makes it the hex's icon, in Play too. Which icon each section offers (or none) is in **Settings → Map look → Icons for linked notes**.
 <!-- slice:hexflower -->
@@ -298,7 +302,7 @@ A map can start blank and fill in as the party explores. Each blank hex the part
 
 **Encounters**, **Weather** and **Hooks & Rumors** in the hex editor are each one section listing every table that applies to the hex, most specific first: the hex's own tables, its area's, the map's (weather and rumours, set in **Maps → Properties**), its terrain's, then the starter. With more than one, pick with the round buttons (it starts on the most specific; your pick lasts the session and changes nothing in your notes, so it works in Play). **Change…** picks any table, your own first, or makes a new one; it's linked to this hex. **×** takes a table off the hex. Tables start empty, for you to fill: an empty table's **Roll** is off and **Add entries** opens it to fill in. The same goes everywhere a table is rolled (the roll dialog, the Random tables view, a note's roller, workflow steps).
 
-Rolls made from the hex editor (🎲 on a table section, 📖 on a section) have **Add to this hex**: pick the play log or a section and the result is appended to it (in Play the play log comes first). With workflows on, **Run workflow** beside the hex title runs a workflow for this hex, and its result can be added the same way. A row that links another table is rolled through (the chain shows under the result), and a row's **When** can ask for the hex's terrain or type (`terrain: swamp`, `type: hills`). World maps come with a starter `weather.md` (one word a row: Sunny, Rainy…) and an empty `rumors.md` to fill in, as ordinary tables in your tables folder.
+Rolls made from the hex editor (🎲 on a table section, 📖 on a section) have **Add to this hex**: pick<!-- slice:play --> the play log or<!-- /slice --> a section and the result is appended to it<!-- slice:play --> (in Play the play log comes first)<!-- /slice -->. With workflows on, **Run workflow** beside the hex title runs a workflow for this hex, and its result can be added the same way. A row that links another table is rolled through (the chain shows under the result), and a row's **When** can ask for the hex's terrain or type (`terrain: swamp`, `type: hills`). World maps come with a starter `weather.md` (one word a row: Sunny, Rainy…) and an empty `rumors.md` to fill in, as ordinary tables in your tables folder.
 
 <!-- slice:packs -->
 ## Content packs

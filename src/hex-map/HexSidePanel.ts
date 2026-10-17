@@ -3,6 +3,7 @@ import type HexmakerPlugin from "../HexmakerPlugin";
 import type { MapData } from "../types";
 import { BADGE_INFO, BADGE_SECTIONS, BADGE_SIZES, badgeHideClass, badgeSize, hiddenBadges, toggleHiddenBadge } from "./linkBadges";
 import { Disclosure } from "../ui/disclosure";
+import { registry } from "../modules";
 import { renderResetButton } from "../ui/sliders";
 import { NAME_FAMILIES, NAME_SIZES, nameStyleId, resolveNameFont, type HexNameSize, type ResolvedNameFont } from "./hexNameFont";
 
@@ -104,6 +105,8 @@ interface OverlayOption {
   cssClass: string;
   /** Shown in the compact "Labels" group rather than as its own row. */
   inLabels?: boolean;
+  /** A map setting a module keeps (HexmakerModule.mapNoteFields): offered only in a build with it. */
+  module?: boolean;
 }
 
 const OVERLAY_OPTIONS: OverlayOption[] = [
@@ -119,8 +122,14 @@ const OVERLAY_OPTIONS: OverlayOption[] = [
   // Hexes still to roll on arrival (a ? mark).
   { key: "showUncharted",  label: "Uncharted (?)", cssClass: "duckmage-hide-uncharted",   inLabels: true },
   // Hexes a party token has stood on (SF5): a dot on each.
-  { key: "showVisited",    label: "Visited",       cssClass: "duckmage-hide-visited",     inLabels: true },
+  { key: "showVisited",    label: "Visited",       cssClass: "duckmage-hide-visited",     inLabels: true, module: true },
 ];
+
+/** The layers this build offers: a module's only when it's built (asked when drawn, never at import time). */
+export function overlayOptions(): OverlayOption[] {
+  const fields = new Set(registry.mapNoteFields().map((f) => f.field));
+  return OVERLAY_OPTIONS.filter((o) => !o.module || fields.has(o.key));
+}
 
 /** Optional layers-menu rows (kept out of the positional callbacks). */
 export interface OverlayPanelExtras {
@@ -206,7 +215,7 @@ export class OverlayPanel extends HexSidePanel {
     labelTitle.createSpan({ text: "Labels" });
     const labelRow = labelGroup.createDiv({ cls: "duckmage-overlay-group-row" });
     this.buildNameFontRow(labelTitle, labelGroup);
-    for (const opt of OVERLAY_OPTIONS) {
+    for (const opt of overlayOptions()) {
       const row = opt.inLabels
         ? labelRow.createDiv({ cls: "duckmage-overlay-row duckmage-overlay-label-toggle" })
         : panel.createDiv({ cls: "duckmage-overlay-row" });
@@ -564,7 +573,7 @@ export class OverlayPanel extends HexSidePanel {
   /** Read the current map's saved state and apply it to the viewport + checkboxes. */
   syncToRegion(): void {
     const map = this.getActiveMap();
-    for (const opt of OVERLAY_OPTIONS) {
+    for (const opt of overlayOptions()) {
       // undefined → true (backwards compat)
       const value = map[opt.key];
       const show = value === undefined ? true : Boolean(value);

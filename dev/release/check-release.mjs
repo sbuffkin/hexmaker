@@ -14,7 +14,7 @@
  *   1. build main.js into a temp folder (esbuild.config.mjs production);
  *   2. for each module of a slice built off, look for what it owns
  *      (src/modules/<id>/index.ts): its command ids, its settings keys (as
- *      keys, not inside a placement id like "Settings.x"), its map-note
+ *      keys, not inside a placement id like "Settings.x" or "Token.x"), its map-note
  *      keys, its own strings, its placement ids and its work-mode ids.
  *      Any hit fails, naming the slice and the text;
  *   3. the bundled help has no slice markers left;
@@ -90,8 +90,8 @@ function needles(mod) {
 	const o = mod.owns;
 	return [
 		...o.commands.map((c) => ({ what: `command ${c}`, re: new RegExp(`["'\`]${escape(c)}["'\`]`) })),
-		// A settings key read or written (settings.x / "x"), not a placement id ("Settings.x").
-		...o.settingsKeys.map((k) => ({ what: `settings key ${k}`, re: new RegExp(`(?<!"Settings\\.)\\b${escape(k)}\\b`) })),
+		// A settings key read or written (settings.x / "x"), not a placement id ("Settings.x", "Token.x").
+		...o.settingsKeys.map((k) => ({ what: `settings key ${k}`, re: new RegExp(`(?<!"[A-Z][A-Za-z]*\\.)\\b${escape(k)}\\b`) })),
 		...o.mapNoteKeys.map((k) => ({ what: `map-note key ${k}`, re: new RegExp(`["'\`]${escape(k)}["'\`]`) })),
 		...(o.strings ?? []).map((s) => ({ what: `string "${s}"`, re: new RegExp(inBundle(s)) })),
 		// Its own rows of the placement map and the work-mode tables (merged in only when it's built).

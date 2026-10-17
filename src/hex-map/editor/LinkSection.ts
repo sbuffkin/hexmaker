@@ -14,7 +14,7 @@ import { linkDisplayName } from "../../encounterLinks";
 import { openNoteFocused } from "../../openNote";
 import { linkNoteTemplatePathFor } from "../../noteTemplates";
 import { withRepairHint } from "../../ui/repairHint";
-import { linkSectionIcon, showOnMapOffer } from "../../play/linkIcons";
+import { linkSectionIcon, showOnMapOffer } from "../../ui/linkIcons";
 import { EditorWritePart, type EditorWriteHost } from "./host";
 
 export interface LinkSectionHost extends EditorWriteHost {

@@ -1,9 +1,9 @@
 import { App, Notice } from "obsidian";
-import { HexmakerModal } from "../HexmakerModal";
+import { HexmakerModal } from "../../HexmakerModal";
 
 /**
  * "Add to play log…" (SF3): one box for what happened at a hex; Add
- * appends it to today's play log (src/play/playLogWriter.ts).
+ * appends it to today's play log (src/modules/play/playLogWriter.ts).
  */
 export class PlayLogModal extends HexmakerModal {
   protected surfaceId = "PlayLog";

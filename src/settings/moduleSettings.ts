@@ -58,3 +58,12 @@ export function isModuleFolderKey(key: string): boolean {
 export function moduleSettingChanged(plugin: HexmakerPlugin, key: string): void {
   for (const c of moduleSettings()) if (c.control.type !== "custom" && c.control.key === key) c.changed?.(plugin);
 }
+
+/**
+ * The modules' folder settings the setup wizard asks for with the core's
+ * folders (SettingContribution.wizard), in module order: key, label, and
+ * the subfolder of the world folder each starts as.
+ */
+export function moduleWizardFolders(): { key: string; label: string; suffix: string }[] {
+  return moduleSettings().flatMap((c) => (c.control.type === "folder" && c.wizard ? [{ key: c.control.key, ...c.wizard }] : []));
+}

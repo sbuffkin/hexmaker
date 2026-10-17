@@ -19,8 +19,6 @@ import { TableChoice } from "../../random-tables/TableChoice";
 import { groupTableFiles } from "../../random-tables/tablePickerGroups";
 import { openTableInView } from "../../workspace/views";
 import { contentFolder } from "../../notePickers";
-import { addToPlayLog } from "../../play/playLogWriter";
-import { PLAY_LOG_TARGET, rollDefaultSection } from "../../play/playLog";
 import { moduleRollTargets } from "../../modules/runtime";
 import { EditorWritePart, type EditorWriteHost } from "./host";
 
@@ -197,9 +195,9 @@ export class TableSections extends EditorWritePart<TableSectionsHost> {
   }
 
   /**
-   * "Add to this hex" for a roll made here (P2): the play log, then every
-   * text section. `defaultSection` is picked first, except in Play, where
-   * the play log is (SF3: what happened goes to the log, not Description).
+   * "Add to this hex" for a roll made here (P2): the modules' places (Solo
+   * play: the play log), then every text section. `defaultSection` is picked
+   * first, unless a module's place is first in this mode (the play log in Play).
    */
   rollTarget(defaultSection: string): RollHexTarget {
     const hx = this.x;
@@ -214,12 +212,11 @@ export class TableSections extends EditorWritePart<TableSectionsHost> {
     return {
       label: `hex ${hx}, ${hy}`,
       context: { ...(terrain ? { terrain } : {}), ...(type ? { type } : {}) },
-      sections: [...extra.map((t) => ({ key: t.key, label: t.label })), { key: PLAY_LOG_TARGET, label: "Play log" }, ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
-      defaultSection: extra.find((t) => t.defaultIn?.includes(mode))?.key ?? rollDefaultSection(mode, defaultSection),
+      sections: [...extra.map((t) => ({ key: t.key, label: t.label })), ...TEXT_SECTIONS, ...ROLLED_TEXT_SECTIONS],
+      defaultSection: extra.find((t) => t.defaultIn?.includes(mode))?.key ?? defaultSection,
       add: async (key, text) => {
         const target = extra.find((t) => t.key === key);
         if (target) { await target.add(text); return; }
-        if (key === PLAY_LOG_TARGET) { await addToPlayLog(this.plugin, this.mapName, hx, hy, text); return; }
         // Still on this hex with the box showing: add through the box.
         const box = hx === this.x && hy === this.y ? this.textBoxes.get(key) : undefined;
         if (box) { box(text); return; }

@@ -50,7 +50,7 @@ Each coding session:
 
 ## Feature switches (release slices)
 
-Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `genpage` (the generator page) `hexflower` (needs `genpage`) and `packs` (content packs) today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
+Every major feature is a **slice** (`release-slices.json`): `foundation` (always built), `worldmaps`, `space`, `genpage` (the generator page), `play` (Solo play: party steps, visited hexes, the play log), `hexflower` (needs `genpage` and `play`) and `packs` (content packs) today. One switch picks which are built, read the same way by esbuild, the tests, the overworld preview, smoke and `check:release` (`dev/release/slices.mjs` `resolveSlices`):
 
 | Variable | Meaning |
 |---|---|
@@ -85,7 +85,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'cd /mnt/c/Users/markr/Documents/KB/journ
 
 - The matrix (`dev/smoke/run.mjs`, plan [[plan-work-modes]] §3) builds 9 vault setups (fresh install, a synthetic 1.5.5 vault, a copy of the owner's real data `C:/Users/markr/work/tmp/migtest/seedF` + a copy of the live `data.json`, space only, overworld + regions, neighbours world, a custom palette with no default names, everything deleted, 80 maps), each in its own sandboxed Obsidian (fresh-eyes `sandbox.mjs`, up to 4 at once), and checks: no plugin console errors; settings saved; every map opens and renders; untouched files unchanged on disk (migrations verified separately: map notes, backups, hex data vs the old frontmatter, paths resolve, palette upgrades keep every terrain); a restart rewrites nothing; paint → undo round trip; registered commands; Play refuses a path edit. ~5 minutes, mostly the real-data migration.
 - Run parts of it: `npm run smoke -- --only fresh,v155 --jobs 2` (`--list` for the setup ids, `--keep` to keep run folders, `--build <dir>` to test another build, `--slices <spec>` to build a set of features into the run folder). A failed setup keeps its run folder (path in `dev/smoke/last-run.json`); a full pass writes `dev/smoke/last-pass.json` (commit, build hash, the slices built, per-check results).
-- premerge also runs the setups that exercise an unreleased slice (a setup's `slices`; today `fresh`, for the hex flower check C10) on a build with every slice, stamped `dev/smoke/last-pass.full.json`, before the release matrix.
+- premerge also runs the setups that exercise an unreleased slice (a setup's `slices`; today `fresh`, for the party check C9 and the hex flower check C10) on a build with every slice, stamped `dev/smoke/last-pass.full.json`, before the release matrix.
 - It only stops the sandboxes it started and checks every other Obsidian process is still there (`otherObsidianBefore == otherObsidianAfter`). Never point it at the main vault.
 - A new feature with a user-visible write path (paint, paths, a new note type, a migration) should get a smoke check in `dev/smoke/lib/page.mjs` / `setups.mjs` as well as unit tests.
 
@@ -93,7 +93,7 @@ MSYS_NO_PATHCONV=1 wsl.exe -e bash -lc 'cd /mnt/c/Users/markr/Documents/KB/journ
 
 `main.ts` re-exports `src/HexmakerPlugin.ts`; esbuild bundles everything into `main.js` (`.md` files import as text: `loader: { '.md': 'text' }` in `esbuild.config.mjs`). The plugin id is `hexmaker`; view types, CSS classes and protocol actions keep the old `duckmage-` prefix. See `ARCHITECTURE.md` for the module table, the data formats and the modules/slices system.
 
-**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__` / `__SLICE_GENPAGE__` / `__SLICE_HEXFLOWER__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, World maps' hooks via `worldMaps()` or the generator page via `genPage()` (each undefined without its slice; type-only imports). Module code that needs another module's api (or the list of runtimes) imports `src/modules/active.ts`, never `runtime.ts` (that imports every module: an import cycle). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
+**Modules and release slices.** World (released), World maps (`src/overworld/`) and Space (`src/space/`) are modules (`src/modules/`); one module is one release slice (`release-slices.json`, esbuild defines `__SLICE_WORLDMAPS__` / `__SLICE_SPACE__` / `__SLICE_GENPAGE__` / `__SLICE_PLAY__` / `__SLICE_HEXFLOWER__` / `__SLICE_PACKS__`). The core never value-imports a module's code: it asks `registry` (data), the runtime contributions in `src/modules/runtime.ts`, World maps' hooks via `worldMaps()` or the generator page via `genPage()` (each undefined without its slice; type-only imports). Module code that needs another module's api (or the list of runtimes) imports `src/modules/active.ts`, never `runtime.ts` (that imports every module: an import cycle). `tests/moduleBoundary.test.ts` holds the import edges at 0. A module's settings keys get no `DEFAULT_SETTINGS` entry (written only once set); its user-visible names go in its `owns.strings`, and Space- or World-maps-only help text goes inside `<!-- slice:<id> -->…<!-- /slice -->` in `help.md`. Run `npm run check:release` after touching a module. Comments inside object literals and class bodies reach `main.js`: don't name a module's features in core comments there.
 
 ### Source layout
 
@@ -130,14 +130,15 @@ src/
                           upgradeNote.ts / upgradeReport.ts; rules in its README.md
   modules/              ← registry (data half), runtime (plugin half), active.ts (the runtimes, for module code);
                           world/, world-maps/, space/, gen-page/ (the generator page: GeneratorView, GeneratorPanel +
-                          sections/ renderers (GeneratorPageCtx), library, saves, generatorPageState.ts), hex-flower/
+                          sections/ renderers (GeneratorPageCtx), library, saves, generatorPageState.ts), play/ (Solo play),
+                          hex-flower/, packs/ (content packs)
   worldgen/             ← generators, engines (procedural/, builtin/), saveFormat, previews, NewMapSetupModal
                           (map creation is core: New map and the wizard run generators without the page)
   overworld/ space/ hexflower/ ← module code (World maps, Space, hex flowers)
   random-tables/        ← RandomTableView, table parse/roll (randomTable.ts), TableStore, workflows
   palettes/             ← PaletteStore (palette notes ⇄ settings), paletteNote, pathTypeTable, presets
   paths/                ← PathsService (resolved chains, route cache), router, path edits, legacy readers
-  play/ arrival/        ← play log, party travel, link icons; places made on arrival, events ledgers
+  arrival/              ← places made on arrival, events ledgers (Solo play is src/modules/play/)
   export/               ← map/hex/workflow exports (PNG, PDF, HTML, Markdown); content packs are modules/packs/
   notes/ tokens/        ← area (faction/region) note styling, frontmatter text; token notes
   ui/                   ← shared kit: sliders.ts, shareSliders.ts (zero-sum), pickers.ts, disclosure.ts

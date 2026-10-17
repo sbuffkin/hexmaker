@@ -57,7 +57,8 @@ describe("work mode classification covers every entry point", () => {
 			...src.flatMap((f) => [...read(f).matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id:\s*"([^"]+)"/g)].map((m) => m[1])),
 			// Modules' command contributions (src/modules/<id>/runtime.ts).
 			...src.filter((f) => /^src\/modules\/[^/]+\/runtime\.ts$/.test(f))
-				.flatMap((f) => [...read(f).matchAll(/\{\s*id:\s*"([^"]+)",\s*name:\s*"/g)].map((m) => m[1])),
+				// (Not their settings, which have ids and names too: "Settings.<key>".)
+				.flatMap((f) => [...read(f).matchAll(/\{\s*id:\s*"(?!Settings\.)([^"]+)",\s*name:\s*"/g)].map((m) => m[1])),
 		];
 		expect(ids.length).toBeGreaterThan(10);
 		const missing = ids.filter((id) => !(id in ALL_COMMANDS));
@@ -82,9 +83,11 @@ describe("work mode classification covers every entry point", () => {
 			expect({ file: f, rawMenus: (text.match(/new Menu\(|\.addItem\(/g) ?? []).length }).toEqual({ file: f, rawMenus: 0 });
 			for (const m of text.matchAll(/\bmenu\.add\(\s*"([^"]+)"/g)) used.add(m[1]);
 		}
-		// Modules' hex menu items (ModuleRuntime.hexMenu): `menuId: "hex.<id>"` in their code.
+		// Modules' hex and token menu items (ModuleRuntime.hexMenu, play.tokenMenu): `menuId: "hex.<id>"`
+		// or `id: "token.<id>"` in their code.
 		for (const f of src.filter((p) => /^src\/(modules|hexflower)\//.test(p))) {
 			for (const m of read(f).matchAll(/menuId:\s*"([^"]+)"/g)) used.add(m[1]);
+			for (const m of read(f).matchAll(/\bid:\s*"((?:hex|token)\.[^"]+)"/g)) used.add(m[1]);
 		}
 		// The overworld menu's ids come from overworldMenu() as `ow.<id>`.
 		const owIds = /id:\s*("[^;]+?");/.exec(readSource("src/overworld/overworldInput.ts"))![1];

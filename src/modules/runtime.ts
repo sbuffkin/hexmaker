@@ -48,6 +48,7 @@ import { worldRuntime } from "./world/runtime";
 import { worldMapsRuntime } from "./world-maps/runtime";
 import { spaceRuntime } from "./space/runtime";
 import { genPageRuntime } from "./gen-page/runtime";
+import { playRuntime } from "./play/runtime";
 import { hexFlowerRuntime } from "./hex-flower/runtime";
 import { packsRuntime } from "./packs/runtime";
 
@@ -56,6 +57,8 @@ const compiled: ModuleRuntime[] = [worldRuntime];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsRuntime);
 if (__SLICE_SPACE__) compiled.push(spaceRuntime);
 if (__SLICE_GENPAGE__) compiled.push(genPageRuntime);
+// Before Hex flower: a step is marked visited before exploring reads it.
+if (__SLICE_PLAY__) compiled.push(playRuntime);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerRuntime);
 if (__SLICE_PACKS__) compiled.push(packsRuntime);
 export const MODULE_RUNTIMES: readonly ModuleRuntime[] = compiled;
@@ -144,6 +147,26 @@ export function runModuleUnload(plugin: HexmakerPlugin): void {
       logError(`${m.id} clean-up`, e);
     }
   }
+}
+
+/**
+ * Does this build have party tokens: a module that moves one in Play (its
+ * partyClick)? Without one, a token marked as the party is a plain token.
+ */
+export function partyTokensOn(): boolean {
+  return MODULE_RUNTIMES.some((m) => !!m.play?.partyClick);
+}
+
+/** The party took a step: each module's marks (onStep), in module order; their undo entries. */
+export function runPartyStep(plugin: HexmakerPlugin, step: PartyStep): UndoItem[] {
+  return MODULE_RUNTIMES.flatMap((m) => {
+    try {
+      return m.play?.onStep?.(plugin, step) ?? [];
+    } catch (e) {
+      logError(`${m.id} party step marks`, e);
+      return [];
+    }
+  });
 }
 
 /** Does any module make this click on a hex the selected party's step? */

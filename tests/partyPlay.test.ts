@@ -4,8 +4,9 @@ import { readFileSync } from "node:fs";
 import { MemVault } from "./helpers/memVault";
 import { fakeRoot } from "./helpers/fakeDom";
 import { applyTokenFrontmatter } from "../src/frontmatter";
-import { moveLogText, onPartyMoved } from "../src/play/partyLog";
-import { logDayName } from "../src/play/playLog";
+import { moveLogText, onPartyMoved } from "../src/modules/play/partyLog";
+import { logDayName } from "../src/modules/play/playLog";
+import { playRuntime } from "../src/modules/play/runtime";
 import { clearRevealed, markRevealed, REVEAL_BOUNCE_MS, revealedNow } from "../src/hex-map/revealBounce";
 import { drawPartyControls, PARTY_CONTROLS_CLS } from "../src/hex-map/view/partyControls";
 import { WorkModeButton } from "../src/hex-map/view/workModeButton";
@@ -69,12 +70,24 @@ describe("a party move writes a log line (P1)", () => {
 		await expect(onPartyMoved(s.plugin as never, { map: "m", from: "4_4", to: "5_4" }, NOW)).resolves.toBeUndefined();
 	});
 
-	it("the map view logs every step and records the visited marks in the step's undo (P2)", () => {
-		const layer = readSource("src/hex-map/view/tokenLayer.ts");
-		// Only in Play: dragging the party around in Build or God isn't logged.
-		expect(layer).toMatch(/if \(this\.host\.undos\.currentWorkMode\(\) === "play"\) void onPartyMoved\(this\.plugin, step\);/);
+	it("the step's hooks: visited marks at once, in the step's undo (P2); the log line only in Play (P1)", async () => {
+		const s = await logSetup();
+		const map: Record<string, unknown> = { name: "m", workMode: "build", visited: ["1_1"] };
+		const plugin = { ...s.plugin, getMap: (n: string) => (n === "m" ? map : undefined), saveSettings: async () => {} };
+		const step = { map: "m", from: "4_4", to: "5_4", token: "world/tokens/Party.md" };
+		expect(playRuntime.play!.onStep!(plugin as never, step)).toEqual([{ kind: "map-field", mapName: "m", field: "visited", before: ["1_1"], after: ["1_1", "4_4", "5_4"] }]);
+		expect(map.visited).toEqual(["1_1", "4_4", "5_4"]);
+		// Both already visited: nothing to undo.
+		expect(playRuntime.play!.onStep!(plugin as never, step)).toEqual([]);
+		// Build: moving the party by hand isn't a step of the game, so no log line.
+		expect(await playRuntime.play!.onEnter!(plugin as never, step)).toEqual([]);
+		expect([...s.vault.files.keys()].some((p) => p.startsWith("Sessions/"))).toBe(false);
+		map.workMode = "play";
+		expect(await playRuntime.play!.onEnter!(plugin as never, step)).toEqual([]);
+		expect([...s.vault.files.keys()].some((p) => p.startsWith("Sessions/"))).toBe(true);
+		// An undone map field redraws the grid (the marks are drawn from the map).
 		const undo = readSource("src/hex-map/view/undoController.ts");
-		expect(undo).toMatch(/if \(item\.field === "visited"\) this\.host\.renderGrid\(\);/);
+		expect(undo).toMatch(/applyMapField\(this\.host\.plugin, item, dir\);\s*\/\/[^\n]*\n\s*this\.host\.renderGrid\(\);/);
 	});
 });
 

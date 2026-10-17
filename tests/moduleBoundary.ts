@@ -23,6 +23,7 @@ export const MODULE_DIRS: Record<string, string[]> = {
   "hex-flower": ["src/hexflower/", "src/modules/hex-flower/"],
   "gen-page": ["src/modules/gen-page/"],
   packs: ["src/modules/packs/"],
+  play: ["src/modules/play/"],
 };
 
 /**

@@ -20,7 +20,8 @@ const core = [...plugin.matchAll(/(?:addCommand\(|addPlaced\("[^"]+",\s*)\{\s*id
 const moduleRuntimes = readdirSync(new URL("../src/modules", import.meta.url), { withFileTypes: true })
 	.filter((d) => d.isDirectory() && existsSync(new URL(`../src/modules/${d.name}/runtime.ts`, import.meta.url)))
 	.map((d) => readSource(`src/modules/${d.name}/runtime.ts`));
-const fromModules = moduleRuntimes.flatMap((t) => [...t.matchAll(/\{\s*id:\s*"[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]));
+// (Not their settings, which have ids and names too: "Settings.<key>".)
+const fromModules = moduleRuntimes.flatMap((t) => [...t.matchAll(/\{\s*id:\s*"(?!Settings\.)[^"]+",\s*name:\s*"([^"]+)"/g)].map((m) => m[1]));
 const registered = [...core, ...fromModules];
 const prefix = `${pluginName}: `;
 const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -28,8 +29,8 @@ const mentioned = [...readme.matchAll(new RegExp(`${escaped}([^*"\\n|]+?)(?=\\*\
 
 describe("README command names", () => {
 	it("finds the registered commands, the modules' too", () => {
-		// Read per module folder, in name order (gen-page, packs, space, world, world-maps).
-		expect(fromModules).toEqual(["Open terrain generator", "Export content pack…", "Import content pack…", "Edit world types…", "Convert world types to tables", "New overworld…"]);
+		// Read per module folder, in name order (gen-page, packs, play, space, world, world-maps).
+		expect(fromModules).toEqual(["Open terrain generator", "Export content pack…", "Import content pack…", "Open today's play log", "Edit world types…", "Convert world types to tables", "New overworld…"]);
 		expect(registered.length).toBeGreaterThan(5);
 		expect(registered).toContain("Export current map…");
 	});

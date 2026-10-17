@@ -3,8 +3,8 @@
  *
  * Any token can be the party: its note says so with `token-party: true`.
  * In Play, with the party selected, clicking a neighbouring hex moves it
- * there (dragging still works), and every hex it has stood on is marked
- * visited. The visited hexes are stored per map, in the map note's
+ * there (dragging still works; ./runtime.ts partyClick), and every hex it
+ * has stood on is marked visited. The visited hexes are stored per map, in the map note's
  * frontmatter as a plain list in the order they were first reached:
  *
  *   visited: ["3_4", "4_4"]
@@ -13,8 +13,8 @@
  *
  * Pure: no Obsidian imports.
  */
-import { parseHexKey } from "../maps/mapNote";
-import { areNeighbours } from "../hexKey";
+import { parseHexKey } from "../../maps/mapNote";
+import { areNeighbours } from "../../hexKey";
 
 /** Is `to` one step from `from` ("x_y" keys) on a grid of this orientation and stagger? */
 export function isStep(
@@ -79,19 +79,4 @@ export function partyTokens<T extends PartyLike>(tokens: readonly T[], map: stri
 export function partyFor<T extends PartyLike>(tokens: readonly T[], map: string, hex: string): T | undefined {
   const parties = partyTokens(tokens, map);
   return parties.find((t) => t.hex === hex) ?? parties[0];
-}
-
-/**
- * What a left click on hex `hex` does while a party token is selected in
- * Play: "move" when the hex is one step from the token, otherwise "none"
- * (the click does what it always does, e.g. opens the hex editor).
- */
-export function partyClick(
-  selected: PartyLike | undefined,
-  hex: string,
-  orientation: "flat" | "pointy",
-  stagger: "odd" | "even" = "odd",
-): "move" | "none" {
-  if (!selected) return "none";
-  return isStep(selected.hex, hex, orientation, stagger) ? "move" : "none";
 }

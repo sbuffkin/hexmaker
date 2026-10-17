@@ -505,6 +505,13 @@ export interface PartyStep {
 /** What a module adds to Play. */
 export interface PlayHooks {
   /**
+   * The party took a step: what it marks at once (Solo play: the visited
+   * hexes), before onEnter and before the tokens are drawn again. Drawn by
+   * refreshing the grid's decorations (gridDecorations), never a redraw.
+   * Returns the undo entries of what it changed (one undo with the move).
+   */
+  onStep?(plugin: HexmakerPlugin, step: PartyStep): UndoItem[];
+  /**
    * The party entered a hex. Returns the undo entries of what it wrote:
    * the map view groups them with the token's move (one undo).
    */
@@ -563,6 +570,8 @@ export interface HexMenuContribution {
   icon: string;
   /** Its placement id (src/ui/placement.ts). */
   placementId?: string;
+  /** Shown ticked (an on/off item). */
+  checked?: boolean;
   run: () => void;
 }
 

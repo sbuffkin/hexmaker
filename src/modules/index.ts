@@ -17,6 +17,7 @@ import { worldModule } from "./world";
 import { worldMapsModule } from "./world-maps";
 import { spaceModule } from "./space";
 import { genPageModule } from "./gen-page";
+import { playModule } from "./play";
 import { hexFlowerModule } from "./hex-flower";
 import { packsModule } from "./packs";
 
@@ -26,6 +27,7 @@ const compiled: HexmakerModule[] = [worldModule];
 if (__SLICE_WORLDMAPS__) compiled.push(worldMapsModule);
 if (__SLICE_SPACE__) compiled.push(spaceModule);
 if (__SLICE_GENPAGE__) compiled.push(genPageModule);
+if (__SLICE_PLAY__) compiled.push(playModule);
 if (__SLICE_HEXFLOWER__) compiled.push(hexFlowerModule);
 if (__SLICE_PACKS__) compiled.push(packsModule);
 
