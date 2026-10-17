@@ -354,6 +354,8 @@ function escapeHtml(s: string): string {
 
 /** Terrain icons as data URIs so the print page needs no vault access. */
 async function iconDataUri(url: string): Promise<string | undefined> {
+  // "" is getIconUrl refusing an icon name that isn't a plain file name.
+  if (!url) return undefined;
   if (url.startsWith("data:")) return url;
   try {
     const img = createEl("img");
