@@ -2,7 +2,7 @@ import type { PathAutoRoute, PathLineStyle, PathRouting, PathType } from "../typ
 import { parseImpassableCell } from "../impassable";
 import { legacyAutoRoute, legacyAvoidsImpassable, legacyRouting } from "../migrations/v1.5-path-types-explicit";
 import { colorCell, readColor, wrapColorCellsInRows, writtenColor } from "./colorCell";
-import { splitRow } from "../md/tableRow";
+import { SEPARATOR_ROW, splitRow } from "../md/tableRow";
 
 // The "Path types" section of a palette note: the kinds of path (roads,
 // rivers, jump routes…) that maps using this palette can draw.
@@ -59,8 +59,6 @@ function columnFor(header: string): Column | null {
   if (h.startsWith("avoid")) return "avoid";
   return null;
 }
-
-const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 export interface PathTableSpan {
   start: number;

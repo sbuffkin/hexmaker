@@ -67,7 +67,7 @@
 
 import { climateKeyValues, readClimate, sameClimateValue, type BiomeClimate } from "./biomeClimate";
 import { cleanTuning, isTuningHeader, readTuningRows, tuningTable, type BiomeTuning } from "./biomeTuning";
-import { splitRow } from "../md/tableRow";
+import { SEPARATOR_ROW, splitRow } from "../md/tableRow";
 
 // The tuning API, for callers that read biome notes (one import for both).
 export {
@@ -200,8 +200,6 @@ export const BIOME_HELP = [
 ];
 
 // ── reading ──────────────────────────────────────────────────────────────
-
-const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 interface Span { start: number; end: number; headers: string[] }
 

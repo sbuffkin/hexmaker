@@ -15,6 +15,7 @@
 import { contentFolder, type ContentFolderKey } from "../notePickers";
 import { templatesFolderFor } from "../noteTemplates";
 import { hasLegacyRollerLink, withRollerBlock } from "../random-tables/randomTable";
+import { escapeRegex } from "../textUtils";
 
 export interface PackKind {
   /** Stable id, also the pack's folder for it ("tables"). */
@@ -179,11 +180,10 @@ export function keepBothPath(path: string, taken: (p: string) => boolean): strin
 export function rewriteFolderLinks(text: string, from: string, to: string): string {
   const f = trim(from), t = trim(to);
   if (!f || !t || f === t) return text;
-  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   // One pass over every form, so a new folder inside the old one isn't rewritten twice.
   const enc = (s: string) => s.replace(/ /g, "%20");
-  const forms = [`\\[\\[${esc(f)}/`, `\\]\\(<?${esc(f)}/`];
-  if (f.includes(" ")) forms.push(`\\]\\(<?${esc(enc(f))}/`);
+  const forms = [`\\[\\[${escapeRegex(f)}/`, `\\]\\(<?${escapeRegex(f)}/`];
+  if (f.includes(" ")) forms.push(`\\]\\(<?${escapeRegex(enc(f))}/`);
   return text.replace(new RegExp(forms.join("|"), "g"), (m) =>
     m.startsWith("[[") ? `[[${t}/` : m.includes("%20") ? m.replace(enc(f), enc(t)) : m.replace(f, t));
 }

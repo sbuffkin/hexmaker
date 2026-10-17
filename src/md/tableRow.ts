@@ -1,10 +1,13 @@
 /**
- * Splitting a markdown table row into cells, shared by the note parsers
- * (map notes, biome notes and pools, palette notes, path types, world
- * types). Only the split is shared: each parser keeps its own separator
- * row pattern and cell escaper, since those differ on purpose (map notes
- * accept `=` separators and fold newlines, for one).
+ * Markdown table rows, shared by the note parsers (map notes, biome notes
+ * and pools, palette notes, path types, world types, workflows): the one
+ * cell splitter and the usual separator row. Map notes and hex flowers keep
+ * their own separator pattern on purpose (map notes accept `=` rows, hex
+ * flowers want two dashes), and each parser keeps its own cell escaper.
  */
+
+/** A `| --- | :-: |` separator row (outer pipes optional, one dash is enough). */
+export const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 
 /** Options for splitRow. */
 export interface SplitRowOptions {
@@ -40,4 +43,17 @@ export function splitRow(line: string, opts: SplitRowOptions = {}): string[] {
 /** splitRow keeping `[[link|alias]]` whole. */
 export function splitLinkRow(line: string): string[] {
   return splitRow(line, { wikiLinks: true });
+}
+
+/**
+ * A row that starts with a pipe, split like splitLinkRow (`[[link|alias]]`
+ * kept whole); null for any other line, and no cells for a lone `|`. What
+ * workflow steps tables read (it was textUtils.splitTableRow, which split
+ * the same way but for a `|` closing an unfinished `[[link`: it's the
+ * row's end now, as in every other table).
+ */
+export function splitPipedRow(line: string): string[] | null {
+  const s = line.trim();
+  if (!s.startsWith("|")) return null;
+  return s === "|" ? [] : splitLinkRow(s);
 }

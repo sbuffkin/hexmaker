@@ -6,7 +6,6 @@ import {
 	addLinkToSection,
 	removeLinkFromSection,
 	getLinksInSection,
-	getSectionContent,
 	getAllSectionData,
 	setSectionContent,
 	addBacklinkToFile,
@@ -188,41 +187,6 @@ describe("getLinksInSection", () => {
 		const { app } = makeApp("hex.md", "### Towns\n\n[[A]]\n\n---\n\n### Dungeons\n\n[[B]]\n");
 		const links = await getLinksInSection(app, "hex.md", "Towns");
 		expect(links).toEqual(["A"]);
-	});
-});
-
-// ── getSectionContent ─────────────────────────────────────────────────────────
-
-describe("getSectionContent", () => {
-	it("returns the trimmed body of a section", async () => {
-		const { app } = makeApp("hex.md", "### Description\n\nA misty valley.\n");
-		const content = await getSectionContent(app, "hex.md", "Description");
-		expect(content).toBe("A misty valley.");
-	});
-
-	it("returns empty string when section does not exist", async () => {
-		const { app } = makeApp("hex.md", "### Other\n\nSomething\n");
-		const content = await getSectionContent(app, "hex.md", "Description");
-		expect(content).toBe("");
-	});
-
-	it("returns empty string when file does not exist", async () => {
-		const { app } = makeApp("hex.md", "");
-		const content = await getSectionContent(app, "MISSING.md", "Description");
-		expect(content).toBe("");
-	});
-
-	it("stops at the next heading", async () => {
-		const { app } = makeApp("hex.md", "### Description\n\nLine one.\n\n### Notes\n\nLine two.\n");
-		const content = await getSectionContent(app, "hex.md", "Description");
-		expect(content).toBe("Line one.");
-		expect(content).not.toContain("Line two");
-	});
-
-	it("stops at a horizontal rule", async () => {
-		const { app } = makeApp("hex.md", "### Description\n\nBefore rule.\n\n---\n\nAfter rule.\n");
-		const content = await getSectionContent(app, "hex.md", "Description");
-		expect(content).toBe("Before rule.");
 	});
 });
 
@@ -420,14 +384,12 @@ describe("guidance prompts under a section heading", () => {
 		const { app } = makeApp("hex.md", note("\n"));
 		const { text } = await getAllSectionData(app, "hex.md");
 		expect(text.get("description")).toBe("");
-		expect(await getSectionContent(app, "hex.md", "description")).toBe("");
 	});
 
 	it("text written under the guidance reads back without it", async () => {
 		const { app } = makeApp("hex.md", note("\nMisty moor.\n"));
 		const { text } = await getAllSectionData(app, "hex.md");
 		expect(text.get("description")).toBe("Misty moor.");
-		expect(await getSectionContent(app, "hex.md", "description")).toBe("Misty moor.");
 	});
 
 	it("writing a section keeps the guidance on top and replaces only the text", async () => {
@@ -439,7 +401,6 @@ describe("guidance prompts under a section heading", () => {
 		expect(getContent()).not.toContain("Misty moor.");
 		await setSectionContent(app, "hex.md", "description", "");
 		expect(getContent()).toBe(`### description\n${HINT}\n\n---\n### landmark\n`);
-		expect(await getSectionContent(app, "hex.md", "description")).toBe("");
 	});
 
 	it("plain (un-italicised) guidance and other text are told apart", async () => {

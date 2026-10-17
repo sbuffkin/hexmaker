@@ -1,5 +1,6 @@
 import { App, TFile } from "obsidian";
 import { splitGuidance } from "./hexGuidance";
+import { escapeRegex } from "./textUtils";
 import { LINK_SECTIONS, ROLLED_TEXT_SECTIONS, TEXT_SECTIONS } from "./types";
 
 /**
@@ -204,7 +205,7 @@ export async function removeLinkFromSection(app: App, filePath: string, section:
 		const afterHeading = match.end;
 		const nextBoundaryMatch = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
 		const sectionEnd = nextBoundaryMatch ? afterHeading + nextBoundaryMatch.index : content.length;
-		const escapedTarget = linkTarget.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const escapedTarget = escapeRegex(linkTarget);
 		const lineRegex = new RegExp(`\\n[^\\n]*\\[\\[${escapedTarget}(?:\\|[^\\]]+)?\\]\\][^\\n]*`, "g");
 		const sectionBody = content.slice(afterHeading, sectionEnd);
 		const newBody = sectionBody.replace(lineRegex, "");
@@ -233,22 +234,6 @@ export async function getLinksInSection(app: App, filePath: string, section: str
 		links.push(m[1]);
 	}
 	return links;
-}
-
-/** Return the plain text body of a named ### section (stops at next heading or ---). */
-export async function getSectionContent(app: App, filePath: string, section: string): Promise<string> {
-	const file = app.vault.getAbstractFileByPath(filePath);
-	if (!(file instanceof TFile)) return "";
-	const content = await app.vault.read(file);
-
-	const match = findSectionHeading(content, section);
-	if (!match) return "";
-
-	const afterHeading = match.end;
-	const nextBoundary = /\n(?:#{1,6} |-{3,})/m.exec(content.slice(afterHeading));
-	const sectionEnd = nextBoundary ? afterHeading + nextBoundary.index : content.length;
-	// The template's guidance prompt under the heading isn't section text.
-	return splitGuidance(content.slice(afterHeading, sectionEnd)).text.trim();
 }
 
 /** Read a file once and return all text and link section content in a single pass. */

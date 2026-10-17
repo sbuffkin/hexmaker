@@ -90,7 +90,7 @@ import {
   type WorldSizeRange,
 } from "../worldgen/cellReaders";
 import { ORBIT_ZONES, orbitZone, readOrbit, type OrbitZone } from "../modules/space/orbitZones";
-import { splitLinkRow as splitRow } from "../md/tableRow";
+import { SEPARATOR_ROW, splitLinkRow as splitRow } from "../md/tableRow";
 
 export { generatorRefId, readGenerator, readIntRange, readOptions, readSize, ORBIT_ZONES, orbitZone, readOrbit };
 export type { IntRange, OrbitZone, WorldGeneratorRef, WorldSizeRange };
@@ -627,7 +627,6 @@ const FEATURE_ALIASES: Record<string, FeatureColumn> = {
   notes: "Notes", note: "Notes", comment: "Notes",
 };
 
-const SEPARATOR_ROW = /^\s*\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?\s*$/;
 const normHeader = (h: string) => h.trim().toLowerCase().replace(/[*_]/g, "").replace(/\s+/g, " ");
 
 interface Span<C extends string = Column> { start: number; end: number; cols: (C | undefined)[] }
