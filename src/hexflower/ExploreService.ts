@@ -15,6 +15,8 @@
  * Undo: the map cells and `hex-flower-at` changes are returned as undo
  * entries, which the map view groups with the token's move (one Ctrl+Z);
  * the party's Reveal button (reveal) is one undo the same way.
+ * The map grows as the party nears its edge (exploreGrow.ts), as a "grid"
+ * entry first in the same group.
  * Notes and the play log are a journal: they stay (the notice says so).
  */
 
@@ -34,6 +36,8 @@ import { logError } from "../log";
 import { exploreOrder, ringOrder } from "./exploreOrder";
 import { markRevealed } from "../hex-map/revealBounce";
 import { isExploreMap, type ExploreMap } from "./exploreFields";
+import { makeRoom } from "./exploreGrow";
+import { applyGridUndo } from "../hex-map/gridChange";
 import {
   describeMove,
   describeWrites,
@@ -274,8 +278,12 @@ export class ExploreService {
     const lines: string[] = [];
     const shown = new Map<string, number>();
     const r = Math.max(1, parseReveal(rings));
+    // Room for what the party sees from here (HF4), before the rings fill into it.
+    const grew = makeRoom(this.plugin, map, center, r, (t) => this.show(t, []));
+    if (grew) undo.push(grew.undo);
     let at: ReadonlyMap<string, number> = parseFlowerAt(map.hexFlowerAt);
     at = await this.fillRings(map, center, r, at, 0, undo, lines, shown);
+    if (grew) lines.push(grew.line);
     undo.push(...this.setFlowerAt(map, at));
     markRevealed(mapName, shown);
     const [x, y] = hexPair(center);
@@ -303,9 +311,13 @@ export class ExploreService {
 
   /** The party entered a hex (ModuleRuntime.play.onEnter). */
   async onEnter(step: PartyStep): Promise<UndoItem[]> {
-    if (!this.exploreMap(step.map)) return [];
+    const map = this.exploreMap(step.map);
+    if (!map) return [];
+    // Near the edge, the map grows first (HF4), so the step's reveal fills into the new hexes.
+    const grew = makeRoom(this.plugin, map, step.to, parseReveal(map.exploreReveal), (t) => this.show(t, []));
     const r = await this.fill(step.map, step.to, step.from);
-    if (!r) return [];
+    if (!r) return grew ? [grew.undo] : [];
+    if (grew) { r.undo.unshift(grew.undo); r.lines.push(grew.line); }
     // What came up is told, but a notice that fails never costs the step its undo.
     try { this.notify(step.map, r, step); } catch (e) { logError("hex flower notice", e); }
     return r.undo;
@@ -358,9 +370,10 @@ export class ExploreService {
     return out;
   }
 
-  /** The notice's Undo: the step's cells and positions back (and the party, when it moved). */
+  /** The notice's Undo: the step's cells and positions back, the rows it grew (still blank), and the party. */
   private async undoStep(mapName: string, undo: readonly UndoItem[], step?: PartyStep): Promise<void> {
     this.takeBack(undo);
+    for (const it of undo) if (it.kind === "grid") applyGridUndo(this.plugin, it, "undo");
     const map = this.exploreMap(mapName);
     for (const it of undo) if (it.kind === "map-field" && map && sameValue(map.hexFlowerAt, it.after)) map.hexFlowerAt = it.before as string[] | undefined;
     void this.plugin.saveSettings();

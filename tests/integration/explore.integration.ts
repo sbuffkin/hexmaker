@@ -3,7 +3,8 @@
  * explores with a hex flower keeps its keys (explore-with, hex-flower-at,
  * explore-reveal) in its map note and data.json; a party step fills a
  * blank hex (map note written); a restart reads it all back and writes
- * nothing (no data.json write, no map note rewrite).
+ * nothing (no data.json write, no map note rewrite). A step at the edge
+ * grows the map (HF4): the new size survives a restart, no hex note is made.
  */
 import { describe, it } from "node:test";
 import expect from "expect";
@@ -141,5 +142,34 @@ describe("exploring through the real plugin", () => {
 		expect(map.exploreWith).toEqual(["[[world/hex flowers/Wilds]] -> terrain"]);
 		expect(map.hexFlowerAt).toEqual(plugin.getMap("vale")!.hexFlowerAt);
 		expect(again.mapStore.get("vale", "3_2")?.terrain).toBe(TERRAIN);
+	});
+
+	it("a step at the edge grows the map: the size survives a restart, and no hex note is made (HF4)", async () => {
+		const v = vault();
+		const plugin = await start(v);
+		await plugin.saveSettings();
+		await plugin.mapStore.flush();
+		const undo = await runPartyEntered(plugin as never, { map: "vale", from: "2_1", to: "2_0" });
+		expect(undo[0]).toMatchObject({ kind: "grid", before: { x: 0, y: 0, cols: 6, rows: 6 }, after: { x: 0, y: -3, cols: 6, rows: 9 } });
+		await plugin.saveSettings();
+		await plugin.mapStore.flush();
+		const back = parseMapNote(v.files.get(NOTE)!)!.settings;
+		expect(back.gridOffset).toEqual({ x: 0, y: -3 });
+		expect(back.gridSize).toEqual({ cols: 6, rows: 9 });
+		const again = await start(v);
+		expect(again.getMap("vale")!.gridOffset).toEqual({ x: 0, y: -3 });
+		expect(again.getMap("vale")!.gridSize).toEqual({ cols: 6, rows: 9 });
+		expect([...v.files.keys()].filter((p) => p.startsWith("world/hexes/vale/") && p !== NOTE)).toEqual([]);
+	});
+
+	it("explore-grow: off is kept in the map note", async () => {
+		const v = vault();
+		const plugin = await start(v);
+		plugin.getMap("vale")!.exploreGrow = "off";
+		await plugin.saveSettings();
+		await plugin.mapStore.flush();
+		expect(v.files.get(NOTE)).toMatch(/^explore-grow: "?off"?$/m);
+		const again = await start(v);
+		expect(again.getMap("vale")!.exploreGrow).toBe("off");
 	});
 });
