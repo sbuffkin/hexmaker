@@ -405,6 +405,23 @@ describe("hex-note properties: off stops updating them; on again resyncs from th
 		expect(fm(r, P34)?.terrain).toBe("hills");
 	});
 
+	it("on again: a note that already matches is remembered, so the next edit to it isn't reverted", async () => {
+		const r = await rig(oldVault());
+		// What the plugin last wrote there, as a vault that's been syncing has it.
+		r.sync.remember(P12, { terrain: "ocean" });
+		await setHexNoteProperties(pluginOf(r), false);
+		// While off, the map and the note change the same way.
+		r.store.set("coast", "1_2", { terrain: "hills" }, "paint-terrain");
+		edit(r, P12, (t) => t.replace("terrain: ocean", "terrain: hills"));
+		await setHexNoteProperties(pluginOf(r), true);
+		await r.sync.flush();
+		// Then the user edits the note: the map follows it.
+		edit(r, P12, (t) => t.replace("terrain: hills", "terrain: swamp"));
+		await r.sync.flush();
+		expect(fm(r, P12)?.terrain).toBe("swamp");
+		expect(r.store.get("coast", "1_2")?.terrain).toBe("swamp");
+	});
+
 	it("on again: a copy the map cleared goes; a value typed while off where the map has none is kept and taken onto the map", async () => {
 		const r = await rig(oldVault());
 		await setHexNoteProperties(pluginOf(r), false);
