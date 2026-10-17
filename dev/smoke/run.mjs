@@ -211,7 +211,9 @@ async function runSetup(setup) {
       if (!disk) probs.push("no data.json written");
       else {
         const renamed = { regions: "maps", defaultRegion: "defaultMap" };
-        const lost = Object.keys(dataIn ?? {}).filter((k) => !(k in disk) && !(renamed[k] && renamed[k] in disk));
+        // Dropped on purpose: RETIRED_SETTINGS_KEYS in src/plugin/settingsTidy.ts.
+        const retired = new Set(["mySetting", "zoomLevel", "hexEditorTerrainExpanded"]);
+        const lost = Object.keys(dataIn ?? {}).filter((k) => !(k in disk) && !retired.has(k) && !(renamed[k] && renamed[k] in disk));
         if (lost.length) probs.push(`keys lost from data.json: ${lost.join(", ")}`);
         const inMaps = new Set((dataIn?.maps ?? dataIn?.regions ?? []).map((m) => m.name));
         const outMaps = new Set((disk.maps ?? []).map((m) => m.name));

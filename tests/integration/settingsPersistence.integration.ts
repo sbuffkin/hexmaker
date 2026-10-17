@@ -177,4 +177,59 @@ describe("settings persistence (characterisation, L1b)", () => {
 		await plugin.saveSettings();
 		expect(writes).toBe(n);
 	});
+
+	it("an old data.json with retired keys loads; the next save leaves them out (1.5.x never read them)", async () => {
+		const v = new MemVault();
+		v.files.set(DATA, JSON.stringify({ ...existing(), mySetting: "default", zoomLevel: 1.5, hexEditorTerrainExpanded: true }));
+		const plugin = await make(v);
+		await plugin.loadSettings();
+		expect(writes).toBe(0);
+		for (const k of ["mySetting", "zoomLevel", "hexEditorTerrainExpanded"]) expect(k in plugin.settings).toBe(false);
+		await plugin.saveSettings();
+		const saved = JSON.parse(v.files.get(DATA)!) as Record<string, unknown>;
+		for (const k of ["mySetting", "zoomLevel", "hexEditorTerrainExpanded"]) expect(k in saved).toBe(false);
+		expect(saved.hexOrientation).toBe("flat");
+		expect(plugin.getMap("coast")?.paletteName).toBe("Default");
+	});
+
+	it("hex orientation on load: missing is flat (the default), saved but empty is pointy (as 1.5.x read it)", async () => {
+		const missing = { ...existing() } as Record<string, unknown>;
+		delete missing.hexOrientation;
+		const v1 = new MemVault();
+		v1.files.set(DATA, JSON.stringify(missing));
+		const p1 = await make(v1);
+		await p1.loadSettings();
+		expect(p1.settings.hexOrientation).toBe("flat");
+		const v2 = new MemVault();
+		v2.files.set(DATA, JSON.stringify({ ...existing(), hexOrientation: "" }));
+		const p2 = await make(v2);
+		await p2.loadSettings();
+		expect(p2.settings.hexOrientation).toBe("pointy");
+	});
+
+	it("a failed save never rejects: logged with the prefix and said in a notice", async () => {
+		const { Notice } = mock as unknown as { Notice: { shown: { msg: string }[] } };
+		const { resetSaveFailureNotices } = await import("../../src/plugin/saveFailure");
+		resetSaveFailureNotices();
+		const v = new MemVault();
+		v.files.set(DATA, JSON.stringify(existing()));
+		const plugin = await make(v);
+		await plugin.loadSettings();
+		const proto = (mock.Plugin as { prototype: Record<string, unknown> }).prototype;
+		const write = proto.saveData;
+		proto.saveData = async () => { throw new Error("disk full"); };
+		const errors: unknown[][] = [];
+		const error = console.error;
+		console.error = (...a: unknown[]) => { errors.push(a); };
+		Notice.shown.length = 0;
+		try {
+			plugin.settings.hiddenIcons = ["x"];
+			await plugin.saveSettings();
+		} finally {
+			console.error = error;
+			proto.saveData = write;
+		}
+		expect(errors.map((a) => a[0])).toContain("Hexmaker: couldn't save the plugin's settings");
+		expect(Notice.shown.map((n) => n.msg)).toEqual([expect.stringMatching(/^Hexmap World Creator: couldn't save the plugin's settings \(disk full\)/)]);
+	});
 });

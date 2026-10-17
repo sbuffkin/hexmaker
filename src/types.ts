@@ -358,7 +358,6 @@ export interface TerrainColor {
 }
 
 export interface HexmakerPluginSettings {
-	mySetting: string;
 	/** Plugin version that last saved data.json (see src/compat.ts). */
 	savedWith?: string;
 	/** Data format stamp (src/migrations/stamp.ts): 1 or absent = 1.5.x and earlier. */
@@ -376,7 +375,6 @@ export interface HexmakerPluginSettings {
 	hexGap: string;
 	terrainPalettes: TerrainPalette[];
 	maps: MapData[];
-	zoomLevel: number;
 	pathTypes: PathType[];
 	hexOrientation: "pointy" | "flat";
 	staggerOffset: "odd" | "even";
@@ -389,8 +387,6 @@ export interface HexmakerPluginSettings {
 	linkSectionIcons?: Partial<Record<string, string>>;
 	defaultTableDice: number;
 	hexEditorTerrainCollapsed: boolean;
-	/** No longer read (round 6: expanding Terrain is per hex). Kept so old data.json files type-check. */
-	hexEditorTerrainExpanded?: boolean;
 	hexEditorFeaturesCollapsed: boolean;
 	hexEditorNotesCollapsed: boolean;
 	/** Hex editor "Icons" group collapsed. Unset = open. */
