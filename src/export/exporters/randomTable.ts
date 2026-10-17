@@ -28,8 +28,9 @@ import {
 import { escapeTableCell } from "../../textUtils";
 import { normalizeFolder } from "../../utils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
-import { exportedMessage, withExportProvenance } from "../exportFolder";
-import { openInVault, writeBinaryToVault, writeTextToVault } from "../vaultWrite";
+import { withExportProvenance } from "../exportFolder";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
+import { logWarn } from "../../log";
 
 /** A linked note resolved to its display name + content (frontmatter stripped). */
 export interface LinkedNote {
@@ -58,12 +59,9 @@ export async function exportRandomTableAsPdf(
       displayHeaderFooter: true,
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
-    const replaced = await writeBinaryToVault(plugin.app, outPath, bytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, bytes));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -80,16 +78,9 @@ export async function exportRandomTableAsMarkdown(
   try {
     const finalMd = serializeMarkdown(md, { wikilinks: "preserve" });
     // Where it came from, in its frontmatter (X1).
-    const replaced = await writeTextToVault(
-      plugin.app,
-      outPath,
-      withExportProvenance(finalMd, file.path, "table"),
-    );
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, withExportProvenance(finalMd, file.path, "table")));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   }
 }
 
@@ -121,7 +112,7 @@ async function loadLinkedNotesForTable(
       const raw = await app.vault.read(file);
       out.push({ name: file.basename, content: stripFrontmatter(raw) });
     } catch (err) {
-      console.warn(`Failed to read linked note ${file.path}:`, err);
+      logWarn("table export: couldn't read linked note", file.path, err);
     }
   }
   return out;

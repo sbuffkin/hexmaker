@@ -14,5 +14,5 @@
     "lib": ["DOM", "ES2020"],
   },
   "include": ["**/*.ts", "eslint.config.js"],
-  "exclude": ["tests/**", "node_modules", "*.mjs"],
+  "exclude": ["tests/**", "dev/measure*.ts", "node_modules", "*.mjs"],
 }

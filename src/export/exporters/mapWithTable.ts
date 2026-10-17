@@ -30,8 +30,8 @@ import { getTerrainFromFile, getHexNameFromFile } from "../../frontmatter";
 import { escapeTableCell } from "../../textUtils";
 import type HexmakerPlugin from "../../HexmakerPlugin";
 import { mapLabel } from "../../maps/mapTree";
-import { exportedMessage } from "../exportFolder";
-import { openInVault, writeBinaryToVault } from "../vaultWrite";
+import { announceExport, reportExportFailure, saveExport } from "../vaultWrite";
+import { sanitiseFilename } from "../exportNames";
 
 export interface MapPdfExportOptions extends MapPngRenderOptions {
   /** Filename stem (no extension). Defaults to mapName. */
@@ -150,13 +150,9 @@ export async function exportMapAsPdf(
       footerTemplate: `<div style="width: 100%; font-size: 9px; text-align: center; color: #666;"><span class="pageNumber"></span> / <span class="totalPages"></span></div>`,
     });
 
-    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
-    await writeBinaryToVault(plugin.app, outPath, pdfBytes);
-    new Notice(exportedMessage(outPath, replaced));
-    void openInVault(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, pdfBytes));
   } catch (err) {
-    console.error(err);
-    new Notice(`Export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err);
   } finally {
     notice.hide();
   }
@@ -453,9 +449,6 @@ function escapeHtmlAttr(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-export function sanitiseFilename(name: string): string {
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}
 
 export async function blobToDataUri(blob: Blob, type: string): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());

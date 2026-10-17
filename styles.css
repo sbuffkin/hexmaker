@@ -586,16 +586,6 @@ div.duckmage-hex-terrain-icon {
     z-index: 1;
 }
 
-.duckmage-hex-link-badge {
-    position: absolute;
-    top: 0.2em;
-    right: 0.2em;
-    font-size: 0.55em;
-    line-height: 1;
-    pointer-events: none;
-    z-index: 2;
-}
-
 .duckmage-hex-table-linked {
     outline: 2px solid var(--interactive-accent);
     outline-offset: -2px;
@@ -748,10 +738,6 @@ div.duckmage-hex-terrain-icon {
     flex-direction: column;
     min-height: 0;
 }
-.duckmage-editor-title-drag {
-    cursor: move;
-    user-select: none;
-}
 /* Native close-button row above our content is also part of the drag zone */
 .duckmage-editor-modal-drag .modal-close-button {
     cursor: move;
@@ -793,35 +779,6 @@ div.duckmage-hex-terrain-icon {
 
 .duckmage-editor-section {
     margin-bottom: 1em;
-}
-
-.duckmage-editor-collapsible-header {
-    display: flex;
-    align-items: center;
-    gap: 0.4em;
-    cursor: pointer;
-    user-select: none;
-    margin: 0.25em 0;
-}
-
-.duckmage-editor-collapsible-header:hover .duckmage-editor-collapsible-title {
-    color: var(--text-normal);
-}
-
-.duckmage-editor-collapsible-arrow {
-    font-size: 0.65em;
-    color: var(--text-muted);
-    line-height: 1;
-    flex-shrink: 0;
-}
-
-.duckmage-editor-collapsible-title {
-    margin: 0;
-    color: var(--text-muted);
-}
-
-.duckmage-editor-collapsible-body {
-    margin-bottom: 0.5em;
 }
 
 /* Terrain preview badge in the collapsible header */
@@ -1224,8 +1181,7 @@ input.duckmage-input-error {
     text-decoration: underline;
 }
 
-.duckmage-link-remove-btn,
-.duckmage-link-roll-btn {
+.duckmage-link-remove-btn {
     flex-shrink: 0;
     background: none;
     border: none;
@@ -1241,10 +1197,6 @@ input.duckmage-input-error {
     color: var(--text-error);
     background: var(--background-modifier-error-hover);
 }
-.duckmage-link-roll-btn:hover {
-    color: var(--text-normal);
-    background: var(--background-modifier-hover);
-}
 
 .duckmage-link-empty {
     font-size: 0.85em;
@@ -1256,7 +1208,6 @@ input.duckmage-input-error {
 }
 
 /* ── Roads & Rivers toolbar ───────────────────────────────────────────────── */
-
 
 .duckmage-draw-btn {
     height: 26px;
@@ -1337,26 +1288,6 @@ input.duckmage-input-error {
 .duckmage-path-editor-preview svg {
     width: 100%;
     height: 100%;
-}
-
-.duckmage-path-type-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    margin: 8px 0;
-}
-.duckmage-path-type-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85em;
-}
-.duckmage-path-type-swatch {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border-radius: 3px;
-    flex-shrink: 0;
 }
 
 .duckmage-tpe-brush-row {
@@ -1845,8 +1776,6 @@ input.duckmage-input-error {
     color: var(--text-normal);
 }
 
-
-
 /* ── Add palette modal ──────────────────────────────────────────────── */
 .duckmage-add-palette-list {
     display: flex;
@@ -2271,8 +2200,7 @@ input.duckmage-input-error {
     margin-left: 0;
 }
 
-.duckmage-submap-new-row,
-.duckmage-map-guided-row {
+.duckmage-submap-new-row {
     display: flex;
     align-items: center;
     gap: 0.6em;
@@ -2451,52 +2379,6 @@ input.duckmage-input-error {
     object-fit: contain;
     flex-shrink: 0;
     opacity: 0.9;
-}
-
-/* ── Modal: icon override ─────────────────────────────────────────────────── */
-
-.duckmage-icon-override-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5em;
-    margin-top: 0.75em;
-}
-
-.duckmage-icon-override-label {
-    color: var(--text-muted);
-    font-size: var(--font-ui-small);
-    white-space: nowrap;
-}
-
-/* ── Settings: terrain palette ────────────────────────────────────────────── */
-
-.duckmage-palette-list .duckmage-palette-item {
-    margin-bottom: 0.5em;
-    display: flex;
-    align-items: center;
-    gap: 0.25em;
-}
-
-.duckmage-palette-drag-handle {
-    cursor: grab;
-    color: var(--text-muted);
-    font-size: 1.2em;
-    line-height: 1;
-    user-select: none;
-    flex-shrink: 0;
-}
-
-.duckmage-palette-drag-handle:active {
-    cursor: grabbing;
-}
-
-.duckmage-palette-item.duckmage-palette-dragging {
-    opacity: 0.4;
-}
-
-.duckmage-palette-item.duckmage-palette-drop-target {
-    outline: 2px dashed var(--interactive-accent);
-    border-radius: 4px;
 }
 
 /* ── Hex table view ───────────────────────────────────────────────────────── */
@@ -2729,15 +2611,6 @@ input.duckmage-input-error {
 .duckmage-cell-modal {
     max-height: 60vh;
     overflow-y: auto;
-}
-
-.duckmage-cell-modal-pre {
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family: var(--font-text);
-    font-size: var(--font-ui-medium);
-    line-height: 1.6;
-    margin: 0;
 }
 
 .duckmage-cell-modal-list {
@@ -2997,12 +2870,6 @@ tr.duckmage-row-hidden {
     background: var(--background-secondary);
 }
 
-
-
-.duckmage-table-picker-combo {
-    margin-bottom: 0;
-}
-
 .duckmage-table-picker-modal .duckmage-link-combo-dropdown {
     max-height: 280px;
 }
@@ -3025,13 +2892,6 @@ tr.duckmage-row-hidden {
     color: var(--text-normal);
     font-weight: 500;
 }
-
-
-
-
-
-
-
 
 .duckmage-table-picker-new-heading {
     margin: 16px 0 8px;
@@ -3139,7 +2999,6 @@ tr.duckmage-row-hidden {
     border-radius: 6px;
     margin-bottom: 8px;
 }
-
 
 .duckmage-rt-list-item {
     padding: 5px 12px;
@@ -4193,34 +4052,6 @@ input.duckmage-field-invalid:focus {
     min-width: 12px;
 }
 
-.duckmage-map-size-sep {
-    font-size: 0.85em;
-    color: var(--text-muted);
-}
-
-.duckmage-map-presets-row {
-    gap: 5px;
-    flex-wrap: wrap;
-}
-
-.duckmage-map-presets-row button {
-    font-size: 0.82em;
-    padding: 2px 8px;
-}
-
-.duckmage-map-new-name-input {
-    flex: 1;
-}
-
-.duckmage-map-new-palette-select {
-    flex: 1;
-}
-
-.duckmage-map-create-row {
-    margin-top: 1.2em;
-    justify-content: flex-end;
-}
-
 .duckmage-region-list {
     list-style: none;
     padding: 0;
@@ -4307,20 +4138,6 @@ input.duckmage-field-invalid:focus {
 
 .duckmage-map-terrain-swatch--set {
     border-color: transparent;
-}
-
-.duckmage-map-delete-btn {
-    margin-left: auto;
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.75em;
-    line-height: 1;
-    flex-shrink: 0;
-    color: var(--text-muted);
 }
 
 .duckmage-region-row {
@@ -4643,17 +4460,6 @@ input.duckmage-field-invalid:focus {
 
 .duckmage-faction-picker {
     min-width: 320px;
-}
-
-
-
-/* Hidden native color picker — triggered via .click() */
-.duckmage-faction-color-input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-    pointer-events: none;
 }
 
 /* Palette grid */
@@ -5774,16 +5580,6 @@ input.duckmage-field-invalid:focus {
 .duckmage-wf-template-validation { margin-top: 4px; font-size: 0.85em; }
 .duckmage-wf-editor-results-row { margin-top: 8px; }
 
-/* Inline numeric readout shown beside a settings slider. */
-.duckmage-slider-value {
-    display: inline-block;
-    min-width: 3em;
-    margin-right: 8px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--text-muted);
-}
-
 /* ── Maps modal: Generator tab (wave function collapse) ───────────────────── */
 
 .duckmage-wfc-section {
@@ -6124,8 +5920,6 @@ button.duckmage-wfc-library-tab.is-active {
     color: var(--text-accent);
     font-weight: 600;
 }
-
-
 
 .duckmage-wfc-library-actions {
     margin: 0;
@@ -6680,20 +6474,6 @@ button.duckmage-wfc-library-tab.is-active {
     cursor: not-allowed;
 }
 
-/* Hex editor autosave cue ("Saving…" → "✓ Saved"), fresh-eyes round 3. */
-.duckmage-editor-save-status {
-    font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
-    margin-left: 0.5em;
-    white-space: nowrap;
-}
-.duckmage-editor-save-status[data-state="saved"] {
-    color: var(--text-success);
-}
-.duckmage-editor-save-status[data-state="error"] {
-    color: var(--text-error);
-}
-
 /* Token form: what the Note field will do, and clickable field names
    (fresh-eyes round 3). */
 .duckmage-token-note-status {
@@ -6885,12 +6665,6 @@ button.duckmage-wfc-library-tab.is-active {
     border-color: var(--color-red);
     background: rgba(var(--color-red-rgb), 0.12);
     font-weight: 600;
-}
-.duckmage-editor-save-status.is-quiet {
-    display: none;
-}
-.duckmage-editor-save-status[data-state="settled"] {
-    color: var(--text-success);
 }
 
 /* Tool mode bar: in the toolbar band (second row, right of undo/redo)
@@ -7103,11 +6877,6 @@ button.duckmage-wfc-library-tab.is-active {
     white-space: nowrap;
 }
 
-/* Maps → New map: the chosen generator's description under the dropdown. */
-.duckmage-map-generator-desc {
-    margin-top: 0.25em;
-}
-
 /* Map list as a tree (N4): submaps under their parent, neighbouring
    regions grouped; collapsible, with a search box on long lists. */
 .duckmage-map-tree-search {
@@ -7143,13 +6912,6 @@ button.duckmage-wfc-library-tab.is-active {
 /* Sideways crumbs (X3): neighbouring regions after the map button. */
 .duckmage-map-side-crumbs {
     max-width: 30vw;
-}
-/* "beside Thornwood:" before a submap's parent's neighbours (round 6 U13). */
-.duckmage-map-side-via {
-    font-size: 0.72em;
-    color: var(--text-faint);
-    white-space: nowrap;
-    padding: 0 2px 0 4px;
 }
 
 /* Round 6 U9: the toolbar sits above the map (controls z-index 20), but its
@@ -7753,17 +7515,6 @@ button.duckmage-terrain-legend-chip {
     margin: 0;
     flex-shrink: 0;
 }
-
-/* New map: the folded "More" section (coordinates, stagger, background). */
-.duckmage-setup-more {
-    margin: 6px 0;
-}
-.duckmage-setup-more > summary {
-    cursor: pointer;
-    color: var(--text-muted);
-    font-size: var(--font-ui-small);
-    margin-bottom: 4px;
-}
 .duckmage-setup-coord {
     width: 70px;
     margin-right: 6px;
@@ -8093,23 +7844,6 @@ button.duckmage-terrain-legend-chip {
 .duckmage-ow-view-toggle button.is-active {
     background: var(--interactive-accent);
     color: var(--text-on-accent);
-}
-
-/* Biome picker and the region's small generator editor. */
-.duckmage-biome-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
-    gap: 4px;
-    margin-bottom: 0.8em;
-}
-.duckmage-biome-option {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    justify-content: flex-start;
-}
-.duckmage-biome-option.is-active {
-    outline: 2px solid var(--interactive-accent);
 }
 /* Biome pickers: group headings (Surface, Mountains, …) and the filter box. */
 .duckmage-biome-group-head {
@@ -8493,7 +8227,6 @@ button.duckmage-terrain-legend-chip {
 }
 
 /* A reshape action locked by the work mode, and the line saying how to unlock it. */
-.duckmage-biome-option.is-locked,
 .duckmage-action-row button.is-locked {
     opacity: 0.45;
     cursor: not-allowed;
@@ -9175,11 +8908,6 @@ textarea.duckmage-edit-region-notes-input {
 .duckmage-role-table-row select {
     min-width: 0;
     width: 100%;
-}
-.duckmage-role-table-from {
-    grid-column: 2;
-    font-size: 0.8em;
-    color: var(--text-muted);
 }
 
 /* Uncharted marker (plan-tables-everywhere §2.6): a small ? on hexes whose

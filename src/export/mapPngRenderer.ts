@@ -15,8 +15,10 @@
 import { getIcon, Notice, TFile, type App } from "obsidian";
 import { hexCenter, hexPolygonPoints, smoothPath, sharpPath } from "../hex-map/hexGeometry";
 import { applyAffine } from "../paths/pathGeometry";
-import { ensureExportFolder, exportedMessage, openExported } from "./exportFolder";
-import { writeBinaryToVault } from "./vaultWrite";
+import { ensureExportFolder } from "./exportFolder";
+import { announceExport, reportExportFailure, saveExport } from "./vaultWrite";
+import { sanitiseFilename } from "./exportNames";
+import { logWarn } from "../log";
 import {
   getTerrainFromFile,
   getIconOverrideFromFile,
@@ -1181,8 +1183,8 @@ async function loadIcons(
         .then((img) => {
           cache.set(name, img);
         })
-        .catch(() => {
-          console.warn(`Map export: failed to load icon ${name}`);
+        .catch((e) => {
+          logWarn("map export: couldn't load icon", name, e);
         }),
     );
   }
@@ -1227,22 +1229,14 @@ export async function exportMapAsPng(
   try {
     const blob = await renderMapToPngBlob(plugin, mapName, opts);
     const buf = new Uint8Array(await blob.arrayBuffer());
-    const replaced = plugin.app.vault.getAbstractFileByPath(outPath) instanceof TFile;
-    await writeBinaryToVault(plugin.app, outPath, buf);
-    new Notice(exportedMessage(outPath, replaced));
-    void openExported(plugin.app, outPath);
+    announceExport(plugin.app, await saveExport(plugin.app, outPath, buf));
   } catch (err) {
-    console.error(err);
-    new Notice(`Map export failed: ${(err as Error).message ?? err}`);
+    reportExportFailure(err, "Map export");
   } finally {
     notice.hide();
   }
 }
 
-function sanitiseFilename(name: string): string {
-  // Strip vault-illegal characters from the map name when used as a filename.
-  return name.replace(/[\\/:*?"<>|]/g, "_");
-}
 
 // Re-export so the renderer's surface is self-contained.
 export type { MapData };

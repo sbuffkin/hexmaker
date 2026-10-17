@@ -81,3 +81,4 @@ the version it came from.
 - Each page has an Advanced dropdown for the less common options, and a Debug section in debug mode.
 - Places icons: settlements, castles, towers, ruins, temples, camps and caves.
 - Exported notes say where they came from.
+- Exporting never replaces a file it didn't make: it saves a copy beside it, as "Name 2".

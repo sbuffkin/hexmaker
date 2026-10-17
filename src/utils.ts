@@ -4,6 +4,7 @@ import { BUNDLED_ICONS } from "./bundledIcons";
 import { registry } from "./modules";
 import { rangeCellTexts } from "./random-tables/randomTable";
 import { ensureFolder } from "./vault/ensureFolder";
+import { logWarn } from "./log";
 
 let labelSeq = 0;
 
@@ -115,7 +116,31 @@ export function createIconEl(
 }
 
 
+/**
+ * True when an icon name is a plain file name. Icon names come from notes
+ * (palettes, map notes, hex notes, packs), so a name with a folder
+ * separator or ".." could reach a file outside the icon folders, even
+ * outside the vault, and the hexcrawl manual would embed it in a PDF
+ * (security review #10).
+ */
+export function isSafeIconName(name: string): boolean {
+	if (!name || /[\\/]|\.\./.test(name)) return false;
+	for (let i = 0; i < name.length; i++) if (name.charCodeAt(i) < 0x20) return false;
+	return true;
+}
+
+/** Unsafe icon names already reported (one console line per name). */
+const reportedIconNames = new Set<string>();
+
+/** The icon's URL ("" for a name that isn't a plain file name: nothing loads). */
 export function getIconUrl(plugin: HexmakerPlugin, iconFilename: string): string {
+	if (!isSafeIconName(iconFilename)) {
+		if (!reportedIconNames.has(iconFilename)) {
+			reportedIconNames.add(iconFilename);
+			logWarn("icon name ignored: it isn't a plain file name", iconFilename);
+		}
+		return "";
+	}
 	if (plugin.vaultIconsSet.has(iconFilename)) {
 		const folder = normalizeFolder(plugin.settings.iconsFolder ?? "");
 		return plugin.app.vault.adapter.getResourcePath(`${folder}/${iconFilename}`);

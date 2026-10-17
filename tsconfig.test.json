@@ -5,6 +5,6 @@
 		"lib": ["DOM", "ES2022"],
 		"types": ["node"]
 	},
-	"include": ["tests/**/*.ts", "src/md.d.ts", "src/slices.d.ts"],
+	"include": ["tests/**/*.ts", "dev/measure*.ts", "src/md.d.ts", "src/slices.d.ts"],
 	"exclude": ["node_modules"]
 }

@@ -11,6 +11,9 @@ and the Places set with `node dev/build-place-icons.mjs`.
 The 37 `bw-*.png` terrain icons are Inkwell Ideas' "Black & White Classic" set for
 Hexographer/Worldographer, unmodified (from
 [worldographer.com/releases/bw-icons.zip](https://worldographer.com/releases/bw-icons.zip)).
+The zip's Worldographer files (`black-and-white-worldographer.wxx`,
+`black_white.properties`) aren't used by the plugin and are no longer kept
+here (git history has them, or get them from the zip).
 Inkwell Ideas: they "were created for Hexographer & Worldographer by Inkwell Ideas, Inc."
 and "are hereby released to the public domain and/or all rights to the icons are
 released where that is not possible. A credit is appreciated but not required."

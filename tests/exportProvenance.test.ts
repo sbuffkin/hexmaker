@@ -24,10 +24,11 @@ describe("export provenance (X1)", () => {
 	it("each markdown exporter writes it and reports Replaced", () => {
 		for (const [file, kind] of [["singleNote", "note"], ["singleHex", "hex"], ["randomTable", "table"], ["workflow", "workflow"]]) {
 			const src = readSource(`src/export/exporters/${file}.ts`);
-			expect(src).toContain(`withExportProvenance(finalMd, `);
+			expect(src).toContain(`saveExport(plugin.app, outPath, withExportProvenance(finalMd, `);
 			expect(src).toContain(`"${kind}")`);
 			expect(src).not.toContain("Exported to ${outPath}");
-			expect(src.match(/exportedMessage\(outPath, replaced\)/g)?.length).toBe(2);
+			// PDF and markdown both say where the file went (saveExport may pick "<name> 2").
+			expect(src.match(/announceExport\(plugin\.app, await saveExport\(/g)?.length).toBe(2);
 		}
 	});
 

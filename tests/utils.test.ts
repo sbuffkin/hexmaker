@@ -1,7 +1,7 @@
 import { describe, it, mock } from "node:test";
 import expect from "expect";
 import { TFile } from "obsidian";
-import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl, iconPackTabs } from "../src/utils";
+import { normalizeFolder, makeTableTemplate, getIconUrl, cssUrl, iconPackTabs, isSafeIconName } from "../src/utils";
 import { BUNDLED_ICONS } from "../src/bundledIcons";
 import { parseRandomTable, parseRandomTableWithReport } from "../src/random-tables/randomTable";
 import type HexmakerPlugin from "../src/HexmakerPlugin";
@@ -190,6 +190,34 @@ describe("getIconUrl", () => {
     const result = getIconUrl(plugin, "ruins.png");
     expect(typeof result).toBe("string");
     expect(result.length).toBeGreaterThan(0);
+  });
+});
+
+describe("getIconUrl refuses icon names that aren't plain file names (security #10)", () => {
+  it("rejects folder separators and '..', never asking for a path", () => {
+    const { plugin, getLastPath } = makePluginForIcon(["village.png"], "icons", "plugins/duckmage-plugin");
+    const warn = console.warn;
+    const warned: unknown[][] = [];
+    console.warn = (...a: unknown[]) => { warned.push(a); };
+    try {
+      for (const bad of ["../../../../Users/me/Pictures/x.png", "..\\..\\secret.png", "sub/x.png", "C:\\x.png", "..", "a..b.png", "", "x\u0000.png"]) {
+        expect(getIconUrl(plugin, bad)).toBe("");
+      }
+      expect(getLastPath()).toBe("");
+      // Reported once per name, with the plugin's prefix.
+      getIconUrl(plugin, "sub/x.png");
+      expect(warned.filter((a) => a[1] === "sub/x.png")).toEqual([["Hexmaker: icon name ignored: it isn't a plain file name", "sub/x.png"]]);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
+  it("plain names, bundled or not, still resolve", () => {
+    const { plugin } = makePluginForIcon(["village.png"], "icons", "plugins/duckmage-plugin");
+    expect(getIconUrl(plugin, "village.png")).toBe("resource://icons/village.png");
+    expect(getIconUrl(plugin, "my tower (2).png")).toBe("resource://plugins/duckmage-plugin/icons/my tower (2).png");
+    expect(isSafeIconName("bw-forest.svg")).toBe(true);
+    expect(isSafeIconName(".hidden.png")).toBe(true);
   });
 });
 

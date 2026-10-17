@@ -8,6 +8,7 @@
 	"src/constants.ts",
 	"src/coordStyle.ts",
 	"src/encounterLinks.ts",
+	"src/export/exportMarker.ts",
 	"src/export/exportNames.ts",
 	"src/export/manual/hexNumber.ts",
 	"src/export/manual/manualHtml.ts",
