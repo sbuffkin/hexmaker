@@ -214,6 +214,7 @@ export interface MapData {
 	linkBadgeSize?: string;
 	showHexNames?: boolean;       // undefined = true: hex name labels on the map
 	showTokenNames?: boolean;     // undefined = true: name under each token
+	showAreaNames?: boolean;      // undefined = true: area names on the area overlay
 	/** Hexes a party token has stood on, first visit first ("x_y"; `visited:` in the map note). */
 	visited?: string[];
 	/** The visited marks (layers menu → Labels). undefined = true. */

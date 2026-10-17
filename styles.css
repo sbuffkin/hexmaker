@@ -9961,3 +9961,22 @@ button.is-armed {
 .duckmage-wfc-paths-amount {
     margin: 0.25em 0 0.5em;
 }
+/* ── Map label stacking (P4, owner 2026-10-16): names above numbers ──────
+   Names matter more than hex numbers, so every name label sits above the
+   coordinates. Grid layers, bottom to top:
+     uncharted marks 9 · tokens 10 · coordinates 11 ·
+     names 12 (hex names, token names, area names) · link badges 13.
+   The token layer is no longer its own stacking context (z-index: auto),
+   so its names can rise above the coordinates while the tokens stay below
+   them. The token rule is zero-specificity (:where) so hover (50) and drag
+   (20) still win. Badges stay on top of the names (round 6 R1: a name
+   covered them), in their own column at the hex's side.
+   Each kind of name has its own toggle in the layers menu (Labels: Hex
+   names, Token names, Area names). */
+.duckmage-token-layer { z-index: auto; }
+:where(.duckmage-token-layer > .duckmage-token) { z-index: 10; }
+.duckmage-token-layer > .duckmage-token-name { z-index: 12; }
+.duckmage-hex-names-layer { z-index: 12; }
+.duckmage-region-labels-layer { z-index: 12; }
+.duckmage-link-badges-layer { z-index: 13; }
+.duckmage-hide-area-names .duckmage-region-labels-layer { display: none; }
